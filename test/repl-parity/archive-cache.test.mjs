@@ -6,7 +6,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {archiveCacheDir,cachedArchives,fetchArchives,pinnedArchives,prepareArchiveCache} from '../../scripts/repl-parity/archive-cache.mjs';
+import {archiveCacheDir,cachedArchives,fetchArchives,installArgs,pinnedArchives,placeCachedEngine,prepareArchiveCache} from '../../scripts/repl-parity/archive-cache.mjs';
 import {loadPins,selectPin} from '../../src/runtime/manifest.mjs';
 import {loadNodePins,selectNodePin} from '../../src/runtime/managed-node.mjs';
 
@@ -80,6 +80,37 @@ test('the checked-in pins name exactly the archives preparation fetches',()=>{
   for(const {archive} of Object.values(pins))assert.match(archive.url,/^https:\/\//);
  }
  assert.throws(()=>pinnedArchives({host:{platform:'linux',arch:'x64'},nodePins:[]}),/No Node is pinned/);
+});
+
+// #171: once cua's Linux engine is pinned (runtime/engine/linux-engine.json), preparation caches the pinned asset for the
+// machine's arch too, verified by its hash under the installer's length bound, and a managed fixture places that copy in
+// its scratch home before `cua install`, whose engine step then finds the pinned engine already placed: nothing downloads.
+const ENGINE=Buffer.from('tiny cua-engine fixture');
+const ENGINE_PIN={version:'0.1.0',release:'linux-engine-v0.1.0',assets:{x64:{url:'https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.1.0/cua-engine-0.1.0-linux-x64',sha256:sha(ENGINE)},arm64:{url:'https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.1.0/cua-engine-0.1.0-linux-arm64',sha256:'0'.repeat(64)}}};
+test('a pinned Linux engine joins the cache: its asset for this arch, by hash under the installer\'s bound, never passed to install',async t=>{
+ const host={platform:'linux',arch:'x64'};
+ const pins=pinnedArchives({host,enginePin:ENGINE_PIN});
+ assert.deepEqual(pins.engine,{file:'cua-engine-0.1.0-linux-x64',archive:{url:ENGINE_PIN.assets.x64.url,sha256:ENGINE_PIN.assets.x64.sha256,maxLength:64*1024*1024}});
+ assert.equal(pinnedArchives({host,enginePin:null}).engine,undefined,'before the first release there is no engine to cache');
+ assert.equal(pinnedArchives({host:{platform:'darwin',arch:'arm64'},enginePin:ENGINE_PIN}).engine,undefined);
+ const prepared=home(t),all={...PINS,engine:pins.engine};
+ const {calls,fetch}=network(url=>url===ENGINE_PIN.assets.x64.url?ENGINE:served[url]);
+ const archives=await fetchArchives(prepared,{pins:all,fetch});
+ assert.deepEqual(calls.at(-1),ENGINE_PIN.assets.x64.url);
+ assert.deepEqual(readFileSync(archives.engine),ENGINE);
+ assert.deepEqual(cachedArchives(prepared,{pins:all}),archives);
+ assert.deepEqual(installArgs(archives),['install','--archive',archives.vendor,'--node-archive',archives.node]);
+ const other=home(t);
+ await assert.rejects(fetchArchives(other,{pins:all,fetch:network(url=>url===ENGINE_PIN.assets.x64.url?Buffer.from('other bytes'):served[url]).fetch}),error=>error.code==='archive_hash_mismatch');
+ assert.throws(()=>cachedArchives(other,{pins:all}),/cua-engine-0\.1\.0-linux-x64.*cleanup-prepared/s);
+});
+
+test('placeCachedEngine puts the cached engine where cua install looks for it, executable',t=>{
+ const prepared=home(t),scratch=home(t),file=join(prepared,'cua-engine-0.1.0-linux-x64');writeFileSync(file,ENGINE,{mode:0o600});
+ const placed=placeCachedEngine(scratch,file);
+ assert.equal(placed,join(scratch,'engine','linux','cua-engine'));
+ assert.deepEqual(readFileSync(placed),ENGINE);
+ assert.equal(statSync(placed).mode&0o777,0o755);
 });
 
 test('the synchronous preparation face fetches in one child and returns the verified paths',t=>{

@@ -56,6 +56,15 @@ test('fresh install release drift is rejected and its scratch is removed',t=>{
  assert.equal(existsSync(home),false);
 });
 
+test('a cached pinned engine is in the managed scratch home before the install runs (#171)',t=>{
+ const {source,ambient}=fixture(t),engine=join(archiveCacheDir(source),'cua-engine-0.1.0-linux-x64');writeFileSync(engine,'engine fixture');
+ const archives=()=>({...CACHED(source),engine});let seen;
+ const scratch=prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{seen=readFileSync(join(options.home,'engine','linux','cua-engine'),'utf8');installed(options.home);},inspect:({home})=>({path:join(home,'node','24.test','bin','node'),version:'v24.18.0'})});
+ t.after(()=>scratch.cleanup());
+ assert.equal(seen,'engine fixture');
+ assert.equal(statSync(join(scratch.dir,'engine','linux','cua-engine')).mode&0o777,0o755);
+});
+
 test('managed scratch rejects an unmanaged or wrong-major Node and removes the failed install',t=>{
  const {source,ambient,archives}=fixture(t);
  for(const ownNode of [{path:'/external/node',version:'v24.18.0'},{version:'v22.18.0'}]){

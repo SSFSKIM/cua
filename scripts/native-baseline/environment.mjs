@@ -1,13 +1,14 @@
 // A fresh-home path changes each run; its role does not. Everything else affecting this native experiment is exact,
 // including whether the runtime was a fresh install or the approved copy reused in place (and which copy), but for the
 // host's memoryBytes, which may move by under 0.1% between boots (sameEnvironmentValue). The REPL host and the native
-// engine a run requested (CUA_REPL_HOST, CUA_NATIVE_ENGINE) are attested apart, so they leave its environment here.
+// engine a run requested (CUA_REPL_HOST, CUA_NATIVE_ENGINE, and on Linux the cua lane's CUA_LINUX_ENGINE_BIN) are attested
+// apart, so they leave its environment here.
 import {isDeepStrictEqual} from 'node:util';
 import {assertManagedNode} from '../repl-parity/node-provenance.mjs';
 import {surfaceOf} from './summary.mjs';
 const relativeNode = meta => meta.ownNode?.path?.startsWith(meta.home + '/') ? meta.ownNode.path.slice(meta.home.length) : meta.ownNode?.path;
 export function comparisonEnvironment(meta) {
-  const {CUA_REPL_HOST: _host, CUA_NATIVE_ENGINE: _engine, ...environment} = meta.environment ?? {};
+  const {CUA_REPL_HOST: _host, CUA_NATIVE_ENGINE: _engine, CUA_LINUX_ENGINE_BIN: _engineBin, ...environment} = meta.environment ?? {};
   return {device:meta.device, identity:meta.deviceIdentity, controller:meta.controllerIdentity, platform:meta.platform, hardware:meta.hardware, os:meta.os,
     display:meta.display, xSession:meta.xSession, gedit:meta.gedit?.version, locale:meta.gedit?.locale, environment,
     checkout:meta.checkout, node:meta.node, ownNode:{path:relativeNode(meta),version:meta.ownNode?.version}, nodeMode:meta.nodeMode,

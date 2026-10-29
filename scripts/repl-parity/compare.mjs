@@ -66,7 +66,10 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo,
       return Array.isArray(run.meta.surfaces)&&['scoped','default','disabled'].includes(run.meta.sandbox)?{surfaces:run.meta.surfaces,sandbox:run.meta.sandbox}:undefined;
     });
     const declared=a.meta.caseConfigurations?.[id]||b.meta.caseConfigurations?.[id];
-    if(native?!transitioned.has(id)&&configs.some(c=>!isDeepStrictEqual(c,NATIVE_FIXTURE)):declared&&(!configs[0]||!configs[1]||!isDeepStrictEqual(...configs)))differences.push({kind:'configuration',case:id,field:'caseConfigurations'});
+    // Two engine lanes of one host (#171) run each native case in one configuration, the Linux computer default, which
+    // the sides must share; the fixture's own configuration rule is the host comparison's.
+    const engineLanes=a.meta.host===b.meta.host&&a.meta.engine!==undefined&&b.meta.engine!==undefined;
+    if(native&&!engineLanes?!transitioned.has(id)&&configs.some(c=>!isDeepStrictEqual(c,NATIVE_FIXTURE)):(declared||engineLanes)&&(!configs[0]||!configs[1]||!isDeepStrictEqual(...configs)))differences.push({kind:'configuration',case:id,field:'caseConfigurations'});
   }
   if(a.meta.caseProofs&&b.meta.caseProofs||(ids??[]).some(id=>/^(api|native|hidden|capability-host)\//.test(id)||/^secrets\/(browser|native)-live\//.test(id)||/^cells\/(facade|documentation|profiles)\//.test(id)))for(const id of ids??[])if(!a.meta.caseProofs?.[id]||a.meta.caseProofs[id]!==b.meta.caseProofs?.[id])differences.push({kind:'configuration',case:id,field:'caseProofs'});
   if(!Array.isArray(ids)||!ids.length)differences.push({kind:'cardinality',message:'empty case manifest'});

@@ -16,6 +16,9 @@ const vendorDefectIds = () => JSON.parse(readFileSync(new URL('../../test/repl-p
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const CANDIDATE_KEYS = ['id', 'engine', 'platform', 'case', 'until', 'reason', 'assertion', 'result'];
 const DECLARATION_KEYS = ['id', 'case', 'cells', 'vendorDefect', 'candidateExpectation', 'reason'];
+// The native baseline's method cases the same M1b expectation covers (scripts/native-baseline/linux-cells.mjs METHOD_CASES).
+export const BASELINE_TEXT_METHODS = Object.freeze(['method.typeText', 'method.paste']);
+const METHOD_CASE_KEYS = ['op', 'engine', 'until', 'outcome', 'reason'];
 // The expected file ({about, candidateExpectations, declarations}) -> the file, each entry checked; throws naming the first
 // that is not one.
 export function validateNativeLinuxExpected(file) {
@@ -28,6 +31,14 @@ export function validateNativeLinuxExpected(file) {
       && c.result?.cell === 'exercise' && c.result.isError === false && Array.isArray(c.result.content) && Object.keys(c.result).length === 3;
     if (!ok) throw new Error(`invalid candidate expectation ${JSON.stringify(c)}: it names a unique id, the cua engine on linux, one of ${TEXT_CASES.join(' and ')}, until M2, its reason, the exact failed assertion and the exact exercise result`);
     ids.add(c.id);
+  }
+  if (!Array.isArray(file.baselineMethodCases)) throw new Error('the Linux native expected file holds baselineMethodCases: [...]');
+  for (const m of file.baselineMethodCases) {
+    const outcome = m?.outcome;
+    const ok = plain(m) && Object.keys(m).every(k => METHOD_CASE_KEYS.includes(k)) && BASELINE_TEXT_METHODS.includes(m.op) && m.engine === 'cua' && m.until === 'M2'
+      && typeof m.reason === 'string' && m.reason.trim() && plain(outcome) && isDeepStrictEqual(Object.keys(outcome), ['outcome', 'error', 'target', 'inserted'])
+      && file.baselineMethodCases.filter(other => other.op === m.op).length === 1;
+    if (!ok) throw new Error(`invalid baseline method case ${JSON.stringify(m)}: it names one of ${BASELINE_TEXT_METHODS.join(' and ')} once, the cua engine, until M2, its reason and the exact {outcome, error, target, inserted}`);
   }
   const defects = vendorDefectIds();
   for (const d of file.declarations) {
@@ -42,6 +53,7 @@ export function validateNativeLinuxExpected(file) {
 }
 export const NATIVE_LINUX_EXPECTED = validateNativeLinuxExpected(JSON.parse(readFileSync(NATIVE_LINUX_EXPECTED_FILE, 'utf8')));
 export const candidateExpectations = NATIVE_LINUX_EXPECTED.candidateExpectations;
+export const baselineMethodCases = NATIVE_LINUX_EXPECTED.baselineMethodCases;
 
 // The candidate expectation an assertion row of a run is, or null: the run's engine, platform and case, the exact failed
 // assertion, and the case's exercise result exactly the declared one.

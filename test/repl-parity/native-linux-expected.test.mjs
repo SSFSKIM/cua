@@ -28,7 +28,7 @@ function lane(engine, {values = outcome[engine]} = {}) {
   for (const id of [TYPE, PASTE]) rows.push(exercise(id, values[id]), ended(id), {case: id, assertion: FAILED});
   const meta = {schema: 1, host: 'cua', platform: 'linux', device: 'cua-171', commit: 'c'.repeat(40), harnessCommit: 'c'.repeat(40), runtimeRelease: RELEASE, suite: 'native',
     engine, engineBin: engine === 'cua' ? observed('cua') : null, caseIds: ids, caseCells: Object.fromEntries(ids.map(id => [id, ['exercise', 'end-task']])),
-    caseConfigurations: Object.fromEntries(ids.map(id => [id, {surfaces: ['computer'], sandbox: 'disabled'}])), caseProofs: Object.fromEntries(ids.map(id => [id, 'native-live'])),
+    caseConfigurations: Object.fromEntries(ids.map(id => [id, {surfaces: ['computer'], sandbox: 'scoped'}])), caseProofs: Object.fromEntries(ids.map(id => [id, 'native-live'])),
     engineAnswered: ids.map(id => ({case: id, requested: engine, expected: observed(engine), error: null, observed: [{exe: observed(engine), kind: engine, parent: 'trusted-worker.mjs'}]})),
     complete: true, connections: ['connection-1'], hostAttestations: [{connection: 'connection-1', host: 'cua', serverInfo: {name: 'cua-repl-host', version: '0.4.0'}, _meta: {'cua/replHost': {host: 'cua', version: '0.4.0'}}, executionFacts: {ownNode: {path: '/n/node', version: 'v24.22.0'}}}]};
   return {meta, tools: {tools: []}, rows};
@@ -86,6 +86,9 @@ test('the diff pairs the lanes by engine and is ok with only the declared text-c
   const other = compareParityRuns(lane('vendor'), cua, {engineDeclarations: NATIVE_LINUX_EXPECTED.declarations});
   assert.equal(other.ok, false);
   assert.ok(other.differences.some(d => d.case === KEY));
+  // The lanes share their configuration: the Linux computer default on both, compared side to side.
+  const sandbox = lane('cua'); sandbox.meta.caseConfigurations[KEY] = {surfaces: ['computer'], sandbox: 'disabled'};
+  assert.ok(compareParityRuns(lane('vendor'), sandbox, {engineDeclarations: NATIVE_LINUX_EXPECTED.declarations}).differences.some(d => d.kind === 'configuration' && d.case === KEY));
   // A declaration nothing needed is itself a difference.
   const same = compareParityRuns(lane('vendor'), lane('cua', {values: outcome.vendor}), {engineDeclarations: NATIVE_LINUX_EXPECTED.declarations});
   assert.equal(same.ok, false);

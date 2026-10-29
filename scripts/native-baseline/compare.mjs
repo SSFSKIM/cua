@@ -36,6 +36,7 @@
 import {isDeepStrictEqual} from 'node:util';
 import {attestation, DEFAULT_PLAN, isDefaultPlan, operationRank, summarize, surfaceOf} from './summary.mjs';
 import {comparisonEnvironment, environmentProblems, sameEnvironmentValue} from './environment.mjs';
+import {baselineMethodCases} from '../repl-parity/native-linux.mjs';
 
 export const TOLERANCE = {ratio: 0.1, floorMs: 500};
 export const latencyLimit = median => median + Math.max(TOLERANCE.ratio * median, TOLERANCE.floorMs);
@@ -136,7 +137,7 @@ function methodOutcome(b, c) {
   if (contained && c.filter(better).length > b.filter(better).length) return 'better';
   return `outcome differs: baseline ${listed(bt).join(' | ')}; candidate ${listed(ct).join(' | ')}`;
 }
-function judgeMethod(op, baseline, candidate) {
+function judgeMethod(op, baseline, candidate, {linux = false} = {}) {
   const b = baseline.methodRows.get(op) ?? [], c = candidate.methodRows.get(op) ?? [];
   const timing = judgeOperation(op, baseline, candidate);
   const base = {...timing, kind: 'method', baseline: timing.baseline && {...timing.baseline, outcomes: listed(tally(b))},
@@ -144,6 +145,14 @@ function judgeMethod(op, baseline, candidate) {
   if (!b.length) return c.some(r => r.ok !== true) ? {...base, verdict: 'fail', reasons: [`only the candidate has this method case, and ${c.filter(r => r.ok !== true).length} of its ${c.length} samples failed`]}
     : {...base, verdict: 'not judged', reasons: ['only the candidate has this method case']};
   if (!c.length) return {...base, verdict: 'fail', reasons: ['no candidate samples']};
+  // A Linux engine comparison's typeText and paste method cases (#171): until M2, exactly M1b's temporary candidate
+  // outcome on every cua sample (scripts/repl-parity/expected/native-linux.json baselineMethodCases), and only while no
+  // vendor-engine sample succeeded; still timed by the same rule.
+  const declared = linux ? baselineMethodCases.find(m => m.op === op) : null;
+  if (declared && c.every(r => outcomeOf(r) === JSON.stringify(declared.outcome)) && !b.some(better)) {
+    const timed = timing.reasons.filter(r => !/succeeded, the baseline/.test(r));
+    return {...base, verdict: timed.length ? 'fail' : 'declared', reasons: [...timed, `M1b's temporary candidate outcome (until ${declared.until}) on all ${c.length} cua samples: ${declared.outcome.outcome}, "${declared.outcome.error}", window ${declared.outcome.target}; the vendor engine's: ${listed(tally(b)).join(' | ')}`]};
+  }
   const outcome = methodOutcome(b, c);
   const reasons = [...(outcome && outcome !== 'better' ? [outcome] : []), ...timing.reasons.filter(r => !/succeeded, the baseline/.test(r)),
     ...(outcome === 'better' ? ['better: the method returned, its window survived and its text was read back'] : [])];
@@ -238,7 +247,7 @@ const plainPlan = (runs, ruled) => {
 
 // #117's comparisons: each mode's two lanes ({host, engine}, the run's --host and --engine) and the attested fields that
 // may differ between them; every other field must be equal.
-const VV = Object.freeze({host: 'vendor', engine: 'vendor'}), VC = Object.freeze({host: 'vendor', engine: 'cua'}), CC = Object.freeze({host: 'cua', engine: 'cua'});
+const VV = Object.freeze({host: 'vendor', engine: 'vendor'}), VC = Object.freeze({host: 'vendor', engine: 'cua'}), CC = Object.freeze({host: 'cua', engine: 'cua'}), CV = Object.freeze({host: 'cua', engine: 'vendor'});
 export const LANE_MODES = Object.freeze({
   engines: {id: 'A', title: 'engine and service', flag: '--engines', usage: '<vv-dir> <vc-dir>', baseline: VV, candidate: VC, differ: ['engine', 'service'],
     note: 'The engine is the one variable: cua\'s service loaded in the vendor trusted worker against the vendor\'s, on the vendor host.'},
@@ -247,6 +256,17 @@ export const LANE_MODES = Object.freeze({
   'end-to-end': {id: 'C', title: 'end to end', flag: '--end-to-end', usage: '<vv-dir> <cc-dir>', baseline: VV, candidate: CC, differ: ['host', 'sandbox', 'engine', 'service'],
     note: 'The product verdict: host and engine are two variables at once, so a regression here is located by A and B, not by C.'},
 });
+// Linux's one comparison (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites;
+// Acceptance 10): Linux serves one host, cua's own, so the engine is the lanes' one difference until M3 makes cua's
+// service the candidate's too.
+export const LINUX_LANE_MODES = Object.freeze({
+  engines: {id: 'A', title: 'engine (Linux)', flag: '--engines', usage: '<cv-dir> <cc-dir>', baseline: CV, candidate: CC, differ: ['engine'], linux: true,
+    note: 'The engine is the one variable: the vendor engine against cua\'s, both driven by the vendor service in cua\'s own host, the only one Linux serves.'},
+});
+// The operations a Linux computer run's engine answers (each reaches it through the vendor service): on these the Linux
+// comparison also fails when cua's median is above the vendor engine's (Acceptance 10). The cold phases, warm.noop and
+// the binder's own refusals never reach an engine, so they keep the tolerance rule alone.
+export const ENGINE_ANSWERED = Object.freeze(['warm.getState', 'warm.listApps', 'bind.getApp', 'warm.getAXState', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.clear', 'task.total', 'method.typeText', 'method.paste']);
 // The attested fields a lane comparison holds equal unless its mode permits them to differ, in report order.
 const LANE_FIELDS = {device: 'device', commit: 'commit', host: 'REPL host', engine: 'engine', service: 'native service', sandbox: 'sandbox',
   approvedEngine: 'approved engine', release: 'runtime release', hardware: 'hardware', os: 'OS', display: 'display', plan: 'sample plan'};
@@ -261,7 +281,9 @@ function laneValue(meta, key) {
 // -> compare()'s result for the lanes `mode` (a LANE_MODES key) names, with `mode`, `lane` (the mode), `permitted` (each
 // field the mode lets differ, {field, label, baseline, candidate, same}) and the DIAGNOSTIC rule of compareSameHost.
 export function compareLanes(mode, baselineRuns, candidateRuns) {
-  const lane = LANE_MODES[mode];
+  const linux = baselineRuns[0]?.meta?.platform === 'linux';
+  const lane = (linux ? LINUX_LANE_MODES : LANE_MODES)[mode];
+  if (!lane && linux) throw new Error(`Linux has one host, cua's own, so one lane comparison: compare --engines ${LINUX_LANE_MODES.engines.usage}`);
   if (!lane) throw new Error(`no lane comparison ${mode}; the modes are ${Object.keys(LANE_MODES).join(', ')}`);
   const usage = `compare ${lane.flag} ${lane.usage}`;
   const sides = [['baseline', baselineRuns, lane.baseline], ['candidate', candidateRuns, lane.candidate]].map(([label, runs, expected]) => {
@@ -293,11 +315,19 @@ export function compareLanes(mode, baselineRuns, candidateRuns) {
     problems.push(`${key} environment differs between the baseline and the candidate`);
   const ops = [...new Set([...baseline.summary.operations, ...candidate.summary.operations].map(o => o.op))]
     .sort((a, b) => operationRank(a) - operationRank(b) || a.localeCompare(b));
-  const operations = ops.map(op => (op.startsWith('method.') ? judgeMethod(op, baseline, candidate) : judgeOperation(op, baseline, candidate)));
+  const operations = ops.map(op => (op.startsWith('method.') ? judgeMethod(op, baseline, candidate, {linux: lane.linux}) : judgeOperation(op, baseline, candidate)));
+  // Linux (Acceptance 10): no cua median above the vendor engine's on an operation the engine answers; every operation
+  // where cua's median is above is listed, whichever rule judged it.
+  const above = lane.linux ? operations.filter(o => o.verdict !== 'not judged' && o.baseline?.judgedMs != null && o.candidate?.judgedMs != null && o.candidate.judgedMs > o.baseline.judgedMs)
+    .map(o => ({op: o.op, baseline: o.baseline.judgedMs, candidate: o.candidate.judgedMs, engineAnswered: ENGINE_ANSWERED.includes(o.op)})) : null;
+  for (const a of above ?? []) {
+    const o = operations.find(each => each.op === a.op);
+    if (a.engineAnswered && o.verdict === 'pass') { o.verdict = 'fail'; o.reasons.push(`cua's median ${a.candidate} ms is above the vendor engine's ${a.baseline} ms on an operation the engine answers (Acceptance 10)`); }
+  }
   const ruled = problems.length ? 'NO VERDICT' : operations.some(o => o.verdict === 'fail') ? 'FAIL' : 'PASS';
   const diagnostic = plainPlan([...baselineRuns, ...candidateRuns], ruled);
   const describe = side => ({host: side.host, serverInfo: side.serverInfo, commits: side.commits, runs: side.summary.runs, attestation: side.summary.attestation, sshMedianMs: side.ssh});
-  return {mode, lane, baseline: describe(baseline), candidate: describe(candidate), operations, permitted, problems,
+  return {mode, lane, baseline: describe(baseline), candidate: describe(candidate), operations, permitted, problems, ...(above ? {above} : {}),
     verdict: diagnostic ? 'DIAGNOSTIC' : ruled, ...(diagnostic ? {diagnostic} : {})};
 }
 
@@ -320,7 +350,7 @@ export function renderComparison(result) {
     `| Runs | ${b.runs.map(r => r.name).join(', ')} | ${c.runs.map(r => r.name).join(', ')} |`,
     `| ssh.roundtrip median | ${fmt(b.sshMedianMs)} | ${fmt(c.sshMedianMs)} |`, '',
     lane
-      ? `Rule (#117 comparison ${lane.id}, ${lane.title}): the baseline runs ${flags(lane.baseline)}, the candidate ${flags(lane.candidate)}; three complete, attested runs a side of one sitting covering the same plan, every attested field equal but ${lane.differ.join(', ')} (below). ${lane.note} Per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median. ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
+      ? `Rule (${lane.linux ? '#171' : '#117'} comparison ${lane.id}, ${lane.title}): the baseline runs ${flags(lane.baseline)}, the candidate ${flags(lane.candidate)}; three complete, attested runs a side of one sitting covering the same plan, every attested field equal but ${lane.differ.join(', ')} (below). ${lane.note} Per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median.${lane.linux ? ` On an operation the engine answers (${ENGINE_ANSWERED.join(', ')}) the candidate\'s judged median must also be at most the baseline\'s (Acceptance 10), and the typeText and paste method cases accept, until M2, exactly M1b\'s temporary candidate outcome (scripts/repl-parity/expected/native-linux.json baselineMethodCases), verdict "declared".` : ''} ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
       : sameHost
       ? `Rule (#115 acceptance 11): one host, three complete, attested runs a side covering the same plan, on the same machine and configuration except the permitted differences below; the judged rows are ${SAME_HOST_JUDGED.join(' and ')}: the candidate\'s median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples. Every other row is reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
       : 'Rule (acceptance 8): three complete, attested runs a side covering the same plan; per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples. The judged median is wall time around the MCP call; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median. ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.', '',
@@ -334,6 +364,8 @@ export function renderComparison(result) {
     ...methods.map(o => `| ${o.op} | ${o.baseline?.samples ?? 0} | ${o.baseline?.outcomes.join('<br>') || '–'} | ${o.candidate?.samples ?? 0} | ${o.candidate?.outcomes.join('<br>') || '–'} | ${triple(o.baseline?.wall)} | ${triple(o.candidate?.wall)} | ${fmt(o.limitMs)} | ${o.verdict} |`));
   if (sameHost) lines.push('', '## Permitted configuration differences', '',
     ...(result.permitted.length ? result.permitted.map(p => `- ${p.field}: ${p.baseline} -> ${p.candidate} (${p.reason})`) : ['None: the configuration is unchanged.']));
+  if (result.above) lines.push('', '## Where cua\'s median is above the vendor engine\'s', '',
+    ...(result.above.length ? result.above.map(a => `- ${a.op}: cua ${fmt(a.candidate)} ms, vendor ${fmt(a.baseline)} ms (${a.engineAnswered ? 'an operation the engine answers: it fails' : 'no engine answers it: judged by the tolerance alone'})`) : ['None: no cua median is above the vendor engine\'s.']));
   if (lane) lines.push('', '## What differs, by design', '',
     ...result.permitted.map(p => `- ${p.field}: ${p.baseline ?? '–'} -> ${p.candidate ?? '–'}${p.same ? ' (the same in these runs)' : ''}`));
   const notes = result.operations.filter(o => o.reasons.length).map(o => `- ${o.op} (${o.verdict}): ${o.reasons.join('; ')}`);

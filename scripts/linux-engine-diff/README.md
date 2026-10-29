@@ -189,6 +189,27 @@ variants included; their evidence is written either way. The run's `end` row kee
 - **Readiness's vendor reference** (`judgeReadinessRun`): the run passes only when the pinned build's captures of
   every condition agree with the truth cua's first captures are judged against; one off or unjudged fails it.
 
+## M1a.4's addition: the drag experiment
+
+- `--experiment drag --vendor <bin> [--newest <bin>] --cua <bin> [--family <list>] [--ops <kinds>] [--trials 30]
+  [--occlusion visible|covered] [--variant <label>=<cua flags>]...` (`drag.mjs`): per family of M0.4's matrix and per
+  kind of drag it has, every lane drags the same path `--trials` times in its own window of the family, each drag in a
+  witness span, its effect read back after it. The lanes: the pinned build (the reference), the newest build
+  (recorded, not judged), `cua` as it ships (each drag paced by its target's family, `families.rs`), `cua:0ms` (no
+  wait after a sample, the press or before the release) and the variants (for example a dwell,
+  `--variant dwell='--drag-step-ms 0 --drag-press-dwell-ms 30 --drag-release-dwell-ms 30'`).
+- **Kinds**: `select` (a text-selection drag: the page's selection, an editor's AT-SPI selection, a terminal's
+  PRIMARY), `range` (an HTML range input), `scale` (a GTK 3 scale, `pages/gtk-scale.py`), `scroller` (a page
+  element's scrollbar thumb), `scrollbar` (an editor's vertical scroll bar, gedit with classic scroll bars), `dnd`
+  (HTML5 drag and drop) and `canvas` (a canvas fed by plain pointermove events, judged by how far the path's corners
+  are from the stroke). The browsers show `pages/drag.html` (Electron through `pages/electron-page/`, a minimal app of
+  the harness's); the editors a document whose first line is the words a selection spans.
+- **Judgement**: a run took effect when its result is the pinned build's (the value its runs of the same parity end
+  at; for a thumb the movement, within a quarter; one more drop; a stroke within 12 px of every corner). A lane
+  passes a cell when every run position the pinned build took, it takes too, with the witness clean wherever the
+  pinned build's was (Chrome's own drag and drop restacks and activates, whichever engine drags). A cell the pinned
+  build never takes (GTK 4) is recorded, not judged.
+
 ## Files
 
 | File | What it is |

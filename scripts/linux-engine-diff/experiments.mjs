@@ -20,6 +20,7 @@ import { join } from 'node:path';
 
 import { elementClick, partialCover } from './clicks.mjs';
 import { Engine } from './engine.mjs';
+import { runDrag } from './drag.mjs';
 import { runEvents } from './events.mjs';
 import { familyNames, openFamily, readText } from './families.mjs';
 import { matrixOutcome } from './matrix-judge.mjs';
@@ -318,7 +319,11 @@ export async function runExperiment(args) {
       md = result.md;
       outcome = { complete: result.pass, failed: result.pass ? [] : ["a first capture was wrong or unjudged, or the pinned build's capture did not confirm a truth"] };
     }
-    else if (args.experiment === 'matrix') {
+    else if (args.experiment === 'drag') {
+      const result = await runDrag(args, { desktop, emit });
+      md = result.md;
+      outcome = { complete: result.complete, failed: result.failed };
+    } else if (args.experiment === 'matrix') {
       const { names } = await runMatrix(args, { desktop, emit, run });
       const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
       md = matrixMarkdown(rows);

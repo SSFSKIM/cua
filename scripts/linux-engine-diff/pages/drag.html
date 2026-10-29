@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 drag scene</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; }
+  body { font: 20px monospace; width: 1000px; height: 700px; position: relative; background: #ffffff; color: #000000; }
+  #words { position: absolute; left: 20px; top: 20px; margin: 0; white-space: nowrap; }
+  #range { position: absolute; left: 20px; top: 70px; width: 400px; height: 24px; margin: 0; padding: 0; }
+  #scroller { position: absolute; left: 20px; top: 120px; width: 300px; height: 200px; overflow-y: scroll; overflow-x: hidden;
+              border: 0; scrollbar-width: auto; background: #f4f4f4; }
+  #scroller div { height: 400px; background: linear-gradient(#f4f4f4, #c8c8c8); }
+  #source { position: absolute; left: 360px; top: 130px; width: 100px; height: 50px; background: #6a8fd0; color: #ffffff; }
+  #target { position: absolute; left: 560px; top: 120px; width: 200px; height: 100px; background: #d8e8d0; }
+  #canvas { position: absolute; left: 20px; top: 350px; width: 400px; height: 200px; background: #eeeeee; touch-action: none; }
+  #status { position: absolute; left: 460px; top: 350px; margin: 0; font-size: 16px; }
+  #status p { margin: 2px 0; }
+</style>
+</head>
+<body>
+<!-- The differential harness's drag scene (#171 M1a.4): one target per kind of drag, each reporting what the drag did
+     in the status lines, which read back through the tree. Every element sits at a fixed place in the page, so the
+     harness aims at the page's origin plus these offsets.
+     - words: a text-selection drag; the status line is the selection, spaces as `_`.
+     - range: an HTML range input, 0-100; the status line is its value.
+     - scroller: a div with its own vertical scrollbar (its content twice its height); the status line is scrollTop.
+     - source and target: HTML5 drag and drop; the status line counts drag starts and drops on the target.
+     - canvas: a path-tracking target that draws what plain pointermove events (no coalesced events) report while the
+       button is down; the status line counts the moves of the last stroke and the farthest of the path's corners from
+       the stroke drawn (CORNERS, canvas pixels), so a drag whose motions arrive merged shows a large deviation.
+     The title comes from the URL's fragment, so every window has its own. -->
+<p id="words">alpha bravo charlie delta echo foxtrot golf</p>
+<input id="range" type="range" min="0" max="100" value="0" aria-label="Range">
+<div id="scroller" aria-label="Scroller"><div></div></div>
+<div id="source" draggable="true" aria-label="Source">drag me</div>
+<div id="target" aria-label="Target"></div>
+<canvas id="canvas" width="400" height="200" aria-label="Canvas"></canvas>
+<div id="status">
+  <p id="s-select">select none</p>
+  <p id="s-range">range 0</p>
+  <p id="s-scroll">scroller 0</p>
+  <p id="s-dnd">dnd starts 0 drops 0</p>
+  <p id="s-canvas">canvas strokes 0 moves 0 dev -1</p>
+</div>
+<script>
+  document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
+  const $ = (id) => document.getElementById(id);
+  // each status line is its own accessible name too: Firefox's tree carries a paragraph's text in no field the
+  // engines' tree reads
+  const line = (id, text) => { $(id).textContent = text; $(id).setAttribute('aria-label', text); };
+  for (const p of document.querySelectorAll('#status p')) p.setAttribute('aria-label', p.textContent);
+  document.addEventListener('selectionchange', () => {
+    const text = String(window.getSelection()).replace(/\s+/g, '_');
+    line('s-select', `select ${text || 'none'}`);
+  });
+  $('range').addEventListener('input', () => line('s-range', `range ${$('range').value}`));
+  $('scroller').addEventListener('scroll', () => line('s-scroll', `scroller ${Math.round($('scroller').scrollTop)}`));
+  const dnd = { starts: 0, drops: 0 };
+  const showDnd = () => line('s-dnd', `dnd starts ${dnd.starts} drops ${dnd.drops}`);
+  $('source').addEventListener('dragstart', (e) => { dnd.starts += 1; e.dataTransfer.setData('text/plain', 'cua171'); showDnd(); });
+  $('target').addEventListener('dragover', (e) => e.preventDefault());
+  $('target').addEventListener('drop', (e) => { e.preventDefault(); dnd.drops += 1; showDnd(); });
+
+  // the canvas: the path the harness drags along, in canvas pixels
+  const CORNERS = [[20, 20], [380, 40], [200, 180], [40, 100]];
+  const canvas = $('canvas');
+  const g = canvas.getContext('2d');
+  let stroke = null;
+  let strokes = 0;
+  const distanceToSegment = ([px, py], [ax, ay], [bx, by]) => {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = dx * dx + dy * dy;
+    const t = len === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len));
+    return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+  };
+  const deviation = (points) => {
+    if (points.length === 0) return -1;
+    const segments = points.length === 1 ? [[points[0], points[0]]] : points.slice(1).map((p, i) => [points[i], p]);
+    return Math.round(Math.max(...CORNERS.map((c) => Math.min(...segments.map(([a, b]) => distanceToSegment(c, a, b))))));
+  };
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    stroke = [[e.offsetX, e.offsetY]];
+    g.clearRect(0, 0, canvas.width, canvas.height);
+    g.beginPath();
+    g.moveTo(e.offsetX, e.offsetY);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    if (!stroke) return;
+    stroke.push([e.offsetX, e.offsetY]);
+    g.lineTo(e.offsetX, e.offsetY);
+    g.stroke();
+  });
+  document.addEventListener('pointerup', (e) => {
+    if (!stroke || e.button !== 0) return;
+    const r = canvas.getBoundingClientRect();
+    stroke.push([e.clientX - r.left, e.clientY - r.top]);
+    strokes += 1;
+    line('s-canvas', `canvas strokes ${strokes} moves ${stroke.length - 2} dev ${deviation(stroke)}`);
+    stroke = null;
+  });
+</script>
+</body>
+</html>

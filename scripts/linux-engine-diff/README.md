@@ -196,8 +196,15 @@ variants included; their evidence is written either way. The run's `end` row kee
   - An audit counts only when its audited requests answered as the timed pass's did (`auditVerdict`; the matrix's
     audit pass requires its keys and clicks answered).
   - The events experiment's wire request times are part of its outcome (`eventsPass`); through the vendor client they
-    are recorded only. Most of its first requests are timed once, so a loss there is checked with interleaved fresh
-    engines before it is believed.
+    are recorded only.
+  - The desktop route's are judged from interleaved fresh engines (`desktopBlocks`, 31 rounds, `--first-rounds`):
+    - a timed request counts only when it answers as the pinned build's same request (`blockAnswerMismatches`; a
+      mismatch fails the run);
+    - a group is judged only with 20 samples an engine, and every Acceptance 3 desktop group
+      (`MANDATORY_SPEED_GROUPS`) must be, or the run is incomplete;
+    - a median above the bar whose bootstrap 95% interval of cua minus the faster build includes 0 is "same (within
+      noise)", in any series;
+    - a loss `deviations.mjs` `SPEED_GAPS` declares is a "declared gap", never a pass.
   - `--via vendor-js` refuses `--variant`: the vendor client starts the engine without the variant's flags.
   - The desktop entries the harness writes take their paths as quoted `Exec` arguments (`desktop-entry.mjs`), never as
     shell source.

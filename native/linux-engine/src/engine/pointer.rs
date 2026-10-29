@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use super::Engine;
 use crate::desktop::Desktop;
+use crate::families::DragPacing;
 use crate::input::chord_keycodes;
 use crate::route::{Route, Target};
 use crate::wire::{
@@ -72,18 +73,21 @@ fn click_once(
 }
 
 /// The drag after the pointer is placed at its first point: the chord, the press, every sample, the release.
-/// `step` follows each sample, the last included (the vendor's 1 ms, behaviour §10.4).
-fn drag_along(x: &X11, route: &mut Route, keycodes: &[u8], points: &[(i16, i16)], step: Duration) -> Result<()> {
+/// `pacing.step` follows each sample, the last included (where the vendor waits 1 ms, behaviour §10.4),
+/// `pacing.press` follows the press and `pacing.release` precedes the release (`families.rs`).
+fn drag_along(x: &X11, route: &mut Route, keycodes: &[u8], points: &[(i16, i16)], pacing: &DragPacing) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
     let dragged = (|| -> Result<()> {
         route.place_again(x, points[0].0, points[0].1)?;
         route.button(x, 1, true)?;
         pressed = true;
+        std::thread::sleep(pacing.press);
         for (sx, sy) in drag_samples(points) {
             route.place_again(x, sx, sy)?;
-            std::thread::sleep(step);
+            std::thread::sleep(pacing.step);
         }
+        std::thread::sleep(pacing.release);
         pressed = false;
         route.button(x, 1, false)
     })();
@@ -213,7 +217,12 @@ impl Engine {
     /// everything released (behaviour §10.4; the chord's place traced).
     pub(super) fn drag(&mut self, input: Option<Value>) -> Result<Value> {
         let input: DragInput = parse_input(input)?;
-        let step = self.cfg.pacing.drag;
+        // the target's family decides the waits: the window named, or on the desktop the window under the start
+        let window = match input.window {
+            Some(target) => Some(target.id),
+            None => input.path.first().and_then(|p| self.x.client_at(p.x, p.y)),
+        };
+        let pacing = self.drag_pacing_for(window);
         let Engine { x, inputs, .. } = self;
         inputs.with_route(x, Target::of(input.window), |x, route, _| {
             let points = input
@@ -226,7 +235,7 @@ impl Engine {
             }
             route.place(x, points[0].0, points[0].1)?;
             let keycodes = chord(x, input.key.as_deref())?;
-            drag_along(x, route, &keycodes, &points, step)
+            drag_along(x, route, &keycodes, &points, &pacing)
         })?;
         Ok(Value::Null)
     }

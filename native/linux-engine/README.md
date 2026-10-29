@@ -55,7 +55,9 @@ cargo test
   released; whatever is still held at exit is released, each release with the state that was held.
 - **The pointer** (`engine/pointer.rs`): clicks, moves, the desktop's interpolated path, wheel steps of 100 pixels held
   36 ms, drags sampled per pixel, `drag_handle` and `move_relative` on the desktop, in the vendor's order of placing,
-  pressing the chord and pressing the button.
+  pressing the chord and pressing the button. A drag waits after each sample only where its target's family needs it
+  (`families.rs`, keyed by `Application.ToolkitName` or the X11 class: 500 µs for Chromium, 250 µs for Gecko,
+  nothing for the rest); the vendor waits 1 ms everywhere.
 - **Elements and windows** (`engine/elements.rs`, `engine/windows.rs`): element clicks through action 0 or a right
   click at the visible point, named actions, the element scroll, `activate_window` and `launch_app`.
 
@@ -74,7 +76,8 @@ cargo test
 | `--capture-wait` | `damage`, `fixed` | a capture of a fresh pixmap waits for the DAMAGE rule, or a fixed 100 ms once per pixmap (the fallback) |
 | `--teardown-ms` | 100 | the wait before a background session's teardown |
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
-| `--drag-step-ms` | 1 | the wait after each drag sample (the vendor's; M1a.3 measures others) |
+| `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
+| `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
 | `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, and how a desktop screenshot was read (`shm` or `get_image`) |
 
 ## Dependencies

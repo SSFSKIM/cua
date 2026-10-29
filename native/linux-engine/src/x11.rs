@@ -431,6 +431,41 @@ impl X11 {
             .and_then(|r| property_text(&r.value))
     }
 
+    /// The class part of `WM_CLASS` (`families.rs`).
+    pub fn wm_class(&self, window: Window) -> Option<String> {
+        self.get_property(window, AtomEnum::WM_CLASS.into())
+            .ok()
+            .and_then(|r| wm_class_app(&r.value))
+    }
+
+    /// The client window at a root point: the top-level under it, then the first window holding `WM_STATE` in its
+    /// subtree (a reparenting window manager's frame holds the client).
+    pub fn client_at(&self, rx: i16, ry: i16) -> Option<Window> {
+        let top = self
+            .conn
+            .translate_coordinates(self.root, self.root, rx, ry)
+            .ok()?
+            .reply()
+            .ok()?
+            .child;
+        if top == x11rb::NONE {
+            return None;
+        }
+        self.client_in(top, 0)
+    }
+
+    fn client_in(&self, window: Window, depth: u32) -> Option<Window> {
+        if depth > 8 {
+            return None;
+        }
+        let state = self.get_property(window, self.atom("WM_STATE")).ok()?;
+        if state.type_ != x11rb::NONE {
+            return Some(window);
+        }
+        let children = self.conn.query_tree(window).ok()?.reply().ok()?.children;
+        children.iter().rev().find_map(|&c| self.client_in(c, depth + 1))
+    }
+
     /// The window-relative point in root coordinates (behaviour §3, `desktop_position`).
     pub fn desktop_position(&self, window: Window, x: i16, y: i16) -> Result<(i16, i16)> {
         let reply = (|| -> Result<TranslateCoordinatesReply> {

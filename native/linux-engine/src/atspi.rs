@@ -126,6 +126,47 @@ fn call_all(bus: &mut Bus, calls: &[MethodCall]) -> Result<Vec<CallResult>> {
     Ok(serials.iter().map(|s| results.remove(s).unwrap()).collect())
 }
 
+/// The `Application.ToolkitName` of a process's accessible application (the first the registry lists for the PID),
+/// or None when the process has none on the bus or the name cannot be read (`families.rs`).
+pub fn toolkit_of(bus: &mut Bus, pid: u32) -> Result<Option<String>> {
+    let registry = ObjRef {
+        bus: REGISTRY.into(),
+        path: ROOT_PATH.into(),
+    };
+    let Ok(apps) = refs_of(&bus.call(&children_call(&registry))?) else {
+        return Ok(None);
+    };
+    let pid_args: Vec<[Arg; 1]> = apps.iter().map(|app| [Arg::Str(&app.bus)]).collect();
+    let pid_calls: Vec<MethodCall> = pid_args
+        .iter()
+        .map(|args| MethodCall {
+            dest: "org.freedesktop.DBus",
+            path: "/org/freedesktop/DBus",
+            iface: "org.freedesktop.DBus",
+            member: "GetConnectionUnixProcessID",
+            args,
+        })
+        .collect();
+    let pids = call_all(bus, &pid_calls)?;
+    let Some(app) = apps
+        .iter()
+        .zip(&pids)
+        .find(|(_, r)| matches!(r.as_ref().ok().and_then(|v| v.first()), Some(Value::U32(p)) if *p == pid))
+        .map(|(a, _)| a)
+    else {
+        return Ok(None);
+    };
+    const ARGS: [Arg<'static>; 2] = [Arg::Str("org.a11y.atspi.Application"), Arg::Str("ToolkitName")];
+    let result = bus.call(&MethodCall {
+        dest: &app.bus,
+        path: &app.path,
+        iface: PROPERTIES,
+        member: "Get",
+        args: &ARGS,
+    })?;
+    Ok(first_str(&result))
+}
+
 /// What association concluded (behaviour §4): a frame, no match, or a sentence.
 pub enum Association {
     Frame(ObjRef),

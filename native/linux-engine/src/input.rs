@@ -20,8 +20,10 @@ pub struct Pacing {
     pub key: Duration,
     /// Before the session's teardown (the vendor's 100 ms).
     pub teardown: Duration,
-    /// After each drag sample (the vendor's 1 ms, behaviour §10.4); `--drag-step-ms` measures others.
-    pub drag: Duration,
+    /// A drag's waits fixed for every target by the measurement flags (`--drag-step-ms`, `--drag-step-us`,
+    /// `--drag-press-dwell-ms`, `--drag-release-dwell-ms`); None, the default, paces each drag by its target's family
+    /// (`families.rs`).
+    pub drag: Option<crate::families::DragPacing>,
 }
 
 /// The keyboard mapping, read fresh per chord as the vendor opens a fresh display per call.
@@ -295,10 +297,11 @@ impl Session {
                 event: self.target,
                 mode: NotifyMode::NORMAL,
             };
+            // its error, if any (a window gone meanwhile), is the session's to drop: no round trip waits for it
             let _ = x
                 .conn
                 .send_event(false, self.target, EventMask::NO_EVENT, focus_out)
-                .map(|c| c.check());
+                .map(|c| c.ignore_error());
         }
         x.release(self.target, self.redirected);
         let _ = x.flush();

@@ -7,6 +7,7 @@ mod keyboard;
 mod pointer;
 mod windows;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -16,6 +17,7 @@ use serde_json::{Value, json};
 use crate::apps;
 use crate::atspi::{self, Association};
 use crate::dbus::{Broken, Bus, BusStats};
+use crate::families::{self, DragPacing};
 use crate::input::Pacing;
 use crate::readiness::CaptureWait;
 use crate::route::Inputs;
@@ -46,6 +48,8 @@ pub struct Engine {
     pending_stats: Option<String>,
     /// Held keys, their sessions and the desktop's keys, across requests.
     inputs: Inputs,
+    /// Each window's drag pacing, looked up once (`families.rs`).
+    drag_families: HashMap<x11rb::protocol::xproto::Window, DragPacing>,
 }
 
 fn merge(into: &mut BusStats, from: BusStats) {
@@ -73,6 +77,7 @@ impl Engine {
             bus_stats: BusStats::default(),
             extra: Default::default(),
             pending_stats: None,
+            drag_families: HashMap::new(),
         })
     }
 
@@ -160,6 +165,43 @@ impl Engine {
         if let Some(mut bus) = self.bus.take() {
             merge(&mut self.bus_stats, bus.take_stats());
         }
+    }
+
+    /// A drag's pacing: the flags' where they fix it, else the family of the window it goes to (`families.rs`): by
+    /// its X11 class, and where no class entry matches and some entry is keyed by toolkit, by its application's
+    /// `ToolkitName` on the accessibility bus. Looked up once per window; no window, or nothing found, is no wait.
+    fn drag_pacing_for(&mut self, window: Option<x11rb::protocol::xproto::Window>) -> DragPacing {
+        if let Some(fixed) = self.cfg.pacing.drag {
+            return fixed;
+        }
+        let Some(window) = window else {
+            return DragPacing::NONE;
+        };
+        if let Some(pacing) = self.drag_families.get(&window) {
+            return *pacing;
+        }
+        let class = self.x.wm_class(window);
+        let mut found = families::family(families::FAMILIES, class.as_deref(), None);
+        if found.is_none()
+            && families::needs_toolkit()
+            && let Some(pid) = self.x.pid(window)
+        {
+            let toolkit = self.with_bus(|bus, _| atspi::toolkit_of(bus, pid)).ok().flatten();
+            found = families::family(families::FAMILIES, class.as_deref(), toolkit.as_deref());
+        }
+        let pacing = found.map_or(DragPacing::NONE, |f| f.drag);
+        self.extra.insert(
+            "drag_pacing".into(),
+            json!({
+                "family": found.map(|f| f.name),
+                "evidence": found.map(|f| f.evidence),
+                "step_us": pacing.step.as_micros() as u64,
+                "press_ms": pacing.press.as_millis() as u64,
+                "release_ms": pacing.release.as_millis() as u64,
+            }),
+        );
+        self.drag_families.insert(window, pacing);
+        pacing
     }
 
     /// Runs `f` on the accessibility bus, connecting first if needed; a broken connection is reopened once.

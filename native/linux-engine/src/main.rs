@@ -9,6 +9,7 @@ mod cover;
 mod dbus;
 mod desktop;
 mod engine;
+mod families;
 mod input;
 mod keys;
 mod readiness;
@@ -30,7 +31,8 @@ use x11::Retention;
 const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop shared|dedicated]
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
-       [--teardown-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms>] [--stats]
+       [--teardown-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
+       [--drag-release-dwell-ms <ms>] [--stats]
        cua-engine --version";
 
 fn version() -> String {
@@ -53,12 +55,17 @@ fn default_config() -> Config {
         pacing: input::Pacing {
             key: Duration::ZERO,
             teardown: Duration::from_millis(100),
-            drag: Duration::from_millis(1),
+            drag: None,
         },
         stats: false,
         mouse_size_px: 0,
         desktop: "shared".into(),
     }
+}
+
+/// A drag flag fixes the drag's waits for every target, the ones it does not name at zero.
+fn fixed_drag(cfg: &mut Config) -> &mut families::DragPacing {
+    cfg.pacing.drag.get_or_insert(families::DragPacing::NONE)
 }
 
 enum Command {
@@ -119,7 +126,10 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             }
             "--teardown-ms" => cfg.pacing.teardown = Duration::from_millis(number(value, arg)?),
             "--key-pace-ms" => cfg.pacing.key = Duration::from_millis(number(value, arg)?),
-            "--drag-step-ms" => cfg.pacing.drag = Duration::from_millis(number(value, arg)?),
+            "--drag-step-ms" => fixed_drag(&mut cfg).step = Duration::from_millis(number(value, arg)?),
+            "--drag-step-us" => fixed_drag(&mut cfg).step = Duration::from_micros(number(value, arg)?),
+            "--drag-press-dwell-ms" => fixed_drag(&mut cfg).press = Duration::from_millis(number(value, arg)?),
+            "--drag-release-dwell-ms" => fixed_drag(&mut cfg).release = Duration::from_millis(number(value, arg)?),
             other => return Err(format!("unknown argument {other}")),
         }
         i += if takes_value { 2 } else { 1 };
@@ -219,15 +229,48 @@ mod tests {
     }
 
     #[test]
-    fn the_drag_step_is_the_vendor_s_millisecond_unless_measured_otherwise() {
+    fn drags_are_paced_by_the_target_s_family_unless_a_flag_fixes_the_pacing() {
+        use crate::families::DragPacing;
         let Ok(Command::Server(cfg)) = parse_args(&args(&["server"])) else {
             panic!()
         };
-        assert_eq!(cfg.pacing.drag, Duration::from_millis(1));
+        assert_eq!(
+            cfg.pacing.drag, None,
+            "by family (families.rs): no wait unless the family is listed"
+        );
         let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-step-ms", "0"])) else {
             panic!()
         };
-        assert_eq!(cfg.pacing.drag, Duration::ZERO);
+        assert_eq!(cfg.pacing.drag, Some(DragPacing::NONE));
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-step-ms", "1"])) else {
+            panic!()
+        };
+        assert_eq!(
+            cfg.pacing.drag.map(|p| p.step),
+            Some(Duration::from_millis(1)),
+            "the vendor's, for measurement"
+        );
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-step-us", "500"])) else {
+            panic!()
+        };
+        assert_eq!(cfg.pacing.drag.map(|p| p.step), Some(Duration::from_micros(500)));
+        let Ok(Command::Server(cfg)) = parse_args(&args(&[
+            "server",
+            "--drag-press-dwell-ms",
+            "30",
+            "--drag-release-dwell-ms",
+            "20",
+        ])) else {
+            panic!()
+        };
+        assert_eq!(
+            cfg.pacing.drag,
+            Some(DragPacing {
+                step: Duration::ZERO,
+                press: Duration::from_millis(30),
+                release: Duration::from_millis(20),
+            })
+        );
     }
 
     #[test]

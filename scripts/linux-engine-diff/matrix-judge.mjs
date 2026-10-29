@@ -166,13 +166,19 @@ export function backgroundAlone(rows, family) {
     const mine = samples.filter((r) => r.engine === engine);
     return mine.length ? mine.every((r) => r.witness === true) : null;
   };
-  const audit = (engine) => audits.find((r) => r.engine === engine)?.clean ?? null;
+  // the audit pass's keys and clicks answer as the series' do (every one ok): one that failed early traced only its
+  // setup, which proves nothing
+  const audit = (engine) => {
+    const row = audits.find((r) => r.engine === engine);
+    if (!row) return null;
+    return row.clean && row.ok === true ? true : row.clean ? 'unexercised' : false;
+  };
   const engines = [...VENDORS, 'cua'];
   const out = { witness: Object.fromEntries(engines.map((e) => [e, witness(e)])), audit: Object.fromEntries(engines.map((e) => [e, audit(e)])) };
   const reasons = [];
   if (out.witness.cua === null) reasons.push('no cua request was witnessed');
   else if (VENDORS.some((v) => out.witness[v] === true) && out.witness.cua !== true) reasons.push("cua's witness changed");
-  if (VENDORS.some((v) => out.witness[v] === true || out.audit[v] === true) && out.audit.cua !== true) reasons.push(out.audit.cua === false ? "cua's audit found a forbidden request" : "cua's audit did not run");
+  if (VENDORS.some((v) => out.witness[v] === true || out.audit[v] === true) && out.audit.cua !== true) reasons.push(out.audit.cua === false ? "cua's audit found a forbidden request" : out.audit.cua === 'unexercised' ? "cua's audited requests failed, so the audit did not exercise them" : "cua's audit did not run");
   return { ...out, pass: reasons.length === 0, reasons };
 }
 
@@ -284,7 +290,7 @@ export function matrixMarkdown(rows) {
   }
   if (rows.some((r) => r.kind === 'matrix-audit')) {
     const mark = (v) => (v === true ? 'clean' : v === false ? '**changed**' : '–');
-    const audited = (v) => (v === true ? 'clean' : v === false ? '**forbidden**' : '–');
+    const audited = (v) => (v === true ? 'clean' : v === false ? '**forbidden**' : v === 'unexercised' ? '**requests failed**' : '–');
     md.push('', 'Background left alone (Acceptance 5): every request in a witness span; each engine\'s keys and clicks audited through xtrace in an untimed pass:', '');
     md.push('| family | witness pinned / newest / cua | audit pinned / newest / cua | cua |', '|---|---|---|---|');
     for (const f of families) {

@@ -211,7 +211,7 @@ test('partial cover at another size: the sweep leaves each chosen fraction of th
 test("Acceptance 5 per family: cua's witness clean wherever a vendor build's is, and its audit clean wherever a vendor build's witness or audit is", async () => {
   const { backgroundAlone } = await import('../../scripts/linux-engine-diff/matrix-judge.mjs');
   const sample = (engine, witness, op = 'key') => ({ kind: 'matrix-sample', family: 'f', engine, op, ok: true, witness });
-  const audit = (engine, clean) => ({ kind: 'matrix-audit', family: 'f', engine, clean, traced: true });
+  const audit = (engine, clean, ok = true) => ({ kind: 'matrix-audit', family: 'f', engine, ok, clean, traced: true });
   const clean = [sample('pinned', true), sample('newest', true), sample('cua', true), sample('cua', true, 'click')];
   const audits = [audit('pinned', true), audit('newest', true), audit('cua', true)];
   assert.equal(backgroundAlone([...clean, ...audits], 'f').pass, true);
@@ -222,6 +222,10 @@ test("Acceptance 5 per family: cua's witness clean wherever a vendor build's is,
   // cua's audit found a forbidden request, or did not run
   assert.match(backgroundAlone([...clean, audit('pinned', true), audit('newest', true), audit('cua', false)], 'f').reasons.join(), /audit/);
   assert.equal(backgroundAlone([...clean, audit('pinned', true), audit('newest', true)], 'f').pass, false);
+  // a clean trace from an audit pass whose requests failed early exercised nothing (M1a branch review)
+  const early = backgroundAlone([...clean, audit('pinned', true), audit('newest', true), audit('cua', true, false)], 'f');
+  assert.equal(early.pass, false);
+  assert.match(early.reasons.join(), /did not exercise/);
   // no vendor build kept either: nothing is required of cua
   const vendorsDirty = [sample('pinned', false), sample('newest', false), sample('cua', false), audit('pinned', false), audit('newest', false), audit('cua', false)];
   assert.equal(backgroundAlone(vendorsDirty, 'f').pass, true);

@@ -111,5 +111,7 @@ export function parseArgs(argv) {
     if (a.via === 'vendor-js' && !a.vendorJs) throw new Error(`--via vendor-js needs --vendor-js <@oai/sky directory>\n${USAGE}`);
     if (!['covered', 'visible'].includes(a.occlusion)) throw new Error('--occlusion is covered or visible');
   }
+  // the vendor client starts the binary it is pointed at with no flags of ours, so a variant would measure the defaults
+  if (a.via === 'vendor-js' && a.variants.length) throw new Error('--via vendor-js cannot run --variant lanes: the vendor client starts the engine without their flags');
   return a;
 }

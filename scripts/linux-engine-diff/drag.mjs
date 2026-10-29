@@ -307,20 +307,29 @@ export function judgeRuns(kind, runs) {
   return { expected, runs: runs.map((r) => ({ ...r, took: took(r) })) };
 }
 
-/** A cell's verdict per cua lane: every run position the pinned build took, taken too; unjudged if it took none. */
-export function judgeCell(runs, lanes) {
-  const pinned = new Set(runs.filter((r) => r.engine === 'pinned' && r.took).map((r) => r.i));
+/**
+ * A cell's verdict per cua lane, absolute once the cell has a usable reference (Decision Log, M1a.4): every one of the
+ * lane's runs must take effect, wherever the pinned build missed too. The reference is usable when the pinned build
+ * took at least one run (the reader works) and, for a kind judged against the pinned build's values (`expected`),
+ * every parity the runs use has one; a cell without it is recorded, not judged (`pass: null`).
+ */
+export function judgeCell(runs, lanes, expected = {}) {
+  const pinnedRuns = runs.filter((r) => r.engine === 'pinned');
+  const pinnedTook = pinnedRuns.filter((r) => r.took).length;
+  const positions = [...new Set(pinnedRuns.map((r) => r.i))].sort((a, b) => a - b);
+  const parities = [...new Set(runs.map((r) => r.i % 2))];
+  const usable = pinnedTook > 0 && (Object.keys(expected).length === 0 || parities.every((p) => expected[p] !== null && expected[p] !== undefined));
   // the witness is required of a lane where every pinned run kept it: Chrome's own drag and drop changes the stacking
   // (and its first one the focus), whichever engine drags
-  const pinnedClean = runs.filter((r) => r.engine === 'pinned').every((r) => r.witness === true);
+  const pinnedClean = pinnedRuns.every((r) => r.witness === true);
   const out = {};
   for (const lane of lanes) {
     const mine = new Map(runs.filter((r) => r.engine === lane).map((r) => [r.i, r]));
-    const misses = [...pinned].filter((i) => mine.get(i)?.took !== true).sort((a, b) => a - b);
+    const misses = [...new Set([...positions, ...mine.keys()])].filter((i) => mine.get(i)?.took !== true).sort((a, b) => a - b);
     const witness = runs.filter((r) => r.engine === lane).every((r) => r.witness === true);
-    out[lane] = { took: [...mine.values()].filter((r) => r.took).length, n: mine.size, misses, witness, pass: pinned.size === 0 ? null : misses.length === 0 && (witness || !pinnedClean) };
+    out[lane] = { took: [...mine.values()].filter((r) => r.took).length, n: mine.size, misses, witness, pass: usable ? misses.length === 0 && (witness || !pinnedClean) : null };
   }
-  return { pinned_took: pinned.size, pinned_witness: pinnedClean, lanes: out };
+  return { pinned_took: pinnedTook, reference: usable, pinned_witness: pinnedClean, lanes: out };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -385,6 +394,8 @@ export async function runDrag(args, { desktop, emit }) {
   if (!args.vendor) throw new Error('the drag experiment needs --vendor (the pinned build is its reference)');
   const names = familyNames(args.families?.length ? args.families : Object.keys(DRAG_FAMILIES));
   const kindsAsked = args.ops && args.ops !== 'all' ? args.ops : null;
+  const plan = dragPlan(names, kindsAsked);
+  if (!plan.length) throw new Error(`no drag cell in families ${names.join(', ')} with kinds ${kindsAsked?.join(', ') ?? 'all'}: nothing to measure`);
   const n = args.samplesTrials ?? 30;
   const lanes = dragEngines(args);
   const cuaLanes = lanes.filter((l) => l.label.startsWith('cua')).map((l) => l.label);
@@ -399,7 +410,6 @@ export async function runDrag(args, { desktop, emit }) {
     `|---|---|${lanes.map(() => '---:').join('|')}|${lanes.slice(1).map(() => '---:').join('|')}|---:|---|---|`,
   ];
   const cells = [];
-  const plan = dragPlan(names, kindsAsked);
   const errors = [];
   try {
     if (!(await negativeCheck(desktop, witness, stubScene, emit))) throw new Error('the witness did not fail the activating stub; the run is invalid');
@@ -440,13 +450,13 @@ export async function runDrag(args, { desktop, emit }) {
           }
           const judged = judgeRuns(kind, runs);
           for (const r of judged.runs) emit({ kind: 'drag-run', ...r });
-          const cell = judgeCell(judged.runs, cuaLanes);
+          const cell = judgeCell(judged.runs, cuaLanes, judged.expected);
           const ms = (label) => median(judged.runs.filter((r) => r.engine === label && r.ok).map((r) => r.ms));
           const row = { kind: 'drag-cell', family, drag: kind, expected: judged.expected, ...cell, ms: Object.fromEntries(lanes.map((l) => [l.label, ms(l.label)])) };
           emit(row);
           cells.push(row);
           const took = (label) => `${judged.runs.filter((r) => r.engine === label && r.took).length}/${n}`;
-          const verdict = cell.pinned_took === 0 ? 'no pinned effect: not judged' : cuaLanes.map((l) => `${l} ${cell.lanes[l].pass ? 'PASS' : `**misses ${cell.lanes[l].misses.length}${cell.lanes[l].witness || !cell.pinned_witness ? '' : ', witness changed'}**`}`).join(', ');
+          const verdict = !cell.reference ? (cell.pinned_took === 0 ? 'no pinned effect: not judged' : 'no usable pinned reference: not judged') : cuaLanes.map((l) => `${l} ${cell.lanes[l].pass ? 'PASS' : `**misses ${cell.lanes[l].misses.length}${cell.lanes[l].witness || !cell.pinned_witness ? '' : ', witness changed'}**`}`).join(', ');
           const witnessClean = judged.runs.every((r) => r.witness) ? 'clean' : '**changed**';
           const f = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : '–');
           md.push(`| ${FAMILIES[family].title} | ${kind} | ${lanes.map((l) => took(l.label)).join(' | ')} | ${lanes.slice(1).map((l) => f(row.ms[l.label])).join(' | ')} | ${f(row.ms.pinned)} | ${witnessClean} | ${verdict} |`);

@@ -80,15 +80,16 @@ test('the verdict needs a clean audit wherever a vendor build keeps its witness 
   ];
   const base = [...rows('pinned', true), ...rows('newest', true), ...rows('cua', true)];
   const opts = { vendors: ['pinned', 'newest'], candidate: 'cua' };
-  assert.equal(judgeOperation(base, { ...opts, audits: { pinned: true, newest: true, cua: true } }).pass, true);
-  const dirty = judgeOperation(base, { ...opts, audits: { pinned: true, newest: true, cua: false } });
+  const a = (clean) => ({ clean, oks: [true, true] });
+  assert.equal(judgeOperation(base, { ...opts, audits: { pinned: a(true), newest: a(true), cua: a(true) } }).pass, true);
+  const dirty = judgeOperation(base, { ...opts, audits: { pinned: a(true), newest: a(true), cua: a(false) } });
   assert.equal(dirty.pass, false);
   assert.match(dirty.reasons.join(), /audit/);
   // an operation the audit did not reach for cua is not a clean audit
-  assert.equal(judgeOperation(base, { ...opts, audits: { pinned: true, newest: true } }).pass, false);
+  assert.equal(judgeOperation(base, { ...opts, audits: { pinned: a(true), newest: a(true) } }).pass, false);
   // activation: no vendor build is clean in either, so neither is required of cua
   const activate = [...rows('pinned', false), ...rows('newest', false), ...rows('cua', false)];
-  assert.equal(judgeOperation(activate, { ...opts, audits: { pinned: false, newest: false, cua: false } }).pass, true);
+  assert.equal(judgeOperation(activate, { ...opts, audits: { pinned: a(false), newest: a(false), cua: a(false) } }).pass, true);
   // no audit pass at all (a run without the audit) leaves the verdict to the witness
   assert.equal(judgeOperation(base, { ...opts, audits: null }).pass, true);
 });

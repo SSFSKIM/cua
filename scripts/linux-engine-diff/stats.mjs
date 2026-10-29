@@ -92,6 +92,19 @@ export function missedEffects(rows, candidate) {
  * cold against cold, warm against warm), every request answered, its output equal, its witness clean wherever a
  * vendor build's is, and its effect verified on every sample (`missedEffects`).
  */
+/**
+ * One engine's audit of an operation: `clean` only when the trace held no forbidden request and its audited requests
+ * (`oks`, one per sample) answered as the engine's timed samples did; an operation that failed early under the proxy
+ * leaves only its setup in the trace, which proves nothing. An expected refusal is refused in both passes.
+ */
+export function auditVerdict(audit, timedRows) {
+  if (!audit) return 'did not run';
+  if (!audit.clean) return 'found a forbidden request';
+  const timed = new Set(timedRows.map((r) => r.ok));
+  if (!audit.oks?.length || !audit.oks.every((ok) => timed.has(ok))) return 'did not answer as the timed pass, so it did not exercise the operation';
+  return 'clean';
+}
+
 export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true }) {
   const engines = {};
   for (const label of new Set(rows.map((r) => r.engine))) {
@@ -122,10 +135,12 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
     }
   }
   if (vendorRows.some((e) => e.witness === true) && c.witness !== true) reasons.push(`${candidate}: the witness changed`);
-  // the X request audit (audits: engine -> clean), required wherever a vendor build's witness or audit is clean
+  // the X request audit (audits: engine -> {clean, oks}), required wherever a vendor build's witness or audit is clean
   if (audits) {
-    const required = vendorRows.some((e) => e.witness === true) || vendors.some((v) => audits[v] === true);
-    if (required && audits[candidate] !== true) reasons.push(`${candidate}: the audit ${audits[candidate] === false ? 'found a forbidden request' : 'did not run'}`);
+    const verdictOf = (engine) => auditVerdict(audits[engine], rows.filter((r) => r.engine === engine));
+    const required = vendorRows.some((e) => e.witness === true) || vendors.some((v) => verdictOf(v) === 'clean');
+    const mine = verdictOf(candidate);
+    if (required && mine !== 'clean') reasons.push(`${candidate}: the audit ${mine}`);
   }
   const missed = missedEffects(rows, candidate);
   if (missed.length) reasons.push(`${candidate}: the effect was not verified on ${missed.length} sample${missed.length === 1 ? '' : 's'} (${missed.slice(0, 5).join(', ')})`);

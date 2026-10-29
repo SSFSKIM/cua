@@ -15,6 +15,7 @@ import { fileURLToPath } from 'node:url';
 
 import { auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { startMonitor } from './busmon.mjs';
+import { desktopEntry } from './desktop-entry.mjs';
 import { declaredDeviation, describe as describeDeviation } from './deviations.mjs';
 import { Engine } from './engine.mjs';
 import { normalizeAnswer } from './events.mjs';
@@ -263,14 +264,17 @@ export async function negativeCheck(desktop, witness, stubScene, emit, { audit =
   return witnessFailed && (auditFailed ?? true);
 }
 
-/** The harness's own desktop entry for launch_app: its program appends a line to a file the harness counts. */
-function launchEntry(dir) {
+/**
+ * The harness's own desktop entry for launch_app: its program appends a line to a file the harness counts. The
+ * script's text is fixed; the file (under the run's directory, so carrying its label) is its quoted argument.
+ */
+export function launchEntry(dir) {
   const apps = join(dir, 'launch', 'applications');
   mkdirSync(apps, { recursive: true });
   const marker = join(dir, 'launch', 'launched');
   const script = join(dir, 'launch', 'launch.sh');
-  writeFileSync(script, `#!/bin/sh\necho launched >> "${marker}"\n`, { mode: 0o755 });
-  writeFileSync(join(apps, 'cua171-launch-probe.desktop'), `[Desktop Entry]\nType=Application\nName=cua171 Launch Probe\nExec=/bin/sh ${script}\n`);
+  writeFileSync(script, '#!/bin/sh\necho launched >> "$1"\n', { mode: 0o755 });
+  writeFileSync(join(apps, 'cua171-launch-probe.desktop'), desktopEntry('cua171 Launch Probe', ['/bin/sh', script, marker]));
   return { env: { XDG_DATA_HOME: join(dir, 'launch'), XDG_DATA_DIRS: '/nonexistent' }, count: () => (existsSync(marker) ? readFileSync(marker, 'utf8').split('\n').filter(Boolean).length : 0) };
 }
 
@@ -433,17 +437,18 @@ export async function runDiff(args) {
           const target = measuredTarget(windows, sceneName, op, spec.label);
           const proxy = await startProxy();
           const engine = makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY });
-          let ok = true;
+          const oks = [];
           try {
-            for (let i = 0; i < 2; i++) ok = (await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName })).row.ok && ok;
+            for (let i = 0; i < 2; i++) oks.push((await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName })).row.ok);
           } finally {
             await engine.close();
             if (ownWindow(op)) target.retainedBy = null;
             if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
           }
           const audited = auditRequests(parseXtrace(await proxy.stop()));
-          audits[`${sceneName}|${op}|${spec.label}`] = audited.clean;
-          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok, clean: audited.clean, traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.slice(0, 10) });
+          // the judge compares these answers with the timed pass's: an operation that failed early is not audited
+          audits[`${sceneName}|${op}|${spec.label}`] = { clean: audited.clean, oks };
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, clean: audited.clean, traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.slice(0, 10) });
           desktop.focusFront();
         }
       }

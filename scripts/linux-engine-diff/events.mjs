@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
+import { desktopEntry } from './desktop-entry.mjs';
 import { declaredDeviation } from './deviations.mjs';
 import { Engine } from './engine.mjs';
 import { XPROBE } from './scenes.mjs';
@@ -364,19 +365,33 @@ export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], cand
   return out.sort((a, b) => `${a.route}${a.command}${a.series}`.localeCompare(`${b.route}${b.command}${b.series}`));
 }
 
-/** `--experiment events`: every scenario on every engine; returns whether cua matched the pinned build everywhere. */
+/**
+ * The experiment's outcome: cua's answers, events and effects as the pinned build's, and over the wire each request
+ * time at or below the faster vendor build's (Acceptance 3); through the vendor client the times include its deferred
+ * settle, so they are recorded, not judged.
+ */
+export function eventsPass({ answers, speeds, via }) {
+  return answers && (via === 'vendor-js' || speeds.every((s) => s.pass));
+}
+
+/** The experiment's engines: the two vendor builds, cua, and each `--variant` as the candidate binary with its flags. */
+export function eventEngines(args) {
+  return [
+    { label: 'pinned', bin: args.vendor, args: [] },
+    { label: 'newest', bin: args.newest, args: [] },
+    { label: 'cua', bin: args.cua, args: [] },
+    ...args.variants.map((v) => ({ label: v.label, bin: args.cua, args: v.args })),
+  ];
+}
+
+/** `--experiment events`: every scenario on every engine; whether cua matched the pinned build everywhere, and its speed. */
 export async function runEvents(args, emit) {
   const server = await startServer();
   const home = mkdtempSync(join(tmpdir(), 'cua171-events-'));
   const env = { ...process.env, DISPLAY: server.display, XAUTHORITY: join(home, 'no-auth'), EVENTS_APPS: join(home, 'data') };
   mkdirSync(join(home, 'data', 'applications'), { recursive: true });
-  writeFileSync(join(home, 'data', 'applications', 'events-probe.desktop'), `[Desktop Entry]\nType=Application\nName=Events Probe\nExec=/usr/bin/touch ${join(home, 'launched')}\n`);
-  const engines = [
-    { label: 'pinned', bin: args.vendor },
-    { label: 'newest', bin: args.newest },
-    { label: 'cua', bin: args.cua },
-    ...args.variants,
-  ];
+  writeFileSync(join(home, 'data', 'applications', 'events-probe.desktop'), desktopEntry('Events Probe', ['/usr/bin/touch', join(home, 'launched')]));
+  const engines = eventEngines(args);
   const via = args.via ?? 'wire';
   const md = [`Through ${via === 'vendor-js' ? "OpenAI's JavaScript client (the desktop-only commands, well-formed requests, effects read back)" : 'the wire'}:`, '', '| scenario | newest | cua | effects (pinned / newest / cua) |', '|---|---|---|---|'];
   const scenarioRows = [];
@@ -426,5 +441,7 @@ export async function runEvents(args, emit) {
   md.push('| route | command | series | n | pinned | newest | cua | cua at or below the faster |', '|---|---|---|---:|---:|---:|---:|---|');
   const f = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : '–');
   for (const r of speeds) md.push(`| ${r.route} | ${r.command} | ${r.series} | ${r.n} | ${f(r.medians.pinned)} | ${f(r.medians.newest)} | ${f(r.medians.cua)} | ${r.pass ? 'yes' : '**no**'} |`);
-  return { md, pass, speeds };
+  const slower = via === 'vendor-js' ? [] : speeds.filter((s) => !s.pass);
+  if (slower.length) md.push('', `cua is slower than the faster vendor build over the wire: ${slower.map((s) => `${s.route} ${s.command} ${s.series}`).join(', ')}.`);
+  return { md, pass: eventsPass({ answers: pass, speeds, via }), answers: pass, speeds };
 }

@@ -44,8 +44,9 @@ pub struct Engine {
     shot_dir: Option<PathBuf>,
     bus_stats: BusStats,
     extra: serde_json::Map<String, Value>,
-    /// The `--stats` line of the last request, written after its response so the line costs the request nothing.
-    pending_stats: Option<String>,
+    /// What the last request's `--stats` line reports, built and written after its response so the line costs the
+    /// request nothing: its id, command, time and outcome.
+    pending_stats: Option<(Value, String, Duration, bool)>,
     /// Held keys, their sessions and the desktop's keys, across requests.
     inputs: Inputs,
     /// `launch_app`'s programs, reaped as they exit.
@@ -113,7 +114,12 @@ impl Engine {
             merge(&mut self.bus_stats, bus.take_stats());
         }
         if self.cfg.stats {
-            self.print_stats(&request.id, &request.command, started, result.is_ok());
+            self.pending_stats = Some((
+                request.id.clone(),
+                request.command.clone(),
+                started.elapsed(),
+                result.is_ok(),
+            ));
         }
         match result {
             Ok(output) => Response::success(request.id, output),
@@ -121,13 +127,13 @@ impl Engine {
         }
     }
 
-    fn print_stats(&mut self, id: &Value, command: &str, started: Instant, ok: bool) {
+    fn stats_line(&mut self, id: Value, command: String, elapsed: Duration, ok: bool) -> String {
         let bus = std::mem::take(&mut self.bus_stats);
         let mut line = json!({
             "id": id,
             "command": command,
             "ok": ok,
-            "elapsed_ms": (started.elapsed().as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0,
+            "elapsed_ms": (elapsed.as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0,
             "variant": {
                 "window_calls": self.cfg.window.calls,
                 "window_bytes": self.cfg.window.bytes,
@@ -153,13 +159,14 @@ impl Engine {
         for (key, value) in std::mem::take(&mut self.extra) {
             line[key] = value;
         }
-        self.pending_stats = Some(json!({ "stats": line }).to_string());
+        json!({ "stats": line }).to_string()
     }
 
     /// Once a response is out: the request's `--stats` line written, and work that can wait for the answer done
     /// (the desktop screenshot's MIT-SHM segment for the next one).
     pub fn after_response(&mut self) {
-        if let Some(line) = self.pending_stats.take() {
+        if let Some((id, command, elapsed, ok)) = self.pending_stats.take() {
+            let line = self.stats_line(id, command, elapsed, ok);
             eprintln!("{line}");
         }
         self.x.prepare_desktop();

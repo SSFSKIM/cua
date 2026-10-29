@@ -147,11 +147,13 @@ impl Engine {
         self.pending_stats = Some(json!({ "stats": line }).to_string());
     }
 
-    /// Writes the last request's `--stats` line, once its response is out.
-    pub fn flush_stats(&mut self) {
+    /// Once a response is out: the request's `--stats` line written, and work that can wait for the answer done
+    /// (the desktop screenshot's MIT-SHM segment for the next one).
+    pub fn after_response(&mut self) {
         if let Some(line) = self.pending_stats.take() {
             eprintln!("{line}");
         }
+        self.x.prepare_desktop();
     }
 
     fn drop_bus(&mut self) {
@@ -246,6 +248,9 @@ impl Engine {
     fn get_screenshot(&mut self, input: Option<Value>) -> Result<Value> {
         let _: NoInput = parse_input(input)?;
         let (rgb, width, height) = self.x.capture_desktop(self.cfg.mouse_size_px)?;
+        if let Some(read) = self.x.last_desktop_read {
+            self.extra.insert("desktop_read".into(), json!(read));
+        }
         Ok(json!([{ "filepath": self.save_screenshot(&rgb, width, height)? }]))
     }
 

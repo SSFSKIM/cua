@@ -38,6 +38,7 @@ version = "0.0.1"
 dependencies = [
  "anyhow",
  "image",
+ "rustix",
  "serde",
  "serde_json",
  "x11rb",

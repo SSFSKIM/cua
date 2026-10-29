@@ -31,8 +31,11 @@ cargo test
   children instead.
 - **Element resolution** (`resolve.rs`): the vendor's two walks, the second reading roles and sampling large tables,
   so a cell the tree read returned resolves.
-- **Screenshots** (`x11.rs`, `capture.rs`, `readiness.rs`): a window's own drawable while it is retained through
-  Composite, the desktop from the root, JPEG quality 80, 4:4:4. A capture of a freshly redirected (or resized, or
+- **Screenshots** (`x11.rs`, `capture.rs`, `readiness.rs`, `shm.rs`): a window's own drawable while it is retained
+  through Composite, the desktop from the root, JPEG quality 80, 4:4:4. The desktop's pixels come through MIT-SHM
+  (a memfd segment the server writes into, attached by descriptor) on a local display whose server answers
+  `ShmQueryVersion` 1.2, else through `GetImage`; the segment is made after the first desktop screenshot's answer, so
+  that one is `GetImage`'s, and any failure turns MIT-SHM off for the engine's life. A capture of a freshly redirected (or resized, or
   remapped) window waits for the DAMAGE rule: the first damage on the new pixmap, then 10 ms with no more, capped at
   150 ms; a window fully unobscured at the redirect (`cover.rs`) needs no first damage, only the 10 ms quiet.
   Damage and structure events are read on a second X connection by a thread of their own.
@@ -72,7 +75,7 @@ cargo test
 | `--teardown-ms` | 100 | the wait before a background session's teardown |
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms` | 1 | the wait after each drag sample (the vendor's; M1a.3 measures others) |
-| `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, and a capture's wait and the damage it saw |
+| `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, and how a desktop screenshot was read (`shm` or `get_image`) |
 
 ## Dependencies
 

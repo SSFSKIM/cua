@@ -83,6 +83,10 @@ pub struct X11 {
     capture_wait: CaptureWait,
     /// How long the last window capture waited for its pixmap, and why.
     pub last_capture_wait: Option<Waited>,
+    /// The desktop screenshot's MIT-SHM segment (`shm.rs`).
+    shm: crate::shm::Shm,
+    /// How the last desktop screenshot was read: `shm` or `get_image`.
+    pub last_desktop_read: Option<&'static str>,
 }
 
 /// Lossy UTF-8, trailing NULs stripped, Unicode-trimmed, empty as None (behaviour §3, `property_text`).
@@ -160,6 +164,8 @@ impl X11 {
             readiness: None,
             capture_wait,
             last_capture_wait: None,
+            shm: crate::shm::Shm::new(),
+            last_desktop_read: None,
         })
     }
 
@@ -630,15 +636,27 @@ impl X11 {
     }
 
     /// The desktop: the root window at its current size as RGB, with the pointer stamped when `mouse_size_px`
-    /// is positive (behaviour §16). No retention: the root is never redirected.
+    /// is positive (behaviour §16). No retention: the root is never redirected. The pixels come through MIT-SHM where
+    /// the display allows it (Design, Screenshots), else through `GetImage`.
     pub fn capture_desktop(&mut self, mouse_size_px: u32) -> Result<(Vec<u8>, u16, u16)> {
         let geometry = self.conn.get_geometry(self.root)?.reply()?;
         let (width, height) = (geometry.width, geometry.height);
-        let image = self
-            .conn
-            .get_image(ImageFormat::Z_PIXMAP, self.root, 0, 0, width, height, !0)?
-            .reply()?;
-        let mut rgb = crate::capture::bgrx_to_rgb(&image.data, width, height).map_err(|e| anyhow!(e))?;
+        let shared = self
+            .shm
+            .read(&self.conn, self.root, width, height)
+            .map(|data| crate::capture::bgrx_to_rgb(data, width, height));
+        self.last_desktop_read = Some(if shared.is_some() { "shm" } else { "get_image" });
+        let rgb = match shared {
+            Some(rgb) => rgb,
+            None => {
+                let image = self
+                    .conn
+                    .get_image(ImageFormat::Z_PIXMAP, self.root, 0, 0, width, height, !0)?
+                    .reply()?;
+                crate::capture::bgrx_to_rgb(&image.data, width, height)
+            }
+        };
+        let mut rgb = rgb.map_err(|e| anyhow!(e))?;
         if mouse_size_px > 0 {
             match self.cursor_image() {
                 Ok(cursor) => crate::capture::stamp_cursor(&mut rgb, width, height, &cursor),
@@ -649,6 +667,11 @@ impl X11 {
             }
         }
         Ok((rgb, width, height))
+    }
+
+    /// After a desktop screenshot's answer: the MIT-SHM segment for the next one, where the display allows it.
+    pub fn prepare_desktop(&mut self) {
+        self.shm.prepare(&self.conn);
     }
 
     /// The pointer's current image through XFixes.

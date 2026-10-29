@@ -408,7 +408,8 @@ test('acceptance 9\'s fifth case: no CUA_NODE, Node 22 on PATH and running cua, 
   assert.throws(() => select('linux'), error => error.code === 'repl_host_node' && /run `cua install`/.test(error.message)
     && JSON.stringify(error.tried) === JSON.stringify(['CUA_NODE (unset)', 'the cua-installed Node (not installed)', `the node running cua ${node22} (v22.23.2)`, `node on PATH ${node22} (v22.23.2)`]));
   await install(ctx, {verifySignature: acceptSignature});
-  assert.deepEqual(select('linux'), {host: 'cua', reason: 'linux', node: join(nodeDir(ctx.home), VERSION, 'bin/node')});
+  // A Linux computer selection carries its engine (#171), the vendor's by default.
+  assert.deepEqual(select('linux'), {host: 'cua', reason: 'linux', node: join(nodeDir(ctx.home), VERSION, 'bin/node'), engine: {engine: 'vendor', reason: 'default', status: 'pass'}});
   // The production default resolver reads the home it is given.
   assert.equal(replHostFor({platform: 'linux', surfaces: ['computer'], ambient: {PATH: dirname(node22)}, home: ctx.home, browserSelection: null}).node,
     join(nodeDir(ctx.home), VERSION, 'bin/node'));

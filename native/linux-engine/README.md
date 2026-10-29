@@ -57,7 +57,8 @@ cargo test
   36 ms, drags sampled per pixel, `drag_handle` and `move_relative` on the desktop, in the vendor's order of placing,
   pressing the chord and pressing the button. A drag waits after each sample only where its target's family needs it
   (`families.rs`, keyed by `Application.ToolkitName` or the X11 class: 500 µs for Chromium, 300 µs and 30 ms before
-  the release for Gecko, nothing for the rest); the vendor waits 1 ms everywhere.
+  the release for Gecko, nothing for the rest); the vendor waits 1 ms everywhere. A `drag_handle`'s held moves wait
+  as the family of the window under its start asks, in place of the vendor's 8 ms between their points.
 - **Elements and windows** (`engine/elements.rs`, `engine/windows.rs`): element clicks through action 0 or a right
   click at the visible point, named actions, the element scroll, `activate_window` and `launch_app`.
 

@@ -192,6 +192,15 @@ variants included; their evidence is written either way. The run's `end` row kee
   fails it makes the run incomplete. `--no-audit` leaves the pass out.
 - **Readiness's vendor reference** (`judgeReadinessRun`): the run passes only when the pinned build's captures of
   every condition agree with the truth cua's first captures are judged against; one off or unjudged fails it.
+- **The M1a branch review's rules:**
+  - An audit counts only when its audited requests answered as the timed pass's did (`auditVerdict`; the matrix's
+    audit pass requires its keys and clicks answered).
+  - The events experiment's wire request times are part of its outcome (`eventsPass`); through the vendor client they
+    are recorded only. Most of its first requests are timed once, so a loss there is checked with interleaved fresh
+    engines before it is believed.
+  - `--via vendor-js` refuses `--variant`: the vendor client starts the engine without the variant's flags.
+  - The desktop entries the harness writes take their paths as quoted `Exec` arguments (`desktop-entry.mjs`), never as
+    shell source.
 
 ## M1a.4's addition: the drag experiment
 

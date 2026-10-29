@@ -24,6 +24,7 @@ M1a.4's runs:
 | `m1a4-vendor-js-final` | 2104e8cd | every scene through OpenAI's own JavaScript client (`--via vendor-js`) |
 | `m1a4-events-final` | 2104e8cd | the input events on a private Xvfb, compared with the pinned build's, both routes |
 | `m1a4-vendor-js-desktop-final` | 2104e8cd | `move_relative` and `drag_handle` through the vendor JavaScript on a private Xvfb, answers and effects |
+| `m1a4-events-br`, `m1a4-events-br2`, `m1a4-vendor-js-desktop-br` | d474e40d | the M1a branch review's re-run: `drag_handle`'s held moves paced by family, the events experiment's wire speed now judged |
 | `m1a4-matrix-covered-final`, `m1a4-matrix-visible-final` | 2104e8cd | M0.4's 11 families, background keys and clicks, with the witness and the X request audit |
 | `m1a4-drag-browsers` | 7a860320 | the drag experiment, final pacing, on Chrome, Electron and Firefox: 30 runs per kind (the drag path is unchanged after it) |
 | `m1a4-drag`, `m1a4-drag-xterm` | 2ab237cc and later | the drag experiment on every family: 30 runs per kind with no wait, a dwell, and the first table |
@@ -64,8 +65,9 @@ cua's effect was read back on every sample under the absolute gate. Every operat
 42/42, and `launch_app` 56/56. The vendor builds took `scroll` 28/42 each ("The vendor's scroll misses", below). The
 text and clipboard commands answer the declared refusal (`deviations.mjs`).
 
-On the private Xvfb (`m1a4-events-final`), cua's answers and X events equal the pinned build's in every scenario of
-both routes. The one declared deviation stands: a key hold whose window is destroyed answers the X error.
+On the private Xvfb (`m1a4-events-final`, and `m1a4-events-br` and `-br2` on d474e40d), cua's answers and X events
+equal the pinned build's in every scenario of both routes. The one declared deviation stands: a key hold whose window
+is destroyed answers the X error.
 
 Through OpenAI's own JavaScript:
 - `m1a4-vendor-js-final`: every verdict passes, covering answers, rendered trees, witness, audit and effects.
@@ -108,6 +110,23 @@ All medians are in `summary.md`. Every other operation passes, most by a factor 
   serializing the `--stats` line inside the request, and 2104e8cd moved that after the response. Their verdict rows
   were written before the speed verdict compared unrounded medians, so `m1a4-cold-1` and `m1a4-cold-2` read PASS with
   cua above.
+- **The events experiment's request times**, over the wire, have been part of its outcome since the M1a branch review.
+  Before that they were only printed, and `m1a4-events-final` showed two losses:
+  - Desktop `drag_handle` later steps: 33.1 against the newest build's 30.1 ms. A held move kept the vendor's 8 ms
+    between points. Since d474e40d, the window under the handle's start sets its `families.rs` pacing, so on the Xvfb's
+    recorder (no row) there is no wait: 0.4 against 30.2 ms in `m1a4-events-br2`.
+  - Desktop `key_up` later steps: 0.24 against 0.17 ms. That was noise. An xtrace of the hold sequences shows cua and
+    the newest build each send `FakeInput` followed by a `GetInputFocus` sync, per key. Measured directly, 120 releases
+    each came out at cua 0.381 against newest 0.389 ms (`.doperpowers/sde/m1a4/keyup-probe.mjs`). In both re-runs it
+    passed (0.1 against 0.2 ms).
+- **The events experiment times most first requests once.** As a gate, it can fail on noise:
+  - `m1a4-events-br` failed desktop `click`, `move`, `scroll` and `drag_handle` first requests by 0.02–0.9 ms. Most of
+    those were 1–3 samples, at parity with the pinned build.
+  - `m1a4-events-br2` passed every one.
+  - 31 interleaved fresh engines per command show `click`, `scroll` and `drag_handle` first at or below the bar.
+  - Desktop `move` first is 74.5 ms against the newest build's 73.6, with the pinned build at 74.8. cua sends the
+    pinned build's 11 motions with its 8 ms between points; the newest build sends 10. Closing that gap means changing
+    the events or the vendor's path wait, so it is left to the design session.
 
 **4. Same elements: pass** (the truncation line through the facade is M4's).
 - The gedit and Chrome reads return exactly the vendor's nodes with the same native ids, through the windowed read:
@@ -127,6 +146,10 @@ All medians are in `summary.md`. Every other operation passes, most by a factor 
   spans.
 - Every operation's X requests held no forbidden request wherever the vendor's did. The audit was through `xtrace`,
   two samples per engine and operation, 78 audits, with tree reads and screenshots now included.
+- Since the M1a branch review, an audit counts only when its audited requests answer as the timed pass did. An
+  operation that failed early under the proxy traces only its setup, and that proves nothing. Expected refusals are
+  refused in both passes. The same rule now applies to the matrix's audit pass. Re-judging all 474 recorded audits
+  moved none, and no matrix audit's requests had failed.
 - `activate_window` changes the desktop on purpose in all three engines.
 - The activate-and-restore stub failed both checks. The witness caught stacking, the active window and focus; the
   audit caught the `_NET_ACTIVE_WINDOW` ClientMessage and XTEST `FakeInput`.
@@ -157,7 +180,8 @@ wait, 30 ms after the press and before the release).
 - Every non-browser family passes:
   - gedit select and scrollbar, and the GTK 3 scale;
   - kate and Qt Creator select and scrollbar;
-  - Writer select;
+  - Writer select, which took 29/30 in every engine, the pinned build's included: the window's first drag selects
+    nothing. The original relative judge passed it; the absolute judge (below) fails it in every cua lane.
   - xterm and xterm with allowSendEvents (select, read through PRIMARY).
 - Chromium (Chrome and Electron) misses the canvas path (0–1 of 30 taken), the scroller thumb (2–5 of 30), and the
   odd first select or drop (1–3 misses).
@@ -214,17 +238,27 @@ Writer's first drag in a fresh window selects nothing in every engine; that is t
   The release dwell does not move the distance: every lane's mean stays 124–128 px, 7–12 px short of the pinned
   build's. The shortfall is in how Chromium takes the motions at 500 µs, not in the release.
 
-  **The margin to the judge's edge, as shipped.** The edge is 75% of the pinned median.
-  - In this run, Chrome's edge is 102.0 and cua's shortest run is 102, exactly on it; Electron's edge is 102.4 and
-    its shortest run is 107, 4.6 over.
-  - In `m1a4-drag-browsers`, the margins were 4.0 (Chrome, 103 against 99.0) and 6.4 (Electron, 105 against 98.6).
-  - cua's mean sits 6–8% under the pinned mean: 128.0 against 136.4 and 126.2 against 134.6 here, and 125.9 against
-    133.1 and 129.0 against 132.4 before.
-  - So a 30-run Chromium thumb cell can miss by a pixel or two on a later run. M5's drag check should expect that, or
-    judge the thumb by the mean.
-- **Chrome's HTML5 DnD changes the desktop in every engine** : stacking, focus and the active window, in 30/30 of the
-  pinned build's drops. That is the application's doing, so the cell asks no
-  witness of cua. Electron's and Firefox's drops leave the desktop alone.
+  **The margin to the judge's edge, as shipped.** Each run is measured against its own baseline: 75% of the pinned
+  median for runs of the same parity, which is the judge's edge. The smallest margin per cell:
+
+  | run | family | baselines (even / odd) | smallest margin | at |
+  |---|---|---:|---:|---|
+  | `m1a4-thumb-dwell` | Chrome | 136 / 141 | 0.00 px | run 10: 102 against 102.00 |
+  | `m1a4-thumb-dwell` | Electron | 139 / 136 | 2.75 px | run 12: 107 against 104.25 |
+  | `m1a4-drag-browsers` | Chrome | 132 / 132 | 4.00 px | run 19: 103 against 99.00 |
+  | `m1a4-drag-browsers` | Electron | 130 / 132 | 7.50 px | run 6: 105 against 97.50 |
+
+  cua's mean sits 6–8% under the pinned build's: 128.0 against 136.4 and 126.2 against 134.6 in the check, and 125.9
+  against 133.1 and 129.0 against 132.4 in `m1a4-drag-browsers`. A 30-run Chromium thumb cell can therefore miss by a
+  pixel on a later run. The cell stays out of gates until M4 lands the full distance.
+- **Chrome's HTML5 DnD changes the desktop in every engine**: stacking, focus and the active window, in 30/30 of the
+  pinned build's drops. That is the application's doing, so the cell asks no witness of cua. Electron's and Firefox's
+  drops leave the desktop alone.
+- **The cell judge is absolute** (the M1a branch review). Once a cell has a usable reference, every cua run must take
+  effect, including runs the pinned build also missed. A usable reference means the pinned build took at least one
+  run and, for value and thumb kinds, every parity has a pinned value. Re-judging every recorded cell moves one:
+  Writer's select in `m1a4-drag` now fails in every cua lane (29/30). That window's first drag selects nothing in
+  every engine, the pinned build's included.
 
 ## The desktop screenshot through MIT-SHM
 

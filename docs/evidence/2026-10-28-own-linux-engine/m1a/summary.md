@@ -2525,3 +2525,285 @@ Every engine drags the same path 30 times per family and kind, in its own window
 
 Cells where a cua lane missed a run the pinned build took: chrome scroller (cua:0ms, cua:r16, cua:r33, cua:r50); electron scroller (cua:0ms, cua:r33).
 
+## m1a4-events-br (experiment events)
+
+Through the wire:
+
+| scenario | newest | cua | effects (pinned / newest / cua) |
+|---|---|---|---|
+| press_key a | same | same | – |
+| press_key A | same | same | – |
+| press_key z | same | same | – |
+| press_key Z | same | same | – |
+| press_key shift+z | same | same | – |
+| press_key Shift+Z | same | same | – |
+| press_key ctrl+z | same | same | – |
+| press_key Ctrl+Z | same | same | – |
+| press_key CTRL+z | same | same | – |
+| press_key Ctrl+Shift+Z | same | same | – |
+| press_key ctrl+shift+t | same | same | – |
+| press_key Ctrl+Shift+T | same | same | – |
+| press_key XK_Return | same | same | – |
+| press_key Return | same | same | – |
+| press_key alt+F5 | same | same | – |
+| press_key Ctrl+Alt+Shift+A | same | same | – |
+| press_key super+L | same | same | – |
+| press_key ! | same | same | – |
+| press_key @ | same | same | – |
+| press_key shift+! | same | same | – |
+| press_key !+@ | same | same | – |
+| press_key ctrl++ | same | same | – |
+| press_key + | same | same | – |
+| press_key a+a | same | same | – |
+| press_key < | same | same | – |
+| press_key kp_enter | same | same | – |
+| press_key f12 | same | same | – |
+| press_key space | same | same | – |
+| press_key Escape | same | same | – |
+| press_key with duration | same | same | – |
+| press_key bad key | same | same | – |
+| press_key empty | same | same | – |
+| held ctrl around press_key a | same | same | – |
+| held Ctrl around press_key Shift+Z | same | same | – |
+| two holds sharing ctrl | same | same | – |
+| a repeated hold is one hold | same | same | – |
+| key_up of nothing held | same | same | – |
+| a hold is named by its normalized chord | same | same | – |
+| order makes a different hold | same | same | – |
+| held shift under a click chord | differs at step 1 (event) | same | – |
+| bad keys in holds | same | same | – |
+| holds left at exit are released with their state | same | same | – |
+| held key across another window request | differs at step 1 (event) | same | – |
+| click | differs at step 0 (event) | same | – |
+| click in the child | differs at step 0 (event) | same | – |
+| right click | differs at step 0 (event) | same | – |
+| middle double click held 0 | differs at step 0 (event) | same | – |
+| click with a chord | differs at step 0 (event) | same | – |
+| click outside the window | same | same | – |
+| click validation | same | same | – |
+| move | differs at step 0 (event) | same | – |
+| scroll at the centre | differs at step 0 (event) | same | – |
+| scroll at a point | differs at step 0 (event) | same | – |
+| scroll validation | same | same | – |
+| drag | differs at step 0 (event) | same | – |
+| a bad chord on move, scroll and drag | differs at step 2 (event) | same | – |
+| an interrupted drag under a held key, then a move | differs at step 1 (event) | same | – |
+| an interrupted click under a held key, then a move | differs at step 1 (event) | same | – |
+| a key hold whose window is destroyed | same but the declared answer (interrupted_hold) | same but the declared answer (interrupted_hold) | – |
+| drag with a chord, and a short path | differs at step 0 (event) | same | – |
+| desktop press_key a | same | same | – |
+| desktop press_key Z | same | same | – |
+| desktop press_key Ctrl+Z | same | same | – |
+| desktop press_key ! | same | same | – |
+| desktop press_key ctrl++ | same | same | – |
+| desktop press_key a+a | same | same | – |
+| desktop press_key bad key | same | same | – |
+| desktop held ctrl around press_key a | same | same | – |
+| desktop two holds sharing ctrl | same | same | – |
+| desktop holds left at exit | same | same | – |
+| desktop hold and a window hold are apart | same | same | – |
+| desktop click | differs at step 0 (event) | same | – |
+| desktop click in place | same | same | – |
+| desktop click far | differs at step 0 (event) | same | – |
+| desktop move | differs at step 0 (event) | same | – |
+| desktop move_relative | same | same | – |
+| desktop scroll | differs at step 1 (event) | same | – |
+| desktop drag | differs at step 0 (event) | same | – |
+| desktop drag short path | same | same | – |
+| drag_handle | differs at step 0 (event) | same | – |
+| drag_handle stray end | same | same | – |
+| activate_window | same | same | – |
+| launch_app | same | same | – |
+
+cua sent the pinned build's events and answers in every scenario.
+
+Request times per route and command (median ms over every scenario step; `first` is the request after the engine started, `later` the rest):
+
+| route | command | series | n | pinned | newest | cua | cua at or below the faster |
+|---|---|---|---:|---:|---:|---:|---|
+| desktop | click | first | 3 | 88.1 | 87.2 | 87.5 | **no** |
+| desktop | click | later | 1 | 158.6 | 92 | 25.2 | yes |
+| desktop | drag_handle | first | 2 | 39 | 40.4 | 39.9 | **no** |
+| desktop | drag_handle | later | 2 | 33.1 | 30.6 | 0.6 | yes |
+| desktop | drag | first | 2 | 343.7 | 116.8 | 64 | yes |
+| desktop | key_down | first | 4 | 51.9 | 2.1 | 1 | yes |
+| desktop | key_down | later | 1 | 33.8 | 0.5 | 0.2 | yes |
+| desktop | key_up | later | 5 | 33.3 | 0.1 | 0.1 | yes |
+| desktop | move_relative | first | 1 | 1.4 | 2.2 | 0.9 | yes |
+| desktop | move_relative | later | 2 | 33.7 | 17.1 | 0.2 | yes |
+| desktop | move | first | 1 | 83.6 | 85.9 | 83.7 | **no** |
+| desktop | move | later | 2 | 38 | 20.2 | 4.5 | yes |
+| desktop | press_key | first | 7 | 69 | 35.6 | 1.2 | yes |
+| desktop | press_key | later | 1 | 67.1 | 33.9 | 0.2 | yes |
+| desktop | scroll | first | 1 | 74 | 75.1 | 74.5 | **no** |
+| desktop | scroll | later | 1 | 441.8 | 407.7 | 375 | yes |
+| window | activate_window | first | 1 | 3.7 | 3 | 1.4 | yes |
+| window | click | first | 7 | 215.9 | 217.1 | 115.3 | yes |
+| window | click | later | 5 | 113.6 | 113.7 | 12.8 | yes |
+| window | drag | first | 2 | 584.4 | 309.7 | 129.5 | yes |
+| window | drag | later | 3 | 202.2 | 201.8 | 100.9 | yes |
+| window | key_down | first | 12 | 238.1 | 203.4 | 2.7 | yes |
+| window | key_down | later | 4 | 67.3 | 50.5 | 0.2 | yes |
+| window | key_up | first | 1 | 1.1 | 1.1 | 0.9 | yes |
+| window | key_up | later | 15 | 134.1 | 101 | 100.5 | yes |
+| window | launch_app | first | 1 | 2.3 | 2.5 | 2 | yes |
+| window | launch_app | later | 4 | 0.4 | 0.4 | 0.3 | yes |
+| window | move | first | 2 | 204.4 | 204.6 | 103.8 | yes |
+| window | move | later | 4 | 100.8 | 101.7 | 0.3 | yes |
+| window | press_key | first | 33 | 337.2 | 237.9 | 103 | yes |
+| window | press_key | later | 3 | 167.8 | 134.4 | 0.3 | yes |
+| window | scroll | first | 3 | 240.9 | 242 | 139.6 | yes |
+| window | scroll | later | 6 | 202.5 | 202.7 | 100.9 | yes |
+
+cua is slower than the faster vendor build over the wire: desktop click first, desktop drag_handle first, desktop move first, desktop scroll first.
+
+## m1a4-vendor-js-desktop-br (experiment events)
+
+Through OpenAI's JavaScript client (the desktop-only commands, well-formed requests, effects read back):
+
+| scenario | newest | cua | effects (pinned / newest / cua) |
+|---|---|---|---|
+| desktop move_relative | same | same | 2/2 / 2/2 / 2/2 |
+| drag_handle | differs at step 0 (event) | same | 3/3 / 3/3 / 3/3 |
+
+cua sent the pinned build's events and answers in every scenario.
+
+Request times per route and command (median ms over every scenario step; `first` is the request after the engine started, `later` the rest; through the client they include its deferred settle, so they are recorded, not judged):
+
+| route | command | series | n | pinned | newest | cua | cua at or below the faster |
+|---|---|---|---:|---:|---:|---:|---|
+| desktop | drag_handle | first | 1 | 78.2 | 80.9 | 77.7 | yes |
+| desktop | drag_handle | later | 2 | 122.9 | 118 | 89 | yes |
+| desktop | move_relative | first | 1 | 5.9 | 7 | 2.4 | yes |
+| desktop | move_relative | later | 1 | 162.3 | 124.3 | 94 | yes |
+
+## m1a4-events-br2 (experiment events)
+
+Through the wire:
+
+| scenario | newest | cua | effects (pinned / newest / cua) |
+|---|---|---|---|
+| press_key a | same | same | – |
+| press_key A | same | same | – |
+| press_key z | same | same | – |
+| press_key Z | same | same | – |
+| press_key shift+z | same | same | – |
+| press_key Shift+Z | same | same | – |
+| press_key ctrl+z | same | same | – |
+| press_key Ctrl+Z | same | same | – |
+| press_key CTRL+z | same | same | – |
+| press_key Ctrl+Shift+Z | same | same | – |
+| press_key ctrl+shift+t | same | same | – |
+| press_key Ctrl+Shift+T | same | same | – |
+| press_key XK_Return | same | same | – |
+| press_key Return | same | same | – |
+| press_key alt+F5 | same | same | – |
+| press_key Ctrl+Alt+Shift+A | same | same | – |
+| press_key super+L | same | same | – |
+| press_key ! | same | same | – |
+| press_key @ | same | same | – |
+| press_key shift+! | same | same | – |
+| press_key !+@ | same | same | – |
+| press_key ctrl++ | same | same | – |
+| press_key + | same | same | – |
+| press_key a+a | same | same | – |
+| press_key < | same | same | – |
+| press_key kp_enter | same | same | – |
+| press_key f12 | same | same | – |
+| press_key space | same | same | – |
+| press_key Escape | same | same | – |
+| press_key with duration | same | same | – |
+| press_key bad key | same | same | – |
+| press_key empty | same | same | – |
+| held ctrl around press_key a | same | same | – |
+| held Ctrl around press_key Shift+Z | same | same | – |
+| two holds sharing ctrl | same | same | – |
+| a repeated hold is one hold | same | same | – |
+| key_up of nothing held | same | same | – |
+| a hold is named by its normalized chord | same | same | – |
+| order makes a different hold | same | same | – |
+| held shift under a click chord | differs at step 1 (event) | same | – |
+| bad keys in holds | same | same | – |
+| holds left at exit are released with their state | same | same | – |
+| held key across another window request | differs at step 1 (event) | same | – |
+| click | differs at step 0 (event) | same | – |
+| click in the child | differs at step 0 (event) | same | – |
+| right click | differs at step 0 (event) | same | – |
+| middle double click held 0 | differs at step 0 (event) | same | – |
+| click with a chord | differs at step 0 (event) | same | – |
+| click outside the window | same | same | – |
+| click validation | same | same | – |
+| move | differs at step 0 (event) | same | – |
+| scroll at the centre | differs at step 0 (event) | same | – |
+| scroll at a point | differs at step 0 (event) | same | – |
+| scroll validation | same | same | – |
+| drag | differs at step 0 (event) | same | – |
+| a bad chord on move, scroll and drag | differs at step 2 (event) | same | – |
+| an interrupted drag under a held key, then a move | differs at step 1 (event) | same | – |
+| an interrupted click under a held key, then a move | differs at step 1 (event) | same | – |
+| a key hold whose window is destroyed | same but the declared answer (interrupted_hold) | same but the declared answer (interrupted_hold) | – |
+| drag with a chord, and a short path | differs at step 0 (event) | same | – |
+| desktop press_key a | same | same | – |
+| desktop press_key Z | same | same | – |
+| desktop press_key Ctrl+Z | same | same | – |
+| desktop press_key ! | same | same | – |
+| desktop press_key ctrl++ | same | same | – |
+| desktop press_key a+a | same | same | – |
+| desktop press_key bad key | same | same | – |
+| desktop held ctrl around press_key a | same | same | – |
+| desktop two holds sharing ctrl | same | same | – |
+| desktop holds left at exit | same | same | – |
+| desktop hold and a window hold are apart | same | same | – |
+| desktop click | differs at step 0 (event) | same | – |
+| desktop click in place | same | same | – |
+| desktop click far | differs at step 0 (event) | same | – |
+| desktop move | differs at step 0 (event) | same | – |
+| desktop move_relative | same | same | – |
+| desktop scroll | differs at step 1 (event) | same | – |
+| desktop drag | differs at step 0 (event) | same | – |
+| desktop drag short path | same | same | – |
+| drag_handle | differs at step 0 (event) | same | – |
+| drag_handle stray end | same | same | – |
+| activate_window | same | same | – |
+| launch_app | same | same | – |
+
+cua sent the pinned build's events and answers in every scenario.
+
+Request times per route and command (median ms over every scenario step; `first` is the request after the engine started, `later` the rest):
+
+| route | command | series | n | pinned | newest | cua | cua at or below the faster |
+|---|---|---|---:|---:|---:|---:|---|
+| desktop | click | first | 3 | 87.5 | 87.2 | 87 | yes |
+| desktop | click | later | 1 | 158.7 | 91.9 | 24.9 | yes |
+| desktop | drag_handle | first | 2 | 40.9 | 38.5 | 38 | yes |
+| desktop | drag_handle | later | 2 | 33 | 30.2 | 0.4 | yes |
+| desktop | drag | first | 2 | 331.1 | 109.5 | 51.3 | yes |
+| desktop | key_down | first | 4 | 52.2 | 2.7 | 1.3 | yes |
+| desktop | key_down | later | 1 | 34.2 | 0.9 | 0.2 | yes |
+| desktop | key_up | later | 5 | 33.4 | 0.2 | 0.1 | yes |
+| desktop | move_relative | first | 1 | 1.7 | 2.5 | 1.2 | yes |
+| desktop | move_relative | later | 2 | 33.8 | 17.3 | 0.3 | yes |
+| desktop | move | first | 1 | 84.3 | 85.9 | 83.4 | yes |
+| desktop | move | later | 2 | 38 | 20.3 | 4.4 | yes |
+| desktop | press_key | first | 7 | 69.4 | 36.2 | 1.2 | yes |
+| desktop | press_key | later | 1 | 67.4 | 34.1 | 0.3 | yes |
+| desktop | scroll | first | 1 | 74.1 | 75.7 | 73.6 | yes |
+| desktop | scroll | later | 1 | 440.2 | 407.9 | 373.4 | yes |
+| window | activate_window | first | 1 | 1.7 | 1.9 | 0.9 | yes |
+| window | click | first | 7 | 216.3 | 217.7 | 115.4 | yes |
+| window | click | later | 5 | 113.1 | 113.6 | 12.8 | yes |
+| window | drag | first | 2 | 583.8 | 308.8 | 124.2 | yes |
+| window | drag | later | 3 | 202.3 | 202.5 | 100.9 | yes |
+| window | key_down | first | 12 | 236.4 | 203.2 | 2.3 | yes |
+| window | key_down | later | 4 | 67.1 | 50.6 | 0.2 | yes |
+| window | key_up | first | 1 | 1.4 | 1.6 | 1 | yes |
+| window | key_up | later | 15 | 134.1 | 100.9 | 100.5 | yes |
+| window | launch_app | first | 1 | 1.4 | 1.5 | 1.1 | yes |
+| window | launch_app | later | 4 | 0.3 | 0.4 | 0.2 | yes |
+| window | move | first | 2 | 203.4 | 205.6 | 102.8 | yes |
+| window | move | later | 4 | 100.8 | 101.9 | 0.4 | yes |
+| window | press_key | first | 33 | 336.9 | 237.6 | 103.1 | yes |
+| window | press_key | later | 3 | 167.7 | 134.3 | 0.3 | yes |
+| window | scroll | first | 3 | 241.5 | 242.7 | 141.3 | yes |
+| window | scroll | later | 6 | 203 | 202.9 | 101.3 | yes |
+

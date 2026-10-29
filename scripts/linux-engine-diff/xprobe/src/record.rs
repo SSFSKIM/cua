@@ -20,9 +20,7 @@ use std::time::Duration;
 
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
-use x11rb::protocol::xproto::{
-    ConnectionExt as _, CreateWindowAux, EventMask, InputFocus, Window, WindowClass,
-};
+use x11rb::protocol::xproto::{ConnectionExt as _, CreateWindowAux, EventMask, InputFocus, Window, WindowClass};
 use x11rb::wrapper::ConnectionExt as _;
 
 use crate::{Result, json_str};
@@ -52,16 +50,41 @@ pub fn record(args: &[String]) -> Result<()> {
         .override_redirect(1)
         .background_pixel(0x00ffffff)
         .event_mask(mask);
-    conn.create_window(0, window, root, x as i16, y as i16, width as u16, height as u16, 0, WindowClass::INPUT_OUTPUT, 0, &aux)?;
+    conn.create_window(
+        0,
+        window,
+        root,
+        x as i16,
+        y as i16,
+        width as u16,
+        height as u16,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &aux,
+    )?;
     let child = conn.generate_id()?;
     let aux = CreateWindowAux::new().background_pixel(0x00c0c0c0).event_mask(mask);
     let (cw, ch) = ((width / 2).max(1), (height / 2).max(1));
-    conn.create_window(0, child, window, (width - cw) as i16, (height - ch) as i16, cw as u16, ch as u16, 0, WindowClass::INPUT_OUTPUT, 0, &aux)?;
+    conn.create_window(
+        0,
+        child,
+        window,
+        (width - cw) as i16,
+        (height - ch) as i16,
+        cw as u16,
+        ch as u16,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &aux,
+    )?;
     conn.map_window(child)?;
     conn.map_window(window)?;
     conn.sync()?;
     if focus {
-        conn.set_input_focus(InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME)?.check()?;
+        conn.set_input_focus(InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME)?
+            .check()?;
     }
     conn.sync()?;
     // Drop what mapping and focusing caused before the first mark.
@@ -91,7 +114,11 @@ pub fn record(args: &[String]) -> Result<()> {
         let line = match event {
             Event::KeyPress(e) | Event::KeyRelease(e) => format!(
                 "{{\"type\":\"{}\",\"send\":{},\"detail\":{},\"state\":{},\"window\":{},\"x\":{},\"y\":{},\"root_x\":{},\"root_y\":{},\"time\":{}}}",
-                if e.response_type & 0x7f == x11rb::protocol::xproto::KEY_PRESS_EVENT { "KeyPress" } else { "KeyRelease" },
+                if e.response_type & 0x7f == x11rb::protocol::xproto::KEY_PRESS_EVENT {
+                    "KeyPress"
+                } else {
+                    "KeyRelease"
+                },
                 e.response_type & 0x80 != 0,
                 e.detail,
                 u16::from(e.state),
@@ -104,7 +131,11 @@ pub fn record(args: &[String]) -> Result<()> {
             ),
             Event::ButtonPress(e) | Event::ButtonRelease(e) => format!(
                 "{{\"type\":\"{}\",\"send\":{},\"detail\":{},\"state\":{},\"window\":{},\"x\":{},\"y\":{},\"root_x\":{},\"root_y\":{},\"time\":{}}}",
-                if e.response_type & 0x7f == x11rb::protocol::xproto::BUTTON_PRESS_EVENT { "ButtonPress" } else { "ButtonRelease" },
+                if e.response_type & 0x7f == x11rb::protocol::xproto::BUTTON_PRESS_EVENT {
+                    "ButtonPress"
+                } else {
+                    "ButtonRelease"
+                },
                 e.response_type & 0x80 != 0,
                 e.detail,
                 u16::from(e.state),
@@ -129,7 +160,11 @@ pub fn record(args: &[String]) -> Result<()> {
             ),
             Event::EnterNotify(e) | Event::LeaveNotify(e) => format!(
                 "{{\"type\":\"{}\",\"send\":{},\"detail\":{},\"mode\":{},\"state\":{},\"window\":{},\"x\":{},\"y\":{},\"root_x\":{},\"root_y\":{},\"time\":{}}}",
-                if e.response_type & 0x7f == x11rb::protocol::xproto::ENTER_NOTIFY_EVENT { "EnterNotify" } else { "LeaveNotify" },
+                if e.response_type & 0x7f == x11rb::protocol::xproto::ENTER_NOTIFY_EVENT {
+                    "EnterNotify"
+                } else {
+                    "LeaveNotify"
+                },
                 e.response_type & 0x80 != 0,
                 u8::from(e.detail),
                 u8::from(e.mode),
@@ -143,7 +178,11 @@ pub fn record(args: &[String]) -> Result<()> {
             ),
             Event::FocusIn(e) | Event::FocusOut(e) => format!(
                 "{{\"type\":\"{}\",\"send\":{},\"detail\":{},\"mode\":{},\"window\":{}}}",
-                if e.response_type & 0x7f == x11rb::protocol::xproto::FOCUS_IN_EVENT { "FocusIn" } else { "FocusOut" },
+                if e.response_type & 0x7f == x11rb::protocol::xproto::FOCUS_IN_EVENT {
+                    "FocusIn"
+                } else {
+                    "FocusOut"
+                },
                 e.response_type & 0x80 != 0,
                 u8::from(e.detail),
                 u8::from(e.mode),
@@ -176,7 +215,9 @@ pub fn record(args: &[String]) -> Result<()> {
         out.flush()?;
         match rx.recv_timeout(Duration::from_millis(1)) {
             Ok(line) => {
-                let Some(tag) = line.strip_prefix("mark ") else { continue };
+                let Some(tag) = line.strip_prefix("mark ") else {
+                    continue;
+                };
                 conn.sync()?;
                 while let Some(event) = conn.poll_for_event()? {
                     print(&mut out, event)?;

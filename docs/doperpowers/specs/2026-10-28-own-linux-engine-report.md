@@ -83,3 +83,68 @@ environment) and one flaky (`accept-lib` tree snapshot, 1 in 3, files unchanged)
 
 **Installed on the VM for M0**: gnome-text-editor, kate, qtcreator, xterm, LibreOffice Writer and its gtk3 plugin,
 Firefox (Mozilla's deb repository), stress-ng, `gir1.2-gtk-4.0`.
+
+## M1a — engine core, wire-compatible, with the differential harness
+
+Branch `feat/171-m1a` from main 8b757c3c. Four loop tasks (pre-flight, 80d13a21):
+
+| Task | Commits | Task review |
+|---|---|---|
+| M1a.1 observation (tree read, readiness, cover, apps) | 80d13a21..2db4ac0a; fixes b0ab6c1..a454569 | 1 round of fixes, then approved |
+| M1a.2 input (routes, holds, desktop) | a454569..81e9be54; fixes 19fbd75..0847e23, 0847e23..48da51a | 2 rounds of fixes, then approved |
+| M1a.3 harness completion and the proof | 48da51a..973f940 | its review's fixes folded into M1a.4 |
+| M1a.4 M1a.3's fixes, drag pacing, MIT-SHM, the proof re-run | 53de86e2..8c82badc; fixes 49e39745..dabf618d | 2 re-reviews (with M1a.3's), then approved |
+
+**Result** (evidence `docs/evidence/2026-10-28-own-linux-engine/m1a/`). On x86-64, for every command but text and
+clipboard:
+- **Acceptance 2, 4 and 5 hold.** Outputs are equal or declared. The over-budget read retains the vendor's native ids
+  exactly, inside the +256 bus-call bound. The witness and the X request audit are clean wherever the vendor's are,
+  judged per family on all eleven of M0.4's families, covered and visible. The activate-and-restore stub fails both.
+- **Acceptance 3 holds, with two listed exceptions.** Every window-route operation is at or below the faster vendor
+  build, e.g. the gedit tree read 83.0 ms warm against 600.8 and the Chrome drag 393.6 against 412.8. The desktop
+  screenshot's cold first capture is listed as parity, and desktop `move`'s later requests are a declared speed gap
+  closed by M4.
+- **cua's effect is judged on every sample.** Where the vendor misses (covered Chrome scroll, 21/30 and 20/30), the
+  cause is the vendor's per-request unredirect; cua's session retention takes 30/30.
+
+**Design changes made during M1a**, each checked or decided by the coordinator (Decision Log, M1a.1 to M1a branch
+review):
+- the unobscured readiness shortcut;
+- Firefox's coordinate clicks `unless_unobscured`; the 60% area rule was withdrawn on the second-size measurement;
+- drags paced by family in `families.rs`: Chromium 500 µs a step, Gecko 300 µs and 30 ms before the release, every
+  other family none;
+- MIT-SHM desktop capture and Acceptance 3's parity rule;
+- cua's effect judged absolutely, with a settled read;
+- long browser drags and full-distance Chromium thumb drags made required M4 work, judged by Acceptance 3 from M4 on;
+- Chrome's HTML5 drag-and-drop an open M3 item;
+- the desktop route's speed judged on fresh engines with a bootstrap interval; "same (within noise)" and declared
+  speed gaps;
+- Writer's first drag recorded as agent-facing behaviour, an M4 candidate.
+
+**Branch review** (`doperpowers:reviewer-high`, 8b757c3c..8272cc51): verdict "incorrect", one P1 and five P2, all in
+the harness. A run label reached shell source. The events experiment computed speed verdicts without failing on them,
+which hid desktop `drag_handle` (33.1 ms against a 30.2 bar) and `move`. The drag judge was still relative to the
+pinned build. An audit could pass without exercising the operation. Events variants had no binary, and vendor-js
+dropped variant args. Fixed in two rounds (2144ee0e..4913ada2) with regression tests. The design session's calls came
+in between: the desktop speed judged on fresh engines with an interval, `move` as a declared gap, Writer primed. The
+re-review (7f1dc04d..38e3c130) found three P2 false passes in the new speed gate: timed answers unchecked, undersampled
+mandatory groups passing, and the noise rule limited to first requests. They were fixed in 9df5f2fc. Its re-review
+(95fd7cb0..9df5f2fc) is "correct", with no material findings. It rejudged the committed evidence independently and
+did not require a live re-run: `m1a4-events-gate3` recorded only `ok` for its timed answers, and future runs record
+full answers. Two mechanical leftovers were fixed with the merge: rustfmt on `xprobe/src/record.rs`, and the evidence
+README's noise-rule wording.
+
+**Validation** (final head in the PR):
+- Engine: `cargo test --release` 121 passed and 2 ignored (live; the SHM one passes under `xvfb-run`); clippy and fmt
+  clean.
+- Harness: `node --test test/linux-engine-diff/*.test.mjs` 123/123; xprobe fmt clean.
+- The verdict run `m1a4-wire-final` ran on engine 2104e8cd. The only engine change after it, d474e40d, touches
+  `drag_handle`'s held moves on the desktop route alone, which the events runs on d474e40d judge.
+- `ci-gate` GREEN on 8272cc51 (run 40899750345) and 38e3c130 (run 40914546404); the final head's run is in the PR.
+
+**Friction** (for a Mac session to record; `~/.claude` is pull-only on this host):
+- The worktree-isolation Bash guard refused tens of calls across M1a: compound commands, a variable in an option
+  position, `cd` before git, heredocs chained with `&&`, node arguments computed at run time. Workaround: plain
+  commands, Write and Edit, and wrapper scripts under `.doperpowers/sde/`.
+- `pgrep -f "<pattern>"` matched the waiter shells that contained the pattern, and a `pkill` on it killed them; match
+  the node process or use `pgrep -x`.

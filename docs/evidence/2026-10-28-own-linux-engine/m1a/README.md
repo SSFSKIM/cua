@@ -131,8 +131,8 @@ All medians are in `summary.md`. Every other operation passes, most by a factor 
   - A group is judged only when every engine has at least 20 samples.
   - Each judged group reports a bootstrap 95% interval of cua's median minus the faster build's. Samples are
     resampled within their own request, so a group that mixes requests keeps its mix.
-  - A `first` group above the bar whose interval includes 0 counts as **same (within noise)**. It is listed apart,
-    not as a pass.
+  - A judged group, `first` or `later`, above the bar whose interval includes 0 counts as **same (within noise)**.
+    It does not fail the run, and it is listed apart from the passes.
   - A loss that a speed gap in `deviations.mjs` declares is a **declared gap**, listed apart and never a pass.
   - Any other loss fails the run.
 

@@ -714,6 +714,17 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `m1a/` (`m1a4-events-gate3`, `m1a4-drag-writer-primed`); `.doperpowers/sde/…/task-8-report.md`, "Branch review fixes" and "round 2" (local).
   Date/Author: 2026-10-29, the plan-executor (session linux171), from the fixer's report; the move gap, the noise rule and Writer as agent-facing behaviour decided by the design session (cua_repl session 1ea561bc).
 
+- Decision (2026-10-29, M1b pre-flight): how M1b is run.
+  - Three loop tasks on `feat/171-m1b`, then the release.
+    - M1b.1, the release pipeline and the gate: `linux-engine.yml`, `scripts/linux-engine-pin.mjs`, the engine's version 0.1.0, and the `engine-linux` ci-kit gate.
+    - M1b.2, selection, install and doctor: `launch.mjs`, `install.mjs`, `manifest.mjs`, `sandbox.mjs`, `doctor-engine.mjs`, `cli.mjs`, the selection mirror and the plugin bump. It consumes the pin's format, which Interfaces fixes, not M1b.1's code, so M1b.1's review runs beside it.
+    - M1b.3, the facade harnesses' Linux engine lanes and the suites on the VM. It consumes M1b.2's selection, so M1b.2 is reviewed clean before M1b.3 dispatches.
+    - After the branch review, the plan-executor dispatches the workflow on the reviewed head and commits the pin. On the pinned asset it runs `cua install --engine`, `cua doctor`, `file`, and `CUA_NATIVE_ENGINE=cua node scripts/accept/linux-native.mjs`. The design session authorized the dispatch.
+  - The workflow builds each target on its own native GitHub runner (x64 on `ubuntu-24.04`, arm64 on `ubuntu-24.04-arm`, as `linux-sandbox-helper.yml` does) and runs the engine's tests there. That makes the release's arm64 asset natively tested, without an arm64 VM before M5. Acceptance 9's install on arm64 runs at M5 on the arm64 VM; M1b proves item 9 on x86-64.
+  - The workflow takes a `publish` input (default true). M1b.1 dispatches it once with `publish: false` on its own head, so the build, the tests and the attestation are proven before the real release. A failure at release time therefore cannot leave a half-published version.
+  - Before the release exists, the facade suites run on the locally built engine through `--engine-bin` (Concrete Steps, `ENGINE_BIN`); `scripts/accept/linux-native.mjs` and the doctor row run on the installed, pinned engine after the release.
+  Date/Author: 2026-10-29, the plan-executor (session linux171).
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

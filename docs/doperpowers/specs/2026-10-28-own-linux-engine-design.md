@@ -734,6 +734,20 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `.doperpowers/sde/…/task-9-report.md` (local); `ci-gate --gates engine-linux,test` GREEN on 643909f3 (run 40923101889).
   Date/Author: 2026-10-29, the plan-executor (session linux171), from the M1b.1 executor's report.
 
+- Decision (2026-10-29, M1b.2): selection, install and doctor on Linux.
+  - The engine is `$CUA_HOME/engine/linux/cua-engine` beside an `install.json` record. Its bytes decide what it is: the pin's hash means pinned. The record only names a local build or an older release. `manifest.mjs` gets a comment and no code, because the engine is an owned path, not a vendor layout key.
+  - Plain `cua install` on Linux always runs the engine step. It only reports a missing pin or a failed engine download, so the vendor runtime still installs. `--engine` makes the step fatal and refuses a missing pin before anything installs; on macOS `--engine` is a usage error. This follows #117's macOS rule.
+  - The pin names no asset length, so a download is capped at 64 MiB, then hash-checked.
+  - `cua engine build` on Linux runs `cargo build --release --locked` and installs the result as a recorded local (glibc) build.
+  - `CUA_LINUX_ENGINE_BIN` is read only when the selection is `cua`, and must be an absolute path to an executable file. Doctor reports it as a harness setting (`warn`), and the scoped preflight protects it beside `$CUA_HOME/engine`.
+  - Doctor's Linux report is `{selected, reason, refused, preferred, runs, installed, pinned, desktop}`, keeping what sessions run apart from what the home holds. It starts no engine: `capabilities` is answered only from M3. On Linux the `repl.host` row names no engine and js results carry no `cua/nativeEngine` attestation; the engine row reports the engine, and the harnesses check the trusted worker's child through `/proc/<pid>/exe` (The facade suites).
+  - `desktopModeFor` lives in `launch.mjs` so that M3's launch reuses it.
+  - The selection mirror's Linux branch was wrong before M1b: it expected `CUA_REPL_HOST=vendor` to work and a missing Node to fall back, where production refuses both. It now mirrors production.
+  - The plugin is bumped to 0.18.0, and `runtime/engine/` joins the package files so the pin ships once committed.
+  - Live on the VM: with `CUA_NATIVE_ENGINE=cua` and `CUA_LINUX_ENGINE_BIN`, `cua serve` read gedit's tree, `cua-engine` ran as the trusted worker's child and no `sky_linux` ran; with no engine installed, serve refused with `engine_not_installed`.
+  Evidence: `.doperpowers/sde/…/task-10-report.md` (local); `ci-gate --gates test` GREEN on ccce4fe7 (run 40934023917).
+  Date/Author: 2026-10-29, the plan-executor (session linux171), from the M1b.2 executor's report.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

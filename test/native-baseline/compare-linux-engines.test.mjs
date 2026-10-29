@@ -96,6 +96,16 @@ test('the text method cases are accepted only as exactly that outcome, and only 
   assert.equal(op(vendorSucceeded, 'method.typeText').verdict, 'fail');
 });
 
+// Review fix 2: a declared text method case is still held to the engine-speed rule.
+test('a declared text method case whose cua median is above the vendor engine\'s fails', t => {
+  for (const name of ['method.typeText', 'method.paste']) {
+    const slower = judge(t, triple('vendor'), triple('cua', {scale: FASTER, edit: (meta, rows) => { rows.find(r => r.op === name).wallMs = 10_248.8; }}));
+    assert.equal(slower.verdict, 'FAIL', name);
+    assert.equal(op(slower, name).verdict, 'fail', name);
+    assert.match(op(slower, name).reasons.join(' '), /above the vendor engine's .* an operation the engine answers/);
+  }
+});
+
 test('the Linux comparison refuses the macOS modes, a lane of the wrong engine, and a run without an engine', t => {
   assert.throws(() => judge(t, triple('vendor'), triple('cua'), 'hosts'), /Linux has one host/);
   const swapped = judge(t, triple('cua'), triple('vendor'));

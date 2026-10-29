@@ -322,7 +322,7 @@ export function compareLanes(mode, baselineRuns, candidateRuns) {
     .map(o => ({op: o.op, baseline: o.baseline.judgedMs, candidate: o.candidate.judgedMs, engineAnswered: ENGINE_ANSWERED.includes(o.op)})) : null;
   for (const a of above ?? []) {
     const o = operations.find(each => each.op === a.op);
-    if (a.engineAnswered && o.verdict === 'pass') { o.verdict = 'fail'; o.reasons.push(`cua's median ${a.candidate} ms is above the vendor engine's ${a.baseline} ms on an operation the engine answers (Acceptance 10)`); }
+    if (a.engineAnswered && ['pass', 'declared'].includes(o.verdict)) { o.verdict = 'fail'; o.reasons.push(`cua's median ${a.candidate} ms is above the vendor engine's ${a.baseline} ms on an operation the engine answers (Acceptance 10)`); }
   }
   const ruled = problems.length ? 'NO VERDICT' : operations.some(o => o.verdict === 'fail') ? 'FAIL' : 'PASS';
   const diagnostic = plainPlan([...baselineRuns, ...candidateRuns], ruled);

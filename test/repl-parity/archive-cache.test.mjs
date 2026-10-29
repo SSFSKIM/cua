@@ -107,10 +107,22 @@ test('a pinned Linux engine joins the cache: its asset for this arch, by hash un
 
 test('placeCachedEngine puts the cached engine where cua install looks for it, executable',t=>{
  const prepared=home(t),scratch=home(t),file=join(prepared,'cua-engine-0.1.0-linux-x64');writeFileSync(file,ENGINE,{mode:0o600});
- const placed=placeCachedEngine(scratch,file);
+ const pins={engine:{file:'cua-engine-0.1.0-linux-x64',archive:{url:ENGINE_PIN.assets.x64.url,sha256:sha(ENGINE),maxLength:64*1024*1024}}};
+ const placed=placeCachedEngine(scratch,file,{pins});
  assert.equal(placed,join(scratch,'engine','linux','cua-engine'));
  assert.deepEqual(readFileSync(placed),ENGINE);
  assert.equal(statSync(placed).mode&0o777,0o755);
+});
+
+// Review fix 4: a cached engine damaged after preparation is refused, never left for the installer to replace by a
+// download: at the fixture's cache check and again in the copy it places.
+test('a cached engine whose bytes no longer hash to the pin is refused with the re-prepare guidance, before and after the copy',t=>{
+ const prepared=home(t),pins={...PINS,engine:{file:'cua-engine-0.1.0-linux-x64',archive:{url:ENGINE_PIN.assets.x64.url,sha256:sha(ENGINE),maxLength:64*1024*1024}}};
+ writeCache(prepared);writeFileSync(join(archiveCacheDir(prepared),pins.engine.file),Buffer.alloc(ENGINE.length,0x61));
+ assert.throws(()=>cachedArchives(prepared,{pins}),/cua-engine-0\.1\.0-linux-x64.*cleanup-prepared.*prepare again/s);
+ const scratch=home(t),damaged=join(prepared,'damaged-engine');writeFileSync(damaged,Buffer.from('other bytes'));
+ assert.throws(()=>placeCachedEngine(scratch,damaged,{pins}),/cleanup-prepared.*prepare again/s);
+ assert.throws(()=>statSync(join(scratch,'engine','linux','cua-engine')),/ENOENT/,'nothing damaged is left where cua install looks');
 });
 
 test('the synchronous preparation face fetches in one child and returns the verified paths',t=>{

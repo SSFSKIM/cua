@@ -4,7 +4,7 @@
 // alone (a native case carries its observation in its exercise result, with no boundary cell).
 import {readFileSync} from 'node:fs';import {isDeepStrictEqual} from 'node:util';
 import {provisionalCellsFor,recordedCells} from './pending-cells.mjs';
-import {declaredCandidateExpectation} from './native-linux.mjs';
+import {declaredCandidateExpectation,candidateGoverns} from './native-linux.mjs';
 export const vendorDefects=JSON.parse(readFileSync(new URL('../../test/repl-parity/vendor-defects.json',import.meta.url),'utf8'));
 const engineScoped=d=>d.engine!==undefined;
 const validScope=d=>engineScoped(d)?d.host==='cua'&&d.engine==='vendor'&&d.platform==='linux'&&d.observation===undefined:d.host==='vendor'&&Boolean(d.observation);
@@ -23,6 +23,13 @@ export function declaredVendorDefect(meta,row,rows){
 export function assessAssertions(meta,rows){
  const unexpectedFailures=[],recorded=[],candidates=[],recordedAssertionRows=[],passed=new Set(),pending=new Set();
  for(const row of rows.filter(r=>Object.hasOwn(r,'assertion'))){
+  // A case a lane's temporary candidate expectation governs (./native-linux.mjs: the cua engine's two text cases until
+  // M2) is decided by that expectation alone: the shared oracle encodes the vendor's outcome, which is no pass for cua.
+  if(!Object.hasOwn(row,'cell')&&candidateGoverns(meta,row.case)){
+   const candidate=row.assertion?.ok===false?declaredCandidateExpectation(meta,row,rows):null;
+   if(candidate){candidates.push({id:candidate.id,case:row.case,until:candidate.until,reason:candidate.reason});recordedAssertionRows.push(row);}else unexpectedFailures.push(row);
+   continue;
+  }
   // A provisional oracle cell's case is pending on its platform; an assertion that does not say so is not counted.
   const provisional=row.assertion?.ok===true?provisionalCellsFor(meta.platform,row.case,recordedCells(rows,row.case)):[];
   if(provisional.length){if(row.assertion.covered===false&&provisional.every(p=>row.assertion.pendingCells?.includes(p.cell)))pending.add(row.case);else unexpectedFailures.push(row);continue;}

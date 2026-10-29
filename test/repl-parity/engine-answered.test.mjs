@@ -71,6 +71,8 @@ test('engineAnsweredProblem: sound only when the requested engine, at the expect
   assert.match(engineAnsweredProblem({requested: 'cua', expected: null, error: 'no engine installed', observed: []}, 'run'), /no expected cua engine \(no engine installed\)/);
   assert.match(engineAnsweredProblem({requested: 'sky', expected: OWN, observed: [own]}, 'run'), /requested engine sky/);
   assert.match(engineAnsweredProblem(undefined, 'run'), /records no engine observation/);
+  // Review fix 3: an interval nobody observed is never covered by the observations around it.
+  assert.match(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [own], sampleError: 'proc unreadable'}, 'run'), /^run: an engine observation failed \(proc unreadable\)/);
 });
 
 test('laneEngineProblem: a run that names its engine has a sound observation for every native case', async () => {

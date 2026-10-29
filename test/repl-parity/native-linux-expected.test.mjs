@@ -73,6 +73,23 @@ test('the cua lane in M1b: the run accepts exactly the temporary candidate expec
   assert.ok(assessAssertions(otherCase.meta, otherCase.rows).unexpectedFailures.some(r => r.case === KEY));
 });
 
+// Review fix 1: on the cua lane the temporary expectations decide the two text cases, before the shared oracle's
+// success counts: the vendor's arm64 crash outcome, which that oracle accepts, is no pass for cua's engine.
+test('the cua lane cannot pass the text cases by reproducing the vendor\'s crash', () => {
+  const crash = 'D-Bus org.freedesktop.DBus.Properties.Get failed: org.freedesktop.DBus.Error.NoReply: Message recipient disconnected from message bus without replying';
+  for (const error of ['Resource temporarily unavailable (os error 11)', crash]) for (const reached of [null, false]) {
+    const run = lane('cua', {values: {[TYPE]: [{error}, reached, true], [PASTE]: [...FORMAT, {error}, reached, true]}});
+    for (const id of [TYPE, PASTE]) run.rows.find(r => r.case === id && r.assertion).assertion = {ok: true};
+    const assessed = assessAssertions(run.meta, run.rows);
+    assert.deepEqual(assessed.unexpectedFailures.map(r => r.case).sort(), [PASTE, TYPE], `${error} ${reached}`);
+    assert.equal(assessed.coveredCases, 1);
+  }
+  // The vendor lane keeps the shared oracle: its arm64 outcome there is a pass.
+  const vendor = lane('vendor', {values: {[TYPE]: [{error: 'Resource temporarily unavailable (os error 11)'}, null, true], [PASTE]: outcome.vendor[PASTE]}});
+  vendor.rows.find(r => r.case === TYPE && r.assertion).assertion = {ok: true};
+  assert.deepEqual(assessAssertions(vendor.meta, vendor.rows).unexpectedFailures, []);
+});
+
 test('the diff pairs the lanes by engine and is ok with only the declared text-case differences', () => {
   const result = compareParityRuns(lane('vendor'), lane('cua'), {engineDeclarations: NATIVE_LINUX_EXPECTED.declarations});
   assert.equal(result.ok, true, JSON.stringify(result.differences));

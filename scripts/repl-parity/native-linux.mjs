@@ -55,6 +55,9 @@ export const NATIVE_LINUX_EXPECTED = validateNativeLinuxExpected(JSON.parse(read
 export const candidateExpectations = NATIVE_LINUX_EXPECTED.candidateExpectations;
 export const baselineMethodCases = NATIVE_LINUX_EXPECTED.baselineMethodCases;
 
+// Whether a run's case is governed by a candidate expectation: the run is that expectation's engine lane on its platform.
+export const candidateGoverns = (meta, id) => meta?.host === 'cua' && candidateExpectations.some(c => c.engine === meta.engine && c.platform === meta.platform && c.case === id);
+
 // The candidate expectation an assertion row of a run is, or null: the run's engine, platform and case, the exact failed
 // assertion, and the case's exercise result exactly the declared one.
 export function declaredCandidateExpectation(meta, row, rows) {

@@ -128,6 +128,8 @@ export function engineAnsweredProblem(record, name) {
   if (!record || !Array.isArray(record.observed)) return `${name}: records no engine observation`;
   const {requested, expected, observed} = record;
   if (!ENGINES.includes(requested)) return `${name}: the requested engine ${requested} is not vendor or cua`;
+  // A failed observation leaves an interval nobody watched: the observations around it do not cover it.
+  if (record.sampleError) return `${name}: an engine observation failed (${record.sampleError}), so what answered in that interval is unknown`;
   if (typeof expected !== 'string' || !expected.startsWith('/')) return `${name}: no expected ${requested} engine${record.error ? ` (${record.error})` : ''}`;
   if (engineKind(expected) !== requested) return `${name}: the expected executable ${expected} is not a ${requested} engine`;
   if (!observed.length) return `${name}: no engine process answered (none was the trusted worker's child while the lane ran)`;

@@ -8,7 +8,8 @@
 // arch is cached too, verified by its hash under the installer's length bound, and a fixture places it in its scratch
 // home before installing (placeCachedEngine), so the install's engine step finds the pinned engine already in place.
 import {execFileSync} from 'node:child_process';
-import {chmodSync,copyFileSync,lstatSync,mkdirSync,renameSync,rmSync} from 'node:fs';
+import {chmodSync,copyFileSync,lstatSync,mkdirSync,readFileSync,renameSync,rmSync} from 'node:fs';
+import {createHash} from 'node:crypto';
 import {basename,dirname,isAbsolute,join} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {download,verifyArchive} from '../../src/runtime/install.mjs';
@@ -58,16 +59,21 @@ export function cachedArchives(home,{pins=pinnedArchives()}={}){
  const dir=archiveCacheDir(home);
  return Object.fromEntries(Object.entries(pins).map(([role,{file,archive}])=>{
   const path=join(dir,file);let stat;try{stat=lstatSync(path);}catch{stat=null;}
-  const sized=archive.length===undefined?stat?.size>0&&stat.size<=archive.maxLength:stat?.size===archive.length;
+  // A hash-pinned archive (the engine) is checked by its hash too: the installer would replace a damaged one by a download.
+  const sized=archive.length===undefined?stat?.size>0&&stat.size<=archive.maxLength&&sha256(path)===archive.sha256:stat?.size===archive.length;
   if(!stat?.isFile()||!sized)throw new Error(`The prepared archive cache ${dir} has no pinned ${file}; managed fixtures never download: run cleanup-prepared, then prepare again`);
   return [role,path];
  }));
 }
 
+const sha256=path=>createHash('sha256').update(readFileSync(path)).digest('hex');
 // The cached engine `file` placed in the cua home `home` as `cua install` and selection find it, executable -> its path.
-export function placeCachedEngine(home,file){
- const path=linuxEnginePath(home);
+// The placed copy must hash to the pin (`pins`, pinnedArchives'), or it is removed and refused: a damaged copy would
+// make the install download the engine instead.
+export function placeCachedEngine(home,file,{pins=pinnedArchives()}={}){
+ const path=linuxEnginePath(home),expected=pins.engine?.archive?.sha256;
  mkdirSync(dirname(path),{recursive:true,mode:0o700});copyFileSync(file,path);chmodSync(path,0o755);
+ if(!expected||sha256(path)!==expected){rmSync(path,{force:true});throw new Error(`The cached engine ${file} is not the pinned cua-engine; managed fixtures never download: run cleanup-prepared, then prepare again`);}
  return path;
 }
 

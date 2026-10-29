@@ -10,6 +10,9 @@
 // names the X11 helper (`skyLinuxBin`), and an optional `notes` records how the archive's provenance was checked when
 // the pin was written. A pin is selected only by its own host, so the
 // Linux pins ship beside the darwin one without affecting a macOS install.
+// cua's own Linux engine (#171) is not a layout key: it is no part of the vendor's release, but an owned path under the
+// cua home ($CUA_HOME/engine/linux/cua-engine) with its own pin, runtime/engine/linux-engine.json (src/runtime/linux-
+// engine.mjs), so a release tree never names it and installing it never touches one.
 import {readFileSync, readdirSync, lstatSync} from 'node:fs';
 import {join, dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';

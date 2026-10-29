@@ -95,15 +95,18 @@ const within = (path, root) => {
 // A macOS vendor-host launch adds its compat settings directory (`compatSettings`, src/sandbox/compat-settings.mjs: what
 // the compat executable confines both children by; writable, a worker could rewrite the kernel's deny list), and every
 // launch $CUA_HOME/sandbox (`sandboxHelper`: the Linux helper, which runs outside every sandbox; writable, a cell could
-// swap what confines the next child, or plant a bubblewrap beside it). A Linux own-host launch adds the XDG
+// swap what confines the next child, or plant a bubblewrap beside it). A Linux launch adds cua's engine (`engines`,
+// #171: $CUA_HOME/engine, and the engine CUA_LINUX_ENGINE_BIN names when a session runs that one; the trusted worker
+// runs it as its child; writable, a cell could swap what reads every window and types into it). A Linux own-host launch adds the XDG
 // applications directories of its environment (`applications`, src/repl-host/launch-services.mjs: launch_app starts
 // their desktop entries outside the sandbox; writable, a cell could plant one), whether they exist yet or not.
-export const protectedPaths = ({trustedCodePaths, codexHome, compatSettings, managedNode, staging, sandboxHelper, applications = [], denied = [], ownRoots = [], ownHolders = []}) => [
+export const protectedPaths = ({trustedCodePaths, codexHome, compatSettings, managedNode, staging, sandboxHelper, engines = [], applications = [], denied = [], ownRoots = [], ownHolders = []}) => [
   ...trustedCodePaths.filter(Boolean).map(path => ({label: 'the trusted code path', path})),
   ...(codexHome ? [{label: 'the runtime\'s configuration and approvals', path: codexHome}] : []),
   ...(compatSettings ? [{label: 'the vendor host\'s compat settings', path: compatSettings}] : []),
   ...(managedNode ? [{label: 'the Node cua installed for its own REPL host', path: managedNode}] : []),
   ...(sandboxHelper ? [{label: 'cua\'s sandbox helper', path: sandboxHelper}] : []),
+  ...engines.filter(Boolean).map(path => ({label: 'cua\'s Linux engine', path})),
   ...(staging ? [{label: 'cua install\'s staging directory', path: staging}] : []),
   ...applications.map(path => ({label: 'the XDG applications directory launch_app starts entries from', path})),
   ...denied.map(path => ({label: 'what JavaScript cells may not read', path, except: ownHolders.filter(Boolean).map(realish).includes(realish(path)) ? ownRoots.filter(Boolean) : []})),
@@ -218,7 +221,8 @@ export function assertDenyListShape(list) {
 // Throws `sandbox_conflict` when `mode` is not disabled and the deny list's targets overlap (assertDenyListShape), or
 // when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of its trusted code paths
 // (trustedCodePathsOf), its CODEX_HOME, its home's managed Node (`launch.managedNodeRoot`), its home's install staging
-// (`launch.stagingRoot`), its home's sandbox helper (`launch.sandboxHelperRoot`) or its deny list (`launch.denyRead`,
+// (`launch.stagingRoot`), its home's sandbox helper (`launch.sandboxHelperRoot`), cua's Linux engine (`launch.engineRoot`,
+// and `launch.linuxEngine` when CUA_LINUX_ENGINE_BIN names it) or its deny list (`launch.denyRead`,
 // except for its own run directory and session temp), whichever host it runs: a vendor session's cells must not choose
 // a later own host's Node, or what an install places, either.
 //
@@ -234,6 +238,7 @@ export function assertSandboxFits(mode, launch) {
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: trustedCodePathsOf(launch), codexHome: launch.env.CODEX_HOME, compatSettings: launch.compat && homeLayout(launch.compat.home).compat,
       managedNode: launch.managedNodeRoot, staging: launch.stagingRoot, sandboxHelper: launch.sandboxHelperRoot,
+      engines: [launch.engineRoot, launch.linuxEngine?.source === 'override' ? launch.linuxEngine.path : null],
       applications: launch.env.CUA_REPL_SANDBOX_HELPER ? xdgApplicationRoots(launch.env) : [],
       denied: launch.denyRead?.deny, ownRoots: [launch.cwd, launch.sessionTmp], ownHolders: launch.cwd ? [dirname(dirname(launch.cwd)), dirname(launch.cwd)] : []}),
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),

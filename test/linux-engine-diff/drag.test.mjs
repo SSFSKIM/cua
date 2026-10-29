@@ -23,6 +23,7 @@ test('paths: the page kinds alternate where a drag leaves its target, the canvas
   assert.deepEqual(pagePath('range', 0)[0], pagePath('range', 1)[1].map((v, k) => (k === 0 ? 28 : v)), 'odd runs end where the even ones start, near 0');
   assert.deepEqual(pagePath('range', 0).at(-1), pagePath('range', 1)[0]);
   assert.deepEqual(pagePath('canvas', 3), CORNERS.map(([x, y]) => [x + 20, y + 350]));
+  assert.deepEqual(pagePath('scroller', 1), pagePath('scroller', 0), 'the page puts its scroller back at the top: every drag is down');
   const at = { page: { x: 0, y: 87 } };
   assert.deepEqual(runPath(at, 'select', 0), [{ x: 50, y: 119 }, { x: 266, y: 119 }]);
   assert.deepEqual(selectOffsets(1), [24, 40], "disjoint from the even runs: a press inside a selection drags the text");

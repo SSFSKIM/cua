@@ -75,33 +75,20 @@ export function summarizeEngine(rows) {
 }
 
 /**
- * Where a vendor build took effect and the candidate did not, sample by sample: the bar is the union of what either
- * build succeeds at, so a sample position (block, series and index) any vendor build verified must be verified by the
- * candidate too. Positions are comparable because every engine runs the same sequence of samples on an equivalent
- * window; a vendor success with no candidate sample at its position is a missing measurement, so it counts as missed.
- * Returns the missed positions as `block/i` labels.
+ * The candidate's samples whose effect was not verified (Design, Verification system; Decision Log, M1a.4: cua's
+ * effect is judged absolutely). An operation reads effects when any of its samples, any engine's, has one; then every
+ * candidate sample that was answered must show its effect, whatever the vendor builds did on that sample: a miss
+ * (`false`), or an effect not read (`null`, absent). Returns the samples as `block/i` labels.
  */
-export function missedEffects(rows, vendors, candidate) {
-  const position = (r, ordinal) => `${r.block ?? 0}/${r.series}/${r.i ?? ordinal}`;
-  const byEngine = (label) => {
-    const seen = new Map();
-    const counters = {};
-    for (const r of rows.filter((x) => x.engine === label)) {
-      counters[r.series] = (counters[r.series] ?? -1) + 1;
-      seen.set(position(r, counters[r.series]), r);
-    }
-    return seen;
-  };
-  const required = new Set();
-  for (const v of vendors) for (const [key, r] of byEngine(v)) if (r.effect === true) required.add(key);
-  const mine = byEngine(candidate);
-  return [...required].filter((key) => mine.get(key)?.effect !== true).map((key) => key.replace(/\/(cold|warm)\//, '/'));
+export function missedEffects(rows, candidate) {
+  if (!rows.some((r) => typeof r.effect === 'boolean')) return [];
+  return rows.filter((r) => r.engine === candidate && r.ok && r.effect !== true).map((r, k) => `${r.block ?? 0}/${r.i ?? k}`);
 }
 
 /**
  * The verdict for one operation and scene: the candidate's medians at or below the bar (the faster vendor build,
  * cold against cold, warm against warm), every request answered, its output equal, its witness clean wherever a
- * vendor build's is, and its effect verified on every sample where a vendor build's is (`missedEffects`).
+ * vendor build's is, and its effect verified on every sample (`missedEffects`).
  */
 export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true }) {
   const engines = {};
@@ -136,8 +123,8 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
     const required = vendorRows.some((e) => e.witness === true) || vendors.some((v) => audits[v] === true);
     if (required && audits[candidate] !== true) reasons.push(`${candidate}: the audit ${audits[candidate] === false ? 'found a forbidden request' : 'did not run'}`);
   }
-  const missed = missedEffects(rows, vendors, candidate);
-  if (missed.length) reasons.push(`${candidate}: the effect was not verified on ${missed.length} sample${missed.length === 1 ? '' : 's'} a vendor build took (${missed.slice(0, 5).join(', ')})`);
+  const missed = missedEffects(rows, candidate);
+  if (missed.length) reasons.push(`${candidate}: the effect was not verified on ${missed.length} sample${missed.length === 1 ? '' : 's'} (${missed.slice(0, 5).join(', ')})`);
   if (c.equal === false) reasons.push(`${candidate}: the output differs from the vendor's`);
   return { engines, bar, speed, pass: reasons.length === 0, reasons };
 }

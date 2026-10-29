@@ -25,6 +25,9 @@
      - words: a text-selection drag; the status line is the selection, spaces as `_`.
      - range: an HTML range input, 0-100; the status line is its value.
      - scroller: a div with its own vertical scrollbar (its content twice its height); the status line is scrollTop.
+       It goes back to its top by itself 2 s after it last scrolled, so every drag of its thumb starts from the top
+       (a thumb drag moves the content by how far the thumb went: one short drag would otherwise leave the thumb
+       where the next press misses it).
      - source and target: HTML5 drag and drop; the status line counts drag starts and drops on the target.
      - canvas: a path-tracking target that draws what plain pointermove events (no coalesced events) report while the
        button is down; the status line counts the moves of the last stroke and the farthest of the path's corners from
@@ -55,7 +58,12 @@
     line('s-select', `select ${text || 'none'}`);
   });
   $('range').addEventListener('input', () => line('s-range', `range ${$('range').value}`));
-  $('scroller').addEventListener('scroll', () => line('s-scroll', `scroller ${Math.round($('scroller').scrollTop)}`));
+  let back = null;
+  $('scroller').addEventListener('scroll', () => {
+    line('s-scroll', `scroller ${Math.round($('scroller').scrollTop)}`);
+    clearTimeout(back);
+    back = setTimeout(() => { $('scroller').scrollTop = 0; }, 2000);
+  });
   const dnd = { starts: 0, drops: 0 };
   const showDnd = () => line('s-dnd', `dnd starts ${dnd.starts} drops ${dnd.drops}`);
   $('source').addEventListener('dragstart', (e) => { dnd.starts += 1; e.dataTransfer.setData('text/plain', 'cua171'); showDnd(); });

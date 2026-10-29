@@ -106,13 +106,36 @@ export const exactIdsFor = (op, scene) => OPS[op].kind === 'read' && !TRANSIENT_
 /** The input scene's buttons, by their accessible names. */
 const INPUT_ELEMENTS = { press: 'Press', menu: 'Menu', far: 'Far' };
 
-async function pollEffect(read, judge) {
-  const deadline = Date.now() + 1500;
+/**
+ * A state read once it has settled: the same twice in a row, `gapMs` apart, or the last read at `deadlineMs`. A page
+ * that scrolls smoothly is otherwise read mid-animation, and a sample's before-state with it.
+ */
+export async function settledRead(read, { gapMs = 120, deadlineMs = 1500 } = {}) {
+  const started = Date.now();
+  let last = await read();
   for (;;) {
-    const after = await read();
-    const arrived = judge(after);
-    if (arrived !== false || Date.now() > deadline) return arrived;
-    await sleep(30);
+    await sleep(gapMs);
+    const now = await read();
+    if (JSON.stringify(now) === JSON.stringify(last) || Date.now() - started > deadlineMs) return now;
+    last = now;
+  }
+}
+
+/**
+ * The effect, judged on the settled state: read until the effect shows and the state holds still (two equal reads),
+ * or 2.5 s have passed, when the last judgement stands. A judgement on a state still moving could pass a sample that
+ * then moves on, or fail one whose effect is on its way.
+ */
+export async function pollEffect(read, judge, { gapMs = 120, deadlineMs = 2500 } = {}) {
+  const started = Date.now();
+  let last = await read();
+  for (;;) {
+    await sleep(gapMs);
+    const now = await read();
+    const verdict = judge(now);
+    const steady = JSON.stringify(now) === JSON.stringify(last);
+    if ((steady && verdict !== false) || Date.now() - started > deadlineMs) return verdict;
+    last = now;
   }
 }
 
@@ -174,7 +197,7 @@ export async function runSample(s) {
     }
     if (def.prepare) await def.prepare(ctx);
   }
-  const before = def.read && !def.follow ? await def.read(ctx) : null;
+  const before = def.read && !def.follow ? await settledRead(() => def.read(ctx)) : null;
   ctx.before = before;
   const [command, input] = def.request(ctx);
   let startedInSpan = false;
@@ -204,7 +227,7 @@ export async function runSample(s) {
   }
   if (def.follow && row.ok) {
     // the retention case's input after the change, its effect read back
-    const followBefore = await def.read(ctx);
+    const followBefore = await settledRead(() => def.read(ctx));
     const [c2, i2] = def.follow(ctx);
     const f = await span(`${s.label}:${s.sceneName}:${op}:follow`, () => engine.request(c2, i2));
     row.follow_ok = f.value.response.ok === true;

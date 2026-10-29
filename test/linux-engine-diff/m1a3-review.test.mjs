@@ -27,12 +27,13 @@ function fakeWitness() {
   return w;
 }
 
-/** An engine that records whether each of its requests ran inside a witness span. */
-function fakeEngine(witness, log) {
+/** An engine that records whether each of its requests ran inside a witness span, and counts what it sent. */
+function fakeEngine(witness, log, sent) {
   return {
     started: true,
     async request(command, input) {
       log.push({ who: 'engine', what: command, inSpan: witness.open > 0 });
+      sent[command] = (sent[command] ?? 0) + 1;
       const output = command === 'get_window_state' ? { ax_tree: { id: ':1.1/r', role: 'frame', children: [] }, screenshots: [{ filepath: '/nonexistent.jpg' }] } : null;
       return { response: { ok: true, output }, ms: 1, sinceSpawnMs: null, stats: null };
     },
@@ -40,15 +41,14 @@ function fakeEngine(witness, log) {
 }
 
 /**
- * The harness's desktop: its own changes to a window recorded the same way. Its counters rise by one per read, so
- * every effect reads as arrived at once (`last` is the key the operation sends).
+ * The harness's desktop: its own changes to a window recorded the same way, and the page's counters as the engine's
+ * requests left them (`last` is the key the operation sends).
  */
-function fakeDesktop(witness, log, last) {
+function fakeDesktop(witness, log, last, sent) {
   const harness = (what) => () => log.push({ who: 'harness', what, inSpan: witness.open > 0 });
-  let n = 0;
   return {
-    inputStatus: async () => ({ moves: 0, downs: 0, ups: 0, drags: 0, key_downs: ++n, key_ups: n, last_key: last, scroll: 0, context: 0, context_on: null, clicks: 0 }),
-    chromeCounters: async () => ({ clicks: 0, keys: ++n, last, seq: '' }),
+    inputStatus: async () => ({ moves: 0, downs: 0, ups: 0, drags: 0, key_downs: sent.key_down ?? 0, key_ups: sent.key_up ?? 0, last_key: last, scroll: 0, context: 0, context_on: null, clicks: 0 }),
+    chromeCounters: async () => ({ clicks: 0, keys: sent.press_key ?? 0, last, seq: '' }),
     resize: harness('resize'),
     remap: harness('remap'),
     focusFront: harness('focusFront'),
@@ -59,9 +59,10 @@ test('every request an engine sends for a sample runs inside a witness span; the
   for (const [op, last] of [['key_down', 'a'], ['key_up', 'b'], ['after_covered_change', 'x'], ['after_resize', 'x'], ['after_remap', 'x']]) {
     const witness = fakeWitness();
     const log = [];
-    const engine = fakeEngine(witness, log);
+    const sent = {};
+    const engine = fakeEngine(witness, log, sent);
     const target = { id: 7, label: 'scene', elements: {} };
-    const s = { desktop: fakeDesktop(witness, log, last), witness, engine, target, op, i: 1, block: 0, label: 'cua', sceneName: 'chrome-input' };
+    const s = { desktop: fakeDesktop(witness, log, last, sent), witness, engine, target, op, i: 1, block: 0, label: 'cua', sceneName: 'chrome-input' };
     const { row } = await runSample(s);
     assert.equal(row.effect, true, `${op}: the fake's effect`);
     assert.equal(row.witness, true);
@@ -70,6 +71,19 @@ test('every request an engine sends for a sample runs inside a witness span; the
     for (const e of fromEngine) assert.equal(e.inSpan, true, `${op}: the engine's ${e.what} outside a witness span`);
     for (const e of log.filter((x) => x.who === 'harness')) assert.equal(e.inSpan, false, `${op}: the harness's ${e.what} inside a witness span`);
   }
+});
+
+test('effects are judged on the settled state, and a before-state is read once it holds still', async () => {
+  const { pollEffect, settledRead } = await import('../../scripts/linux-engine-diff/run.mjs');
+  const reader = (values) => {
+    let k = 0;
+    return async () => values[Math.min(k++, values.length - 1)];
+  };
+  // a scroll on its way (50, then 300) is judged where it stops
+  assert.equal(await pollEffect(reader([0, 50, 300, 360, 360]), (v) => v > 0, { gapMs: 1 }), true);
+  // a transient pass that moves back is not a pass
+  assert.equal(await pollEffect(reader([100, 200, 0, 0, 0]), (v) => v > 50, { gapMs: 1, deadlineMs: 30 }), false);
+  assert.equal(await settledRead(reader([307, 330, 360, 360]), { gapMs: 1 }), 360);
 });
 
 test('the audit covers every window-targeted operation, each on the window it is measured on', () => {

@@ -50,7 +50,7 @@ test('the bar is the faster vendor build per series, judged cold against cold an
   assert.match(v2.reasons.join(), /cold 260.* > bar 250/);
 });
 
-test('the verdict needs equal output, a clean witness where a vendor is clean, and the effect where a vendor has it', () => {
+test('the verdict needs equal output, a clean witness where a vendor is clean, and the effect', () => {
   const base = [
     ...samples('pinned', 300, [200], { witness: true, effect: true, equal: true }),
     ...samples('newest', 250, [230], { witness: true, effect: false, equal: true }),
@@ -63,36 +63,36 @@ test('the verdict needs equal output, a clean witness where a vendor is clean, a
   assert.match(judgeOperation(differs, { vendors: ['pinned', 'newest'], candidate: 'cua' }).reasons.join(), /output/);
   const good = [...base, ...samples('cua', 100, [100], { witness: true, effect: true, equal: true })];
   assert.equal(judgeOperation(good, { vendors: ['pinned', 'newest'], candidate: 'cua' }).pass, true);
-  // where no vendor build verifies the effect or keeps the witness clean, neither is required of cua
-  const vendorsDirty = [
+  // where no vendor build keeps the witness clean, it is not required of cua; the effect always is (M1a.4)
+  const vendorsDirty = (effect) => [
     ...samples('pinned', 300, [200], { witness: false, effect: false, equal: true }),
     ...samples('newest', 250, [230], { witness: false, effect: false, equal: true }),
-    ...samples('cua', 100, [100], { witness: false, effect: false, equal: true }),
+    ...samples('cua', 100, [100], { witness: false, effect, equal: true }),
   ];
-  assert.equal(judgeOperation(vendorsDirty, { vendors: ['pinned', 'newest'], candidate: 'cua' }).pass, true);
+  assert.equal(judgeOperation(vendorsDirty(true), { vendors: ['pinned', 'newest'], candidate: 'cua' }).pass, true);
+  assert.equal(judgeOperation(vendorsDirty(false), { vendors: ['pinned', 'newest'], candidate: 'cua' }).pass, false);
 });
 
-test('effects are required of cua wherever a vendor build verified them on the same sample, even when no build verified all', () => {
-  // the scroll baseline: both vendor builds miss samples 1 and 4 of every block, so neither build's whole series holds
+test("cua's effect is judged on every sample, whatever the vendor builds did on it (Decision Log, M1a.4)", () => {
   const series = (engine, effectOf) => [0, 1].flatMap((block) => [0, 1, 2, 3, 4, 5].map((i) => ({ engine, block, i, series: i === 0 ? 'cold' : 'warm', ms: 10, ok: true, witness: true, equal: true, effect: effectOf(i) })));
   const partial = (i) => i !== 1 && i !== 4;
   const vendors = [...series('pinned', partial), ...series('newest', partial)];
   const opts = { vendors: ['pinned', 'newest'], candidate: 'cua' };
-  const none = judgeOperation([...vendors, ...series('cua', () => false)], opts);
-  assert.equal(none.pass, false);
-  assert.match(none.reasons.join(), /effect/);
-  // one sample missed where a vendor build took effect fails too
-  assert.equal(judgeOperation([...vendors, ...series('cua', (i) => i !== 2)], opts).pass, false);
-  // the samples no vendor build took are not required, and taking them does no harm
-  assert.equal(judgeOperation([...vendors, ...series('cua', partial)], opts).pass, true);
+  // every sample taken: a pass, whatever the vendor builds missed
   assert.equal(judgeOperation([...vendors, ...series('cua', () => true)], opts).pass, true);
-  // the union of the builds: a sample only the newest build took is required too
-  const union = [...series('pinned', (i) => i === 0), ...series('newest', (i) => i === 3)];
-  assert.equal(judgeOperation([...union, ...series('cua', (i) => i === 0)], opts).pass, false);
-  assert.equal(judgeOperation([...union, ...series('cua', (i) => i === 0 || i === 3)], opts).pass, true);
-  // a vendor success with no candidate sample to compare it with is a missing measurement
-  const short = series('cua', () => true).filter((r) => !(r.block === 1 && r.i === 5));
-  assert.equal(judgeOperation([...vendors, ...short], opts).pass, false);
+  // a sample both vendor builds missed and cua missed fails the operation: the vendor's miss is not the bar
+  const together = judgeOperation([...vendors, ...series('cua', partial)], opts);
+  assert.equal(together.pass, false);
+  assert.match(together.reasons.join(), /effect was not verified on 4 samples/);
+  // so does any one miss, and a run where no engine took any effect
+  assert.equal(judgeOperation([...vendors, ...series('cua', (i) => i !== 2)], opts).pass, false);
+  assert.equal(judgeOperation([...series('pinned', () => false), ...series('newest', () => false), ...series('cua', () => false)], opts).pass, false);
+  // a sample of an operation that reads effects, answered but with no effect read, is not verified
+  const unread = series('cua', () => true).map((r) => (r.block === 1 && r.i === 5 ? { ...r, effect: null } : r));
+  assert.equal(judgeOperation([...vendors, ...unread], opts).pass, false);
+  // an operation with no effect read (every sample null) requires none
+  const none = (engine) => series(engine, () => null);
+  assert.equal(judgeOperation([...none('pinned'), ...none('newest'), ...none('cua')], opts).pass, true);
 });
 
 test('a failed request fails the verdict', () => {

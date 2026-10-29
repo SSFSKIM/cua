@@ -83,7 +83,8 @@ export function pagePath(kind, i) {
     case 'range':
       return even ? [[28, 82], [316, 82]] : [[316, 82], [124, 82]];
     case 'scroller':
-      return even ? [[313, 160], [313, 220]] : [[313, 220], [313, 160]];
+      // always down from the top: the page puts the scroller back at its top between drags
+      return [[313, 160], [313, 220]];
     case 'dnd':
       return [[410, 155], [440, 160], [660, 170]];
     case 'canvas':
@@ -332,10 +333,13 @@ async function series(ctx, spec, scene, at, kind, n) {
   try {
     for (let i = 0; i < n; i++) {
       if (kind === 'select' && scene.kindOf === 'terminal') {
+        // the marker must own PRIMARY before the drag: an xclip slow to start would take it after the selection
         claimPrimary();
-        await sleep(100);
+        for (let tries = 0; primary() !== 'cua171-none' && tries < 50; tries++) await sleep(20);
       }
       const read = () => readEffect(ctx, scene, at, kind);
+      // the page's scroller goes back to its top by itself; the drag waits for it
+      if (kind === 'scroller') for (let tries = 0; (await read()) !== 0 && tries < 40; tries++) await sleep(200);
       const before = await read();
       const path = runPath(at, kind, i);
       const { value, witness: w } = await witness.span(`${spec.label}:${family}:drag:${kind}`, () => engine.request('drag', { window: { id: scene.id }, path }));

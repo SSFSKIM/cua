@@ -172,6 +172,19 @@ export class Desktop {
     xdotool('windowactivate', '--sync', this.front.id);
   }
 
+  /** The harness's own change to a retained window: a new size, at the scene's place (outside any witness span). */
+  resize(id, w, h) {
+    configure(id, 0, 0, w, h);
+  }
+
+  /** The harness's own change to a retained window: unmapped and mapped again at the scene's place and size. */
+  async remap(id, [w, h]) {
+    xdotool('windowunmap', '--sync', id);
+    await sleep(200);
+    xdotool('windowmap', '--sync', id);
+    configure(id, 0, 0, w, h);
+  }
+
   /** For the visible condition: the scene window above the other scene windows, the focus still in front. */
   raise(scene) {
     xdotool('windowraise', scene.id);

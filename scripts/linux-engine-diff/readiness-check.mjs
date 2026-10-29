@@ -65,6 +65,24 @@ export function judgeReadiness(trials) {
   };
 }
 
+/**
+ * The run's verdict: every first capture right, and the truth each was judged against confirmed by the pinned build,
+ * whose captures of every condition must agree with it. A vendor capture off the truth, or one that could not be
+ * judged, leaves that truth unconfirmed, so the run does not pass; nor does a run with no vendor capture at all.
+ */
+export function judgeReadinessRun(trials, vendorTrials) {
+  const verdict = judgeReadiness(trials);
+  const vendorWrong = vendorTrials.filter((t) => t.ok === false).length;
+  const vendorUnjudged = vendorTrials.filter((t) => t.ok !== true && t.ok !== false).length;
+  return {
+    ...verdict,
+    vendor_trials: vendorTrials.length,
+    vendor_wrong: vendorWrong,
+    vendor_unjudged: vendorUnjudged,
+    pass: verdict.pass && vendorTrials.length > 0 && vendorWrong === 0 && vendorUnjudged === 0,
+  };
+}
+
 function imgdiff(a, b) {
   return JSON.parse(execFileSync(XPROBE, ['imgdiff', a, b, '0'], { encoding: 'utf8' }));
 }
@@ -189,9 +207,9 @@ export async function engineReadiness(desktop, emit, args) {
       md.push(`| ${name} | ${condition} | ${mine.filter((t) => t.capture?.unobscured).length}/${mine.length} | ${mine.filter((t) => t.ok).length}/${mine.length} | ${r1(median(waits)) ?? '–'} | ${waits.length ? r1(Math.max(...waits)) : '–'} | ${reasons} | ${r1(median(firsts)) ?? '–'} | ${r1(median(mine.map((t) => t.ms))) ?? '–'} | ${theirs.filter((t) => t.ok).length}/${theirs.length} |`);
     }
   }
-  const verdict = judgeReadiness(all);
-  const vendorWrong = vendor.filter((t) => t.ok !== true).length;
-  emit({ kind: 'readiness-verdict', ...verdict, vendor_wrong: vendorWrong, vendor_trials: vendor.length });
-  md.push('', `**${verdict.pass ? 'every first capture right' : `${verdict.wrong} wrong first captures (${verdict.unobscured_wrong} judged unobscured), ${verdict.unjudged} unjudged`}** of ${verdict.trials}; the pinned build's captures off the truth: ${vendorWrong}/${vendor.length}.`);
+  const verdict = judgeReadinessRun(all, vendor);
+  emit({ kind: 'readiness-verdict', ...verdict });
+  const firsts = verdict.wrong === 0 && verdict.unjudged === 0 ? 'every first capture right' : `${verdict.wrong} wrong first captures (${verdict.unobscured_wrong} judged unobscured), ${verdict.unjudged} unjudged`;
+  md.push('', `**${verdict.pass ? 'PASS' : 'FAIL'}: ${firsts}** of ${verdict.trials}; the pinned build's captures against the truth: ${verdict.vendor_wrong} off and ${verdict.vendor_unjudged} unjudged of ${verdict.vendor_trials}.`);
   return { md, pass: verdict.pass };
 }

@@ -72,6 +72,29 @@ test('the verdict needs equal output, a clean witness where a vendor is clean, a
   assert.equal(judgeOperation(vendorsDirty, { vendors: ['pinned', 'newest'], candidate: 'cua' }).pass, true);
 });
 
+test('effects are required of cua wherever a vendor build verified them on the same sample, even when no build verified all', () => {
+  // the scroll baseline: both vendor builds miss samples 1 and 4 of every block, so neither build's whole series holds
+  const series = (engine, effectOf) => [0, 1].flatMap((block) => [0, 1, 2, 3, 4, 5].map((i) => ({ engine, block, i, series: i === 0 ? 'cold' : 'warm', ms: 10, ok: true, witness: true, equal: true, effect: effectOf(i) })));
+  const partial = (i) => i !== 1 && i !== 4;
+  const vendors = [...series('pinned', partial), ...series('newest', partial)];
+  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua' };
+  const none = judgeOperation([...vendors, ...series('cua', () => false)], opts);
+  assert.equal(none.pass, false);
+  assert.match(none.reasons.join(), /effect/);
+  // one sample missed where a vendor build took effect fails too
+  assert.equal(judgeOperation([...vendors, ...series('cua', (i) => i !== 2)], opts).pass, false);
+  // the samples no vendor build took are not required, and taking them does no harm
+  assert.equal(judgeOperation([...vendors, ...series('cua', partial)], opts).pass, true);
+  assert.equal(judgeOperation([...vendors, ...series('cua', () => true)], opts).pass, true);
+  // the union of the builds: a sample only the newest build took is required too
+  const union = [...series('pinned', (i) => i === 0), ...series('newest', (i) => i === 3)];
+  assert.equal(judgeOperation([...union, ...series('cua', (i) => i === 0)], opts).pass, false);
+  assert.equal(judgeOperation([...union, ...series('cua', (i) => i === 0 || i === 3)], opts).pass, true);
+  // a vendor success with no candidate sample to compare it with is a missing measurement
+  const short = series('cua', () => true).filter((r) => !(r.block === 1 && r.i === 5));
+  assert.equal(judgeOperation([...vendors, ...short], opts).pass, false);
+});
+
 test('a failed request fails the verdict', () => {
   const rows = [...samples('pinned', 300, [200]), ...samples('newest', 250, [230]), { engine: 'cua', series: 'cold', ms: 5, ok: false }];
   assert.match(judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua' }).reasons.join(), /failed/);

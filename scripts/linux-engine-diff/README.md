@@ -56,7 +56,9 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
   most in flight and the calls issued with nothing else outstanding.
 - **Verdict** per candidate (`cua` and each `--variant`): its cold and warm medians at or below the faster vendor
   build's (the bar), every request answered, output equal, witness clean wherever a vendor build's is, effect verified
-  wherever a vendor build's is.
+  on every sample where a vendor build's is (sample by sample: the same block and index, the union of both builds,
+  so a vendor build that takes 20 of 30 samples still requires those 20), and for a `tree` read over the wire the
+  bus-call bound (below).
 
 `results.jsonl` gets one line per sample, image comparison, count, check and verdict; `summary.md` is rewritten from
 all of it (`--summarize` rewrites it alone). Several runs append to one directory under their `--run` names.
@@ -135,8 +137,9 @@ variants included; their evidence is written either way. The run's `end` row kee
   sample) and a key whose effect is read back. A cold sample is the engine's start and its first request, except where
   untimed preparation must come first (`key_up`, the retention cases, element ids through the vendor JavaScript),
   where it is that request alone; each row says which (`timed`).
-- **The audit** (`audit.mjs`): after the blocks, every input operation runs twice more per engine with the engine's
-  X connections through `xtrace` on a proxy display of its own, and the trace is searched for SetInputFocus,
+- **The audit** (`audit.mjs`): after the blocks, every window-targeted operation (tree reads and screenshots as well
+  as input) runs twice more per engine, on the window it is measured on, with the engine's X connections through
+  `xtrace` on a proxy display of its own, and the trace is searched for SetInputFocus,
   ConfigureWindow with a stack mode, WarpPointer, a `_NET_ACTIVE_WINDOW` ClientMessage and XTEST FakeInput (matched
   by the opcode the server reported for XTEST, minor 2). The verdict needs cua's audit clean wherever a vendor
   build's witness or audit is. The negative check drives the stub through a proxy too, and the run is valid only when
@@ -158,6 +161,22 @@ variants included; their evidence is written either way. The run's `end` row kee
   opens its first window at that size), swept from 40% to 70% visible from the bottom and from the left.
 - `--experiment events` also has a key hold whose window is destroyed under it (`xprobe record … fragile-key`; the
   declared `interrupted_hold`), and reports each route's request times per command against the faster vendor build.
+
+## M1a.4's changes: the M1a.3 review's findings
+
+- **Effects sample by sample** (`stats.mjs` `missedEffects`): a sample position any vendor build took must be taken by
+  cua; a vendor success with no cua sample at its position counts as missed.
+- **Companions witnessed**: every request the engine under measurement sends besides the timed one (a hold's start
+  or end, the retaining capture, the key that changes a covered window, element ids read through the vendor
+  JavaScript) runs inside a witness span of its own. The harness's own changes to a window (the retention cases'
+  resize and remap, giving the focus back) stay outside the spans.
+- **The audit on every window-targeted operation** (`auditPlan`, `measuredTarget`): reads of the shared window and
+  screenshots too, each on the window its samples are measured on.
+- **The bus-call bound enforced** (`judgeCalls`): every `tree` verdict over the wire needs the cold and the warm count
+  of cua and of a vendor build, cua's at most the vendor's plus 256. A count that did not run (`--no-counts`) or
+  failed fails the verdict, and so does an excess, which fails the run.
+- **Readiness's vendor reference** (`judgeReadinessRun`): the run passes only when the pinned build's captures of
+  every condition agree with the truth cua's first captures are judged against; one off or unjudged fails it.
 
 ## Files
 

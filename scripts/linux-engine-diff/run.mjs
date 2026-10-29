@@ -23,7 +23,7 @@ import { compareStates, normalizeState, retainedIds } from './normalize.mjs';
 import { OPS, REFUSED, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs';
 import { writeSummary } from './report.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
-import { blockOrder, judgeOperation, runOutcome } from './stats.mjs';
+import { blockOrder, judgeCalls, judgeOperation, runOutcome } from './stats.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
 import { startWitness } from './witness.mjs';
 
@@ -149,7 +149,7 @@ export function differingField(reference, candidate) {
  * started inside it when nothing had to come first), the untimed companion, the effect read back and the follow-up
  * input of a retention case. Returns the row and the raw response.
  */
-async function runSample(s) {
+export async function runSample(s) {
   const { desktop, witness, engine, target, op, i } = s;
   const def = OPS[op];
   const ctx = { desktop, scene: target, engine, i, witness };
@@ -160,6 +160,8 @@ async function runSample(s) {
     spans.push(result.witness);
     return result;
   };
+  // every request the engine under measurement sends besides the timed one runs inside a witness span of its own; the
+  // harness's own changes to the window (a resize, a remap) stay outside the spans
   ctx.witnessed = (fn) => span(`${s.label}:${s.sceneName}:${op}:companion`, fn).then((r) => r.value);
   const needsIds = target?.elements && typeof engine.resolveElements === 'function';
   if (def.prepare || needsIds) {
@@ -167,7 +169,7 @@ async function runSample(s) {
     if (needsIds) {
       // read once per engine process and window: the client keeps its numbering for the window
       engine.ids ??= new Map();
-      if (!engine.ids.has(target.id)) engine.ids.set(target.id, await engine.resolveElements(target, target.elements));
+      if (!engine.ids.has(target.id)) engine.ids.set(target.id, await ctx.witnessed(() => engine.resolveElements(target, target.elements)));
       ctx.ids = engine.ids.get(target.id);
     }
     if (def.prepare) await def.prepare(ctx);
@@ -330,7 +332,7 @@ export async function runDiff(args) {
       for (const { scene: sceneName, op } of plan) {
         for (const label of blockOrder(labels, block)) {
           const spec = engines.find((e) => e.label === label);
-          const target = sceneName === 'desktop' ? null : ownWindow(op) ? windows[sceneName].own[label] : windows[sceneName].shared;
+          const target = measuredTarget(windows, sceneName, op, label);
           if (target && args.occlusion === 'visible') desktop.raise(target);
           const engine = makeEngine(spec, OPS[op].apps ? launch.env : undefined);
           const n = 1 + samplesFor(op);
@@ -399,12 +401,13 @@ export async function runDiff(args) {
     }
 
     // The X request audit, in its own untimed pass: each engine's connections through an xtrace proxy, a fresh
-    // process for two samples of each window-targeted input operation on its own window.
+    // process for two samples of each window-targeted operation (reads and screenshots too) on the window it is
+    // measured on.
     const audits = {};
     if (args.audit) {
-      for (const { scene: sceneName, op } of plan.filter((p) => inputOp(p.op))) {
+      for (const { scene: sceneName, op } of auditPlan(plan)) {
         for (const spec of engines) {
-          const target = windows[sceneName].own[spec.label];
+          const target = measuredTarget(windows, sceneName, op, spec.label);
           const proxy = await startProxy();
           const engine = makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY });
           let ok = true;
@@ -412,7 +415,7 @@ export async function runDiff(args) {
             for (let i = 0; i < 2; i++) ok = (await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName })).row.ok && ok;
           } finally {
             await engine.close();
-            target.retainedBy = null;
+            if (ownWindow(op)) target.retainedBy = null;
             if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
           }
           const audited = auditRequests(parseXtrace(await proxy.stop()));
@@ -443,7 +446,9 @@ export async function runDiff(args) {
     }
 
     // Screenshots: every sample's against the pinned build's of its block, before any verdict is drawn.
-    const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'sample');
+    const written = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
+    const rows = written.filter((r) => r.kind === 'sample');
+    const countRows = written.filter((r) => r.kind === 'counts');
     const imageOf = new Map();
     for (const c of compareShots(shots, xprobeDiff(XPROBE))) {
       const { image, pair, ...rest } = c;
@@ -479,9 +484,19 @@ export async function runDiff(args) {
         }
       }
       for (const candidate of labels.filter((l) => !VENDORS.includes(l))) {
-        const opAudits = args.audit && inputOp(op) ? Object.fromEntries(labels.map((l) => [l, audits[`${sceneName}|${op}|${l}`]])) : null;
+        const opAudits = args.audit && targeted(op) ? Object.fromEntries(labels.map((l) => [l, audits[`${sceneName}|${op}|${l}`]])) : null;
         const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire' });
         const extra = {};
+        if (op === 'tree' && via === 'wire') {
+          // the bus-call bound (Design, Observation; Acceptance 4): the cold and the warm count pass, each measured,
+          // cua's calls at most the vendor's plus M0's constant; a missing or failed count fails it
+          const calls = judgeCalls(countRows.filter((r) => r.scene === sceneName && r.op === op), { vendors: VENDORS, candidate });
+          extra.calls_bound = calls;
+          if (!calls.pass) {
+            verdict.pass = false;
+            verdict.reasons.push(...calls.reasons);
+          }
+        }
         const kept = keep[`${candidate}|${sceneName}|${op}`];
         if (kept && refKept && OPS[op].kind !== 'retention') {
           const cmp = compareStates(refKept.output, kept.output, { exactIds: exactIdsFor(op, sceneName), labelA: refKept.label, labelB: kept.label });
@@ -521,6 +536,15 @@ export async function runDiff(args) {
     `run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${outcome.pass ? 'every verdict PASS' : `FAIL: ${outcome.failed.join(', ')}`}\nresults: ${results}\n`,
   );
   return outcome.code === 0;
+}
+
+/** The operations the X request audit covers: every window-targeted one (reads and screenshots included). */
+export const auditPlan = (plan) => plan.filter((p) => targeted(p.op));
+
+/** The window an engine's samples of an operation go to: none (desktop), its own, or the scene's shared one. */
+export function measuredTarget(windows, sceneName, op, label) {
+  if (sceneName === 'desktop') return null;
+  return ownWindow(op) ? windows[sceneName].own[label] : windows[sceneName].shared;
 }
 
 function mode(values) {

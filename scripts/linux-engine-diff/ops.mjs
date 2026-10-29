@@ -8,13 +8,21 @@
 // changes the desktop on purpose, so neither its witness nor its audit is expected clean.
 //
 // A sample runs: `prepare` (untimed: companion requests, the harness's change to the window), the before-state, the
-// request inside a witness span, then `after` (untimed: the companion that ends a hold) and the effect. `timing`
+// request inside a witness span, then `after` (untimed: the companion that ends a hold) and the effect. Every
+// companion request the engine sends runs in a witness span of its own (`companion`); the harness's own changes to the
+// window go through the desktop (`resize`, `remap`) and stay outside the spans. `timing`
 // says what a cold sample measures: `spawn` (the engine's start and its first request) or `request` (the request
 // alone, where untimed preparation must come first).
 
-import { activeWindow, configure, xdotool } from './scenes.mjs';
+import { activeWindow } from './scenes.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * A request the engine under measurement sends besides the timed one (a hold's start or end, the retaining capture,
+ * the key that changes a covered window): inside a witness span of its own, untimed (`ctx.witnessed`, run.mjs).
+ */
+const companion = (ctx, fn) => (ctx.witnessed ? ctx.witnessed(fn) : fn());
 
 /** Which operations each scene runs. */
 export const SCENE_OPS = {
@@ -195,7 +203,7 @@ const inputScene = {
     background: true,
     read: status,
     request: ({ scene }) => ['key_down', { window: { id: scene.id }, key: 'a' }],
-    after: async (ctx) => ctx.engine.request('key_up', { window: { id: ctx.scene.id }, key: 'a' }),
+    after: async (ctx) => companion(ctx, () => ctx.engine.request('key_up', { window: { id: ctx.scene.id }, key: 'a' })),
     effect: (ctx, input, before, after) => rose(before, after, 'key_downs') && after.last_key === 'a',
   },
   // the hold starts before the before-state (untimed); a cold sample is the engine's start, the key_down and the key_up
@@ -203,7 +211,7 @@ const inputScene = {
     kind: 'input',
     background: true,
     timing: 'spawn',
-    prepare: async (ctx) => ctx.engine.request('key_down', { window: { id: ctx.scene.id }, key: 'b' }),
+    prepare: async (ctx) => companion(ctx, () => ctx.engine.request('key_down', { window: { id: ctx.scene.id }, key: 'b' })),
     read: status,
     request: ({ scene }) => ['key_up', { window: { id: scene.id }, key: 'b' }],
     effect: (ctx, input, before, after) => rose(before, after, 'key_ups') && after.last_key === 'b',
@@ -226,7 +234,7 @@ const inputScene = {
 /** The window retained first: one screenshot by the engine under test before its first change. */
 async function retainOnce(ctx) {
   if (ctx.scene.retainedBy === ctx.engine) return;
-  const { response } = await ctx.engine.request('get_window_state', { window: { id: ctx.scene.id }, include_screenshot: true });
+  const { response } = await companion(ctx, () => ctx.engine.request('get_window_state', { window: { id: ctx.scene.id }, include_screenshot: true }));
   if (!response.ok) throw new Error(`retaining ${ctx.scene.label} failed: ${response.error}`);
   ctx.scene.retainedBy = ctx.engine;
 }
@@ -247,7 +255,7 @@ const retention = {
     prepare: async (ctx) => {
       await retainOnce(ctx);
       const [w, h] = ctx.i % 2 ? CHROME : RESIZED;
-      configure(ctx.scene.id, 0, 0, w, h);
+      ctx.desktop.resize(ctx.scene.id, w, h);
       await sleep(400);
     },
     ...keyFollows,
@@ -260,10 +268,7 @@ const retention = {
     timing: 'request',
     prepare: async (ctx) => {
       await retainOnce(ctx);
-      xdotool('windowunmap', '--sync', ctx.scene.id);
-      await sleep(200);
-      xdotool('windowmap', '--sync', ctx.scene.id);
-      configure(ctx.scene.id, 0, 0, ...CHROME);
+      await ctx.desktop.remap(ctx.scene.id, CHROME);
       ctx.desktop.focusFront();
       await sleep(400);
     },
@@ -278,7 +283,7 @@ const retention = {
     prepare: async (ctx) => {
       await retainOnce(ctx);
       ctx.changeBefore = await ctx.desktop.chromeCounters(ctx.scene);
-      const { response } = await ctx.engine.request('press_key', { window: { id: ctx.scene.id }, key: 'x' });
+      const { response } = await companion(ctx, () => ctx.engine.request('press_key', { window: { id: ctx.scene.id }, key: 'x' }));
       ctx.changeAnswer = response;
       await sleep(300);
     },

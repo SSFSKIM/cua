@@ -96,6 +96,11 @@ export function renderSummary(lines) {
       out.push('', 'Over-budget retained native ids:');
       for (const v of retained) out.push(`- ${v.candidate}: ${v.retained_ids_equal ? 'equal to the pinned build\'s' : '**differ**'}`);
     }
+    const bounded = verdicts.filter((v) => v.calls_bound);
+    if (bounded.length) {
+      out.push('', "Bus-call bound (the cold and the warm count, each at most the vendor's plus 256):");
+      for (const v of bounded) out.push(`- ${v.scene} ${v.candidate}: ${v.calls_bound.pass ? 'within' : `**${v.calls_bound.reasons.join('; ')}**`}`);
+    }
     const end = rows.find((r) => r.kind === 'end');
     const verdictLine = !end || end.pass === undefined ? '' : end.pass ? '; every verdict PASS' : `; **FAIL**: ${end.failed.join(', ')}`;
     out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${verdictLine}, finished ${end.finished}` : 'run unfinished', '');

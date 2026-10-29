@@ -6,8 +6,11 @@
 // for background input. Each engine gets its own window of the family, fully covered by the harness's front
 // window (`--occlusion covered`, the default) or raised above the other scene windows with the front window in a
 // corner (`--occlusion visible`), and its own fresh process; effects are read back through the application's objects
-// (oracle.mjs), for a terminal through what its program received, and for Writer without AT-SPI as pixels.
+// (oracle.mjs), for a terminal through what its program received, and for Writer without AT-SPI as pixels. With the
+// audit on (the default; M1a.4), each engine but `cua:none` then sends two keys and two clicks again through an
+// xtrace proxy, and the run judges Acceptance 5 per family (`backgroundAlone`).
 
+import { auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { Engine } from './engine.mjs';
 import { FAMILIES, familyNames, openFamily, readCaret, readCounter, readText, textArea, wmClass } from './families.mjs';
 import { caretArrived, clickPoints, counterArrived, keyArrived, terminalClickArrived, typedArrived } from './matrix-judge.mjs';
@@ -17,9 +20,12 @@ import { negativeCheck } from './run.mjs';
 import { XPROBE } from './scenes.mjs';
 import { startWitness } from './witness.mjs';
 
-/** M0.3's choice (Decision Log, M0.3), in the spike's flags. */
-export const CUA_CHOICE = ['--window-calls', '32', '--settle-ms', '40', '--key-pace-ms', '0'];
-const CUA_NONE = ['--window-calls', '32', '--retention', 'none', '--settle-ms', '0', '--key-pace-ms', '0'];
+/**
+ * cua-engine as it ships: its defaults are M0's choices (W 32, no input settle, no key pacing, the readiness rule
+ * before a capture; Decision Log, M0.3, M0.4, M1a.2), so the matrix measures them without flags.
+ */
+export const CUA_CHOICE = [];
+const CUA_NONE = ['--retention', 'none'];
 const VENDORS = ['pinned', 'newest'];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const chars = (s) => [...(s ?? '')];
@@ -139,6 +145,29 @@ async function clickSeries(ctx, engine, scene, n) {
   }
 }
 
+/**
+ * The X request audit (Acceptance 5): in an untimed pass after the series, a fresh engine process with its X
+ * connections through an xtrace proxy sends two keys (`x`, then `BackSpace` where it would grow a document) and two
+ * clicks to its own window, and the trace is searched for the forbidden requests (audit.mjs).
+ */
+async function auditPass(ctx, spec, scene) {
+  const { oracle, emit, family } = ctx;
+  const proxy = await startProxy();
+  const engine = new Engine({ ...spec, stats: false, env: proxy.env }).start();
+  let ok = true;
+  try {
+    for (const key of scene.kindOf === 'terminal' ? ['x', 'x'] : ['x', 'BackSpace']) ok = (await engine.request('press_key', { window: { id: scene.id }, key })).response.ok === true && ok;
+    for (let i = 0; i < 2; i++) {
+      ok = (await engine.request('click', { window: { id: scene.id }, ...clickTarget(oracle, scene, i).point })).response.ok === true && ok;
+      await sleep(600);
+    }
+  } finally {
+    await engine.close();
+  }
+  const audited = auditRequests(parseXtrace(await proxy.stop()));
+  emit({ kind: 'matrix-audit', family, engine: spec.label, ok, clean: audited.clean, traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.slice(0, 10) });
+}
+
 const targetsOf = (scene) => ({ field: Boolean(scene.field), button: Boolean(scene.button), document: Boolean(scene.document) });
 
 async function identify(desktop, oracle, scene, args) {
@@ -176,8 +205,8 @@ export async function runMatrix(args, { desktop, emit, run }) {
   const witness = await startWitness(XPROBE);
   const results = [];
   try {
-    const valid = await negativeCheck(desktop, witness, stubScene, emit);
-    if (!valid) throw new Error('the witness did not fail the activating stub; the run is invalid');
+    const valid = await negativeCheck(desktop, witness, stubScene, emit, { audit: args.audit });
+    if (!valid) throw new Error(`the witness${args.audit ? ' or the audit' : ''} did not fail the activating stub; the run is invalid`);
     for (const family of names) {
       process.stdout.write(`family ${family}\n`);
       const scenes = {};
@@ -202,6 +231,13 @@ export async function runMatrix(args, { desktop, emit, run }) {
             await engine.close();
           }
           desktop.focusFront();
+        }
+        if (args.audit) {
+          for (const spec of list.filter((e) => e.label !== 'cua:none')) {
+            if (args.occlusion === 'visible') desktop.raise(scenes[spec.label]);
+            await auditPass(ctx, spec, scenes[spec.label]);
+            desktop.focusFront();
+          }
         }
         results.push({ family, identity });
       } catch (error) {

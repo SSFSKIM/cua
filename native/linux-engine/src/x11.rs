@@ -1,5 +1,5 @@
 //! The X server side (behaviour §3, §5.7, §9, §16): windows and their properties, the X11 fallback tree,
-//! retention through Composite, and window capture. Requests are pipelined where the vendor sends them one by
+//! retention through Composite, and window and desktop capture. Requests are pipelined where the vendor sends them one by
 //! one; the answers are the vendor's.
 
 use std::collections::{HashMap, HashSet};
@@ -11,9 +11,11 @@ use x11rb::connection::Connection;
 use x11rb::cookie::Cookie;
 use x11rb::protocol::Event;
 use x11rb::protocol::composite::{ConnectionExt as _, Redirect};
+use x11rb::protocol::xfixes::ConnectionExt as _;
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 
+use crate::readiness::{CaptureWait, Readiness, Waited};
 use crate::tree::AxNode;
 
 /// `GetProperty`'s length, in 32-bit units, as the vendor asks (behaviour §3).
@@ -69,9 +71,22 @@ pub struct X11 {
     atoms: HashMap<&'static str, Atom>,
     atom_names: HashMap<Atom, String>,
     composite_ready: bool,
+    xfixes_ready: bool,
     retained: HashSet<Window>,
     pub retention: Retention,
+    /// The wait after a window's redirect before input to it: none by default (Design, Retention and the fixed
+    /// waits); `--settle-ms` sets it for measurements.
     pub settle: Duration,
+    /// Opened at the first redirect (its connection and thread cost the start of every engine otherwise, the
+    /// desktop-only requests' included).
+    readiness: Option<Readiness>,
+    capture_wait: CaptureWait,
+    /// How long the last window capture waited for its pixmap, and why.
+    pub last_capture_wait: Option<Waited>,
+    /// The desktop screenshot's MIT-SHM segment (`shm.rs`).
+    shm: crate::shm::Shm,
+    /// How the last desktop screenshot was read: `shm` or `get_image`.
+    pub last_desktop_read: Option<&'static str>,
 }
 
 /// Lossy UTF-8, trailing NULs stripped, Unicode-trimmed, empty as None (behaviour §3, `property_text`).
@@ -124,7 +139,7 @@ struct Described {
 }
 
 impl X11 {
-    pub fn connect(retention: Retention, settle: Duration) -> Result<X11> {
+    pub fn connect(retention: Retention, settle: Duration, capture_wait: CaptureWait) -> Result<X11> {
         let (conn, screen) = x11rb::connect(None).context("failed to connect to the X server")?;
         let setup_screen = &conn.setup().roots[screen];
         let root = setup_screen.root;
@@ -142,9 +157,15 @@ impl X11 {
             atoms,
             atom_names: HashMap::new(),
             composite_ready: false,
+            xfixes_ready: false,
             retained: HashSet::new(),
             retention,
             settle,
+            readiness: None,
+            capture_wait,
+            last_capture_wait: None,
+            shm: crate::shm::Shm::new(),
+            last_desktop_read: None,
         })
     }
 
@@ -410,6 +431,41 @@ impl X11 {
             .and_then(|r| property_text(&r.value))
     }
 
+    /// The class part of `WM_CLASS` (`families.rs`).
+    pub fn wm_class(&self, window: Window) -> Option<String> {
+        self.get_property(window, AtomEnum::WM_CLASS.into())
+            .ok()
+            .and_then(|r| wm_class_app(&r.value))
+    }
+
+    /// The client window at a root point: the top-level under it, then the first window holding `WM_STATE` in its
+    /// subtree (a reparenting window manager's frame holds the client).
+    pub fn client_at(&self, rx: i16, ry: i16) -> Option<Window> {
+        let top = self
+            .conn
+            .translate_coordinates(self.root, self.root, rx, ry)
+            .ok()?
+            .reply()
+            .ok()?
+            .child;
+        if top == x11rb::NONE {
+            return None;
+        }
+        self.client_in(top, 0)
+    }
+
+    fn client_in(&self, window: Window, depth: u32) -> Option<Window> {
+        if depth > 8 {
+            return None;
+        }
+        let state = self.get_property(window, self.atom("WM_STATE")).ok()?;
+        if state.type_ != x11rb::NONE {
+            return Some(window);
+        }
+        let children = self.conn.query_tree(window).ok()?.reply().ok()?.children;
+        children.iter().rev().find_map(|&c| self.client_in(c, depth + 1))
+    }
+
     /// The window-relative point in root coordinates (behaviour §3, `desktop_position`).
     pub fn desktop_position(&self, window: Window, x: i16, y: i16) -> Result<(i16, i16)> {
         let reply = (|| -> Result<TranslateCoordinatesReply> {
@@ -446,40 +502,136 @@ impl X11 {
     }
 
     pub fn note_event(&mut self, event: Event) {
-        if let Event::DestroyNotify(e) = event {
+        if let Event::DestroyNotify(e) = &event {
             self.retained.remove(&e.window);
+        }
+        if let Some(readiness) = &self.readiness {
+            readiness.note(&event);
         }
     }
 
-    /// Makes `window`'s contents available offscreen for input or capture, as `retention` says, and returns
-    /// whether this request redirected it (so it must unredirect at its end).
-    pub fn retain(&mut self, window: Window) -> Result<bool> {
+    /// Capture readiness, its connection opened on first use.
+    fn readiness(&mut self) -> &Readiness {
+        let rule = self.capture_wait;
+        self.readiness.get_or_insert_with(|| Readiness::connect(rule))
+    }
+
+    /// Whether `window` is fully unobscured now (`cover.rs`); any X error is doubt, and doubt is obscured.
+    fn fully_unobscured(&self, window: Window, geometry: &GetGeometryReply) -> bool {
+        self.cover(window, geometry)
+            .map(|(rect, levels)| crate::cover::fully_unobscured(rect, &levels))
+            .unwrap_or(false)
+    }
+
+    /// The window's rectangle in root coordinates and its ancestry's stacking, from its parent up to the root.
+    fn cover(
+        &self,
+        window: Window,
+        geometry: &GetGeometryReply,
+    ) -> Result<(crate::cover::Rect, Vec<crate::cover::Level>)> {
+        use crate::cover::{Above, Level, Rect};
+        let origin = self.conn.translate_coordinates(window, self.root, 0, 0)?.reply()?;
+        let rect = Rect {
+            x: origin.dst_x as i32,
+            y: origin.dst_y as i32,
+            w: geometry.width as i32,
+            h: geometry.height as i32,
+        };
+        let mut levels = Vec::new();
+        let mut current = window;
+        while current != self.root {
+            let parent = self.conn.query_tree(current)?.reply()?.parent;
+            let siblings = self.conn.query_tree(parent)?.reply()?.children;
+            let position = siblings
+                .iter()
+                .position(|w| *w == current)
+                .ok_or_else(|| anyhow!("window {current} is not among its parent's children"))?;
+            let above = &siblings[position + 1..];
+            let parent_geometry = self.conn.get_geometry(parent)?;
+            let parent_origin = self.conn.translate_coordinates(parent, self.root, 0, 0)?;
+            let pending: Vec<_> = above
+                .iter()
+                .map(|&w| Ok((self.conn.get_window_attributes(w)?, self.conn.get_geometry(w)?)))
+                .collect::<Result<_>>()?;
+            let parent_geometry = parent_geometry.reply()?;
+            let parent_origin = parent_origin.reply()?;
+            let (px, py) = (parent_origin.dst_x as i32, parent_origin.dst_y as i32);
+            let mut level = Level {
+                clip: Rect {
+                    x: px,
+                    y: py,
+                    w: parent_geometry.width as i32,
+                    h: parent_geometry.height as i32,
+                },
+                above: Vec::with_capacity(pending.len()),
+            };
+            for (attributes, geometry) in pending {
+                let (attributes, g) = (attributes.reply()?, geometry.reply()?);
+                let border = 2 * g.border_width as i32;
+                level.above.push(Above {
+                    rect: Rect {
+                        x: px + g.x as i32,
+                        y: py + g.y as i32,
+                        w: g.width as i32 + border,
+                        h: g.height as i32 + border,
+                    },
+                    viewable: attributes.map_state == MapState::VIEWABLE,
+                    input_only: attributes.class == WindowClass::INPUT_ONLY,
+                });
+            }
+            levels.push(level);
+            current = parent;
+        }
+        Ok((rect, levels))
+    }
+
+    /// Makes `window`'s contents available offscreen, as `retention` says: redirected through Composite, the
+    /// Damage tracking set up first so readiness misses nothing. Returns whether this request redirected it
+    /// (`fresh`) and whether it must unredirect it at its end (`undo`).
+    fn redirect(&mut self, window: Window) -> Result<(bool, bool)> {
         let attributes = self.conn.get_window_attributes(window)?.reply()?;
         if attributes.map_state != MapState::VIEWABLE {
             bail!("window {window} is not mapped; restore it before using background input or taking a screenshot");
         }
         match self.retention {
-            Retention::None => Ok(false),
-            Retention::Session if self.retained.contains(&window) => Ok(false),
+            Retention::None => Ok((false, false)),
+            Retention::Session if self.retained.contains(&window) => Ok((false, false)),
             mode => {
                 self.ensure_composite()?;
+                let geometry = self.conn.get_geometry(window)?.reply()?;
+                let unobscured = self.fully_unobscured(window, &geometry);
+                self.readiness().watch(window, (geometry.width, geometry.height))?;
                 let redirect = self
                     .conn
                     .composite_redirect_window(window, Redirect::AUTOMATIC)
                     .map_err(anyhow::Error::from);
-                redirect
+                let redirected = redirect
                     .and_then(|c| Ok(c.check()?))
-                    .context("failed to retain the target window's rendering buffer")?;
+                    .context("failed to retain the target window's rendering buffer");
+                if let Err(error) = redirected {
+                    self.readiness().forget(window);
+                    return Err(error);
+                }
+                self.readiness().redirected(window, unobscured)?;
                 if mode == Retention::Session {
                     // Our own event selection on the window, so its destruction ends the retention record.
                     let aux = ChangeWindowAttributesAux::new().event_mask(EventMask::STRUCTURE_NOTIFY);
                     self.conn.change_window_attributes(window, &aux)?.check()?;
                     self.retained.insert(window);
                 }
-                std::thread::sleep(self.settle);
-                Ok(mode == Retention::PerRequest)
+                Ok((true, mode == Retention::PerRequest))
             }
         }
+    }
+
+    /// Retention for input: the redirect, then the input wait after a fresh one. Returns whether this request
+    /// must unredirect the window at its end.
+    pub fn retain(&mut self, window: Window) -> Result<bool> {
+        let (fresh, undo) = self.redirect(window)?;
+        if fresh {
+            std::thread::sleep(self.settle);
+        }
+        Ok(undo)
     }
 
     pub fn release(&mut self, window: Window, redirected: bool) {
@@ -488,15 +640,17 @@ impl X11 {
                 .conn
                 .composite_unredirect_window(window, Redirect::AUTOMATIC)
                 .map(|c| c.check());
+            self.readiness().forget(window);
         }
     }
 
     // -----------------------------------------------------------------------------------------------------------
     // Capture
 
-    /// The window's own drawable as RGB (behaviour §16).
+    /// The window's own drawable as RGB (behaviour §16), once its pixmap is ready (`readiness.rs`).
     pub fn capture_window(&mut self, window: Window) -> Result<(Vec<u8>, u16, u16)> {
-        let redirected = self.retain(window)?;
+        let (_, redirected) = self.redirect(window)?;
+        self.last_capture_wait = Some(self.readiness().wait(window));
         let result = (|| {
             let geometry = self
                 .conn
@@ -514,6 +668,70 @@ impl X11 {
         })();
         self.release(window, redirected);
         result
+    }
+
+    /// The desktop: the root window at its current size as RGB, with the pointer stamped when `mouse_size_px`
+    /// is positive (behaviour §16). No retention: the root is never redirected. The pixels come through MIT-SHM where
+    /// the display allows it (Design, Screenshots), else through `GetImage`.
+    pub fn capture_desktop(&mut self, mouse_size_px: u32) -> Result<(Vec<u8>, u16, u16)> {
+        let geometry = self.conn.get_geometry(self.root)?.reply()?;
+        let (width, height) = (geometry.width, geometry.height);
+        let shared = self
+            .shm
+            .read(&self.conn, self.root, width, height)
+            .map(|data| crate::capture::bgrx_to_rgb(data, width, height));
+        self.last_desktop_read = Some(if shared.is_some() { "shm" } else { "get_image" });
+        let rgb = match shared {
+            Some(rgb) => rgb,
+            None => {
+                let image = self
+                    .conn
+                    .get_image(ImageFormat::Z_PIXMAP, self.root, 0, 0, width, height, !0)?
+                    .reply()?;
+                crate::capture::bgrx_to_rgb(&image.data, width, height)
+            }
+        };
+        let mut rgb = rgb.map_err(|e| anyhow!(e))?;
+        if mouse_size_px > 0 {
+            match self.cursor_image() {
+                Ok(cursor) => crate::capture::stamp_cursor(&mut rgb, width, height, &cursor),
+                Err(_) => {
+                    let pointer = self.conn.query_pointer(self.root)?.reply()?;
+                    crate::capture::stamp_arrow(&mut rgb, width, height, pointer.root_x, pointer.root_y, mouse_size_px);
+                }
+            }
+        }
+        Ok((rgb, width, height))
+    }
+
+    /// After a desktop screenshot's answer: the MIT-SHM segment for the next one, where the display allows it.
+    pub fn prepare_desktop(&mut self) {
+        self.shm.prepare(&self.conn);
+    }
+
+    /// The pointer's current image through XFixes.
+    fn cursor_image(&mut self) -> Result<crate::capture::Cursor> {
+        if !self.xfixes_ready {
+            self.conn.xfixes_query_version(4, 0)?.reply()?;
+            self.xfixes_ready = true;
+        }
+        let reply = self.conn.xfixes_get_cursor_image()?.reply()?;
+        let expected = reply.width as usize * reply.height as usize;
+        if reply.cursor_image.len() != expected {
+            bail!(
+                "xfixes cursor image {} pixels, expected {expected}",
+                reply.cursor_image.len()
+            );
+        }
+        Ok(crate::capture::Cursor {
+            x: reply.x,
+            y: reply.y,
+            width: reply.width,
+            height: reply.height,
+            xhot: reply.xhot,
+            yhot: reply.yhot,
+            pixels: reply.cursor_image,
+        })
     }
 
     // -----------------------------------------------------------------------------------------------------------

@@ -50,7 +50,7 @@ test('the bar is the faster vendor build per series, judged cold against cold an
   assert.match(v2.reasons.join(), /cold 260.* > bar 250/);
 });
 
-test('the verdict needs equal output, a clean witness where a vendor is clean, and the effect where a vendor has it', () => {
+test('the verdict needs equal output, a clean witness where a vendor is clean, and the effect', () => {
   const base = [
     ...samples('pinned', 300, [200], { witness: true, effect: true, equal: true }),
     ...samples('newest', 250, [230], { witness: true, effect: false, equal: true }),
@@ -63,18 +63,61 @@ test('the verdict needs equal output, a clean witness where a vendor is clean, a
   assert.match(judgeOperation(differs, { vendors: ['pinned', 'newest'], candidate: 'cua' }).reasons.join(), /output/);
   const good = [...base, ...samples('cua', 100, [100], { witness: true, effect: true, equal: true })];
   assert.equal(judgeOperation(good, { vendors: ['pinned', 'newest'], candidate: 'cua' }).pass, true);
-  // where no vendor build verifies the effect or keeps the witness clean, neither is required of cua
-  const vendorsDirty = [
+  // where no vendor build keeps the witness clean, it is not required of cua; the effect always is (M1a.4)
+  const vendorsDirty = (effect) => [
     ...samples('pinned', 300, [200], { witness: false, effect: false, equal: true }),
     ...samples('newest', 250, [230], { witness: false, effect: false, equal: true }),
-    ...samples('cua', 100, [100], { witness: false, effect: false, equal: true }),
+    ...samples('cua', 100, [100], { witness: false, effect, equal: true }),
   ];
-  assert.equal(judgeOperation(vendorsDirty, { vendors: ['pinned', 'newest'], candidate: 'cua' }).pass, true);
+  assert.equal(judgeOperation(vendorsDirty(true), { vendors: ['pinned', 'newest'], candidate: 'cua' }).pass, true);
+  assert.equal(judgeOperation(vendorsDirty(false), { vendors: ['pinned', 'newest'], candidate: 'cua' }).pass, false);
+});
+
+test("cua's effect is judged on every sample, whatever the vendor builds did on it (Decision Log, M1a.4)", () => {
+  const series = (engine, effectOf) => [0, 1].flatMap((block) => [0, 1, 2, 3, 4, 5].map((i) => ({ engine, block, i, series: i === 0 ? 'cold' : 'warm', ms: 10, ok: true, witness: true, equal: true, effect: effectOf(i) })));
+  const partial = (i) => i !== 1 && i !== 4;
+  const vendors = [...series('pinned', partial), ...series('newest', partial)];
+  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua' };
+  // every sample taken: a pass, whatever the vendor builds missed
+  assert.equal(judgeOperation([...vendors, ...series('cua', () => true)], opts).pass, true);
+  // a sample both vendor builds missed and cua missed fails the operation: the vendor's miss is not the bar
+  const together = judgeOperation([...vendors, ...series('cua', partial)], opts);
+  assert.equal(together.pass, false);
+  assert.match(together.reasons.join(), /effect was not verified on 4 samples/);
+  // so does any one miss, and a run where no engine took any effect
+  assert.equal(judgeOperation([...vendors, ...series('cua', (i) => i !== 2)], opts).pass, false);
+  assert.equal(judgeOperation([...series('pinned', () => false), ...series('newest', () => false), ...series('cua', () => false)], opts).pass, false);
+  // a sample of an operation that reads effects, answered but with no effect read, is not verified
+  const unread = series('cua', () => true).map((r) => (r.block === 1 && r.i === 5 ? { ...r, effect: null } : r));
+  assert.equal(judgeOperation([...vendors, ...unread], opts).pass, false);
+  // an operation with no effect read (every sample null) requires none
+  const none = (engine) => series(engine, () => null);
+  assert.equal(judgeOperation([...none('pinned'), ...none('newest'), ...none('cua')], opts).pass, true);
+});
+
+test('speed is judged on the unrounded medians: a loss smaller than the shown tenth of a millisecond is still a loss', () => {
+  const rows = [...samples('pinned', 5.3, [0.69]), ...samples('newest', 5.02, [0.65]), ...samples('cua', 5.0, [0.67])];
+  const verdict = judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua' });
+  assert.equal(verdict.speed, false);
+  assert.match(verdict.reasons.join(), /warm 0\.67 ms > bar 0\.65 ms/);
 });
 
 test('a failed request fails the verdict', () => {
   const rows = [...samples('pinned', 300, [200]), ...samples('newest', 250, [230]), { engine: 'cua', series: 'cold', ms: 5, ok: false }];
   assert.match(judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua' }).reasons.join(), /failed/);
+});
+
+test('a request every engine answers with an error is judged by its answer and timed like any other', () => {
+  const refused = (engine, cold, warm) => [
+    { engine, series: 'cold', ms: cold, ok: false, equal: true },
+    { engine, series: 'warm', ms: warm, ok: false, equal: true },
+  ];
+  const rows = [...refused('pinned', 290, 300), ...refused('newest', 280, 270), ...refused('cua', 135, 128)];
+  const verdict = judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua' });
+  assert.equal(verdict.pass, true);
+  assert.deepEqual(verdict.bar, { cold: 280, warm: 270 });
+  const slow = judgeOperation([...refused('pinned', 290, 300), ...refused('newest', 280, 270), ...refused('cua', 300, 128)], { vendors: ['pinned', 'newest'], candidate: 'cua' });
+  assert.equal(slow.speed, false);
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -350,7 +393,16 @@ test('the summary has a row per engine with its medians, calls and verdict, and 
   const text = renderSummary(lines);
   assert.match(text, /variants: `cua:W16` = `--window-calls 16`/);
   assert.match(text, /the witness failed the activating stub \(active\)/);
-  assert.match(text, /\| gedit \| tree \| cua \| 60 \| – \| 0 \| 3040 \/ – \| 20 \/ – \| 0 \| 1\/1 \| – \| – \| PASS \|/);
+  assert.match(text, /\| gedit \| tree \| cua \| 60 \| – \| 0 \| 3040 \/ – \| 20 \/ – \| 0 \| 1\/1 \| – \| – \| – \| PASS \|/);
   assert.match(text, /\| gedit \| tree \| \*\*bar\*\* \| 500 \|/);
   assert.match(text, /run valid/);
+});
+
+test('through the vendor JavaScript speed is recorded but not judged', () => {
+  const rows = [...samples('pinned', 300, [200]), ...samples('newest', 250, [230]), ...samples('cua', 400, [300])];
+  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua' };
+  assert.equal(judgeOperation(rows, opts).pass, false);
+  const unjudged = judgeOperation(rows, { ...opts, judgeSpeed: false });
+  assert.equal(unjudged.pass, true);
+  assert.equal(unjudged.speed, false);
 });

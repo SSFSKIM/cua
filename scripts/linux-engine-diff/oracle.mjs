@@ -88,6 +88,26 @@ export class Oracle {
     return this.prop(id, 'org.a11y.atspi.Text', 'CaretOffset');
   }
 
+  /** The first selection's text, `''` when nothing is selected. */
+  selectedText(id) {
+    const [n] = this.on(id, 'org.a11y.atspi.Text', 'GetNSelections');
+    if (!n) return '';
+    const [start, end] = this.on(id, 'org.a11y.atspi.Text', 'GetSelection', 'i', 0);
+    if (end <= start) return '';
+    return this.on(id, 'org.a11y.atspi.Text', 'GetText', 'ii', start, end)[0];
+  }
+
+  /** A character's screen extents `{x, y, w, h}`. */
+  charExtents(id, offset) {
+    const [x, y, w, h] = this.on(id, 'org.a11y.atspi.Text', 'GetCharacterExtents', 'iu', offset, 0);
+    return { x, y, w, h };
+  }
+
+  /** A Value object's current value (a slider's, a scroll bar's). */
+  currentValue(id) {
+    return this.prop(id, 'org.a11y.atspi.Value', 'CurrentValue');
+  }
+
   /** Screen extents `{x, y, w, h}`. */
   extents(id) {
     const [[x, y, w, h]] = this.on(id, 'org.a11y.atspi.Component', 'GetExtents', 'u', 0);

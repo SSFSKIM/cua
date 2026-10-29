@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 input scene</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; height: 4000px; }
+  /* explicit looks, so the page reads the same whether or not the real pointer rests over it */
+  #pad { position: absolute; left: 0; top: 0; width: 100vw; height: 300px; background: #dddddd; border-bottom: 1px solid #888888; }
+  #status { position: fixed; left: 12px; top: 310px; margin: 0; }
+  #status p { margin: 2px 0; }
+  #press, #menu { position: absolute; left: 12px; width: 300px; height: 60px; font-size: 20px;
+                  appearance: none; background: #eeeeee; border: 1px solid #888888; color: #000000; }
+  #press { top: 470px; }
+  #menu { top: 540px; }
+  #far { position: absolute; left: 12px; top: 3000px; width: 300px; height: 60px; font-size: 20px;
+         appearance: none; background: #eeeeee; border: 1px solid #888888; color: #000000; }
+</style>
+</head>
+<body>
+<!-- The differential harness's pointer and key scene: every input the engines send here leaves a count in the status
+     lines, which read back through the tree. The pad counts pointer moves, presses and drags; the page counts key
+     downs and ups, its scroll position, its context-menu requests (cancelled, so no menu opens) and the button's
+     clicks. "far" sits below the first screen, so an element right click on it has no visible point in the window
+     (the right click's fallback). The title comes from the URL's fragment, so every scene window has its own. -->
+<div id="pad"></div>
+<div id="status">
+  <p id="pointer">pointer moves 0 downs 0 ups 0 drags 0</p>
+  <p id="keys">keys down 0 up 0 last none</p>
+  <p id="scroll">scroll 0</p>
+  <p id="context">context 0 on none</p>
+  <p id="clicks">clicks 0</p>
+</div>
+<button id="press" type="button">Press</button>
+<button id="menu" type="button">Menu</button>
+<button id="far" type="button">Far</button>
+<script>
+  document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
+  const state = { moves: 0, downs: 0, ups: 0, drags: 0, down: null, kd: 0, ku: 0, last: 'none', context: 0, on: 'none', clicks: 0 };
+  const show = () => {
+    document.getElementById('pointer').textContent = `pointer moves ${state.moves} downs ${state.downs} ups ${state.ups} drags ${state.drags}`;
+    document.getElementById('keys').textContent = `keys down ${state.kd} up ${state.ku} last ${state.last}`;
+    document.getElementById('scroll').textContent = `scroll ${Math.round(window.scrollY)}`;
+    document.getElementById('context').textContent = `context ${state.context} on ${state.on}`;
+    document.getElementById('clicks').textContent = `clicks ${state.clicks}`;
+  };
+  const pad = document.getElementById('pad');
+  pad.addEventListener('mousemove', () => { state.moves += 1; show(); });
+  pad.addEventListener('mousedown', (e) => { if (e.button === 0) { state.downs += 1; state.down = [e.clientX, e.clientY]; show(); } });
+  document.addEventListener('mouseup', (e) => {
+    if (e.button !== 0) return;
+    state.ups += 1;
+    if (state.down && (e.clientX !== state.down[0] || e.clientY !== state.down[1])) state.drags += 1;
+    state.down = null;
+    show();
+  });
+  // every key is the page's own (no default action), and Home puts the page back at its top at once (the harness's
+  // reset after a scroll series)
+  document.addEventListener('keydown', (e) => {
+    state.kd += 1;
+    state.last = e.key;
+    e.preventDefault();
+    if (e.key === 'Home') window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    show();
+  });
+  document.addEventListener('keyup', (e) => { state.ku += 1; state.last = e.key; show(); e.preventDefault(); });
+  document.addEventListener('contextmenu', (e) => { state.context += 1; state.on = e.target.id || e.target.tagName.toLowerCase(); show(); e.preventDefault(); });
+  document.getElementById('press').addEventListener('click', () => { state.clicks += 1; show(); });
+  window.addEventListener('scroll', show);
+</script>
+</body>
+</html>

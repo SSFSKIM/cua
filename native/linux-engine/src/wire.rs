@@ -154,8 +154,128 @@ pub struct PressKeyInput {
     pub duration: Option<u64>,
 }
 
+/// `key_down` and `key_up`.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct KeyInput {
+    #[serde(default)]
+    pub window: Option<Target>,
+    pub key: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MoveInput {
+    #[serde(default)]
+    pub window: Option<Target>,
+    pub x: i16,
+    pub y: i16,
+    #[serde(default)]
+    pub key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MoveRelativeInput {
+    pub dx: i16,
+    pub dy: i16,
+    #[serde(default)]
+    pub key: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    #[serde(rename = "up", alias = "u")]
+    Up,
+    #[serde(rename = "down", alias = "d")]
+    Down,
+    #[serde(rename = "left", alias = "l")]
+    Left,
+    #[serde(rename = "right", alias = "r")]
+    Right,
+}
+
+impl Direction {
+    /// The wheel button (behaviour §10.3).
+    pub fn button(self) -> u8 {
+        match self {
+            Direction::Up => 4,
+            Direction::Down => 5,
+            Direction::Left => 6,
+            Direction::Right => 7,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ScrollInput {
+    #[serde(default)]
+    pub window: Option<Target>,
+    #[serde(default)]
+    pub element_id: Option<String>,
+    pub direction: Direction,
+    #[serde(default)]
+    pub pixels: Option<u16>,
+    #[serde(default)]
+    pub x: Option<i16>,
+    #[serde(default)]
+    pub y: Option<i16>,
+    #[serde(default)]
+    pub key: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone, Copy)]
+#[serde(deny_unknown_fields)]
+pub struct Point {
+    pub x: i16,
+    pub y: i16,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DragInput {
+    #[serde(default)]
+    pub window: Option<Target>,
+    pub path: Vec<Point>,
+    #[serde(default)]
+    pub key: Option<String>,
+}
+
+/// `drag_handle`'s input, tagged on `action` (behaviour §10.5).
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action", deny_unknown_fields)]
+pub enum DragHandleInput {
+    #[serde(rename = "start")]
+    Start { x: i16, y: i16 },
+    #[serde(rename = "move_to")]
+    MoveTo { x: i16, y: i16 },
+    #[serde(rename = "end")]
+    End,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SecondaryActionInput {
+    pub window: Target,
+    pub element_id: String,
+    pub action: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WindowInput {
+    pub window: Target,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LaunchAppInput {
+    pub app: String,
+}
+
 /// The pinned helper's 20 commands, the newest build's `type_characters` and cua's `capabilities`
-/// (behaviour §2). The spike answers four of them; the rest answer [`not_available`].
+/// (behaviour §2). Those this build does not answer yet answer [`not_available`].
 pub const COMMANDS: &[&str] = &[
     "perform_secondary_action",
     "click",
@@ -285,6 +405,40 @@ mod tests {
         .unwrap();
         assert_eq!(input.window.id, 18874616);
         assert_eq!(input.include_screenshot, Some(false));
+    }
+
+    #[test]
+    fn drag_handle_is_tagged_on_its_action() {
+        let start: DragHandleInput = parse_input(Some(json!({"action": "start", "x": 3, "y": 4}))).unwrap();
+        assert!(matches!(start, DragHandleInput::Start { x: 3, y: 4 }));
+        let end: DragHandleInput = parse_input(Some(json!({"action": "end"}))).unwrap();
+        assert!(matches!(end, DragHandleInput::End));
+        assert!(parse_input::<DragHandleInput>(Some(json!({"action": "move_to", "x": 1}))).is_err());
+        assert!(parse_input::<DragHandleInput>(Some(json!({"action": "drop"}))).is_err());
+    }
+
+    #[test]
+    fn scroll_directions_accept_the_short_names() {
+        for (name, button) in [
+            ("up", 4),
+            ("u", 4),
+            ("down", 5),
+            ("d", 5),
+            ("left", 6),
+            ("l", 6),
+            ("right", 7),
+            ("r", 7),
+        ] {
+            let input: ScrollInput = parse_input(Some(json!({"direction": name}))).unwrap();
+            assert_eq!(input.direction.button(), button);
+        }
+        let error = parse_input::<MoveRelativeInput>(Some(json!({"dx": 1, "dy": 1, "x": 3})))
+            .unwrap_err()
+            .to_string();
+        assert_eq!(
+            error, "failed to parse command input: unknown field `x`, expected one of `dx`, `dy`, `key`",
+            "the vendor's traced sentence"
+        );
     }
 
     #[test]

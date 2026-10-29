@@ -1,14 +1,22 @@
 //! `cua-engine`: cua's own Linux native engine (#171), speaking the vendor helper's wire on stdin and stdout.
 //!
-//! M0's spike: `list_windows`, `get_window_state` and the background route's `press_key` and `click`, with the
-//! fetching and waiting variants M0.3 measures. See `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`.
+//! M1a's engine core (`README.md` says what it answers). See `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`.
 
+mod apps;
 mod atspi;
 mod capture;
+mod cover;
 mod dbus;
+mod desktop;
 mod engine;
+mod families;
 mod input;
 mod keys;
+mod readiness;
+mod resolve;
+mod route;
+mod shm;
+mod table;
 mod tree;
 mod wire;
 mod x11;
@@ -16,13 +24,15 @@ mod x11;
 use std::io::{BufRead, Write};
 use std::time::Duration;
 
-use engine::{BusMode, Config, Engine, TreeMode};
+use engine::{Config, Engine};
+use readiness::CaptureWait;
 use x11::Retention;
 
 const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop shared|dedicated]
-       [--tree sequential|frontier|cache] [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>]
-       [--slack-nodes <n>] [--retention per-request|session|none] [--settle-ms <ms>] [--teardown-ms <ms>]
-       [--key-pace-ms <ms>] [--bus persistent|per-request] [--stats]
+       [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
+       [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
+       [--teardown-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
+       [--drag-release-dwell-ms <ms>] [--stats]
        cua-engine --version";
 
 fn version() -> String {
@@ -33,28 +43,29 @@ fn version() -> String {
     )
 }
 
-/// The spike's defaults: the frontier read with W 64, R 4 MiB, 4 KiB per call in flight (Design, Observation);
-/// session retention; the vendor's waits until M0.3 measures them.
+/// The defaults: the tree read's window as M0 chose it (Design, Observation); session retention; no wait after a
+/// redirect before input and no key pacing, with the vendor's 100 ms before `FocusOut` (Design, Retention and the
+/// fixed waits); a capture's wait is the readiness rule.
 fn default_config() -> Config {
     Config {
-        tree: TreeMode::Frontier,
-        window: tree::Window {
-            calls: 64,
-            bytes: 4 * 1024 * 1024,
-            reservation: 4 * 1024,
-            slack: 16,
-        },
+        window: tree::WINDOW,
         retention: Retention::Session,
-        settle: Duration::from_millis(100),
+        settle: Duration::ZERO,
+        capture_wait: CaptureWait::Damage,
         pacing: input::Pacing {
-            key: Duration::from_millis(33),
+            key: Duration::ZERO,
             teardown: Duration::from_millis(100),
+            drag: None,
         },
-        bus: BusMode::Persistent,
         stats: false,
         mouse_size_px: 0,
         desktop: "shared".into(),
     }
+}
+
+/// A drag flag fixes the drag's waits for every target, the ones it does not name at zero.
+fn fixed_drag(cfg: &mut Config) -> &mut families::DragPacing {
+    cfg.pacing.drag.get_or_insert(families::DragPacing::NONE)
 }
 
 enum Command {
@@ -93,14 +104,6 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                     _ => return Err("--desktop is shared or dedicated".into()),
                 }
             }
-            "--tree" => {
-                cfg.tree = match value.map(String::as_str) {
-                    Some("sequential") => TreeMode::Sequential,
-                    Some("frontier") => TreeMode::Frontier,
-                    Some("cache") => TreeMode::Cache,
-                    _ => return Err("--tree is sequential, frontier or cache".into()),
-                }
-            }
             "--window-calls" => cfg.window.calls = number(value, arg)?.max(1) as usize,
             "--window-bytes" => cfg.window.bytes = number(value, arg)?.max(1) as usize,
             "--call-reservation" => cfg.window.reservation = number(value, arg)? as usize,
@@ -114,15 +117,19 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                 }
             }
             "--settle-ms" => cfg.settle = Duration::from_millis(number(value, arg)?),
-            "--teardown-ms" => cfg.pacing.teardown = Duration::from_millis(number(value, arg)?),
-            "--key-pace-ms" => cfg.pacing.key = Duration::from_millis(number(value, arg)?),
-            "--bus" => {
-                cfg.bus = match value.map(String::as_str) {
-                    Some("persistent") => BusMode::Persistent,
-                    Some("per-request") => BusMode::PerRequest,
-                    _ => return Err("--bus is persistent or per-request".into()),
+            "--capture-wait" => {
+                cfg.capture_wait = match value.map(String::as_str) {
+                    Some("damage") => CaptureWait::Damage,
+                    Some("fixed") => CaptureWait::Fixed,
+                    _ => return Err("--capture-wait is damage or fixed".into()),
                 }
             }
+            "--teardown-ms" => cfg.pacing.teardown = Duration::from_millis(number(value, arg)?),
+            "--key-pace-ms" => cfg.pacing.key = Duration::from_millis(number(value, arg)?),
+            "--drag-step-ms" => fixed_drag(&mut cfg).step = Duration::from_millis(number(value, arg)?),
+            "--drag-step-us" => fixed_drag(&mut cfg).step = Duration::from_micros(number(value, arg)?),
+            "--drag-press-dwell-ms" => fixed_drag(&mut cfg).press = Duration::from_millis(number(value, arg)?),
+            "--drag-release-dwell-ms" => fixed_drag(&mut cfg).release = Duration::from_millis(number(value, arg)?),
             other => return Err(format!("unknown argument {other}")),
         }
         i += if takes_value { 2 } else { 1 };
@@ -185,6 +192,7 @@ fn serve(engine: &mut Engine) -> i32 {
             eprintln!("Error failed to write server response: {error}");
             return 1;
         }
+        engine.after_response();
     }
 }
 
@@ -197,27 +205,80 @@ mod tests {
     }
 
     #[test]
-    fn the_defaults_are_the_spike_s_starting_point() {
+    fn the_defaults_are_m0_s_choices() {
         let Ok(Command::Server(cfg)) = parse_args(&args(&["server"])) else {
             panic!()
         };
-        assert_eq!(cfg.tree, TreeMode::Frontier);
         assert_eq!(
-            (cfg.window.calls, cfg.window.bytes, cfg.window.reservation),
-            (64, 4 << 20, 4 << 10)
+            (
+                cfg.window.calls,
+                cfg.window.bytes,
+                cfg.window.reservation,
+                cfg.window.slack
+            ),
+            (32, 4 << 20, 4 << 10, 8)
         );
         assert_eq!(cfg.retention, Retention::Session);
+        assert_eq!(cfg.capture_wait, CaptureWait::Damage);
         assert_eq!(cfg.mouse_size_px, 0);
+        assert_eq!(
+            (cfg.settle, cfg.pacing.key, cfg.pacing.teardown),
+            (Duration::ZERO, Duration::ZERO, Duration::from_millis(100)),
+            "no input settle and no key pacing; the 100 ms before FocusOut stays"
+        );
     }
 
     #[test]
-    fn variants_and_vendor_options_parse_in_any_order() {
+    fn drags_are_paced_by_the_target_s_family_unless_a_flag_fixes_the_pacing() {
+        use crate::families::DragPacing;
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server"])) else {
+            panic!()
+        };
+        assert_eq!(
+            cfg.pacing.drag, None,
+            "by family (families.rs): no wait unless the family is listed"
+        );
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-step-ms", "0"])) else {
+            panic!()
+        };
+        assert_eq!(cfg.pacing.drag, Some(DragPacing::NONE));
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-step-ms", "1"])) else {
+            panic!()
+        };
+        assert_eq!(
+            cfg.pacing.drag.map(|p| p.step),
+            Some(Duration::from_millis(1)),
+            "the vendor's, for measurement"
+        );
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server", "--drag-step-us", "500"])) else {
+            panic!()
+        };
+        assert_eq!(cfg.pacing.drag.map(|p| p.step), Some(Duration::from_micros(500)));
+        let Ok(Command::Server(cfg)) = parse_args(&args(&[
+            "server",
+            "--drag-press-dwell-ms",
+            "30",
+            "--drag-release-dwell-ms",
+            "20",
+        ])) else {
+            panic!()
+        };
+        assert_eq!(
+            cfg.pacing.drag,
+            Some(DragPacing {
+                step: Duration::ZERO,
+                press: Duration::from_millis(30),
+                release: Duration::from_millis(20),
+            })
+        );
+    }
+
+    #[test]
+    fn measurement_and_vendor_options_parse_in_any_order() {
         let Ok(Command::Server(cfg)) = parse_args(&args(&[
             "--mouse-size-px",
             "12",
             "server",
-            "--tree",
-            "sequential",
             "--window-calls",
             "8",
             "--window-bytes",
@@ -228,29 +289,49 @@ mod tests {
             "per-request",
             "--settle-ms",
             "0",
-            "--bus",
-            "per-request",
+            "--capture-wait",
+            "fixed",
             "--stats",
         ])) else {
             panic!()
         };
-        assert_eq!(cfg.tree, TreeMode::Sequential);
         assert_eq!(
             (cfg.window.calls, cfg.window.bytes, cfg.window.reservation),
             (8, 65536, 1024)
         );
         assert_eq!(cfg.retention, Retention::PerRequest);
         assert_eq!(cfg.settle, Duration::ZERO);
-        assert_eq!(cfg.bus, BusMode::PerRequest);
+        assert_eq!(cfg.capture_wait, CaptureWait::Fixed);
         assert!(cfg.stats);
         assert_eq!(cfg.mouse_size_px, 12);
     }
 
     #[test]
     fn bad_arguments_are_refused() {
-        assert!(parse_args(&args(&["server", "--tree", "level"])).is_err());
+        for removed in [
+            ["--tree", "frontier"],
+            ["--bus", "persistent"],
+            ["--children-after-role", "x"],
+        ] {
+            let mut list = vec!["server"];
+            list.extend(removed);
+            assert!(
+                parse_args(&args(&list)).is_err(),
+                "{removed:?} left the engine with M1a"
+            );
+        }
+        assert!(parse_args(&args(&["server", "--capture-wait", "40"])).is_err());
         assert!(parse_args(&args(&["server", "--window-calls"])).is_err());
         assert!(parse_args(&args(&["--stats"])).is_err());
         assert!(matches!(parse_args(&args(&["--version"])), Ok(Command::Version)));
+    }
+
+    #[test]
+    fn the_version_line_names_the_package_version_and_the_commit() {
+        let line = version();
+        let rest = line.strip_prefix("cua-engine ").expect(&line);
+        let (semver, sha) = rest.split_once(' ').expect(&line);
+        assert_eq!(semver, env!("CARGO_PKG_VERSION"));
+        assert!(sha.starts_with('(') && sha.ends_with(')') && sha.len() > 2, "{line}");
     }
 }

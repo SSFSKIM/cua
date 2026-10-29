@@ -34,7 +34,10 @@ test('the terminal recorder takes its file as an argument, so a run label never 
 test('an unknown operation, a scene with nothing planned and an empty plan are refused', () => {
   assert.deepEqual(planOps(['gedit'], ['tree', 'press_key']), [{ scene: 'gedit', op: 'tree' }, { scene: 'gedit', op: 'press_key' }]);
   assert.throws(() => planOps(['gedit'], ['press_keys']), /unknown operation press_keys/);
-  assert.throws(() => planOps(['gedit'], ['tree', 'scroll']), /unknown operation scroll/);
+  assert.throws(() => planOps(['gedit'], ['tree', 'scrolls']), /unknown operation scrolls/);
+  // an operation that exists but that none of the scenes asked for runs is refused too, not silently dropped
+  assert.throws(() => planOps(['gedit'], ['tree', 'scroll']), /operation scroll is not run by any scene asked for/);
+  assert.deepEqual(planOps(['gedit', 'chrome-input'], ['tree', 'scroll']), [{ scene: 'gedit', op: 'tree' }, { scene: 'chrome-input', op: 'scroll' }]);
   assert.throws(() => planOps(['over-budget'], ['press_key']), /over-budget has none of the operations/);
   assert.throws(() => planOps(['gedit', 'over-budget'], ['press_key']), /over-budget has none of the operations/);
   assert.throws(() => planOps([], ['tree']), /nothing to run/);

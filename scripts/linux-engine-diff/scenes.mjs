@@ -105,13 +105,27 @@ export class Desktop {
   }
 
   /** A Chrome window on one of the harness's pages, its title unique to this window. */
-  async openChrome(role, page) {
-    const label = this.label(page.replace(/\.html$/, ''), role);
+  async openChrome(role, page, { stem = page.replace(/\.html$/, '') } = {}) {
+    // `stem`: the scene's name where two scenes open one page, so every window's title stays its own
+    const label = this.label(stem, role);
     const url = `${pathToFileURL(join(PAGES, page)).href}#${encodeURIComponent(label)}`;
     const child = spawn('google-chrome', ['--new-window', url], { stdio: 'ignore', detached: true });
     child.unref();
     const title = `${label} - Google Chrome`;
-    const info = await this.waitForWindow((w) => w.title === title, label, 30000);
+    let info;
+    try {
+      info = await this.waitForWindow((w) => w.title === title, label, 30000);
+    } catch (error) {
+      // the harness closes what it opened, also when its window did not come up as exactly one
+      for (const w of (await this.listWindows()).filter((x) => x.title === title)) {
+        try {
+          execFileSync(XPROBE, ['close', String(w.id)]);
+        } catch {
+          // already gone
+        }
+      }
+      throw error;
+    }
     const scene = { kind: 'chrome', role, label, page, id: info.id };
     this.windows.push(scene);
     this.place(scene.id, 'chrome');
@@ -158,6 +172,19 @@ export class Desktop {
     xdotool('windowactivate', '--sync', this.front.id);
   }
 
+  /** The harness's own change to a retained window: a new size, at the scene's place (outside any witness span). */
+  resize(id, w, h) {
+    configure(id, 0, 0, w, h);
+  }
+
+  /** The harness's own change to a retained window: unmapped and mapped again at the scene's place and size. */
+  async remap(id, [w, h]) {
+    xdotool('windowunmap', '--sync', id);
+    await sleep(200);
+    xdotool('windowmap', '--sync', id);
+    configure(id, 0, 0, w, h);
+  }
+
   /** For the visible condition: the scene window above the other scene windows, the focus still in front. */
   raise(scene) {
     xdotool('windowraise', scene.id);
@@ -175,6 +202,33 @@ export class Desktop {
     const nodes = preorder((await this.state(scene)).ax_tree);
     const text = nodes.find((n) => n.role === 'text' && n.states?.includes('editable'));
     return text?.value ?? null;
+  }
+
+  /** The input scene's status lines (pages/input.html), parsed. */
+  async inputStatus(scene) {
+    const { parseInputStatus } = await import('./ops.mjs');
+    const nodes = preorder((await this.state(scene)).ax_tree);
+    return parseInputStatus(nodes.map((n) => n.name).filter((n) => typeof n === 'string'));
+  }
+
+  /** Native ids of a scene's push buttons, by accessible name (`{key: name}` to `{key: id}`). */
+  async elementsByName(scene, names) {
+    const nodes = preorder((await this.state(scene)).ax_tree);
+    const out = {};
+    for (const [key, name] of Object.entries(names)) {
+      const node = nodes.find((n) => n.role === 'push button' && n.name === name);
+      if (!node) throw new Error(`${scene.label} has no button named ${name}`);
+      out[key] = node.id;
+    }
+    return out;
+  }
+
+  /** A family's window (families.mjs) as a scene: its application started, sized and settled. */
+  async openFamilyScene(name, role) {
+    const { openFamily } = await import('./families.mjs');
+    const { Oracle } = await import('./oracle.mjs');
+    this.oracle ??= new Oracle();
+    return openFamily(this, this.oracle, name, role);
   }
 
   /** The scene page's counters: clicks, keys, the last key and the typed sequence. */

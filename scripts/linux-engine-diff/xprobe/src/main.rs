@@ -11,6 +11,10 @@
 //! - `xprobe imgdiff <a.jpg> <b.jpg> [mask-top-rows]`: sizes, mean absolute difference and differing pixels of two
 //!   JPEGs below their top rows.
 //! - `xprobe close <window>`: asks the window's client to close it (`WM_DELETE_WINDOW`), for harness-owned windows.
+//! - `xprobe record <x> <y> <width> <height> [focus]`: a recorder window that prints the input events it receives
+//!   (`record.rs`).
+
+mod record;
 
 use std::io::{BufRead, Write};
 use std::sync::mpsc;
@@ -24,7 +28,7 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::rust_connection::RustConnection;
 
-type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+pub(crate) type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 const SAMPLE: Duration = Duration::from_millis(5);
 
@@ -35,7 +39,8 @@ fn main() {
         Some("retention") => retention(&args[1..]),
         Some("imgdiff") if (3..=4).contains(&args.len()) => imgdiff(&args[1], &args[2], args.get(3)),
         Some("close") if args.len() == 2 => close(&args[1]),
-        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window>".into()),
+        Some("record") => record::record(&args[1..]),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window> | record <x> <y> <w> <h> [focus]".into()),
     };
     if let Err(error) = result {
         eprintln!("xprobe: {error}");
@@ -55,7 +60,7 @@ fn atom(conn: &RustConnection, name: &str) -> Result<u32> {
     Ok(conn.intern_atom(false, name.as_bytes())?.reply()?.atom)
 }
 
-fn json_str(text: &str) -> String {
+pub(crate) fn json_str(text: &str) -> String {
     let mut out = String::from("\"");
     for c in text.chars() {
         match c {

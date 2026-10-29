@@ -1,10 +1,13 @@
 //! The tree read (behaviour §5; Design, Observation): the vendor's per-element calls for the vendor's field set,
-//! admitted by the vendor's preorder with one shared counter (5,000 nodes, depths 0–63). Stub for the RED step.
+//! sent many at a time along the preorder frontier inside a window of W calls and R bytes, and admitted by the
+//! vendor's preorder with one shared counter (5,000 nodes, depths 0–63). A `table` with more than 5,000 children
+//! has its visible cells sampled (`table.rs`) and read as leaves, as the vendor does (behaviour §5.4).
 
 use anyhow::Result;
 use serde::Serialize;
 
 use crate::dbus::{Arg, CallResult, MethodCall, Value};
+use crate::table::{self, Need, Progress, Sampler};
 
 pub const NODE_LIMIT: u32 = 5000;
 pub const MAX_DEPTH: u32 = 63;
@@ -27,6 +30,10 @@ pub enum Field {
     ActionName(u32),
     ChildCount,
     Children,
+    /// `Component.GetExtents(0)`, screen coordinates.
+    Extents,
+    /// `Component.GetAccessibleAtPoint(x, y, 0)`, screen coordinates.
+    AtPoint(i32, i32),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -44,22 +51,6 @@ pub struct AxNode {
     pub states: Option<Vec<&'static str>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
-}
-
-/// Fields known before the read, from the `Cache.GetItems` experiment; a seeded field is not called for.
-#[derive(Debug, Default, Clone)]
-pub struct Seed {
-    pub nodes: std::collections::HashMap<ObjRef, SeedNode>,
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct SeedNode {
-    pub role: Option<String>,
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub states: Option<Vec<&'static str>>,
-    pub has_action: Option<bool>,
-    pub children: Option<Vec<ObjRef>>,
 }
 
 /// The query filter (behaviour §5.5): after the walk, keep a node when the lowercased form of its id, role,
@@ -114,12 +105,26 @@ pub struct Window {
     pub slack: u32,
 }
 
+/// M0's choice (Decision Log, M0.3): W 32, R 4 MiB, 4 KiB reserved per call in flight; slack 8, halved from M0's
+/// 16 when `GetChildren` moved behind the role (see `ALWAYS`), which keeps the over-budget page's extra calls near
+/// where M0 measured them.
+pub const WINDOW: Window = Window {
+    calls: 32,
+    bytes: 4 * 1024 * 1024,
+    reservation: 4 * 1024,
+    slack: 8,
+};
+
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct ReadStats {
     pub admitted: u32,
     pub discovered: usize,
     pub wasted_calls: u64,
-    pub large_tables: u32,
+    /// Tables over 5,000 children whose visible cells were sampled, and those whose sampling failed and whose
+    /// children were listed instead.
+    pub tables_sampled: u32,
+    pub tables_listed: u32,
+    pub hit_tests: u32,
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -127,11 +132,14 @@ pub struct ReadStats {
 
 const ACCESSIBLE: &str = "org.a11y.atspi.Accessible";
 const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
+const COMPONENT: &str = "org.a11y.atspi.Component";
 pub const ACTION: &str = "org.a11y.atspi.Action";
+pub const TABLE: &str = "org.a11y.atspi.Table";
 
 /// The D-Bus call for `field` of `obj`, handed to `with`.
 pub fn with_call<R>(obj: &ObjRef, field: Field, with: impl FnOnce(&MethodCall) -> R) -> R {
     let index;
+    let point;
     let (iface, member, args): (&str, &str, &[Arg]) = match field {
         Field::Role => (ACCESSIBLE, "GetRoleName", &[]),
         Field::Name => (PROPERTIES, "Get", &[Arg::Str(ACCESSIBLE), Arg::Str("Name")]),
@@ -146,6 +154,11 @@ pub fn with_call<R>(obj: &ObjRef, field: Field, with: impl FnOnce(&MethodCall) -
         }
         Field::ChildCount => (PROPERTIES, "Get", &[Arg::Str(ACCESSIBLE), Arg::Str("ChildCount")]),
         Field::Children => (ACCESSIBLE, "GetChildren", &[]),
+        Field::Extents => (COMPONENT, "GetExtents", &[Arg::U32(0)]),
+        Field::AtPoint(x, y) => {
+            point = [Arg::I32(x), Arg::I32(y), Arg::U32(0)];
+            (COMPONENT, "GetAccessibleAtPoint", &point)
+        }
     };
     with(&MethodCall {
         dest: &obj.bus,
@@ -156,12 +169,13 @@ pub fn with_call<R>(obj: &ObjRef, field: Field, with: impl FnOnce(&MethodCall) -
     })
 }
 
-fn needs_text(role: &str) -> bool {
-    role == "text" || role == "entry"
+/// `GetText(0, -1)` is read for `text` and `entry` roles, and for a sampled table cell (behaviour §5.1, §5.4).
+fn needs_text(role: &str, leaf: bool) -> bool {
+    role == "text" || role == "entry" || (leaf && role == "table cell")
 }
 
 /// `GetRoleName`: the string verbatim, `unknown` when the reply is not a string; a failure drops the node.
-fn role_of(result: &CallResult) -> Option<String> {
+pub(crate) fn role_of(result: &CallResult) -> Option<String> {
     match result {
         Ok(values) => Some(values.first().and_then(Value::as_str).unwrap_or("unknown").to_string()),
         Err(_) => None,
@@ -215,17 +229,27 @@ pub fn decode_states(words: &[Value]) -> Option<Vec<&'static str>> {
     )
 }
 
-fn states_of(result: &CallResult) -> Option<Vec<&'static str>> {
+pub(crate) fn states_of(result: &CallResult) -> Option<Vec<&'static str>> {
     match result.as_ref().ok()?.first()? {
         Value::Array(words) => decode_states(words),
         _ => None,
     }
 }
 
-/// `GetInterfaces`: whether Action is among them; None when the call fails or is not an array.
-fn has_action_of(result: &CallResult) -> Option<bool> {
+/// What `GetInterfaces` says the tree read needs: whether Action and Table are among them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Ifaces {
+    action: bool,
+    table: bool,
+}
+
+/// None when the call fails or is not an array.
+fn ifaces_of(result: &CallResult) -> Option<Ifaces> {
     match result.as_ref().ok()?.first()? {
-        Value::Array(items) => Some(items.iter().any(|i| i.as_str() == Some(ACTION))),
+        Value::Array(items) => Some(Ifaces {
+            action: items.iter().any(|i| i.as_str() == Some(ACTION)),
+            table: items.iter().any(|i| i.as_str() == Some(TABLE)),
+        }),
         _ => None,
     }
 }
@@ -241,7 +265,7 @@ fn count_of(result: &CallResult) -> Option<u32> {
     }
 }
 
-fn child_count_of(result: &CallResult) -> Option<i32> {
+pub(crate) fn child_count_of(result: &CallResult) -> Option<i32> {
     match result.as_ref().ok()?.first()?.unvariant() {
         Value::I32(n) => Some(*n),
         _ => None,
@@ -249,7 +273,7 @@ fn child_count_of(result: &CallResult) -> Option<i32> {
 }
 
 /// `GetChildren`: the `(string, object path)` pairs in reply order; `[]` when it fails or is not an array.
-fn children_of(result: &CallResult) -> Vec<ObjRef> {
+pub(crate) fn children_of(result: &CallResult) -> Vec<ObjRef> {
     let Ok(values) = result else { return Vec::new() };
     let Some(Value::Array(items)) = values.first() else {
         return Vec::new();
@@ -277,7 +301,7 @@ struct Data {
     description: Option<Option<String>>,
     text: Option<Option<String>>,
     states: Option<Option<Vec<&'static str>>>,
-    has_action: Option<Option<bool>>,
+    ifaces: Option<Option<Ifaces>>,
     nactions: Option<Option<u32>>,
     action_names: Vec<Option<Option<String>>>,
     child_count: Option<Option<i32>>,
@@ -292,7 +316,7 @@ impl Data {
             Field::Description => self.description = Some(label_of(result)),
             Field::Text => self.text = Some(text_of(result)),
             Field::State => self.states = Some(states_of(result)),
-            Field::Interfaces => self.has_action = Some(has_action_of(result)),
+            Field::Interfaces => self.ifaces = Some(ifaces_of(result)),
             Field::NActions => {
                 let n = count_of(result);
                 self.action_names = vec![None; n.unwrap_or(0) as usize];
@@ -305,6 +329,7 @@ impl Data {
             }
             Field::ChildCount => self.child_count = Some(child_count_of(result)),
             Field::Children => self.children = Some(children_of(result)),
+            Field::Extents | Field::AtPoint(..) => debug_assert!(false, "not a node field"),
         }
     }
 
@@ -316,13 +341,22 @@ impl Data {
         matches!(self.role, Some(None))
     }
 
-    /// Every field the vendor reads for this node has its answer.
-    fn complete(&self) -> bool {
+    fn has_action(&self) -> bool {
+        matches!(self.ifaces, Some(Some(Ifaces { action: true, .. })))
+    }
+
+    /// A table whose children the vendor samples instead of listing (behaviour §5.4).
+    fn samples(&self, leaf: bool) -> bool {
+        !leaf && self.role() == Some("table") && matches!(self.child_count, Some(Some(n)) if n > table::SAMPLE_OVER)
+    }
+
+    /// Every attribute the vendor reads for this node has its answer (the children are the node's own matter).
+    fn complete(&self, leaf: bool) -> bool {
         let Some(role) = &self.role else { return false };
         let Some(role) = role else { return true };
-        let actions_done = match self.has_action {
+        let actions_done = match self.ifaces {
             None => false,
-            Some(Some(true)) => match self.nactions {
+            Some(Some(Ifaces { action: true, .. })) => match self.nactions {
                 None => false,
                 Some(None) => true,
                 Some(Some(_)) => self.action_names.iter().all(Option::is_some),
@@ -333,33 +367,32 @@ impl Data {
             && self.description.is_some()
             && self.states.is_some()
             && actions_done
-            && (!needs_text(role) || self.text.is_some())
-            && (role != "table" || self.child_count.is_some())
-            && self.children.is_some()
+            && (!needs_text(role, leaf) || self.text.is_some())
+            && (leaf || role != "table" || self.child_count.is_some())
     }
 
     /// The `actions` key: omitted without Action, `[]` for none, and omitted whole when any read failed.
     fn actions(&self) -> Option<Vec<String>> {
-        if self.has_action != Some(Some(true)) {
+        if !self.has_action() {
             return None;
         }
         self.nactions??;
         self.action_names.iter().map(|n| n.clone().flatten()).collect()
     }
 
-    fn into_node(self, obj: &ObjRef, children: Vec<AxNode>, stats: &mut ReadStats) -> AxNode {
+    fn into_node(self, obj: &ObjRef, children: Vec<AxNode>, leaf: bool) -> AxNode {
         let role = self.role.clone().flatten().unwrap_or_default();
-        if role == "table" && matches!(self.child_count, Some(Some(n)) if n > NODE_LIMIT as i32) {
-            // The vendor samples the visible cells of such a table (behaviour §5.4); the spike lists children.
-            stats.large_tables += 1;
-        }
         AxNode {
             actions: self.actions(),
             children,
             description: self.description.flatten(),
             id: format!("{}:{}", obj.bus, obj.path),
             name: self.name.flatten(),
-            value: if needs_text(&role) { self.text.flatten() } else { None },
+            value: if needs_text(&role, leaf) {
+                self.text.flatten()
+            } else {
+                None
+            },
             states: self.states.flatten(),
             role,
         }
@@ -367,78 +400,7 @@ impl Data {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// The sequential read: the vendor's calls one by one, in the vendor's order
-
-fn call<T: Transport>(t: &mut T, obj: &ObjRef, field: Field) -> Result<CallResult> {
-    let token = t.send(obj, field)?;
-    loop {
-        let (got, result) = t.recv()?;
-        if got == token {
-            return Ok(result);
-        }
-    }
-}
-
-pub fn read_sequential<T: Transport>(t: &mut T, root: &ObjRef) -> Result<(Option<AxNode>, ReadStats)> {
-    let mut stats = ReadStats::default();
-    let mut counter = 0;
-    let tree = visit_sequential(t, root, 0, &mut counter, &mut stats)?;
-    stats.admitted = counter;
-    stats.discovered = counter as usize;
-    Ok((tree, stats))
-}
-
-fn visit_sequential<T: Transport>(
-    t: &mut T,
-    obj: &ObjRef,
-    depth: u32,
-    counter: &mut u32,
-    stats: &mut ReadStats,
-) -> Result<Option<AxNode>> {
-    if *counter >= NODE_LIMIT || depth > MAX_DEPTH {
-        return Ok(None);
-    }
-    *counter += 1;
-    let mut data = Data::default();
-    data.store(Field::Role, &call(t, obj, Field::Role)?);
-    let Some(role) = data.role().map(str::to_string) else {
-        return Ok(None);
-    };
-    for field in [Field::Name, Field::Description] {
-        data.store(field, &call(t, obj, field)?);
-    }
-    if needs_text(&role) {
-        data.store(Field::Text, &call(t, obj, Field::Text)?);
-    }
-    for field in [Field::State, Field::Interfaces] {
-        data.store(field, &call(t, obj, field)?);
-    }
-    if data.has_action == Some(Some(true)) {
-        data.store(Field::NActions, &call(t, obj, Field::NActions)?);
-        if let Some(Some(n)) = data.nactions {
-            for i in 0..n {
-                data.store(Field::ActionName(i), &call(t, obj, Field::ActionName(i))?);
-                if !matches!(data.action_names[i as usize], Some(Some(_))) {
-                    break;
-                }
-            }
-        }
-    }
-    if role == "table" {
-        data.store(Field::ChildCount, &call(t, obj, Field::ChildCount)?);
-    }
-    data.store(Field::Children, &call(t, obj, Field::Children)?);
-    let mut children = Vec::new();
-    for child in data.children.clone().unwrap_or_default() {
-        if let Some(node) = visit_sequential(t, &child, depth + 1, counter, stats)? {
-            children.push(node);
-        }
-    }
-    Ok(Some(data.into_node(obj, children, stats)))
-}
-
-// ---------------------------------------------------------------------------------------------------------------
-// The frontier read: the same calls, many in flight, along the preorder frontier inside the admission window
+// The frontier read: the vendor's calls, many in flight, along the preorder frontier inside the admission window
 
 /// How many more calls the window allows: at most `calls` in flight, and a new call only while the reply bytes
 /// received and not consumed plus `reservation` per call in flight are under `bytes` (Design, Observation).
@@ -450,24 +412,68 @@ fn room(in_flight: usize, staged: usize, window: Window) -> usize {
     window.calls.min(by_bytes).saturating_sub(in_flight)
 }
 
-const ALWAYS: [Field; 6] = [
+/// The calls every node gets first, together. `GetChildren` follows once the role is known, and for a `table`
+/// once its child count says it is listed: the vendor never lists a table over 5,000 children (it samples its
+/// cells), and listing one can hold its application for seconds (LibreOffice Calc's sheet) or make it build every
+/// cell's accessible (GTK's tree view), so the frontier does not send it ahead.
+const ALWAYS: [Field; 5] = [
     Field::Role,
-    Field::Children,
     Field::Interfaces,
     Field::Name,
     Field::Description,
     Field::State,
 ];
 
+/// One call of the frontier: one of the node's own fields, or a call of its table scan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Call {
+    Own(Field),
+    TableExtents,
+    HitTest(i32, i32),
+    CellRole,
+    CellState,
+    CellExtents,
+}
+
+/// A table's scan inside the frontier.
+struct Sampling {
+    sampler: Sampler,
+    /// The object the current cell step reads.
+    cell: Option<ObjRef>,
+    /// The current step's calls not yet sent.
+    queue: Vec<Call>,
+    /// The current step's calls sent and not yet answered.
+    outstanding: u32,
+    outcome: Option<std::result::Result<Vec<ObjRef>, String>>,
+}
+
+impl Sampling {
+    fn apply(&mut self, progress: Progress) {
+        match progress {
+            Progress::Need(Need::TableExtents) => self.queue = vec![Call::TableExtents],
+            Progress::Need(Need::HitTest { x, y }) => self.queue = vec![Call::HitTest(x, y)],
+            Progress::Need(Need::Cell(obj)) => {
+                self.cell = Some(obj);
+                self.queue = vec![Call::CellRole, Call::CellState, Call::CellExtents];
+            }
+            Progress::Done(cells) => self.outcome = Some(Ok(cells)),
+            Progress::Failed(reason) => self.outcome = Some(Err(reason)),
+        }
+    }
+}
+
 struct Pending {
     obj: ObjRef,
     depth: u32,
     parent: Option<usize>,
+    /// A sampled table cell: read without `GetChildren`, with `GetText` for its role (behaviour §5.4).
+    leaf: bool,
     data: Data,
     /// Fields of `ALWAYS`, Text, NActions and ChildCount issued, as bits; action names issued, as a count.
     issued: u16,
     names_issued: u32,
     calls: u32,
+    sampling: Option<Sampling>,
     children: Option<Vec<usize>>,
     done: bool,
     subtree_done: bool,
@@ -491,60 +497,38 @@ fn bit(field: Field) -> u16 {
         Field::NActions => 64,
         Field::ChildCount => 128,
         Field::Children => 256,
-        Field::ActionName(_) => 0,
+        Field::ActionName(_) | Field::Extents | Field::AtPoint(..) => 0,
     }
 }
 
 struct Frontier {
     nodes: Vec<Pending>,
-    seed: Seed,
-    tokens: std::collections::HashMap<u32, (usize, Field)>,
+    tokens: std::collections::HashMap<u32, (usize, Call)>,
+    hit_tests: u32,
 }
 
 impl Frontier {
-    fn new(root: &ObjRef, seed: Seed) -> Self {
+    fn new(root: &ObjRef) -> Self {
         let mut f = Frontier {
             nodes: Vec::new(),
-            seed,
             tokens: Default::default(),
+            hit_tests: 0,
         };
-        f.add(root.clone(), 0, None);
-        f.settle(0);
+        f.add(root.clone(), 0, None, false);
         f
     }
 
-    fn add(&mut self, obj: ObjRef, depth: u32, parent: Option<usize>) -> usize {
-        let mut data = Data::default();
-        let mut issued = 0;
-        if let Some(seeded) = self.seed.nodes.get(&obj) {
-            if let Some(role) = &seeded.role {
-                data.role = Some(Some(role.clone()));
-                issued |= bit(Field::Role);
-            }
-            data.name = Some(seeded.name.clone());
-            data.description = Some(seeded.description.clone());
-            issued |= bit(Field::Name) | bit(Field::Description);
-            if seeded.states.is_some() {
-                data.states = Some(seeded.states.clone());
-                issued |= bit(Field::State);
-            }
-            if let Some(has_action) = seeded.has_action {
-                data.has_action = Some(Some(has_action));
-                issued |= bit(Field::Interfaces);
-            }
-            if let Some(children) = &seeded.children {
-                data.children = Some(children.clone());
-                issued |= bit(Field::Children);
-            }
-        }
+    fn add(&mut self, obj: ObjRef, depth: u32, parent: Option<usize>, leaf: bool) -> usize {
         self.nodes.push(Pending {
             obj,
             depth,
             parent,
-            data,
-            issued,
+            leaf,
+            data: Data::default(),
+            issued: 0,
             names_issued: 0,
             calls: 0,
+            sampling: None,
             children: None,
             done: false,
             subtree_done: false,
@@ -557,29 +541,79 @@ impl Frontier {
     }
 
     /// The calls `node` can send now, in order.
-    fn ready(node: &Pending, out: &mut Vec<Field>) {
+    fn ready(node: &Pending, out: &mut Vec<Call>) {
         if node.data.role_failed() {
             return;
         }
         for field in ALWAYS {
             if node.issued & bit(field) == 0 {
-                out.push(field);
+                out.push(Call::Own(field));
             }
         }
         if let Some(role) = node.data.role() {
-            if needs_text(role) && node.issued & bit(Field::Text) == 0 {
-                out.push(Field::Text);
+            if !node.leaf && node.issued & bit(Field::Children) == 0 && Self::listed(node, role) {
+                out.push(Call::Own(Field::Children));
             }
-            if role == "table" && node.issued & bit(Field::ChildCount) == 0 {
-                out.push(Field::ChildCount);
+            if needs_text(role, node.leaf) && node.issued & bit(Field::Text) == 0 {
+                out.push(Call::Own(Field::Text));
+            }
+            if !node.leaf && role == "table" && node.issued & bit(Field::ChildCount) == 0 {
+                out.push(Call::Own(Field::ChildCount));
             }
         }
-        if node.data.has_action == Some(Some(true)) && node.issued & bit(Field::NActions) == 0 {
-            out.push(Field::NActions);
+        if node.data.has_action() && node.issued & bit(Field::NActions) == 0 {
+            out.push(Call::Own(Field::NActions));
         }
         if let Some(Some(n)) = node.data.nactions {
-            out.extend((node.names_issued..n).map(Field::ActionName));
+            out.extend((node.names_issued..n).map(|i| Call::Own(Field::ActionName(i))));
         }
+        if let Some(sampling) = &node.sampling {
+            out.extend(sampling.queue.iter().copied());
+        }
+    }
+
+    /// Whether the node's children are listed with `GetChildren`: always, but for a table over 5,000 children
+    /// whose scan has not failed, and a table whose child count is not in yet.
+    fn listed(node: &Pending, role: &str) -> bool {
+        if role != "table" {
+            return true;
+        }
+        match node.data.child_count {
+            None => false,
+            Some(Some(n)) if n > table::SAMPLE_OVER => {
+                matches!(node.sampling.as_ref().and_then(|s| s.outcome.as_ref()), Some(Err(_)))
+            }
+            Some(_) => true,
+        }
+    }
+
+    /// Starts the scan of a table once its child count, interfaces and states are in and the `before` nodes that
+    /// precede it in preorder are exactly known, with the cells admission can still take after them. The budget
+    /// must be exact, not an upper bound: a hit test the vendor never makes (past its budget) can fail, and a
+    /// failed scan lists the children instead of keeping the cells found. True when the scan concluded at once (a
+    /// budget of nothing, or a precondition that failed).
+    fn start_sampling(node: &mut Pending, before: u32) -> bool {
+        if node.sampling.is_some() || !node.data.samples(node.leaf) {
+            return false;
+        }
+        let (Some(ifaces), Some(states)) = (&node.data.ifaces, &node.data.states) else {
+            return false;
+        };
+        let implements_table = ifaces.is_some_and(|i| i.table);
+        let states = states.clone().unwrap_or_default();
+        let budget = (NODE_LIMIT - 1).saturating_sub(before);
+        let (sampler, progress) = Sampler::start(node.obj.clone(), budget, implements_table, &states);
+        let mut sampling = Sampling {
+            sampler,
+            cell: None,
+            queue: Vec::new(),
+            outstanding: 0,
+            outcome: None,
+        };
+        sampling.apply(progress);
+        let concluded = sampling.outcome.is_some();
+        node.sampling = Some(sampling);
+        concluded
     }
 
     /// Up to `max` calls, earliest in preorder first, for nodes preorder admission could still admit: the walk
@@ -591,12 +625,12 @@ impl Frontier {
     /// nodes started there precede it in preorder; already started nodes always continue. On a tree under the
     /// limit nothing is ever refused, so the rule costs nothing; over the limit it keeps the calls spent on nodes
     /// preorder later refuses to a few nodes per level the walk discovers out of preorder.
-    fn scan(&mut self, max: usize, slack: u32, out: &mut Vec<(usize, Field)>) {
+    fn scan(&mut self, max: usize, slack: u32, out: &mut Vec<(usize, Call)>) {
         let mut count = 0u32;
         let mut uncertain = false;
         let mut speculative_before = 0u32;
         let mut stack = vec![0usize];
-        let mut fields = Vec::new();
+        let mut calls = Vec::new();
         while let Some(index) = stack.pop() {
             if count >= NODE_LIMIT {
                 return;
@@ -609,27 +643,37 @@ impl Frontier {
                 }
                 continue;
             }
+            // `count` is exact while nothing before this node is uncertain.
+            if !uncertain && Self::start_sampling(&mut self.nodes[index], count) {
+                self.settle(index);
+            }
             count += 1;
+            let node = &self.nodes[index];
             if node.speculative && uncertain {
                 speculative_before += 1;
             }
             if node.calls > 0 || !uncertain || speculative_before < slack {
-                fields.clear();
-                Self::ready(node, &mut fields);
-                for &field in &fields {
+                calls.clear();
+                Self::ready(node, &mut calls);
+                for &call in &calls {
                     if out.len() == max {
                         return;
                     }
-                    out.push((index, field));
+                    out.push((index, call));
                     let node = &mut self.nodes[index];
                     if node.calls == 0 && uncertain {
                         node.speculative = true;
                         speculative_before += 1;
                     }
                     node.calls += 1;
-                    match field {
-                        Field::ActionName(_) => node.names_issued += 1,
-                        other => node.issued |= bit(other),
+                    match call {
+                        Call::Own(Field::ActionName(_)) => node.names_issued += 1,
+                        Call::Own(field) => node.issued |= bit(field),
+                        _ => {
+                            let sampling = node.sampling.as_mut().expect("a scan call comes from a scan");
+                            sampling.queue.remove(0);
+                            sampling.outstanding += 1;
+                        }
                     }
                 }
             }
@@ -642,38 +686,97 @@ impl Frontier {
         }
     }
 
+    /// The object and D-Bus call a frontier call goes to.
+    fn target(&self, index: usize, call: Call) -> (&ObjRef, Field) {
+        let node = &self.nodes[index];
+        let cell = || {
+            node.sampling
+                .as_ref()
+                .and_then(|s| s.cell.as_ref())
+                .expect("a cell call has a cell")
+        };
+        match call {
+            Call::Own(field) => (&node.obj, field),
+            Call::TableExtents => (&node.obj, Field::Extents),
+            Call::HitTest(x, y) => (&node.obj, Field::AtPoint(x, y)),
+            Call::CellRole => (cell(), Field::Role),
+            Call::CellState => (cell(), Field::State),
+            Call::CellExtents => (cell(), Field::Extents),
+        }
+    }
+
     fn on_reply(&mut self, token: u32, result: CallResult) {
-        let Some((index, field)) = self.tokens.remove(&token) else {
+        let Some((index, call)) = self.tokens.remove(&token) else {
             return;
         };
-        self.nodes[index].data.store(field, &result);
+        let node = &mut self.nodes[index];
+        match call {
+            Call::Own(field) => node.data.store(field, &result),
+            scan_call => {
+                let sampling = node.sampling.as_mut().expect("a scan reply belongs to a scan");
+                sampling.outstanding -= 1;
+                let progress = match scan_call {
+                    Call::TableExtents => Some(sampling.sampler.table_extents(&result)),
+                    Call::HitTest(..) => {
+                        self.hit_tests += 1;
+                        Some(sampling.sampler.hit(&result))
+                    }
+                    Call::CellRole => sampling.sampler.cell_role(result),
+                    Call::CellState => sampling.sampler.cell_state(result),
+                    Call::CellExtents => sampling.sampler.cell_extents(result),
+                    Call::Own(_) => unreachable!("matched above"),
+                };
+                if let Some(progress) = progress {
+                    sampling.apply(progress);
+                }
+            }
+        }
         self.settle(index);
     }
 
-    /// Expands a node once its role and children are known, and marks it done once complete; seeded children
-    /// may settle in turn.
+    /// The node's children once they are final: none for a leaf; the sampled cells (leaves) of a table that
+    /// samples, or its listed children when sampling failed; else `GetChildren`'s.
+    fn child_refs(node: &Pending) -> Option<(Vec<ObjRef>, bool)> {
+        if node.leaf {
+            return Some((Vec::new(), false));
+        }
+        let role = node.data.role()?;
+        if role == "table" {
+            node.data.child_count.as_ref()?;
+            if node.data.samples(false) {
+                match &node.sampling.as_ref()?.outcome {
+                    Some(Ok(cells)) => return Some((cells.clone(), true)),
+                    Some(Err(_)) => {}
+                    None => return None,
+                }
+            }
+        }
+        node.data.children.clone().map(|children| (children, false))
+    }
+
+    /// Expands a node once its children are final, and marks it done once complete.
     fn settle(&mut self, index: usize) {
-        let mut work = vec![index];
-        while let Some(index) = work.pop() {
-            let node = &self.nodes[index];
-            if node.children.is_none() && node.data.role().is_some() && node.data.children.is_some() {
-                let refs = node.data.children.clone().unwrap_or_default();
-                let depth = node.depth + 1;
-                let ids: Vec<usize> = if depth > MAX_DEPTH {
-                    Vec::new()
-                } else {
-                    refs.into_iter().map(|r| self.add(r, depth, Some(index))).collect()
-                };
-                work.extend(ids.iter().copied());
-                let node = &mut self.nodes[index];
-                node.open_children = ids.len() as u32;
-                node.children = Some(ids);
-            }
+        let node = &self.nodes[index];
+        if node.children.is_none()
+            && !node.data.role_failed()
+            && let Some((refs, leaves)) = Self::child_refs(node)
+        {
+            let depth = node.depth + 1;
+            let ids: Vec<usize> = if depth > MAX_DEPTH {
+                Vec::new()
+            } else {
+                refs.into_iter()
+                    .map(|r| self.add(r, depth, Some(index), leaves))
+                    .collect()
+            };
             let node = &mut self.nodes[index];
-            if !node.done && node.data.complete() {
-                node.done = true;
-                self.finish(index);
-            }
+            node.open_children = ids.len() as u32;
+            node.children = Some(ids);
+        }
+        let node = &mut self.nodes[index];
+        if !node.done && node.data.complete(node.leaf) && (node.children.is_some() || node.data.role_failed()) {
+            node.done = true;
+            self.finish(index);
         }
     }
 
@@ -702,11 +805,12 @@ impl Frontier {
     fn build(&mut self) -> (Option<AxNode>, ReadStats) {
         let mut stats = ReadStats {
             discovered: self.nodes.len(),
+            hit_tests: self.hit_tests,
             ..Default::default()
         };
         let mut admitted = vec![false; self.nodes.len()];
         let mut counter = 0;
-        let tree = self.build_node(0, &mut counter, &mut admitted, &mut stats);
+        let tree = self.build_node(0, &mut counter, &mut admitted);
         stats.admitted = counter;
         for (i, node) in self.nodes.iter().enumerate() {
             stats.wasted_calls += match (admitted[i], node.data.role_failed()) {
@@ -714,17 +818,19 @@ impl Frontier {
                 (true, true) => node.calls.saturating_sub(1) as u64,
                 (true, false) => 0,
             };
+            if admitted[i]
+                && let Some(sampling) = &node.sampling
+            {
+                match sampling.outcome {
+                    Some(Ok(_)) => stats.tables_sampled += 1,
+                    _ => stats.tables_listed += 1,
+                }
+            }
         }
         (tree, stats)
     }
 
-    fn build_node(
-        &mut self,
-        index: usize,
-        counter: &mut u32,
-        admitted: &mut [bool],
-        stats: &mut ReadStats,
-    ) -> Option<AxNode> {
+    fn build_node(&mut self, index: usize, counter: &mut u32, admitted: &mut [bool]) -> Option<AxNode> {
         if *counter >= NODE_LIMIT {
             return None;
         }
@@ -737,35 +843,27 @@ impl Frontier {
             .clone()
             .unwrap_or_default()
             .into_iter()
-            .filter_map(|c| self.build_node(c, counter, admitted, stats))
+            .filter_map(|c| self.build_node(c, counter, admitted))
             .collect();
         let node = &mut self.nodes[index];
         let data = std::mem::take(&mut node.data);
-        Some(data.into_node(&node.obj, children, stats))
+        Some(data.into_node(&node.obj, children, node.leaf))
     }
 }
 
-pub fn read_frontier<T: Transport>(t: &mut T, root: &ObjRef, window: Window) -> Result<(Option<AxNode>, ReadStats)> {
-    read_seeded(t, root, window, Seed::default())
-}
-
-/// The frontier read with some fields already known (the `cache` variant).
-pub fn read_seeded<T: Transport>(
-    t: &mut T,
-    root: &ObjRef,
-    window: Window,
-    seed: Seed,
-) -> Result<(Option<AxNode>, ReadStats)> {
-    let mut frontier = Frontier::new(root, seed);
+/// Reads the tree under `root` (behaviour §5.1–5.4): None when the root's own `GetRoleName` fails.
+pub fn read<T: Transport>(t: &mut T, root: &ObjRef, window: Window) -> Result<(Option<AxNode>, ReadStats)> {
+    let mut frontier = Frontier::new(root);
     let mut batch = Vec::new();
     loop {
         let room = room(t.in_flight(), t.staged_bytes(), window);
         if room > 0 {
             batch.clear();
             frontier.scan(room, window.slack, &mut batch);
-            for &(index, field) in &batch {
-                let token = t.send(&frontier.nodes[index].obj, field)?;
-                frontier.tokens.insert(token, (index, field));
+            for &(index, call) in &batch {
+                let (obj, field) = frontier.target(index, call);
+                let token = t.send(obj, field)?;
+                frontier.tokens.insert(token, (index, call));
             }
         }
         if t.in_flight() == 0 {
@@ -781,715 +879,4 @@ pub fn read_seeded<T: Transport>(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::{HashMap, VecDeque};
-
-    /// One fake accessible object.
-    #[derive(Clone, Default)]
-    struct Fake {
-        role: Option<&'static str>,
-        name: Option<String>,
-        text: Option<String>,
-        states: [u32; 2],
-        actions: Option<Vec<&'static str>>,
-        children: Vec<String>,
-        child_count: i32,
-    }
-
-    /// A fake bus: a reply becomes available only when the engine waits, and a wait answers everything sent
-    /// before it (one round trip). It checks the window's bounds at every send.
-    struct FakeBus {
-        objects: HashMap<String, Fake>,
-        next: u32,
-        sent: VecDeque<(u32, String, Field)>,
-        ready: VecDeque<(u32, CallResult, usize)>,
-        window: Window,
-        calls: Vec<(String, Field)>,
-        waits: u64,
-        max_in_flight: usize,
-        violations: u32,
-    }
-
-    impl FakeBus {
-        fn new(objects: HashMap<String, Fake>, window: Window) -> Self {
-            FakeBus {
-                objects,
-                next: 1,
-                sent: VecDeque::new(),
-                ready: VecDeque::new(),
-                window,
-                calls: vec![],
-                waits: 0,
-                max_in_flight: 0,
-                violations: 0,
-            }
-        }
-
-        fn answer(&self, path: &str, field: Field) -> CallResult {
-            let o = self
-                .objects
-                .get(path)
-                .ok_or("D-Bus org.a11y.atspi.Accessible.X failed: unknown object")?;
-            let s = |v: &str| Value::Str(v.to_string());
-            let var = |v: Value| Value::Variant(Box::new(v));
-            Ok(match field {
-                Field::Role => vec![s(o
-                    .role
-                    .ok_or("D-Bus org.a11y.atspi.Accessible.GetRoleName failed: defunct")?)],
-                Field::Name => vec![var(s(o.name.as_deref().unwrap_or("")))],
-                Field::Description => vec![var(s(""))],
-                Field::Text => vec![s(o.text.as_deref().unwrap_or(""))],
-                Field::State => vec![Value::Array(vec![Value::U32(o.states[0]), Value::U32(o.states[1])])],
-                Field::Interfaces => {
-                    let mut i = vec![s("org.a11y.atspi.Accessible")];
-                    if o.actions.is_some() {
-                        i.push(s("org.a11y.atspi.Action"));
-                    }
-                    vec![Value::Array(i)]
-                }
-                Field::NActions => vec![var(Value::I32(o.actions.as_ref().map_or(0, |a| a.len() as i32)))],
-                Field::ActionName(n) => vec![s(o.actions.as_ref().unwrap()[n as usize])],
-                Field::ChildCount => vec![var(Value::I32(o.child_count))],
-                Field::Children => vec![Value::Array(
-                    o.children
-                        .iter()
-                        .map(|c| Value::Struct(vec![s(":1.2"), Value::Path(c.clone())]))
-                        .collect(),
-                )],
-            })
-        }
-
-        fn size(result: &CallResult) -> usize {
-            match result {
-                Ok(values) => {
-                    values
-                        .iter()
-                        .map(|v| match v {
-                            Value::Str(s) => s.len(),
-                            _ => 16,
-                        })
-                        .sum::<usize>()
-                        + 64
-                }
-                Err(_) => 64,
-            }
-        }
-
-        fn staged(&self) -> usize {
-            self.ready.iter().map(|r| r.2).sum()
-        }
-    }
-
-    impl Transport for FakeBus {
-        fn send(&mut self, obj: &ObjRef, field: Field) -> Result<u32> {
-            if self.in_flight() >= self.window.calls
-                || self.staged() + self.window.reservation * self.in_flight() >= self.window.bytes
-            {
-                self.violations += 1;
-            }
-            let token = self.next;
-            self.next += 1;
-            self.sent.push_back((token, obj.path.clone(), field));
-            self.calls.push((obj.path.clone(), field));
-            self.max_in_flight = self.max_in_flight.max(self.in_flight());
-            Ok(token)
-        }
-
-        fn recv(&mut self) -> Result<(u32, CallResult)> {
-            if self.ready.is_empty() {
-                self.waits += 1;
-                while let Some((token, path, field)) = self.sent.pop_front() {
-                    let result = self.answer(&path, field);
-                    let size = Self::size(&result);
-                    self.ready.push_back((token, result, size));
-                }
-            }
-            let (token, result, _) = self.ready.pop_front().expect("a call is outstanding");
-            Ok((token, result))
-        }
-
-        fn try_recv(&mut self) -> Result<Option<(u32, CallResult)>> {
-            Ok(self.ready.pop_front().map(|(t, r, _)| (t, r)))
-        }
-
-        fn in_flight(&self) -> usize {
-            self.sent.len() + self.ready.len()
-        }
-
-        fn staged_bytes(&self) -> usize {
-            self.staged()
-        }
-    }
-
-    const WINDOW: Window = Window {
-        calls: 64,
-        bytes: 4 << 20,
-        reservation: 4 << 10,
-        slack: 16,
-    };
-    const SHOWING: [u32; 2] = [(1 << 8) | (1 << 24) | (1 << 25) | (1 << 30), 0];
-
-    fn root() -> ObjRef {
-        ObjRef {
-            bus: ":1.2".into(),
-            path: "/0".into(),
-        }
-    }
-
-    /// A tree with text and entry nodes, actions, a table and a node whose role fails.
-    fn mixed() -> HashMap<String, Fake> {
-        let mut objects = HashMap::new();
-        let mut add = |path: &str, fake: Fake| {
-            objects.insert(path.to_string(), fake);
-        };
-        add(
-            "/0",
-            Fake {
-                role: Some("frame"),
-                name: Some("Window".into()),
-                states: SHOWING,
-                children: vec!["/1".into(), "/2".into(), "/3".into(), "/4".into()],
-                ..Default::default()
-            },
-        );
-        add(
-            "/1",
-            Fake {
-                role: Some("push button"),
-                name: Some("Open".into()),
-                actions: Some(vec!["click"]),
-                states: SHOWING,
-                ..Default::default()
-            },
-        );
-        add(
-            "/2",
-            Fake {
-                role: Some("entry"),
-                text: Some(String::new()),
-                states: [1 << 7, 1 << 9],
-                actions: Some(vec![]),
-                ..Default::default()
-            },
-        );
-        add(
-            "/3",
-            Fake {
-                role: None,
-                children: vec!["/5".into()],
-                ..Default::default()
-            },
-        );
-        add(
-            "/4",
-            Fake {
-                role: Some("table"),
-                child_count: 2,
-                children: vec!["/6".into(), "/7".into()],
-                ..Default::default()
-            },
-        );
-        add(
-            "/5",
-            Fake {
-                role: Some("label"),
-                name: Some("never read".into()),
-                ..Default::default()
-            },
-        );
-        add(
-            "/6",
-            Fake {
-                role: Some("table cell"),
-                name: Some("a".into()),
-                ..Default::default()
-            },
-        );
-        add(
-            "/7",
-            Fake {
-                role: Some("text"),
-                text: Some("body\nline".into()),
-                actions: Some(vec!["showContextMenu", "doDefault"]),
-                ..Default::default()
-            },
-        );
-        objects
-    }
-
-    /// `branching` children per node down to `depth` levels below the root (paths are unique).
-    fn uniform(branching: usize, depth: usize) -> HashMap<String, Fake> {
-        let mut objects = HashMap::new();
-        fn build(objects: &mut HashMap<String, Fake>, path: String, level: usize, branching: usize, depth: usize) {
-            let children: Vec<String> = if level < depth {
-                (0..branching).map(|i| format!("{path}/{i}")).collect()
-            } else {
-                vec![]
-            };
-            objects.insert(
-                path.clone(),
-                Fake {
-                    role: Some(if level % 3 == 2 { "text" } else { "panel" }),
-                    name: Some(path.clone()),
-                    states: SHOWING,
-                    children: children.clone(),
-                    ..Default::default()
-                },
-            );
-            for c in children {
-                build(objects, c, level + 1, branching, depth);
-            }
-        }
-        build(&mut objects, "/0".into(), 0, branching, depth);
-        objects
-    }
-
-    fn count(node: &AxNode) -> usize {
-        1 + node.children.iter().map(count).sum::<usize>()
-    }
-
-    fn ids(node: &AxNode, out: &mut Vec<String>) {
-        out.push(node.id.clone());
-        for c in &node.children {
-            ids(c, out);
-        }
-    }
-
-    fn sorted_calls(mut calls: Vec<(String, Field)>) -> Vec<(String, String)> {
-        let mut v: Vec<(String, String)> = calls.drain(..).map(|(p, f)| (p, format!("{f:?}"))).collect();
-        v.sort();
-        v
-    }
-
-    #[test]
-    fn the_query_keeps_matches_and_their_ancestors_only() {
-        let mut bus = FakeBus::new(mixed(), WINDOW);
-        let tree = read_frontier(&mut bus, &root(), WINDOW).unwrap().0.unwrap();
-        let filtered = filter(tree.clone(), "  LINE ");
-        assert_eq!(filtered.children.len(), 1);
-        assert_eq!(filtered.children[0].id, ":1.2:/4");
-        assert_eq!(filtered.children[0].children.len(), 1);
-        assert_eq!(filtered.children[0].children[0].value.as_deref(), Some("body\nline"));
-        assert_eq!(filter(tree.clone(), "   "), tree);
-        assert_eq!(
-            count(&filter(tree.clone(), ":1.2")),
-            count(&tree),
-            "the id is matched too"
-        );
-        assert!(filter(tree, "nothing matches this").children.is_empty());
-    }
-
-    #[test]
-    fn seeded_fields_are_not_called_for_and_give_the_same_tree() {
-        let objects = uniform(4, 2);
-        let mut seq = FakeBus::new(objects.clone(), Window { calls: 1, ..WINDOW });
-        let (expected, _) = read_sequential(&mut seq, &root()).unwrap();
-        let mut seed = Seed::default();
-        for (path, fake) in &objects {
-            let children = fake
-                .children
-                .iter()
-                .map(|c| ObjRef {
-                    bus: ":1.2".into(),
-                    path: c.clone(),
-                })
-                .collect();
-            seed.nodes.insert(
-                ObjRef {
-                    bus: ":1.2".into(),
-                    path: path.clone(),
-                },
-                SeedNode {
-                    role: fake.role.map(str::to_string),
-                    name: fake.name.clone(),
-                    description: None,
-                    states: decode_states(&[Value::U32(fake.states[0]), Value::U32(fake.states[1])]),
-                    has_action: Some(false),
-                    children: Some(children),
-                },
-            );
-        }
-        let mut bus = FakeBus::new(objects, WINDOW);
-        let (got, _) = read_seeded(&mut bus, &root(), WINDOW, seed).unwrap();
-        assert_eq!(got, expected);
-        assert!(
-            bus.calls.iter().all(|(_, f)| *f == Field::Text),
-            "only the text roles' GetText remains: {:?}",
-            bus.calls
-        );
-    }
-
-    #[test]
-    fn states_keep_the_vendor_table_and_order() {
-        let words = [Value::U32(0x4320_0102), Value::U32(0)];
-        assert_eq!(
-            decode_states(&words),
-            Some(vec!["enabled", "sensitive", "showing", "visible"])
-        );
-        let all = [Value::U32(u32::MAX), Value::U32(u32::MAX)];
-        assert_eq!(
-            decode_states(&all),
-            Some(vec![
-                "checked",
-                "defunct",
-                "editable",
-                "enabled",
-                "expanded",
-                "focusable",
-                "focused",
-                "selected",
-                "sensitive",
-                "showing",
-                "visible",
-                "indeterminate",
-                "checkable"
-            ])
-        );
-        assert_eq!(decode_states(&[Value::U32(0), Value::U32(0)]), Some(vec![]));
-        assert_eq!(decode_states(&[Value::U32(1)]), None);
-    }
-
-    #[test]
-    fn sequential_reads_the_vendor_fields_and_calls() {
-        let mut bus = FakeBus::new(mixed(), Window { calls: 1, ..WINDOW });
-        let (tree, stats) = read_sequential(&mut bus, &root()).unwrap();
-        let tree = tree.unwrap();
-        let json = serde_json::to_value(&tree).unwrap();
-        assert_eq!(json["id"], ":1.2:/0");
-        assert_eq!(json["role"], "frame");
-        assert_eq!(json["name"], "Window");
-        assert!(json.get("description").is_none(), "an empty description is omitted");
-        assert!(json.get("actions").is_none(), "no Action interface, no key");
-        let kids = json["children"].as_array().unwrap();
-        assert_eq!(kids.len(), 3, "the node whose role fails drops with its subtree");
-        assert_eq!(kids[0]["actions"], serde_json::json!(["click"]));
-        assert_eq!(kids[1]["value"], "", "an entry's empty text is kept");
-        assert_eq!(kids[1]["actions"], serde_json::json!([]));
-        assert_eq!(kids[1]["states"], serde_json::json!(["editable", "checkable"]));
-        assert!(
-            kids[2]["children"][0].get("value").is_none(),
-            "a table cell gets no text"
-        );
-        assert_eq!(kids[2]["children"][1]["value"], "body\nline");
-        assert_eq!(
-            kids[2]["children"][1]["actions"],
-            serde_json::json!(["showContextMenu", "doDefault"])
-        );
-        // key order is alphabetical, absent keys skipped
-        let line = serde_json::to_string(&kids[0]).unwrap();
-        assert!(
-            line.starts_with(
-                r#"{"actions":["click"],"children":[],"id":":1.2:/1","name":"Open","role":"push button","states":"#
-            ),
-            "{line}"
-        );
-        assert_eq!(
-            stats.admitted, 7,
-            "the failed node consumes its count; its child is never visited"
-        );
-        // the vendor's order for one node, and no calls after a failed GetRoleName
-        let first: Vec<Field> = bus.calls.iter().filter(|(p, _)| p == "/2").map(|(_, f)| *f).collect();
-        assert_eq!(
-            first,
-            vec![
-                Field::Role,
-                Field::Name,
-                Field::Description,
-                Field::Text,
-                Field::State,
-                Field::Interfaces,
-                Field::NActions,
-                Field::Children
-            ]
-        );
-        let failed: Vec<Field> = bus.calls.iter().filter(|(p, _)| p == "/3").map(|(_, f)| *f).collect();
-        assert_eq!(failed, vec![Field::Role]);
-        let table: Vec<Field> = bus.calls.iter().filter(|(p, _)| p == "/4").map(|(_, f)| *f).collect();
-        assert_eq!(
-            table,
-            vec![
-                Field::Role,
-                Field::Name,
-                Field::Description,
-                Field::State,
-                Field::Interfaces,
-                Field::ChildCount,
-                Field::Children
-            ]
-        );
-        assert_eq!(bus.waits as usize, bus.calls.len(), "one wait per call");
-    }
-
-    #[test]
-    fn frontier_returns_the_sequential_tree_with_the_same_calls_and_far_fewer_waits() {
-        let objects = uniform(6, 3); // 259 nodes
-        let mut seq = FakeBus::new(objects.clone(), Window { calls: 1, ..WINDOW });
-        let (expected, _) = read_sequential(&mut seq, &root()).unwrap();
-        let mut bus = FakeBus::new(objects, WINDOW);
-        let (got, stats) = read_frontier(&mut bus, &root(), WINDOW).unwrap();
-        assert_eq!(got, expected);
-        assert_eq!(
-            sorted_calls(bus.calls.clone()),
-            sorted_calls(seq.calls.clone()),
-            "exactly the vendor's calls"
-        );
-        assert_eq!(stats.wasted_calls, 0);
-        assert_eq!(bus.violations, 0);
-        assert!(
-            bus.max_in_flight <= 64 && bus.max_in_flight > 32,
-            "max in flight {}",
-            bus.max_in_flight
-        );
-        assert!(
-            bus.waits * 20 < seq.waits,
-            "frontier waits {} vs sequential {}",
-            bus.waits,
-            seq.waits
-        );
-    }
-
-    #[test]
-    fn frontier_matches_sequential_on_failures_tables_and_actions() {
-        let mut seq = FakeBus::new(mixed(), Window { calls: 1, ..WINDOW });
-        let (expected, _) = read_sequential(&mut seq, &root()).unwrap();
-        for calls in [1, 2, 3, 7, 64] {
-            let window = Window { calls, ..WINDOW };
-            let mut bus = FakeBus::new(mixed(), window);
-            let (got, _) = read_frontier(&mut bus, &root(), window).unwrap();
-            assert_eq!(got, expected, "W={calls}");
-            assert_eq!(bus.violations, 0);
-            assert!(bus.max_in_flight <= calls);
-        }
-    }
-
-    #[test]
-    fn depth_is_limited_to_63_below_the_root() {
-        let mut objects = HashMap::new();
-        for d in 0..70 {
-            let children = if d < 69 { vec![format!("/{}", d + 1)] } else { vec![] };
-            objects.insert(
-                format!("/{d}"),
-                Fake {
-                    role: Some("panel"),
-                    children,
-                    ..Default::default()
-                },
-            );
-        }
-        let mut seq = FakeBus::new(objects.clone(), Window { calls: 1, ..WINDOW });
-        let (expected, _) = read_sequential(&mut seq, &root()).unwrap();
-        assert_eq!(count(expected.as_ref().unwrap()), 64);
-        let mut bus = FakeBus::new(objects, WINDOW);
-        let (got, _) = read_frontier(&mut bus, &root(), WINDOW).unwrap();
-        assert_eq!(got, expected);
-        assert!(
-            !bus.calls.iter().any(|(p, _)| p == "/64"),
-            "no call for a node deeper than 63"
-        );
-    }
-
-    #[test]
-    fn the_root_failing_reads_nothing() {
-        let mut objects = mixed();
-        objects.get_mut("/0").unwrap().role = None;
-        let mut bus = FakeBus::new(objects.clone(), WINDOW);
-        assert_eq!(read_frontier(&mut bus, &root(), WINDOW).unwrap().0, None);
-        let mut seq = FakeBus::new(objects, WINDOW);
-        assert_eq!(read_sequential(&mut seq, &root()).unwrap().0, None);
-    }
-
-    /// Over budget, deep first: a long chain of wide levels whose preorder fills the budget before the later wide
-    /// siblings, which a careless frontier would fetch.
-    fn over_budget() -> HashMap<String, Fake> {
-        let mut objects = HashMap::new();
-        let mut top = Vec::new();
-        // the deep branch: 40 levels of 150 children each, the first child of each level continuing
-        let mut parent = "/0/deep".to_string();
-        top.push(parent.clone());
-        for level in 0..40 {
-            let children: Vec<String> = (0..150).map(|i| format!("{parent}/{i}")).collect();
-            objects.insert(
-                parent.clone(),
-                Fake {
-                    role: Some("panel"),
-                    children: children.clone(),
-                    ..Default::default()
-                },
-            );
-            for c in &children[1..] {
-                objects.insert(
-                    c.clone(),
-                    Fake {
-                        role: Some(if level % 2 == 0 { "label" } else { "entry" }),
-                        name: Some(c.clone()),
-                        ..Default::default()
-                    },
-                );
-            }
-            parent = children[0].clone();
-        }
-        objects.insert(
-            parent,
-            Fake {
-                role: Some("label"),
-                ..Default::default()
-            },
-        );
-        // the wide branch: 20,000 leaves
-        let wide: Vec<String> = (0..20_000).map(|i| format!("/0/wide/{i}")).collect();
-        for c in &wide {
-            objects.insert(
-                c.clone(),
-                Fake {
-                    role: Some("push button"),
-                    actions: Some(vec!["click"]),
-                    ..Default::default()
-                },
-            );
-        }
-        objects.insert(
-            "/0/wide".into(),
-            Fake {
-                role: Some("list"),
-                children: wide,
-                ..Default::default()
-            },
-        );
-        top.push("/0/wide".into());
-        objects.insert(
-            "/0".into(),
-            Fake {
-                role: Some("frame"),
-                children: top,
-                ..Default::default()
-            },
-        );
-        objects
-    }
-
-    #[test]
-    fn over_budget_keeps_the_preorder_node_set_and_bounds_extra_calls() {
-        let objects = over_budget();
-        let mut seq = FakeBus::new(objects.clone(), Window { calls: 1, ..WINDOW });
-        let (expected, _) = read_sequential(&mut seq, &root()).unwrap();
-        let expected = expected.unwrap();
-        assert_eq!(count(&expected), 5000);
-        let mut bus = FakeBus::new(objects, WINDOW);
-        let (got, stats) = read_frontier(&mut bus, &root(), WINDOW).unwrap();
-        let got = got.unwrap();
-        let (mut a, mut b) = (vec![], vec![]);
-        ids(&expected, &mut a);
-        ids(&got, &mut b);
-        assert_eq!(a, b, "the retained native ids are the vendor's exactly");
-        assert_eq!(got, expected);
-        assert_eq!(stats.admitted, 5000);
-        let extra = bus.calls.len() as i64 - seq.calls.len() as i64;
-        assert!(
-            extra >= 0 && extra as u64 == stats.wasted_calls,
-            "extra {extra}, wasted {}",
-            stats.wasted_calls
-        );
-        // Measured on this shape: W 16 wastes 66 calls, W 64 354, W 256 630 (slack 16); M0.3 fixes the bound.
-        assert!(
-            stats.wasted_calls <= 8 * WINDOW.calls as u64,
-            "wasted {} calls",
-            stats.wasted_calls
-        );
-        assert_eq!(bus.violations, 0);
-        assert!(
-            bus.waits * 10 < seq.waits,
-            "frontier waits {} vs sequential {}",
-            bus.waits,
-            seq.waits
-        );
-    }
-
-    #[test]
-    fn a_deep_first_branch_under_the_limit_reads_at_full_speed() {
-        // the over-budget shape cut to 20 levels of 150 (3,021 nodes): nothing is refused, nothing may crawl
-        let mut objects = over_budget();
-        objects.retain(|path, _| !path.starts_with("/0/wide"));
-        let deep_limit = (0..20).fold("/0/deep".to_string(), |p, _| format!("{p}/0"));
-        objects.retain(|path, _| !path.starts_with(&format!("{deep_limit}/")));
-        objects.get_mut(&deep_limit).unwrap().children.clear();
-        objects.get_mut("/0").unwrap().children = vec!["/0/deep".into()];
-        let mut seq = FakeBus::new(objects.clone(), Window { calls: 1, ..WINDOW });
-        let (expected, _) = read_sequential(&mut seq, &root()).unwrap();
-        let mut bus = FakeBus::new(objects, WINDOW);
-        let (got, stats) = read_frontier(&mut bus, &root(), WINDOW).unwrap();
-        assert_eq!(got, expected);
-        assert_eq!(stats.wasted_calls, 0);
-        assert!(
-            bus.waits * 30 < seq.waits,
-            "frontier waits {} vs sequential {}",
-            bus.waits,
-            seq.waits
-        );
-    }
-
-    #[test]
-    fn a_wide_container_fetches_attributes_only_inside_the_admission_window() {
-        let mut objects = HashMap::new();
-        let wide: Vec<String> = (0..20_000).map(|i| format!("/w/{i}")).collect();
-        for c in &wide {
-            objects.insert(
-                c.clone(),
-                Fake {
-                    role: Some("list item"),
-                    ..Default::default()
-                },
-            );
-        }
-        objects.insert(
-            "/0".into(),
-            Fake {
-                role: Some("list"),
-                children: wide,
-                ..Default::default()
-            },
-        );
-        let mut seq = FakeBus::new(objects.clone(), Window { calls: 1, ..WINDOW });
-        let (expected, _) = read_sequential(&mut seq, &root()).unwrap();
-        let mut bus = FakeBus::new(objects, WINDOW);
-        let (got, stats) = read_frontier(&mut bus, &root(), WINDOW).unwrap();
-        assert_eq!(got, expected);
-        assert_eq!(count(got.as_ref().unwrap()), 5000);
-        assert_eq!(stats.wasted_calls, 0);
-        assert_eq!(bus.calls.len(), seq.calls.len());
-    }
-
-    #[test]
-    fn the_byte_budget_bounds_calls_in_flight_and_a_reply_over_it_is_read_whole() {
-        let mut objects = mixed();
-        let big = "é".repeat(2 * 1024 * 1024 + 7); // over 4 MiB of UTF-8
-        objects.get_mut("/7").unwrap().text = Some(big.clone());
-        let window = Window {
-            calls: 64,
-            bytes: 3 * 4096,
-            reservation: 4096,
-            slack: 16,
-        };
-        let mut bus = FakeBus::new(objects.clone(), window);
-        let (got, _) = read_frontier(&mut bus, &root(), window).unwrap();
-        assert!(
-            bus.max_in_flight <= 3,
-            "R / reservation = 3 calls, got {}",
-            bus.max_in_flight
-        );
-        assert_eq!(bus.violations, 0);
-        let mut seq = FakeBus::new(objects.clone(), Window { calls: 1, ..WINDOW });
-        let (expected, _) = read_sequential(&mut seq, &root()).unwrap();
-        assert_eq!(got, expected);
-        let cell = &got.unwrap().children[2].children[1];
-        assert_eq!(
-            cell.value.as_deref(),
-            Some(big.as_str()),
-            "the 4 MiB text is read exactly"
-        );
-        let mut bus = FakeBus::new(objects, WINDOW);
-        let (got, _) = read_frontier(&mut bus, &root(), WINDOW).unwrap();
-        assert_eq!(got, expected);
-        assert_eq!(bus.violations, 0);
-    }
-}
+pub(crate) mod tests;

@@ -9,9 +9,10 @@ export const USAGE = `usage:
   linux-engine-diff.mjs --check-wire --vendor-js <@oai/sky directory>
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <bin> --scene <list> --ops <list|all> --out <dir>
       [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
-      [--occlusion covered|visible] [--no-counts]
-  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover --cua <bin> --out <dir> [--run <name>]
-      [--vendor <bin> --newest <bin>] [--family <list>] [--load] [--samples-input 5] [--samples-text 2]
+      [--occlusion covered|visible] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
+  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag --cua <bin> --out <dir> [--run <name>]
+      [--vendor <bin> --newest <bin>] [--family <list>] [--load] [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
+      [--via vendor-js --vendor-js <@oai/sky directory>] (events only)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
 
@@ -29,7 +30,7 @@ const VALUE_FLAGS = {
   '--experiment': 'experiment',
   '--occlusion': 'occlusion',
 };
-const NUMBER_FLAGS = { '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText' };
+const NUMBER_FLAGS = { '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText', '--trials': 'samplesTrials', '--first-rounds': 'firstRounds' };
 
 export function parseArgs(argv) {
   const a = {
@@ -45,6 +46,7 @@ export function parseArgs(argv) {
     ops: null,
     occlusion: 'covered',
     counts: true,
+    audit: true,
   };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
@@ -58,8 +60,14 @@ export function parseArgs(argv) {
     else if (flag === '--record-wire') a.mode = 'record-wire';
     else if (flag === '--summarize') a.mode = 'summarize';
     else if (flag === '--no-counts') a.counts = false;
+    else if (flag === '--no-audit') a.audit = false;
     else if (flag === '--load') a.load = true;
     else if (flag === '--family') a.families = need().split(',').filter(Boolean);
+    else if (flag === '--geometry') {
+      const m = need().match(/^(\d+)x(\d+)$/);
+      if (!m) throw new Error('--geometry needs <width>x<height>');
+      a.geometry = [Number(m[1]), Number(m[2])];
+    }
     else if (flag in VALUE_FLAGS) a[VALUE_FLAGS[flag]] = need();
     else if (flag in NUMBER_FLAGS) {
       const n = Number(need());
@@ -86,9 +94,12 @@ export function parseArgs(argv) {
   else if (a.mode === 'summarize') require('out');
   else if (a.mode === 'experiment') {
     require('cua', 'out');
-    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
-    if (['matrix', 'element-click', 'partial-cover'].includes(a.experiment)) require('vendor', 'newest');
-    if (a.experiment === 'qt-bridge') require('vendor');
+    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
+    if (['matrix', 'element-click', 'partial-cover', 'events'].includes(a.experiment)) require('vendor', 'newest');
+    if (a.experiment === 'qt-bridge' || a.experiment === 'engine-readiness' || a.experiment === 'drag') require('vendor');
+    // the events experiment's desktop-only commands through OpenAI's JavaScript client
+    if (a.via && !(a.experiment === 'events' && ['wire', 'vendor-js'].includes(a.via))) throw new Error('--via is wire or vendor-js, and among the experiments only events takes it');
+    if (a.via === 'vendor-js' && !a.vendorJs) throw new Error(`--via vendor-js needs --vendor-js <@oai/sky directory>\n${USAGE}`);
   }
   else {
     require('vendor', 'newest', 'cua', 'out');
@@ -96,8 +107,11 @@ export function parseArgs(argv) {
     // the desktop's operations (list_windows) need no scene; everything else does
     const desktopOnly = a.ops !== 'all' && a.ops.length > 0 && a.ops.every((op) => DESKTOP_OPS.includes(op));
     if (a.scenes.length === 0 && !desktopOnly) throw new Error(`--scene is required\n${USAGE}`);
-    if (a.via && a.via !== 'wire') throw new Error('--via vendor-js arrives with M1a; M0 drives the engines over the wire');
+    if (a.via && !['wire', 'vendor-js'].includes(a.via)) throw new Error('--via is wire or vendor-js');
+    if (a.via === 'vendor-js' && !a.vendorJs) throw new Error(`--via vendor-js needs --vendor-js <@oai/sky directory>\n${USAGE}`);
     if (!['covered', 'visible'].includes(a.occlusion)) throw new Error('--occlusion is covered or visible');
   }
+  // the vendor client starts the binary it is pointed at with no flags of ours, so a variant would measure the defaults
+  if (a.via === 'vendor-js' && a.variants.length) throw new Error('--via vendor-js cannot run --variant lanes: the vendor client starts the engine without their flags');
   return a;
 }

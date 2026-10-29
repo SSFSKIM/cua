@@ -152,6 +152,36 @@ export function classifyFamily(summary, { engines = ['pinned', 'newest', 'cua'] 
   };
 }
 
+const VENDORS = ['pinned', 'newest'];
+
+/**
+ * Acceptance 5 on one family: every cua request kept the witness clean wherever a vendor build's requests all did,
+ * and cua's audit (its own untimed pass through xtrace) is clean wherever a vendor build's witness or audit is.
+ * `cua:none` is exploration, not the engine as it ships, and is not judged.
+ */
+export function backgroundAlone(rows, family) {
+  const samples = rows.filter((r) => r.kind === 'matrix-sample' && r.family === family);
+  const audits = rows.filter((r) => r.kind === 'matrix-audit' && r.family === family);
+  const witness = (engine) => {
+    const mine = samples.filter((r) => r.engine === engine);
+    return mine.length ? mine.every((r) => r.witness === true) : null;
+  };
+  // the audit pass's keys and clicks answer as the series' do (every one ok): one that failed early traced only its
+  // setup, which proves nothing
+  const audit = (engine) => {
+    const row = audits.find((r) => r.engine === engine);
+    if (!row) return null;
+    return row.clean && row.ok === true ? true : row.clean ? 'unexercised' : false;
+  };
+  const engines = [...VENDORS, 'cua'];
+  const out = { witness: Object.fromEntries(engines.map((e) => [e, witness(e)])), audit: Object.fromEntries(engines.map((e) => [e, audit(e)])) };
+  const reasons = [];
+  if (out.witness.cua === null) reasons.push('no cua request was witnessed');
+  else if (VENDORS.some((v) => out.witness[v] === true) && out.witness.cua !== true) reasons.push("cua's witness changed");
+  if (VENDORS.some((v) => out.witness[v] === true || out.audit[v] === true) && out.audit.cua !== true) reasons.push(out.audit.cua === false ? "cua's audit found a forbidden request" : out.audit.cua === 'unexercised' ? "cua's audited requests failed, so the audit did not exercise them" : "cua's audit did not run");
+  return { ...out, pass: reasons.length === 0, reasons };
+}
+
 // The objects a family's effects are read from, by how they are read: a run that did not find them cannot judge.
 const NEEDED = { editor: ['field'], paragraphs: ['document'], page: ['field', 'button'], button: ['button'], electron: ['field', 'button'], terminal: [], pixels: [] };
 
@@ -172,6 +202,7 @@ function readable(sample, pixels) {
  */
 export function matrixOutcome(rows, families) {
   const failed = [];
+  const audited = rows.some((r) => r.kind === 'meta' && r.audit === true) || rows.some((r) => r.kind === 'matrix-audit');
   for (const family of families) {
     const error = rows.find((r) => r.kind === 'matrix-error' && r.family === family);
     const identity = rows.find((r) => r.kind === 'matrix-identity' && r.family === family);
@@ -197,6 +228,11 @@ export function matrixOutcome(rows, families) {
     if (unread.length) {
       const which = [...new Set(unread.map((r) => `${r.engine} ${r.op}`))].join(', ');
       failed.push(`${family}: ${unread.length} effect${unread.length > 1 ? 's' : ''} could not be read (${which})`);
+    }
+    // a run with the X request audit (M1a.4 on) also judges Acceptance 5 on the family
+    if (audited) {
+      const alone = backgroundAlone(rows, family);
+      if (!alone.pass) failed.push(`${family}: ${alone.reasons.join('; ')}`);
     }
   }
   return { complete: failed.length === 0, failed };
@@ -251,6 +287,16 @@ export function matrixMarkdown(rows) {
   for (const f of ignoring) {
     const c = classifyFamily(f.summary);
     md.push(`- ${f.title} (${f.identity.wm_class}; ${f.identity.toolkit ?? 'no AT-SPI provider'}): ${c.description} (run \`${f.run}\`)`);
+  }
+  if (rows.some((r) => r.kind === 'matrix-audit')) {
+    const mark = (v) => (v === true ? 'clean' : v === false ? '**changed**' : '–');
+    const audited = (v) => (v === true ? 'clean' : v === false ? '**forbidden**' : v === 'unexercised' ? '**requests failed**' : '–');
+    md.push('', 'Background left alone (Acceptance 5): every request in a witness span; each engine\'s keys and clicks audited through xtrace in an untimed pass:', '');
+    md.push('| family | witness pinned / newest / cua | audit pinned / newest / cua | cua |', '|---|---|---|---|');
+    for (const f of families) {
+      const a = backgroundAlone(rows.filter((r) => r.run === f.run), f.family);
+      md.push(`| ${f.title} | ${['pinned', 'newest', 'cua'].map((e) => mark(a.witness[e])).join(' / ')} | ${['pinned', 'newest', 'cua'].map((e) => audited(a.audit[e])).join(' / ')} | ${a.pass ? 'PASS' : `**FAIL**: ${a.reasons.join('; ')}`} |`);
+    }
   }
   const meta = rows.find((r) => r.kind === 'meta');
   const outcome = matrixOutcome(rows, meta?.families?.length ? meta.families : [...new Set(rows.filter((r) => r.family).map((r) => r.family))]);

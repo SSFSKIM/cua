@@ -20,11 +20,14 @@ import { join } from 'node:path';
 
 import { elementClick, partialCover } from './clicks.mjs';
 import { Engine } from './engine.mjs';
+import { runDrag } from './drag.mjs';
+import { runEvents } from './events.mjs';
 import { familyNames, openFamily, readText } from './families.mjs';
 import { matrixOutcome } from './matrix-judge.mjs';
 import { matrixMarkdown, runMatrix } from './matrix.mjs';
 import { Oracle } from './oracle.mjs';
 import { qtBridge } from './qt-bridge.mjs';
+import { engineReadiness } from './readiness-check.mjs';
 import { analyzeTrial } from './readiness.mjs';
 import { writeSummary } from './report.mjs';
 import { Desktop, GEOMETRY, XPROBE } from './scenes.mjs';
@@ -289,7 +292,15 @@ export async function runExperiment(args) {
   mkdirSync(args.out, { recursive: true });
   const results = join(args.out, 'results.jsonl');
   const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);
-  emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: execFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, started: new Date().toISOString() });
+  emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: execFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(args.experiment === 'matrix' ? { audit: args.audit, occlusion: args.occlusion } : {}), started: new Date().toISOString() });
+  if (args.experiment === 'events') {
+    // on a private X server of its own: no scene windows, no desktop
+    const { md, pass } = await runEvents(args, emit);
+    emit({ kind: 'experiment-summary', markdown: md, complete: pass, failed: [], finished: new Date().toISOString() });
+    process.stdout.write(`${md.join('\n')}\n`);
+    writeSummary(args.out);
+    return pass;
+  }
   const desktop = new Desktop({ cua: args.cua, run });
   const load = args.load ? startLoad(emit) : null;
   let md;
@@ -301,7 +312,18 @@ export async function runExperiment(args) {
     else if (args.experiment === 'qt-bridge') md = await qtBridge(desktop, emit, { vendor: args.vendor });
     else if (args.experiment === 'element-click') md = await elementClick(desktop, emit, args);
     else if (args.experiment === 'partial-cover') md = await partialCover(desktop, emit, args);
-    else if (args.experiment === 'matrix') {
+    else if (args.experiment === 'engine-readiness') {
+      desktop.keepDir = join(args.out, 'frames');
+      mkdirSync(desktop.keepDir, { recursive: true });
+      const result = await engineReadiness(desktop, emit, args);
+      md = result.md;
+      outcome = { complete: result.pass, failed: result.pass ? [] : ["a first capture was wrong or unjudged, or the pinned build's capture did not confirm a truth"] };
+    }
+    else if (args.experiment === 'drag') {
+      const result = await runDrag(args, { desktop, emit });
+      md = result.md;
+      outcome = { complete: result.complete, failed: result.failed };
+    } else if (args.experiment === 'matrix') {
       const { names } = await runMatrix(args, { desktop, emit, run });
       const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
       md = matrixMarkdown(rows);

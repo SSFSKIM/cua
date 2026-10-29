@@ -81,3 +81,22 @@ test('a cell the pinned build never takes is recorded, not judged; a changed wit
   // the newest build is a reference lane, never judged
   assert.deepEqual(Object.keys(judgeCell(dropped.runs, ['cua:0ms']).lanes), ['cua:0ms']);
 });
+
+test('a drag run is complete only when every requested family and kind finished; a structural error makes it incomplete', async () => {
+  const { dragPlan, dragCompleteness } = await import('../../scripts/linux-engine-diff/drag.mjs');
+  const plan = dragPlan(['chrome', 'gedit', 'nosuch'], ['select', 'scroller', 'scrollbar']);
+  assert.deepEqual(plan, [
+    { family: 'chrome', kind: 'select' }, { family: 'chrome', kind: 'scroller' },
+    { family: 'gedit', kind: 'select' }, { family: 'gedit', kind: 'scrollbar' },
+  ]);
+  assert.equal(dragPlan(['gedit'], null).length, 2, 'without --ops, every kind of the family');
+  const cell = (family, drag, pass = true) => ({ family, drag, lanes: { cua: { pass } } });
+  const all = [cell('chrome', 'select'), cell('chrome', 'scroller', false), cell('gedit', 'select'), cell('gedit', 'scrollbar')];
+  assert.deepEqual(dragCompleteness(plan, all, []), { complete: true, failed: [] }, 'a lane that misses is an outcome, not an incompleteness');
+  // a later kind throws after an earlier kind of the same family completed
+  const partial = dragCompleteness(plan, [cell('chrome', 'select'), cell('gedit', 'select'), cell('gedit', 'scrollbar')], [{ family: 'chrome', kind: 'scroller', error: 'Error: no thumb' }]);
+  assert.equal(partial.complete, false);
+  assert.deepEqual(partial.failed, ['chrome scroller: Error: no thumb']);
+  assert.deepEqual(dragCompleteness(plan, all.slice(0, 3), []), { complete: false, failed: ['gedit scrollbar: not measured'] });
+  assert.equal(dragCompleteness(plan, all, [{ family: 'gedit', kind: null, error: 'Error: closing' }]).complete, false, 'an error after every cell still makes the run incomplete');
+});

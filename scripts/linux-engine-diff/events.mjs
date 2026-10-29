@@ -160,16 +160,21 @@ export const VENDOR_JS_SCENARIOS = [
 ];
 
 /**
- * The steps where a vendor build took effect and the candidate did not (the union of the builds, step by step); a
- * step the candidate lacks is a miss.
+ * The effect-bearing steps (those with an effect read) where the candidate did not take effect, whatever the vendor
+ * builds did on them (Decision Log, M1a.4: cua's effect is judged absolutely); a step the candidate lacks is a miss.
  */
-export function effectMisses(records, vendors, candidate) {
-  const misses = [];
-  const n = Math.max(...vendors.map((v) => records[v]?.length ?? 0));
-  for (let i = 0; i < n; i++) {
-    if (vendors.some((v) => records[v]?.[i]?.effect === true) && records[candidate]?.[i]?.effect !== true) misses.push(i);
-  }
-  return misses;
+export function effectMisses(steps, records, candidate) {
+  return steps.flatMap((step, i) => (step.effect && records[candidate]?.[i]?.effect !== true ? [i] : []));
+}
+
+/**
+ * A scenario's effect verdict: each candidate's misses, failing on any; a scenario whose effect no vendor build took
+ * fails too, since its reader then proves nothing.
+ */
+export function judgeScenarioEffects(steps, records, candidates) {
+  const misses = Object.fromEntries(candidates.map((label) => [label, effectMisses(steps, records, label)]));
+  const vendorTook = ['pinned', 'newest'].some((v) => records[v]?.some((s) => s.effect === true));
+  return { pass: vendorTook && Object.values(misses).every((m) => m.length === 0), misses };
 }
 
 function pointerOn(env) {
@@ -396,16 +401,13 @@ export async function runEvents(args, emit) {
         verdicts[engine.label] = difference;
         if (difference && engine.label.startsWith('cua')) pass = false;
       }
-      // effects, where a scenario reads them: every step a vendor build took must take effect in cua's engines too
-      const misses = {};
+      // effects, where a scenario reads them: every effect-bearing step must take effect in cua's engines
+      let misses = {};
       const judged = scenario.steps.some((s) => s.effect);
       if (judged) {
-        for (const engine of engines.filter((e) => e.label.startsWith('cua'))) {
-          misses[engine.label] = effectMisses(records, ['pinned', 'newest'], engine.label);
-          if (misses[engine.label].length) pass = false;
-        }
-        // a scenario whose effect no vendor build took proves nothing
-        if (!['pinned', 'newest'].some((v) => records[v].some((s) => s.effect === true))) pass = false;
+        const effects = judgeScenarioEffects(scenario.steps, records, engines.filter((e) => e.label.startsWith('cua')).map((e) => e.label));
+        misses = effects.misses;
+        if (!effects.pass) pass = false;
       }
       emit({ kind: 'events', scenario: scenario.name, route: scenario.route, via, records, differences: verdicts, declared, ...(judged ? { effect_misses: misses } : {}) });
       scenarioRows.push({ route: scenario.route, records });

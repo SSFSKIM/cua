@@ -182,8 +182,9 @@ variants included; their evidence is written either way. The run's `end` row kee
   <@oai/sky directory>`): `move_relative` and `drag_handle` (start, move, end through the client's own handle) on the
   private Xvfb, well-formed requests only, each engine behind a fresh client. Answers and events are compared with
   the pinned build's as over the wire, and each step's effect is read back (the pointer through `xdotool
-  getmouselocation`, the press, held motion and release through the recorder); a step either vendor build took must
-  take effect in cua. Request times through the client are recorded, not judged.
+  getmouselocation`, the press, held motion and release through the recorder); every step with an effect read must
+  take effect in cua, whatever the vendor builds did on it (a scenario no vendor build took effect on fails too: its
+  reader proves nothing). Request times through the client are recorded, not judged.
 - **The matrix with the audit** (`--experiment matrix`): after each family's series, every engine but `cua:none`
   sends two keys and two clicks to its own window again through an xtrace proxy (`matrix-audit` rows), the negative
   check runs through a proxy too, and the run judges Acceptance 5 per family (`backgroundAlone`: cua's witness
@@ -211,7 +212,9 @@ variants included; their evidence is written either way. The run's `end` row kee
   at; for a thumb the movement, within a quarter; one more drop; a stroke within 12 px of every corner). A lane
   passes a cell when every run position the pinned build took, it takes too, with the witness clean wherever the
   pinned build's was (Chrome's own drag and drop restacks and activates, whichever engine drags). A cell the pinned
-  build never takes (GTK 4) is recorded, not judged.
+  build never takes (GTK 4) is recorded, not judged. The run is complete only when every requested family and kind
+  produced its cell and nothing threw (`dragCompleteness`); a family's error leaves its remaining kinds unmeasured
+  and the run incomplete, while a lane that misses is a measured outcome.
 
 ## Files
 

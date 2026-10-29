@@ -361,6 +361,26 @@ async function series(ctx, spec, scene, at, kind, n) {
   return runs;
 }
 
+/** The cells a run asks for: each family's kinds (`--ops` narrows them), in the order the run measures them. */
+export function dragPlan(names, kindsAsked) {
+  return names.flatMap((family) => (DRAG_FAMILIES[family] ?? []).filter((k) => !kindsAsked || kindsAsked.includes(k)).map((kind) => ({ family, kind })));
+}
+
+/**
+ * Whether the run measured what it asked for: every planned cell finished and nothing threw. A lane that misses
+ * effects is a measured outcome; an error or a cell left unmeasured makes the run incomplete.
+ */
+export function dragCompleteness(plan, cells, errors) {
+  const failed = [
+    ...errors.map((e) => `${e.family}${e.kind ? ` ${e.kind}` : ''}: ${e.error}`),
+    ...plan
+      .filter((p) => !cells.some((c) => c.family === p.family && c.drag === p.kind))
+      .filter((p) => !errors.some((e) => e.family === p.family && e.kind === p.kind))
+      .map((p) => `${p.family} ${p.kind}: not measured`),
+  ];
+  return { complete: failed.length === 0, failed };
+}
+
 export async function runDrag(args, { desktop, emit }) {
   if (!args.vendor) throw new Error('the drag experiment needs --vendor (the pinned build is its reference)');
   const names = familyNames(args.families?.length ? args.families : Object.keys(DRAG_FAMILIES));
@@ -379,11 +399,14 @@ export async function runDrag(args, { desktop, emit }) {
     `|---|---|${lanes.map(() => '---:').join('|')}|${lanes.slice(1).map(() => '---:').join('|')}|---:|---|---|`,
   ];
   const cells = [];
+  const plan = dragPlan(names, kindsAsked);
+  const errors = [];
   try {
     if (!(await negativeCheck(desktop, witness, stubScene, emit))) throw new Error('the witness did not fail the activating stub; the run is invalid');
     for (const family of names) {
-      const kinds = (DRAG_FAMILIES[family] ?? []).filter((k) => !kindsAsked || kindsAsked.includes(k));
+      const kinds = plan.filter((p) => p.family === family).map((p) => p.kind);
       if (!kinds.length) continue;
+      let measuring = null;
       process.stdout.write(`family ${family}: ${kinds.join(', ')}\n`);
       const scenes = {};
       const ctx = { desktop, oracle, witness, emit, family, occlusion: args.occlusion };
@@ -406,6 +429,7 @@ export async function runDrag(args, { desktop, emit }) {
           at[l.label] = await locate(ctx, scenes[l.label], kinds);
         }
         for (const [k, kind] of kinds.entries()) {
+          measuring = kind;
           const runs = [];
           // the lanes rotate per kind, so no lane always goes first
           const order = [...lanes.slice(k % lanes.length), ...lanes.slice(0, k % lanes.length)];
@@ -427,9 +451,12 @@ export async function runDrag(args, { desktop, emit }) {
           const f = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : '–');
           md.push(`| ${FAMILIES[family].title} | ${kind} | ${lanes.map((l) => took(l.label)).join(' | ')} | ${lanes.slice(1).map((l) => f(row.ms[l.label])).join(' | ')} | ${f(row.ms.pinned)} | ${witnessClean} | ${verdict} |`);
           process.stdout.write(`${md.at(-1)}\n`);
+          measuring = null;
         }
       } catch (error) {
-        emit({ kind: 'drag-error', family, error: String(error.stack ?? error).slice(0, 1000) });
+        // the family's state is unknown after a structural error, so its remaining kinds are not measured
+        errors.push({ family, kind: measuring, error: String(error.message ?? error).split('\n')[0].slice(0, 200) });
+        emit({ kind: 'drag-error', family, drag: measuring, error: String(error.stack ?? error).slice(0, 1000) });
         process.stdout.write(`family ${family} failed: ${error.message}\n`);
         md.push(`| ${FAMILIES[family]?.title ?? family} | – | **failed: ${String(error.message).slice(0, 200)}** |`);
       } finally {
@@ -441,6 +468,5 @@ export async function runDrag(args, { desktop, emit }) {
   }
   const missing = cells.filter((c) => c.pinned_took > 0 && Object.values(c.lanes).some((l) => !l.pass));
   md.push('', missing.length ? `Cells where a cua lane missed a run the pinned build took: ${missing.map((c) => `${c.family} ${c.drag} (${Object.entries(c.lanes).filter(([, l]) => !l.pass).map(([k]) => k).join(', ')})`).join('; ')}.` : 'No cua lane missed a run the pinned build took.');
-  const failed = names.filter((f) => !cells.some((c) => c.family === f));
-  return { md, complete: failed.length === 0, failed: failed.map((f) => `${f}: no cell measured`) };
+  return { md, ...dragCompleteness(plan, cells, errors) };
 }

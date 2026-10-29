@@ -182,13 +182,23 @@ test('the vendor-js desktop scenarios are well formed and judge their effects fr
   assert.equal(end.effect({ after: [300, 260], events: [] }), false);
 });
 
-test('a step any vendor build took effect on must take effect in cua too', async () => {
+test('every effect-bearing step must take effect in cua, whatever the vendor builds did on it (Decision Log, M1a.4)', async () => {
   const { effectMisses } = await import('../../scripts/linux-engine-diff/events.mjs');
+  const steps = [{ effect: () => true }, { effect: () => true }, {}, { effect: () => true }];
+  const lane = (...effects) => effects.map((effect) => ({ command: 'drag_handle', ...(effect === undefined ? {} : { effect }) }));
+  assert.deepEqual(effectMisses(steps, { cua: lane(true, true, undefined, true) }, 'cua'), []);
+  assert.deepEqual(effectMisses(steps, { cua: lane(true, false, undefined, true) }, 'cua'), [1], 'a miss on a step both vendor builds missed too');
+  assert.deepEqual(effectMisses(steps, { cua: lane(true, true) }, 'cua'), [3], 'a missing effect-bearing step is a miss; a step without an effect read is not');
+});
+
+test('a vendor-js desktop scenario whose step every engine missed fails the run', async () => {
+  const { judgeScenarioEffects } = await import('../../scripts/linux-engine-diff/events.mjs');
+  const steps = [{ effect: () => true }, { effect: () => true }];
   const lane = (...effects) => effects.map((effect) => ({ command: 'drag_handle', effect }));
-  const records = { pinned: lane(true, true, false), newest: lane(true, false, true), cua: lane(true, true, true) };
-  assert.deepEqual(effectMisses(records, ['pinned', 'newest'], 'cua'), []);
-  assert.deepEqual(effectMisses({ ...records, cua: lane(true, true, false) }, ['pinned', 'newest'], 'cua'), [2]);
-  assert.deepEqual(effectMisses({ ...records, cua: lane(true, true) }, ['pinned', 'newest'], 'cua'), [2], 'a missing step is a miss');
+  const all = (...effects) => ({ pinned: lane(...effects), newest: lane(...effects), cua: lane(...effects) });
+  assert.deepEqual(judgeScenarioEffects(steps, all(true, true), ['cua']), { pass: true, misses: { cua: [] } });
+  assert.deepEqual(judgeScenarioEffects(steps, all(true, false), ['cua']), { pass: false, misses: { cua: [1] } }, "the reviewer's case: [true, false] in all three engines");
+  assert.equal(judgeScenarioEffects(steps, all(false, false), ['cua']).pass, false);
 });
 
 test('the events experiment can go through the vendor JavaScript, which needs its directory', () => {

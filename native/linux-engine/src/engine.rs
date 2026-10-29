@@ -53,6 +53,8 @@ pub struct Engine {
     launched: apps::Launched,
     /// Each window's drag pacing, looked up once (`families.rs`).
     drag_families: HashMap<x11rb::protocol::xproto::Window, DragPacing>,
+    /// The pacing of the drag a `drag_handle` holds, from its start to its end.
+    handle_pacing: pointer::HandlePacing,
 }
 
 fn merge(into: &mut BusStats, from: BusStats) {
@@ -81,6 +83,7 @@ impl Engine {
             extra: Default::default(),
             pending_stats: None,
             drag_families: HashMap::new(),
+            handle_pacing: pointer::HandlePacing::default(),
             launched: apps::Launched::default(),
         })
     }

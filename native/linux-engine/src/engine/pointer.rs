@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use anyhow::{Result, bail};
 use serde_json::Value;
+use x11rb::protocol::xproto::ConnectionExt as _;
 
 use super::Engine;
 use crate::desktop::Desktop;
@@ -22,6 +23,26 @@ pub(super) const CLICK_HOLD: Duration = Duration::from_millis(12);
 const WHEEL_HOLD: Duration = Duration::from_millis(36);
 /// `scroll`'s pixels when absent.
 const DEFAULT_PIXELS: u16 = 800;
+
+/// The pacing of the drag a `drag_handle` holds: found at its start from the window under the pointer (as a desktop
+/// `drag` finds it under its path's start), kept for its moves and its release, forgotten at its end.
+#[derive(Debug, Default)]
+pub(super) struct HandlePacing(Option<DragPacing>);
+
+impl HandlePacing {
+    pub(super) fn current(&self) -> Option<DragPacing> {
+        self.0
+    }
+
+    pub(super) fn start(&mut self, pacing: DragPacing) -> DragPacing {
+        self.0 = Some(pacing);
+        pacing
+    }
+
+    pub(super) fn end(&mut self) -> DragPacing {
+        self.0.take().unwrap_or(DragPacing::NONE)
+    }
+}
 
 /// Wheel steps for a pixel count: pixels / 100 rounded half away from zero, at least one (behaviour §10.3).
 pub fn scroll_steps(pixels: u16) -> u32 {
@@ -240,19 +261,39 @@ impl Engine {
         Ok(Value::Null)
     }
 
-    /// `drag_handle`: desktop only and stateless here; start, move and end are the JavaScript's to order
-    /// (behaviour §10.5).
+    /// `drag_handle`: desktop only; start, move and end are the JavaScript's to order (behaviour §10.5). The vendor's
+    /// events, with the drag's waits by family (`families.rs`) in place of the vendor's 8 ms between a held move's
+    /// points: the window under the start decides them, for the whole handle. The move to the start is the vendor's
+    /// own pointer move, as a desktop `drag`'s placing is.
     pub(super) fn drag_handle(&mut self, input: Option<Value>) -> Result<Value> {
         let input: DragHandleInput = parse_input(input)?;
-        let x = &self.x;
         match input {
             DragHandleInput::Start { x: px, y: py } => {
-                Desktop::move_path(x, px, py)?;
-                Desktop::motion(x, px, py)?;
-                Desktop::button(x, 1, true)?;
+                let window = self.x.client_at(px, py);
+                let pacing = self.drag_pacing_for(window);
+                self.handle_pacing.start(pacing);
+                Desktop::move_path(&self.x, px, py)?;
+                Desktop::motion(&self.x, px, py)?;
+                Desktop::button(&self.x, 1, true)?;
+                std::thread::sleep(pacing.press);
             }
-            DragHandleInput::MoveTo { x: px, y: py } => Desktop::move_path(x, px, py)?,
-            DragHandleInput::End => Desktop::button(x, 1, false)?,
+            DragHandleInput::MoveTo { x: px, y: py } => {
+                // a move with no start in this engine (the wire allows it): the window under the pointer decides
+                let pacing = match self.handle_pacing.current() {
+                    Some(pacing) => pacing,
+                    None => {
+                        let pointer = self.x.conn.query_pointer(self.x.root)?.reply()?;
+                        let window = self.x.client_at(pointer.root_x, pointer.root_y);
+                        let pacing = self.drag_pacing_for(window);
+                        self.handle_pacing.start(pacing)
+                    }
+                };
+                Desktop::move_path_paced(&self.x, px, py, pacing.step)?;
+            }
+            DragHandleInput::End => {
+                std::thread::sleep(self.handle_pacing.end().release);
+                Desktop::button(&self.x, 1, false)?;
+            }
         }
         Ok(Value::Null)
     }
@@ -303,6 +344,30 @@ mod tests {
         ] {
             assert_eq!(scroll_steps(pixels), steps, "{pixels} px");
         }
+    }
+
+    #[test]
+    fn a_drag_handle_keeps_the_pacing_its_start_found_until_its_end() {
+        let gecko = DragPacing {
+            step: Duration::from_micros(300),
+            press: Duration::ZERO,
+            release: Duration::from_millis(30),
+        };
+        let mut handle = HandlePacing::default();
+        assert_eq!(handle.current(), None, "no handle yet: the move looks its window up");
+        assert_eq!(handle.start(gecko), gecko);
+        assert_eq!(
+            handle.current(),
+            Some(gecko),
+            "every move of the handle keeps the start's family"
+        );
+        assert_eq!(handle.end(), gecko, "the release waits as the family asks");
+        assert_eq!(handle.current(), None, "the end forgets it");
+        assert_eq!(
+            handle.end(),
+            DragPacing::NONE,
+            "an end without a start waits for nothing"
+        );
     }
 
     #[test]

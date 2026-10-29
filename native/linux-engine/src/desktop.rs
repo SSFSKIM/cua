@@ -128,11 +128,16 @@ impl Desktop {
 
     /// `move_path`: from wherever the pointer is to the point, through [`path_points`], 8 ms between points.
     pub fn move_path(x: &X11, rx: i16, ry: i16) -> Result<()> {
+        Self::move_path_paced(x, rx, ry, PATH_STEP)
+    }
+
+    /// [`Desktop::move_path`]'s points with `step` between them: a held `drag_handle` move, paced by its family.
+    pub fn move_path_paced(x: &X11, rx: i16, ry: i16, step: Duration) -> Result<()> {
         let pointer = x.conn.query_pointer(x.root)?.reply()?;
         let points = path_points((pointer.root_x, pointer.root_y), (rx, ry));
         for (i, &(px, py)) in points.iter().enumerate() {
             if i > 0 {
-                std::thread::sleep(PATH_STEP);
+                std::thread::sleep(step);
             }
             Self::motion(x, px, py)?;
         }

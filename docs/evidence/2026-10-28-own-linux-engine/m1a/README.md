@@ -25,6 +25,8 @@ M1a.4's runs:
 | `m1a4-events-final` | 2104e8cd | the input events on a private Xvfb, compared with the pinned build's, both routes |
 | `m1a4-vendor-js-desktop-final` | 2104e8cd | `move_relative` and `drag_handle` through the vendor JavaScript on a private Xvfb, answers and effects |
 | `m1a4-events-br`, `m1a4-events-br2`, `m1a4-vendor-js-desktop-br` | d474e40d | the M1a branch review's re-run: `drag_handle`'s held moves paced by family, the events experiment's wire speed now judged |
+| `m1a4-events-gate`, `m1a4-events-gate3` | d474e40d (harness def3babd, c796d4d9) | the desktop speed gate: interleaved fresh-engine blocks, 20 samples a judged group, the bootstrap interval; before and after the declared `move` gap |
+| `m1a4-drag-writer-primed` | d474e40d | the Writer select cell with each fresh window primed by one drag |
 | `m1a4-matrix-covered-final`, `m1a4-matrix-visible-final` | 2104e8cd | M0.4's 11 families, background keys and clicks, with the witness and the X request audit |
 | `m1a4-drag-browsers` | 7a860320 | the drag experiment, final pacing, on Chrome, Electron and Firefox: 30 runs per kind (the drag path is unchanged after it) |
 | `m1a4-drag`, `m1a4-drag-xterm` | 2ab237cc and later | the drag experiment on every family: 30 runs per kind with no wait, a dwell, and the first table |
@@ -119,14 +121,62 @@ All medians are in `summary.md`. Every other operation passes, most by a factor 
     the newest build each send `FakeInput` followed by a `GetInputFocus` sync, per key. Measured directly, 120 releases
     each came out at cua 0.381 against newest 0.389 ms (`.doperpowers/sde/m1a4/keyup-probe.mjs`). In both re-runs it
     passed (0.1 against 0.2 ms).
-- **The events experiment times most first requests once.** As a gate, it can fail on noise:
-  - `m1a4-events-br` failed desktop `click`, `move`, `scroll` and `drag_handle` first requests by 0.02–0.9 ms. Most of
-    those were 1–3 samples, at parity with the pinned build.
-  - `m1a4-events-br2` passed every one.
-  - 31 interleaved fresh engines per command show `click`, `scroll` and `drag_handle` first at or below the bar.
-  - Desktop `move` first is 74.5 ms against the newest build's 73.6, with the pinned build at 74.8. cua sends the
-    pinned build's 11 motions with its 8 ms between points; the newest build sends 10. Closing that gap means changing
-    the events or the vendor's path wait, so it is left to the design session.
+- **The desktop route's speed gate** (the branch review's second round). The scenarios time most requests once, and
+  as a gate that failed on noise: `m1a4-events-br` failed four desktop first requests by 0.02–0.9 ms, and `-br2`, on
+  the same binary, passed them all. Since then, over the wire:
+  - The desktop route is timed in interleaved fresh engines. Every desktop scenario's sequence runs on the private
+    Xvfb with its window-bound steps left out and its first request repeated at the end. Each round gives every
+    engine a fresh process per sequence, with the order rotating and 150 ms after each start. There are 31 rounds.
+  - The scenarios' own desktop times are recorded beside the blocks as `… in a scenario`.
+  - A group is judged only when every engine has at least 20 samples.
+  - Each judged group reports a bootstrap 95% interval of cua's median minus the faster build's. Samples are
+    resampled within their own request, so a group that mixes requests keeps its mix.
+  - A `first` group above the bar whose interval includes 0 counts as **same (within noise)**. It is listed apart,
+    not as a pass.
+  - A loss that a speed gap in `deviations.mjs` declares is a **declared gap**, listed apart and never a pass.
+  - Any other loss fails the run.
+
+  `m1a4-events-gate3` (d474e40d's engine, the harness of c796d4d9) passes:
+
+  | desktop command | first: cua / bar ms, interval | later: cua / bar ms, interval |
+  |---|---|---|
+  | `press_key` | 0.66 / 34.76, pass | 0.33 / 34.20, pass |
+  | `key_down` | 0.60 / 1.42, pass | 0.21 / 0.64, pass |
+  | `key_up` | (none: a fresh engine has nothing held) | 0.16 / 0.17, [−0.02, 0.005], pass |
+  | `click` | 86.77 / 86.51, [−0.05, 0.60], **same (within noise)** | 12.74 / 30.02, pass |
+  | `move` | 82.68 / 82.89, [−0.43, 0.02], pass | 8.43 / 6.01, [2.32, 2.49], **declared gap (M4)** |
+  | `move_relative` | 0.45 / 0.71, pass | 0.15 / 0.23, pass |
+  | `scroll` | 73.18 / 73.40, pass | 223.0 / 240.1, pass |
+  | `drag` | 47.6 / 106.6, pass | 50.9 / 110.5, pass |
+  | `drag_handle` | 37.51 / 37.53, [−0.10, 0.12], pass | 0.46 / 30.30, pass |
+
+  **The declared gap, desktop `move` later.**
+  - cua sends the pinned build's motions. The first motion is at the pointer's own position, and the vendor's 8 ms
+    path wait follows each motion.
+  - The newest build leaves that first motion out. On a short move it therefore sends one motion and waits nothing,
+    against cua's two motions and one wait.
+  - The run before the gap was declared (`m1a4-events-gate`) failed on this group alone: 8.45 against 6.05,
+    [2.27, 2.59].
+  - Removing the gap means changing the events or the vendor's path wait, which M4 shortens under its rule. It is
+    therefore declared, with section M4.
+  - The long first `move` passes: cua's first request does nothing the move does not need. The X connection and its
+    atoms are set up before the first request, and the accessibility bus, the keymap (fetched only for a chord) and
+    the SHM segment are not touched.
+  - On a different path, (640, 400) to (500, 400), the probe found cua 0.5 ms behind the newest build (74.79 against
+    74.28, [0.015, 1.193]). That is the same one-motion difference, and the gate's scenario path does not show it.
+
+**Which run judges each desktop-route operation's speed** (cold is the first request, warm the later ones):
+
+| operation | cold | warm |
+|---|---|---|
+| `list_windows`, `list_apps` | the verdict run's desktop scene (`m1a4-wire-final`, 7 blocks) | the same |
+| `get_screenshot` | the three 20-block sittings (`m1a4-final-sitting-*`; parity, above) | the same, and the verdict run |
+| `launch_app` | the three 20-block sittings, and the verdict run | the same |
+| `press_key`, `key_down`, `click`, `move`, `move_relative`, `scroll`, `drag`, `drag_handle` | the events experiment's desktop blocks (`m1a4-events-gate3`) | the same |
+| `key_up` | not applicable: a fresh engine holds nothing, so its first `key_up` is the no-op the window route's verdict run times | the events experiment's desktop blocks |
+
+Window-route speeds are judged in the verdict run, with seven fresh-process blocks a scene. The events experiment's
+window-route groups have too few samples and are recorded only.
 
 **4. Same elements: pass** (the truncation line through the facade is M4's).
 - The gedit and Chrome reads return exactly the vendor's nodes with the same native ids, through the windowed read:
@@ -181,7 +231,8 @@ wait, 30 ms after the press and before the release).
   - gedit select and scrollbar, and the GTK 3 scale;
   - kate and Qt Creator select and scrollbar;
   - Writer select, which took 29/30 in every engine, the pinned build's included: the window's first drag selects
-    nothing. The original relative judge passed it; the absolute judge (below) fails it in every cua lane.
+    nothing. The original relative judge passed it; the absolute judge (below) fails it, and with the window primed
+    every lane takes 30/30 (below).
   - xterm and xterm with allowSendEvents (select, read through PRIMARY).
 - Chromium (Chrome and Electron) misses the canvas path (0–1 of 30 taken), the scroller thumb (2–5 of 30), and the
   odd first select or drop (1–3 misses).
@@ -259,6 +310,14 @@ Writer's first drag in a fresh window selects nothing in every engine; that is t
   run and, for value and thumb kinds, every parity has a pinned value. Re-judging every recorded cell moves one:
   Writer's select in `m1a4-drag` now fails in every cua lane (29/30). That window's first drag selects nothing in
   every engine, the pinned build's included.
+- **Writer's cell is primed** (`DRAG_PRIMING` in `drag.mjs`). Each engine's fresh Writer window takes one drag before
+  its 30 runs. The priming drag is untimed, unjudged and witnessed, and it selects the odd runs' text, so the first
+  measured run never presses inside it. This is harness setup that hides real behaviour: an agent's first drag in a
+  fresh Writer window selects nothing. That is an M4 candidate: why it happens, and whether the engine can prime the
+  window itself.
+
+  In `m1a4-drag-writer-primed` (d474e40d), every priming drag answered and kept the witness clean, and **every lane
+  took 30/30**: pinned, newest, cua and `cua:0ms`. cua took 117.5 ms against the newest build's 306.
 
 ## The desktop screenshot through MIT-SHM
 

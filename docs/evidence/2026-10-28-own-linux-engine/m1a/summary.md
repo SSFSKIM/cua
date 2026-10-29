@@ -2807,3 +2807,315 @@ Request times per route and command (median ms over every scenario step; `first`
 | window | scroll | first | 3 | 241.5 | 242.7 | 141.3 | yes |
 | window | scroll | later | 6 | 203 | 202.9 | 101.3 | yes |
 
+## m1a4-events-gate (experiment events)
+
+Through the wire:
+
+| scenario | newest | cua | effects (pinned / newest / cua) |
+|---|---|---|---|
+| press_key a | same | same | – |
+| press_key A | same | same | – |
+| press_key z | same | same | – |
+| press_key Z | same | same | – |
+| press_key shift+z | same | same | – |
+| press_key Shift+Z | same | same | – |
+| press_key ctrl+z | same | same | – |
+| press_key Ctrl+Z | same | same | – |
+| press_key CTRL+z | same | same | – |
+| press_key Ctrl+Shift+Z | same | same | – |
+| press_key ctrl+shift+t | same | same | – |
+| press_key Ctrl+Shift+T | same | same | – |
+| press_key XK_Return | same | same | – |
+| press_key Return | same | same | – |
+| press_key alt+F5 | same | same | – |
+| press_key Ctrl+Alt+Shift+A | same | same | – |
+| press_key super+L | same | same | – |
+| press_key ! | same | same | – |
+| press_key @ | same | same | – |
+| press_key shift+! | same | same | – |
+| press_key !+@ | same | same | – |
+| press_key ctrl++ | same | same | – |
+| press_key + | same | same | – |
+| press_key a+a | same | same | – |
+| press_key < | same | same | – |
+| press_key kp_enter | same | same | – |
+| press_key f12 | same | same | – |
+| press_key space | same | same | – |
+| press_key Escape | same | same | – |
+| press_key with duration | same | same | – |
+| press_key bad key | same | same | – |
+| press_key empty | same | same | – |
+| held ctrl around press_key a | same | same | – |
+| held Ctrl around press_key Shift+Z | same | same | – |
+| two holds sharing ctrl | same | same | – |
+| a repeated hold is one hold | same | same | – |
+| key_up of nothing held | same | same | – |
+| a hold is named by its normalized chord | same | same | – |
+| order makes a different hold | same | same | – |
+| held shift under a click chord | differs at step 1 (event) | same | – |
+| bad keys in holds | same | same | – |
+| holds left at exit are released with their state | same | same | – |
+| held key across another window request | differs at step 1 (event) | same | – |
+| click | differs at step 0 (event) | same | – |
+| click in the child | differs at step 0 (event) | same | – |
+| right click | differs at step 0 (event) | same | – |
+| middle double click held 0 | differs at step 0 (event) | same | – |
+| click with a chord | differs at step 0 (event) | same | – |
+| click outside the window | same | same | – |
+| click validation | same | same | – |
+| move | differs at step 0 (event) | same | – |
+| scroll at the centre | differs at step 0 (event) | same | – |
+| scroll at a point | differs at step 0 (event) | same | – |
+| scroll validation | same | same | – |
+| drag | differs at step 0 (event) | same | – |
+| a bad chord on move, scroll and drag | differs at step 2 (event) | same | – |
+| an interrupted drag under a held key, then a move | differs at step 1 (event) | same | – |
+| an interrupted click under a held key, then a move | differs at step 1 (event) | same | – |
+| a key hold whose window is destroyed | same but the declared answer (interrupted_hold) | same but the declared answer (interrupted_hold) | – |
+| drag with a chord, and a short path | differs at step 0 (event) | same | – |
+| desktop press_key a | same | same | – |
+| desktop press_key Z | same | same | – |
+| desktop press_key Ctrl+Z | same | same | – |
+| desktop press_key ! | same | same | – |
+| desktop press_key ctrl++ | same | same | – |
+| desktop press_key a+a | same | same | – |
+| desktop press_key bad key | same | same | – |
+| desktop held ctrl around press_key a | same | same | – |
+| desktop two holds sharing ctrl | same | same | – |
+| desktop holds left at exit | same | same | – |
+| desktop hold and a window hold are apart | same | same | – |
+| desktop click | differs at step 0 (event) | same | – |
+| desktop click in place | same | same | – |
+| desktop click far | differs at step 0 (event) | same | – |
+| desktop move | differs at step 0 (event) | same | – |
+| desktop move_relative | same | same | – |
+| desktop scroll | differs at step 1 (event) | same | – |
+| desktop drag | differs at step 0 (event) | same | – |
+| desktop drag short path | same | same | – |
+| drag_handle | differs at step 0 (event) | same | – |
+| drag_handle stray end | same | same | – |
+| activate_window | same | same | – |
+| launch_app | same | same | – |
+
+cua sent the pinned build's events and answers in every scenario.
+
+Request times per route and command (median ms; `first` is the request after the engine started, `later` the rest; the desktop route's `first` and `later` from 31 interleaved fresh engines per engine and sequence, its scenarios' own beside them; a group is judged only with 20 samples an engine; `first` above the bar with a bootstrap 95% interval of cua minus the faster build that includes 0 is the same within noise):
+
+| route | command | series | n | pinned | newest | cua | cua − faster, 95% interval | verdict |
+|---|---|---|---:|---:|---:|---:|---|---|
+| desktop | click | first | 93 | 87.01 | 86.53 | 86.69 | [-0.46, 0.72] | **same (within noise)** |
+| desktop | click | first in a scenario | 3 | 87.68 | 87.73 | 87.32 | – | too few samples, not judged |
+| desktop | click | later | 124 | 46.45 | 30.1 | 12.75 | [-33.89, -0.53] | pass |
+| desktop | click | later in a scenario | 1 | 158.52 | 91.98 | 25.17 | – | too few samples, not judged |
+| desktop | drag_handle | first | 62 | 37.85 | 38.5 | 37.49 | [-74.06, 73.43] | pass |
+| desktop | drag_handle | first in a scenario | 2 | 38.4 | 38.02 | 38.74 | – | too few samples, not judged |
+| desktop | drag_handle | later | 124 | 32.99 | 30.44 | 0.51 | [-59.81, 0.155] | pass |
+| desktop | drag_handle | later in a scenario | 2 | 34.1 | 30.48 | 0.39 | – | too few samples, not judged |
+| desktop | drag | first | 62 | 324.82 | 106.47 | 47.42 | [-213.15, 96.15] | pass |
+| desktop | drag | first in a scenario | 2 | 336.87 | 110.2 | 55.45 | – | too few samples, not judged |
+| desktop | drag | later | 62 | 328.79 | 111.02 | 50.23 | [-222.61, 103.01] | pass |
+| desktop | key_down | first | 124 | 51.57 | 1.44 | 0.59 | [-0.89, -0.79] | pass |
+| desktop | key_down | first in a scenario | 4 | 52.07 | 2.09 | 1.02 | – | too few samples, not judged |
+| desktop | key_down | later | 155 | 34.1 | 0.63 | 0.2 | [-0.46, -0.41] | pass |
+| desktop | key_down | later in a scenario | 1 | 33.96 | 0.59 | 0.21 | – | too few samples, not judged |
+| desktop | key_up | later | 124 | 33.52 | 0.17 | 0.16 | [-0.03, 0.005] | pass |
+| desktop | key_up | later in a scenario | 5 | 33.42 | 0.15 | 0.14 | – | too few samples, not judged |
+| desktop | move_relative | first | 31 | 0.7 | 1.52 | 0.47 | [-0.3, -0.16] | pass |
+| desktop | move_relative | first in a scenario | 1 | 1.74 | 2.57 | 1.02 | – | too few samples, not judged |
+| desktop | move_relative | later | 93 | 0.28 | 0.67 | 0.15 | [-0.17, -0.07] | pass |
+| desktop | move_relative | later in a scenario | 2 | 33.78 | 17.48 | 0.21 | – | too few samples, not judged |
+| desktop | move | first | 31 | 82.91 | 83.82 | 82.67 | [-0.64, -0.09] | pass |
+| desktop | move | first in a scenario | 1 | 83.9 | 86.89 | 83.32 | – | too few samples, not judged |
+| desktop | move | later | 93 | 8.56 | 6.05 | 8.45 | [2.27, 2.59] | **fail** |
+| desktop | move | later in a scenario | 2 | 37.92 | 20.35 | 4.38 | – | too few samples, not judged |
+| desktop | press_key | first | 217 | 68.29 | 34.73 | 0.64 | [-34.13, -34.03] | pass |
+| desktop | press_key | first in a scenario | 7 | 68.79 | 35.35 | 1.18 | – | too few samples, not judged |
+| desktop | press_key | later | 248 | 67.55 | 34.18 | 0.3 | [-33.915, -33.84] | pass |
+| desktop | press_key | later in a scenario | 1 | 67.45 | 33.9 | 0.24 | – | too few samples, not judged |
+| desktop | scroll | first | 31 | 73.45 | 74.33 | 73.22 | [-0.38, -0.06] | pass |
+| desktop | scroll | first in a scenario | 1 | 74.24 | 77.89 | 75.74 | – | too few samples, not judged |
+| desktop | scroll | later | 62 | 256.18 | 240.11 | 223 | [-333.535, 299.205] | pass |
+| desktop | scroll | later in a scenario | 1 | 441.54 | 408.77 | 373.93 | – | too few samples, not judged |
+| window | activate_window | first | 1 | 1.55 | 1.33 | 1.01 | – | too few samples, not judged |
+| window | click | first | 7 | 216.52 | 217.18 | 115.14 | – | too few samples, not judged |
+| window | click | later | 5 | 113.17 | 113.38 | 12.64 | – | too few samples, not judged |
+| window | drag | first | 2 | 579.35 | 307.27 | 125.5 | – | too few samples, not judged |
+| window | drag | later | 3 | 202.18 | 201.75 | 100.91 | – | too few samples, not judged |
+| window | key_down | first | 12 | 237.83 | 203.29 | 2.7 | – | too few samples, not judged |
+| window | key_down | later | 4 | 67.2 | 50.54 | 0.14 | – | too few samples, not judged |
+| window | key_up | first | 1 | 1.14 | 1.03 | 0.99 | – | too few samples, not judged |
+| window | key_up | later | 15 | 134.05 | 101.12 | 100.54 | – | too few samples, not judged |
+| window | launch_app | first | 1 | 1.61 | 1.39 | 1.07 | – | too few samples, not judged |
+| window | launch_app | later | 4 | 0.26 | 0.27 | 0.2 | – | too few samples, not judged |
+| window | move | first | 2 | 203.16 | 204.5 | 102.98 | – | too few samples, not judged |
+| window | move | later | 4 | 100.78 | 101.65 | 0.52 | – | too few samples, not judged |
+| window | press_key | first | 33 | 336.44 | 237.47 | 102.83 | [-134.92, -134.34] | pass |
+| window | press_key | later | 3 | 168.13 | 134.25 | 0.36 | – | too few samples, not judged |
+| window | scroll | first | 3 | 239.85 | 240.95 | 138.82 | – | too few samples, not judged |
+| window | scroll | later | 6 | 202.48 | 202.59 | 100.96 | – | too few samples, not judged |
+
+Same within noise (cua above the bar, the interval including 0): desktop click first (86.69 against 86.53, [-0.46, 0.72]).
+
+cua is slower than the faster vendor build over the wire: desktop move later (8.45 against 6.05, [2.27, 2.59]).
+
+## m1a4-drag-writer-primed (experiment drag)
+
+Every engine drags the same path 30 times per family and kind, in its own window (visible), each drag in a witness span; a run took effect when its result is the pinned build's (module header, drag.mjs). `cua:0ms` has no wait after a sample, after the press or before the release.
+
+| family | kind | pinned took | newest took | cua took | cua:0ms took | newest drag ms | cua drag ms | cua:0ms drag ms | pinned drag ms | witness | verdict |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|
+| LibreOffice Writer (gtk3) | select | 30/30 | 30/30 | 30/30 | 30/30 | 306 | 117.5 | 117.6 | 378.6 | clean | cua PASS, cua:0ms PASS |
+
+No cua lane missed a run the pinned build took.
+
+## m1a4-events-gate3 (experiment events)
+
+Through the wire:
+
+| scenario | newest | cua | effects (pinned / newest / cua) |
+|---|---|---|---|
+| press_key a | same | same | – |
+| press_key A | same | same | – |
+| press_key z | same | same | – |
+| press_key Z | same | same | – |
+| press_key shift+z | same | same | – |
+| press_key Shift+Z | same | same | – |
+| press_key ctrl+z | same | same | – |
+| press_key Ctrl+Z | same | same | – |
+| press_key CTRL+z | same | same | – |
+| press_key Ctrl+Shift+Z | same | same | – |
+| press_key ctrl+shift+t | same | same | – |
+| press_key Ctrl+Shift+T | same | same | – |
+| press_key XK_Return | same | same | – |
+| press_key Return | same | same | – |
+| press_key alt+F5 | same | same | – |
+| press_key Ctrl+Alt+Shift+A | same | same | – |
+| press_key super+L | same | same | – |
+| press_key ! | same | same | – |
+| press_key @ | same | same | – |
+| press_key shift+! | same | same | – |
+| press_key !+@ | same | same | – |
+| press_key ctrl++ | same | same | – |
+| press_key + | same | same | – |
+| press_key a+a | same | same | – |
+| press_key < | same | same | – |
+| press_key kp_enter | same | same | – |
+| press_key f12 | same | same | – |
+| press_key space | same | same | – |
+| press_key Escape | same | same | – |
+| press_key with duration | same | same | – |
+| press_key bad key | same | same | – |
+| press_key empty | same | same | – |
+| held ctrl around press_key a | same | same | – |
+| held Ctrl around press_key Shift+Z | same | same | – |
+| two holds sharing ctrl | same | same | – |
+| a repeated hold is one hold | same | same | – |
+| key_up of nothing held | same | same | – |
+| a hold is named by its normalized chord | same | same | – |
+| order makes a different hold | same | same | – |
+| held shift under a click chord | differs at step 1 (event) | same | – |
+| bad keys in holds | same | same | – |
+| holds left at exit are released with their state | same | same | – |
+| held key across another window request | differs at step 1 (event) | same | – |
+| click | differs at step 0 (event) | same | – |
+| click in the child | differs at step 0 (event) | same | – |
+| right click | differs at step 0 (event) | same | – |
+| middle double click held 0 | differs at step 0 (event) | same | – |
+| click with a chord | differs at step 0 (event) | same | – |
+| click outside the window | same | same | – |
+| click validation | same | same | – |
+| move | differs at step 0 (event) | same | – |
+| scroll at the centre | differs at step 0 (event) | same | – |
+| scroll at a point | differs at step 0 (event) | same | – |
+| scroll validation | same | same | – |
+| drag | differs at step 0 (event) | same | – |
+| a bad chord on move, scroll and drag | differs at step 2 (event) | same | – |
+| an interrupted drag under a held key, then a move | differs at step 1 (event) | same | – |
+| an interrupted click under a held key, then a move | differs at step 1 (event) | same | – |
+| a key hold whose window is destroyed | same but the declared answer (interrupted_hold) | same but the declared answer (interrupted_hold) | – |
+| drag with a chord, and a short path | differs at step 0 (event) | same | – |
+| desktop press_key a | same | same | – |
+| desktop press_key Z | same | same | – |
+| desktop press_key Ctrl+Z | same | same | – |
+| desktop press_key ! | same | same | – |
+| desktop press_key ctrl++ | same | same | – |
+| desktop press_key a+a | same | same | – |
+| desktop press_key bad key | same | same | – |
+| desktop held ctrl around press_key a | same | same | – |
+| desktop two holds sharing ctrl | same | same | – |
+| desktop holds left at exit | same | same | – |
+| desktop hold and a window hold are apart | same | same | – |
+| desktop click | differs at step 0 (event) | same | – |
+| desktop click in place | same | same | – |
+| desktop click far | differs at step 0 (event) | same | – |
+| desktop move | differs at step 0 (event) | same | – |
+| desktop move_relative | same | same | – |
+| desktop scroll | differs at step 1 (event) | same | – |
+| desktop drag | differs at step 0 (event) | same | – |
+| desktop drag short path | same | same | – |
+| drag_handle | differs at step 0 (event) | same | – |
+| drag_handle stray end | same | same | – |
+| activate_window | same | same | – |
+| launch_app | same | same | – |
+
+cua sent the pinned build's events and answers in every scenario.
+
+Request times per route and command (median ms; `first` is the request after the engine started, `later` the rest; the desktop route's `first` and `later` from 31 interleaved fresh engines per engine and sequence, its scenarios' own beside them; a group is judged only with 20 samples an engine; `first` above the bar with a bootstrap 95% interval of cua minus the faster build that includes 0 is the same within noise):
+
+| route | command | series | n | pinned | newest | cua | cua − faster, 95% interval | verdict |
+|---|---|---|---:|---:|---:|---:|---|---|
+| desktop | click | first | 93 | 87.15 | 86.51 | 86.77 | [-0.05, 0.6] | **same (within noise)** |
+| desktop | click | first in a scenario | 3 | 87.89 | 87.81 | 87.15 | – | too few samples, not judged |
+| desktop | click | later | 124 | 46.29 | 30.02 | 12.74 | [-17.395, -17.175] | pass |
+| desktop | click | later in a scenario | 1 | 158.54 | 92.01 | 24.95 | – | too few samples, not judged |
+| desktop | drag_handle | first | 62 | 37.76 | 37.53 | 37.51 | [-0.1, 0.12] | pass |
+| desktop | drag_handle | first in a scenario | 2 | 38.61 | 39.5 | 38.62 | – | too few samples, not judged |
+| desktop | drag_handle | later | 124 | 33.05 | 30.3 | 0.46 | [-29.93, -29.74] | pass |
+| desktop | drag_handle | later in a scenario | 2 | 33.03 | 30.74 | 0.41 | – | too few samples, not judged |
+| desktop | drag | first | 62 | 326.87 | 106.64 | 47.63 | [-59.315, -58.82] | pass |
+| desktop | drag | first in a scenario | 2 | 340.97 | 110.28 | 50.11 | – | too few samples, not judged |
+| desktop | drag | later | 62 | 329.6 | 110.5 | 50.88 | [-60.14, -59.04] | pass |
+| desktop | key_down | first | 124 | 51.46 | 1.42 | 0.6 | [-0.88, -0.76] | pass |
+| desktop | key_down | first in a scenario | 4 | 51.91 | 2.12 | 1.08 | – | too few samples, not judged |
+| desktop | key_down | later | 155 | 34.15 | 0.64 | 0.21 | [-0.46, -0.39] | pass |
+| desktop | key_down | later in a scenario | 1 | 34.06 | 0.63 | 0.19 | – | too few samples, not judged |
+| desktop | key_up | later | 124 | 33.55 | 0.17 | 0.16 | [-0.02, 0.005] | pass |
+| desktop | key_up | later in a scenario | 5 | 33.41 | 0.14 | 0.14 | – | too few samples, not judged |
+| desktop | move_relative | first | 31 | 0.71 | 1.45 | 0.45 | [-0.28, -0.2] | pass |
+| desktop | move_relative | first in a scenario | 1 | 1.7 | 2.83 | 1.12 | – | too few samples, not judged |
+| desktop | move_relative | later | 93 | 0.23 | 0.62 | 0.15 | [-0.11, -0.06] | pass |
+| desktop | move_relative | later in a scenario | 2 | 33.71 | 17.48 | 0.23 | – | too few samples, not judged |
+| desktop | move | first | 31 | 82.89 | 83.77 | 82.68 | [-0.43, 0.02] | pass |
+| desktop | move | first in a scenario | 1 | 83.94 | 85.21 | 83.1 | – | too few samples, not judged |
+| desktop | move | later | 93 | 8.58 | 6.01 | 8.43 | [2.32, 2.49] | **declared gap** (M4) |
+| desktop | move | later in a scenario | 2 | 38 | 20.3 | 4.43 | – | too few samples, not judged |
+| desktop | press_key | first | 217 | 68.46 | 34.76 | 0.66 | [-34.15, -34.03] | pass |
+| desktop | press_key | first in a scenario | 7 | 69.86 | 35.54 | 1.04 | – | too few samples, not judged |
+| desktop | press_key | later | 248 | 67.74 | 34.2 | 0.33 | [-33.92, -33.83] | pass |
+| desktop | press_key | later in a scenario | 1 | 67.16 | 33.96 | 0.27 | – | too few samples, not judged |
+| desktop | scroll | first | 31 | 73.4 | 74.33 | 73.18 | [-0.38, -0.1] | pass |
+| desktop | scroll | first in a scenario | 1 | 74.66 | 75.7 | 73.86 | – | too few samples, not judged |
+| desktop | scroll | later | 62 | 256.57 | 240.05 | 223 | [-17.315, -16.875] | pass |
+| desktop | scroll | later in a scenario | 1 | 440.93 | 407.78 | 374.05 | – | too few samples, not judged |
+| window | activate_window | first | 1 | 2.91 | 2.66 | 1.76 | – | too few samples, not judged |
+| window | click | first | 7 | 216.28 | 217.04 | 115.22 | – | too few samples, not judged |
+| window | click | later | 5 | 113.1 | 113.66 | 12.7 | – | too few samples, not judged |
+| window | drag | first | 2 | 580.89 | 307.57 | 128.54 | – | too few samples, not judged |
+| window | drag | later | 3 | 201.97 | 202.25 | 100.8 | – | too few samples, not judged |
+| window | key_down | first | 12 | 237.46 | 203.64 | 2.45 | – | too few samples, not judged |
+| window | key_down | later | 4 | 67.06 | 50.57 | 0.18 | – | too few samples, not judged |
+| window | key_up | first | 1 | 2.26 | 2.2 | 1.5 | – | too few samples, not judged |
+| window | key_up | later | 15 | 134.18 | 101.02 | 100.51 | – | too few samples, not judged |
+| window | launch_app | first | 1 | 2.52 | 1.88 | 0.77 | – | too few samples, not judged |
+| window | launch_app | later | 4 | 0.45 | 0.33 | 0.26 | – | too few samples, not judged |
+| window | move | first | 2 | 203.81 | 204.12 | 102.61 | – | too few samples, not judged |
+| window | move | later | 4 | 100.85 | 101.74 | 0.39 | – | too few samples, not judged |
+| window | press_key | first | 33 | 336.72 | 237.65 | 102.92 | [-134.92, -134.42] | pass |
+| window | press_key | later | 3 | 167.69 | 134.37 | 0.33 | – | too few samples, not judged |
+| window | scroll | first | 3 | 240.83 | 241.28 | 139.33 | – | too few samples, not judged |
+| window | scroll | later | 6 | 202.32 | 202.3 | 101.02 | – | too few samples, not judged |
+
+Same within noise (cua above the bar, the interval including 0): desktop click first (86.77 against 86.51, [-0.05, 0.6]).
+
+Declared speed gaps (deviations.mjs; not a pass): desktop move later (8.43 against 6.01, M4: cua sends the pinned build's motions, the first at the pointer's own position, with the vendor's 8 ms path wait after each; the newest build leaves that first motion out, so a short move waits 8 ms less. M4 shortens the wait).
+

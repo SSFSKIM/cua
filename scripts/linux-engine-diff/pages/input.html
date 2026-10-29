@@ -54,7 +54,15 @@
     state.down = null;
     show();
   });
-  document.addEventListener('keydown', (e) => { state.kd += 1; state.last = e.key; show(); e.preventDefault(); });
+  // every key is the page's own (no default action), and Home puts the page back at its top at once (the harness's
+  // reset after a scroll series)
+  document.addEventListener('keydown', (e) => {
+    state.kd += 1;
+    state.last = e.key;
+    e.preventDefault();
+    if (e.key === 'Home') window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    show();
+  });
   document.addEventListener('keyup', (e) => { state.ku += 1; state.last = e.key; show(); e.preventDefault(); });
   document.addEventListener('contextmenu', (e) => { state.context += 1; state.on = e.target.id || e.target.tagName.toLowerCase(); show(); e.preventDefault(); });
   document.getElementById('press').addEventListener('click', () => { state.clicks += 1; show(); });

@@ -1,6 +1,7 @@
 //! The `engine-linux` gate's live test (Verification system, CI): the engine binary over its wire, against a GTK 3
 //! text window on a real X server and accessibility bus. It reads the window's tree, sends a background `press_key`
-//! and reads its effect back through the tree, and captures a window screenshot whose pixels it checks.
+//! and reads its effect back through the tree, and captures a window screenshot, which it judges against the window as
+//! a second X client reads it (`judge_screenshot`).
 //!
 //!   xvfb-run -a dbus-run-session -- cargo test --features live -- --test-threads 1
 //!
@@ -178,6 +179,148 @@ fn read_text(engine: &mut Engine, window: u64) -> Option<String> {
     text_value(&state["ax_tree"])
 }
 
+/// A pixel is light above this luma and dark at or below it: every pixel is one or the other.
+const LUMA_SPLIT: u8 = 128;
+/// The fewest dark pixels the text window's capture may have. The live window (480x320, `INITIAL_TEXT` and one typed
+/// `q` in yad's default font) renders 238 of 153600, the same on every run; 100 is under half of that, above a bare
+/// caret's few dozen, and far from the 0 of a window drawn without its text.
+const MIN_DARK_PIXELS: usize = 100;
+/// The largest mean absolute luma difference (0..255) between the engine's JPEG and the window as another X client
+/// reads it. Measured on the live window: JPEG quality 80 costs 0.091 (the same on every run); the same capture
+/// shifted by one pixel differs by 0.76, and a blank white one by 1.14. 0.25 is under three times the encoding's loss
+/// and under a third of a one-pixel shift.
+const MAX_MEAN_ABS_DIFF: f64 = 0.25;
+
+/// The mean absolute luma difference between two images of one size.
+fn mean_abs_diff(a: &image::GrayImage, b: &image::GrayImage) -> f64 {
+    let sum: u64 = a
+        .pixels()
+        .zip(b.pixels())
+        .map(|(x, y)| u64::from(x.0[0].abs_diff(y.0[0])))
+        .sum();
+    sum as f64 / a.pixels().len() as f64
+}
+
+/// Whether the engine's capture is the window: the size of the reference (the window read by another X client), mostly
+/// light (a text view's background, which a black capture is not) with dark glyphs on it (which a uniformly white
+/// capture has none of), and the reference's own pixels, JPEG's loss aside (which a capture of other content is not).
+fn judge_screenshot(shot: &image::GrayImage, reference: &image::GrayImage) -> Result<(), String> {
+    if shot.dimensions() != reference.dimensions() {
+        return Err(format!(
+            "size {:?}, the window's is {:?}",
+            shot.dimensions(),
+            reference.dimensions()
+        ));
+    }
+    let total = shot.pixels().len();
+    let light = shot.pixels().filter(|p| p.0[0] > LUMA_SPLIT).count();
+    let dark = total - light;
+    if light * 2 <= total {
+        return Err(format!("not mostly light: {light} of {total} pixels light"));
+    }
+    if dark < MIN_DARK_PIXELS {
+        return Err(format!(
+            "no text on it: {dark} dark pixels of {total}, at least {MIN_DARK_PIXELS} wanted"
+        ));
+    }
+    let diff = mean_abs_diff(shot, reference);
+    if diff > MAX_MEAN_ABS_DIFF {
+        return Err(format!(
+            "mean luma difference {diff:.3} from the window, at most {MAX_MEAN_ABS_DIFF} allowed"
+        ));
+    }
+    Ok(())
+}
+
+/// The window's pixels as a second X client reads them: its own connection and `GetImage`, nothing of the engine's.
+fn read_window_luma(window: u32) -> image::GrayImage {
+    use x11rb::protocol::xproto::{ConnectionExt, ImageFormat};
+    let (conn, _) = x11rb::connect(None).expect("an X connection for the reference");
+    let geometry = conn.get_geometry(window).unwrap().reply().unwrap();
+    let (width, height) = (u32::from(geometry.width), u32::from(geometry.height));
+    let reply = conn
+        .get_image(ImageFormat::Z_PIXMAP, window, 0, 0, geometry.width, geometry.height, !0)
+        .unwrap()
+        .reply()
+        .unwrap();
+    // B, G, R, X per pixel, as the 24-bit visual lays them out; Rec. 601 luma, as `image` converts.
+    let luma = reply
+        .data
+        .chunks_exact(4)
+        .map(|px| ((u32::from(px[2]) * 299 + u32::from(px[1]) * 587 + u32::from(px[0]) * 114) / 1000) as u8)
+        .collect();
+    image::GrayImage::from_raw(width, height, luma).expect("a full image")
+}
+
+/// A light view with a line of text-like glyphs (thin strokes, as small text is) of about the live window's weight.
+fn text_view(top: u32, left: u32) -> image::GrayImage {
+    let mut view = image::GrayImage::from_pixel(480, 320, image::Luma([255]));
+    for glyph in 0..14 {
+        let x = left + glyph * 8;
+        for y in top..top + 10 {
+            view.put_pixel(x, y, image::Luma([30]));
+            view.put_pixel(x + 4, y, image::Luma([30]));
+        }
+        for dx in 0..5 {
+            view.put_pixel(x + dx, top + 5, image::Luma([30]));
+        }
+    }
+    view
+}
+
+/// The image as the engine hands it over: JPEG at quality 80, decoded.
+fn through_jpeg(view: &image::GrayImage) -> image::GrayImage {
+    let mut bytes = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 80)
+        .encode(view.as_raw(), view.width(), view.height(), image::ExtendedColorType::L8)
+        .unwrap();
+    image::load_from_memory(&bytes).unwrap().to_luma8()
+}
+
+#[test]
+fn a_capture_of_the_windows_content_passes() {
+    let window = text_view(10, 10);
+    assert_eq!(judge_screenshot(&through_jpeg(&window), &window), Ok(()));
+}
+
+#[test]
+fn a_uniformly_white_capture_fails() {
+    let window = text_view(10, 10);
+    let white = image::GrayImage::from_pixel(480, 320, image::Luma([255]));
+    assert!(judge_screenshot(&white, &window).is_err());
+}
+
+#[test]
+fn a_uniformly_black_capture_fails() {
+    let window = text_view(10, 10);
+    let black = image::GrayImage::from_pixel(480, 320, image::Luma([0]));
+    assert!(judge_screenshot(&black, &window).is_err());
+}
+
+#[test]
+fn a_light_capture_of_other_content_fails() {
+    let window = text_view(10, 10);
+    // The same text a pixel to the right, and a line of it lower down: each is light with dark glyphs, and not the window.
+    assert!(judge_screenshot(&through_jpeg(&text_view(10, 11)), &window).is_err());
+    assert!(judge_screenshot(&through_jpeg(&text_view(40, 10)), &window).is_err());
+}
+
+#[test]
+fn a_capture_of_another_size_fails() {
+    let window = text_view(10, 10);
+    let cropped = image::imageops::crop_imm(&window, 0, 0, 480, 300).to_image();
+    assert!(judge_screenshot(&cropped, &window).is_err());
+}
+
+#[test]
+fn a_caret_alone_is_not_text() {
+    let mut caret = image::GrayImage::from_pixel(480, 320, image::Luma([255]));
+    for y in 10..25 {
+        caret.put_pixel(10, y, image::Luma([0]));
+    }
+    assert!(judge_screenshot(&caret, &caret).is_err());
+}
+
 #[test]
 fn reads_the_tree_types_in_the_background_and_captures_the_window() {
     let mut engine = Engine::start();
@@ -231,10 +374,8 @@ fn reads_the_tree_types_in_the_background_and_captures_the_window() {
     assert_eq!(&bytes[..2], &[0xFF, 0xD8], "a JPEG");
     let image = image::load_from_memory(&bytes).unwrap().to_luma8();
     assert_eq!((u64::from(image.width()), u64::from(image.height())), (width, height));
-    let light = image.pixels().filter(|p| p.0[0] > 128).count();
-    let total = (image.width() * image.height()) as usize;
-    assert!(
-        light * 2 > total,
-        "mostly light (a text view), not blank: {light} of {total} pixels light"
-    );
+    let reference = read_window_luma(id as u32);
+    if let Err(why) = judge_screenshot(&image, &reference) {
+        panic!("the screenshot is not the text window: {why}");
+    }
 }

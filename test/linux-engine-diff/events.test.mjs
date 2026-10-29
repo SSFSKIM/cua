@@ -107,7 +107,7 @@ test('request times are grouped by route, command and first or later step, and j
   const rows = [
     { route: 'desktop', records: { pinned: [step('move', 40, true), step('move', 30, false)], newest: [step('move', 35, true), step('move', 20, false)], cua: [step('move', 30, true), step('move', 25, false)] } },
   ];
-  const speeds = eventSpeeds(rows);
+  const speeds = eventSpeeds(rows, { minSamples: 1, gaps: [] });
   const first = speeds.find((r) => r.series === 'first');
   const later = speeds.find((r) => r.series === 'later');
   assert.equal(first.bar, 35);

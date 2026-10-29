@@ -124,7 +124,7 @@ test("the events experiment's wire speed verdicts are part of its outcome; throu
   const { eventSpeeds, eventsPass } = await import('../../scripts/linux-engine-diff/events.mjs');
   const step = (command, ms, first = false) => ({ command, ms, first, answer: { ok: true }, events: [] });
   const rows = [{ route: 'desktop', records: { pinned: [step('key_down', 1, true), step('key_up', 33)], newest: [step('key_down', 1, true), step('key_up', 0.17)], cua: [step('key_down', 0.5, true), step('key_up', 0.24)] } }];
-  const speeds = eventSpeeds(rows);
+  const speeds = eventSpeeds(rows, { minSamples: 1 });
   assert.equal(speeds.find((s) => s.command === 'key_up').pass, false);
   assert.equal(eventsPass({ answers: true, speeds, via: 'wire' }), false, 'a wire speed loss fails the experiment');
   assert.equal(eventsPass({ answers: true, speeds, via: 'vendor-js' }), true, "the client's deferred settle distorts speed: recorded, not judged");

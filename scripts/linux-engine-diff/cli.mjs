@@ -30,7 +30,7 @@ const VALUE_FLAGS = {
   '--experiment': 'experiment',
   '--occlusion': 'occlusion',
 };
-const NUMBER_FLAGS = { '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText', '--trials': 'samplesTrials' };
+const NUMBER_FLAGS = { '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText', '--trials': 'samplesTrials', '--first-rounds': 'firstRounds' };
 
 export function parseArgs(argv) {
   const a = {

@@ -169,6 +169,21 @@ async function locate(ctx, scene, kinds) {
   return at;
 }
 
+/**
+ * Harness setup that hides a real behaviour, so it is listed here with what it hides: a family whose fresh window takes
+ * one untimed, unjudged, witnessed drag before its measured runs.
+ */
+export const DRAG_PRIMING = {
+  writer: {
+    reason:
+      "Writer ignores the first drag of a fresh window in every engine, the pinned build's included (Surprises, M1a.4): the cell would measure the window's first drag, not the engine's",
+    hides: "an agent's first drag in a fresh Writer window selects nothing: an M4 candidate (why, and whether the engine can prime the window itself)",
+  },
+};
+
+/** The priming drag's path: the odd runs' text, so the first measured run (even) never presses inside its selection. */
+export const primingPath = (at, kind) => runPath(at, kind, 1);
+
 /** A run's path, window-relative: `[{x, y}, ...]`. */
 export function runPath(at, kind, i) {
   let points;
@@ -335,11 +350,17 @@ export function judgeCell(runs, lanes, expected = {}) {
 // ---------------------------------------------------------------------------------------------------------------
 // the run
 
-async function series(ctx, spec, scene, at, kind, n) {
+async function series(ctx, spec, scene, at, kind, n, { prime = false } = {}) {
   const { witness, emit, family } = ctx;
   const engine = new Engine(spec).start();
   const runs = [];
   try {
+    if (prime) {
+      // DRAG_PRIMING: one drag the cell neither times nor judges, witnessed like every other
+      const { value, witness: w } = await witness.span(`${spec.label}:${family}:drag:${kind}:prime`, () => engine.request('drag', { window: { id: scene.id }, path: primingPath(at, kind) }));
+      emit({ kind: 'drag-prime', family, drag: kind, engine: spec.label, ok: value.response.ok === true, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, reason: DRAG_PRIMING[family].reason });
+      await sleep(700);
+    }
     for (let i = 0; i < n; i++) {
       if (kind === 'select' && scene.kindOf === 'terminal') {
         // the marker must own PRIMARY before the drag: an xclip slow to start would take it after the selection
@@ -445,7 +466,7 @@ export async function runDrag(args, { desktop, emit }) {
           const order = [...lanes.slice(k % lanes.length), ...lanes.slice(0, k % lanes.length)];
           for (const spec of order) {
             if (args.occlusion === 'visible') desktop.raise(scenes[spec.label]);
-            runs.push(...(await series(ctx, spec, scenes[spec.label], at[spec.label], kind, n)));
+            runs.push(...(await series(ctx, spec, scenes[spec.label], at[spec.label], kind, n, { prime: k === 0 && Boolean(DRAG_PRIMING[family]) })));
             desktop.focusFront();
           }
           const judged = judgeRuns(kind, runs);

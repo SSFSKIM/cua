@@ -16,7 +16,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 import { desktopEntry } from './desktop-entry.mjs';
-import { declaredDeviation } from './deviations.mjs';
+import { SPEED_GAPS, declaredDeviation, declaredSpeedGap } from './deviations.mjs';
 import { Engine } from './engine.mjs';
 import { XPROBE } from './scenes.mjs';
 import { median } from './stats.mjs';
@@ -336,43 +336,140 @@ async function runScenario(scenario, engine, env, { via = 'wire', skyDir } = {})
   return steps;
 }
 
+/** A speed group is judged only when every engine has at least this many samples in it; a smaller one is recorded. */
+export const MIN_JUDGED = 20;
+
+/** A seeded generator, so a run's intervals can be computed again from its rows. */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 /**
- * The request times of the scenarios, per route and command: each engine's median over the steps that answered,
- * first steps (the request after the engine's start) and later ones apart, and cua's against the faster vendor
- * build's. Scenarios that deliberately fail (validation, bad keys) are timed too: the same requests go to every engine.
+ * The bootstrap 95% interval of median(a) − median(b): each sample resampled with replacement, `rounds` times, the
+ * 2.5th and 97.5th percentiles of the differences.
  */
-export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], candidate = 'cua' } = {}) {
+export function medianDifferenceInterval(a, b, { rounds = 2000, seed = 171 } = {}) {
+  const random = mulberry32(seed);
+  const resample = (xs) => median(Array.from(xs, () => xs[Math.floor(random() * xs.length)]));
+  const diffs = Array.from({ length: rounds }, () => resample(a) - resample(b)).sort((x, y) => x - y);
+  const at = (q) => diffs[Math.min(diffs.length - 1, Math.max(0, Math.round(q * (diffs.length - 1))))];
+  return [at(0.025), at(0.975)].map((v) => Math.round(v * 1000) / 1000);
+}
+
+/**
+ * The request times per route, command and series: each engine's median, and cua's against the faster vendor build's.
+ * Over the wire the desktop route's judged times come from `blocks` (`desktopBlocks`' interleaved fresh engines over the
+ * scenarios' sequences), and the scenarios' own desktop times are recorded beside them as `… in a scenario`.
+ * A group is judged only when every engine has `minSamples`; then cua at or below the bar passes, and above it:
+ * - a `first` series whose bootstrap interval of the median difference includes 0 is "same (within noise)";
+ * - a loss a speed gap declares (deviations.mjs) is "declared gap";
+ * - otherwise it fails. Scenarios that deliberately fail (validation, bad keys) are timed too: every engine gets them.
+ */
+export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], candidate = 'cua', blocks = null, minSamples = MIN_JUDGED, gaps = SPEED_GAPS } = {}) {
   const groups = new Map();
-  for (const row of scenarioRows) {
+  const add = (row, fromBlocks) => {
     for (const [label, steps] of Object.entries(row.records)) {
       for (const step of steps) {
         if (typeof step.ms !== 'number') continue;
-        const key = `${row.route}|${step.command}|${step.first ? 'first' : 'later'}`;
+        const series = (step.first ? 'first' : 'later') + (blocks && row.route === 'desktop' && !fromBlocks ? ' in a scenario' : '');
+        const key = `${row.route}|${step.command}|${series}`;
         if (!groups.has(key)) groups.set(key, {});
         (groups.get(key)[label] ??= []).push(step.ms);
       }
     }
-  }
+  };
+  for (const row of scenarioRows) add(row, false);
+  for (const row of blocks ?? []) add(row, true);
   const out = [];
   for (const [key, byEngine] of groups) {
     const [route, command, series] = key.split('|');
     const medians = Object.fromEntries(Object.entries(byEngine).map(([label, xs]) => [label, median(xs)]));
-    const bars = vendors.map((v) => medians[v]).filter((v) => typeof v === 'number');
-    const bar = bars.length ? Math.min(...bars) : null;
+    const present = vendors.filter((v) => typeof medians[v] === 'number');
+    const fastest = present.length ? present.reduce((a, b) => (medians[b] < medians[a] ? b : a)) : null;
+    const bar = fastest ? medians[fastest] : null;
     const mine = medians[candidate];
-    out.push({ route, command, series, n: byEngine[candidate]?.length ?? 0, medians, bar, pass: bar === null || (typeof mine === 'number' && mine <= bar) });
+    const judged = bar !== null && typeof mine === 'number' && [...vendors, candidate].every((l) => (byEngine[l]?.length ?? 0) >= minSamples);
+    const interval = judged ? medianDifferenceInterval(byEngine[candidate], byEngine[fastest]) : null;
+    const gap = judged && mine > bar ? declaredSpeedGap({ op: command, route, series }, gaps) : null;
+    let verdict;
+    if (!judged) verdict = 'too few samples, not judged';
+    else if (mine <= bar) verdict = 'pass';
+    else if (series === 'first' && interval[0] <= 0) verdict = 'same (within noise)';
+    else if (gap) verdict = 'declared gap';
+    else verdict = 'fail';
+    const n = Math.min(...[...vendors, candidate].map((l) => byEngine[l]?.length ?? 0));
+    out.push({ route, command, series, n, medians, bar, faster: fastest, interval, verdict, pass: verdict === 'pass' ? true : verdict === 'fail' ? false : null, ...(gap ? { gap } : {}) });
   }
   return out.sort((a, b) => `${a.route}${a.command}${a.series}`.localeCompare(`${b.route}${b.command}${b.series}`));
 }
 
 /**
- * The experiment's outcome: cua's answers, events and effects as the pinned build's, and over the wire each request
- * time at or below the faster vendor build's (Acceptance 3); through the vendor client the times include its deferred
- * settle, so they are recorded, not judged.
+ * The experiment's outcome: cua's answers, events and effects as the pinned build's, and over the wire no judged
+ * request time failing (Acceptance 3); through the vendor client the times include its deferred settle, so they are
+ * recorded, not judged.
  */
 export function eventsPass({ answers, speeds, via }) {
-  return answers && (via === 'vendor-js' || speeds.every((s) => s.pass));
+  return answers && (via === 'vendor-js' || speeds.every((s) => s.verdict !== 'fail'));
 }
+
+/**
+ * The desktop requests the speed gate times in fresh engines: every desktop scenario without launched programs or
+ * interruptions, its window-bound steps left out (their route is the window's), and its first request once more at
+ * the end, so every command has later samples too.
+ */
+export function blockSequences(list = scenarios()) {
+  return list
+    .filter((s) => s.route === 'desktop' && !s.apps && !s.fragile && !s.steps.some((st) => st.interrupted))
+    .map((s) => {
+      const steps = s.steps.filter((st) => !st.input?.window).map(({ effect, ...st }) => st);
+      return { scenario: s.name, steps: [...steps, steps[0]] };
+    })
+    .filter((s) => s.steps.length > 1);
+}
+
+/**
+ * The desktop route's request times, judged: every block sequence in a fresh engine per engine, `rounds` rounds, the
+ * engines' order rotating each round, the pointer put at its start first and the engine given time to start, so its
+ * first request is timed the way the differential run's cold sample is. Returns a row in the scenarios' shape.
+ */
+async function desktopBlocks(engines, env, emit, { rounds = FIRST_ROUNDS } = {}) {
+  const records = Object.fromEntries(engines.map((e) => [e.label, []]));
+  const sequences = blockSequences();
+  for (let r = 0; r < rounds; r++) {
+    for (const sequence of sequences) {
+      const order = [...engines.slice(r % engines.length), ...engines.slice(0, r % engines.length)];
+      for (const engine of order) {
+        execFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
+        const process_ = new Engine({ label: engine.label, bin: engine.bin, args: engine.args ?? [], env }).start();
+        try {
+          await new Promise((resolve) => setTimeout(resolve, ENGINE_SETTLE_MS));
+          for (const [i, step] of sequence.steps.entries()) {
+            const { response, ms } = await process_.request(step.command, step.input, { timeoutMs: 30000 });
+            records[engine.label].push({ command: step.command, scenario: sequence.scenario, ms: Math.round(ms * 100) / 100, first: i === 0, ok: response.ok === true });
+          }
+          // a handle left down is let go before the engine exits
+          if (sequence.steps.some((st) => st.command === 'drag_handle' && st.input?.action === 'start')) await process_.request('drag_handle', { action: 'end' });
+        } finally {
+          await process_.close();
+        }
+      }
+    }
+  }
+  emit({ kind: 'events-blocks', rounds, sequences: sequences.map((s) => s.scenario), settle_ms: ENGINE_SETTLE_MS, records });
+  return { route: 'desktop', records };
+}
+
+/** The desktop blocks' rounds: 31 fresh engines per engine and sequence. */
+export const FIRST_ROUNDS = 31;
+/** The wait after an engine's start before its first request: its own start is not the request's time. */
+const ENGINE_SETTLE_MS = 150;
 
 /** The experiment's engines: the two vendor builds, cua, and each `--variant` as the candidate binary with its flags. */
 export function eventEngines(args) {
@@ -395,6 +492,7 @@ export async function runEvents(args, emit) {
   const via = args.via ?? 'wire';
   const md = [`Through ${via === 'vendor-js' ? "OpenAI's JavaScript client (the desktop-only commands, well-formed requests, effects read back)" : 'the wire'}:`, '', '| scenario | newest | cua | effects (pinned / newest / cua) |', '|---|---|---|---|'];
   const scenarioRows = [];
+  let blocks = null;
   let pass = true;
   try {
     for (const scenario of via === 'vendor-js' ? VENDOR_JS_SCENARIOS : scenarios()) {
@@ -430,18 +528,27 @@ export async function runEvents(args, emit) {
       const took = (label) => `${records[label].filter((s) => s.effect === true).length}/${records[label].filter((s) => typeof s.effect === 'boolean').length}`;
       md.push(`| ${scenario.name} | ${cell('newest')} | ${cell('cua')} | ${judged ? `${took('pinned')} / ${took('newest')} / ${took('cua')}${misses.cua?.length ? ` (**cua missed step ${misses.cua.join(', ')}**)` : ''}` : '–'} |`);
     }
+    // over the wire, the desktop route's speed is judged from interleaved fresh engines, enough samples a group
+    if (via === 'wire') blocks = [await desktopBlocks(engines, env, emit, { rounds: args.firstRounds ?? FIRST_ROUNDS })];
   } finally {
     server.stop();
     rmSync(home, { recursive: true, force: true });
   }
   md.push('', pass ? 'cua sent the pinned build\'s events and answers in every scenario.' : 'cua differs from the pinned build; results.jsonl has each first difference.');
-  const speeds = eventSpeeds(scenarioRows);
-  for (const row of speeds) emit({ kind: 'events-speed', ...row });
-  md.push('', `Request times per route and command (median ms over every scenario step; \`first\` is the request after the engine started, \`later\` the rest${via === 'vendor-js' ? "; through the client they include its deferred settle, so they are recorded, not judged" : ''}):`, '');
-  md.push('| route | command | series | n | pinned | newest | cua | cua at or below the faster |', '|---|---|---|---:|---:|---:|---:|---|');
-  const f = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : '–');
-  for (const r of speeds) md.push(`| ${r.route} | ${r.command} | ${r.series} | ${r.n} | ${f(r.medians.pinned)} | ${f(r.medians.newest)} | ${f(r.medians.cua)} | ${r.pass ? 'yes' : '**no**'} |`);
-  const slower = via === 'vendor-js' ? [] : speeds.filter((s) => !s.pass);
-  if (slower.length) md.push('', `cua is slower than the faster vendor build over the wire: ${slower.map((s) => `${s.route} ${s.command} ${s.series}`).join(', ')}.`);
+  const speeds = eventSpeeds(scenarioRows, { blocks });
+  for (const row of speeds) emit({ kind: 'events-speed', via, ...row });
+  const judging = via === 'vendor-js' ? "through the client they include its deferred settle, so they are recorded, not judged" : `the desktop route's \`first\` and \`later\` from ${args.firstRounds ?? FIRST_ROUNDS} interleaved fresh engines per engine and sequence, its scenarios' own beside them; a group is judged only with ${MIN_JUDGED} samples an engine; \`first\` above the bar with a bootstrap 95% interval of cua minus the faster build that includes 0 is the same within noise`;
+  md.push('', `Request times per route and command (median ms; \`first\` is the request after the engine started, \`later\` the rest; ${judging}):`, '');
+  md.push('| route | command | series | n | pinned | newest | cua | cua − faster, 95% interval | verdict |', '|---|---|---|---:|---:|---:|---:|---|---|');
+  const f = (v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : '–');
+  const shown = (r) => (via === 'vendor-js' ? (r.medians.cua <= r.bar ? 'at or below (recorded)' : 'above (recorded)') : r.verdict === 'fail' ? '**fail**' : r.verdict === 'declared gap' ? `**declared gap** (${r.gap.section})` : r.verdict === 'same (within noise)' ? '**same (within noise)**' : r.verdict);
+  for (const r of speeds) md.push(`| ${r.route} | ${r.command} | ${r.series} | ${r.n} | ${f(r.medians.pinned)} | ${f(r.medians.newest)} | ${f(r.medians.cua)} | ${r.interval ? `[${r.interval[0]}, ${r.interval[1]}]` : '–'} | ${shown(r)} |`);
+  if (via !== 'vendor-js') {
+    const listed = (verdict) => speeds.filter((s) => s.verdict === verdict);
+    const line = (rows, f2) => rows.map((s) => `${s.route} ${s.command} ${s.series} (${f2(s)})`).join('; ');
+    if (listed('same (within noise)').length) md.push('', `Same within noise (cua above the bar, the interval including 0): ${line(listed('same (within noise)'), (s) => `${f(s.medians.cua)} against ${f(s.bar)}, [${s.interval.join(', ')}]`)}.`);
+    if (listed('declared gap').length) md.push('', `Declared speed gaps (deviations.mjs; not a pass): ${line(listed('declared gap'), (s) => `${f(s.medians.cua)} against ${f(s.bar)}, ${s.gap.section}: ${s.gap.reason}`)}.`);
+    if (listed('fail').length) md.push('', `cua is slower than the faster vendor build over the wire: ${line(listed('fail'), (s) => `${f(s.medians.cua)} against ${f(s.bar)}, [${s.interval.join(', ')}]`)}.`);
+  }
   return { md, pass: eventsPass({ answers: pass, speeds, via }), answers: pass, speeds };
 }

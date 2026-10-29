@@ -52,9 +52,10 @@ impl Family {
 pub const FAMILIES: &[Family] = &[
     // The browsers' engines merge motions that arrive faster than they handle them: with no wait a canvas stroke loses
     // the path's corners and an HTML5 drop can fail, in Chromium also a scrollbar thumb's drag falls short and a text
-    // selection can end early. A wait after each sample matched the pinned build's effect in every run (Chromium needed
-    // 500 µs for the thumb, Gecko 250 µs); a dwell after the press or before the release did not help. The other
-    // families of M0.4's matrix matched the pinned build with no wait at all.
+    // selection can end early, and a dwell after the press or before the release alone does not help. Chromium takes
+    // every kind with 500 µs after each sample (less leaves canvas strokes and thumb drags short; a dwell before the
+    // release adds nothing); Gecko takes canvas strokes with 300 µs and HTML5 drops only with 30 ms before the release
+    // as well. The other families of M0.4's matrix matched the pinned build with no wait at all.
     Family {
         name: "Chromium",
         toolkit: Some("Chromium"),
@@ -64,18 +65,18 @@ pub const FAMILIES: &[Family] = &[
             press: Duration::ZERO,
             release: Duration::ZERO,
         },
-        evidence: "m1a/ run m1a4-drag",
+        evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller",
     },
     Family {
         name: "Gecko",
         toolkit: Some("Gecko"),
         classes: &["firefox"],
         drag: DragPacing {
-            step: Duration::from_micros(250),
+            step: Duration::from_micros(300),
             press: Duration::ZERO,
-            release: Duration::ZERO,
+            release: Duration::from_millis(30),
         },
-        evidence: "m1a/ run m1a4-drag",
+        evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller",
     },
 ];
 

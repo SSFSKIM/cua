@@ -13,24 +13,25 @@ use crate::apps;
 use crate::wire::{LaunchAppInput, WindowInput, parse_input};
 
 impl Engine {
-    /// `_NET_ACTIVE_WINDOW` (source indication 1, the application), a raise, and the input focus, each checked with
-    /// a round trip; no prior validation, no wait (behaviour §14).
+    /// `_NET_ACTIVE_WINDOW` (source indication 1, the application), a raise, and the input focus, in that order;
+    /// no prior validation, no wait (behaviour §14). The vendor checks each with a round trip of its own; here the
+    /// three go out together and are checked in order, so the server sees the same requests in the same order and the
+    /// first failure is the answer, at the cost of one round trip.
     pub(super) fn activate_window(&mut self, input: Option<Value>) -> Result<Value> {
         let input: WindowInput = parse_input(input)?;
         let (window, conn, root) = (input.window.id, &self.x.conn, self.x.root);
         let message = ClientMessageEvent::new(32, window, self.x.atom("_NET_ACTIVE_WINDOW"), [1, 0, 0, 0, 0]);
         let mask = EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT;
-        (|| -> Result<()> { Ok(conn.send_event(false, root, mask, message)?.check()?) })()
-            .with_context(|| format!("failed to request focus for X11 window {window}"))?;
         let above = ConfigureWindowAux::new().stack_mode(StackMode::ABOVE);
-        (|| -> Result<()> { Ok(conn.configure_window(window, &above)?.check()?) })()
+        let requested = conn.send_event(false, root, mask, message);
+        let raised = conn.configure_window(window, &above);
+        let focused = conn.set_input_focus(InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME);
+        (|| -> Result<()> { Ok(requested?.check()?) })()
+            .with_context(|| format!("failed to request focus for X11 window {window}"))?;
+        (|| -> Result<()> { Ok(raised?.check()?) })()
             .with_context(|| format!("failed to raise X11 window {window}"))?;
-        (|| -> Result<()> {
-            Ok(conn
-                .set_input_focus(InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME)?
-                .check()?)
-        })()
-        .with_context(|| format!("failed to focus X11 window {window}"))?;
+        (|| -> Result<()> { Ok(focused?.check()?) })()
+            .with_context(|| format!("failed to focus X11 window {window}"))?;
         conn.flush()?;
         Ok(Value::Null)
     }

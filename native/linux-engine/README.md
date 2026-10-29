@@ -56,8 +56,8 @@ cargo test
 - **The pointer** (`engine/pointer.rs`): clicks, moves, the desktop's interpolated path, wheel steps of 100 pixels held
   36 ms, drags sampled per pixel, `drag_handle` and `move_relative` on the desktop, in the vendor's order of placing,
   pressing the chord and pressing the button. A drag waits after each sample only where its target's family needs it
-  (`families.rs`, keyed by `Application.ToolkitName` or the X11 class: 500 µs for Chromium, 250 µs for Gecko,
-  nothing for the rest); the vendor waits 1 ms everywhere.
+  (`families.rs`, keyed by `Application.ToolkitName` or the X11 class: 500 µs for Chromium, 300 µs and 30 ms before
+  the release for Gecko, nothing for the rest); the vendor waits 1 ms everywhere.
 - **Elements and windows** (`engine/elements.rs`, `engine/windows.rs`): element clicks through action 0 or a right
   click at the visible point, named actions, the element scroll, `activate_window` and `launch_app`.
 

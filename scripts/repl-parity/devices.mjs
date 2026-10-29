@@ -7,6 +7,13 @@ export const DEVICES = Object.freeze({
   'cua-linux': Object.freeze({platform: 'linux', discoveryHome: '/home/admin/.local/share/cua-h4', captureChrome: true}),
   'cua-gce': Object.freeze({platform: 'linux', captureChrome: true}),
   'cua-bench': Object.freeze({platform: 'linux'}),
+  // #171's VMs (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Concrete Steps "Once per VM"): cua-171 the
+  // x86-64 VM, cua-171-arm64 M5's arm64 VM. Each is prepared as an ssh alias on the VM reaching the VM itself (a key of
+  // its own in authorized_keys, HostName 127.0.0.1), so the controller runs in the VM's worktree, as hosted-macos reaches
+  // itself; with one ready bound Chrome profile, which prepare requires (`cua profiles add me --chrome-profile Default`,
+  // then `cua profiles bind me`); and with gedit, gnome-text-editor and zenity installed.
+  'cua-171': Object.freeze({platform: 'linux'}),
+  'cua-171-arm64': Object.freeze({platform: 'linux'}),
   // GitHub's hosted macOS runner reaching itself over a loopback ssh alias, which scripts/repl-parity/hosted/hosted.sh
   // sets up there (#159, ci-kit gates sandbox-denials and parity-browser).
   'hosted-macos': Object.freeze({platform: 'darwin'}),

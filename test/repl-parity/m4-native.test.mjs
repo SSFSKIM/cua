@@ -12,7 +12,7 @@ test('every Linux native contract has an executable real native case and rejects
 
 test('native lane refuses local or macOS execution and assigns unique owned window names',async()=>{
  const {nativeCommand}=await import('../../scripts/repl-parity/native.mjs');
- const facts={device:'cua-linux',platform:'linux',host:'vendor',checkout:'/fixture',home:'/runtime'};
+ const facts={device:'cua-linux',platform:'linux',host:'vendor',engine:'vendor',checkout:'/fixture',home:'/runtime'};
  assert.throws(()=>nativeCommand({...facts,device:'local'}));assert.throws(()=>nativeCommand({...facts,platform:'darwin'}));
  const a=nativeCommand(facts),b=nativeCommand(facts);assert.notEqual(a.nativeFilename,b.nativeFilename);assert.match(a.nativeFilename,/^cua-m4-[a-f0-9-]{36}\.txt$/);assert.ok(a.args.at(-1).includes(a.nativeFilename));
 });
@@ -66,7 +66,7 @@ test('the native lane accepts only the approval of its owned window\'s app, lear
    return {isError:false,content:[{type:'text',text:'NATIVE_READY'}]};
   }};
  const prepared={device:'cua-linux',platform:'linux',checkout:'/fixture',home:'/runtime'};
- await runNativeScenario({cells:[],assert:()=>({ok:true})},{pool:{open:async()=>client},prepared,host:'cua',emit:()=>{}});
+ await runNativeScenario({cells:[],assert:()=>({ok:true})},{pool:{open:async()=>client},prepared,host:'cua',engine:'vendor',emit:()=>{}});
  assert.deepEqual(calls,['Find harness-owned gedit','Bind harness-owned gedit','end_task']);
  assert.deepEqual(answers,[{action:'decline'},['org.gnome.gedit','accept'],['org.gnome.Terminal','decline'],['(desktop)','decline']],'nothing before the window is known; then its app only');
  assert.throws(()=>nativeWindowApp({isError:false,content:[{type:'text',text:'NATIVE_WINDOW:{"app":""}'}]}),/Native setup failed/);

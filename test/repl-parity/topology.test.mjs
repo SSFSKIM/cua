@@ -77,7 +77,7 @@ test('every parity lane keeps its runtime warm through a pause',async()=>{
  const {apiCommand}=await import('../../scripts/repl-parity/api-lanes.mjs');const {nativeCommand}=await import('../../scripts/repl-parity/native.mjs');
  const {settingsFrom}=await import('../../src/mcp/server.mjs');
  const facts={device:'mini',checkout:'/c',home:'/h',host:'cua',nodeMode:'managed'};
- for(const command of [cellsCommand(facts),apiCommand(facts),apiCommand(facts,{lane:'binder-double'}),nativeCommand({...facts,device:'cua-linux',platform:'linux'})])
+ for(const command of [cellsCommand(facts),apiCommand(facts),apiCommand(facts,{lane:'binder-double'}),nativeCommand({...facts,device:'cua-linux',platform:'linux',engine:'vendor'})])
   assert.match(command.args.at(-1),/exec env -u CUA_NODE -u CUA_PARITY_NODE_MODE CUA_RUNTIME_IDLE_MS=0 /);
  assert.equal(settingsFrom({CUA_RUNTIME_IDLE_MS:'0'}).runtimeIdleMs,0);
 });

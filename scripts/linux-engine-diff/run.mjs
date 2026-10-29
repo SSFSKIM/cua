@@ -128,7 +128,9 @@ function answerDigest(op, scene, response, labelPattern) {
   if (kind === 'read' || kind === 'shot') {
     const exactIds = exactIdsFor(op, scene);
     const normalized = normalizeState(response.output, { exactIds, label: exactIds ? null : labelPattern });
-    const rendered = typeof response.output.rendered === 'string' ? response.output.rendered.replace(labelPattern, '<label>').replace(/Memory usage - [\d.]+ [KMG]B/g, 'Memory usage - <n>') : undefined;
+    let rendered = typeof response.output.rendered === 'string' ? response.output.rendered.replace(labelPattern, '<label>').replace(/Memory usage - [\d.]+ [KMG]B/g, 'Memory usage - <n>') : undefined;
+    // the client's decimal ids follow the native ids it has seen: by position wherever native ids are
+    if (rendered !== undefined && !exactIds) rendered = rendered.split('\n').map((line, i) => line.replace(/^(\t*)\d+ /, `$1${i} `)).join('\n');
     return sha(JSON.stringify(rendered === undefined ? normalized : { normalized, rendered }));
   }
   return sha(JSON.stringify(normalizeAnswer(response)));
@@ -362,6 +364,7 @@ export async function runDiff(args) {
           }
           await engine.close();
           if (target) target.retainedBy = null;
+          if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
           // gedit's press_key series ends with the document back at its original length
           if (op === 'press_key' && target.kind === 'gedit' && (await desktop.geditText(target)).length > target.originalLength) {
             const fix = new Engine({ label: 'restore', bin: args.cua }).start();
@@ -410,6 +413,7 @@ export async function runDiff(args) {
           } finally {
             await engine.close();
             target.retainedBy = null;
+            if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
           }
           const audited = auditRequests(parseXtrace(await proxy.stop()));
           audits[`${sceneName}|${op}|${spec.label}`] = audited.clean;

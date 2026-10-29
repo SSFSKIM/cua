@@ -111,6 +111,21 @@ const status = (ctx) => ctx.desktop.inputStatus(ctx.scene);
 const element = (ctx, name) => ctx.ids?.[name] ?? ctx.scene.elements[name];
 const rose = (before, after, key, by = 1) => before?.[key] !== null && after?.[key] !== null && after[key] === before[key] + by;
 
+/** The input page back at its top: Home, from the harness's own engine (never one under measurement). */
+async function scrollToTop({ desktop, scene, cua }) {
+  const { Engine } = await import('./engine.mjs');
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { scroll } = await desktop.inputStatus(scene);
+    if (scroll === 0) return;
+    process.stdout.write(`${scene.label}: the scroll series ended at ${scroll}; back to the top\n`);
+    const engine = new Engine({ label: 'reset', bin: cua }).start();
+    await engine.request('press_key', { window: { id: scene.id }, key: 'Home' });
+    await engine.close();
+    await sleep(600);
+  }
+  if ((await desktop.inputStatus(scene)).scroll !== 0) throw new Error(`${scene.label} did not scroll back to its top`);
+}
+
 const inputScene = {
   click_element: {
     kind: 'input',
@@ -156,13 +171,15 @@ const inputScene = {
     request: ({ scene }) => ['drag', { window: { id: scene.id }, path: [{ x: 200, y: 150 }, { x: 380, y: 180 }, { x: 600, y: 240 }] }],
     effect: (ctx, input, before, after) => rose(before, after, 'drags') && rose(before, after, 'downs') && rose(before, after, 'ups'),
   },
-  // down from the top, back up otherwise, so the page stays near its top
+  // down from the top, back up otherwise; Chrome scrolls smoothly, so a series can end off the top, and the harness
+  // puts the page back at its top after it (the pad's points and the far element's place assume it)
   scroll: {
     kind: 'input',
     background: true,
     read: status,
     request: ({ scene, before }) => ['scroll', { window: { id: scene.id }, direction: before.scroll > 0 ? 'up' : 'down', pixels: 300, x: 520, y: 500 }],
     effect: (ctx, input, before, after) => (input.direction === 'down' ? after.scroll > before.scroll : after.scroll < before.scroll),
+    reset: scrollToTop,
   },
   // an element with no visible point in the window: both engines refuse; cua's sentence is a declared deviation
   scroll_element_hidden: {

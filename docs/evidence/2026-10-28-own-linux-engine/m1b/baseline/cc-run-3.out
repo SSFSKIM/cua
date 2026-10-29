@@ -1,0 +1,30 @@
+installing 26.928.40906-linux-x64 from https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_amd64.deb
+installing Node 24.22.0 for cua's own REPL host from https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz
+device cua-171 (linux): vServer, x64, 8 CPUs Ubuntu 24.04.4 LTS, runtime 26.928.40906-linux-x64, clone 41db78a2aa, host cua, engine cua (/Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/native/linux-engine/target/release/cua-engine), computer surface
+cold 1: handshake miss (planned miss)
+cold 2: handshake hit (planned hit)
+cold 3: handshake miss (planned miss)
+cold 4: handshake hit (planned hit)
+cold 5: handshake hit (planned hit)
+warm.noop: 30/30 ok
+warm.getState: 30/30 ok
+warm.listApps: 30/30 ok
+warm.getAXState: 30/30 ok
+warm.getScreenshot: 30/30 ok
+task 1: ok
+task 2: ok
+task 3: ok
+task 4: ok
+task 5: ok
+task 6: ok
+task 7: ok
+task 8: ok
+task 9: ok
+task 10: ok
+method.typeText: threw (type_text is not available in this engine build), window survived
+method.paste: threw (type_text is not available in this engine build), window survived
+method.paste.format: threw (Linux paste supports only text format.), window survived
+method.setValue: threw (setValue is unavailable on Linux; use click, pressKey, and typeText.), window survived
+method.selectText: threw (selectText is unavailable on Linux.), window survived
+method.scroll.pages: threw (Linux scroll accepts { pixels }, not pages.), window survived
+complete; leftovers: {"serves":0,"geditRunning":0}

@@ -51,6 +51,17 @@ test('the bootstrap interval of the median difference is deterministic and brack
   assert.ok(lo <= 1 && hi >= 1 && lo > 0.5 && hi < 1.5, `[${lo}, ${hi}]`);
 });
 
+test("a group mixing requests is resampled within each request, so the interval does not jump between the requests' times", () => {
+  // drag_handle's first requests: a start (about 38 ms) and a stray end (about 2 ms), 31 of each per engine
+  const mixed = (start, end) => [...Array.from({ length: 31 }, (_, i) => start + (i % 7) * 0.05), ...Array.from({ length: 31 }, (_, i) => end + (i % 5) * 0.05)];
+  const strata = [...Array(31).fill('start'), ...Array(31).fill('stray end')];
+  const [lo, hi] = medianDifferenceInterval(mixed(38.2, 2.1), mixed(38, 2), { strataA: strata, strataB: strata });
+  assert.ok(hi - lo < 20, `[${lo}, ${hi}] stays far narrower than the 36 ms between the requests`);
+  const rows = (label, start, end) => [...mixed(start, end).map((ms, i) => ({ command: 'drag_handle', ms, first: true, scenario: strata[i] }))];
+  const speeds = eventSpeeds([], { blocks: [{ route: 'desktop', records: { pinned: rows('pinned', 38, 2), newest: rows('newest', 38.1, 2.1), cua: rows('cua', 38.2, 2.1) } }] });
+  assert.ok(speeds[0].interval[1] - speeds[0].interval[0] < 20, `the group's interval ${speeds[0].interval} is stratified`);
+});
+
 test('a declared speed gap turns its own failing verdict into a declared gap, never a pass; an undeclared loss still fails', () => {
   const gaps = [{ op: 'move', route: 'desktop', series: 'first', reason: 'r', section: 'M4' }];
   assert.equal(declaredSpeedGap({ op: 'move', route: 'desktop', series: 'first' }, gaps)?.section, 'M4');

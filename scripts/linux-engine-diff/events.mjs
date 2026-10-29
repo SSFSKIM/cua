@@ -353,12 +353,23 @@ function mulberry32(seed) {
 
 /**
  * The bootstrap 95% interval of median(a) − median(b): each sample resampled with replacement, `rounds` times, the
- * 2.5th and 97.5th percentiles of the differences.
+ * 2.5th and 97.5th percentiles of the differences. With strata (each sample's request), a sample is resampled within
+ * its own stratum, so every resample keeps the group's mix of requests and its median does not jump between them.
  */
-export function medianDifferenceInterval(a, b, { rounds = 2000, seed = 171 } = {}) {
+export function medianDifferenceInterval(a, b, { rounds = 2000, seed = 171, strataA = null, strataB = null } = {}) {
   const random = mulberry32(seed);
-  const resample = (xs) => median(Array.from(xs, () => xs[Math.floor(random() * xs.length)]));
-  const diffs = Array.from({ length: rounds }, () => resample(a) - resample(b)).sort((x, y) => x - y);
+  const split = (xs, strata) => {
+    const by = new Map();
+    xs.forEach((x, i) => {
+      const s = strata?.[i] ?? '';
+      if (!by.has(s)) by.set(s, []);
+      by.get(s).push(x);
+    });
+    return [...by.values()];
+  };
+  const [partsA, partsB] = [split(a, strataA), split(b, strataB)];
+  const resample = (parts) => median(parts.flatMap((xs) => Array.from(xs, () => xs[Math.floor(random() * xs.length)])));
+  const diffs = Array.from({ length: rounds }, () => resample(partsA) - resample(partsB)).sort((x, y) => x - y);
   const at = (q) => diffs[Math.min(diffs.length - 1, Math.max(0, Math.round(q * (diffs.length - 1))))];
   return [at(0.025), at(0.975)].map((v) => Math.round(v * 1000) / 1000);
 }
@@ -380,15 +391,17 @@ export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], cand
         if (typeof step.ms !== 'number') continue;
         const series = (step.first ? 'first' : 'later') + (blocks && row.route === 'desktop' && !fromBlocks ? ' in a scenario' : '');
         const key = `${row.route}|${step.command}|${series}`;
-        if (!groups.has(key)) groups.set(key, {});
-        (groups.get(key)[label] ??= []).push(step.ms);
+        if (!groups.has(key)) groups.set(key, { ms: {}, strata: {} });
+        (groups.get(key).ms[label] ??= []).push(step.ms);
+        // a stratum is one request: its sequence and its place in it
+        (groups.get(key).strata[label] ??= []).push(`${step.scenario ?? ''}#${step.step ?? ''}`);
       }
     }
   };
   for (const row of scenarioRows) add(row, false);
   for (const row of blocks ?? []) add(row, true);
   const out = [];
-  for (const [key, byEngine] of groups) {
+  for (const [key, { ms: byEngine, strata }] of groups) {
     const [route, command, series] = key.split('|');
     const medians = Object.fromEntries(Object.entries(byEngine).map(([label, xs]) => [label, median(xs)]));
     const present = vendors.filter((v) => typeof medians[v] === 'number');
@@ -396,7 +409,7 @@ export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], cand
     const bar = fastest ? medians[fastest] : null;
     const mine = medians[candidate];
     const judged = bar !== null && typeof mine === 'number' && [...vendors, candidate].every((l) => (byEngine[l]?.length ?? 0) >= minSamples);
-    const interval = judged ? medianDifferenceInterval(byEngine[candidate], byEngine[fastest]) : null;
+    const interval = judged ? medianDifferenceInterval(byEngine[candidate], byEngine[fastest], { strataA: strata[candidate], strataB: strata[fastest] }) : null;
     const gap = judged && mine > bar ? declaredSpeedGap({ op: command, route, series }, gaps) : null;
     let verdict;
     if (!judged) verdict = 'too few samples, not judged';
@@ -452,7 +465,7 @@ async function desktopBlocks(engines, env, emit, { rounds = FIRST_ROUNDS } = {})
           await new Promise((resolve) => setTimeout(resolve, ENGINE_SETTLE_MS));
           for (const [i, step] of sequence.steps.entries()) {
             const { response, ms } = await process_.request(step.command, step.input, { timeoutMs: 30000 });
-            records[engine.label].push({ command: step.command, scenario: sequence.scenario, ms: Math.round(ms * 100) / 100, first: i === 0, ok: response.ok === true });
+            records[engine.label].push({ command: step.command, scenario: sequence.scenario, step: i, ms: Math.round(ms * 100) / 100, first: i === 0, ok: response.ok === true });
           }
           // a handle left down is let go before the engine exits
           if (sequence.steps.some((st) => st.command === 'drag_handle' && st.input?.action === 'start')) await process_.request('drag_handle', { action: 'end' });

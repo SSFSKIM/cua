@@ -100,10 +100,23 @@ export class VendorJsEngine {
     }
   }
 
+  /**
+   * `drag_handle` is a handle in the client (`drag_handle()` returns `{start, move_to, end}`, which keep its state):
+   * a start takes a new one, the moves and the end go to it. A move or an end with no handle started goes to a new
+   * one, which refuses it as the client does.
+   */
+  dragHandle(client, { action, ...point }) {
+    if (action === 'start' || !this.handle) this.handle = client.drag_handle();
+    const handle = this.handle;
+    if (action === 'end') this.handle = null;
+    if (typeof handle[action] !== 'function') throw new Error(`the vendor client's drag handle has no ${action}`);
+    return action === 'end' ? handle.end() : handle[action](point);
+  }
+
   async request(command, input = {}) {
     const client = await this.client();
     const first = this.requests++ === 0;
-    const fn = client[command];
+    const fn = command === 'drag_handle' && typeof client.drag_handle === 'function' ? (i) => this.dragHandle(client, i) : client[command];
     const sentAt = now();
     let response;
     if (typeof fn !== 'function') {

@@ -175,6 +175,12 @@ variants included; their evidence is written either way. The run's `end` row kee
 - **The bus-call bound enforced** (`judgeCalls`): every `tree` verdict over the wire needs the cold and the warm count
   of cua and of a vendor build, cua's at most the vendor's plus 256. A count that did not run (`--no-counts`) or
   failed fails the verdict, and so does an excess, which fails the run.
+- **The desktop-only commands through the vendor JavaScript** (`--experiment events --via vendor-js --vendor-js
+  <@oai/sky directory>`): `move_relative` and `drag_handle` (start, move, end through the client's own handle) on the
+  private Xvfb, well-formed requests only, each engine behind a fresh client. Answers and events are compared with
+  the pinned build's as over the wire, and each step's effect is read back (the pointer through `xdotool
+  getmouselocation`, the press, held motion and release through the recorder); a step either vendor build took must
+  take effect in cua. Request times through the client are recorded, not judged.
 - **Readiness's vendor reference** (`judgeReadinessRun`): the run passes only when the pinned build's captures of
   every condition agree with the truth cua's first captures are judged against; one off or unjudged fails it.
 

@@ -115,3 +115,83 @@ test('request times are grouped by route, command and first or later step, and j
   assert.equal(later.bar, 20);
   assert.equal(later.pass, false);
 });
+
+// ---------------------------------------------------------------------------------------------------------------
+// the desktop-only commands through OpenAI's JavaScript client, on the private X server (M1a.3 review)
+
+test("drag_handle goes through the vendor client's own handle: start, move_to, end; a move before a start is the client's refusal", async () => {
+  const { VendorJsEngine } = await import('../../scripts/linux-engine-diff/vendor-js.mjs');
+  const calls = [];
+  const handle = () => {
+    let state = 'idle';
+    return {
+      async start(point) {
+        if (state !== 'idle') throw new Error('drag handle can only be started once');
+        calls.push(['start', point]);
+        state = 'dragging';
+      },
+      async move_to(point) {
+        if (state !== 'dragging') throw new Error('drag handle must be started before moving');
+        calls.push(['move_to', point]);
+      },
+      async end() {
+        if (state !== 'dragging') throw new Error('drag handle must be started before ending');
+        calls.push(['end']);
+        state = 'ended';
+      },
+    };
+  };
+  const engine = new VendorJsEngine({ label: 'cua', bin: '/bin/true', skyDir: '/nonexistent' }).start();
+  engine.instance = { drag_handle: handle, move_relative: async (input) => calls.push(['move_relative', input]) };
+  try {
+    const answers = [];
+    for (const input of [{ action: 'start', x: 200, y: 200 }, { action: 'move_to', x: 300, y: 260 }, { action: 'end' }]) answers.push((await engine.request('drag_handle', input)).response);
+    assert.deepEqual(answers.map((a) => a.ok), [true, true, true]);
+    assert.deepEqual(calls, [['start', { x: 200, y: 200 }], ['move_to', { x: 300, y: 260 }], ['end']]);
+    const stray = await engine.request('drag_handle', { action: 'move_to', x: 1, y: 1 });
+    assert.deepEqual(stray.response, { id: null, ok: false, error: 'drag handle must be started before moving' });
+    assert.equal((await engine.request('move_relative', { dx: 1, dy: 2 })).response.ok, true);
+    assert.deepEqual(calls.at(-1), ['move_relative', { dx: 1, dy: 2 }]);
+  } finally {
+    await engine.close();
+  }
+});
+
+test('the vendor-js desktop scenarios are well formed and judge their effects from the pointer and the recorder', async () => {
+  const { VENDOR_JS_SCENARIOS } = await import('../../scripts/linux-engine-diff/events.mjs');
+  const byName = Object.fromEntries(VENDOR_JS_SCENARIOS.map((s) => [s.name, s]));
+  const moves = byName['desktop move_relative'];
+  const drag = byName['drag_handle'];
+  assert.ok(moves && drag);
+  for (const s of VENDOR_JS_SCENARIOS) {
+    assert.equal(s.route, 'desktop');
+    for (const step of s.steps) {
+      assert.equal(typeof step.effect, 'function', `${s.name} ${step.command} has an effect`);
+      assert.equal(step.input.window, undefined, 'desktop only');
+    }
+  }
+  const motion = (x, y, state = 0) => ({ type: 'MotionNotify', send: false, detail: 0, state, window: 'top', root_x: x, root_y: y });
+  assert.equal(moves.steps[0].effect({ before: [300, 300], after: [310, 295], events: [motion(310, 295)] }), true);
+  assert.equal(moves.steps[0].effect({ before: [300, 300], after: [300, 300], events: [] }), false);
+  const [start, move, end] = drag.steps;
+  assert.equal(start.effect({ after: [200, 200], events: [motion(200, 200), { type: 'ButtonPress', send: false, detail: 1, root_x: 200, root_y: 200 }] }), true);
+  assert.equal(start.effect({ after: [200, 200], events: [motion(200, 200)] }), false, 'no press');
+  assert.equal(move.effect({ after: [300, 260], events: [motion(250, 230, 256), motion(300, 260, 256)] }), true);
+  assert.equal(move.effect({ after: [300, 260], events: [motion(300, 260, 0)] }), false, 'moved without the button held');
+  assert.equal(end.effect({ after: [300, 260], events: [{ type: 'ButtonRelease', send: false, detail: 1, root_x: 300, root_y: 260 }] }), true);
+  assert.equal(end.effect({ after: [300, 260], events: [] }), false);
+});
+
+test('a step any vendor build took effect on must take effect in cua too', async () => {
+  const { effectMisses } = await import('../../scripts/linux-engine-diff/events.mjs');
+  const lane = (...effects) => effects.map((effect) => ({ command: 'drag_handle', effect }));
+  const records = { pinned: lane(true, true, false), newest: lane(true, false, true), cua: lane(true, true, true) };
+  assert.deepEqual(effectMisses(records, ['pinned', 'newest'], 'cua'), []);
+  assert.deepEqual(effectMisses({ ...records, cua: lane(true, true, false) }, ['pinned', 'newest'], 'cua'), [2]);
+  assert.deepEqual(effectMisses({ ...records, cua: lane(true, true) }, ['pinned', 'newest'], 'cua'), [2], 'a missing step is a miss');
+});
+
+test('the events experiment can go through the vendor JavaScript, which needs its directory', () => {
+  assert.throws(() => parseArgs(['--experiment', 'events', '--cua', 'c', '--out', 'o', '--vendor', 'v', '--newest', 'n', '--via', 'vendor-js']), /--vendor-js/);
+  assert.equal(parseArgs(['--experiment', 'events', '--cua', 'c', '--out', 'o', '--vendor', 'v', '--newest', 'n', '--via', 'vendor-js', '--vendor-js', 's']).via, 'vendor-js');
+});

@@ -12,6 +12,7 @@ export const USAGE = `usage:
       [--occlusion covered|visible] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
   linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness --cua <bin> --out <dir> [--run <name>]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load] [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
+      [--via vendor-js --vendor-js <@oai/sky directory>] (events only)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
 
@@ -96,6 +97,9 @@ export function parseArgs(argv) {
     if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
     if (['matrix', 'element-click', 'partial-cover', 'events'].includes(a.experiment)) require('vendor', 'newest');
     if (a.experiment === 'qt-bridge' || a.experiment === 'engine-readiness') require('vendor');
+    // the events experiment's desktop-only commands through OpenAI's JavaScript client
+    if (a.via && !(a.experiment === 'events' && ['wire', 'vendor-js'].includes(a.via))) throw new Error('--via is wire or vendor-js, and among the experiments only events takes it');
+    if (a.via === 'vendor-js' && !a.vendorJs) throw new Error(`--via vendor-js needs --vendor-js <@oai/sky directory>\n${USAGE}`);
   }
   else {
     require('vendor', 'newest', 'cua', 'out');

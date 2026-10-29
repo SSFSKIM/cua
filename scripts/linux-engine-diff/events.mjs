@@ -19,6 +19,7 @@ import { declaredDeviation } from './deviations.mjs';
 import { Engine } from './engine.mjs';
 import { XPROBE } from './scenes.mjs';
 import { median } from './stats.mjs';
+import { VendorJsEngine } from './vendor-js.mjs';
 
 /** The recorder's top-level window on the private screen (root coordinates); its child covers the lower-right quarter. */
 export const RECORDER = { x: 100, y: 100, width: 800, height: 600 };
@@ -114,6 +115,67 @@ export function scenarios() {
     ...activation.map((s) => ({ ...s, route: 'window' })),
     ...launch.map((s) => ({ ...s, route: 'window' })),
   ];
+}
+
+const last = (events, type) => events.filter((e) => e.type === type).at(-1);
+const at = (e, x, y) => Boolean(e) && e.root_x === x && e.root_y === y;
+/** The pointer moved by (dx, dy) from where it was, read on the private server (`xdotool getmouselocation`). */
+const movedBy = (dx, dy) => ({ before, after }) => after[0] === before[0] + dx && after[1] === before[1] + dy;
+/** Button 1 pressed (not sent) with the pointer at (x, y). */
+const pressedAt = (x, y) => ({ after, events }) => at(last(events, 'ButtonPress'), x, y) && last(events, 'ButtonPress').detail === 1 && after[0] === x && after[1] === y;
+/** The pointer at (x, y), its last motion there with button 1 held (state Button1Mask). */
+const heldTo = (x, y) => ({ after, events }) => {
+  const m = last(events, 'MotionNotify');
+  return at(m, x, y) && (m.state & 256) !== 0 && after[0] === x && after[1] === y;
+};
+/** Button 1 released at (x, y). */
+const releasedAt = (x, y) => ({ events }) => {
+  const r = last(events, 'ButtonRelease');
+  return at(r, x, y) && r.detail === 1;
+};
+
+/**
+ * The desktop-only commands through OpenAI's JavaScript client (`--experiment events --via vendor-js`): only
+ * well-formed requests (the client validates before the engine sees anything), each step with its effect read back
+ * on the private server.
+ */
+export const VENDOR_JS_SCENARIOS = [
+  {
+    name: 'desktop move_relative',
+    route: 'desktop',
+    steps: [
+      { command: 'move_relative', input: { dx: 10, dy: -5 }, effect: movedBy(10, -5) },
+      { command: 'move_relative', input: { dx: -3, dy: 4, key: 'shift' }, effect: movedBy(-3, 4) },
+    ],
+  },
+  {
+    name: 'drag_handle',
+    route: 'desktop',
+    steps: [
+      { command: 'drag_handle', input: { action: 'start', x: 200, y: 200 }, effect: pressedAt(200, 200) },
+      { command: 'drag_handle', input: { action: 'move_to', x: 300, y: 260 }, effect: heldTo(300, 260) },
+      { command: 'drag_handle', input: { action: 'end' }, effect: releasedAt(300, 260) },
+    ],
+  },
+];
+
+/**
+ * The steps where a vendor build took effect and the candidate did not (the union of the builds, step by step); a
+ * step the candidate lacks is a miss.
+ */
+export function effectMisses(records, vendors, candidate) {
+  const misses = [];
+  const n = Math.max(...vendors.map((v) => records[v]?.length ?? 0));
+  for (let i = 0; i < n; i++) {
+    if (vendors.some((v) => records[v]?.[i]?.effect === true) && records[candidate]?.[i]?.effect !== true) misses.push(i);
+  }
+  return misses;
+}
+
+function pointerOn(env) {
+  const text = execFileSync('xdotool', ['getmouselocation', '--shell'], { env, encoding: 'utf8' });
+  const value = (key) => Number(text.match(new RegExp(`^${key}=(-?\\d+)`, 'm'))?.[1]);
+  return [value('X'), value('Y')];
 }
 
 /** The event fields compared across engines (not the timestamp). */
@@ -229,22 +291,28 @@ class Recorder {
   }
 }
 
-/** Runs one scenario on one engine: a fresh recorder and engine process, the pointer put at its start. */
-async function runScenario(scenario, engine, env) {
+/**
+ * Runs one scenario on one engine: a fresh recorder and engine process (or, through the vendor JavaScript, a fresh
+ * client's engine), the pointer put at its start. A step with an `effect` has it judged from the pointer read before
+ * and after it and the events the recorder received.
+ */
+async function runScenario(scenario, engine, env, { via = 'wire', skyDir } = {}) {
   execFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
   const recorder = new Recorder(env, { focus: scenario.route === 'desktop', fragile: scenario.fragile, fragileKey: scenario.fragileKey });
   const window = await recorder.ready();
   const engineEnv = scenario.apps ? { ...env, XDG_DATA_HOME: env.EVENTS_APPS, XDG_DATA_DIRS: '' } : env;
-  const process_ = new Engine({ label: engine.label, bin: engine.bin, args: engine.args ?? [], env: engineEnv }).start();
+  const process_ = (via === 'vendor-js' ? new VendorJsEngine({ label: engine.label, bin: engine.bin, skyDir, env: engineEnv }) : new Engine({ label: engine.label, bin: engine.bin, args: engine.args ?? [], env: engineEnv })).start();
   const steps = [];
   try {
     for (const [i, step] of scenario.steps.entries()) {
       const { command, input } = bindStep(step, window);
+      const before = step.effect ? pointerOn(env) : null;
       const { response, ms } = await process_.request(command, input, { timeoutMs: 30000 });
       const events = await recorder.mark(`step-${i}`);
       const timed = { ms: Math.round(ms * 100) / 100, first: i === 0 };
+      const effect = step.effect ? { effect: response.ok === true && step.effect({ before, after: pointerOn(env), events }) } : {};
       if (step.interrupted) steps.push({ command, interrupted: true, ...interruptedStep(response, events), raw: normalizeAnswer(response), ...timed });
-      else steps.push({ command, answer: normalizeAnswer(response), events, ...timed });
+      else steps.push({ command, answer: normalizeAnswer(response), events, ...timed, ...effect });
     }
     await process_.close();
     steps.push({ command: 'exit', answer: { ok: true }, events: await recorder.mark('exit') });
@@ -304,13 +372,14 @@ export async function runEvents(args, emit) {
     { label: 'cua', bin: args.cua },
     ...args.variants,
   ];
-  const md = ['| scenario | newest | cua |', '|---|---|---|'];
+  const via = args.via ?? 'wire';
+  const md = [`Through ${via === 'vendor-js' ? "OpenAI's JavaScript client (the desktop-only commands, well-formed requests, effects read back)" : 'the wire'}:`, '', '| scenario | newest | cua | effects (pinned / newest / cua) |', '|---|---|---|---|'];
   const scenarioRows = [];
   let pass = true;
   try {
-    for (const scenario of scenarios()) {
+    for (const scenario of via === 'vendor-js' ? VENDOR_JS_SCENARIOS : scenarios()) {
       const records = {};
-      for (const engine of engines) records[engine.label] = await runScenario(scenario, engine, env);
+      for (const engine of engines) records[engine.label] = await runScenario(scenario, engine, env, { via, skyDir: args.vendorJs });
       const verdicts = {};
       const declared = {};
       for (const engine of engines.slice(1)) {
@@ -327,10 +396,22 @@ export async function runEvents(args, emit) {
         verdicts[engine.label] = difference;
         if (difference && engine.label.startsWith('cua')) pass = false;
       }
-      emit({ kind: 'events', scenario: scenario.name, route: scenario.route, records, differences: verdicts, declared });
+      // effects, where a scenario reads them: every step a vendor build took must take effect in cua's engines too
+      const misses = {};
+      const judged = scenario.steps.some((s) => s.effect);
+      if (judged) {
+        for (const engine of engines.filter((e) => e.label.startsWith('cua'))) {
+          misses[engine.label] = effectMisses(records, ['pinned', 'newest'], engine.label);
+          if (misses[engine.label].length) pass = false;
+        }
+        // a scenario whose effect no vendor build took proves nothing
+        if (!['pinned', 'newest'].some((v) => records[v].some((s) => s.effect === true))) pass = false;
+      }
+      emit({ kind: 'events', scenario: scenario.name, route: scenario.route, via, records, differences: verdicts, declared, ...(judged ? { effect_misses: misses } : {}) });
       scenarioRows.push({ route: scenario.route, records });
       const cell = (label) => (verdicts[label] ? `differs at step ${verdicts[label].step} (${verdicts[label].what})` : declared[label] ? `same but the declared answer (${declared[label]})` : 'same');
-      md.push(`| ${scenario.name} | ${cell('newest')} | ${cell('cua')} |`);
+      const took = (label) => `${records[label].filter((s) => s.effect === true).length}/${records[label].filter((s) => typeof s.effect === 'boolean').length}`;
+      md.push(`| ${scenario.name} | ${cell('newest')} | ${cell('cua')} | ${judged ? `${took('pinned')} / ${took('newest')} / ${took('cua')}${misses.cua?.length ? ` (**cua missed step ${misses.cua.join(', ')}**)` : ''}` : '–'} |`);
     }
   } finally {
     server.stop();
@@ -339,7 +420,7 @@ export async function runEvents(args, emit) {
   md.push('', pass ? 'cua sent the pinned build\'s events and answers in every scenario.' : 'cua differs from the pinned build; results.jsonl has each first difference.');
   const speeds = eventSpeeds(scenarioRows);
   for (const row of speeds) emit({ kind: 'events-speed', ...row });
-  md.push('', 'Request times per route and command (median ms over every scenario step; `first` is the request after the engine started, `later` the rest):', '');
+  md.push('', `Request times per route and command (median ms over every scenario step; \`first\` is the request after the engine started, \`later\` the rest${via === 'vendor-js' ? "; through the client they include its deferred settle, so they are recorded, not judged" : ''}):`, '');
   md.push('| route | command | series | n | pinned | newest | cua | cua at or below the faster |', '|---|---|---|---:|---:|---:|---:|---|');
   const f = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : '–');
   for (const r of speeds) md.push(`| ${r.route} | ${r.command} | ${r.series} | ${r.n} | ${f(r.medians.pinned)} | ${f(r.medians.newest)} | ${f(r.medians.cua)} | ${r.pass ? 'yes' : '**no**'} |`);

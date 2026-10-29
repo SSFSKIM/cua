@@ -207,3 +207,26 @@ test('partial cover at another size: the sweep leaves each chosen fraction of th
   assert.equal(coverage(covers[0].front, window, point).visible_fraction, 0);
   assert.equal(coverage(covers.at(-1).front, window, point).visible_fraction, 1);
 });
+
+test("Acceptance 5 per family: cua's witness clean wherever a vendor build's is, and its audit clean wherever a vendor build's witness or audit is", async () => {
+  const { backgroundAlone } = await import('../../scripts/linux-engine-diff/matrix-judge.mjs');
+  const sample = (engine, witness, op = 'key') => ({ kind: 'matrix-sample', family: 'f', engine, op, ok: true, witness });
+  const audit = (engine, clean) => ({ kind: 'matrix-audit', family: 'f', engine, clean, traced: true });
+  const clean = [sample('pinned', true), sample('newest', true), sample('cua', true), sample('cua', true, 'click')];
+  const audits = [audit('pinned', true), audit('newest', true), audit('cua', true)];
+  assert.equal(backgroundAlone([...clean, ...audits], 'f').pass, true);
+  // one cua sample whose witness changed
+  const dirty = backgroundAlone([...clean, sample('cua', false, 'click'), ...audits], 'f');
+  assert.equal(dirty.pass, false);
+  assert.match(dirty.reasons.join(), /witness/);
+  // cua's audit found a forbidden request, or did not run
+  assert.match(backgroundAlone([...clean, audit('pinned', true), audit('newest', true), audit('cua', false)], 'f').reasons.join(), /audit/);
+  assert.equal(backgroundAlone([...clean, audit('pinned', true), audit('newest', true)], 'f').pass, false);
+  // no vendor build kept either: nothing is required of cua
+  const vendorsDirty = [sample('pinned', false), sample('newest', false), sample('cua', false), audit('pinned', false), audit('newest', false), audit('cua', false)];
+  assert.equal(backgroundAlone(vendorsDirty, 'f').pass, true);
+  // the redirect-less lane is exploration, not the shipped engine
+  assert.equal(backgroundAlone([...clean, sample('cua:none', false), ...audits], 'f').pass, true);
+  // a family with no cua sample at all cannot pass
+  assert.equal(backgroundAlone([sample('pinned', true), ...audits], 'f').pass, false);
+});

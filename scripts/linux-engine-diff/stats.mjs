@@ -65,6 +65,8 @@ export function summarizeEngine(rows) {
   return {
     cold: round(median(timed(cold))),
     warm: round(median(timed(warm))),
+    // the verdict compares these: a loss under the shown tenth of a millisecond is still a loss
+    exact: { cold: median(timed(cold)), warm: median(timed(warm)) },
     n_cold: cold.length,
     n_warm: warm.length,
     ok: rows.length > 0 && rows.every((r) => r.ok),
@@ -96,11 +98,12 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
     engines[label] = summarizeEngine(rows.filter((r) => r.engine === label));
   }
   const vendorRows = vendors.map((v) => engines[v]).filter(Boolean);
-  const best = (series) => {
-    const values = vendorRows.map((e) => e[series]).filter((v) => v !== null);
+  const best = (series, exact = false) => {
+    const values = vendorRows.map((e) => (exact ? e.exact[series] : e[series])).filter((v) => v !== null);
     return values.length ? Math.min(...values) : null;
   };
   const bar = { cold: best('cold'), warm: best('warm') };
+  const exactBar = { cold: best('cold', true), warm: best('warm', true) };
   const c = engines[candidate];
   const reasons = [];
   if (!c) return { engines, bar, speed: false, pass: false, reasons: [`no samples from ${candidate}`] };
@@ -109,12 +112,13 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   if (!c.ok && (vendorRows.length === 0 || vendorRows.some((e) => e.ok))) reasons.push(`${candidate}: a request failed`);
   let speed = true;
   for (const series of ['cold', 'warm']) {
-    if (bar[series] === null || c[series] === null) continue;
-    if (c[series] > bar[series]) {
+    if (exactBar[series] === null || c.exact[series] === null) continue;
+    if (c.exact[series] > exactBar[series]) {
       speed = false;
       // through the vendor JavaScript a request's time includes the client's deferred settle after the previous
       // action, which the harness's own reads between requests use up unevenly: recorded, judged over the wire only
-      if (judgeSpeed) reasons.push(`${candidate}: ${series} ${c[series]} ms > bar ${bar[series]} ms`);
+      const shown = (v) => Math.round(v * 100) / 100;
+      if (judgeSpeed) reasons.push(`${candidate}: ${series} ${shown(c.exact[series])} ms > bar ${shown(exactBar[series])} ms`);
     }
   }
   if (vendorRows.some((e) => e.witness === true) && c.witness !== true) reasons.push(`${candidate}: the witness changed`);

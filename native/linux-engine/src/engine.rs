@@ -48,6 +48,8 @@ pub struct Engine {
     pending_stats: Option<String>,
     /// Held keys, their sessions and the desktop's keys, across requests.
     inputs: Inputs,
+    /// `launch_app`'s programs, reaped as they exit.
+    launched: apps::Launched,
     /// Each window's drag pacing, looked up once (`families.rs`).
     drag_families: HashMap<x11rb::protocol::xproto::Window, DragPacing>,
 }
@@ -78,11 +80,13 @@ impl Engine {
             extra: Default::default(),
             pending_stats: None,
             drag_families: HashMap::new(),
+            launched: apps::Launched::default(),
         })
     }
 
     pub fn handle(&mut self, request: Request) -> Response {
         self.x.drain_events();
+        self.launched.reap();
         let started = Instant::now();
         let result = match request.command.as_str() {
             "list_windows" => self.list_windows(request.input),

@@ -48,7 +48,9 @@ impl Engine {
         let path = std::env::var("PATH").ok();
         let entries = apps::discover(&roots, path.as_deref());
         let entry = apps::find_launchable(&entries, &input.app).map_err(anyhow::Error::msg)?;
-        apps::launch(entry).with_context(|| format!("failed to launch application {:?}", input.app.trim()))?;
+        let child =
+            apps::launch(entry).with_context(|| format!("failed to launch application {:?}", input.app.trim()))?;
+        self.launched.add(child);
         Ok(Value::Null)
     }
 }

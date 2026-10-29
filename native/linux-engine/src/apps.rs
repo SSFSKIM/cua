@@ -254,17 +254,36 @@ pub fn find_launchable<'e>(entries: &'e [Entry], app: &str) -> Result<&'e Entry,
 }
 
 /// Starts the entry's program with its arguments, its standard streams on `/dev/null`, in the engine's directory and
-/// environment, reaped by a detached thread; the answer does not wait for it.
-pub fn launch(entry: &Entry) -> std::io::Result<()> {
+/// environment; the answer does not wait for it. The caller reaps the child once it has exited (`Launched`).
+pub fn launch(entry: &Entry) -> std::io::Result<std::process::Child> {
     use std::process::{Command, Stdio};
-    let mut child = Command::new(&entry.argv[0])
+    Command::new(&entry.argv[0])
         .args(&entry.argv[1..])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn()?;
-    std::thread::spawn(move || child.wait());
-    Ok(())
+        .spawn()
+}
+
+/// The launched programs not yet reaped: each one's exit status is collected, without waiting, before every later
+/// request, so no exited program stays a zombie for long and a launch costs no thread.
+#[derive(Default)]
+pub struct Launched(Vec<std::process::Child>);
+
+impl Launched {
+    pub fn add(&mut self, child: std::process::Child) {
+        self.0.push(child);
+    }
+
+    /// Collects the programs that have exited.
+    pub fn reap(&mut self) {
+        self.0.retain_mut(|child| matches!(child.try_wait(), Ok(None)));
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.0.len()
+    }
 }
 
 /// `list_apps`: every entry with the listed windows whose `app` equals, ASCII case-insensitively, its
@@ -300,6 +319,28 @@ pub fn list_apps(entries: &[Entry], windows: &[WindowInfo]) -> Vec<App> {
         .collect();
     apps.sort_by_key(|app| app.name.to_ascii_lowercase());
     apps
+}
+
+#[cfg(test)]
+mod launched_tests {
+    use super::*;
+
+    #[test]
+    fn an_exited_program_is_reaped_without_waiting_and_a_running_one_is_kept() {
+        let mut launched = Launched::default();
+        let entry = |argv: &[&str]| Entry {
+            id: "probe.desktop".into(),
+            name: "probe".into(),
+            argv: argv.iter().map(|s| s.to_string()).collect(),
+            startup_wm_class: None,
+            path: PathBuf::new(),
+        };
+        launched.add(launch(&entry(&["/bin/true"])).unwrap());
+        launched.add(launch(&entry(&["/bin/sleep", "5"])).unwrap());
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        launched.reap();
+        assert_eq!(launched.len(), 1, "the sleeper runs on");
+    }
 }
 
 #[cfg(test)]

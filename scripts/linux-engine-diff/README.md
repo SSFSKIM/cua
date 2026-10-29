@@ -167,6 +167,8 @@ variants included; their evidence is written either way. The run's `end` row kee
 - **Effects on every sample** (`stats.mjs` `missedEffects`; Decision Log, M1a.4): every answered cua sample of an
   operation that reads effects must show its effect, whatever the vendor builds did on it; read once the state
   settles (`settledRead`, `pollEffect`).
+- **Speed on unrounded medians** (`stats.mjs`): the summary shows tenths of a millisecond, the verdict compares the
+  medians themselves, so a sub-millisecond operation's loss of a few hundredths is a loss.
 - **Companions witnessed**: every request the engine under measurement sends besides the timed one (a hold's start
   or end, the retaining capture, the key that changes a covered window, element ids read through the vendor
   JavaScript) runs inside a witness span of its own. The harness's own changes to a window (the retention cases'

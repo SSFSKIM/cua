@@ -95,6 +95,13 @@ test("cua's effect is judged on every sample, whatever the vendor builds did on 
   assert.equal(judgeOperation([...none('pinned'), ...none('newest'), ...none('cua')], opts).pass, true);
 });
 
+test('speed is judged on the unrounded medians: a loss smaller than the shown tenth of a millisecond is still a loss', () => {
+  const rows = [...samples('pinned', 5.3, [0.69]), ...samples('newest', 5.02, [0.65]), ...samples('cua', 5.0, [0.67])];
+  const verdict = judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua' });
+  assert.equal(verdict.speed, false);
+  assert.match(verdict.reasons.join(), /warm 0\.67 ms > bar 0\.65 ms/);
+});
+
 test('a failed request fails the verdict', () => {
   const rows = [...samples('pinned', 300, [200]), ...samples('newest', 250, [230]), { engine: 'cua', series: 'cold', ms: 5, ok: false }];
   assert.match(judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua' }).reasons.join(), /failed/);

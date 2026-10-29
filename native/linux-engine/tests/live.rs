@@ -119,9 +119,8 @@ impl Window {
         let title = format!("cua-engine-live-{tag}-{}", std::process::id());
         let file = std::env::temp_dir().join(format!("{title}.txt"));
         std::fs::write(&file, text).unwrap();
-        // A steady caret: a blinking one may be drawn in the capture and not in the reference, or the other way round,
-        // which is a caret's height of ink pixels (about 17) differing that no text produced; the CI runner showed 17
-        // and 18 of about 1060 where the same test passes on the VM with none.
+        // A steady caret: a blinking one would be drawn in one read of the window and not in the next, a caret's
+        // height of pixels (about 17) differing that no text produced, and the reference would never settle.
         let config = std::env::temp_dir().join(format!("{title}-config"));
         std::fs::create_dir_all(config.join("gtk-3.0")).unwrap();
         std::fs::write(
@@ -204,52 +203,28 @@ const LUMA_SPLIT: u8 = 128;
 /// `q` in yad's default font) renders 238 of 153600, the same on every run; 100 is under half of that, above a bare
 /// caret's few dozen, and far from the 0 of a window drawn without its text.
 const MIN_DARK_PIXELS: usize = 100;
-/// How far, in pixels, the ink (the dark pixels of either image) is grown before the comparison, so that the ringing
-/// JPEG leaves beside a glyph is judged with the glyph.
-const INK_MARGIN: u32 = 2;
 /// A pixel differs when its luma is off by more than this (the differential harness's, xprobe's, per-channel 32).
 const DIFFERS_BY: u8 = 32;
-/// The largest share of the ink's pixels that may differ. Measured on the live window: JPEG quality 80 against the
-/// window as a second X client reads it differs in 0 of 1152 ink pixels on the VM, the same on every run. On the CI
-/// runner the same comparison showed up to 18 of about 1060 (1.7%) before the caret was held steady, the height of a
-/// caret in the one state in the capture and the other in the reference. A second yad window with two letters
-/// changed ("pcua live test" for "qcua live text"), whose whole-image mean difference is lost in the empty
-/// background, differs in 70 of 1166 on the VM (6.0%) and 122 of 1087 on the runner (11%). 3% is under half of the
-/// least of those and nearly twice the largest noise.
-const MAX_DIFFERING_SHARE: f64 = 0.03;
+/// The most pixels, of the whole image, that may differ from the reference. A count over the whole image, not a share
+/// of the ink: a share lets a glyph through and cannot see the background. A correct capture differs in 0 pixels on the
+/// VM and 1 on the CI runner (nine captures over three gate runs), once the reference is read after the window has
+/// stopped drawing. A window with one glyph changed ("qcua live test" for "qcua live text") differs in 32 on the VM
+/// and 79 on the runner, and one with its final glyph missing (the stale frame of a capture taken before the key's
+/// effect rendered) in 26 and 24 to 40. 8 is eight times the noise and under a third of the smallest change.
+const MAX_DIFFERING_PIXELS: usize = 8;
 
-/// How many of the ink pixels differ by more than `DIFFERS_BY`, and how many there are: the pixels where either image
-/// is dark, grown by `INK_MARGIN`. The empty window around the text is left out, because its agreement would average
-/// away a handful of wrong glyphs.
-fn ink_difference(a: &image::GrayImage, b: &image::GrayImage) -> (usize, usize) {
-    let (width, height) = a.dimensions();
-    let mut ink = vec![false; (width * height) as usize];
-    for (x, y, pixel) in a.enumerate_pixels() {
-        if pixel.0[0] <= LUMA_SPLIT || b.get_pixel(x, y).0[0] <= LUMA_SPLIT {
-            for yy in y.saturating_sub(INK_MARGIN)..=(y + INK_MARGIN).min(height - 1) {
-                for xx in x.saturating_sub(INK_MARGIN)..=(x + INK_MARGIN).min(width - 1) {
-                    ink[(yy * width + xx) as usize] = true;
-                }
-            }
-        }
-    }
-    let mut counted = 0;
-    let mut differing = 0;
-    for (x, y, pixel) in a.enumerate_pixels() {
-        if ink[(y * width + x) as usize] {
-            counted += 1;
-            if pixel.0[0].abs_diff(b.get_pixel(x, y).0[0]) > DIFFERS_BY {
-                differing += 1;
-            }
-        }
-    }
-    (differing, counted)
+/// How many pixels differ by more than `DIFFERS_BY`, over the whole image: the background is judged as the text is.
+fn differing_pixels(a: &image::GrayImage, b: &image::GrayImage) -> usize {
+    a.pixels()
+        .zip(b.pixels())
+        .filter(|(x, y)| x.0[0].abs_diff(y.0[0]) > DIFFERS_BY)
+        .count()
 }
 
 /// Whether the engine's capture is the window: the size of the reference (the window read by another X client), mostly
 /// light (a text view's background, which a black capture is not) with dark glyphs on it (which a uniformly white
-/// capture has none of), and the reference's own glyphs where the ink is, JPEG's loss aside (which a capture of other
-/// text is not).
+/// capture has none of), and the reference's own pixels all over, JPEG's loss aside (which a capture of other text,
+/// or of a stale frame, or with a changed background, is not).
 fn judge_screenshot(shot: &image::GrayImage, reference: &image::GrayImage) -> Result<(), String> {
     if shot.dimensions() != reference.dimensions() {
         return Err(format!(
@@ -269,11 +244,10 @@ fn judge_screenshot(shot: &image::GrayImage, reference: &image::GrayImage) -> Re
             "no text on it: {dark} dark pixels of {total}, at least {MIN_DARK_PIXELS} wanted"
         ));
     }
-    let (differing, counted) = ink_difference(shot, reference);
-    let share = differing as f64 / counted as f64;
-    if share > MAX_DIFFERING_SHARE {
+    let differing = differing_pixels(shot, reference);
+    if differing > MAX_DIFFERING_PIXELS {
         return Err(format!(
-            "{differing} of the {counted} ink pixels differ from the window ({share:.3}), at most {MAX_DIFFERING_SHARE} allowed"
+            "{differing} pixels differ from the window, at most {MAX_DIFFERING_PIXELS} allowed"
         ));
     }
     Ok(())
@@ -297,6 +271,22 @@ fn read_window_luma(window: u32) -> image::GrayImage {
         .map(|px| ((u32::from(px[2]) * 299 + u32::from(px[1]) * 587 + u32::from(px[0]) * 114) / 1000) as u8)
         .collect();
     image::GrayImage::from_raw(width, height, luma).expect("a full image")
+}
+
+/// The window's pixels once they have stopped changing: two reads 100 ms apart agree exactly. The window goes on
+/// drawing for a moment after its text changes (its caret comes up: 17 pixels, seen on the VM), and a reference read in
+/// that moment is out of date, which is not the engine's error.
+fn settled_window_luma(window: u32) -> image::GrayImage {
+    let mut last = read_window_luma(window);
+    poll("the window stops changing", || {
+        sleep(Duration::from_millis(100));
+        let now = read_window_luma(window);
+        if now == last {
+            return Some(now);
+        }
+        last = now;
+        None
+    })
 }
 
 /// A light view with a line of text-like glyphs (thin strokes, as small text is) of about the live window's weight.
@@ -379,6 +369,46 @@ fn a_capture_of_text_with_a_few_letters_changed_fails() {
 }
 
 #[test]
+fn a_capture_with_one_glyph_changed_fails() {
+    // The fifth glyph becomes a solid block: the typed character of a stale frame, or its absence, is one glyph.
+    let window = text_view(10, 10);
+    let mut wrong = window.clone();
+    for y in 10..20 {
+        for dx in 0..=4 {
+            wrong.put_pixel(10 + 5 * 8 + dx, y, image::Luma([30]));
+        }
+    }
+    assert!(judge_screenshot(&through_jpeg(&window), &window).is_ok());
+    assert!(judge_screenshot(&through_jpeg(&wrong), &window).is_err());
+}
+
+#[test]
+fn a_capture_missing_the_final_glyph_fails() {
+    let window = text_view(10, 10);
+    let mut wrong = window.clone();
+    for y in 10..20 {
+        for dx in 0..=4 {
+            wrong.put_pixel(10 + 13 * 8 + dx, y, image::Luma([255]));
+        }
+    }
+    assert!(judge_screenshot(&through_jpeg(&wrong), &window).is_err());
+}
+
+#[test]
+fn a_capture_with_half_its_background_off_white_fails() {
+    // The bottom half is luma 180 for the window's 255: still light, with all the window's ink, and nothing in it
+    // that a count over the ink would see.
+    let window = text_view(10, 10);
+    let mut wrong = window.clone();
+    for y in 160..320 {
+        for x in 0..480 {
+            wrong.put_pixel(x, y, image::Luma([180]));
+        }
+    }
+    assert!(judge_screenshot(&through_jpeg(&wrong), &window).is_err());
+}
+
+#[test]
 fn a_capture_of_another_size_fails() {
     let window = text_view(10, 10);
     let cropped = image::imageops::crop_imm(&window, 0, 0, 480, 300).to_image();
@@ -432,42 +462,65 @@ fn reads_the_tree_types_in_the_background_and_captures_the_window() {
         "nothing else changed: {after:?}"
     );
 
-    // A window screenshot: a JPEG of the window's size whose pixels are the window's, not a blank capture.
-    let image = capture_luma(&mut engine, id);
-    assert_eq!((u64::from(image.width()), u64::from(image.height())), (width, height));
-    let reference = read_window_luma(id as u32);
-    if let Err(why) = judge_screenshot(&image, &reference) {
-        panic!("the screenshot is not the text window: {why}");
+    // A window screenshot: a JPEG of the window's size whose pixels are the window's, not a blank capture. Taken
+    // several times: the differing-pixel count of a correct capture is the noise the limit stands above.
+    let reference = settled_window_luma(id as u32);
+    for _ in 0..3 {
+        let image = capture_luma(&mut engine, id);
+        assert_eq!((u64::from(image.width()), u64::from(image.height())), (width, height));
+        say(&format!(
+            "the window's capture: {} pixels differ from the window",
+            differing_pixels(&image, &reference)
+        ));
+        if let Err(why) = judge_screenshot(&image, &reference) {
+            panic!("the screenshot is not the text window: {why}");
+        }
+        sleep(Duration::from_millis(200));
     }
 
-    // Another window of the same size and kind whose text differs by two letters ("pcua live test" for "qcua live
-    // text"), typed into the same way. Its capture is light, has as much ink, and is within a hair of the first
-    // window's average; it is still not the first window's.
-    let other = Window::open("cua live test", "b");
-    let other_id = poll("the second window is listed", || {
-        let windows = engine.request("list_windows", json!({})).unwrap();
-        windows
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|w| w["title"] == json!(other.title))
-            .and_then(|w| w["id"].as_u64())
-    });
-    poll("the second window's text is on the accessibility bus", || {
-        read_text(&mut engine, other_id).filter(|t| t == "cua live test")
-    });
-    engine
-        .request("press_key", json!({"window": {"id": other_id}, "key": "p"}))
-        .unwrap();
-    poll("the second window's key is in the tree", || {
-        read_text(&mut engine, other_id).filter(|t| t.contains('p'))
-    });
-    let wrong = capture_luma(&mut engine, other_id);
-    let refused = judge_screenshot(&wrong, &reference);
-    assert!(
-        refused.is_err(),
-        "another window's text is not the first window's: {refused:?}"
-    );
+    // Other windows of the same size and kind, whose captures are light, have as much ink, and are the first
+    // window's but for one or two glyphs: a stale frame is the first window's with its last typed glyph missing.
+    // Each must be refused.
+    for (text, key) in [
+        ("cua live test", "p"), // "pcua live test" for "qcua live text": two glyphs
+        ("cua live test", "q"), // "qcua live test": one glyph
+        ("cua live tex", "q"),  // "qcua live tex": the final glyph missing
+    ] {
+        let other = Window::open(text, "b");
+        let other_id = poll("the other window is listed", || {
+            let windows = engine.request("list_windows", json!({})).unwrap();
+            windows
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|w| w["title"] == json!(other.title))
+                .and_then(|w| w["id"].as_u64())
+        });
+        poll("the other window's text is on the accessibility bus", || {
+            read_text(&mut engine, other_id).filter(|t| t == text)
+        });
+        engine
+            .request("press_key", json!({"window": {"id": other_id}, "key": key}))
+            .unwrap();
+        poll("the other window's key is in the tree", || {
+            read_text(&mut engine, other_id).filter(|t| t != text)
+        });
+        let wrong = capture_luma(&mut engine, other_id);
+        say(&format!(
+            "{key}{text:?} against the window: {} pixels differ",
+            differing_pixels(&wrong, &reference)
+        ));
+        let refused = judge_screenshot(&wrong, &reference);
+        assert!(
+            refused.is_err(),
+            "{key}{text:?} is not the first window's text: {refused:?}"
+        );
+    }
+}
+
+/// A line on stderr that the test harness does not hold back with a passing test: the gate's log shows the counts.
+fn say(line: &str) {
+    let _ = writeln!(std::io::stderr(), "live: {line}");
 }
 
 /// The engine's window screenshot, decoded to luma, with the file checked to be a JPEG.

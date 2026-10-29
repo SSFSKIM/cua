@@ -148,3 +148,41 @@ README's noise-rule wording.
   commands, Write and Edit, and wrapper scripts under `.doperpowers/sde/`.
 - `pgrep -f "<pattern>"` matched the waiter shells that contained the pattern, and a `pkill` on it killed them; match
   the node process or use `pgrep -x`.
+
+## M1b — distribution and selection, the first release
+
+Branch `feat/171-m1b` from main 132ae9d0. Three loop tasks (pre-flight 18e6329d), a follow-up and the release:
+
+| Task | Commits | Review |
+|---|---|---|
+| M1b.1 release workflow, pin script, 0.1.0, `engine-linux` gate | 643909f3 | approved |
+| M1b.2 selection, install, doctor, `cua engine build` on Linux | fa6a585a, ccce4fe7; fix 2d1c1fc8 | 1 round (a symlink bypass of the engine's containment), then approved |
+| M1b.3 the facade harnesses' Linux engine lanes, suites on the VM | 863d16b0..b5f51114; fix 6866d9c5 | 1 round (four fail-open gate paths), then approved |
+| M1b.1's Minor: the live gate's screenshot judged by content | c9ec213a, 3bc0ee60, 8ea09205, 8988b854 | 3 rounds (`reviewer-low`), then correct |
+| Release `linux-engine-v0.1.0` and the pin | run 40969350911 on 0546538a; pin 1e18edaf | evidence below |
+
+**Result.**
+- Acceptance 9 on x86-64: the pinned, attested, static-pie asset installs into a fresh home, and doctor passes the
+  engine row under `CUA_NATIVE_ENGINE=cua`.
+- Acceptance 1: `scripts/accept/linux-native.mjs` passes 11/11 on the installed engine. A 50 ms sampler saw no
+  `sky_linux`, and `cua-engine` ran as the trusted worker's child.
+- Acceptance 10's facade suites pass on both engine lanes, with the cua lane on the local build before the release.
+  repl-parity shows only the declared text cases; the native baseline's engine comparison passes.
+- The default stays `vendor`.
+
+**Branch review** (`doperpowers:reviewer-high`, 132ae9d0..6866d9c5): "correct", no material findings. It listed every
+macOS-visible change for the coordinator's merge condition: 0.18.0's macOS changes are #221's fix (already on main),
+the `--engine` usage error, and the Linux pin shipping in the package; everything else is internal or developer
+tooling.
+
+**Coordinator's merge conditions** (the marketplace auto-updates every Mac, the mini included):
+- `ci-gate` GREEN on the PR head with `test` and `sandbox-live`;
+- the PR body states 0.18.0's macOS changes exactly;
+- no text from draft PR #211.
+
+**Friction** (for a Mac session to record):
+- devcloud rewrites `~/.ssh/authorized_keys` every 30 minutes, which wiped repl-parity's loopback key mid-run; it now
+  lives in `authorized_keys2` (logged by the coordinator).
+- Executors reused the controller's commit-message file, so two commits went out with stale messages and were amended
+  and force-pushed with lease on the branch; later executors got their own message file.
+- The worktree guard refused multi-line read-only probes from reviewers; single-line commands worked.

@@ -263,12 +263,16 @@ test('the vendor engine selected: skip, saying cua\'s engine is not selected, ho
   assert.match(refusedHost.row.detail, /sessions here are refused \(repl_host_refused; see repl\.host\)/);
 });
 
-test('no native engine applies off macOS or without the computer surface; an unknown setting fails', async () => {
-  const linux = await row({CUA_NATIVE_ENGINE: 'cua'}, {platform: 'linux'});
-  assert.equal(linux.row.status, 'skip');
-  assert.equal(linux.report, undefined);
-  assert.equal(linux.inspected, 0);
-  assert.match(linux.row.detail, /macOS/);
+// Linux's own engine row is test/doctor-engine-linux.test.mjs (#171): it never reads the macOS approved location.
+test('no native engine applies off macOS and Linux or without the computer surface; an unknown setting fails', async () => {
+  const other = await engineCheck({env: {CUA_SHIM_SURFACES: 'computer'}, platform: 'win32', session: {host: 'cua'}, inspect: async () => assert.fail('not read')});
+  assert.equal(other.row.status, 'skip');
+  assert.equal(other.report, undefined);
+  assert.match(other.row.detail, /macOS and Linux/);
+  const linux = await engineCheck({env: {CUA_SHIM_SURFACES: 'computer', CUA_NATIVE_ENGINE: 'cua'}, platform: 'linux', arch: 'x64', home: '/nonexistent-home', session: {code: 'engine_not_installed', message: 'none'},
+    engine: {config: () => ({})}, inspect: async () => assert.fail('the macOS approved location is not read on Linux'), records: () => assert.fail('nor its records'),
+    inspectLinux: () => ({path: '/nonexistent-home/engine/linux/cua-engine', exists: false, executable: false, sha256: null, build: null, version: null, release: null, pinned: null, current: false})});
+  assert.equal(linux.row.status, 'fail');
   const browser = await row({CUA_NATIVE_ENGINE: 'cua', CUA_SHIM_SURFACES: 'browser'});
   assert.equal(browser.row.status, 'skip');
   assert.equal(browser.report.selected, null);

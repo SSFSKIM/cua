@@ -1,8 +1,9 @@
 [package]
 name = "cua-linux-engine"
-# 0.1.0 is M1b's first release (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Interfaces and
-# Dependencies); the M0 spike stays below it.
-version = "0.0.1"
+# M1b's first release, linux-engine-v0.1.0; each later release takes the next minor
+# (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Interfaces and Dependencies). The release workflow
+# (.github/workflows/linux-engine.yml) builds the version named here and refuses one already released.
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.94"
 publish = false
@@ -22,6 +23,11 @@ x11rb = { version = "0.13.2", features = ["composite", "damage", "xtest", "xfixe
 image = { version = "0.25.10", default-features = false, features = ["jpeg"] }        # vendor: image 0.25.10
 # x11rb's own dependency, named for the desktop screenshot's MIT-SHM segment (memfd and mmap): no new package
 rustix = { version = "1.1.4", features = ["fs", "mm"] }                                # vendor: rustix 1.1.4
+
+[features]
+# Tests that need an X display with Composite, DAMAGE and MIT-SHM, an accessibility bus, and yad (a GTK 3 window):
+# the engine-linux gate and the release workflow run them under `xvfb-run -a dbus-run-session`.
+live = []
 
 [profile.release]
 codegen-units = 1

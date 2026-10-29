@@ -10,6 +10,7 @@
 //   state/compat/         per vendor-host session, the compat executable's settings (src/sandbox/compat-settings.mjs)
 //   node/                 the pinned Node cua's own REPL host runs on, and its pointer (src/runtime/managed-node.mjs)
 //   sandbox/<tag>/        Linux: the pinned sandbox helper, codex-linux-sandbox (src/sandbox/linux.mjs)
+//   engine/linux/         Linux: cua's own engine, cua-engine, and its install record (src/runtime/linux-engine.mjs; #171)
 //   run/<session>/        per-connection working directory and private endpoints
 //   kernel/<session>/     Linux under the default sandbox mode: the confined kernel's working directory, with tmp/ (its
 //                         TMPDIR), outside run/, which is denied to it whole (src/runtime/launch.mjs kernelDir)
@@ -44,6 +45,7 @@ export function homeLayout(home) {
     compat: join(home, 'state', 'compat'),
     node: join(home, 'node'),
     sandbox: join(home, 'sandbox'),
+    engine: join(home, 'engine'),
     run: join(home, 'run'),
     kernel: join(home, 'kernel'),
   };

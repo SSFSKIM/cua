@@ -32,7 +32,9 @@
 // engine (engine_not_installed). The engine's own row is `engine` (src/runtime/doctor-engine.mjs), whose effective
 // selection is this row's session selection, reported beside the preferred engine: with cua's engine preferred, its approved bundle, the signature as a match, whether the socket's owner is the approved bundle, the three
 // grants, the probe's ability, the route-4 overrides and the apps routeAdvice names; else why it is not in use. Its
-// facts are also the report's `engine` object (macOS only). The two rows share one read of the approved engine.
+// facts are also the report's `engine` object. The two rows share one read of the approved engine. On Linux (#171) the
+// engine row reports cua's own engine against this cua's pin and the device mode, and repl.host names no engine: there
+// the engine never changes the host.
 // `sandbox` describes the CUA_SHIM_SANDBOX in `env` (src/runtime/sandbox.mjs). Under scoped it fails when the
 // profile's write roots ($CUA_HOME/run: a connection's run directory and its session temp, which is its TMPDIR) overlap
 // a trusted code path (the release's modules, the checkout's src/repl-host, src/sandbox, src/services and src/secrets),
@@ -121,7 +123,7 @@ function launcherCheck({sandboxExec, compat, node}) {
   return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: ${sandboxExec} for cua's own host, and on the vendor host ${compat}${node ? ` on ${node}` : ''}; no Codex CLI is launched`);
 }
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -185,10 +187,11 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const secretsEnabled = (env.CUA_SHIM_SECRETS ?? 'on') !== 'off';
   checks.push(classifyStore(secretsInfo, {enabled: secretsEnabled}));
   if (secretsInfo.project) checks.push(classifyStore(secretsInfo.project, {enabled: secretsEnabled, project: secretsInfo.project.root}));
-  const engineInputs = sharedEngineInputs(engine, env);
+  const engineInputs = host.platform === 'linux' ? engine ?? {} : sharedEngineInputs(engine, env);
   const replHost = replHostCheck(home, env, host.platform, resolveOwnNode, engineInputs);
   checks.push(replHost.row);
-  const engineRow = await engineCheck({env, platform: host.platform, session: replHost.session, engine: engineInputs, inspect: inspectEngine, records: readEngineRecords});
+  const engineRow = await engineCheck({env, platform: host.platform, arch: host.arch, home, session: replHost.session, engine: engineInputs, inspect: inspectEngine, records: readEngineRecords,
+    ...(inspectLinuxEngine ? {inspectLinux: inspectLinuxEngine} : {})});
   checks.push(engineRow.row);
   checks.push(...await inspectChrome({home, host, env}));
   checks.push(...await inspectAgent({home, env, host}));
@@ -268,8 +271,9 @@ function replHostCheck(home, env, platform, resolveOwnNode, engine) {
   const resolve = resolvedOnce(resolveOwnNode ?? (() => ownHostNode({ambient: env, home})));
   const session = replHostSelection(home, env, platform, surfaces, resolve, engine);
   const listing = replHostSelection(home, env, platform, ['browser'], resolve, engine);
+  // A Linux session's engine never changes its host (#171): the engine row names it, this one does not.
   const words = r => (r.code ? `refused (${r.code}): ${r.message}`
-    : `${r.host} host (${r.reason})${r.node ? ` on Node ${r.node}` : ''}: ${REPL_HOST_REASONS[r.reason](r)}${r.engine ? `; ${engineWords(r.engine)}` : ''}`);
+    : `${r.host} host (${r.reason})${r.node ? ` on Node ${r.node}` : ''}: ${REPL_HOST_REASONS[r.reason](r)}${r.engine && platform !== 'linux' ? `; ${engineWords(r.engine)}` : ''}`);
   const status = session.code || listing.code ? 'fail' : [session, listing].some(r => r.reason === 'own_host_node_unavailable' || r.engine?.status === 'warn') ? 'warn' : 'pass';
   // `session` is also the engine row's effective selection: the engine a session here actually drives.
   return {session, row: result('repl.host', status,
@@ -324,7 +328,8 @@ function sandboxRow({home, env, runtime, platform, surfaces, userns, mode}) {
     + (computer ? `cells have no network${workerNetwork}` : 'neither has the network'));
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: [runtime?.paths.moduleDir, REPL_HOST_DIR, CUA_API_DIR, CUA_API_DOCS_DIR, SANDBOX_DIR, dirname(SKY_SERVICE), dirname(BROWSER_SERVICE), BROWSER_SERVICE_IMPL_DIR, ...SERVICE_SUPPORT_DIRS],
-      codexHome: owned.codexHome, managedNode: owned.node, staging: owned.staging, sandboxHelper: owned.sandbox, applications: linux ? xdgApplicationRoots({HOME: env.HOME, XDG_DATA_DIRS: env.XDG_DATA_DIRS}) : [],
+      codexHome: owned.codexHome, managedNode: owned.node, staging: owned.staging, sandboxHelper: owned.sandbox, engines: linux ? [owned.engine] : [],
+      applications: linux ? xdgApplicationRoots({HOME: env.HOME, XDG_DATA_DIRS: env.XDG_DATA_DIRS}) : [],
       denied: deny, ownRoots: [session], ownHolders: [owned.home, owned.run]}),
     writeRoots: scopedWriteRoots({cwd: session, cwdLabel: 'a connection\'s run directory, $CUA_HOME/run/<session>'}),
   });

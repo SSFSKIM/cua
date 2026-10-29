@@ -57,7 +57,10 @@
 //                                            opened by the vendor through LaunchServices (never with cua's engine, so
 //                                            nothing may open the vendor helper)
 //   OAI_SKY_LINUX_BIN                        computer surface, linux: the relocated sky_linux helper, which the vendor
-//                                            spawns as a child over stdio (pinned rather than resolved by the vendor)
+//                                            spawns as a child over stdio (pinned rather than resolved by the vendor), or
+//                                            with cua's engine selected (nativeEngineFor, #171) cua-engine, installed under
+//                                            <home>/engine/linux or named by CUA_LINUX_ENGINE_BIN, behind the vendor
+//                                            service until cua's own (M3)
 //   CUA_SKY_SERVICE                          computer surface: the sky service module the trusted wrapper delegates to:
 //                                            the vendor's (@oai/sky/service), or on macOS with cua's engine selected
 //                                            (nativeEngineFor) cua's own, src/services/engine/service.mjs, on either host
@@ -92,8 +95,11 @@
 // launch record also carries `replHost` ({host, reason}, replHostFor), the REPL host it runs, and `nativeEngine`, the
 // engine attestation the proxy puts on every js result of a macOS computer session ({engine, version, build}: cua's
 // engine's version and build from its approved bundle, the vendor's helper bundle version and runtime release; null
-// elsewhere; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, EngineAttestation). CUA_REPL_HOST, CUA_NODE
-// and CUA_NATIVE_ENGINE are read by the proxy only and never reach the runtime's environment. Deliberately never set:
+// elsewhere; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, EngineAttestation). CUA_REPL_HOST, CUA_NODE,
+// CUA_NATIVE_ENGINE and CUA_LINUX_ENGINE_BIN are read by the proxy only and never reach the runtime's environment. A
+// Linux launch also carries `engineRoot`, <home>/engine, and `linuxEngine`, the cua engine its computer surface runs
+// ({path: its canonical path, the one OAI_SKY_LINUX_BIN names; lookup: the path it was found by; source}, null for the
+// vendor's), which the scoped preflight protects, the lookup's links included. Deliberately never set:
 // NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS, NODE_REPL_UNTRUSTED_ENV_ALLOWLIST (cells see only what the vendor launcher
 // adds), SKY_CUA_SERVICE_NATIVE_PIPE_PATH, NODE_REPL_HOST_SERVICES_PIPE_PATH, NODE_REPL_WORKER_WRAPPER,
 // NODE_REPL_DENIED_PATHS.
@@ -162,7 +168,8 @@ import {homedir} from 'node:os';
 import {dirname, isAbsolute, join} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {CuaError, fail} from './errors.mjs';
-import {homeLayout, realHome} from './layout.mjs';
+import {defaultHome, homeLayout, realHome} from './layout.mjs';
+import {executableFile, installedLinuxEngine, linuxEnginePath} from './linux-engine.mjs';
 import {STORE_ENV} from '../secrets/store.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {launchBackendPaths, MAWS_INSTANCE_MARKER} from '../chrome/discovery.mjs';
@@ -291,8 +298,10 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   // The engine a macOS computer session drives (nativeEngineFor): cua's own service and the approved bundle, on either
   // host, or the vendor's service and helper (a selection that names no engine is the vendor's: today's path).
   const cuaEngine = !linux && enabled.includes('computer') && replHost.engine?.engine === 'cua' ? replHost.engine.app : null;
+  // On Linux cua's engine runs behind the vendor service until cua's own service (M3): the vendor's sky_linux replaced.
+  const linuxEngine = linux && enabled.includes('computer') && replHost.engine?.engine === 'cua' ? replHost.engine.bin : null;
   if (enabled.includes('computer')) {
-    if (linux) Object.assign(env, {OAI_SKY_LINUX_BIN: p.skyLinuxBin, CUA_SKY_SERVICE: p.skyVendorService});
+    if (linux) Object.assign(env, {OAI_SKY_LINUX_BIN: linuxEngine?.path ?? p.skyLinuxBin, CUA_SKY_SERVICE: p.skyVendorService});
     else {
       Object.assign(env, cuaEngine ? {CUA_SKY_SERVICE: ENGINE_SERVICE, CUA_ENGINE_APP: cuaEngine.bundlePath} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp, CUA_SKY_SERVICE: p.skyVendorService});
       env.CUA_ENGINE_SCREENSHOTS = join(cwd, 'screenshots');
@@ -312,6 +321,7 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   } else if (secretsUnavailable) env[STORE_ENV.unavailable] = secretsUnavailable;
   const launch = {command: own ? ownNode : p.node, args: own ? ['--disable-sigusr1', REPL_HOST_SUPERVISOR] : [p.cuaRepl], env, cwd, sessionTmp, kernelDir, denyRead,
     replHost: {host: replHost.host, reason: replHost.reason}, managedNodeRoot: owned.node, stagingRoot: owned.staging, sandboxHelperRoot: owned.sandbox,
+    engineRoot: linux ? owned.engine : null, linuxEngine: linuxEngine ? {path: linuxEngine.path, lookup: linuxEngine.lookup, source: linuxEngine.source} : null,
     nativeEngine: linux || !enabled.includes('computer') ? null : cuaEngine ? {engine: 'cua', version: cuaEngine.engineVersion, build: cuaEngine.build}
       : {engine: 'vendor', version: bundleVersion(p.skyServiceApp), build: runtime.release},
     compat: compat ? {home: owned.home, sessionId, node: p.node} : null};
@@ -350,13 +360,14 @@ function linuxSandboxEnv(home, arch, surfaces) {
 
 // The REPL host a launch with `surfaces` on `platform` runs, and why -> {host: 'cua' | 'vendor', reason}, plus, for
 // `cua`, `node`: the Node it runs on, for `own_host_node_unavailable`, `nodeTried`: the candidates ownHostNode tried, and
-// for the computer surface on macOS, `engine`: the native engine the session drives (nativeEngineFor's, below).
+// for the computer surface, `engine`: the native engine the session drives (nativeEngineFor's, below; on Linux, #171,
+// resolved before Node and never changing the host).
 // On Linux it is always cua's own host (#115 M3, which closes #135): the vendor host there is retired, because its
 // node_repl ran JavaScript unconfined when its launcher failed at run time, and cua's sandbox does not serve it.
 // `resolveOwnNode` resolves the own host's Node (ownHostNode from `ambient` and `home` by default), asked at most once
 // and only when the selection would be cua's own host: a connection resolves its selection once, so its Node too.
 // `engine` reaches nativeEngineFor (its `config`, `installed` and `defaultEngine`, for tests); it too is asked only
-// for the computer surface on macOS, once. Either host runs cua's browser service with the browser surface.
+// for the computer surface (on macOS or Linux), once. Either host runs cua's browser service with the browser surface.
 // CUA_REPL_HOST in `ambient`, the caller's original environment:
 //   vendor   the vendor host (`explicit`): the macOS rollback; Node is never asked for. Refused on Linux
 //            (repl_host_refused, naming why), never downgraded.
@@ -381,10 +392,12 @@ export function replHostFor({platform, surfaces, ambient, home, resolveOwnNode =
     fail('repl_host_refused', 'CUA_REPL_HOST=vendor is not supported on Linux: the vendor host there is retired (#115), because its node_repl ran JavaScript cells unconfined when its sandbox launcher failed (#135), and cua\'s own sandbox does not serve it. Unset CUA_REPL_HOST (or use CUA_REPL_HOST=cua) for cua\'s own host');
   if (platform === 'darwin' && surfaces.includes('computer')) return macosComputerHost({requested, ambient, resolveOwnNode, engine});
   if (requested === 'vendor') return {host: 'vendor', reason: 'explicit'};
-  if (requested === 'cua') return {host: 'cua', reason: 'explicit', node: resolveOwnNode()};
+  // A Linux computer session's engine (#171), resolved before Node as on macOS; it never changes the host.
+  const linuxEngine = platform === 'linux' && surfaces.includes('computer') ? {engine: nativeEngineFor({env: ambient, platform, home, ...engine})} : {};
+  if (requested === 'cua') return {host: 'cua', reason: 'explicit', node: resolveOwnNode(), ...linuxEngine};
   const reason = platform === 'linux' ? 'linux' : 'browser_only';
   try {
-    return {host: 'cua', reason, node: resolveOwnNode()};
+    return {host: 'cua', reason, node: resolveOwnNode(), ...linuxEngine};
   } catch (error) {
     if (error?.code !== 'repl_host_node' || platform === 'linux') throw error;
     return {host: 'vendor', reason: 'own_host_node_unavailable', nodeTried: error.tried};
@@ -433,8 +446,17 @@ const engineSource = (reason, value) => (reason === 'settings' ? `"engine": "${v
 // --engine`), while the default keeps the vendor engine (reason `engine_not_installed`, status `warn`) until M6, so a
 // plugin update never breaks a session before the engine is installed. Status is `pass` otherwise. `env.HOME` locates
 // engine.json and the approved engine, as `cua engine` places them.
-export function nativeEngineFor({env, requestedHost = null, defaultEngine = DEFAULT_NATIVE_ENGINE,
-  config = () => readEngineSettings({env}), installed = () => installedEngine({dir: engineDirectory(env.HOME || homedir())})}) {
+//
+// On Linux (`platform` linux; #171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Selection) the same
+// setting, precedence, reasons and refusals select between the vendor's sky_linux and cua's own engine, which is
+// installed in the cua home `home` (src/runtime/linux-engine.mjs installedLinuxEngine, the default `installed`: {path}
+// or null). There is no host to refuse (cua's own host is the only one there). cua's engine carries `bin` {path,
+// source: 'installed' | 'override'}: CUA_LINUX_ENGINE_BIN in `env`, read only for cua's engine and only by the
+// harnesses, names an engine to run in place of the installed one (an absolute path to an executable file, else
+// refused: invalid_setting, engine_not_installed).
+export function nativeEngineFor({env, platform = 'darwin', home, requestedHost = null, defaultEngine = DEFAULT_NATIVE_ENGINE, config = () => readEngineSettings({env}), installed}) {
+  if (platform === 'linux') return linuxEngineFor({env, home, defaultEngine, config, installed});
+  installed ??= () => installedEngine({dir: engineDirectory(env.HOME || homedir())});
   const setting = engineSetting(env, config, defaultEngine);
   if (setting.engine === 'vendor') {
     if (requestedHost === 'cua')
@@ -450,6 +472,57 @@ export function nativeEngineFor({env, requestedHost = null, defaultEngine = DEFA
     return {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
   }
   return {engine: 'cua', reason: setting.reason, status: 'pass', app: {bundlePath: app.bundlePath, engineVersion: app.engineVersion, build: app.build}};
+}
+
+function linuxEngineFor({env, home, defaultEngine, config, installed}) {
+  const setting = engineSetting(env, config, defaultEngine);
+  if (setting.engine === 'vendor') return {engine: 'vendor', reason: setting.reason, status: 'pass'};
+  const override = env.CUA_LINUX_ENGINE_BIN;
+  if (override !== undefined && override !== '') {
+    if (!isAbsolute(override)) fail('invalid_setting', 'CUA_LINUX_ENGINE_BIN must be an absolute path');
+    if (!executableFile(override))
+      fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and CUA_LINUX_ENGINE_BIN names ${override}, which is not an executable file: build it (cargo build --release in native/linux-engine) or unset CUA_LINUX_ENGINE_BIN for the installed engine`);
+    return {engine: 'cua', reason: setting.reason, status: 'pass', bin: canonicalEngine(override, 'override')};
+  }
+  const cuaHome = () => realHome(home ?? defaultHome(env, {platform: 'linux'}));
+  const found = (installed ?? (() => installedLinuxEngine({home: cuaHome()})))();
+  if (!found) {
+    if (setting.reason !== 'default')
+      fail('engine_not_installed', `${engineSource(setting.reason, 'cua')} selects cua's own engine, and none is installed in this cua home (${linuxEnginePath(cuaHome())}): install it with \`cua install --engine\` (or a local build with \`cua engine build\`), or set CUA_NATIVE_ENGINE=vendor for the vendor engine`);
+    return {engine: 'vendor', reason: 'engine_not_installed', status: 'warn'};
+  }
+  return {engine: 'cua', reason: setting.reason, status: 'pass', bin: {path: found.path, lookup: found.lookup ?? found.path, source: 'installed'}};
+}
+
+// The engine as a launch names it -> {path, lookup, source}: `path` its canonical path, resolved once at selection
+// (installedLinuxEngine resolves the installed one), so every launch of the connection runs the file the scoped
+// preflight checked, never a link a cell could re-point; `lookup` the path it was found by, whose links the preflight
+// checks too (src/runtime/sandbox.mjs).
+function canonicalEngine(lookup, source) {
+  let path;
+  try { path = realpathSync(lookup); } catch (error) { fail('engine_not_installed', `cua's engine at ${lookup} cannot be resolved (${error.code ?? error.message})`); }
+  return {path, lookup, source};
+}
+
+// The device mode cua's engine runs in on Linux (#171, Design "Device mode") -> {mode: 'shared' | 'dedicated', reason:
+// 'explicit' | 'settings' | 'default'}: CUA_DESKTOP_MODE in `env` (unset or empty: not set), else `desktop` in
+// ~/.config/cua/engine.json, else shared. Any other value is refused (invalid_setting), as is an engine.json that cannot
+// be read. Doctor reports it; cua's own service passes it to the engine (M3).
+const DESKTOP_MODES = ['shared', 'dedicated'];
+export function desktopModeFor({env, config = () => readEngineSettings({env})}) {
+  const value = env.CUA_DESKTOP_MODE;
+  if (value !== undefined && value !== '') {
+    if (!DESKTOP_MODES.includes(value)) fail('invalid_setting', `CUA_DESKTOP_MODE must be ${DESKTOP_MODES.join(' or ')}`);
+    return {mode: value, reason: 'explicit'};
+  }
+  let settings;
+  try { settings = config(); } catch (error) {
+    if (error instanceof CuaError) fail('invalid_setting', error.message);
+    throw error;
+  }
+  if (settings?.desktop === undefined) return {mode: 'shared', reason: 'default'};
+  if (!DESKTOP_MODES.includes(settings.desktop)) fail('invalid_setting', `"desktop" in ${engineSettingsPath(env)} must be ${DESKTOP_MODES.join(' or ')}`);
+  return {mode: settings.desktop, reason: 'settings'};
 }
 
 // The engine the setting names, before the approved engine, the host and Node decide what a session gets -> {engine,

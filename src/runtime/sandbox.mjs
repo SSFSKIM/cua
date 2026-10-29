@@ -21,6 +21,7 @@ import {fail} from './errors.mjs';
 import {USERNS_REMEDY, bwrapUserns} from './linux-desktop.mjs';
 import {homeLayout} from './layout.mjs';
 import {verifyHelper as verifyLinuxHelper} from '../sandbox/linux.mjs';
+import {engineLookup} from './linux-engine.mjs';
 import {xdgApplicationRoots} from '../repl-host/launch-services.mjs';
 
 export const SANDBOX_META_KEY = 'codex/sandbox-state-meta';
@@ -95,15 +96,18 @@ const within = (path, root) => {
 // A macOS vendor-host launch adds its compat settings directory (`compatSettings`, src/sandbox/compat-settings.mjs: what
 // the compat executable confines both children by; writable, a worker could rewrite the kernel's deny list), and every
 // launch $CUA_HOME/sandbox (`sandboxHelper`: the Linux helper, which runs outside every sandbox; writable, a cell could
-// swap what confines the next child, or plant a bubblewrap beside it). A Linux own-host launch adds the XDG
+// swap what confines the next child, or plant a bubblewrap beside it). A Linux launch adds cua's engine (`engines`,
+// #171: $CUA_HOME/engine, and the canonical engine file a session runs, installed or CUA_LINUX_ENGINE_BIN's; the trusted worker
+// runs it as its child; writable, a cell could swap what reads every window and types into it). A Linux own-host launch adds the XDG
 // applications directories of its environment (`applications`, src/repl-host/launch-services.mjs: launch_app starts
 // their desktop entries outside the sandbox; writable, a cell could plant one), whether they exist yet or not.
-export const protectedPaths = ({trustedCodePaths, codexHome, compatSettings, managedNode, staging, sandboxHelper, applications = [], denied = [], ownRoots = [], ownHolders = []}) => [
+export const protectedPaths = ({trustedCodePaths, codexHome, compatSettings, managedNode, staging, sandboxHelper, engines = [], applications = [], denied = [], ownRoots = [], ownHolders = []}) => [
   ...trustedCodePaths.filter(Boolean).map(path => ({label: 'the trusted code path', path})),
   ...(codexHome ? [{label: 'the runtime\'s configuration and approvals', path: codexHome}] : []),
   ...(compatSettings ? [{label: 'the vendor host\'s compat settings', path: compatSettings}] : []),
   ...(managedNode ? [{label: 'the Node cua installed for its own REPL host', path: managedNode}] : []),
   ...(sandboxHelper ? [{label: 'cua\'s sandbox helper', path: sandboxHelper}] : []),
+  ...engines.filter(Boolean).map(path => ({label: 'cua\'s Linux engine', path})),
   ...(staging ? [{label: 'cua install\'s staging directory', path: staging}] : []),
   ...applications.map(path => ({label: 'the XDG applications directory launch_app starts entries from', path})),
   ...denied.map(path => ({label: 'what JavaScript cells may not read', path, except: ownHolders.filter(Boolean).map(realish).includes(realish(path)) ? ownRoots.filter(Boolean) : []})),
@@ -218,7 +222,9 @@ export function assertDenyListShape(list) {
 // Throws `sandbox_conflict` when `mode` is not disabled and the deny list's targets overlap (assertDenyListShape), or
 // when `mode` is scoped and a write root of `launch` (src/runtime/launch.mjs) overlaps one of its trusted code paths
 // (trustedCodePathsOf), its CODEX_HOME, its home's managed Node (`launch.managedNodeRoot`), its home's install staging
-// (`launch.stagingRoot`), its home's sandbox helper (`launch.sandboxHelperRoot`) or its deny list (`launch.denyRead`,
+// (`launch.stagingRoot`), its home's sandbox helper (`launch.sandboxHelperRoot`), cua's Linux engine (`launch.engineRoot`,
+// and `launch.linuxEngine`'s canonical file, whatever its source, with any symbolic link on its lookup path lying in a
+// write root) or its deny list (`launch.denyRead`,
 // except for its own run directory and session temp), whichever host it runs: a vendor session's cells must not choose
 // a later own host's Node, or what an install places, either.
 //
@@ -234,11 +240,27 @@ export function assertSandboxFits(mode, launch) {
   const conflicts = sandboxConflicts({
     protectedPaths: protectedPaths({trustedCodePaths: trustedCodePathsOf(launch), codexHome: launch.env.CODEX_HOME, compatSettings: launch.compat && homeLayout(launch.compat.home).compat,
       managedNode: launch.managedNodeRoot, staging: launch.stagingRoot, sandboxHelper: launch.sandboxHelperRoot,
+      engines: [launch.engineRoot, launch.linuxEngine?.path],
       applications: launch.env.CUA_REPL_SANDBOX_HELPER ? xdgApplicationRoots(launch.env) : [],
       denied: launch.denyRead?.deny, ownRoots: [launch.cwd, launch.sessionTmp], ownHolders: launch.cwd ? [dirname(dirname(launch.cwd)), dirname(launch.cwd)] : []}),
     writeRoots: scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR}),
   });
+  conflicts.push(...engineLinkConflicts(launch.linuxEngine?.lookup, scopedWriteRoots({cwd: launch.cwd, tmpdir: launch.env.TMPDIR})));
   if (conflicts.length) fail('sandbox_conflict', describeConflicts(conflicts), {hint: SANDBOX_CONFLICT_HINT});
+}
+
+// The symbolic links on the path cua's Linux engine was found by (src/runtime/linux-engine.mjs engineLookup) that lie
+// in a write root, where a cell could re-point one: each is a conflict, though the engine it leads to lies outside.
+// A link is compared by where it lies (its directory's real path and its name), never by its target.
+function engineLinkConflicts(lookup, writeRoots) {
+  if (!lookup) return [];
+  const links = engineLookup(lookup).links.map(link => join(realish(dirname(link)), basename(link)));
+  const conflicts = [];
+  for (const root of writeRoots.filter(r => r.path)) {
+    const path = realish(root.path);
+    for (const link of links) if (within(link, path)) conflicts.push({root: {label: root.label, path}, protected: {label: 'a symbolic link on the path to cua\'s Linux engine', path: link}, inside: 'protected'});
+  }
+  return conflicts;
 }
 
 function assertVendorLauncher(path) {

@@ -24,13 +24,22 @@
 // missing so intervention detection is off, the signature not the configured identity's, route 3 advising an override,
 // an engine doctor launched and could not stop); `skip` where cua's engine is not preferred; else `pass`. The probe's
 // ability is reported, not judged.
+//
+// On Linux (#171; docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, "Doctor") the row reports cua's own
+// engine, cua-engine in the cua home, from its file and install record only (nothing is launched): the engine sessions
+// here run (the installed one, or what CUA_LINUX_ENGINE_BIN names), its version, release and SHA-256 against this cua's
+// pin, or that it is a local build (`cua engine build`), an older release or an unknown file, and the device mode.
+// `pass` for the pinned engine; `warn` for a local build, an older release, CUA_LINUX_ENGINE_BIN or the default's
+// fallback; `fail` for refused sessions, an unknown or unexecutable file, or an invalid device mode; `skip` while the
+// vendor's engine is preferred. Its capability report is cua's own service's to read (M3).
 import {realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {CuaError} from './errors.mjs';
 import {BUNDLE_ID} from './engine-bundle.mjs';
 import {ENGINE_GRANTS, engineDirectory, engineRecords, grantSteps, inspectEngine, shortBuild} from './engine.mjs';
 import {readEngineSettings} from './engine-sign.mjs';
-import {nativeEngineSetting} from './launch.mjs';
+import {desktopModeFor, nativeEngineSetting} from './launch.mjs';
+import {inspectLinuxEngine, loadEnginePin} from './linux-engine.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
@@ -43,12 +52,25 @@ const worst = statuses => statuses.reduce((a, b) => (SEVERITY.indexOf(b) > SEVER
 export const defaultInspectEngine = ({env, mayLaunch, location}) => inspectEngine({dir: engineDirectory(env.HOME || homedir()), env, mayLaunch, location: location?.()});
 export const defaultEngineRecords = ({env}) => engineRecords({dir: engineDirectory(env.HOME || homedir())});
 
-// -> {row, report}; `report` is undefined off macOS. `session` is repl.host's selection for a session here (replHostFor's
-// answer, or {code, message} when refused; undefined when repl.host refused every connection before selecting).
-// `engine` carries nativeEngineFor's inputs ({config, installed, defaultEngine, location}), shared with repl.host;
-// `inspect` and `records` read the approved location (seams for tests, which never launch anything).
-export async function engineCheck({env, platform, session, engine = {}, inspect = defaultInspectEngine, records = defaultEngineRecords}) {
-  if (platform !== 'darwin') return {row: result('engine', 'skip', 'cua\'s native engine is macOS\'s; computer sessions here use the pinned Linux helper (#171 replaces it)')};
+// The Linux engine placed in the cua home, against this cua's pin (src/runtime/linux-engine.mjs inspectLinuxEngine); a
+// pin this checkout cannot parse is reported as none, with why (`pinProblem`).
+export function defaultInspectLinuxEngine({home, arch}) {
+  let pin = null, pinProblem = null;
+  try { pin = loadEnginePin(); } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    pinProblem = error.message;
+  }
+  return {...inspectLinuxEngine({home, arch, pin}), ...(pinProblem ? {pinProblem} : {})};
+}
+
+// -> {row, report}; `report` is undefined off macOS and Linux. `session` is repl.host's selection for a session here
+// (replHostFor's answer, or {code, message} when refused; undefined when repl.host refused every connection before
+// selecting). `engine` carries nativeEngineFor's inputs ({config, installed, defaultEngine, location}), shared with
+// repl.host; `inspect` and `records` read the approved location on macOS, `inspectLinux` the engine placed in the cua
+// home `home` on Linux, for a machine of `arch` (seams for tests, which never launch anything).
+export async function engineCheck({env, platform, arch = process.arch, home, session, engine = {}, inspect = defaultInspectEngine, records = defaultEngineRecords, inspectLinux = defaultInspectLinuxEngine}) {
+  if (platform !== 'darwin' && platform !== 'linux') return {row: result('engine', 'skip', `cua's native engine is for macOS and Linux; this host is ${platform}`)};
+  const linux = platform === 'linux';
   let surfaces;
   try { surfaces = surfacesFrom(env.CUA_SHIM_SURFACES); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
@@ -63,11 +85,13 @@ export async function engineCheck({env, platform, session, engine = {}, inspect 
   try { preferred = nativeEngineSetting({env, config, ...(engine.defaultEngine ? {defaultEngine: engine.defaultEngine} : {})}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     const refused = {code: error.code, message: error.message};
-    return {row: result('engine', 'fail', `${error.message}; every macOS computer session is refused (${error.code})`), report: {...notApplicable(error.code), refused}};
+    return {row: result('engine', 'fail', `${error.message}; every ${linux ? 'Linux' : 'macOS'} computer session is refused (${error.code})`),
+      report: linux ? {...linuxReport({refused, preferred: null}), reason: error.code} : {...notApplicable(error.code), refused}};
   }
   const refused = session.code ? {code: session.code, message: session.message} : null;
   const selection = {selected: refused ? null : session.engine?.engine ?? null, reason: refused ? refused.code : session.engine?.reason ?? null, refused,
     preferred: {engine: preferred.engine, reason: preferred.reason}};
+  if (linux) return linuxRow(selection, {env, config, session, facts: inspectLinux({home, arch})});
   if (preferred.engine === 'vendor') return vendorRow(selection, records({env}));
   const facts = await inspect({env, mayLaunch: selection.selected === 'cua', location: engine.location});
   const settings = settingsOf(config);
@@ -100,6 +124,68 @@ function vendorRow(selection, records) {
     report: {...notApplicable(selection.reason), selected: selection.selected, refused: selection.refused, preferred: selection.preferred, bundle: records.bundlePath, exists: records.exists,
       approved: records.exists ? null : false, approvedBuild: records.approved?.build ?? null, approvedAt: records.approved?.approvedAt ?? null, pending: records.pending},
   };
+}
+
+// ---- Linux (#171) ----
+
+// The report's facts on Linux: the selection; `runs`, the engine sessions here run ({path, source: 'installed' |
+// 'override'}, null when they run the vendor's); `installed`, what the cua home holds (inspectLinuxEngine's facts, null
+// when unread); `pinned`, this cua's pin for this machine; and the device mode where cua's engine runs.
+function linuxReport({selected = null, reason = null, refused = null, preferred = null, facts = null, runs = null, desktop = null}) {
+  const installed = facts && {path: facts.path, exists: facts.exists, executable: facts.executable, sha256: facts.sha256, version: facts.version, build: facts.build,
+    release: facts.release, current: facts.current};
+  return {selected, reason, refused, preferred, runs, installed, pinned: facts?.pinned ?? null, desktop};
+}
+
+const PIN_NOTE = 'runtime/engine/linux-engine.json comes with the engine\'s first release';
+// What the cua home holds, judged against this cua's pin: `say(status, text)` records a verdict where it is short of the
+// pinned engine.
+function linuxHeld(facts, say) {
+  const {path, pinned} = facts;
+  const pinWords = facts.pinProblem ? `this cua's pin cannot be read (${facts.pinProblem})` : `this cua pins none yet (${PIN_NOTE})`;
+  if (!facts.exists) return pinned ? `no engine is installed in this cua home (${path}): cua install --engine installs the pinned cua-engine ${pinned.version} (${pinned.release})`
+    : `no engine is installed in this cua home (${path}), and ${pinWords}: cua engine build installs a local build`;
+  const words = facts.build === 'pinned' && facts.current ? `the pinned cua-engine ${facts.version} (${facts.release}) at ${path}, SHA-256 ${facts.sha256}`
+    : facts.build === 'pinned' ? say('warn', `cua-engine ${facts.version} from ${facts.release} at ${path} (SHA-256 ${facts.sha256}), ${pinned ? `which is not this cua's pinned ${pinned.version}: cua install --engine replaces it` : `and ${pinWords}`}`)
+    : facts.build === 'local' ? say('warn', `a local build of cua-engine ${facts.version} at ${path} (cua engine build), SHA-256 ${facts.sha256}, not the pinned engine (${pinned ? `${pinned.version}; cua install --engine puts it back` : 'this cua pins none yet'})`)
+    : say('fail', `the file at ${path} (SHA-256 ${facts.sha256}) is neither this cua's pinned engine nor a build cua recorded: cua install --engine replaces it`);
+  return facts.executable ? words : `${words}; ${say('fail', 'it is not executable, so no session runs it: cua install --engine places it again')}`;
+}
+
+const DESKTOP_WORDS = {
+  explicit: mode => `CUA_DESKTOP_MODE=${mode}`,
+  settings: mode => `"desktop": "${mode}" in ${SETTINGS}`,
+  default: () => `the default: CUA_DESKTOP_MODE=dedicated, or "desktop": "dedicated" in ${SETTINGS}, gives the agent the desktop`,
+};
+
+function linuxRow(selection, {env, config, session, facts}) {
+  const verdicts = [];
+  const say = (status, text) => { verdicts.push(status); return text; };
+  const held = linuxHeld(facts, say);
+  const source = SOURCE_WORDS[selection.preferred.reason];
+  const report = linuxReport({...selection, facts});
+  if (selection.preferred.engine === 'vendor') {
+    const why = selection.preferred.reason === 'default' ? 'the default engine is the vendor\'s' : source('vendor');
+    const serves = selection.refused ? `; sessions here are refused (${selection.refused.code}; see repl.host)` : ', so Linux computer sessions use the vendor\'s sky_linux helper';
+    return {row: result('engine', 'skip', `cua's engine is not selected: ${why}${serves}. CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ${SETTINGS}, selects cua's own: ${held}`), report};
+  }
+  if (selection.refused) return {row: result('engine', 'fail', `cua's engine is preferred (${source('cua')}), but sessions here are refused (${selection.refused.code}; see repl.host): ${held}`), report};
+  if (selection.selected !== 'cua')
+    return {row: result('engine', 'warn', `cua's engine is the default, but none is installed, so Linux computer sessions keep the vendor's sky_linux helper (${selection.reason}): ${held}`), report};
+  const bin = session.engine.bin;
+  const runs = bin.source === 'override'
+    ? say('warn', `${bin.path}, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), behind the vendor's service until cua's own; installed: ${held}`)
+    : `${held}, behind the vendor's service until cua's own`;
+  let desktop = null, mode;
+  try {
+    desktop = desktopModeFor({env, config});
+    mode = `device mode ${desktop.mode} (${DESKTOP_WORDS[desktop.reason](desktop.mode)})`;
+  } catch (error) {
+    if (!(error instanceof CuaError)) throw error;
+    mode = say('fail', error.message);
+  }
+  return {row: result('engine', worst(verdicts), `cua's engine is selected (${source('cua')}): sessions here run ${runs}; ${mode}`),
+    report: {...report, runs: {path: bin.path, source: bin.source}, desktop}};
 }
 
 // ---- cua's engine preferred ----

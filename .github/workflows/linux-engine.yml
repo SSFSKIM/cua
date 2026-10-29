@@ -1,0 +1,280 @@
+# Builds cua's own Linux engine (cua-engine, native/linux-engine/) from a cua commit, for x86_64 and aarch64 (static
+# musl, each on its own native runner), runs the engine's tests there (the unit tests and the live tests under Xvfb,
+# against the very binary that ships), attests its build provenance and publishes both binaries with their SHA-256
+# sums as the release `linux-engine-v<version>`, the version read from native/linux-engine/Cargo.toml at that commit.
+# It refuses a version whose tag or release exists. scripts/linux-engine-pin.mjs then pins the assets
+# (runtime/engine/linux-engine.json), which `cua install` fetches by. Spec
+# docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, "Selection, distribution and install".
+#
+#   gh workflow run linux-engine.yml --ref <branch> -f commit=<40-hex sha>                  # the release
+#   gh workflow run linux-engine.yml --ref <branch> -f commit=<40-hex sha> -f publish=false # build, test, attest only
+#   gh attestation verify <asset> --repo SSFSKIM/cua --signer-workflow SSFSKIM/cua/.github/workflows/linux-engine.yml
+#
+# The commit must be the head of the ref the run is dispatched on: the run builds what it names, and the attestation's
+# source commit is that commit.
+name: linux-engine
+on:
+  # A push of this file only registers the workflow, so it can be dispatched on a branch before it reaches main; its
+  # jobs run on dispatch only.
+  push:
+    paths: ['.github/workflows/linux-engine.yml']
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: 'the cua commit to build (40 hex digits): the head of the ref this run is dispatched on'
+        required: true
+      publish:
+        description: 'publish the release; false builds, tests and attests, and publishes nothing'
+        type: boolean
+        default: true
+permissions: {}
+concurrency:
+  group: linux-engine-${{ inputs.commit || github.sha }}
+  cancel-in-progress: false
+env:
+  COMMIT: ${{ inputs.commit }}
+jobs:
+  version:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - name: Check the commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "commit must be 40 lowercase hex digits" >&2; exit 1; }
+          [[ "$COMMIT" == "$GITHUB_SHA" ]] || { echo "${GITHUB_REF} is at ${GITHUB_SHA}, not ${COMMIT}: dispatch on a ref whose head is the commit" >&2; exit 1; }
+      - name: Check out the commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - name: Read the version and check it is unreleased
+        id: version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("native/linux-engine/Cargo.toml", "rb"))["package"]["version"])')"
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo "native/linux-engine/Cargo.toml's version ${version} is not <major>.<minor>.<patch>" >&2; exit 1; }
+          tag="linux-engine-v${version}"
+          status=0; git ls-remote --exit-code --tags "https://github.com/${GITHUB_REPOSITORY}" "refs/tags/${tag}" > /dev/null || status=$?
+          [[ "$status" == 2 ]] || { echo "the tag ${tag} exists (or the lookup failed, status ${status}): raise the version in native/linux-engine/Cargo.toml" >&2; exit 1; }
+          if out="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${tag}" 2>&1)"; then
+            echo "the release ${tag} exists: raise the version in native/linux-engine/Cargo.toml" >&2; exit 1
+          fi
+          grep -q 'HTTP 404' <<< "$out" || { echo "looking up the release ${tag} failed: ${out}" >&2; exit 1; }
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "cua-engine ${version} from ${COMMIT}: ${tag} is unreleased"
+
+  build:
+    name: build ${{ matrix.target }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - {arch: x64, target: x86_64-unknown-linux-musl, runner: ubuntu-24.04}
+          - {arch: arm64, target: aarch64-unknown-linux-musl, runner: ubuntu-24.04-arm}
+    env:
+      TARGET: ${{ matrix.target }}
+      ASSET: cua-engine-${{ needs.version.outputs.version }}-linux-${{ matrix.arch }}
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Check out the commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ inputs.commit }}
+          persist-credentials: false
+      - name: Install the live tests' dependencies (Xvfb, a session bus, AT-SPI, a GTK 3 window)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -y
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb xauth dbus at-spi2-core yad file binutils
+      - name: Set up the Rust toolchain (native/linux-engine/rust-toolchain.toml, 1.94.1)
+        uses: dtolnay/rust-toolchain@ee868d7805ade43a1b47dd054727ab76c9108b4f # 1.94.1
+        with:
+          targets: ${{ matrix.target }}
+          components: rustfmt, clippy
+      - name: Use a hermetic Cargo home and remap the build paths
+        shell: bash
+        working-directory: native/linux-engine
+        run: |
+          set -euo pipefail
+          rustc --version | grep -q '^rustc 1\.94\.1 '
+          cargo_home="${GITHUB_WORKSPACE}/.cargo-home"
+          mkdir -p "${cargo_home}/bin"
+          : > "${cargo_home}/config.toml"
+          echo "CARGO_HOME=${cargo_home}" >> "$GITHUB_ENV"
+          # The binary names no runner directory: panic locations of dependencies and of inlined standard-library
+          # code would otherwise carry the Cargo home's, the checkout's and the toolchain's absolute paths.
+          echo "RUSTFLAGS=--remap-path-prefix=${cargo_home}=/cargo --remap-path-prefix=${GITHUB_WORKSPACE}=/cua --remap-path-prefix=$(rustc --print sysroot)=/rust" >> "$GITHUB_ENV"
+          echo "CUA_ENGINE_GIT_SHA=${COMMIT:0:12}" >> "$GITHUB_ENV"
+      - name: Build cua-engine
+        shell: bash
+        working-directory: native/linux-engine
+        run: |
+          set -euo pipefail
+          cargo build --release --locked --target "$TARGET"
+          bin="target/${TARGET}/release/cua-engine"
+          strip --strip-debug --strip-unneeded "$bin"
+          file "$bin"
+          file "$bin" | grep -Eq 'static(-pie|ally) linked'
+          mkdir -p "${GITHUB_WORKSPACE}/dist"
+          cp "$bin" "${GITHUB_WORKSPACE}/dist/${ASSET}"
+      - name: Smoke the binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          reported="$("dist/${ASSET}" --version)"
+          echo "$reported"
+          [[ "$reported" == "cua-engine ${VERSION} (${COMMIT:0:12})" ]]
+      - name: Check the binary carries no runner path or token
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin="dist/${ASSET}"
+          # Counts per category only: a match is never printed, since it could be the secret itself.
+          found=0
+          for category in 'home path:/home/|/Users/|/root/' 'GitHub token:gh[pousr]_[A-Za-z0-9]{20,}' 'private key:BEGIN [A-Z ]*PRIVATE KEY'; do
+            count=$(strings -a "$bin" | grep -E -c "${category#*:}" || true)
+            echo "${category%%:*}: ${count}"
+            [ "$count" = 0 ] || found=1
+          done
+          if [ "$found" != 0 ]; then
+            echo "the binary names a home directory or carries a token-shaped string" >&2; exit 1
+          fi
+          echo "no home path or token-shaped string in ${ASSET}"
+      - name: Run the engine's tests, the live ones against the built binary
+        shell: bash
+        working-directory: native/linux-engine
+        run: |
+          set -euo pipefail
+          CUA_ENGINE_BIN="${GITHUB_WORKSPACE}/dist/${ASSET}" xvfb-run -a dbus-run-session -- \
+            cargo test --release --locked --target "$TARGET" --features live -- --test-threads 1
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: ${{ env.ASSET }}
+          path: dist/${{ env.ASSET }}
+          if-no-files-found: error
+          retention-days: 7
+
+  attest:
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: cua-engine-*
+          path: dist
+          merge-multiple: true
+      - name: Write the checksums
+        shell: bash
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          chmod 0755 "cua-engine-${VERSION}-linux-x64" "cua-engine-${VERSION}-linux-arm64"
+          sha256sum "cua-engine-${VERSION}-linux-x64" "cua-engine-${VERSION}-linux-arm64" > SHA256SUMS
+          cat SHA256SUMS
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/cua-engine-${{ env.VERSION }}-linux-x64
+            dist/cua-engine-${{ env.VERSION }}-linux-arm64
+      - name: Verify the attestations as scripts/linux-engine-pin.mjs will
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          for arch in x64 arm64; do
+            asset="dist/cua-engine-${VERSION}-linux-${arch}"
+            for attempt in 1 2 3; do
+              gh attestation verify "$asset" --repo "$GITHUB_REPOSITORY" \
+                --signer-workflow "${GITHUB_REPOSITORY}/.github/workflows/linux-engine.yml" \
+                --source-digest "$COMMIT" --deny-self-hosted-runners && break
+              [ "$attempt" = 3 ] && exit 1
+              sleep 10
+            done
+          done
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: linux-engine-release
+          path: |
+            dist/cua-engine-${{ env.VERSION }}-linux-x64
+            dist/cua-engine-${{ env.VERSION }}-linux-arm64
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
+      - name: Summary
+        shell: bash
+        env:
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          {
+            echo "cua-engine ${VERSION} from ${COMMIT}, attested."
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+            if [ "$PUBLISH" != true ]; then echo; echo "publish is false: no release or tag was created."; fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    if: inputs.publish
+    needs: [version, attest]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: linux-engine-release
+          path: dist
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # Checked again here: a release or tag made since the version job would otherwise take these assets.
+          if out="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" 2>&1)"; then
+            echo "the tag ${TAG} exists" >&2; exit 1
+          fi
+          grep -q 'HTTP 404' <<< "$out" || { echo "looking up the tag ${TAG} failed: ${out}" >&2; exit 1; }
+          {
+            echo "cua's own Linux engine, cua-engine ${VERSION}, built from ${COMMIT} for x86-64 and arm64 (static musl)."
+            echo
+            echo "- Workflow run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} (run id ${GITHUB_RUN_ID})."
+            echo "- Provenance: \`gh attestation verify <asset> --repo ${GITHUB_REPOSITORY} --signer-workflow ${GITHUB_REPOSITORY}/.github/workflows/linux-engine.yml\`."
+            echo "- Pinned by \`node scripts/linux-engine-pin.mjs ${TAG}\` (runtime/engine/linux-engine.json)."
+            echo
+            echo '```'
+            cat dist/SHA256SUMS
+            echo '```'
+          } > notes.md
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$COMMIT" --title "$TAG" --notes-file notes.md --latest=false \
+            "dist/cua-engine-${VERSION}-linux-x64" "dist/cua-engine-${VERSION}-linux-arm64" dist/SHA256SUMS

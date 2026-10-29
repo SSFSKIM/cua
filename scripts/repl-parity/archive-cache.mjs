@@ -4,32 +4,41 @@
 // its removal removes them. Every managed fixture still runs the real release install into its fresh scratch home, from
 // these local copies (`cua install --archive … --node-archive … [--sandbox-helper …]`, installArgs, which re-verifies
 // each against its pin); a fixture never downloads, so an absent or damaged cache is a preparation fault: clean up and
-// prepare again.
+// prepare again. Once cua's Linux engine is pinned (#171, runtime/engine/linux-engine.json), its asset for the machine's
+// arch is cached too, verified by its hash under the installer's length bound, and a fixture places it in its scratch
+// home before installing (placeCachedEngine), so the install's engine step finds the pinned engine already in place.
 import {execFileSync} from 'node:child_process';
-import {lstatSync,mkdirSync,renameSync,rmSync} from 'node:fs';
-import {isAbsolute,join} from 'node:path';
+import {chmodSync,copyFileSync,lstatSync,mkdirSync,readFileSync,renameSync,rmSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {basename,dirname,isAbsolute,join} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {download,verifyArchive} from '../../src/runtime/install.mjs';
 import {loadPins,selectPin} from '../../src/runtime/manifest.mjs';
 import {loadNodePins,nodeDistName,selectNodePin} from '../../src/runtime/managed-node.mjs';
 import {helperAsset,loadHelperPin} from '../../src/sandbox/linux.mjs';
+import {engineAsset,linuxEnginePath,loadEnginePin} from '../../src/runtime/linux-engine.mjs';
+
+// The installer's bound on an engine download (src/runtime/install.mjs): the pin names no length.
+export const ENGINE_MAX_BYTES=64*1024*1024;
 
 const SCRIPT=fileURLToPath(import.meta.url);
 export const archiveCacheDir=home=>join(home,'parity-archives');
 
-// {vendor, node, helper?}: {file, archive: the pin's own {url, length, sha256}} for this host's install; `helper` on
-// Linux only.
-export function pinnedArchives({host={platform:process.platform,arch:process.arch},pins=loadPins(),nodePins=loadNodePins(),helperPin=host.platform==='linux'?loadHelperPin():null}={}){
+// {vendor, node, helper?, engine?}: {file, archive: the pin's own {url, length, sha256}} for this host's install; `helper`
+// on Linux only, `engine` on Linux once the engine is pinned ({url, sha256, maxLength}: hash-pinned, length-bounded).
+export function pinnedArchives({host={platform:process.platform,arch:process.arch},pins=loadPins(),nodePins=loadNodePins(),helperPin=host.platform==='linux'?loadHelperPin():null,enginePin=host.platform==='linux'?loadEnginePin():null}={}){
  const vendor=selectPin(pins,host),node=selectNodePin(nodePins,host);
  if(!node)throw new Error(`No Node is pinned for ${host.platform}-${host.arch}; managed parity preparation installs the pinned Node`);
  return {
   vendor:{file:`${vendor.release}-${vendor.platform}-${vendor.arch}.${vendor.archive.format??'zip'}`,archive:vendor.archive},
   node:{file:`${nodeDistName(node)}.tar.gz`,archive:node.archive},
   ...(helperPin?{helper:{file:`codex-linux-sandbox-${helperPin.upstreamTag}-linux-${host.arch}`,archive:helperAsset(helperPin,host.arch)}}:{}),
+  ...(host.platform==='linux'&&enginePin?(asset=>({engine:{file:basename(new URL(asset.url).pathname),archive:{url:asset.url,sha256:asset.sha256,maxLength:ENGINE_MAX_BYTES}}}))(engineAsset(enginePin,host.arch)):{}),
  };
 }
 
-// `cua install`'s arguments for the cached archives (cachedArchives).
+// `cua install`'s arguments for the cached archives (cachedArchives). The engine is not one: placeCachedEngine puts it in
+// place first.
 export const installArgs=archives=>['install','--archive',archives.vendor,'--node-archive',archives.node,...(archives.helper?['--sandbox-helper',archives.helper]:[])];
 
 // Preparation only, into a home that has no cache yet. Each archive lands under its name only once verified.
@@ -50,9 +59,22 @@ export function cachedArchives(home,{pins=pinnedArchives()}={}){
  const dir=archiveCacheDir(home);
  return Object.fromEntries(Object.entries(pins).map(([role,{file,archive}])=>{
   const path=join(dir,file);let stat;try{stat=lstatSync(path);}catch{stat=null;}
-  if(!stat?.isFile()||stat.size!==archive.length)throw new Error(`The prepared archive cache ${dir} has no pinned ${file}; managed fixtures never download: run cleanup-prepared, then prepare again`);
+  // A hash-pinned archive (the engine) is checked by its hash too: the installer would replace a damaged one by a download.
+  const sized=archive.length===undefined?stat?.size>0&&stat.size<=archive.maxLength&&sha256(path)===archive.sha256:stat?.size===archive.length;
+  if(!stat?.isFile()||!sized)throw new Error(`The prepared archive cache ${dir} has no pinned ${file}; managed fixtures never download: run cleanup-prepared, then prepare again`);
   return [role,path];
  }));
+}
+
+const sha256=path=>createHash('sha256').update(readFileSync(path)).digest('hex');
+// The cached engine `file` placed in the cua home `home` as `cua install` and selection find it, executable -> its path.
+// The placed copy must hash to the pin (`pins`, pinnedArchives'), or it is removed and refused: a damaged copy would
+// make the install download the engine instead.
+export function placeCachedEngine(home,file,{pins=pinnedArchives()}={}){
+ const path=linuxEnginePath(home),expected=pins.engine?.archive?.sha256;
+ mkdirSync(dirname(path),{recursive:true,mode:0o700});copyFileSync(file,path);chmodSync(path,0o755);
+ if(!expected||sha256(path)!==expected){rmSync(path,{force:true});throw new Error(`The cached engine ${file} is not the pinned cua-engine; managed fixtures never download: run cleanup-prepared, then prepare again`);}
+ return path;
 }
 
 // Synchronous face for the (synchronous) device preparation: the download runs in one child of this module.

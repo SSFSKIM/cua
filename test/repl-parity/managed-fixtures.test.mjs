@@ -11,7 +11,7 @@ import {prepareBinderLaunch} from './serve-binder.mjs';
 import {attestedOutput} from '../../scripts/repl-parity/provenance.mjs';
 import {Writable} from 'node:stream';
 import {createHash} from 'node:crypto';
-import {archiveCacheDir,cachedArchives} from '../../scripts/repl-parity/archive-cache.mjs';
+import {archiveCacheDir,cachedArchives,placeCachedEngine} from '../../scripts/repl-parity/archive-cache.mjs';
 
 const CACHE={vendor:{file:'r1-linux-x64.deb',bytes:Buffer.from('vendor fixture')},node:{file:'node-v24.0.0-linux-x64.tar.gz',bytes:Buffer.from('node fixture')}};
 const PINS=Object.fromEntries(Object.entries(CACHE).map(([role,{file,bytes}])=>[role,{file,archive:{url:`https://${role}.test/${file}`,length:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')}}]));
@@ -54,6 +54,15 @@ test('fresh install release drift is rejected and its scratch is removed',t=>{
  const {source,ambient,archives}=fixture(t);let home;
  assert.throws(()=>prepareCapabilityHome({source,ambient,archives,scratchRoot:join(ambient.HOME,'.cp'),install:options=>{home=options.home;installed(home,'r2');},inspect:()=>{throw Error('release must be checked first');}}),/release/i);
  assert.equal(existsSync(home),false);
+});
+
+test('a cached pinned engine is in the managed scratch home before the install runs (#171)',t=>{
+ const {source,ambient}=fixture(t),engine=join(archiveCacheDir(source),'cua-engine-0.1.0-linux-x64');writeFileSync(engine,'engine fixture');
+ const archives=()=>({...CACHED(source),engine});let seen;
+ const scratch=prepareCapabilityHome({source,ambient,archives,placeEngine:(home,file)=>placeCachedEngine(home,file,{pins:{engine:{archive:{sha256:createHash('sha256').update('engine fixture').digest('hex')}}}}),scratchRoot:join(ambient.HOME,'.cp'),install:options=>{seen=readFileSync(join(options.home,'engine','linux','cua-engine'),'utf8');installed(options.home);},inspect:({home})=>({path:join(home,'node','24.test','bin','node'),version:'v24.18.0'})});
+ t.after(()=>scratch.cleanup());
+ assert.equal(seen,'engine fixture');
+ assert.equal(statSync(join(scratch.dir,'engine','linux','cua-engine')).mode&0o777,0o755);
 });
 
 test('managed scratch rejects an unmanaged or wrong-major Node and removes the failed install',t=>{

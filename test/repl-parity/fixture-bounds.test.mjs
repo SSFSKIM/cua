@@ -23,7 +23,7 @@ test('a boundary probe runs against the prepared home under the unchanged 120 s 
 test('fixture connections keep the 150 s request bound: the client default, overridden by neither native nor cells commands',async t=>{
  const client=new StdioClient({command:process.execPath,args:['-e','']});t.after(()=>client.exited);
  assert.equal(client.timeoutMs,150000);
- for(const command of [nativeCommand({...prepared,host:'cua'}),cellsCommand({...prepared,host:'cua'})]){
+ for(const command of [nativeCommand({...prepared,host:'cua',engine:'vendor'}),cellsCommand({...prepared,host:'cua'})]){
   assert.equal(Object.hasOwn(command,'timeoutMs'),false);
   assert.match(command.args.at(-1),/CUA_HOME='\/prepared\/home'/);
  }

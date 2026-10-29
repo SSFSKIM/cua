@@ -29,10 +29,27 @@ export function expectedSelection(row){
  // the profile listing and doctor resolve the selection itself (invalid_repl_host). Both carry the one sentence.
  if(!['unset','cua','vendor'].includes(override))return {error:lane==='profiles'?'invalid_repl_host':'invalid_setting',doctorError:'invalid_repl_host',sentence:INVALID_REPL_HOST};
  if(macosComputer)return engineTable(row,availableNode);
+ // Linux has no vendor host (#115 M3): an explicit one is refused and a missing Node refuses, never falling back.
+ if(platform==='linux'){
+  if(override==='vendor')return {error:'repl_host_refused'};
+  const engine=surfaces.includes('computer')?linuxEngineTable(row):{status:'pass'};
+  if(engine.error)return engine;
+  if(!availableNode)return {error:'repl_host_node'};
+  return {host:'cua',reason:override==='cua'?'explicit':'linux',status:engine.status};
+ }
  if(override==='vendor')return {host:'vendor',reason:'explicit',status:'pass'};
  if(override==='cua')return !availableNode?{error:'repl_host_node'}:{host:'cua',reason:'explicit',status:'pass'};
  if(!availableNode)return {host:'vendor',reason:'own_host_node_unavailable',status:'warn'};
- return {host:'cua',reason:platform==='linux'?'linux':'browser_only',status:'pass'};
+ return {host:'cua',reason:'browser_only',status:'pass'};
+}
+// #171: a Linux computer session's engine, resolved before Node, never changes the host there; doctor's repl.host names
+// none and the result attests none (the engine row reports it). An unknown engine is refused, and cua's with none
+// installed: explicitly set, refused; the default's (M5 on), the vendor engine with a warning.
+function linuxEngineTable({engine='unset',engineFrom='env',installed=false,defaultEngine=ORACLE_DEFAULT_ENGINE}){
+ if(!['unset','empty','vendor','cua'].includes(engine))return {error:'invalid_setting',...(engineFrom==='env'?{sentence:INVALID_ENGINE}:{})};
+ const set=engine!=='unset'&&engine!=='empty',selected=set?engine:defaultEngine;
+ if(selected==='cua'&&!installed)return set?{error:'engine_not_installed'}:{status:'warn'};
+ return {status:'pass'};
 }
 // #117's table, its refusals in their order: an unknown engine, the host setting, the approved engine, Node. An explicit
 // engine (or CUA_REPL_HOST=cua) refuses where a default cua engine keeps the vendor host and engine with a warning.
@@ -51,14 +68,15 @@ export function selectionCases(platform){
  for(const lane of ['ordinary','profiles'])for(const override of ['unset','cua','vendor'])rows.push({platform,registration:'cua',maws:false,surfaces:['browser'],lane,override,node24:false});
  for(const lane of ['ordinary','profiles'])rows.push({platform,registration:'cua',maws:false,surfaces:['browser'],lane,override:'unset',node24:false,managedNode:true});
  // #117: every cell of the engine × host table a live home can reach (the default is the production one), through the
- // ordinary lane, the only one with the computer surface; on Linux the setting is ignored.
+ // ordinary lane, the only one with the computer surface; on Linux (#171) the setting's own rows, with no engine
+ // installed (the live lane places none there).
  const engineRow=fields=>({platform,registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',...fields});
  if(platform==='darwin'){
   for(const engine of ['unset','vendor','cua','invalid'])for(const override of ['unset','vendor','cua'])for(const node24 of [true,false])for(const installed of [false,true])rows.push(engineRow({override,node24,engine,installed}));
   for(const [engine,installed] of [['cua',true],['cua',false],['vendor',true],['invalid',true]])rows.push(engineRow({override:'unset',node24:true,engine,engineFrom:'settings',installed}));
   for(const installed of [false,true])rows.push(engineRow({override:'unset',node24:true,engine:'empty',installed}));
   rows.push(engineRow({surfaces:['computer','browser'],override:'unset',node24:true,engine:'cua',installed:true}));
- }else for(const engine of ['cua','invalid'])rows.push(engineRow({override:'unset',node24:true,engine,installed:false}));
+ }else for(const engine of ['vendor','cua','invalid'])for(const override of ['unset','cua'])rows.push(engineRow({override,node24:true,engine,installed:false}));
  return rows;
 }
 // Doctor reports ordinary and listing independently in one row; the row's lane reads its own sentence. Rows recorded
@@ -89,7 +107,7 @@ export function assertSelection(row,{doctor,observation,error,errorMessage},revi
  const selected=doctorSelection(detail);
  assert.ok(selected?.host===expected.host&&selected.reason===expected.reason,`Doctor host/reason differs from independent M5 table: ${JSON.stringify(detail)} where ${expected.host} host (${expected.reason}) is expected`);
  // The engine (#117): doctor names it, and the real call's result attests it (the proxy's cua/nativeEngine); neither
- // names one outside the computer surface on macOS.
+ // names one outside the computer surface on macOS (on Linux the engine row reports it, #171).
  assert.ok(selected.engine===(expected.engine??null),`Doctor engine ${selected.engine} differs from the independent table's ${expected.engine??'none'}: ${JSON.stringify(detail)}`);
  const attested=observation._meta?.['cua/nativeEngine']??null;
  assert.ok((attested?.engine??null)===(expected.engine??null),`Real call attests engine ${JSON.stringify(attested)} where the independent table expects ${expected.engine??'none'}`);

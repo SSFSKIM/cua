@@ -32,6 +32,11 @@
 // launch refuses a helper it cannot execute); one whose bytes differ is never replaced in place (running
 // children may be executing it, and a tampered file is a finding), so the step refuses with the remedy.
 //
+// installLinuxEngine is `cua install`'s Linux engine step (#171; src/runtime/linux-engine.mjs): the pinned cua-engine
+// for the machine's architecture, checked against the pin's SHA-256 in staging, then placed at
+// $CUA_HOME/engine/linux/cua-engine with one rename. Unlike the helper, an engine of another version or a local build
+// there is replaced: a running engine keeps the file it started from.
+//
 // The signature checker, fetch and the tool lookup are injectable for tests through this module API only; the CLI
 // always uses the production codesign check, the global fetch and the PATH.
 import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, rmdirSync, statSync, lstatSync, renameSync, writeFileSync, copyFileSync, constants as fsConstants, createReadStream, createWriteStream} from 'node:fs';
@@ -46,6 +51,7 @@ import {findPin, loadPins, readInstalledRecord, assertHostSupports, recoveryHint
 import {verifyCodeSignatures, verifyRuntimeTree} from './checks.mjs';
 import {findTool, requireTools} from './tools.mjs';
 import {helperAsset, helperDir, helperPath, loadHelperPin, sha256Of} from '../sandbox/linux.mjs';
+import {ENGINE_BINARY, engineAsset, inspectLinuxEngine, linuxEnginePath, loadEnginePin, placeLinuxEngine, readEngineRecord, refuseUnpinned, writeEngineRecord} from './linux-engine.mjs';
 
 // What unpacking a deb runs, and the package each comes from.
 const DEB_TOOLS = {ar: 'binutils', tar: 'tar', xz: 'xz-utils'};
@@ -215,7 +221,9 @@ async function snapshotArchive(path, dest, {length}, {deb}) {
   }
 }
 
-export async function download({url, length}, dest, fetchImpl, onProgress) {
+// `length` is the pinned length; an asset pinned by its hash alone (cua's Linux engine) gives `maxLength` instead, a
+// bound on what is accepted before the hash is checked.
+export async function download({url, length, maxLength}, dest, fetchImpl, onProgress) {
   let response;
   try {
     response = await fetchImpl(url, {redirect: 'follow'});
@@ -224,14 +232,17 @@ export async function download({url, length}, dest, fetchImpl, onProgress) {
   }
   if (!response.ok || !response.body) fail('download_failed', `${url} answered HTTP ${response.status}`);
   const declared = Number(response.headers.get('content-length'));
-  if (declared && declared !== length) fail('archive_length_mismatch', `${url} declares ${declared} bytes; the pin expects ${length}`);
+  if (declared && length !== undefined && declared !== length) fail('archive_length_mismatch', `${url} declares ${declared} bytes; the pin expects ${length}`);
+  const limit = length ?? maxLength;
+  const bound = length === undefined ? `the ${maxLength}-byte bound` : `the pinned ${length} bytes`;
+  if (declared && declared > limit) fail('archive_length_mismatch', `${url} declares ${declared} bytes, more than ${bound}`);
   let received = 0;
   try {
     await pipeline(Readable.fromWeb(response.body), async function* (chunks) {
       for await (const chunk of chunks) {
         received += chunk.length;
-        if (received > length) fail('archive_length_mismatch', `${url} sent more than the pinned ${length} bytes`);
-        onProgress?.(received, length);
+        if (received > limit) fail('archive_length_mismatch', `${url} sent more than ${bound}`);
+        if (length !== undefined) onProgress?.(received, length);
         yield chunk;
       }
     }, createWriteStream(dest, {mode: 0o600}));
@@ -241,9 +252,10 @@ export async function download({url, length}, dest, fetchImpl, onProgress) {
   }
 }
 
+// `length` may be absent for an asset pinned by its hash alone.
 export async function verifyArchive(path, {length, sha256}) {
   const size = statSync(path).size;
-  if (size !== length) fail('archive_length_mismatch', `archive is ${size} bytes; the pin expects ${length}`);
+  if (length !== undefined && size !== length) fail('archive_length_mismatch', `archive is ${size} bytes; the pin expects ${length}`);
   const hash = createHash('sha256');
   await pipeline(createReadStream(path), hash);
   const actual = hash.digest('hex');
@@ -287,6 +299,47 @@ export async function installSandboxHelper({home, pin = loadHelperPin(), path, f
     mkdirSync(helperDir(real, pin), {recursive: true, mode: 0o755});
     renameSync(staged, target);
     return {path: target, sha256: asset.sha256, changed: true};
+  } finally {
+    rmSync(stage, {recursive: true, force: true});
+  }
+}
+
+// The engine asset's bound before its hash is checked: the release's engine is about 1.4 MB.
+const ENGINE_MAX_BYTES = 64 * 1024 * 1024;
+
+// `cua install`'s Linux engine step (#171; src/runtime/linux-engine.mjs): the pinned asset for the machine's
+// architecture, fetched from its pinned URL into staging and checked against the pin's SHA-256 before anything else
+// reads it, then placed at $CUA_HOME/engine/linux/cua-engine with one rename, replacing an engine of another version or
+// a local build (a running engine keeps its file) -> {path, version, release, sha256, changed}. The pin's hash is the
+// trust root; the assets' provenance attestations are checked when the pin is written, not here. The pinned engine
+// already placed makes the step a no-op, but for its mode and its record, put back if they were changed. No pin (before
+// the engine's first release) is refused, engine_not_pinned.
+export async function installLinuxEngine({home, pin = loadEnginePin(), fetch = globalThis.fetch, host = {platform: process.platform, arch: process.arch}}) {
+  if (host.platform !== 'linux') fail('unsupported_platform', `cua's Linux engine is a Linux binary; this host is ${host.platform}-${host.arch}`);
+  if (!pin) refuseUnpinned();
+  const asset = engineAsset(pin, host.arch);
+  const real = realHome(home, {create: true});
+  const record = {build: 'pinned', version: pin.version, release: pin.release, sha256: asset.sha256, source: asset.url};
+  const answer = changed => ({path: linuxEnginePath(real), version: pin.version, release: pin.release, sha256: asset.sha256, changed});
+  const placed = inspectLinuxEngine({home: real, arch: host.arch, pin});
+  if (placed.current && lstatSync(placed.path).isFile()) {
+    const recorded = readEngineRecord(real);
+    const recordKept = recorded && Object.entries(record).every(([key, value]) => recorded[key] === value);
+    const modeKept = (statSync(placed.path).mode & 0o777) === 0o755;
+    if (recordKept && modeKept) return answer(false);
+    if (!modeKept) chmodSync(placed.path, 0o755);
+    if (!recordKept) writeEngineRecord(real, {...record, installedAt: new Date().toISOString()});
+    return answer(true);
+  }
+  const staging = homeLayout(real).staging;
+  mkdirSync(staging, {recursive: true, mode: 0o700});
+  const stage = mkdtempSync(join(staging, 'linux-engine-'));
+  try {
+    const staged = join(stage, ENGINE_BINARY);
+    await download({url: asset.url, maxLength: ENGINE_MAX_BYTES}, staged, fetch);
+    await verifyArchive(staged, asset);
+    placeLinuxEngine({home: real, staged, record});
+    return answer(true);
   } finally {
     rmSync(stage, {recursive: true, force: true});
   }

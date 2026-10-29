@@ -408,7 +408,8 @@ test('acceptance 9\'s fifth case: no CUA_NODE, Node 22 on PATH and running cua, 
   assert.throws(() => select('linux'), error => error.code === 'repl_host_node' && /run `cua install`/.test(error.message)
     && JSON.stringify(error.tried) === JSON.stringify(['CUA_NODE (unset)', 'the cua-installed Node (not installed)', `the node running cua ${node22} (v22.23.2)`, `node on PATH ${node22} (v22.23.2)`]));
   await install(ctx, {verifySignature: acceptSignature});
-  assert.deepEqual(select('linux'), {host: 'cua', reason: 'linux', node: join(nodeDir(ctx.home), VERSION, 'bin/node')});
+  // A Linux computer selection carries its engine (#171), the vendor's by default.
+  assert.deepEqual(select('linux'), {host: 'cua', reason: 'linux', node: join(nodeDir(ctx.home), VERSION, 'bin/node'), engine: {engine: 'vendor', reason: 'default', status: 'pass'}});
   // The production default resolver reads the home it is given.
   assert.equal(replHostFor({platform: 'linux', surfaces: ['computer'], ambient: {PATH: dirname(node22)}, home: ctx.home, browserSelection: null}).node,
     join(nodeDir(ctx.home), VERSION, 'bin/node'));
@@ -436,7 +437,8 @@ async function cliInstall(t, args, deps) {
   process.stdout.write = chunk => { out.push(String(chunk)); return true; };
   process.stderr.write = chunk => { err.push(String(chunk)); return true; };
   try {
-    const status = await main(['install', ...args], deps);
+    // No Linux engine pin unless a test gives one, so a Linux run never reaches the release download (#171).
+    const status = await main(['install', ...args], {enginePin: () => null, ...deps});
     return {status, stdout: out.join(''), stderr: err.join('')};
   } finally { Object.assign(process.stdout, {write: write.stdout}); Object.assign(process.stderr, {write: write.stderr}); }
 }

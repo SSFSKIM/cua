@@ -13,7 +13,7 @@
 // computer run of #117 also attests its native engine (requested and answering, scripts/native-baseline/engine.mjs) and
 // the approved engine it served; one whose engine or helper attestation is unsound is a problem (engineProblem).
 import {readFileSync, readdirSync, existsSync} from 'node:fs';
-import {join} from 'node:path';
+import {basename, join} from 'node:path';
 import {validateHostAttestations} from '../bench-summary.mjs';
 import {METHOD_CASES} from './linux-cells.mjs';
 import {engineProblem, attestedBuild} from './engine.mjs';
@@ -74,6 +74,14 @@ function hostAttested(meta) {
 function engineAttested(meta) {
   const record = meta.nativeEngine;
   if (!record) return null;
+  // A Linux run (#171) attests what answered by kind and source, never by a path inside the run's own home, so the
+  // runs of one lane compare equal: the runtime's sky_linux_<arch>, the cua-engine --engine-bin named, or the one
+  // installed in the run's home.
+  if (meta.platform === 'linux') {
+    const answered = [...new Set((record.observed ?? []).map(o => basename(o.exe)))].join(', ') || 'none observed';
+    const source = record.requested === 'vendor' ? 'of the run\'s runtime' : record.bin ? `named by --engine-bin ${record.bin}` : 'installed in the run\'s home';
+    return `${record.requested} (answered: ${answered} ${source})`;
+  }
   const answered = (record.attested ?? []).map(a => `${a.engine} ${a.version}, build ${attestedBuild(a.build)}`);
   return `${record.requested} (attested: ${answered.join('; ') || 'none'}${record.unattested ? `; ${record.unattested} unattested` : ''})`;
 }
@@ -107,7 +115,7 @@ export function coverageProblems(run) {
   const count = op => rows.filter(r => r.op === op).length;
   const linux = meta.platform === 'linux';
   const expected = surfaceOf(meta) === 'browser' ? [['ssh.roundtrip', 5]] : [['ssh.roundtrip', 5], ['warm.noop', plan.samples], ['warm.getState', plan.samples], ['warm.listApps', plan.samples],
-    ...(meta.nativeEngine ? [['setup.activate', 1]] : []), [linux ? 'setup.findWindow' : 'setup.newDocument', 1], ['bind.getApp', 1], ['warm.getAXState', plan.samples], ['warm.getScreenshot', plan.samples],
+    ...(meta.nativeEngine && !linux ? [['setup.activate', 1]] : []), [linux ? 'setup.findWindow' : 'setup.newDocument', 1], ['bind.getApp', 1], ['warm.getAXState', plan.samples], ['warm.getScreenshot', plan.samples],
     ['task.act', plan.tasks], [linux ? 'task.clear' : 'task.close', plan.tasks], ['task.total', plan.tasks],
     ...(linux ? Object.keys(METHOD_CASES).map(op => [op, 1]) : []), ['end_task', 1]];
   const problems = expected.filter(([op, n]) => count(op) !== n).map(([op, n]) => `${name} covers ${count(op)} ${op} sample${count(op) === 1 ? '' : 's'}, the plan ${n}`);

@@ -43,6 +43,15 @@ test('the npm package carries the Node pins `cua install` installs the own host\
   assert.deepEqual(pins.filter(path => !files.has(path)), []);
 });
 
+// #171: `cua install` fetches cua's Linux engine by runtime/engine/linux-engine.json, which the engine's first release
+// writes; the directory is listed before then, so the pin ships the moment it is committed.
+test('the npm package carries the Linux engine pin `cua install` fetches the engine by', () => {
+  const {files} = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.ok(files.includes('runtime/engine/'));
+  const pins = execFileSync('git', ['ls-files', '--', 'runtime/engine/'], {cwd: ROOT, encoding: 'utf8'}).split('\n').filter(Boolean);
+  if (pins.length) assert.deepEqual(pins.filter(path => !packed().has(path)), []);
+});
+
 test('the package floor stays Node 22 while the own host\'s floor is Node 24, resolved per connection', () => {
   const {engines} = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   assert.equal(engines.node, '^22.14 || >=23.7', 'cua itself, and the vendor host route, keep running on Node 22');

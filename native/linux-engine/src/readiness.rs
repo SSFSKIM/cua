@@ -576,9 +576,9 @@ mod tests {
     }
 
     /// The reviewer's live case: an event connection without DAMAGE still renews per pixmap. Needs an X display
-    /// with Composite (`cargo test -- --ignored` on the VM, or under `xvfb-run`).
+    /// with Composite (`--features live`, on the VM or under `xvfb-run`).
     #[test]
-    #[ignore = "needs an X display"]
+    #[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
     fn without_damage_the_event_connection_renews_after_resize_and_remap() {
         use x11rb::protocol::composite::{ConnectionExt as _, Redirect};
         use x11rb::protocol::xproto::{ConfigureWindowAux, CreateWindowAux, WindowClass};

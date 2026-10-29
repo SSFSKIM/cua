@@ -10,7 +10,7 @@
 //   - `home/`, the HOME the serve runs with (scripts/browser-parity/topology.mjs localCuaServeCommand), empty.
 // The directory is short because a Unix socket path below it must fit 104 bytes. Remote managed runs install
 // freshly under ~/.cp (outside TMPDIR), through the real release install path from the prepared home's verified
-// archive cache (scripts/repl-parity/archive-cache.mjs), never a download; legacy/local doubles keep the
+// archive cache (scripts/repl-parity/archive-cache.mjs; on Linux, once pinned, cua's engine placed from it first), never a download; legacy/local doubles keep the
 // cloned-runtime path in /tmp.
 import {execFileSync} from 'node:child_process';
 import {existsSync, mkdirSync, mkdtempSync, realpathSync, writeFileSync} from 'node:fs';
@@ -19,7 +19,7 @@ import {userInfo} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {ownNodeFacts} from '../repl-parity/provenance.mjs';
-import {cachedArchives, installArgs} from '../repl-parity/archive-cache.mjs';
+import {cachedArchives, installArgs, placeCachedEngine} from '../repl-parity/archive-cache.mjs';
 import {assertManagedNode,nodeEnvironment} from '../repl-parity/node-provenance.mjs';
 import {defaultHome, homeLayout, readPointer, writePointer} from '../../src/runtime/layout.mjs';
 import {cuaRecordFile} from '../../src/chrome/route.mjs';
@@ -36,7 +36,7 @@ function installRuntime({env,run,archives}) {
 // -> {dir, userHome, release, nodeMode, ownNode?, cleanup()}; source facts remain the caller's provenance.
 export function prepareCapabilityHome({source = defaultHome(), platform = process.platform, ambient = process.env,
   prefix = (ambient.CUA_PARITY_SCRATCH_PREFIX??'cua-')+'cap-', scratchRoot, install = installRuntime, run = execFileSync,
-  archives = cachedArchives, inspect = ({home,ambient}) => ownNodeFacts(ambient,{home})} = {}) {
+  archives = cachedArchives, placeEngine = placeCachedEngine, inspect = ({home,ambient}) => ownNodeFacts(ambient,{home})} = {}) {
   const release = readPointer(source);
   const runtime = release && join(homeLayout(source).runtimes, release);
   if (!runtime || !existsSync(runtime)) throw new Error(`no installed runtime in ${source}; run \`cua install\` first`);
@@ -53,6 +53,8 @@ export function prepareCapabilityHome({source = defaultHome(), platform = proces
     mkdirSync(userHome, {mode: 0o700});
     if (managed) {
       const env = nodeEnvironment({...ambient, CUA_HOME: dir, HOME: userHome});
+      // A pinned Linux engine from the cache, in place before the install, whose engine step then finds it (#171).
+      if (cache.engine) placeEngine(dir, cache.engine);
       try { install({home: dir, env, run, archives: cache}); }
       catch (error) {
         if (!/\[archive_[a-z_]+\]/.test(error.message)) throw error;

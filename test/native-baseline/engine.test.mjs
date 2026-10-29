@@ -25,9 +25,10 @@ test('--engine and --approved-engine are a macOS computer run\'s, required there
   assert.throws(() => assertEngineOptions({...mac, host: 'vendor', engine: 'sky'}), /needs --engine vendor\|cua/);
   assert.throws(() => assertEngineOptions({...mac, host: 'vendor', engine: 'cua', approvedEngine: undefined}), /needs --approved-engine.*never build/);
   assert.throws(() => assertEngineOptions({...mac, host: 'vendor', engine: 'cua', approvedEngine: 'cua Engine.app'}), /absolute path/);
-  assertEngineOptions({platform: 'linux', surface: 'computer', host: 'cua'});
+  // A Linux computer run's engine options are its own (#171; test/native-baseline/linux-engine.test.mjs).
+  assertEngineOptions({platform: 'linux', surface: 'computer', host: 'cua', engine: 'cua'});
   assertEngineOptions({platform: 'darwin', surface: 'browser', host: 'cua'});
-  assert.throws(() => assertEngineOptions({platform: 'linux', surface: 'computer', host: 'cua', engine: 'cua'}), /macOS native engine; a linux computer run has none/);
+  assert.throws(() => assertEngineOptions({platform: 'linux', surface: 'computer', host: 'cua', engine: 'cua', approvedEngine: BUNDLE}), /--approved-engine names the approved cua Engine\.app of a macOS run/);
   assert.throws(() => assertEngineOptions({platform: 'darwin', surface: 'browser', host: 'cua', approvedEngine: BUNDLE}), /a darwin browser run has none/);
 });
 

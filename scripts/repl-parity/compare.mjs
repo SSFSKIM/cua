@@ -32,7 +32,7 @@ export function validateAttestations(meta) {
 // #115 M3 moves it to: a declared configuration transition (validateExpected) is the one allowed change between them.
 export const NATIVE_FIXTURE=Object.freeze({surfaces:Object.freeze(['computer']),sandbox:'disabled'});
 export const LINUX_COMPUTER_DEFAULT=Object.freeze({surfaces:Object.freeze(['computer']),sandbox:'scoped'});
-export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}={}) {
+export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo,engineDeclarations=[]}={}) {
   validateAttestations(a.meta);validateAttestations(b.meta);
   if(a.meta.host==='vendor'&&b.meta.host==='vendor'&&expected.length)throw new Error('No expected differences allowed for vendor determinism');
   // M0 has no allowances. M1 may enumerate its identity marker, never whole results/documents, the declared
@@ -66,7 +66,10 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}
       return Array.isArray(run.meta.surfaces)&&['scoped','default','disabled'].includes(run.meta.sandbox)?{surfaces:run.meta.surfaces,sandbox:run.meta.sandbox}:undefined;
     });
     const declared=a.meta.caseConfigurations?.[id]||b.meta.caseConfigurations?.[id];
-    if(native?!transitioned.has(id)&&configs.some(c=>!isDeepStrictEqual(c,NATIVE_FIXTURE)):declared&&(!configs[0]||!configs[1]||!isDeepStrictEqual(...configs)))differences.push({kind:'configuration',case:id,field:'caseConfigurations'});
+    // Two engine lanes of one host (#171) run each native case in one configuration, the Linux computer default, which
+    // the sides must share; the fixture's own configuration rule is the host comparison's.
+    const engineLanes=a.meta.host===b.meta.host&&a.meta.engine!==undefined&&b.meta.engine!==undefined;
+    if(native&&!engineLanes?!transitioned.has(id)&&configs.some(c=>!isDeepStrictEqual(c,NATIVE_FIXTURE)):(declared||engineLanes)&&(!configs[0]||!configs[1]||!isDeepStrictEqual(...configs)))differences.push({kind:'configuration',case:id,field:'caseConfigurations'});
   }
   if(a.meta.caseProofs&&b.meta.caseProofs||(ids??[]).some(id=>/^(api|native|hidden|capability-host)\//.test(id)||/^secrets\/(browser|native)-live\//.test(id)||/^cells\/(facade|documentation|profiles)\//.test(id)))for(const id of ids??[])if(!a.meta.caseProofs?.[id]||a.meta.caseProofs[id]!==b.meta.caseProofs?.[id])differences.push({kind:'configuration',case:id,field:'caseProofs'});
   if(!Array.isArray(ids)||!ids.length)differences.push({kind:'cardinality',message:'empty case manifest'});
@@ -116,9 +119,28 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}
     for(const [rows,{row,index}] of [[vendorRows,v],[ownRows,o]]){const projected={...row};for(const f of fields)projected[f]={configurationTransition:transition.id};rows[index]=projected;}
     accepted.push({kind:transition.kind,case:c.case,cell:c.cell,fields,issue:transition.issue,reason:transition.reason});
   }
+  // The Linux engine lanes' declarations (#171, ./native-linux.mjs): between a vendor-engine run and a cua-engine run,
+  // each declaration holds only when the vendor side recorded exactly its vendor defect on its case and the cua side
+  // exactly its candidate expectation; then only that case's exercise result and assertion are projected to one shared
+  // placeholder on both sides. A declaration that does not hold is itself a difference, and the rows still compare.
+  if(engineDeclarations.length&&a.meta.engine!==b.meta.engine){
+   const [vendorRows,cuaRows,vendorAssessment,cuaAssessment]=a.meta.engine==='vendor'?[left,right,leftAssertions,rightAssertions]:[right,left,rightAssertions,leftAssertions];
+   for(const d of engineDeclarations){
+    if(!ids?.includes(d.case))continue;
+    const holds=vendorAssessment.vendorDefects.some(v=>v.id===d.vendorDefect&&v.case===d.case)&&cuaAssessment.candidateExpectations.some(c=>c.id===d.candidateExpectation&&c.case===d.case);
+    if(!holds){differences.push({kind:'overdeclared',case:d.case,declaration:d.id,message:'the declared engine difference did not occur: the vendor side holds no such vendor defect, or the cua side no such candidate expectation'});continue;}
+    for(const rows of [vendorRows,cuaRows])for(const [index,row] of rows.entries()){
+     if(row.case!==d.case)continue;
+     if(d.cells.includes(row.cell))rows[index]={...row,content:{engineDeclaration:d.id},isError:{engineDeclaration:d.id}};
+     else if(!Object.hasOwn(row,'cell')&&Object.hasOwn(row,'assertion')){const projected={...row,assertion:{ok:true,engineDeclaration:d.id}};delete projected.vendorDefect;delete projected.candidateExpectation;rows[index]=projected;}
+    }
+    accepted.push({kind:'engine-declaration',case:d.case,cells:d.cells,declaration:d.id,vendorDefect:d.vendorDefect,candidateExpectation:d.candidateExpectation,reason:d.reason});
+   }
+  }
   // Exempt only the assessed row object, never every assertion sharing its case ID.
   const recordedAssertionFailures={a:new Set(leftAssertions.recordedAssertionRows),b:new Set(rightAssertions.recordedAssertionRows)};
   const vendorDefects=[...new Map([...leftAssertions.vendorDefects,...rightAssertions.vendorDefects].map(d=>[d.id,d])).values()];
+  const candidates=[...new Map([...leftAssertions.candidateExpectations,...rightAssertions.candidateExpectations].map(c=>[c.id,c])).values()];
   const result=compareRuns(left,right,{raw:true,recordedAssertionFailures});
   differences.push(...result.differences);
   // Keep assessment independently authoritative even if the shared comparison's indexing changes.
@@ -126,7 +148,7 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo}
     if(!differences.some(d=>d.kind==='assertion'&&d.side===side&&d.case===row.case&&d.cell===row.cell))differences.push({kind:'assertion',side,case:row.case,cell:row.cell,message:'undeclared assertion failure'});
   }
   const provisionalCells=[...new Map([...pendingLeft.provisional,...pendingRight.provisional].map(p=>[`${p.case}|${p.cell}`,p])).values()];
-  return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)&&!pa.pendingObligations.includes(id)&&!provisionalCells.some(p=>p.case===id)&&!vendorDefects.some(d=>d.case===id)).length,recordedCases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,vendorDefects,pendingCells:pendingLeft.observations.map(x=>({...x,status:{a:x.status,b:pendingRight.observations.find(y=>y.case===x.case&&y.cell===x.cell)?.status}})),pendingObligations:pa.pendingObligations.filter(id=>ids.includes(id)),pendingUnexpectedPasses:[...pendingLeft.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'a'})),...pendingRight.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'b'}))],provisionalCells,allAssertionsPassed:!differences.length&&!vendorDefects.length&&!pendingLeft.observations.length&&!provisionalCells.length,doubleCases:fakeCases.size,differences,ok:!differences.length};
+  return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)&&!pa.pendingObligations.includes(id)&&!provisionalCells.some(p=>p.case===id)&&!vendorDefects.some(d=>d.case===id)&&!candidates.some(c=>c.case===id)).length,recordedCases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,vendorDefects,candidateExpectations:candidates,pendingCells:pendingLeft.observations.map(x=>({...x,status:{a:x.status,b:pendingRight.observations.find(y=>y.case===x.case&&y.cell===x.cell)?.status}})),pendingObligations:pa.pendingObligations.filter(id=>ids.includes(id)),pendingUnexpectedPasses:[...pendingLeft.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'a'})),...pendingRight.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'b'}))],provisionalCells,allAssertionsPassed:!differences.length&&!vendorDefects.length&&!candidates.length&&!pendingLeft.observations.length&&!provisionalCells.length,doubleCases:fakeCases.size,differences,ok:!differences.length};
 }
 
 // The expected-differences file: exact identity-slot allowances (field meta.cua/replHost, both sides' values named) and

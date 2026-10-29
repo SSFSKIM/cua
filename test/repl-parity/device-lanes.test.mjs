@@ -20,7 +20,7 @@ test('the GCE box is declared as a Linux device with no inherited H4 home; cua-l
 
 test('the native lane runs on any declared Linux device it was prepared on, and on nothing else', () => {
   for (const device of ['cua-gce', 'cua-linux']) {
-    const command = nativeCommand({...facts, device, host: 'vendor'});
+    const command = nativeCommand({...facts, device, host: 'vendor', engine: 'vendor'});
     assert.equal(command.command, 'ssh');
     assert.ok(command.args.includes(device), device);
     assert.equal(command.expectedFacts.device, device);

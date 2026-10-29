@@ -150,13 +150,37 @@ test('the oracle\'s engine table: today\'s path, the target, comparison A, the r
  assert.deepEqual(row({defaultEngine:'cua',override:'vendor'}),{host:'vendor',reason:'engine_not_installed',engine:'vendor',status:'warn'});
  assert.deepEqual(row({defaultEngine:'cua',installed:true,node24:false,managedNode:false}),{host:'vendor',reason:'own_host_node_unavailable',engine:'vendor',status:'warn'});
  assert.deepEqual(row({defaultEngine:'cua',override:'cua'}),{error:'engine_not_installed'});
- // Linux and browser-only rows ignore the setting.
- assert.deepEqual(expectedSelection({platform:'linux',surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,engine:'invalid'}),{host:'cua',reason:'linux',status:'pass'});
+ // Browser-only rows ignore the setting.
  assert.deepEqual(expectedSelection({platform:'darwin',surfaces:['computer'],lane:'profiles',override:'unset',node24:true,engine:'cua'}),{host:'cua',reason:'browser_only',status:'pass'});
+ assert.deepEqual(expectedSelection({platform:'linux',surfaces:['computer'],lane:'profiles',override:'unset',node24:true,engine:'invalid'}),{host:'cua',reason:'linux',status:'pass'});
  const rows=selectionCases('darwin').filter(r=>r.engine);
  for(const engine of ['unset','vendor','cua','invalid'])for(const override of ['unset','vendor','cua'])for(const node24 of [true,false])for(const installed of [false,true])
   assert.ok(rows.some(r=>r.engine===engine&&r.override===override&&r.node24===node24&&r.installed===installed),`${engine} ${override} ${node24} ${installed}`);
- assert.ok(rows.some(r=>r.engineFrom==='settings'));assert.equal(selectionCases('linux').filter(r=>r.engine).length,2);
+ assert.ok(rows.some(r=>r.engineFrom==='settings'));assert.equal(selectionCases('linux').filter(r=>r.engine).length,6);
+});
+// #171: on Linux the engine never changes the host, so the table's rows are the host's with the engine's refusals.
+test('the oracle\'s Linux rows: the engine\'s refusals before Node, the host always cua\'s, and the vendor host refused',()=>{
+ const row=fields=>expectedSelection({platform:'linux',registration:'cua',maws:false,surfaces:['computer'],lane:'ordinary',override:'unset',node24:true,engine:'unset',installed:false,...fields});
+ assert.deepEqual(row({}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(row({engine:'vendor',override:'cua'}),{host:'cua',reason:'explicit',status:'pass'});
+ assert.deepEqual(row({engine:'cua',node24:false}),{error:'engine_not_installed'},'the engine refuses before Node');
+ assert.deepEqual(row({engine:'cua',installed:true}),{host:'cua',reason:'linux',status:'pass'});
+ assert.deepEqual(row({engine:'invalid'}),{error:'invalid_setting',sentence:'CUA_NATIVE_ENGINE must be vendor or cua'});
+ assert.deepEqual(row({engine:'invalid',engineFrom:'settings'}),{error:'invalid_setting'});
+ assert.deepEqual(row({defaultEngine:'cua'}),{host:'cua',reason:'linux',status:'warn'});
+ assert.deepEqual(row({node24:false}),{error:'repl_host_node'},'Linux has no vendor host to fall back to');
+ assert.deepEqual(row({override:'vendor'}),{error:'repl_host_refused'});
+ assert.deepEqual(row({override:'vendor',lane:'profiles'}),{error:'repl_host_refused'});
+});
+test('every Linux engine row agrees with doctor\'s actual row, which names no engine',async t=>{
+ const reviewed=reviewedSource(t);
+ for(const row of selectionCases('linux').filter(r=>r.engine).map(r=>({...r,managedNode:true})))await t.test(JSON.stringify(row),async t=>{
+  const expected=expectedSelection(row);
+  const doctor=await doctorReplHost(t,{platform:'linux',env:{...envFor(row),...engineEnv(row)},node:MANAGED});
+  if(expected.error){assert.doesNotThrow(()=>assertSelection(row,{doctor,error:expected.error,errorMessage:expected.sentence??'refused'},reviewed));return;}
+  assert.doesNotThrow(()=>assertSelection(row,{doctor,observation:ownObservation(reviewed.reviewedCommit)},reviewed));
+  assert.throws(()=>assertSelection(row,{doctor,observation:{...ownObservation(reviewed.reviewedCommit),_meta:{...ownObservation(reviewed.reviewedCommit)._meta,...attestation('cua')}}},reviewed),/attests engine/);
+ });
 });
 test('every engine row agrees with doctor\'s actual row and the real call\'s attestation; a wrong engine anywhere fails',async t=>{
  const reviewed=reviewedSource(t);

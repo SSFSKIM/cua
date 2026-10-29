@@ -329,9 +329,9 @@ test('the REPL host follows the selection table: macOS computer keeps vendor, Li
   for (const unset of [undefined, '']) for (const extra of IGNORED) {
     const label = what => `${what}, CUA_REPL_HOST=${JSON.stringify(unset)}, ${JSON.stringify(extra)}`;
     for (const [platform, surfaces, expected] of [
-      ['linux', COMPUTER, own('linux')],
+      ['linux', COMPUTER, {...own('linux'), engine: DEFAULT_VENDOR_ENGINE}],   // #171: the engine never changes the host there
       ['linux', BROWSER, own('linux')],
-      ['linux', BOTH, own('linux')],
+      ['linux', BOTH, {...own('linux'), engine: DEFAULT_VENDOR_ENGINE}],
       ['darwin', BROWSER, own('browser_only')],
       ['darwin', COMPUTER, {...vendor('macos_native_peer_requires_vendor'), engine: DEFAULT_VENDOR_ENGINE}],
       ['darwin', BOTH, {...vendor('macos_native_peer_requires_vendor'), engine: DEFAULT_VENDOR_ENGINE}],   // MAWS client mode does not override macOS computer
@@ -393,7 +393,8 @@ test('with no Node 24 or later, a macOS session the table moves to cua\'s own ho
 
 test('an explicit CUA_REPL_HOST=cua is honoured where the own host can run, and otherwise refused before launch, never downgraded to vendor', () => {
   for (const extra of IGNORED) for (const [platform, surfaces] of [['linux', COMPUTER], ['linux', BROWSER], ['linux', BOTH], ['darwin', BROWSER]])
-    assert.deepEqual(hostFor(platform, surfaces, 'cua', withNode, extra), {host: 'cua', reason: 'explicit', node: NODE24}, `${platform} ${surfaces} ${JSON.stringify(extra)}`);
+    assert.deepEqual(hostFor(platform, surfaces, 'cua', withNode, extra), {host: 'cua', reason: 'explicit', node: NODE24,
+      ...(platform === 'linux' && surfaces.includes('computer') ? {engine: DEFAULT_VENDOR_ENGINE} : {})}, `${platform} ${surfaces} ${JSON.stringify(extra)}`);
   // With no Node 24 or later an explicit cua is refused with the resolver's diagnostic, never downgraded to vendor.
   for (const [platform, surfaces] of [['linux', COMPUTER], ['darwin', BROWSER]])
     assert.deepEqual(hostFor(platform, surfaces, 'cua', withoutNode), {code: 'repl_host_node', message: 'cua\'s own REPL host needs Node 24 or later, and none was found'});
@@ -1034,11 +1035,12 @@ test('the three engine_not_installed refusals and the refusal precedence: unknow
   assert.deepEqual(unreadable, {code: 'invalid_setting', message: '/Users/someone/.config/cua/engine.json is not a JSON object'});
 });
 
-test('the engine setting is read only for the computer surface on macOS: Linux and browser-only sessions ignore it', () => {
-  const never = () => assert.fail('not asked outside macOS computer');
-  for (const [platform, surfaces] of [['linux', COMPUTER], ['linux', BOTH], ['darwin', BROWSER]]) for (const value of ['cua', 'vendor', 'nonsense']) {
-    const selected = replHostFor({platform, surfaces, ambient: {CUA_NATIVE_ENGINE: value}, resolveOwnNode: withNode, engine: {config: never, installed: never}});
-    assert.equal(selected.engine, undefined, `${platform} ${surfaces} ${value}`);
+// On Linux the computer surface reads it too since #171 (test/runtime-linux-engine-selection.test.mjs).
+test('the engine setting is read only for the computer surface: browser-only sessions ignore it', () => {
+  const never = () => assert.fail('not asked without the computer surface');
+  for (const platform of ['darwin', 'linux']) for (const value of ['cua', 'vendor', 'nonsense']) {
+    const selected = replHostFor({platform, surfaces: BROWSER, ambient: {CUA_NATIVE_ENGINE: value}, resolveOwnNode: withNode, engine: {config: never, installed: never}});
+    assert.equal(selected.engine, undefined, `${platform} ${value}`);
     assert.equal(selected.host, 'cua');
   }
 });

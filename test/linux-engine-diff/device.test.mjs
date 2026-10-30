@@ -22,8 +22,8 @@ test('a refused request is audited for nothing sent: a SendEvent of any kind, or
 });
 
 test("Acceptance 8's cases: each kind and condition, refused in shared mode, foreground in dedicated, the rest background", () => {
-  const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'gnome-text-editor'], Object.values(DEVICE_SCENE_OPS).flat().filter((op) => op !== 'capabilities'));
-  assert.equal(plan.length, 29);
+  const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'device-chrome', 'gnome-text-editor'], Object.values(DEVICE_SCENE_OPS).flat().filter((op) => op !== 'capabilities'));
+  assert.equal(plan.length, 34);
   for (const { op, scene } of plan) {
     const def = OPS[op];
     assert.ok(SCENE_OPS[scene].includes(op));
@@ -38,6 +38,7 @@ test("Acceptance 8's cases: each kind and condition, refused in shared mode, for
     }
   }
   assert.equal(routeOf('firefox_click_visible_shared', 'device-firefox'), 'background');
+  assert.equal(routeOf('chrome_drag_visible_path_shared', 'device-chrome'), 'background', 'a visible path in a partly covered window');
   assert.equal(routeOf('gtk4_element_click', 'device-gtk4'), null, 'an element action records no route');
   assert.ok(SCENE_OPS.desktop.includes('capabilities'));
 });

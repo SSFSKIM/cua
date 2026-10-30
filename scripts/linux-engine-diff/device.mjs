@@ -16,7 +16,8 @@
 // `device-firefox` (Firefox on pages/input.html: Gecko ignores synthetic coordinate clicks unless its window is fully
 // unobscured; the cases put a window over its bottom half, or part of it off the screen, or leave it fully visible),
 // `device-xterm` (xterm running the recorder: it ignores synthetic keys and takes clicks), `device-qt` (kate on a long
-// document: Qt ignores synthetic wheel events) and gnome-text-editor's text refusal on the `gnome-text-editor` scene.
+// document: Qt ignores synthetic wheel events), `device-chrome` (Chrome on pages/input.html: Chromium takes a drag only
+// along a visible path) and gnome-text-editor's text refusal on the `gnome-text-editor` scene.
 // M3.1's listings beyond M0's (scroll and move for GTK 4 and Gecko, scroll for Qt) join the cases as M0's did.
 
 import { readFileSync } from 'node:fs';
@@ -70,6 +71,8 @@ function scalePath(i) {
 
 const grew = (key) => (before, after) => typeof before?.[key] === 'number' && typeof after?.[key] === 'number' && after[key] > before[key];
 const higher = (before, after) => typeof before === 'number' && typeof after === 'number' && after > before;
+/** A drag across the input page's pad (pages/input.html counts it), in the top half of the window. */
+const padDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: [{ x: 200, y: 150 }, { x: 380, y: 180 }, { x: 600, y: 240 }] }];
 const moveTo = (ctx, a, b) => ['move', { window: { id: ctx.scene.id }, ...(ctx.i % 2 === 0 ? a : b) }];
 
 /** The input page back at its top after a scroll series: Home through the background route (Gecko takes keys). */
@@ -97,6 +100,12 @@ function visible(ctx) {
 function overlapped(ctx) {
   configure(ctx.scene.id, 0, 0, ...ctx.scene.size);
   ctx.desktop.arrange(ctx.scene, 'partial');
+}
+
+/** A window over the top 55% of the scene window, where the pad is: the window partly visible, the path covered. */
+function topCovered(ctx) {
+  configure(ctx.scene.id, 0, 0, ...ctx.scene.size);
+  ctx.desktop.arrange(ctx.scene, 'partial-top');
 }
 
 /** The scene window with its right fifth off the screen, nothing over it. */
@@ -186,6 +195,8 @@ export const DEVICE_OPS = {
   },
   firefox_move_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2) }),
   firefox_move_covered_dedicated: device({ device: 'foreground', condition: covered, read: page, request: (ctx) => moveTo(ctx, PAD, PAD2), effect: grew('moves') }),
+  firefox_drag_overlap_shared: device({ device: 'refusal', condition: overlapped, read: page, request: padDrag }),
+  firefox_drag_covered_dedicated: device({ device: 'foreground', condition: covered, read: page, request: padDrag, effect: rose('drags') }),
   firefox_element_click_covered: device({ device: 'background', condition: covered, read: page, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.elements.press }], effect: rose('clicks') }),
   // xterm (`device-xterm`): keys refused or foreground; a click on the background route (a mouse report arrives)
   xterm_key_shared: device({ device: 'refusal', read: record, request: (ctx) => ['press_key', { window: { id: ctx.scene.id }, key: 'x' }] }),
@@ -197,6 +208,11 @@ export const DEVICE_OPS = {
     request: (ctx) => ['click', { window: { id: ctx.scene.id }, x: 100, y: 100 }],
     effect: (before, after) => typeof before === 'string' && typeof after === 'string' && after.slice(before.length).includes('\x1b[M'),
   }),
+  // Chrome (`device-chrome`): a drag along a path the cover leaves visible takes the background route; one along a
+  // covered path is refused, or in dedicated mode sent through the foreground route
+  chrome_drag_visible_path_shared: device({ device: 'background', route: 'background', condition: overlapped, read: page, request: padDrag, effect: rose('drags') }),
+  chrome_drag_covered_path_shared: device({ device: 'refusal', condition: topCovered, read: page, request: padDrag }),
+  chrome_drag_covered_dedicated: device({ device: 'foreground', condition: covered, read: page, request: padDrag, effect: rose('drags') }),
   // Qt (`device-qt`, kate on a long document): its scroll bar's value
   qt_scroll_shared: device({ device: 'refusal', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }] }),
   qt_scroll_dedicated: device({ device: 'foreground', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }], effect: higher }),
@@ -221,7 +237,8 @@ for (const op of Object.values(DEVICE_OPS)) {
 export const DEVICE_SCENE_OPS = {
   'device-gtk4': ['gtk4_click_shared', 'gtk4_click_dedicated', 'gtk4_key_shared', 'gtk4_key_dedicated', 'gtk4_key_down_shared', 'gtk4_right_click_shared', 'gtk4_element_click', 'gtk4_scroll_shared', 'gtk4_scroll_dedicated', 'gtk4_move_shared', 'gtk4_move_dedicated', 'gtk4_drag_shared', 'gtk4_drag_dedicated'],
   // the scroll last: its series ends with the page put back at its top (`reset`)
-  'device-firefox': ['firefox_click_overlap_shared', 'firefox_click_offscreen_shared', 'firefox_right_click_overlap_shared', 'firefox_click_overlap_dedicated', 'firefox_click_visible_shared', 'firefox_element_click_covered', 'firefox_move_overlap_shared', 'firefox_move_covered_dedicated', 'firefox_scroll_overlap_shared', 'firefox_scroll_covered_dedicated'],
+  'device-firefox': ['firefox_click_overlap_shared', 'firefox_click_offscreen_shared', 'firefox_right_click_overlap_shared', 'firefox_click_overlap_dedicated', 'firefox_click_visible_shared', 'firefox_element_click_covered', 'firefox_move_overlap_shared', 'firefox_move_covered_dedicated', 'firefox_drag_overlap_shared', 'firefox_drag_covered_dedicated', 'firefox_scroll_overlap_shared', 'firefox_scroll_covered_dedicated'],
+  'device-chrome': ['chrome_drag_visible_path_shared', 'chrome_drag_covered_path_shared', 'chrome_drag_covered_dedicated'],
   'device-qt': ['qt_scroll_shared', 'qt_scroll_dedicated'],
   'device-xterm': ['xterm_key_shared', 'xterm_key_dedicated', 'xterm_click_shared'],
   'gnome-text-editor': ['gte_type_text_shared'],

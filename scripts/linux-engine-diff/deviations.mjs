@@ -139,8 +139,8 @@ export const REFUSALS = [
     op: 'drag',
     scene: 'chrome-input',
     reason:
-      "the scene's Chrome window is fully covered, where Chromium ignores background text-selection, scrollbar-thumb and drag-and-drop drags in every engine; cua refuses every drag into a Chromium window that is not fully unobscured, because it cannot tell before sending a drag that would land (this pad's, a range's, a canvas's) from one that would not",
-    section: 'Decision Log, M3.1 (Chromium Drag unless_unobscured); m3/kinds/ run m31-drag-covered',
+      "the scene's Chrome window is fully covered, where Chromium ignores background text-selection, scrollbar-thumb and drag-and-drop drags in every engine (m31-drag-covered: 0/10 in the pinned build and cua); cua refuses a drag into Chromium unless every point of its path is visible in the window, because it cannot tell before sending a drag that would land from one that would not. So a covered drag that lands in the vendor is refused: this pad's, and a range's (9/10 in the pinned build) and a canvas's (10/10). An M4 candidate decides by the AT-SPI role at the path's start",
+    section: 'Decision Log, M3.1 (Chromium Drag unless_path_unobscured); m3/kinds/ runs m31-drag-covered, m31-drag-partial, m31-drag-partial-top',
   },
 ];
 

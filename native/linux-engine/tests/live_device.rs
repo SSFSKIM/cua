@@ -12,6 +12,7 @@
 mod support;
 
 use serde_json::{Value, json};
+use std::sync::mpsc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 use support::Engine;
@@ -362,5 +363,139 @@ fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_an
             Input::ButtonPress { button: 5, sent: false },
             Input::ButtonRelease { button: 5, sent: false }
         ]
+    );
+}
+
+/// Chromium (class `Google-chrome`) takes a background drag only along a path that is visible in its window: with
+/// its bottom half covered, a drag across its top half takes the background route; one whose path runs under the
+/// cover is refused in shared mode with nothing sent.
+#[test]
+fn a_chromium_drag_takes_the_background_route_only_along_a_visible_path() {
+    let chrome = Probe::open("Google-chrome", (0, 0, 400, 300));
+    let _cover = Probe::open("Cover", (0, 150, 400, 150));
+    let mut shared = Engine::start();
+    let refusal = format!("{}{SENTENCE}", app_of(&mut shared, chrome.id));
+    shared
+        .request(
+            "drag",
+            json!({"window": chrome.target(), "path": [{"x": 20, "y": 20}, {"x": 200, "y": 120}]}),
+        )
+        .unwrap();
+    let dragged = chrome.inputs();
+    assert_eq!(dragged.len(), 2, "a press and a release: {dragged:?}");
+    assert!(sent(&dragged), "the background route: {dragged:?}");
+    for path in [
+        json!([{"x": 20, "y": 20}, {"x": 200, "y": 200}]),
+        json!([{"x": 20, "y": 140}, {"x": 380, "y": 140}, {"x": 380, "y": 160}]),
+    ] {
+        assert_eq!(
+            shared.request("drag", json!({"window": chrome.target(), "path": path})),
+            Err(refusal.clone()),
+            "a path ending under the cover"
+        );
+    }
+    assert_eq!(chrome.inputs(), vec![], "nothing was sent");
+}
+
+/// A window of the test's own, classed `Google-chrome`, whose client takes `XdndSelection` once a drag's held motion
+/// reaches it, as an XDND source does when its drag and drop begins; it records the input events it receives until
+/// told to stop.
+fn drag_source() -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<Vec<Input>>) {
+    let (ready, window) = mpsc::channel();
+    let (stop, stopped) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
+        let mask = EventMask::KEY_PRESS
+            | EventMask::KEY_RELEASE
+            | EventMask::BUTTON_PRESS
+            | EventMask::BUTTON_RELEASE
+            | EventMask::BUTTON1_MOTION;
+        probe
+            .conn
+            .change_window_attributes(
+                probe.id,
+                &x11rb::protocol::xproto::ChangeWindowAttributesAux::new().event_mask(mask),
+            )
+            .unwrap();
+        let selection = probe
+            .conn
+            .intern_atom(false, b"XdndSelection")
+            .unwrap()
+            .reply()
+            .unwrap()
+            .atom;
+        probe.conn.sync().unwrap();
+        ready.send(probe.id).unwrap();
+        let mut seen = Vec::new();
+        let mut taken = false;
+        while stopped.try_recv().is_err() {
+            while let Some(event) = probe.conn.poll_for_event().unwrap() {
+                let sent = event.sent_event();
+                match event {
+                    Event::MotionNotify(_) if !taken => {
+                        probe
+                            .conn
+                            .set_selection_owner(probe.id, selection, x11rb::CURRENT_TIME)
+                            .unwrap();
+                        probe.conn.flush().unwrap();
+                        taken = true;
+                    }
+                    Event::KeyPress(_) => seen.push(Input::KeyPress { sent }),
+                    Event::KeyRelease(_) => seen.push(Input::KeyRelease { sent }),
+                    Event::ButtonPress(e) => seen.push(Input::ButtonPress { button: e.detail, sent }),
+                    Event::ButtonRelease(e) => seen.push(Input::ButtonRelease { button: e.detail, sent }),
+                    _ => {}
+                }
+            }
+            sleep(Duration::from_millis(1));
+        }
+        seen
+    });
+    (window.recv().unwrap(), stop, handle)
+}
+
+/// The drag-and-drop candidate: in shared mode a background drag into Chromium whose target takes `XdndSelection`
+/// mid-drag is cancelled before the drop, Escape and then the release, and refused; in dedicated mode it is not watched
+/// and ends with its release as any drag does.
+#[test]
+fn a_drag_that_becomes_a_drag_and_drop_is_cancelled_before_the_drop_when_shared() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source();
+    let mut shared = Engine::start();
+    let app = app_of(&mut shared, window);
+    assert_eq!(
+        shared.request("drag", json!({"window": {"id": window}, "path": path})),
+        Err(format!(
+            "{app} began a drag and drop, which changes the desktop; it was cancelled before the drop, so nothing was \
+             dropped. Use a dedicated desktop for drag and drop"
+        ))
+    );
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+        ],
+        "Escape before the release"
+    );
+    drop(shared);
+    let (window, stop, recorder) = drag_source();
+    let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+    dedicated
+        .request("drag", json!({"window": {"id": window}, "path": path}))
+        .unwrap();
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+        ],
+        "dedicated: the drop goes ahead"
     );
 }

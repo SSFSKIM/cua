@@ -70,6 +70,12 @@ impl Engine {
     /// [`Engine::way_for`]'s choice alone, with nothing activated yet: for a request that checks its own input
     /// before the foreground route activates the window, so that one refused for its input changes nothing.
     pub(super) fn route_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Way> {
+        self.route_along(window, kind, &[])
+    }
+
+    /// [`Engine::route_for`] for input along a path of root points (a drag's every sample): a family's
+    /// `unless_path_unobscured` judges the path.
+    pub(super) fn route_along(&mut self, window: Option<Window>, kind: Kind, path: &[(i16, i16)]) -> Result<Way> {
         let way = match window {
             None => Way::Desktop,
             Some(window) => {
@@ -77,6 +83,7 @@ impl Engine {
                 let ignored = match family.and_then(|f| f.ignores(kind)) {
                     Some(When::Always) => true,
                     Some(When::UnlessUnobscured) => !self.x.unobscured(window),
+                    Some(When::UnlessPathUnobscured) => !self.x.points_unobscured(window, path),
                     None => false,
                 };
                 match (ignored, self.cfg.desktop) {

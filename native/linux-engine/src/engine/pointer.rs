@@ -7,6 +7,7 @@ use anyhow::{Result, bail};
 use serde_json::{Value, json};
 use x11rb::protocol::xproto::ConnectionExt as _;
 
+use super::way::Way;
 use super::{DesktopMode, Engine};
 use crate::desktop::Desktop;
 use crate::dnd::DndWatch;
@@ -284,7 +285,23 @@ impl Engine {
             None => input.path.first().and_then(|p| self.x.client_at(p.x, p.y)),
         };
         let pacing = self.drag_pacing_for(window);
-        let target = self.target_for(input.window.map(|w| w.id), Kind::Drag)?;
+        // the path's every sample in root coordinates, for a family that takes a drag only along a visible path; a
+        // path that cannot be translated is judged as none (doubt), and its own error comes inside the route
+        let samples = match input.window {
+            Some(target) => input
+                .path
+                .iter()
+                .map(|p| self.x.desktop_position(target.id, p.x, p.y))
+                .collect::<Result<Vec<_>>>()
+                .map(|points| drag_samples(&points))
+                .unwrap_or_default(),
+            None => Vec::new(),
+        };
+        let way = self.route_along(input.window.map(|w| w.id), Kind::Drag, &samples)?;
+        if let (Way::Foreground, Some(target)) = (way, input.window) {
+            self.enter(target.id)?;
+        }
+        let target = input.window.map_or(Target::Desktop, |w| way.target(w.id));
         // in shared mode, a background drag into a family whose drop changes the desktop watches for a drag and drop
         let mut watch = match target {
             Target::Window(window)

@@ -544,6 +544,15 @@ impl X11 {
         Ok(None)
     }
 
+    /// Whether every root point of `points` is visible in `window` now (`cover.rs`); any X error is doubt, obscured.
+    pub fn points_unobscured(&self, window: Window, points: &[(i16, i16)]) -> bool {
+        let points: Vec<(i32, i32)> = points.iter().map(|&(x, y)| (x as i32, y as i32)).collect();
+        let geometry = self.conn.get_geometry(window).ok().and_then(|c| c.reply().ok());
+        geometry
+            .and_then(|g| self.cover(window, &g).ok())
+            .is_some_and(|(rect, levels)| crate::cover::points_unobscured(rect, &levels, &points))
+    }
+
     /// Whether `window` is fully unobscured now (`cover.rs`); any X error is doubt, and doubt is obscured.
     fn fully_unobscured(&self, window: Window, geometry: &GetGeometryReply) -> bool {
         self.cover(window, geometry)

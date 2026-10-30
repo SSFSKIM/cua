@@ -458,10 +458,11 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
     opened.scrollbar = await verticalScrollBar(desktop, desktop.oracle, opened);
     return withApp(desktop, opened);
   }
-  if (scene === 'device-firefox') {
+  if (scene === 'device-firefox' || scene === 'device-chrome') {
     const { openFamily, FAMILIES } = await import('./families.mjs');
     desktop.oracle ??= new Oracle();
-    const opened = await openFamily(desktop, desktop.oracle, 'firefox', role, { page: 'input.html', geometry: FAMILIES.firefox.geometry });
+    const family = scene === 'device-firefox' ? 'firefox' : 'chrome';
+    const opened = await openFamily(desktop, desktop.oracle, family, role, { page: 'input.html', geometry: FAMILIES[family].geometry });
     opened.kindOf = 'page';
     opened.elements = await desktop.elementsByName(opened, INPUT_ELEMENTS);
     return withApp(desktop, opened);

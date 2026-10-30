@@ -54,6 +54,9 @@ pub enum When {
     Always,
     /// Unless the window is fully unobscured (`cover.rs`; any doubt counts as obscured).
     UnlessUnobscured,
+    /// For a drag: unless every point of its path, vertices and the segments between them, is unobscured in the window
+    /// (`cover.rs` `points_unobscured`; any doubt counts as obscured). Another kind, which has no path, is ignored.
+    UnlessPathUnobscured,
 }
 
 /// One kind a family ignores, and when.
@@ -139,8 +142,9 @@ pub const FAMILIES: &[Family] = &[
     // release adds nothing); Gecko takes canvas strokes with 300 µs and HTML5 drops only with 30 ms before the release
     // as well. The other families of M0.4's matrix matched the pinned build with no wait at all. Fully covered, a
     // Chromium window ignores background text-selection, scrollbar-thumb and drag-and-drop drags in every engine
-    // (range and canvas drags still land; with half the window covered and the path visible every drag lands, M3.1):
-    // its drags take the clicks' `unless_unobscured` of Gecko.
+    // (range and canvas drags still land); with half the window covered and the path visible every drag lands, and
+    // with the path under the cover the drags miss as fully covered (M3.1): its drags are refused unless their whole
+    // path is visible, which a covered range or canvas drag that would land loses (deviations.mjs).
     Family {
         name: "Chromium",
         toolkit: Some("Chromium"),
@@ -154,12 +158,12 @@ pub const FAMILIES: &[Family] = &[
         paste: DEFAULT_PASTE,
         ignores: &[Ignored {
             kind: Kind::Drag,
-            when: When::UnlessUnobscured,
+            when: When::UnlessPathUnobscured,
         }],
         feff_after_astral: false,
         drop_changes_desktop: true,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
-                   m31-drag-partial",
+                   m31-drag-partial, m31-drag-partial-top",
     },
     // Gecko's Text answers a U+FEFF after each character beyond the BMP (M0.4), which the paste's confirmation strips
     // there and only there, so a real U+FEFF still counts. Gecko ignores synthetic coordinate clicks while any of its
@@ -445,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn drags_are_ignored_by_gtk_4_always_and_by_gecko_and_chromium_unless_unobscured() {
+    fn drags_are_ignored_by_gtk_4_always_by_gecko_unless_unobscured_and_by_chromium_unless_their_path_is() {
         let drag = |class, toolkit: Option<Toolkit>| {
             family(FAMILIES, Some(class), toolkit.as_ref()).and_then(|f| f.ignores(Kind::Drag))
         };
@@ -453,11 +457,15 @@ mod tests {
             drag("gnome-text-editor", Some(toolkit("GTK", Some("4.14.2")))),
             Some(When::Always)
         );
-        assert_eq!(drag("firefox", None), Some(When::UnlessUnobscured));
-        assert_eq!(drag("Google-chrome", None), Some(When::UnlessUnobscured));
+        assert_eq!(
+            drag("firefox", None),
+            Some(When::UnlessUnobscured),
+            "Gecko's flip is the window's"
+        );
+        assert_eq!(drag("Google-chrome", None), Some(When::UnlessPathUnobscured));
         assert_eq!(
             drag("cua-electron-fixture", Some(toolkit("Chromium", Some("1.0")))),
-            Some(When::UnlessUnobscured),
+            Some(When::UnlessPathUnobscured),
             "Electron is Chromium by its toolkit"
         );
         for (class, toolkit) in [("kate", Some(toolkit("Qt", Some("5.15.13")))), ("XTerm", None)] {

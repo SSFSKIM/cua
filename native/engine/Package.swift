@@ -20,7 +20,8 @@ let package = Package(
         .linkedFramework("ScreenCaptureKit"),
       ]
     ),
-    .testTarget(name: "EngineTests", dependencies: ["Engine"], path: "Tests/EngineTests"),
+    // Fixtures (the cursor motion's reference vectors and the script that made them) are read by path, not built.
+    .testTarget(name: "EngineTests", dependencies: ["Engine"], path: "Tests/EngineTests", exclude: ["Fixtures"]),
   ],
   swiftLanguageModes: [.v6]
 )

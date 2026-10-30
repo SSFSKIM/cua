@@ -181,7 +181,7 @@ That gives roughly 0.34–0.97 s, with damping 0.9.
 - OpenAI's own `Animation` module: velocity-Verlet at a fixed 1/240 s step.
 - k = (2π/response)², capped at 28800; drag = 2√k·ζ.
 - Each frame it simulates up to the display link's `targetTimestamp`. After a stall of more than 1 s it simulates only 1/60 s.
-- When the speed falls below the idle-velocity threshold, it snaps to the target and finishes.
+- When the spring has settled, it snaps to the target and finishes. Settled (`FUN_1007d622c`, resolved 2026-10-30, Appendix B §1.3) means both the velocity and the force (the acceleration, mass 1) are within the idle-velocity threshold, `max(|v|², |F|²) ≤ τ²`, and the value is within 1 % of the target's own magnitude, `|target − x|² ≤ |0.01·target|²` (skipped when the target is zero). It is checked once per display frame, after that frame's sub-steps.
 - The clock is the cursor window's `displayLink(target:selector:)` in common run-loop modes, at the display's native rate; no frame-rate range is set.
 
 **Close enough versus finished** (Appendix B §3.3–4):
@@ -243,7 +243,6 @@ No handling was found [fact for the selectors and environment values].
 ## 7. Undetermined
 
 - The anchor of the main rotation effect and how the arrow tip lines up with the hotspot (a (4.5, 4.5) offset pair whose role is unread).
-- The exact displacement term of the progress spring's settle test (only a 0.01 literal is visible).
 - What the GaussianBlur filter's `0x202` flags mean.
 - The defaults suite behind `FeatureFlag.isEnabled`.
 - Whether anything sets the cursor's `delegate` or `isAttached` in this build.
@@ -675,11 +674,16 @@ func step() {                                                                   
     F = cfg.stiffness * (target - x) - cfg.drag * vHalf                         // [inference: sign/order of the two terms]
     v = vHalf + h * F
 }
-func settled() -> Bool {                                                        // FUN_1007d622c
-    if |v|² > idleVelocityThreshold² { return false }                          // [code: threshold squared; exact norm inferred]
-    return <displacement test using literal 0.01>                               // [undetermined form; treat as |x - target| ≤ 0.01 in value units]
+func settled(_ x: V, _ target: V) -> Bool {                                    // FUN_1007d622c [code + disasm, resolved 2026-10-30]
+    let tau2 = configuration.idleVelocityThreshold * configuration.idleVelocityThreshold
+    if max(velocity.magnitudeSquared(), force.magnitudeSquared()) > tau2 { return false }   // 0x1007d6548–0x1007d6604
+    let a = (target * 0.01).magnitudeSquared()                                 // 0.01 at 0x10104d6e8; 0x1007d6610–0x1007d6958
+    if !(a > 0) { return true }                                                // integer literal 0 (0x101054bb0, width 1)
+    return !((target - x).magnitudeSquared() > a)                              // 0x1007d69d4–0x1007d6a24
 }
 ```
+How it was read (2026-10-30, #235 M1 step 0). The caller `FUN_1007b63a8` passes `x0` = the animation's value (getter 0x1007b3280) and `x1` = its target (0x1007b3554), after the sub-steps of `FUN_1007d6180`, with `x20` = a copy of the simulation. In the callee, `[x2+0x28]` and `[x2+0x2c]` are the simulation's field offsets 2 and 3, `velocity` and `force` (S.fields: `configuration, time, velocity, force`), and the threshold is field 4 of the `Configuration` metadata (`FUN_1007d4d48`, offset at `+0x30`: `response, stiffness, drag, dt, idleVelocityThreshold`), squared with `Numeric.*`. The vector norm is the `AnimatableVector` witness at `+0x30`; in `SIMD2<A> : AnimatableVector`'s witness table (conformance 0x10107a160, pattern 0x1014047d0) that slot is the thunk 0x1007cdb38 → `SIMD2.magnitudeSquared()` (0x1007cdb00); the `+0x28` slot is `magnitude()`. The 0.01 vector is a splat (`SIMDStorage` subscript setter loop), multiplied lane by lane with the target; the displacement is `target − x` (`AdditiveArithmetic.-`, lanes of `x1` minus lanes of `x0`). The result `1` makes the caller return nil, which `performTick` turns into `value = target; .finished`.
+Consequences. The force term dominates near rest: for the progress spring (τ 0.01, k = (2π/R)² ≈ 50–190 for the responses of 0.46–0.87 s the reference cases give) it holds only within about 2e-4 of the target, so the 1 % displacement term rarely binds there; for the scoot's point spring (τ 12 pt/s) it holds within about 0.8 pt. The displacement term is relative to the target's magnitude, so for a point spring it depends on where the coordinate origin is (the vendor's scoot runs in screen or window-relative origins). Against "speed under the threshold and within 0.01 of the target", the resolved rule finishes about 20 % later on the reference cases (path: 208 against 173 sub-steps at 197 pt; scoot: 67 against 53 at 117 pt), all of it in the last, invisible fraction of the motion.
 - Retarget: setting `targetValue` on a running animation keeps `v`/`F` (the simulation is untouched) and, by the Event enum, reports `.retargeted(from:to:)` **[inference: enum read (S.fields:4959), setter not traced]**.
 - `stop(immediately: true)` (0x1007b41a4): `state = .ended` and **emits `.finished(currentValue)`** to the event handler (this matters, §3.5).
 - `isLogicallyComplete` (0x1007b5ac0) = `sim.time − startTime ≥ response` (else `state == .ended`); not used by the cursor code **[inference: no cursor caller]**.
@@ -890,7 +894,6 @@ func press(count: Int, delay: Duration) async throws {
 Both call sites use `count: 1, delay: SynthesizedEvent.humanClickInterval` (0.1 s; FUN_100743804): `VirtualCursor.press()` (0x1007afda0, called before an element's AX action, F-helper-logic §5) and the controller at 0x100074f14. So a click shows ~0.1 s pressed + 0.1 s released (0.2 s) before the action proceeds. A cancelled first sleep leaves `isPressed == true` **[code: the throw path skips the reset]**. What `isPressed` looks like is in the Style/view code (look notes).
 
 ### 6. Undetermined
-- Exact form of the spring settle displacement test (literal 0.01) and the velocity norm used against `idleVelocityThreshold²` (generic SIMD code; FUN_1007d622c).
 - The `0x202` companion flags of `GraphicsSupport.LayerFilter.GaussianBlur` (FUN_1000838c4 / `CALayer.updateFilter`).
 - What the cursor delegate does (who sets `CUC.delegate`; likely the remote-hosted PiP path) — outside this slice.
 

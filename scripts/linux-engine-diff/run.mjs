@@ -512,7 +512,7 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
     const { openFamily, FAMILIES } = await import('./families.mjs');
     const { PAGE, locate, runPath } = await import('./drag.mjs');
     desktop.oracle ??= new Oracle();
-    const opened = await openFamily(desktop, desktop.oracle, 'chrome', role, { page: PAGE, geometry: FAMILIES.chrome.geometry });
+    const opened = await openFamily(desktop, desktop.oracle, 'chrome', `device_${role}`, { page: PAGE, geometry: FAMILIES.chrome.geometry });
     opened.kindOf = 'page';
     opened.dndAt = await locate({ desktop, oracle: desktop.oracle }, opened, ['dnd']);
     opened.dndPath = runPath(opened.dndAt, 'dnd', 0);
@@ -522,7 +522,8 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
     const { openFamily, FAMILIES } = await import('./families.mjs');
     desktop.oracle ??= new Oracle();
     const family = scene === 'device-firefox' ? 'firefox' : 'chrome';
-    const opened = await openFamily(desktop, desktop.oracle, family, role, { page: 'input.html', geometry: FAMILIES[family].geometry });
+    // a role of the scene's own: chrome-input's windows show the same page, and a window is found by its title
+    const opened = await openFamily(desktop, desktop.oracle, family, `device_${role}`, { page: 'input.html', geometry: FAMILIES[family].geometry });
     opened.kindOf = 'page';
     opened.elements = await desktop.elementsByName(opened, INPUT_ELEMENTS);
     return withApp(desktop, opened);

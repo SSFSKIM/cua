@@ -200,7 +200,7 @@ final class CursorHub: @unchecked Sendable {
         cursor.lifecycle.userActed(now: now)
         guard cursor.lifecycle.phase != before else { continue }
         cursor.phaseSince = now
-        freeze(cursor, now: now)  // taken over is still: a motion in flight stops where it is, its pending dip with it
+        freeze(cursor, now: now)  // taken over is still: whatever plays stops where it is, a dip or the halo's relaxing too
         commit(cursor)
       }
     }
@@ -398,9 +398,10 @@ final class CursorHub: @unchecked Sendable {
     return settles > now || motion.dips.contains { $0 > now }
   }
 
-  /// Stops a motion in flight where it is now: the retained trajectory's state, held, with no pending dip.
+  /// Stops whatever the retained motion still plays, where it is now: the trajectory's state held, with no dip (one
+  /// playing or to come). Unconditional: the tip may have settled while a dip or the halo's relaxation still runs.
   private func freeze(_ cursor: CursorModel, now: TimeInterval) {
-    guard motionInFlight(cursor, now: now), let motion = cursor.motion else { return }
+    guard let motion = cursor.motion else { return }
     var state = motion.trajectory.state(at: now - motion.beginTime)
     state.velocity = .zero
     motionCounter += 1
@@ -424,6 +425,8 @@ final class CursorHub: @unchecked Sendable {
         cursor.motion = CursorMotionInstall(id: motionCounter, trajectory: trajectory, beginTime: begin,
                                             dips: dipPending ? [begin + trajectory.arrival] : [], fadeIn: false)
         cursor.plannedReduced = reduce
+        // One settle deadline for the replacement and the state: thinking begins when this trajectory settles.
+        cursor.lifecycle.motionReplaced(settlesAt: begin + Double(trajectory.settleIndex) * trajectory.step)
       }
       commit(cursor)
     }

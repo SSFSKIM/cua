@@ -363,16 +363,50 @@ final class CursorHubTests: XCTestCase {
     XCTAssertEqual(still.dips, [], "the pending dip is cancelled")
   }
 
-  func testTakingOverAtRestKeepsTheMotion() throws {
+  func testTakingOverAtRestHoldsTheCursorWhereItIs() throws {
     let world = World(), renderer = RecordingRenderer()
     let hub = hub(world, renderer)
     click(hub, CGPoint(x: 400, y: 300))
-    let rest = try XCTUnwrap(renderer.last?.motion)
     world.clock.t += 1
     hub.tick()
     hub.userActed(pid: 600)
     hub.drain()
-    XCTAssertEqual(renderer.last?.motion?.id, rest.id)
+    let still = try XCTUnwrap(renderer.last?.motion)
+    XCTAssertEqual(still.trajectory.samples.count, 1)
+    XCTAssertEqual(still.trajectory.end, CGPoint(x: 400, y: 600))
+    XCTAssertEqual(still.dips, [])
+  }
+
+  func testTakingOverWhileTheArrivalsDipPlaysStopsTheDipToo() throws {
+    // The tip has settled (a snap from hidden) and its dip began 50 ms ago: the dip must not run on.
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    let shown = try XCTUnwrap(renderer.last?.motion)
+    world.clock.t = try XCTUnwrap(shown.dips.first) + 0.05
+    hub.userActed(pid: 600)
+    hub.drain()
+    let commit = try XCTUnwrap(renderer.last)
+    XCTAssertEqual(commit.phase, .takenOver)
+    XCTAssertNotEqual(commit.motion?.id, shown.id, "a still motion replaces it, with no dip")
+    XCTAssertEqual(commit.motion?.dips, [])
+  }
+
+  func testTakingOverWhileTheHaloRelaxesHoldsItsSwell() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 100, y: 100))
+    world.clock.t += 2
+    click(hub, CGPoint(x: 1300, y: 800))
+    let moving = try XCTUnwrap(renderer.last?.motion)
+    let settled = moving.beginTime + Double(moving.trajectory.settleIndex) * moving.trajectory.step
+    XCTAssertGreaterThan(moving.trajectory.duration, Double(moving.trajectory.settleIndex) * moving.trajectory.step, "a relaxing tail")
+    world.clock.t = settled + 0.05
+    hub.userActed(pid: 600)
+    hub.drain()
+    let still = try XCTUnwrap(renderer.last?.motion)
+    XCTAssertEqual(still.trajectory.samples.count, 1)
+    XCTAssertEqual(still.trajectory.samples[0].swell, moving.trajectory.state(at: world.clock.t - moving.beginTime).swell)
   }
 
   func testAClickThenAScrollBeforeItsArrivalLeavesNoDip() throws {
@@ -407,6 +441,47 @@ final class CursorHubTests: XCTestCase {
     XCTAssertEqual(replanned.trajectory.samples[0].position, moving.trajectory.state(at: replanned.beginTime - moving.beginTime).position)
     XCTAssertEqual(replanned.trajectory.end, moving.trajectory.end)
     XCTAssertEqual(replanned.dips.count, 1, "the click's dip had not played: it plays at the new arrival")
+    // One settle deadline: thinking when the shortened move settles, long before the old glide would have.
+    let newSettle = replanned.beginTime + Double(replanned.trajectory.settleIndex) * replanned.trajectory.step
+    let oldSettle = moving.beginTime + Double(moving.trajectory.settleIndex) * moving.trajectory.step
+    XCTAssertLessThan(newSettle, oldSettle)
+    world.clock.t = newSettle - 0.001
+    hub.tick()
+    XCTAssertEqual(hub.phase(connection: 1), .acting)
+    world.clock.t = newSettle
+    hub.tick()
+    XCTAssertEqual(hub.phase(connection: 1), .thinking, "not still acting until the old glide's settle")
+  }
+
+  func testReduceMotionTurningOffMidMoveKeepsActingUntilTheLongerGlideSettles() throws {
+    let world = World(), renderer = RecordingRenderer()
+    world.reduceMotion = true
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 200, y: 200))
+    world.clock.t += 2
+    click(hub, CGPoint(x: 1200, y: 700))
+    let short = try XCTUnwrap(renderer.last?.motion)
+    XCTAssertEqual(short.trajectory.duration, 0.15, accuracy: 1 / 240.0)
+    world.clock.t += 0.05
+    world.reduceMotion = false
+    world.workspace.post(name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+    hub.drain()
+    let long = try XCTUnwrap(renderer.last?.motion)
+    XCTAssertNotEqual(long.id, short.id)
+    XCTAssertEqual(long.trajectory.mode, .path)
+    let oldSettle = short.beginTime + Double(short.trajectory.settleIndex) * short.trajectory.step
+    let newSettle = long.beginTime + Double(long.trajectory.settleIndex) * long.trajectory.step
+    XCTAssertGreaterThan(newSettle, oldSettle + 0.2)
+    world.clock.t = oldSettle + 0.01
+    hub.tick()
+    XCTAssertEqual(hub.phase(connection: 1), .acting, "no rock while the replacement glide is underway")
+    world.clock.t = newSettle - 0.001
+    hub.tick()
+    XCTAssertEqual(hub.phase(connection: 1), .acting)
+    world.clock.t = newSettle
+    hub.tick()
+    XCTAssertEqual(hub.phase(connection: 1), .thinking)
+    XCTAssertEqual(renderer.last?.phase, .thinking)
   }
 
   func testReduceMotionTurningOffWhileThinkingIsCommittedWithNoAction() throws {

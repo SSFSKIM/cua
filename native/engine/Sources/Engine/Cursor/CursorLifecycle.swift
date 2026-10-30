@@ -82,6 +82,12 @@ struct CursorLifecycle {
     return wasHidden
   }
 
+  /// The motion now playing was replaced (planned again under a changed Reduce Motion): it settles at `settlesAt`.
+  /// The requests in flight and the idle bound are untouched.
+  mutating func motionReplaced(settlesAt: TimeInterval) {
+    if phase == .acting { motionSettlesAt = settlesAt }
+  }
+
   /// The engine's intervention detection attributed the person's event to the app the cursor acts in.
   mutating func userActed(now: TimeInterval) {
     if phase == .acting || phase == .thinking {

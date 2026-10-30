@@ -25,12 +25,6 @@ pub enum Target {
     Foreground(Window),
 }
 
-impl Target {
-    pub fn of(window: Option<crate::wire::Target>) -> Target {
-        window.map_or(Target::Desktop, |w| Target::Window(w.id))
-    }
-}
-
 /// One `key_down` hold: named by its target and its normalized chord (the keysyms in order, duplicates kept, so
 /// `ctrl+shift` and `shift+ctrl` are different holds), with the keycodes it acquired.
 #[derive(Debug, Clone, PartialEq)]

@@ -90,6 +90,13 @@ impl Engine {
         Ok(way)
     }
 
+    /// The input target `kind` takes into `window` (None: the desktop), refused in shared mode where the family ignores
+    /// it, the window entered on the foreground route: for a request whose input needs no check before the route.
+    pub(super) fn target_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Target> {
+        let way = self.way_for(window, kind)?;
+        Ok(window.map_or(Target::Desktop, |window| way.target(window)))
+    }
+
     /// The route on the `--stats` line, for the harness's witness.
     pub(super) fn record_route(&mut self, way: Way) {
         self.extra.insert("route".into(), json!(way.name()));

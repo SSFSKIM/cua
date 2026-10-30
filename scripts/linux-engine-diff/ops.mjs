@@ -16,6 +16,7 @@
 // says what a cold sample measures: `spawn` (the engine's start and its first request) or `request` (the request
 // alone, where untimed preparation must come first).
 
+import { DEVICE_OPS, DEVICE_SCENE_OPS } from './device.mjs';
 import { CASE_OPS } from './safety.mjs';
 import { activeWindow } from './scenes.mjs';
 import { TEXT_OPS, TEXT_SCENE_OPS } from './text.mjs';
@@ -30,7 +31,7 @@ const companion = (ctx, fn) => (ctx.witnessed ? ctx.witnessed(fn) : fn());
 
 /** Which operations each scene runs. */
 export const SCENE_OPS = {
-  desktop: ['list_windows', 'list_apps', 'get_screenshot', 'launch_app'],
+  desktop: ['list_windows', 'list_apps', 'get_screenshot', 'launch_app', ...DEVICE_SCENE_OPS.desktop],
   gedit: ['tree', 'tree_shot', 'press_key', 'click', ...TEXT_SCENE_OPS.gedit, ...CASE_OPS.gedit],
   chrome: ['tree', 'tree_shot', 'press_key', 'click'],
   'chrome-input': ['click_element', 'right_click', 'right_click_fallback', 'secondary_action', 'move', 'drag', 'scroll', 'scroll_element_hidden', 'key_down', 'key_up', 'activate_window'],
@@ -41,8 +42,12 @@ export const SCENE_OPS = {
   retention: ['after_resize', 'after_remap', 'after_covered_change'],
   'chrome-textarea': [...TEXT_SCENE_OPS['chrome-textarea'], ...CASE_OPS['chrome-textarea']],
   'chrome-address-bar': TEXT_SCENE_OPS['chrome-address-bar'],
-  'gnome-text-editor': [...TEXT_SCENE_OPS['gnome-text-editor'], ...CASE_OPS['gnome-text-editor']],
+  'gnome-text-editor': [...TEXT_SCENE_OPS['gnome-text-editor'], ...CASE_OPS['gnome-text-editor'], ...DEVICE_SCENE_OPS['gnome-text-editor']],
   'paste-target': CASE_OPS['paste-target'],
+  // M3.1: the device mode's cases (device.mjs), cua alone
+  'device-gtk4': DEVICE_SCENE_OPS['device-gtk4'],
+  'device-firefox': DEVICE_SCENE_OPS['device-firefox'],
+  'device-xterm': DEVICE_SCENE_OPS['device-xterm'],
 };
 
 const GEDIT = [910, 756];
@@ -326,6 +331,7 @@ export const OPS = {
   ...inputScene,
   ...Object.fromEntries(Object.entries(retention).map(([name, op]) => [name, { ...op, request: ({ scene }) => ['get_window_state', { window: { id: scene.id }, include_screenshot: true }] }])),
   ...TEXT_OPS,
+  ...DEVICE_OPS,
   ...Object.fromEntries(Object.values(CASE_OPS).flat().map((name) => [name, { kind: 'case' }])),
 };
 

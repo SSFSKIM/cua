@@ -40,6 +40,12 @@ pub enum Kind {
     /// Synthetic button presses at a point: a coordinate `click` into a window (its chord included) and an element's
     /// right click, which presses button 3 at the element's visible point. An element's primary click is its action.
     Clicks,
+    /// Wheel steps into a window: `scroll` at a point, at the window's centre, or at an element.
+    Scroll,
+    /// A button held along a path: `drag` into a window.
+    Drag,
+    /// The pointer moved within a window: `move`.
+    Move,
 }
 
 /// When a listed kind is ignored.

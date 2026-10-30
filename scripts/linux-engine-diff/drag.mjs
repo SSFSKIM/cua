@@ -21,9 +21,10 @@
 import { execFileSync, spawn } from 'node:child_process';
 
 import { Engine } from './engine.mjs';
-import { FAMILIES, familyNames, openFamily } from './families.mjs';
+import { FAMILIES, familyNames, openFamily, readGtk4Status } from './families.mjs';
 import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
+import { captureWindow, pixelsChanged } from './pixels.mjs';
 import { negativeCheck } from './run.mjs';
 import { XPROBE } from './scenes.mjs';
 import { median } from './stats.mjs';
@@ -53,6 +54,11 @@ export const DRAG_FAMILIES = {
   writer: ['select'],
   xterm: ['select'],
   'xterm-allow': ['select'],
+  // M3.1: the device mode's measurement of every family of the matrix (Decision Log, M3 pre-flight): GTK 4's scale in
+  // the harness's GTK 4 scene, VTE's text selection (PRIMARY, as xterm's), Writer through `gen` judged by its pixels
+  'gtk4-input': ['scale4'],
+  'gnome-terminal': ['select'],
+  'writer-gen': ['select'],
 };
 
 /**
@@ -61,13 +67,20 @@ export const DRAG_FAMILIES = {
  * cua-engine with every drag wait at zero (the check that decides the table), then the variants.
  */
 export function dragEngines(args) {
-  return [
+  const all = [
     { label: 'pinned', bin: args.vendor, args: [] },
     ...(args.newest ? [{ label: 'newest', bin: args.newest, args: [] }] : []),
     { label: 'cua', bin: args.cua, args: [] },
     { label: 'cua:0ms', bin: args.cua, args: ['--drag-step-ms', '0', '--drag-press-dwell-ms', '0', '--drag-release-dwell-ms', '0'] },
     ...args.variants.map((v) => ({ ...v, bin: args.cua })),
+    // M3.1's control (kinds.mjs): the window activated, then cua-engine's windowless drag along the same path in root
+    // coordinates, through XTEST; only when `--lanes` names it
+    { label: 'xtest', bin: args.cua, args: [], control: true },
   ];
+  if (!args.lanes) return all.filter((l) => !l.control);
+  for (const label of args.lanes) if (!all.some((l) => l.label === label)) throw new Error(`unknown drag lane ${label}; known: ${all.map((l) => l.label).join(', ')}`);
+  if (!args.lanes.includes('pinned')) throw new Error('the drag lanes need pinned, the reference');
+  return all.filter((l) => args.lanes.includes(l.label));
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -107,10 +120,31 @@ export const selectOffsets = (i) => (i % 2 === 0 ? [2, 20] : [24, 40]);
 export const xtermCell = (offset) => [2 + 6 * offset + 3, 2 + 6];
 
 /**
+ * A terminal's character cell from its window's size hints (a terminal resizes in whole cells: the increment is the
+ * cell, the base size the border and padding), as a character's centre on the first line.
+ */
+export function terminalCell(id) {
+  const hints = execFileSync('xprop', ['-id', String(id), 'WM_NORMAL_HINTS'], { encoding: 'utf8', timeout: 5000 });
+  const pair = (label) => hints.match(new RegExp(`${label}: (\\d+) by (\\d+)`))?.slice(1).map(Number) ?? null;
+  const [cw, ch] = pair('program specified resize increment') ?? [0, 0];
+  if (!cw || !ch) throw new Error(`window ${id} names no resize increment`);
+  const [bw, bh] = pair('program specified base size') ?? [0, 0];
+  return (offset) => [Math.floor(bw / 2) + cw * offset + Math.floor(cw / 2), Math.floor(bh / 2) + Math.floor(ch / 2)];
+}
+
+/**
+ * Writer through gen has no accessibility tree to aim by: its first line's characters where a capture of its 1100x760
+ * window shows them (M3.1: the line's 43 characters span x 198-542 at y 203, 8 px a character). The control lane
+ * shows whether the estimate lands on the text.
+ */
+export const WRITER_GEN_LINE = { x: 202, y: 203, advance: 8 };
+export const writerGenCell = (offset) => [WRITER_GEN_LINE.x + WRITER_GEN_LINE.advance * offset, WRITER_GEN_LINE.y];
+
+/**
  * Where a family's scene puts each kind's targets, found once when its window opens: the page's origin in the
  * window, the text whose characters a selection spans, the slider, the vertical scroll bar.
  */
-async function locate(ctx, scene, kinds) {
+export async function locate(ctx, scene, kinds) {
   const { desktop, oracle } = ctx;
   const origin = { x: scene.window.x, y: scene.window.y };
   // GTK 4.14 reports extents relative to the window, not the screen (M0.4)
@@ -132,8 +166,11 @@ async function locate(ctx, scene, kinds) {
     at.page = { x: e.x - 20 - origin.x, y: e.y - 70 - origin.y };
     return at;
   }
+  if (kinds.includes('scale4')) at.scale4 = FAMILIES['gtk4-input'].places.scale;
   if (kinds.includes('select')) {
-    if (scene.kindOf === 'terminal') at.text = { cell: xtermCell };
+    if (scene.family === 'gnome-terminal') at.text = { cell: terminalCell(scene.id) };
+    else if (scene.kindOf === 'terminal') at.text = { cell: xtermCell };
+    else if (scene.pixels) at.text = { cell: writerGenCell, pixels: true };
     else {
       const id = scene.kindOf === 'paragraphs' ? oracle.children(scene.document).find((c) => oracle.role(c) === 'paragraph') : scene.field;
       if (!id) throw new Error(`${scene.label}: no text to select`);
@@ -149,24 +186,31 @@ async function locate(ctx, scene, kinds) {
     at.scale = { id: scene.slider, extents: { ...e, x: e.x - origin.x, y: e.y - origin.y } };
   }
   if (kinds.includes('scrollbar')) {
-    // kate's window does not associate (the engines answer its X11 tree): its objects through the harness's own walk
-    const all = scene.source === 'at_spi' ? preorder((await desktop.state(scene)).ax_tree) : scene.frame ? oracle.walk(scene.frame, { prune: ['menu bar', 'menu', 'popup menu', 'tool bar', 'status bar'] }) : [];
-    const nodes = all.filter((n) => n.role === 'scroll bar');
-    const bars = nodes
-      .map((n) => {
-        try {
-          return { id: n.id, e: oracle.extents(n.id) };
-        } catch {
-          return null;
-        }
-      })
-      .filter((b) => b && b.e.h > 3 * b.e.w && b.e.w > 0)
-      .sort((a, b) => b.e.h - a.e.h);
-    if (!bars.length) throw new Error(`${scene.label}: no vertical scroll bar`);
-    const { id, e } = bars[0];
+    const { id, e } = await verticalScrollBar(desktop, oracle, scene, { extents: true });
     at.scrollbar = { id, extents: { ...e, x: e.x - origin.x, y: e.y - origin.y } };
   }
   return at;
+}
+
+/**
+ * The window's tallest vertical scroll bar: its node id, with `extents` its extents too (`{id, e}`). kate's window does
+ * not associate (the engines answer its X11 tree): its objects through the harness's own walk.
+ */
+export async function verticalScrollBar(desktop, oracle, scene, { extents = false } = {}) {
+  const all = scene.source === 'at_spi' ? preorder((await desktop.state(scene)).ax_tree) : scene.frame ? oracle.walk(scene.frame, { prune: ['menu bar', 'menu', 'popup menu', 'tool bar', 'status bar'] }) : [];
+  const nodes = all.filter((n) => n.role === 'scroll bar');
+  const bars = nodes
+    .map((n) => {
+      try {
+        return { id: n.id, e: oracle.extents(n.id) };
+      } catch {
+        return null;
+      }
+    })
+    .filter((b) => b && b.e.h > 3 * b.e.w && b.e.w > 0)
+    .sort((a, b) => b.e.h - a.e.h);
+  if (!bars.length) throw new Error(`${scene.label}: no vertical scroll bar`);
+  return extents ? bars[0] : bars[0].id;
 }
 
 /**
@@ -191,6 +235,11 @@ export function runPath(at, kind, i) {
   else if (kind === 'select') {
     const [a, b] = selectOffsets(i);
     points = [at.text.cell(a), at.text.cell(b)];
+  } else if (kind === 'scale4') {
+    const { x0, x1, y } = at.scale4;
+    const at25 = x0 + 12 + (x1 - x0 - 24) * 0.25;
+    const at75 = x0 + 12 + (x1 - x0 - 24) * 0.75;
+    points = i % 2 === 0 ? [[x0 + 12, y], [at75, y]] : [[at75, y], [at25, y]];
   } else if (kind === 'scale') {
     const e = at.scale.extents;
     const y = Math.round(e.y + e.h / 2);
@@ -239,13 +288,15 @@ function claimPrimary() {
 }
 
 /** The value a kind's effect is judged by. */
-async function readEffect(ctx, scene, at, kind) {
+export async function readEffect(ctx, scene, at, kind) {
   const { desktop, oracle } = ctx;
   if (at.page) {
     const nodes = preorder((await desktop.state(scene)).ax_tree);
     const status = parseDragStatus(nodes.flatMap((n) => [n.name, n.value, n.text].filter((s) => typeof s === 'string')));
     return kind === 'dnd' ? status.dnd : kind === 'canvas' ? status.canvas : status[kind];
   }
+  if (kind === 'scale4') return (await readGtk4Status(desktop, scene))?.scale ?? null;
+  if (kind === 'select' && at.text.pixels) return { capture: await captureWindow(ctx.cua, scene, desktop.dir) };
   if (kind === 'select') {
     if (scene.kindOf === 'terminal') {
       const text = primary();
@@ -309,6 +360,8 @@ export function judgeRuns(kind, runs) {
   }
   const took = (r) => {
     if (!r.ok || r.after === null || r.after === undefined) return false;
+    // Writer through gen, whose selection reads only as its pixels: the capture after the drag differs from before
+    if (r.after?.capture !== undefined) return r.pixels_changed === true;
     if (kind === 'dnd') return r.after.drops === (r.before?.drops ?? -2) + 1;
     if (kind === 'canvas') return r.after.strokes === (r.before?.strokes ?? -2) + 1 && r.after.dev >= 0 && r.after.dev <= CANVAS_TOLERANCE;
     if (THUMB_KINDS.includes(kind)) {
@@ -370,18 +423,24 @@ async function series(ctx, spec, scene, at, kind, n, { prime = false } = {}) {
       const read = () => readEffect(ctx, scene, at, kind);
       // the page's scroller goes back to its top by itself; the drag waits for it
       if (kind === 'scroller') for (let tries = 0; (await read()) !== 0 && tries < 40; tries++) await sleep(200);
+      ctx.desktop.arrange(scene, ctx.occlusion);
       const before = await read();
       const path = runPath(at, kind, i);
-      const { value, witness: w } = await witness.span(`${spec.label}:${family}:drag:${kind}`, () => engine.request('drag', { window: { id: scene.id }, path }));
+      let sent;
+      if (spec.control) {
+        execFileSync('xdotool', ['windowactivate', '--sync', String(scene.id)]);
+        await sleep(150);
+        const root = path.map((p) => ({ x: scene.window.x + p.x, y: scene.window.y + p.y }));
+        sent = await witness.span(`${spec.label}:${family}:drag:${kind}`, () => engine.request('drag', { path: root }));
+      } else sent = await witness.span(`${spec.label}:${family}:drag:${kind}`, () => engine.request('drag', { window: { id: scene.id }, path }));
+      const { value, witness: w } = sent;
       const ok = value.response.ok === true;
-      const after = ok ? await settled(read, before) : null;
-      const run = { family, drag: kind, engine: spec.label, i, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before, after, path };
+      const after = ok ? (at.text?.pixels ? await read() : await settled(read, before)) : null;
+      const run = { family, drag: kind, occlusion: ctx.occlusion, engine: spec.label, i, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before, after, path };
+      if (at.text?.pixels) run.pixels_changed = ok ? pixelsChanged(before.capture, after.capture) : false;
       runs.push(run);
-      // what the application changed (Chrome's drag and drop activates and restacks) is put back for the next run
-      if (!w.clean) {
-        if (ctx.occlusion === 'visible') ctx.desktop.raise(scene);
-        else ctx.desktop.focusFront();
-      }
+      // what the application changed (Chrome's drag and drop activates and restacks, the control activates) is put
+      // back for the next run by its arrangement
       // past the double-click time, so the next press starts a drag of its own
       await sleep(700);
     }
@@ -422,7 +481,7 @@ export async function runDrag(args, { desktop, emit }) {
   const cuaLanes = lanes.filter((l) => l.label.startsWith('cua')).map((l) => l.label);
   const oracle = new Oracle();
   const stubScene = await desktop.openChrome('stub', 'scene.html');
-  await desktop.openFront(args.occlusion);
+  await desktop.openFront(args.occlusion === 'covered' ? 'covered' : 'visible');
   const witness = await startWitness(XPROBE);
   const md = [
     `Every engine drags the same path ${n} times per family and kind, in its own window (${args.occlusion}), each drag in a witness span; a run took effect when its result is the pinned build's (module header, drag.mjs). \`cua:0ms\` has no wait after a sample, after the press or before the release.`,
@@ -448,15 +507,15 @@ export async function runDrag(args, { desktop, emit }) {
         for (const l of lanes) {
           // Firefox opens maximized unless its profile asks for a size, and a maximized window is under the front
           // window's corner, where Gecko ignores coordinate input (Device mode, `unless_unobscured`)
-          const geometry = family === 'firefox' ? FAMILIES.firefox.geometry : null;
+          const geometry = ['firefox', 'writer-gen'].includes(family) ? FAMILIES[family].geometry : null;
           scenes[l.label] = await openFamily(desktop, oracle, family, `drag${l.label.replace(/[^a-z0-9]+/gi, '')}`, { page, doc: DRAG_DOC, env, geometry });
           if (page) scenes[l.label].kindOf = 'page';
         }
-        desktop.arrangeFront(args.occlusion);
+        desktop.arrangeFront(args.occlusion === 'covered' ? 'covered' : 'visible');
         await sleep(1000);
         const at = {};
         for (const l of lanes) {
-          if (args.occlusion === 'visible') desktop.raise(scenes[l.label]);
+          if (args.occlusion !== 'covered') desktop.raise(scenes[l.label]);
           at[l.label] = await locate(ctx, scenes[l.label], kinds);
         }
         for (const [k, kind] of kinds.entries()) {
@@ -465,7 +524,6 @@ export async function runDrag(args, { desktop, emit }) {
           // the lanes rotate per kind, so no lane always goes first
           const order = [...lanes.slice(k % lanes.length), ...lanes.slice(0, k % lanes.length)];
           for (const spec of order) {
-            if (args.occlusion === 'visible') desktop.raise(scenes[spec.label]);
             runs.push(...(await series(ctx, spec, scenes[spec.label], at[spec.label], kind, n, { prime: k === 0 && Boolean(DRAG_PRIMING[family]) })));
             desktop.focusFront();
           }

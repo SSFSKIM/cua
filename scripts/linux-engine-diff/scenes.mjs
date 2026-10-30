@@ -192,6 +192,22 @@ export class Desktop {
     this.focusFront();
   }
 
+  /**
+   * A scene window put in an occlusion condition before its request, the focus in front: `covered` (the front window
+   * over the whole screen), `visible` (the window raised above the other scene windows, the front window in its
+   * corner) or `partial` (the window raised, the front window over its bottom half).
+   */
+  arrange(scene, occlusion) {
+    if (occlusion === 'covered') return this.arrangeFront('covered');
+    if (occlusion === 'partial') {
+      xdotool('windowraise', scene.id);
+      const y = scene.window.y + Math.round(scene.window.height / 2);
+      configure(this.front.id, 0, y, 1280, 800 - y);
+      return this.focusFront();
+    }
+    return this.raise(scene);
+  }
+
   async state(scene) {
     const { response } = await this.reader.request('get_window_state', { window: { id: scene.id }, include_screenshot: false });
     if (!response.ok) throw new Error(`reading ${scene.label} failed: ${response.error}`);

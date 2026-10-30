@@ -131,8 +131,9 @@ impl Engine {
     /// extents within the window (no ancestor clipping, no state check), then the wheel.
     pub(super) fn element_scroll(&mut self, window: u32, element: &str, input: &ScrollInput) -> Result<Value> {
         let element = self.resolve_element(window, element)?;
+        let target = self.target_for(Some(window), Kind::Scroll)?;
         let (x, bus, inputs) = self.parts()?;
-        inputs.with_route(x, Target::Window(window), |x, route, _| {
+        inputs.with_route(x, target, |x, route, _| {
             let bounds = atspi::extents(bus, &element.target)?.map_err(anyhow::Error::msg)?;
             let at = centre(clip_to_window(bounds, &element.info))?;
             wheel(x, route, Some(at), input)

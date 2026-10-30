@@ -114,6 +114,16 @@ export const FAMILIES = {
     // pages/gtk4-button.py: one button whose label counts its presses
     launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'gtk4-button.py'), ctx.label], match: (w) => w.title === ctx.label }),
   },
+  // M3.1: the GTK 4 input scene (pages/gtk4-input.py): a status line counting its scroll, scale, pointer moves, button
+  // presses and keys, for the device mode's scroll, drag, move and click measurements and cases
+  'gtk4-input': {
+    title: 'GTK 4 input (harness scene)',
+    kind: 'gtk4-input',
+    geometry: [600, 400],
+    // window-relative, as the scene lays itself out (pages/gtk4-input.py): GTK 4.14's extents are not window coordinates
+    places: { scale: { x0: 20, x1: 580, y: 40 }, button: { x: 300, y: 103 }, list: { x: 300, y: 300 } },
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'gtk4-input.py'), ctx.label], match: (w) => w.title === ctx.label }),
+  },
   'gtk-scale': {
     title: 'GTK 3 scale (harness scene)',
     kind: 'scale',
@@ -284,6 +294,12 @@ export function terminalLaunch(ctx, extra) {
  * appears in the terminal's own text, where an engine can confirm it.
  */
 export function vteLaunch(ctx) {
+  if (ctx.doc) {
+    const file = scratchFile(ctx);
+    const pidfile = join(ctx.dir, `${ctx.label}.pid`);
+    const script = `echo $$ > "$2"; printf '\\033]0;%s\\007' "$3"; cat "$1"; exec sleep 86400`;
+    return { cmd: 'gnome-terminal', args: ['--wait', '--title', ctx.label, '--', 'sh', '-c', script, 'sh', file, pidfile, ctx.label], match: (w) => w.title === ctx.label, record: null, pidfile };
+  }
   const record = join(ctx.dir, `${ctx.label}.input`);
   const pidfile = join(ctx.dir, `${ctx.label}.pid`);
   writeFileSync(record, '');
@@ -395,6 +411,10 @@ async function resolveTargets(desktop, oracle, scene) {
     scene.button = nodes.find((n) => n.role === 'push button' && /^presses \d+$/.test(n.name ?? ''))?.id ?? null;
   } else if (scene.kindOf === 'scale') {
     scene.slider = nodes.find((n) => n.role === 'slider')?.id ?? null;
+  } else if (scene.kindOf === 'gtk4-input') {
+    scene.status = nodes.find((n) => GTK4_STATUS.test(n.name ?? ''))?.id ?? null;
+    scene.slider = nodes.find((n) => n.role === 'slider')?.id ?? null;
+    scene.button = nodes.find((n) => n.name === 'press')?.id ?? null;
   } else if (scene.kindOf === 'button') {
     scene.button = nodes.find((n) => COUNTED.test(n.name ?? ''))?.id ?? null;
   } else if (scene.kindOf === 'electron') {
@@ -442,6 +462,16 @@ export async function readCaret(desktop, oracle, scene) {
 }
 
 const COUNTED = /^presses \d+$/;
+const GTK4_STATUS = /^scroll -?\d+ scale -?\d+ moves \d+ presses \d+ keys \d+ rights \d+$/;
+
+/** The GTK 4 input scene's status line, parsed: `{scroll, scale, moves, presses, keys, rights}`, or null when not read. */
+export async function readGtk4Status(desktop, scene) {
+  const nodes = preorder((await desktop.state(scene)).ax_tree);
+  const line = nodes.find((n) => GTK4_STATUS.test(n.name ?? ''))?.name;
+  if (!line) return null;
+  const num = (key) => Number(line.match(new RegExp(`\\b${key} (-?\\d+)`))[1]);
+  return { scroll: num('scroll'), scale: num('scale'), moves: num('moves'), presses: num('presses'), keys: num('keys'), rights: num('rights') };
+}
 
 /** The click counter: the matrix page's or the GTK 4 scene's button label, the Electron fixture's status. */
 export async function readCounter(desktop, oracle, scene) {

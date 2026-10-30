@@ -23,8 +23,10 @@
 //! - `xprobe focus-grabbed <window>...`: the focus and `_NET_ACTIVE_WINDOW` set to each window in turn under one
 //!   server grab (`focus.rs`).
 //! - `xprobe quarantine`: whether cua's display-wide unconfirmed-paste window is open, and for how long (`clip.rs`).
+//! - `xprobe selection-watch <selection>...`: every owner change of the selections until stdin closes (`dnd.rs`).
 
 mod clip;
+mod dnd;
 mod focus;
 mod record;
 mod restack;
@@ -61,7 +63,8 @@ fn main() {
         Some("restack-grabbed") => restack::restack_grabbed(&args[1..]),
         Some("focus-grabbed") => focus::focus_grabbed(&args[1..]),
         Some("quarantine") if args.len() == 1 => clip::quarantine(),
-        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window> | record <x> <y> <w> <h> [focus] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | focus-grabbed <window>... | quarantine".into()),
+        Some("selection-watch") => dnd::selection_watch(&args[1..]),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window> | record <x> <y> <w> <h> [focus] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | focus-grabbed <window>... | quarantine | selection-watch <selection>...".into()),
     };
     if let Err(error) = result {
         eprintln!("xprobe: {error}");

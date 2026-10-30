@@ -15,11 +15,12 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSy
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { auditForeground, auditRequests, parseXtrace, startProxy } from './audit.mjs';
+import { auditForeground, auditNothingSent, auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { startMonitor } from './busmon.mjs';
 import { stacking, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
 import { declaredDeviation, declaredParity } from './deviations.mjs';
+import { judgeDevice } from './device.mjs';
 import { Engine } from './engine.mjs';
 import { medianDifferenceInterval, normalizeAnswer } from './events.mjs';
 import { compareShots, xprobeDiff } from './images.mjs';
@@ -30,7 +31,7 @@ import { writeSummary } from './report.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
 import { auditVerdict, blockOrder, judgeCalls, judgeOperation, runOutcome, verdictLine } from './stats.mjs';
-import { expectedRoute, resolveField } from './text.mjs';
+import { resolveField } from './text.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
 import { judgeForegroundSpan, startWitness } from './witness.mjs';
 
@@ -43,6 +44,12 @@ const VENDORS = ['pinned', 'newest'];
 export const FORBIDDEN_TEXT_CALLS = ['PasteText', 'InsertText', 'SetTextContents'];
 const isCase = (op) => OPS[op].kind === 'case';
 const isText = (op) => OPS[op].kind === 'text';
+const isDevice = (op) => Boolean(OPS[op].device);
+/**
+ * The route cua's request of an operation must take on a scene (a text operation's, text.mjs; a device case's,
+ * device.mjs), or null where none is expected: its witness is judged against it and the route the engine reports.
+ */
+export const routeOf = (op, scene) => OPS[op].route?.(scene) ?? null;
 
 /**
  * The plan: each scene's operations that `ops` names. An operation no scene has, an operation none of the scenes
@@ -192,7 +199,7 @@ export function differingField(reference, candidate) {
  * input of a retention case. Returns the row and the raw response.
  */
 export async function runSample(s) {
-  const ctx = { desktop: s.desktop, scene: s.target, sceneName: s.sceneName, engine: s.engine, i: s.i, witness: s.witness };
+  const ctx = { desktop: s.desktop, scene: s.target, sceneName: s.sceneName, engine: s.engine, i: s.i, witness: s.witness, cuaVersion: s.cuaVersion };
   try {
     return await measureSample(s, ctx);
   } finally {
@@ -249,8 +256,8 @@ async function measureSample(s, ctx) {
   const tag = `${s.label}:${s.sceneName}:${op}`;
   // a cua text command's route is known beforehand: its witness is judged against it and the route the engine reports
   // taking (Decision Log, M2.2); a vendor build's is judged strictly
-  const expected = VENDORS.includes(s.label) ? null : expectedRoute(op, s.sceneName);
-  const answered = witness && target && isText(op) ? await routeWitness(witness, tag, target.id, expected, send) : await span(tag, send);
+  const expected = VENDORS.includes(s.label) ? null : routeOf(op, s.sceneName);
+  const answered = witness && target && (isText(op) || isDevice(op)) ? await routeWitness(witness, tag, target.id, expected, send) : await span(tag, send);
   const { response, ms, sinceSpawnMs, stats } = answered.value;
   const row = { kind: 'sample', engine: s.label, scene: s.sceneName, op, block: s.block, series: i === 0 ? 'cold' : 'warm', i };
   if (expected) row.route_expected = expected;
@@ -438,11 +445,32 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
   }
   if (scene === 'chrome-textarea') return resolveField(desktop, await desktop.openChrome(role, 'text.html', { stem: 'textarea', query: 'paste=plain' }), scene);
   if (scene === 'chrome-address-bar') return resolveField(desktop, await desktop.openChrome(role, 'scene.html', { stem: 'addressbar' }), scene);
-  if (scene === 'gnome-text-editor') return resolveField(desktop, await desktop.openFamilyScene('gnome-text-editor', role), scene);
+  if (scene === 'gnome-text-editor') return withApp(desktop, await resolveField(desktop, await desktop.openFamilyScene('gnome-text-editor', role), scene));
+  // M3.1's device cases (device.mjs): each window's application as list_windows names it (the Device mode sentence's)
+  // and its size (a case moves it and puts it back)
+  if (scene === 'device-gtk4') return withApp(desktop, await desktop.openFamilyScene('gtk4-input', role));
+  if (scene === 'device-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role));
+  if (scene === 'device-firefox') {
+    const { openFamily, FAMILIES } = await import('./families.mjs');
+    desktop.oracle ??= new Oracle();
+    const opened = await openFamily(desktop, desktop.oracle, 'firefox', role, { page: 'input.html', geometry: FAMILIES.firefox.geometry });
+    opened.kindOf = 'page';
+    opened.elements = await desktop.elementsByName(opened, INPUT_ELEMENTS);
+    return withApp(desktop, opened);
+  }
   if (FAMILY_OF[scene]) return desktop.openFamilyScene(FAMILY_OF[scene], role);
   const opened = await desktop.openChrome(role, PAGE_OF[scene], { stem: scene === 'retention' ? 'retention' : undefined });
   if (scene === 'chrome-input') opened.elements = await desktop.elementsByName(opened, INPUT_ELEMENTS);
   return opened;
+}
+
+/** A scene window with its application's name as `list_windows` gives it and its size. */
+async function withApp(desktop, scene) {
+  const listed = (await desktop.listWindows()).find((w) => w.id === scene.id);
+  if (!listed) throw new Error(`${scene.label} is not listed`);
+  scene.app = listed.app;
+  scene.size = [listed.width, listed.height];
+  return scene;
 }
 
 /** The engine a candidate runs an operation with: its flags plus the operation's own (M2: `--desktop dedicated`). */
@@ -473,6 +501,7 @@ export async function runDiff(args) {
   const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);
   if (!existsSync(XPROBE)) throw new Error(`build the harness's X client first: cargo build --release --manifest-path ${join(here, 'xprobe', 'Cargo.toml')}`);
   const via = args.via ?? 'wire';
+  const cuaVersion = engineVersion(args.cua);
 
   const engines = [
     { label: 'pinned', bin: args.vendor, args: [] },
@@ -527,8 +556,9 @@ export async function runDiff(args) {
       const ops = blockPlan.filter((p) => p.scene === scene).map((p) => p.op);
       const open = (role, text = false) => openScene(desktop, scene, role, { text });
       windows[scene] = { shared: ops.some((op) => !ownWindow(op)) ? await open('read') : null, own: {}, text: {} };
-      if (ops.some((op) => ownWindow(op) && !isText(op))) {
-        for (const label of labels) windows[scene].own[label] = await open(label.replace(/[^a-z0-9]+/gi, '_'));
+      // each engine that runs one of the scene's own-window operations gets its own window
+      for (const label of labels.filter((l) => ops.some((op) => ownWindow(op) && !isText(op) && runsOp(l, op)))) {
+        windows[scene].own[label] = await open(label.replace(/[^a-z0-9]+/gi, '_'));
       }
       // the text operations on windows of their own, so a document they grow never changes another operation's scene
       for (const label of labels.filter((l) => ops.some((op) => isText(op) && runsOp(l, op)))) {
@@ -543,7 +573,7 @@ export async function runDiff(args) {
 
     if (stubScene && !(await negativeCheck(desktop, witness, stubScene, emit, { audit: args.audit }))) valid = false;
     // the foreground route's allowance, wherever a request is expected to take that route
-    const foregroundPlanned = plan.some((p) => (isText(p.op) && expectedRoute(p.op, p.scene) === 'foreground') || p.op === 'restore_refused');
+    const foregroundPlanned = plan.some((p) => routeOf(p.op, p.scene) === 'foreground' || p.op === 'restore_refused');
     if (foregroundPlanned && !(await foregroundNegativeCheck(witness, emit))) valid = false;
 
     // One engine's series of an operation in a block: a fresh process, its cold sample and `n - 1` warm ones.
@@ -553,7 +583,7 @@ export async function runDiff(args) {
       if (target && args.occlusion === 'visible') desktop.raise(target);
       const engine = makeEngine(spec, OPS[op].apps ? launch.env : undefined);
       for (let i = 0; i < n; i++) {
-        const { row, response } = await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName });
+        const { row, response } = await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName, cuaVersion });
         if (row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot' || OPS[op].kind === 'retention')) {
           row.nodes = retainedIds(response.output).length;
           row.source = response.output.ax_tree_source;
@@ -603,7 +633,7 @@ export async function runDiff(args) {
     // gets fresh-engine rounds until each engine has MIN_DESKTOP_SAMPLES samples in each series, so none is judged on
     // the medians of fewer. A round is one more series per engine, its cold sample alone unless the warm series is short
     // too; the engines' order rotates on from the blocks'.
-    for (const { scene: sceneName, op } of blockPlan.filter((p) => p.scene === 'desktop')) {
+    for (const { scene: sceneName, op } of blockPlan.filter((p) => p.scene === 'desktop' && !isDevice(p.op))) {
       const { rounds, warm } = topUpRounds({ cold: args.blocks, warm: args.blocks * samplesFor(op) }, { min: MIN_DESKTOP_SAMPLES, warmPerRound: samplesFor(op) });
       if (rounds) emit({ kind: 'top-up', scene: sceneName, op, rounds, warm, min: MIN_DESKTOP_SAMPLES });
       for (let r = 0; r < rounds; r++) {
@@ -647,7 +677,7 @@ export async function runDiff(args) {
           const engine = makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY });
           const oks = [];
           try {
-            for (let i = 0; i < 2; i++) oks.push((await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName })).row.ok);
+            for (let i = 0; i < 2; i++) oks.push((await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion })).row.ok);
           } finally {
             await engine.close();
             if (ownWindow(op)) target.retainedBy = null;
@@ -655,12 +685,15 @@ export async function runDiff(args) {
           }
           // a cua request that must take the foreground route is audited against that route: only its target's activation,
           // raise and focus and XTEST input (M2 whole-branch review)
-          const foregroundAudit = !VENDORS.includes(spec.label) && expectedRoute(op, sceneName) === 'foreground';
+          const foregroundAudit = !VENDORS.includes(spec.label) && routeOf(op, sceneName) === 'foreground';
+          // a refused device case sends nothing at all (device.mjs)
+          const nothingAudit = OPS[op].device === 'refusal';
           const trace = parseXtrace(await proxy.stop());
-          const audited = foregroundAudit ? auditForeground(trace, target.id) : auditRequests(trace);
+          const audited = foregroundAudit ? auditForeground(trace, target.id) : nothingAudit ? auditNothingSent(trace) : auditRequests(trace);
+          const auditKind = foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
-          audits[`${sceneName}|${op}|${spec.label}`] = { clean: audited.clean, oks, foreground: foregroundAudit };
-          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, clean: audited.clean, traced: audited.traced, requests: audited.requests, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), forbidden: audited.forbidden.slice(0, 10) });
+          audits[`${sceneName}|${op}|${spec.label}`] = { clean: audited.clean, oks, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set(audited.forbidden.map((f) => f.what))] };
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, clean: audited.clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), forbidden: audited.forbidden.slice(0, 10) });
           desktop.focusFront();
         }
       }
@@ -715,7 +748,15 @@ export async function runDiff(args) {
     // Verdicts: each sample's answer against the pinned build's of its block, a difference excused only by a declared
     // deviation, then the operation judged per candidate.
     const verdicts = [];
-    for (const { scene: sceneName, op } of blockPlan) {
+    // the device cases (device.mjs): cua alone, each judged by its expectation
+    for (const { scene: sceneName, op } of blockPlan.filter((p) => isDevice(p.op))) {
+      const opRows = rows.filter((r) => r.scene === sceneName && r.op === op && r.engine === 'cua');
+      const judged = judgeDevice(op, opRows, args.audit ? audits[`${sceneName}|${op}|cua`] : { clean: true, kind: 'skipped' });
+      const row = { kind: 'verdict', scene: sceneName, op, candidate: 'cua', device: OPS[op].device, ...judged, verdict: judged.pass ? 'pass' : 'fail' };
+      verdicts.push(row);
+      emit(row);
+    }
+    for (const { scene: sceneName, op } of blockPlan.filter((p) => !isDevice(p.op))) {
       const opRows = rows.filter((r) => r.scene === sceneName && r.op === op);
       // The reference is the pinned build's answer in the same block: a scene's own windows change across blocks
       // (gedit marks a document modified, a counter grows), and so does the window list. A text command's is the
@@ -753,7 +794,7 @@ export async function runDiff(args) {
         // the foreground route's activation and desktop input are the route itself, which its witness allowance judges
         // where the scene's expected route is the foreground one (a sample that took another route fails its witness);
         // the audit's forbidden requests are the background route's
-        const foreground = expectedRoute(op, sceneName) === 'foreground';
+        const foreground = routeOf(op, sceneName) === 'foreground';
         const opAudits = args.audit && targeted(op) && !foreground ? Object.fromEntries(labels.map((l) => [l, audits[`${sceneName}|${op}|${l}`]])) : null;
         const parity = ['cold', 'warm'].map((series) => declaredParity({ op, scene: sceneName, series })).filter(Boolean);
         // the desktop route's groups, topped up to MIN_DESKTOP_SAMPLES a side, are never judged on fewer
@@ -761,7 +802,7 @@ export async function runDiff(args) {
         const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op), noise: medianDifferenceInterval, parity, minSamples });
         const extra = {};
         if (routes.length) extra.routes = routes;
-        if (isText(op) && expectedRoute(op, sceneName)) extra.route_expected = expectedRoute(op, sceneName);
+        if (isText(op) && routeOf(op, sceneName)) extra.route_expected = routeOf(op, sceneName);
         if (foreground && args.audit) {
           // the foreground audit: the route's own requests on the target and nothing else, required of cua
           const mine = auditVerdict(audits[`${sceneName}|${op}|${candidate}`], opRows.filter((r) => r.engine === candidate));

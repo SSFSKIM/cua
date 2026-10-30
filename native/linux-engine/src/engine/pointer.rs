@@ -8,8 +8,6 @@ use serde_json::Value;
 use x11rb::protocol::xproto::ConnectionExt as _;
 
 use super::Engine;
-use super::keyboard::target_of;
-use super::way::Way;
 use crate::desktop::Desktop;
 use crate::families::DragPacing;
 use crate::families::Kind;
@@ -161,13 +159,9 @@ impl Engine {
         let hold = input.duration.map(Duration::from_millis).unwrap_or(CLICK_HOLD);
         // a family that ignores synthetic clicks (families.rs): refused in shared mode, the foreground route in
         // dedicated mode
-        let window = input.window.map(|w| w.id);
-        let way = self.route_for(window, Kind::Clicks)?;
-        if let (Way::Foreground, Some(window)) = (way, window) {
-            self.enter(window)?;
-        }
+        let target = self.target_for(input.window.map(|w| w.id), Kind::Clicks)?;
         let Engine { x, inputs, .. } = self;
-        inputs.with_route(x, target_of(way, window), |x, route, _| {
+        inputs.with_route(x, target, |x, route, _| {
             let at = match position {
                 Some((px, py)) => {
                     let (rx, ry) = route.root_point(x, px, py)?;
@@ -189,8 +183,9 @@ impl Engine {
     /// window its FocusIn and FocusOut pair, traced).
     pub(super) fn move_pointer(&mut self, input: Option<Value>) -> Result<Value> {
         let input: MoveInput = parse_input(input)?;
+        let target = self.target_for(input.window.map(|w| w.id), Kind::Move)?;
         let Engine { x, inputs, .. } = self;
-        inputs.with_route(x, Target::of(input.window), |x, route, _| {
+        inputs.with_route(x, target, |x, route, _| {
             let (rx, ry) = route.root_point(x, input.x, input.y)?;
             let keycodes = chord(x, input.key.as_deref())?;
             let held = route.acquire(x, &keycodes)?;
@@ -226,8 +221,9 @@ impl Engine {
             }
             return self.element_scroll(window.id, element, &input);
         }
+        let target = self.target_for(input.window.map(|w| w.id), Kind::Scroll)?;
         let Engine { x, inputs, .. } = self;
-        inputs.with_route(x, Target::of(input.window), |x, route, _| {
+        inputs.with_route(x, target, |x, route, _| {
             let at = match (input.x, input.y, input.window) {
                 (Some(px), Some(py), _) => Some(route.root_point(x, px, py)?),
                 (None, None, Some(window)) => {
@@ -256,8 +252,9 @@ impl Engine {
             None => input.path.first().and_then(|p| self.x.client_at(p.x, p.y)),
         };
         let pacing = self.drag_pacing_for(window);
+        let target = self.target_for(input.window.map(|w| w.id), Kind::Drag)?;
         let Engine { x, inputs, .. } = self;
-        inputs.with_route(x, Target::of(input.window), |x, route, _| {
+        inputs.with_route(x, target, |x, route, _| {
             let points = input
                 .path
                 .iter()

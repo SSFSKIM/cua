@@ -7,9 +7,9 @@
   "nodeMode": "managed",
   "preparation": {
     "device": "cua-171",
-    "home": "/Users/new/.local/share/cua-native-baseline/run-OttXnj",
-    "userHome": "/Users/new/.local/share/cua-native-baseline/run-OttXnj.home",
-    "token": "18f21c6e-e95b-43f3-9382-03c7e37dcc57",
+    "home": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP",
+    "userHome": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP.home",
+    "token": "e01588bc-16b9-4e8c-acbd-8ffed3b56550",
     "xSession": {
       "DISPLAY": ":0",
       "XAUTHORITY": "/Users/new/.Xauthority",
@@ -20,7 +20,7 @@
     "nodeMode": "managed",
     "nodeOverride": null,
     "ownNode": {
-      "path": "/Users/new/.local/share/cua-native-baseline/run-OttXnj/node/24.22.0/bin/node",
+      "path": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP/node/24.22.0/bin/node",
       "version": "v24.22.0"
     }
   },
@@ -35,7 +35,7 @@
       "count": 8
     }
   },
-  "userHome": "/Users/new/.local/share/cua-native-baseline/run-OttXnj.home",
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP.home",
   "xSession": {
     "DISPLAY": ":0",
     "XAUTHORITY": "/Users/new/.Xauthority",
@@ -59,12 +59,12 @@
   },
   "load": {
     "device": {
-      "before": "03:00:43 up 2 days,  3:50,  4 users,  load average: 0.63, 0.51, 0.62",
-      "after": "03:02:56 up 2 days,  3:53,  4 users,  load average: 0.51, 0.46, 0.59"
+      "before": "09:06:19 up 2 days,  9:56,  4 users,  load average: 0.69, 0.47, 0.62",
+      "after": "09:08:33 up 2 days,  9:58,  4 users,  load average: 0.36, 0.43, 0.59"
     },
     "controller": {
-      "before": "03:00:43 up 2 days,  3:50,  3 users,  load average: 0.63, 0.51, 0.62",
-      "after": "03:02:56 up 2 days,  3:53,  4 users,  load average: 0.51, 0.46, 0.59"
+      "before": "09:06:20 up 2 days,  9:56,  3 users,  load average: 0.69, 0.47, 0.62",
+      "after": "09:08:33 up 2 days,  9:58,  4 users,  load average: 0.36, 0.43, 0.59"
     }
   },
   "device": "cua-171",
@@ -79,14 +79,14 @@
         "version": "0.5.0"
       },
       "_meta": {
-        "codex/nodeReplExecutionDurationMs": 211,
+        "codex/nodeReplExecutionDurationMs": 201,
         "cua/replHost": {
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "6f16cd43-d67b-448d-a2a7-236f82c4bc71",
+        "cua/taskId": "acff4b69-4223-43b1-9c9b-1dae34aff2a4",
         "cua/nativeExecution": {
-          "path": "/Users/new/.local/share/cua-native-baseline/run-OttXnj/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "cua/sandboxLaunch": {
@@ -102,14 +102,14 @@
         "version": "0.5.0"
       },
       "_meta": {
-        "codex/nodeReplExecutionDurationMs": 240,
+        "codex/nodeReplExecutionDurationMs": 223,
         "cua/replHost": {
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "320d55c3-8189-4365-892a-474337b3ebeb",
+        "cua/taskId": "974a7944-a24e-4f78-9061-91ec644016f4",
         "cua/nativeExecution": {
-          "path": "/Users/new/.local/share/cua-native-baseline/run-OttXnj/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "cua/sandboxLaunch": {
@@ -125,14 +125,14 @@
         "version": "0.5.0"
       },
       "_meta": {
-        "codex/nodeReplExecutionDurationMs": 229,
+        "codex/nodeReplExecutionDurationMs": 242,
         "cua/replHost": {
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "79c2d5b7-e839-4b6b-9c46-df3aea646277",
+        "cua/taskId": "8a9e2cb7-1387-4224-a71b-93d194ea5182",
         "cua/nativeExecution": {
-          "path": "/Users/new/.local/share/cua-native-baseline/run-OttXnj/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "cua/sandboxLaunch": {
@@ -148,14 +148,14 @@
         "version": "0.5.0"
       },
       "_meta": {
-        "codex/nodeReplExecutionDurationMs": 226,
+        "codex/nodeReplExecutionDurationMs": 238,
         "cua/replHost": {
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "7ebbac09-16ce-49bc-bd9b-2319ca8dc1f1",
+        "cua/taskId": "761e77cb-6a5e-49a2-89aa-556891664257",
         "cua/nativeExecution": {
-          "path": "/Users/new/.local/share/cua-native-baseline/run-OttXnj/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "cua/sandboxLaunch": {
@@ -176,9 +176,9 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "146b782d-c989-4e8d-94ed-05d29c5c7c09",
+        "cua/taskId": "ccb3fd39-67eb-4230-ad80-167c8992f26a",
         "cua/nativeExecution": {
-          "path": "/Users/new/.local/share/cua-native-baseline/run-OttXnj/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "cua/sandboxLaunch": {
@@ -194,14 +194,14 @@
         "version": "0.5.0"
       },
       "_meta": {
-        "codex/nodeReplExecutionDurationMs": 199,
+        "codex/nodeReplExecutionDurationMs": 212,
         "cua/replHost": {
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "a0247afa-5a62-43c6-8388-fe76be23270d",
+        "cua/taskId": "efddccb9-0aab-41b0-b077-ab688444a8af",
         "cua/nativeExecution": {
-          "path": "/Users/new/.local/share/cua-native-baseline/run-OttXnj/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "cua/sandboxLaunch": {
@@ -238,12 +238,12 @@
       "hit"
     ]
   },
-  "started": "2026-10-30T10:00:43.412Z",
-  "spikeWaitMs": 1198,
+  "started": "2026-10-30T16:06:20.209Z",
+  "spikeWaitMs": 1199,
   "elicitations": [
     {
-      "t": "2026-10-30T10:00:56.214Z",
-      "at": 44441.513897,
+      "t": "2026-10-30T16:06:32.601Z",
+      "at": 44630.286359,
       "app": "org.gnome.gedit",
       "action": "accept"
     }
@@ -263,12 +263,12 @@
     ]
   },
   "engineStop": {},
-  "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+  "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
   "checkout": "/Users/new/Developer/GitHub/cua-parity",
-  "home": "/Users/new/.local/share/cua-native-baseline/run-OttXnj",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP",
   "node": "v24.22.1",
   "ownNode": {
-    "path": "/Users/new/.local/share/cua-native-baseline/run-OttXnj/node/24.22.0/bin/node",
+    "path": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP/node/24.22.0/bin/node",
     "version": "v24.22.0"
   },
   "runtime": {
@@ -301,21 +301,21 @@
     },
     "owned": [
       {
-        "pid": 3592304,
-        "dir": "/tmp/cua-native-baseline-BJUxAT",
-        "file": "/tmp/cua-native-baseline-BJUxAT/scratch-0edbb3.txt",
+        "pid": 3983094,
+        "dir": "/tmp/cua-native-baseline-PwDJVT",
+        "file": "/tmp/cua-native-baseline-PwDJVT/scratch-7e5314.txt",
         "role": "scratch"
       },
       {
-        "pid": 3593456,
-        "dir": "/tmp/cua-native-baseline-e71PLs",
-        "file": "/tmp/cua-native-baseline-e71PLs/victim-78ff86.txt",
+        "pid": 3984179,
+        "dir": "/tmp/cua-native-baseline-Y1JO7B",
+        "file": "/tmp/cua-native-baseline-Y1JO7B/victim-5bed57.txt",
         "role": "victim"
       },
       {
-        "pid": 3593672,
-        "dir": "/tmp/cua-native-baseline-QZv6Rt",
-        "file": "/tmp/cua-native-baseline-QZv6Rt/victim-8909e7.txt",
+        "pid": 3984454,
+        "dir": "/tmp/cua-native-baseline-5qOX3P",
+        "file": "/tmp/cua-native-baseline-5qOX3P/victim-a0ff72.txt",
         "role": "victim"
       }
     ],
@@ -323,23 +323,23 @@
       {
         "op": "method.typeText",
         "terminated": [
-          3593456
+          3984179
         ],
         "notOwned": [],
         "gone": [],
         "removed": [
-          "/tmp/cua-native-baseline-e71PLs"
+          "/tmp/cua-native-baseline-Y1JO7B"
         ]
       },
       {
         "op": "method.paste",
         "terminated": [
-          3593672
+          3984454
         ],
         "notOwned": [],
         "gone": [],
         "removed": [
-          "/tmp/cua-native-baseline-QZv6Rt"
+          "/tmp/cua-native-baseline-5qOX3P"
         ]
       }
     ],
@@ -349,15 +349,15 @@
     },
     "cleanup": {
       "terminated": [
-        3592304
+        3983094
       ],
       "notOwned": [],
       "gone": [
-        3593456,
-        3593672
+        3984179,
+        3984454
       ],
       "removed": [
-        "/tmp/cua-native-baseline-BJUxAT"
+        "/tmp/cua-native-baseline-PwDJVT"
       ]
     },
     "crashReportsAfter": {
@@ -376,7 +376,7 @@
     "helpers": []
   },
   "answeringNode": {
-    "path": "/Users/new/.local/share/cua-native-baseline/run-OttXnj/node/24.22.0/bin/node",
+    "path": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP/node/24.22.0/bin/node",
     "version": "v24.22.0"
   },
   "sandboxLaunch": {
@@ -396,7 +396,7 @@
     "serves": 0,
     "geditRunning": 0
   },
-  "finished": "2026-10-30T10:02:56.155Z",
+  "finished": "2026-10-30T16:08:33.274Z",
   "preparationCleanup": {
     "removed": true
   }

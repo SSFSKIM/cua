@@ -1,8 +1,8 @@
 {
   "device": "cua-171",
-  "home": "/Users/new/.local/share/cua-native-baseline/run-cU40lq",
-  "userHome": "/Users/new/.local/share/cua-native-baseline/run-cU40lq.home",
-  "token": "24d57513-bfaa-4f56-85dc-c0045babda22",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-f17fsF",
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-f17fsF.home",
+  "token": "7573fe2e-e7c6-4501-85c5-fb5cf29859fd",
   "xSession": {
     "DISPLAY": ":0",
     "XAUTHORITY": "/Users/new/.Xauthority",
@@ -13,7 +13,7 @@
   "nodeMode": "managed",
   "nodeOverride": null,
   "ownNode": {
-    "path": "/Users/new/.local/share/cua-native-baseline/run-cU40lq/node/24.22.0/bin/node",
+    "path": "/Users/new/.local/share/cua-native-baseline/run-f17fsF/node/24.22.0/bin/node",
     "version": "v24.22.0"
   }
 }

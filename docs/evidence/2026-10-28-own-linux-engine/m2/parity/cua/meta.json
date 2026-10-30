@@ -4,12 +4,12 @@
   "pendingObligations": [],
   "host": "cua",
   "observedHost": "cua",
-  "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-  "harnessCommit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+  "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+  "harnessCommit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
   "node": "v24.22.1",
   "runtimeRelease": "26.928.40906-linux-x64",
   "ownNode": {
-    "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+    "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
     "version": "v24.22.0"
   },
   "nodeMode": "managed",
@@ -817,27 +817,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-dGzAau",
+          "home": "/Users/new/.cp/cua-m4t1-cap-rYay9n",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-dGzAau/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-rYay9n/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -848,7 +848,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "83c913c4-d638-4093-adb1-e85b665f0932"
+        "cua/taskId": "fa430cc6-75a2-4b35-bf74-5e22f9fbf735"
       }
     },
     {
@@ -860,27 +860,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-ubFhjc",
+          "home": "/Users/new/.cp/cua-m4t1-cap-QLFgbw",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-ubFhjc/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-QLFgbw/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -891,7 +891,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "355ca9bd-e448-4a11-bb0b-820d1ab77d31"
+        "cua/taskId": "d18d7255-1eda-4dfc-99e8-02613d67a05b"
       }
     },
     {
@@ -903,27 +903,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-u6kuWe",
+          "home": "/Users/new/.cp/cua-m4t1-cap-e8NWb5",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-u6kuWe/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-e8NWb5/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -934,7 +934,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "5bc6c2e7-dc7e-4bfd-9caf-67bc906a936b"
+        "cua/taskId": "7f941bcf-e625-4b0c-80bd-b11d135b1e2d"
       }
     },
     {
@@ -946,27 +946,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-NR7ZXT",
+          "home": "/Users/new/.cp/cua-m4t1-cap-Hq1tfQ",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-NR7ZXT/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-Hq1tfQ/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -977,7 +977,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "789bbf2b-ca74-4d67-8694-20ffc664f27c"
+        "cua/taskId": "0bcc9767-0da4-4512-b69f-496cace042b4"
       }
     },
     {
@@ -989,27 +989,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-Kv6qAi",
+          "home": "/Users/new/.cp/cua-m4t1-cap-dr9iu4",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-Kv6qAi/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-dr9iu4/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -1020,7 +1020,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "0f583a33-1cfd-47aa-b2a9-f92fb1ce4c12"
+        "cua/taskId": "526a4c4c-c82e-493c-b099-91d517ca1b3e"
       }
     },
     {
@@ -1032,27 +1032,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-CNeBhM",
+          "home": "/Users/new/.cp/cua-m4t1-cap-Uf8gOS",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-CNeBhM/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-Uf8gOS/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -1063,7 +1063,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "ff9990c7-a88c-49d7-b4d5-51c5cecadbc9"
+        "cua/taskId": "182602fe-8440-4d7b-a3b0-9b7ccc465e4d"
       }
     },
     {
@@ -1075,27 +1075,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-Oe0QQf",
+          "home": "/Users/new/.cp/cua-m4t1-cap-QTEUBR",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-Oe0QQf/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-QTEUBR/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -1106,7 +1106,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "198b0902-99b7-41fe-8a6c-5e04f52927ea"
+        "cua/taskId": "311beed2-44bd-4019-a33d-f1c3d904c008"
       }
     },
     {
@@ -1118,27 +1118,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-ANyRCa",
+          "home": "/Users/new/.cp/cua-m4t1-cap-xha6UB",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-ANyRCa/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-xha6UB/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -1149,7 +1149,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "94653510-df37-4353-be4a-a582dce3c354"
+        "cua/taskId": "d41f2e92-a3eb-4940-91ad-6133e47851a2"
       }
     },
     {
@@ -1161,27 +1161,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-UBBknU",
+          "home": "/Users/new/.cp/cua-m4t1-cap-kL7V1f",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-UBBknU/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-kL7V1f/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -1192,7 +1192,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "b9116d9b-6cf6-45a5-bc03-591a7009ea2a"
+        "cua/taskId": "dca46eb4-1e5e-4efe-89db-820fc9d2813e"
       }
     },
     {
@@ -1204,27 +1204,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-zZtkto",
+          "home": "/Users/new/.cp/cua-m4t1-cap-jQKY4e",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-zZtkto/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-jQKY4e/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -1235,7 +1235,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "8d253b7a-46ff-41f7-9adb-fa0a24b2463f"
+        "cua/taskId": "9e2d60f4-0787-4744-aa58-69ba9bbe5642"
       }
     },
     {
@@ -1247,27 +1247,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-kEcQN3",
+          "home": "/Users/new/.cp/cua-m4t1-cap-pzSZjB",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-kEcQN3/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-pzSZjB/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -1278,7 +1278,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "d98a0719-64d8-4f1a-8f40-b76ca466fab8"
+        "cua/taskId": "dcd9690f-62d9-45e2-967b-a321d332e2f8"
       }
     },
     {
@@ -1290,27 +1290,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-HOZhsg",
+          "home": "/Users/new/.cp/cua-m4t1-cap-fW6OF9",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-HOZhsg/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-fW6OF9/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -1321,7 +1321,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "9acd8cad-8ff1-4793-a4ad-469d61e37abc"
+        "cua/taskId": "f0629cea-100d-4a06-8ec3-69bc4e6b6886"
       }
     },
     {
@@ -1333,27 +1333,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-KfoG5x",
+          "home": "/Users/new/.cp/cua-m4t1-cap-gXTQ4Y",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-KfoG5x/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-gXTQ4Y/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -1364,7 +1364,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "8bdb2fbe-f2eb-413c-8766-132bccdcd925"
+        "cua/taskId": "743f6595-da0c-4cf0-ae0d-c3d063df079d"
       }
     },
     {
@@ -1376,27 +1376,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-tFvx3o",
+          "home": "/Users/new/.cp/cua-m4t1-cap-UePmr3",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-tFvx3o/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-UePmr3/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -1407,7 +1407,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "889f0f15-5351-4fc9-9448-51259462df47"
+        "cua/taskId": "4b291d19-2beb-401f-8271-117dbc81586b"
       }
     },
     {
@@ -1419,27 +1419,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-ObZJLl",
+          "home": "/Users/new/.cp/cua-m4t1-cap-f3IjNy",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-ObZJLl/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-f3IjNy/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -1450,7 +1450,7 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "5fa08ebf-c6c6-4737-8478-5b2e67f73a2c"
+        "cua/taskId": "1a271ec5-b3e3-4014-8b97-a924ed6e63c7"
       }
     },
     {
@@ -1462,39 +1462,39 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-OJEhMs",
+          "home": "/Users/new/.cp/cua-m4t1-cap-q1VJUR",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-OJEhMs/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-q1VJUR/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
         }
       },
       "_meta": {
-        "codex/nodeReplExecutionDurationMs": 278,
+        "codex/nodeReplExecutionDurationMs": 233,
         "cua/replHost": {
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "bad64e4a-b0ce-4683-801d-e41e25df6733"
+        "cua/taskId": "1dd05fc4-4437-4438-bb0c-14eca9b9c3ce"
       }
     },
     {
@@ -1506,467 +1506,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-McQC16",
+          "home": "/Users/new/.cp/cua-m4t1-cap-VsLBBn",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-McQC16/node/24.22.0/bin/node",
-            "version": "v24.22.0"
-          },
-          "nodeMode": "managed"
-        }
-      },
-      "_meta": {
-        "codex/nodeReplExecutionDurationMs": 238,
-        "cua/replHost": {
-          "host": "cua",
-          "version": "0.5.0"
-        },
-        "cua/taskId": "38a8bc38-1c27-4920-a688-a517efe0bd52"
-      }
-    },
-    {
-      "connection": "connection-18",
-      "host": "cua",
-      "serverInfo": {
-        "name": "cua-repl-host",
-        "version": "0.5.0"
-      },
-      "executionFacts": {
-        "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-        "dirty": false,
-        "release": "26.928.40906-linux-x64",
-        "node": "v24.22.1",
-        "runtimeNode": "v24.21.0",
-        "platform": "linux",
-        "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
-          "version": "v24.22.0"
-        },
-        "browserRoute": {
-          "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
-          "chatgptRecordPath": null,
-          "manifests": []
-        },
-        "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-aPjYh2",
-          "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-aPjYh2/node/24.22.0/bin/node",
-            "version": "v24.22.0"
-          },
-          "nodeMode": "managed"
-        }
-      },
-      "_meta": {
-        "codex/nodeReplExecutionDurationMs": 222,
-        "cua/replHost": {
-          "host": "cua",
-          "version": "0.5.0"
-        },
-        "cua/taskId": "1baeff89-ad26-4e80-b5b8-1c66111ac5dc"
-      }
-    },
-    {
-      "connection": "connection-19",
-      "host": "cua",
-      "serverInfo": {
-        "name": "cua-repl-host",
-        "version": "0.5.0"
-      },
-      "executionFacts": {
-        "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-        "dirty": false,
-        "release": "26.928.40906-linux-x64",
-        "node": "v24.22.1",
-        "runtimeNode": "v24.21.0",
-        "platform": "linux",
-        "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
-          "version": "v24.22.0"
-        },
-        "browserRoute": {
-          "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
-          "chatgptRecordPath": null,
-          "manifests": []
-        },
-        "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-mL3pLz",
-          "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-mL3pLz/node/24.22.0/bin/node",
-            "version": "v24.22.0"
-          },
-          "nodeMode": "managed"
-        }
-      },
-      "_meta": {
-        "codex/nodeReplExecutionDurationMs": 220,
-        "cua/replHost": {
-          "host": "cua",
-          "version": "0.5.0"
-        },
-        "cua/taskId": "8a0b6e6e-d99f-4d9a-a91c-8054fa37ba73"
-      }
-    },
-    {
-      "connection": "connection-20",
-      "host": "cua",
-      "serverInfo": {
-        "name": "cua-repl-host",
-        "version": "0.5.0"
-      },
-      "executionFacts": {
-        "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-        "dirty": false,
-        "release": "26.928.40906-linux-x64",
-        "node": "v24.22.1",
-        "runtimeNode": "v24.21.0",
-        "platform": "linux",
-        "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
-          "version": "v24.22.0"
-        },
-        "browserRoute": {
-          "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
-          "chatgptRecordPath": null,
-          "manifests": []
-        },
-        "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-ozukEA",
-          "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-ozukEA/node/24.22.0/bin/node",
-            "version": "v24.22.0"
-          },
-          "nodeMode": "managed"
-        }
-      },
-      "_meta": {
-        "codex/nodeReplExecutionDurationMs": 240,
-        "cua/replHost": {
-          "host": "cua",
-          "version": "0.5.0"
-        },
-        "cua/taskId": "822b429f-065c-4b8d-b27b-b31aa5cb3730"
-      }
-    },
-    {
-      "connection": "connection-21",
-      "host": "cua",
-      "serverInfo": {
-        "name": "cua-repl-host",
-        "version": "0.5.0"
-      },
-      "executionFacts": {
-        "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-        "dirty": false,
-        "release": "26.928.40906-linux-x64",
-        "node": "v24.22.1",
-        "runtimeNode": "v24.21.0",
-        "platform": "linux",
-        "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
-          "version": "v24.22.0"
-        },
-        "browserRoute": {
-          "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
-          "chatgptRecordPath": null,
-          "manifests": []
-        },
-        "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-9pvghJ",
-          "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-9pvghJ/node/24.22.0/bin/node",
-            "version": "v24.22.0"
-          },
-          "nodeMode": "managed"
-        }
-      },
-      "_meta": {
-        "codex/nodeReplExecutionDurationMs": 260,
-        "cua/replHost": {
-          "host": "cua",
-          "version": "0.5.0"
-        },
-        "cua/taskId": "b0c147c0-f9f9-46a1-a1be-2d0ecfa43ee9"
-      }
-    },
-    {
-      "connection": "connection-22",
-      "host": "cua",
-      "serverInfo": {
-        "name": "cua-repl-host",
-        "version": "0.5.0"
-      },
-      "executionFacts": {
-        "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-        "dirty": false,
-        "release": "26.928.40906-linux-x64",
-        "node": "v24.22.1",
-        "runtimeNode": "v24.21.0",
-        "platform": "linux",
-        "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
-          "version": "v24.22.0"
-        },
-        "browserRoute": {
-          "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
-          "chatgptRecordPath": null,
-          "manifests": []
-        },
-        "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-KZFrW2",
-          "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-KZFrW2/node/24.22.0/bin/node",
-            "version": "v24.22.0"
-          },
-          "nodeMode": "managed"
-        }
-      },
-      "_meta": {
-        "codex/nodeReplExecutionDurationMs": 250,
-        "cua/replHost": {
-          "host": "cua",
-          "version": "0.5.0"
-        },
-        "cua/taskId": "993d4abd-6031-42ff-8cb7-1516068f4919"
-      }
-    },
-    {
-      "connection": "connection-23",
-      "host": "cua",
-      "serverInfo": {
-        "name": "cua-repl-host",
-        "version": "0.5.0"
-      },
-      "executionFacts": {
-        "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-        "dirty": false,
-        "release": "26.928.40906-linux-x64",
-        "node": "v24.22.1",
-        "runtimeNode": "v24.21.0",
-        "platform": "linux",
-        "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
-          "version": "v24.22.0"
-        },
-        "browserRoute": {
-          "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
-          "chatgptRecordPath": null,
-          "manifests": []
-        },
-        "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-n4VSPV",
-          "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-n4VSPV/node/24.22.0/bin/node",
-            "version": "v24.22.0"
-          },
-          "nodeMode": "managed"
-        }
-      },
-      "_meta": {
-        "codex/nodeReplExecutionDurationMs": 229,
-        "cua/replHost": {
-          "host": "cua",
-          "version": "0.5.0"
-        },
-        "cua/taskId": "b7a51a61-9d05-4460-bd54-c5e4c3dd0db2"
-      }
-    },
-    {
-      "connection": "connection-24",
-      "host": "cua",
-      "serverInfo": {
-        "name": "cua-repl-host",
-        "version": "0.5.0"
-      },
-      "executionFacts": {
-        "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-        "dirty": false,
-        "release": "26.928.40906-linux-x64",
-        "node": "v24.22.1",
-        "runtimeNode": "v24.21.0",
-        "platform": "linux",
-        "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
-          "version": "v24.22.0"
-        },
-        "browserRoute": {
-          "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
-          "chatgptRecordPath": null,
-          "manifests": []
-        },
-        "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-3MPfHR",
-          "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-3MPfHR/node/24.22.0/bin/node",
-            "version": "v24.22.0"
-          },
-          "nodeMode": "managed"
-        }
-      },
-      "_meta": {
-        "codex/nodeReplExecutionDurationMs": 245,
-        "cua/replHost": {
-          "host": "cua",
-          "version": "0.5.0"
-        },
-        "cua/taskId": "9d3d3ae3-4c5c-4601-b5ec-7b0ae2a0fca6"
-      }
-    },
-    {
-      "connection": "connection-25",
-      "host": "cua",
-      "serverInfo": {
-        "name": "cua-repl-host",
-        "version": "0.5.0"
-      },
-      "executionFacts": {
-        "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-        "dirty": false,
-        "release": "26.928.40906-linux-x64",
-        "node": "v24.22.1",
-        "runtimeNode": "v24.21.0",
-        "platform": "linux",
-        "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
-          "version": "v24.22.0"
-        },
-        "browserRoute": {
-          "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
-          "chatgptRecordPath": null,
-          "manifests": []
-        },
-        "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-Kf8eEx",
-          "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-Kf8eEx/node/24.22.0/bin/node",
-            "version": "v24.22.0"
-          },
-          "nodeMode": "managed"
-        }
-      },
-      "_meta": {
-        "codex/nodeReplExecutionDurationMs": 203,
-        "cua/replHost": {
-          "host": "cua",
-          "version": "0.5.0"
-        },
-        "cua/taskId": "3c297999-37bd-4aff-9aa0-f40b0a68b828"
-      }
-    },
-    {
-      "connection": "connection-26",
-      "host": "cua",
-      "serverInfo": {
-        "name": "cua-repl-host",
-        "version": "0.5.0"
-      },
-      "executionFacts": {
-        "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-        "dirty": false,
-        "release": "26.928.40906-linux-x64",
-        "node": "v24.22.1",
-        "runtimeNode": "v24.21.0",
-        "platform": "linux",
-        "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
-          "version": "v24.22.0"
-        },
-        "browserRoute": {
-          "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
-          "chatgptRecordPath": null,
-          "manifests": []
-        },
-        "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-JmN7PS",
-          "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-JmN7PS/node/24.22.0/bin/node",
-            "version": "v24.22.0"
-          },
-          "nodeMode": "managed"
-        }
-      },
-      "_meta": {
-        "codex/nodeReplExecutionDurationMs": 226,
-        "cua/replHost": {
-          "host": "cua",
-          "version": "0.5.0"
-        },
-        "cua/taskId": "73d3796b-b440-4c2d-b72b-5f68248ffbae"
-      }
-    },
-    {
-      "connection": "connection-27",
-      "host": "cua",
-      "serverInfo": {
-        "name": "cua-repl-host",
-        "version": "0.5.0"
-      },
-      "executionFacts": {
-        "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-        "dirty": false,
-        "release": "26.928.40906-linux-x64",
-        "node": "v24.22.1",
-        "runtimeNode": "v24.21.0",
-        "platform": "linux",
-        "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
-          "version": "v24.22.0"
-        },
-        "browserRoute": {
-          "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
-          "chatgptRecordPath": null,
-          "manifests": []
-        },
-        "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-Rc4Hzb",
-          "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-Rc4Hzb/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-VsLBBn/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -1978,11 +1538,11 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "25ec66ce-4733-4f0a-ad25-e4830dbb7288"
+        "cua/taskId": "15108e64-4338-4347-9d6e-b3f73e26b04b"
       }
     },
     {
-      "connection": "connection-28",
+      "connection": "connection-18",
       "host": "cua",
       "serverInfo": {
         "name": "cua-repl-host",
@@ -1990,115 +1550,27 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-GObBca",
+          "home": "/Users/new/.cp/cua-m4t1-cap-1x0hi9",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-GObBca/node/24.22.0/bin/node",
-            "version": "v24.22.0"
-          },
-          "nodeMode": "managed"
-        }
-      },
-      "_meta": {
-        "codex/nodeReplExecutionDurationMs": 210,
-        "cua/replHost": {
-          "host": "cua",
-          "version": "0.5.0"
-        },
-        "cua/taskId": "ac20f93d-66d2-4b76-a04a-9871e4c91384"
-      }
-    },
-    {
-      "connection": "connection-29",
-      "host": "cua",
-      "serverInfo": {
-        "name": "cua-repl-host",
-        "version": "0.5.0"
-      },
-      "executionFacts": {
-        "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-        "dirty": false,
-        "release": "26.928.40906-linux-x64",
-        "node": "v24.22.1",
-        "runtimeNode": "v24.21.0",
-        "platform": "linux",
-        "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
-          "version": "v24.22.0"
-        },
-        "browserRoute": {
-          "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
-          "chatgptRecordPath": null,
-          "manifests": []
-        },
-        "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-dQS18I",
-          "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-dQS18I/node/24.22.0/bin/node",
-            "version": "v24.22.0"
-          },
-          "nodeMode": "managed"
-        }
-      },
-      "_meta": {
-        "codex/nodeReplExecutionDurationMs": 222,
-        "cua/replHost": {
-          "host": "cua",
-          "version": "0.5.0"
-        },
-        "cua/taskId": "884e79e7-a0cf-47ca-9851-dfe0f29bda12"
-      }
-    },
-    {
-      "connection": "connection-30",
-      "host": "cua",
-      "serverInfo": {
-        "name": "cua-repl-host",
-        "version": "0.5.0"
-      },
-      "executionFacts": {
-        "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
-        "dirty": false,
-        "release": "26.928.40906-linux-x64",
-        "node": "v24.22.1",
-        "runtimeNode": "v24.21.0",
-        "platform": "linux",
-        "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
-          "version": "v24.22.0"
-        },
-        "browserRoute": {
-          "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
-          "chatgptRecordPath": null,
-          "manifests": []
-        },
-        "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-PzUeWs",
-          "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-PzUeWs/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-1x0hi9/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -2110,11 +1582,11 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "123ab1f2-974a-4f0a-aa86-7586f94cf1f5"
+        "cua/taskId": "42be9fd9-da76-4666-9099-f9ee08437a15"
       }
     },
     {
-      "connection": "connection-31",
+      "connection": "connection-19",
       "host": "cua",
       "serverInfo": {
         "name": "cua-repl-host",
@@ -2122,43 +1594,43 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-AnFACX",
+          "home": "/Users/new/.cp/cua-m4t1-cap-y4VuXK",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-AnFACX/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-y4VuXK/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
         }
       },
       "_meta": {
-        "codex/nodeReplExecutionDurationMs": 212,
+        "codex/nodeReplExecutionDurationMs": 208,
         "cua/replHost": {
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "9aca046e-da4a-4a88-b035-9ec1751be061"
+        "cua/taskId": "56f97985-fd46-44a6-b776-6c7eacf4466e"
       }
     },
     {
-      "connection": "connection-32",
+      "connection": "connection-20",
       "host": "cua",
       "serverInfo": {
         "name": "cua-repl-host",
@@ -2166,43 +1638,43 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-HSNai1",
+          "home": "/Users/new/.cp/cua-m4t1-cap-1r4Sbl",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-HSNai1/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-1r4Sbl/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
         }
       },
       "_meta": {
-        "codex/nodeReplExecutionDurationMs": 247,
+        "codex/nodeReplExecutionDurationMs": 215,
         "cua/replHost": {
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "670de2dc-0b85-4f53-9db9-241281b66420"
+        "cua/taskId": "fb21a839-17c5-4e53-bced-625b0e376b26"
       }
     },
     {
-      "connection": "connection-33",
+      "connection": "connection-21",
       "host": "cua",
       "serverInfo": {
         "name": "cua-repl-host",
@@ -2210,43 +1682,43 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-NYcib5",
+          "home": "/Users/new/.cp/cua-m4t1-cap-sKiVqc",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-NYcib5/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-sKiVqc/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
         }
       },
       "_meta": {
-        "codex/nodeReplExecutionDurationMs": 252,
+        "codex/nodeReplExecutionDurationMs": 203,
         "cua/replHost": {
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "54c23e1f-c18d-49f4-8ac5-0ab39b73df9f"
+        "cua/taskId": "7343531e-519c-4edb-931e-52ffb9f8c05b"
       }
     },
     {
-      "connection": "connection-34",
+      "connection": "connection-22",
       "host": "cua",
       "serverInfo": {
         "name": "cua-repl-host",
@@ -2254,27 +1726,159 @@
       },
       "executionFacts": {
         "checkout": "/Users/new/Developer/GitHub/cua-parity",
-        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
-        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
         "dirty": false,
         "release": "26.928.40906-linux-x64",
         "node": "v24.22.1",
         "runtimeNode": "v24.21.0",
         "platform": "linux",
         "ownNode": {
-          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
           "version": "v24.22.0"
         },
         "browserRoute": {
           "route": "cua",
-          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
           "chatgptRecordPath": null,
           "manifests": []
         },
         "answeringHost": {
-          "home": "/Users/new/.cp/cua-m4t1-cap-4c7IcT",
+          "home": "/Users/new/.cp/cua-m4t1-cap-kJPujv",
           "ownNode": {
-            "path": "/Users/new/.cp/cua-m4t1-cap-4c7IcT/node/24.22.0/bin/node",
+            "path": "/Users/new/.cp/cua-m4t1-cap-kJPujv/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 219,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "0fb280b9-63ea-457e-8cc4-a11b27e432f6"
+      }
+    },
+    {
+      "connection": "connection-23",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-C3J2xy",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-C3J2xy/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 211,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "8b1b4339-9ec7-4ce5-94bd-4fede1a6ebb5"
+      }
+    },
+    {
+      "connection": "connection-24",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-FBLQGf",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-FBLQGf/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 206,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "fc41207b-fe9f-40fa-8e60-d6c8dfb922c9"
+      }
+    },
+    {
+      "connection": "connection-25",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-vNI7Dc",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-vNI7Dc/node/24.22.0/bin/node",
             "version": "v24.22.0"
           },
           "nodeMode": "managed"
@@ -2286,7 +1890,403 @@
           "host": "cua",
           "version": "0.5.0"
         },
-        "cua/taskId": "80825567-53ce-48bb-b0a2-43743a0dfaa4"
+        "cua/taskId": "9036e81e-c481-4a05-ab08-645fe9206a63"
+      }
+    },
+    {
+      "connection": "connection-26",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-9xNXwH",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-9xNXwH/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 216,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "859790fc-1fb9-4600-a1f2-f24036762f1d"
+      }
+    },
+    {
+      "connection": "connection-27",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-KQEeD9",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-KQEeD9/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 204,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "416371a0-ff6d-4ee2-9c62-319517169c75"
+      }
+    },
+    {
+      "connection": "connection-28",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-xliHIW",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-xliHIW/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 248,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "bcc9b485-79d5-4354-b709-cb2aaa534cdf"
+      }
+    },
+    {
+      "connection": "connection-29",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-oxh62k",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-oxh62k/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 235,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "2208cae0-c255-452b-8d5a-c18507c99878"
+      }
+    },
+    {
+      "connection": "connection-30",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-yjJNtb",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-yjJNtb/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 211,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "b55bc733-b353-4cb4-95f4-c03919de0eb8"
+      }
+    },
+    {
+      "connection": "connection-31",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-w6lIcs",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-w6lIcs/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 231,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "6b7334d5-a6a7-4be4-b163-e33d4c461cb5"
+      }
+    },
+    {
+      "connection": "connection-32",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-hAp61s",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-hAp61s/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 223,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "1a3749e7-7799-44c3-af14-2c699472fe63"
+      }
+    },
+    {
+      "connection": "connection-33",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-dVOJoJ",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-dVOJoJ/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 243,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "08e2dece-3ce1-49bf-9a2d-3cce3f663476"
+      }
+    },
+    {
+      "connection": "connection-34",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS",
+        "commit": "426e25f2cf3d44bef8d6db65ce6bba31f90781bd",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-iRtqZS/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-0Vh8bz",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-0Vh8bz/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 204,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "893cf5fe-d260-47e5-afdd-ddc05d03137a"
       }
     }
   ],

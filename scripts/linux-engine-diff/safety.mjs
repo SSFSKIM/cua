@@ -4,7 +4,8 @@
 //
 // - chrome-textarea (pages/text.html): `focus_change` (the focus moved to the page's other field while the engine's
 //   snapshot is in progress: refused with nothing sent), `focus_change_takeover` (the same, and the prior owner takes
-//   CLIPBOARD back as soon as the engine owns it: nothing sent, the new owner's contents intact), `concurrent` (two
+//   CLIPBOARD back as soon as the engine owns it: nothing sent, the new owner's contents intact), `silent_owner` (the
+//   prior owner never answers the snapshot: nothing sent within the bound, the locks released), `concurrent` (two
 //   engines paste distinct markers at the same moment, each into its own window), `contention` (two engines paste in a
 //   tight loop with random gaps), `late_page` (the page inserts the paste's text 3 s after its paste event),
 //   `ignored_page` (the page drops the paste);
@@ -280,6 +281,41 @@ export class Cases {
     return this.record('chrome-textarea', 'contention', 0, verdict, { pastes: answers.length, ms_median: ms[Math.floor(ms.length / 2)], ms_max: ms.at(-1), fields: { before, after } });
   }
 
+  /**
+   * A silent clipboard owner (Plan of Work, M2, Decisions; Design, Snapshot bounds): the prior owner never answers the
+   * engine's snapshot TARGETS, so the paste ends within the 500 ms bound with nothing sent, both locks released: the
+   * next paste, once the owner answers again, goes in.
+   */
+  async silentOwner(scene) {
+    const engine = this.engine();
+    this.focusFirst(scene);
+    await sleep(200);
+    const prior = await startOwner(`cua171 prior silent ${stamp()}`);
+    // after the clipboard watchers' reads of a new owner (armedOwner)
+    await sleep(600);
+    prior.send('silence');
+    await prior.waitFor((r) => r.silent);
+    const before = textOf(this.oracle, scene.field);
+    const span = await this.witness.span('case:silent_owner', () => engine.request('type_text', { window: { id: scene.id }, text: `cua171-silent-${stamp()}` }));
+    const after = textOf(this.oracle, scene.field);
+    const clipboard = clipRead();
+    const verdict = judgeRefusal({ answer: span.value.response, sentence: /^clipboard capture timed out: .*; nothing was sent$/, fields: [{ before, after }], clipboard, expectClipboard: prior.text });
+    if (!(span.value.ms < 1500)) verdict.reasons.push(`answered after ${Math.round(span.value.ms)} ms, past the 500 ms TARGETS bound and its margin`);
+    if (!prior.lines.some((l) => l.silenced)) verdict.reasons.push("the owner did not hold back the engine's TARGETS");
+    // the locks were released: the next paste goes in, once
+    const state = stateOf(this.oracle, scene.field);
+    const marker = `cua171-after-silent-${stamp()}`;
+    const next = await this.witness.span('case:silent_owner:next', () => engine.request('type_text', { window: { id: scene.id }, text: marker }));
+    await sleep(300);
+    const landedAfter = textOf(this.oracle, scene.field);
+    await prior.stop();
+    await engine.close();
+    if (next.value.response.ok !== true || landedAfter !== pasted(state, marker)) verdict.reasons.push(`the next paste answered ${JSON.stringify(next.value.response)} and did not land once`);
+    if (!span.witness.clean || !next.witness.clean) verdict.reasons.push('the witness changed');
+    verdict.pass = verdict.reasons.length === 0;
+    return this.record('chrome-textarea', 'silent_owner', 0, verdict, { answer: span.value.response, ms: Math.round(span.value.ms), next_ms: Math.round(next.value.ms) });
+  }
+
   /** A page that applies the paste 3 s late (`late`) or drops it (`ignored`). */
   async pageCase(scene, op) {
     const engine = this.engine();
@@ -447,7 +483,7 @@ export class Cases {
 
 /** The cases each scene runs, in order. */
 export const CASE_OPS = {
-  'chrome-textarea': ['focus_change', 'focus_change_takeover', 'concurrent', 'contention', 'late_page', 'ignored_page'],
+  'chrome-textarea': ['focus_change', 'focus_change_takeover', 'silent_owner', 'concurrent', 'contention', 'late_page', 'ignored_page'],
   'paste-target': ['stalled_incr', 'late_convert', 'unreadable'],
   gedit: ['caret_placed'],
   'gnome-text-editor': ['restore_refused'],
@@ -484,6 +520,7 @@ export async function runCases({ desktop, witness, cua, emit, plan, openScene })
       desktop.focusFront();
       await run('chrome-textarea', 'focus_change', () => cases.focusChange(a, { takeover: false }));
       await run('chrome-textarea', 'focus_change_takeover', () => cases.focusChange(a, { takeover: true }));
+      await run('chrome-textarea', 'silent_owner', () => cases.silentOwner(a));
       await run('chrome-textarea', 'concurrent', () => cases.concurrent([a, b]));
       await run('chrome-textarea', 'contention', () => cases.contention([a, b]));
       if (wanted('chrome-textarea', 'late_page')) {

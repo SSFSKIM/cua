@@ -95,12 +95,26 @@ function selectFirstWord(ctx) {
   ctx.selected = chars(oracle.text(ctx.scene.field)).slice(...FIRST_WORD).join('');
 }
 
-/** A `clipboard_read` of the document's first word, for the operations that need a handle (untimed, witnessed). */
+/** The handle an operation sends when its engine could not read one: no engine issued it. */
+export const NO_HANDLE = 'cua171-no-handle';
+
+/**
+ * A `clipboard_read` of the document's first word, for the operations that need a handle (untimed, witnessed), tried
+ * twice. An engine whose Copy fails both times (the pinned build, once its window is in some states, M2.3) is sent a
+ * handle it never issued, and its sample records why (`prepare_error`): the request still runs, its answer and effect
+ * are judged as any other, so a candidate's failure here fails its verdict and a vendor build's is recorded.
+ */
 async function handleOfFirstWord(ctx) {
-  selectFirstWord(ctx);
-  const { response } = await companion(ctx, () => ctx.engine.request('clipboard_read', { window: { id: ctx.scene.id } }));
-  if (!response.ok) throw new Error(`clipboard_read for a handle failed on ${ctx.scene.label}: ${response.error}`);
-  return response.output;
+  let error;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    selectFirstWord(ctx);
+    const { response } = await companion(ctx, () => ctx.engine.request('clipboard_read', { window: { id: ctx.scene.id } }));
+    if (response.ok) return response.output;
+    error = response.error;
+    await sleep(200);
+  }
+  ctx.prepareError = `clipboard_read for a handle failed: ${String(error).slice(0, 200)}`;
+  return NO_HANDLE;
 }
 
 const release = (ctx, handle) => companion(ctx, () => ctx.engine.request('clipboard_release', { handle }));
@@ -220,7 +234,9 @@ export const TEXT_OPS = {
     request: (ctx) => ['clipboard_write', { window: { id: ctx.scene.id }, handle: ctx.handle }],
     effect: (ctx, input, before, after) => landed(before, after, ctx.selected),
     check: (ctx) => clipboardAfter(ctx, ctx.prior.text),
-    cleanup: async (ctx) => release(ctx, ctx.handle),
+    cleanup: async (ctx) => {
+      if (ctx.handle !== NO_HANDLE) await release(ctx, ctx.handle);
+    },
   },
   // a handle read untimed before each warm sample; the cold sample (the engine's start and its first request, as for
   // every operation without untimed preparation) releases a handle the engine never issued, which both builds answer

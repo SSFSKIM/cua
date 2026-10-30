@@ -7,6 +7,7 @@
 //!   - `arm`: the next `TARGETS` request is held until `go` (at most 450 ms, under the engine's 500 ms snapshot
 //!     bound); holding it prints `{"held":"TARGETS",…}`, so the harness can change the desktop while an engine's
 //!     snapshot is in progress;
+//!   - `silence`: the next `TARGETS` request is never answered (a silent owner), printing `{"silenced":…}`;
 //!   - `retake <ms> <text>`: when CLIPBOARD is next taken from it, it takes it back after `<ms>` and serves `<text>`
 //!     (an external takeover of the engine's paste ownership);
 //!   - `quit` (or EOF): exits.
@@ -119,6 +120,7 @@ struct Owner {
     atoms: Atoms,
     text: String,
     armed: bool,
+    silent: bool,
     retake: Option<(Duration, String)>,
 }
 
@@ -144,6 +146,12 @@ impl Owner {
 
     fn answer(&mut self, e: &SelectionRequestEvent, rx: &mpsc::Receiver<Option<String>>) -> Result<bool> {
         let property = if e.property == x11rb::NONE { e.target } else { e.property };
+        if self.silent && e.target == self.atoms.targets {
+            // a silent owner: this request is never answered
+            self.silent = false;
+            say(format!("{{\"silenced\":\"TARGETS\",\"requestor\":{}}}", e.requestor))?;
+            return Ok(true);
+        }
         let mut served = true;
         if e.target == self.atoms.targets {
             if self.armed {
@@ -198,6 +206,9 @@ impl Owner {
         if line == "arm" {
             self.armed = true;
             say("{\"armed\":true}".into())?;
+        } else if line == "silence" {
+            self.silent = true;
+            say("{\"silent\":true}".into())?;
         } else if let Some(rest) = line.strip_prefix("retake ") {
             let (ms, text) = rest.split_once(' ').ok_or("retake <ms> <text>")?;
             self.retake = Some((Duration::from_millis(ms.parse()?), text.to_string()));
@@ -218,6 +229,7 @@ pub fn own(args: &[String]) -> Result<()> {
         atoms,
         text,
         armed: false,
+        silent: false,
         retake: None,
     };
     let time = owner.take()?;

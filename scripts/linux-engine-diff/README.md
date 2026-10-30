@@ -267,7 +267,9 @@ variants included; their evidence is written either way. The run's `end` row kee
   `chrome-textarea`: `focus_change` (the prior owner holds the engine's snapshot `TARGETS` while the harness moves the
   focus to the page's other field through AT-SPI: `requested field or selection changed before dispatch; nothing was
   sent`, neither field changed), `focus_change_takeover` (the same, and the prior owner takes CLIPBOARD back 0, 20 or
-  50 ms after the engine takes it: nothing sent, the new owner's text intact), `concurrent` (two engines paste distinct
+  50 ms after the engine takes it: nothing sent, the new owner's text intact), `silent_owner` (the prior owner never
+  answers the snapshot's `TARGETS`: `clipboard capture timed out: …; nothing was sent` within the bound, and the next
+  paste goes in, so both locks were released), `concurrent` (two engines paste distinct
   markers at once into their own windows), `contention` (two engines, 20 pastes each with random gaps of 0–30 ms),
   `late_page` (the page inserts the paste's text 3 s after its paste event: unconfirmed, then the text once),
   `ignored_page` (unconfirmed, the field unchanged, the next request answered at once); `paste-target`

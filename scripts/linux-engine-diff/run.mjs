@@ -265,6 +265,7 @@ export async function runSample(s) {
   if (def.changeEffect && row.ok) row.effect = await def.changeEffect(ctx);
   if (row.effect === null) delete row.effect;
   if (def.check) Object.assign(row, await def.check(ctx, response));
+  if (ctx.prepareError) row.prepare_error = ctx.prepareError;
   if (def.cleanup) await def.cleanup(ctx, response);
   if (def.restore) await def.restore(ctx);
   const main = answered.judged ?? answered.witness;

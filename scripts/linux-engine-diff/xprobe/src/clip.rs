@@ -376,3 +376,51 @@ pub fn within(args: &[String]) -> Result<()> {
     }
     say(format!("{{\"within\":{inside}}}"))
 }
+
+/// The longest window cua writes (10 s) plus the engine's slack: a record further ahead is not one of its windows.
+const QUARANTINE_LIMIT_MS: u32 = 11_000;
+
+/// How long the display's unconfirmed-paste window (`CUA_CLIPBOARD_QUARANTINE` on the root: its end in server time and
+/// the target's X client, written by cua's engine) still runs, read as the engine reads it: on the wrapping server
+/// clock, ignoring a record further ahead than a window runs.
+pub fn quarantine_left(end: u32, now: u32) -> Option<u32> {
+    let left = end.wrapping_sub(now);
+    (left != 0 && left <= QUARANTINE_LIMIT_MS).then_some(left)
+}
+
+/// `xprobe quarantine`: `{"open":…,"remaining_ms":…,"client":…}` for the display's unconfirmed-paste window.
+pub fn quarantine() -> Result<()> {
+    let (conn, screen) = x11rb::connect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let window = own_window(&conn, screen)?;
+    let property = atom(&conn, "XPROBE_CLIP")?;
+    let record = atom(&conn, "CUA_CLIPBOARD_QUARANTINE")?;
+    let reply = conn
+        .get_property(false, root, record, AtomEnum::CARDINAL, 0, 2)?
+        .reply()?;
+    let values: Vec<u32> = reply.value32().map(|v| v.collect()).unwrap_or_default();
+    let [end, client] = values.as_slice() else {
+        return say("{\"open\":false,\"remaining_ms\":0,\"client\":null}".into());
+    };
+    let now = server_time(&conn, window, property)?;
+    let left = quarantine_left(*end, now);
+    say(format!(
+        "{{\"open\":{},\"remaining_ms\":{},\"client\":{client}}}",
+        left.is_some(),
+        left.unwrap_or(0)
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::quarantine_left;
+
+    #[test]
+    fn the_window_is_read_as_the_engine_reads_it() {
+        assert_eq!(quarantine_left(10_500, 500), Some(10_000));
+        assert_eq!(quarantine_left(10_500, 10_500), None, "ended");
+        assert_eq!(quarantine_left(10_500, 20_000), None, "long past");
+        assert_eq!(quarantine_left(4_000, u32::MAX - 999), Some(5_000), "across the wrap");
+        assert_eq!(quarantine_left(11_001, 0), None, "further ahead than a window runs");
+    }
+}

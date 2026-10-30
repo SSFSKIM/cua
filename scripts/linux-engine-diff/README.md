@@ -270,11 +270,30 @@ variants included; their evidence is written either way. The run's `end` row kee
   and reparenting of one in order (`xprobe/src/restack.rs`). They are never coalesced, unlike
   `_NET_CLIENT_LIST_STACKING`, which is read after its notify and so shows only the latest of quick changes: that
   property stays a second record (each change read back with its orders must be the target's raise), and its
-  same-value rewrites pass only because no forbidden restack accompanies them. A foreground route's activation and
-  XTEST input are the route itself, so where the foreground route is expected the audit is not required. A run with a
-  foreground request also runs the foreground checks (`foregroundNegativeCheck`): another window raised and the top
-  one raised back, 50 ms apart and under one server grab (`xprobe restack-grabbed`), which the allowance must fail,
-  and the target raised, which it must pass, or the run is invalid.
+  same-value rewrites pass only because no forbidden restack accompanies them. The activation and the focus are judged
+  the same way (`judgeFocus`): with `FocusChange` on the root and every root child, the witness records every
+  `FocusIn`, `FocusOut` and `_NET_ACTIVE_WINDOW` activation request in order (`xprobe/src/focus.rs`), and only the
+  target may be activated or take the focus (its frame or its own window), through no focus on the way at most; an
+  active-window notify, which carries no value, passes only beside such clean evidence. Where the foreground route is
+  expected, the X request audit is the foreground audit (`audit.mjs` `auditForeground`): of the requests the background
+  route forbids, only the `_NET_ACTIVE_WINDOW` ClientMessage, the stacking `ConfigureWindow` and `SetInputFocus`
+  naming the target, and XTEST FakeInput are allowed. A run with a foreground request also runs the foreground checks
+  (`foregroundNegativeCheck`), or the run is invalid: another window raised and the top one raised back, 50 ms apart
+  and under one server grab (`xprobe restack-grabbed`), and the focus and the active window switched to another
+  window and back under one server grab (`xprobe focus-grabbed`), which the allowance must fail; the target raised,
+  and the target activated through the window manager, which it must pass.
+- **A text operation proves its effect**: every text operation's definition reads an independent effect (the field
+  through the harness's own AT-SPI reads, or the clipboard), and a sample whose effect could not be read is a miss
+  (`effect_unread`), whatever the operation's other samples could read; `clipboard_release`, which changes only the
+  engine's own handle map, declares why it has none (`effectFree`).
+- **The desktop route's groups are topped up**: a group of a `desktop` scene operation with fewer than 20 samples an
+  engine in a series (the cold series has one a block) gets fresh-engine rounds (`top-up` rows, blocks `topup-<n>`)
+  until each engine has 20, and is then judged with the interval and its bound; the judge never passes or fails a
+  desktop group on fewer (`judgeOperation` `minSamples`).
+- **The display-wide unconfirmed-paste window** (`CUA_CLIPBOARD_QUARANTINE`): after an unconfirmed paste every cua
+  engine on the display refuses text requests for up to 10 s. The harness waits it out before every text sample, every
+  safety case and each late-conversion trial (`clip.mjs` `waitQuarantineOver`, `xprobe quarantine`), and never
+  removes it, since the unconfirmed paste's target may still convert until it ends.
 - **A failed preparation**: a sample whose engine could not make the handle it needs (`prepare_error`: both Copy
   attempts failed, so a handle no engine issued is sent) times another request than the operation's, so no engine's
   such sample is in the medians; a cua sample of that kind fails its verdict, a vendor build's is recorded.

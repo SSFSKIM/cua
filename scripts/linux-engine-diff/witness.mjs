@@ -131,6 +131,36 @@ export function judgeRestacks(report, frame) {
   return { clean: violations.length === 0, raised, violations };
 }
 
+/** FocusIn's detail `Pointer`: an event about the window under the pointer while the focus is PointerRoot. */
+const DETAIL_POINTER = 5;
+
+/**
+ * The focus and activation events of a span, judged (M2 whole-branch review): `report.focus` is every `FocusIn` and
+ * `FocusOut` of the root and its children and every `_NET_ACTIVE_WINDOW` activation request, in order, never coalesced
+ * (`xprobe witness`, `focus.rs`). Only the target may be activated (a request naming its window or its frame) or take
+ * the focus (a `FocusIn` of its frame, `frame`). On its way the focus may pass through no window (the root's
+ * `FocusIn`, detail `PointerRoot` or `None`, and the `Pointer` details that follow it), so long as it goes into the
+ * target's frame afterwards. With no record, the span is not clean. Returns `{clean, violations}`.
+ */
+export function judgeFocus(report, { target, frame }) {
+  if (!Array.isArray(report?.focus)) return { clean: false, violations: ['no focus record'] };
+  const events = report.focus;
+  // the target's frame, or the target's own window (a client created on the root has the events selected before its
+  // window manager frames it)
+  const ours = (w) => Boolean(frame) && (w === frame || w === target);
+  const intoTarget = (e) => e.kind === 'focus_in' && ours(e.window) && e.detail !== DETAIL_POINTER;
+  const violations = [];
+  events.forEach((e, i) => {
+    if (e.kind === 'activate') {
+      if (e.window !== target && !(frame && e.window === frame)) violations.push(e);
+    } else if (e.kind === 'focus_in' && !intoTarget(e)) {
+      const passing = e.window === report.root || e.detail === DETAIL_POINTER;
+      if (!(passing && events.slice(i + 1).some(intoTarget))) violations.push(e);
+    }
+  });
+  return { clean: violations.length === 0, violations };
+}
+
 /**
  * The witness of a request that took the foreground route (Decision Log, M2.2: the allowance is keyed to the route the
  * request took, and the route each scene's request must take is known beforehand, run.mjs). On a dedicated desktop the
@@ -140,10 +170,13 @@ export function judgeRestacks(report, frame) {
  * only the target's frame may move, and only to the top. The property `_NET_CLIENT_LIST_STACKING` is a second record:
  * each change read back with its orders must be the target's raise, and a notify that leaves the order as it was (the
  * window manager rewriting it) is allowed only because the restack events show no forbidden restack beside it. No
- * restack record, or no frame, is a violation. On its way the window manager may pass through no active window and no
- * input focus (None or PointerRoot), so long as the last change goes to the target. Anything else, a protocol error
- * included, is a violation. Returns `{clean, fields, allowed}`: `fields` the violations, `allowed` the fields that
- * changed within the allowance.
+ * restack record, or no frame, is a violation. The activation and the focus are judged the same way on their events
+ * (`judgeFocus`): only the target may be activated or take the focus, and an active-window notify, which carries no
+ * value, is allowed only when those events show no forbidden switch; the sampled focus and the active window read back
+ * are the second record. On its way the window manager may pass through no active window and no input focus (None or
+ * PointerRoot), so long as the last change goes to the target. Anything else, a protocol error included, is a
+ * violation. Returns `{clean, fields, allowed}`: `fields` the violations, `allowed` the fields that changed within the
+ * allowance.
  */
 export function judgeForegroundSpan(report, { target, frame, focusWithin }) {
   if (!report || report.error) return { clean: false, fields: ['protocol'], allowed: [] };
@@ -152,6 +185,12 @@ export function judgeForegroundSpan(report, { target, frame, focusWithin }) {
   const restacks = judgeRestacks(report, frame);
   if (!restacks.clean || !frame) bad.add('stacking');
   else if (restacks.raised) allowed.add('stacking');
+  const focus = judgeFocus(report, { target, frame });
+  if (!focus.clean) {
+    bad.add('focus');
+    // a forbidden switch leaves no active-window notify excusable
+    if ((report.changes ?? []).some((c) => c.field === 'active') || focus.violations.some((e) => e.kind === 'activate')) bad.add('active');
+  }
   const changes = report.changes ?? [];
   const toTarget = (to) => Array.isArray(to) && to.length === 1 && to[0] === target;
   const noneActive = (to) => Array.isArray(to) && (to.length === 0 || (to.length === 1 && to[0] === 0));

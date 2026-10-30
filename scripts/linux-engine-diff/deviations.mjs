@@ -23,7 +23,10 @@ const appliedWhereNoVendorDoes = (op, scene, why) => ({
   section: 'Purpose ("Text arrives"); Design, Text and clipboard',
 });
 
-/** The paste route's refusal while an earlier unconfirmed paste's `CurrentTime` refusal runs (Decision Log, M2.1). */
+/**
+ * The refusal while the display's unconfirmed-paste window is open (Decision Log, M2.1; M2 whole-branch review: the
+ * window is display-wide, a root-window record every cua engine reads).
+ */
 export const PREVIOUS_UNCONFIRMED = /^a previous paste could not be confirmed and may still be read; nothing was sent; retry after \d+ s$/;
 
 const previousUnconfirmed = (op) => ({
@@ -31,8 +34,8 @@ const previousUnconfirmed = (op) => ({
   field: 'error',
   answer: (c) => c.ok === false && PREVIOUS_UNCONFIRMED.test(String(c.error)),
   reason:
-    "for 10 s after a paste that could not be confirmed and whose target was not served in full, a new paste is refused with nothing sent, so a late conversion of the earlier paste is never served the new one's text; the vendor never refuses here",
-  section: 'Decision Log, M2.1 (serving generations across pastes)',
+    "for 10 s after a paste that could not be confirmed and whose target was not served in full, any cua engine on the display (the one that pasted, another, or one started after it exited) refuses type_text, clipboard_write and a clipboard_read whose route makes the application Copy, before dispatch with nothing sent, so the earlier paste's target is never served another text by a late conversion; the vendor never refuses here",
+  section: 'Decision Log, M2.1 (serving generations across pastes); M2 whole-branch review (the display-wide window)',
 });
 
 export const DEVIATIONS = [
@@ -55,7 +58,7 @@ export const DEVIATIONS = [
       "a character the layout cannot produce at level 1 or 2 is refused in one sentence of cua's, naming it; the newest build refuses the same text with `resolve_keys failed …`, `cannot type control character …` or `cannot type literal keysym …`, and the events are the same (nothing typed)",
     section: 'Design, Keys; Decision Log, M2.2',
   },
-  ...['type_text', 'clipboard_write'].map(previousUnconfirmed),
+  ...['type_text', 'clipboard_write', 'clipboard_read'].map(previousUnconfirmed),
   {
     op: 'interrupted_hold',
     scene: 'events',

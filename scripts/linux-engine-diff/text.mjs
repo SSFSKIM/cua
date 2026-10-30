@@ -250,6 +250,9 @@ export const TEXT_OPS = {
   clipboard_release: {
     kind: 'text',
     warmSamples: 10,
+    // the one text operation with no effect outside the engine: a release removes the handle from the engine's own map,
+    // and the desktop and the clipboard stay as they were (the witness and the bus trace show that)
+    effectFree: 'a release changes only the engine’s own handle map; nothing on the desktop or the clipboard to read back',
     prepare: async (ctx) => {
       if (ctx.i === 0) {
         ctx.handle = 'cua171-never-issued';

@@ -15,9 +15,9 @@ import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSy
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { auditRequests, parseXtrace, startProxy } from './audit.mjs';
+import { auditForeground, auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { startMonitor } from './busmon.mjs';
-import { stacking, toplevel, within } from './clip.mjs';
+import { stacking, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
 import { declaredDeviation, declaredParity } from './deviations.mjs';
 import { Engine } from './engine.mjs';
@@ -29,7 +29,7 @@ import { Oracle } from './oracle.mjs';
 import { writeSummary } from './report.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
-import { blockOrder, judgeCalls, judgeOperation, runOutcome, verdictLine } from './stats.mjs';
+import { auditVerdict, blockOrder, judgeCalls, judgeOperation, runOutcome, verdictLine } from './stats.mjs';
 import { expectedRoute, resolveField } from './text.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
 import { judgeForegroundSpan, startWitness } from './witness.mjs';
@@ -204,6 +204,9 @@ export async function runSample(s) {
 async function measureSample(s, ctx) {
   const { witness, engine, target, op, i } = s;
   const def = OPS[op];
+  // cua's display-wide unconfirmed-paste window refuses every cua engine's text request while it runs: a text sample
+  // starts once it has closed (waited out, never removed: its target may still convert until it ends)
+  const quarantined = isText(op) ? await waitQuarantineOver() : null;
   const spans = [];
   const span = async (tag, fn) => {
     if (!witness || !target) return { value: await fn(), witness: null };
@@ -276,9 +279,19 @@ async function measureSample(s, ctx) {
     row.effect = row.follow_ok ? await pollEffect(() => def.read(ctx), (after) => def.effect(ctx, i2, followBefore, after)) : false;
   }
   if (def.changeEffect && row.ok) row.effect = await def.changeEffect(ctx);
+  // a text operation must prove its effect (M2 whole-branch review): one it could not read is not shown, so it is a
+  // miss, whatever the other samples of the operation could read
+  if (isText(op) && def.effect) {
+    row.effect_required = true;
+    if (row.ok && typeof row.effect !== 'boolean') {
+      row.effect = false;
+      row.effect_unread = true;
+    }
+  }
   if (row.effect === null) delete row.effect;
   if (def.check) Object.assign(row, await def.check(ctx, response));
   if (ctx.prepareError) row.prepare_error = ctx.prepareError;
+  if (quarantined?.waited_ms) row.quarantine_waited_ms = quarantined.waited_ms;
   if (def.cleanup) await def.cleanup(ctx, response);
   if (def.restore) await def.restore(ctx);
   const main = answered.judged ?? answered.witness;
@@ -290,6 +303,7 @@ async function measureSample(s, ctx) {
     if ((!row.witness || answered.judged?.allowed?.length) && answered.report) {
       row.witness_changes = (answered.report.changes ?? []).slice(0, 20);
       row.witness_restacks = (answered.report.restacks ?? []).slice(0, 20);
+      row.witness_focus = (answered.report.focus ?? []).slice(0, 20);
     }
     if (answered.judged?.allowed?.length) row.witness_allowed = answered.judged.allowed;
   }
@@ -317,13 +331,18 @@ export async function negativeCheck(desktop, witness, stubScene, emit, { audit =
 
 /**
  * The foreground allowance's checks, on the two top windows of the desktop. Each span is judged as a foreground request
- * on one of them; the allowance must fail the first two and pass the third, or the run is invalid:
+ * on one of them; the allowance must fail `spaced`, `coalesced` and `switched` and pass `raised` and `activated`, or the
+ * run is invalid:
  * - `spaced`: the window just below the top raised, then the top window raised back 50 ms later, inside one span;
  * - `coalesced`: the same two raises under one server grab (`xprobe restack-grabbed`), so the window manager processes
  *   them together and `_NET_CLIENT_LIST_STACKING` may show no change at all: only the restack events tell;
  * - `raised`: the window below the top raised, judged with it as the target: its frame rises to the top, with the
  *   window manager's property rewrites, which the allowance passes. The top window is raised back after the span.
- * Each judgement names the target's frame (`toplevel`). Returns whether all three held.
+ * - `switched`: the focus and `_NET_ACTIVE_WINDOW` set to the other window and back under one server grab (`xprobe
+ *   focus-grabbed`), which only the focus events show;
+ * - `activated`: the other window activated through the window manager (`xdotool windowactivate`), judged with it as
+ *   the target: activated, raised and focused, which the allowance passes. The top window is activated again after it.
+ * Each judgement names the target's frame (`toplevel`). Returns whether all five held.
  */
 export async function foregroundNegativeCheck(witness, emit) {
   const order = stacking();
@@ -353,16 +372,42 @@ export async function foregroundNegativeCheck(witness, emit) {
   });
   raise(top);
   await sleep(100);
+  // the activation evidence (M2 whole-branch review): the focus and the active window switched to the other window and
+  // back under one server grab, which the property read after its notifies and the sampled focus cannot show; then the
+  // other window activated through the window manager as the foreground route activates its target
+  const activate = (w) => execFileSync('xdotool', ['windowactivate', '--sync', String(w)]);
+  activate(top);
+  await sleep(100);
+  const switched = await witness.span('stub:foreground:switched', async () => {
+    execFileSync(XPROBE, ['focus-grabbed', String(other), String(top)]);
+    await sleep(100);
+  });
+  const activated = await witness.span('stub:foreground:activated', async () => {
+    activate(other);
+    await sleep(100);
+  });
+  activate(top);
+  await sleep(100);
+  const shownFocus = (report) => ({ ...shown(report), focus: (report.focus ?? []).slice(0, 10) });
   const checks = {
     spaced: { ...judge(spaced.report, top), ...shown(spaced.report) },
     coalesced: { ...judge(coalesced.report, top), ...shown(coalesced.report) },
     raised: { ...judge(raised.report, other), ...shown(raised.report) },
+    switched: { ...judge(switched.report, top), ...shownFocus(switched.report) },
+    activated: { ...judge(activated.report, other), ...shownFocus(activated.report) },
   };
-  const held = checks.spaced.fields.includes('stacking') && checks.coalesced.fields.includes('stacking') && checks.raised.clean && checks.raised.allowed.includes('stacking');
+  const held =
+    checks.spaced.fields.includes('stacking') &&
+    checks.coalesced.fields.includes('stacking') &&
+    checks.raised.clean &&
+    checks.raised.allowed.includes('stacking') &&
+    checks.switched.fields.includes('focus') &&
+    checks.activated.clean &&
+    checks.activated.allowed.includes('active');
   emit({ kind: 'stub-check-foreground', top, other, restored, checks, witness_failed_it: held });
   const line = (name, c) => `${name}: ${c.clean ? 'clean' : c.fields.join(', ')}`;
   process.stdout.write(
-    `foreground checks: ${held ? 'held' : 'DID NOT HOLD'} (${line('another raised and the top raised back', checks.spaced)}; ${line('the same under one server grab', checks.coalesced)}; ${line('the target raised', checks.raised)}; order ${restored ? 'restored' : 'not restored'})\n`,
+    `foreground checks: ${held ? 'held' : 'DID NOT HOLD'} (${line('another raised and the top raised back', checks.spaced)}; ${line('the same under one server grab', checks.coalesced)}; ${line('the target raised', checks.raised)}; ${line('the focus and the active window switched away and back under one server grab', checks.switched)}; ${line('the target activated', checks.activated)}; order ${restored ? 'restored' : 'not restored'})\n`,
   );
   return held;
 }
@@ -408,6 +453,18 @@ export function engineSpecFor(spec, op, scene) {
 
 /** Whether an engine runs an operation: a candidate-only operation (`cuaOnly`) is not sent to the vendor builds. */
 export const runsOp = (label, op) => !(OPS[op].cuaOnly && VENDORS.includes(label));
+
+/** The samples a side each desktop-route group is judged on (Acceptance 3), topped up to when the blocks give fewer. */
+export const MIN_DESKTOP_SAMPLES = 20;
+
+/**
+ * The top-up rounds a desktop-route group needs: each round is one fresh engine per engine, its cold sample, and its
+ * `warmPerRound` warm ones only when the warm series is short too. `{rounds, warm}`.
+ */
+export function topUpRounds({ cold, warm }, { min, warmPerRound }) {
+  if (warm < min) return { rounds: Math.max(min - cold, Math.ceil((min - warm) / warmPerRound), 0), warm: true };
+  return { rounds: Math.max(min - cold, 0), warm: false };
+}
 
 export async function runDiff(args) {
   const run = args.run ?? `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
@@ -489,55 +546,72 @@ export async function runDiff(args) {
     const foregroundPlanned = plan.some((p) => (isText(p.op) && expectedRoute(p.op, p.scene) === 'foreground') || p.op === 'restore_refused');
     if (foregroundPlanned && !(await foregroundNegativeCheck(witness, emit))) valid = false;
 
+    // One engine's series of an operation in a block: a fresh process, its cold sample and `n - 1` warm ones.
+    const measureSeries = async ({ sceneName, op, label, block, n }) => {
+      const spec = engineSpecFor(engines.find((e) => e.label === label), op, sceneName);
+      const target = measuredTarget(windows, sceneName, op, label);
+      if (target && args.occlusion === 'visible') desktop.raise(target);
+      const engine = makeEngine(spec, OPS[op].apps ? launch.env : undefined);
+      for (let i = 0; i < n; i++) {
+        const { row, response } = await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName });
+        if (row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot' || OPS[op].kind === 'retention')) {
+          row.nodes = retainedIds(response.output).length;
+          row.source = response.output.ax_tree_source;
+          if (response.output.rendered !== undefined) row.rendered_lines = response.output.rendered?.split('\n').length ?? null;
+          const exactIds = exactIdsFor(op, sceneName);
+          keep[`${label}|${sceneName}|${op}`] ??= { output: response.output, label: exactIds ? null : labelPattern };
+        } else if (row.ok && (op === 'list_windows' || op === 'list_apps')) {
+          row.items = response.output.length;
+        }
+        row.digest = answerDigest(op, sceneName, response, labelPattern);
+        if (!['read', 'shot', 'retention'].includes(OPS[op].kind)) answers.set(`${label}|${sceneName}|${op}|${block}|${i}`, answerOf(op, response));
+        if (row.ok && shotOf(op)) {
+          // every sample's screenshot is kept for the comparison after the blocks
+          const shot = op === 'get_screenshot' ? response.output[0] : response.output.screenshots[0];
+          const copy = join(desktop.dir, `${label.replace(/[^a-z0-9]+/gi, '_')}-${sceneName}-${op}-${block}-${i}.jpg`);
+          if (shot) copyFileSync(shot.filepath, copy);
+          shots.push({ engine: label, scene: sceneName, op, block, i, image: shot ? copy : null, pair: OPS[op].kind === 'retention' ? 'i' : 'last' });
+        }
+        if (row.ok) {
+          const files = op === 'get_screenshot' ? response.output : (response.output?.screenshots ?? []);
+          for (const shot of files) {
+            if (shot.filepath.startsWith('/tmp/') && !shot.filepath.startsWith('/tmp/cua-engine-')) rmSync(shot.filepath, { force: true });
+          }
+        }
+        emit(row);
+      }
+      await engine.close();
+      if (target) target.retainedBy = null;
+      if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
+      // gedit's press_key series ends with the document back at its original length
+      if (op === 'press_key' && target.kind === 'gedit' && (await desktop.geditText(target)).length > target.originalLength) {
+        const fix = new Engine({ label: 'restore', bin: args.cua }).start();
+        await fix.request('press_key', { window: { id: target.id }, key: 'BackSpace' });
+        await fix.close();
+      }
+    };
+
     for (let block = 0; block < args.blocks; block++) {
       for (const { scene: sceneName, op } of blockPlan) {
         for (const label of blockOrder(labels, block).filter((l) => runsOp(l, op))) {
-          const spec = engineSpecFor(engines.find((e) => e.label === label), op, sceneName);
-          const target = measuredTarget(windows, sceneName, op, label);
-          if (target && args.occlusion === 'visible') desktop.raise(target);
-          const engine = makeEngine(spec, OPS[op].apps ? launch.env : undefined);
-          const n = 1 + samplesFor(op);
-          for (let i = 0; i < n; i++) {
-            const { row, response } = await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName });
-            if (row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot' || OPS[op].kind === 'retention')) {
-              row.nodes = retainedIds(response.output).length;
-              row.source = response.output.ax_tree_source;
-              if (response.output.rendered !== undefined) row.rendered_lines = response.output.rendered?.split('\n').length ?? null;
-              const exactIds = exactIdsFor(op, sceneName);
-              keep[`${label}|${sceneName}|${op}`] ??= { output: response.output, label: exactIds ? null : labelPattern };
-            } else if (row.ok && (op === 'list_windows' || op === 'list_apps')) {
-              row.items = response.output.length;
-            }
-            row.digest = answerDigest(op, sceneName, response, labelPattern);
-            if (!['read', 'shot', 'retention'].includes(OPS[op].kind)) answers.set(`${label}|${sceneName}|${op}|${block}|${i}`, answerOf(op, response));
-            if (row.ok && shotOf(op)) {
-              // every sample's screenshot is kept for the comparison after the blocks
-              const shot = op === 'get_screenshot' ? response.output[0] : response.output.screenshots[0];
-              const copy = join(desktop.dir, `${label.replace(/[^a-z0-9]+/gi, '_')}-${sceneName}-${op}-${block}-${i}.jpg`);
-              if (shot) copyFileSync(shot.filepath, copy);
-              shots.push({ engine: label, scene: sceneName, op, block, i, image: shot ? copy : null, pair: OPS[op].kind === 'retention' ? 'i' : 'last' });
-            }
-            if (row.ok) {
-              const files = op === 'get_screenshot' ? response.output : (response.output?.screenshots ?? []);
-              for (const shot of files) {
-                if (shot.filepath.startsWith('/tmp/') && !shot.filepath.startsWith('/tmp/cua-engine-')) rmSync(shot.filepath, { force: true });
-              }
-            }
-            emit(row);
-          }
-          await engine.close();
-          if (target) target.retainedBy = null;
-          if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
-          // gedit's press_key series ends with the document back at its original length
-          if (op === 'press_key' && target.kind === 'gedit' && (await desktop.geditText(target)).length > target.originalLength) {
-            const fix = new Engine({ label: 'restore', bin: args.cua }).start();
-            await fix.request('press_key', { window: { id: target.id }, key: 'BackSpace' });
-            await fix.close();
-          }
+          await measureSeries({ sceneName, op, label, block, n: 1 + samplesFor(op) });
         }
       }
     }
 
+    // The desktop route's top-up (Acceptance 3; Decision Log, the design session's top-up): every desktop-route group
+    // gets fresh-engine rounds until each engine has MIN_DESKTOP_SAMPLES samples in each series, so none is judged on
+    // the medians of fewer. A round is one more series per engine, its cold sample alone unless the warm series is short
+    // too; the engines' order rotates on from the blocks'.
+    for (const { scene: sceneName, op } of blockPlan.filter((p) => p.scene === 'desktop')) {
+      const { rounds, warm } = topUpRounds({ cold: args.blocks, warm: args.blocks * samplesFor(op) }, { min: MIN_DESKTOP_SAMPLES, warmPerRound: samplesFor(op) });
+      if (rounds) emit({ kind: 'top-up', scene: sceneName, op, rounds, warm, min: MIN_DESKTOP_SAMPLES });
+      for (let r = 0; r < rounds; r++) {
+        for (const label of blockOrder(labels, args.blocks + r).filter((l) => runsOp(l, op))) {
+          await measureSeries({ sceneName, op, label, block: `topup-${r}`, n: warm ? 1 + samplesFor(op) : 1 });
+        }
+      }
+    }
     // Accessibility-bus calls, in their own untimed pass: a fresh process per engine, the cold read then a warm one.
     if (args.counts && via === 'wire') {
       for (const { scene: sceneName, op } of plan.filter((p) => p.op === 'tree')) {
@@ -579,10 +653,14 @@ export async function runDiff(args) {
             if (ownWindow(op)) target.retainedBy = null;
             if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
           }
-          const audited = auditRequests(parseXtrace(await proxy.stop()));
+          // a cua request that must take the foreground route is audited against that route: only its target's activation,
+          // raise and focus and XTEST input (M2 whole-branch review)
+          const foregroundAudit = !VENDORS.includes(spec.label) && expectedRoute(op, sceneName) === 'foreground';
+          const trace = parseXtrace(await proxy.stop());
+          const audited = foregroundAudit ? auditForeground(trace, target.id) : auditRequests(trace);
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
-          audits[`${sceneName}|${op}|${spec.label}`] = { clean: audited.clean, oks };
-          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, clean: audited.clean, traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.slice(0, 10) });
+          audits[`${sceneName}|${op}|${spec.label}`] = { clean: audited.clean, oks, foreground: foregroundAudit };
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, clean: audited.clean, traced: audited.traced, requests: audited.requests, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), forbidden: audited.forbidden.slice(0, 10) });
           desktop.focusFront();
         }
       }
@@ -678,11 +756,22 @@ export async function runDiff(args) {
         const foreground = expectedRoute(op, sceneName) === 'foreground';
         const opAudits = args.audit && targeted(op) && !foreground ? Object.fromEntries(labels.map((l) => [l, audits[`${sceneName}|${op}|${l}`]])) : null;
         const parity = ['cold', 'warm'].map((series) => declaredParity({ op, scene: sceneName, series })).filter(Boolean);
-        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op), noise: medianDifferenceInterval, parity });
+        // the desktop route's groups, topped up to MIN_DESKTOP_SAMPLES a side, are never judged on fewer
+        const minSamples = sceneName === 'desktop' ? MIN_DESKTOP_SAMPLES : null;
+        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op), noise: medianDifferenceInterval, parity, minSamples });
         const extra = {};
         if (routes.length) extra.routes = routes;
         if (isText(op) && expectedRoute(op, sceneName)) extra.route_expected = expectedRoute(op, sceneName);
-        if (foreground) extra.audit_note = 'foreground route: the activation and the desktop input are the route itself; judged by the witness allowance';
+        if (foreground && args.audit) {
+          // the foreground audit: the route's own requests on the target and nothing else, required of cua
+          const mine = auditVerdict(audits[`${sceneName}|${op}|${candidate}`], opRows.filter((r) => r.engine === candidate));
+          extra.audit_note = `foreground route: only the target's activation, raise and focus and XTEST input allowed; the audit ${mine}`;
+          if (mine !== 'clean') {
+            verdict.pass = false;
+            verdict.verdict = 'fail';
+            verdict.reasons.push(`${candidate}: the foreground audit ${mine}`);
+          }
+        }
         if (isText(op) && via === 'wire' && args.counts) {
           // Acceptance 6: no PasteText, InsertText or SetTextContents from cua
           const bus = busRows.find((r) => r.scene === sceneName && r.op === op && r.engine === candidate);
@@ -711,6 +800,8 @@ export async function runDiff(args) {
         }
         const declared = [...new Set(opRows.filter((r) => r.engine === candidate && r.deviation).map((r) => r.deviation))];
         if (declared.length) extra.deviations = declared;
+        // a reason added beside the judge (the bus trace, the bus-call bound, the foreground audit) is a failure, parity or not
+        if (verdict.reasons.length) verdict.verdict = 'fail';
         const row = { kind: 'verdict', scene: sceneName, op, candidate, ...verdict, ...extra };
         verdicts.push(row);
         emit(row);

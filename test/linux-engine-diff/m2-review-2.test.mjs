@@ -26,7 +26,7 @@ const facts = { target: CLIENT, frame: TARGET, focusWithin: (w) => w === CLIENT 
 const configure = (window, above) => ({ kind: 'configure', window, above, or: 0 });
 
 test("the target's frame raised to the top, with the window manager's property rewrites, is allowed", () => {
-  const raised = { tree, restacks: [configure(TARGET, TOP)] };
+  const raised = { tree, focus: [], restacks: [configure(TARGET, TOP)] };
   assert.deepEqual(judgeRestacks(raised, TARGET), { clean: true, raised: true, violations: [] });
   const report = {
     ...raised,
@@ -46,6 +46,7 @@ test('another window raised and restored under one server grab fails, though the
   // the coalesced form: two notifies, the property read only after both restacks, so no transition is recorded
   const report = {
     tree,
+    focus: [],
     restacks: [configure(OTHER, TOP), configure(TOP, OTHER)],
     changes: [
       { field: 'stacking', notify: true },
@@ -75,8 +76,8 @@ test("only the target's frame may move, and only to the top", () => {
 });
 
 test('a foreground span without the restack record, or without the frame, cannot be judged clean', () => {
-  assert.deepEqual(judgeForegroundSpan({ changes: [] }, facts).fields, ['stacking']);
-  assert.deepEqual(judgeForegroundSpan({ tree, restacks: [], changes: [] }, { ...facts, frame: null }).fields, ['stacking']);
+  assert.deepEqual(judgeForegroundSpan({ focus: [], changes: [] }, facts).fields, ['stacking']);
+  assert.deepEqual(judgeForegroundSpan({ tree, focus: [], restacks: [], changes: [] }, { ...facts, frame: null }).fields, ['stacking']);
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -93,7 +94,7 @@ const engineScript = () => {
 test('a passing case whose cleanup fails fails, every disposal still run', async () => {
   const { dir, bin } = engineScript();
   try {
-    const cases = new Cases({ desktop: { oracle: {} }, witness: null, cua: bin, emit: () => {} });
+    const cases = new Cases({ desktop: { oracle: {} }, witness: null, cua: bin, emit: () => {}, settle: async () => ({}) });
     const ran = [];
     const engine = await (async () => {
       let e;
@@ -121,7 +122,7 @@ test('a passing case whose cleanup fails fails, every disposal still run', async
 });
 
 test("a case that threw keeps its own error, the cleanup failures attached", async () => {
-  const cases = new Cases({ desktop: { oracle: {} }, witness: null, cua: '/nonexistent', emit: () => {} });
+  const cases = new Cases({ desktop: { oracle: {} }, witness: null, cua: '/nonexistent', emit: () => {}, settle: async () => ({}) });
   await assert.rejects(
     cases.guarded(async () => {
       cases.defer(() => {
@@ -140,7 +141,7 @@ test("a case that threw keeps its own error, the cleanup failures attached", asy
 test('an engine that already exited is gone, so its disposal is not a failure', async () => {
   const { dir, bin } = engineScript();
   try {
-    const cases = new Cases({ desktop: { oracle: {} }, witness: null, cua: bin, emit: () => {} });
+    const cases = new Cases({ desktop: { oracle: {} }, witness: null, cua: bin, emit: () => {}, settle: async () => ({}) });
     const verdict = await cases.guarded(async () => {
       const e = cases.engine();
       await e.close();

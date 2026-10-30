@@ -62,6 +62,33 @@ export function auditRequests({ requests, extensions }) {
   return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
 }
 
+/** The window a background-forbidden request names: a ClientMessage's or ConfigureWindow's window, SetInputFocus's focus. */
+function namedWindow(request) {
+  const m = request.text.match(request.major === 42 ? /\bfocus=0x([0-9a-f]+)/ : /\bwindow=0x([0-9a-f]+)/);
+  return m ? Number.parseInt(m[1], 16) : null;
+}
+
+/**
+ * The audit of a request that must take the foreground route (M2 whole-branch review): the route activates its
+ * target, raises it, gives it the focus and sends XTEST input, so of the requests the background route forbids, only
+ * those are allowed: the `_NET_ACTIVE_WINDOW` ClientMessage, the stacking `ConfigureWindow` and `SetInputFocus` naming
+ * the target window, and XTEST FakeInput. Any of them naming another window, and WarpPointer, is forbidden. A trace
+ * with no requests is not clean. Returns `{clean, traced, requests, allowed, forbidden}`.
+ */
+export function auditForeground({ requests, extensions }, target) {
+  const found = [];
+  let allowed = 0;
+  for (const r of requests) {
+    const what = forbidden(r, extensions);
+    if (!what) continue;
+    const targeted = what === 'XTEST FakeInput' || (what !== 'WarpPointer' && namedWindow(r) === target);
+    if (targeted) allowed++;
+    else found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+  }
+  const traced = requests.length > 0;
+  return { clean: traced && found.length === 0, traced, requests: requests.length, allowed, forbidden: found };
+}
+
 function freeDisplay() {
   for (let n = 40; n < 100; n++) {
     if (!existsSync(`/tmp/.X11-unix/X${n}`) && !existsSync(`/tmp/.X${n}-lock`)) return n;

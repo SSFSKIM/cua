@@ -102,10 +102,12 @@ export function summarizeEngine(rows) {
  * The candidate's samples whose effect was not verified (Design, Verification system; Decision Log, M1a.4: cua's
  * effect is judged absolutely). An operation reads effects when any of its samples, any engine's, has one; then every
  * candidate sample that was answered must show its effect, whatever the vendor builds did on that sample: a miss
- * (`false`), or an effect not read (`null`, absent). Returns the samples as `block/i` labels.
+ * (`false`), or an effect not read (`null`, absent). An operation whose definition requires an effect
+ * (`effect_required`, every text operation but the one with none to read, M2 whole-branch review) reads it on every
+ * sample, readable or not. Returns the samples as `block/i` labels.
  */
 export function missedEffects(rows, candidate) {
-  if (!rows.some((r) => typeof r.effect === 'boolean')) return [];
+  if (!rows.some((r) => typeof r.effect === 'boolean' || r.effect_required)) return [];
   return rows.filter((r) => r.engine === candidate && r.ok && r.effect !== true).map((r, k) => `${r.block ?? 0}/${r.i ?? k}`);
 }
 
@@ -155,9 +157,10 @@ export function noiseVerdict(interval, bar) {
  * within `noiseBound` is the same within noise (`noise`); a wider interval is undetermined, which fails here (the
  * differential run adds no samples). A series `parity` declares (deviations.mjs `PARITY`) whose median lies within the
  * bar build's own spread of samples is parity: the verdict is then `parity`, neither a pass nor a failure.
+ * With `minSamples` (the desktop route's groups) a series with fewer samples on either side is not judged: it fails.
  * Returns `{engines, bar, speed, noise, parity, pass, verdict, reasons}`.
  */
-export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true, text = false, noise: interval = null, parity: parityList = [] }) {
+export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true, text = false, noise: interval = null, parity: parityList = [], minSamples = null }) {
   const engines = {};
   for (const label of new Set(rows.map((r) => r.engine))) {
     engines[label] = summarizeEngine(rows.filter((r) => r.engine === label));
@@ -186,6 +189,16 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   const shown = (v) => Math.round(v * 100) / 100;
   for (const series of ['cold', 'warm']) {
     if (exactBar[series] === null || c.exact[series] === null) continue;
+    if (minSamples) {
+      // a desktop-route group (Acceptance 3; Decision Log, the design session's top-up): judged only on enough samples
+      // a side, never on the medians of fewer, whichever way they point
+      const fewest = Math.min(...[candidate, ...vendors].filter((e) => engines[e]).map((e) => timedOf(e, series).length));
+      if (fewest < minSamples) {
+        speed = false;
+        if (judgeSpeed) reasons.push(`${candidate}: ${series}: ${fewest} samples a side, fewer than ${minSamples}; not judged on medians`);
+        continue;
+      }
+    }
     if (c.exact[series] <= exactBar[series]) continue;
     // the build that set the bar: its samples as the bar counts them (a text command's: its successes)
     const barEngine = vendors.find((v) => {

@@ -24,7 +24,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 
-import { clipRead, grabs, startOwner, toplevel, within } from './clip.mjs';
+import { clipRead, grabs, startOwner, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { Engine } from './engine.mjs';
 import { PAGES } from './scenes.mjs';
 import {
@@ -136,8 +136,13 @@ const stamp = () => Date.now().toString(36);
  * that fails fails the case.
  */
 export class Cases {
-  constructor({ desktop, witness, cua, emit }) {
-    Object.assign(this, { desktop, witness, cua, emit });
+  /**
+   * `settle()` waits out cua's display-wide unconfirmed-paste window before each case and each late-conversion trial
+   * (`clip.mjs` `waitQuarantineOver`): an unconfirmed case opens it, and while it runs every cua engine refuses text
+   * requests. It is waited out, never removed: the case's target may still convert until it ends.
+   */
+  constructor({ desktop, witness, cua, emit, settle = waitQuarantineOver }) {
+    Object.assign(this, { desktop, witness, cua, emit, settle });
     this.oracle = desktop.oracle;
     this.pending = [];
   }
@@ -173,6 +178,7 @@ export class Cases {
     let value;
     let thrown = null;
     try {
+      await this.settle();
       value = await fn();
     } catch (error) {
       thrown = error instanceof Error ? error : new Error(String(error));
@@ -456,6 +462,8 @@ export class Cases {
   async lateConvert() {
     let all = true;
     for (const [trial, mode] of ['late-convert:1500', 'late-convert:3000', 'late-convert-current:3000'].entries()) {
+      // each trial's paste is unconfirmed: the next one starts once the window it opened has closed
+      await this.settle();
       const scene = await this.target(mode);
       const engine = this.engine();
       const prior = await this.owner(`cua171 prior late ${stamp()}`);
@@ -556,7 +564,7 @@ export class Cases {
     }
     // the expected route, then its allowance (judgeRouteSpan): a route other than the expected one fails here
     if (!span.judged.clean) reasons.push(`the witness changed beyond the ${expected} route's allowance (${span.judged.fields.join(', ')})`);
-    return this.record(sceneName, op, 0, { pass: reasons.length === 0, reasons }, { answer: span.value.response, ms: Math.round(span.value.ms), route: span.route, route_expected: expected, witness_allowed: span.judged.allowed, witness_changes: (span.report?.changes ?? []).slice(0, 30), witness_restacks: (span.report?.restacks ?? []).slice(0, 30), paste });
+    return this.record(sceneName, op, 0, { pass: reasons.length === 0, reasons }, { answer: span.value.response, ms: Math.round(span.value.ms), route: span.route, route_expected: expected, witness_allowed: span.judged.allowed, witness_changes: (span.report?.changes ?? []).slice(0, 30), witness_restacks: (span.report?.restacks ?? []).slice(0, 30), witness_focus: (span.report?.focus ?? []).slice(0, 30), paste });
   }
 }
 

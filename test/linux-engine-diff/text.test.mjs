@@ -52,7 +52,7 @@ test("the foreground route's witness allows the target's activation and the poin
   const target = 0x1200005;
   // the spans carry the restack record (judgeRestacks): here nothing was restacked
   const facts = { target, frame: 0x47a900, focusWithin: (w) => w === target || w === target + 1 };
-  const none = { tree: [], restacks: [] };
+  const none = { tree: [], restacks: [], focus: [] };
   const report = {
     ...none,
     changes: [
@@ -90,7 +90,7 @@ test("the foreground route's witness allows the target's activation and the poin
 test('each change of the stacking order is judged: only the target rises', () => {
   const [a, b, target] = [0x400001, 0x400002, 0x1200005];
   const facts = { target, frame: 0x47a900, focusWithin: (w) => w === target };
-  const none = { tree: [], restacks: [] };
+  const none = { tree: [], restacks: [], focus: [] };
   // another window raised and the order restored: the orders before and after the span are the same
   const raisedAndRestored = {
     ...none,
@@ -103,14 +103,14 @@ test('each change of the stacking order is judged: only the target rises', () =>
   };
   assert.deepEqual(judgeForegroundSpan(raisedAndRestored, facts).fields, ['stacking'], 'the restore is the target rising, the raise before it is not');
   // the target's raise followed by another window's
-  const thenAnother = { changes: [{ field: 'stacking', from: [target, a, b], to: [a, b, target] }, { field: 'stacking', from: [a, b, target], to: [b, target, a] }] };
+  const thenAnother = { ...none, changes: [{ field: 'stacking', from: [target, a, b], to: [a, b, target] }, { field: 'stacking', from: [a, b, target], to: [b, target, a] }] };
   assert.deepEqual(judgeForegroundSpan(thenAnother, facts).fields, ['stacking']);
   // a window that appears is not the target's raise
-  assert.deepEqual(judgeForegroundSpan({ changes: [{ field: 'stacking', from: [a, target], to: [a, target, b] }] }, facts).fields, ['stacking']);
+  assert.deepEqual(judgeForegroundSpan({ ...none, changes: [{ field: 'stacking', from: [a, target], to: [a, target, b] }] }, facts).fields, ['stacking']);
   // a notify that leaves the order as it was (the window manager rewriting it, the target already on top) is allowed
   assert.deepEqual(judgeForegroundSpan({ ...none, changes: [{ field: 'stacking', notify: true }] }, facts), { clean: true, fields: [], allowed: ['stacking'] });
   // a change recorded without its orders (a witness that records only the lengths) cannot be judged
-  assert.deepEqual(judgeForegroundSpan({ changes: [{ field: 'stacking', from_len: 3, to_len: 3 }] }, facts).fields, ['stacking']);
+  assert.deepEqual(judgeForegroundSpan({ ...none, changes: [{ field: 'stacking', from_len: 3, to_len: 3 }] }, facts).fields, ['stacking']);
 });
 
 test('a refusal before dispatch passes only with its sentence, nothing in either field and the expected clipboard', () => {

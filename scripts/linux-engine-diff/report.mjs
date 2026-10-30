@@ -42,10 +42,14 @@ export function renderSummary(lines) {
     const foreground = rows.find((r) => r.kind === 'stub-check-foreground');
     if (foreground?.checks) {
       // M2.3 review round 2: the spaced and coalesced negatives and the positive raise (run.mjs foregroundNegativeCheck)
-      const { spaced, coalesced, raised } = foreground.checks;
-      const verdict = (c, mustFail) => (mustFail ? (c.fields.includes('stacking') ? 'failed' : '**passed (run invalid)**') : c.clean ? 'passed' : `**failed (run invalid): ${c.fields.join(', ')}**`);
+      // M2 whole-branch review: the focus and activation switched away and back, and the target activated
+      const { spaced, coalesced, raised, switched, activated } = foreground.checks;
+      const verdict = (c, mustFail, field = 'stacking') => (mustFail ? (c.fields.includes(field) ? 'failed' : '**passed (run invalid)**') : c.clean ? 'passed' : `**failed (run invalid): ${c.fields.join(', ')}**`);
+      const focusChecks = switched
+        ? `; ${verdict(switched, true, 'focus')} the focus and the active window switched to another window and back under one server grab (${switched.focus.filter((e) => e.kind === 'focus_in').length} FocusIn events); ${verdict(activated, false)} the target activated`
+        : '';
       out.push(
-        `foreground checks: the allowance ${verdict(spaced, true)} another window raised and the top one raised back; ${verdict(coalesced, true)} the same two raises under one server grab (${coalesced.restacks.length} restack events, ${coalesced.changes.filter((c) => c.from).length} property changes read); ${verdict(raised, false)} the target raised`,
+        `foreground checks: the allowance ${verdict(spaced, true)} another window raised and the top one raised back; ${verdict(coalesced, true)} the same two raises under one server grab (${coalesced.restacks.length} restack events, ${coalesced.changes.filter((c) => c.from).length} property changes read); ${verdict(raised, false)} the target raised${focusChecks}`,
         '',
       );
     } else if (foreground) {

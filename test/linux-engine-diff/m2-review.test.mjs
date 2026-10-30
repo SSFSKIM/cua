@@ -35,7 +35,7 @@ test("each cua text scene's route is known beforehand: background everywhere but
 test('the allowance is granted only where the expected route is the one taken; a missing route record fails', () => {
   const target = 0x1200005;
   const facts = { target, frame: 0x47a900, focusWithin: (w) => w === target };
-  const activated = { tree: [[0x400001, 1, 0], [0x47a900, 1, 0]], restacks: [{ kind: 'configure', window: 0x47a900, above: 0x400001, or: 0 }], changes: [{ field: 'active', from: [0x400001], to: [target] }, { field: 'stacking', from: [target, 0x400001], to: [0x400001, target] }] };
+  const activated = { focus: [], tree: [[0x400001, 1, 0], [0x47a900, 1, 0]], restacks: [{ kind: 'configure', window: 0x47a900, above: 0x400001, or: 0 }], changes: [{ field: 'active', from: [0x400001], to: [target] }, { field: 'stacking', from: [target, 0x400001], to: [0x400001, target] }] };
   // expected and taken: the foreground allowance
   assert.deepEqual(judgeRouteSpan(activated, { ...facts, expected: 'foreground', reported: 'foreground' }), { clean: true, fields: [], allowed: ['active', 'stacking'], foreground: true });
   // a background scene whose request reported the foreground route: no allowance, and the route itself fails
@@ -192,7 +192,7 @@ test('a safety case that throws mid-setup still ends every engine it started', a
     const bin = join(dir, 'engine');
     writeFileSync(bin, '#!/bin/sh\ncat >/dev/null\n');
     chmodSync(bin, 0o755);
-    const cases = new Cases({ desktop: { oracle: {} }, witness: null, cua: bin, emit: () => {} });
+    const cases = new Cases({ desktop: { oracle: {} }, witness: null, cua: bin, emit: () => {}, settle: async () => ({}) });
     const started = [];
     const released = [];
     await assert.rejects(

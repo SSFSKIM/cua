@@ -29,6 +29,31 @@ export function toplevel(window) {
   return JSON.parse(execFileSync(XPROBE, ['toplevel', String(window)], { encoding: 'utf8', timeout: 10000 }).trim()).toplevel;
 }
 
+/**
+ * cua's display-wide unconfirmed-paste window (`CUA_CLIPBOARD_QUARANTINE`, Decision Log, M2 whole-branch review):
+ * `{open, remaining_ms, client}`, read as the engine reads it.
+ */
+export function quarantine() {
+  return JSON.parse(execFileSync(XPROBE, ['quarantine'], { encoding: 'utf8', timeout: 10000 }).trim());
+}
+
+/**
+ * Waits until the display-wide window has closed, never removing it: an unconfirmed paste's target may still convert
+ * until the window ends, and every cua engine refuses text requests meanwhile. A window still open after `maxMs` (more
+ * than the longest one, 10 s) is an error. Returns `{waited_ms, reads}`.
+ */
+export async function waitQuarantineOver({ read = quarantine, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), maxMs = 12_000 } = {}) {
+  let waited = 0;
+  for (let reads = 1; ; reads++) {
+    const window = read();
+    if (!window.open) return { waited_ms: waited, reads };
+    const step = window.remaining_ms + 50;
+    if (waited + step > maxMs) throw new Error(`the display's unconfirmed-paste window is still open after ${waited} ms (${window.remaining_ms} ms left)`);
+    await sleep(step);
+    waited += step;
+  }
+}
+
 /** The window manager's stacking order, bottom first (`_NET_CLIENT_LIST_STACKING`). */
 export function stacking() {
   const text = execFileSync('xprop', ['-root', '_NET_CLIENT_LIST_STACKING'], { encoding: 'utf8' });

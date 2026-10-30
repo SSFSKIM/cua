@@ -217,13 +217,17 @@ impl Clipboard {
     /// The current CLIPBOARD contents within the snapshot bounds: empty when it has no owner; what the engine's own
     /// owner serves when that is the owner.
     pub fn snapshot(&mut self) -> Result<Payload> {
+        self.snapshot_within(MAX_SNAPSHOT_BYTES)
+    }
+
+    fn snapshot_within(&mut self, cap: usize) -> Result<Payload> {
         let ours = self.owner.as_ref().and_then(|owner| owner.serving());
         if let Some((window, payload)) = ours
             && self.owner_window()? == window
         {
             return Ok((*payload).clone());
         }
-        self.reader.snapshot()
+        self.reader.snapshot(cap)
     }
 
     /// The server's time now.
@@ -234,11 +238,27 @@ impl Clipboard {
     /// Becomes CLIPBOARD's owner serving `payload` for one paste; the returned paste's cleanup switches what is
     /// served to `restore` while the engine still owns CLIPBOARD.
     pub fn take(&mut self, payload: Payload, restore: Payload) -> Result<Paste> {
+        // Taken before the server's time is read, so the cleanup's estimate of the server's time is never early.
+        let anchor = std::time::Instant::now();
+        let time = self.reader.server_time()?;
+        self.take_from(payload, restore, time, anchor)
+    }
+
+    /// [`Clipboard::take`] with the server's `time` already read, no earlier than `anchor`.
+    fn take_from(
+        &mut self,
+        payload: Payload,
+        restore: Payload,
+        time: u32,
+        anchor: std::time::Instant,
+    ) -> Result<Paste> {
         if self.owner.as_ref().is_none_or(|owner| !owner.alive()) {
             self.owner = Some(owner::Owner::start(self.atoms)?);
         }
-        let time = self.reader.server_time()?;
-        self.owner.as_ref().expect("started above").take(payload, restore, time)
+        self.owner
+            .as_ref()
+            .expect("started above")
+            .take(payload, restore, time, anchor)
     }
 
     /// Whether the engine owns CLIPBOARD now (it has received no `SelectionClear`).

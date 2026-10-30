@@ -2,20 +2,20 @@
 //! Transfer bounds; behaviour §13.4–13.5): one X connection, one unmapped InputOnly window and one thread that
 //! answers `SelectionRequest`s for as long as the engine lives or another client takes CLIPBOARD.
 //!
-//! The request thread takes CLIPBOARD for a paste with [`Owner::take`], which returns the [`Paste`]: its cleanup,
-//! run on every exit path (an explicit [`Paste::confirmed`] or a drop), never calls `SetSelectionOwner`. While the
-//! engine still owns CLIPBOARD it switches what is served to the snapshot taken before the paste, and keeps serving
-//! that; after a `SelectionClear` it does nothing. Each paste is a serving generation: once its cleanup has run, a
+//! The request thread asks for CLIPBOARD for a paste with [`Owner::take`], and the owner thread takes it, so taking
+//! CLIPBOARD and handling a `SelectionClear` never interleave. `take` returns the [`Paste`]: its cleanup, run on
+//! every exit path (an explicit [`Paste::confirmed`] or a drop), never calls `SetSelectionOwner`. While the engine
+//! still owns CLIPBOARD it switches what is served to the snapshot taken before the paste, and keeps serving that;
+//! after a `SelectionClear` it does nothing. Each paste is a serving generation: once its cleanup has run, a
 //! conversion that carries its timestamps is refused (`serving.rs`), so a late requestor never receives the
 //! restored snapshot as if it were the paste. An INCR transfer keeps the payload it started with, and one that
 //! stops for 2 s between chunks or runs past 10 s is dropped.
 
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::thread::{JoinHandle, sleep};
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use x11rb::connection::{Connection, RequestConnection};
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{
@@ -24,11 +24,19 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::rust_connection::RustConnection;
 
-use super::serving::{Atom, CLOSED_KEPT, Closed, Format, Payload, chunk_size};
+use super::serving::{Atom, Closed, Format, Payload, Refusals, chunk_size};
 use super::{Atoms, TRANSFER_GAP, TRANSFER_WAIT, input_only};
+
+/// A pause in the `SelectionClear` handling between its check and its conclusion, for the tests' interleavings.
+#[cfg(test)]
+pub static CLEAR_PAUSE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// How long the thread sleeps between polls while an INCR transfer is in flight (it blocks otherwise).
 const POLL: Duration = Duration::from_millis(2);
+/// How long the request thread waits for the owner thread to take CLIPBOARD.
+const TAKE_WAIT: Duration = Duration::from_secs(5);
+/// How many requests one paste's [`Watch`] lists; its counts go on.
+const WATCH_LOG: usize = 256;
 
 /// What a paste's requestors have done so far (Design, Transfer bounds), for the paste route to judge.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -44,15 +52,65 @@ pub struct Watch {
     pub first_request: Option<Instant>,
     /// The last request, chunk or completion.
     pub last_progress: Option<Instant>,
+    /// Each request, in arrival order (the first [`WATCH_LOG`]), with its requestor window, so the paste route can
+    /// tell the target's X client's requests from another client's (by `resource_id_mask`).
+    pub log: Vec<Seen>,
+}
+
+/// One request a paste's owner saw.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Seen {
+    pub requestor: Window,
+    pub target: Atom,
+    /// The request's timestamp; 0 is `CurrentTime`.
+    pub time: u32,
+    pub at: Instant,
+    pub outcome: Outcome,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// Refused: a closed paste's timestamp, the engine no longer the owner, or a target not served.
+    Refused,
+    /// Answered with the `TARGETS` list.
+    Targets,
+    /// One of the paste's formats served in full.
+    Served,
+    /// An INCR transfer of one of the paste's formats, still in flight.
+    Transferring,
+    /// An INCR transfer dropped at the bounds or by its requestor's going.
+    Stalled,
+}
+
+impl Watch {
+    fn log(&mut self, seen: Seen) -> Option<usize> {
+        (self.log.len() < WATCH_LOG).then(|| {
+            self.log.push(seen);
+            self.log.len() - 1
+        })
+    }
+
+    fn mark(&mut self, entry: Option<usize>, outcome: Outcome) {
+        if let Some(seen) = entry.and_then(|i| self.log.get_mut(i)) {
+            seen.outcome = outcome;
+        }
+    }
 }
 
 struct Active {
     id: u64,
     owned_at: u32,
     dispatched: Option<u32>,
-    /// When `owned_at` was read, for the cleanup's estimate of the server's time.
-    taken: Instant,
+    /// A moment no later than when `owned_at` was read, for the cleanup's conservative estimate of the server's time.
+    anchor: Instant,
     watch: Watch,
+}
+
+/// A paste's request for CLIPBOARD, carried out by the owner thread.
+struct Take {
+    payload: Payload,
+    time: u32,
+    anchor: Instant,
 }
 
 struct Shared {
@@ -60,25 +118,43 @@ struct Shared {
     content: Arc<Payload>,
     /// The paste being served, if one is.
     active: Option<Active>,
-    /// The engine owns CLIPBOARD: it took it and has had no `SelectionClear` since.
+    /// The engine owns CLIPBOARD: it took it and has had no `SelectionClear` since. Only the owner thread sets it.
     owned: bool,
-    closed: VecDeque<Closed>,
+    refusals: Refusals,
     next_id: u64,
+    /// A take waiting for the owner thread, and its outcome: the paste's id, or the sentence.
+    take: Option<Take>,
+    taken: Option<std::result::Result<u64, String>>,
     /// The thread ends at its next event.
     stop: bool,
     /// The thread has ended (stopped, or its connection broke).
     ended: bool,
 }
 
-fn locked(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
-    shared.lock().unwrap_or_else(|e| e.into_inner())
+/// The state both threads share, and the signal for a finished take.
+struct State {
+    shared: Mutex<Shared>,
+    taken: Condvar,
+}
+
+impl State {
+    fn locked(&self) -> MutexGuard<'_, Shared> {
+        self.shared.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// Wakes the owner thread: a message to its own window reaches its own connection.
+fn wake(conn: &RustConnection, window: Window, atoms: &Atoms) {
+    let message = ClientMessageEvent::new(32, window, atoms.wake, [0u32; 5]);
+    let _ = conn.send_event(false, window, EventMask::NO_EVENT, message);
+    let _ = conn.flush();
 }
 
 pub struct Owner {
     conn: Arc<RustConnection>,
     window: Window,
     atoms: Atoms,
-    shared: Arc<Mutex<Shared>>,
+    state: Arc<State>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -90,20 +166,25 @@ impl Owner {
         let root = conn.setup().roots[screen].root;
         let window = input_only(&conn, root, EventMask::NO_EVENT)?;
         let chunk = chunk_size(conn.maximum_request_bytes())?;
-        let shared = Arc::new(Mutex::new(Shared {
-            content: Arc::new(Payload::default()),
-            active: None,
-            owned: false,
-            closed: VecDeque::new(),
-            next_id: 1,
-            stop: false,
-            ended: false,
-        }));
+        let state = Arc::new(State {
+            shared: Mutex::new(Shared {
+                content: Arc::new(Payload::default()),
+                active: None,
+                owned: false,
+                refusals: Refusals::default(),
+                next_id: 1,
+                take: None,
+                taken: None,
+                stop: false,
+                ended: false,
+            }),
+            taken: Condvar::new(),
+        });
         let serving = Serving {
             conn: conn.clone(),
             window,
             atoms,
-            shared: shared.clone(),
+            state: state.clone(),
             chunk,
             transfers: Vec::new(),
         };
@@ -115,62 +196,67 @@ impl Owner {
             conn,
             window,
             atoms,
-            shared,
+            state,
             thread: Some(thread),
         })
     }
 
     pub fn alive(&self) -> bool {
-        !locked(&self.shared).ended
+        !self.state.locked().ended
     }
 
     /// The owner's window and what it serves, while it owns CLIPBOARD.
     pub fn serving(&self) -> Option<(Window, Arc<Payload>)> {
-        let shared = locked(&self.shared);
+        let shared = self.state.locked();
         (shared.owned && !shared.ended).then(|| (self.window, shared.content.clone()))
     }
 
     /// Takes CLIPBOARD at server time `time` to serve `payload` for one paste, whose cleanup restores `restore`.
-    pub fn take(&self, payload: Payload, restore: Payload, time: u32) -> Result<Paste> {
-        let id = {
-            let mut shared = locked(&self.shared);
+    /// `anchor` is a moment no later than when `time` was read. The owner thread takes it and verifies it.
+    pub fn take(&self, payload: Payload, restore: Payload, time: u32, anchor: Instant) -> Result<Paste> {
+        {
+            let mut shared = self.state.locked();
             if shared.ended {
                 bail!("clipboard owner stopped during paste");
             }
-            let id = shared.next_id;
-            shared.next_id += 1;
-            shared.content = Arc::new(payload);
-            shared.active = Some(Active {
-                id,
-                owned_at: time,
-                dispatched: None,
-                taken: Instant::now(),
-                watch: Watch::default(),
-            });
-            shared.owned = true;
-            id
+            shared.take = Some(Take { payload, time, anchor });
+            shared.taken = None;
+        }
+        wake(&self.conn, self.window, &self.atoms);
+        let deadline = Instant::now() + TAKE_WAIT;
+        let mut shared = self.state.locked();
+        let taken = loop {
+            if let Some(taken) = shared.taken.take() {
+                break taken;
+            }
+            if shared.ended {
+                bail!("clipboard owner stopped during paste");
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                shared.take = None;
+                bail!("clipboard owner did not take CLIPBOARD");
+            }
+            shared = self
+                .state
+                .taken
+                .wait_timeout(shared, deadline - now)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
         };
-        let paste = Paste {
-            shared: self.shared.clone(),
+        let id = taken.map_err(|e| anyhow!(e))?;
+        Ok(Paste {
+            state: self.state.clone(),
             id,
             restore: Some(Arc::new(restore)),
-        };
-        self.conn.set_selection_owner(self.window, self.atoms.clipboard, time)?;
-        let owner = self.conn.get_selection_owner(self.atoms.clipboard)?.reply()?.owner;
-        if owner != self.window {
-            locked(&self.shared).owned = false;
-            bail!("failed to acquire X11 selection");
-        }
-        Ok(paste)
+        })
     }
 }
 
 impl Drop for Owner {
     fn drop(&mut self) {
-        locked(&self.shared).stop = true;
-        let wake = ClientMessageEvent::new(32, self.window, self.atoms.wake, [0u32; 5]);
-        let _ = self.conn.send_event(false, self.window, EventMask::NO_EVENT, wake);
-        let _ = self.conn.flush();
+        self.state.locked().stop = true;
+        wake(&self.conn, self.window, &self.atoms);
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -179,7 +265,7 @@ impl Drop for Owner {
 
 /// One paste's serving generation. Dropping it without [`Paste::confirmed`] is the unconfirmed cleanup.
 pub struct Paste {
-    shared: Arc<Mutex<Shared>>,
+    state: Arc<State>,
     id: u64,
     /// Taken by the cleanup, which runs once.
     restore: Option<Arc<Payload>>,
@@ -188,13 +274,13 @@ pub struct Paste {
 impl Paste {
     /// Records the synthetic Ctrl+V's timestamp, the generation's key.
     pub fn dispatched(&self, time: u32) {
-        if let Some(active) = locked(&self.shared).active.as_mut().filter(|a| a.id == self.id) {
+        if let Some(active) = self.state.locked().active.as_mut().filter(|a| a.id == self.id) {
             active.dispatched = Some(time);
         }
     }
 
     pub fn watch(&self) -> Watch {
-        let shared = locked(&self.shared);
+        let shared = self.state.locked();
         shared
             .active
             .as_ref()
@@ -205,7 +291,7 @@ impl Paste {
 
     /// Whether another client has taken CLIPBOARD since the paste took it.
     pub fn lost(&self) -> bool {
-        let shared = locked(&self.shared);
+        let shared = self.state.locked();
         !shared.owned || shared.ended
     }
 
@@ -218,24 +304,23 @@ impl Paste {
     /// the engine still owns CLIPBOARD; nothing else after a `SelectionClear`.
     fn cleanup(&mut self, confirmed: bool) {
         let Some(restore) = self.restore.take() else { return };
-        let mut shared = locked(&self.shared);
+        let mut shared = self.state.locked();
         let Some(active) = shared.active.take_if(|a| a.id == self.id) else {
             return;
         };
-        let elapsed = active.taken.elapsed().as_millis() as u32;
-        // The server's time now, estimated from the moment ownership was taken; one more millisecond so the window
-        // covers a request stamped in the cleanup's own millisecond.
-        let cleaned_at = active.owned_at.wrapping_add(elapsed).wrapping_add(1);
-        shared.closed.push_back(Closed::new(
+        // The server's time now, estimated never earlier than it is: the anchor was taken no later than the
+        // ownership timestamp was read, so the time elapsed since it is at least the server's. One millisecond more
+        // covers a request stamped in the cleanup's own millisecond, and one per thousand the clocks' drift.
+        let elapsed = active.anchor.elapsed().as_millis() as u32;
+        let cleaned_at = active.owned_at.wrapping_add(elapsed).wrapping_add(1 + elapsed / 1000);
+        let closed = Closed::new(
             active.owned_at,
             active.dispatched,
             cleaned_at,
             confirmed,
             Instant::now(),
-        ));
-        while shared.closed.len() > CLOSED_KEPT {
-            shared.closed.pop_front();
-        }
+        );
+        shared.refusals.push(closed);
         if shared.owned {
             shared.content = restore;
         }
@@ -258,8 +343,9 @@ struct Transfer {
     ending: bool,
     started: Instant,
     progress: Instant,
-    /// The paste it belongs to, if one was being served.
+    /// The paste it belongs to, if one was being served, and its entry in that paste's log.
     paste: Option<u64>,
+    seen: Option<usize>,
 }
 
 /// The owner thread's side.
@@ -267,7 +353,7 @@ struct Serving {
     conn: Arc<RustConnection>,
     window: Window,
     atoms: Atoms,
-    shared: Arc<Mutex<Shared>>,
+    state: Arc<State>,
     chunk: usize,
     transfers: Vec<Transfer>,
 }
@@ -275,7 +361,8 @@ struct Serving {
 impl Serving {
     fn run(mut self) {
         let _ = self.serve();
-        locked(&self.shared).ended = true;
+        self.state.locked().ended = true;
+        self.state.taken.notify_all();
         let _ = self.conn.destroy_window(self.window);
         let _ = self.conn.flush();
     }
@@ -287,13 +374,14 @@ impl Serving {
             } else {
                 self.conn.poll_for_event()?
             };
-            if locked(&self.shared).stop {
+            if self.state.locked().stop {
                 return Ok(());
             }
             match event {
                 Some(event) => self.handle(event)?,
                 None => sleep(POLL),
             }
+            self.take()?;
             self.expire(Instant::now());
             self.conn.flush()?;
         }
@@ -305,8 +393,12 @@ impl Serving {
             Event::SelectionClear(e) if e.selection == self.atoms.clipboard && e.owner == self.window => {
                 // A clear can be stale: the request thread may have taken CLIPBOARD again since. The server knows.
                 let owner = self.conn.get_selection_owner(self.atoms.clipboard)?.reply()?.owner;
+                #[cfg(test)]
+                sleep(Duration::from_millis(
+                    CLEAR_PAUSE_MS.load(std::sync::atomic::Ordering::SeqCst),
+                ));
                 if owner != self.window {
-                    locked(&self.shared).owned = false;
+                    self.state.locked().owned = false;
                 }
                 Ok(())
             }
@@ -317,6 +409,42 @@ impl Serving {
             }
             _ => Ok(()),
         }
+    }
+
+    /// A waiting take: the generation set up, CLIPBOARD taken at the paste's timestamp and the owner read back. On
+    /// this thread, so no `SelectionClear` is handled in between.
+    fn take(&mut self) -> Result<()> {
+        let Some(take) = self.state.locked().take.take() else {
+            return Ok(());
+        };
+        let id = {
+            let mut shared = self.state.locked();
+            let id = shared.next_id;
+            shared.next_id += 1;
+            shared.content = Arc::new(take.payload);
+            shared.active = Some(Active {
+                id,
+                owned_at: take.time,
+                dispatched: None,
+                anchor: take.anchor,
+                watch: Watch::default(),
+            });
+            id
+        };
+        self.conn
+            .set_selection_owner(self.window, self.atoms.clipboard, take.time)?;
+        let owner = self.conn.get_selection_owner(self.atoms.clipboard)?.reply()?.owner;
+        let mut shared = self.state.locked();
+        shared.owned = owner == self.window;
+        shared.taken = Some(if shared.owned {
+            Ok(id)
+        } else {
+            shared.active = None;
+            Err("failed to acquire X11 selection".into())
+        });
+        drop(shared);
+        self.state.taken.notify_all();
+        Ok(())
     }
 
     /// Notifies the requestor; `property` None refuses.
@@ -340,18 +468,27 @@ impl Serving {
         }
         let now = Instant::now();
         let (content, paste, refused) = {
-            let mut shared = locked(&self.shared);
-            let refused = !shared.owned || shared.closed.iter().any(|c| c.refuses(e.time, now));
+            let mut shared = self.state.locked();
+            let refused = !shared.owned || shared.refusals.refuses(e.time, now);
             let content = shared.content.clone();
             let paste = shared.active.as_mut().map(|active| {
                 let watch = &mut active.watch;
                 watch.requests += 1;
                 watch.first_request.get_or_insert(now);
                 watch.last_progress = Some(now);
-                active.id
+                let seen = watch.log(Seen {
+                    requestor: e.requestor,
+                    target: e.target,
+                    time: e.time,
+                    at: now,
+                    outcome: Outcome::Refused,
+                });
+                (active.id, seen)
             });
             (content, paste, refused)
         };
+        let seen = paste.and_then(|(_, seen)| seen);
+        let paste = paste.map(|(id, _)| id);
         // An obsolete requestor names no property: the target is the property (ICCCM).
         let property = if e.property == x11rb::NONE {
             e.target
@@ -372,6 +509,7 @@ impl Serving {
                 targets.len() as u32,
                 &targets.iter().flat_map(|a| a.to_ne_bytes()).collect::<Vec<u8>>(),
             )?;
+            self.mark(paste, seen, Outcome::Targets);
             return self.notify(e, property);
         }
         let Some(format) = content.get(e.target).cloned() else {
@@ -381,7 +519,7 @@ impl Serving {
         if format.data.len() <= self.chunk {
             self.write(e.requestor, property, &format, &format.data)?;
             self.notify(e, property)?;
-            self.served(paste);
+            self.served(paste, seen);
             return Ok(());
         }
         // INCR: watch the requestor's deletions first, so none is missed.
@@ -404,7 +542,9 @@ impl Serving {
             started: now,
             progress: now,
             paste,
+            seen,
         });
+        self.mark(paste, seen, Outcome::Transferring);
         self.recount();
         Ok(())
     }
@@ -439,7 +579,7 @@ impl Serving {
         if t.ending {
             let done = self.transfers.remove(i);
             self.release_requestor(done.requestor);
-            self.served(done.paste);
+            self.served(done.paste, done.seen);
             self.recount();
             return Ok(());
         }
@@ -468,9 +608,12 @@ impl Serving {
             self.release_requestor(t.requestor);
         }
         {
-            let mut shared = locked(&self.shared);
+            let mut shared = self.state.locked();
             if let Some(active) = shared.active.as_mut() {
-                active.watch.stalled += gone.iter().filter(|t| t.paste == Some(active.id)).count() as u32;
+                for t in gone.iter().filter(|t| t.paste == Some(active.id)) {
+                    active.watch.stalled += 1;
+                    active.watch.mark(t.seen, Outcome::Stalled);
+                }
             }
         }
         self.recount();
@@ -484,23 +627,31 @@ impl Serving {
         }
     }
 
-    fn served(&self, paste: Option<u64>) {
-        let mut shared = locked(&self.shared);
+    fn served(&self, paste: Option<u64>, seen: Option<usize>) {
+        let mut shared = self.state.locked();
         if let Some(active) = shared.active.as_mut().filter(|a| Some(a.id) == paste) {
             active.watch.served += 1;
             active.watch.last_progress = Some(Instant::now());
+            active.watch.mark(seen, Outcome::Served);
+        }
+    }
+
+    fn mark(&self, paste: Option<u64>, seen: Option<usize>, outcome: Outcome) {
+        let mut shared = self.state.locked();
+        if let Some(active) = shared.active.as_mut().filter(|a| Some(a.id) == paste) {
+            active.watch.mark(seen, outcome);
         }
     }
 
     fn progressed(&self, paste: Option<u64>, now: Instant) {
-        let mut shared = locked(&self.shared);
+        let mut shared = self.state.locked();
         if let Some(active) = shared.active.as_mut().filter(|a| Some(a.id) == paste) {
             active.watch.last_progress = Some(now);
         }
     }
 
     fn recount(&self) {
-        let mut shared = locked(&self.shared);
+        let mut shared = self.state.locked();
         if let Some(active) = shared.active.as_mut() {
             active.watch.active = self.transfers.iter().filter(|t| t.paste == Some(active.id)).count() as u32;
         }

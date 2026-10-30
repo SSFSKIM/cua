@@ -19,7 +19,7 @@ use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, EventMask, PropMode,
 use x11rb::rust_connection::RustConnection;
 
 use super::serving::{Atom, Format, Payload};
-use super::{Atoms, CHUNK_GAP, FORMAT_WAIT, MAX_SNAPSHOT_BYTES, SNAPSHOT_WAIT, TARGETS_WAIT, input_only};
+use super::{Atoms, CHUNK_GAP, FORMAT_WAIT, SNAPSHOT_WAIT, TARGETS_WAIT, input_only};
 
 /// The most `TARGETS` may hold, as the vendor reads it.
 const TARGETS_BYTES: usize = 1024;
@@ -164,7 +164,7 @@ impl Reader {
 
     /// The snapshot (behaviour §13.3): empty without an owner; else `TARGETS`, then each target not skipped, in
     /// offered order, stored in ascending atom order.
-    pub fn snapshot(&mut self) -> Result<Payload> {
+    pub fn snapshot(&mut self, cap: usize) -> Result<Payload> {
         let deadline = Instant::now() + SNAPSHOT_WAIT;
         self.drain()?;
         let start = self.generation;
@@ -172,10 +172,14 @@ impl Reader {
         if owner == x11rb::NONE {
             return Ok(Payload::default());
         }
-        let mut budget = MAX_SNAPSHOT_BYTES;
+        let mut budget = cap;
         let targets = match self.convert(self.atoms.targets, Waiting::Targets, TARGETS_BYTES, deadline)? {
             Some(reply) => reply,
-            None => bail!("clipboard owner did not provide its formats"),
+            None => {
+                // The server itself refuses for an owner that has just gone: that is a change, not a refusal.
+                self.check_unchanged(start)?;
+                bail!("clipboard owner did not provide its formats")
+            }
         };
         if targets.kind != u32::from(AtomEnum::ATOM) || targets.format != 32 || targets.data.len() % 4 != 0 {
             bail!("clipboard owner returned invalid TARGETS");
@@ -201,7 +205,10 @@ impl Reader {
             if SKIPPED_TYPES.contains(&self.name(reply.kind)?.as_str()) {
                 continue;
             }
-            budget -= reply.data.len();
+            // `convert` holds each format to the budget; checked again so the count can never wrap.
+            budget = budget
+                .checked_sub(reply.data.len())
+                .ok_or_else(|| failed_format(&name, anyhow!("X11 selection exceeds byte limit")))?;
             formats.push(Format {
                 target: atom,
                 kind: reply.kind,
@@ -269,13 +276,7 @@ impl Reader {
         if head.bytes_after as usize > cap {
             bail!("X11 selection exceeds byte limit");
         }
-        let whole = self
-            .conn
-            .get_property(true, window, property, AtomEnum::ANY, 0, head.bytes_after.div_ceil(4))?
-            .reply()?;
-        if whole.bytes_after != 0 {
-            bail!("incomplete X11 selection property");
-        }
+        let whole = self.take_property(window, cap)?;
         let reply = Reply {
             kind: whole.type_,
             format: whole.format,
@@ -283,6 +284,21 @@ impl Reader {
         };
         reply.check()?;
         Ok(Some(reply))
+    }
+
+    /// Reads and deletes the property, refusing it when it holds more than `cap` bytes. It asks for one 32-bit unit
+    /// more than `cap` allows, so a property even a byte over the cap shows as over it, in what came back or in what
+    /// was left.
+    fn take_property(&self, window: Window, cap: usize) -> Result<x11rb::protocol::xproto::GetPropertyReply> {
+        let units = u32::try_from(cap / 4 + 1).unwrap_or(u32::MAX);
+        let reply = self
+            .conn
+            .get_property(true, window, self.atoms.property, AtomEnum::ANY, 0, units)?
+            .reply()?;
+        if reply.bytes_after != 0 || reply.value.len() > cap {
+            bail!("X11 selection exceeds byte limit");
+        }
+        Ok(reply)
     }
 
     /// An INCR transfer: the size checked, the INCR property deleted to start it, then each new chunk read and
@@ -331,20 +347,7 @@ impl Reader {
                 }
             }
             let left = cap - reply.as_ref().map_or(0, |r| r.data.len());
-            let chunk = self
-                .conn
-                .get_property(
-                    true,
-                    window,
-                    property,
-                    AtomEnum::ANY,
-                    0,
-                    (left as u32).div_ceil(4).max(1),
-                )?
-                .reply()?;
-            if chunk.bytes_after != 0 {
-                bail!("X11 selection exceeds byte limit");
-            }
+            let chunk = self.take_property(window, left)?;
             if chunk.value.is_empty() {
                 let reply = reply.unwrap_or(Reply {
                     kind: chunk.type_,

@@ -206,6 +206,13 @@ enum Behaviour {
     Serve(Vec<(&'static str, Vec<u8>)>),
     /// Serves `UTF8_STRING` by INCR and stops after the first chunk.
     StallIncr(Vec<u8>),
+    /// Serves these targets, each by INCR in chunks of `chunk` bytes, its INCR property announcing `announce` bytes
+    /// when given (an owner may announce less than it sends).
+    Incr {
+        targets: Vec<(&'static str, Vec<u8>)>,
+        chunk: usize,
+        announce: Option<u32>,
+    },
 }
 
 struct TestOwner {
@@ -222,7 +229,9 @@ impl TestOwner {
         let targets = intern(&conn, "TARGETS");
         let incr = intern(&conn, "INCR");
         let served: Vec<(Atom, Vec<u8>)> = match &behaviour {
-            Behaviour::Serve(list) => list.iter().map(|(n, b)| (intern(&conn, n), b.clone())).collect(),
+            Behaviour::Serve(list) | Behaviour::Incr { targets: list, .. } => {
+                list.iter().map(|(n, b)| (intern(&conn, n), b.clone())).collect()
+            }
             Behaviour::StallIncr(bytes) => vec![(intern(&conn, "UTF8_STRING"), bytes.clone())],
             Behaviour::Silent => vec![],
         };
@@ -267,18 +276,17 @@ impl TestOwner {
                                 .unwrap();
                             notify(e.property);
                         } else if let Some((target, data)) = served.iter().find(|(a, _)| *a == e.target) {
-                            let incremental = data.len() > 65_536 || matches!(behaviour, Behaviour::StallIncr(_));
+                            let incremental = data.len() > 65_536
+                                || matches!(behaviour, Behaviour::StallIncr(_) | Behaviour::Incr { .. });
+                            let announced = match &behaviour {
+                                Behaviour::Incr { announce: Some(n), .. } => *n,
+                                _ => data.len() as u32,
+                            };
                             if incremental {
                                 let aux = ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE);
                                 conn.change_window_attributes(e.requestor, &aux).unwrap();
-                                conn.change_property32(
-                                    PropMode::REPLACE,
-                                    e.requestor,
-                                    e.property,
-                                    incr,
-                                    &[data.len() as u32],
-                                )
-                                .unwrap();
+                                conn.change_property32(PropMode::REPLACE, e.requestor, e.property, incr, &[announced])
+                                    .unwrap();
                                 transfers.push((e.requestor, e.property, *target, data.clone(), 0, 0));
                             } else {
                                 conn.change_property8(PropMode::REPLACE, e.requestor, e.property, *target, data)
@@ -297,7 +305,11 @@ impl TestOwner {
                         if matches!(behaviour, Behaviour::StallIncr(_)) && *chunks == 1 {
                             continue;
                         }
-                        let end = (*offset + 4096).min(data.len());
+                        let step = match &behaviour {
+                            Behaviour::Incr { chunk, .. } => *chunk,
+                            _ => 4096,
+                        };
+                        let end = (*offset + step).min(data.len());
                         conn.change_property8(PropMode::REPLACE, *requestor, *property, *kind, &data[*offset..end])
                             .unwrap();
                         conn.flush().unwrap();
@@ -502,6 +514,9 @@ fn a_late_conversion_never_receives_the_restored_snapshot_as_the_paste() {
         Answer::Refused,
         "CurrentTime within 10 s of an unconfirmed paste"
     );
+    // The cleanup's end is estimated late, by up to the time it took to read the ownership timestamp; a request
+    // stamped well after it is served.
+    sleep(Duration::from_millis(50));
     let later = server_time(&conn);
     assert_eq!(
         text_of(at_paste(later)),
@@ -768,10 +783,14 @@ fn engines_contending_for_the_lock_never_hold_it_together_nor_cross_deliver() {
     clear_clipboard();
     let holders = Arc::new(AtomicUsize::new(0));
     let done = Arc::new(AtomicBool::new(false));
+    // Each engine lives until both are done: an engine's exit takes CLIPBOARD down with its owner, which the other
+    // engine, mid-snapshot, would see vanish.
+    let finished = Arc::new(std::sync::Barrier::new(2));
     let pasters: Vec<_> = ["marker-A", "marker-B"]
         .into_iter()
         .map(|marker| {
             let holders = holders.clone();
+            let finished = finished.clone();
             std::thread::spawn(move || {
                 let mut c = clipboard();
                 for round in 0..40 {
@@ -785,6 +804,7 @@ fn engines_contending_for_the_lock_never_hold_it_together_nor_cross_deliver() {
                     holders.fetch_sub(1, Ordering::SeqCst);
                     drop(lock);
                 }
+                finished.wait();
             })
         })
         .collect();
@@ -808,4 +828,187 @@ fn engines_contending_for_the_lock_never_hold_it_together_nor_cross_deliver() {
     }
     done.store(true, Ordering::SeqCst);
     assert!(grabber.join().unwrap() > 0, "the grabber got the lock in between");
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Review fixes (task review of 125c8768)
+
+fn incr_owner(targets: Vec<(&'static str, Vec<u8>)>, chunk: usize, announce: Option<u32>) -> TestOwner {
+    TestOwner::start(Behaviour::Incr {
+        targets,
+        chunk,
+        announce,
+    })
+}
+
+fn snapshot_capped(cap: usize) -> Result<Payload> {
+    let mut c = clipboard();
+    let lock = c.lock().unwrap();
+    let snapshot = c.snapshot_within(cap);
+    drop(lock);
+    snapshot
+}
+
+const OVER_CAP: &str = "failed to capture clipboard format \"UTF8_STRING\": X11 selection exceeds byte limit";
+
+/// The aggregate cap holds for INCR: exactly the cap is taken, one byte more is refused, whether the owner announces
+/// its size truthfully or announces the cap and sends more.
+#[test]
+#[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+fn an_incr_format_is_held_to_the_cap_exactly() {
+    let _serial = serial();
+    clear_clipboard();
+    {
+        let _owner = incr_owner(vec![("UTF8_STRING", vec![b'a'; 12])], 4, None);
+        let snapshot = snapshot_capped(12).unwrap();
+        assert_eq!(snapshot.bytes(), 12, "exactly the cap");
+    }
+    {
+        let _owner = incr_owner(vec![("UTF8_STRING", vec![b'a'; 13])], 4, None);
+        assert_eq!(
+            format!("{:#}", snapshot_capped(12).unwrap_err()),
+            OVER_CAP,
+            "announced over the cap"
+        );
+    }
+    {
+        let _owner = incr_owner(vec![("UTF8_STRING", vec![b'a'; 13])], 4, Some(12));
+        assert_eq!(
+            format!("{:#}", snapshot_capped(12).unwrap_err()),
+            OVER_CAP,
+            "announced at the cap, sent one byte more"
+        );
+    }
+    {
+        let _owner = incr_owner(vec![("UTF8_STRING", vec![b'a'; 13])], 13, Some(12));
+        assert_eq!(
+            format!("{:#}", snapshot_capped(12).unwrap_err()),
+            OVER_CAP,
+            "one chunk of one byte more"
+        );
+    }
+}
+
+/// A remaining budget that is not a whole number of 32-bit units: 3 bytes of the first format leave 7 of 10.
+#[test]
+#[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+fn the_budget_left_by_earlier_formats_is_counted_in_bytes() {
+    let _serial = serial();
+    clear_clipboard();
+    let (conn, _) = x11rb::connect(None).unwrap();
+    // Atoms are numbered in interning order, and formats are captured in the order TARGETS offers them.
+    let first = "text/x-cua-first";
+    let second = "text/x-cua-second";
+    intern(&conn, first);
+    intern(&conn, second);
+    {
+        let _owner = incr_owner(vec![(first, b"abc".to_vec()), (second, vec![b'b'; 7])], 2, None);
+        assert_eq!(snapshot_capped(10).unwrap().bytes(), 10);
+    }
+    {
+        let _owner = incr_owner(vec![(first, b"abc".to_vec()), (second, vec![b'b'; 8])], 2, Some(7));
+        assert_eq!(
+            format!("{:#}", snapshot_capped(10).unwrap_err()),
+            format!("failed to capture clipboard format \"{second}\": X11 selection exceeds byte limit")
+        );
+    }
+}
+
+/// The cleanup's window starts no later than the server's time at ownership and ends no earlier than the cleanup,
+/// even when the request thread pauses between reading the server's time and taking CLIPBOARD.
+#[test]
+#[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+fn a_pause_before_taking_clipboard_does_not_shorten_the_refused_window() {
+    let _serial = serial();
+    clear_clipboard();
+    let mut c = clipboard();
+    let (conn, _) = x11rb::connect(None).unwrap();
+    let anchor = Instant::now();
+    let time = c.server_time().unwrap();
+    sleep(Duration::from_millis(300));
+    let paste = c
+        .take_from(text(&c, "pasted"), text(&c, "before"), time, anchor)
+        .unwrap();
+    let during = server_time(&conn);
+    paste.confirmed();
+    assert_eq!(
+        convert(
+            "UTF8_STRING",
+            Asking {
+                time: during,
+                ..Default::default()
+            }
+        ),
+        Answer::Refused,
+        "a time while the paste was served"
+    );
+    assert_eq!(text_of(convert("UTF8_STRING", Asking::default())), "before");
+}
+
+/// Another client takes CLIPBOARD and the engine takes it back for a new paste while the owner thread is still
+/// handling the first `SelectionClear`, held up between its check and its conclusion: the new paste owns CLIPBOARD,
+/// serves its text and restores its snapshot.
+#[test]
+#[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+fn a_takeover_handled_late_does_not_cost_the_next_paste_its_clipboard() {
+    let _serial = serial();
+    clear_clipboard();
+    let mut c = clipboard();
+    let first = c.take(text(&c, "first"), text(&c, "before")).unwrap();
+    first.confirmed();
+    owner::CLEAR_PAUSE_MS.store(300, Ordering::SeqCst);
+    let external = TestOwner::start(Behaviour::Serve(vec![("UTF8_STRING", b"theirs".to_vec())]));
+    // The owner thread has the clear and is held up in it.
+    sleep(Duration::from_millis(100));
+    let next = c.take(text(&c, "second"), text(&c, "restored")).unwrap();
+    sleep(Duration::from_millis(400));
+    owner::CLEAR_PAUSE_MS.store(0, Ordering::SeqCst);
+    assert!(!next.lost(), "the engine took CLIPBOARD after the takeover");
+    assert!(c.owns());
+    assert_eq!(text_of(convert("UTF8_STRING", Asking::default())), "second");
+    next.confirmed();
+    assert_eq!(text_of(convert("UTF8_STRING", Asking::default())), "restored");
+    drop(external);
+}
+
+/// Refusal by timestamp has no expiry: a conversion stamped in the first paste's window stays refused after more
+/// pastes than the closed generations kept.
+#[test]
+#[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+fn a_conversion_of_a_long_evicted_paste_stays_refused() {
+    let _serial = serial();
+    clear_clipboard();
+    let mut c = clipboard();
+    let (conn, _) = x11rb::connect(None).unwrap();
+    let first = c.take(text(&c, "first"), text(&c, "before")).unwrap();
+    let first_ctrl_v = server_time(&conn);
+    first.dispatched(first_ctrl_v);
+    first.confirmed();
+    for i in 0..serving::CLOSED_KEPT + 2 {
+        let paste = c.take(text(&c, &format!("paste {i}")), text(&c, "before")).unwrap();
+        paste.confirmed();
+    }
+    assert_eq!(
+        convert(
+            "UTF8_STRING",
+            Asking {
+                time: first_ctrl_v,
+                ..Default::default()
+            }
+        ),
+        Answer::Refused
+    );
+    sleep(Duration::from_millis(50));
+    let now = server_time(&conn);
+    assert_eq!(
+        text_of(convert(
+            "UTF8_STRING",
+            Asking {
+                time: now,
+                ..Default::default()
+            }
+        )),
+        "before",
+        "a later request is still served"
+    );
 }

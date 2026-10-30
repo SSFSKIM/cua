@@ -139,8 +139,73 @@ impl Closed {
     }
 }
 
-/// How many closed pastes keep refusing: far more than can be in flight, so memory stays bounded.
+/// How many closed pastes are kept one by one; older ones are merged into one span (`Refusals`).
 pub const CLOSED_KEPT: usize = 32;
+
+/// The longest span the merged older pastes cover: half the server clock's range, so "within" stays meaningful.
+/// A conversion stamped more than 24 days before the newest merged paste is no longer refused for it.
+const SPAN_LIMIT: u32 = 1 << 31;
+
+/// Every closed paste's refusal, bounded in memory without expiry (Design, Serving generations): the newest
+/// `CLOSED_KEPT` exactly, and the older ones merged into one span from the oldest merged ownership to the newest merged
+/// cleanup, which refuses a little more than they did (the gaps between them), never less.
+#[derive(Debug, Default)]
+pub struct Refusals {
+    kept: std::collections::VecDeque<Closed>,
+    merged: Option<Merged>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Merged {
+    from: u32,
+    through: u32,
+    current_time_until: Option<Instant>,
+}
+
+impl Refusals {
+    pub fn push(&mut self, closed: Closed) {
+        self.kept.push_back(closed);
+        while self.kept.len() > CLOSED_KEPT {
+            let old = self.kept.pop_front().expect("over the limit");
+            self.merge(old);
+        }
+    }
+
+    fn merge(&mut self, old: Closed) {
+        let merged = match self.merged {
+            None => Merged {
+                from: old.owned_at,
+                through: old.cleaned_at,
+                current_time_until: old.current_time_until,
+            },
+            Some(m) => {
+                let through = old.cleaned_at;
+                let from = if through.wrapping_sub(m.from) > SPAN_LIMIT {
+                    through.wrapping_sub(SPAN_LIMIT)
+                } else {
+                    m.from
+                };
+                Merged {
+                    from,
+                    through,
+                    current_time_until: m.current_time_until.max(old.current_time_until),
+                }
+            }
+        };
+        self.merged = Some(merged);
+    }
+
+    pub fn refuses(&self, time: u32, now: Instant) -> bool {
+        self.kept.iter().any(|c| c.refuses(time, now))
+            || self.merged.is_some_and(|m| {
+                if time == 0 {
+                    m.current_time_until.is_some_and(|until| now < until)
+                } else {
+                    within(time, m.from, m.through)
+                }
+            })
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -237,6 +302,56 @@ mod tests {
             closed.refuses(1_040, now + Duration::from_secs(60)),
             "its timestamps stay refused"
         );
+    }
+
+    #[test]
+    fn pastes_beyond_the_kept_ones_still_refuse_their_timestamps() {
+        let now = Instant::now();
+        let mut refusals = Refusals::default();
+        // Paste i owns from 1000 + 100 i to 1000 + 100 i + 50, its Ctrl+V at + 10.
+        for i in 0..(CLOSED_KEPT as u32 + 5) {
+            let at = 1_000 + 100 * i;
+            refusals.push(Closed::new(at, Some(at + 10), at + 50, true, now));
+        }
+        assert!(refusals.refuses(1_010, now), "the first paste's Ctrl+V, long evicted");
+        assert!(refusals.refuses(1_000, now) && refusals.refuses(1_050, now));
+        assert!(
+            refusals.refuses(1_075, now),
+            "a gap between merged pastes is refused too, conservatively"
+        );
+        let last = 1_000 + 100 * (CLOSED_KEPT as u32 + 4);
+        assert!(refusals.refuses(last + 50, now));
+        assert!(!refusals.refuses(last + 51, now), "a later request is served");
+        assert!(!refusals.refuses(999, now), "before every paste");
+        assert!(!refusals.refuses(0, now), "confirmed pastes refuse no CurrentTime");
+    }
+
+    #[test]
+    fn a_merged_unconfirmed_paste_keeps_its_current_time_refusal() {
+        let now = Instant::now();
+        let mut refusals = Refusals::default();
+        refusals.push(Closed::new(10, None, 20, false, now));
+        for i in 0..CLOSED_KEPT as u32 {
+            refusals.push(Closed::new(100 + i, None, 100 + i, true, now));
+        }
+        assert!(refusals.refuses(0, now + Duration::from_secs(5)));
+        assert!(!refusals.refuses(0, now + CURRENT_TIME_REFUSAL));
+    }
+
+    #[test]
+    fn the_merged_span_stays_within_half_the_clock() {
+        let now = Instant::now();
+        let mut refusals = Refusals::default();
+        refusals.push(Closed::new(0x10, None, 0x20, true, now));
+        for i in 0..CLOSED_KEPT as u32 + 1 {
+            let at = 0x9000_0000 + i;
+            refusals.push(Closed::new(at, None, at, true, now));
+        }
+        assert!(
+            !refusals.refuses(0x15, now),
+            "more than 2^31 ms before the newest merged paste"
+        );
+        assert!(refusals.refuses(0x9000_0000, now));
     }
 
     #[test]

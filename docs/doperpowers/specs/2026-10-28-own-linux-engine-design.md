@@ -776,6 +776,20 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - Executors write commit messages to their own file (`~/.local/share/cua-171/commit-msg-<task>.txt`), not the controller's: two M1b commits went out with a stale shared message.
   Date/Author: 2026-10-29, the plan-executor (session linux171).
 
+- Decision (2026-10-29, M2.1): the clipboard core, and one rule the serving generations needed.
+  - Serving generations across pastes. Chrome converts with `CurrentTime` and gedit with the Ctrl+V's timestamp (xtrace), so a `CurrentTime` request is ambiguous: a late conversion from an earlier target looks like the next paste's own. The 10 s `CurrentTime` refusal after an unconfirmed paste therefore covers any later paste too, so a late conversion is never served the next paste's text. Two refinements keep this from blocking ordinary use; M2.2 builds them, and the design session was asked to check them:
+    - The window opens only after an unconfirmed paste whose transfer did not complete (no `SelectionRequest`, or one stopped by the transfer bounds). If the transfer was served in full, no conversion of that paste can still be pending. An unreadable field that received its text opens no window.
+    - While a window is open, a new `type_text` or `clipboard_write` is refused before dispatch, with nothing sent: `a previous paste could not be confirmed and may still be read; nothing was sent; retry after <n> s`. Rejected: serving `CurrentTime` requests during the window, which could deliver one paste's text into another field; and waiting the window out inside the request, which would hold the request queue past its bounds.
+  - An empty prior clipboard is restored as an owner that offers no formats; the cleanup never calls `SetSelectionOwner`.
+  - The snapshot bounds' sentences begin with the vendor's `clipboard capture timed out: …`. M2.2 adds `; nothing was sent`.
+  - `clipboard_read` waits at most 2 s for the Copy to change CLIPBOARD's owner. Its Copy routes are `EditableText.CopyText` of the one selection, else the context menu's Copy item; the Edit-menu route is not built. A context menu the engine opened that has no Copy item is left open; M2.2 closes it, with Escape, so the request leaves no menu behind.
+  - The focused element is the first focused node of a post-order walk, as the vendor's trace shows, with siblings fetched in batches. A GTK 3 window that has never had focus exposes no focused element, which matters to M2.2's observation when no `element_id` is given.
+  - The owner drops every stalled INCR transfer, a paste's or not. `Watch` reports transfer progress, which M2.2 needs for the 500 ms start bound.
+  - Speed, on a private Xvfb with the pinned vendor alongside: `clipboard_read` takes 21–39 ms on gedit against 425–525 ms, and 41–50 ms on Chrome's omnibox against 283–296 ms. M2.3 removes `clipboard_read` and `clipboard_release` from `deviations.mjs`'s refusals.
+  - The hostile clients M2's Decisions name were each handled within the bounds: a silent owner, an owner stalling mid-INCR, a requestor stalling INCR acknowledgements, a late `ConvertSelection`, an external takeover, and lock contention.
+  Evidence: `.doperpowers/sde/…/task-13-report.md` (local); `ci-gate --gates engine-linux` GREEN on 4489e02b, the tree of 7b4a6773.
+  Date/Author: 2026-10-29, the plan-executor (session linux171), from the M2.1 executor's report.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

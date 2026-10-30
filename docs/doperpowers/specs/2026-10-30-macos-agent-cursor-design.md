@@ -368,6 +368,9 @@ Environment, read by the service: `CUA_CURSOR` (`0` turns the session's cursor o
 
 ## Decision Log
 
+- Decision (2026-10-30, execution pre-flight, the executing session cursor235#b93055dd): the milestones' order holds (M2 consumes M1's `CursorHub`; M3 consumes the branch). M1 runs as one task in two passes: its executor stops after step 0 (the settle rule and the reference vectors) and step 1 (the spike's verdict), the design session is told both, and the same executor resumes for the build; a fallback waits for the design session's answer. M2's task review closes M1's frontier before M2 dispatches. The execution record is `docs/doperpowers/specs/2026-10-30-macos-agent-cursor-report.md`. `--probe cursor` runs on the owner's MacBook in use: short runs that draw on the screen and never drive the owner's apps. #211 is still open (2026-10-30), so the branch stays on `fc15e1b8`'s line until it lands.
+  Date/Author: 2026-10-30, cursor235#b93055dd.
+
 - Decision: verification. The spec gets one independent spec review and the `doperpowers:adversarial-reviewer`'s buildability review of the execution section, in the same round, before it is handed to the executor. The branch gets `doperpowers:review-code` at **high** (reviewer-high) before the PR: an always-on overlay on the owner's desktop, touching every input path's hook and the main thread's typing path, is high-stakes for a small diff.
   Rationale: three milestones and an attended live proof; a defect here is visible on every session's screen or slows every action.
   Date/Author: 2026-10-30, the design session (cua_repl#1ea561bc).

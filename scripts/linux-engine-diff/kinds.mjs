@@ -23,7 +23,7 @@ import { readFileSync } from 'node:fs';
 
 import { DRAG_DOC, verticalScrollBar } from './drag.mjs';
 import { Engine } from './engine.mjs';
-import { FAMILIES, familyNames, openFamily, readGtk4Status } from './families.mjs';
+import { FAMILIES, familyNames, openFamily, readGtk4Status, readQtCounts } from './families.mjs';
 import { Oracle } from './oracle.mjs';
 import { captureWindow, pixelsChanged } from './pixels.mjs';
 import { negativeCheck } from './run.mjs';
@@ -51,10 +51,19 @@ export const KIND_FAMILIES = {
   xterm: ['scroll', 'move'],
   'xterm-allow': ['scroll', 'move'],
   'gnome-terminal': ['scroll', 'move'],
+  'qt5-input': ['scroll', 'move', 'click'],
+  'qt6-input': ['scroll', 'move', 'click'],
+  'qt5-breeze': ['move'],
+  'qt5-fusion': ['move'],
 };
 
-/** Writer through gen has no tree: its first toolbar's first button (New), window-relative, from a capture (M3.1). */
-export const WRITER_GEN_BUTTON = { x: 15, y: 33 };
+/**
+ * Writer's first toolbar's first button (New), window-relative, from a capture of each (M3.1): gen has no tree, and
+ * Writer through gtk3 reports its objects' extents about 24 px above where it draws them.
+ */
+export const WRITER_BUTTONS = { writer: { x: 18, y: 45 }, 'writer-gen': { x: 15, y: 33 } };
+/** The Qt style scene's auto-raise tool button, window-relative (pages/qt-input.py). */
+export const QT_TOOL_BUTTON = { x: 50, y: 30 };
 /** A hover took effect when more pixels than this changed (a caret's few dozen do not count). */
 export const HOVER_PIXELS = 40;
 
@@ -133,6 +142,7 @@ function target(scene, kind, i) {
     if (kind === 'move') return { x: i % 2 ? 400 : 200, y: list.y };
     return list;
   }
+  if (scene.kindOf === 'qt-input') return { x: kind === 'move' && i % 2 ? 400 : 200, y: 200 };
   if (scene.kindOf === 'terminal') {
     // a move to a cell of its own each run
     if (kind === 'move') return { x: i % 2 ? 100 : 300, y: Math.round(w.height / 2) };
@@ -145,7 +155,8 @@ function target(scene, kind, i) {
 
 /** A toolbar button near the window's top to hover, window-relative: from the tree, or Writer through gen's fixed one. */
 export async function hoverTarget(desktop, oracle, scene) {
-  if (scene.pixels) return WRITER_GEN_BUTTON;
+  if (WRITER_BUTTONS[scene.family]) return WRITER_BUTTONS[scene.family];
+  if (scene.kindOf === 'qt-style') return QT_TOOL_BUTTON;
   const { preorder } = await import('./normalize.mjs');
   const nodes = scene.source === 'at_spi' ? preorder((await desktop.state(scene)).ax_tree) : scene.frame ? oracle.walk(scene.frame, { prune: ['menu', 'popup menu'] }) : [];
   const w = scene.window;
@@ -179,6 +190,10 @@ async function readValue(ctx, scene, kind) {
       const s = await readGtk4Status(desktop, scene);
       return s === null ? null : kind === 'scroll' ? s.scroll : kind === 'move' ? s.moves : s.presses;
     }
+    if (scene.kindOf === 'qt-input') {
+      const s = readQtCounts(scene);
+      return s === null ? null : kind === 'scroll' ? s.wheels : kind === 'move' ? s.moves : s.presses;
+    }
     if (scene.kindOf === 'terminal') return readFileSync(scene.record, 'latin1');
     if (kind === 'move' || scene.pixels || !scene.scrollbar) return await captureWindow(ctx.cua, scene, ctx.dir);
     return Number(oracle.currentValue(scene.scrollbar));
@@ -190,6 +205,7 @@ async function readValue(ctx, scene, kind) {
 /** Whether a run took effect, from the values before and after. */
 function judge(scene, kind, input, before, after) {
   if (scene.kindOf === 'terminal') return kind === 'move' ? motionReported(before, after) : wheelReported(before, after);
+  if (scene.kindOf === 'qt-input') return grew(before, after);
   if (kind === 'move' && !['page', 'gtk4-input'].includes(scene.kindOf)) {
     const over = pixelsOver(XPROBE, before, after);
     return over === null ? null : over > HOVER_PIXELS;
@@ -248,7 +264,11 @@ async function series(ctx, spec, scene, kind, n) {
       const after = ok ? await settledEffect(read, (now) => judge(scene, kind, input, before, now)) : null;
       const took = ok ? judge(scene, kind, input, before, after) : false;
       const shown = (v) => (typeof v === 'string' && v.length > 80 ? `${v.length} bytes` : v);
-      const run = { kind: 'kinds-run', family, input: kind, occlusion: ctx.occlusion, engine: spec.label, i, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before: shown(before), after: shown(after), took };
+      const run = { kind: 'kinds-run', family, input: kind, occlusion: ctx.occlusion, engine: spec.label, i, point, ok, error: ok ? undefined : String(value.response.error).slice(0, 300), ms: Math.round(value.ms * 10) / 10, witness: w.clean, witness_fields: w.clean ? undefined : w.fields, before: shown(before), after: shown(after), took };
+      // a hover read as pixels: how many changed, for the record
+      if (kind === 'move' && ok && typeof before === 'string' && before.endsWith('.jpg')) run.pixels_over = pixelsOver(XPROBE, before, after);
+      // the Qt style scene: the hover events its tool button received so far, beside its highlight's pixels
+      if (scene.kindOf === 'qt-style') run.hovers = readQtCounts(scene)?.hovers ?? null;
       emit(run);
       runs.push(run);
       if (spec.control) desktop.focusFront();
@@ -301,10 +321,10 @@ export async function runKinds(args, { desktop, emit }) {
           scenes[l.label] = await openFamily(desktop, oracle, family, `kinds${l.label.replace(/[^a-z0-9]+/gi, '')}`, { page, doc, env, geometry, motion: true });
           if (page) scenes[l.label].kindOf = 'page';
           // an editor's or a document's effect is its vertical scroll bar's value, where it has one
-          if (scenes[l.label].kindOf !== 'terminal' && !page && !scenes[l.label].pixels && family !== 'gtk4-input') {
+          if (!['terminal', 'gtk4-input', 'qt-input', 'qt-style'].includes(scenes[l.label].kindOf) && !page && !scenes[l.label].pixels) {
             scenes[l.label].scrollbar = await verticalScrollBar(desktop, oracle, scenes[l.label]).catch(() => null);
           }
-          if (kinds.includes('move') && !page && !['terminal', 'gtk4-input'].includes(scenes[l.label].kindOf)) scenes[l.label].hover = await hoverTarget(desktop, oracle, scenes[l.label]);
+          if (kinds.includes('move') && !page && !['terminal', 'gtk4-input', 'qt-input'].includes(scenes[l.label].kindOf)) scenes[l.label].hover = await hoverTarget(desktop, oracle, scenes[l.label]);
         }
         desktop.arrangeFront(args.occlusion === 'covered' ? 'covered' : 'visible');
         await sleep(1000);
@@ -313,7 +333,7 @@ export async function runKinds(args, { desktop, emit }) {
           for (const spec of lanes) runs.push(...(await series(ctx, spec, scenes[spec.label], kind, n)));
           const verdict = cellVerdict(runs, n);
           const took = Object.fromEntries(lanes.map((l) => [l.label, runs.filter((r) => r.engine === l.label && r.took === true).length]));
-          const reader = scenes.cua.kindOf === 'terminal' ? (kind === 'move' ? 'motion report' : 'wheel report') : kind === 'move' && !['page', 'gtk4-input'].includes(scenes.cua.kindOf) ? 'hover pixels' : scenes.cua.pixels || (!['page', 'gtk4-input'].includes(scenes.cua.kindOf) && !scenes.cua.scrollbar) ? 'pixels' : scenes.cua.kindOf === 'page' ? 'page status' : scenes.cua.kindOf === 'gtk4-input' ? 'status line' : 'scroll bar value';
+          const reader = scenes.cua.kindOf === 'qt-input' ? 'event counts' : scenes.cua.kindOf === 'terminal' ? (kind === 'move' ? 'motion report' : 'wheel report') : kind === 'move' && !['page', 'gtk4-input'].includes(scenes.cua.kindOf) ? 'hover pixels' : scenes.cua.pixels || (!['page', 'gtk4-input'].includes(scenes.cua.kindOf) && !scenes.cua.scrollbar) ? 'pixels' : scenes.cua.kindOf === 'page' ? 'page status' : scenes.cua.kindOf === 'gtk4-input' ? 'status line' : 'scroll bar value';
           const witnessClean = runs.filter((r) => r.engine !== 'xtest').every((r) => r.witness) ? 'clean' : '**changed**';
           const row = { kind: 'kinds-cell', family, input: kind, occlusion: args.occlusion, n, took, reader, verdict, background_witness: witnessClean };
           emit(row);

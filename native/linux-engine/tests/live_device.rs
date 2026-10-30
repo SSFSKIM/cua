@@ -398,9 +398,10 @@ fn a_chromium_drag_takes_the_background_route_only_along_a_visible_path() {
 }
 
 /// A window of the test's own, classed `Google-chrome`, whose client takes `XdndSelection` once a drag's held motion
-/// reaches it, as an XDND source does when its drag and drop begins; it records the input events it receives until
-/// told to stop.
-fn drag_source() -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<Vec<Input>>) {
+/// reaches it, as an XDND source does when its drag and drop begins, and, with `OnRelease::Focuses`, takes the X input
+/// focus on the button's release unless an Escape came first, as Chrome's drop activates its window; it records the
+/// input events it receives until told to stop.
+fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<Vec<Input>>) {
     let (ready, window) = mpsc::channel();
     let (stop, stopped) = mpsc::channel();
     let handle = std::thread::spawn(move || {
@@ -443,7 +444,20 @@ fn drag_source() -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<Vec<Input
                     Event::KeyPress(_) => seen.push(Input::KeyPress { sent }),
                     Event::KeyRelease(_) => seen.push(Input::KeyRelease { sent }),
                     Event::ButtonPress(e) => seen.push(Input::ButtonPress { button: e.detail, sent }),
-                    Event::ButtonRelease(e) => seen.push(Input::ButtonRelease { button: e.detail, sent }),
+                    Event::ButtonRelease(e) => {
+                        seen.push(Input::ButtonRelease { button: e.detail, sent });
+                        if on_release == OnRelease::Focuses && !seen.contains(&Input::KeyPress { sent: true }) {
+                            probe
+                                .conn
+                                .set_input_focus(
+                                    x11rb::protocol::xproto::InputFocus::PARENT,
+                                    probe.id,
+                                    x11rb::CURRENT_TIME,
+                                )
+                                .unwrap();
+                            probe.conn.flush().unwrap();
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -454,20 +468,62 @@ fn drag_source() -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<Vec<Input
     (window.recv().unwrap(), stop, handle)
 }
 
+/// What the drag source does on the button's release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OnRelease {
+    Nothing,
+    Focuses,
+}
+
+/// The input focus on no window, so a drop's activation shows.
+fn focus_nothing() {
+    let (conn, _) = x11rb::connect(None).expect("an X connection");
+    conn.set_input_focus(
+        x11rb::protocol::xproto::InputFocus::NONE,
+        x11rb::NONE,
+        x11rb::CURRENT_TIME,
+    )
+    .unwrap();
+    conn.sync().unwrap();
+}
+
+/// The root's `_NET_ACTIVE_WINDOW` set to `window`, as a window manager would, or deleted with `None`.
+fn set_active_window(window: Option<Window>) {
+    let (conn, screen) = x11rb::connect(None).expect("an X connection");
+    let root = conn.setup().roots[screen].root;
+    let atom = conn
+        .intern_atom(false, b"_NET_ACTIVE_WINDOW")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    match window {
+        Some(window) => {
+            conn.change_property32(PropMode::REPLACE, root, atom, AtomEnum::WINDOW, &[window])
+                .unwrap();
+        }
+        None => {
+            conn.delete_property(root, atom).unwrap();
+        }
+    }
+    conn.sync().unwrap();
+}
+
 /// The drag-and-drop candidate: in shared mode a background drag into Chromium whose target takes `XdndSelection`
 /// mid-drag is cancelled before the drop, Escape and then the release, and refused; in dedicated mode it is not watched
 /// and ends with its release as any drag does.
 #[test]
 fn a_drag_that_becomes_a_drag_and_drop_is_cancelled_before_the_drop_when_shared() {
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
-    let (window, stop, recorder) = drag_source();
+    let (window, stop, recorder) = drag_source(OnRelease::Focuses);
+    focus_nothing();
     let mut shared = Engine::start();
     let app = app_of(&mut shared, window);
     assert_eq!(
         shared.request("drag", json!({"window": {"id": window}, "path": path})),
         Err(format!(
             "{app} began a drag and drop, which changes the desktop; it was cancelled before the drop, so nothing was \
-             dropped. Use a dedicated desktop for drag and drop"
+             dropped. Use a dedicated desktop, or activate the window first"
         ))
     );
     sleep(SETTLE);
@@ -483,7 +539,7 @@ fn a_drag_that_becomes_a_drag_and_drop_is_cancelled_before_the_drop_when_shared(
         "Escape before the release"
     );
     drop(shared);
-    let (window, stop, recorder) = drag_source();
+    let (window, stop, recorder) = drag_source(OnRelease::Nothing);
     let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
     dedicated
         .request("drag", json!({"window": {"id": window}, "path": path}))
@@ -497,5 +553,63 @@ fn a_drag_that_becomes_a_drag_and_drop_is_cancelled_before_the_drop_when_shared(
             Input::ButtonRelease { button: 1, sent: true },
         ],
         "dedicated: the drop goes ahead"
+    );
+}
+
+/// The answer stays honest when the cancel comes too late (Acceptance 8's forced-late case, through the measurement
+/// option that holds the Escape until after the release): the drop took the focus, so the answer says the drop may
+/// have happened and never that nothing was dropped.
+#[test]
+fn a_cancel_too_late_answers_that_the_drop_may_have_happened() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::Focuses);
+    focus_nothing();
+    let mut late = Engine::start_with(&["--dnd-cancel-after-release"]);
+    let app = app_of(&mut late, window);
+    assert_eq!(
+        late.request("drag", json!({"window": {"id": window}, "path": path})),
+        Err(format!(
+            "{app} began a drag and drop, which changes the desktop, and it could not be cancelled in time: the drop \
+             may have happened and the desktop changed. Use a dedicated desktop, or activate the window first"
+        ))
+    );
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+        ],
+        "the release, then the Escape"
+    );
+}
+
+/// A drag into Chrome already in front (the active window, holding the focus, fully unobscured) is not watched in
+/// shared mode: its drop changes nothing the person sees, so it goes ahead.
+#[test]
+fn a_drag_into_chrome_already_in_front_drops_when_shared() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::Nothing);
+    let (conn, _) = x11rb::connect(None).expect("an X connection");
+    conn.set_input_focus(x11rb::protocol::xproto::InputFocus::PARENT, window, x11rb::CURRENT_TIME)
+        .unwrap();
+    conn.sync().unwrap();
+    set_active_window(Some(window));
+    let mut shared = Engine::start();
+    let dragged = shared.request("drag", json!({"window": {"id": window}, "path": path}));
+    set_active_window(None);
+    dragged.unwrap();
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+        ],
+        "the drop goes ahead, no Escape"
     );
 }

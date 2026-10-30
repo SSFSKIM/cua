@@ -81,17 +81,24 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   the background route always or unless its window is fully unobscured (`cover.rs`): the paste chord, keys
   (`press_key`, `key_down`, `key_up`, `type_characters`), clicks (a coordinate `click` into a window and an element's
   right click), scroll (at a point, the window's centre or an element), `drag` and `move`. GTK 4 ignores all of these
-  always; Gecko its clicks, scrolls and moves unless unobscured; Qt its scrolls; xterm its keys (and has no verified
-  paste route). Element actions through AT-SPI are never listed. For a listed kind and condition, `--desktop shared`
+  always; Gecko its clicks, scrolls, moves and drags unless unobscured; Chromium its drags unless every point and
+  segment of the drag's path is unobscured (`cover.rs`' `points_unobscured`); Qt its scrolls; xterm its keys (and has
+  no verified paste route). Element actions through AT-SPI are never listed. For a listed kind and condition, `--desktop shared`
   refuses with `<app> does not accept background input; use a dedicated desktop or activate the window first`
   before anything is sent; `--desktop dedicated` activates the window (`_NET_ACTIVE_WINDOW`, a raise, the input
   focus), waits for it to hold the focus, and sends the input through XTEST at the same window-relative points (the
   foreground route); a request whose input is refused for itself (a bad key) activates nothing. A hold made on the
   foreground route is released on it, the window activated again first. Every request that consults the table
   records its route on the `--stats` line (`route`: `background`, `foreground` or `desktop`).
-- **Drag and drop into Chrome** (`dnd.rs`): in shared mode a background drag into a family whose drop changes the
-  desktop watches `XdndSelection` through XFixes; when the target's own client takes it (a drag and drop has
-  begun), Escape is pressed and released, then the button, and the drag is refused before anything drops.
+- **Drag and drop into Chrome** (`dnd.rs`): Chrome's HTML5 drop activates, focuses and raises its window (the
+  Chromium toolkit's other applications, Electron among them, change nothing). In shared mode a background drag into
+  Chrome watches `XdndSelection` through XFixes, unless Chrome's window is already the active window, holds the focus
+  and is fully unobscured (any doubt counts as not), where the drop goes ahead. When Chrome's own client takes the
+  selection (a drag and drop has begun), Escape is pressed and released on the background route, then the button,
+  and the drag is refused: `… it was cancelled before the drop, so nothing was dropped. Use a dedicated desktop, or
+  activate the window first`, said only if within 300 ms Chrome's window did not newly become active, focused or top
+  of the stacking order; if it did, the answer is that the drop may have happened and the desktop changed. The
+  `--stats` line's `dnd` records whether the window was in front, the watch saw a start, and the signature and wait.
 
 ## How it uses the clipboard
 
@@ -165,6 +172,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
+| `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, and how a desktop screenshot was read (`shm` or `get_image`) |
 
 ## Dependencies

@@ -111,8 +111,9 @@ impl std::error::Error for DropCancelled {}
 /// The drag after the pointer is placed at its first point: the chord, the press, every sample, the release.
 /// `pacing.step` follows each sample, the last included (where the vendor waits 1 ms, behaviour §10.4),
 /// `pacing.press` follows the press and `pacing.release` precedes the release (`families.rs`). With a watch on
-/// `XdndSelection`, a drag the target turns into a drag and drop stops there: Escape is pressed and released, then the
-/// button, so the drag and drop is cancelled before anything drops, and the answer is [`DropCancelled`].
+/// `XdndSelection` (always on the background route), a drag the target turns into a drag and drop stops there:
+/// Escape is pressed and released, then the button, so the drag and drop is cancelled before anything drops, and the
+/// answer is [`DropCancelled`]; with `late` (measurement only) the drag goes on to its release and Escape follows it.
 fn drag_along(
     x: &X11,
     route: &mut Route,
@@ -120,9 +121,14 @@ fn drag_along(
     points: &[(i16, i16)],
     pacing: &DragPacing,
     mut watch: Option<&mut DndWatch>,
+    late: bool,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
+    let escape = |route: &mut Route| -> Result<()> {
+        let held = route.acquire(x, &chord_keycodes(x, "Escape")?)?;
+        route.release(x, &held)
+    };
     let dragged = (|| -> Result<()> {
         route.place_again(x, points[0].0, points[0].1)?;
         route.button(x, 1, true)?;
@@ -132,11 +138,10 @@ fn drag_along(
             route.place_again(x, sx, sy)?;
             std::thread::sleep(pacing.step);
             if let Some(watch) = watch.as_deref_mut()
+                && !late
                 && watch.started(x)
             {
-                let escape = chord_keycodes(x, "Escape")?;
-                let held = route.acquire(x, &escape)?;
-                route.release(x, &held)?;
+                escape(route)?;
                 pressed = false;
                 route.button(x, 1, false)?;
                 return Err(DropCancelled.into());
@@ -144,7 +149,14 @@ fn drag_along(
         }
         std::thread::sleep(pacing.release);
         pressed = false;
-        route.button(x, 1, false)
+        route.button(x, 1, false)?;
+        if let Some(watch) = watch.as_deref_mut()
+            && watch.started(x)
+        {
+            escape(route)?;
+            return Err(DropCancelled.into());
+        }
+        Ok(())
     })();
     if pressed {
         // interrupted while the button is down: its release is attempted; the interruption stays the answer
@@ -302,16 +314,25 @@ impl Engine {
             self.enter(target.id)?;
         }
         let target = input.window.map_or(Target::Desktop, |w| way.target(w.id));
-        // in shared mode, a background drag into a family whose drop changes the desktop watches for a drag and drop
-        let mut watch = match target {
+        // in shared mode, a background drag into a family whose drop changes the desktop watches for a drag and drop,
+        // unless the window is already in front (active, focused, fully unobscured), where the drop changes nothing
+        let mut guard = match target {
             Target::Window(window)
                 if self.cfg.desktop == DesktopMode::Shared
                     && self.family_of(window).is_some_and(|f| f.drop_changes_desktop) =>
             {
-                Some(DndWatch::start(&mut self.x, window)?)
+                let standing = self.x.standing(window);
+                let in_front = standing.active && standing.focused && self.x.unobscured(window);
+                self.extra.insert("dnd".into(), json!({ "in_front": in_front }));
+                if in_front {
+                    None
+                } else {
+                    Some((DndWatch::start(&mut self.x, window)?, standing))
+                }
             }
             _ => None,
         };
+        let late = self.cfg.dnd_cancel_late;
         let Engine { x, inputs, .. } = self;
         let dragged = inputs.with_route(x, target, |x, route, _| {
             let points = input
@@ -324,19 +345,42 @@ impl Engine {
             }
             route.place(x, points[0].0, points[0].1)?;
             let keycodes = chord(x, input.key.as_deref())?;
-            drag_along(x, route, &keycodes, &points, &pacing, watch.as_mut())
+            drag_along(
+                x,
+                route,
+                &keycodes,
+                &points,
+                &pacing,
+                guard.as_mut().map(|(w, _)| w),
+                late,
+            )
         });
-        if let Some(watch) = watch {
-            self.extra
-                .insert("dnd".into(), json!({ "cancelled": watch.is_started() }));
-            watch.stop(&mut self.x);
-        }
+        let Some((watch, before)) = guard else {
+            return dragged.map(|()| Value::Null);
+        };
+        let started = watch.is_started();
+        watch.stop(&mut self.x);
         match dragged {
             Err(error) if error.downcast_ref::<DropCancelled>().is_some() => {
+                // the answer says nothing dropped only if the drop's signature does not show
                 let window = window.expect("a cancelled drag named its window");
-                bail!(crate::dnd::cancelled(&self.x.get_window(window)?.app))
+                let (dropped, waited) = crate::dnd::signature_within(before, || self.x.standing(window));
+                self.extra.insert(
+                    "dnd".into(),
+                    json!({ "in_front": false, "started": started, "late": late, "signature": dropped, "settle_ms": waited.as_secs_f64() * 1000.0 }),
+                );
+                let app = self.x.get_window(window)?.app;
+                bail!(if dropped {
+                    crate::dnd::may_have_dropped(&app)
+                } else {
+                    crate::dnd::cancelled(&app)
+                })
             }
-            other => other.map(|()| Value::Null),
+            other => {
+                self.extra
+                    .insert("dnd".into(), json!({ "in_front": false, "started": started }));
+                other.map(|()| Value::Null)
+            }
         }
     }
 

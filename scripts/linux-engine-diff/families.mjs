@@ -124,6 +124,35 @@ export const FAMILIES = {
     places: { scale: { x0: 20, x1: 580, y: 40 }, button: { x: 300, y: 103 }, list: { x: 300, y: 300 } },
     launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'gtk4-input.py'), ctx.label], match: (w) => w.title === ctx.label }),
   },
+  // M3.1: the Qt input scene (pages/qt-input.py) under each major version, plain Qt widgets counting the pointer moves,
+  // wheel events and presses that reach the toolkit, written to a record file: whether kate's and qtcreator's
+  // difference is the version's or the applications'
+  'qt5-input': {
+    title: 'Qt 5 input (harness scene)',
+    kind: 'qt-input',
+    geometry: [600, 400],
+    launch: (ctx) => qtLaunch(ctx, 'qt5'),
+  },
+  'qt6-input': {
+    title: 'Qt 6 input (harness scene)',
+    kind: 'qt-input',
+    geometry: [600, 400],
+    launch: (ctx) => qtLaunch(ctx, 'qt6'),
+  },
+  // M3.1: the same scene under Qt 5 with an auto-raise tool button whose hover highlight the style draws, under KDE's
+  // Breeze and under Qt's own Fusion: whether a hover highlight that misses a background move is Breeze's
+  'qt5-breeze': {
+    title: 'Qt 5 Breeze (harness scene)',
+    kind: 'qt-style',
+    geometry: [600, 400],
+    launch: (ctx) => qtLaunch(ctx, 'qt5', 'breeze'),
+  },
+  'qt5-fusion': {
+    title: 'Qt 5 Fusion (harness scene)',
+    kind: 'qt-style',
+    geometry: [600, 400],
+    launch: (ctx) => qtLaunch(ctx, 'qt5', 'fusion'),
+  },
   'gtk-scale': {
     title: 'GTK 3 scale (harness scene)',
     kind: 'scale',
@@ -252,6 +281,21 @@ export const FAMILIES = {
     launch: (ctx) => vteLaunch(ctx),
   },
 };
+
+/** The Qt input scene under a binding (and a style, with its tool button), its counts appended to a record file. */
+function qtLaunch(ctx, binding, style) {
+  const record = join(ctx.dir, `${ctx.label}.counts`);
+  writeFileSync(record, '');
+  const args = ['-I', join(PAGES, 'qt-input.py'), ctx.label, record, binding, ...(style ? [style] : [])];
+  return { cmd: 'python3', args, match: (w) => w.title === ctx.label, record };
+}
+
+/** The Qt input scene's last counts: `{moves, wheels, presses, hovers}`, or null before its first line. */
+export function readQtCounts(scene) {
+  const last = readFileSync(scene.record, 'utf8').trim().split('\n').at(-1) ?? '';
+  const m = last.match(/^moves (\d+) wheels (\d+) presses (\d+) hovers (\d+)$/);
+  return m ? { moves: Number(m[1]), wheels: Number(m[2]), presses: Number(m[3]), hovers: Number(m[4]) } : null;
+}
 
 /**
  * A size asked for explicitly: Writer's first window opens at it, in the normal state (state 1), instead of maximized

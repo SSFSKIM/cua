@@ -49,6 +49,9 @@ pub struct Config {
     pub stats: bool,
     pub mouse_size_px: u32,
     pub desktop: DesktopMode,
+    /// Measurement only (`--dnd-cancel-after-release`): a drag and drop the engine would cancel is cancelled only
+    /// after the release, too late, so the harness can check the answer then.
+    pub dnd_cancel_late: bool,
 }
 
 pub struct Engine {

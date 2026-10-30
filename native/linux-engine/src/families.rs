@@ -145,9 +145,13 @@ pub const FAMILIES: &[Family] = &[
     // (range and canvas drags still land); with half the window covered and the path visible every drag lands, and
     // with the path under the cover the drags miss as fully covered (M3.1): its drags are refused unless their whole
     // path is visible, which a covered range or canvas drag that would land loses (deviations.mjs).
+    //
+    // Chrome (by its X11 classes) is Chromium whose HTML5 drop activates, focuses and raises its window, in every
+    // engine, and nothing puts them back; Electron's drop, the same engine's, changes nothing (M3.1). Chromium browsers
+    // of other classes (Brave, Edge, Vivaldi) are unmeasured and take Chromium's entry.
     Family {
-        name: "Chromium",
-        toolkit: Some("Chromium"),
+        name: "Chrome",
+        toolkit: None,
         toolkit_major: None,
         classes: &["Google-chrome", "Chromium", "Chromium-browser"],
         drag: DragPacing {
@@ -163,7 +167,27 @@ pub const FAMILIES: &[Family] = &[
         feff_after_astral: false,
         drop_changes_desktop: true,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
-                   m31-drag-partial, m31-drag-partial-top",
+                   m31-drag-partial, m31-drag-partial-top, m31-dnd-visible",
+    },
+    Family {
+        name: "Chromium",
+        toolkit: Some("Chromium"),
+        toolkit_major: None,
+        classes: &[],
+        drag: DragPacing {
+            step: Duration::from_micros(500),
+            press: Duration::ZERO,
+            release: Duration::ZERO,
+        },
+        paste: DEFAULT_PASTE,
+        ignores: &[Ignored {
+            kind: Kind::Drag,
+            when: When::UnlessPathUnobscured,
+        }],
+        feff_after_astral: false,
+        drop_changes_desktop: false,
+        evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
+                   m31-drag-partial, m31-drag-partial-top, m31-dnd-visible",
     },
     // Gecko's Text answers a U+FEFF after each character beyond the BMP (M0.4), which the paste's confirmation strips
     // there and only there, so a real U+FEFF still counts. Gecko ignores synthetic coordinate clicks while any of its
@@ -476,6 +500,32 @@ mod tests {
         for kind in [Kind::Clicks, Kind::Keys, Kind::Scroll, Kind::Move, Kind::Paste] {
             assert_eq!(chromium.ignores(kind), None, "Chromium takes {kind:?} covered");
         }
+    }
+
+    #[test]
+    fn only_chrome_s_drop_changes_the_desktop() {
+        let chrome = family(FAMILIES, Some("Google-chrome"), Some(&toolkit("Chromium", Some("1.0")))).unwrap();
+        assert_eq!(chrome.name, "Chrome");
+        assert!(chrome.drop_changes_desktop);
+        let electron = family(
+            FAMILIES,
+            Some("cua-electron-fixture"),
+            Some(&toolkit("Chromium", Some("1.0"))),
+        )
+        .unwrap();
+        assert_eq!(
+            electron.name, "Chromium",
+            "Electron, and Chromium browsers of other classes"
+        );
+        assert!(!electron.drop_changes_desktop);
+        assert_eq!(electron.drag, chrome.drag, "the same engine's pacing");
+        assert_eq!(electron.ignores, chrome.ignores, "and its drag rule");
+        assert!(
+            FAMILIES
+                .iter()
+                .filter(|f| f.drop_changes_desktop)
+                .all(|f| f.name == "Chrome")
+        );
     }
 
     #[test]

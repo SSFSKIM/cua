@@ -544,6 +544,22 @@ impl X11 {
         Ok(None)
     }
 
+    /// The window's standing on the desktop now (`dnd.rs`): the active window, the X input focus within it, on top of
+    /// the window manager's stacking order. A property or reply that cannot be read counts as not.
+    pub fn standing(&self, window: Window) -> crate::dnd::Standing {
+        let last = |name| {
+            self.property(self.root, self.atom(name))
+                .ok()
+                .and_then(|c| c.reply().ok())
+                .and_then(|r| values32(&r).last().copied())
+        };
+        crate::dnd::Standing {
+            active: last("_NET_ACTIVE_WINDOW") == Some(window),
+            focused: crate::input::focus_is_within(self, window).unwrap_or(false),
+            top: last("_NET_CLIENT_LIST_STACKING") == Some(window),
+        }
+    }
+
     /// Whether every root point of `points` is visible in `window` now (`cover.rs`); any X error is doubt, obscured.
     pub fn points_unobscured(&self, window: Window, points: &[(i16, i16)]) -> bool {
         let points: Vec<(i32, i32)> = points.iter().map(|&(x, y)| (x as i32, y as i32)).collect();

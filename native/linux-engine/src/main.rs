@@ -40,7 +40,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
        [--teardown-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
-       [--drag-release-dwell-ms <ms>] [--stats]
+       [--drag-release-dwell-ms <ms>] [--dnd-cancel-after-release] [--stats]
        cua-engine --version";
 
 fn version() -> String {
@@ -68,6 +68,7 @@ fn default_config() -> Config {
         stats: false,
         mouse_size_px: 0,
         desktop: engine::DesktopMode::Shared,
+        dnd_cancel_late: false,
     }
 }
 
@@ -103,6 +104,10 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             }
             "--stats" => {
                 cfg.stats = true;
+                takes_value = false;
+            }
+            "--dnd-cancel-after-release" => {
+                cfg.dnd_cancel_late = true;
                 takes_value = false;
             }
             "--mouse-size-px" => cfg.mouse_size_px = number(value, arg)? as u32,

@@ -16,7 +16,7 @@ layer.
 ```sh
 node scripts/probe-chrome-original.mjs --static --readable-source "$HOME/codex-app-src" --report /tmp/cua-chrome-original-static.json     # ~1 s
 CUA_HOME=/tmp/cua-m7.lxJbgf node scripts/probe-chrome-original.mjs --live --report /tmp/cua-chrome-original-live.json   # ~13 s
-node --test scripts/probe/chrome/original/test/   # prototype helper tests, outside npm test: 22/22
+node --test scripts/probe/chrome/original/test/*.test.mjs   # prototype helper tests, outside npm test: 22/22
 npm test                                           # 188/188
 ```
 
@@ -150,4 +150,4 @@ the archived host binary.
 `scripts/probe-chrome-original.mjs` (entry), `scripts/probe/chrome/original/hosts.mjs` (process/socket selection,
 signatures), `classify.mjs` (outcome classes, sanitizer), `live-layer.mjs`, `static-layer.mjs`, `disasm.mjs`
 (otool -tV parsing, literal/table cross-references), and `test/` (prototype helper tests, run explicitly with
-`node --test scripts/probe/chrome/original/test/`, deliberately outside `npm test`).
+`node --test scripts/probe/chrome/original/test/*.test.mjs`, deliberately outside `npm test`).

@@ -6,7 +6,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { matrixMarkdown } from './matrix-judge.mjs';
-import { summarizeEngine } from './stats.mjs';
+import { summarizeEngine, verdictLine } from './stats.mjs';
 
 const fmt = (v) => (v === null || v === undefined ? '–' : String(v));
 const frac = (rows, key) => {
@@ -39,6 +39,23 @@ export function renderSummary(lines) {
       const audit = stub.audit ? `; the X request audit ${stub.audit_failed_it ? 'failed' : '**passed (run invalid)**'} it (${[...new Set(stub.audit.forbidden)].join(', ') || 'nothing forbidden'}, ${stub.audit.requests} requests traced)` : '; no X request audit in this run';
       out.push(`negative check: the witness ${stub.witness_failed_it ? 'failed' : '**passed (run invalid)**'} the activating stub (${stub.witness.fields.join(', ') || 'no change'})${audit}`, '');
     }
+    const foreground = rows.find((r) => r.kind === 'stub-check-foreground');
+    if (foreground?.checks) {
+      // M2.3 review round 2: the spaced and coalesced negatives and the positive raise (run.mjs foregroundNegativeCheck)
+      // M2 whole-branch review: the focus and activation switched away and back, and the target activated
+      const { spaced, coalesced, raised, switched, activated } = foreground.checks;
+      const verdict = (c, mustFail, field = 'stacking') => (mustFail ? (c.fields.includes(field) ? 'failed' : '**passed (run invalid)**') : c.clean ? 'passed' : `**failed (run invalid): ${c.fields.join(', ')}**`);
+      const focusChecks = switched
+        ? `; ${verdict(switched, true, 'focus')} the focus and the active window switched to another window and back under one server grab (${switched.focus.filter((e) => e.kind === 'focus_in').length} FocusIn events); ${verdict(activated, false)} the target activated`
+        : '';
+      out.push(
+        `foreground checks: the allowance ${verdict(spaced, true)} another window raised and the top one raised back; ${verdict(coalesced, true)} the same two raises under one server grab (${coalesced.restacks.length} restack events, ${coalesced.changes.filter((c) => c.from).length} property changes read); ${verdict(raised, false)} the target raised${focusChecks}`,
+        '',
+      );
+    } else if (foreground) {
+      const how = foreground.why ?? `${foreground.witness.fields.join(', ') || 'no violation'}; the order ${foreground.restored ? 'restored' : 'not restored'} at the span's end`;
+      out.push(`foreground negative check: the foreground allowance ${foreground.witness_failed_it ? 'failed' : '**passed (run invalid)**'} another window raised and the top one raised back (${how})`, '');
+    }
     const samples = rows.filter((r) => r.kind === 'sample');
     const counts = rows.filter((r) => r.kind === 'counts');
     const verdicts = rows.filter((r) => r.kind === 'verdict');
@@ -60,7 +77,10 @@ export function renderSummary(lines) {
         const eq = equality.find((r) => r.scene === scene && r.op === op && r.engine === engine);
         const v = verdicts.find((r) => r.scene === scene && r.op === op && r.candidate === engine);
         const declared = v?.deviations?.length ? ` (declared: ${v.deviations.join(', ')})` : '';
-        const verdict = v ? (v.pass ? `PASS${declared}` : `FAIL: ${v.reasons.join('; ')}${declared}`) : '';
+        const noise = v?.noise?.length ? ` (same within noise: ${v.noise.map((n) => `${n.series} ${Math.round(n.candidate * 100) / 100} against ${Math.round(n.bar * 100) / 100}, [${n.interval.join(', ')}]`).join('; ')})` : '';
+        const r2 = (x) => Math.round(x * 100) / 100;
+        const parity = v?.parity?.length ? ` (${v.parity.map((p) => `${p.series} ${r2(p.candidate)} against ${r2(p.bar)}, within the ${p.against} build's spread [${p.spread.join(', ')}]; ${p.section}`).join('; ')})` : '';
+        const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`;
         const a = audits.find((r) => r.scene === scene && r.op === op && r.engine === engine);
         const audit = a ? (a.clean ? 'clean' : `**${[...new Set(a.forbidden.map((f) => f.what))].join(', ') || 'not traced'}**`) : '–';
         const wasted = mine.map((r) => r.stats?.tree?.wasted_calls).filter((w) => typeof w === 'number');
@@ -85,6 +105,35 @@ export function renderSummary(lines) {
         out.push(`| ${scene} | ${engine} | ${mine.filter((r) => r.ok).length}/${mine.length} | ${most('over')} | ${most('mad')} | ${bad ? `block ${bad.block} sample ${bad.i}: ${bad.reason}` : ''} |`);
       }
     }
+    const textBus = rows.filter((r) => r.kind === 'text-bus');
+    const textSamples = samples.filter((r) => r.clipboard_kept !== undefined || r.route !== undefined);
+    if (textBus.length || textSamples.length) {
+      out.push('', "Text commands (M2): the clipboard after each sample (the harness's prior text kept, or for clipboard_write what its owner set between the read and the write), the route cua's request must take and the routes it reported (a sample whose route differs fails its witness), the witness's allowance for the foreground route, and the text calls of each engine's bus pass:", '');
+      out.push('| scene | op | engine | clipboard kept | expected route | routes | foreground allowed | PasteText / InsertText / SetTextContents |', '|---|---|---|---|---|---|---|---|');
+      for (const key of [...new Set([...textSamples, ...textBus].map((r) => `${r.scene}|${r.op}|${r.engine}`))]) {
+        const [scene, op, engine] = key.split('|');
+        const mine = textSamples.filter((r) => r.scene === scene && r.op === op && r.engine === engine);
+        const bus = textBus.find((r) => r.scene === scene && r.op === op && r.engine === engine);
+        const routes = [...new Set(mine.map((r) => r.route).filter(Boolean))].join(', ') || '–';
+        const allowed = [...new Set(mine.flatMap((r) => r.witness_allowed ?? []))].join(', ') || '–';
+        const calls = bus ? ['PasteText', 'InsertText', 'SetTextContents'].map((m) => bus.forbidden[m]).join(' / ') : '–';
+        const expected = [...new Set(mine.map((r) => r.route_expected).filter(Boolean))].join(', ') || '–';
+        out.push(`| ${scene} | ${op} | ${engine} | ${frac(mine, 'clipboard_kept')} | ${expected} | ${routes} | ${allowed} | ${calls} |`);
+      }
+    }
+    const cases = rows.filter((r) => r.kind === 'case');
+    if (cases.length) {
+      out.push('', "Paste safety cases (cua alone; safety.mjs):", '');
+      out.push('| scene | case | trial | verdict | answer | ms | detail |', '|---|---|---:|---|---|---:|---|');
+      for (const c of cases) {
+        const answer = c.answer ? (c.answer.ok ? 'success' : `\`${String(c.answer.error).slice(0, 90)}\``) : c.answers ? c.answers.map((a) => (a.ok ? 'success' : a.error)).join(', ') : c.pastes !== undefined ? `${c.pastes} pastes` : '–';
+        const ms = c.ms ?? c.ms_median ?? '–';
+        const detail = [c.mode, c.retake_delay_ms !== undefined ? `retake after ${c.retake_delay_ms} ms` : null, c.route ? `route ${c.route}` : null, c.next_ms !== undefined ? `next request ${c.next_ms} ms` : null, c.transfer ? `transfer ${c.transfer}` : null, c.ms_max !== undefined ? `max ${c.ms_max} ms` : null].filter(Boolean).join('; ');
+        out.push(`| ${c.scene} | ${c.op} | ${c.trial ?? '–'} | ${c.pass ? 'PASS' : `FAIL: ${c.reasons.join('; ')}`} | ${answer} | ${ms} | ${detail} |`);
+      }
+      const bus = rows.find((r) => r.kind === 'case-bus');
+      if (bus) out.push('', `The cases' bus trace (${bus.calls} calls of ${bus.connections} connections): PasteText ${bus.forbidden.PasteText}, InsertText ${bus.forbidden.InsertText}, SetTextContents ${bus.forbidden.SetTextContents}.`);
+    }
     const refusals = rows.filter((r) => r.kind === 'refusal');
     if (refusals.length) {
       out.push('', "Declared refusals (cua alone; the text and clipboard commands are M2's, `deviations.mjs`):", '');
@@ -102,8 +151,8 @@ export function renderSummary(lines) {
       for (const v of bounded) out.push(`- ${v.scene} ${v.candidate}: ${v.calls_bound.pass ? 'within' : `**${v.calls_bound.reasons.join('; ')}**`}`);
     }
     const end = rows.find((r) => r.kind === 'end');
-    const verdictLine = !end || end.pass === undefined ? '' : end.pass ? '; every verdict PASS' : `; **FAIL**: ${end.failed.join(', ')}`;
-    out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${verdictLine}, finished ${end.finished}` : 'run unfinished', '');
+    const ending = !end || end.pass === undefined ? '' : `; ${verdictLine(end, (s) => `**${s}**`)}`;
+    out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
   }
   return out.join('\n');
 }

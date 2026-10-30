@@ -3,14 +3,15 @@
 
 use std::time::Duration;
 
-use anyhow::{Result, bail};
-use serde_json::Value;
+use anyhow::{Context, Result, anyhow, bail};
+use serde_json::{Value, json};
 
 use super::Engine;
+use crate::families::Kind;
 use crate::input::{chord_keycodes, keymap};
-use crate::keys::{parse_chord, resolve};
+use crate::keys::{literal_keycodes, parse_chord, resolve};
 use crate::route::{Hold, Target};
-use crate::wire::{KeyInput, PressKeyInput, parse_input};
+use crate::wire::{KeyInput, PressKeyInput, TypeCharactersInput, parse_input};
 
 const EMPTY_KEY: &str = "key must be a non-empty string";
 
@@ -87,5 +88,36 @@ impl Engine {
             released
         })?;
         Ok(Value::Null)
+    }
+
+    /// `type_characters` (behaviour §11.4; Design, Keys): the characters the keyboard layout produces at level 1 or 2,
+    /// each pressed and released in turn (Shift held for level 2), answering how many were sent. The window's input
+    /// session opens first, as the newest build's does; the whole text is resolved before any key goes out, and the
+    /// first character the layout cannot produce (a control character, one on no key, one only at a higher level)
+    /// refuses it with nothing sent. A family that ignores synthetic keys (`families.rs`) is refused in shared mode
+    /// and typed through the foreground route in dedicated mode.
+    pub(super) fn type_characters(&mut self, input: Option<Value>) -> Result<Value> {
+        let input: TypeCharactersInput = parse_input(input)?;
+        let window = input.window.id;
+        let way = self.way_for(Some(window), Kind::Keys)?;
+        let Engine { x, inputs, .. } = self;
+        let sent = inputs.with_route(x, way.target(window), |x, route, _| {
+            let keys = literal_keycodes(&input.text, &keymap(x)?)
+                .map_err(|c| anyhow!("Character {c:?} is not on the keyboard layout"))?;
+            let mut sent = 0u64;
+            for keycodes in &keys {
+                route
+                    .acquire(x, keycodes)
+                    .and_then(|held| route.release(x, &held))
+                    .with_context(|| {
+                        format!(
+                            "typing interrupted after {sent} complete characters; inspect the window before retrying"
+                        )
+                    })?;
+                sent += 1;
+            }
+            Ok(sent)
+        })?;
+        Ok(json!(sent))
     }
 }

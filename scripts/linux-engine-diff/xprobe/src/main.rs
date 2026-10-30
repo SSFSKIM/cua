@@ -3,8 +3,11 @@
 //!
 //! - `xprobe witness`: watches the desktop state an engine must leave alone. It selects `PropertyNotify` on the
 //!   root for `_NET_ACTIVE_WINDOW` and `_NET_CLIENT_LIST_STACKING` and samples the input focus and the pointer
-//!   every 5 ms. Lines on stdin `begin <tag>` and `end <tag>` delimit a span; at `end` it prints one JSON line with
-//!   every change seen in the span.
+//!   every 5 ms; with `SubstructureNotify` on the root it records every restack, map and unmap of a root child in
+//!   order (`restack.rs`). Lines on stdin `begin <tag>` and `end <tag>` delimit a span; at `end` it prints one JSON
+//!   line with every change seen in the span, the root's children when it began (`tree`) and those events
+//!   (`restacks`); with `FocusChange` on the root and every root child it records every focus transition and every
+//!   `_NET_ACTIVE_WINDOW` activation request (`focus.rs`, `focus`).
 //! - `xprobe retention <window> [trials] [span-ms] [gap-ms] [dump-prefix]`: redirects the window through Composite, captures it
 //!   with `GetImage` as fast as it can for the span, unredirects, and prints one JSON line per trial with the
 //!   moments the captured contents changed (a hash of the colour bytes and the black fraction, never pixels).
@@ -13,8 +16,18 @@
 //! - `xprobe close <window>`: asks the window's client to close it (`WM_DELETE_WINDOW`), for harness-owned windows.
 //! - `xprobe record <x> <y> <width> <height> [focus]`: a recorder window that prints the input events it receives
 //!   (`record.rs`).
+//! - `xprobe clip-own <text>`, `clip-read`, `grabs`, `within <window> <ancestor>`: the clipboard owner and reader and
+//!   the desktop checks of M2's text cases (`clip.rs`).
+//! - `xprobe toplevel <window>`, `restack-grabbed <window>...`: a window's top-level, and the coalesced negative
+//!   check's raises under one server grab (`restack.rs`).
+//! - `xprobe focus-grabbed <window>...`: the focus and `_NET_ACTIVE_WINDOW` set to each window in turn under one
+//!   server grab (`focus.rs`).
+//! - `xprobe quarantine`: whether cua's display-wide unconfirmed-paste window is open, and for how long (`clip.rs`).
 
+mod clip;
+mod focus;
 mod record;
+mod restack;
 
 use std::io::{BufRead, Write};
 use std::sync::mpsc;
@@ -40,7 +53,15 @@ fn main() {
         Some("imgdiff") if (3..=4).contains(&args.len()) => imgdiff(&args[1], &args[2], args.get(3)),
         Some("close") if args.len() == 2 => close(&args[1]),
         Some("record") => record::record(&args[1..]),
-        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window> | record <x> <y> <w> <h> [focus]".into()),
+        Some("clip-own") => clip::own(&args[1..]),
+        Some("clip-read") if args.len() == 1 => clip::read(),
+        Some("grabs") if args.len() == 1 => clip::grabs(),
+        Some("within") => clip::within(&args[1..]),
+        Some("toplevel") => restack::toplevel(&args[1..]),
+        Some("restack-grabbed") => restack::restack_grabbed(&args[1..]),
+        Some("focus-grabbed") => focus::focus_grabbed(&args[1..]),
+        Some("quarantine") if args.len() == 1 => clip::quarantine(),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window> | record <x> <y> <w> <h> [focus] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | focus-grabbed <window>... | quarantine".into()),
     };
     if let Err(error) = result {
         eprintln!("xprobe: {error}");
@@ -48,7 +69,7 @@ fn main() {
     }
 }
 
-fn parse_window(text: &str) -> Result<Window> {
+pub(crate) fn parse_window(text: &str) -> Result<Window> {
     let window = match text.strip_prefix("0x") {
         Some(hex) => u32::from_str_radix(hex, 16)?,
         None => text.parse()?,
@@ -56,7 +77,7 @@ fn parse_window(text: &str) -> Result<Window> {
     Ok(window)
 }
 
-fn atom(conn: &RustConnection, name: &str) -> Result<u32> {
+pub(crate) fn atom(conn: &RustConnection, name: &str) -> Result<u32> {
     Ok(conn.intern_atom(false, name.as_bytes())?.reply()?.atom)
 }
 
@@ -72,6 +93,11 @@ pub(crate) fn json_str(text: &str) -> String {
     }
     out.push('"');
     out
+}
+
+fn json_ids(ids: &[u32]) -> String {
+    let items: Vec<String> = ids.iter().map(u32::to_string).collect();
+    format!("[{}]", items.join(","))
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -130,6 +156,14 @@ struct Span {
     last_sample: Instant,
     notifies_active: u64,
     notifies_stacking: u64,
+    /// the root's children when the span began (`restack::tree`)
+    tree: String,
+    /// the root window, which the focus record names when the focus goes to neither top-level
+    root: Window,
+    /// every root-substructure event of the span, in order (`restack::record`)
+    restacks: Vec<String>,
+    /// every focus transition and activation request of the span, in order (`focus::record`)
+    focus: Vec<String>,
 }
 
 impl Span {
@@ -143,9 +177,11 @@ impl Span {
         }
         if now.stacking != self.last.stacking {
             self.changes.push(format!(
-                "{{\"field\":\"stacking\",\"t_ms\":{t:.1},\"from_len\":{},\"to_len\":{}}}",
+                "{{\"field\":\"stacking\",\"t_ms\":{t:.1},\"from_len\":{},\"to_len\":{},\"from\":{},\"to\":{}}}",
                 self.last.stacking.len(),
-                now.stacking.len()
+                now.stacking.len(),
+                json_ids(&self.last.stacking),
+                json_ids(&now.stacking)
             ));
         }
         if now.focus != self.last.focus {
@@ -177,14 +213,18 @@ impl Span {
 
     fn report(&self) -> String {
         format!(
-            "{{\"tag\":{},\"duration_ms\":{:.1},\"samples\":{},\"max_gap_ms\":{:.1},\"notifies\":{{\"active\":{},\"stacking\":{}}},\"changes\":[{}]}}",
+            "{{\"tag\":{},\"duration_ms\":{:.1},\"samples\":{},\"max_gap_ms\":{:.1},\"notifies\":{{\"active\":{},\"stacking\":{}}},\"changes\":[{}],\"tree\":{},\"root\":{},\"restacks\":[{}],\"focus\":[{}]}}",
             json_str(&self.tag),
             self.started.elapsed().as_secs_f64() * 1000.0,
             self.samples,
             self.max_gap_ms,
             self.notifies_active,
             self.notifies_stacking,
-            self.changes.join(",")
+            self.changes.join(","),
+            self.tree,
+            self.root,
+            self.restacks.join(","),
+            self.focus.join(",")
         )
     }
 }
@@ -200,8 +240,10 @@ fn witness() -> Result<()> {
     };
     desktop.conn.change_window_attributes(
         root,
-        &ChangeWindowAttributesAux::new().event_mask(EventMask::PROPERTY_CHANGE),
+        &ChangeWindowAttributesAux::new()
+            .event_mask(EventMask::PROPERTY_CHANGE | EventMask::SUBSTRUCTURE_NOTIFY | EventMask::FOCUS_CHANGE),
     )?;
+    focus::watch(&desktop.conn, root)?;
     desktop.conn.flush()?;
 
     let (tx, rx) = mpsc::channel::<Option<String>>();
@@ -231,7 +273,7 @@ fn witness() -> Result<()> {
             let line = line.trim();
             if let Some(tag) = line.strip_prefix("begin ") {
                 // events from before the span belong to no span
-                while desktop.conn.poll_for_event()?.is_some() {}
+                drain_idle(&desktop)?;
                 let now = Instant::now();
                 span = Some(Span {
                     tag: tag.to_string(),
@@ -243,6 +285,10 @@ fn witness() -> Result<()> {
                     last_sample: now,
                     notifies_active: 0,
                     notifies_stacking: 0,
+                    tree: restack::tree(&desktop.conn, desktop.root)?,
+                    root: desktop.root,
+                    restacks: Vec::new(),
+                    focus: Vec::new(),
                 });
                 println!("{{\"begun\":{}}}", json_str(tag));
                 stdout.lock().flush()?;
@@ -279,7 +325,7 @@ fn witness() -> Result<()> {
             };
             s.record(state);
         } else {
-            while desktop.conn.poll_for_event()?.is_some() {}
+            drain_idle(&desktop)?;
         }
         next += SAMPLE;
         let now = Instant::now();
@@ -293,29 +339,45 @@ fn witness() -> Result<()> {
 
 /// Reads queued `PropertyNotify` events. Each one for a watched property is recorded as a change (`Span::notify`),
 /// whatever the value reads afterwards; the value is re-read too, so a lasting change also shows its from and to.
+/// The value is read right after each notify, not once per poll, so each change of the stacking order is recorded as
+/// its own transition (the foreground route's witness judges every one). Changes faster than one read can still merge:
+/// their notifies stay recorded either way.
+///
+/// The root-substructure events (restacks, maps, unmaps of the root's children) are recorded as they come, in order
+/// with the notifies: they are the record that is never coalesced (`restack.rs`).
 fn drain_notifies(desktop: &Desktop, span: &mut Span) -> Result<()> {
-    let mut active = false;
-    let mut stacking = false;
     while let Some(event) = desktop.conn.poll_for_event()? {
+        focus::follow(&desktop.conn, desktop.root, &event)?;
+        let t = span.started.elapsed().as_secs_f64() * 1000.0;
+        if let Some(line) = focus::record(&event, desktop.active_atom, t) {
+            span.focus.push(line);
+            continue;
+        }
+        if let Some(line) = restack::record(&event, desktop.root, t) {
+            span.restacks.push(line);
+            continue;
+        }
         if let Event::PropertyNotify(notify) = event {
+            let mut state = span.last.clone();
             if notify.atom == desktop.active_atom {
                 span.notify("active");
-                active = true;
+                state.active = desktop.property(desktop.active_atom)?;
             } else if notify.atom == desktop.stacking_atom {
                 span.notify("stacking");
-                stacking = true;
+                state.stacking = desktop.property(desktop.stacking_atom)?;
+            } else {
+                continue;
             }
+            span.record(state);
         }
     }
-    if active || stacking {
-        let mut state = span.last.clone();
-        if active {
-            state.active = desktop.property(desktop.active_atom)?;
-        }
-        if stacking {
-            state.stacking = desktop.property(desktop.stacking_atom)?;
-        }
-        span.record(state);
+    Ok(())
+}
+
+/// Outside a span, events belong to no span; a new root child still gets its focus events selected.
+fn drain_idle(desktop: &Desktop) -> Result<()> {
+    while let Some(event) = desktop.conn.poll_for_event()? {
+        focus::follow(&desktop.conn, desktop.root, &event)?;
     }
     Ok(())
 }
@@ -482,6 +544,10 @@ mod tests {
             last_sample: now,
             notifies_active: 0,
             notifies_stacking: 0,
+            tree: "[[1,1,0],[2,1,0]]".into(),
+            root: 0x100,
+            restacks: Vec::new(),
+            focus: Vec::new(),
         }
     }
 
@@ -497,6 +563,37 @@ mod tests {
         assert_eq!(s.changes.len(), 2, "{:?}", s.changes);
         assert!(s.changes.iter().all(|c| c.contains("\"field\":\"active\"")));
         assert!(s.report().contains("\"notifies\":{\"active\":2,\"stacking\":0}"));
+    }
+
+    #[test]
+    fn a_stacking_change_records_both_orders() {
+        // the foreground route's witness judges each transition of the order, not only its lengths (M2.3 review)
+        let mut s = span();
+        let mut raised = state(5);
+        raised.stacking = vec![1, 3, 2];
+        s.record(raised);
+        assert_eq!(s.changes.len(), 1);
+        assert!(
+            s.changes[0].contains("\"from\":[1,2,3]") && s.changes[0].contains("\"to\":[1,3,2]"),
+            "{:?}",
+            s.changes
+        );
+    }
+
+    #[test]
+    fn the_report_carries_the_tree_and_every_restack_in_order() {
+        let mut s = span();
+        s.restacks
+            .push("{\"kind\":\"configure\",\"window\":1,\"above\":2}".into());
+        s.restacks
+            .push("{\"kind\":\"configure\",\"window\":2,\"above\":1}".into());
+        let report = s.report();
+        assert!(report.contains("\"tree\":[[1,1,0],[2,1,0]],\"root\":256"), "{report}");
+        assert!(report.ends_with(",\"focus\":[]}"), "{report}");
+        assert!(
+            report.contains("\"restacks\":[{\"kind\":\"configure\",\"window\":1,\"above\":2},{\"kind\":\"configure\",\"window\":2,\"above\":1}]"),
+            "{report}"
+        );
     }
 
     #[test]

@@ -1,0 +1,19 @@
+{
+  "device": "cua-171",
+  "home": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP",
+  "userHome": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP.home",
+  "token": "e01588bc-16b9-4e8c-acbd-8ffed3b56550",
+  "xSession": {
+    "DISPLAY": ":0",
+    "XAUTHORITY": "/Users/new/.Xauthority",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/501/bus",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "XDG_DATA_DIRS": "/usr/share/openbox:/usr/local/share:/usr/share:/var/lib/snapd/desktop"
+  },
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-native-baseline/run-gEvvGP/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  }
+}

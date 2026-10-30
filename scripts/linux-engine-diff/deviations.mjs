@@ -1,6 +1,7 @@
 // The declared deviations (Design, Verification system: "its output equals the vendor's, or differs only as a
 // declared deviation listed in scripts/linux-engine-diff/deviations.mjs, each naming this spec's section"; Interfaces:
-// `[{op, scene?, field, reason, section}]`). A deviation excuses a difference from the pinned build only in its own
+// `[{op, scene?, field, reason, section}]`). A deviation excuses a difference from the reference build (the pinned
+// build; for a text command, a build whose route applied it in that block, text.mjs) only in its own
 // operation (and scene, when it names one) and its own field, and only when cua's answer is the one declared
 // (`answer`), so a declared difference never covers an undeclared one beside it.
 //
@@ -8,20 +9,56 @@
 // expected cua's own sentence; the pinned and newest builds answer the same `element has no visible bounds in this
 // window`), and the private screenshot directory (file paths are not compared).
 
-/** The sentence an engine-build refusal answers (Plan of Work, M1a, Decisions). */
-export const refusalSentence = (command) => `${command} is not available in this engine build`;
-
-const refused = (op) => ({
+/**
+ * A text command that cua applies where no vendor build's route does (the bar is the union of what either build
+ * succeeds at, so with no vendor success there is no answer to equal): only cua's success is declared, and its effect
+ * is still judged on every sample.
+ */
+const appliedWhereNoVendorDoes = (op, scene, why) => ({
   op,
-  scene: 'refusals',
+  scene,
+  field: 'answer',
+  answer: (c) => c.ok === true,
+  reason: `cua's paste route applies the text here and neither vendor build does: ${why}`,
+  section: 'Purpose ("Text arrives"); Design, Text and clipboard',
+});
+
+/**
+ * The refusal while the display's unconfirmed-paste window is open (Decision Log, M2.1; M2 whole-branch review: the
+ * window is display-wide, a root-window record every cua engine reads).
+ */
+export const PREVIOUS_UNCONFIRMED = /^a previous paste could not be confirmed and may still be read; nothing was sent; retry after \d+ s$/;
+
+const previousUnconfirmed = (op) => ({
+  op,
   field: 'error',
-  answer: (c) => c.ok === false && c.error === refusalSentence(op),
-  reason: `refused in this engine build rather than reproduce the vendor's text and clipboard failures; M2 brings the one verified paste route`,
-  section: 'Plan of Work, M1a, Decisions; M2',
+  answer: (c) => c.ok === false && PREVIOUS_UNCONFIRMED.test(String(c.error)),
+  reason:
+    "for 10 s after a paste that could not be confirmed and whose target was not served in full, any cua engine on the display (the one that pasted, another, or one started after it exited) refuses type_text, clipboard_write and a clipboard_read whose route makes the application Copy, before dispatch with nothing sent, so the earlier paste's target is never served another text by a late conversion; the vendor never refuses here",
+  section: 'Decision Log, M2.1 (serving generations across pastes); M2 whole-branch review (the display-wide window)',
 });
 
 export const DEVIATIONS = [
-  ...['type_text', 'type_characters', 'clipboard_read', 'clipboard_write', 'clipboard_release'].map(refused),
+  appliedWhereNoVendorDoes('type_text', 'gnome-text-editor', 'GTK 4 ignores the background route, where both builds send their text, and cua takes the foreground route in dedicated mode (M0.4 matrix; Decision Log, M2 pre-flight)'),
+  appliedWhereNoVendorDoes('clipboard_write', 'gedit', "both builds paste a snapshot with EditableText.PasteText, which inserts nothing in gedit and fails after 10 s (R/F §7); cua pastes it with the family's chord"),
+  {
+    op: 'clipboard_write',
+    field: 'clipboard',
+    answer: (c) => c.clipboard_kept === true,
+    reason:
+      "cua's cleanup leaves the clipboard as it found it (or as a competing owner set it meanwhile), where both vendor builds leave the written snapshot on CLIPBOARD; the difference shows only when something changed the clipboard between the clipboard_read and the clipboard_write",
+    section: 'Decision Log, M0.1 folded (clipboard_write restores the clipboard)',
+  },
+  {
+    op: 'type_characters',
+    scene: 'events',
+    field: 'answer',
+    answer: (c) => c.ok === false && /^Character '.+' is not on the keyboard layout$/su.test(String(c.error)),
+    reason:
+      "a character the layout cannot produce at level 1 or 2 is refused in one sentence of cua's, naming it; the newest build refuses the same text with `resolve_keys failed …`, `cannot type control character …` or `cannot type literal keysym …`, and the events are the same (nothing typed)",
+    section: 'Design, Keys; Decision Log, M2.2',
+  },
+  ...['type_text', 'clipboard_write', 'clipboard_read'].map(previousUnconfirmed),
   {
     op: 'interrupted_hold',
     scene: 'events',
@@ -61,6 +98,30 @@ export const SPEED_GAPS = [
 /** The speed gap that declares this verdict's loss, or null. */
 export function declaredSpeedGap({ op, route, series }, list = SPEED_GAPS) {
   return list.find((g) => g.op === op && g.route === route && g.series === series) ?? null;
+}
+
+/**
+ * The declared parity list (Acceptance 3's parity rule): an operation whose work is identical by construction in every
+ * engine and cannot be made faster. Above the bar, its verdict is **parity** (listed apart, never a pass, not a
+ * failure) only while cua's median lies within the spread of the bar build's own samples of that series in that run,
+ * which is how M1a.4 checked its verdict run (stats.mjs); otherwise it still fails. `[{op, scene, series, reason,
+ * section}]`.
+ */
+export const PARITY = [
+  {
+    // m2-wire: cold 36.44 ms against the pinned build's 33.58, whose cold samples spread over 32.22-40.05
+    op: 'get_screenshot',
+    scene: 'desktop',
+    series: 'cold',
+    reason:
+      "the first desktop capture is the vendor's own plain GetImage of the root (cua makes its MIT-SHM segment after the first answer), the same X work in every engine",
+    section: 'Decision Log, M1a.4 (MIT-SHM: the cold first desktop capture is parity)',
+  },
+];
+
+/** The parity that declares this verdict's series, or null. */
+export function declaredParity({ op, scene, series }, list = PARITY) {
+  return list.find((p) => p.op === op && p.scene === scene && p.series === series) ?? null;
 }
 
 /** A deviation as recorded in results.jsonl and summary.md (without its matcher). */

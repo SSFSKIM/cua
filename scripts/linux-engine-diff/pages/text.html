@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 text scene</title>
+<style>
+  body { margin: 0; padding: 12px; font: 16px sans-serif; }
+  textarea { display: block; width: 90%; height: 30vh; margin: 8px 0; font: 16px monospace; }
+</style>
+</head>
+<body>
+<!-- The differential harness's text scene (#171 M2): two textareas, the first focused with its caret at the end. The
+     query's `paste` names what the first does with a paste: `plain` (the browser's own paste), `late` (the paste
+     event's text inserted 3 s later, at the selection the paste found), `ignored` (the paste handled and dropped).
+     The second exists so the focus can move away from the first. The title comes from the URL's fragment. -->
+<textarea id="a" aria-label="Text A">cua171 textarea scene</textarea>
+<textarea id="b" aria-label="Text B">cua171 other field</textarea>
+<p id="state">pastes 0</p>
+<script>
+  document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
+  const mode = new URLSearchParams(location.search).get('paste') ?? 'plain';
+  const a = document.getElementById('a');
+  let pastes = 0;
+  a.addEventListener('paste', (e) => {
+    pastes += 1;
+    document.getElementById('state').textContent = `pastes ${pastes}`;
+    if (mode === 'plain') return;
+    e.preventDefault();
+    if (mode === 'late') {
+      const text = e.clipboardData.getData('text/plain');
+      const [start, end] = [a.selectionStart, a.selectionEnd];
+      setTimeout(() => a.setRangeText(text, start, end, 'end'), 3000);
+    }
+  });
+  a.focus();
+  a.setSelectionRange(a.value.length, a.value.length);
+</script>
+</body>
+</html>

@@ -170,6 +170,22 @@ impl Route<'_> {
         }
     }
 
+    /// Releases a key the bookkeeping does not hold (its press's delivery unknown), sending no press.
+    pub fn release_unheld(&mut self, x: &X11, keycode: u8) -> Result<()> {
+        match self {
+            Route::Window(session) => session.release_unheld(x, keycode),
+            Route::Desktop(_) => Desktop::release_unheld(x, keycode),
+        }
+    }
+
+    /// The background session, on the background route.
+    pub fn session(&self) -> Option<&Session> {
+        match self {
+            Route::Window(session) => Some(session),
+            Route::Desktop(_) => None,
+        }
+    }
+
     pub fn button(&mut self, x: &X11, button: u8, press: bool) -> Result<()> {
         match self {
             Route::Window(session) => session.button(x, button, press),

@@ -10,8 +10,9 @@ M1a builds it up from M0's spike. It answers every command of the pinned helper 
 `list_windows`, `list_apps`, `get_window_state` (the tree, `query`, `include_screenshot`) and `get_screenshot` (the
 desktop) on the observation side (M1a.1); `press_key`, `key_down`, `key_up`, `click`, `move`, `move_relative`,
 `scroll`, `drag`, `drag_handle`, `perform_secondary_action`, `activate_window` and `launch_app` on the input side
-(M1a.2). `type_text`, the clipboard commands and `type_characters` (M2) and `capabilities` (M3) answer
-`<command> is not available in this engine build`.
+(M1a.2). M2.1 adds the clipboard core and `clipboard_read` and `clipboard_release`; M2.2 the paste route for
+`type_text` and `clipboard_write`, and `type_characters`. `capabilities` (M3) answers
+`capabilities is not available in this engine build`.
 
 ```bash
 cargo build --release
@@ -59,6 +60,14 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   `Ctrl+Z` stays undo), and its held-key bookkeeping: counts per target and keycode shared by `press_key`, `key_down`
   and every command's `key` chord; a window with held keys keeps its session across requests until the last hold is
   released; whatever is still held at exit is released, each release with the state that was held.
+- **`type_characters`** (`engine/keyboard.rs`, `keys.rs`): the newest build's command, with its events. The window's
+  session opens, then the whole text is resolved: each character's keysym (its code point below 0x100, else 0x1000000
+  plus it) at level 1 of a key, or at level 2 with Shift_L held (letters included); the first character it cannot
+  produce that way (a control character, a keysym on no key, one only at AltGr's level) refuses the text with
+  `Character '<c>' is not on the keyboard layout` before any key is sent. Each character is then pressed and
+  released in turn, and the answer is the number sent. A family that ignores synthetic keys (GTK 4, xterm) is refused
+  in `--desktop shared` mode and typed through the foreground route in `dedicated` mode; the route taken is the
+  `--stats` line's `route`.
 - **The pointer** (`engine/pointer.rs`): clicks, moves, the desktop's interpolated path, wheel steps of 100 pixels held
   36 ms, drags sampled per pixel, `drag_handle` and `move_relative` on the desktop, in the vendor's order of placing,
   pressing the chord and pressing the button. A drag waits after each sample only where its target's family needs it
@@ -68,12 +77,67 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 - **Elements and windows** (`engine/elements.rs`, `engine/windows.rs`): element clicks through action 0 or a right
   click at the visible point, named actions, the element scroll, `activate_window` and `launch_app`.
 
+## How it uses the clipboard
+
+- **The lock** (`clipboard/lock.rs`): the display's private selections `CUA_CLIPBOARD_LOCK`, then the vendor's
+  `SKY_CLIPBOARD_LOCK`, each taken by a compare-and-set under a server grab (`GrabServer`, the owner must be None,
+  `SetSelectionOwner`, the owner read again, `UngrabServer`) and retried every 5 ms for at most 5 s, else
+  `clipboard busy`. Every engine on the display shares them; a paste and `clipboard_read` hold both throughout.
+- **The snapshot** (`clipboard/reader.rs`): the current CLIPBOARD's formats as the vendor captures them (`TARGETS`,
+  then each target it does not skip, INCR included, 64 MiB in all, the owner unchanged throughout), within 500 ms for
+  `TARGETS`, 500 ms for each format's first answer, 2 s between INCR chunks and 5 s overall.
+- **The owner** (`clipboard/owner.rs`, `clipboard/serving.rs`): one connection and thread that serve CLIPBOARD for
+  as long as the engine lives or another client takes it: text as `UTF8_STRING`, `text/plain`,
+  `text/plain;charset=utf-8` and, when Latin-1 only, `STRING`; a snapshot format by format; INCR above 64 KiB, a
+  transfer dropped when it stalls 2 s between chunks or runs past 10 s. A paste takes CLIPBOARD once; its cleanup,
+  on every exit path, never takes it again: while the engine still owns CLIPBOARD it serves the snapshot taken before
+  the paste instead, and after a `SelectionClear` it does nothing. Once cleaned up, a conversion stamped from the
+  paste's ownership to its cleanup (or with the Ctrl+V's own time), and a `CurrentTime` one within 10 s of a paste
+  that did not confirm, is refused, so a late requestor never receives the restored snapshot as the paste.
+  The take is checked against the snapshot atomically: under a server grab, the owner thread counts every XFIXES
+  report of CLIPBOARD's owner being set (re-assertions by the same owner included) and refuses, leaving CLIPBOARD
+  alone, if any came after the snapshot.
+- **The window after an unconfirmed paste** (`clipboard/quarantine.rs`) is the display's, not the engine's: a root
+  window property, `CUA_CLIPBOARD_QUARANTINE`, holds its end in server time and the target's X client, written by
+  the cleanup and read before a paste or a Copy, under the lock. While it runs, every cua engine on the display
+  refuses to paste, `clipboard_write` or Copy, also after the engine that opened it has exited. A vendor engine does
+  not read it.
+- **`clipboard_read`** (`engine/clipboard.rs`, `copy.rs`): under the lock, the window's focused element (the first
+  focused node in a post-order walk of its frame, siblings fetched together) copies by the vendor's route choice:
+  `EditableText.CopyText` of its one selection, else its context menu's Copy item; then CLIPBOARD's new contents are
+  snapshotted under a handle (`<pid>-<nanoseconds>-<n>`, at most 32 and 256 MiB). The application's copy stays on
+  CLIPBOARD. `clipboard_release` frees a handle, an unknown one without error. A context menu the Copy opened and
+  found no Copy in is closed with Escape through the background route, so the request leaves no menu open.
+- **The paste route** (`engine/paste.rs`, `paste.rs`, `field.rs`): `type_text` and `clipboard_write` (a handle's
+  snapshot into the window's focused element). In order: text over 64 MiB is refused; while an earlier unconfirmed
+  paste's `CurrentTime` refusal runs, a new paste is refused (`a previous paste could not be confirmed and may still
+  be read; nothing was sent; retry after <n> s`); the window's family (`families.rs`) gives the paste chord (Ctrl+V,
+  Ctrl+Shift+V for VTE terminals) or refuses text (xterm: no verified route), and a family that ignores the chord on
+  the background route (GTK 4) is refused in `--desktop shared` mode and, in `dedicated` mode, activated and pasted
+  through the desktop route. Inside the input session the field is observed (the named element, else the window's
+  focused one: its focus, editability, character count, caret and selection); a named element without the focus is
+  clicked at its visible point (once more if the focus has not shown 500 ms later: background Chrome drops a first
+  click in some states; `paste.clicks` and `paste.focus_ms` on the `--stats` line) and its caret or selection put back
+  (`AddSelection`, `SetCaretOffset`; a refusal is no failure). Then the lock, the snapshot and CLIPBOARD taken; the field and the desktop focus revalidated
+  (`requested field or selection changed before dispatch; nothing was sent`); the chord sent once; the field read
+  every 20 ms for up to 2 s for the inserted segment where the caret or selection was (for Gecko, without the U+FEFF
+  it adds after each character beyond the BMP), each read bounded by that deadline and counted only if it ends
+  before it, while the target's selection transfer is followed, counting only requests from the target's X client
+  (its window's resource-id base); and the cleanup. The answer is success when the segment is read back, else
+  `Paste was sent once and could not be confirmed; read the field before retrying`. Only a refusal before dispatch, or
+  a chord press the X server answered with an X error naming it (so the chord's last key never arrived), says that
+  nothing was sent or pasted; a press whose acknowledgement never came may have arrived, and is answered as sent. The
+  chord's keys are pressed one at a time and every key that may be down is released (a failed release tried once
+  more, no press sent again); a key that still could not be released is reported in the answer, success included. An
+  unconfirmed paste whose target was not served in full opens the 10 s `CurrentTime` refusal. `PasteText`,
+  `InsertText` and `SetTextContents` are never called.
+
 ## Flags
 
 | Flag | Values (default first) | What it changes |
 |---|---|---|
 | `--mouse-size-px` | 0 | a positive value stamps the pointer into desktop screenshots (the XFixes cursor at its native size; the value sizes the fallback arrow drawn without XFixes) |
-| `--desktop` | `shared`, `dedicated` | accepted for the spec's CLI; read from M3 |
+| `--desktop` | `shared`, `dedicated` | the device mode: whether a family that ignores the background route's paste chord or keys is refused, or reached through the foreground route, for `type_text`, `clipboard_write` and `type_characters` (M2; M3 adds the clicks and `press_key`'s keys) |
 | `--window-calls` | 32 | W: calls in flight at most |
 | `--window-bytes` | 4194304 | R: reply bytes received and not consumed, plus the reservation per call in flight, stay under it; a larger reply is still read whole |
 | `--call-reservation` | 4096 | bytes reserved per call in flight |

@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::{ErrorKind, Read, Write};
 use std::os::linux::net::SocketAddrExt;
 use std::os::unix::net::UnixStream;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow, bail};
 
@@ -538,6 +538,8 @@ pub struct Bus {
     ready: VecDeque<(u32, CallResult)>,
     /// Bytes of an oversized message still to be discarded.
     skip: usize,
+    /// How long the bus may stay silent before every outstanding call fails.
+    io_timeout: Duration,
     pub unique_name: String,
     pub stats: BusStats,
 }
@@ -601,6 +603,7 @@ impl Bus {
             pending: HashMap::new(),
             ready: VecDeque::new(),
             skip: 0,
+            io_timeout: timeout,
             unique_name: String::new(),
             stats: BusStats::default(),
         })
@@ -712,6 +715,73 @@ impl Bus {
                 waited = true;
             }
             self.read_more()?;
+        }
+    }
+
+    /// Sends `calls` together and returns their results in order, waiting for them no later than `deadline`
+    /// whatever the bus's silence timeout. None when the deadline passes first: the calls are then abandoned, and
+    /// their late replies are discarded when they come.
+    pub fn calls_until(&mut self, calls: &[MethodCall], deadline: Instant) -> Result<Option<Vec<CallResult>>> {
+        let serials: Vec<u32> = calls.iter().map(|c| self.send(c)).collect();
+        self.flush()?;
+        loop {
+            if serials.iter().all(|s| self.ready.iter().any(|(r, _)| r == s)) {
+                let mut results = Vec::with_capacity(serials.len());
+                for serial in &serials {
+                    let index = self.ready.iter().position(|(r, _)| r == serial).expect("present");
+                    results.push(self.ready.remove(index).expect("present").1);
+                }
+                return Ok(Some(results));
+            }
+            if self.dispatch_buffered()? {
+                continue;
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                for serial in &serials {
+                    self.pending.remove(serial);
+                }
+                self.ready.retain(|(r, _)| !serials.contains(r));
+                return Ok(None);
+            }
+            // The socket waits at most until the deadline; its own silence timeout comes back afterwards.
+            self.stream
+                .set_read_timeout(Some((deadline - now).min(self.io_timeout)))?;
+            let read = self.read_until_quiet();
+            self.stream.set_read_timeout(Some(self.io_timeout))?;
+            read?;
+        }
+    }
+
+    /// Reads what the bus has sent; a read that times out returns with nothing read and fails no call (the caller's
+    /// deadline decides).
+    fn read_until_quiet(&mut self) -> Result<()> {
+        let start = self.inbuf.len();
+        self.inbuf.resize(start + 64 * 1024, 0);
+        let result = self.stream.read(&mut self.inbuf[start..]);
+        match result {
+            Ok(0) => {
+                self.inbuf.truncate(start);
+                Err(Broken("the accessibility bus closed the connection".into()).into())
+            }
+            Ok(n) => {
+                self.inbuf.truncate(start + n);
+                self.stats.peak_staged = self.stats.peak_staged.max(self.inbuf.len());
+                Ok(())
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted
+                ) =>
+            {
+                self.inbuf.truncate(start);
+                Ok(())
+            }
+            Err(error) => {
+                self.inbuf.truncate(start);
+                Err(Broken(format!("failed to read from the accessibility bus: {error}")).into())
+            }
         }
     }
 
@@ -1328,6 +1398,64 @@ mod tests {
         assert!(first.1.unwrap_err().contains("os error 11"));
         assert_eq!(bus.in_flight(), 0);
         drop(theirs);
+    }
+
+    #[test]
+    fn calls_with_a_deadline_end_at_it_however_the_replies_trickle_in_and_late_replies_are_dropped() {
+        // the first reply comes at once and the second after the deadline: the bus's own silence timeout (5 s here)
+        // restarting at each reply must not stretch the wait
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let server = std::thread::spawn(move || {
+            let calls = read_calls(&mut theirs, 2);
+            theirs
+                .write_all(&answer(METHOD_RETURN, calls[0].0, None, "count"))
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(150));
+            theirs
+                .write_all(&answer(METHOD_RETURN, calls[0].0, None, "dup"))
+                .unwrap();
+            std::thread::sleep(Duration::from_millis(250));
+            theirs
+                .write_all(&answer(METHOD_RETURN, calls[1].0, None, "late text"))
+                .unwrap();
+            for (serial, member) in read_calls(&mut theirs, 1) {
+                theirs.write_all(&answer(METHOD_RETURN, serial, None, &member)).unwrap();
+            }
+        });
+        let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
+        let started = std::time::Instant::now();
+        let deadline = started + Duration::from_millis(300);
+        let got = bus.calls_until(&[call("Count"), call("GetText")], deadline).unwrap();
+        let waited = started.elapsed();
+        assert_eq!(got, None, "the second reply came after the deadline");
+        assert!(
+            waited >= Duration::from_millis(290) && waited < Duration::from_millis(390),
+            "{waited:?}"
+        );
+        assert_eq!(bus.in_flight(), 0, "the calls are abandoned");
+        // the late reply is discarded when it comes: the next call gets its own
+        assert_eq!(bus.call(&call("Next")).unwrap(), Ok(vec![Value::Str("Next".into())]));
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn calls_with_a_deadline_answer_in_order_when_every_reply_is_in_time() {
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let server = std::thread::spawn(move || {
+            let mut calls = read_calls(&mut theirs, 2);
+            calls.reverse();
+            for (serial, member) in calls {
+                theirs.write_all(&answer(METHOD_RETURN, serial, None, &member)).unwrap();
+            }
+        });
+        let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let got = bus.calls_until(&[call("A"), call("B")], deadline).unwrap();
+        assert_eq!(
+            got,
+            Some(vec![Ok(vec![Value::Str("A".into())]), Ok(vec![Value::Str("B".into())])])
+        );
+        server.join().unwrap();
     }
 
     #[test]

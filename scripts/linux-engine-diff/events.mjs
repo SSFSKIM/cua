@@ -19,7 +19,7 @@ import { desktopEntry } from './desktop-entry.mjs';
 import { SPEED_GAPS, declaredDeviation, declaredSpeedGap } from './deviations.mjs';
 import { Engine } from './engine.mjs';
 import { XPROBE } from './scenes.mjs';
-import { median } from './stats.mjs';
+import { median, noiseVerdict } from './stats.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
 
 /** The recorder's top-level window on the private screen (root coordinates); its child covers the lower-right quarter. */
@@ -106,11 +106,25 @@ export function scenarios() {
     { name: 'drag_handle', steps: [{ command: 'drag_handle', input: { action: 'start', x: 200, y: 200 } }, { command: 'drag_handle', input: { action: 'move_to', x: 300, y: 260 } }, { command: 'drag_handle', input: { action: 'end' } }] },
     { name: 'drag_handle stray end', steps: [{ command: 'drag_handle', input: { action: 'end' } }] },
   ];
+  // type_characters is the newest build's command (the pinned one has none): judged against the newest build. A
+  // refusal is one per scenario, since a declared deviation excuses one step's answer.
+  const tc = (text) => ({ command: 'type_characters', input: { window: W, text } });
+  const typing = [
+    { name: 'type_characters mixed case, digits and shifted symbols', steps: [tc(' AbZ09!?'), tc('<>|aa')] },
+    { name: 'type_characters empty', steps: [tc('')] },
+    ...[
+      ['a character off the layout', 'aé'],
+      ['a control character', 'ab\ncd'],
+      ['a combining mark', 'x́'],
+      ['a character beyond Latin-1', 'Ω'],
+    ].map(([what, text]) => ({ name: `type_characters refuses ${what} before typing anything`, deviation: 'type_characters', steps: [tc(text)] })),
+  ].map((s) => ({ ...s, reference: 'newest' }));
   const activation = [{ name: 'activate_window', steps: [{ command: 'activate_window', input: { window: W } }] }];
   // launch_app against the experiment's own desktop entry only (no system entries): its program touches a file
   const launch = [{ name: 'launch_app', apps: true, steps: ['Events Probe', 'events-probe', ' EVENTS-PROBE.desktop ', 'missing', '  '].map((app) => ({ command: 'launch_app', input: { app } })) }];
   return [
     ...keys.map((s) => ({ ...s, route: 'window' })),
+    ...typing.map((s) => ({ ...s, route: 'window' })),
     ...pointer.map((s) => ({ ...s, route: 'window' })),
     ...desktop.map((s) => ({ ...s, route: 'desktop' })),
     ...activation.map((s) => ({ ...s, route: 'window' })),
@@ -379,11 +393,14 @@ export function medianDifferenceInterval(a, b, { rounds = 2000, seed = 171, stra
  * Over the wire the desktop route's judged times come from `blocks` (`desktopBlocks`' interleaved fresh engines over the
  * scenarios' sequences), and the scenarios' own desktop times are recorded beside them as `… in a scenario`.
  * A group is judged only when every engine has `minSamples`; then cua at or below the bar passes, and above it:
- * - a group whose bootstrap interval of the median difference includes 0 is "same (within noise)";
+ * - a group whose bootstrap interval of the median difference includes 0 and whose upper end is within the bound
+ *   (stats.mjs `noiseBound`: max(5% of the bar, 1 ms)) is "same (within noise)";
  * - a loss a speed gap declares (deviations.mjs) is "declared gap";
+ * - an interval that includes 0 but reaches past the bound is "undetermined" while more samples may come (`final`
+ *   false: `runEvents` adds rounds), and a failure (`wide`) once they are final;
  * - otherwise it fails. Scenarios that deliberately fail (validation, bad keys) are timed too: every engine gets them.
  */
-export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], candidate = 'cua', blocks = null, minSamples = MIN_JUDGED, gaps = SPEED_GAPS, mismatches = [] } = {}) {
+export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], candidate = 'cua', blocks = null, minSamples = MIN_JUDGED, gaps = SPEED_GAPS, mismatches = [], final = true } = {}) {
   const groups = new Map();
   // a timed request that did not answer as the pinned build's proves nothing about speed (blockAnswerMismatches)
   const wrong = new Set(mismatches.map((m) => `${m.engine}|${m.key}`));
@@ -415,14 +432,16 @@ export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], cand
     const judged = bar !== null && typeof mine === 'number' && [...vendors, candidate].every((l) => (byEngine[l]?.length ?? 0) >= minSamples);
     const interval = judged ? medianDifferenceInterval(byEngine[candidate], byEngine[fastest], { strataA: strata[candidate], strataB: strata[fastest] }) : null;
     const gap = judged && mine > bar ? declaredSpeedGap({ op: command, route, series }, gaps) : null;
+    const noise = judged && mine > bar ? noiseVerdict(interval, bar) : null;
     let verdict;
     if (!judged) verdict = 'too few samples, not judged';
     else if (mine <= bar) verdict = 'pass';
-    else if (interval[0] <= 0) verdict = 'same (within noise)';
+    else if (noise === 'same') verdict = 'same (within noise)';
     else if (gap) verdict = 'declared gap';
+    else if (noise === 'wide' && !final) verdict = 'undetermined';
     else verdict = 'fail';
     const n = Math.min(...[...vendors, candidate].map((l) => byEngine[l]?.length ?? 0));
-    out.push({ route, command, series, n, medians, bar, faster: fastest, interval, verdict, pass: verdict === 'pass' ? true : verdict === 'fail' ? false : null, ...(gap ? { gap } : {}) });
+    out.push({ route, command, series, n, medians, bar, faster: fastest, interval, verdict, pass: verdict === 'pass' ? true : verdict === 'fail' ? false : null, ...(gap ? { gap } : {}), ...(noise === 'wide' ? { wide: true } : {}) });
   }
   return out.sort((a, b) => `${a.route}${a.command}${a.series}`.localeCompare(`${b.route}${b.command}${b.series}`));
 }
@@ -434,7 +453,7 @@ export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], cand
  */
 export function eventsPass({ answers, speeds, via, required = [] }) {
   if (via === 'vendor-js') return answers;
-  return answers && speeds.every((s) => s.verdict !== 'fail') && missingSpeedGroups(speeds, required).length === 0;
+  return answers && speeds.every((s) => s.verdict !== 'fail' && s.verdict !== 'undetermined') && missingSpeedGroups(speeds, required).length === 0;
 }
 
 /**
@@ -502,11 +521,13 @@ export function blockSequences(list = scenarios()) {
  * The desktop route's request times, judged: every block sequence in a fresh engine per engine, `rounds` rounds, the
  * engines' order rotating each round, the pointer put at its start first and the engine given time to start, so its
  * first request is timed the way the differential run's cold sample is. Returns a row in the scenarios' shape.
+ * A top-up (`commands`: only the sequences that send them) numbers its rounds on from `firstRound`, so its requests
+ * never share a key with an earlier block's.
  */
-async function desktopBlocks(engines, env, emit, { rounds = FIRST_ROUNDS } = {}) {
+async function desktopBlocks(engines, env, emit, { rounds = FIRST_ROUNDS, firstRound = 0, commands = null } = {}) {
   const records = Object.fromEntries(engines.map((e) => [e.label, []]));
-  const sequences = blockSequences();
-  for (let r = 0; r < rounds; r++) {
+  const sequences = blockSequences().filter((s) => !commands || s.steps.some((st) => commands.has(st.command)));
+  for (let r = firstRound; r < firstRound + rounds; r++) {
     for (const sequence of sequences) {
       const order = [...engines.slice(r % engines.length), ...engines.slice(0, r % engines.length)];
       for (const engine of order) {
@@ -527,12 +548,14 @@ async function desktopBlocks(engines, env, emit, { rounds = FIRST_ROUNDS } = {})
     }
   }
   const mismatches = blockAnswerMismatches(records, engines.filter((e) => e.label.startsWith('cua')).map((e) => e.label));
-  emit({ kind: 'events-blocks', rounds, sequences: sequences.map((s) => s.scenario), settle_ms: ENGINE_SETTLE_MS, records, mismatches });
+  emit({ kind: 'events-blocks', rounds, first_round: firstRound, sequences: sequences.map((s) => s.scenario), settle_ms: ENGINE_SETTLE_MS, records, mismatches });
   return { route: 'desktop', records, mismatches };
 }
 
 /** The desktop blocks' rounds: 31 fresh engines per engine and sequence. */
 export const FIRST_ROUNDS = 31;
+/** The top-ups an undetermined desktop group gets (Acceptance 3), each `FIRST_ROUNDS` more rounds of its sequences. */
+export const TOP_UPS = 2;
 /** The wait after an engine's start before its first request: its own start is not the request's time. */
 const ENGINE_SETTLE_MS = 150;
 
@@ -565,14 +588,16 @@ export async function runEvents(args, emit) {
       for (const engine of engines) records[engine.label] = await runScenario(scenario, engine, env, { via, skyDir: args.vendorJs });
       const verdicts = {};
       const declared = {};
-      for (const engine of engines.slice(1)) {
-        let difference = firstDifference(records.pinned, records[engine.label]);
+      // the build the scenario is judged against: the pinned one, or the newest for its own command
+      const reference = scenario.reference ?? 'pinned';
+      for (const engine of engines.filter((e) => e.label !== reference && !(reference === 'newest' && e.label === 'pinned'))) {
+        let difference = firstDifference(records[reference], records[engine.label]);
         // a declared deviation excuses its own step's answer, and only when the candidate answered as declared
         if (difference?.what === 'answer' && scenario.deviation) {
           const deviation = declaredDeviation({ op: scenario.deviation, scene: 'events', field: 'answer', candidate: difference.candidate });
           if (deviation) {
-            const excused = records[engine.label].map((step, i) => (i === difference.step ? { ...step, answer: records.pinned[i].answer } : step));
-            difference = firstDifference(records.pinned, excused);
+            const excused = records[engine.label].map((step, i) => (i === difference.step ? { ...step, answer: records[reference][i].answer } : step));
+            difference = firstDifference(records[reference], excused);
             if (!difference) declared[engine.label] = deviation.op;
           }
         }
@@ -588,13 +613,26 @@ export async function runEvents(args, emit) {
         if (!effects.pass) pass = false;
       }
       emit({ kind: 'events', scenario: scenario.name, route: scenario.route, via, records, differences: verdicts, declared, ...(judged ? { effect_misses: misses } : {}) });
-      scenarioRows.push({ route: scenario.route, records });
-      const cell = (label) => (verdicts[label] ? `differs at step ${verdicts[label].step} (${verdicts[label].what})` : declared[label] ? `same but the declared answer (${declared[label]})` : 'same');
+      // a build the scenario is not judged against (the pinned build has no type_characters) times nothing in it
+      const timed = reference === 'newest' ? Object.fromEntries(Object.entries(records).filter(([label]) => label !== 'pinned')) : records;
+      scenarioRows.push({ route: scenario.route, records: timed });
+      const cell = (label) => (label === reference ? 'the reference' : verdicts[label] ? `differs at step ${verdicts[label].step} (${verdicts[label].what})` : declared[label] ? `same but the declared answer (${declared[label]})` : 'same');
       const took = (label) => `${records[label].filter((s) => s.effect === true).length}/${records[label].filter((s) => typeof s.effect === 'boolean').length}`;
       md.push(`| ${scenario.name} | ${cell('newest')} | ${cell('cua')} | ${judged ? `${took('pinned')} / ${took('newest')} / ${took('cua')}${misses.cua?.length ? ` (**cua missed step ${misses.cua.join(', ')}**)` : ''}` : '–'} |`);
     }
     // over the wire, the desktop route's speed is judged from interleaved fresh engines, enough samples a group
-    if (via === 'wire') blocks = [await desktopBlocks(engines, env, emit, { rounds: args.firstRounds ?? FIRST_ROUNDS })];
+    if (via === 'wire') {
+      const rounds = args.firstRounds ?? FIRST_ROUNDS;
+      blocks = [await desktopBlocks(engines, env, emit, { rounds })];
+      // Acceptance 3: a group whose interval includes 0 but reaches past the noise bound is undetermined, and gets
+      // more samples; whatever is still undetermined after the top-ups fails or stands as a declared gap
+      for (let more = 1; more <= TOP_UPS; more++) {
+        const open = eventSpeeds(scenarioRows, { blocks, mismatches: blocks.flatMap((b) => b.mismatches), final: false }).filter((s) => s.verdict === 'undetermined');
+        if (!open.length) break;
+        emit({ kind: 'events-top-up', top_up: more, rounds, groups: open.map((s) => ({ route: s.route, command: s.command, series: s.series, interval: s.interval, bar: s.bar })) });
+        blocks.push(await desktopBlocks(engines, env, emit, { rounds, firstRound: rounds * more, commands: new Set(open.map((s) => s.command)) }));
+      }
+    }
   } finally {
     server.stop();
     rmSync(home, { recursive: true, force: true });
@@ -610,11 +648,11 @@ export async function runEvents(args, emit) {
   const required = via === 'wire' ? MANDATORY_SPEED_GROUPS : [];
   const missing = missingSpeedGroups(speeds, required);
   if (missing.length) md.push('', `Incomplete: Acceptance 3's desktop groups left unjudged (too few samples or none): ${missing.map((g) => `${g.command} ${g.series}`).join(', ')}.`);
-  const judging = via === 'vendor-js' ? "through the client they include its deferred settle, so they are recorded, not judged" : `the desktop route's \`first\` and \`later\` from ${args.firstRounds ?? FIRST_ROUNDS} interleaved fresh engines per engine and sequence, each time counted only when its answer is the pinned build's, the scenarios' own beside them; a group is judged only with ${MIN_JUDGED} samples an engine, and every Acceptance 3 desktop group must be; above the bar with a bootstrap 95% interval of cua minus the faster build that includes 0 is the same within noise`;
+  const judging = via === 'vendor-js' ? "through the client they include its deferred settle, so they are recorded, not judged" : `the desktop route's \`first\` and \`later\` from ${args.firstRounds ?? FIRST_ROUNDS} interleaved fresh engines per engine and sequence, each time counted only when its answer is the pinned build's, the scenarios' own beside them; a group is judged only with ${MIN_JUDGED} samples an engine, and every Acceptance 3 desktop group must be; above the bar with a bootstrap 95% interval of cua minus the faster build that includes 0 and reaches at most max(5% of the bar, 1 ms) is the same within noise, and a wider one gets up to ${TOP_UPS} top-ups of ${args.firstRounds ?? FIRST_ROUNDS} rounds, then fails`;
   md.push('', `Request times per route and command (median ms; \`first\` is the request after the engine started, \`later\` the rest; ${judging}):`, '');
   md.push('| route | command | series | n | pinned | newest | cua | cua − faster, 95% interval | verdict |', '|---|---|---|---:|---:|---:|---:|---|---|');
   const f = (v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : '–');
-  const shown = (r) => (via === 'vendor-js' ? (r.medians.cua <= r.bar ? 'at or below (recorded)' : 'above (recorded)') : r.verdict === 'fail' ? '**fail**' : r.verdict === 'declared gap' ? `**declared gap** (${r.gap.section})` : r.verdict === 'same (within noise)' ? '**same (within noise)**' : r.verdict);
+  const shown = (r) => (via === 'vendor-js' ? (r.medians.cua <= r.bar ? 'at or below (recorded)' : 'above (recorded)') : r.verdict === 'fail' ? (r.wide ? '**fail** (undetermined: the interval reaches past the bound)' : '**fail**') : r.verdict === 'declared gap' ? `**declared gap** (${r.gap.section})` : r.verdict === 'same (within noise)' ? '**same (within noise)**' : r.verdict);
   for (const r of speeds) md.push(`| ${r.route} | ${r.command} | ${r.series} | ${r.n} | ${f(r.medians.pinned)} | ${f(r.medians.newest)} | ${f(r.medians.cua)} | ${r.interval ? `[${r.interval[0]}, ${r.interval[1]}]` : '–'} | ${shown(r)} |`);
   if (via !== 'vendor-js') {
     const listed = (verdict) => speeds.filter((s) => s.verdict === verdict);

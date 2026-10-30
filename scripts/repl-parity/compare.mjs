@@ -121,26 +121,32 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo,
   }
   // The Linux engine lanes' declarations (#171, ./native-linux.mjs): between a vendor-engine run and a cua-engine run,
   // each declaration holds only when the vendor side recorded exactly its vendor defect on its case and the cua side
-  // exactly its candidate expectation; then only that case's exercise result and assertion are projected to one shared
+  // exactly its declared passing assertion and exercise result; then only those fields are projected to one shared
   // placeholder on both sides. A declaration that does not hold is itself a difference, and the rows still compare.
   if(engineDeclarations.length&&a.meta.engine!==b.meta.engine){
-   const [vendorRows,cuaRows,vendorAssessment,cuaAssessment]=a.meta.engine==='vendor'?[left,right,leftAssertions,rightAssertions]:[right,left,rightAssertions,leftAssertions];
+   const [vendorRows,cuaRows,vendorAssessment]=a.meta.engine==='vendor'?[left,right,leftAssertions]:[right,left,rightAssertions];
+   const scoped=[a,b].every(r=>r.meta.host==='cua'&&r.meta.platform==='linux')&&[a.meta.engine,b.meta.engine].sort().join(',')==='cua,vendor';
    for(const d of engineDeclarations){
     if(!ids?.includes(d.case))continue;
-    const holds=vendorAssessment.vendorDefects.some(v=>v.id===d.vendorDefect&&v.case===d.case)&&cuaAssessment.candidateExpectations.some(c=>c.id===d.candidateExpectation&&c.case===d.case);
-    if(!holds){differences.push({kind:'overdeclared',case:d.case,declaration:d.id,message:'the declared engine difference did not occur: the vendor side holds no such vendor defect, or the cua side no such candidate expectation'});continue;}
+    const one=(rows,match)=>{const found=rows.filter(r=>r.case===d.case&&match(r));return found.length===1?found[0]:null;};
+    const assertion=rows=>one(rows,r=>!Object.hasOwn(r,'cell')&&Object.hasOwn(r,'assertion'));
+    const result=rows=>one(rows,r=>r.cell===d.cua.result.cell);
+    const ownAssertion=assertion(cuaRows),ownResult=result(cuaRows);
+    const holds=scoped&&vendorAssessment.vendorDefects.some(v=>v.id===d.vendorDefect&&v.case===d.case)&&assertion(vendorRows)&&result(vendorRows)
+      &&ownAssertion&&!Object.hasOwn(ownAssertion,'vendorDefect')&&isDeepStrictEqual(ownAssertion.assertion,d.cua.assertion)
+      &&ownResult?.ok===true&&ownResult.isError===d.cua.result.isError&&isDeepStrictEqual(ownResult.content,d.cua.result.content);
+    if(!holds){differences.push({kind:'overdeclared',case:d.case,declaration:d.id,message:'the declared engine difference did not occur: the vendor side holds no such vendor defect, or the cua side no such positive result'});continue;}
     for(const rows of [vendorRows,cuaRows])for(const [index,row] of rows.entries()){
      if(row.case!==d.case)continue;
      if(d.cells.includes(row.cell))rows[index]={...row,content:{engineDeclaration:d.id},isError:{engineDeclaration:d.id}};
-     else if(!Object.hasOwn(row,'cell')&&Object.hasOwn(row,'assertion')){const projected={...row,assertion:{ok:true,engineDeclaration:d.id}};delete projected.vendorDefect;delete projected.candidateExpectation;rows[index]=projected;}
+     else if(!Object.hasOwn(row,'cell')&&Object.hasOwn(row,'assertion')){const projected={...row,assertion:{ok:true,engineDeclaration:d.id}};delete projected.vendorDefect;rows[index]=projected;}
     }
-    accepted.push({kind:'engine-declaration',case:d.case,cells:d.cells,declaration:d.id,vendorDefect:d.vendorDefect,candidateExpectation:d.candidateExpectation,reason:d.reason});
+    accepted.push({kind:'engine-declaration',case:d.case,cells:d.cells,declaration:d.id,vendorDefect:d.vendorDefect,reason:d.reason});
    }
   }
   // Exempt only the assessed row object, never every assertion sharing its case ID.
   const recordedAssertionFailures={a:new Set(leftAssertions.recordedAssertionRows),b:new Set(rightAssertions.recordedAssertionRows)};
   const vendorDefects=[...new Map([...leftAssertions.vendorDefects,...rightAssertions.vendorDefects].map(d=>[d.id,d])).values()];
-  const candidates=[...new Map([...leftAssertions.candidateExpectations,...rightAssertions.candidateExpectations].map(c=>[c.id,c])).values()];
   const result=compareRuns(left,right,{raw:true,recordedAssertionFailures});
   differences.push(...result.differences);
   // Keep assessment independently authoritative even if the shared comparison's indexing changes.
@@ -148,7 +154,7 @@ export function compareParityRuns(a,b,{expected=[],caseIds,caseCells,sourceRepo,
     if(!differences.some(d=>d.kind==='assertion'&&d.side===side&&d.case===row.case&&d.cell===row.cell))differences.push({kind:'assertion',side,case:row.case,cell:row.cell,message:'undeclared assertion failure'});
   }
   const provisionalCells=[...new Map([...pendingLeft.provisional,...pendingRight.provisional].map(p=>[`${p.case}|${p.cell}`,p])).values()];
-  return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)&&!pa.pendingObligations.includes(id)&&!provisionalCells.some(p=>p.case===id)&&!vendorDefects.some(d=>d.case===id)&&!candidates.some(c=>c.case===id)).length,recordedCases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,vendorDefects,candidateExpectations:candidates,pendingCells:pendingLeft.observations.map(x=>({...x,status:{a:x.status,b:pendingRight.observations.find(y=>y.case===x.case&&y.cell===x.cell)?.status}})),pendingObligations:pa.pendingObligations.filter(id=>ids.includes(id)),pendingUnexpectedPasses:[...pendingLeft.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'a'})),...pendingRight.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'b'}))],provisionalCells,allAssertionsPassed:!differences.length&&!vendorDefects.length&&!candidates.length&&!pendingLeft.observations.length&&!provisionalCells.length,doubleCases:fakeCases.size,differences,ok:!differences.length};
+  return {...result,expected:accepted,cases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)&&!pa.pendingObligations.includes(id)&&!provisionalCells.some(p=>p.case===id)&&!vendorDefects.some(d=>d.case===id)).length,recordedCases:differences.length?0:(ids??[]).filter(id=>!fakeCases.has(id)).length,vendorDefects,pendingCells:pendingLeft.observations.map(x=>({...x,status:{a:x.status,b:pendingRight.observations.find(y=>y.case===x.case&&y.cell===x.cell)?.status}})),pendingObligations:pa.pendingObligations.filter(id=>ids.includes(id)),pendingUnexpectedPasses:[...pendingLeft.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'a'})),...pendingRight.observations.filter(x=>x.status==='unexpected-pass').map(x=>({...x,side:'b'}))],provisionalCells,allAssertionsPassed:!differences.length&&!vendorDefects.length&&!pendingLeft.observations.length&&!provisionalCells.length,doubleCases:fakeCases.size,differences,ok:!differences.length};
 }
 
 // The expected-differences file: exact identity-slot allowances (field meta.cua/replHost, both sides' values named) and

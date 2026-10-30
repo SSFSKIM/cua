@@ -5,13 +5,19 @@
 mod apps;
 mod atspi;
 mod capture;
+mod clipboard;
+mod copy;
 mod cover;
 mod dbus;
 mod desktop;
 mod engine;
 mod families;
+#[cfg(test)]
+mod fault;
+mod field;
 mod input;
 mod keys;
+mod paste;
 mod readiness;
 mod resolve;
 mod route;
@@ -59,7 +65,7 @@ fn default_config() -> Config {
         },
         stats: false,
         mouse_size_px: 0,
-        desktop: "shared".into(),
+        desktop: engine::DesktopMode::Shared,
     }
 }
 
@@ -100,7 +106,8 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             "--mouse-size-px" => cfg.mouse_size_px = number(value, arg)? as u32,
             "--desktop" => {
                 cfg.desktop = match value.map(String::as_str) {
-                    Some(mode @ ("shared" | "dedicated")) => mode.to_string(),
+                    Some("shared") => engine::DesktopMode::Shared,
+                    Some("dedicated") => engine::DesktopMode::Dedicated,
                     _ => return Err("--desktop is shared or dedicated".into()),
                 }
             }
@@ -222,6 +229,15 @@ mod tests {
         assert_eq!(cfg.capture_wait, CaptureWait::Damage);
         assert_eq!(cfg.mouse_size_px, 0);
         assert_eq!(
+            cfg.desktop,
+            engine::DesktopMode::Shared,
+            "a person may be using the desktop"
+        );
+        let Ok(Command::Server(dedicated)) = parse_args(&args(&["server", "--desktop", "dedicated"])) else {
+            panic!()
+        };
+        assert_eq!(dedicated.desktop, engine::DesktopMode::Dedicated);
+        assert_eq!(
             (cfg.settle, cfg.pacing.key, cfg.pacing.teardown),
             (Duration::ZERO, Duration::ZERO, Duration::from_millis(100)),
             "no input settle and no key pacing; the 100 ms before FocusOut stays"
@@ -321,6 +337,7 @@ mod tests {
             );
         }
         assert!(parse_args(&args(&["server", "--capture-wait", "40"])).is_err());
+        assert!(parse_args(&args(&["server", "--desktop", "owned"])).is_err());
         assert!(parse_args(&args(&["server", "--window-calls"])).is_err());
         assert!(parse_args(&args(&["--stats"])).is_err());
         assert!(matches!(parse_args(&args(&["--version"])), Ok(Command::Version)));

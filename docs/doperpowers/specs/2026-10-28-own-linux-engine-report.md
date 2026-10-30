@@ -186,3 +186,59 @@ tooling.
 - Executors reused the controller's commit-message file, so two commits went out with stale messages and were amended
   and force-pushed with lease on the branch; later executors got their own message file.
 - The worktree guard refused multi-line read-only probes from reviewers; single-line commands worked.
+
+## M2 — text and clipboard, one verified paste route, the second release
+
+Branch `feat/171-m2` from main 7023047c. Three loop tasks (pre-flight aecd9e37), the branch review's fix round and the
+release:
+
+| Task | Commits | Review |
+|---|---|---|
+| M2.1 the clipboard core (owner, lock, snapshot, generations, cleanup, `clipboard_read`/`release`) | 7b4a6773; fixes efaa06f3, 420f3f07, 50729a3d | 3 rounds (INCR cap underflow, cleanup anchors, a `SelectionClear` race, refused timestamps re-enabled, an abandoned take publishing), then approved |
+| M2.2 the paste route, `type_characters`, the route on `--stats` | 9531b4c6..c79a318e; fix 69329228 | 1 round (uncertain X delivery answered as not applied; the confirmation deadline not absolute), then approved |
+| M2.3 the harness's text proof, facade suites positive, 0.2.0, plugin 0.19.0, `m2/` | a28617ae..719b93f3; fixes e871a099..c48b5cbe, 6dc52571..5a229a08 | 2 rounds (route expectations, coalesced restacks, failed preparation and cleanups passing), then approved |
+| Branch review fixes | de4802a5 (engine), 426e25f2 (harness), 8b49b682 (`m2/` rebuilt) | `reviewer-high`: "incorrect" (two clipboard faults, two harness gaps), then "correct" |
+| Release `linux-engine-v0.2.0` and the pin | run 41090954823 on 8b49b682; pin and `m2/release/` after it | evidence below |
+
+**Result.**
+- cua's engine answers the five text and clipboard commands through one verified paste route. It makes no
+  accessibility-bus text insertion, sends a paste at most once, confirms the result, and keeps the person's clipboard.
+- Acceptance 6, and 2–5 for these commands, hold on x86-64 in the verdict run `m2-final`, which exits 0 on the
+  released engine's sources.
+- The facade suites' text cases are positive on the cua lane, and the native baseline's engine comparison passes.
+- On the released asset: the fresh-home install, the doctor row, and the Linux acceptance fixture at 11/11, with no
+  `sky_linux` and the engine as the trusted worker's child.
+- The default stays `vendor`.
+
+**Design-session decisions taken during M2** (all in the Decision Log):
+- the `CurrentTime` window and its attribution to the target's X client;
+- the dedicated-mode witness keyed to the route the request took;
+- Acceptance 3's noise rule extended to every speed verdict, bounded on the interval's upper end;
+- under-sampled desktop groups topped up, never judged on medians;
+- the snapshot's owner generation checked atomically in the take;
+- the unconfirmed window made display-wide, as a root-window property.
+
+**Branch review** (`doperpowers:reviewer-high`, 7023047c..a422ebf4, then the fix range 1ea029a5..8b49b682). It found
+two clipboard faults every task review had passed, each reproduced on a private Xvfb:
+- A copy made between the snapshot and the take was lost.
+- A second engine could cross-deliver into the first engine's unconfirmed target.
+
+It also found two harness paths that could pass a failure: activation changed and restored between samples, and text
+operations with no readable effect. All four were fixed. The re-review was "correct", and it checked the verdict run's
+recorded engine hash against the build.
+
+macOS inventory: 0.19.0 changes only the plugin's and marketplace's version on macOS; everything else is Linux-only or
+internal.
+
+**Deferred, carried to the PR's Unresolved Review Findings:**
+- the GTK `ATK_IS_TEXT` criticals of the unreadable-field path;
+- the M2.1 clear-race test's timing-based rendezvous.
+
+**Friction** (for a Mac session to record):
+- The worktree-isolation guard refused heredocs with code, loops, `export VAR=$HOME…`, some `&&` chains and some
+  read-only reviewer probes as too complex. Each cost a rewrite into a script file run by path, or into single
+  commands.
+- A subagent has no blocking wait for a roughly 70-minute GUI run, since a foreground `sleep` is refused. The M2.3
+  executor waited with a script looping on `read -t`.
+- Committing the spec while an executor worked in the same checkout risked mixing the two commits' contents. Each
+  controller commit therefore names its paths (`git commit -- <path>`).

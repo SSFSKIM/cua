@@ -2,7 +2,7 @@
 // The facade suites; Acceptance 10): `compare --engines <cv-dir> <cc-dir>`, cua's own host with the vendor engine
 // against it with cua's engine, the engine the one attested difference. Every row is judged as the default compare
 // judges it; an operation the engine answers also fails when cua's median is above the vendor engine's; the typeText and
-// paste method cases accept, until M2, exactly M1b's temporary candidate outcome. The rows are real: the committed Linux
+// paste method cases require success on every cua sample (Plan of Work M2). The rows are real: the committed Linux
 // cua-host triple of #116 M5 (docs/evidence/2026-10-14-own-repl-host-native/m5-cua-bench/cua), each run given the
 // fields an engine-lane run records for the lane it stands for.
 import {test} from 'node:test';
@@ -17,7 +17,6 @@ import {compareLanes, LINUX_LANE_MODES, renderComparison} from '../../scripts/na
 const EVIDENCE = fileURLToPath(new URL('../../docs/evidence/2026-10-14-own-repl-host-native/m5-cua-bench/cua', import.meta.url));
 const REAL = readRuns(EVIDENCE);
 const BIN = '/home/admin/Developer/GitHub/cua-171/native/linux-engine/target/release/cua-engine';
-const REFUSED = 'type_text is not available in this engine build';
 
 function laneRun(real, {engine, scale = {}, edit = () => {}}) {
   const meta = structuredClone(real.meta), release = meta.runtime.release;
@@ -28,7 +27,7 @@ function laneRun(real, {engine, scale = {}, edit = () => {}}) {
     nativeEngine: {requested: engine, bin: engine === 'cua' ? BIN : null, expected, error: null, observed: [{exe: expected, kind: engine, parent: 'trusted-worker.mjs'}]},
   });
   const rows = real.rows.map(r => {
-    if (['method.typeText', 'method.paste'].includes(r.op)) return {...r, wallMs: engine === 'cua' ? 30 : 10_200, methodError: engine === 'cua' ? REFUSED : 'editable Paste did not insert text', target: 'survived'};
+    if (['method.typeText', 'method.paste'].includes(r.op)) return {...r, wallMs: engine === 'cua' ? 30 : 10_200, outcome: engine === 'cua' ? 'returned' : 'threw', methodError: engine === 'cua' ? undefined : 'editable Paste did not insert text', target: 'survived', inserted: engine === 'cua' ? true : null};
     return scale[r.op] ? {...r, wallMs: r.wallMs * scale[r.op]} : r;
   });
   edit(meta, rows);
@@ -56,7 +55,7 @@ test('Linux has one lane comparison: cua\'s host, the vendor engine against cua\
   assert.deepEqual({baseline: lane.baseline, candidate: lane.candidate, differ: lane.differ}, {baseline: {host: 'cua', engine: 'vendor'}, candidate: {host: 'cua', engine: 'cua'}, differ: ['engine']});
 });
 
-test('the Linux engines comparison on the real triple passes, with the text method cases accepted as M1b\'s temporary candidate outcome', t => {
+test('the Linux engines comparison passes with positive cua text cases against the failing vendor engine', t => {
   const result = judge(t, triple('vendor'), triple('cua', {scale: FASTER}));
   assert.deepEqual(result.problems, []);
   assert.equal(result.verdict, 'PASS', JSON.stringify(result.operations.filter(o => o.verdict === 'fail')));
@@ -64,14 +63,14 @@ test('the Linux engines comparison on the real triple passes, with the text meth
   assert.equal(result.permitted[0].baseline, 'vendor (answered: sky_linux_arm64 of the run\'s runtime)');
   assert.equal(result.permitted[0].candidate, `cua (answered: cua-engine named by --engine-bin ${BIN})`);
   for (const name of ['method.typeText', 'method.paste']) {
-    assert.equal(op(result, name).verdict, 'declared', name);
-    assert.match(op(result, name).reasons.join(' '), /temporary candidate outcome \(until M2\)/);
+    assert.equal(op(result, name).verdict, 'pass', name);
+    assert.match(op(result, name).reasons.join(' '), /better: the method returned, its window survived and its text was read back/);
   }
   assert.equal(op(result, 'method.setValue').verdict, 'pass');
   const text = renderComparison(result);
   assert.match(text, /# Native baseline comparison A: engine \(Linux\)/);
   assert.match(text, /`--host cua --engine vendor`, the candidate `--host cua --engine cua`/);
-  assert.match(text, /\| method\.typeText \|.*\| declared \|/);
+  assert.match(text, /\| method\.typeText \|.*\| pass \|/);
   assert.match(text, /Verdict: \*\*PASS\*\*/);
 });
 
@@ -87,17 +86,31 @@ test('an operation the engine answers fails when cua\'s median is above the vend
   assert.match(renderComparison(noise), /## Where cua's median is above the vendor engine's/);
 });
 
-test('the text method cases are accepted only as exactly that outcome, and only while the vendor engine did not succeed', t => {
-  const otherSentence = judge(t, triple('vendor'), triple('cua', {scale: FASTER, edit: (meta, rows) => { rows.find(r => r.op === 'method.typeText').methodError = 'another failure'; }}));
-  assert.equal(op(otherSentence, 'method.typeText').verdict, 'fail');
-  const exited = judge(t, triple('vendor'), triple('cua', {scale: FASTER, edit: (meta, rows) => { rows.find(r => r.op === 'method.paste').target = 'exited'; }}));
-  assert.equal(op(exited, 'method.paste').verdict, 'fail');
-  const vendorSucceeded = judge(t, triple('vendor', {edit: (meta, rows) => { Object.assign(rows.find(r => r.op === 'method.typeText'), {outcome: 'returned', methodError: undefined, target: 'survived', inserted: true}); }}), triple('cua', {scale: FASTER}));
-  assert.equal(op(vendorSucceeded, 'method.typeText').verdict, 'fail');
+test('every cua text sample must return without an error, survive and read back, even if most improve on the vendor', t => {
+  for (const name of ['method.typeText', 'method.paste']) for (const patch of [
+    {outcome: 'threw', methodError: 'editable Paste did not insert text', inserted: null},
+    {outcome: 'threw', methodError: 'type_text is not available in this engine build', inserted: null},
+    {target: 'exited'}, {inserted: false}, {inserted: undefined}, {methodError: 'another failure'}, {ok: false, error: 'harness failed'},
+  ]) {
+    let sample = 0;
+    const result = judge(t, triple('vendor'), triple('cua', {scale: FASTER, edit: (meta, rows) => {if (sample++ === 1) Object.assign(rows.find(r => r.op === name), patch);}}));
+    assert.equal(op(result, name).verdict, 'fail', `${name}: ${JSON.stringify(patch)}`);
+  }
+  const sameFailure = judge(t, triple('vendor'), triple('cua', {scale: FASTER, edit: (meta, rows) => {
+    for (const row of rows.filter(r => ['method.typeText', 'method.paste'].includes(r.op))) Object.assign(row, {outcome: 'threw', methodError: 'editable Paste did not insert text', inserted: null});
+  }}));
+  assert.equal(op(sameFailure, 'method.typeText').verdict, 'fail');
+  assert.equal(op(sameFailure, 'method.paste').verdict, 'fail');
 });
 
-// Review fix 2: a declared text method case is still held to the engine-speed rule.
-test('a declared text method case whose cua median is above the vendor engine\'s fails', t => {
+test('positive cua text cases also pass when the vendor succeeds, without a defect waiver', t => {
+  const result = judge(t, triple('vendor', {edit: (meta, rows) => {
+    for (const row of rows.filter(r => ['method.typeText', 'method.paste'].includes(r.op))) Object.assign(row, {outcome: 'returned', methodError: undefined, inserted: true});
+  }}), triple('cua', {scale: FASTER}));
+  assert.equal(result.verdict, 'PASS');
+});
+
+test('a positive text method case whose cua median is above the vendor engine\'s fails', t => {
   for (const name of ['method.typeText', 'method.paste']) {
     const slower = judge(t, triple('vendor'), triple('cua', {scale: FASTER, edit: (meta, rows) => { rows.find(r => r.op === name).wallMs = 10_248.8; }}));
     assert.equal(slower.verdict, 'FAIL', name);

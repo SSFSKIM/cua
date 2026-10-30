@@ -97,6 +97,35 @@ export class Oracle {
     return this.on(id, 'org.a11y.atspi.Text', 'GetText', 'ii', start, end)[0];
   }
 
+  /** The first selection `[start, end]`, or null when nothing is selected. */
+  selection(id) {
+    const [n] = this.on(id, 'org.a11y.atspi.Text', 'GetNSelections');
+    if (!n) return null;
+    const [start, end] = this.on(id, 'org.a11y.atspi.Text', 'GetSelection', 'i', 0);
+    return end > start ? [start, end] : null;
+  }
+
+  /**
+   * The harness's own changes to a field it opened (M2's text cases): the caret placed (which clears a selection), a
+   * range selected, the focus moved. Each answers whether the application accepted it.
+   */
+  setCaret(id, offset) {
+    return this.on(id, 'org.a11y.atspi.Text', 'SetCaretOffset', 'i', offset)[0] === true;
+  }
+
+  select(id, start, end) {
+    return this.on(id, 'org.a11y.atspi.Text', 'AddSelection', 'ii', start, end)[0] === true;
+  }
+
+  grabFocus(id) {
+    return this.on(id, 'org.a11y.atspi.Component', 'GrabFocus')[0] === true;
+  }
+
+  /** The text's length in characters (`Text.CharacterCount`). */
+  count(id) {
+    return this.prop(id, 'org.a11y.atspi.Text', 'CharacterCount');
+  }
+
   /** A character's screen extents `{x, y, w, h}`. */
   charExtents(id, offset) {
     const [x, y, w, h] = this.on(id, 'org.a11y.atspi.Text', 'GetCharacterExtents', 'iu', offset, 0);

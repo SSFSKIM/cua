@@ -61,7 +61,11 @@ impl Desktop {
 
     fn key(x: &X11, keycode: u8, press: bool) -> Result<()> {
         let kind = if press { KEY_PRESS_EVENT } else { KEY_RELEASE_EVENT };
-        fake(x, kind, keycode, x.root, 0, 0)
+        let send = || fake(x, kind, keycode, x.root, 0, 0);
+        #[cfg(test)]
+        return crate::fault::key(keycode, press, send);
+        #[cfg(not(test))]
+        send()
     }
 
     /// Presses each keycode not already held, in order (behaviour §11.3).
@@ -95,6 +99,11 @@ impl Desktop {
             std::thread::sleep(pace);
             sent
         })
+    }
+
+    /// Releases a key the bookkeeping does not hold (its press's delivery unknown), sending no press.
+    pub fn release_unheld(x: &X11, keycode: u8) -> Result<()> {
+        Self::key(x, keycode, false)
     }
 
     /// Releases every key still held (the engine's exit).

@@ -232,6 +232,15 @@ export const FAMILIES = {
     geometry: [640, 400],
     launch: (ctx) => terminalLaunch(ctx, ['-xrm', 'XTerm*allowSendEvents: true']),
   },
+  // M2: the VTE family, whose paste chord is Ctrl+Shift+V (Ctrl+V inserts the next key literally in a shell; Design,
+  // Device mode and the foreground route; Decision Log, M0.4). Its window belongs to the session's gnome-terminal
+  // server, not to the process the harness starts, so the recorder writes its own PID for the harness to end it
+  'gnome-terminal': {
+    title: 'gnome-terminal (VTE)',
+    kind: 'terminal',
+    geometry: [640, 400],
+    launch: (ctx) => vteLaunch(ctx),
+  },
 };
 
 /**
@@ -269,6 +278,20 @@ export function terminalLaunch(ctx, extra) {
 }
 
 /**
+ * gnome-terminal running the recorder: the title set by the program itself as well as asked for, its PID written to a
+ * file (the window is the gnome-terminal server's, so ending the started process does not close it; ending the
+ * recorder does, as the terminal exits with its command). The recorder also shows what it receives, so a paste's text
+ * appears in the terminal's own text, where an engine can confirm it.
+ */
+export function vteLaunch(ctx) {
+  const record = join(ctx.dir, `${ctx.label}.input`);
+  const pidfile = join(ctx.dir, `${ctx.label}.pid`);
+  writeFileSync(record, '');
+  const script = `echo $$ > "$2"; printf '\\033]0;%s\\007\\033[?1000h' "$3"; stty raw -echo; exec tee -a "$1"`;
+  return { cmd: 'gnome-terminal', args: ['--wait', '--title', ctx.label, '--', 'sh', '-c', script, 'sh', record, pidfile, ctx.label], match: (w) => w.title === ctx.label, record, pidfile };
+}
+
+/**
  * Opens a family's window on the harness's desktop: launched, found, sized and placed, its objects resolved.
  * Returns the scene: `{kind: 'family', family, id, pid, group, ...targets}`.
  */
@@ -286,7 +309,7 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
     const spec = family.launch(ctx);
     const child = spawn(spec.cmd, spec.args, { stdio: 'ignore', detached: true, env: { ...process.env, ...(spec.env ?? {}), ...env } });
     child.unref();
-    scene = { kind: 'family', family: name, kindOf: family.kind, role, label, pid: child.pid, group: true, record: spec.record ?? null, dir: ctx.dir, pixels: Boolean(family.pixels) };
+    scene = { kind: 'family', family: name, kindOf: family.kind, role, label, pid: child.pid, group: true, record: spec.record ?? null, pidfile: spec.pidfile ?? null, dir: ctx.dir, pixels: Boolean(family.pixels) };
     desktop.windows.push(scene);
     const match = spec.byPid ? byPid(child.pid) : spec.match;
     const info = await desktop.waitForWindow(match, label, 60000);
@@ -328,7 +351,11 @@ async function settle(desktop, scene) {
 
 /** The objects an input lands in: the text area, the field, the button or status, found once at open. */
 async function resolveTargets(desktop, oracle, scene) {
-  if (scene.kindOf === 'terminal') return;
+  if (scene.kindOf === 'terminal') {
+    // effects are read from what the terminal's program received; a terminal with a tree (VTE) still names its toolkit
+    if (scene.source === 'at_spi') scene.frame = (await desktop.state(scene)).ax_tree.id;
+    return;
+  }
   let nodes;
   if (scene.source === 'at_spi') {
     nodes = preorder((await desktop.state(scene)).ax_tree).map((n) => ({ id: n.id, role: n.role, name: n.name }));

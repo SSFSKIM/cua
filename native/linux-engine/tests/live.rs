@@ -40,8 +40,33 @@ struct Engine {
     next_id: u64,
 }
 
+/// Removes the display's record of an unconfirmed paste's window (the root window's `CUA_CLIPBOARD_QUARANTINE`), which
+/// outlives the engine that wrote it, so a test starts with no window open from an earlier test.
+fn clear_display_record() {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::ConnectionExt;
+    let (conn, screen) = x11rb::connect(None).expect("an X connection");
+    let root = conn.setup().roots[screen].root;
+    let atom = conn
+        .intern_atom(false, b"CUA_CLIPBOARD_QUARANTINE")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    conn.delete_property(root, atom).unwrap();
+    conn.flush().unwrap();
+    conn.get_input_focus().unwrap().reply().unwrap();
+}
+
 impl Engine {
+    /// An engine, on a display with no unconfirmed paste's window open.
     fn start() -> Engine {
+        clear_display_record();
+        Engine::spawn()
+    }
+
+    /// An engine, leaving any window on the display open.
+    fn spawn() -> Engine {
         let bin = engine_bin();
         let mut child = Command::new(&bin)
             .arg("server")
@@ -116,6 +141,11 @@ struct Window {
 impl Window {
     /// A window opened with `text`; `tag` keeps the titles of the test's windows apart.
     fn open(text: &str, tag: &str) -> Window {
+        Window::open_with(text, tag, &["--text-info", "--editable", "--no-buttons"])
+    }
+
+    /// A yad window of this dialog and options; a `--text-info` one shows `text`.
+    fn open_with(text: &str, tag: &str, dialog: &[&str]) -> Window {
         let title = format!("cua-engine-live-{tag}-{}", std::process::id());
         let file = std::env::temp_dir().join(format!("{title}.txt"));
         std::fs::write(&file, text).unwrap();
@@ -130,15 +160,14 @@ impl Window {
         .unwrap();
         let child = Command::new("yad")
             .env("XDG_CONFIG_HOME", &config)
-            .args([
-                "--text-info",
-                "--editable",
-                "--no-buttons",
-                "--width=480",
-                "--height=320",
-            ])
+            .args(dialog)
+            .args(["--width=480", "--height=320"])
             .arg(format!("--title={title}"))
-            .arg(format!("--filename={}", file.display()))
+            .args(
+                dialog
+                    .contains(&"--text-info")
+                    .then(|| format!("--filename={}", file.display())),
+            )
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -538,4 +567,634 @@ fn capture_luma(engine: &mut Engine, id: u64) -> image::GrayImage {
     let bytes = std::fs::read(&path).unwrap();
     assert_eq!(&bytes[..2], &[0xFF, 0xD8], "a JPEG");
     image::load_from_memory(&bytes).unwrap().to_luma8()
+}
+
+/// Whether the first `text` node, depth first, has the `focused` state.
+fn text_is_focused(node: &Value) -> bool {
+    if node["role"] == json!("text") {
+        return node["states"].as_array().is_some_and(|s| s.contains(&json!("focused")));
+    }
+    node["children"]
+        .as_array()
+        .is_some_and(|c| c.iter().any(text_is_focused))
+}
+
+/// CLIPBOARD's `UTF8_STRING` as another X client reads it (no INCR: the test's text is small).
+fn read_clipboard_text() -> Option<String> {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::Event;
+    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, CreateWindowAux, EventMask, WindowClass};
+    let (conn, screen) = x11rb::connect(None).ok()?;
+    let root = conn.setup().roots[screen].root;
+    let atom = |name: &str| conn.intern_atom(false, name.as_bytes()).unwrap().reply().unwrap().atom;
+    let (clipboard, utf8, property) = (atom("CLIPBOARD"), atom("UTF8_STRING"), atom("CUA_LIVE_PROPERTY"));
+    let window = conn.generate_id().ok()?;
+    let aux = CreateWindowAux::new().event_mask(EventMask::PROPERTY_CHANGE);
+    conn.create_window(0, window, root, 0, 0, 1, 1, 0, WindowClass::INPUT_ONLY, 0, &aux)
+        .ok()?;
+    conn.convert_selection(window, clipboard, utf8, property, x11rb::CURRENT_TIME)
+        .ok()?;
+    conn.flush().ok()?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        match conn.poll_for_event().ok()? {
+            Some(Event::SelectionNotify(e)) if e.requestor == window => {
+                if e.property == x11rb::NONE {
+                    return None;
+                }
+                let reply = conn
+                    .get_property(true, window, property, AtomEnum::ANY, 0, 1 << 20)
+                    .ok()?
+                    .reply()
+                    .ok()?;
+                return String::from_utf8(reply.value).ok();
+            }
+            Some(_) => {}
+            None => sleep(Duration::from_millis(5)),
+        }
+    }
+    None
+}
+
+#[test]
+fn clipboard_read_copies_the_selection_under_a_handle_and_release_frees_it() {
+    const TEXT: &str = "cua clipboard 안녕 e\u{301} 🙂";
+    let mut engine = Engine::start();
+    let window = Window::open(TEXT, "c");
+    let id = poll("the window is listed", || {
+        let windows = engine.request("list_windows", json!({})).unwrap();
+        windows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["title"] == json!(window.title))
+            .and_then(|w| w["id"].as_u64())
+    });
+    poll("the window's text is on the accessibility bus", || {
+        read_text(&mut engine, id).filter(|t| t == TEXT)
+    });
+    let target = json!({"window": {"id": id}});
+
+    // Copy goes through the window's focused element, and a GTK 3 window that has never had the input focus has
+    // none (on the CI runner the window can come up unfocused). The test's own display: activate it, and wait for
+    // its text view to report the focus.
+    engine.request("activate_window", target.clone()).unwrap();
+    poll("the text view has the focus", || {
+        let state = engine
+            .request(
+                "get_window_state",
+                json!({"window": {"id": id}, "include_screenshot": false}),
+            )
+            .ok()?;
+        text_is_focused(&state["ax_tree"]).then_some(())
+    });
+
+    // Nothing selected: the application has nothing to Copy, and no handle is made.
+    engine
+        .request("press_key", json!({"window": {"id": id}, "key": "ctrl+End"}))
+        .unwrap();
+    assert_eq!(
+        engine.request("clipboard_read", target.clone()),
+        Err("editable element has no selected text to Copy".to_string())
+    );
+
+    // Everything selected: the application's Copy, its contents under a handle, and its copy left on CLIPBOARD.
+    engine
+        .request("press_key", json!({"window": {"id": id}, "key": "ctrl+a"}))
+        .unwrap();
+    let handle = engine.request("clipboard_read", target.clone()).unwrap();
+    let handle = handle.as_str().expect("a handle string").to_string();
+    let parts: Vec<&str> = handle.split('-').collect();
+    assert_eq!(parts.len(), 3, "<pid>-<nanoseconds>-<n>: {handle}");
+    assert_eq!(parts[2], "1");
+    assert_eq!(
+        read_clipboard_text().as_deref(),
+        Some(TEXT),
+        "the application's copy stays on CLIPBOARD"
+    );
+    let second = engine.request("clipboard_read", target).unwrap();
+    assert!(second.as_str().unwrap().ends_with("-2"), "{second}");
+
+    // Release, twice: the second is no error either.
+    for _ in 0..2 {
+        assert_eq!(
+            engine.request("clipboard_release", json!({"handle": handle})),
+            Ok(Value::Null)
+        );
+    }
+    assert_eq!(
+        engine.request("clipboard_release", json!({"handle": "unknown"})),
+        Ok(Value::Null)
+    );
+}
+
+/// A window of `text`, listed, its text on the bus, activated on the test's own display and its text view focused:
+/// the paste's target is the window's focused element.
+fn focused_window(engine: &mut Engine, window: Window, text: &str) -> (Window, u64) {
+    let id = poll("the window is listed", || {
+        let windows = engine.request("list_windows", json!({})).unwrap();
+        windows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["title"] == json!(window.title))
+            .and_then(|w| w["id"].as_u64())
+    });
+    poll("the window's text is on the accessibility bus", || {
+        read_text(engine, id).filter(|t| t == text)
+    });
+    engine
+        .request("activate_window", json!({"window": {"id": id}}))
+        .unwrap();
+    poll("the text view has the focus", || {
+        let state = engine
+            .request(
+                "get_window_state",
+                json!({"window": {"id": id}, "include_screenshot": false}),
+            )
+            .ok()?;
+        text_is_focused(&state["ax_tree"]).then_some(())
+    });
+    (window, id)
+}
+
+/// Another program's clipboard: an X client owning CLIPBOARD and serving `text` as `UTF8_STRING` from its own thread,
+/// until dropped.
+struct PriorOwner {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl PriorOwner {
+    fn start(text: &'static str) -> PriorOwner {
+        use x11rb::connection::Connection;
+        use x11rb::protocol::Event;
+        use x11rb::protocol::xproto::*;
+        use x11rb::wrapper::ConnectionExt as _;
+        let (conn, screen) = x11rb::connect(None).unwrap();
+        let root = conn.setup().roots[screen].root;
+        let atom = |name: &str| conn.intern_atom(false, name.as_bytes()).unwrap().reply().unwrap().atom;
+        let (clipboard, utf8, targets) = (atom("CLIPBOARD"), atom("UTF8_STRING"), atom("TARGETS"));
+        let window = conn.generate_id().unwrap();
+        let aux = CreateWindowAux::new();
+        conn.create_window(0, window, root, 0, 0, 1, 1, 0, WindowClass::INPUT_ONLY, 0, &aux)
+            .unwrap();
+        conn.set_selection_owner(window, clipboard, x11rb::CURRENT_TIME)
+            .unwrap();
+        assert_eq!(
+            conn.get_selection_owner(clipboard).unwrap().reply().unwrap().owner,
+            window,
+            "the prior owner holds CLIPBOARD"
+        );
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stopping = stop.clone();
+        let thread = std::thread::spawn(move || {
+            while !stopping.load(std::sync::atomic::Ordering::SeqCst) {
+                let Ok(event) = conn.poll_for_event() else { return };
+                let Some(Event::SelectionRequest(e)) = event else {
+                    sleep(Duration::from_millis(2));
+                    continue;
+                };
+                let property = if e.property == x11rb::NONE {
+                    e.target
+                } else {
+                    e.property
+                };
+                let answered = if e.target == targets {
+                    conn.change_property32(
+                        PropMode::REPLACE,
+                        e.requestor,
+                        property,
+                        AtomEnum::ATOM,
+                        &[targets, utf8],
+                    )
+                    .is_ok()
+                } else if e.target == utf8 {
+                    conn.change_property8(PropMode::REPLACE, e.requestor, property, utf8, text.as_bytes())
+                        .is_ok()
+                } else {
+                    false
+                };
+                let notify = SelectionNotifyEvent {
+                    response_type: SELECTION_NOTIFY_EVENT,
+                    sequence: 0,
+                    time: e.time,
+                    requestor: e.requestor,
+                    selection: e.selection,
+                    target: e.target,
+                    property: if answered { property } else { x11rb::NONE },
+                };
+                let _ = conn.send_event(false, e.requestor, EventMask::NO_EVENT, notify);
+                let _ = conn.flush();
+            }
+        });
+        PriorOwner {
+            stop,
+            thread: Some(thread),
+        }
+    }
+}
+
+impl Drop for PriorOwner {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+#[test]
+fn type_text_pastes_unicode_text_once_at_the_caret_and_restores_the_clipboard() {
+    const TEXT: &str = "cua171 안녕 e\u{301} 🙂\nline2";
+    let mut engine = Engine::start();
+    let (_window, id) = focused_window(&mut engine, Window::open(INITIAL_TEXT, "t"), INITIAL_TEXT);
+    let target = json!({"window": {"id": id}});
+    let _prior = PriorOwner::start("the person's clipboard");
+
+    // At the end of the text: the paste lands there, once, and answers success.
+    engine
+        .request("press_key", json!({"window": {"id": id}, "key": "ctrl+End"}))
+        .unwrap();
+    let started = Instant::now();
+    assert_eq!(
+        engine.request("type_text", json!({"window": {"id": id}, "text": TEXT})),
+        Ok(Value::Null),
+        "the paste is confirmed"
+    );
+    say(&format!("type_text answered in {:?}", started.elapsed()));
+    let expected = format!("{INITIAL_TEXT}{TEXT}");
+    assert_eq!(
+        read_text(&mut engine, id).as_deref(),
+        Some(expected.as_str()),
+        "exactly once, exactly"
+    );
+    assert_eq!(
+        read_clipboard_text().as_deref(),
+        Some("the person's clipboard"),
+        "the clipboard is what it was before"
+    );
+
+    // A preselected range is replaced by the text.
+    engine
+        .request("press_key", json!({"window": {"id": id}, "key": "ctrl+a"}))
+        .unwrap();
+    assert_eq!(
+        engine.request("type_text", json!({"window": {"id": id}, "text": "replaced 🙂"})),
+        Ok(Value::Null)
+    );
+    assert_eq!(read_text(&mut engine, id).as_deref(), Some("replaced 🙂"));
+    assert_eq!(read_clipboard_text().as_deref(), Some("the person's clipboard"));
+
+    // Text the clipboard cannot hold is refused before anything is sent.
+    let long = "x".repeat(64 * 1024 * 1024 + 1);
+    let mut input = target;
+    input["text"] = json!(long);
+    assert_eq!(
+        engine.request("type_text", input),
+        Err("clipboard text exceeds byte limit".to_string())
+    );
+    assert_eq!(read_text(&mut engine, id).as_deref(), Some("replaced 🙂"));
+}
+
+#[test]
+fn clipboard_write_pastes_a_snapshot_that_reads_back_exactly() {
+    const TEXT: &str = "cua write 안녕 e\u{301} 🙂";
+    let mut engine = Engine::start();
+    let (_window, id) = focused_window(&mut engine, Window::open(TEXT, "w"), TEXT);
+    let target = json!({"window": {"id": id}});
+    engine
+        .request("press_key", json!({"window": {"id": id}, "key": "ctrl+a"}))
+        .unwrap();
+    let handle = engine.request("clipboard_read", target).unwrap();
+    let _prior = PriorOwner::start("taken after the copy");
+    engine
+        .request("press_key", json!({"window": {"id": id}, "key": "ctrl+End"}))
+        .unwrap();
+    assert_eq!(
+        engine.request("clipboard_write", json!({"window": {"id": id}, "handle": handle})),
+        Ok(Value::Null),
+        "the paste of the snapshot is confirmed"
+    );
+    let doubled = format!("{TEXT}{TEXT}");
+    assert_eq!(read_text(&mut engine, id).as_deref(), Some(doubled.as_str()));
+    assert_eq!(
+        read_clipboard_text().as_deref(),
+        Some("taken after the copy"),
+        "the cleanup leaves the clipboard as it was before the write"
+    );
+    assert_eq!(
+        engine.request(
+            "clipboard_write",
+            json!({"window": {"id": id}, "handle": "no-such-handle"})
+        ),
+        Err("unknown clipboard handle; copy again in this Linux helper".to_string())
+    );
+}
+
+/// The native id of the first `text` node, depth first, and whether it has the focus.
+fn text_node(node: &Value) -> Option<(String, bool)> {
+    if node["role"] == json!("text") {
+        let focused = node["states"].as_array().is_some_and(|s| s.contains(&json!("focused")));
+        return Some((node["id"].as_str()?.to_string(), focused));
+    }
+    node["children"].as_array()?.iter().find_map(text_node)
+}
+
+fn window_text_node(engine: &mut Engine, id: u64) -> Option<(String, bool)> {
+    let state = engine
+        .request(
+            "get_window_state",
+            json!({"window": {"id": id}, "include_screenshot": false}),
+        )
+        .ok()?;
+    text_node(&state["ax_tree"])
+}
+
+#[test]
+fn a_named_element_without_the_focus_is_clicked_and_the_text_lands_at_its_own_caret() {
+    const TEXT: &str = "0123456789";
+    let mut engine = Engine::start();
+    // With its buttons, so the focus has somewhere else to go in the window.
+    let window = Window::open_with(TEXT, "e", &["--text-info", "--editable"]);
+    let (_window, id) = focused_window(&mut engine, window, TEXT);
+    let key = |engine: &mut Engine, key: &str| {
+        engine
+            .request("press_key", json!({"window": {"id": id}, "key": key}))
+            .unwrap();
+    };
+    // The caret placed after "0123", then the focus moved to the window's buttons.
+    key(&mut engine, "ctrl+Home");
+    for _ in 0..4 {
+        key(&mut engine, "Right");
+    }
+    key(&mut engine, "ctrl+Tab");
+    let (element, _) = poll("the text view has lost the focus", || {
+        window_text_node(&mut engine, id).filter(|(_, focused)| !focused)
+    });
+    assert_eq!(
+        engine.request(
+            "type_text",
+            json!({"window": {"id": id}, "element_id": element, "text": "ABC"})
+        ),
+        Ok(Value::Null)
+    );
+    assert_eq!(
+        read_text(&mut engine, id).as_deref(),
+        Some("0123ABC456789"),
+        "at the caret the element had, not where the focusing click fell"
+    );
+    assert!(window_text_node(&mut engine, id).is_some_and(|(_, focused)| focused));
+}
+
+/// A clipboard manager: on every change of CLIPBOARD's owner it reads `UTF8_STRING` in full, as any XFixes watcher
+/// may. What it read, in order.
+struct Watcher {
+    read: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Watcher {
+    fn start() -> Watcher {
+        use x11rb::connection::Connection;
+        use x11rb::protocol::Event;
+        use x11rb::protocol::xfixes::{ConnectionExt as _, SelectionEventMask};
+        use x11rb::protocol::xproto::*;
+        let (conn, screen) = x11rb::connect(None).unwrap();
+        let root = conn.setup().roots[screen].root;
+        let atom = |name: &str| conn.intern_atom(false, name.as_bytes()).unwrap().reply().unwrap().atom;
+        let (clipboard, utf8, property) = (atom("CLIPBOARD"), atom("UTF8_STRING"), atom("CUA_LIVE_WATCHER"));
+        conn.xfixes_query_version(1, 0).unwrap().reply().unwrap();
+        let window = conn.generate_id().unwrap();
+        let aux = CreateWindowAux::new().event_mask(EventMask::PROPERTY_CHANGE);
+        conn.create_window(0, window, root, 0, 0, 1, 1, 0, WindowClass::INPUT_ONLY, 0, &aux)
+            .unwrap();
+        conn.xfixes_select_selection_input(window, clipboard, SelectionEventMask::SET_SELECTION_OWNER)
+            .unwrap();
+        conn.flush().unwrap();
+        let read = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (reading, stopping) = (read.clone(), stop.clone());
+        let thread = std::thread::spawn(move || {
+            while !stopping.load(std::sync::atomic::Ordering::SeqCst) {
+                let Ok(event) = conn.poll_for_event() else { return };
+                match event {
+                    Some(Event::XfixesSelectionNotify(e)) if e.owner != x11rb::NONE => {
+                        let _ = conn.convert_selection(window, clipboard, utf8, property, x11rb::CURRENT_TIME);
+                        let _ = conn.flush();
+                    }
+                    Some(Event::SelectionNotify(e)) if e.property != x11rb::NONE => {
+                        if let Ok(reply) = conn
+                            .get_property(true, window, property, AtomEnum::ANY, 0, 1 << 20)
+                            .unwrap()
+                            .reply()
+                        {
+                            reading
+                                .lock()
+                                .unwrap()
+                                .push(String::from_utf8_lossy(&reply.value).into_owned());
+                        }
+                    }
+                    Some(_) => {}
+                    None => sleep(Duration::from_millis(2)),
+                }
+            }
+        });
+        Watcher {
+            read,
+            stop,
+            thread: Some(thread),
+        }
+    }
+}
+
+impl Drop for Watcher {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+#[test]
+fn a_third_client_reading_the_paste_neither_starts_nor_completes_it() {
+    let mut engine = Engine::start();
+    // A list, whose application never converts CLIPBOARD on Ctrl+V: the paste's target never asks for it.
+    let window = Window::open_with("", "r", &["--list", "--column=item", "one", "two", "--no-buttons"]);
+    let id = poll("the window is listed", || {
+        let windows = engine.request("list_windows", json!({})).unwrap();
+        windows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["title"] == json!(window.title))
+            .and_then(|w| w["id"].as_u64())
+    });
+    engine
+        .request("activate_window", json!({"window": {"id": id}}))
+        .unwrap();
+    poll("an element of the window has the focus", || {
+        let state = engine
+            .request(
+                "get_window_state",
+                json!({"window": {"id": id}, "include_screenshot": false}),
+            )
+            .ok()?;
+        state["ax_tree"].to_string().contains(r#""focused""#).then_some(())
+    });
+    let watcher = Watcher::start();
+    let _prior = PriorOwner::start("before the paste");
+    let started = Instant::now();
+    assert_eq!(
+        engine.request("type_text", json!({"window": {"id": id}, "text": "never pasted"})),
+        Err("Paste was sent once and could not be confirmed; read the field before retrying".to_string()),
+        "sent once, and never confirmed"
+    );
+    say(&format!("the unconfirmed answer came in {:?}", started.elapsed()));
+    assert!(
+        watcher.read.lock().unwrap().iter().any(|t| t == "never pasted"),
+        "the watcher read the paste in full: {:?}",
+        watcher.read.lock().unwrap()
+    );
+    // The target's late conversion at CurrentTime gets nothing, neither the paste nor the restored clipboard.
+    assert_eq!(
+        read_clipboard_text(),
+        None,
+        "a CurrentTime conversion is refused in the window"
+    );
+    // Nor does the next paste go out while the window runs.
+    let refused = engine
+        .request("type_text", json!({"window": {"id": id}, "text": "next"}))
+        .unwrap_err();
+    assert!(
+        refused.starts_with(
+            "a previous paste could not be confirmed and may still be read; nothing was sent; retry after "
+        ) && refused.ends_with(" s"),
+        "{refused}"
+    );
+    drop(watcher);
+}
+
+#[test]
+fn a_windowless_type_text_pastes_into_the_focused_window_through_the_six_steps() {
+    const TEXT: &str = "abc";
+    let mut engine = Engine::start();
+    let (_window, id) = focused_window(&mut engine, Window::open(TEXT, "d"), TEXT);
+    let _prior = PriorOwner::start("the clipboard before");
+    engine
+        .request("press_key", json!({"window": {"id": id}, "key": "ctrl+End"}))
+        .unwrap();
+    // No window: desktop input into the window holding the X input focus, confirmed there.
+    assert_eq!(
+        engine.request("type_text", json!({"text": " 안녕 🙂"})),
+        Ok(Value::Null)
+    );
+    assert_eq!(read_text(&mut engine, id).as_deref(), Some("abc 안녕 🙂"));
+    assert_eq!(read_clipboard_text().as_deref(), Some("the clipboard before"));
+}
+
+#[test]
+fn type_characters_types_the_layout_s_characters_and_refuses_the_rest_before_typing() {
+    const TEXT: &str = "start";
+    let mut engine = Engine::start();
+    let (_window, id) = focused_window(&mut engine, Window::open(TEXT, "k"), TEXT);
+    let target = json!({"id": id});
+    engine
+        .request("press_key", json!({"window": target, "key": "ctrl+End"}))
+        .unwrap();
+    assert_eq!(
+        engine.request("type_characters", json!({"window": target, "text": " AbZ09!?"})),
+        Ok(json!(8)),
+        "the number of characters sent"
+    );
+    poll("the characters are in the text", || {
+        read_text(&mut engine, id).filter(|t| t == "start AbZ09!?")
+    });
+    // A character off the layout refuses the whole text: nothing of it is typed.
+    assert_eq!(
+        engine.request("type_characters", json!({"window": target, "text": "ok é"})),
+        Err("Character 'é' is not on the keyboard layout".to_string())
+    );
+    assert_eq!(
+        engine.request("type_characters", json!({"window": target, "text": "a\nb"})),
+        Err("Character '\\n' is not on the keyboard layout".to_string())
+    );
+    assert_eq!(
+        engine.request("type_characters", json!({"window": target, "text": ""})),
+        Ok(json!(0))
+    );
+    sleep(Duration::from_millis(300));
+    assert_eq!(read_text(&mut engine, id).as_deref(), Some("start AbZ09!?"));
+    assert!(
+        engine
+            .request("type_characters", json!({"text": "x"}))
+            .unwrap_err()
+            .contains("missing field `window`"),
+        "a window is required"
+    );
+}
+
+/// The M2 branch review's sequence, now failing safe: engine A's paste is unconfirmed with its target unserved, so its
+/// window opens; engine B, a second process with no record of its own, is refused its Copy and its paste while the
+/// window runs, and still after A has exited. A's target's late `CurrentTime` conversion never gets B's text.
+#[test]
+fn an_unconfirmed_paste_s_window_refuses_every_engine_on_the_display_and_outlives_its_engine() {
+    const SENTENCE: &str =
+        "a previous paste could not be confirmed and may still be read; nothing was sent; retry after ";
+    let mut a = Engine::start();
+    // A list, whose application never converts CLIPBOARD on Ctrl+V: the paste's target never asks for it.
+    let window = Window::open_with("", "q", &["--list", "--column=item", "one", "two", "--no-buttons"]);
+    let id = poll("the window is listed", || {
+        let windows = a.request("list_windows", json!({})).unwrap();
+        windows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["title"] == json!(window.title))
+            .and_then(|w| w["id"].as_u64())
+    });
+    a.request("activate_window", json!({"window": {"id": id}})).unwrap();
+    poll("an element of the window has the focus", || {
+        let state = a
+            .request(
+                "get_window_state",
+                json!({"window": {"id": id}, "include_screenshot": false}),
+            )
+            .ok()?;
+        state["ax_tree"].to_string().contains(r#""focused""#).then_some(())
+    });
+    assert_eq!(
+        a.request("type_text", json!({"window": {"id": id}, "text": "paste A"})),
+        Err("Paste was sent once and could not be confirmed; read the field before retrying".to_string()),
+    );
+    let refused = |answer: Result<Value, String>, what: &str| {
+        let sentence = answer.expect_err(what);
+        assert!(
+            sentence.starts_with(SENTENCE) && sentence.ends_with(" s"),
+            "{what}: {sentence}"
+        );
+    };
+    let mut b = Engine::spawn();
+    refused(
+        b.request("clipboard_read", json!({"window": {"id": id}})),
+        "B's Copy while A's window runs",
+    );
+    refused(
+        b.request("type_text", json!({"window": {"id": id}, "text": "paste B"})),
+        "B's paste while A's window runs",
+    );
+    assert_ne!(read_clipboard_text().as_deref(), Some("paste B"));
+    // A exits mid-window, its CLIPBOARD ownership with it; the window is the display's, and stays.
+    drop(a);
+    refused(
+        b.request("type_text", json!({"window": {"id": id}, "text": "paste B"})),
+        "B's paste after A has gone",
+    );
+    assert_ne!(
+        read_clipboard_text().as_deref(),
+        Some("paste B"),
+        "A's target's late CurrentTime conversion never gets B's text"
+    );
 }

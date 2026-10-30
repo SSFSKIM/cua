@@ -5,7 +5,7 @@
 // never an engine under measurement. Nothing here logs the text or titles of windows the harness did not open.
 
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -105,10 +105,11 @@ export class Desktop {
   }
 
   /** A Chrome window on one of the harness's pages, its title unique to this window. */
-  async openChrome(role, page, { stem = page.replace(/\.html$/, '') } = {}) {
-    // `stem`: the scene's name where two scenes open one page, so every window's title stays its own
+  async openChrome(role, page, { stem = page.replace(/\.html$/, ''), query = '' } = {}) {
+    // `stem`: the scene's name where two scenes open one page, so every window's title stays its own; `query`: the
+    // page's own parameters
     const label = this.label(stem, role);
-    const url = `${pathToFileURL(join(PAGES, page)).href}#${encodeURIComponent(label)}`;
+    const url = `${pathToFileURL(join(PAGES, page)).href}${query ? `?${query}` : ''}#${encodeURIComponent(label)}`;
     const child = spawn('google-chrome', ['--new-window', url], { stdio: 'ignore', detached: true });
     child.unref();
     const title = `${label} - Google Chrome`;
@@ -246,6 +247,14 @@ export class Desktop {
    */
   async close(scenes) {
     for (const scene of [...scenes].reverse()) {
+      // a window another process owns (gnome-terminal's server): its program, whose PID it wrote, ends first
+      if (scene.pidfile) {
+        try {
+          process.kill(Number(readFileSync(scene.pidfile, 'utf8').trim()), 'SIGTERM');
+        } catch {
+          // never started, or already gone
+        }
+      }
       try {
         if (scene.kind === 'chrome') execFileSync(XPROBE, ['close', String(scene.id)]);
         else if (scene.group) process.kill(-scene.pid, 'SIGTERM');

@@ -13,10 +13,10 @@
 // once in the connection (the supervisor's memory answers repeats). Its whole GUI footprint: one standalone gedit process (`gedit --standalone`) on an
 // empty file in a directory it creates under /tmp, and one zenity dialog carrying the marker (its desktop entry under
 // ~/.local/share/applications, named for the run); both are ended (zenity only when its own command line carries the
-// marker) and both files removed in `finally`. It types with pressKey, one X keysym per character, because the
-// helper's typeText and paste crash GTK3 text views (F2). Run it in the X session's environment (DISPLAY, XAUTHORITY;
-// the session bus is derived from XDG_RUNTIME_DIR):
-//   node scripts/accept/linux-native.mjs [--screenshot <file>]     prints a JSON report; exit 0 when every step passes
+// marker) and both files removed in `finally`. It types with typeText: cua-engine's verified paste route (M2) inserts
+// the marker once. The pinned vendor engine still fails GTK3 text input (on some architectures it crashes the window).
+// Run with cua's engine in the X session's environment (DISPLAY, XAUTHORITY; the session bus is derived from XDG_RUNTIME_DIR):
+//   CUA_NATIVE_ENGINE=cua node scripts/accept/linux-native.mjs [--screenshot <file>]   JSON report; exit 0 when every step passes
 import {spawn} from 'node:child_process';
 import {randomBytes} from 'node:crypto';
 import {existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, writeFileSync} from 'node:fs';
@@ -26,7 +26,6 @@ import {fileURLToPath} from 'node:url';
 import {defaultHome} from '../../src/runtime/layout.mjs';
 import {findTool} from '../../src/runtime/tools.mjs';
 import {pinnedApprovals} from './lib.mjs';
-import {keysymsFor} from './linux-native-lib.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
@@ -76,9 +75,9 @@ try {
   if (!step('bind the fixture window by X11 id', !find.result?.isError && pinned.size === 1 && !bind?.result?.isError && /"bound":true/.test(bind ? resultText(bind) : ''),
     window ?? resultText(find).slice(0, 600))) throw new Error('bind');
 
-  const typed = await session.js(`for (const key of ${JSON.stringify(keysymsFor(marker))}) await fixtureApp.pressKey(key);
+  const typed = await session.js(`await fixtureApp.typeText(${JSON.stringify(marker)});
     const tree = await fixtureApp.getAXState({emit: false, disableDiffing: true});
-    nodeRepl.write(JSON.stringify({source: /Accessibility source: (\\S+)/.exec(tree)?.[1] ?? null, readBack: tree.includes(${JSON.stringify(marker)})}));`, 90_000);
+    nodeRepl.write(JSON.stringify({source: /Accessibility source: (\\S+)/.exec(tree)?.[1] ?? null, readBack: tree.split(${JSON.stringify(marker)}).length - 1 === 1}));`, 90_000);
   const observed = /\{"source".*\}$/m.exec(resultText(typed))?.[0];
   const seen = observed ? JSON.parse(observed) : null;
   step('type the marker and read it back from the accessibility tree', !typed.result?.isError && seen?.readBack === true, seen ?? resultText(typed).slice(0, 600));

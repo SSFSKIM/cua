@@ -1,8 +1,8 @@
 import {isFullNativeTree} from '../fixtures/native-state-oracle.mjs';
 // Independent Linux oracle: readable chatgpt-26.928.40906 R/cua_node/@oai/cua/dist/lib/js/oai_js_cua/src/
 // tinysky_alt/bind_linux_app.js:18-155, create_tinysky_alt.js:76-102, get_apps.js:11-25;
-// targets/linux/{create_client,element_ids,launch_app,perform_secondary_action}.js. GTK3 failure sentence is observed
-// in committed M0 native vendor/run-1/results.jsonl. No owned facade implementation supplies expectations.
+// targets/linux/{create_client,element_ids,launch_app,perform_secondary_action}.js. M2's text oracle deliberately departs
+// from the vendor's GTK3 failure: successful return, the marker once, window alive (the #171 design's Acceptance 6).
 import assert from 'node:assert/strict';
 import {caseSchedule} from '../../../scripts/repl-parity/registry.mjs';
 const plan=new Map(caseSchedule().map(c=>[c.id,c])),scenarios=[];
@@ -39,9 +39,8 @@ add('target-app-decorated-tab/selecttext',take(`app.selectText(0,'fixture',{sele
 add('target-app-decorated-tab/setvalue',take(`app.setValue(0,'fixture')`),[err('setValue is unavailable on Linux; use click, pressKey, and typeText.')]);
 add('target-app-decorated-tab/performsecondaryaction',take(`app.performSecondaryAction(999999,'not-a-fixture-action')`),[err('Unknown element ID 999999 for this window; refresh get_window_state()')]);
 add('app/presskey',take(`(async()=>{for(const key of ['m','f','o','u','r'])await app.pressKey(key);const inserted=await nativeCheck('mfour');await app.pressKey('ctrl+a');await app.pressKey('BackSpace');return {inserted,cleared:!(await nativeAX()).includes('mfour')};})()`),[{inserted:true,cleared:true}]);
-const crash='D-Bus org.freedesktop.DBus.Properties.Get failed: org.freedesktop.DBus.Error.NoReply: Message recipient disconnected from message bus without replying';
-// Each text case records, after the method, whether its marker reached the window's text (null when the tree could not
-// be read, as once the window has gone) and whether the window then exited.
-const reached=`(async()=>{try{return (await nativeAX()).includes('cuamfourfixture');}catch{return null;}})()`;
-for(const [id,method] of [['app/typetext','typeText'],['app/paste','paste']])add(id,(method==='paste'?['html','md'].map(format=>take(`app.paste('fixture',{format:'${format}'})`)).join(''):'')+take(`app.${method}('cuamfourfixture')`)+take(reached)+take(`(async()=>{let end=Date.now()+10000;do{if(!(await cua.listWindows({emit:false})).some(w=>w.id===nativeWindow.id))return true;}while(Date.now()<end);return false;})()`),values=>{const offset=method==='paste'?2:0;if(offset)assert.deepEqual(values.slice(0,2),[err('Linux paste supports only text format.'),err('Linux paste supports only text format.')]);assert.equal(values.length,offset+3);assert.deepEqual(Object.keys(values[offset]),['error']);assert.ok([crash,'Resource temporarily unavailable (os error 11)'].includes(values[offset].error),'unrecognized native input error');assert.ok([false,null].includes(values[offset+1]),'the failed input must not reach the text');assert.equal(values[offset+2],true);});
+// Each text case records the marker's occurrence count after the method (null when the tree cannot be read), then
+// whether the window exited. M2 requires a successful return, exactly one marker and a surviving window.
+const reached=`(async()=>{try{return (await nativeAX()).split('cuamfourfixture').length-1;}catch{return null;}})()`;
+for(const [id,method] of [['app/typetext','typeText'],['app/paste','paste']])add(id,(method==='paste'?['html','md'].map(format=>take(`app.paste('fixture',{format:'${format}'})`)).join(''):'')+take(`app.${method}('cuamfourfixture')`)+take(reached)+take(`(async()=>{let end=Date.now()+10000;do{if(!(await cua.listWindows({emit:false})).some(w=>w.id===nativeWindow.id))return true;}while(Date.now()<end);return false;})()`),values=>{const offset=method==='paste'?2:0;if(offset)assert.deepEqual(values.slice(0,2),[err('Linux paste supports only text format.'),err('Linux paste supports only text format.')]);assert.equal(values.length,offset+3);assert.ok(values[offset]==='undefined','native text input must return without an error');assert.equal(values[offset+1],1,'the marker must reach the text exactly once');assert.equal(values[offset+2],false,'the window must survive text input');});
 export default scenarios;

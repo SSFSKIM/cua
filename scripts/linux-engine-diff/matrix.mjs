@@ -1,9 +1,9 @@
 // The application-family matrix (M0.4; Plan of Work, M0, Matrix; Design, Device mode and the foreground route):
 // per family, whether the background route's click, key and type_text take effect, with the witness watching
 // every request, and the family's `Application.ToolkitName` and X11 class. The same well-formed requests go to the
-// pinned and newest vendor builds and to cua-engine with M0.3's choice; type_text goes to the vendor builds only
-// (the spike has none; M2 owns cua's). `cua:none` (no RedirectWindow) shows whether a family needs the redirect
-// for background input. Each engine gets its own window of the family, fully covered by the harness's front
+// pinned and newest vendor builds and to cua-engine with M0.3's choice; type_text to both builds and, since M2, to
+// cua (in shared mode, so a family whose paste kind is listed refuses it). `cua:none` (no RedirectWindow) shows
+// whether a family needs the redirect for background input. Each engine gets its own window of the family, fully covered by the harness's front
 // window (`--occlusion covered`, the default) or raised above the other scene windows with the front window in a
 // corner (`--occlusion visible`), and its own fresh process; effects are read back through the application's objects
 // (oracle.mjs), for a terminal through what its program received, and for Writer without AT-SPI as pixels. With the
@@ -225,7 +225,8 @@ export async function runMatrix(args, { desktop, emit, run }) {
           const engine = new Engine(spec).start();
           try {
             await keySeries(ctx, engine, scene, n);
-            if (VENDORS.includes(spec.label)) await textSeries(ctx, engine, scene, nText);
+            // cua's paste route since M2; `cua:none` explores the redirect for clicks and keys only
+            if (spec.label !== 'cua:none') await textSeries(ctx, engine, scene, nText);
             await clickSeries(ctx, engine, scene, n);
           } finally {
             await engine.close();

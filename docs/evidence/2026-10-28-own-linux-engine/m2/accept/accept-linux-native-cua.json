@@ -1,0 +1,129 @@
+{
+ "home": "/Users/new/.local/share/cua",
+ "sandbox": "(unset: the platform default)",
+ "steps": [
+  {
+   "name": "preconditions",
+   "status": "PASS",
+   "detail": {
+    "platform": "linux",
+    "display": ":0",
+    "gedit": "/usr/bin/gedit"
+   }
+  },
+  {
+   "name": "bind the fixture window by X11 id",
+   "status": "PASS",
+   "detail": {
+    "windowId": 18874616,
+    "app": "org.gnome.gedit",
+    "title": "fixture-c25284.txt (/tmp/cua-linux-native-t3mZNB) - gedit"
+   }
+  },
+  {
+   "name": "type the marker and read it back from the accessibility tree",
+   "status": "PASS",
+   "detail": {
+    "source": "at_spi",
+    "readBack": true
+   }
+  },
+  {
+   "name": "the kernel is confined: no private state or store, no X11, TCP or session-bus connect",
+   "status": "PASS",
+   "detail": {
+    "state": "EACCES",
+    "store": "EACCES",
+    "x11": "EPERM",
+    "tcp": "EPERM",
+    "bus": "EPERM"
+   }
+  },
+  {
+   "name": "screenshot of the window",
+   "status": "PASS",
+   "detail": {
+    "mimeType": "image/jpeg",
+    "bytes": 39620,
+    "savedTo": null
+   }
+  },
+  {
+   "name": "launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+   "status": "PASS",
+   "detail": {
+    "result": "launched",
+    "processes": 1,
+    "sameNamespace": true
+   }
+  },
+  {
+   "name": "end_task",
+   "status": "PASS",
+   "detail": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "19780ac7-b2f1-4f60-ad83-7d3ac384b0ca"
+   }
+  },
+  {
+   "name": "approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+   "status": "PASS",
+   "detail": {
+    "pinned": [
+     "org.gnome.gedit",
+     "cua-accept-cua-f2-742b759a.desktop"
+    ],
+    "asked": [
+     {
+      "method": "elicitation/create",
+      "app": "org.gnome.gedit",
+      "action": "accept"
+     },
+     {
+      "method": "elicitation/create",
+      "app": "cua-accept-cua-f2-742b759a.desktop",
+      "action": "accept"
+     }
+    ],
+    "otherRequests": 0
+   }
+  },
+  {
+   "name": "cua serve exited cleanly",
+   "status": "PASS",
+   "detail": {
+    "code": 0,
+    "signal": null
+   }
+  },
+  {
+   "name": "no run entry left for the connection",
+   "status": "PASS",
+   "detail": {
+    "before": [
+     "fb2a7b87-62a3-4bb8-b147-f7da707fb547.pid"
+    ],
+    "after": [
+     "fb2a7b87-62a3-4bb8-b147-f7da707fb547.pid"
+    ]
+   }
+  },
+  {
+   "name": "CUA_REPL_HOST=vendor is refused on Linux with a sentence",
+   "status": "PASS",
+   "detail": {
+    "initialize": "initialize failed (no answer)",
+    "exit": {
+     "code": 1,
+     "signal": null
+    },
+    "stderr": [
+     "cua: CUA_REPL_HOST=vendor is not supported on Linux: the vendor host there is retired (#115), because its node_repl ran JavaScript cells unconfined when its sandbox launcher failed (#135), and cua's own sandbox does not serve it. Unset CUA_REPL_HOST (or use CUA_REPL_HOST=cua) for cua's own host [repl_host_refused]"
+    ]
+   }
+  }
+ ],
+ "marker": "cua-f2-742b759a",
+ "status": "PASS"
+}

@@ -145,8 +145,9 @@ variants included; their evidence is written either way. The run's `end` row kee
   build's witness or audit is. The negative check drives the stub through a proxy too, and the run is valid only when
   the witness and the audit both fail it. `--no-audit` leaves the pass out.
 - **Deviations** (`deviations.mjs`): a difference from the pinned build passes only when a declared deviation names
-  its operation, its field and cua's exact answer. The text and clipboard commands are checked apart, cua alone: each
-  must answer `<command> is not available in this engine build`.
+  its operation, its field and cua's exact answer. (In M1a the text and clipboard commands were checked apart, cua
+  alone, each refused with `<command> is not available in this engine build`; M2 replaced that with its text
+  operations, below.)
 - **`--via vendor-js --vendor-js <@oai/sky directory>`** (`vendor-js.mjs`): every engine driven through OpenAI's own
   JavaScript client, OAI_SKY_LINUX_BIN set in the harness's process to the engine; each block reaches its engine
   through a path of its own, so the client's per-path process cache starts it fresh and the block ends it. Element
@@ -202,9 +203,11 @@ variants included; their evidence is written either way. The run's `end` row kee
       mismatch fails the run);
     - a group is judged only with 20 samples an engine, and every Acceptance 3 desktop group
       (`MANDATORY_SPEED_GROUPS`) must be, or the run is incomplete;
-    - a median above the bar whose bootstrap 95% interval of cua minus the faster build includes 0 is "same (within
-      noise)", in any series;
-    - a loss `deviations.mjs` `SPEED_GAPS` declares is a "declared gap", never a pass.
+    - a median above the bar whose bootstrap 95% interval of cua minus the faster build includes 0 and reaches at most
+      max(5% of the bar, 1 ms) (`stats.mjs` `noiseBound`) is "same (within noise)", in any series;
+    - a loss `deviations.mjs` `SPEED_GAPS` declares is a "declared gap", never a pass;
+    - an interval that includes 0 but reaches past the bound is undetermined: its commands' sequences get up to two
+      more sets of rounds (`TOP_UPS`, `events-top-up` rows), and a group still that wide fails.
   - `--via vendor-js` refuses `--variant`: the vendor client starts the engine without the variant's flags.
   - The desktop entries the harness writes take their paths as quoted `Exec` arguments (`desktop-entry.mjs`), never as
     shell source.
@@ -232,6 +235,110 @@ variants included; their evidence is written either way. The run's `end` row kee
   produced its cell and nothing threw (`dragCompleteness`); a family's error leaves its remaining kinds unmeasured
   and the run incomplete, while a lane that misses is a measured outcome.
 
+## M2's additions: text, clipboard and the paste safety cases
+
+- **Text operations** (`text.mjs`, kind `text`), each on every engine's own window, apart from the scene's other
+  windows, so a document they grow never changes another operation's scene:
+  - `gedit`: `type_text` (Acceptance 6's `cua171 안녕 é 🙂\nline2`, the acute a combining mark, at the caret),
+    `type_text_selection` (a preselected range replaced), `type_text_dedicated` (cua alone with `--desktop dedicated`:
+    gedit takes the background route, so its witness must stay clean), `type_characters` (`Hi 42!`, the newest build
+    the reference), `clipboard_read` (the application's Copy of the selected first word; its effect is the clipboard),
+    `clipboard_write` (a handle read untimed, then the harness's own owner takes CLIPBOARD, then the write: cua leaves
+    that owner's text, the vendor builds the snapshot, a declared deviation), `clipboard_release`;
+  - `chrome-textarea` (`pages/text.html`): `type_text`;
+  - `chrome-address-bar` (a Chrome window's address bar, focused with Ctrl+L and its text selected): `type_text` of a
+    single line, which must read back exactly;
+  - `gnome-text-editor`: `type_text`, cua with `--desktop dedicated` (GTK 4 ignores the background route).
+
+  A sample's prior clipboard is the harness's own text (`clip.mjs`, `xprobe clip-own`), and the field is read through
+  the harness's own bus reads (`oracle.mjs`): the effect is the paste landing exactly once where the caret or the
+  selection was; `clipboard_kept` records whether CLIPBOARD (read with a real timestamp, `xprobe clip-read`) holds what
+  it held. The bar is built from the vendor samples that succeeded (no vendor success, no bar); every cua request must
+  succeed, take effect and keep the clipboard, whatever the vendor builds did. A text operation's reference answer is
+  that of a build whose route applied it in the block; where neither does (gnome-text-editor; gedit's
+  `clipboard_write`), cua's success is a declared deviation.
+- **The witness by route**: the route each cua text request must take is known beforehand (`text.mjs`
+  `expectedRoute`: the foreground route for gnome-text-editor in dedicated mode, the background route everywhere else,
+  none for `clipboard_read` and `clipboard_release`), and cua reports the route it took on its `--stats` line. A request
+  whose reported route differs from the expected one, a missing record included, fails its witness (`witness.mjs`
+  `judgeRouteSpan`). Where both are `foreground`, the request may activate its target and move the pointer and nothing
+  else (`judgeForegroundSpan`: the active window and the focus end in the target; the stacking is judged on the
+  restack events, `judgeRestacks`, and only the target's top-level, its window manager frame from `xprobe toplevel`,
+  may move, and only to the top; then a quiet 300 ms span and no grab left, `xprobe grabs`); every other request must
+  leave the witness unchanged. The restack events come from `SubstructureNotify` on the root: the witness records the
+  root's children when a span begins and every `ConfigureNotify`, `CirculateNotify`, map, unmap, creation, destruction
+  and reparenting of one in order (`xprobe/src/restack.rs`). They are never coalesced, unlike
+  `_NET_CLIENT_LIST_STACKING`, which is read after its notify and so shows only the latest of quick changes: that
+  property stays a second record (each change read back with its orders must be the target's raise), and its
+  same-value rewrites pass only because no forbidden restack accompanies them. The activation and the focus are judged
+  the same way (`judgeFocus`): with `FocusChange` on the root and every root child, the witness records every
+  `FocusIn`, `FocusOut` and `_NET_ACTIVE_WINDOW` activation request in order (`xprobe/src/focus.rs`), and only the
+  target may be activated or take the focus (its frame or its own window), through no focus on the way at most; an
+  active-window notify, which carries no value, passes only beside such clean evidence. Where the foreground route is
+  expected, the X request audit is the foreground audit (`audit.mjs` `auditForeground`): of the requests the background
+  route forbids, only the `_NET_ACTIVE_WINDOW` ClientMessage, the stacking `ConfigureWindow` and `SetInputFocus`
+  naming the target, and XTEST FakeInput are allowed. A run with a foreground request also runs the foreground checks
+  (`foregroundNegativeCheck`), or the run is invalid: another window raised and the top one raised back, 50 ms apart
+  and under one server grab (`xprobe restack-grabbed`), and the focus and the active window switched to another
+  window and back under one server grab (`xprobe focus-grabbed`), which the allowance must fail; the target raised,
+  and the target activated through the window manager, which it must pass.
+- **A text operation proves its effect**: every text operation's definition reads an independent effect (the field
+  through the harness's own AT-SPI reads, or the clipboard), and a sample whose effect could not be read is a miss
+  (`effect_unread`), whatever the operation's other samples could read; `clipboard_release`, which changes only the
+  engine's own handle map, declares why it has none (`effectFree`).
+- **The desktop route's groups are topped up**: a group of a `desktop` scene operation with fewer than 20 samples an
+  engine in a series (the cold series has one a block) gets fresh-engine rounds (`top-up` rows, blocks `topup-<n>`)
+  until each engine has 20, and is then judged with the interval and its bound; the judge never passes or fails a
+  desktop group on fewer (`judgeOperation` `minSamples`).
+- **The display-wide unconfirmed-paste window** (`CUA_CLIPBOARD_QUARANTINE`): after an unconfirmed paste every cua
+  engine on the display refuses text requests for up to 10 s. The harness waits it out before every text sample, every
+  safety case and each late-conversion trial (`clip.mjs` `waitQuarantineOver`, `xprobe quarantine`), and never
+  removes it, since the unconfirmed paste's target may still convert until it ends.
+- **A failed preparation**: a sample whose engine could not make the handle it needs (`prepare_error`: both Copy
+  attempts failed, so a handle no engine issued is sent) times another request than the operation's, so no engine's
+  such sample is in the medians; a cua sample of that kind fails its verdict, a vendor build's is recorded.
+- **Every cleanup a case owes runs when it ends** (`Cases.guarded`): the engines, clipboard owners and target windows
+  a case starts, whether it ends by its verdict or by an exception half-way through its setup; a sample's clipboard
+  owner ends with the sample the same way (`runSample`). Each disposal establishes that what it ends is gone (an
+  engine or owner that has exited, a target window's process group answering ESRCH); a disposal that fails fails the
+  case, after every other disposal has run: a case that passed throws `cleanup failed: …`, and a case that threw keeps
+  its own error with the failures attached.
+- **The bus trace**: a pass per text operation and engine, a fresh process under `dbus-monitor`, counts
+  `PasteText`, `InsertText` and `SetTextContents`; cua's must be 0 (vendor counts recorded). The safety cases' whole
+  phase is watched the same way.
+- **Paste safety cases** (`safety.mjs`, kind `case`, cua alone, after the blocks, on windows of their own):
+  `chrome-textarea`: `focus_change` (the prior owner holds the engine's snapshot `TARGETS` while the harness moves the
+  focus to the page's other field through AT-SPI: `requested field or selection changed before dispatch; nothing was
+  sent`, neither field changed), `focus_change_takeover` (the same, and the prior owner takes CLIPBOARD back 0, 20 or
+  50 ms after the engine takes it: nothing sent, the new owner's text intact), `silent_owner` (the prior owner never
+  answers the snapshot's `TARGETS`: `clipboard capture timed out: …; nothing was sent` within the bound, and the next
+  paste goes in, so both locks were released), `concurrent` (two engines paste distinct
+  markers at once into their own windows), `contention` (two engines, 20 pastes each with random gaps of 0–30 ms),
+  `late_page` (the page inserts the paste's text 3 s after its paste event: unconfirmed, then the text once),
+  `ignored_page` (unconfirmed, the field unchanged, the next request answered at once); `paste-target`
+  (`pages/paste-target.py`, a GTK 3 window whose conversions the harness controls, made on its own X connection so the
+  engine attributes them to the target): `stalled_incr` (100 KB, the INCR transfer never acknowledged), `late_convert`
+  (a conversion 1.5 s after the chord, served the paste itself, never the prior clipboard; 3 s after it, with the
+  chord's timestamp and with CurrentTime, refused), `unreadable` (no Text interface: unconfirmed, the text received
+  once); `gedit`: `caret_placed` (a caret placed, the focus moved to a toolbar button, then `type_text` naming the
+  field: clicked, the caret put back, the text at the caret); `gnome-text-editor`: `restore_refused` (dedicated mode,
+  the focus moved to the search bar with Ctrl+F through the desktop route: clicked through XTEST, GTK 4 refuses the
+  caret's restore, the text goes in once, the foreground route's witness allowance).
+- **The matrix** (`--experiment matrix`): `gnome-terminal` joins (VTE, paste chord Ctrl+Shift+V; its recorder shows what
+  it receives, so a paste is confirmed in the terminal's text), and cua's `type_text` runs beside the vendor builds'.
+- `--via vendor-js` refuses the text operations and the cases: their facade-level proof is the facade suites.
+- **Same within noise** (Acceptance 3's rule, now in every verdict over the wire): a candidate median above the bar
+  whose bootstrap 95% interval of the candidate's median minus the bar build's includes 0 and reaches at most max(5% of
+  the bar, 1 ms) passes as "same within noise", listed in the verdict with its interval, when both sides have at least
+  20 samples in the series; a wider interval is undetermined, which fails the verdict (the differential run adds no
+  samples); with fewer samples, the medians alone decide.
+- **Parity** (Acceptance 3's parity rule): `deviations.mjs` `PARITY` lists an operation, scene and series whose work
+  is identical by construction in every engine (the cold desktop screenshot, Decision Log, M1a.4). Above the bar, it is
+  **parity** when cua's median lies within the bar build's own spread of samples of that series in the run, which is
+  neither a pass nor a failure: listed apart in the verdict and on the run's last line, it does not fail the run;
+  outside that spread it fails. Unlisted operations are unaffected. `clipboard_release` (a map removal in every engine, about 0.1 ms the harness's own
+  scheduling dominates) takes 10 warm samples a block so that its warm series has them.
+
 ## Files
 
 | File | What it is |
@@ -253,4 +360,5 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `wire-check.mjs`, `stub-replay.mjs`, `record-wire.mjs`, `fixtures/wire/` | the wire fixtures |
 | `stub-activating.mjs` | the negative check's stub engine |
 | `events.mjs`, `xprobe/src/record.rs` | M1a.2's input events experiment and its recorder window |
-| `pages/` | the Chrome scenes (`input.html` the pointer and key scene) and `gtk-table.py`, the large-table scene |
+| `pages/` | the Chrome scenes (`input.html` the pointer and key scene, `text.html` the text scene) and `gtk-table.py`, the large-table scene |
+| `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |

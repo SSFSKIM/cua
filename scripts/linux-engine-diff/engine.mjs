@@ -103,8 +103,10 @@ export class Engine {
     return { responses: answers.map((a) => a.response), ms: answers.at(-1).at - started };
   }
 
+  /** Ends the process: its stdin closed, killed after 10 s; a process that has already exited is gone. */
   async close() {
     if (!this.child) return;
+    if (this.child.exitCode !== null || this.child.signalCode !== null) return;
     this.child.stdin.end();
     const timer = setTimeout(() => this.child.kill('SIGKILL'), 10000);
     await this.exited;

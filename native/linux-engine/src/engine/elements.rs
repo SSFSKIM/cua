@@ -17,10 +17,11 @@ use crate::wire::{MouseButton, ScrollInput, SecondaryActionInput, parse_input};
 use crate::x11::{WindowInfo, X11};
 
 /// A resolved element: its window, the element and its ancestors nearest first, ending with the frame.
-struct Element {
-    info: WindowInfo,
-    target: ObjRef,
-    ancestors: Vec<ObjRef>,
+#[derive(Clone)]
+pub(super) struct Element {
+    pub(super) info: WindowInfo,
+    pub(super) target: ObjRef,
+    pub(super) ancestors: Vec<ObjRef>,
 }
 
 enum RightClick {
@@ -33,7 +34,7 @@ enum RightClick {
 impl Engine {
     /// Resolves `element` in `window` (behaviour §6.2): X11 fallback ids refused first, then the window, the bus,
     /// the association and the two walks.
-    fn resolve_element(&mut self, window: u32, element: &str) -> Result<Element> {
+    pub(super) fn resolve_element(&mut self, window: u32, element: &str) -> Result<Element> {
         if element.starts_with("x11:") {
             bail!("element actions require AT-SPI; X11 fallback IDs only identify windows");
         }
@@ -164,7 +165,7 @@ fn right_click(
 ) -> std::result::Result<(), RightClick> {
     let mut point_failed = false;
     let result = inputs.with_route(x, Target::Window(element.info.id), |x, route, _| {
-        let (rx, ry) = visible_point(bus, element).inspect_err(|_| point_failed = true)?;
+        let (rx, ry) = visible_point(bus, element, "right-clicking").inspect_err(|_| point_failed = true)?;
         route.place(x, rx, ry)?;
         route.button(x, 3, true)?;
         std::thread::sleep(CLICK_HOLD);
@@ -201,10 +202,10 @@ fn centre((x0, y0, x1, y1): (i32, i32, i32, i32)) -> Result<(i16, i16)> {
 
 /// The right click's point (behaviour §7.2 steps 2–3): showing and visible, the extents clipped by the window and
 /// by every `viewport` and `scroll pane` ancestor.
-fn visible_point(bus: &mut Bus, element: &Element) -> Result<(i16, i16)> {
+pub(super) fn visible_point(bus: &mut Bus, element: &Element, purpose: &str) -> Result<(i16, i16)> {
     let states = atspi::state_words(bus, &element.target)?.unwrap_or_default();
     if !(states.contains(&"showing") && states.contains(&"visible")) {
-        bail!("element is not visible; scroll it into view before right-clicking");
+        bail!("element is not visible; scroll it into view before {purpose}");
     }
     let bounds = atspi::extents(bus, &element.target)?.map_err(anyhow::Error::msg)?;
     let (mut x0, mut y0, mut x1, mut y1) = clip_to_window(bounds, &element.info);

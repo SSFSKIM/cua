@@ -319,8 +319,15 @@ impl Session {
         self.grab = None;
     }
 
-    fn now(&self) -> u32 {
+    /// The server time the session stamps an event sent now with.
+    pub fn now(&self) -> u32 {
         self.clock()()
+    }
+
+    /// Whether the X input focus was within the target when the session opened: the synthetic-focus state the
+    /// session holds (no FocusIn was synthesized), which a paste revalidates before its dispatch.
+    pub fn focus_was_within(&self) -> bool {
+        !self.synthesized_focus
     }
 
     /// The server time now, as a closure that borrows nothing of the session.
@@ -367,6 +374,12 @@ impl Session {
             std::thread::sleep(pace);
             sent
         })
+    }
+
+    /// Releases a key the bookkeeping does not hold: one whose press may have been delivered though its acknowledgement
+    /// never came. No press is sent.
+    pub fn release_unheld(&mut self, x: &X11, keycode: u8) -> Result<()> {
+        send_key(x, self.target, self.now(), keycode, false, self.state())
     }
 
     /// Places the pointer at a root point: Enter and Motion to the deepest viewable child under it, or one
@@ -539,8 +552,14 @@ fn send_key(x: &X11, target: Window, time: u32, keycode: u8, press: bool, state:
         state: state.into(),
         same_screen: true,
     };
-    x.conn.send_event(false, target, EventMask::NO_EVENT, event)?.check()?;
-    Ok(())
+    let send = || -> Result<()> {
+        x.conn.send_event(false, target, EventMask::NO_EVENT, event)?.check()?;
+        Ok(())
+    };
+    #[cfg(test)]
+    return crate::fault::key(keycode, press, send);
+    #[cfg(not(test))]
+    send()
 }
 
 #[cfg(test)]

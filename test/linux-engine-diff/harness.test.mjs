@@ -300,7 +300,7 @@ test('every sample is compared with the pinned build\'s screenshot of its block,
 test('a run exits nonzero when any verdict fails, and when the negative check did not hold', async () => {
   const { runOutcome } = await import('../../scripts/linux-engine-diff/stats.mjs');
   const verdict = (pass) => ({ run: 'r', kind: 'verdict', candidate: 'cua', scene: 'gedit', op: 'tree', pass });
-  assert.deepEqual(runOutcome([verdict(true), verdict(true)], { valid: true }), { valid: true, pass: true, failed: [], code: 0 });
+  assert.deepEqual(runOutcome([verdict(true), verdict(true)], { valid: true }), { valid: true, pass: true, failed: [], parity: [], code: 0 });
   const failed = runOutcome([verdict(true), verdict(false)], { valid: true });
   assert.equal(failed.pass, false);
   assert.equal(failed.code, 1);

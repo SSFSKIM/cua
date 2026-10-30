@@ -1,9 +1,9 @@
 [package]
 name = "cua-linux-engine"
-# M1b's first release, linux-engine-v0.1.0; each later release takes the next minor
+# M1b's first release was linux-engine-v0.1.0, M2's is 0.2.0; each later release takes the next minor
 # (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Interfaces and Dependencies). The release workflow
 # (.github/workflows/linux-engine.yml) builds the version named here and refuses one already released.
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.94"
 publish = false

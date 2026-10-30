@@ -1,0 +1,27 @@
+{
+  "exit": 0,
+  "status": "PASS",
+  "steps": [
+    "PASS preconditions",
+    "PASS bind the fixture window by X11 id",
+    "PASS type the marker and read it back from the accessibility tree",
+    "PASS the kernel is confined: no private state or store, no X11, TCP or session-bus connect",
+    "PASS screenshot of the window",
+    "PASS launch_app starts the application outside the sandbox (this PID namespace), and it outlives the call",
+    "PASS end_task",
+    "PASS approvals: the fixture window's app and the launched entry's id, each asked once and accepted, nothing else asked",
+    "PASS cua serve exited cleanly",
+    "PASS no run entry left for the connection",
+    "PASS CUA_REPL_HOST=vendor is refused on Linux with a sentence"
+  ],
+  "samples": 3369,
+  "maxSkyLinux": 0,
+  "cuaEngines": [
+    {
+      "pid": "4012128",
+      "exe": "/Users/new/.local/share/cua/engine/linux/cua-engine",
+      "ppid": "4012109",
+      "parent": "/Users/new/.local/share/cua/node/24.22.0/bin/node --experimental-vm-modules /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/src/repl-host/trusted-worker.mjs"
+    }
+  ]
+}

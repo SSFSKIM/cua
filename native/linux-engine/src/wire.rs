@@ -270,6 +270,38 @@ pub struct WindowInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct ClipboardReleaseInput {
+    pub handle: String,
+}
+
+/// `type_text` (behaviour §2, §12): no window is desktop input, into whatever has the focus.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeTextInput {
+    #[serde(default)]
+    pub window: Option<Target>,
+    #[serde(default)]
+    pub element_id: Option<String>,
+    pub text: String,
+}
+
+/// `type_characters` (the newest build's, behaviour §11.4): a window is required.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeCharactersInput {
+    pub window: Target,
+    pub text: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ClipboardWriteInput {
+    pub window: Target,
+    pub handle: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LaunchAppInput {
     pub app: String,
 }

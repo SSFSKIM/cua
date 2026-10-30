@@ -77,34 +77,10 @@ func cursorArrowPath(scale: CGFloat = 0.75) -> CGPath {
   return path
 }
 
-/// The press spring (VirtualCursor.press(), VC §6): pressed toward 0.7 for 0.1 s, released toward 1, on the SwiftUI spring
-/// (stiffness 130.5, damping 18.85), sampled until it rests.
-func pressDipCurve(step: Double = cursorMotionStep) -> [Double] {
-  var x = 1.0, v = 0.0, t = 0.0
-  var values = [x]
-  while t < 2 {
-    let target = t < 0.1 ? 0.7 : 1.0
-    let a = 130.5 * (target - x) - 18.85 * v
-    v += a * step
-    x += v * step
-    t += step
-    values.append(x)
-    if t > 0.1, abs(x - 1) < 0.0005, abs(v) < 0.01 { break }
-  }
-  values[values.count - 1] = 1
-  return values
-}
-
 @MainActor
 private final class CursorOverlay {
   /// The container's side: room for the halo's 2.5× swell around the tip at its centre.
   static let side: CGFloat = 180
-  /// The arrow's fill alpha at rest and while thinking. The vendor's rises 16 % → 24 % (×1.5); cua's rest fill is the
-  /// session's colour at 0.8, rising to 1, since a ×1.5 rise would need a rest fill of 0.66, which reads pale over the
-  /// frost against look A's solid arrow.
-  static let fill: CGFloat = 0.8, thinkingFill: CGFloat = 1
-  /// The rock (VC Appendix C §2): ±10°, 0.684931506849315 s per swing, 0.41 s back to rest.
-  static let rockDegrees = 10.0, rockSwing = 0.684931506849315, rockStop = 0.41
 
   private let panel: CursorWindow
   private let content: NSView
@@ -117,6 +93,7 @@ private final class CursorOverlay {
   private let pill: NSView
   private let pillText = CATextLayer()
   private var installedMotion: Int?
+  private let rocker = CursorRock()
   private var phase: CursorPhase = .hidden
   private var shown = false
   private var screenFrame: CGRect = .zero
@@ -243,7 +220,7 @@ private final class CursorOverlay {
     let contrast = commit.increaseContrast
     let color = commit.identity.color
     shape.strokeColor = NSColor.white.withAlphaComponent(contrast ? 1 : 0.8).cgColor
-    halo.setTint(color, increaseContrast: contrast)
+    halo.setTint(color)
     let rgb = color.usingColorSpace(.sRGB).map { RGB(red: Double($0.redComponent), green: Double($0.greenComponent), blue: Double($0.blueComponent)) }
     pill.layer?.backgroundColor = (rgb.map { pillShade(of: $0).color } ?? color).cgColor
     if label != commit.identity.label {
@@ -302,15 +279,8 @@ private final class CursorOverlay {
         keyframes("transform", samples.map { NSValue(caTransform3D: swellTransform($0.swell, haloLayer)) }, on: haloLayer, key: "swell")
       }
     }
-    for (i, dip) in motion.dips.enumerated() {
-      let curve = pressDipCurve()
-      let animation = CAKeyframeAnimation(keyPath: reduceMotion ? "opacity" : "transform.scale")
-      animation.values = reduceMotion ? curve.map { 0.45 + 0.55 * min(max(($0 - 0.7) / 0.3, 0), 1) } : curve
-      animation.duration = Double(curve.count - 1) * cursorMotionStep
-      animation.beginTime = layerTime(dip, press)
-      animation.fillMode = .removed
-      press.add(animation, forKey: "dip\(i)")
-    }
+    // A new motion cancels the old one's unplayed dips, with or without dips of its own.
+    CursorDips.schedule(motion.dips, on: press, reduceMotion: reduceMotion)
   }
 
   /// The heading (clockwise on screen, so negative in the panel's y-up layers) and the stretch along the travel axis.
@@ -332,7 +302,7 @@ private final class CursorOverlay {
 
   // MARK: States
 
-  /// The state's look: opacity (hidden and fading 0, taken over 0.5), the rock while thinking, the fill.
+  /// The state's look: opacity (hidden and fading 0, taken over 0.5) and the rock while thinking.
   private func transition(to commit: CursorCommit) {
     guard let cursorLayer = cursor.layer else { return }
     let nowShown = commit.shown
@@ -360,20 +330,10 @@ private final class CursorOverlay {
       cursorLayer.opacity = shownTarget
       cursorLayer.add(animation, forKey: "opacity")
     }
-    let thinking = commit.phase == .thinking && !commit.reduceMotion
-    if thinking && (phase != .thinking) { startRock(at: commit.phaseSince) }
-    if !thinking && phase == .thinking { stopRock() }
-    let fill = commit.increaseContrast ? 1 : (commit.phase == .thinking ? Self.thinkingFill : Self.fill)
-    let color = commit.identity.color.withAlphaComponent(fill).cgColor
-    if shape.fillColor != color {
-      let animation = CABasicAnimation(keyPath: "fillColor")
-      animation.fromValue = shape.presentation()?.fillColor ?? shape.fillColor
-      animation.toValue = color
-      animation.duration = 0.2
-      animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-      shape.fillColor = color
-      shape.add(animation, forKey: "fill")
-    }
+    // Thinking is the rock alone (the fill stays solid, look A); the rock follows Reduce Motion live.
+    rocker.update(commit.phase == .thinking && !commit.reduceMotion, on: rock, at: max(commit.phaseSince, CACurrentMediaTime()))
+    let color = commit.identity.color.withAlphaComponent(1).cgColor
+    if shape.fillColor != color { shape.fillColor = color }
     if commit.phase == .hidden {
       // Nothing animates while hidden (the spec's Design, energy).
       for layer in [rock, press, heading] { layer.removeAllAnimations() }
@@ -404,40 +364,5 @@ private final class CursorOverlay {
     blur.fillMode = .backwards
     rock.setValue(0, forKeyPath: "filters.blur.inputRadius")
     rock.add(blur, forKey: "blur")
-  }
-
-  /// The thinking rock (FUN_1001421ec): to the nearest extreme, then ±10° for ever, eased.
-  private func startRock(at host: TimeInterval) {
-    let degrees = Self.rockDegrees * .pi / 180
-    let ramp = CABasicAnimation(keyPath: "transform.rotation.z")
-    ramp.fromValue = 0
-    ramp.toValue = degrees
-    ramp.duration = Self.rockSwing / 2
-    ramp.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-    ramp.beginTime = layerTime(host, rock)
-    ramp.fillMode = .backwards
-    rock.add(ramp, forKey: "rockIn")
-    let swing = CABasicAnimation(keyPath: "transform.rotation.z")
-    swing.fromValue = degrees
-    swing.toValue = -degrees
-    swing.duration = Self.rockSwing
-    swing.autoreverses = true
-    swing.repeatCount = .infinity
-    swing.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-    swing.beginTime = layerTime(host + Self.rockSwing / 2, rock)
-    rock.add(swing, forKey: "rock")
-  }
-
-  /// Back to rest over 0.41 s from wherever the rock is.
-  private func stopRock() {
-    let angle = (rock.presentation()?.value(forKeyPath: "transform.rotation.z") as? NSNumber)?.doubleValue ?? 0
-    rock.removeAnimation(forKey: "rockIn")
-    rock.removeAnimation(forKey: "rock")
-    let back = CABasicAnimation(keyPath: "transform.rotation.z")
-    back.fromValue = angle
-    back.toValue = 0
-    back.duration = Self.rockStop
-    back.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-    rock.add(back, forKey: "rockOut")
   }
 }

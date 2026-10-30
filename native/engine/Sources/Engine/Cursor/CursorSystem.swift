@@ -6,7 +6,8 @@ import Foundation
 // display options as last read on the main thread (refreshed by AppKit's notifications, read by the cursor queue under a
 // lock, so it never waits on main), the on-screen window list, the frontmost app, an element's current frame and
 // window by Accessibility, NSWorkspace's and the distributed notification centres, and an `NSProcessInfo` activity
-// (`.userInitiated`, never `.idleSystemSleepDisabled`) held while a cursor shows.
+// (`.userInitiatedAllowingIdleSystemSleep`: plain `.userInitiated` includes `.idleSystemSleepDisabled`) held while a
+// cursor shows.
 
 final class CursorSystem: @unchecked Sendable {
   private let lock = NSLock()
@@ -66,7 +67,7 @@ final class CursorSystem: @unchecked Sendable {
     e.activity = { [self] showing in
       lock.withLock {
         if showing, activity == nil {
-          activity = ProcessInfo.processInfo.beginActivity(options: .userInitiated, reason: "cua's agent cursor is on screen")
+          activity = ProcessInfo.processInfo.beginActivity(options: .userInitiatedAllowingIdleSystemSleep, reason: "cua's agent cursor is on screen")
         } else if !showing, let held = activity {
           ProcessInfo.processInfo.endActivity(held)
           activity = nil

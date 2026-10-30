@@ -165,7 +165,7 @@ final class CursorHub: @unchecked Sendable {
       let cursor = model(connection)
       if let identity { cursor.identity = identity }
       cursor.enabled = enabled
-      if !enabled { cursor.lifecycle.hide(now: environment.now()) }
+      if !enabled { hideNow(cursor) }
       commit(cursor)
     }
   }
@@ -175,7 +175,7 @@ final class CursorHub: @unchecked Sendable {
     let generation = bump(connection)
     queue.async { [self] in
       guard let cursor = cursors[connection] else { return }
-      cursor.lifecycle.hide(now: environment.now())
+      hideNow(cursor)
       commit(cursor, generation: generation)
     }
   }
@@ -198,7 +198,10 @@ final class CursorHub: @unchecked Sendable {
       for cursor in cursors.values where cursor.attachment?.owner == pid {
         let before = cursor.lifecycle.phase
         cursor.lifecycle.userActed(now: now)
-        if cursor.lifecycle.phase != before { cursor.phaseSince = now; commit(cursor) }
+        guard cursor.lifecycle.phase != before else { continue }
+        cursor.phaseSince = now
+        freeze(cursor, now: now)  // taken over is still: a motion in flight stops where it is, its pending dip with it
+        commit(cursor)
       }
     }
   }
@@ -297,6 +300,7 @@ final class CursorHub: @unchecked Sendable {
     motionCounter += 1
     cursor.motion = CursorMotionInstall(id: motionCounter, trajectory: trajectory, beginTime: begin,
                                         dips: dips ? [begin + arrival] : [], fadeIn: start == nil)
+    cursor.plannedReduced = reduce
     cursor.screen = screen
     cursor.attachment = attachment
     cursor.app = app
@@ -372,12 +376,56 @@ final class CursorHub: @unchecked Sendable {
   }
 
   private func lockScreen() {
-    let now = environment.now()
     for cursor in cursors.values where cursor.lifecycle.phase.visible {
       let generation = bump(cursor.connection)
-      cursor.lifecycle.hide(now: now)
-      cursor.phaseSince = now
+      hideNow(cursor)
       commit(cursor, generation: generation)
+    }
+  }
+
+  /// A fade starting now: the renderer starts it from `phaseSince`, so the timestamp is the fade's own start.
+  private func hideNow(_ cursor: CursorModel) {
+    let now = environment.now()
+    let before = cursor.lifecycle.phase
+    cursor.lifecycle.hide(now: now)
+    if cursor.lifecycle.phase != before { cursor.phaseSince = now }
+  }
+
+  /// Whether `cursor`'s retained motion is still playing at `now` (its tip not yet settled, or a dip still to come).
+  private func motionInFlight(_ cursor: CursorModel, now: TimeInterval) -> Bool {
+    guard let motion = cursor.motion else { return false }
+    let settles = motion.beginTime + Double(motion.trajectory.settleIndex) * motion.trajectory.step
+    return settles > now || motion.dips.contains { $0 > now }
+  }
+
+  /// Stops a motion in flight where it is now: the retained trajectory's state, held, with no pending dip.
+  private func freeze(_ cursor: CursorModel, now: TimeInterval) {
+    guard motionInFlight(cursor, now: now), let motion = cursor.motion else { return }
+    var state = motion.trajectory.state(at: now - motion.beginTime)
+    state.velocity = .zero
+    motionCounter += 1
+    cursor.motion = CursorMotionInstall(id: motionCounter, trajectory: stillTrajectory(at: state), beginTime: now, dips: [], fadeIn: false)
+  }
+
+  /// Reduce Motion or Increase Contrast changed: a motion in flight is planned again from where it is now under the new
+  /// setting (its dip kept if it had not played yet), and every cursor is committed, so the renderer re-reads the
+  /// options (the rock, the stroke).
+  private func displayOptionsChanged() {
+    let now = environment.now()
+    let reduce = environment.reduceMotion()
+    let screens = environment.screens()
+    for cursor in cursors.values {
+      if reduce != cursor.plannedReduced, motionInFlight(cursor, now: now), let motion = cursor.motion, let screen = cursor.screen {
+        let begin = now + Self.spliceLead
+        let start = motion.trajectory.state(at: begin - motion.beginTime)
+        let trajectory = plan(from: start, to: motion.trajectory.end, bounds: screens.localVisibleFrame(of: screen), reduceMotion: reduce)
+        let dipPending = motion.dips.contains { $0 > now }
+        motionCounter += 1
+        cursor.motion = CursorMotionInstall(id: motionCounter, trajectory: trajectory, beginTime: begin,
+                                            dips: dipPending ? [begin + trajectory.arrival] : [], fadeIn: false)
+        cursor.plannedReduced = reduce
+      }
+      commit(cursor)
     }
   }
 
@@ -425,7 +473,7 @@ final class CursorHub: @unchecked Sendable {
     }
     let reduce = workspace.addObserver(forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: nil) { [weak self] _ in
       guard let self else { return }
-      self.queue.async { [self] in for cursor in cursors.values { commit(cursor) } }
+      self.queue.async { [self] in displayOptionsChanged() }
     }
     observers.append((workspace, reduce))
     let distributed = environment.distributedCenter
@@ -476,8 +524,9 @@ private final class CursorModel {
   var app: String?
   var screen: CursorScreen?
   var attachment: CursorAttachment?
-  /// The retained motion: what a splice evaluates.
+  /// The retained motion: what a splice evaluates; and whether it was planned under Reduce Motion.
   var motion: CursorMotionInstall?
+  var plannedReduced = false
   var committed: CursorCommit?
 
   init(connection: Int, identity: CursorIdentity) {

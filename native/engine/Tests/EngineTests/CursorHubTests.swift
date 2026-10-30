@@ -329,6 +329,104 @@ final class CursorHubTests: XCTestCase {
     XCTAssertEqual(world.activity, [true, false])
   }
 
+  func testAnExplicitHideStartsItsFadeWhenTheHideComes() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    world.clock.t += 1
+    hub.tick()
+    XCTAssertEqual(renderer.last?.phase, .thinking)
+    world.clock.t += 2.5  // well after thinking began, before the idle fade
+    hub.hide(connection: 1)
+    hub.drain()
+    let commit = try XCTUnwrap(renderer.last)
+    XCTAssertEqual(commit.phase, .fading)
+    XCTAssertEqual(commit.phaseSince, world.clock.t, "the fade starts now, not when thinking began")
+  }
+
+  func testTakingOverMidwayThroughALongMoveFreezesTheCursorWhereItIs() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 200, y: 200))
+    world.clock.t += 2
+    click(hub, CGPoint(x: 1200, y: 700))
+    let moving = try XCTUnwrap(renderer.last?.motion)
+    world.clock.t += 0.3
+    hub.userActed(pid: 600)
+    hub.drain()
+    let commit = try XCTUnwrap(renderer.last)
+    XCTAssertEqual(commit.phase, .takenOver)
+    let still = try XCTUnwrap(commit.motion)
+    XCTAssertNotEqual(still.id, moving.id)
+    XCTAssertEqual(still.trajectory.samples.count, 1, "still")
+    XCTAssertEqual(still.trajectory.samples[0].position, moving.trajectory.state(at: world.clock.t - moving.beginTime).position)
+    XCTAssertEqual(still.dips, [], "the pending dip is cancelled")
+  }
+
+  func testTakingOverAtRestKeepsTheMotion() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    let rest = try XCTUnwrap(renderer.last?.motion)
+    world.clock.t += 1
+    hub.tick()
+    hub.userActed(pid: 600)
+    hub.drain()
+    XCTAssertEqual(renderer.last?.motion?.id, rest.id)
+  }
+
+  func testAClickThenAScrollBeforeItsArrivalLeavesNoDip() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 200, y: 200))
+    world.clock.t += 2
+    click(hub, CGPoint(x: 1200, y: 700))
+    XCTAssertEqual(renderer.last?.motion?.dips.count, 1)
+    world.clock.t += 0.1  // before the click's arrival
+    hub.act(connection: 1, app: app, window: 20, .scroll(CGPoint(x: 300, y: 300)))
+    hub.drain()
+    XCTAssertEqual(try XCTUnwrap(renderer.last?.motion).dips, [], "the commit carries no dip: the renderer replaces the old one with none")
+  }
+
+  func testReduceMotionTurningOnMidMoveReplansTheMoveFromWhereItIs() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 200, y: 200))
+    world.clock.t += 2
+    click(hub, CGPoint(x: 1200, y: 700))
+    let moving = try XCTUnwrap(renderer.last?.motion)
+    world.clock.t += 0.2
+    world.reduceMotion = true
+    world.workspace.post(name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+    hub.drain()
+    let commit = try XCTUnwrap(renderer.last)
+    XCTAssertTrue(commit.reduceMotion)
+    let replanned = try XCTUnwrap(commit.motion)
+    XCTAssertNotEqual(replanned.id, moving.id)
+    XCTAssertEqual(replanned.trajectory.duration, 0.15, accuracy: 1 / 240.0)
+    XCTAssertEqual(replanned.trajectory.samples[0].position, moving.trajectory.state(at: replanned.beginTime - moving.beginTime).position)
+    XCTAssertEqual(replanned.trajectory.end, moving.trajectory.end)
+    XCTAssertEqual(replanned.dips.count, 1, "the click's dip had not played: it plays at the new arrival")
+  }
+
+  func testReduceMotionTurningOffWhileThinkingIsCommittedWithNoAction() throws {
+    let world = World(), renderer = RecordingRenderer()
+    world.reduceMotion = true
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    world.clock.t += 1
+    hub.tick()
+    XCTAssertEqual(renderer.last?.phase, .thinking)
+    XCTAssertEqual(renderer.last?.reduceMotion, true)
+    let count = renderer.commits.count
+    world.reduceMotion = false
+    world.workspace.post(name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil)
+    hub.drain()
+    XCTAssertGreaterThan(renderer.commits.count, count)
+    XCTAssertEqual(renderer.last?.phase, .thinking)
+    XCTAssertEqual(renderer.last?.reduceMotion, false, "the renderer's rock starts from this commit (CursorRock)")
+  }
+
   func testADisplayReconfigurationResetsThePanelToItsScreensNewFrame() throws {
     let world = World(), renderer = RecordingRenderer()
     let hub = hub(world, renderer)

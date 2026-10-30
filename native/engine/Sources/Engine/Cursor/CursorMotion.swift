@@ -451,8 +451,11 @@ func planStraight(from: CursorState, to: CGPoint, bounds: CGRect, reduceMotion: 
 }
 
 /// No motion: the cursor appears at `point` (a fade-in at the target, or the skip check of FUN_100091650).
-func snapTrajectory(to point: CGPoint) -> Trajectory {
-  Trajectory(step: cursorMotionStep, samples: [.rest(at: point)], mode: .snap, chosen: nil, cost: nil, response: nil, arrivalIndex: 0, settleIndex: 0)
+func snapTrajectory(to point: CGPoint) -> Trajectory { stillTrajectory(at: .rest(at: point)) }
+
+/// No motion: the cursor held in `state` (a motion stopped where it was).
+func stillTrajectory(at state: CursorState) -> Trajectory {
+  Trajectory(step: cursorMotionStep, samples: [state], mode: .snap, chosen: nil, cost: nil, response: nil, arrivalIndex: 0, settleIndex: 0)
 }
 
 /// Path mode (FUN_100093c30's tick, at every step): the progress spring from 0 to 1, the tip on the path, the arrow along

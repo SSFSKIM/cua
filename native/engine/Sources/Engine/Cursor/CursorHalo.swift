@@ -51,11 +51,11 @@ final class CursorHalo {
     view.addSubview(wash)
   }
 
-  /// The session's colour washed over the frost (look A: 12–20 %); a little stronger with Increase Contrast.
-  func setTint(_ color: NSColor, increaseContrast: Bool) {
+  /// The session's colour washed over the frost (look A: 12–20 %).
+  func setTint(_ color: NSColor) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    tint.backgroundColor = color.withAlphaComponent(increaseContrast ? 0.24 : 0.14).cgColor
+    tint.backgroundColor = color.withAlphaComponent(0.14).cgColor
     CATransaction.commit()
   }
 

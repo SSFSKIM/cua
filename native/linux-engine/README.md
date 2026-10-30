@@ -108,8 +108,9 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   the background route (GTK 4) is refused in `--desktop shared` mode and, in `dedicated` mode, activated and pasted
   through the desktop route. Inside the input session the field is observed (the named element, else the window's
   focused one: its focus, editability, character count, caret and selection); a named element without the focus is
-  clicked at its visible point and its caret or selection put back (`AddSelection`, `SetCaretOffset`; a refusal
-  is no failure). Then the lock, the snapshot and CLIPBOARD taken; the field and the desktop focus revalidated
+  clicked at its visible point (once more if the focus has not shown 500 ms later: background Chrome drops a first
+  click in some states; `paste.clicks` and `paste.focus_ms` on the `--stats` line) and its caret or selection put back
+  (`AddSelection`, `SetCaretOffset`; a refusal is no failure). Then the lock, the snapshot and CLIPBOARD taken; the field and the desktop focus revalidated
   (`requested field or selection changed before dispatch; nothing was sent`); the chord sent once; the field read
   every 20 ms for up to 2 s for the inserted segment where the caret or selection was (for Gecko, without the U+FEFF
   it adds after each character beyond the BMP), each read bounded by that deadline and counted only if it ends

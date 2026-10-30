@@ -247,7 +247,7 @@ export async function runSample(s) {
     row.stats = { calls: stats.bus.calls, waits_alone: stats.bus.waits_alone, max_in_flight: stats.bus.max_in_flight, connections: stats.bus.connections };
     if (stats.tree) row.stats.tree = stats.tree;
     if (stats.capture) row.stats.capture = stats.capture;
-    if (stats.paste) row.stats.paste = { confirmed: stats.paste.confirmed, confirm_ms: stats.paste.confirm_ms, transfer: stats.paste.transfer, clicked: stats.paste.clicked, restored: stats.paste.restored, focus_ms: stats.paste.focus_ms };
+    if (stats.paste) row.stats.paste = { confirmed: stats.paste.confirmed, confirm_ms: stats.paste.confirm_ms, transfer: stats.paste.transfer, clicked: stats.paste.clicked, restored: stats.paste.restored, focus_ms: stats.paste.focus_ms, clicks: stats.paste.clicks };
     if (stats.route) row.route = stats.route;
   }
   if (def.after) await def.after(ctx, response);

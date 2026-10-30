@@ -34,6 +34,8 @@ use crate::x11::X11;
 /// How long a clicked element may take to report the focus, and the poll.
 const FOCUS_WAIT: Duration = Duration::from_millis(500);
 const FOCUS_POLL: Duration = Duration::from_millis(10);
+/// How many focusing clicks at most (`click_for_focus`).
+const FOCUS_CLICKS: u32 = 2;
 
 const LOST: &str = "another program took the clipboard before the paste was sent; nothing was sent";
 const UNKNOWN_HANDLE: &str = "unknown clipboard handle; copy again in this Linux helper";
@@ -66,8 +68,9 @@ struct Report {
     log: Vec<String>,
     /// A press of the chord whose delivery is unknown.
     delivery: Option<String>,
-    /// How long a clicked element took to report the focus (or the wait, when it did not).
+    /// How long a clicked element took to report the focus (or the wait, when it did not), and the clicks it took.
     focus_ms: Option<f64>,
+    clicks: u32,
 }
 
 /// The text a snapshot holds, as a field would show it pasted: its UTF-8 formats first, then `STRING` (Latin-1).
@@ -135,6 +138,7 @@ impl Engine {
                 "log": report.log,
                 "delivery": report.delivery,
                 "focus_ms": report.focus_ms,
+                "clicks": report.clicks,
             }),
         );
         result
@@ -221,18 +225,20 @@ impl Engine {
             // 2. Focus only if needed, then put back the caret or selection the click moved.
             if named && !seen.focused {
                 let (rx, ry) = visible_point(bus, &element, "typing")?;
-                route.place(x, rx, ry)?;
-                route.button(x, 1, true)?;
-                std::thread::sleep(CLICK_HOLD);
-                route.button(x, 1, false)?;
                 report.clicked = true;
                 let clicked_at = Instant::now();
-                let deadline = clicked_at + FOCUS_WAIT;
-                let mut after = observe(bus, &element.target)?;
-                while !after.focused && Instant::now() < deadline {
-                    std::thread::sleep(FOCUS_POLL);
-                    after = observe(bus, &element.target)?;
-                }
+                let (after, clicks) = click_for_focus(
+                    || {
+                        route.place(x, rx, ry)?;
+                        route.button(x, 1, true)?;
+                        std::thread::sleep(CLICK_HOLD);
+                        route.button(x, 1, false)
+                    },
+                    || observe(bus, &element.target),
+                    FOCUS_WAIT,
+                    FOCUS_POLL,
+                )?;
+                report.clicks = clicks;
                 report.focus_ms = Some(clicked_at.elapsed().as_secs_f64() * 1000.0);
                 if !after.focused {
                     bail!("element did not take the focus when clicked; nothing was sent");
@@ -282,6 +288,33 @@ impl Engine {
             dispatch_and_confirm(x, route, bus, clipboard, field, delivery, report)
         })?;
         Ok(Value::Null)
+    }
+}
+
+/// The focusing click: clicks, then observes every `poll` for up to `wait` until the element reports the focus. A click
+/// whose focus never showed is made once more, the wait past any double-click time: background Chrome drops the first
+/// synthetic click into one window's address bar after the vendor build's pastes into another of its windows (M2.3's
+/// harness, reproduced in every sitting; the focus never came within 3 s), and takes the next. Nothing has been sent
+/// yet, so the second click risks nothing a first one would not. Returns the last observation and the clicks made.
+fn click_for_focus(
+    mut click: impl FnMut() -> Result<()>,
+    mut observe: impl FnMut() -> Result<Observation>,
+    wait: Duration,
+    poll: Duration,
+) -> Result<(Observation, u32)> {
+    let mut clicks = 0;
+    loop {
+        click()?;
+        clicks += 1;
+        let deadline = Instant::now() + wait;
+        let mut after = observe()?;
+        while !after.focused && Instant::now() < deadline {
+            std::thread::sleep(poll);
+            after = observe()?;
+        }
+        if after.focused || clicks == FOCUS_CLICKS {
+            return Ok((after, clicks));
+        }
     }
 }
 
@@ -526,6 +559,79 @@ fn confirmed_before(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn seen(focused: bool) -> Observation {
+        Observation {
+            focused,
+            editable: true,
+            showing: true,
+            text: None,
+        }
+    }
+
+    #[test]
+    fn a_focusing_click_the_application_dropped_is_made_once_more_past_the_double_click_time() {
+        // background Chrome drops the first click into an address bar in some states and takes the next (M2.3)
+        let started = Instant::now();
+        let clicks_at = std::cell::RefCell::new(Vec::new());
+        let (after, clicks) = click_for_focus(
+            || {
+                clicks_at.borrow_mut().push(started.elapsed());
+                Ok(())
+            },
+            || Ok(seen(clicks_at.borrow().len() >= 2)),
+            Duration::from_millis(450),
+            Duration::from_millis(5),
+        )
+        .unwrap();
+        assert!(after.focused);
+        assert_eq!(clicks, 2);
+        let clicks_at = clicks_at.into_inner();
+        assert!(
+            clicks_at[1] - clicks_at[0] >= Duration::from_millis(450),
+            "no double click: {clicks_at:?}"
+        );
+    }
+
+    #[test]
+    fn the_focusing_click_stops_at_its_second_try_or_at_the_focus() {
+        let mut made = 0;
+        let (after, clicks) = click_for_focus(
+            || {
+                made += 1;
+                Ok(())
+            },
+            || Ok(seen(false)),
+            Duration::from_millis(20),
+            Duration::from_millis(5),
+        )
+        .unwrap();
+        assert!(!after.focused);
+        assert_eq!((clicks, made), (2, 2), "never a third click");
+        let mut made = 0;
+        let (after, clicks) = click_for_focus(
+            || {
+                made += 1;
+                Ok(())
+            },
+            || Ok(seen(true)),
+            Duration::from_millis(20),
+            Duration::from_millis(5),
+        )
+        .unwrap();
+        assert!(after.focused);
+        assert_eq!((clicks, made), (1, 1), "a click that focused is not repeated");
+        // a click the X server refuses ends the request there
+        assert!(
+            click_for_focus(
+                || anyhow::bail!("BadWindow"),
+                || Ok(seen(false)),
+                Duration::from_millis(5),
+                Duration::from_millis(1)
+            )
+            .is_err()
+        );
+    }
 
     fn expected() -> Expected {
         Expected {

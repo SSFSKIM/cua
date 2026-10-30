@@ -44,6 +44,8 @@ private final class World: @unchecked Sendable {
   var reduceMotion = false
   let workspace = NotificationCenter()
   let distributed = NotificationCenter()
+  let appCenter = NotificationCenter()
+  var screens = [CursorScreen(frame: CGRect(x: 0, y: 0, width: 1440, height: 900), visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 870))]
   var activity: [Bool] = []
 
   func environment(main: ((@escaping @Sendable () -> Void) -> Void)? = nil, beforePlanning: @escaping () -> Void = {},
@@ -51,10 +53,8 @@ private final class World: @unchecked Sendable {
     var e = CursorEnvironment()
     e.now = { [clock] in clock.t }
     e.main = main ?? { $0() }
-    e.screens = {
-      CursorScreens(primaryHeight: 900, all: [CursorScreen(frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
-                                                           visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 870))])
-    }
+    e.screens = { [unowned self] in CursorScreens(primaryHeight: 900, all: screens) }
+    e.appCenter = appCenter
     e.windowList = { [unowned self] in list }
     e.frontmostPid = { [unowned self] in front }
     e.reduceMotion = { [unowned self] in reduceMotion }
@@ -327,6 +327,18 @@ final class CursorHubTests: XCTestCase {
     hub.tick()
     XCTAssertEqual(hub.phase(connection: 1), .hidden)
     XCTAssertEqual(world.activity, [true, false])
+  }
+
+  func testADisplayReconfigurationResetsThePanelToItsScreensNewFrame() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    world.screens = [CursorScreen(frame: CGRect(x: 0, y: 0, width: 1728, height: 900), visibleFrame: CGRect(x: 0, y: 0, width: 1728, height: 870))]
+    world.appCenter.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    hub.drain()
+    let commit = try XCTUnwrap(renderer.last)
+    XCTAssertEqual(commit.screen.frame.width, 1728)
+    XCTAssertEqual(try XCTUnwrap(commit.motion).trajectory.end, CGPoint(x: 400, y: 600), "resting at its last point")
   }
 
   func testReduceMotionPlansStraightEases() throws {

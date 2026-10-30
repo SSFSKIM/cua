@@ -71,6 +71,8 @@ struct CursorEnvironment: @unchecked Sendable {
   /// The centres the attachment's events arrive on: NSWorkspace's and the distributed one (the screen lock).
   var workspaceCenter = NotificationCenter()
   var distributedCenter = NotificationCenter()
+  /// The application's own centre, where a display reconfiguration arrives (NotificationCenter.default).
+  var appCenter = NotificationCenter()
   /// Whether the hub arms real timers (the tests drive `tick` themselves).
   var timers = false
   /// Holds an `NSProcessInfo` activity while any cursor shows, so App Nap cannot delay a motion that is due.
@@ -432,6 +434,28 @@ final class CursorHub: @unchecked Sendable {
       self.queue.async { [self] in lockScreen() }
     }
     observers.append((distributed, lock))
+    let app = environment.appCenter
+    let screens = app.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: nil) { [weak self] _ in
+      guard let self else { return }
+      self.queue.async { [self] in rescreen() }
+    }
+    observers.append((app, screens))
+  }
+
+  /// A display reconfiguration: each cursor's panel is re-set to the frame of the screen now holding its last point,
+  /// where it rests (a snap, as a move across screens is).
+  private func rescreen() {
+    let screens = environment.screens()
+    let now = environment.now()
+    for cursor in cursors.values {
+      guard let app = cursor.app, let point = cursor.lifecycle.lastPoints[app], let screen = screens.screen(containing: point.global),
+            screen != cursor.screen else { continue }
+      motionCounter += 1
+      cursor.motion = CursorMotionInstall(id: motionCounter, trajectory: snapTrajectory(to: screens.local(point.global, in: screen)),
+                                          beginTime: now + Self.spliceLead, dips: [], fadeIn: false)
+      cursor.screen = screen
+      commit(cursor)
+    }
   }
 
   // MARK: Test and probe readings

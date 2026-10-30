@@ -61,6 +61,7 @@ final class CursorSystem: @unchecked Sendable {
     }
     e.workspaceCenter = NSWorkspace.shared.notificationCenter
     e.distributedCenter = DistributedNotificationCenter.default()
+    e.appCenter = NotificationCenter.default
     e.timers = true
     e.activity = { [self] showing in
       lock.withLock {

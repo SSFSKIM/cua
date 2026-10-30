@@ -99,8 +99,10 @@ func pressDipCurve(step: Double = cursorMotionStep) -> [Double] {
 private final class CursorOverlay {
   /// The container's side: room for the halo's 2.5× swell around the tip at its centre.
   static let side: CGFloat = 180
-  /// The arrow's fill alpha at rest and while thinking (the vendor's 16 % → 24 %, the same ratio).
-  static let fill: CGFloat = 0.66, thinkingFill: CGFloat = 0.99
+  /// The arrow's fill alpha at rest and while thinking. The vendor's rises 16 % → 24 % (×1.5); cua's rest fill is the
+  /// session's colour at 0.8, rising to 1, since a ×1.5 rise would need a rest fill of 0.66, which reads pale over the
+  /// frost against look A's solid arrow.
+  static let fill: CGFloat = 0.8, thinkingFill: CGFloat = 1
   /// The rock (VC Appendix C §2): ±10°, 0.684931506849315 s per swing, 0.41 s back to rest.
   static let rockDegrees = 10.0, rockSwing = 0.684931506849315, rockStop = 0.41
 

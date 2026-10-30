@@ -221,7 +221,9 @@ impl Clipboard {
     }
 
     fn snapshot_within(&mut self, cap: usize) -> Result<Payload> {
-        let ours = self.owner.as_ref().and_then(|owner| owner.serving());
+        // A take still settling (one its caller gave up on) is waited for as long as an owner may take to answer
+        // TARGETS; the X conversion is the fallback, and it waits on the same thread.
+        let ours = self.owner.as_ref().and_then(|owner| owner.settled(TARGETS_WAIT));
         if let Some((window, payload)) = ours
             && self.owner_window()? == window
         {
@@ -263,6 +265,6 @@ impl Clipboard {
 
     /// Whether the engine owns CLIPBOARD now (it has received no `SelectionClear`).
     pub fn owns(&self) -> bool {
-        self.owner.as_ref().is_some_and(|owner| owner.serving().is_some())
+        self.owner.as_ref().is_some_and(|owner| owner.owns())
     }
 }

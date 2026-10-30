@@ -28,21 +28,26 @@ use super::serving::{Atom, Closed, Format, Payload, Refusals, chunk_size};
 use super::{Atoms, TRANSFER_GAP, TRANSFER_WAIT, input_only};
 
 /// The tests' interleavings: a pause in the `SelectionClear` handling between its check and its conclusion, a pause
-/// after a take is dequeued and before CLIPBOARD is taken, and the signal that a pause has begun.
+/// after a take is dequeued and before CLIPBOARD is taken, a pause after CLIPBOARD is taken and read back and before
+/// the take's outcome is decided, and the signals that a pause has begun.
 #[cfg(test)]
 pub static CLEAR_PAUSE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 #[cfg(test)]
 pub static TAKE_PAUSE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 #[cfg(test)]
+pub static VERIFY_PAUSE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(test)]
 pub static PAUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+#[cfg(test)]
+pub static VERIFY_PAUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Holds the thread for a test's pause, signalling it.
 #[cfg(test)]
-fn test_pause(pause: &std::sync::atomic::AtomicU64) {
+fn test_pause(pause: &std::sync::atomic::AtomicU64, signal: &std::sync::atomic::AtomicBool) {
     use std::sync::atomic::Ordering::SeqCst;
     let ms = pause.load(SeqCst);
     if ms > 0 {
-        PAUSED.store(true, SeqCst);
+        signal.store(true, SeqCst);
         sleep(Duration::from_millis(ms));
     }
 }
@@ -150,6 +155,8 @@ struct Shared {
     next_token: u64,
     /// Takes whose caller stopped waiting after the owner thread had started them: cleaned up when they complete.
     abandoned: Vec<u64>,
+    /// The owner thread has dequeued a take and not yet published its outcome.
+    settling: bool,
     /// The thread ends at its next event.
     stop: bool,
     /// The thread has ended (stopped, or its connection broke).
@@ -202,6 +209,7 @@ impl Owner {
                 taken: None,
                 next_token: 1,
                 abandoned: Vec::new(),
+                settling: false,
                 stop: false,
                 ended: false,
             }),
@@ -232,10 +240,31 @@ impl Owner {
         !self.state.locked().ended
     }
 
-    /// The owner's window and what it serves, while it owns CLIPBOARD.
-    pub fn serving(&self) -> Option<(Window, Arc<Payload>)> {
+    /// Whether the engine owns CLIPBOARD now (it has had no `SelectionClear` since it took it).
+    pub fn owns(&self) -> bool {
         let shared = self.state.locked();
-        (shared.owned && !shared.ended).then(|| (self.window, shared.content.clone()))
+        shared.owned && !shared.ended
+    }
+
+    /// The owner's window and what it serves, for a snapshot to take without converting: only a settled generation's
+    /// content, the snapshot a cleanup restored. None while the engine does not own CLIPBOARD, while a paste is being
+    /// served, and while a take is pending or settling, once `wait` has passed without it settling.
+    pub fn settled(&self, wait: Duration) -> Option<(Window, Arc<Payload>)> {
+        let deadline = Instant::now() + wait;
+        let mut shared = self.state.locked();
+        while (shared.take.is_some() || shared.settling) && !shared.ended {
+            let now = Instant::now();
+            if now >= deadline {
+                return None;
+            }
+            shared = self
+                .state
+                .taken
+                .wait_timeout(shared, deadline - now)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+        (shared.owned && !shared.ended && shared.active.is_none()).then(|| (self.window, shared.content.clone()))
     }
 
     /// Takes CLIPBOARD at server time `time` to serve `payload` for one paste, whose cleanup restores `restore`.
@@ -444,7 +473,7 @@ impl Serving {
                 // A clear can be stale: the request thread may have taken CLIPBOARD again since. The server knows.
                 let owner = self.conn.get_selection_owner(self.atoms.clipboard)?.reply()?.owner;
                 #[cfg(test)]
-                test_pause(&CLEAR_PAUSE_MS);
+                test_pause(&CLEAR_PAUSE_MS, &PAUSED);
                 if owner != self.window {
                     self.state.locked().owned = false;
                 }
@@ -459,48 +488,66 @@ impl Serving {
         }
     }
 
-    /// A waiting take: the generation set up, CLIPBOARD taken at the paste's timestamp and the owner read back. On
-    /// this thread, so no `SelectionClear` is handled in between.
+    /// A waiting take: CLIPBOARD taken at the paste's timestamp and the owner read back, then the outcome decided and
+    /// published in one step. On this thread, so no `SelectionClear` is handled in between. Nothing of the take is
+    /// visible until then: while it settles, `settling` holds off the snapshot's fast path, and an abandoned take never
+    /// publishes its payload at all.
     fn take(&mut self) -> Result<()> {
-        let Some(take) = self.state.locked().take.take() else {
+        let take = {
+            let mut shared = self.state.locked();
+            let take = shared.take.take();
+            shared.settling = take.is_some();
+            take
+        };
+        let Some(take) = take else {
             return Ok(());
         };
         #[cfg(test)]
-        test_pause(&TAKE_PAUSE_MS);
-        let id = {
-            let mut shared = self.state.locked();
-            let id = shared.next_id;
-            shared.next_id += 1;
-            shared.content = Arc::new(take.payload);
-            shared.active = Some(Active {
-                id,
-                owned_at: take.time,
-                dispatched: None,
-                anchor: take.anchor,
-                restore: take.restore,
-                watch: Watch::default(),
-            });
-            id
-        };
-        self.conn
-            .set_selection_owner(self.window, self.atoms.clipboard, take.time)?;
-        let owner = self.conn.get_selection_owner(self.atoms.clipboard)?.reply()?.owner;
+        test_pause(&TAKE_PAUSE_MS, &PAUSED);
+        let taken = self
+            .conn
+            .set_selection_owner(self.window, self.atoms.clipboard, take.time)
+            .map_err(anyhow::Error::from)
+            .and_then(|_| Ok(self.conn.get_selection_owner(self.atoms.clipboard)?.reply()?.owner));
+        #[cfg(test)]
+        test_pause(&VERIFY_PAUSE_MS, &VERIFY_PAUSED);
         let mut shared = self.state.locked();
-        shared.owned = owner == self.window;
-        if let Some(i) = shared.abandoned.iter().position(|t| *t == take.token) {
-            // Its caller has gone: no `Paste` will clean it up, so its cleanup runs now. Nothing was dispatched, so no
-            // conversion can be pending for it and it opens no `CurrentTime` refusal.
-            shared.abandoned.swap_remove(i);
-            close(&mut shared, id, true);
-            return Ok(());
-        }
-        let result = if shared.owned {
-            Ok(id)
-        } else {
-            shared.active = None;
-            Err("failed to acquire X11 selection".into())
+        shared.settling = false;
+        let owner = match taken {
+            Ok(owner) => owner,
+            Err(error) => {
+                drop(shared);
+                self.state.taken.notify_all();
+                return Err(error);
+            }
         };
-        shared.taken = Some((take.token, result));
+        shared.owned = owner == self.window;
+        let id = shared.next_id;
+        shared.next_id += 1;
+        let active = Active {
+            id,
+            owned_at: take.time,
+            dispatched: None,
+            anchor: take.anchor,
+            restore: take.restore,
+            watch: Watch::default(),
+        };
+        if let Some(i) = shared.abandoned.iter().position(|t| *t == take.token) {
+            // Its caller has gone and no `Paste` will clean it up: its payload is never served, and its cleanup runs
+            // now, serving its snapshot if the engine holds CLIPBOARD. Nothing was dispatched, so no conversion can be
+            // pending for it and it opens no `CurrentTime` refusal.
+            shared.abandoned.swap_remove(i);
+            if shared.owned {
+                shared.active = Some(active);
+                close(&mut shared, id, true);
+            }
+        } else if shared.owned {
+            shared.content = Arc::new(take.payload);
+            shared.active = Some(active);
+            shared.taken = Some((take.token, Ok(id)));
+        } else {
+            shared.taken = Some((take.token, Err("failed to acquire X11 selection".into())));
+        }
         drop(shared);
         self.state.taken.notify_all();
         Ok(())

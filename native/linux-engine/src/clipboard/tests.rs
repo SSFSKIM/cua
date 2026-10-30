@@ -1046,6 +1046,47 @@ fn a_take_abandoned_after_the_owner_started_it_is_cleaned_up() {
     );
 }
 
+/// A snapshot taken while an abandoned take is between taking CLIPBOARD and its outcome holds the clipboard as it was,
+/// never the abandoned paste's text, and the next paste restores that.
+#[test]
+#[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+fn a_snapshot_during_an_abandoned_take_s_verification_holds_the_clipboard_as_it_was() {
+    let _serial = serial();
+    clear_clipboard();
+    let mut c = clipboard();
+    let (conn, _) = x11rb::connect(None).unwrap();
+    let warm = c.take(text(&c, "warm"), text(&c, "original")).unwrap();
+    warm.confirmed();
+    owner::VERIFY_PAUSED.store(false, Ordering::SeqCst);
+    owner::TAKE_PAUSE_MS.store(owner::TAKE_WAIT.as_millis() as u64 + 200, Ordering::SeqCst);
+    owner::VERIFY_PAUSE_MS.store(300, Ordering::SeqCst);
+    let abandoned = c.take(text(&c, "abandoned"), text(&c, "original"));
+    owner::TAKE_PAUSE_MS.store(0, Ordering::SeqCst);
+    assert!(abandoned.is_err(), "the caller gave up");
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !owner::VERIFY_PAUSED.load(Ordering::SeqCst) {
+        assert!(Instant::now() < deadline, "the abandoned take reached its verification");
+        sleep(Duration::from_millis(1));
+    }
+    let snapshot = c.snapshot();
+    owner::VERIFY_PAUSE_MS.store(0, Ordering::SeqCst);
+    let snapshot = snapshot.unwrap();
+    assert_eq!(snapshot, text(&c, "original"), "the clipboard as it was");
+    let next = c.take(text(&c, "next"), snapshot).unwrap();
+    next.confirmed();
+    sleep(Duration::from_millis(50));
+    assert_eq!(
+        text_of(convert(
+            "UTF8_STRING",
+            Asking {
+                time: server_time(&conn),
+                ..Default::default()
+            }
+        )),
+        "original"
+    );
+}
+
 /// Refusal by timestamp has no expiry: a conversion stamped in the first paste's window stays refused after more
 /// pastes than the closed generations kept.
 #[test]

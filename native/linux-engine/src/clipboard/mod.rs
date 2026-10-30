@@ -12,6 +12,7 @@
 pub mod handles;
 mod lock;
 mod owner;
+mod quarantine;
 mod reader;
 pub mod serving;
 
@@ -21,7 +22,7 @@ pub(crate) mod tests;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use x11rb::connection::Connection;
 use x11rb::protocol::xfixes::ConnectionExt as _;
 use x11rb::protocol::xproto::{AtomEnum, ConnectionExt as _, CreateWindowAux, EventMask, Window, WindowClass};
@@ -72,9 +73,11 @@ pub struct Atoms {
     pub sky_lock: Atom,
     /// The owner thread's wake-up message.
     pub wake: Atom,
+    /// The root window's record of an open unconfirmed-paste window (`quarantine.rs`).
+    pub quarantine: Atom,
 }
 
-const ATOM_NAMES: [&str; 10] = [
+const ATOM_NAMES: [&str; 11] = [
     "CLIPBOARD",
     "TARGETS",
     "INCR",
@@ -85,6 +88,7 @@ const ATOM_NAMES: [&str; 10] = [
     "CUA_CLIPBOARD_LOCK",
     "SKY_CLIPBOARD_LOCK",
     "CUA_CLIPBOARD_WAKE",
+    "CUA_CLIPBOARD_QUARANTINE",
 ];
 
 impl Atoms {
@@ -108,6 +112,7 @@ impl Atoms {
             cua_lock,
             sky_lock,
             wake,
+            quarantine,
         ] = atoms;
         Ok(Atoms {
             clipboard,
@@ -120,6 +125,7 @@ impl Atoms {
             cua_lock,
             sky_lock,
             wake,
+            quarantine,
         })
     }
 
@@ -142,13 +148,22 @@ fn input_only(conn: &RustConnection, root: Window, mask: EventMask) -> Result<Wi
     Ok(window)
 }
 
+/// CLIPBOARD's contents as a snapshot read them, with the owner generation they were read at: a take that restores
+/// them refuses if CLIPBOARD's owner has been set since (`Owner::take`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Snapshot {
+    pub payload: Payload,
+    generation: u64,
+}
+
 pub struct Clipboard {
     conn: Arc<RustConnection>,
     atoms: Atoms,
     reader: reader::Reader,
     lock_window: Window,
-    /// Started on the first paste.
+    /// Started on the first snapshot or paste.
     owner: Option<owner::Owner>,
+    quarantine: Arc<quarantine::Quarantine>,
 }
 
 impl Clipboard {
@@ -164,12 +179,14 @@ impl Clipboard {
             .context("clipboard requires the X XFIXES extension")?;
         let lock_window = input_only(&conn, root, EventMask::NO_EVENT)?;
         let reader = reader::Reader::new(conn.clone(), root, atoms)?;
+        let quarantine = Arc::new(quarantine::Quarantine::new(conn.clone(), root, atoms.quarantine));
         Ok(Clipboard {
             conn,
             atoms,
             reader,
             lock_window,
             owner: None,
+            quarantine,
         })
     }
 
@@ -212,21 +229,32 @@ impl Clipboard {
     }
 
     /// The current CLIPBOARD contents within the snapshot bounds: empty when it has no owner; what the engine's own
-    /// owner serves when that is the owner.
-    pub fn snapshot(&mut self) -> Result<Payload> {
+    /// owner serves when that is the owner. With the owner generation they were read at, unchanged through the read.
+    pub fn snapshot(&mut self) -> Result<Snapshot> {
         self.snapshot_within(MAX_SNAPSHOT_BYTES)
     }
 
-    fn snapshot_within(&mut self, cap: usize) -> Result<Payload> {
+    fn snapshot_within(&mut self, cap: usize) -> Result<Snapshot> {
+        let generation = self.owner()?.generation()?;
         // A take still settling (one its caller gave up on) is waited for as long as an owner may take to answer
         // TARGETS; the X conversion is the fallback, and it waits on the same thread.
-        let ours = self.owner.as_ref().and_then(|owner| owner.settled(TARGETS_WAIT));
-        if let Some((window, payload)) = ours
-            && self.owner_window()? == window
-        {
-            return Ok((*payload).clone());
+        let ours = self.owner()?.settled(TARGETS_WAIT);
+        let payload = match ours {
+            Some((window, payload)) if self.owner_window()? == window => (*payload).clone(),
+            _ => self.reader.snapshot(cap)?,
+        };
+        if self.owner()?.generation()? != generation {
+            bail!("clipboard changed while its contents were being captured");
         }
-        self.reader.snapshot(cap)
+        Ok(Snapshot { payload, generation })
+    }
+
+    /// The owner, started on first use (and again if its thread has ended).
+    fn owner(&mut self) -> Result<&owner::Owner> {
+        if self.owner.as_ref().is_none_or(|owner| !owner.alive()) {
+            self.owner = Some(owner::Owner::start(self.atoms, self.quarantine.clone())?);
+        }
+        Ok(self.owner.as_ref().expect("started above"))
     }
 
     /// The server's time now.
@@ -235,8 +263,9 @@ impl Clipboard {
     }
 
     /// Becomes CLIPBOARD's owner serving `payload` for one paste; the returned paste's cleanup switches what is
-    /// served to `restore` while the engine still owns CLIPBOARD.
-    pub fn take(&mut self, payload: Payload, restore: Payload) -> Result<Paste> {
+    /// served to `restore`'s contents while the engine still owns CLIPBOARD. Refused, with CLIPBOARD untouched, when
+    /// its owner has been set since `restore` was read.
+    pub fn take(&mut self, payload: Payload, restore: Snapshot) -> Result<Paste> {
         // Taken before the server's time is read, so the cleanup's estimate of the server's time is never early.
         let anchor = std::time::Instant::now();
         let time = self.reader.server_time()?;
@@ -247,23 +276,39 @@ impl Clipboard {
     fn take_from(
         &mut self,
         payload: Payload,
-        restore: Payload,
+        restore: Snapshot,
         time: u32,
         anchor: std::time::Instant,
     ) -> Result<Paste> {
-        if self.owner.as_ref().is_none_or(|owner| !owner.alive()) {
-            self.owner = Some(owner::Owner::start(self.atoms)?);
-        }
-        self.owner
-            .as_ref()
-            .expect("started above")
-            .take(payload, restore, time, anchor)
+        self.owner()?
+            .take(payload, restore.payload, restore.generation, time, anchor)
     }
 
-    /// How long the `CurrentTime` refusal of an earlier unconfirmed paste still runs, if one does (Decision Log,
-    /// M2.1): while it runs, a new paste is refused before dispatch.
-    pub fn current_time_refusal(&self) -> Option<Duration> {
-        self.owner.as_ref().and_then(|owner| owner.current_time_refusal())
+    /// How long an unconfirmed paste's window still runs, if one does: this engine's own, or any cua engine's on the
+    /// display, from the root window's record (`quarantine.rs`). Read under the clipboard lock. While it runs, nothing
+    /// may change what CLIPBOARD serves: a paste, a `clipboard_write` and a `clipboard_read`'s Copy are refused.
+    pub fn quarantine(&mut self) -> Result<Option<Duration>> {
+        let own = self.owner.as_ref().and_then(|owner| owner.current_time_refusal());
+        let display = match self.quarantine.read()? {
+            Some(record) => quarantine::remaining(record.end, self.reader.server_time()?),
+            None => None,
+        };
+        Ok(own.max(display))
+    }
+
+    /// [`Clipboard::take`] restoring `restore`, read as of now: for tests whose restore is of their choosing.
+    #[cfg(test)]
+    pub fn take_restoring(&mut self, payload: Payload, restore: Payload) -> Result<Paste> {
+        let restore = self.as_of_now(restore);
+        self.take(payload, restore)
+    }
+
+    /// A snapshot of `payload` at the owner generation now, for tests that take CLIPBOARD with a restore of their
+    /// choosing.
+    #[cfg(test)]
+    pub fn as_of_now(&mut self, payload: Payload) -> Snapshot {
+        let generation = self.owner().unwrap().generation().unwrap();
+        Snapshot { payload, generation }
     }
 
     /// Whether the engine owns CLIPBOARD now (it has received no `SelectionClear`).

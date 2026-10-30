@@ -40,8 +40,33 @@ struct Engine {
     next_id: u64,
 }
 
+/// Removes the display's record of an unconfirmed paste's window (the root window's `CUA_CLIPBOARD_QUARANTINE`), which
+/// outlives the engine that wrote it, so a test starts with no window open from an earlier test.
+fn clear_display_record() {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::ConnectionExt;
+    let (conn, screen) = x11rb::connect(None).expect("an X connection");
+    let root = conn.setup().roots[screen].root;
+    let atom = conn
+        .intern_atom(false, b"CUA_CLIPBOARD_QUARANTINE")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    conn.delete_property(root, atom).unwrap();
+    conn.flush().unwrap();
+    conn.get_input_focus().unwrap().reply().unwrap();
+}
+
 impl Engine {
+    /// An engine, on a display with no unconfirmed paste's window open.
     fn start() -> Engine {
+        clear_display_record();
+        Engine::spawn()
+    }
+
+    /// An engine, leaving any window on the display open.
+    fn spawn() -> Engine {
         let bin = engine_bin();
         let mut child = Command::new(&bin)
             .arg("server")
@@ -1108,5 +1133,68 @@ fn type_characters_types_the_layout_s_characters_and_refuses_the_rest_before_typ
             .unwrap_err()
             .contains("missing field `window`"),
         "a window is required"
+    );
+}
+
+/// The M2 branch review's sequence, now failing safe: engine A's paste is unconfirmed with its target unserved, so its
+/// window opens; engine B, a second process with no record of its own, is refused its Copy and its paste while the
+/// window runs, and still after A has exited. A's target's late `CurrentTime` conversion never gets B's text.
+#[test]
+fn an_unconfirmed_paste_s_window_refuses_every_engine_on_the_display_and_outlives_its_engine() {
+    const SENTENCE: &str =
+        "a previous paste could not be confirmed and may still be read; nothing was sent; retry after ";
+    let mut a = Engine::start();
+    // A list, whose application never converts CLIPBOARD on Ctrl+V: the paste's target never asks for it.
+    let window = Window::open_with("", "q", &["--list", "--column=item", "one", "two", "--no-buttons"]);
+    let id = poll("the window is listed", || {
+        let windows = a.request("list_windows", json!({})).unwrap();
+        windows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["title"] == json!(window.title))
+            .and_then(|w| w["id"].as_u64())
+    });
+    a.request("activate_window", json!({"window": {"id": id}})).unwrap();
+    poll("an element of the window has the focus", || {
+        let state = a
+            .request(
+                "get_window_state",
+                json!({"window": {"id": id}, "include_screenshot": false}),
+            )
+            .ok()?;
+        state["ax_tree"].to_string().contains(r#""focused""#).then_some(())
+    });
+    assert_eq!(
+        a.request("type_text", json!({"window": {"id": id}, "text": "paste A"})),
+        Err("Paste was sent once and could not be confirmed; read the field before retrying".to_string()),
+    );
+    let refused = |answer: Result<Value, String>, what: &str| {
+        let sentence = answer.expect_err(what);
+        assert!(
+            sentence.starts_with(SENTENCE) && sentence.ends_with(" s"),
+            "{what}: {sentence}"
+        );
+    };
+    let mut b = Engine::spawn();
+    refused(
+        b.request("clipboard_read", json!({"window": {"id": id}})),
+        "B's Copy while A's window runs",
+    );
+    refused(
+        b.request("type_text", json!({"window": {"id": id}, "text": "paste B"})),
+        "B's paste while A's window runs",
+    );
+    assert_ne!(read_clipboard_text().as_deref(), Some("paste B"));
+    // A exits mid-window, its CLIPBOARD ownership with it; the window is the display's, and stays.
+    drop(a);
+    refused(
+        b.request("type_text", json!({"window": {"id": id}, "text": "paste B"})),
+        "B's paste after A has gone",
+    );
+    assert_ne!(
+        read_clipboard_text().as_deref(),
+        Some("paste B"),
+        "A's target's late CurrentTime conversion never gets B's text"
     );
 }

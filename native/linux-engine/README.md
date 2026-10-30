@@ -94,6 +94,14 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   the paste instead, and after a `SelectionClear` it does nothing. Once cleaned up, a conversion stamped from the
   paste's ownership to its cleanup (or with the Ctrl+V's own time), and a `CurrentTime` one within 10 s of a paste
   that did not confirm, is refused, so a late requestor never receives the restored snapshot as the paste.
+  The take is checked against the snapshot atomically: under a server grab, the owner thread counts every XFIXES
+  report of CLIPBOARD's owner being set (re-assertions by the same owner included) and refuses, leaving CLIPBOARD
+  alone, if any came after the snapshot.
+- **The window after an unconfirmed paste** (`clipboard/quarantine.rs`) is the display's, not the engine's: a root
+  window property, `CUA_CLIPBOARD_QUARANTINE`, holds its end in server time and the target's X client, written by
+  the cleanup and read before a paste or a Copy, under the lock. While it runs, every cua engine on the display
+  refuses to paste, `clipboard_write` or Copy, also after the engine that opened it has exited. A vendor engine does
+  not read it.
 - **`clipboard_read`** (`engine/clipboard.rs`, `copy.rs`): under the lock, the window's focused element (the first
   focused node in a post-order walk of its frame, siblings fetched together) copies by the vendor's route choice:
   `EditableText.CopyText` of its one selection, else its context menu's Copy item; then CLIPBOARD's new contents are

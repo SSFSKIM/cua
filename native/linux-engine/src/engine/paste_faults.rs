@@ -73,8 +73,27 @@ fn poll<T>(what: &str, mut probe: impl FnMut() -> Option<T>) -> T {
     }
 }
 
-/// An engine and a focused yad text window holding `TEXT`, the caret at its end.
+/// Removes the display's record of an unconfirmed paste's window, which outlives the engine that wrote it, so a test
+/// starts with none open from an earlier one.
+fn clear_display_record() {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::ConnectionExt as _;
+    let (conn, screen) = x11rb::connect(None).unwrap();
+    let root = conn.setup().roots[screen].root;
+    let atom = conn
+        .intern_atom(false, b"CUA_CLIPBOARD_QUARANTINE")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    conn.delete_property(root, atom).unwrap();
+    conn.get_input_focus().unwrap().reply().unwrap();
+}
+
+/// An engine and a focused yad text window holding `TEXT`, the caret at its end, on a display with no unconfirmed
+/// paste's window open.
 fn setup(tag: &str) -> (Engine, Yad, u64) {
+    clear_display_record();
     let title = format!("cua-engine-fault-{tag}-{}", std::process::id());
     let file = std::env::temp_dir().join(format!("{title}.txt"));
     std::fs::write(&file, TEXT).unwrap();

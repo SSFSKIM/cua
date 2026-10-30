@@ -28,6 +28,11 @@ impl Engine {
         let info = self.x.get_window(input.window.id)?;
         let clipboard = self.clipboard()?;
         let lock = clipboard.lock()?;
+        // The application's Copy changes what CLIPBOARD serves, and the application serves it, so no refusal of the
+        // engine's could reach a late conversion of an unconfirmed paste: while one's window runs, no Copy is made.
+        if let Some(wait) = clipboard.quarantine()? {
+            bail!(crate::paste::previous_unconfirmed(wait));
+        }
         let before = clipboard.generation()?;
         let copied = self.with_bus(|bus, x| {
             let frame = match atspi::associate(bus, x, &info)? {
@@ -67,10 +72,10 @@ impl Engine {
             bail!("Copy cleared the clipboard");
         }
         let snapshot = clipboard.snapshot()?;
-        if snapshot.is_empty() {
+        if snapshot.payload.is_empty() {
             bail!("clipboard has no readable data formats");
         }
-        let handle = self.handles.store(snapshot)?;
+        let handle = self.handles.store(snapshot.payload)?;
         drop(lock);
         Ok(json!(handle))
     }

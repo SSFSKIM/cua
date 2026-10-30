@@ -18,13 +18,15 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, anyhow, bail};
 use x11rb::connection::{Connection, RequestConnection};
 use x11rb::protocol::Event;
+use x11rb::protocol::xfixes::{ConnectionExt as _, SelectionEventMask};
 use x11rb::protocol::xproto::{
     AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConnectionExt as _, EventMask, PropMode, Property,
     SELECTION_NOTIFY_EVENT, SelectionNotifyEvent, SelectionRequestEvent, Window,
 };
 use x11rb::rust_connection::RustConnection;
 
-use super::serving::{Atom, Closed, Format, Payload, Refusals, chunk_size};
+use super::quarantine::{Quarantine, Record};
+use super::serving::{Atom, CURRENT_TIME_REFUSAL, Closed, Format, Payload, Refusals, chunk_size};
 use super::{Atoms, TRANSFER_GAP, TRANSFER_WAIT, input_only};
 
 /// The tests' interleavings: a pause in the `SelectionClear` handling between its check and its conclusion, a pause
@@ -56,6 +58,8 @@ fn test_pause(pause: &std::sync::atomic::AtomicU64, signal: &std::sync::atomic::
 const POLL: Duration = Duration::from_millis(2);
 /// How long the request thread waits for the owner thread to take CLIPBOARD (shorter in tests, which wait it out).
 pub(super) const TAKE_WAIT: Duration = Duration::from_secs(if cfg!(test) { 1 } else { 5 });
+/// A take refused because CLIPBOARD's owner was set after the snapshot it would restore.
+pub const CHANGED_SINCE: &str = "the clipboard changed after it was read";
 /// How many requests one paste's [`Watch`] lists; its counts go on.
 const WATCH_LOG: usize = 256;
 
@@ -126,6 +130,8 @@ struct Active {
     anchor: Instant,
     /// What the cleanup serves in the paste's place.
     restore: Arc<Payload>,
+    /// The target's X client, once the Ctrl+V was sent, for the display's record of a window it opens.
+    client: Option<u32>,
     watch: Watch,
 }
 
@@ -138,6 +144,8 @@ struct Take {
     restore: Arc<Payload>,
     time: u32,
     anchor: Instant,
+    /// The owner generation the snapshot was taken at: the take refuses if CLIPBOARD's owner has been set since.
+    generation: u64,
 }
 
 struct Shared {
@@ -157,6 +165,9 @@ struct Shared {
     abandoned: Vec<u64>,
     /// The owner thread has dequeued a take and not yet published its outcome.
     settling: bool,
+    /// A request for the owner generation, by token, and its answer.
+    sync: Option<u64>,
+    synced: Option<(u64, u64)>,
     /// The thread ends at its next event.
     stop: bool,
     /// The thread has ended (stopped, or its connection broke).
@@ -187,17 +198,28 @@ pub struct Owner {
     window: Window,
     atoms: Atoms,
     state: Arc<State>,
+    /// Where a paste's cleanup records the window it opens, for every cua engine on the display.
+    quarantine: Arc<Quarantine>,
     thread: Option<JoinHandle<()>>,
 }
 
 impl Owner {
     /// The owner's connection, window and thread; it owns nothing until [`Owner::take`].
-    pub fn start(atoms: Atoms) -> Result<Owner> {
+    pub fn start(atoms: Atoms, quarantine: Arc<Quarantine>) -> Result<Owner> {
         let (conn, screen) = x11rb::connect(None).context("failed to connect to the X server")?;
         let conn = Arc::new(conn);
         let root = conn.setup().roots[screen].root;
         let window = input_only(&conn, root, EventMask::NO_EVENT)?;
         let chunk = chunk_size(conn.maximum_request_bytes())?;
+        // Every setting of CLIPBOARD's owner is counted on this connection: the owner generation a take checks.
+        conn.xfixes_query_version(1, 0)?
+            .reply()
+            .context("clipboard requires the X XFIXES extension")?;
+        let mask = SelectionEventMask::SET_SELECTION_OWNER
+            | SelectionEventMask::SELECTION_WINDOW_DESTROY
+            | SelectionEventMask::SELECTION_CLIENT_CLOSE;
+        conn.xfixes_select_selection_input(window, atoms.clipboard, mask)?
+            .check()?;
         let state = Arc::new(State {
             shared: Mutex::new(Shared {
                 content: Arc::new(Payload::default()),
@@ -210,6 +232,8 @@ impl Owner {
                 next_token: 1,
                 abandoned: Vec::new(),
                 settling: false,
+                sync: None,
+                synced: None,
                 stop: false,
                 ended: false,
             }),
@@ -222,6 +246,7 @@ impl Owner {
             state: state.clone(),
             chunk,
             transfers: Vec::new(),
+            generation: 0,
         };
         let thread = std::thread::Builder::new()
             .name("clipboard owner".into())
@@ -232,6 +257,7 @@ impl Owner {
             window,
             atoms,
             state,
+            quarantine,
             thread: Some(thread),
         })
     }
@@ -275,9 +301,56 @@ impl Owner {
         Some(until - now)
     }
 
+    /// The owner generation now: how many times CLIPBOARD's owner has been set, by anyone, as the owner thread has
+    /// counted up to a round trip made now. Re-assertions by the same owner count, as XFIXES reports each.
+    pub fn generation(&self) -> Result<u64> {
+        let token = {
+            let mut shared = self.state.locked();
+            if shared.ended {
+                bail!("clipboard owner stopped");
+            }
+            let token = shared.next_token;
+            shared.next_token += 1;
+            shared.sync = Some(token);
+            token
+        };
+        wake(&self.conn, self.window, &self.atoms);
+        let deadline = Instant::now() + TAKE_WAIT;
+        let mut shared = self.state.locked();
+        loop {
+            if let Some((for_token, generation)) = shared.synced.take()
+                && for_token == token
+            {
+                return Ok(generation);
+            }
+            if shared.ended {
+                bail!("clipboard owner stopped");
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                shared.sync = None;
+                bail!("clipboard owner did not answer");
+            }
+            shared = self
+                .state
+                .taken
+                .wait_timeout(shared, deadline - now)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+    }
+
     /// Takes CLIPBOARD at server time `time` to serve `payload` for one paste, whose cleanup restores `restore`.
     /// `anchor` is a moment no later than when `time` was read. The owner thread takes it and verifies it.
-    pub fn take(&self, payload: Payload, restore: Payload, time: u32, anchor: Instant) -> Result<Paste> {
+    /// The take is refused, with CLIPBOARD left as it is, when its owner has been set since `generation`.
+    pub fn take(
+        &self,
+        payload: Payload,
+        restore: Payload,
+        generation: u64,
+        time: u32,
+        anchor: Instant,
+    ) -> Result<Paste> {
         let token = {
             let mut shared = self.state.locked();
             if shared.ended {
@@ -291,6 +364,7 @@ impl Owner {
                 restore: Arc::new(restore),
                 time,
                 anchor,
+                generation,
             });
             shared.taken = None;
             token
@@ -327,6 +401,7 @@ impl Owner {
         };
         let id = taken.map_err(|e| anyhow!(e))?;
         Ok(Paste {
+            quarantine: self.quarantine.clone(),
             state: self.state.clone(),
             id,
             done: false,
@@ -347,6 +422,7 @@ impl Drop for Owner {
 /// One paste's serving generation. Dropping it without [`Paste::confirmed`] or [`Paste::settled`] is the unconfirmed
 /// cleanup, which opens the `CurrentTime` refusal once its Ctrl+V was recorded as sent.
 pub struct Paste {
+    quarantine: Arc<Quarantine>,
     state: Arc<State>,
     id: u64,
     /// The cleanup has run; it runs once.
@@ -354,10 +430,12 @@ pub struct Paste {
 }
 
 impl Paste {
-    /// Records the synthetic Ctrl+V's timestamp, the generation's key.
-    pub fn dispatched(&self, time: u32) {
+    /// Records the synthetic Ctrl+V's timestamp, the generation's key, and the target's X client (its resource-id
+    /// base), which the display's record of a window names.
+    pub fn dispatched(&self, time: u32, client: u32) {
         if let Some(active) = self.state.locked().active.as_mut().filter(|a| a.id == self.id) {
             active.dispatched = Some(time);
+            active.client = Some(client);
         }
     }
 
@@ -390,9 +468,14 @@ impl Paste {
 
     /// The guarded cleanup (Design, The cleanup): the generation closed, and the snapshot served in its place while
     /// the engine still owns CLIPBOARD; nothing else after a `SelectionClear`.
+    /// A window it opens is recorded on the display too, so no cua engine serves anything new while it runs; the
+    /// caller holds the clipboard lock until after the cleanup.
     fn cleanup(&mut self, ending: Ending) {
         if !std::mem::replace(&mut self.done, true) {
-            close(&mut self.state.locked(), self.id, ending);
+            let opened = close(&mut self.state.locked(), self.id, ending);
+            if let Some(record) = opened {
+                self.quarantine.open(record);
+            }
         }
     }
 }
@@ -407,11 +490,9 @@ enum Ending {
 }
 
 /// Closes paste `id`, if it is the one being served: its generation's refusal recorded, and its snapshot served in its
-/// place while the engine still owns CLIPBOARD.
-fn close(shared: &mut Shared, id: u64, ending: Ending) {
-    let Some(active) = shared.active.take_if(|a| a.id == id) else {
-        return;
-    };
+/// place while the engine still owns CLIPBOARD. The window it opens, if it opens one, for the display's record.
+fn close(shared: &mut Shared, id: u64, ending: Ending) -> Option<Record> {
+    let active = shared.active.take_if(|a| a.id == id)?;
     let pending = ending == Ending::Unconfirmed && active.dispatched.is_some();
     // The server's time now, estimated never earlier than it is: the anchor was taken no later than the ownership
     // timestamp was read, so the time elapsed since it is at least the server's. One millisecond more covers a request
@@ -423,6 +504,10 @@ fn close(shared: &mut Shared, id: u64, ending: Ending) {
     if shared.owned {
         shared.content = active.restore;
     }
+    pending.then(|| Record {
+        end: cleaned_at.wrapping_add(CURRENT_TIME_REFUSAL.as_millis() as u32),
+        client: active.client.unwrap_or(0),
+    })
 }
 
 impl Drop for Paste {
@@ -454,6 +539,8 @@ struct Serving {
     state: Arc<State>,
     chunk: usize,
     transfers: Vec<Transfer>,
+    /// The settings of CLIPBOARD's owner XFIXES has reported on this connection.
+    generation: u64,
 }
 
 impl Serving {
@@ -479,6 +566,7 @@ impl Serving {
                 Some(event) => self.handle(event)?,
                 None => sleep(POLL),
             }
+            self.sync()?;
             self.take()?;
             self.expire(Instant::now());
             self.conn.flush()?;
@@ -498,6 +586,10 @@ impl Serving {
                 }
                 Ok(())
             }
+            Event::XfixesSelectionNotify(e) if e.selection == self.atoms.clipboard => {
+                self.generation += 1;
+                Ok(())
+            }
             Event::PropertyNotify(e) if e.state == Property::DELETE => self.acknowledged(e.window, e.atom),
             Event::DestroyNotify(e) => {
                 self.drop_where(|t| t.requestor == e.window);
@@ -505,6 +597,64 @@ impl Serving {
             }
             _ => Ok(()),
         }
+    }
+
+    /// Every event queued before a round trip made now, handled; so the owner generation counts every setting of
+    /// CLIPBOARD's owner the server made before now.
+    fn catch_up(&mut self) -> Result<()> {
+        self.conn.get_input_focus()?.reply()?;
+        while let Some(event) = self.conn.poll_for_event()? {
+            self.handle(event)?;
+        }
+        Ok(())
+    }
+
+    /// A waiting request for the owner generation.
+    fn sync(&mut self) -> Result<()> {
+        let Some(token) = self.state.locked().sync.take() else {
+            return Ok(());
+        };
+        self.catch_up()?;
+        self.state.locked().synced = Some((token, self.generation));
+        self.state.taken.notify_all();
+        Ok(())
+    }
+
+    /// The take's acquisition, atomic with its check: under a server grab no other client can set CLIPBOARD's owner,
+    /// so after a round trip that delivers every earlier notification, an unchanged generation means CLIPBOARD is
+    /// still what the snapshot read. The owner is set and read back inside the grab. Events that arrive meanwhile are
+    /// counted then and handled after the grab is released (a `SelectionClear` check makes a round trip). The
+    /// answer: the owner read back, or None when the generation had moved.
+    fn acquire(&mut self, take: &Take) -> Result<Option<Window>> {
+        self.conn.grab_server()?;
+        let inside = (|| -> Result<(Option<Window>, Vec<Event>)> {
+            self.conn.get_input_focus()?.reply()?;
+            let mut later = Vec::new();
+            while let Some(event) = self.conn.poll_for_event()? {
+                if let Event::XfixesSelectionNotify(e) = &event
+                    && e.selection == self.atoms.clipboard
+                {
+                    self.generation += 1;
+                } else {
+                    later.push(event);
+                }
+            }
+            if self.generation != take.generation {
+                return Ok((None, later));
+            }
+            self.conn
+                .set_selection_owner(self.window, self.atoms.clipboard, take.time)?;
+            let owner = self.conn.get_selection_owner(self.atoms.clipboard)?.reply()?.owner;
+            Ok((Some(owner), later))
+        })();
+        let ungrab = self.conn.ungrab_server().map_err(anyhow::Error::from);
+        self.conn.flush()?;
+        let (owner, later) = inside?;
+        ungrab?;
+        for event in later {
+            self.handle(event)?;
+        }
+        Ok(owner)
     }
 
     /// A waiting take: CLIPBOARD taken at the paste's timestamp and the owner read back, then the outcome decided and
@@ -523,17 +673,25 @@ impl Serving {
         };
         #[cfg(test)]
         test_pause(&TAKE_PAUSE_MS, &PAUSED);
-        let taken = self
-            .conn
-            .set_selection_owner(self.window, self.atoms.clipboard, take.time)
-            .map_err(anyhow::Error::from)
-            .and_then(|_| Ok(self.conn.get_selection_owner(self.atoms.clipboard)?.reply()?.owner));
+        let taken = self.acquire(&take);
         #[cfg(test)]
         test_pause(&VERIFY_PAUSE_MS, &VERIFY_PAUSED);
         let mut shared = self.state.locked();
         shared.settling = false;
         let owner = match taken {
-            Ok(owner) => owner,
+            Ok(Some(owner)) => owner,
+            Ok(None) => {
+                // CLIPBOARD's owner was set after the snapshot: the engine's ownership is untouched, and so is the
+                // newer owner's. An abandoned take needs nothing more.
+                if let Some(i) = shared.abandoned.iter().position(|t| *t == take.token) {
+                    shared.abandoned.swap_remove(i);
+                } else {
+                    shared.taken = Some((take.token, Err(CHANGED_SINCE.into())));
+                }
+                drop(shared);
+                self.state.taken.notify_all();
+                return Ok(());
+            }
             Err(error) => {
                 drop(shared);
                 self.state.taken.notify_all();
@@ -549,6 +707,7 @@ impl Serving {
             dispatched: None,
             anchor: take.anchor,
             restore: take.restore,
+            client: None,
             watch: Watch::default(),
         };
         if let Some(i) = shared.abandoned.iter().position(|t| *t == take.token) {
@@ -558,7 +717,7 @@ impl Serving {
             shared.abandoned.swap_remove(i);
             if shared.owned {
                 shared.active = Some(active);
-                close(&mut shared, id, Ending::Settled);
+                let _ = close(&mut shared, id, Ending::Settled);
             }
         } else if shared.owned {
             shared.content = Arc::new(take.payload);

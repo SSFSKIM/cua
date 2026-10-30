@@ -71,11 +71,15 @@ fn clipboard_owner(conn: &RustConnection) -> Window {
     conn.get_selection_owner(clipboard).unwrap().reply().unwrap().owner
 }
 
-/// Gives CLIPBOARD up if anyone holds it, so each test starts from an empty clipboard.
+/// Gives CLIPBOARD up if anyone holds it, and removes the display's record of an unconfirmed paste's window, so each
+/// test starts from an empty clipboard with no window open.
 fn clear_clipboard() {
     let (conn, _) = x11rb::connect(None).unwrap();
     let clipboard = intern(&conn, "CLIPBOARD");
     conn.set_selection_owner(x11rb::NONE, clipboard, x11rb::CURRENT_TIME)
+        .unwrap();
+    let root = conn.setup().roots[0].root;
+    conn.delete_property(root, intern(&conn, "CUA_CLIPBOARD_QUARANTINE"))
         .unwrap();
     conn.sync().unwrap();
 }
@@ -218,6 +222,9 @@ enum Behaviour {
 struct TestOwner {
     window: Window,
     stop: Arc<AtomicBool>,
+    /// Set to make the owner set CLIPBOARD's owner to its own window again, as an application copying anew does;
+    /// cleared once it has.
+    reassert: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -243,10 +250,18 @@ impl TestOwner {
         );
         let stop = Arc::new(AtomicBool::new(false));
         let stopping = stop.clone();
+        let reassert = Arc::new(AtomicBool::new(false));
+        let reasserting = reassert.clone();
         let thread = std::thread::spawn(move || {
             // (requestor, property, data, offset, chunks sent)
             let mut transfers: Vec<(Window, Atom, Atom, Vec<u8>, usize, usize)> = Vec::new();
             while !stopping.load(Ordering::SeqCst) {
+                if reasserting.load(Ordering::SeqCst) {
+                    conn.set_selection_owner(window, clipboard, x11rb::CURRENT_TIME)
+                        .unwrap();
+                    conn.sync().unwrap();
+                    reasserting.store(false, Ordering::SeqCst);
+                }
                 let Some(event) = conn.poll_for_event().unwrap() else {
                     sleep(Duration::from_millis(1));
                     continue;
@@ -327,7 +342,18 @@ impl TestOwner {
         TestOwner {
             window,
             stop,
+            reassert,
             thread: Some(thread),
+        }
+    }
+
+    /// Copies anew: CLIPBOARD's owner set to the same window again.
+    fn copy_again(&self) {
+        self.reassert.store(true, Ordering::SeqCst);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while self.reassert.load(Ordering::SeqCst) {
+            assert!(Instant::now() < deadline, "the owner set CLIPBOARD again");
+            sleep(Duration::from_millis(1));
         }
     }
 }
@@ -358,7 +384,9 @@ fn the_owner_serves_text_in_every_format_and_targets() {
     let _serial = serial();
     clear_clipboard();
     let mut c = clipboard();
-    let paste = c.take(text(&c, "cua171 안녕 e\u{301} 🙂"), Payload::default()).unwrap();
+    let paste = c
+        .take_restoring(text(&c, "cua171 안녕 e\u{301} 🙂"), Payload::default())
+        .unwrap();
     assert!(c.owns());
     for target in ["UTF8_STRING", "text/plain", "text/plain;charset=utf-8"] {
         match convert(target, Asking::default()) {
@@ -400,7 +428,7 @@ fn the_owner_serves_text_in_every_format_and_targets() {
         "TARGETS and refusals are not served: {watch:?}"
     );
     paste.confirmed();
-    let later = c.take(text(&c, "café"), Payload::default()).unwrap();
+    let later = c.take_restoring(text(&c, "café"), Payload::default()).unwrap();
     match convert("STRING", Asking::default()) {
         Answer::Data { kind, bytes, .. } => assert_eq!((kind.as_str(), bytes.as_slice()), ("STRING", &b"caf\xe9"[..])),
         other => panic!("{other:?}"),
@@ -415,7 +443,7 @@ fn the_owner_serves_a_large_payload_through_incr() {
     clear_clipboard();
     let mut c = clipboard();
     let big: String = (0..300_000).map(|i| char::from(b'a' + (i % 26) as u8)).collect();
-    let paste = c.take(text(&c, &big), Payload::default()).unwrap();
+    let paste = c.take_restoring(text(&c, &big), Payload::default()).unwrap();
     match convert("UTF8_STRING", Asking::default()) {
         Answer::Data {
             kind,
@@ -446,7 +474,7 @@ fn a_requestor_that_stops_acknowledging_incr_chunks_is_dropped_within_the_bounds
     clear_clipboard();
     let mut c = clipboard();
     let big = "x".repeat(200_000);
-    let paste = c.take(text(&c, &big), Payload::default()).unwrap();
+    let paste = c.take_restoring(text(&c, &big), Payload::default()).unwrap();
     let started = Instant::now();
     let stalled = std::thread::spawn(|| {
         convert(
@@ -491,9 +519,9 @@ fn a_late_conversion_never_receives_the_restored_snapshot_as_the_paste() {
     let mut c = clipboard();
     let (conn, _) = x11rb::connect(None).unwrap();
     let restore = text(&c, "the person's clipboard");
-    let paste = c.take(text(&c, "the pasted text"), restore).unwrap();
+    let paste = c.take_restoring(text(&c, "the pasted text"), restore).unwrap();
     let ctrl_v = server_time(&conn);
-    paste.dispatched(ctrl_v);
+    paste.dispatched(ctrl_v, 0);
     // The requestor delays its ConvertSelection past the 500 ms start bound; the paste ends unconfirmed meanwhile.
     sleep(Duration::from_millis(600));
     assert_eq!(paste.watch().requests, 0);
@@ -535,22 +563,22 @@ fn only_an_unconfirmed_paste_that_was_sent_opens_the_current_time_refusal() {
     clear_clipboard();
     let mut c = clipboard();
     let (conn, _) = x11rb::connect(None).unwrap();
-    drop(c.take(text(&c, "never sent"), text(&c, "before")).unwrap());
-    assert_eq!(c.current_time_refusal(), None);
+    drop(c.take_restoring(text(&c, "never sent"), text(&c, "before")).unwrap());
+    assert_eq!(c.quarantine().unwrap(), None);
     assert_eq!(text_of(convert("UTF8_STRING", Asking::default())), "before");
 
-    let served = c.take(text(&c, "served"), text(&c, "before")).unwrap();
-    served.dispatched(server_time(&conn));
+    let served = c.take_restoring(text(&c, "served"), text(&c, "before")).unwrap();
+    served.dispatched(server_time(&conn), 0);
     served.settled();
-    assert_eq!(c.current_time_refusal(), None);
+    assert_eq!(c.quarantine().unwrap(), None);
     assert_eq!(text_of(convert("UTF8_STRING", Asking::default())), "before");
 
-    let unconfirmed = c.take(text(&c, "unconfirmed"), text(&c, "before")).unwrap();
-    unconfirmed.dispatched(server_time(&conn));
+    let unconfirmed = c.take_restoring(text(&c, "unconfirmed"), text(&c, "before")).unwrap();
+    unconfirmed.dispatched(server_time(&conn), 0);
     drop(unconfirmed);
-    let left = c.current_time_refusal().expect("the refusal runs");
+    let left = c.quarantine().unwrap().expect("the refusal runs");
     assert!(
-        left > Duration::from_secs(9) && left <= Duration::from_secs(10),
+        left > Duration::from_secs(9) && left <= Duration::from_millis(10_100),
         "{left:?}"
     );
     assert_eq!(convert("UTF8_STRING", Asking::default()), Answer::Refused);
@@ -566,13 +594,13 @@ fn an_unconfirmed_paste_s_current_time_refusal_covers_the_next_paste_too() {
     clear_clipboard();
     let mut c = clipboard();
     let (conn, _) = x11rb::connect(None).unwrap();
-    let first = c.take(text(&c, "first"), text(&c, "before")).unwrap();
-    first.dispatched(server_time(&conn));
+    let first = c.take_restoring(text(&c, "first"), text(&c, "before")).unwrap();
+    first.dispatched(server_time(&conn), 0);
     drop(first);
-    let next = c.take(text(&c, "second"), text(&c, "before")).unwrap();
+    let next = c.take_restoring(text(&c, "second"), text(&c, "before")).unwrap();
     assert_eq!(convert("UTF8_STRING", Asking::default()), Answer::Refused);
     let ctrl_v = server_time(&conn);
-    next.dispatched(ctrl_v);
+    next.dispatched(ctrl_v, 0);
     assert_eq!(
         text_of(convert(
             "UTF8_STRING",
@@ -593,7 +621,7 @@ fn after_a_confirmed_paste_current_time_gets_the_snapshot() {
     let _serial = serial();
     clear_clipboard();
     let mut c = clipboard();
-    let paste = c.take(text(&c, "pasted"), text(&c, "before")).unwrap();
+    let paste = c.take_restoring(text(&c, "pasted"), text(&c, "before")).unwrap();
     assert_eq!(text_of(convert("UTF8_STRING", Asking::default())), "pasted");
     paste.confirmed();
     assert_eq!(text_of(convert("UTF8_STRING", Asking::default())), "before");
@@ -605,7 +633,7 @@ fn the_cleanup_leaves_a_newer_owner_alone() {
     let _serial = serial();
     clear_clipboard();
     let mut c = clipboard();
-    let paste = c.take(text(&c, "pasted"), text(&c, "before")).unwrap();
+    let paste = c.take_restoring(text(&c, "pasted"), text(&c, "before")).unwrap();
     let external = TestOwner::start(Behaviour::Serve(vec![("UTF8_STRING", b"someone else's".to_vec())]));
     let deadline = Instant::now() + Duration::from_secs(1);
     while !paste.lost() && Instant::now() < deadline {
@@ -627,7 +655,7 @@ fn an_empty_prior_clipboard_is_restored_as_an_owner_with_no_formats() {
     let mut c = clipboard();
     let lock = c.lock().unwrap();
     let before = c.snapshot().unwrap();
-    assert!(before.is_empty(), "no owner: an empty snapshot");
+    assert!(before.payload.is_empty(), "no owner: an empty snapshot");
     let paste = c.take(text(&c, "pasted"), before).unwrap();
     paste.confirmed();
     drop(lock);
@@ -664,6 +692,7 @@ fn a_snapshot_captures_every_format_another_owner_offers_incr_included() {
     let snapshot = c.snapshot().unwrap();
     drop(lock);
     let (conn, _) = x11rb::connect(None).unwrap();
+    let snapshot = snapshot.payload;
     let names: Vec<String> = snapshot.formats.iter().map(|f| atom_name(&conn, f.target)).collect();
     let mut expected = vec!["UTF8_STRING".to_string(), "image/x-test".to_string()];
     expected.sort_by_key(|n| intern(&conn, n));
@@ -735,9 +764,9 @@ fn the_engine_s_own_clipboard_is_snapshotted_as_it_serves_it() {
     clear_clipboard();
     let mut c = clipboard();
     let restored = text(&c, "restored");
-    let paste = c.take(text(&c, "ours"), restored.clone()).unwrap();
+    let paste = c.take_restoring(text(&c, "ours"), restored.clone()).unwrap();
     paste.confirmed();
-    assert_eq!(c.snapshot().unwrap(), restored);
+    assert_eq!(c.snapshot().unwrap().payload, restored);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -878,7 +907,7 @@ fn snapshot_capped(cap: usize) -> Result<Payload> {
     let lock = c.lock().unwrap();
     let snapshot = c.snapshot_within(cap);
     drop(lock);
-    snapshot
+    snapshot.map(|s| s.payload)
 }
 
 const OVER_CAP: &str = "failed to capture clipboard format \"UTF8_STRING\": X11 selection exceeds byte limit";
@@ -958,9 +987,9 @@ fn a_pause_before_taking_clipboard_does_not_shorten_the_refused_window() {
     let anchor = Instant::now();
     let time = c.server_time().unwrap();
     sleep(Duration::from_millis(300));
-    let paste = c
-        .take_from(text(&c, "pasted"), text(&c, "before"), time, anchor)
-        .unwrap();
+    let restore = text(&c, "before");
+    let restore = c.as_of_now(restore);
+    let paste = c.take_from(text(&c, "pasted"), restore, time, anchor).unwrap();
     let during = server_time(&conn);
     paste.confirmed();
     assert_eq!(
@@ -986,7 +1015,7 @@ fn a_takeover_handled_late_does_not_cost_the_next_paste_its_clipboard() {
     let _serial = serial();
     clear_clipboard();
     let mut c = clipboard();
-    let first = c.take(text(&c, "first"), text(&c, "before")).unwrap();
+    let first = c.take_restoring(text(&c, "first"), text(&c, "before")).unwrap();
     first.confirmed();
     owner::PAUSED.store(false, Ordering::SeqCst);
     owner::CLEAR_PAUSE_MS.store(300, Ordering::SeqCst);
@@ -998,7 +1027,7 @@ fn a_takeover_handled_late_does_not_cost_the_next_paste_its_clipboard() {
         assert!(Instant::now() < deadline, "the clear handler reached its pause");
         sleep(Duration::from_millis(1));
     }
-    let next = c.take(text(&c, "second"), text(&c, "restored")).unwrap();
+    let next = c.take_restoring(text(&c, "second"), text(&c, "restored")).unwrap();
     owner::CLEAR_PAUSE_MS.store(0, Ordering::SeqCst);
     assert!(!next.lost(), "the engine took CLIPBOARD after the takeover");
     assert!(c.owns());
@@ -1018,11 +1047,11 @@ fn a_take_abandoned_after_the_owner_started_it_is_cleaned_up() {
     clear_clipboard();
     let mut c = clipboard();
     let (conn, _) = x11rb::connect(None).unwrap();
-    let warm = c.take(text(&c, "warm"), text(&c, "before")).unwrap();
+    let warm = c.take_restoring(text(&c, "warm"), text(&c, "before")).unwrap();
     warm.confirmed();
     owner::TAKE_PAUSE_MS.store(owner::TAKE_WAIT.as_millis() as u64 + 500, Ordering::SeqCst);
     let started = server_time(&conn);
-    let abandoned = c.take(text(&c, "abandoned"), text(&c, "the snapshot"));
+    let abandoned = c.take_restoring(text(&c, "abandoned"), text(&c, "the snapshot"));
     owner::TAKE_PAUSE_MS.store(0, Ordering::SeqCst);
     assert_eq!(
         abandoned.err().map(|e| e.to_string()).as_deref(),
@@ -1052,7 +1081,7 @@ fn a_take_abandoned_after_the_owner_started_it_is_cleaned_up() {
         Answer::Refused,
         "a time while the abandoned paste held CLIPBOARD"
     );
-    let next = c.take(text(&c, "next"), text(&c, "after")).unwrap();
+    let next = c.take_restoring(text(&c, "next"), text(&c, "after")).unwrap();
     assert!(!next.lost());
     assert_eq!(
         text_of(convert(
@@ -1087,12 +1116,12 @@ fn a_snapshot_during_an_abandoned_take_s_verification_holds_the_clipboard_as_it_
     clear_clipboard();
     let mut c = clipboard();
     let (conn, _) = x11rb::connect(None).unwrap();
-    let warm = c.take(text(&c, "warm"), text(&c, "original")).unwrap();
+    let warm = c.take_restoring(text(&c, "warm"), text(&c, "original")).unwrap();
     warm.confirmed();
     owner::VERIFY_PAUSED.store(false, Ordering::SeqCst);
     owner::TAKE_PAUSE_MS.store(owner::TAKE_WAIT.as_millis() as u64 + 200, Ordering::SeqCst);
     owner::VERIFY_PAUSE_MS.store(300, Ordering::SeqCst);
-    let abandoned = c.take(text(&c, "abandoned"), text(&c, "original"));
+    let abandoned = c.take_restoring(text(&c, "abandoned"), text(&c, "original"));
     owner::TAKE_PAUSE_MS.store(0, Ordering::SeqCst);
     assert!(abandoned.is_err(), "the caller gave up");
     let deadline = Instant::now() + Duration::from_secs(2);
@@ -1103,7 +1132,7 @@ fn a_snapshot_during_an_abandoned_take_s_verification_holds_the_clipboard_as_it_
     let snapshot = c.snapshot();
     owner::VERIFY_PAUSE_MS.store(0, Ordering::SeqCst);
     let snapshot = snapshot.unwrap();
-    assert_eq!(snapshot, text(&c, "original"), "the clipboard as it was");
+    assert_eq!(snapshot.payload, text(&c, "original"), "the clipboard as it was");
     let next = c.take(text(&c, "next"), snapshot).unwrap();
     next.confirmed();
     sleep(Duration::from_millis(50));
@@ -1128,12 +1157,14 @@ fn a_conversion_of_a_long_evicted_paste_stays_refused() {
     clear_clipboard();
     let mut c = clipboard();
     let (conn, _) = x11rb::connect(None).unwrap();
-    let first = c.take(text(&c, "first"), text(&c, "before")).unwrap();
+    let first = c.take_restoring(text(&c, "first"), text(&c, "before")).unwrap();
     let first_ctrl_v = server_time(&conn);
-    first.dispatched(first_ctrl_v);
+    first.dispatched(first_ctrl_v, 0);
     first.confirmed();
     for i in 0..serving::CLOSED_KEPT + 2 {
-        let paste = c.take(text(&c, &format!("paste {i}")), text(&c, "before")).unwrap();
+        let paste = c
+            .take_restoring(text(&c, &format!("paste {i}")), text(&c, "before"))
+            .unwrap();
         paste.confirmed();
     }
     assert_eq!(
@@ -1159,4 +1190,87 @@ fn a_conversion_of_a_long_evicted_paste_stays_refused() {
         "before",
         "a later request is still served"
     );
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Branch review fixes (M2's whole-branch review)
+
+/// A copy made between the snapshot and the take: the take refuses with CLIPBOARD untouched, so the newer copy
+/// survives, and both locks are free afterwards.
+#[test]
+#[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+fn a_copy_between_the_snapshot_and_the_take_is_refused_and_the_newer_copy_survives() {
+    let _serial = serial();
+    clear_clipboard();
+    let mut c = clipboard();
+    let warm = c.take_restoring(text(&c, "warm"), text(&c, "old clipboard")).unwrap();
+    warm.confirmed();
+    let lock = c.lock().unwrap();
+    let snapshot = c.snapshot().unwrap();
+    assert_eq!(snapshot.payload, text(&c, "old clipboard"));
+    let newer = TestOwner::start(Behaviour::Serve(vec![("UTF8_STRING", b"new user copy".to_vec())]));
+    let taken = c.take(text(&c, "pasted"), snapshot);
+    assert_eq!(
+        taken.err().map(|e| e.to_string()).as_deref(),
+        Some(owner::CHANGED_SINCE)
+    );
+    drop(lock);
+    let (conn, _) = x11rb::connect(None).unwrap();
+    assert_eq!(clipboard_owner(&conn), newer.window, "the newer owner is left alone");
+    assert_eq!(text_of(convert("UTF8_STRING", Asking::default())), "new user copy");
+    drop(clipboard().lock_within(Duration::from_millis(100)).unwrap());
+}
+
+/// The same owner copying again between the snapshot and the take (Chrome and GTK keep their owner window and
+/// re-assert ownership): refused too, since every setting of the owner counts, not the owner's window.
+#[test]
+#[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+fn the_same_owner_copying_again_between_the_snapshot_and_the_take_is_refused() {
+    let _serial = serial();
+    clear_clipboard();
+    let owner = TestOwner::start(Behaviour::Serve(vec![("UTF8_STRING", b"first copy".to_vec())]));
+    let mut c = clipboard();
+    let lock = c.lock().unwrap();
+    let snapshot = c.snapshot().unwrap();
+    assert_eq!(snapshot.payload.formats.len(), 1);
+    owner.copy_again();
+    let taken = c.take(text(&c, "pasted"), snapshot);
+    assert_eq!(
+        taken.err().map(|e| e.to_string()).as_deref(),
+        Some(owner::CHANGED_SINCE)
+    );
+    drop(lock);
+    let (conn, _) = x11rb::connect(None).unwrap();
+    assert_eq!(clipboard_owner(&conn), owner.window);
+    assert_eq!(text_of(convert("UTF8_STRING", Asking::default())), "first copy");
+}
+
+/// Engine A's unconfirmed paste opens the window for every cua engine on the display: engine B, which has no
+/// refusal record of its own, reads it from the root window, and still does after A has gone.
+#[test]
+#[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+fn an_unconfirmed_paste_s_window_holds_for_another_engine_and_outlives_the_engine() {
+    let _serial = serial();
+    clear_clipboard();
+    let (conn, _) = x11rb::connect(None).unwrap();
+    let mut b = clipboard();
+    {
+        let mut a = clipboard();
+        let lock = a.lock().unwrap();
+        let unconfirmed = a.take_restoring(text(&a, "paste A"), text(&a, "before")).unwrap();
+        unconfirmed.dispatched(server_time(&conn), 0x0420_0000);
+        drop(unconfirmed);
+        drop(lock);
+        let _lock = b.lock().unwrap();
+        let left = b.quarantine().unwrap().expect("B sees A's window");
+        assert!(left > Duration::from_secs(9), "{left:?}");
+    }
+    // A has gone, and its ownership with it: the record is the server's.
+    sleep(Duration::from_millis(100));
+    let _lock = b.lock().unwrap();
+    let left = b
+        .quarantine()
+        .unwrap()
+        .expect("the window outlives the engine that opened it");
+    assert!(left > Duration::from_secs(8), "{left:?}");
 }

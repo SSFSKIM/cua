@@ -145,8 +145,10 @@ impl Engine {
     }
 
     fn paste_with(&mut self, request: &Request, report: &mut Report) -> Result<Value> {
-        // A conversion of an earlier unconfirmed paste may still come: nothing new is served meanwhile.
-        if let Some(wait) = self.clipboard()?.current_time_refusal() {
+        // A conversion of an earlier unconfirmed paste, this engine's or another cua engine's, may still come: nothing
+        // new is served meanwhile. Read early so a refusal comes before anything is done; read again under the lock,
+        // where it decides.
+        if let Some(wait) = self.clipboard()?.quarantine()? {
             bail!(paste::previous_unconfirmed(wait));
         }
         let window = match request.window {
@@ -371,6 +373,9 @@ fn dispatch_and_confirm(
     }
     // 3. Lock, snapshot, own. The lock is released after the paste's cleanup (dropped in reverse order).
     let _lock = clipboard.lock()?;
+    if let Some(wait) = clipboard.quarantine()? {
+        bail!(paste::previous_unconfirmed(wait));
+    }
     let restore = clipboard
         .snapshot()
         .map_err(|e| anyhow!(paste::nothing_sent(format!("{e:#}"))))?;
@@ -390,7 +395,7 @@ fn dispatch_and_confirm(
         Some(session) => session.now(),
         None => clipboard.server_time()?,
     };
-    pasted.dispatched(time);
+    pasted.dispatched(time, window & !delivery.resource_id_mask);
     // Before the press goes out, so a request the press causes is never earlier than it.
     let dispatched_at = Instant::now();
     let chord = send_chord(x, route, delivery.keycodes);

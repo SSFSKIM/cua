@@ -66,6 +66,8 @@ struct Report {
     log: Vec<String>,
     /// A press of the chord whose delivery is unknown.
     delivery: Option<String>,
+    /// How long a clicked element took to report the focus (or the wait, when it did not).
+    focus_ms: Option<f64>,
 }
 
 /// The text a snapshot holds, as a field would show it pasted: its UTF-8 formats first, then `STRING` (Latin-1).
@@ -132,6 +134,7 @@ impl Engine {
                 "expected": report.expected,
                 "log": report.log,
                 "delivery": report.delivery,
+                "focus_ms": report.focus_ms,
             }),
         );
         result
@@ -223,12 +226,14 @@ impl Engine {
                 std::thread::sleep(CLICK_HOLD);
                 route.button(x, 1, false)?;
                 report.clicked = true;
-                let deadline = Instant::now() + FOCUS_WAIT;
+                let clicked_at = Instant::now();
+                let deadline = clicked_at + FOCUS_WAIT;
                 let mut after = observe(bus, &element.target)?;
                 while !after.focused && Instant::now() < deadline {
                     std::thread::sleep(FOCUS_POLL);
                     after = observe(bus, &element.target)?;
                 }
+                report.focus_ms = Some(clicked_at.elapsed().as_secs_f64() * 1000.0);
                 if !after.focused {
                     bail!("element did not take the focus when clicked; nothing was sent");
                 }

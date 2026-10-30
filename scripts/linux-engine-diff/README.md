@@ -284,6 +284,11 @@ variants included; their evidence is written either way. The run's `end` row kee
 - **The matrix** (`--experiment matrix`): `gnome-terminal` joins (VTE, paste chord Ctrl+Shift+V; its recorder shows what
   it receives, so a paste is confirmed in the terminal's text), and cua's `type_text` runs beside the vendor builds'.
 - `--via vendor-js` refuses the text operations and the cases: their facade-level proof is the facade suites.
+- **Same within noise** (Acceptance 3's rule, now in every verdict over the wire): a candidate median above the bar
+  whose bootstrap 95% interval of the candidate's median minus the bar build's includes 0 passes as "same within
+  noise", listed in the verdict with its interval, when both sides have at least 20 samples in the series; with fewer,
+  the medians alone decide. `clipboard_release` (a map removal in every engine, about 0.1 ms the harness's own
+  scheduling dominates) takes 10 warm samples a block so that its warm series has them.
 
 ## Files
 

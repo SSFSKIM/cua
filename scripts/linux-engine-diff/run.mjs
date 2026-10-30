@@ -20,7 +20,7 @@ import { startMonitor } from './busmon.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
 import { declaredDeviation } from './deviations.mjs';
 import { Engine } from './engine.mjs';
-import { normalizeAnswer } from './events.mjs';
+import { medianDifferenceInterval, normalizeAnswer } from './events.mjs';
 import { compareShots, xprobeDiff } from './images.mjs';
 import { compareStates, normalizeState, retainedIds } from './normalize.mjs';
 import { OPS, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs';
@@ -247,7 +247,7 @@ export async function runSample(s) {
     row.stats = { calls: stats.bus.calls, waits_alone: stats.bus.waits_alone, max_in_flight: stats.bus.max_in_flight, connections: stats.bus.connections };
     if (stats.tree) row.stats.tree = stats.tree;
     if (stats.capture) row.stats.capture = stats.capture;
-    if (stats.paste) row.stats.paste = { confirmed: stats.paste.confirmed, confirm_ms: stats.paste.confirm_ms, transfer: stats.paste.transfer, clicked: stats.paste.clicked, restored: stats.paste.restored };
+    if (stats.paste) row.stats.paste = { confirmed: stats.paste.confirmed, confirm_ms: stats.paste.confirm_ms, transfer: stats.paste.transfer, clicked: stats.paste.clicked, restored: stats.paste.restored, focus_ms: stats.paste.focus_ms };
     if (stats.route) row.route = stats.route;
   }
   if (def.after) await def.after(ctx, response);
@@ -361,7 +361,7 @@ export async function runDiff(args) {
     throw new Error("M2's text operations and paste cases run over the wire; their facade-level proof is the facade suites (repl-parity's native text cases, the native baseline)");
   }
   const blockPlan = plan.filter((p) => !isCase(p.op));
-  const samplesFor = (op) => (inputOp(op) ? args.samplesInput : args.samplesTree);
+  const samplesFor = (op) => OPS[op].warmSamples ?? (inputOp(op) ? args.samplesInput : args.samplesTree);
 
   emit({
     kind: 'meta',
@@ -604,7 +604,7 @@ export async function runDiff(args) {
         // the audit's forbidden requests are the background route's
         const foreground = routes.includes('foreground');
         const opAudits = args.audit && targeted(op) && !foreground ? Object.fromEntries(labels.map((l) => [l, audits[`${sceneName}|${op}|${l}`]])) : null;
-        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op) });
+        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op), noise: medianDifferenceInterval });
         const extra = {};
         if (routes.length) extra.routes = routes;
         if (foreground) extra.audit_note = 'foreground route: the activation and the desktop input are the route itself; judged by the witness allowance';

@@ -241,8 +241,11 @@ export const TEXT_OPS = {
   // a handle read untimed before each warm sample; the cold sample (the engine's start and its first request, as for
   // every operation without untimed preparation) releases a handle the engine never issued, which both builds answer
   // with success too (behaviour §13.1)
+  // A release is a map removal in every engine, a tenth of a millisecond the harness's own scheduling dominates: ten
+  // warm samples a block give each side the 20 that Acceptance 3's noise rule needs (stats.mjs).
   clipboard_release: {
     kind: 'text',
+    warmSamples: 10,
     prepare: async (ctx) => {
       if (ctx.i === 0) {
         ctx.handle = 'cua171-never-issued';

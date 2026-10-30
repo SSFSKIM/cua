@@ -112,7 +112,10 @@ export function auditVerdict(audit, timedRows) {
  * either build succeeds at; a build that only failed sets no bar, and with none there is no speed judgement), every
  * candidate request must answer success, and the clipboard is judged on every candidate sample that records it.
  */
-export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true, text = false }) {
+/** The samples a side a series needs before Acceptance 3's noise rule may judge it (Acceptance 3). */
+export const MIN_NOISE_SAMPLES = 20;
+
+export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true, text = false, noise: interval = null }) {
   const engines = {};
   for (const label of new Set(rows.map((r) => r.engine))) {
     engines[label] = summarizeEngine(rows.filter((r) => r.engine === label));
@@ -133,8 +136,31 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   // errors too, the answers are compared (`equal`)
   if (!c.ok && (text || vendorRows.length === 0 || vendorRows.some((e) => e.ok))) reasons.push(`${candidate}: a request failed`);
   let speed = true;
+  const noise = [];
+  const timedOf = (engine, series) => {
+    const mine = rows.filter((r) => r.engine === engine && r.series === series);
+    return (mine.some((r) => r.ok) ? mine.filter((r) => r.ok) : mine).map((r) => r.ms).filter(Number.isFinite);
+  };
   for (const series of ['cold', 'warm']) {
     if (exactBar[series] === null || c.exact[series] === null) continue;
+    if (c.exact[series] > exactBar[series] && interval) {
+      // Acceptance 3: a median above the bar whose bootstrap 95% interval of cua's median minus the faster build's
+      // includes 0 is the same within noise, listed apart, when both sides have enough samples to resample
+      // the build that set the bar: its samples as the bar counts them (a text command's: its successes)
+      const barEngine = vendors.find((v) => {
+        const xs = timedOf(v, series);
+        return xs.length > 0 && median(xs) === exactBar[series];
+      });
+      const mine = timedOf(candidate, series);
+      const theirs = barEngine ? timedOf(barEngine, series) : [];
+      if (mine.length >= MIN_NOISE_SAMPLES && theirs.length >= MIN_NOISE_SAMPLES) {
+        const ci = interval(mine, theirs);
+        if (ci[0] <= 0) {
+          noise.push({ series, candidate: c.exact[series], bar: exactBar[series], against: barEngine, interval: ci });
+          continue;
+        }
+      }
+    }
     if (c.exact[series] > exactBar[series]) {
       speed = false;
       // through the vendor JavaScript a request's time includes the client's deferred settle after the previous
@@ -156,5 +182,5 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   if (missed.length) reasons.push(`${candidate}: the effect was not verified on ${missed.length} sample${missed.length === 1 ? '' : 's'} (${missed.slice(0, 5).join(', ')})`);
   if (c.equal === false) reasons.push(`${candidate}: the output differs from the vendor's`);
   if (text && c.clipboard === false) reasons.push(`${candidate}: the clipboard was not left as it was before the paste`);
-  return { engines, bar, speed, pass: reasons.length === 0, reasons };
+  return { engines, bar, speed, noise, pass: reasons.length === 0, reasons };
 }

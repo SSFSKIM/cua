@@ -186,6 +186,26 @@ test("a text command's verdict: the bar from the vendor samples that succeeded, 
   assert.match(judgeOperation(lost, opts).reasons.join(), /clipboard/);
 });
 
+test('a median above the bar whose bootstrap interval includes 0 is same within noise, with at least 20 samples a side', async () => {
+  const { judgeOperation } = await import('../../scripts/linux-engine-diff/stats.mjs');
+  const { medianDifferenceInterval } = await import('../../scripts/linux-engine-diff/events.mjs');
+  // one cold sample each, the same: the warm series is the one judged here
+  const series = (engine, values) => values.map((ms, i) => ({ engine, series: i === 0 ? 'cold' : 'warm', ms: i === 0 ? 0.1 : ms, ok: true }));
+  const noisy = (base) => Array.from({ length: 31 }, (_, i) => base + ((i * 7) % 5) * 0.01);
+  const rows = [...series('pinned', noisy(0.11)), ...series('newest', noisy(0.12)), ...series('cua', noisy(0.115))];
+  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua', noise: medianDifferenceInterval };
+  const v = judgeOperation(rows, opts);
+  assert.equal(v.pass, true, v.reasons.join('; '));
+  assert.equal(v.noise.length, 1);
+  assert.equal(v.noise[0].series, 'warm');
+  // a real loss, its interval above 0, still fails
+  const slow = [...series('pinned', noisy(0.11)), ...series('newest', noisy(0.12)), ...series('cua', noisy(0.2))];
+  assert.equal(judgeOperation(slow, opts).pass, false);
+  // fewer than 20 samples a side: judged on the medians alone
+  const few = rows.filter((r) => r.series === 'cold' || rows.indexOf(r) % 31 < 10);
+  assert.equal(judgeOperation(few, opts).noise.length, 0);
+});
+
 test('lock contention: each field holds exactly its own markers, in order, once each', () => {
   const a = ['A1', 'A2', 'A3'];
   const b = ['B1', 'B2'];

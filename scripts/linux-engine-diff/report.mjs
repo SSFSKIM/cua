@@ -60,7 +60,8 @@ export function renderSummary(lines) {
         const eq = equality.find((r) => r.scene === scene && r.op === op && r.engine === engine);
         const v = verdicts.find((r) => r.scene === scene && r.op === op && r.candidate === engine);
         const declared = v?.deviations?.length ? ` (declared: ${v.deviations.join(', ')})` : '';
-        const verdict = v ? (v.pass ? `PASS${declared}` : `FAIL: ${v.reasons.join('; ')}${declared}`) : '';
+        const noise = v?.noise?.length ? ` (same within noise: ${v.noise.map((n) => `${n.series} ${Math.round(n.candidate * 100) / 100} against ${Math.round(n.bar * 100) / 100}, [${n.interval.join(', ')}]`).join('; ')})` : '';
+        const verdict = v ? (v.pass ? `PASS${noise}${declared}` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`) : '';
         const a = audits.find((r) => r.scene === scene && r.op === op && r.engine === engine);
         const audit = a ? (a.clean ? 'clean' : `**${[...new Set(a.forbidden.map((f) => f.what))].join(', ') || 'not traced'}**`) : '–';
         const wasted = mine.map((r) => r.stats?.tree?.wasted_calls).filter((w) => typeof w === 'number');

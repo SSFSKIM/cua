@@ -10,12 +10,23 @@ export function median(values) {
 /**
  * A run's outcome from its verdict rows (Interfaces: exit 0 only when the negative check held and every verdict
  * passes, exploratory variants included; their rows stay in the evidence either way). `valid` is the negative
- * check's alone, kept apart from `pass`.
+ * check's alone, kept apart from `pass`. A declared parity verdict (deviations.mjs `PARITY`) is listed in `parity`:
+ * neither a failure nor a pass.
  */
 export function runOutcome(verdicts, { valid }) {
-  const failed = verdicts.filter((v) => v.kind === 'verdict' && !v.pass).map((v) => `${v.scene} ${v.op} ${v.candidate}`);
+  const name = (v) => `${v.scene} ${v.op} ${v.candidate}`;
+  const judged = verdicts.filter((v) => v.kind === 'verdict');
+  const parity = judged.filter((v) => !v.pass && v.verdict === 'parity').map(name);
+  const failed = judged.filter((v) => !v.pass && v.verdict !== 'parity').map(name);
   const pass = failed.length === 0;
-  return { valid, pass, failed, code: valid && pass ? 0 : 1 };
+  return { valid, pass, failed, parity, code: valid && pass ? 0 : 1 };
+}
+
+/** A run's verdicts in one line: its failures, else every verdict PASS; a parity verdict listed apart either way. */
+export function verdictLine({ pass, failed, parity = [] }, strong = (s) => s) {
+  const listed = parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : '';
+  if (!pass) return `${strong('FAIL')}: ${failed.join(', ')}${listed}`;
+  return `${parity.length ? 'no verdict FAIL' : 'every verdict PASS'}${listed}`;
 }
 
 /** The engine order of block `index`: rotated, so every engine takes every position across the sitting. */
@@ -51,6 +62,17 @@ export function judgeCalls(countRows, { vendors, candidate, slack = CALL_SLACK }
 
 const round = (v) => (v === null ? null : Math.round(v * 10) / 10);
 
+/**
+ * The times of one engine's samples of a series as the medians count them. A sample whose preparation failed
+ * (`prepare_error`: a handle no engine issued sent in place of the one its Copy could not make) timed another request
+ * than the operation's, so it is left out. The answered requests are timed; a request every sample answers with an
+ * error (a refusal the vendor gives too) is timed as it is answered.
+ */
+export function timedMs(series) {
+  const prepared = series.filter((r) => !r.prepare_error);
+  return (prepared.some((r) => r.ok) ? prepared.filter((r) => r.ok) : prepared).map((r) => r.ms).filter(Number.isFinite);
+}
+
 /** One engine's samples summarized: medians per series, and whether every sample held each property. */
 export function summarizeEngine(rows) {
   const all = (key) => {
@@ -59,9 +81,7 @@ export function summarizeEngine(rows) {
   };
   const cold = rows.filter((r) => r.series === 'cold');
   const warm = rows.filter((r) => r.series === 'warm');
-  // the answered requests are timed; a request every sample answers with an error (a refusal the vendor gives too)
-  // is timed as it is answered
-  const timed = (series) => (series.some((r) => r.ok) ? series.filter((r) => r.ok) : series).map((r) => r.ms);
+  const timed = timedMs;
   return {
     cold: round(median(timed(cold))),
     warm: round(median(timed(warm))),
@@ -90,11 +110,6 @@ export function missedEffects(rows, candidate) {
 }
 
 /**
- * The verdict for one operation and scene: the candidate's medians at or below the bar (the faster vendor build,
- * cold against cold, warm against warm), every request answered, its output equal, its witness clean wherever a
- * vendor build's is, and its effect verified on every sample (`missedEffects`).
- */
-/**
  * One engine's audit of an operation: `clean` only when the trace held no forbidden request and its audited requests
  * (`oks`, one per sample) answered as the engine's timed samples did; an operation that failed early under the proxy
  * leaves only its setup in the trace, which proves nothing. An expected refusal is refused in both passes.
@@ -107,15 +122,42 @@ export function auditVerdict(audit, timedRows) {
   return 'clean';
 }
 
-/**
- * `text` (M2's text and clipboard commands): the bar is built from the vendor samples that succeeded (the union of what
- * either build succeeds at; a build that only failed sets no bar, and with none there is no speed judgement), every
- * candidate request must answer success, and the clipboard is judged on every candidate sample that records it.
- */
 /** The samples a side a series needs before Acceptance 3's noise rule may judge it (Acceptance 3). */
 export const MIN_NOISE_SAMPLES = 20;
 
-export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true, text = false, noise: interval = null }) {
+/**
+ * Acceptance 3's bound on a noise pass: the bootstrap interval's upper end, the worst plausible loss, at most 5% of the
+ * bar (below anything an agent loop notices above about 20 ms) or 1 ms (below the MCP round trip), whichever is larger.
+ */
+export const noiseBound = (bar) => Math.max(0.05 * bar, 1);
+
+/**
+ * A median above the bar, judged by its bootstrap interval of cua's median minus the bar build's: `same` when the
+ * interval includes 0 and its upper end is within `noiseBound`, `wide` when it includes 0 but reaches past the bound
+ * (undetermined: more samples, else a failure), `loss` when it lies above 0.
+ */
+export function noiseVerdict(interval, bar) {
+  if (interval[0] > 0) return 'loss';
+  return interval[1] <= noiseBound(bar) ? 'same' : 'wide';
+}
+
+/**
+ * The verdict for one operation and scene: the candidate's medians at or below the bar (the faster vendor build,
+ * cold against cold, warm against warm), every request answered, its output equal, its witness clean wherever a
+ * vendor build's is, and its effect verified on every sample (`missedEffects`).
+ *
+ * `text` (M2's text and clipboard commands): the bar is built from the vendor samples that succeeded (the union of what
+ * either build succeeds at; a build that only failed sets no bar, and with none there is no speed judgement), every
+ * candidate request must answer success, and the clipboard is judged on every candidate sample that records it. A
+ * candidate sample whose preparation failed (`prepare_error`) fails the verdict; no engine's such sample is timed.
+ *
+ * Above the bar (Acceptance 3): with `noise` (the bootstrap interval) and at least `MIN_NOISE_SAMPLES` a side, a series
+ * within `noiseBound` is the same within noise (`noise`); a wider interval is undetermined, which fails here (the
+ * differential run adds no samples). A series `parity` declares (deviations.mjs `PARITY`) whose median lies within the
+ * bar build's own spread of samples is parity: the verdict is then `parity`, neither a pass nor a failure.
+ * Returns `{engines, bar, speed, noise, parity, pass, verdict, reasons}`.
+ */
+export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true, text = false, noise: interval = null, parity: parityList = [] }) {
   const engines = {};
   for (const label of new Set(rows.map((r) => r.engine))) {
     engines[label] = summarizeEngine(rows.filter((r) => r.engine === label));
@@ -131,43 +173,51 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   const exactBar = { cold: best('cold', true), warm: best('warm', true) };
   const c = engines[candidate];
   const reasons = [];
-  if (!c) return { engines, bar, speed: false, pass: false, reasons: [`no samples from ${candidate}`] };
+  if (!c) return { engines, bar, speed: false, noise: [], parity: [], pass: false, verdict: 'fail', reasons: [`no samples from ${candidate}`] };
   // a failed request fails the verdict where a vendor build answered every request; where the vendors' answers are
   // errors too, the answers are compared (`equal`)
   if (!c.ok && (text || vendorRows.length === 0 || vendorRows.some((e) => e.ok))) reasons.push(`${candidate}: a request failed`);
+  const unprepared = rows.filter((r) => r.engine === candidate && r.prepare_error);
+  if (unprepared.length) reasons.push(`${candidate}: ${unprepared.length} sample${unprepared.length === 1 ? "'s" : "s'"} preparation failed (${unprepared[0].prepare_error})`);
   let speed = true;
   const noise = [];
-  const timedOf = (engine, series) => {
-    const mine = rows.filter((r) => r.engine === engine && r.series === series);
-    return (mine.some((r) => r.ok) ? mine.filter((r) => r.ok) : mine).map((r) => r.ms).filter(Number.isFinite);
-  };
+  const parity = [];
+  const timedOf = (engine, series) => timedMs(rows.filter((r) => r.engine === engine && r.series === series));
+  const shown = (v) => Math.round(v * 100) / 100;
   for (const series of ['cold', 'warm']) {
     if (exactBar[series] === null || c.exact[series] === null) continue;
-    if (c.exact[series] > exactBar[series] && interval) {
-      // Acceptance 3: a median above the bar whose bootstrap 95% interval of cua's median minus the faster build's
-      // includes 0 is the same within noise, listed apart, when both sides have enough samples to resample
-      // the build that set the bar: its samples as the bar counts them (a text command's: its successes)
-      const barEngine = vendors.find((v) => {
-        const xs = timedOf(v, series);
-        return xs.length > 0 && median(xs) === exactBar[series];
-      });
-      const mine = timedOf(candidate, series);
-      const theirs = barEngine ? timedOf(barEngine, series) : [];
-      if (mine.length >= MIN_NOISE_SAMPLES && theirs.length >= MIN_NOISE_SAMPLES) {
-        const ci = interval(mine, theirs);
-        if (ci[0] <= 0) {
-          noise.push({ series, candidate: c.exact[series], bar: exactBar[series], against: barEngine, interval: ci });
-          continue;
-        }
+    if (c.exact[series] <= exactBar[series]) continue;
+    // the build that set the bar: its samples as the bar counts them (a text command's: its successes)
+    const barEngine = vendors.find((v) => {
+      const xs = timedOf(v, series);
+      return xs.length > 0 && median(xs) === exactBar[series];
+    });
+    const theirs = barEngine ? timedOf(barEngine, series) : [];
+    let loss = `${candidate}: ${series} ${shown(c.exact[series])} ms > bar ${shown(exactBar[series])} ms`;
+    const mine = timedOf(candidate, series);
+    if (interval && mine.length >= MIN_NOISE_SAMPLES && theirs.length >= MIN_NOISE_SAMPLES) {
+      // Acceptance 3: the bootstrap 95% interval of cua's median minus the bar build's
+      const ci = interval(mine, theirs);
+      const judged = noiseVerdict(ci, exactBar[series]);
+      if (judged === 'same') {
+        noise.push({ series, candidate: c.exact[series], bar: exactBar[series], against: barEngine, interval: ci });
+        continue;
       }
+      if (judged === 'wide') loss += `, undetermined: the interval [${ci.join(', ')}] reaches past ${shown(noiseBound(exactBar[series]))} ms`;
     }
-    if (c.exact[series] > exactBar[series]) {
-      speed = false;
-      // through the vendor JavaScript a request's time includes the client's deferred settle after the previous
-      // action, which the harness's own reads between requests use up unevenly: recorded, judged over the wire only
-      const shown = (v) => Math.round(v * 100) / 100;
-      if (judgeSpeed) reasons.push(`${candidate}: ${series} ${shown(c.exact[series])} ms > bar ${shown(exactBar[series])} ms`);
+    const declared = parityList.find((p) => p.series === series);
+    if (declared && theirs.length) {
+      const spread = [Math.min(...theirs), Math.max(...theirs)];
+      if (c.exact[series] >= spread[0] && c.exact[series] <= spread[1]) {
+        parity.push({ series, candidate: c.exact[series], bar: exactBar[series], against: barEngine, spread, section: declared.section });
+        continue;
+      }
+      loss += `, outside the bar's spread [${spread.join(', ')}]`;
     }
+    speed = false;
+    // through the vendor JavaScript a request's time includes the client's deferred settle after the previous
+    // action, which the harness's own reads between requests use up unevenly: recorded, judged over the wire only
+    if (judgeSpeed) reasons.push(loss);
   }
   // a text command's witness is judged whatever the vendor builds did (by the route each request took, run.mjs)
   if ((text || vendorRows.some((e) => e.witness === true)) && c.witness !== true) reasons.push(`${candidate}: the witness changed`);
@@ -182,5 +232,6 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   if (missed.length) reasons.push(`${candidate}: the effect was not verified on ${missed.length} sample${missed.length === 1 ? '' : 's'} (${missed.slice(0, 5).join(', ')})`);
   if (c.equal === false) reasons.push(`${candidate}: the output differs from the vendor's`);
   if (text && c.clipboard === false) reasons.push(`${candidate}: the clipboard was not left as it was before the paste`);
-  return { engines, bar, speed, noise, pass: reasons.length === 0, reasons };
+  const verdict = reasons.length ? 'fail' : parity.length ? 'parity' : 'pass';
+  return { engines, bar, speed, noise, parity, pass: verdict === 'pass', verdict, reasons };
 }

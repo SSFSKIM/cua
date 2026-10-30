@@ -24,7 +24,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 
-import { clipRead, grabs, stacking, startOwner, within } from './clip.mjs';
+import { clipRead, grabs, startOwner, within } from './clip.mjs';
 import { Engine } from './engine.mjs';
 import { PAGES } from './scenes.mjs';
 import {
@@ -37,7 +37,7 @@ import {
   judgeUnconfirmed,
 } from './safety-judge.mjs';
 import { occurrences, pasted } from './text.mjs';
-import { judgeForegroundSpan, judgeSpan, raisedOnly } from './witness.mjs';
+import { judgeRouteSpan } from './witness.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -45,17 +45,16 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // the witness of a case's request, by the route it took
 
 /**
- * The witness of one request, keyed to the route the engine reports it took (Decision Log, M2.2): the foreground route
- * may activate its target and move the pointer, and nothing may change after the request ends (a quiet span) or stay
- * grabbed; every other route allows nothing.
+ * The witness of one request whose route is known beforehand (`expected`: text.mjs `expectedRoute`, null where none
+ * applies), judged by `judgeRouteSpan` against the route the engine reports it took (Decision Log, M2.2): the foreground
+ * route's allowance only where both are the foreground route, and then nothing may change after the request ends (a
+ * quiet span) or stay grabbed; a route other than the expected one fails.
  */
-export async function routeWitness(witness, tag, target, fn) {
-  const before = stacking();
+export async function routeWitness(witness, tag, target, expected, fn) {
   const result = await witness.span(tag, fn);
   const route = result.value?.stats?.route ?? null;
-  if (route !== 'foreground') return { ...result, route, judged: judgeSpan(result.report) };
-  const after = stacking();
-  const judged = judgeForegroundSpan(result.report, { target, focusWithin: (w) => within(w, target), stackingRaised: raisedOnly(before, after, target) });
+  const judged = judgeRouteSpan(result.report, { expected, reported: route, target, focusWithin: (w) => within(w, target) });
+  if (!judged.foreground) return { ...result, route, judged };
   const quiet = await witness.span(`${tag}:after`, () => sleep(300));
   const held = grabs();
   const fields = [...judged.fields];
@@ -67,8 +66,8 @@ export async function routeWitness(witness, tag, target, fn) {
 // ---------------------------------------------------------------------------------------------------------------
 // the cases (live)
 
-/** A paste-target window (pages/paste-target.py) and what it reports. */
-async function openTarget(desktop, mode) {
+/** A paste-target window (pages/paste-target.py) and what it reports; `hold(scene)` as soon as its program runs. */
+async function openTarget(desktop, mode, hold) {
   const label = desktop.label('target', mode.replace(/[^a-z0-9]+/gi, ''));
   const child = spawn('python3', ['-I', join(PAGES, 'paste-target.py'), label, mode], { stdio: ['ignore', 'pipe', 'ignore'], detached: true });
   child.unref();
@@ -82,6 +81,7 @@ async function openTarget(desktop, mode) {
   });
   const scene = { kind: 'family', role: mode, label, pid: child.pid, group: true, reports };
   desktop.windows.push(scene);
+  hold(scene);
   const info = await desktop.waitForWindow((w) => w.title === label, label);
   scene.id = info.id;
   const state = await desktop.waitForTree(scene);
@@ -129,26 +129,74 @@ function caretToEnd(oracle, id) {
 const stamp = () => Date.now().toString(36);
 
 /**
- * An owner of the prior clipboard whose next TARGETS answer is held. Applications that watch CLIPBOARD (gedit, a
- * clipboard manager) read a new owner's TARGETS as soon as it takes over; the owner is armed only after they have, so
- * the request it holds is the engine's snapshot.
+ * The cases. Every engine, clipboard owner and target window a case starts is ended when the case ends, however it
+ * ends (`guarded`): a case that throws half-way through its setup leaves nothing running into the next.
  */
-async function armedOwner(text) {
-  const owner = await startOwner(text);
-  await sleep(600);
-  owner.send('arm');
-  await owner.waitFor((r) => r.armed);
-  return owner;
-}
-
 export class Cases {
   constructor({ desktop, witness, cua, emit }) {
     Object.assign(this, { desktop, witness, cua, emit });
     this.oracle = desktop.oracle;
+    this.pending = [];
+  }
+
+  /** A cleanup the running case owes, run when it ends (`releaseAll`). */
+  defer(fn) {
+    this.pending.push(fn);
+  }
+
+  /** Every cleanup owed, newest first, each whatever the others did. */
+  async releaseAll() {
+    for (const fn of this.pending.splice(0).reverse()) {
+      try {
+        await fn();
+      } catch {
+        // already gone; the rest still run
+      }
+    }
+  }
+
+  /** `fn` as one case: its cleanups run when it ends, by its answer or by an exception. */
+  async guarded(fn) {
+    try {
+      return await fn();
+    } finally {
+      await this.releaseAll();
+    }
   }
 
   engine(args = []) {
-    return new Engine({ label: 'cua', bin: this.cua, args, stats: true }).start();
+    const engine = new Engine({ label: 'cua', bin: this.cua, args, stats: true });
+    this.defer(() => engine.close());
+    return engine.start();
+  }
+
+  /** A harness owner of CLIPBOARD (`clip.mjs`), stopped when the case ends. */
+  async owner(text) {
+    const owner = await startOwner(text);
+    this.defer(() => owner.stop());
+    return owner;
+  }
+
+  /**
+   * An owner of the prior clipboard whose next TARGETS answer is held. Applications that watch CLIPBOARD (gedit, a
+   * clipboard manager) read a new owner's TARGETS as soon as it takes over; the owner is armed only after they have, so
+   * the request it holds is the engine's snapshot.
+   */
+  async armedOwner(text) {
+    const owner = await this.owner(text);
+    await sleep(600);
+    owner.send('arm');
+    await owner.waitFor((r) => r.armed);
+    return owner;
+  }
+
+  /** A paste-target window, closed when the case ends unless the case closed it. */
+  target(mode) {
+    return openTarget(this.desktop, mode, (scene) =>
+      this.defer(async () => {
+        if (this.desktop.windows.includes(scene)) await this.desktop.close([scene]);
+      }),
+    );
   }
 
   record(scene, op, trial, verdict, details) {
@@ -179,7 +227,7 @@ export class Cases {
       this.focusFirst(scene);
       await sleep(200);
       const before = [textOf(this.oracle, scene.field), textOf(this.oracle, scene.other)];
-      const prior = await armedOwner(`cua171 prior focus ${stamp()}`);
+      const prior = await this.armedOwner(`cua171 prior focus ${stamp()}`);
       const taken = `cua171 taken ${stamp()}`;
       if (takeover) {
         prior.send(`retake ${delay} ${taken}`);
@@ -232,7 +280,7 @@ export class Cases {
     for (let trial = 0; trial < 3; trial++) {
       for (const s of scenes) this.focusFirst(s);
       await sleep(200);
-      const prior = await startOwner(`cua171 prior concurrent ${stamp()}`);
+      const prior = await this.owner(`cua171 prior concurrent ${stamp()}`);
       const before = scenes.map((s) => stateOf(this.oracle, s.field));
       const markers = scenes.map((_, i) => `cua171-concurrent-${trial}-${i}-${stamp()}`);
       const span = await this.witness.span(`case:concurrent:${trial}`, () => Promise.all(engines.map((e, i) => e.request('type_text', { window: { id: scenes[i].id }, text: markers[i] }))));
@@ -254,7 +302,7 @@ export class Cases {
     const engines = scenes.map(() => this.engine());
     for (const s of scenes) this.focusFirst(s);
     await sleep(200);
-    const prior = await startOwner(`cua171 prior contention ${stamp()}`);
+    const prior = await this.owner(`cua171 prior contention ${stamp()}`);
     const before = scenes.map((s) => stateOf(this.oracle, s.field));
     const markers = scenes.map((_, i) => Array.from({ length: n }, (__, k) => `[${'AB'[i]}${k}]`));
     const answers = [];
@@ -290,7 +338,7 @@ export class Cases {
     const engine = this.engine();
     this.focusFirst(scene);
     await sleep(200);
-    const prior = await startOwner(`cua171 prior silent ${stamp()}`);
+    const prior = await this.owner(`cua171 prior silent ${stamp()}`);
     // after the clipboard watchers' reads of a new owner (armedOwner)
     await sleep(600);
     prior.send('silence');
@@ -321,7 +369,7 @@ export class Cases {
     const engine = this.engine();
     this.focusFirst(scene);
     await sleep(200);
-    const prior = await startOwner(`cua171 prior ${op} ${stamp()}`);
+    const prior = await this.owner(`cua171 prior ${op} ${stamp()}`);
     const state = stateOf(this.oracle, scene.field);
     const before = state.text;
     const marker = `cua171-${op}-${stamp()}`;
@@ -351,9 +399,9 @@ export class Cases {
 
   /** A target that stalls an INCR transfer: 100 KB of text, so the engine serves it in chunks. */
   async stalledIncr() {
-    const scene = await openTarget(this.desktop, 'stall-incr');
+    const scene = await this.target('stall-incr');
     const engine = this.engine();
-    const prior = await startOwner(`cua171 prior stall ${stamp()}`);
+    const prior = await this.owner(`cua171 prior stall ${stamp()}`);
     const before = textOf(this.oracle, scene.field);
     const text = `cua171-stall ${'0123456789'.repeat(10000)}`;
     const span = await this.witness.span('case:stalled_incr', () => engine.request('type_text', { window: { id: scene.id }, text }));
@@ -378,9 +426,9 @@ export class Cases {
   async lateConvert() {
     let all = true;
     for (const [trial, mode] of ['late-convert:1500', 'late-convert:3000', 'late-convert-current:3000'].entries()) {
-      const scene = await openTarget(this.desktop, mode);
+      const scene = await this.target(mode);
       const engine = this.engine();
-      const prior = await startOwner(`cua171 prior late ${stamp()}`);
+      const prior = await this.owner(`cua171 prior late ${stamp()}`);
       const before = textOf(this.oracle, scene.field);
       const marker = `cua171-late-convert-${trial}`;
       const span = await this.witness.span(`case:late_convert:${trial}`, () => engine.request('type_text', { window: { id: scene.id }, text: marker }));
@@ -400,9 +448,9 @@ export class Cases {
 
   /** A field with no readable Text: unconfirmed, and the application received the text once. */
   async unreadable() {
-    const scene = await openTarget(this.desktop, 'unreadable');
+    const scene = await this.target('unreadable');
     const engine = this.engine();
-    const prior = await startOwner(`cua171 prior unreadable ${stamp()}`);
+    const prior = await this.owner(`cua171 prior unreadable ${stamp()}`);
     const marker = `cua171-unreadable-${stamp()}`;
     const span = await this.witness.span('case:unreadable', () => engine.request('type_text', { window: { id: scene.id }, text: marker }));
     const next = await engine.request('list_windows', {});
@@ -430,6 +478,8 @@ export class Cases {
     const nodes = preorder((await this.desktop.state(scene)).ax_tree);
     const control = nodes.find((n) => n.role === 'push button' && (n.states ?? []).includes('focusable') && n.id !== scene.field);
     const engine = this.engine(dedicated ? ['--desktop', 'dedicated'] : []);
+    // the foreground route leaves its window active: the front window takes the focus back when the case ends
+    if (dedicated) this.defer(() => this.desktop.focusFront());
     const before = textOf(this.oracle, scene.field);
     const placed = 6;
     let caretSet = false;
@@ -450,7 +500,8 @@ export class Cases {
     } else moved = control ? this.oracle.grabFocus(control.id) : false;
     await sleep(300);
     const marker = `cua171-${op}-${stamp()}`;
-    const span = await routeWitness(this.witness, `case:${op}`, scene.id, () => engine.request('type_text', { window: { id: scene.id }, element_id: scene.field, text: marker }));
+    const expected = dedicated ? 'foreground' : 'background';
+    const span = await routeWitness(this.witness, `case:${op}`, scene.id, expected, () => engine.request('type_text', { window: { id: scene.id }, element_id: scene.field, text: marker }));
     await sleep(300);
     const after = textOf(this.oracle, scene.field);
     if (dedicated) {
@@ -459,7 +510,6 @@ export class Cases {
       await sleep(200);
     }
     await engine.close();
-    if (dedicated) this.desktop.focusFront();
     const paste = span.value.stats?.paste ?? null;
     const reasons = [];
     if (span.value.response.ok !== true) reasons.push(`answered ${JSON.stringify(span.value.response)}`);
@@ -474,10 +524,9 @@ export class Cases {
       const expected = [...[...before].slice(0, placed), ...marker, ...[...before].slice(placed)].join('');
       if (after !== expected) reasons.push('the text did not land at the placed caret, once');
     }
-    if (dedicated && span.route !== 'foreground') reasons.push(`the route was ${span.route}, not the foreground route`);
-    if (!dedicated && span.route !== 'background') reasons.push(`the route was ${span.route}, not the background route`);
-    if (!span.judged.clean) reasons.push(`the witness changed beyond the ${span.route} route's allowance (${span.judged.fields.join(', ')})`);
-    return this.record(sceneName, op, 0, { pass: reasons.length === 0, reasons }, { answer: span.value.response, ms: Math.round(span.value.ms), route: span.route, witness_allowed: span.judged.allowed, witness_changes: (span.report?.changes ?? []).slice(0, 30), paste });
+    // the expected route, then its allowance (judgeRouteSpan): a route other than the expected one fails here
+    if (!span.judged.clean) reasons.push(`the witness changed beyond the ${expected} route's allowance (${span.judged.fields.join(', ')})`);
+    return this.record(sceneName, op, 0, { pass: reasons.length === 0, reasons }, { answer: span.value.response, ms: Math.round(span.value.ms), route: span.route, route_expected: expected, witness_allowed: span.judged.allowed, witness_changes: (span.report?.changes ?? []).slice(0, 30), paste });
   }
 }
 
@@ -500,7 +549,7 @@ export async function runCases({ desktop, witness, cua, emit, plan, openScene })
   const run = async (scene, op, fn) => {
     if (!wanted(scene, op)) return;
     try {
-      all = (await fn()) && all;
+      all = (await cases.guarded(fn)) && all;
     } catch (error) {
       all = false;
       emit({ kind: 'case', scene, op, trial: null, pass: false, reasons: [`threw: ${error.message}`] });

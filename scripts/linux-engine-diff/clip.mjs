@@ -77,6 +77,12 @@ export async function startOwner(text) {
       clearTimeout(timer);
     },
   };
-  await owner.waitFor((r) => 'owned' in r);
+  try {
+    await owner.waitFor((r) => 'owned' in r);
+  } catch (error) {
+    // an owner that never took CLIPBOARD is not left running
+    await owner.stop();
+    throw error;
+  }
   return owner;
 }

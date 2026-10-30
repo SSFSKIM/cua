@@ -104,7 +104,7 @@ export const NO_HANDLE = 'cua171-no-handle';
  * handle it never issued, and its sample records why (`prepare_error`): the request still runs, its answer and effect
  * are judged as any other, so a candidate's failure here fails its verdict and a vendor build's is recorded.
  */
-async function handleOfFirstWord(ctx) {
+export async function handleOfFirstWord(ctx) {
   let error;
   for (let attempt = 0; attempt < 2; attempt++) {
     selectFirstWord(ctx);
@@ -130,8 +130,9 @@ export const TEXT_SCENE_OPS = {
 const typeText = {
   kind: 'text',
   // gnome-text-editor (GTK 4) ignores the background route: cua takes the foreground route there, in dedicated mode
-  // (Decision Log, M2 pre-flight); its witness is judged by the route each request took (run.mjs)
+  // (Decision Log, M2 pre-flight); every other scene's request takes the background route (`route`, run.mjs)
   cuaArgs: (scene) => (scene === 'gnome-text-editor' ? ['--desktop', 'dedicated'] : []),
+  route: (scene) => (scene === 'gnome-text-editor' ? 'foreground' : 'background'),
   prepare: async (ctx) => {
     if (ctx.sceneName === 'chrome-address-bar') {
       // the address bar focused with its text selected, as a person's Ctrl+L leaves it; the paste replaces it. The
@@ -184,6 +185,7 @@ export const TEXT_OPS = {
     ...typeText,
     cuaOnly: true,
     cuaArgs: () => ['--desktop', 'dedicated'],
+    route: () => 'background',
     prepare: async (ctx) => {
       caretToEnd(ctx);
       await priorClipboard(ctx);
@@ -196,6 +198,7 @@ export const TEXT_OPS = {
   type_characters: {
     kind: 'text',
     reference: 'newest',
+    route: () => 'background',
     prepare: async (ctx) => caretToEnd(ctx),
     read: readField,
     request: (ctx) => ['type_characters', { window: { id: ctx.scene.id }, text: LAYOUT_TEXT }],
@@ -225,6 +228,7 @@ export const TEXT_OPS = {
   // cleanup leaves serving (the vendor builds leave the snapshot instead, a declared deviation)
   clipboard_write: {
     kind: 'text',
+    route: () => 'background',
     prepare: async (ctx) => {
       ctx.handle = await handleOfFirstWord(ctx);
       caretToEnd(ctx);
@@ -257,6 +261,15 @@ export const TEXT_OPS = {
     request: (ctx) => ['clipboard_release', { handle: ctx.handle }],
   },
 };
+
+/**
+ * The route cua's request of a text operation must take on a scene (Decision Log, M2.2: the foreground route's witness
+ * allowance is granted only where it is the expected route and the one the engine reports taking), or null for an
+ * operation that pastes nothing and reports no route.
+ */
+export function expectedRoute(op, sceneName) {
+  return TEXT_OPS[op]?.route?.(sceneName) ?? null;
+}
 
 /** The scene's field (and the textarea page's second field), found once its window is open (run.mjs). */
 export async function resolveField(desktop, scene, sceneName) {

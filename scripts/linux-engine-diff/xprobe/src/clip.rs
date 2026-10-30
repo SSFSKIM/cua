@@ -127,8 +127,7 @@ struct Owner {
 impl Owner {
     fn take(&mut self) -> Result<u32> {
         let time = server_time(&self.conn, self.window, self.atoms.property)?;
-        self.conn
-            .set_selection_owner(self.window, self.atoms.clipboard, time)?;
+        self.conn.set_selection_owner(self.window, self.atoms.clipboard, time)?;
         let owner = self.conn.get_selection_owner(self.atoms.clipboard)?.reply()?.owner;
         if owner != self.window {
             return Err("CLIPBOARD was not taken".into());
@@ -137,7 +136,12 @@ impl Owner {
     }
 
     fn targets(&self) -> Vec<u32> {
-        let mut out = vec![self.atoms.targets, self.atoms.utf8, self.atoms.plain_utf8, self.atoms.plain];
+        let mut out = vec![
+            self.atoms.targets,
+            self.atoms.utf8,
+            self.atoms.plain_utf8,
+            self.atoms.plain,
+        ];
         if self.text.chars().all(|c| (c as u32) < 0x100) {
             out.push(AtomEnum::STRING.into());
         }
@@ -145,7 +149,11 @@ impl Owner {
     }
 
     fn answer(&mut self, e: &SelectionRequestEvent, rx: &mpsc::Receiver<Option<String>>) -> Result<bool> {
-        let property = if e.property == x11rb::NONE { e.target } else { e.property };
+        let property = if e.property == x11rb::NONE {
+            e.target
+        } else {
+            e.property
+        };
         if self.silent && e.target == self.atoms.targets {
             // a silent owner: this request is never answered
             self.silent = false;
@@ -194,7 +202,9 @@ impl Owner {
         self.conn.flush()?;
         say(format!(
             "{{\"request\":{},\"requestor\":{},\"time\":{},\"served\":{served}}}",
-            json_str(&String::from_utf8_lossy(&self.conn.get_atom_name(e.target)?.reply()?.name)),
+            json_str(&String::from_utf8_lossy(
+                &self.conn.get_atom_name(e.target)?.reply()?.name
+            )),
             e.requestor,
             e.time
         ))?;
@@ -292,7 +302,10 @@ pub fn read() -> Result<()> {
                     ));
                 }
                 let text = String::from_utf8_lossy(&reply.value);
-                return say(format!("{{\"ok\":true,\"owner\":{owner},\"text\":{}}}", json_str(&text)));
+                return say(format!(
+                    "{{\"ok\":true,\"owner\":{owner},\"text\":{}}}",
+                    json_str(&text)
+                ));
             }
             Some(_) => {}
             None => std::thread::sleep(Duration::from_millis(1)),

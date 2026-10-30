@@ -81,6 +81,11 @@ pub(crate) fn json_str(text: &str) -> String {
     out
 }
 
+fn json_ids(ids: &[u32]) -> String {
+    let items: Vec<String> = ids.iter().map(u32::to_string).collect();
+    format!("[{}]", items.join(","))
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // The witness
 
@@ -150,9 +155,11 @@ impl Span {
         }
         if now.stacking != self.last.stacking {
             self.changes.push(format!(
-                "{{\"field\":\"stacking\",\"t_ms\":{t:.1},\"from_len\":{},\"to_len\":{}}}",
+                "{{\"field\":\"stacking\",\"t_ms\":{t:.1},\"from_len\":{},\"to_len\":{},\"from\":{},\"to\":{}}}",
                 self.last.stacking.len(),
-                now.stacking.len()
+                now.stacking.len(),
+                json_ids(&self.last.stacking),
+                json_ids(&now.stacking)
             ));
         }
         if now.focus != self.last.focus {
@@ -300,29 +307,24 @@ fn witness() -> Result<()> {
 
 /// Reads queued `PropertyNotify` events. Each one for a watched property is recorded as a change (`Span::notify`),
 /// whatever the value reads afterwards; the value is re-read too, so a lasting change also shows its from and to.
+/// The value is read right after each notify, not once per poll, so each change of the stacking order is recorded as
+/// its own transition (the foreground route's witness judges every one). Changes faster than one read can still merge:
+/// their notifies stay recorded either way.
 fn drain_notifies(desktop: &Desktop, span: &mut Span) -> Result<()> {
-    let mut active = false;
-    let mut stacking = false;
     while let Some(event) = desktop.conn.poll_for_event()? {
         if let Event::PropertyNotify(notify) = event {
+            let mut state = span.last.clone();
             if notify.atom == desktop.active_atom {
                 span.notify("active");
-                active = true;
+                state.active = desktop.property(desktop.active_atom)?;
             } else if notify.atom == desktop.stacking_atom {
                 span.notify("stacking");
-                stacking = true;
+                state.stacking = desktop.property(desktop.stacking_atom)?;
+            } else {
+                continue;
             }
+            span.record(state);
         }
-    }
-    if active || stacking {
-        let mut state = span.last.clone();
-        if active {
-            state.active = desktop.property(desktop.active_atom)?;
-        }
-        if stacking {
-            state.stacking = desktop.property(desktop.stacking_atom)?;
-        }
-        span.record(state);
     }
     Ok(())
 }
@@ -504,6 +506,21 @@ mod tests {
         assert_eq!(s.changes.len(), 2, "{:?}", s.changes);
         assert!(s.changes.iter().all(|c| c.contains("\"field\":\"active\"")));
         assert!(s.report().contains("\"notifies\":{\"active\":2,\"stacking\":0}"));
+    }
+
+    #[test]
+    fn a_stacking_change_records_both_orders() {
+        // the foreground route's witness judges each transition of the order, not only its lengths (M2.3 review)
+        let mut s = span();
+        let mut raised = state(5);
+        raised.stacking = vec![1, 3, 2];
+        s.record(raised);
+        assert_eq!(s.changes.len(), 1);
+        assert!(
+            s.changes[0].contains("\"from\":[1,2,3]") && s.changes[0].contains("\"to\":[1,3,2]"),
+            "{:?}",
+            s.changes
+        );
     }
 
     #[test]

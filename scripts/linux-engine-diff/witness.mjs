@@ -70,15 +70,16 @@ export function raisedOnly(before, after, target) {
 
 /**
  * The witness of a request that took the foreground route (Decision Log, M2.2: the allowance is keyed to the route the
- * request actually took, read from the engine's record, never to the desktop mode). On a dedicated desktop the route
- * may activate its target window and move the pointer, and nothing else: every change of the active window goes to the
- * target, every change of the input focus goes into it (`focusWithin`), the stacking order changes only by the target's
- * raise (`stackingRaised`, from the orders before and after the span), and the pointer may move. On its way the window
- * manager may pass through no active window and no input focus (None or PointerRoot), so long as the last change goes
- * to the target. Anything else, a protocol error included, is a violation. Returns `{clean, fields, allowed}`:
- * `fields` the violations, `allowed` the fields that changed within the allowance.
+ * request took, and the route each scene's request must take is known beforehand, run.mjs). On a dedicated desktop the
+ * route may activate its target window and move the pointer, and nothing else: every change of the active window goes
+ * to the target, every change of the input focus goes into it (`focusWithin`), each change of the stacking order is the
+ * target's raise (the witness records the orders on both sides of every change; a notify that leaves the order as it
+ * was is the window manager rewriting it), and the pointer may move. On its way the window manager may pass through no
+ * active window and no input focus (None or PointerRoot), so long as the last change goes to the target. Anything else,
+ * a protocol error and a stacking change recorded without its orders included, is a violation. Returns `{clean,
+ * fields, allowed}`: `fields` the violations, `allowed` the fields that changed within the allowance.
  */
-export function judgeForegroundSpan(report, { target, focusWithin, stackingRaised }) {
+export function judgeForegroundSpan(report, { target, focusWithin }) {
   if (!report || report.error) return { clean: false, fields: ['protocol'], allowed: [] };
   const bad = new Set();
   const allowed = new Set();
@@ -95,9 +96,25 @@ export function judgeForegroundSpan(report, { target, focusWithin, stackingRaise
       if (focusWithin(c.to) || ([0, 1].includes(c.to) && focusWithin(last('focus').to))) allowed.add('focus');
       else bad.add('focus');
     } else if (c.field === 'stacking') {
-      if (stackingRaised) allowed.add('stacking');
+      if (c.notify || (Array.isArray(c.from) && Array.isArray(c.to) && raisedOnly(c.from, c.to, target))) allowed.add('stacking');
       else bad.add('stacking');
     } else bad.add(c.field);
   }
   return { clean: bad.size === 0, fields: [...bad], allowed: [...allowed] };
+}
+
+/**
+ * The witness of a request whose route is known beforehand (`expected`, text.mjs `expectedRoute`) against the route
+ * the engine reports it took (`reported`): the foreground route's allowance (`judgeForegroundSpan`) only where both are
+ * the foreground route; anything else is judged strictly (`judgeSpan`), and a reported route other than the expected
+ * one, a missing record included, is a violation of its own. With no expected route (a vendor build, an operation that
+ * pastes nothing) the span is judged strictly whatever is reported. Returns `{clean, fields, allowed, foreground}`.
+ */
+export function judgeRouteSpan(report, { expected, reported, target, focusWithin }) {
+  const fields = [];
+  if (expected && reported !== expected) fields.push(`route ${reported ?? 'not recorded'}, expected ${expected}`);
+  const foreground = expected === 'foreground' && reported === 'foreground';
+  const judged = foreground ? judgeForegroundSpan(report, { target, focusWithin }) : { ...judgeSpan(report), allowed: [] };
+  fields.push(...judged.fields);
+  return { clean: fields.length === 0, fields, allowed: judged.allowed, foreground };
 }

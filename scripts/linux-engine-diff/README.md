@@ -203,9 +203,11 @@ variants included; their evidence is written either way. The run's `end` row kee
       mismatch fails the run);
     - a group is judged only with 20 samples an engine, and every Acceptance 3 desktop group
       (`MANDATORY_SPEED_GROUPS`) must be, or the run is incomplete;
-    - a median above the bar whose bootstrap 95% interval of cua minus the faster build includes 0 is "same (within
-      noise)", in any series;
-    - a loss `deviations.mjs` `SPEED_GAPS` declares is a "declared gap", never a pass.
+    - a median above the bar whose bootstrap 95% interval of cua minus the faster build includes 0 and reaches at most
+      max(5% of the bar, 1 ms) (`stats.mjs` `noiseBound`) is "same (within noise)", in any series;
+    - a loss `deviations.mjs` `SPEED_GAPS` declares is a "declared gap", never a pass;
+    - an interval that includes 0 but reaches past the bound is undetermined: its commands' sequences get up to two
+      more sets of rounds (`TOP_UPS`, `events-top-up` rows), and a group still that wide fails.
   - `--via vendor-js` refuses `--variant`: the vendor client starts the engine without the variant's flags.
   - The desktop entries the harness writes take their paths as quoted `Exec` arguments (`desktop-entry.mjs`), never as
     shell source.
@@ -255,11 +257,23 @@ variants included; their evidence is written either way. The run's `end` row kee
   succeed, take effect and keep the clipboard, whatever the vendor builds did. A text operation's reference answer is
   that of a build whose route applied it in the block; where neither does (gnome-text-editor; gedit's
   `clipboard_write`), cua's success is a declared deviation.
-- **The witness by route**: cua reports the route each text request took on its `--stats` line. A `foreground`
-  request may activate its target and move the pointer and nothing else (`witness.mjs` `judgeForegroundSpan`: the
-  active window and the focus end in the target, the stacking order changes only by its raise; then a quiet 300 ms span
-  and no grab left, `xprobe grabs`); every other route must leave the witness unchanged. A foreground route's
-  activation and XTEST input are the route itself, so its audit is not required.
+- **The witness by route**: the route each cua text request must take is known beforehand (`text.mjs`
+  `expectedRoute`: the foreground route for gnome-text-editor in dedicated mode, the background route everywhere else,
+  none for `clipboard_read` and `clipboard_release`), and cua reports the route it took on its `--stats` line. A request
+  whose reported route differs from the expected one, a missing record included, fails its witness (`witness.mjs`
+  `judgeRouteSpan`). Where both are `foreground`, the request may activate its target and move the pointer and nothing
+  else (`judgeForegroundSpan`: the active window and the focus end in the target, and each change of the stacking
+  order is the target's raise, the witness recording the orders on both sides of every change; then a quiet 300 ms
+  span and no grab left, `xprobe grabs`); every other request must leave the witness unchanged. A foreground route's
+  activation and XTEST input are the route itself, so where the foreground route is expected the audit is not
+  required. A run with a foreground request also runs the foreground negative check (`foregroundNegativeCheck`):
+  another window raised and the top one raised back, which the allowance must fail, or the run is invalid.
+- **A failed preparation**: a sample whose engine could not make the handle it needs (`prepare_error`: both Copy
+  attempts failed, so a handle no engine issued is sent) times another request than the operation's, so no engine's
+  such sample is in the medians; a cua sample of that kind fails its verdict, a vendor build's is recorded.
+- **Every cleanup a case owes runs when it ends** (`Cases.guarded`): the engines, clipboard owners and target windows
+  a case starts, whether it ends by its verdict or by an exception half-way through its setup; a sample's clipboard
+  owner ends with the sample the same way (`runSample`).
 - **The bus trace**: a pass per text operation and engine, a fresh process under `dbus-monitor`, counts
   `PasteText`, `InsertText` and `SetTextContents`; cua's must be 0 (vendor counts recorded). The safety cases' whole
   phase is watched the same way.
@@ -285,9 +299,15 @@ variants included; their evidence is written either way. The run's `end` row kee
   it receives, so a paste is confirmed in the terminal's text), and cua's `type_text` runs beside the vendor builds'.
 - `--via vendor-js` refuses the text operations and the cases: their facade-level proof is the facade suites.
 - **Same within noise** (Acceptance 3's rule, now in every verdict over the wire): a candidate median above the bar
-  whose bootstrap 95% interval of the candidate's median minus the bar build's includes 0 passes as "same within
-  noise", listed in the verdict with its interval, when both sides have at least 20 samples in the series; with fewer,
-  the medians alone decide. `clipboard_release` (a map removal in every engine, about 0.1 ms the harness's own
+  whose bootstrap 95% interval of the candidate's median minus the bar build's includes 0 and reaches at most max(5% of
+  the bar, 1 ms) passes as "same within noise", listed in the verdict with its interval, when both sides have at least
+  20 samples in the series; a wider interval is undetermined, which fails the verdict (the differential run adds no
+  samples); with fewer samples, the medians alone decide.
+- **Parity** (Acceptance 3's parity rule): `deviations.mjs` `PARITY` lists an operation, scene and series whose work
+  is identical by construction in every engine (the cold desktop screenshot, Decision Log, M1a.4). Above the bar, it is
+  **parity** when cua's median lies within the bar build's own spread of samples of that series in the run, which is
+  neither a pass nor a failure: listed apart in the verdict and on the run's last line, it does not fail the run;
+  outside that spread it fails. Unlisted operations are unaffected. `clipboard_release` (a map removal in every engine, about 0.1 ms the harness's own
   scheduling dominates) takes 10 warm samples a block so that its warm series has them.
 
 ## Files

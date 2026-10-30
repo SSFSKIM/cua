@@ -17,8 +17,9 @@ import { fileURLToPath } from 'node:url';
 
 import { auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { startMonitor } from './busmon.mjs';
+import { stacking, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
-import { declaredDeviation } from './deviations.mjs';
+import { declaredDeviation, declaredParity } from './deviations.mjs';
 import { Engine } from './engine.mjs';
 import { medianDifferenceInterval, normalizeAnswer } from './events.mjs';
 import { compareShots, xprobeDiff } from './images.mjs';
@@ -28,10 +29,10 @@ import { Oracle } from './oracle.mjs';
 import { writeSummary } from './report.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
-import { blockOrder, judgeCalls, judgeOperation, runOutcome } from './stats.mjs';
-import { resolveField } from './text.mjs';
+import { blockOrder, judgeCalls, judgeOperation, runOutcome, verdictLine } from './stats.mjs';
+import { expectedRoute, resolveField } from './text.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
-import { startWitness } from './witness.mjs';
+import { judgeForegroundSpan, startWitness } from './witness.mjs';
 
 export { SCENE_OPS };
 
@@ -191,9 +192,18 @@ export function differingField(reference, candidate) {
  * input of a retention case. Returns the row and the raw response.
  */
 export async function runSample(s) {
-  const { desktop, witness, engine, target, op, i } = s;
+  const ctx = { desktop: s.desktop, scene: s.target, sceneName: s.sceneName, engine: s.engine, i: s.i, witness: s.witness };
+  try {
+    return await measureSample(s, ctx);
+  } finally {
+    // the sample's clipboard owner ends with the sample, however it ends (a check stops it on the way)
+    await ctx.prior?.stop();
+  }
+}
+
+async function measureSample(s, ctx) {
+  const { witness, engine, target, op, i } = s;
   const def = OPS[op];
-  const ctx = { desktop, scene: target, sceneName: s.sceneName, engine, i, witness };
   const spans = [];
   const span = async (tag, fn) => {
     if (!witness || !target) return { value: await fn(), witness: null };
@@ -234,10 +244,13 @@ export async function runSample(s) {
     return engine.request(command, input);
   };
   const tag = `${s.label}:${s.sceneName}:${op}`;
-  // a text command's witness is judged by the route the engine reports the request took (Decision Log, M2.2)
-  const answered = witness && target && isText(op) ? await routeWitness(witness, tag, target.id, send) : await span(tag, send);
+  // a cua text command's route is known beforehand: its witness is judged against it and the route the engine reports
+  // taking (Decision Log, M2.2); a vendor build's is judged strictly
+  const expected = VENDORS.includes(s.label) ? null : expectedRoute(op, s.sceneName);
+  const answered = witness && target && isText(op) ? await routeWitness(witness, tag, target.id, expected, send) : await span(tag, send);
   const { response, ms, sinceSpawnMs, stats } = answered.value;
   const row = { kind: 'sample', engine: s.label, scene: s.sceneName, op, block: s.block, series: i === 0 ? 'cold' : 'warm', i };
+  if (expected) row.route_expected = expected;
   row.ms = Math.round((i === 0 && startedInSpan ? sinceSpawnMs : ms) * 100) / 100;
   row.timed = i === 0 && startedInSpan ? 'spawn' : 'request';
   row.request_ms = Math.round(ms * 100) / 100;
@@ -296,6 +309,35 @@ export async function negativeCheck(desktop, witness, stubScene, emit, { audit =
   emit({ kind: 'stub-check', ok: value.response.ok, witness: w, witness_failed_it: witnessFailed, audit: audited ? { traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.map((f) => f.what) } : null, audit_failed_it: auditFailed });
   process.stdout.write(`negative check: the witness ${witnessFailed ? 'failed' : 'PASSED'} the activating stub (${w.fields.join(', ') || 'no change'})${audited ? `; the audit ${auditFailed ? 'failed' : 'PASSED'} it (${[...new Set(audited.forbidden.map((f) => f.what))].join(', ') || 'nothing forbidden'})` : ''}\n`);
   return witnessFailed && (auditFailed ?? true);
+}
+
+/**
+ * The foreground allowance's negative check: inside one span, the window just below the top is raised and the top
+ * window raised back over it, so the stacking order ends as it began. Judged as a foreground request whose target is the
+ * top window, the span must fail on the stacking order: the witness judges each of its changes, not the orders before
+ * and after. Returns whether it did.
+ */
+export async function foregroundNegativeCheck(witness, emit) {
+  const order = stacking();
+  if (order.length < 2) {
+    emit({ kind: 'stub-check-foreground', witness_failed_it: false, why: 'fewer than two windows to restack' });
+    process.stdout.write('foreground negative check: fewer than two windows to restack\n');
+    return false;
+  }
+  const [other, target] = order.slice(-2);
+  const raise = (w) => execFileSync('xdotool', ['windowraise', String(w)]);
+  const { report } = await witness.span('stub:foreground', async () => {
+    raise(other);
+    await sleep(50);
+    raise(target);
+    await sleep(50);
+  });
+  const judged = judgeForegroundSpan(report, { target, focusWithin: (w) => within(w, target) });
+  const restored = stacking().join() === order.join();
+  const failedIt = judged.fields.includes('stacking');
+  emit({ kind: 'stub-check-foreground', target, raised: other, restored, witness: judged, changes: (report.changes ?? []).slice(0, 10), witness_failed_it: failedIt });
+  process.stdout.write(`foreground negative check: the allowance ${failedIt ? 'failed' : 'PASSED'} another window raised and the order restored (${judged.fields.join(', ') || 'no violation'}; order ${restored ? 'restored' : 'not restored'})\n`);
+  return failedIt;
 }
 
 /**
@@ -416,6 +458,9 @@ export async function runDiff(args) {
     const busAddress = a11yBusAddress();
 
     if (stubScene && !(await negativeCheck(desktop, witness, stubScene, emit, { audit: args.audit }))) valid = false;
+    // the foreground route's allowance, wherever a request is expected to take that route
+    const foregroundPlanned = plan.some((p) => (isText(p.op) && expectedRoute(p.op, p.scene) === 'foreground') || p.op === 'restore_refused');
+    if (foregroundPlanned && !(await foregroundNegativeCheck(witness, emit))) valid = false;
 
     for (let block = 0; block < args.blocks; block++) {
       for (const { scene: sceneName, op } of blockPlan) {
@@ -600,13 +645,16 @@ export async function runDiff(args) {
       for (const candidate of labels.filter((l) => !VENDORS.includes(l))) {
         const mine = opRows.filter((r) => r.engine === candidate);
         const routes = [...new Set(mine.map((r) => r.route).filter(Boolean))];
-        // the foreground route's activation and desktop input are the route itself, which its witness allowance judges;
+        // the foreground route's activation and desktop input are the route itself, which its witness allowance judges
+        // where the scene's expected route is the foreground one (a sample that took another route fails its witness);
         // the audit's forbidden requests are the background route's
-        const foreground = routes.includes('foreground');
+        const foreground = expectedRoute(op, sceneName) === 'foreground';
         const opAudits = args.audit && targeted(op) && !foreground ? Object.fromEntries(labels.map((l) => [l, audits[`${sceneName}|${op}|${l}`]])) : null;
-        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op), noise: medianDifferenceInterval });
+        const parity = ['cold', 'warm'].map((series) => declaredParity({ op, scene: sceneName, series })).filter(Boolean);
+        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op), noise: medianDifferenceInterval, parity });
         const extra = {};
         if (routes.length) extra.routes = routes;
+        if (isText(op) && expectedRoute(op, sceneName)) extra.route_expected = expectedRoute(op, sceneName);
         if (foreground) extra.audit_note = 'foreground route: the activation and the desktop input are the route itself; judged by the witness allowance';
         if (isText(op) && via === 'wire' && args.counts) {
           // Acceptance 6: no PasteText, InsertText or SetTextContents from cua
@@ -671,15 +719,13 @@ export async function runDiff(args) {
       emit(row);
     }
     outcome = runOutcome(verdicts, { valid });
-    emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, finished: new Date().toISOString() });
+    emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, finished: new Date().toISOString() });
   } finally {
     if (witness) await witness.stop();
     await desktop.closeAll();
   }
   writeSummary(args.out);
-  process.stdout.write(
-    `run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${outcome.pass ? 'every verdict PASS' : `FAIL: ${outcome.failed.join(', ')}`}\nresults: ${results}\n`,
-  );
+  process.stdout.write(`run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${verdictLine(outcome)}\nresults: ${results}\n`);
   return outcome.code === 0;
 }
 

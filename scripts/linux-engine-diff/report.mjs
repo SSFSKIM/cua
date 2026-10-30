@@ -6,7 +6,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { matrixMarkdown } from './matrix-judge.mjs';
-import { summarizeEngine } from './stats.mjs';
+import { summarizeEngine, verdictLine } from './stats.mjs';
 
 const fmt = (v) => (v === null || v === undefined ? '–' : String(v));
 const frac = (rows, key) => {
@@ -39,6 +39,11 @@ export function renderSummary(lines) {
       const audit = stub.audit ? `; the X request audit ${stub.audit_failed_it ? 'failed' : '**passed (run invalid)**'} it (${[...new Set(stub.audit.forbidden)].join(', ') || 'nothing forbidden'}, ${stub.audit.requests} requests traced)` : '; no X request audit in this run';
       out.push(`negative check: the witness ${stub.witness_failed_it ? 'failed' : '**passed (run invalid)**'} the activating stub (${stub.witness.fields.join(', ') || 'no change'})${audit}`, '');
     }
+    const foreground = rows.find((r) => r.kind === 'stub-check-foreground');
+    if (foreground) {
+      const how = foreground.why ?? `${foreground.witness.fields.join(', ') || 'no violation'}; the order ${foreground.restored ? 'restored' : 'not restored'} at the span's end`;
+      out.push(`foreground negative check: the foreground allowance ${foreground.witness_failed_it ? 'failed' : '**passed (run invalid)**'} another window raised and the top one raised back (${how})`, '');
+    }
     const samples = rows.filter((r) => r.kind === 'sample');
     const counts = rows.filter((r) => r.kind === 'counts');
     const verdicts = rows.filter((r) => r.kind === 'verdict');
@@ -61,7 +66,9 @@ export function renderSummary(lines) {
         const v = verdicts.find((r) => r.scene === scene && r.op === op && r.candidate === engine);
         const declared = v?.deviations?.length ? ` (declared: ${v.deviations.join(', ')})` : '';
         const noise = v?.noise?.length ? ` (same within noise: ${v.noise.map((n) => `${n.series} ${Math.round(n.candidate * 100) / 100} against ${Math.round(n.bar * 100) / 100}, [${n.interval.join(', ')}]`).join('; ')})` : '';
-        const verdict = v ? (v.pass ? `PASS${noise}${declared}` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`) : '';
+        const r2 = (x) => Math.round(x * 100) / 100;
+        const parity = v?.parity?.length ? ` (${v.parity.map((p) => `${p.series} ${r2(p.candidate)} against ${r2(p.bar)}, within the ${p.against} build's spread [${p.spread.join(', ')}]; ${p.section}`).join('; ')})` : '';
+        const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`;
         const a = audits.find((r) => r.scene === scene && r.op === op && r.engine === engine);
         const audit = a ? (a.clean ? 'clean' : `**${[...new Set(a.forbidden.map((f) => f.what))].join(', ') || 'not traced'}**`) : '–';
         const wasted = mine.map((r) => r.stats?.tree?.wasted_calls).filter((w) => typeof w === 'number');
@@ -89,8 +96,8 @@ export function renderSummary(lines) {
     const textBus = rows.filter((r) => r.kind === 'text-bus');
     const textSamples = samples.filter((r) => r.clipboard_kept !== undefined || r.route !== undefined);
     if (textBus.length || textSamples.length) {
-      out.push('', "Text commands (M2): the clipboard after each sample (the harness's prior text kept, or for clipboard_write what its owner set between the read and the write), the route cua reports, the witness's allowance for the foreground route, and the text calls of each engine's bus pass:", '');
-      out.push('| scene | op | engine | clipboard kept | routes | foreground allowed | PasteText / InsertText / SetTextContents |', '|---|---|---|---|---|---|---|');
+      out.push('', "Text commands (M2): the clipboard after each sample (the harness's prior text kept, or for clipboard_write what its owner set between the read and the write), the route cua's request must take and the routes it reported (a sample whose route differs fails its witness), the witness's allowance for the foreground route, and the text calls of each engine's bus pass:", '');
+      out.push('| scene | op | engine | clipboard kept | expected route | routes | foreground allowed | PasteText / InsertText / SetTextContents |', '|---|---|---|---|---|---|---|---|');
       for (const key of [...new Set([...textSamples, ...textBus].map((r) => `${r.scene}|${r.op}|${r.engine}`))]) {
         const [scene, op, engine] = key.split('|');
         const mine = textSamples.filter((r) => r.scene === scene && r.op === op && r.engine === engine);
@@ -98,7 +105,8 @@ export function renderSummary(lines) {
         const routes = [...new Set(mine.map((r) => r.route).filter(Boolean))].join(', ') || '–';
         const allowed = [...new Set(mine.flatMap((r) => r.witness_allowed ?? []))].join(', ') || '–';
         const calls = bus ? ['PasteText', 'InsertText', 'SetTextContents'].map((m) => bus.forbidden[m]).join(' / ') : '–';
-        out.push(`| ${scene} | ${op} | ${engine} | ${frac(mine, 'clipboard_kept')} | ${routes} | ${allowed} | ${calls} |`);
+        const expected = [...new Set(mine.map((r) => r.route_expected).filter(Boolean))].join(', ') || '–';
+        out.push(`| ${scene} | ${op} | ${engine} | ${frac(mine, 'clipboard_kept')} | ${expected} | ${routes} | ${allowed} | ${calls} |`);
       }
     }
     const cases = rows.filter((r) => r.kind === 'case');
@@ -131,8 +139,8 @@ export function renderSummary(lines) {
       for (const v of bounded) out.push(`- ${v.scene} ${v.candidate}: ${v.calls_bound.pass ? 'within' : `**${v.calls_bound.reasons.join('; ')}**`}`);
     }
     const end = rows.find((r) => r.kind === 'end');
-    const verdictLine = !end || end.pass === undefined ? '' : end.pass ? '; every verdict PASS' : `; **FAIL**: ${end.failed.join(', ')}`;
-    out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${verdictLine}, finished ${end.finished}` : 'run unfinished', '');
+    const ending = !end || end.pass === undefined ? '' : `; ${verdictLine(end, (s) => `**${s}**`)}`;
+    out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
   }
   return out.join('\n');
 }

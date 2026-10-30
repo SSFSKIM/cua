@@ -97,5 +97,29 @@ export function declaredSpeedGap({ op, route, series }, list = SPEED_GAPS) {
   return list.find((g) => g.op === op && g.route === route && g.series === series) ?? null;
 }
 
+/**
+ * The declared parity list (Acceptance 3's parity rule): an operation whose work is identical by construction in every
+ * engine and cannot be made faster. Above the bar, its verdict is **parity** (listed apart, never a pass, not a
+ * failure) only while cua's median lies within the spread of the bar build's own samples of that series in that run,
+ * which is how M1a.4 checked its verdict run (stats.mjs); otherwise it still fails. `[{op, scene, series, reason,
+ * section}]`.
+ */
+export const PARITY = [
+  {
+    // m2-wire: cold 36.44 ms against the pinned build's 33.58, whose cold samples spread over 32.22-40.05
+    op: 'get_screenshot',
+    scene: 'desktop',
+    series: 'cold',
+    reason:
+      "the first desktop capture is the vendor's own plain GetImage of the root (cua makes its MIT-SHM segment after the first answer), the same X work in every engine",
+    section: 'Decision Log, M1a.4 (MIT-SHM: the cold first desktop capture is parity)',
+  },
+];
+
+/** The parity that declares this verdict's series, or null. */
+export function declaredParity({ op, scene, series }, list = PARITY) {
+  return list.find((p) => p.op === op && p.scene === scene && p.series === series) ?? null;
+}
+
 /** A deviation as recorded in results.jsonl and summary.md (without its matcher). */
 export const describe = ({ answer, ...rest }) => rest;

@@ -816,8 +816,14 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - Every `type_text`, `clipboard_write` and `type_characters` that passes the family check records `"route": "background" | "foreground" | "desktop"` on its `--stats` line, for M2.3's witness.
     - The windowless `type_text` runs the six steps, a live test shows it. On a display with no window manager, the focused window falls back to its top-level window, since no `WM_STATE` exists there.
   - The foreground route in `dedicated` mode is the desktop route (XTEST), so a focusing click moves the real pointer. On a dedicated desktop the witness allows exactly the changes the foreground route exists to make: the target window activated (active window, its raise, the X input focus) and the pointer's position. It allows nothing else: no other window's state, no grab left behind, no change after the request ends. The allowance is keyed to the route the request actually took, read from the engine's record, not to the desktop mode (the design session's condition). A `dedicated`-mode paste into an unlisted family (gedit, Chrome, Firefox) takes the background route, and its witness allows nothing, exactly as in `shared` mode, so a background-route regression on a dedicated desktop cannot pass unseen. There is one witness case for each: dedicated gnome-text-editor allows the activation and the pointer; dedicated gedit allows nothing. M2.3's harness builds both. The windowless `type_text` still runs the six steps, observing and revalidating against the real X focus, under the lock, with confirmation. M2.2's review checks this.
-  Evidence: `.doperpowers/sde/…/task-14-report.md` (local); `ci-gate` (engine-linux, plugin, test) GREEN on 9531b4c6 (run 40993434518).
-  Date/Author: 2026-10-29, the plan-executor (session linux171), from the M2.2 executor's report.
+  - The task review's fixes:
+    - Uncertain delivery stays sent. The chord's keys are pressed one at a time. Only a press the X server answers with an X error naming it answers "nothing was pasted", with no `CurrentTime` window. A press whose acknowledgement never came counts as sent and goes through confirmation.
+    - Every key that may be down is released, with one retry and no second press. A key that still cannot be released is reported in the answer, even when the paste confirms.
+    - The confirming read is bounded by the confirmation's absolute deadline (`Bus::calls_until`), and a result returned after it does not confirm.
+    - Fault injection uses a seam compiled only into test builds.
+  - Attribution evidence: on fresh private Xvfb servers, one per probe, Chrome's and gedit's requestor windows share their top-level window's resource-id base (mask `0x1fffff`). The live test with a third client reading the paste shows that a different client is excluded.
+  Evidence: `.doperpowers/sde/…/task-14-report.md` (local); `ci-gate` (engine-linux, plugin, test) GREEN on c79a318e (run 40998501356); `ci-gate --gates engine-linux` GREEN on 69329228 (run 41001628393).
+  Date/Author: 2026-10-29, the plan-executor (session linux171), from the M2.2 executor's report and its task review.
 
 ## Outcomes & Retrospective
 

@@ -144,13 +144,14 @@ func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
 /// route 4 the events are posted while the foreground assist holds the app in front. A failed guard throws before any of
 /// the click's events is posted, and nothing is retried (never with ⌘). `beforePosting` runs once the app is prepared,
 /// just before the events (the intervention guard's in-flight check: a user event during the activation stops the
-/// click). The meta carries the route from the start, so a refusal names the route that failed.
+/// click); `announce` (the agent cursor's hook, which only enqueues) runs after it, as the events are about to go out.
+/// The meta carries the route from the start, so a refusal names the route that failed.
 func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton, count: Int, activation: FakeActivation?,
                   activations: HeldActivations = HeldActivations(), foreground: ForegroundAssist? = nil, targetActive: () -> Bool,
-                  beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, post: (CGEvent, pid_t) -> Void,
-                  meta: inout InputMeta) throws {
+                  beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, announce: () -> Void = {},
+                  post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
   try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, foreground: foreground,
-                     beforeActivating: beforeActivating, beforePosting: beforePosting, post: post, meta: &meta) {
+                     beforeActivating: beforeActivating, beforePosting: beforePosting, announce: announce, post: post, meta: &meta) {
     clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
   }
 }
@@ -160,10 +161,10 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
 /// registry; the default, a registry of the action's own, shares with nothing (the unit tests'). `beforeActivating` (the
 /// in-flight intervention check) runs under the registry's lock, so a user event that lands while the action waits
 /// behind another holder's activation stops it before its activation and activation click; `beforePosting` runs again
-/// just before the events.
+/// just before the events, and `announce` once they are made and about to be posted.
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
                     foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {},
-                    post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
+                    announce: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
   var release: (() -> Bool)?
   defer { _ = release?() }  // every path out of the action, error or success, ends its lease
@@ -177,6 +178,7 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     try beforePosting()
     let made = events()
     guard !made.isEmpty else { throw EngineError(name: "eventCreationFailed", "The mouse events could not be created.") }
+    announce()
     meta.posting { _ = postToProcess(made, pid: pid, post: post); return true }
   }
   if route == .foreground, let foreground {
@@ -291,9 +293,13 @@ extension Engine {
               try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
             }
             try guarding.checkInFlight()
+            if let point = pointing.point {  // route 1: the element's clickable point, as the action goes out
+              cursor.act(connection: context.connection.id, app: app.key, window: pointing.windowID, .click(point))
+            }
             try deliverAction(action, route: route, perform: { AXUIElementPerformAction(target.element, $0 as CFString) }, meta: &meta)
           case .synthesized(let route):
-            try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding, meta: &meta)
+            try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding,
+                                 connection: context.connection.id, meta: &meta)
           }
         }
         context.connection.clearMenuRecord(app: app.key)
@@ -315,6 +321,7 @@ extension Engine {
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                              targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
                              beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
+                             announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
                              post: { $0.postToPid($1) }, meta: &meta)
           }
         }

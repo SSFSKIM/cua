@@ -166,7 +166,10 @@ extension Engine {
       try focusField(target, app: app, appPid: appPid, guarding: guarding, connection: context.connection, meta: &meta)
       try guarding.checkInFlight()
       var written = AXError.failure
-      meta.posting { written = ax.write(target.element, kAXSelectedTextRangeAttribute, axRangeValue(selectionType.selection(match))); return true }
+      cursor.afterElementAction(connection: context.connection.id, app: app.key, element: target.element, storedFrame: target.entry.frame) {
+        meta.posting { written = ax.write(target.element, kAXSelectedTextRangeAttribute, axRangeValue(selectionType.selection(match))); return true }
+        return written == .success
+      }
       context.connection.markActed(app)
       guard written == .success else { throw EngineError(name: "actionFailed", "The element did not accept the text selection.") }
       return ["meta": meta.wire]

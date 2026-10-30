@@ -102,7 +102,11 @@ extension Engine {
       }
       try guarding.checkInFlight()
       var performed = AXError.failure
-      meta.posting { performed = performOffered(chosen, on: target.element, ax: ax); return true }
+      // The cursor points at the element after the action returns, and only when it succeeded (Cursor/CursorHub.swift).
+      cursor.afterElementAction(connection: context.connection.id, app: app.key, element: target.element, storedFrame: target.entry.frame) {
+        meta.posting { performed = performOffered(chosen, on: target.element, ax: ax); return true }
+        return performed == .success
+      }
       context.connection.markActed(app)
       guard performed == .success else { throw EngineError(name: "actionFailed", "The element did not accept the \(chosen.description.prefix(256)) action.") }
       context.connection.clearMenuRecord(app: app.key)

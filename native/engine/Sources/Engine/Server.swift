@@ -56,7 +56,8 @@ final class Server: @unchecked Sendable {
   init(paths: ServerPaths, settings: EngineSettings) {
     self.paths = paths
     self.peerPolicy = settings.peerPolicy
-    self.engine = Engine(paths: paths, routes: settings.routes)
+    // The server is made on the main thread (main.swift), where the cursor's panels and its screen readings live.
+    self.engine = Engine(paths: paths, routes: settings.routes, cursor: MainActor.assumeIsolated { CursorHub.live() })
   }
 
   /// Claims the directory, the lock and the socket, then accepts on a thread of its own.
@@ -180,6 +181,7 @@ final class Server: @unchecked Sendable {
     connection.endFocusHold()  // and its focus hold (FocusHold.swift)
     engine.connectionClosed(connection)  // its drives end; the intervention tap goes with the last (Intervention.swift)
     engine.webAccessibility.release(connection: connection.id)  // enablement no connection observes now (Enablement.swift)
+    engine.cursor.closed(connection: connection.id)  // its cursor's panel is ordered out and released (Cursor/CursorHub.swift)
   }
 
   /// Accepts a shutdown atomically with accept: with no connection open but `connection`, closes the listener under the
@@ -235,7 +237,9 @@ final class Server: @unchecked Sendable {
     for connection in connections {  // held activations end before the exit
       connection.menuSpan.end()
       connection.endFocusHold()
+      engine.cursor.closed(connection: connection.id)
     }
+    engine.cursor.drain()
     engine.webAccessibility.releaseAll()  // the engine's enablement goes with it
     unlink(paths.socket)
     Lifecycle.exit("shutdown requested", status: 0)

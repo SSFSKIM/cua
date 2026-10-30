@@ -23,6 +23,9 @@ struct Outcome {
 
 /// The input methods: every error they return carries the input meta (Interfaces, input errors), paste's included, so a
 /// lock-screen refusal reads the same on every input method.
+/// The methods that act through the keyboard alone: they move no cursor, but they are its activity.
+private let keyboardOnlyMethods: Set<String> = ["press_key", "type_text", "paste"]
+
 private let inputMethods: Set<String> = ["click", "press_key", "type_text", "paste", "drag", "perform_secondary_action", "scroll", "select_text", "set_value"]
 
 final class Engine: @unchecked Sendable {
@@ -47,11 +50,13 @@ final class Engine: @unchecked Sendable {
   let pasteLock = FIFOLock()
   /// The outside world of the paste's route-3 activation (Paste.swift): the system's, replaced in the unit tests.
   let pasteActivation: ActivationSystem
+  /// The agent cursor (Cursor/CursorHub.swift): the live one draws; the default keeps its state and draws nothing.
+  let cursor: CursorHub
   weak var server: Server?
 
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
        screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general,
-       pasteActivation: ActivationSystem = ActivationSystem()) {
+       pasteActivation: ActivationSystem = ActivationSystem(), cursor: CursorHub = CursorHub()) {
     self.paths = paths
     self.apps = AppDirectory(usagePath: paths.usage)
     self.routes = routes
@@ -59,6 +64,9 @@ final class Engine: @unchecked Sendable {
     self.screenLocked = screenLocked
     self.pasteboardAccess = pasteboard
     self.pasteActivation = pasteActivation
+    self.cursor = cursor
+    // The person acting in an app a cursor acts in turns that cursor half-transparent: from the detector's own ledger.
+    intervention.ledger.onRecord = { [cursor] pid in cursor.userActed(pid: pid) }
     activationObservers = observeRealActivations(NSWorkspace.shared.notificationCenter, registry: heldActivations)
   }
 
@@ -156,6 +164,10 @@ final class Engine: @unchecked Sendable {
     } catch let error as EngineError where inputMethods.contains(method) {
       throw withMeta(error, InputMeta(context))
     }
+    // The cursor's activity (the spec's Design, "Hooks"): every request counts, a keyboard-only one may bring a faded
+    // cursor back at its last point in the app; the 5 s idle runs from the end of the last request.
+    cursor.begin(connection: connection.id, app: target?.key, keyboardOnly: keyboardOnlyMethods.contains(method))
+    defer { cursor.end(connection: connection.id) }
     // The held menu activation: kept for the recorded menu's observations, ended after the item press (unless the
     // request recorded a menu anew), ended before anything aimed elsewhere.
     let step = menuSpanStep(method: method, app: target?.key, heldApp: connection.menuSpan.app,

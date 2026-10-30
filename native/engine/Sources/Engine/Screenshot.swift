@@ -35,7 +35,9 @@ func shareableContent() throws -> SCShareableContent {
 
 /// The shareable content, listed once and kept: listing it cost 60 of a 134 ms capture on the MacBook (the spec's
 /// Surprises). It is listed again when the on-screen window list changed since, when the window is not in it, or when a
-/// cached window fails to capture. A change of order alone (another window brought forward) is not a change of list.
+/// cached window fails to capture. A change of order alone (another window brought forward) is not a change of list,
+/// and the engine's own windows (the agent cursor's panels, EngineWindows) are left out of it, so a cursor appearing
+/// never costs a screenshot a re-list (#235).
 final class ShareableWindowCache: @unchecked Sendable {
   private let lock = NSLock()
   private var content: SCShareableContent?
@@ -44,7 +46,7 @@ final class ShareableWindowCache: @unchecked Sendable {
   func window(_ id: CGWindowID, timings: inout Timings, refresh: Bool = false) throws -> (window: SCWindow?, cached: Bool) {
     lock.lock()
     defer { lock.unlock() }
-    let onScreen = timings.time("screenshotWindowList") { onScreenWindowIDs().map(Set.init) }
+    let onScreen = timings.time("screenshotWindowList") { onScreenWindowIDs().map { Set($0).subtracting(EngineWindows.shared.all) } }
     if !refresh, let content, onScreen == nil || onScreen == windowIDs, let window = content.windows.first(where: { $0.windowID == id }) {
       timings.set("screenshotContentCached", true)
       return (window, true)

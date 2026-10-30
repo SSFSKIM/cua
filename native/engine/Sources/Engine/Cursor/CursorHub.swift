@@ -101,10 +101,14 @@ final class CursorHub: @unchecked Sendable {
   private var activityHeld = false
   private var observers: [(NotificationCenter, NSObjectProtocol)] = []
 
+  /// What keeps the live environment's readings current (CursorSystem), held for the hub's lifetime.
+  private let system: AnyObject?
+
   /// A hub that keeps the cursors' state; `renderer` nil draws nothing (the unit tests' engines, unbundled tools).
-  init(environment: CursorEnvironment = CursorEnvironment(), renderer: CursorRenderer? = nil) {
+  init(environment: CursorEnvironment = CursorEnvironment(), renderer: CursorRenderer? = nil, system: AnyObject? = nil) {
     self.environment = environment
     self.renderer = renderer
+    self.system = system
     observeAttachmentEvents()
   }
 

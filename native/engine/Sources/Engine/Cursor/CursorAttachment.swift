@@ -54,11 +54,12 @@ func cursorAttachment(window: CGWindowID, list: [ListedWindow], frontmostPid: pi
 }
 
 /// The vendor's skip check (FUN_100091650): is something other than the target the topmost window at `point` (global,
-/// top-left)? The engine's own windows never count; only the levels a user's windows and menus take (0…19 and the
-/// pop-up menu level), not the Dock, the menu bar or the system's overlays.
+/// top-left)? The engine's own windows never count (its cursor panels), the target always does; only the levels a
+/// user's windows and menus take (0…19 and the pop-up menu level), not the Dock, the menu bar or the system's overlays.
 func occluded(_ point: CGPoint, target: CGWindowID, list: [ListedWindow], enginePid: pid_t) -> Bool {
-  guard let top = list.first(where: { $0.owner != enginePid && ($0.layer < 20 || $0.layer == popUpMenuLevel) && $0.bounds.contains(point) })
-  else { return false }
+  guard let top = list.first(where: {
+    ($0.number == target || $0.owner != enginePid) && ($0.layer < 20 || $0.layer == popUpMenuLevel) && $0.bounds.contains(point)
+  }) else { return false }
   return top.number != target
 }
 

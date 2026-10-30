@@ -11,7 +11,8 @@ import Foundation
 // fixed ANSI keys, or press_key's key specs posted as a keyboard posts them; KeystrokeProbe.swift), `focus` (the focused app and window, and the named window's focused value
 // as a hash; FocusProbe.swift), `text-view` (a harness-owned text view's selected range and scroll bars by Accessibility,
 // past the engine's observation; TextViewProbe.swift) and `watch-activations` (every NSWorkspace activation and deactivation with its time, the probe's
-// own pid printed first, so the harness can stop it and the oracles can exclude probe instances). Every command but
+// own pid printed first, so the harness can stop it and the oracles can exclude probe instances), `cursor` (the agent
+// cursor drawn and run through its moves and states, or held over a window; Cursor/CursorProbe.swift). Every command but
 // `watch-activations` prints one JSON line, its result, carrying `exitStatus` (the process's exit code, which `open`
 // does not pass through); `watch-activations` streams lines until killed and has no final line, so none of its lines
 // carries one.
@@ -28,8 +29,10 @@ enum Probe {
       return textView(Array(arguments.dropFirst()))
     case "watch-activations":
       return watchActivations()
+    case "cursor":
+      return CursorProbe.run(Array(arguments.dropFirst()))
     default:
-      return emit(["error": "usage: --probe input-source current|<id> [--at <unix ms>] | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only|--ansi-keys] <text> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] --keys <press_key spec>... | focus [--window <pid,x,y,w,h>] | text-view --pid <n> [--set-horizontal <0..1>] [--set-vertical <0..1>] | watch-activations"],
+      return emit(["error": "usage: --probe input-source current|<id> [--at <unix ms>] | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] [--key-codes-only|--ansi-keys] <text> | keystroke --user-pid <n> --user-bounds <x,y,w,h> [--at <unix ms>] --keys <press_key spec>... | focus [--window <pid,x,y,w,h>] | text-view --pid <n> [--set-horizontal <0..1>] [--set-vertical <0..1>] | watch-activations | cursor [--window <n> [--seconds <n>]]"],
                   status: 64)
     }
   }

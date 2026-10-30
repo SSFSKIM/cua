@@ -99,6 +99,8 @@ extension Engine {
                             try focusField(target, app: app, appPid: appPid, guarding: guarding, connection: context.connection, meta: &meta)
                           },
                           checkInFlight: guarding.checkInFlight, acted: { context.connection.markActed(app) })
+      // The write was accepted (setElementValue throws otherwise): the cursor points at the element, read after the write.
+      cursor.act(connection: context.connection.id, app: app.key, window: nil, .element(target.element, storedFrame: target.entry.frame))
       // The vendor's re-check after the write: a re-fetch matching without the value, whose result replaces the stored
       // handle and identity; a failed one propagates, after the write (the interval says it was made).
       _ = try context.connection.element(token, app: app, lineage: context.lineage ?? "", refetch: .ignoringValue) { ElementResolver.live($0, pid: appPid) }

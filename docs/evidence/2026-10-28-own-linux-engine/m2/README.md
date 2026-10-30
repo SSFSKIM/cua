@@ -7,7 +7,7 @@ XFIXES owner generation under a server grab; the unconfirmed-paste window is dis
 The harness is at 426e25f2, which changes no engine file. The vendor builds are the pinned 26.928.40906 and the newest
 26.1023.51421. The commands are the spec's Concrete Steps (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md):
 the differential harness with M2's scenes, the family matrix, then the facade suites. The release, the pin and the
-checks on the released asset come after the merge review and are not here.
+checks on the released asset followed the branch review ("The release and the pinned engine", below).
 
 Every run below is on that build. The earlier sittings on older engine builds (`m2-wire` on e0168c63, the review
 rounds' `m2-review*` runs) are superseded and removed from this directory; they stay in the branch's history (5a229a08
@@ -200,7 +200,41 @@ No cua median is above the vendor's on an operation the engine answers. Four ope
 `CUA_NATIVE_ENGINE=cua CUA_LINUX_ENGINE_BIN=<build> node scripts/accept/linux-native.mjs` on the VM's default home
 (before the release, the build stands in for the pinned engine): **PASS**, 11 of 11 steps. The marker is typed with
 `typeText` and read back from the accessibility tree exactly once (`accept/accept-linux-native-cua.json`). On the
-released asset, without `CUA_LINUX_ENGINE_BIN`, it runs again after the release.
+released asset, without `CUA_LINUX_ENGINE_BIN`, it ran again after the release (`release/`, below).
+
+## The release and the pinned engine (`release/`)
+
+`linux-engine.yml` was dispatched with `publish: true` on the reviewed head 8b49b682, run
+https://github.com/SSFSKIM/cua/actions/runs/41090954823. That run built, tested and attested both arches natively,
+then published `linux-engine-v0.2.0`. `node scripts/linux-engine-pin.mjs linux-engine-v0.2.0` verified both
+attestations and wrote `runtime/engine/linux-engine.json`:
+
+| arch | SHA-256 |
+|---|---|
+| x64 | `2a0036acfb331f612ab2ce79b8a5ae902e29232f406ce1d3395ab83b1b0c543c` |
+| arm64 | `b28c13a8dc3168a498cef226f96308c08d4c09979b9fc92c0d454edca65dc9f9` |
+
+The released engine is built from 8b49b682, whose engine sources are de4802a5's, the build every run above used; only
+the commit in its version line differs.
+
+On the #171 VM (x86-64), on the pinned asset:
+
+- **Acceptance 9, fresh home.** `CUA_HOME=<fresh> cua install --engine` installed cua's Linux engine 0.2.0
+  (linux-engine-v0.2.0) at `<fresh>/engine/linux/cua-engine`.
+  - `file` reports `ELF 64-bit LSB pie executable, x86-64, static-pie linked, stripped`.
+  - `--version` prints `cua-engine 0.2.0 (8b49b6825ae5)`, and its SHA-256 is the pin's.
+  - With `CUA_NATIVE_ENGINE=cua`, `cua doctor` passes the engine row: "sessions here run the pinned cua-engine 0.2.0
+    (linux-engine-v0.2.0) … SHA-256 2a0036ac…".
+- **Acceptance 1 and the Linux acceptance fixture, VM default home.** After `cua install --engine`, the fixture ran
+  as `CUA_NATIVE_ENGINE=cua node scripts/accept/linux-native.mjs`, with no `CUA_LINUX_ENGINE_BIN`, under
+  `release/accept-watch.mjs`. The watcher sampled the process table every 50 ms (3,369 samples). Report:
+  `release/accept-linux-native-cua.json`.
+  - All 11 steps passed, the marker typed with `typeText` and read back exactly once.
+  - The most `sky_linux` processes seen at once was 0.
+  - The one engine process was `/Users/new/.local/share/cua/engine/linux/cua-engine`, the child of the trusted
+    worker (`src/repl-host/trusted-worker.mjs`).
+- **Not run here:** the arm64 install, which is M5's on the arm64 VM. The release run tested the arm64 asset natively
+  on GitHub's `ubuntu-24.04-arm` runner.
 
 ## Gate
 

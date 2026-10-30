@@ -1,74 +1,33 @@
-// The Linux native suite's engine lanes, judged (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The
-// facade suites; M1b): the expected file (./expected/native-linux.json, its `about` says what each part is), the cua
-// engine's temporary candidate expectations the run's assessment accepts (./vendor-defects.mjs assessAssertions), and
-// the pair a diff of the two lanes takes (checkEnginePair; the declarations are applied by ./compare.mjs
-// compareParityRuns' `engineDeclarations`).
+// The Linux native suite's engine lanes (#171, Plan of Work M2): the expected file declares the vendor's exact
+// text defects against cua's positive results. checkEnginePair binds one sitting; ./compare.mjs projects only the
+// declared exercise result and assertion when both sides hold exactly the outcomes named.
 import {readFileSync} from 'node:fs';
 import {isDeepStrictEqual} from 'node:util';
 import {laneEngineProblem} from './engine-answered.mjs';
 
 export const NATIVE_LINUX_EXPECTED_FILE = new URL('./expected/native-linux.json', import.meta.url);
-// The only cases a candidate expectation may name: the native suite's two text cases (M1b's temporary expectations).
 export const TEXT_CASES = Object.freeze(['native/app/typetext', 'native/app/paste']);
-// Read as JSON, not through ./vendor-defects.mjs, which imports this module.
-const vendorDefectIds = () => JSON.parse(readFileSync(new URL('../../test/repl-parity/vendor-defects.json', import.meta.url), 'utf8')).filter(d => d.engine === 'vendor').map(d => d.id);
-
+// Read as JSON, not through ./vendor-defects.mjs, which is consumed with this module by the comparison.
+const vendorDefects = () => JSON.parse(readFileSync(new URL('../../test/repl-parity/vendor-defects.json', import.meta.url), 'utf8'));
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
-const CANDIDATE_KEYS = ['id', 'engine', 'platform', 'case', 'until', 'reason', 'assertion', 'result'];
-const DECLARATION_KEYS = ['id', 'case', 'cells', 'vendorDefect', 'candidateExpectation', 'reason'];
-// The native baseline's method cases the same M1b expectation covers (scripts/native-baseline/linux-cells.mjs METHOD_CASES).
-export const BASELINE_TEXT_METHODS = Object.freeze(['method.typeText', 'method.paste']);
-const METHOD_CASE_KEYS = ['op', 'engine', 'until', 'outcome', 'reason'];
-// The expected file ({about, candidateExpectations, declarations}) -> the file, each entry checked; throws naming the first
-// that is not one.
+const DECLARATION_KEYS = ['id', 'case', 'cells', 'vendorDefect', 'cua', 'reason'];
+// The expected file ({about, declarations}) -> the file, each declaration checked; throws naming the first invalid one.
 export function validateNativeLinuxExpected(file) {
-  if (!plain(file) || !Array.isArray(file.candidateExpectations) || !Array.isArray(file.declarations)) throw new Error('the Linux native expected file holds {about, candidateExpectations: [...], declarations: [...]}');
-  const ids = new Set();
-  for (const c of file.candidateExpectations) {
-    const ok = plain(c) && Object.keys(c).every(k => CANDIDATE_KEYS.includes(k)) && typeof c.id === 'string' && c.id && !ids.has(c.id)
-      && c.engine === 'cua' && c.platform === 'linux' && TEXT_CASES.includes(c.case) && c.until === 'M2' && typeof c.reason === 'string' && c.reason.trim()
-      && c.assertion?.ok === false && typeof c.assertion.reason === 'string' && Object.keys(c.assertion).length === 2
-      && c.result?.cell === 'exercise' && c.result.isError === false && Array.isArray(c.result.content) && Object.keys(c.result).length === 3;
-    if (!ok) throw new Error(`invalid candidate expectation ${JSON.stringify(c)}: it names a unique id, the cua engine on linux, one of ${TEXT_CASES.join(' and ')}, until M2, its reason, the exact failed assertion and the exact exercise result`);
-    ids.add(c.id);
-  }
-  if (!Array.isArray(file.baselineMethodCases)) throw new Error('the Linux native expected file holds baselineMethodCases: [...]');
-  for (const m of file.baselineMethodCases) {
-    const outcome = m?.outcome;
-    const ok = plain(m) && Object.keys(m).every(k => METHOD_CASE_KEYS.includes(k)) && BASELINE_TEXT_METHODS.includes(m.op) && m.engine === 'cua' && m.until === 'M2'
-      && typeof m.reason === 'string' && m.reason.trim() && plain(outcome) && isDeepStrictEqual(Object.keys(outcome), ['outcome', 'error', 'target', 'inserted'])
-      && file.baselineMethodCases.filter(other => other.op === m.op).length === 1;
-    if (!ok) throw new Error(`invalid baseline method case ${JSON.stringify(m)}: it names one of ${BASELINE_TEXT_METHODS.join(' and ')} once, the cua engine, until M2, its reason and the exact {outcome, error, target, inserted}`);
-  }
-  const defects = vendorDefectIds();
+  if (!plain(file) || Object.keys(file).some(k => !['about', 'declarations'].includes(k)) || !Array.isArray(file.declarations)) throw new Error('the Linux native expected file holds {about, declarations: [...]}');
+  const ids = new Set(), cases = new Set(), defects = vendorDefects();
   for (const d of file.declarations) {
-    const candidate = file.candidateExpectations.find(c => c.id === d?.candidateExpectation);
+    const defect = defects.find(v => v.id === d?.vendorDefect && v.host === 'cua' && v.engine === 'vendor' && v.platform === 'linux' && v.case === d?.case);
     const ok = plain(d) && Object.keys(d).every(k => DECLARATION_KEYS.includes(k)) && typeof d.id === 'string' && d.id && !ids.has(d.id)
-      && typeof d.reason === 'string' && d.reason.trim() && isDeepStrictEqual(d.cells, ['exercise'])
-      && defects.includes(d.vendorDefect) && candidate?.case === d.case;
-    if (!ok) throw new Error(`invalid engine declaration ${JSON.stringify(d)}: it names a unique id, its reason, the exercise cell, a vendor-engine defect of test/repl-parity/vendor-defects.json and a candidate expectation of this file on the same case`);
-    ids.add(d.id);
+      && TEXT_CASES.includes(d.case) && !cases.has(d.case) && typeof d.reason === 'string' && d.reason.trim() && isDeepStrictEqual(d.cells, ['exercise'])
+      && defect && plain(d.cua) && isDeepStrictEqual(Object.keys(d.cua).sort(), ['assertion', 'result']) && isDeepStrictEqual(d.cua.assertion, {ok: true})
+      && plain(d.cua.result) && isDeepStrictEqual(Object.keys(d.cua.result).sort(), ['cell', 'content', 'isError'])
+      && d.cua.result.cell === 'exercise' && d.cua.result.isError === false && Array.isArray(d.cua.result.content);
+    if (!ok) throw new Error(`invalid engine declaration ${JSON.stringify(d)}: it names a unique id and text case, its reason, the exercise cell, a vendor-engine defect on the same case and the exact passing cua assertion and exercise result`);
+    ids.add(d.id); cases.add(d.case);
   }
   return file;
 }
 export const NATIVE_LINUX_EXPECTED = validateNativeLinuxExpected(JSON.parse(readFileSync(NATIVE_LINUX_EXPECTED_FILE, 'utf8')));
-export const candidateExpectations = NATIVE_LINUX_EXPECTED.candidateExpectations;
-export const baselineMethodCases = NATIVE_LINUX_EXPECTED.baselineMethodCases;
-
-// Whether a run's case is governed by a candidate expectation: the run is that expectation's engine lane on its platform.
-export const candidateGoverns = (meta, id) => meta?.host === 'cua' && candidateExpectations.some(c => c.engine === meta.engine && c.platform === meta.platform && c.case === id);
-
-// The candidate expectation an assertion row of a run is, or null: the run's engine, platform and case, the exact failed
-// assertion, and the case's exercise result exactly the declared one.
-export function declaredCandidateExpectation(meta, row, rows) {
-  if (Object.hasOwn(row, 'cell') || row.assertion?.ok !== false) return null;
-  return candidateExpectations.find(c => {
-    if (meta.host !== 'cua' || meta.engine !== c.engine || meta.platform !== c.platform || row.case !== c.case || !isDeepStrictEqual(row.assertion, c.assertion)) return false;
-    if (row.candidateExpectation && row.candidateExpectation !== c.id) return false;
-    const result = rows.find(r => r.case === c.case && r.cell === c.result.cell);
-    return result?.ok === true && result.isError === c.result.isError && isDeepStrictEqual(result.content, c.result.content);
-  }) ?? null;
-}
 
 // Whether two runs form one engine-lane pair a diff may take -> nothing, or throws why not: both complete Linux runs on
 // cua's host that name their engine, of one sitting (one device, one prepared commit, the same controller cells, one

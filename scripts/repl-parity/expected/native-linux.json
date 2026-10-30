@@ -1,59 +1,27 @@
 {
-  "about": "The Linux native suite's engine lanes (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites; M1b), read by `node scripts/repl-parity.mjs run --suite native --host cua --engine cua` (the run's assessment, scripts/repl-parity/vendor-defects.mjs assessAssertions) and by `node scripts/repl-parity.mjs diff <vendor-engine run> <cua-engine run> --expected scripts/repl-parity/expected/native-linux.json` (scripts/repl-parity/native-linux.mjs). `candidateExpectations` are the cua engine's temporary outcomes, until `until`: the run accepts exactly the named case's assertion failure with exactly the named exercise result, and nothing else (M1b: the engine refuses type_text and clipboard_write with `type_text is not available in this engine build`, M1a's declared deviation, so the text stays unchanged and the window alive; M2 makes the cases positive and removes these). `baselineMethodCases` are the same deviation's outcomes in the native baseline's typeText and paste method cases, which `node scripts/native-baseline.mjs compare --engines` accepts on the cua lane (scripts/native-baseline/compare.mjs), also until M2. `declarations` are the differences the diff between the two lanes accepts, each naming the vendor engine's declared defect (test/repl-parity/vendor-defects.json) and the cua engine's candidate expectation it pairs on one case: only those cases' exercise results and assertions are projected, and only while both sides hold exactly what they name; a declaration nothing needed is itself a difference.",
-  "candidateExpectations": [
-    {
-      "id": "linux-cua-engine-typetext-refused-until-m2",
-      "engine": "cua",
-      "platform": "linux",
-      "case": "native/app/typetext",
-      "until": "M2",
-      "reason": "M1a's declared deviation: until M2's verified paste route, cua-engine answers type_text with `type_text is not available in this engine build` instead of reproducing the vendor's known PasteText failure; nothing is sent, the marker does not reach the text and gedit stays alive (Decision Log, M1a; Plan of Work, M1b).",
-      "assertion": {"ok": false, "reason": "unrecognized native input error"},
-      "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"type_text is not available in this engine build\"},false,false]"}]}
-    },
-    {
-      "id": "linux-cua-engine-paste-refused-until-m2",
-      "engine": "cua",
-      "platform": "linux",
-      "case": "native/app/paste",
-      "until": "M2",
-      "reason": "M1a's declared deviation: until M2's verified paste route, cua-engine answers the paste's text request with `type_text is not available in this engine build` instead of reproducing the vendor's known PasteText failure; nothing is sent, the marker does not reach the text and gedit stays alive (Decision Log, M1a; Plan of Work, M1b). The facade's two format refusals come first, unchanged.",
-      "assertion": {"ok": false, "reason": "unrecognized native input error"},
-      "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"type_text is not available in this engine build\"},false,false]"}]}
-    }
-  ],
-  "baselineMethodCases": [
-    {
-      "op": "method.typeText",
-      "engine": "cua",
-      "until": "M2",
-      "outcome": {"outcome": "threw", "error": "type_text is not available in this engine build", "target": "survived", "inserted": null},
-      "reason": "The native baseline's typeText method case on the cua engine lane (scripts/native-baseline/linux-cells.mjs METHOD_CASES), under the same M1a deviation as the native suite's text cases: refused before anything is sent, its window alive. `compare --engines` accepts exactly this outcome on every cua sample, and only while no vendor-engine sample succeeded (returned, survived, read back)."
-    },
-    {
-      "op": "method.paste",
-      "engine": "cua",
-      "until": "M2",
-      "outcome": {"outcome": "threw", "error": "type_text is not available in this engine build", "target": "survived", "inserted": null},
-      "reason": "The native baseline's paste method case on the cua engine lane, under the same M1a deviation: refused before anything is sent, its window alive. `compare --engines` accepts exactly this outcome on every cua sample, and only while no vendor-engine sample succeeded."
-    }
-  ],
+  "about": "The Linux native suite's engine lanes (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites; Plan of Work M2). The two text cases require a successful method return, the marker read back exactly once and a surviving window. M1b's temporary candidate and baseline method expectations are removed. `declarations` are consumed by `node scripts/repl-parity.mjs diff <vendor-engine run> <cua-engine run> --expected scripts/repl-parity/expected/native-linux.json`: each names the vendor engine's exact declared defect (test/repl-parity/vendor-defects.json) and the exact passing cua assertion and exercise result on that case. Only those exercise results' content and isError and those case assertions are projected, and only when both sides hold exactly what they name; every other field still compares. A declaration nothing needed is itself a difference. The native baseline needs no vendor-failure waiver: its existing better-outcome rule accepts returned/survived/read-back outcomes against failures, and its Linux text cases require every cua sample to succeed while keeping Acceptance 10's engine-speed rule.",
   "declarations": [
     {
-      "id": "linux-text-typetext-m1b",
+      "id": "linux-text-typetext-m2",
       "case": "native/app/typetext",
       "cells": ["exercise"],
       "vendorDefect": "linux-x64-vendor-engine-typetext-not-inserted",
-      "candidateExpectation": "linux-cua-engine-typetext-refused-until-m2",
-      "reason": "Both engines fail typeText in M1b, differently: the pinned vendor engine tries EditableText.PasteText for 10 s and inserts nothing, cua's engine refuses before sending anything. Neither inserts the marker and gedit survives both."
+      "cua": {
+        "assertion": {"ok": true},
+        "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[\"undefined\",1,false]"}]}
+      },
+      "reason": "Plan of Work M2 makes typeText positive: cua returns successfully, inserts the marker exactly once and leaves gedit alive. The pinned x64 vendor engine still answers `editable Paste did not insert text`, inserts nothing and leaves gedit alive, the declared vendor defect named above."
     },
     {
-      "id": "linux-text-paste-m1b",
+      "id": "linux-text-paste-m2",
       "case": "native/app/paste",
       "cells": ["exercise"],
       "vendorDefect": "linux-x64-vendor-engine-paste-not-inserted",
-      "candidateExpectation": "linux-cua-engine-paste-refused-until-m2",
-      "reason": "Both engines fail paste in M1b, differently: the pinned vendor engine tries EditableText.PasteText for 10 s and inserts nothing, cua's engine refuses before sending anything. Neither inserts the marker and gedit survives both."
+      "cua": {
+        "assertion": {"ok": true},
+        "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"Linux paste supports only text format.\"},\"undefined\",1,false]"}]}
+      },
+      "reason": "Plan of Work M2 makes paste positive: cua returns successfully, inserts the marker exactly once and leaves gedit alive. The pinned x64 vendor engine still answers `editable Paste did not insert text`, inserts nothing and leaves gedit alive, the declared vendor defect named above. The two leading errors are the case's intentional html and md format-refusal probes, which the facade rejects before either engine is called."
     }
   ]
 }

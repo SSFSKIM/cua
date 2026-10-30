@@ -17,9 +17,9 @@
     "platform": "linux",
     "runtimeRelease": "26.928.40906-linux-x64",
     "case": "native/app/typetext",
-    "reason": "On the #171 x86-64 VM the pinned vendor engine (sky_linux_x64, under cua's own host, the only one Linux serves) answers typeText with `editable Paste did not insert text` after its 10 s EditableText.PasteText attempt; gedit (GTK 3) survives and the marker never reaches the text. The case's oracle encodes arm64's outcome (the NoReply or EAGAIN error, then the window's exit), so the x64 failure is recorded vendor behaviour, not passing coverage (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Surprises & Discoveries: the text-case oracles accept only arm64's outcomes). M2 replaces the oracle with a positive one.",
-    "assertion": {"ok": false, "reason": "unrecognized native input error"},
-    "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"editable Paste did not insert text\"},false,false]"}]}
+    "reason": "On the #171 x86-64 VM the pinned vendor engine (sky_linux_x64, under cua's own host, the only one Linux serves) answers typeText with `editable Paste did not insert text` after its 10 s EditableText.PasteText attempt; gedit (GTK 3) survives and the marker never reaches the text. Plan of Work M2's positive oracle requires success, exactly one marker and a surviving window, so this is recorded vendor behaviour, not passing coverage. This declaration names x64 only; arm64's distinct crash outcome will be measured and declared with M5's native-suite run.",
+    "assertion": {"ok": false, "reason": "native text input must return without an error"},
+    "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"editable Paste did not insert text\"},0,false]"}]}
   },
   {
     "id": "linux-x64-vendor-engine-paste-not-inserted",
@@ -28,8 +28,8 @@
     "platform": "linux",
     "runtimeRelease": "26.928.40906-linux-x64",
     "case": "native/app/paste",
-    "reason": "On the #171 x86-64 VM the pinned vendor engine (sky_linux_x64, under cua's own host, the only one Linux serves) answers paste with `editable Paste did not insert text` after its 10 s EditableText.PasteText attempt; gedit (GTK 3) survives and the marker never reaches the text. The case's oracle encodes arm64's outcome (the NoReply or EAGAIN error, then the window's exit), so the x64 failure is recorded vendor behaviour, not passing coverage (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Surprises & Discoveries: the text-case oracles accept only arm64's outcomes). M2 replaces the oracle with a positive one.",
-    "assertion": {"ok": false, "reason": "unrecognized native input error"},
-    "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"editable Paste did not insert text\"},false,false]"}]}
+    "reason": "On the #171 x86-64 VM the pinned vendor engine (sky_linux_x64, under cua's own host, the only one Linux serves) answers paste with `editable Paste did not insert text` after its 10 s EditableText.PasteText attempt; gedit (GTK 3) survives and the marker never reaches the text. Plan of Work M2's positive oracle requires success, exactly one marker and a surviving window, so this is recorded vendor behaviour, not passing coverage. This declaration names x64 only; arm64's distinct crash outcome will be measured and declared with M5's native-suite run.",
+    "assertion": {"ok": false, "reason": "native text input must return without an error"},
+    "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"editable Paste did not insert text\"},0,false]"}]}
   }
 ]

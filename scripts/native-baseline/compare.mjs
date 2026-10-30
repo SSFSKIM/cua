@@ -36,7 +36,8 @@
 import {isDeepStrictEqual} from 'node:util';
 import {attestation, DEFAULT_PLAN, isDefaultPlan, operationRank, summarize, surfaceOf} from './summary.mjs';
 import {comparisonEnvironment, environmentProblems, sameEnvironmentValue} from './environment.mjs';
-import {baselineMethodCases} from '../repl-parity/native-linux.mjs';
+
+const LINUX_TEXT_METHODS = new Set(['method.typeText', 'method.paste']);
 
 export const TOLERANCE = {ratio: 0.1, floorMs: 500};
 export const latencyLimit = median => median + Math.max(TOLERANCE.ratio * median, TOLERANCE.floorMs);
@@ -145,16 +146,12 @@ function judgeMethod(op, baseline, candidate, {linux = false} = {}) {
   if (!b.length) return c.some(r => r.ok !== true) ? {...base, verdict: 'fail', reasons: [`only the candidate has this method case, and ${c.filter(r => r.ok !== true).length} of its ${c.length} samples failed`]}
     : {...base, verdict: 'not judged', reasons: ['only the candidate has this method case']};
   if (!c.length) return {...base, verdict: 'fail', reasons: ['no candidate samples']};
-  // A Linux engine comparison's typeText and paste method cases (#171): until M2, exactly M1b's temporary candidate
-  // outcome on every cua sample (scripts/repl-parity/expected/native-linux.json baselineMethodCases), and only while no
-  // vendor-engine sample succeeded; still timed by the same rule.
-  const declared = linux ? baselineMethodCases.find(m => m.op === op) : null;
-  if (declared && c.every(r => outcomeOf(r) === JSON.stringify(declared.outcome)) && !b.some(better)) {
-    const timed = timing.reasons.filter(r => !/succeeded, the baseline/.test(r));
-    return {...base, verdict: timed.length ? 'fail' : 'declared', reasons: [...timed, `M1b's temporary candidate outcome (until ${declared.until}) on all ${c.length} cua samples: ${declared.outcome.outcome}, "${declared.outcome.error}", window ${declared.outcome.target}; the vendor engine's: ${listed(tally(b)).join(' | ')}`]};
-  }
+  // Plan of Work M2: every Linux cua text sample must be a real success. The ordinary better-outcome rule already
+  // accepts that improvement over the vendor's text failures; it must not also accept partial success or equal failures.
+  const failedText = linux && LINUX_TEXT_METHODS.has(op) ? c.filter(r => !better(r) || r.methodError != null).length : 0;
   const outcome = methodOutcome(b, c);
-  const reasons = [...(outcome && outcome !== 'better' ? [outcome] : []), ...timing.reasons.filter(r => !/succeeded, the baseline/.test(r)),
+  const reasons = [...(failedText ? [`${failedText}/${c.length} cua text samples did not return without an error, survive and read back (Plan of Work M2)`] : []),
+    ...(outcome && outcome !== 'better' ? [outcome] : []), ...timing.reasons.filter(r => !/succeeded, the baseline/.test(r)),
     ...(outcome === 'better' ? ['better: the method returned, its window survived and its text was read back'] : [])];
   return {...base, verdict: reasons.some(r => !r.startsWith('better')) ? 'fail' : 'pass', reasons};
 }
@@ -322,7 +319,7 @@ export function compareLanes(mode, baselineRuns, candidateRuns) {
     .map(o => ({op: o.op, baseline: o.baseline.judgedMs, candidate: o.candidate.judgedMs, engineAnswered: ENGINE_ANSWERED.includes(o.op)})) : null;
   for (const a of above ?? []) {
     const o = operations.find(each => each.op === a.op);
-    if (a.engineAnswered && ['pass', 'declared'].includes(o.verdict)) { o.verdict = 'fail'; o.reasons.push(`cua's median ${a.candidate} ms is above the vendor engine's ${a.baseline} ms on an operation the engine answers (Acceptance 10)`); }
+    if (a.engineAnswered && o.verdict === 'pass') { o.verdict = 'fail'; o.reasons.push(`cua's median ${a.candidate} ms is above the vendor engine's ${a.baseline} ms on an operation the engine answers (Acceptance 10)`); }
   }
   const ruled = problems.length ? 'NO VERDICT' : operations.some(o => o.verdict === 'fail') ? 'FAIL' : 'PASS';
   const diagnostic = plainPlan([...baselineRuns, ...candidateRuns], ruled);
@@ -350,7 +347,7 @@ export function renderComparison(result) {
     `| Runs | ${b.runs.map(r => r.name).join(', ')} | ${c.runs.map(r => r.name).join(', ')} |`,
     `| ssh.roundtrip median | ${fmt(b.sshMedianMs)} | ${fmt(c.sshMedianMs)} |`, '',
     lane
-      ? `Rule (${lane.linux ? '#171' : '#117'} comparison ${lane.id}, ${lane.title}): the baseline runs ${flags(lane.baseline)}, the candidate ${flags(lane.candidate)}; three complete, attested runs a side of one sitting covering the same plan, every attested field equal but ${lane.differ.join(', ')} (below). ${lane.note} Per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median.${lane.linux ? ` On an operation the engine answers (${ENGINE_ANSWERED.join(', ')}) the candidate\'s judged median must also be at most the baseline\'s (Acceptance 10), and the typeText and paste method cases accept, until M2, exactly M1b\'s temporary candidate outcome (scripts/repl-parity/expected/native-linux.json baselineMethodCases), verdict "declared".` : ''} ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
+      ? `Rule (${lane.linux ? '#171' : '#117'} comparison ${lane.id}, ${lane.title}): the baseline runs ${flags(lane.baseline)}, the candidate ${flags(lane.candidate)}; three complete, attested runs a side of one sitting covering the same plan, every attested field equal but ${lane.differ.join(', ')} (below). ${lane.note} Per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median.${lane.linux ? ` On an operation the engine answers (${ENGINE_ANSWERED.join(', ')}) the candidate\'s judged median must also be at most the baseline\'s (Acceptance 10), and every cua typeText and paste sample must return without an error, survive and read back its text (Plan of Work M2); the ordinary better-outcome rule accepts this improvement over the vendor engine\'s text failures, with no failure waived on cua.` : ''} ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
       : sameHost
       ? `Rule (#115 acceptance 11): one host, three complete, attested runs a side covering the same plan, on the same machine and configuration except the permitted differences below; the judged rows are ${SAME_HOST_JUDGED.join(' and ')}: the candidate\'s median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples. Every other row is reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.`
       : 'Rule (acceptance 8): three complete, attested runs a side covering the same plan; per operation (method cases included), the candidate\'s judged median must be at most the baseline\'s plus max(10%, 500 ms), or faster, and it must succeed in no smaller share of its valid samples. The judged median is wall time around the MCP call; the cold-connection phases that open the ssh pipe are judged net of each side\'s ssh.roundtrip median. ssh, approval, guard and setup operations are reported, not judged. Milliseconds; "OK" is successes over valid samples; wall and in-cell columns are median / p95 / max of successful samples.', '',

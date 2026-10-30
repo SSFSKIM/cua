@@ -125,6 +125,9 @@ struct CursorLifecycle {
     }
   }
 
+  /// When the fade now playing began.
+  var fadeStartedAt: TimeInterval? { phase == .fading ? fadeEndsAt.map { $0 - Self.fadeSeconds } : nil }
+
   /// When the idle fade starts: five seconds after the last request ended, while none is in flight.
   private var fadeAt: TimeInterval? { idleSince.map { $0 + Self.idleSeconds } }
 

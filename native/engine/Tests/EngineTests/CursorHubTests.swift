@@ -1,0 +1,359 @@
+import AppKit
+import ApplicationServices
+import XCTest
+@testable import Engine
+
+// The cursor hub (Cursor/CursorHub.swift): the hooks' interface, the generations, retargeting from the retained
+// trajectory, the press dip at arrival, the attachment driven by synthetic notifications, and the hooks' ordering for
+// the accessibility-only methods. The renderer is a recording fake, the clock a manual one, the main thread a block run
+// in place (or held, to test the main-thread drop).
+
+private final class Clock: @unchecked Sendable {
+  var t: TimeInterval = 100
+}
+
+private final class RecordingRenderer: CursorRenderer, @unchecked Sendable {
+  private let lock = NSLock()
+  private var applied: [CursorCommit] = []
+  private var closedConnections: [Int] = []
+  func apply(_ commit: CursorCommit) { lock.withLock { applied.append(commit) } }
+  func close(connection: Int) { lock.withLock { closedConnections.append(connection) } }
+  var commits: [CursorCommit] { lock.withLock { applied } }
+  var closed: [Int] { lock.withLock { closedConnections } }
+  var last: CursorCommit? { commits.last }
+}
+
+/// A main thread that holds its blocks until `run`.
+private final class HeldMain: @unchecked Sendable {
+  private let lock = NSLock()
+  private var blocks: [@Sendable () -> Void] = []
+  func enqueue(_ block: @escaping @Sendable () -> Void) { lock.withLock { blocks.append(block) } }
+  func run() {
+    let pending = lock.withLock { () -> [@Sendable () -> Void] in defer { blocks = [] }; return blocks }
+    pending.forEach { $0() }
+  }
+}
+
+private final class World: @unchecked Sendable {
+  let clock = Clock()
+  var list: [ListedWindow] = [
+    ListedWindow(number: 10, owner: 500, layer: 0, bounds: CGRect(x: 0, y: 0, width: 600, height: 400)),
+    ListedWindow(number: 20, owner: 600, layer: 0, bounds: CGRect(x: 100, y: 100, width: 1200, height: 700)),
+  ]
+  var front: pid_t = 500
+  var reduceMotion = false
+  let workspace = NotificationCenter()
+  let distributed = NotificationCenter()
+  var activity: [Bool] = []
+
+  func environment(main: ((@escaping @Sendable () -> Void) -> Void)? = nil, beforePlanning: @escaping () -> Void = {},
+                   elementFrame: @escaping (AXUIElement) -> CGRect? = { _ in nil }) -> CursorEnvironment {
+    var e = CursorEnvironment()
+    e.now = { [clock] in clock.t }
+    e.main = main ?? { $0() }
+    e.screens = {
+      CursorScreens(primaryHeight: 900, all: [CursorScreen(frame: CGRect(x: 0, y: 0, width: 1440, height: 900),
+                                                           visibleFrame: CGRect(x: 0, y: 0, width: 1440, height: 870))])
+    }
+    e.windowList = { [unowned self] in list }
+    e.frontmostPid = { [unowned self] in front }
+    e.reduceMotion = { [unowned self] in reduceMotion }
+    e.elementFrame = elementFrame
+    e.elementWindow = { _ in 20 }
+    e.workspaceCenter = workspace
+    e.distributedCenter = distributed
+    e.activity = { [unowned self] in activity.append($0) }
+    e.beforePlanning = beforePlanning
+    return e
+  }
+}
+
+final class CursorHubTests: XCTestCase {
+  private let app = "/System/Applications/TextEdit.app#600"
+
+  private func hub(_ world: World, _ renderer: RecordingRenderer, main: ((@escaping @Sendable () -> Void) -> Void)? = nil,
+                   beforePlanning: @escaping () -> Void = {}, elementFrame: @escaping (AXUIElement) -> CGRect? = { _ in nil }) -> CursorHub {
+    CursorHub(environment: world.environment(main: main, beforePlanning: beforePlanning, elementFrame: elementFrame), renderer: renderer)
+  }
+
+  /// One click request at the global point.
+  private func click(_ hub: CursorHub, _ point: CGPoint, window: CGWindowID? = 20) {
+    hub.begin(connection: 1, app: app, keyboardOnly: false)
+    hub.act(connection: 1, app: app, window: window, .click(point))
+    hub.end(connection: 1)
+    hub.drain()
+  }
+
+  func testTheFirstActionFadesInAtItsTargetAndDipsThere() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    let commit = try XCTUnwrap(renderer.last)
+    XCTAssertEqual(commit.phase, .acting)
+    XCTAssertTrue(commit.shown)
+    let motion = try XCTUnwrap(commit.motion)
+    XCTAssertTrue(motion.fadeIn)
+    XCTAssertEqual(motion.trajectory.mode, .snap)
+    XCTAssertEqual(motion.trajectory.end, CGPoint(x: 400, y: 600), "flipped into the panel's y-up coordinates")
+    XCTAssertEqual(motion.dips, [motion.beginTime])
+    XCTAssertEqual(world.activity, [true], "the activity is held while a cursor shows")
+  }
+
+  func testThePressDipPlaysAtArrivalNotAtTheCall() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 200, y: 200))
+    world.clock.t += 2
+    click(hub, CGPoint(x: 1200, y: 700))
+    let motion = try XCTUnwrap(renderer.last?.motion)
+    XCTAssertEqual(motion.trajectory.mode, .path)
+    XCTAssertFalse(motion.fadeIn)
+    let dip = try XCTUnwrap(motion.dips.first)
+    XCTAssertEqual(dip, motion.beginTime + motion.trajectory.arrival, accuracy: 1e-9)
+    XCTAssertGreaterThan(dip - world.clock.t, 0.3, "the glide comes first; the action did not wait for it")
+  }
+
+  func testAScrollGlidesWithNoDip() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 200, y: 200))
+    hub.act(connection: 1, app: app, window: 20, .scroll(CGPoint(x: 260, y: 230)))
+    hub.drain()
+    XCTAssertEqual(try XCTUnwrap(renderer.last?.motion).dips, [])
+  }
+
+  func testADragGlidesToItsStartDipsThenTracesToItsEnd() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 200, y: 200))
+    world.clock.t += 2
+    hub.act(connection: 1, app: app, window: 20, .drag([CGPoint(x: 300, y: 300), CGPoint(x: 900, y: 500)]))
+    hub.drain()
+    let motion = try XCTUnwrap(renderer.last?.motion)
+    XCTAssertEqual(motion.trajectory.end, CGPoint(x: 900, y: 400))
+    XCTAssertEqual(motion.dips.count, 1)
+    XCTAssertLessThan(motion.dips[0], motion.beginTime + motion.trajectory.duration - 0.2, "the dip at the start, before the trace")
+  }
+
+  func testRapidRetargetsSpliceFromTheRetainedTrajectoryAndNeverJumpBack() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 150, y: 150))
+    var previous = try XCTUnwrap(renderer.last?.motion)
+    for (i, target) in [CGPoint(x: 1200, y: 700), CGPoint(x: 1300, y: 200), CGPoint(x: 300, y: 650), CGPoint(x: 700, y: 400)].enumerated() {
+      world.clock.t += 0.05 + 0.1 * Double(i)
+      click(hub, target)
+      let motion = try XCTUnwrap(renderer.last?.motion)
+      XCTAssertGreaterThan(motion.beginTime, previous.beginTime)
+      let spliced = previous.trajectory.state(at: motion.beginTime - previous.beginTime)
+      XCTAssertEqual(motion.trajectory.samples[0].position, spliced.position, "move \(i) starts where the last one was then")
+      XCTAssertEqual(motion.beginTime, world.clock.t + CursorHub.spliceLead, accuracy: 1e-9)
+      previous = motion
+    }
+  }
+
+  func testAHideWhileAPlanIsComputingDropsThatPlan() {
+    let world = World(), renderer = RecordingRenderer()
+    let planning = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+    var held = true
+    let hub = hub(world, renderer, beforePlanning: {
+      if held { held = false; planning.signal(); release.wait() }
+    })
+    hub.act(connection: 1, app: app, window: 20, .click(CGPoint(x: 400, y: 300)))
+    planning.wait()
+    hub.hide(connection: 1)
+    release.signal()
+    hub.drain()
+    XCTAssertFalse(renderer.commits.contains { $0.shown }, "the plan was dropped: nothing showed")
+    XCTAssertEqual(hub.phase(connection: 1), .hidden)
+  }
+
+  func testACloseWhilePlanningDropsThePlanAndOrdersThePanelOut() {
+    let world = World(), renderer = RecordingRenderer()
+    let planning = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+    var held = true
+    let hub = hub(world, renderer, beforePlanning: {
+      if held { held = false; planning.signal(); release.wait() }
+    })
+    hub.act(connection: 1, app: app, window: 20, .click(CGPoint(x: 400, y: 300)))
+    planning.wait()
+    hub.closed(connection: 1)
+    release.signal()
+    hub.drain()
+    XCTAssertTrue(renderer.commits.isEmpty)
+    XCTAssertEqual(renderer.closed, [1])
+  }
+
+  func testAStaleCommitIsDroppedAtTheMainThread() throws {
+    let world = World(), renderer = RecordingRenderer(), main = HeldMain()
+    let hub = hub(world, renderer, main: { main.enqueue($0) })
+    click(hub, CGPoint(x: 400, y: 300))   // its show waits on the held main thread
+    hub.hide(connection: 1)
+    hub.drain()
+    main.run()
+    XCTAssertEqual(renderer.commits.count, 1, "the late show was dropped")
+    XCTAssertEqual(renderer.last?.phase, .fading)
+  }
+
+  func testAnActionWithNoPointOrNoWindowMovesNothing() {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300), window: nil)
+    XCTAssertFalse(renderer.commits.contains { $0.shown })
+    let element = AXUIElementCreateApplication(getpid())
+    hub.act(connection: 1, app: app, window: 20, .element(element, storedFrame: nil))  // no frame now, none stored
+    hub.drain()
+    XCTAssertFalse(renderer.commits.contains { $0.shown })
+    click(hub, CGPoint(x: -500, y: 300))  // off every screen
+    XCTAssertFalse(renderer.commits.contains { $0.shown })
+    XCTAssertEqual(hub.phase(connection: 1), .hidden)
+  }
+
+  func testAnElementActionUsesTheStoredFrameWhenTheCurrentOneCannotBeRead() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    hub.act(connection: 1, app: app, window: nil, .element(AXUIElementCreateApplication(getpid()), storedFrame: CGRect(x: 300, y: 200, width: 100, height: 40)))
+    hub.drain()
+    XCTAssertEqual(try XCTUnwrap(renderer.last?.motion).trajectory.end, CGPoint(x: 350, y: 680), "the stored frame's midpoint, flipped")
+  }
+
+  func testTheAccessibilityOnlyHookReadsTheFrameOnlyAfterTheOperationReturns() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let marks = NSLock()
+    var operationEnded: Double?, frameRead: Double?
+    let hub = hub(world, renderer, elementFrame: { _ in
+      marks.withLock { frameRead = monotonicMilliseconds() }
+      return CGRect(x: 500, y: 300, width: 80, height: 20)
+    })
+    let element = AXUIElementCreateApplication(getpid())
+    let succeeded = hub.afterElementAction(connection: 1, app: app, element: element, storedFrame: nil) {
+      usleep(100_000)  // a slow accessibility operation; the cursor queue is free meanwhile
+      marks.withLock { operationEnded = monotonicMilliseconds() }
+      return true
+    }
+    hub.drain()
+    XCTAssertTrue(succeeded)
+    let ended = try XCTUnwrap(marks.withLock { operationEnded }), read = try XCTUnwrap(marks.withLock { frameRead })
+    XCTAssertGreaterThanOrEqual(read, ended)
+    XCTAssertEqual(try XCTUnwrap(renderer.last?.motion).trajectory.end, CGPoint(x: 540, y: 590))
+  }
+
+  func testAFailedAccessibilityOperationPointsNowhere() {
+    let world = World(), renderer = RecordingRenderer()
+    var read = false
+    let hub = hub(world, renderer, elementFrame: { _ in read = true; return CGRect(x: 0, y: 0, width: 10, height: 10) })
+    XCTAssertFalse(hub.afterElementAction(connection: 1, app: app, element: AXUIElementCreateApplication(getpid()), storedFrame: nil) { false })
+    hub.drain()
+    XCTAssertFalse(read)
+    XCTAssertTrue(renderer.commits.isEmpty)
+  }
+
+  func testDeactivatingTheTargetAppDropsTheCursorBackToItsWindowsLevel() throws {
+    let world = World(), renderer = RecordingRenderer()
+    world.front = 600  // TextEdit in front: raised above menus
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    XCTAssertEqual(renderer.last?.attachment.level, 102)
+    world.front = 500  // the person switches to another app
+    world.workspace.post(name: NSWorkspace.didDeactivateApplicationNotification, object: nil)
+    hub.drain()
+    XCTAssertEqual(renderer.last?.attachment.level, 0)
+    XCTAssertEqual(renderer.last?.attachment.window, 20)
+    XCTAssertTrue(try XCTUnwrap(renderer.last).shown)
+  }
+
+  func testASpaceChangeHidesTheCursorAndChangingBackShowsIt() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    let target = world.list[1]
+    world.list = [world.list[0]]  // the target window is not on the new Space
+    world.workspace.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+    hub.drain()
+    XCTAssertFalse(try XCTUnwrap(renderer.last).shown)
+    world.list.append(target)
+    world.workspace.post(name: NSWorkspace.activeSpaceDidChangeNotification, object: nil)
+    hub.drain()
+    XCTAssertTrue(try XCTUnwrap(renderer.last).shown)
+  }
+
+  func testTheWindowStateCheckSeesAMenuOpeningAndClosingWithNoRequest() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    XCTAssertEqual(renderer.last?.attachment.level, 0)
+    world.list.insert(ListedWindow(number: 31, owner: 600, layer: 101, bounds: CGRect(x: 380, y: 300, width: 200, height: 300)), at: 0)
+    world.clock.t += CursorHub.checkPeriod
+    hub.tick()
+    XCTAssertEqual(renderer.last?.attachment.level, 102, "the menu opened: above it")
+    world.list.removeFirst()
+    world.clock.t += CursorHub.checkPeriod
+    hub.tick()
+    XCTAssertEqual(renderer.last?.attachment.level, 0, "closed: back under what covers TextEdit within a check")
+  }
+
+  func testLockingTheScreenHidesTheCursor() {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    world.distributed.post(name: Notification.Name("com.apple.screenIsLocked"), object: nil)
+    hub.drain()
+    XCTAssertEqual(renderer.last?.phase, .fading)
+  }
+
+  func testThePersonActingInTheAppMakesTheCursorTakenOver() {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    hub.userActed(pid: 500)  // another app
+    hub.drain()
+    XCTAssertNotEqual(hub.phase(connection: 1), .takenOver)
+    hub.userActed(pid: 600)
+    hub.drain()
+    XCTAssertEqual(renderer.last?.phase, .takenOver)
+  }
+
+  func testTheIdleFadeRunsOnTheHubsTimerAndReleasesTheActivity() {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    world.clock.t += 1
+    hub.tick()
+    XCTAssertEqual(renderer.last?.phase, .thinking)
+    world.clock.t += 4.2
+    hub.tick()
+    XCTAssertEqual(renderer.last?.phase, .fading)
+    world.clock.t += 0.5
+    hub.tick()
+    XCTAssertEqual(hub.phase(connection: 1), .hidden)
+    XCTAssertEqual(world.activity, [true, false])
+  }
+
+  func testReduceMotionPlansStraightEases() throws {
+    let world = World(), renderer = RecordingRenderer()
+    world.reduceMotion = true
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 200, y: 200))
+    world.clock.t += 1
+    click(hub, CGPoint(x: 1200, y: 700))
+    let commit = try XCTUnwrap(renderer.last)
+    XCTAssertTrue(commit.reduceMotion)
+    XCTAssertEqual(try XCTUnwrap(commit.motion).trajectory.duration, 0.15, accuracy: 1 / 240.0)
+  }
+
+  func testKeyboardRequestsBringAFadedCursorBackAtItsLastPoint() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    world.clock.t += 6
+    hub.tick()
+    world.clock.t += 0.5
+    hub.tick()
+    XCTAssertEqual(hub.phase(connection: 1), .hidden)
+    hub.begin(connection: 1, app: app, keyboardOnly: true)
+    hub.drain()
+    let commit = try XCTUnwrap(renderer.last)
+    XCTAssertTrue(commit.shown)
+    XCTAssertEqual(try XCTUnwrap(commit.motion).trajectory.end, CGPoint(x: 400, y: 600))
+  }
+}

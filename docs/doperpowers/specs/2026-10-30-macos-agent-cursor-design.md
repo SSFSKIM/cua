@@ -21,7 +21,7 @@ Vocabulary used throughout:
 
 - [x] (2026-10-30) Design session (cua_repl#1ea561bc, coordinating #171 in parallel): three research readings (engine hooks, the vendor cursor's behaviour and logic, prior art and macOS overlay technique), three question rounds with the owner, an animated look mockup; design approved by the owner.
 - [x] (2026-10-30) Spec review: round 1 (spec review and buildability review, twelve findings) and round 2 (three findings), all folded (Decision Log).
-- [ ] M1 — The cursor in the engine: overlay, motion, states.
+- [ ] M1 — The cursor in the engine: overlay, motion, states. (2026-10-30: built, a5e37a47..be05d750; in task review.)
 - [ ] M2 — Identity, settings, lifecycle wiring and the harness.
 - [ ] M3 — The attended proof on the MacBook, the plugin bump, the docs.
 
@@ -371,6 +371,16 @@ Environment, read by the service: `CUA_CURSOR` (`0` turns the session's cursor o
 
 ## Decision Log
 
+- Decision (2026-10-30, M1 build, from its executor; commits a5e37a47..be05d750):
+  - `type_text` and `paste` take no element in this engine (they key into the app's focused element, `Input.swift`, `Paste.swift`), so they are keyboard-only activity through `begin`/`end`; the Hooks list's "aimed at an element" has no case and `Paste.swift` carries no hook.
+  - The pointer hook fires inside `send()`, after the in-flight check and just before the events: a click refused by route 3's guard or stopped in flight never moves the cursor (it lands after route 3's freeze begins, which Hooks accepts). Route 1's element click and the focus-fallback click of `set_value`/`select_text` act `.click` at their point; the AX-only methods then act `.element` after the operation, with the element's window read on the cursor queue (`kAXWindowAttribute`), not on the request thread.
+  - Taken over comes from a callback on the existing intervention ledger (`onRecord`, outside its lock), matched to cursors by the target window's owner pid; an event attributed to another pid (a panel service's) does not trigger it, a limit M3's real click tests.
+  - The drag trace is a straight path carried by the progress spring with the vendor's response formula (the look reference's drag): the drag's events go out back to back and have no pace of their own to follow.
+  - A scoot planned from a splice seeds its point spring with the spliced velocity (the vendor's starts from zero), so a retarget mid-scoot does not stop dead; a path starts at progress 0 with its tangent's heading, as the vendor's. The scoot's tilt is folded into the arrow's angle and the stretch pivot is not modelled.
+  - The halo's swell relaxes after the tip settles; the press dip plays at the vendor's "close enough" arrival point, the thinking state at the tip's settle.
+  - The halo is `.hudWindow` under a forced `.aqua` appearance, the closer to look A's milky frost than `.fullScreenUI`, with a 14 % wash of the session's colour for look A's tint; owned by one type (`Cursor/`).
+  - Teal's pill is darkened too (`#0f8b8d` gives 4.12:1 with white; pill `#0e8486`, 4.50:1); clay's pill is `#b75d39`, amber's `#9b6d00`.
+  - `--probe cursor --backdrop` paints the probe's own target with colour bands, so a capture holds only the probe's windows.
 - Decision (2026-10-30, M1 steps 0 and 1): the motion settles by the vendor's rule, resolved from the decompile, not by the approximation; the reference counts settle time per 1/240 s sub-step (display-rate independent, and what Acceptance 11's "within one step" tests). The reference vectors are in the Swift module's y-up panel tip coordinates, the mock running verbatim behind a mirror; they add two cases where the in-bounds filter changes the choice with both ends on screen (candidate 14 over 15; 0 over 17). The Rendering design is promoted with `NSVisualEffectView` as the halo inside the display-wide panel; neither fallback is built. The `main.sync` micro-benchmark's +0.1–0.3 µs is read as no added latency: the rule that governs typing is Acceptance 12's, measured in M3 on real typing, whose floor is 1 ms.
   Date/Author: 2026-10-30, cursor235#b93055dd, from M1's executor.
   The design session accepted both (2026-10-30, cua_repl#1ea561bc:50), adding: the halo's backdrop is owned by one small type, so a later swap to the vendor's own route (its `FogBackgroundEffectView` draws through `GraphicsSupport.BackdropLayer`, inferred to be the private `CABackdropLayer` with a radius-17 Gaussian blur and `FogRenderParameters`' saturation and luminance curve) touches neither motion nor hooks; the material (`.hudWindow` or `.fullScreenUI`, under a forced `.aqua` appearance) is chosen against the look reference. That route is the follow-up only if the owner finds the halo off in M3, re-measured against Acceptance 12; if Acceptance 12 fails in M3, the design session decides before any fallback.

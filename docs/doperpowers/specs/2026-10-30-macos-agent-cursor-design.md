@@ -140,7 +140,7 @@ The cursor's views are layer-backed AppKit views (`CAShapeLayer` for the arrow, 
 
 The panel stays ordered in for the whole connection, fully transparent when hidden, and is ordered out only when the connection closes. The engine's screenshot path re-lists ScreenCaptureKit's shareable content whenever the set of on-screen window numbers changes (`Screenshot.swift`, EH §4, about 60 ms on the MacBook). So, too, that cache's key leaves out the engine's own windows, so a cursor appearing never costs a screenshot a re-list.
 
-Energy: nothing animates while the cursor is hidden; the rock animates only while thinking (at most 5 s at a time); the engine takes an `NSProcessInfo` activity (`.userInitiated`, not `.idleSystemSleepDisabled`) only while a cursor is visible, so App Nap cannot delay a motion that is due.
+Energy: nothing animates while the cursor is hidden; the rock animates only while thinking (at most 5 s at a time); the engine takes an `NSProcessInfo` activity (`.userInitiatedAllowingIdleSystemSleep`; plain `.userInitiated` includes `.idleSystemSleepDisabled`) only while a cursor is visible, so App Nap cannot delay a motion that is due.
 
 ### Hooks: where the engine tells the cursor
 
@@ -371,6 +371,7 @@ Environment, read by the service: `CUA_CURSOR` (`0` turns the session's cursor o
 
 ## Decision Log
 
+- Decision (2026-10-30, M1 task review): the activity option is `.userInitiatedAllowingIdleSystemSleep`. The spec named `.userInitiated`, which contains `.idleSystemSleepDisabled` (checked headless by the reviewer), against its own stated intent that a visible cursor never holds off sleep.
 - Decision (2026-10-30, the design session, cua_repl#1ea561bc:51): the arrow's fill is solid, 1.0, in every state, and thinking is carried by the rock alone. This resolves a conflict in the spec in favour of the approved artefact: the look ("filled with the session's colour") and the look reference (`.a-arrow path { fill: var(--c) }`, thinking changing only the angle) against the state table's "fill a little stronger", which carried over the vendor's 16→24 % from a different, faint arrow. Increase Contrast now changes only the stroke. Both the build's 0.8→1.0 and the ratio's 0.66→1.0 are rejected. The design session also accepted the build's halo (`.hudWindow`, `.aqua`, the 14 % wash, inside the mockup's 12–20 % tint), the spliced-velocity scoot (the vendor's own retarget keeps v and F, VC Appendix B), the drag trace, teal's pill, `type_text`/`paste` as keyboard activity and the taken-over mapping.
 - Decision (2026-10-30, M1 build, from its executor; commits a5e37a47..be05d750):
   - `type_text` and `paste` take no element in this engine (they key into the app's focused element, `Input.swift`, `Paste.swift`), so they are keyboard-only activity through `begin`/`end`; the Hooks list's "aimed at an element" has no case and `Paste.swift` carries no hook.

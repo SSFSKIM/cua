@@ -539,3 +539,98 @@ fn capture_luma(engine: &mut Engine, id: u64) -> image::GrayImage {
     assert_eq!(&bytes[..2], &[0xFF, 0xD8], "a JPEG");
     image::load_from_memory(&bytes).unwrap().to_luma8()
 }
+
+/// CLIPBOARD's `UTF8_STRING` as another X client reads it (no INCR: the test's text is small).
+fn read_clipboard_text() -> Option<String> {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::Event;
+    use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, CreateWindowAux, EventMask, WindowClass};
+    let (conn, screen) = x11rb::connect(None).ok()?;
+    let root = conn.setup().roots[screen].root;
+    let atom = |name: &str| conn.intern_atom(false, name.as_bytes()).unwrap().reply().unwrap().atom;
+    let (clipboard, utf8, property) = (atom("CLIPBOARD"), atom("UTF8_STRING"), atom("CUA_LIVE_PROPERTY"));
+    let window = conn.generate_id().ok()?;
+    let aux = CreateWindowAux::new().event_mask(EventMask::PROPERTY_CHANGE);
+    conn.create_window(0, window, root, 0, 0, 1, 1, 0, WindowClass::INPUT_ONLY, 0, &aux)
+        .ok()?;
+    conn.convert_selection(window, clipboard, utf8, property, x11rb::CURRENT_TIME)
+        .ok()?;
+    conn.flush().ok()?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while Instant::now() < deadline {
+        match conn.poll_for_event().ok()? {
+            Some(Event::SelectionNotify(e)) if e.requestor == window => {
+                if e.property == x11rb::NONE {
+                    return None;
+                }
+                let reply = conn
+                    .get_property(true, window, property, AtomEnum::ANY, 0, 1 << 20)
+                    .ok()?
+                    .reply()
+                    .ok()?;
+                return String::from_utf8(reply.value).ok();
+            }
+            Some(_) => {}
+            None => sleep(Duration::from_millis(5)),
+        }
+    }
+    None
+}
+
+#[test]
+fn clipboard_read_copies_the_selection_under_a_handle_and_release_frees_it() {
+    const TEXT: &str = "cua clipboard 안녕 e\u{301} 🙂";
+    let mut engine = Engine::start();
+    let window = Window::open(TEXT, "c");
+    let id = poll("the window is listed", || {
+        let windows = engine.request("list_windows", json!({})).unwrap();
+        windows
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|w| w["title"] == json!(window.title))
+            .and_then(|w| w["id"].as_u64())
+    });
+    poll("the window's text is on the accessibility bus", || {
+        read_text(&mut engine, id).filter(|t| t == TEXT)
+    });
+    let target = json!({"window": {"id": id}});
+
+    // Nothing selected: the application has nothing to Copy, and no handle is made.
+    engine
+        .request("press_key", json!({"window": {"id": id}, "key": "ctrl+End"}))
+        .unwrap();
+    assert_eq!(
+        engine.request("clipboard_read", target.clone()),
+        Err("editable element has no selected text to Copy".to_string())
+    );
+
+    // Everything selected: the application's Copy, its contents under a handle, and its copy left on CLIPBOARD.
+    engine
+        .request("press_key", json!({"window": {"id": id}, "key": "ctrl+a"}))
+        .unwrap();
+    let handle = engine.request("clipboard_read", target.clone()).unwrap();
+    let handle = handle.as_str().expect("a handle string").to_string();
+    let parts: Vec<&str> = handle.split('-').collect();
+    assert_eq!(parts.len(), 3, "<pid>-<nanoseconds>-<n>: {handle}");
+    assert_eq!(parts[2], "1");
+    assert_eq!(
+        read_clipboard_text().as_deref(),
+        Some(TEXT),
+        "the application's copy stays on CLIPBOARD"
+    );
+    let second = engine.request("clipboard_read", target).unwrap();
+    assert!(second.as_str().unwrap().ends_with("-2"), "{second}");
+
+    // Release, twice: the second is no error either.
+    for _ in 0..2 {
+        assert_eq!(
+            engine.request("clipboard_release", json!({"handle": handle})),
+            Ok(Value::Null)
+        );
+    }
+    assert_eq!(
+        engine.request("clipboard_release", json!({"handle": "unknown"})),
+        Ok(Value::Null)
+    );
+}

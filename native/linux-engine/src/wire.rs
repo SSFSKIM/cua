@@ -270,6 +270,12 @@ pub struct WindowInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct ClipboardReleaseInput {
+    pub handle: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct LaunchAppInput {
     pub app: String,
 }

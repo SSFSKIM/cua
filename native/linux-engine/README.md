@@ -10,8 +10,8 @@ M1a builds it up from M0's spike. It answers every command of the pinned helper 
 `list_windows`, `list_apps`, `get_window_state` (the tree, `query`, `include_screenshot`) and `get_screenshot` (the
 desktop) on the observation side (M1a.1); `press_key`, `key_down`, `key_up`, `click`, `move`, `move_relative`,
 `scroll`, `drag`, `drag_handle`, `perform_secondary_action`, `activate_window` and `launch_app` on the input side
-(M1a.2). `type_text`, the clipboard commands and `type_characters` (M2) and `capabilities` (M3) answer
-`<command> is not available in this engine build`.
+(M1a.2). M2.1 adds the clipboard core and `clipboard_read` and `clipboard_release`. `type_text`, `clipboard_write`
+and `type_characters` (M2.2) and `capabilities` (M3) answer `<command> is not available in this engine build`.
 
 ```bash
 cargo build --release
@@ -67,6 +67,29 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   as the family of the window under its start asks, in place of the vendor's 8 ms between their points.
 - **Elements and windows** (`engine/elements.rs`, `engine/windows.rs`): element clicks through action 0 or a right
   click at the visible point, named actions, the element scroll, `activate_window` and `launch_app`.
+
+## How it uses the clipboard
+
+- **The lock** (`clipboard/lock.rs`): the display's private selections `CUA_CLIPBOARD_LOCK`, then the vendor's
+  `SKY_CLIPBOARD_LOCK`, each taken by a compare-and-set under a server grab (`GrabServer`, the owner must be None,
+  `SetSelectionOwner`, the owner read again, `UngrabServer`) and retried every 5 ms for at most 5 s, else
+  `clipboard busy`. Every engine on the display shares them; a paste and `clipboard_read` hold both throughout.
+- **The snapshot** (`clipboard/reader.rs`): the current CLIPBOARD's formats as the vendor captures them (`TARGETS`,
+  then each target it does not skip, INCR included, 64 MiB in all, the owner unchanged throughout), within 500 ms for
+  `TARGETS`, 500 ms for each format's first answer, 2 s between INCR chunks and 5 s overall.
+- **The owner** (`clipboard/owner.rs`, `clipboard/serving.rs`): one connection and thread that serve CLIPBOARD for
+  as long as the engine lives or another client takes it: text as `UTF8_STRING`, `text/plain`,
+  `text/plain;charset=utf-8` and, when Latin-1 only, `STRING`; a snapshot format by format; INCR above 64 KiB, a
+  transfer dropped when it stalls 2 s between chunks or runs past 10 s. A paste takes CLIPBOARD once; its cleanup,
+  on every exit path, never takes it again: while the engine still owns CLIPBOARD it serves the snapshot taken before
+  the paste instead, and after a `SelectionClear` it does nothing. Once cleaned up, a conversion stamped from the
+  paste's ownership to its cleanup (or with the Ctrl+V's own time), and a `CurrentTime` one within 10 s of a paste
+  that did not confirm, is refused, so a late requestor never receives the restored snapshot as the paste.
+- **`clipboard_read`** (`engine/clipboard.rs`, `copy.rs`): under the lock, the window's focused element (the first
+  focused node in a post-order walk of its frame, siblings fetched together) copies by the vendor's route choice:
+  `EditableText.CopyText` of its one selection, else its context menu's Copy item; then CLIPBOARD's new contents are
+  snapshotted under a handle (`<pid>-<nanoseconds>-<n>`, at most 32 and 256 MiB). The application's copy stays on
+  CLIPBOARD. `clipboard_release` frees a handle, an unknown one without error.
 
 ## Flags
 

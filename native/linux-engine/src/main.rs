@@ -5,6 +5,8 @@
 mod apps;
 mod atspi;
 mod capture;
+mod clipboard;
+mod copy;
 mod cover;
 mod dbus;
 mod desktop;

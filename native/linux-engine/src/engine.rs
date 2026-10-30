@@ -1,7 +1,8 @@
 //! The request dispatcher: one request at a time, in arrival order (Design, Process model). Observation lives here;
-//! input is in the child modules: keys (`keyboard`), the pointer (`pointer`), element actions (`elements`) and the
-//! window and application requests (`windows`).
+//! input is in the child modules: keys (`keyboard`), the pointer (`pointer`), element actions (`elements`), the
+//! window and application requests (`windows`) and the clipboard's (`clipboard`).
 
+mod clipboard;
 mod elements;
 mod keyboard;
 mod pointer;
@@ -55,6 +56,10 @@ pub struct Engine {
     drag_families: HashMap<x11rb::protocol::xproto::Window, DragPacing>,
     /// The pacing of the drag a `drag_handle` holds, from its start to its end.
     handle_pacing: pointer::HandlePacing,
+    /// The clipboard's own connections, opened on first use.
+    clipboard: Option<crate::clipboard::Clipboard>,
+    /// `clipboard_read`'s snapshots, until released or the engine exits.
+    handles: crate::clipboard::Handles,
 }
 
 fn merge(into: &mut BusStats, from: BusStats) {
@@ -85,6 +90,8 @@ impl Engine {
             drag_families: HashMap::new(),
             handle_pacing: pointer::HandlePacing::default(),
             launched: apps::Launched::default(),
+            clipboard: None,
+            handles: crate::clipboard::Handles::new(),
         })
     }
 
@@ -109,6 +116,8 @@ impl Engine {
             "perform_secondary_action" => self.perform_secondary_action(request.input),
             "activate_window" => self.activate_window(request.input),
             "launch_app" => self.launch_app(request.input),
+            "clipboard_read" => self.clipboard_read(request.input),
+            "clipboard_release" => self.clipboard_release(request.input),
             "server" => Err(anyhow!("server command cannot be nested")),
             command if wire::COMMANDS.contains(&command) => Err(anyhow!(wire::not_available(command))),
             command => Err(anyhow!("unknown command `{command}`")),
@@ -341,11 +350,12 @@ impl Engine {
         Ok(dir)
     }
 
-    /// The orderly exit: every key still held released and every open input session closed, then the screenshot
-    /// directory removed.
+    /// The orderly exit: every key still held released and every open input session closed, the clipboard's owner
+    /// stopped (CLIPBOARD goes with it, as the vendor's does), then the screenshot directory removed.
     pub fn shutdown(&mut self) {
         self.inputs.release_everything(&mut self.x);
         let _ = self.x.flush();
+        self.clipboard = None;
         if let Some(dir) = self.shot_dir.take() {
             let _ = std::fs::remove_dir_all(dir);
         }

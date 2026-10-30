@@ -19,16 +19,14 @@ use x11rb::protocol::xproto::Window;
 use super::Engine;
 use super::elements::{Element, visible_point};
 use super::pointer::CLICK_HOLD;
-use super::windows::activate;
 use crate::atspi::{self, Association};
 use crate::clipboard::{Clipboard, Payload, TRANSFER_WAIT};
 use crate::copy;
-use crate::engine::DesktopMode;
-use crate::families::{DEFAULT_PASTE, Kind, PasteRoute, When};
+use crate::families::{DEFAULT_PASTE, Kind, PasteRoute};
 use crate::field::{self, Observation};
 use crate::input::{chord_keycodes, focus_is_within};
 use crate::paste::{self, CHANGED, Expected, Transfer, UNCONFIRMED};
-use crate::route::{Route, Target};
+use crate::route::Route;
 use crate::tree::ObjRef;
 use crate::wire::{ClipboardWriteInput, TypeTextInput, parse_input};
 use crate::x11::X11;
@@ -36,32 +34,9 @@ use crate::x11::X11;
 /// How long a clicked element may take to report the focus, and the poll.
 const FOCUS_WAIT: Duration = Duration::from_millis(500);
 const FOCUS_POLL: Duration = Duration::from_millis(10);
-/// How long an activated window may take to hold the X input focus (the foreground route).
-const ACTIVATION_WAIT: Duration = Duration::from_secs(1);
 
 const LOST: &str = "another program took the clipboard before the paste was sent; nothing was sent";
 const UNKNOWN_HANDLE: &str = "unknown clipboard handle; copy again in this Linux helper";
-
-/// Which route the chord takes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Way {
-    /// `SendEvent` to the window, with the session's synthetic focus.
-    Background,
-    /// The window activated, then XTEST (dedicated mode, a family that ignores the background route).
-    Foreground,
-    /// XTEST into the focused client (no window named).
-    Desktop,
-}
-
-impl Way {
-    fn name(self) -> &'static str {
-        match self {
-            Way::Background => "background",
-            Way::Foreground => "foreground",
-            Way::Desktop => "desktop",
-        }
-    }
-}
 
 /// One paste: where it goes and what it serves.
 struct Request {
@@ -177,32 +152,12 @@ impl Engine {
             PasteRoute::Chord(chord) => chord,
             PasteRoute::Unverified => bail!(paste::no_paste_route(&info.app)),
         };
-        let ignored = match family.and_then(|f| f.ignores(Kind::Paste)) {
-            Some(When::Always) => true,
-            Some(When::UnlessUnobscured) => !self.x.unobscured(window),
-            None => false,
-        };
-        let way = match (request.window, ignored, self.cfg.desktop) {
-            (None, _, _) => Way::Desktop,
-            (Some(_), false, _) => Way::Background,
-            (Some(_), true, DesktopMode::Dedicated) => Way::Foreground,
-            (Some(_), true, DesktopMode::Shared) => bail!(paste::no_background_input(&info.app)),
-        };
+        let way = self.way_for(request.window.map(|_| window), Kind::Paste)?;
         self.extra.insert(
             "paste_route".into(),
-            json!({"way": way.name(), "family": family.map(|f| f.name), "chord": chord}),
+            json!({"family": family.map(|f| f.name), "chord": chord}),
         );
         let keycodes = chord_keycodes(&self.x, chord)?;
-        if way == Way::Foreground {
-            activate(&self.x, window)?;
-            let deadline = Instant::now() + ACTIVATION_WAIT;
-            while !focus_is_within(&self.x, window)? {
-                if Instant::now() >= deadline {
-                    bail!("window {window} did not take the input focus when activated; nothing was sent");
-                }
-                std::thread::sleep(FOCUS_POLL);
-            }
-        }
         // The element: the one named, resolved with its ancestors for the focusing click's point; else the window's
         // focused element, looked for once the session's synthetic focus is in (a background Chrome reports its
         // address bar focused only then).
@@ -219,10 +174,7 @@ impl Engine {
                 .map_err(anyhow::Error::msg)?),
         };
         let feff = family.is_some_and(|f| f.feff_after_astral);
-        let target = match way {
-            Way::Background => Target::Window(window),
-            Way::Foreground | Way::Desktop => Target::Desktop,
-        };
+        let target = way.target(window);
         let resource_id_mask = self.x.conn.setup().resource_id_mask;
         let Engine {
             x,

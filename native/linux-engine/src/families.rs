@@ -34,6 +34,8 @@ impl DragPacing {
 pub enum Kind {
     /// The paste chord of `type_text` and `clipboard_write`.
     Paste,
+    /// Synthetic keys: `type_characters` reads it now; `press_key`, `key_down` and `key_up` from M3.
+    Keys,
 }
 
 /// When a listed kind is ignored.
@@ -158,7 +160,8 @@ pub const FAMILIES: &[Family] = &[
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text)",
     },
     // GTK 4 reads input only as XInput 2 events: a synthetic key never arrives, covered or visible, in every engine
-    // (M0.4), so its paste chord takes the foreground route in dedicated mode and is refused in shared mode.
+    // (M0.4), so its paste chord and its keys take the foreground route in dedicated mode and are refused in shared
+    // mode.
     Family {
         name: "GTK 4",
         toolkit: Some("GTK"),
@@ -166,10 +169,16 @@ pub const FAMILIES: &[Family] = &[
         classes: &[],
         drag: DragPacing::NONE,
         paste: DEFAULT_PASTE,
-        ignores: &[Ignored {
-            kind: Kind::Paste,
-            when: When::Always,
-        }],
+        ignores: &[
+            Ignored {
+                kind: Kind::Paste,
+                when: When::Always,
+            },
+            Ignored {
+                kind: Kind::Keys,
+                when: When::Always,
+            },
+        ],
         feff_after_astral: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible",
     },
@@ -194,7 +203,10 @@ pub const FAMILIES: &[Family] = &[
         classes: &["XTerm"],
         drag: DragPacing::NONE,
         paste: PasteRoute::Unverified,
-        ignores: &[],
+        ignores: &[Ignored {
+            kind: Kind::Keys,
+            when: When::Always,
+        }],
         feff_after_astral: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible",
     },
@@ -287,6 +299,10 @@ mod tests {
             gtk(Some("4.14.2")).and_then(|f| f.ignores(Kind::Paste)),
             Some(When::Always)
         );
+        assert_eq!(
+            gtk(Some("4.14.2")).and_then(|f| f.ignores(Kind::Keys)),
+            Some(When::Always)
+        );
     }
 
     #[test]
@@ -296,6 +312,10 @@ mod tests {
         assert_eq!(paste("Google-chrome"), PasteRoute::Chord("ctrl+v"));
         assert_eq!(paste("Gnome-terminal"), PasteRoute::Chord("ctrl+shift+v"));
         assert_eq!(paste("XTerm"), PasteRoute::Unverified);
+        let keys = |class| family(FAMILIES, Some(class), None).and_then(|f| f.ignores(Kind::Keys));
+        assert_eq!(keys("XTerm"), Some(When::Always), "xterm ignores synthetic keys");
+        assert_eq!(keys("Gnome-terminal"), None);
+        assert_eq!(keys("Google-chrome"), None);
         assert!(family(FAMILIES, Some("firefox"), None).is_some_and(|f| f.feff_after_astral));
         assert!(
             FAMILIES

@@ -7,6 +7,7 @@ mod elements;
 mod keyboard;
 mod paste;
 mod pointer;
+mod way;
 mod windows;
 
 use std::collections::HashMap;
@@ -130,6 +131,7 @@ impl Engine {
             "clipboard_release" => self.clipboard_release(request.input),
             "clipboard_write" => self.clipboard_write(request.input),
             "type_text" => self.type_text(request.input),
+            "type_characters" => self.type_characters(request.input),
             "server" => Err(anyhow!("server command cannot be nested")),
             command if wire::COMMANDS.contains(&command) => Err(anyhow!(wire::not_available(command))),
             command => Err(anyhow!("unknown command `{command}`")),

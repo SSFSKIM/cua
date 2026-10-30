@@ -285,6 +285,14 @@ pub struct TypeTextInput {
     pub text: String,
 }
 
+/// `type_characters` (the newest build's, behaviour §11.4): a window is required.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TypeCharactersInput {
+    pub window: Target,
+    pub text: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ClipboardWriteInput {

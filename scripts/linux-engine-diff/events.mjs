@@ -106,11 +106,25 @@ export function scenarios() {
     { name: 'drag_handle', steps: [{ command: 'drag_handle', input: { action: 'start', x: 200, y: 200 } }, { command: 'drag_handle', input: { action: 'move_to', x: 300, y: 260 } }, { command: 'drag_handle', input: { action: 'end' } }] },
     { name: 'drag_handle stray end', steps: [{ command: 'drag_handle', input: { action: 'end' } }] },
   ];
+  // type_characters is the newest build's command (the pinned one has none): judged against the newest build. A
+  // refusal is one per scenario, since a declared deviation excuses one step's answer.
+  const tc = (text) => ({ command: 'type_characters', input: { window: W, text } });
+  const typing = [
+    { name: 'type_characters mixed case, digits and shifted symbols', steps: [tc(' AbZ09!?'), tc('<>|aa')] },
+    { name: 'type_characters empty', steps: [tc('')] },
+    ...[
+      ['a character off the layout', 'aé'],
+      ['a control character', 'ab\ncd'],
+      ['a combining mark', 'x́'],
+      ['a character beyond Latin-1', 'Ω'],
+    ].map(([what, text]) => ({ name: `type_characters refuses ${what} before typing anything`, deviation: 'type_characters', steps: [tc(text)] })),
+  ].map((s) => ({ ...s, reference: 'newest' }));
   const activation = [{ name: 'activate_window', steps: [{ command: 'activate_window', input: { window: W } }] }];
   // launch_app against the experiment's own desktop entry only (no system entries): its program touches a file
   const launch = [{ name: 'launch_app', apps: true, steps: ['Events Probe', 'events-probe', ' EVENTS-PROBE.desktop ', 'missing', '  '].map((app) => ({ command: 'launch_app', input: { app } })) }];
   return [
     ...keys.map((s) => ({ ...s, route: 'window' })),
+    ...typing.map((s) => ({ ...s, route: 'window' })),
     ...pointer.map((s) => ({ ...s, route: 'window' })),
     ...desktop.map((s) => ({ ...s, route: 'desktop' })),
     ...activation.map((s) => ({ ...s, route: 'window' })),
@@ -565,14 +579,16 @@ export async function runEvents(args, emit) {
       for (const engine of engines) records[engine.label] = await runScenario(scenario, engine, env, { via, skyDir: args.vendorJs });
       const verdicts = {};
       const declared = {};
-      for (const engine of engines.slice(1)) {
-        let difference = firstDifference(records.pinned, records[engine.label]);
+      // the build the scenario is judged against: the pinned one, or the newest for its own command
+      const reference = scenario.reference ?? 'pinned';
+      for (const engine of engines.filter((e) => e.label !== reference && !(reference === 'newest' && e.label === 'pinned'))) {
+        let difference = firstDifference(records[reference], records[engine.label]);
         // a declared deviation excuses its own step's answer, and only when the candidate answered as declared
         if (difference?.what === 'answer' && scenario.deviation) {
           const deviation = declaredDeviation({ op: scenario.deviation, scene: 'events', field: 'answer', candidate: difference.candidate });
           if (deviation) {
-            const excused = records[engine.label].map((step, i) => (i === difference.step ? { ...step, answer: records.pinned[i].answer } : step));
-            difference = firstDifference(records.pinned, excused);
+            const excused = records[engine.label].map((step, i) => (i === difference.step ? { ...step, answer: records[reference][i].answer } : step));
+            difference = firstDifference(records[reference], excused);
             if (!difference) declared[engine.label] = deviation.op;
           }
         }
@@ -588,8 +604,10 @@ export async function runEvents(args, emit) {
         if (!effects.pass) pass = false;
       }
       emit({ kind: 'events', scenario: scenario.name, route: scenario.route, via, records, differences: verdicts, declared, ...(judged ? { effect_misses: misses } : {}) });
-      scenarioRows.push({ route: scenario.route, records });
-      const cell = (label) => (verdicts[label] ? `differs at step ${verdicts[label].step} (${verdicts[label].what})` : declared[label] ? `same but the declared answer (${declared[label]})` : 'same');
+      // a build the scenario is not judged against (the pinned build has no type_characters) times nothing in it
+      const timed = reference === 'newest' ? Object.fromEntries(Object.entries(records).filter(([label]) => label !== 'pinned')) : records;
+      scenarioRows.push({ route: scenario.route, records: timed });
+      const cell = (label) => (label === reference ? 'the reference' : verdicts[label] ? `differs at step ${verdicts[label].step} (${verdicts[label].what})` : declared[label] ? `same but the declared answer (${declared[label]})` : 'same');
       const took = (label) => `${records[label].filter((s) => s.effect === true).length}/${records[label].filter((s) => typeof s.effect === 'boolean').length}`;
       md.push(`| ${scenario.name} | ${cell('newest')} | ${cell('cua')} | ${judged ? `${took('pinned')} / ${took('newest')} / ${took('cua')}${misses.cua?.length ? ` (**cua missed step ${misses.cua.join(', ')}**)` : ''}` : '–'} |`);
     }

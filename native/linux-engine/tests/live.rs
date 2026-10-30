@@ -1051,3 +1051,62 @@ fn a_third_client_reading_the_paste_neither_starts_nor_completes_it() {
     );
     drop(watcher);
 }
+
+#[test]
+fn a_windowless_type_text_pastes_into_the_focused_window_through_the_six_steps() {
+    const TEXT: &str = "abc";
+    let mut engine = Engine::start();
+    let (_window, id) = focused_window(&mut engine, Window::open(TEXT, "d"), TEXT);
+    let _prior = PriorOwner::start("the clipboard before");
+    engine
+        .request("press_key", json!({"window": {"id": id}, "key": "ctrl+End"}))
+        .unwrap();
+    // No window: desktop input into the window holding the X input focus, confirmed there.
+    assert_eq!(
+        engine.request("type_text", json!({"text": " 안녕 🙂"})),
+        Ok(Value::Null)
+    );
+    assert_eq!(read_text(&mut engine, id).as_deref(), Some("abc 안녕 🙂"));
+    assert_eq!(read_clipboard_text().as_deref(), Some("the clipboard before"));
+}
+
+#[test]
+fn type_characters_types_the_layout_s_characters_and_refuses_the_rest_before_typing() {
+    const TEXT: &str = "start";
+    let mut engine = Engine::start();
+    let (_window, id) = focused_window(&mut engine, Window::open(TEXT, "k"), TEXT);
+    let target = json!({"id": id});
+    engine
+        .request("press_key", json!({"window": target, "key": "ctrl+End"}))
+        .unwrap();
+    assert_eq!(
+        engine.request("type_characters", json!({"window": target, "text": " AbZ09!?"})),
+        Ok(json!(8)),
+        "the number of characters sent"
+    );
+    poll("the characters are in the text", || {
+        read_text(&mut engine, id).filter(|t| t == "start AbZ09!?")
+    });
+    // A character off the layout refuses the whole text: nothing of it is typed.
+    assert_eq!(
+        engine.request("type_characters", json!({"window": target, "text": "ok é"})),
+        Err("Character 'é' is not on the keyboard layout".to_string())
+    );
+    assert_eq!(
+        engine.request("type_characters", json!({"window": target, "text": "a\nb"})),
+        Err("Character '\\n' is not on the keyboard layout".to_string())
+    );
+    assert_eq!(
+        engine.request("type_characters", json!({"window": target, "text": ""})),
+        Ok(json!(0))
+    );
+    sleep(Duration::from_millis(300));
+    assert_eq!(read_text(&mut engine, id).as_deref(), Some("start AbZ09!?"));
+    assert!(
+        engine
+            .request("type_characters", json!({"text": "x"}))
+            .unwrap_err()
+            .contains("missing field `window`"),
+        "a window is required"
+    );
+}

@@ -14,7 +14,7 @@ test('every declared deviation names its operation, field, reason and the spec s
 });
 
 test('the text and clipboard commands are declared refused, each with its own sentence', () => {
-  for (const op of ['type_text', 'type_characters', 'clipboard_read', 'clipboard_write', 'clipboard_release']) {
+  for (const op of ['type_text', 'clipboard_read', 'clipboard_write', 'clipboard_release']) {
     const d = declaredDeviation({ op, scene: 'refusals', field: 'error', candidate: { ok: false, error: refusalSentence(op) } });
     assert.ok(d, op);
     assert.equal(d.op, op);
@@ -46,6 +46,18 @@ test("a paste refused while an earlier unconfirmed paste's window runs is declar
     assert.equal(declaredDeviation({ op, scene: 'gedit', field: 'output', candidate: { ok: false, error } }), null);
   }
   assert.equal(declaredDeviation({ op: 'press_key', scene: 'gedit', field: 'error', candidate: { ok: false, error } }), null);
+});
+
+test('type_characters is answered, and only its refusal sentence is declared', () => {
+  const refused = { ok: false, error: refusalSentence('type_characters') };
+  assert.equal(declaredDeviation({ op: 'type_characters', scene: 'refusals', field: 'error', candidate: refused }), null);
+  for (const c of ['é', '\\n', '\\u{301}']) {
+    const candidate = { ok: false, error: `Character '${c}' is not on the keyboard layout` };
+    assert.ok(declaredDeviation({ op: 'type_characters', scene: 'events', field: 'answer', candidate }), c);
+  }
+  assert.equal(declaredDeviation({ op: 'type_characters', scene: 'events', field: 'answer', candidate: { ok: true, output: 3 } }), null);
+  const sentence = { ok: false, error: "Character 'é' is not on the keyboard layout" };
+  assert.equal(declaredDeviation({ op: 'type_characters', scene: 'events', field: 'events', candidate: sentence }), null);
 });
 
 test('interrupted input answering an error where the pinned build answers success is declared', () => {

@@ -32,11 +32,6 @@ pub fn nothing_sent(cause: impl std::fmt::Display) -> String {
     format!("{cause}; nothing was sent")
 }
 
-/// The Device mode sentence for a family that ignores the paste chord on the background route, in shared mode.
-pub fn no_background_input(app: &str) -> String {
-    format!("{app} does not accept background input; use a dedicated desktop or activate the window first")
-}
-
 /// For a family with no verified paste route.
 pub fn no_paste_route(app: &str) -> String {
     format!("{app} has no verified paste route; nothing was sent")
@@ -362,10 +357,6 @@ mod tests {
         assert_eq!(
             previous_unconfirmed(Duration::from_secs(3)),
             "a previous paste could not be confirmed and may still be read; nothing was sent; retry after 3 s"
-        );
-        assert_eq!(
-            no_background_input("org.gnome.TextEditor"),
-            "org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first"
         );
         assert_eq!(
             nothing_sent("clipboard capture timed out: the clipboard owner did not answer TARGETS within 500 ms"),

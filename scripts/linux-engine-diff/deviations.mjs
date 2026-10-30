@@ -33,7 +33,16 @@ const previousUnconfirmed = (op) => ({
 });
 
 export const DEVIATIONS = [
-  ...['type_text', 'type_characters', 'clipboard_read', 'clipboard_write', 'clipboard_release'].map(refused),
+  ...['type_text', 'clipboard_read', 'clipboard_write', 'clipboard_release'].map(refused),
+  {
+    op: 'type_characters',
+    scene: 'events',
+    field: 'answer',
+    answer: (c) => c.ok === false && /^Character '.+' is not on the keyboard layout$/su.test(String(c.error)),
+    reason:
+      "a character the layout cannot produce at level 1 or 2 is refused in one sentence of cua's, naming it; the newest build refuses the same text with `resolve_keys failed …`, `cannot type control character …` or `cannot type literal keysym …`, and the events are the same (nothing typed)",
+    section: 'Design, Keys; Decision Log, M2.2',
+  },
   ...['type_text', 'clipboard_write'].map(previousUnconfirmed),
   {
     op: 'interrupted_hold',

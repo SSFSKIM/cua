@@ -38,7 +38,7 @@ export const SCENE_OPS = {
 };
 
 /** The commands the text and clipboard deviation covers: cua's refusals, checked apart (no vendor runs them here). */
-export const REFUSED = ['type_text', 'type_characters', 'clipboard_read', 'clipboard_write', 'clipboard_release'];
+export const REFUSED = ['type_text', 'clipboard_read', 'clipboard_write', 'clipboard_release'];
 
 const GEDIT = [910, 756];
 const CHROME = [1050, 780];

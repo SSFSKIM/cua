@@ -11,8 +11,8 @@ M1a builds it up from M0's spike. It answers every command of the pinned helper 
 desktop) on the observation side (M1a.1); `press_key`, `key_down`, `key_up`, `click`, `move`, `move_relative`,
 `scroll`, `drag`, `drag_handle`, `perform_secondary_action`, `activate_window` and `launch_app` on the input side
 (M1a.2). M2.1 adds the clipboard core and `clipboard_read` and `clipboard_release`; M2.2 the paste route for
-`type_text` and `clipboard_write`. `type_characters` and `capabilities` (M3) answer
-`<command> is not available in this engine build`.
+`type_text` and `clipboard_write`, and `type_characters`. `capabilities` (M3) answers
+`capabilities is not available in this engine build`.
 
 ```bash
 cargo build --release
@@ -60,6 +60,14 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   `Ctrl+Z` stays undo), and its held-key bookkeeping: counts per target and keycode shared by `press_key`, `key_down`
   and every command's `key` chord; a window with held keys keeps its session across requests until the last hold is
   released; whatever is still held at exit is released, each release with the state that was held.
+- **`type_characters`** (`engine/keyboard.rs`, `keys.rs`): the newest build's command, with its events. The window's
+  session opens, then the whole text is resolved: each character's keysym (its code point below 0x100, else 0x1000000
+  plus it) at level 1 of a key, or at level 2 with Shift_L held (letters included); the first character it cannot
+  produce that way (a control character, a keysym on no key, one only at AltGr's level) refuses the text with
+  `Character '<c>' is not on the keyboard layout` before any key is sent. Each character is then pressed and
+  released in turn, and the answer is the number sent. A family that ignores synthetic keys (GTK 4, xterm) is refused
+  in `--desktop shared` mode and typed through the foreground route in `dedicated` mode; the route taken is the
+  `--stats` line's `route`.
 - **The pointer** (`engine/pointer.rs`): clicks, moves, the desktop's interpolated path, wheel steps of 100 pixels held
   36 ms, drags sampled per pixel, `drag_handle` and `move_relative` on the desktop, in the vendor's order of placing,
   pressing the chord and pressing the button. A drag waits after each sample only where its target's family needs it
@@ -116,7 +124,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | Flag | Values (default first) | What it changes |
 |---|---|---|
 | `--mouse-size-px` | 0 | a positive value stamps the pointer into desktop screenshots (the XFixes cursor at its native size; the value sizes the fallback arrow drawn without XFixes) |
-| `--desktop` | `shared`, `dedicated` | the device mode: whether a family that ignores the background route's paste chord is refused or pasted through the foreground route (M2; M3 adds the clicks and keys) |
+| `--desktop` | `shared`, `dedicated` | the device mode: whether a family that ignores the background route's paste chord or keys is refused, or reached through the foreground route, for `type_text`, `clipboard_write` and `type_characters` (M2; M3 adds the clicks and `press_key`'s keys) |
 | `--window-calls` | 32 | W: calls in flight at most |
 | `--window-bytes` | 4194304 | R: reply bytes received and not consumed, plus the reservation per call in flight, stay under it; a larger reply is still read whole |
 | `--call-reservation` | 4096 | bytes reserved per call in flight |

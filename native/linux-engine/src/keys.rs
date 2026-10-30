@@ -199,6 +199,30 @@ pub fn resolve(chord: &[u32], map: &Keymap) -> Result<Vec<u8>, String> {
     Ok(keycodes)
 }
 
+/// `type_characters`' keys (behaviour §11.4): for each character, its keycode, after Shift_L when the layout has it at
+/// level 2 only (letters included, unlike a chord's rule), or the first character the layout cannot produce at level 1
+/// or 2: a control character, a keysym no key carries, or one only at a higher level (AltGr is never used). The
+/// keysym is the code point below 0x100, else 0x1000000 plus it, as the newest build looks it up.
+pub fn literal_keycodes(text: &str, map: &Keymap) -> Result<Vec<Vec<u8>>, char> {
+    let shift = map.keycode_for(SHIFT_L);
+    text.chars()
+        .map(|c| {
+            let code = u32::from(c);
+            if code < 0x20 || (0x7f..=0x9f).contains(&code) {
+                return Err(c);
+            }
+            let keysym = if code < 0x100 { code } else { 0x0100_0000 + code };
+            let keycode = map.keycode_for(keysym);
+            match keycode {
+                0 => Err(c),
+                _ if map.keysym(keycode, 0) == keysym => Ok(vec![keycode]),
+                _ if map.keysym(keycode, 1) == keysym && shift != 0 => Ok(vec![shift, keycode]),
+                _ => Err(c),
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,6 +390,62 @@ mod tests {
         assert_eq!(resolve(&parse_chord("1").unwrap(), &map), Ok(vec![10]));
         assert_eq!(resolve(&parse_chord("<").unwrap(), &map), Ok(vec![94]));
         assert_eq!(resolve(&parse_chord("shift+a").unwrap(), &map), Ok(vec![50, 38]));
+    }
+
+    #[test]
+    fn literal_characters_take_their_level_with_shift_for_level_two_letters_included() {
+        // the newest build's events for " AbZ09!?" (m2-2/newest-typechars.txt): letters by case, Shift for A and Z
+        let map = us(true);
+        assert_eq!(
+            literal_keycodes("aAzZ!1<", &map),
+            Ok(vec![
+                vec![38],
+                vec![50, 38],
+                vec![52],
+                vec![50, 52],
+                vec![50, 10],
+                vec![10],
+                vec![94]
+            ])
+        );
+        assert_eq!(literal_keycodes("", &map), Ok(vec![]));
+    }
+
+    #[test]
+    fn a_character_off_the_layout_refuses_the_whole_text() {
+        let map = us(true);
+        assert_eq!(
+            literal_keycodes("aé", &map),
+            Err('é'),
+            "the first character the layout lacks"
+        );
+        assert_eq!(
+            literal_keycodes("Ω", &map),
+            Err('Ω'),
+            "beyond Latin-1 the keysym is 0x1000000 + its code point"
+        );
+        assert_eq!(
+            literal_keycodes("az\nza", &map),
+            Err('\n'),
+            "control characters, newline and tab included"
+        );
+        assert_eq!(literal_keycodes("\t", &map), Err('\t'));
+        assert_eq!(literal_keycodes("\u{85}", &map), Err('\u{85}'));
+        assert_eq!(literal_keycodes("a\u{301}", &map), Err('\u{301}'));
+        assert_eq!(literal_keycodes("!", &us(false)), Err('!'), "no Shift on the layout");
+    }
+
+    #[test]
+    fn a_character_only_at_a_third_level_is_refused_never_typed_with_altgr() {
+        // German: q Q q Q @ … at AltGr+q; the newest build answers `cannot type literal keysym 0x40`
+        let mut map = us(true);
+        map.per = 6;
+        map.syms = vec![0; (255 - 8 + 1) * 6];
+        let row = |kc: u8| (kc - 8) as usize * 6;
+        map.syms[row(24)..row(24) + 6].copy_from_slice(&[0x71, 0x51, 0x71, 0x51, 0x40, 0]);
+        map.syms[row(50)] = 0xffe1;
+        assert_eq!(literal_keycodes("qQ", &map), Ok(vec![vec![24], vec![50, 24]]));
+        assert_eq!(literal_keycodes("q@", &map), Err('@'));
     }
 
     #[test]

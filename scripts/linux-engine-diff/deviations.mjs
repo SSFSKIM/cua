@@ -127,6 +127,9 @@ export function declaredParity({ op, scene, series }, list = PARITY) {
 /** The Device mode sentence (Design, Device mode and the foreground route), whatever the application. */
 export const DEVICE_REFUSAL = / does not accept background input; use a dedicated desktop or activate the window first$/;
 
+/** The drag-and-drop cancel's answer (dnd.rs): a drag Chrome turned into a drag and drop, refused before the drop. */
+export const DND_REFUSAL = /^\S.* began a drag and drop, which changes the desktop; it was cancelled before the drop, so nothing was dropped\. Use a dedicated desktop, or activate the window first$/;
+
 /**
  * The declared refusals (M3.1): an operation of the differential run that the vendor builds send and that lands, which
  * cua refuses in shared mode because the scene's window is in a condition its family lists (families.rs), so its
@@ -141,6 +144,15 @@ export const REFUSALS = [
     reason:
       "the scene's Chrome window is fully covered, where Chromium ignores background text-selection, scrollbar-thumb and drag-and-drop drags in every engine (m31-drag-covered: 0/10 in the pinned build and cua); cua refuses a drag into Chromium unless every point of its path is visible in the window, because it cannot tell before sending a drag that would land from one that would not. So a covered drag that lands in the vendor is refused: this pad's, and a range's (9/10 in the pinned build) and a canvas's (10/10). An M4 candidate decides by the AT-SPI role at the path's start",
     section: 'Decision Log, M3.1 (Chromium Drag unless_path_unobscured); m3/kinds/ runs m31-drag-covered, m31-drag-partial, m31-drag-partial-top',
+  },
+  {
+    // the drag-and-drop experiment's Chrome cell (dnd.mjs), whose cua lane answers the cancel
+    op: 'drag',
+    scene: 'dnd:chrome',
+    answer: DND_REFUSAL,
+    reason:
+      "in shared mode, Chrome's HTML5 drops are refused unless Chrome is already the active window, holds the focus and is fully unobscured: the vendor lands them (m31-dnd-visible: 9/10 in the pinned build) while its drop activates, focuses and raises Chrome's window, which nothing puts back. cua cancels the drag and drop before the drop (Escape on the background route) and says so; in dedicated mode, or with Chrome already in front, the drop goes ahead",
+    section: 'Decision Log, M3.1 (Chrome drag and drop); m3/kinds/ runs m31-dnd-visible, m31-dnd-candidate',
   },
 ];
 

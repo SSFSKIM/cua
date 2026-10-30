@@ -10,6 +10,12 @@
 //   foreground route: the route recorded, the witness's foreground allowance, the foreground audit;
 // - `background` (a kind the family takes, or an element action): the request takes effect on the background route,
 //   with the witness unchanged and the background audit clean;
+// - `cancel` (shared mode, a drag that Chrome turns into a drag and drop): the request answers that the drag and drop
+//   was cancelled before the drop, exactly, with nothing dropped, the witness unchanged and the background audit clean
+//   (the cancel's Escape is a synthetic key event, never XTEST);
+// - `late` (the same, the cancel forced after the release, `--dnd-cancel-after-release`): every answer is honest (that
+//   the drop may have happened, or that nothing was dropped only where nothing dropped and the witness is unchanged),
+//   at least one answer says the drop may have happened, and the background audit is clean;
 // - `answer`: `capabilities`, its answer checked.
 //
 // Scenes: `device-gtk4` (the harness's GTK 4 scene, pages/gtk4-input.py: GTK 4 ignores synthetic input always),
@@ -17,10 +23,13 @@
 // unobscured; the cases put a window over its bottom half, or part of it off the screen, or leave it fully visible),
 // `device-xterm` (xterm running the recorder: it ignores synthetic keys and takes clicks), `device-qt` (kate on a long
 // document: Qt ignores synthetic wheel events), `device-chrome` (Chrome on pages/input.html: Chromium takes a drag only
-// along a visible path) and gnome-text-editor's text refusal on the `gnome-text-editor` scene.
+// along a visible path), `device-chrome-dnd` (Chrome on pages/drag.html: its HTML5 drag and drop, cancelled in shared
+// mode unless Chrome is already in front) and gnome-text-editor's text refusal on the `gnome-text-editor` scene.
 // M3.1's listings beyond M0's (scroll and move for GTK 4 and Gecko, scroll for Qt) join the cases as M0's did.
 
 import { readFileSync } from 'node:fs';
+
+import { execFileSync } from 'node:child_process';
 
 import { readGtk4Status } from './families.mjs';
 import { activeWindow, configure } from './scenes.mjs';
@@ -30,7 +39,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** The Device mode sentence (Design, Device mode), for the application `list_windows` names. */
 export const deviceSentence = (app) => `${app} does not accept background input; use a dedicated desktop or activate the window first`;
 
+/** The answers to a drag Chrome turned into a drag and drop, in shared mode (dnd.rs). */
+export const dndCancelledSentence = (app) =>
+  `${app} began a drag and drop, which changes the desktop; it was cancelled before the drop, so nothing was dropped. Use a dedicated desktop, or activate the window first`;
+export const dndMayHaveDroppedSentence = (app) =>
+  `${app} began a drag and drop, which changes the desktop, and it could not be cancelled in time: the drop may have happened and the desktop changed. Use a dedicated desktop, or activate the window first`;
+
 const DEDICATED = ['--desktop', 'dedicated'];
+const LATE = ['--dnd-cancel-after-release'];
 /** How long a refused request's window is watched for anything arriving after the answer. */
 const QUIET_MS = 400;
 
@@ -43,6 +59,16 @@ const record = (ctx) => readFileSync(ctx.scene.record, 'latin1');
 const scrollBar = (ctx) => {
   try {
     return Number(ctx.desktop.oracle.currentValue(ctx.scene.scrollbar));
+  } catch {
+    return null;
+  }
+};
+/** The drag page's drag-and-drop status (pages/drag.html): `{drops, ...}`. */
+const dropStatus = async (ctx) => {
+  try {
+    // drag.mjs imports run.mjs, which imports this module
+    const { readEffect } = await import('./drag.mjs');
+    return await readEffect({ desktop: ctx.desktop, oracle: ctx.desktop.oracle }, ctx.scene, ctx.scene.dndAt, 'dnd');
   } catch {
     return null;
   }
@@ -74,6 +100,8 @@ const higher = (before, after) => typeof before === 'number' && typeof after ===
 /** A drag across the input page's pad (pages/input.html counts it), in the top half of the window. */
 const padDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: [{ x: 200, y: 150 }, { x: 380, y: 180 }, { x: 600, y: 240 }] }];
 const moveTo = (ctx, a, b) => ['move', { window: { id: ctx.scene.id }, ...(ctx.i % 2 === 0 ? a : b) }];
+/** The drag page's drag-and-drop path (`scene.dndPath`, drag.mjs's): the source dragged to the drop zone. */
+const dndDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.scene.dndPath }];
 
 /** The input page back at its top after a scroll series: Home through the background route (Gecko takes keys). */
 async function pageHome({ scene, cua }) {
@@ -119,6 +147,12 @@ function offscreen(ctx) {
 /** The front window over the whole screen. */
 const covered = (ctx) => ctx.desktop.arrangeFront('covered');
 
+/** The scene window fully visible and already in front: activated (the active window, the focus, on top). */
+function inFront(ctx) {
+  visible(ctx);
+  execFileSync('xdotool', ['windowactivate', '--sync', String(ctx.scene.id)]);
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // the cases
 
@@ -126,7 +160,7 @@ const covered = (ctx) => ctx.desktop.arrangeFront('covered');
  * A case: `device` its expectation, `scene` where it runs, `condition` the arrangement before each sample, `read` what
  * the window counts, `request`, and `effect` (from the counts before and after) for the cases that must take effect.
  */
-function device({ device: expect, condition = covered, read, request, effect, route }) {
+function device({ device: expect, condition = covered, read, request, effect, route, args }) {
   const dedicated = expect === 'foreground';
   return {
     kind: 'input',
@@ -134,7 +168,7 @@ function device({ device: expect, condition = covered, read, request, effect, ro
     cuaOnly: true,
     // a handful a block: these cases prove behaviour, not speed (cua alone has no bar)
     warmSamples: 2,
-    cuaArgs: () => (dedicated ? DEDICATED : []),
+    cuaArgs: () => args ?? (dedicated ? DEDICATED : []),
     // the witness: the foreground allowance only where the foreground route is expected and reported (run.mjs)
     route: () => route ?? (dedicated ? 'foreground' : null),
     prepare: async (ctx) => {
@@ -143,7 +177,7 @@ function device({ device: expect, condition = covered, read, request, effect, ro
     },
     read,
     request,
-    effect: expect === 'refusal' ? undefined : effect,
+    effect: ['refusal', 'cancel', 'late'].includes(expect) ? undefined : effect,
     check: async (ctx, response) => {
       const out = {};
       if (expect === 'refusal') {
@@ -151,6 +185,14 @@ function device({ device: expect, condition = covered, read, request, effect, ro
         await sleep(QUIET_MS);
         const after = await read(ctx);
         out.unchanged = ctx.before !== null && after !== null && JSON.stringify(after) === JSON.stringify(ctx.before);
+      }
+      if (expect === 'cancel' || expect === 'late') {
+        out.expected_error = dndCancelledSentence(ctx.scene.app);
+        if (expect === 'late') out.late_error = dndMayHaveDroppedSentence(ctx.scene.app);
+        // a drop the page counts shows within its settle; one never read counts as dropped
+        await sleep(QUIET_MS);
+        const after = await read(ctx);
+        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
       }
       if (dedicated && response.ok) out.activated = activeWindow() === ctx.scene.id;
       return out;
@@ -213,6 +255,13 @@ export const DEVICE_OPS = {
   chrome_drag_visible_path_shared: device({ device: 'background', route: 'background', condition: overlapped, read: page, request: padDrag, effect: rose('drags') }),
   chrome_drag_covered_path_shared: device({ device: 'refusal', condition: topCovered, read: page, request: padDrag }),
   chrome_drag_covered_dedicated: device({ device: 'foreground', condition: covered, read: page, request: padDrag, effect: rose('drags') }),
+  // Chrome's HTML5 drag and drop (`device-chrome-dnd`): cancelled before the drop in shared mode; let through when Chrome
+  // is already in front, the desktop unchanged; an honest answer when the cancel comes too late; the drop through the
+  // foreground route in dedicated mode
+  chrome_dnd_shared: device({ device: 'cancel', condition: visible, read: dropStatus, request: dndDrag }),
+  chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: inFront, read: dropStatus, request: dndDrag, effect: rose('drops') }),
+  chrome_dnd_late_shared: device({ device: 'late', condition: visible, read: dropStatus, request: dndDrag, args: LATE }),
+  chrome_dnd_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndDrag, effect: rose('drops') }),
   // Qt (`device-qt`, kate on a long document): its scroll bar's value
   qt_scroll_shared: device({ device: 'refusal', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }] }),
   qt_scroll_dedicated: device({ device: 'foreground', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }], effect: higher }),
@@ -239,6 +288,7 @@ export const DEVICE_SCENE_OPS = {
   // the scroll last: its series ends with the page put back at its top (`reset`)
   'device-firefox': ['firefox_click_overlap_shared', 'firefox_click_offscreen_shared', 'firefox_right_click_overlap_shared', 'firefox_click_overlap_dedicated', 'firefox_click_visible_shared', 'firefox_element_click_covered', 'firefox_move_overlap_shared', 'firefox_move_covered_dedicated', 'firefox_drag_overlap_shared', 'firefox_drag_covered_dedicated', 'firefox_scroll_overlap_shared', 'firefox_scroll_covered_dedicated'],
   'device-chrome': ['chrome_drag_visible_path_shared', 'chrome_drag_covered_path_shared', 'chrome_drag_covered_dedicated'],
+  'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared', 'chrome_dnd_covered_dedicated'],
   'device-qt': ['qt_scroll_shared', 'qt_scroll_dedicated'],
   'device-xterm': ['xterm_key_shared', 'xterm_key_dedicated', 'xterm_click_shared'],
   'gnome-text-editor': ['gte_type_text_shared'],
@@ -278,6 +328,16 @@ export function judgeDevice(op, rows, audit) {
     bad('not refused with the Device mode sentence', (r) => !r.ok && r.error === r.expected_error);
     bad('the window changed', (r) => r.unchanged === true);
   }
+  if (expect === 'cancel') {
+    bad('not cancelled with the drag-and-drop sentence', (r) => !r.ok && r.error === r.expected_error);
+    bad('it dropped', (r) => r.dropped === false);
+  }
+  if (expect === 'late') {
+    bad('a request answered success', (r) => !r.ok);
+    // "nothing was dropped" only where nothing dropped and the desktop is as it was
+    bad('an answer was not honest', (r) => r.error === r.late_error || (r.error === r.expected_error && r.dropped === false && r.witness === true));
+    if (!rows.some((r) => r.error === r.late_error)) reasons.push('no answer said the drop may have happened: no cancel came too late');
+  }
   if (expect === 'foreground' || expect === 'background') {
     bad('a request failed', (r) => r.ok);
     bad('the effect was not verified', (r) => r.effect === true);
@@ -286,7 +346,8 @@ export function judgeDevice(op, rows, audit) {
     bad('not the foreground route', (r) => r.route === 'foreground');
     bad('the window was not left active', (r) => r.activated === true);
   }
-  if (expect !== 'answer') bad('the witness changed', (r) => r.witness === true);
+  // a late cancel's drop changes the desktop: its answer is judged instead
+  if (expect !== 'answer' && expect !== 'late') bad('the witness changed', (r) => r.witness === true);
   if (expect !== 'answer') {
     if (!audit) reasons.push('the audit did not run');
     else if (!audit.clean) reasons.push(`the ${audit.kind} audit found ${audit.forbidden?.join(', ') || 'no traced requests'}`);

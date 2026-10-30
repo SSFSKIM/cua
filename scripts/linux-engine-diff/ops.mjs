@@ -50,6 +50,7 @@ export const SCENE_OPS = {
   'device-xterm': DEVICE_SCENE_OPS['device-xterm'],
   'device-qt': DEVICE_SCENE_OPS['device-qt'],
   'device-chrome': DEVICE_SCENE_OPS['device-chrome'],
+  'device-chrome-dnd': DEVICE_SCENE_OPS['device-chrome-dnd'],
 };
 
 const GEDIT = [910, 756];

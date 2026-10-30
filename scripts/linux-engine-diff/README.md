@@ -339,6 +339,35 @@ variants included; their evidence is written either way. The run's `end` row kee
   outside that spread it fails. Unlisted operations are unaffected. `clipboard_release` (a map removal in every engine, about 0.1 ms the harness's own
   scheduling dominates) takes 10 warm samples a block so that its warm series has them.
 
+## M3.1's additions: the device mode
+
+- **The kinds experiment** (`--experiment kinds [--family <list>] [--ops scroll,move,click] [--occlusion …]
+  [--lanes …]`, `kinds.mjs`): per family of M0.4's matrix, plus the harness's GTK 4 scene (`pages/gtk4-input.py`) and
+  Qt scenes (`pages/qt-input.py`: plain Qt 5 or Qt 6 widgets counting what reaches the toolkit, and under a named
+  style an auto-raise tool button for the hover run, families `qt5-breeze` and `qt5-fusion`), each lane scrolls,
+  moves or clicks its own window `--trials` times and reads the effect back (a page's or scene's counts, a terminal's
+  mouse reports, a scroll bar's value, or for a hover the pixels of a capture). The lanes: the vendor builds, `cua`,
+  and the control `xtest` (the window activated, then a windowless request at root coordinates through XTEST). A cell
+  the control takes and no background lane takes is a kind the family ignores (`ignored`), the evidence for a listing
+  in `families.rs`.
+- **Occlusions** (`--occlusion`, `Desktop.arrange`): `covered`, `visible`, `partial` (the front window over the scene
+  window's bottom half), `partial-deep` (its bottom 70%) and `partial-top` (its top 55%, where the targets are). The
+  drag experiment takes the same lanes and occlusions.
+- **The drag-and-drop experiment** (`--experiment dnd [--family chrome,electron,firefox] [--lanes …]`, `dnd.mjs`):
+  per lane, drags along `pages/drag.html`'s drag-and-drop path, each recorded with the `XdndSelection` owners, the
+  grabs during and after, the desktop (active window, focus, stacking) before, at the answer and 1 s later, the
+  witness, the drop, and cua's answer (the declared refusal, or that the drop may have happened). `cua:active` is cua
+  with the window activated before each drag; `--variant` adds the dedicated and forced-late lanes.
+- **Acceptance 8's cases** (`device.mjs`, the scenes `device-gtk4`, `device-firefox`, `device-xterm`, `device-qt`,
+  `device-chrome`, `device-chrome-dnd`, and `gnome-text-editor`'s and `desktop`'s): cua alone, each judged by its
+  expectation (refusal with the Device mode sentence and nothing sent; the foreground route in dedicated mode; the
+  background route; a drag and drop cancelled before the drop; an honest answer when the cancel comes too late), with
+  the witness and the X request audit of the kind the expectation needs. `capabilities` is checked against the
+  engine's version and build.
+- **Declared refusals** (`deviations.mjs` `REFUSALS`): an operation the vendor lands and cua refuses in shared mode,
+  recorded as a loss (verdict `declared refusal`, listed apart, never a pass) while every cua sample answers the
+  declared sentence with the witness unchanged.
+
 ## Files
 
 | File | What it is |
@@ -362,3 +391,4 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `events.mjs`, `xprobe/src/record.rs` | M1a.2's input events experiment and its recorder window |
 | `pages/` | the Chrome scenes (`input.html` the pointer and key scene, `text.html` the text scene) and `gtk-table.py`, the large-table scene |
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |
+| `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |

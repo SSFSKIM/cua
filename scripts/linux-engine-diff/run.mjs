@@ -272,6 +272,7 @@ async function measureSample(s, ctx) {
     if (stats.capture) row.stats.capture = stats.capture;
     if (stats.paste) row.stats.paste = { confirmed: stats.paste.confirmed, confirm_ms: stats.paste.confirm_ms, transfer: stats.paste.transfer, clicked: stats.paste.clicked, restored: stats.paste.restored, focus_ms: stats.paste.focus_ms, clicks: stats.paste.clicks };
     if (stats.route) row.route = stats.route;
+    if (stats.dnd) row.dnd = stats.dnd;
   }
   if (def.after) await def.after(ctx, response);
   if (def.effect && row.ok && def.read && !def.follow) {
@@ -456,6 +457,16 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
     desktop.oracle ??= new Oracle();
     const opened = await openFamily(desktop, desktop.oracle, 'kate', role, { doc: DRAG_DOC });
     opened.scrollbar = await verticalScrollBar(desktop, desktop.oracle, opened);
+    return withApp(desktop, opened);
+  }
+  if (scene === 'device-chrome-dnd') {
+    const { openFamily, FAMILIES } = await import('./families.mjs');
+    const { PAGE, locate, runPath } = await import('./drag.mjs');
+    desktop.oracle ??= new Oracle();
+    const opened = await openFamily(desktop, desktop.oracle, 'chrome', role, { page: PAGE, geometry: FAMILIES.chrome.geometry });
+    opened.kindOf = 'page';
+    opened.dndAt = await locate({ desktop, oracle: desktop.oracle }, opened, ['dnd']);
+    opened.dndPath = runPath(opened.dndAt, 'dnd', 0);
     return withApp(desktop, opened);
   }
   if (scene === 'device-firefox' || scene === 'device-chrome') {
@@ -856,7 +867,7 @@ export async function runDiff(args) {
         // the judge's verdict; anything else fails
         const refusal = declaredRefusal({ op, scene: sceneName });
         if (refusal) {
-          const bad = mine.filter((r) => r.ok || !DEVICE_REFUSAL.test(String(r.error ?? '')) || r.witness !== true);
+          const bad = mine.filter((r) => r.ok || !(refusal.answer ?? DEVICE_REFUSAL).test(String(r.error ?? '')) || r.witness !== true);
           extra.refusal = describe(refusal);
           Object.assign(verdict, bad.length ? { pass: false, verdict: 'fail', reasons: [`${candidate}: ${bad.length} of ${mine.length} samples not the declared refusal with the witness unchanged`] } : { pass: false, verdict: 'declared refusal', reasons: [] });
         }

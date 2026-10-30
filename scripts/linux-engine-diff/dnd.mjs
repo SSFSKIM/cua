@@ -11,6 +11,9 @@
 // - the witness's record: the changed fields, the focus events (with their modes: a keyboard grab shows as mode 1 and
 //   its end as mode 2), the activation requests and the restacks, maps and unmaps;
 // - the drop itself: the page's drop count.
+// The lanes (`--lanes` narrows them): the pinned and newest vendor engines, cua, cua's `--variant` lanes (the
+// drag-and-drop candidate's `dedicated` and forced-late ones), and `cua:active`, cua with the window activated before
+// each drag, the window already in front, where the candidate lets the drop go ahead in shared mode.
 
 import { execFileSync, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -19,6 +22,7 @@ import { PAGE, locate, readEffect, runPath } from './drag.mjs';
 import { Engine } from './engine.mjs';
 import { FAMILIES, openFamily } from './families.mjs';
 import { Oracle } from './oracle.mjs';
+import { DND_REFUSAL } from './deviations.mjs';
 import { negativeCheck } from './run.mjs';
 import { XPROBE, activeWindow } from './scenes.mjs';
 import { stacking } from './clip.mjs';
@@ -88,12 +92,14 @@ function sampleGrabs() {
 }
 
 export function dndLanes(args) {
-  return [
+  const all = [
     { label: 'pinned', bin: args.vendor, args: [] },
     ...(args.newest ? [{ label: 'newest', bin: args.newest, args: [] }] : []),
     { label: 'cua', bin: args.cua, args: [] },
+    { label: 'cua:active', bin: args.cua, args: [], activate: true },
     ...args.variants.map((v) => ({ ...v, bin: args.cua })),
   ];
+  return args.lanes ? all.filter((l) => args.lanes.includes(l.label)) : all.filter((l) => l.label !== 'cua:active');
 }
 
 /** One lane's drags into its own window: the run rows, each emitted. */
@@ -106,6 +112,7 @@ async function series(ctx, spec, scene, family, n) {
   try {
     for (let i = 0; i < n; i++) {
       desktop.arrange(scene, occlusion);
+      if (spec.activate) execFileSync('xdotool', ['windowactivate', '--sync', String(scene.id)]);
       await sleep(400);
       const before = desktopState();
       const drops = (await readEffect(ctx, scene, at, 'dnd')).drops;
@@ -164,7 +171,9 @@ function summaryRow(family, label, runs, n) {
     return tally.length ? tally.join(', ') : 'none';
   };
   const grabbed = (g) => g.pointer !== 'free' || g.keyboard !== 'free';
-  return `| ${family} | ${label} | ${count((r) => r.dropped)}/${n} | ${fields('witness_fields')} | ${count((r) => r.xdnd_owners.some((o) => o.owner !== 0))}/${n} | ${count((r) => r.grabs_during.length > 0)}/${n} | ${count((r) => grabbed(r.grab_after))}/${n} | ${fields('changed_at_answer')} | ${fields('changed_later')} |`;
+  // cua's answers: the declared refusal (deviations.mjs: the cancel before the drop), or that the drop may have happened
+  const answers = `${count((r) => DND_REFUSAL.test(r.error ?? ''))} / ${count((r) => /could not be cancelled in time/.test(r.error ?? ''))}`;
+  return `| ${family} | ${label} | ${count((r) => r.dropped)}/${n} | ${answers} | ${fields('witness_fields')} | ${count((r) => r.xdnd_owners.some((o) => o.owner !== 0))}/${n} | ${count((r) => r.grabs_during.length > 0)}/${n} | ${count((r) => grabbed(r.grab_after))}/${n} | ${fields('changed_at_answer')} | ${fields('changed_later')} |`;
 }
 
 export async function runDnd(args, { desktop, emit }) {
@@ -175,10 +184,10 @@ export async function runDnd(args, { desktop, emit }) {
   await desktop.openFront(args.occlusion === 'covered' ? 'covered' : 'visible');
   const witness = await startWitness(XPROBE);
   const md = [
-    `HTML5 drag and drop (pages/drag.html's \`dnd\` path), ${n} drags a lane, each window ${args.occlusion} (dnd.mjs). Columns: drops that landed; runs whose witness changed, by field; runs that took XdndSelection; runs where a grab was in force during the drag; runs with a grab left after the answer; runs whose active window, focus or stacking differed from before right after the answer, and 1 s later.`,
+    `HTML5 drag and drop (pages/drag.html's \`dnd\` path), ${n} drags a lane, each window ${args.occlusion} (dnd.mjs). Columns: drops that landed; answers that refused the drop as declared (deviations.mjs) / that said the drop may have happened; runs whose witness changed, by field; runs that took XdndSelection; runs where a grab was in force during the drag; runs with a grab left after the answer; runs whose active window, focus or stacking differed from before right after the answer, and 1 s later.`,
     '',
-    '| family | lane | drops | witness changed | took XdndSelection | grab during | grab after | changed at the answer | changed 1 s later |',
-    '|---|---|---:|---|---:|---:|---:|---|---|',
+    '| family | lane | drops | refused / may have dropped | witness changed | took XdndSelection | grab during | grab after | changed at the answer | changed 1 s later |',
+    '|---|---|---:|---|---|---:|---:|---:|---|---|',
   ];
   const ctx = { desktop, oracle, witness, emit, occlusion: args.occlusion };
   try {

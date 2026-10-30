@@ -12,7 +12,7 @@ export const USAGE = `usage:
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
   linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd --cua <bin> --out <dir> [--run <name>]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load] [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
-      [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds)
+      [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
 

@@ -21,7 +21,7 @@ Vocabulary used throughout:
 
 - [x] (2026-10-30) Design session (cua_repl#1ea561bc, coordinating #171 in parallel): three research readings (engine hooks, the vendor cursor's behaviour and logic, prior art and macOS overlay technique), three question rounds with the owner, an animated look mockup; design approved by the owner.
 - [x] (2026-10-30) Spec review: round 1 (spec review and buildability review, twelve findings) and round 2 (three findings), all folded (Decision Log).
-- [ ] M1 — The cursor in the engine: overlay, motion, states. (2026-10-30: built, a5e37a47..be05d750; in task review.)
+- [x] (2026-10-30) M1 — The cursor in the engine: overlay, motion, states. Built a5e37a47..be05d750, task-review fixes 3827cbda and 8d1f156f; review clean; 564 engine tests; hosted engine-swift and test GREEN on 7d8e27a3 (run 41146110438).
 - [ ] M2 — Identity, settings, lifecycle wiring and the harness.
 - [ ] M3 — The attended proof on the MacBook, the plugin bump, the docs.
 
@@ -368,6 +368,8 @@ Environment, read by the service: `CUA_CURSOR` (`0` turns the session's cursor o
   Evidence: `docs/doperpowers/research/2026-10-30-macos-agent-cursor/vendor-cursor.md` Appendix B §1.3; `native/engine/Tests/EngineTests/Fixtures/cursor-reference/vectors.json` (`settleSteps`), commit 0ca3adac.
 - Observation (2026-10-30, M1 step 1, the spike, run briefly on the MacBook): an `NSVisualEffectView` (`.behindWindow`) masked by a soft `maskImage` blurs what lies behind a display-wide transparent panel and follows a `CAKeyframeAnimation` of its container in the same frame (arrow-to-halo offset 6.1 px moving left, 6.6 px moving right, against 23 px of travel per 60 fps frame; a lag would flip sign with direction). With the view's appearance `.aqua`, `.hudWindow` or `.fullScreenUI` gives the light frosted look; a system material cannot take the vendor's blur radius of 17, so the owner judges the look in M3. `CALayer.backgroundFilters` blurs nothing behind the window. A `main.sync` no-op round trip (median 11.5–11.8 µs, 3600 samples, two sittings) gains +0.1 µs [0.0, 0.3] and +0.3 µs [0.1, 0.5] with a Core Animation cursor gliding, and process CPU rises 2 ms/s; a small window moved by a main-thread display link (fallback b) adds 3.0–3.2 µs at the median, takes p99 from 29–49 µs to 314–332 µs and costs about 95 ms/s of CPU.
   Evidence: the spike's method and numbers in the execution record (`2026-10-30-macos-agent-cursor-report.md`, M1); the spike itself is not in the tree.
+- Observation (2026-10-30, M1 build): the press dip, played on the vendor's press spring (stiffness 130.5, damping 18.85, about 0.55 s response) pressed for 0.1 s, reaches about 0.86 scale, not the 0.7 target the Design names: the spring never gets there in 0.1 s. That is the vendor's own visible dip, so it is kept; the test pins it between 0.7 and 0.9.
+  Evidence: `native/engine/Tests/EngineTests/CursorEffectsTests.swift`, the execution record's M1 build section.
 
 ## Decision Log
 

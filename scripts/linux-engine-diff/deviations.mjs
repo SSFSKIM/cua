@@ -20,8 +20,21 @@ const refused = (op) => ({
   section: 'Plan of Work, M1a, Decisions; M2',
 });
 
+/** The paste route's refusal while an earlier unconfirmed paste's `CurrentTime` refusal runs (Decision Log, M2.1). */
+export const PREVIOUS_UNCONFIRMED = /^a previous paste could not be confirmed and may still be read; nothing was sent; retry after \d+ s$/;
+
+const previousUnconfirmed = (op) => ({
+  op,
+  field: 'error',
+  answer: (c) => c.ok === false && PREVIOUS_UNCONFIRMED.test(String(c.error)),
+  reason:
+    "for 10 s after a paste that could not be confirmed and whose target was not served in full, a new paste is refused with nothing sent, so a late conversion of the earlier paste is never served the new one's text; the vendor never refuses here",
+  section: 'Decision Log, M2.1 (serving generations across pastes)',
+});
+
 export const DEVIATIONS = [
   ...['type_text', 'type_characters', 'clipboard_read', 'clipboard_write', 'clipboard_release'].map(refused),
+  ...['type_text', 'clipboard_write'].map(previousUnconfirmed),
   {
     op: 'interrupted_hold',
     scene: 'events',

@@ -36,6 +36,18 @@ test("a deviation covers only its field and only the candidate's declared answer
   assert.equal(declaredDeviation({ op: 'scroll', scene: 'gedit', field: 'error', candidate: { ok: false, error: sentence } }, list), null);
 });
 
+test("a paste refused while an earlier unconfirmed paste's window runs is declared, in any scene", () => {
+  const error = 'a previous paste could not be confirmed and may still be read; nothing was sent; retry after 7 s';
+  for (const op of ['type_text', 'clipboard_write']) {
+    for (const scene of ['gedit', 'chrome-textarea']) {
+      assert.ok(declaredDeviation({ op, scene, field: 'error', candidate: { ok: false, error } }), `${op} ${scene}`);
+    }
+    assert.equal(declaredDeviation({ op, scene: 'gedit', field: 'error', candidate: { ok: false, error: `${error}.` } }), null);
+    assert.equal(declaredDeviation({ op, scene: 'gedit', field: 'output', candidate: { ok: false, error } }), null);
+  }
+  assert.equal(declaredDeviation({ op: 'press_key', scene: 'gedit', field: 'error', candidate: { ok: false, error } }), null);
+});
+
 test('interrupted input answering an error where the pinned build answers success is declared', () => {
   const candidate = { ok: false, error: 'X11 error X11Error { error_kind: Window, error_code: 3, sequence: N }' };
   assert.ok(declaredDeviation({ op: 'interrupted_hold', scene: 'events', field: 'answer', candidate }));

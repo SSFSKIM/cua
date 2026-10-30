@@ -170,6 +170,14 @@ impl Route<'_> {
         }
     }
 
+    /// The background session, on the background route.
+    pub fn session(&self) -> Option<&Session> {
+        match self {
+            Route::Window(session) => Some(session),
+            Route::Desktop(_) => None,
+        }
+    }
+
     pub fn button(&mut self, x: &X11, button: u8, press: bool) -> Result<()> {
         match self {
             Route::Window(session) => session.button(x, button, press),

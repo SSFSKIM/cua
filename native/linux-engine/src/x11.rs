@@ -516,6 +516,28 @@ impl X11 {
         self.readiness.get_or_insert_with(|| Readiness::connect(rule))
     }
 
+    /// Whether `window` is fully unobscured now, as a family's `unless_unobscured` condition reads it (`families.rs`).
+    pub fn unobscured(&self, window: Window) -> bool {
+        let geometry = self.conn.get_geometry(window).ok().and_then(|c| c.reply().ok());
+        geometry.is_some_and(|g| self.fully_unobscured(window, &g))
+    }
+
+    /// The client window holding the X input focus: the focus window or the nearest ancestor with `WM_STATE`, None
+    /// when the focus is on no client (None, PointerRoot, the root, or a window outside any client).
+    pub fn focused_client(&self) -> Result<Option<Window>> {
+        let mut window = self.conn.get_input_focus()?.reply()?.focus;
+        for _ in 0..100 {
+            if window == x11rb::NONE || window == 1 || window == self.root {
+                return Ok(None);
+            }
+            if self.get_property(window, self.atom("WM_STATE"))?.type_ != x11rb::NONE {
+                return Ok(Some(window));
+            }
+            window = self.conn.query_tree(window)?.reply()?.parent;
+        }
+        Ok(None)
+    }
+
     /// Whether `window` is fully unobscured now (`cover.rs`); any X error is doubt, and doubt is obscured.
     fn fully_unobscured(&self, window: Window, geometry: &GetGeometryReply) -> bool {
         self.cover(window, geometry)

@@ -526,6 +526,36 @@ fn a_late_conversion_never_receives_the_restored_snapshot_as_the_paste() {
     assert!(c.owns(), "the engine keeps serving the snapshot");
 }
 
+/// Only an unconfirmed paste whose Ctrl+V went out opens the `CurrentTime` refusal: one never sent, or one whose target
+/// was served in full (`settled`), leaves `CurrentTime` requests served (Decision Log, M2.1).
+#[test]
+#[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+fn only_an_unconfirmed_paste_that_was_sent_opens_the_current_time_refusal() {
+    let _serial = serial();
+    clear_clipboard();
+    let mut c = clipboard();
+    let (conn, _) = x11rb::connect(None).unwrap();
+    drop(c.take(text(&c, "never sent"), text(&c, "before")).unwrap());
+    assert_eq!(c.current_time_refusal(), None);
+    assert_eq!(text_of(convert("UTF8_STRING", Asking::default())), "before");
+
+    let served = c.take(text(&c, "served"), text(&c, "before")).unwrap();
+    served.dispatched(server_time(&conn));
+    served.settled();
+    assert_eq!(c.current_time_refusal(), None);
+    assert_eq!(text_of(convert("UTF8_STRING", Asking::default())), "before");
+
+    let unconfirmed = c.take(text(&c, "unconfirmed"), text(&c, "before")).unwrap();
+    unconfirmed.dispatched(server_time(&conn));
+    drop(unconfirmed);
+    let left = c.current_time_refusal().expect("the refusal runs");
+    assert!(
+        left > Duration::from_secs(9) && left <= Duration::from_secs(10),
+        "{left:?}"
+    );
+    assert_eq!(convert("UTF8_STRING", Asking::default()), Answer::Refused);
+}
+
 /// The refusal holds whatever is served next, a later paste's text included: a late `CurrentTime` conversion of
 /// the unconfirmed paste must not receive the next paste's text either. Chrome converts with `CurrentTime`, so for
 /// 10 s after an unconfirmed paste it receives nothing (Decision, M2.1).
@@ -536,7 +566,9 @@ fn an_unconfirmed_paste_s_current_time_refusal_covers_the_next_paste_too() {
     clear_clipboard();
     let mut c = clipboard();
     let (conn, _) = x11rb::connect(None).unwrap();
-    drop(c.take(text(&c, "first"), text(&c, "before")).unwrap());
+    let first = c.take(text(&c, "first"), text(&c, "before")).unwrap();
+    first.dispatched(server_time(&conn));
+    drop(first);
     let next = c.take(text(&c, "second"), text(&c, "before")).unwrap();
     assert_eq!(convert("UTF8_STRING", Asking::default()), Answer::Refused);
     let ctrl_v = server_time(&conn);

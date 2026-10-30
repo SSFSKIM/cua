@@ -5,6 +5,7 @@
 mod clipboard;
 mod elements;
 mod keyboard;
+mod paste;
 mod pointer;
 mod windows;
 
@@ -18,13 +19,22 @@ use serde_json::{Value, json};
 use crate::apps;
 use crate::atspi::{self, Association};
 use crate::dbus::{Broken, Bus, BusStats};
-use crate::families::{self, DragPacing};
+use crate::families::{self, DragPacing, Family};
 use crate::input::Pacing;
 use crate::readiness::CaptureWait;
 use crate::route::Inputs;
 use crate::tree;
 use crate::wire::{self, GetWindowStateInput, NoInput, Request, Response, parse_input};
 use crate::x11::{Retention, X11};
+
+/// The device mode (Design, Device mode and the foreground route): whether a person may be using this desktop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DesktopMode {
+    /// Input a family ignores on the background route is refused.
+    Shared,
+    /// The desktop is the agent's: such input activates the window and takes the desktop route.
+    Dedicated,
+}
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -35,7 +45,7 @@ pub struct Config {
     pub pacing: Pacing,
     pub stats: bool,
     pub mouse_size_px: u32,
-    pub desktop: String,
+    pub desktop: DesktopMode,
 }
 
 pub struct Engine {
@@ -52,8 +62,8 @@ pub struct Engine {
     inputs: Inputs,
     /// `launch_app`'s programs, reaped as they exit.
     launched: apps::Launched,
-    /// Each window's drag pacing, looked up once (`families.rs`).
-    drag_families: HashMap<x11rb::protocol::xproto::Window, DragPacing>,
+    /// Each window's family, looked up once (`families.rs`).
+    families: HashMap<x11rb::protocol::xproto::Window, Option<&'static Family>>,
     /// The pacing of the drag a `drag_handle` holds, from its start to its end.
     handle_pacing: pointer::HandlePacing,
     /// The clipboard's own connections, opened on first use.
@@ -87,7 +97,7 @@ impl Engine {
             bus_stats: BusStats::default(),
             extra: Default::default(),
             pending_stats: None,
-            drag_families: HashMap::new(),
+            families: HashMap::new(),
             handle_pacing: pointer::HandlePacing::default(),
             launched: apps::Launched::default(),
             clipboard: None,
@@ -118,6 +128,8 @@ impl Engine {
             "launch_app" => self.launch_app(request.input),
             "clipboard_read" => self.clipboard_read(request.input),
             "clipboard_release" => self.clipboard_release(request.input),
+            "clipboard_write" => self.clipboard_write(request.input),
+            "type_text" => self.type_text(request.input),
             "server" => Err(anyhow!("server command cannot be nested")),
             command if wire::COMMANDS.contains(&command) => Err(anyhow!(wire::not_available(command))),
             command => Err(anyhow!("unknown command `{command}`")),
@@ -190,18 +202,12 @@ impl Engine {
         }
     }
 
-    /// A drag's pacing: the flags' where they fix it, else the family of the window it goes to (`families.rs`): by
-    /// its X11 class, and where no class entry matches and some entry is keyed by toolkit, by its application's
-    /// `ToolkitName` on the accessibility bus. Looked up once per window; no window, or nothing found, is no wait.
-    fn drag_pacing_for(&mut self, window: Option<x11rb::protocol::xproto::Window>) -> DragPacing {
-        if let Some(fixed) = self.cfg.pacing.drag {
-            return fixed;
-        }
-        let Some(window) = window else {
-            return DragPacing::NONE;
-        };
-        if let Some(pacing) = self.drag_families.get(&window) {
-            return *pacing;
+    /// The family of a window (`families.rs`): by its X11 class, and where no class entry matches and some entry is
+    /// keyed by toolkit, by its application's `ToolkitName` and `Version` on the accessibility bus. Looked up
+    /// once per window; None is an unlisted family.
+    fn family_of(&mut self, window: x11rb::protocol::xproto::Window) -> Option<&'static Family> {
+        if let Some(found) = self.families.get(&window) {
+            return *found;
         }
         let class = self.x.wm_class(window);
         let mut found = families::family(families::FAMILIES, class.as_deref(), None);
@@ -210,8 +216,26 @@ impl Engine {
             && let Some(pid) = self.x.pid(window)
         {
             let toolkit = self.with_bus(|bus, _| atspi::toolkit_of(bus, pid)).ok().flatten();
-            found = families::family(families::FAMILIES, class.as_deref(), toolkit.as_deref());
+            self.extra.insert(
+                "toolkit".into(),
+                json!(toolkit.as_ref().map(|t| json!({"name": t.name, "version": t.version}))),
+            );
+            found = families::family(families::FAMILIES, class.as_deref(), toolkit.as_ref());
         }
+        self.families.insert(window, found);
+        found
+    }
+
+    /// A drag's pacing: the flags' where they fix it, else the family of the window it goes to; no window, or an
+    /// unlisted family, is no wait.
+    fn drag_pacing_for(&mut self, window: Option<x11rb::protocol::xproto::Window>) -> DragPacing {
+        if let Some(fixed) = self.cfg.pacing.drag {
+            return fixed;
+        }
+        let Some(window) = window else {
+            return DragPacing::NONE;
+        };
+        let found = self.family_of(window);
         let pacing = found.map_or(DragPacing::NONE, |f| f.drag);
         self.extra.insert(
             "drag_pacing".into(),
@@ -223,7 +247,6 @@ impl Engine {
                 "release_ms": pacing.release.as_millis() as u64,
             }),
         );
-        self.drag_families.insert(window, pacing);
         pacing
     }
 

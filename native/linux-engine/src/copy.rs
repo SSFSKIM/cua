@@ -158,15 +158,32 @@ fn int_of(result: &CallResult) -> Option<i32> {
     }
 }
 
-/// Copies from the focused element by the vendor's route choice; the sentence when it cannot.
-pub fn copy(bus: &mut Bus, element: &ObjRef) -> Result<std::result::Result<(), String>> {
+/// Why nothing was copied: the sentence, and whether a context menu the Copy opened is still open, which the caller
+/// closes (with Escape) so the request leaves no menu behind.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refused {
+    pub sentence: String,
+    pub menu_open: bool,
+}
+
+impl From<String> for Refused {
+    fn from(sentence: String) -> Refused {
+        Refused {
+            sentence,
+            menu_open: false,
+        }
+    }
+}
+
+/// Copies from the focused element by the vendor's route choice; why not when it cannot.
+pub fn copy(bus: &mut Bus, element: &ObjRef) -> Result<std::result::Result<(), Refused>> {
     let interfaces = tree::with_call(element, Field::Interfaces, |c| bus.call(c))?;
     let interfaces: Vec<String> = match interfaces.as_ref().ok().and_then(|v| v.first()) {
         Some(Value::Array(items)) => items.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
         _ => Vec::new(),
     };
     if interfaces.iter().any(|i| i == EDITABLE_TEXT) {
-        return editable_copy(bus, element);
+        return Ok(editable_copy(bus, element)?.map_err(Refused::from));
     }
     if interfaces.iter().any(|i| i == tree::ACTION)
         && let Ok(names) = crate::atspi::action_names(bus, element)?
@@ -181,9 +198,9 @@ pub fn copy(bus: &mut Bus, element: &ObjRef) -> Result<std::result::Result<(), S
             return context_menu_item(bus, element, *index as u32, "Copy");
         }
     }
-    Ok(Err(
-        "focused element offers no Copy: it has no editable text and no context menu".into(),
-    ))
+    Ok(Err(Refused::from(
+        "focused element offers no Copy: it has no editable text and no context menu".to_string(),
+    )))
 }
 
 /// `EditableText.CopyText` of the element's one selected range.
@@ -239,7 +256,7 @@ fn context_menu_item(
     element: &ObjRef,
     action: u32,
     label: &str,
-) -> Result<std::result::Result<(), String>> {
+) -> Result<std::result::Result<(), Refused>> {
     let app = ObjRef {
         bus: element.bus.clone(),
         path: ROOT_PATH.into(),
@@ -249,7 +266,7 @@ fn context_menu_item(
     };
     let before: HashSet<ObjRef> = app_children(bus)?.into_iter().collect();
     if let Err(e) = crate::atspi::do_action(bus, element, action)? {
-        return Ok(Err(e));
+        return Ok(Err(e.into()));
     }
     let deadline = Instant::now() + MENU_WAIT;
     let mut opened = false;
@@ -258,14 +275,24 @@ fn context_menu_item(
             let (item, items) = find_menu_item(bus, &frame, label)?;
             opened |= items > 0;
             if let Some(item) = item {
-                return crate::atspi::do_action(bus, &item, 0);
+                return Ok(crate::atspi::do_action(bus, &item, 0)?.map_err(|sentence| Refused {
+                    sentence,
+                    menu_open: true,
+                }));
             }
         }
         if Instant::now() >= deadline {
             return Ok(Err(if opened {
-                format!("native menu opened without an available {label}; no clipboard action was sent")
+                Refused {
+                    sentence: format!("native menu opened without an available {label}; no clipboard action was sent"),
+                    menu_open: true,
+                }
             } else {
-                "context menu did not open; no clipboard action was sent".to_string()
+                // A menu that opens after the wait is not seen, and so not closed: an Escape sent without one open
+                // would reach the application itself.
+                "context menu did not open; no clipboard action was sent"
+                    .to_string()
+                    .into()
             }));
         }
         std::thread::sleep(MENU_POLL);

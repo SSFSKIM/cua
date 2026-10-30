@@ -116,7 +116,7 @@ fn name_call(obj: &ObjRef) -> MethodCall<'_> {
 }
 
 /// Sends `calls` together and returns their results in order.
-fn call_all(bus: &mut Bus, calls: &[MethodCall]) -> Result<Vec<CallResult>> {
+pub fn call_all(bus: &mut Bus, calls: &[MethodCall]) -> Result<Vec<CallResult>> {
     let serials: Vec<u32> = calls.iter().map(|c| bus.send(c)).collect();
     let mut results: HashMap<u32, CallResult> = HashMap::new();
     while results.len() < serials.len() {
@@ -126,9 +126,10 @@ fn call_all(bus: &mut Bus, calls: &[MethodCall]) -> Result<Vec<CallResult>> {
     Ok(serials.iter().map(|s| results.remove(s).unwrap()).collect())
 }
 
-/// The `Application.ToolkitName` of a process's accessible application (the first the registry lists for the PID),
-/// or None when the process has none on the bus or the name cannot be read (`families.rs`).
-pub fn toolkit_of(bus: &mut Bus, pid: u32) -> Result<Option<String>> {
+/// The `Application.ToolkitName` and `Version` (the toolkit's) of a process's accessible application (the first the
+/// registry lists for the PID), or None when the process has none on the bus or the name cannot be read
+/// (`families.rs`).
+pub fn toolkit_of(bus: &mut Bus, pid: u32) -> Result<Option<crate::families::Toolkit>> {
     let registry = ObjRef {
         bus: REGISTRY.into(),
         path: ROOT_PATH.into(),
@@ -156,15 +157,20 @@ pub fn toolkit_of(bus: &mut Bus, pid: u32) -> Result<Option<String>> {
     else {
         return Ok(None);
     };
-    const ARGS: [Arg<'static>; 2] = [Arg::Str("org.a11y.atspi.Application"), Arg::Str("ToolkitName")];
-    let result = bus.call(&MethodCall {
+    const NAME: [Arg<'static>; 2] = [Arg::Str("org.a11y.atspi.Application"), Arg::Str("ToolkitName")];
+    const VERSION: [Arg<'static>; 2] = [Arg::Str("org.a11y.atspi.Application"), Arg::Str("Version")];
+    let get = |args| MethodCall {
         dest: &app.bus,
         path: &app.path,
         iface: PROPERTIES,
         member: "Get",
-        args: &ARGS,
-    })?;
-    Ok(first_str(&result))
+        args,
+    };
+    let results = call_all(bus, &[get(&NAME), get(&VERSION)])?;
+    Ok(first_str(&results[0]).map(|name| crate::families::Toolkit {
+        name,
+        version: first_str(&results[1]),
+    }))
 }
 
 /// What association concluded (behaviour §4): a frame, no match, or a sentence.

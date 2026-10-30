@@ -10,8 +10,9 @@ M1a builds it up from M0's spike. It answers every command of the pinned helper 
 `list_windows`, `list_apps`, `get_window_state` (the tree, `query`, `include_screenshot`) and `get_screenshot` (the
 desktop) on the observation side (M1a.1); `press_key`, `key_down`, `key_up`, `click`, `move`, `move_relative`,
 `scroll`, `drag`, `drag_handle`, `perform_secondary_action`, `activate_window` and `launch_app` on the input side
-(M1a.2). M2.1 adds the clipboard core and `clipboard_read` and `clipboard_release`. `type_text`, `clipboard_write`
-and `type_characters` (M2.2) and `capabilities` (M3) answer `<command> is not available in this engine build`.
+(M1a.2). M2.1 adds the clipboard core and `clipboard_read` and `clipboard_release`; M2.2 the paste route for
+`type_text` and `clipboard_write`. `type_characters` and `capabilities` (M3) answer
+`<command> is not available in this engine build`.
 
 ```bash
 cargo build --release
@@ -89,14 +90,33 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   focused node in a post-order walk of its frame, siblings fetched together) copies by the vendor's route choice:
   `EditableText.CopyText` of its one selection, else its context menu's Copy item; then CLIPBOARD's new contents are
   snapshotted under a handle (`<pid>-<nanoseconds>-<n>`, at most 32 and 256 MiB). The application's copy stays on
-  CLIPBOARD. `clipboard_release` frees a handle, an unknown one without error.
+  CLIPBOARD. `clipboard_release` frees a handle, an unknown one without error. A context menu the Copy opened and
+  found no Copy in is closed with Escape through the background route, so the request leaves no menu open.
+- **The paste route** (`engine/paste.rs`, `paste.rs`, `field.rs`): `type_text` and `clipboard_write` (a handle's
+  snapshot into the window's focused element). In order: text over 64 MiB is refused; while an earlier unconfirmed
+  paste's `CurrentTime` refusal runs, a new paste is refused (`a previous paste could not be confirmed and may still
+  be read; nothing was sent; retry after <n> s`); the window's family (`families.rs`) gives the paste chord (Ctrl+V,
+  Ctrl+Shift+V for VTE terminals) or refuses text (xterm: no verified route), and a family that ignores the chord on
+  the background route (GTK 4) is refused in `--desktop shared` mode and, in `dedicated` mode, activated and pasted
+  through the desktop route. Inside the input session the field is observed (the named element, else the window's
+  focused one: its focus, editability, character count, caret and selection); a named element without the focus is
+  clicked at its visible point and its caret or selection put back (`AddSelection`, `SetCaretOffset`; a refusal
+  is no failure). Then the lock, the snapshot and CLIPBOARD taken; the field and the desktop focus revalidated
+  (`requested field or selection changed before dispatch; nothing was sent`); the chord sent once; the field read
+  every 20 ms for up to 2 s for the inserted segment where the caret or selection was (for Gecko, without the U+FEFF
+  it adds after each character beyond the BMP), while the target's selection transfer is followed, counting only
+  requests from the target's X client (its window's resource-id base); and the cleanup. The answer is success when the
+  segment is read back, else `Paste was sent once and could not be confirmed; read the field before retrying`; only a
+  refusal before dispatch or a chord the X server rejected says that nothing was sent or pasted. An unconfirmed paste
+  whose target was not served in full opens the 10 s `CurrentTime` refusal. `PasteText`, `InsertText` and
+  `SetTextContents` are never called.
 
 ## Flags
 
 | Flag | Values (default first) | What it changes |
 |---|---|---|
 | `--mouse-size-px` | 0 | a positive value stamps the pointer into desktop screenshots (the XFixes cursor at its native size; the value sizes the fallback arrow drawn without XFixes) |
-| `--desktop` | `shared`, `dedicated` | accepted for the spec's CLI; read from M3 |
+| `--desktop` | `shared`, `dedicated` | the device mode: whether a family that ignores the background route's paste chord is refused or pasted through the foreground route (M2; M3 adds the clicks and keys) |
 | `--window-calls` | 32 | W: calls in flight at most |
 | `--window-bytes` | 4194304 | R: reply bytes received and not consumed, plus the reservation per call in flight, stay under it; a larger reply is still read whole |
 | `--call-reservation` | 4096 | bytes reserved per call in flight |

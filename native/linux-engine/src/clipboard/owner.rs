@@ -241,6 +241,7 @@ impl Owner {
     }
 
     /// Whether the engine owns CLIPBOARD now (it has had no `SelectionClear` since it took it).
+    #[cfg(test)]
     pub fn owns(&self) -> bool {
         let shared = self.state.locked();
         shared.owned && !shared.ended
@@ -265,6 +266,13 @@ impl Owner {
                 .0;
         }
         (shared.owned && !shared.ended && shared.active.is_none()).then(|| (self.window, shared.content.clone()))
+    }
+
+    /// How long the `CurrentTime` refusal an unconfirmed paste opened still runs, if one does.
+    pub fn current_time_refusal(&self) -> Option<Duration> {
+        let now = Instant::now();
+        let until = self.state.locked().refusals.current_time_until(now)?;
+        Some(until - now)
     }
 
     /// Takes CLIPBOARD at server time `time` to serve `payload` for one paste, whose cleanup restores `restore`.
@@ -336,7 +344,8 @@ impl Drop for Owner {
     }
 }
 
-/// One paste's serving generation. Dropping it without [`Paste::confirmed`] is the unconfirmed cleanup.
+/// One paste's serving generation. Dropping it without [`Paste::confirmed`] or [`Paste::settled`] is the unconfirmed
+/// cleanup, which opens the `CurrentTime` refusal once its Ctrl+V was recorded as sent.
 pub struct Paste {
     state: Arc<State>,
     id: u64,
@@ -370,36 +379,46 @@ impl Paste {
 
     /// The cleanup after a confirmed paste.
     pub fn confirmed(mut self) {
-        self.cleanup(true);
+        self.cleanup(Ending::Confirmed);
+    }
+
+    /// The cleanup after a paste no conversion of which can still be pending, though it did not confirm: its target
+    /// was served in full, or the Ctrl+V was never delivered. It opens no `CurrentTime` refusal (Decision Log, M2.1).
+    pub fn settled(mut self) {
+        self.cleanup(Ending::Settled);
     }
 
     /// The guarded cleanup (Design, The cleanup): the generation closed, and the snapshot served in its place while
     /// the engine still owns CLIPBOARD; nothing else after a `SelectionClear`.
-    fn cleanup(&mut self, confirmed: bool) {
+    fn cleanup(&mut self, ending: Ending) {
         if !std::mem::replace(&mut self.done, true) {
-            close(&mut self.state.locked(), self.id, confirmed);
+            close(&mut self.state.locked(), self.id, ending);
         }
     }
 }
 
+/// How a paste ended, for its `CurrentTime` refusal: only an unconfirmed paste whose Ctrl+V was recorded as sent opens
+/// one, since only then can a conversion of it still be on its way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Ending {
+    Confirmed,
+    Settled,
+    Unconfirmed,
+}
+
 /// Closes paste `id`, if it is the one being served: its generation's refusal recorded, and its snapshot served in its
 /// place while the engine still owns CLIPBOARD.
-fn close(shared: &mut Shared, id: u64, confirmed: bool) {
+fn close(shared: &mut Shared, id: u64, ending: Ending) {
     let Some(active) = shared.active.take_if(|a| a.id == id) else {
         return;
     };
+    let pending = ending == Ending::Unconfirmed && active.dispatched.is_some();
     // The server's time now, estimated never earlier than it is: the anchor was taken no later than the ownership
     // timestamp was read, so the time elapsed since it is at least the server's. One millisecond more covers a request
     // stamped in the cleanup's own millisecond, and one per thousand the clocks' drift.
     let elapsed = active.anchor.elapsed().as_millis() as u32;
     let cleaned_at = active.owned_at.wrapping_add(elapsed).wrapping_add(1 + elapsed / 1000);
-    let closed = Closed::new(
-        active.owned_at,
-        active.dispatched,
-        cleaned_at,
-        confirmed,
-        Instant::now(),
-    );
+    let closed = Closed::new(active.owned_at, active.dispatched, cleaned_at, !pending, Instant::now());
     shared.refusals.push(closed);
     if shared.owned {
         shared.content = active.restore;
@@ -408,7 +427,7 @@ fn close(shared: &mut Shared, id: u64, confirmed: bool) {
 
 impl Drop for Paste {
     fn drop(&mut self) {
-        self.cleanup(false);
+        self.cleanup(Ending::Unconfirmed);
     }
 }
 
@@ -539,7 +558,7 @@ impl Serving {
             shared.abandoned.swap_remove(i);
             if shared.owned {
                 shared.active = Some(active);
-                close(&mut shared, id, true);
+                close(&mut shared, id, Ending::Settled);
             }
         } else if shared.owned {
             shared.content = Arc::new(take.payload);

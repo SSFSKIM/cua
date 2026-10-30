@@ -110,7 +110,8 @@ pub fn within(time: u32, from: u32, to: u32) -> bool {
 pub const CURRENT_TIME_REFUSAL: Duration = Duration::from_secs(10);
 
 /// A paste whose cleanup has run: from when the engine took CLIPBOARD for it to the cleanup, the Ctrl+V's own
-/// timestamp, and, when it did not confirm, until when a `CurrentTime` request is refused.
+/// timestamp, and, when it did not confirm and a conversion of it may still be pending, until when a `CurrentTime`
+/// request is refused (`confirmed` false opens that refusal).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Closed {
     pub owned_at: u32,
@@ -215,6 +216,16 @@ impl Refusals {
             through,
             current_time_until,
         });
+    }
+
+    /// Until when a `CurrentTime` request is refused, if it is now.
+    pub fn current_time_until(&self, now: Instant) -> Option<Instant> {
+        self.kept
+            .iter()
+            .filter_map(|c| c.current_time_until)
+            .chain(self.merged.and_then(|m| m.current_time_until))
+            .filter(|until| now < *until)
+            .max()
     }
 
     pub fn refuses(&self, time: u32, now: Instant) -> bool {

@@ -9,11 +9,13 @@ use super::Engine;
 use crate::atspi::{self, Association};
 use crate::clipboard::{COPY_WAIT, Clipboard};
 use crate::copy;
+use crate::input::chord_keycodes;
+use crate::route::Target;
 use crate::wire::{ClipboardReleaseInput, WindowInput, parse_input};
 
 impl Engine {
     /// The clipboard's connection, opened on first use.
-    fn clipboard(&mut self) -> Result<&mut Clipboard> {
+    pub(super) fn clipboard(&mut self) -> Result<&mut Clipboard> {
         if self.clipboard.is_none() {
             self.clipboard = Some(Clipboard::connect()?);
         }
@@ -30,15 +32,30 @@ impl Engine {
         let copied = self.with_bus(|bus, x| {
             let frame = match atspi::associate(bus, x, &info)? {
                 Association::Frame(frame) => frame,
-                Association::NoMatch => return Ok(Err("window has no AT-SPI accessibility tree".to_string())),
-                Association::Refused(sentence) => return Ok(Err(sentence)),
+                Association::NoMatch => {
+                    return Ok(Err("window has no AT-SPI accessibility tree".to_string().into()));
+                }
+                Association::Refused(sentence) => return Ok(Err(sentence.into())),
             };
             let Some(focused) = copy::focused(bus, &frame)? else {
-                return Ok(Err(format!("window {} has no focused element to Copy from", info.id)));
+                return Ok(Err(
+                    format!("window {} has no focused element to Copy from", info.id).into()
+                ));
             };
             copy::copy(bus, &focused)
         });
-        copied?.map_err(anyhow::Error::msg)?;
+        if let Err(refused) = copied? {
+            if refused.menu_open {
+                // The menu the Copy opened is closed, so the request leaves none behind: Escape through the
+                // background route; the refusal stays the answer whatever the key's outcome.
+                let Engine { x, inputs, .. } = self;
+                let _ = inputs.with_route(x, Target::Window(info.id), |x, route, _| {
+                    let held = route.acquire(x, &chord_keycodes(x, "Escape")?)?;
+                    route.release(x, &held)
+                });
+            }
+            bail!(refused.sentence);
+        }
         let clipboard = self
             .clipboard
             .as_mut()

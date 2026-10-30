@@ -319,8 +319,15 @@ impl Session {
         self.grab = None;
     }
 
-    fn now(&self) -> u32 {
+    /// The server time the session stamps an event sent now with.
+    pub fn now(&self) -> u32 {
         self.clock()()
+    }
+
+    /// Whether the X input focus was within the target when the session opened: the synthetic-focus state the
+    /// session holds (no FocusIn was synthesized), which a paste revalidates before its dispatch.
+    pub fn focus_was_within(&self) -> bool {
+        !self.synthesized_focus
     }
 
     /// The server time now, as a closure that borrows nothing of the session.

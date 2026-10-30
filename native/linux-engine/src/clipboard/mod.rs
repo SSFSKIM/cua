@@ -4,14 +4,10 @@
 //!
 //! Three X connections, none of them the engine's main one: this module's own (the lock, the reader and the
 //! server's time; only the request thread uses it), and the owner's, read by the owner's thread (`owner.rs`). A
-//! paste (M2.2) runs as: [`Clipboard::lock`], [`Clipboard::snapshot`], [`Clipboard::take`] with the text and the
-//! snapshot to restore, [`Paste::dispatched`] with the synthetic Ctrl+V's timestamp, [`Paste::watch`] while
-//! confirming, then [`Paste::confirmed`] or a drop, which is the cleanup on every other exit path; the lock is
-//! released when dropped after it.
-
-// The paste side (`take`, `Paste`, `Watch`, the transfer bounds, `Handles::get`) is driven by this module's live
-// tests until M2.2's paste route calls it; this allowance goes with M2.2.
-#![allow(dead_code)]
+//! paste (`engine/paste.rs`) runs as: [`Clipboard::lock`], [`Clipboard::snapshot`], [`Clipboard::take`] with the text
+//! and the snapshot to restore, [`Paste::dispatched`] with the synthetic Ctrl+V's timestamp, [`Paste::watch`] while
+//! confirming, then [`Paste::confirmed`], [`Paste::settled`] (nothing of it can still be pending) or a drop, which is
+//! the cleanup on every other exit path; the lock is released when dropped after it.
 
 pub mod handles;
 mod lock;
@@ -33,7 +29,7 @@ use x11rb::rust_connection::RustConnection;
 
 pub use handles::Handles;
 pub use lock::Lock;
-pub use owner::Paste;
+pub use owner::{Outcome, Paste, Seen};
 pub use serving::{Payload, TextAtoms};
 
 use serving::Atom;
@@ -181,6 +177,7 @@ impl Clipboard {
         self.atoms.text()
     }
 
+    #[cfg(test)]
     pub fn lock_window(&self) -> Window {
         self.lock_window
     }
@@ -263,7 +260,14 @@ impl Clipboard {
             .take(payload, restore, time, anchor)
     }
 
+    /// How long the `CurrentTime` refusal of an earlier unconfirmed paste still runs, if one does (Decision Log,
+    /// M2.1): while it runs, a new paste is refused before dispatch.
+    pub fn current_time_refusal(&self) -> Option<Duration> {
+        self.owner.as_ref().and_then(|owner| owner.current_time_refusal())
+    }
+
     /// Whether the engine owns CLIPBOARD now (it has received no `SelectionClear`).
+    #[cfg(test)]
     pub fn owns(&self) -> bool {
         self.owner.as_ref().is_some_and(|owner| owner.owns())
     }

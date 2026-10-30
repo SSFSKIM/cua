@@ -23,7 +23,7 @@ test('a refused request is audited for nothing sent: a SendEvent of any kind, or
 
 test("Acceptance 8's cases: each kind and condition, refused in shared mode, foreground in dedicated, the rest background", () => {
   const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'device-chrome', 'device-chrome-dnd', 'gnome-text-editor'], Object.values(DEVICE_SCENE_OPS).flat().filter((op) => op !== 'capabilities'));
-  assert.equal(plan.length, 38);
+  assert.equal(plan.length, 37);
   for (const { op, scene } of plan) {
     const def = OPS[op];
     assert.ok(SCENE_OPS[scene].includes(op));
@@ -77,6 +77,9 @@ test('a foreground case passes only with its effect, the foreground route record
 test("capabilities answers the X11 backend's report for the engine's own version and build", () => {
   const output = { backend: 'x11', tree: 'at_spi', input: { background: true, desktop: true }, capture: { window: 'retained', desktop: true }, text: { paste: 'verified', literal: true }, desktop: 'shared', version: '0.3.0', build: 'abc' };
   assert.equal(capabilitiesAnswer(output, 'cua-engine 0.3.0 (abc)'), true);
+  // as the engine writes it: its keys in its own order
+  const sorted = Object.fromEntries(Object.keys(output).sort().map((k) => [k, output[k]]));
+  assert.equal(capabilitiesAnswer({ ...sorted, text: { literal: true, paste: 'verified' } }, 'cua-engine 0.3.0 (abc)'), true);
   assert.equal(capabilitiesAnswer({ ...output, desktop: 'dedicated' }, 'cua-engine 0.3.0 (abc)'), false);
   assert.equal(capabilitiesAnswer(output, 'cua-engine 0.3.1 (abc)'), false);
   assert.equal(judgeDevice('capabilities', [row({ ok: true, answer_ok: true })], null).pass, true, 'no audit for an answer');

@@ -26,7 +26,7 @@ import { DND_REFUSAL } from './deviations.mjs';
 import { negativeCheck } from './run.mjs';
 import { XPROBE, activeWindow } from './scenes.mjs';
 import { stacking } from './clip.mjs';
-import { startWitness } from './witness.mjs';
+import { judgeRestacks, startWitness } from './witness.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -107,7 +107,8 @@ async function series(ctx, spec, scene, family, n) {
   const { desktop, witness, emit, occlusion } = ctx;
   desktop.arrange(scene, occlusion);
   const at = await locate(ctx, scene, ['dnd']);
-  const engine = new Engine(spec).start();
+  // with its `--stats` line: cua's route and its drag-and-drop record (`dnd`: in front, started, the signature and its wait)
+  const engine = new Engine({ ...spec, stats: spec.label.startsWith('cua') }).start();
   const runs = [];
   try {
     for (let i = 0; i < n; i++) {
@@ -140,6 +141,11 @@ async function series(ctx, spec, scene, family, n) {
         dropped: typeof drops === 'number' && dropped === drops + 1,
         witness: w.clean,
         witness_fields: w.fields,
+        // the witness's record: each change read back (a notify that left the value as it was is marked `notify`), the
+        // activation requests, and whether any restack moved a mapped window that is not override-redirect
+        witness_changes: (report.changes ?? []).slice(0, 20),
+        activations: (report.focus ?? []).filter((e) => e.kind === 'activate'),
+        restacked_managed: (judgeRestacks(report, null).violations ?? []).filter((e) => !e.or).length,
         focus_events: (report.focus ?? []).slice(0, 30),
         restacks: (report.restacks ?? []).slice(0, 30),
         xdnd_owners: owners,

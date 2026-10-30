@@ -1,0 +1,1618 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<link rel="icon" href="data:,">
+<title>Agent cursor: look and motion options (cua #235)</title>
+<!--
+  Design law for this throwaway mock (kept here rather than in a DESIGN.md, since the page is one file).
+  - Route: the desktop is macOS, so its chrome is adopted from macOS (system font, traffic lights, light window
+    surfaces). The three cursor looks are dictated by the brief and the research (vendor Fog cursor, MAWS browser cursor).
+  - Density: compact. Criticality: low (a decision aid). The desktop dominates; the options panel is a quiet utility
+    column beside it.
+  - Colour job: colour belongs to agent identity only (blue, clay = MAWS accent #c9663f, green). The panel has no
+    accent: a selected segment is the raised white macOS segment, focus is a dark ring. So nothing in the controls
+    competes with the cursors. Rejected: a blue control accent (it would read as the Research agent).
+  - Ground: neutral light panel (#f4f4f6, chroma ~0). Rejected: a dark panel, which would pull the eye off the light desktop.
+  - Type: the system family only, hierarchy by weight and size; mono only for code, numbers and the live readouts.
+  - Signature element: the live per-agent readout (motion mode, distance, spring response, chosen candidate).
+  Motion reproduction: research/B-vendor-cursor.md §3 and Appendices A to C.
+-->
+<style>
+:root {
+  /* panel */
+  --panel-bg: #f4f4f6;
+  --panel-text: #1d1d1f;
+  --panel-text-2: #5f5f66;
+  --hairline: rgba(0, 0, 0, 0.1);
+  --seg-track: rgba(0, 0, 0, 0.065);
+  --seg-on: #ffffff;
+  --focus: #1d1d1f;
+  --around: #e4e5e9;
+  /* desktop */
+  --wall-1: #d9e4f4;
+  --wall-2: #e5e1f3;
+  --wall-3: #dcebee;
+  --win-bg: #ffffff;
+  --win-chrome: #f2f2f4;
+  --win-line: rgba(0, 0, 0, 0.08);
+  --win-text: #1d1d1f;
+  --win-text-2: #6e6e73;
+  --light-off: #d6d6d9;
+  --light-red: #ff5f57;
+  --light-yellow: #febc2e;
+  --light-green: #28c840;
+  --sel-text: #b3d7ff;
+  --sel-cell: #5b5b60;
+  --ok: #1a7f37;
+  --bad: #c4271d;
+  --fill-amber: rgba(245, 196, 81, 0.38);
+  --code-kw: #ad3da4;
+  --code-type: #703daa;
+  --code-num: #272ad8;
+  /* cursors (MAWS look) */
+  --maws-edge: #1a1a1a;
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; }
+body { font: 13px/1.4 var(--font); color: var(--panel-text); background: var(--around); -webkit-font-smoothing: antialiased; }
+
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 316px; height: 100vh; }
+
+/* ---------- stage (the mock desktop) ---------- */
+.stage-area { position: relative; overflow: hidden; }
+.stage {
+  position: absolute; left: 0; top: 0; width: 1200px; height: 760px; transform-origin: 0 0;
+  border-radius: 12px; overflow: hidden; isolation: isolate;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12), 0 18px 50px rgba(0, 0, 0, 0.18);
+  user-select: none; -webkit-user-select: none;
+}
+.wallpaper {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(520px 380px at 18% 78%, rgba(150, 190, 240, 0.55), transparent 70%),
+    radial-gradient(600px 420px at 86% 18%, rgba(196, 172, 236, 0.5), transparent 70%),
+    radial-gradient(500px 360px at 70% 92%, rgba(150, 214, 206, 0.5), transparent 70%),
+    linear-gradient(160deg, var(--wall-1), var(--wall-2) 55%, var(--wall-3));
+}
+.menubar {
+  position: absolute; left: 0; right: 0; top: 0; height: 24px; z-index: 50;
+  display: flex; align-items: center; gap: 18px; padding: 0 14px; font-size: 13px; color: var(--win-text);
+  background: rgba(255, 255, 255, 0.55); backdrop-filter: blur(20px);
+}
+.menubar b { font-weight: 700; }
+.menubar .clock { margin-left: auto; }
+
+.win {
+  position: absolute; background: var(--win-bg); border-radius: 10px; overflow: hidden; color: var(--win-text);
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.22), 0 10px 30px rgba(0, 0, 0, 0.16), 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+.titlebar {
+  height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 14px;
+  background: var(--win-chrome); border-bottom: 1px solid var(--win-line);
+}
+.lights { display: flex; gap: 8px; flex: none; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; background: var(--light-off); box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.12); }
+.win.key .lights i:nth-child(1) { background: var(--light-red); }
+.win.key .lights i:nth-child(2) { background: var(--light-yellow); }
+.win.key .lights i:nth-child(3) { background: var(--light-green); }
+.title { font-weight: 600; font-size: 13px; color: var(--win-text-2); }
+.win.key .title { color: var(--win-text); }
+.chip {
+  display: inline-flex; align-items: center; justify-content: center; height: 26px; padding: 0 10px; border-radius: 6px;
+  font-size: 12px; color: var(--win-text); background: #fff; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.2), 0 0.5px 1px rgba(0, 0, 0, 0.1);
+  transition: background 0.08s;
+}
+.chip.is-pressed, .web-btn.is-pressed { filter: brightness(0.86); }
+
+/* Safari */
+.nav { display: flex; gap: 4px; }
+.nav .chip { width: 30px; padding: 0; font-size: 16px; line-height: 1; box-shadow: none; background: transparent; color: var(--win-text-2); }
+.nav .chip.is-pressed { background: rgba(0, 0, 0, 0.1); filter: none; }
+.url { flex: 1; height: 26px; border-radius: 7px; background: rgba(0, 0, 0, 0.055); display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--win-text-2); }
+.web { padding: 0 20px; font-size: 13px; }
+.web-top { height: 34px; display: flex; align-items: center; gap: 8px; margin: 0 -20px; padding: 0 20px; border-bottom: 1px solid #ececef; font-size: 12px; }
+.web-top b { font-size: 13px; }
+.web-top .crumb { margin-left: auto; color: var(--win-text-2); }
+.web-search { display: flex; gap: 8px; margin-top: 12px; height: 30px; }
+.field { width: 250px; height: 30px; border-radius: 8px; border: 1px solid #d2d2d7; display: flex; align-items: center; padding: 0 10px; color: var(--win-text); }
+.field .ph { color: #8e8e93; }
+.field.has .ph { display: none; }
+.field .caret { width: 1.5px; height: 15px; background: var(--win-text); margin-left: 1px; opacity: 0; }
+.field.focus { border-color: #6e6e73; box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.07); }
+.field.focus .caret { opacity: 1; }
+.web-btn { display: inline-flex; align-items: center; height: 30px; padding: 0 16px; border-radius: 8px; background: #1d1d1f; color: #fff; font-weight: 600; font-size: 12px; }
+.web-results { height: 96px; margin-top: 8px; }
+.web-results .recent { margin: 6px 0 0; color: var(--win-text-2); font-size: 12px; }
+.web-results ol { display: none; list-style: none; margin: 0; padding: 0; }
+.web-results.show .recent { display: none; }
+.web-results.show ol { display: block; }
+.web-results li { height: 28px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 6px; }
+.web-results li b { font-weight: 600; color: #0b5cad; }
+.web-results li span { color: var(--win-text-2); font-size: 12px; }
+.web-results li.sel { background: rgba(0, 0, 0, 0.06); }
+.doc { padding-top: 4px; }
+.doc .kind { margin: 0; font-size: 12px; color: var(--win-text-2); }
+.doc h2 { margin: 2px 0 6px; font-size: 20px; letter-spacing: -0.01em; }
+.doc .lede { margin: 0 0 10px; font-size: 14px; }
+.doc pre { margin: 0 0 12px; padding: 8px 10px; border-radius: 6px; background: #f5f5f7; font: 12px/1.4 var(--mono); }
+.doc h3 { margin: 0 0 4px; font-size: 14px; }
+.doc p { margin: 0 0 8px; }
+.selwrap { position: relative; white-space: nowrap; isolation: isolate; }
+.text-sel { position: absolute; left: 0; top: -1px; bottom: -1px; width: 0; background: var(--sel-text); z-index: -1; border-radius: 2px; }
+
+/* code editor */
+.tabs { height: 28px; display: flex; background: var(--win-chrome); border-bottom: 1px solid var(--win-line); font-size: 12px; }
+.tab { padding: 0 14px; display: flex; align-items: center; color: var(--win-text-2); border-right: 1px solid var(--win-line); }
+.tab.on { background: #fff; color: var(--win-text); }
+.code { height: 286px; padding-top: 8px; font: 12px/19px var(--mono); overflow: hidden; }
+.ln { display: grid; grid-template-columns: 36px 18px 1fr; height: 19px; white-space: pre; }
+.ln .no { text-align: right; color: #a1a1a6; padding-right: 2px; }
+.ln .mk { text-align: center; font-family: var(--font); font-size: 11px; color: #a1a1a6; }
+.ln .mk.bad { color: var(--bad); font-weight: 700; }
+.ln .mk.ok { color: var(--ok); font-weight: 700; }
+.ln .tx { padding-left: 6px; }
+.ln.err { background: rgba(196, 39, 29, 0.07); }
+.kw { color: var(--code-kw); }
+.ty { color: var(--code-type); }
+.nu { color: var(--code-num); }
+.testpanel { height: 92px; border-top: 1px solid var(--win-line); background: #fafafa; font-size: 12px; padding: 0 12px; }
+.tp-head { height: 28px; display: flex; align-items: center; gap: 8px; }
+.tp-head .st { margin-left: auto; font-weight: 600; }
+.tp-head .st.bad { color: var(--bad); }
+.tp-head .st.ok { color: var(--ok); }
+.tp-row { height: 24px; display: flex; align-items: center; color: var(--win-text-2); white-space: nowrap; }
+.tp-actions { height: 34px; display: flex; align-items: center; gap: 8px; }
+
+/* spreadsheet */
+.sheet-tools { height: 38px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-bottom: 1px solid var(--win-line); }
+.sheet-tools .swatch { width: 10px; height: 10px; border-radius: 2px; background: #f5c451; margin-right: 5px; }
+.grid {
+  position: relative; margin: 8px 9px 0; display: grid; font-size: 12px;
+  grid-template-columns: 32px 150px 92px 84px 84px 190px; grid-template-rows: 22px repeat(7, 24px);
+}
+.grid > div { border-right: 1px solid #e3e3e6; border-bottom: 1px solid #e3e3e6; padding: 0 7px; display: flex; align-items: center; white-space: nowrap; overflow: hidden; }
+.grid .hd { background: #f5f5f7; color: var(--win-text-2); justify-content: center; font-size: 11px; padding: 0; }
+.grid .num { justify-content: flex-end; font-family: var(--mono); font-size: 11.5px; }
+.grid .r1 { font-weight: 600; }
+.grid .filled { background: var(--fill-amber); }
+.grid .editing { box-shadow: inset 0 0 0 1px var(--sel-cell); justify-content: flex-start; font-family: var(--mono); }
+.grid > .cell-sel { position: absolute; display: none; border: 2px solid var(--sel-cell); background: rgba(91, 91, 96, 0.06); border-radius: 1px; pointer-events: none; padding: 0; }
+
+/* ---------- agent cursors ---------- */
+.agent-layer { position: absolute; inset: 0; pointer-events: none; }
+.cur { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.look { display: none; position: absolute; left: 0; top: 0; }
+.stage[data-look="a"] .look-a, .stage[data-look="b"] .look-b, .stage[data-look="c"] .look-c { display: block; }
+.a-rot { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
+.a-halo {
+  position: absolute; left: 0; top: 0; width: 90px; height: 90px; border-radius: 50%; transform-origin: 45px 45px;
+  background: radial-gradient(circle closest-side, color-mix(in srgb, var(--c) 20%, rgb(255 255 255 / 0.55)), color-mix(in srgb, var(--c) 12%, rgb(255 255 255 / 0.3)));
+  -webkit-backdrop-filter: blur(17px) saturate(1.15) brightness(1.06);
+  backdrop-filter: blur(17px) saturate(1.15) brightness(1.06);
+  -webkit-mask-image: radial-gradient(circle closest-side, #000 24%, rgb(0 0 0 / 0.5) 47%, transparent 82%);
+  mask-image: radial-gradient(circle closest-side, #000 24%, rgb(0 0 0 / 0.5) 47%, transparent 82%);
+}
+.a-arrow { position: absolute; left: -6px; top: -6px; overflow: visible; transform-origin: 6px 6px; }
+.a-arrow path { fill: var(--c); stroke: rgb(255 255 255 / 0.8); stroke-width: 2; stroke-linejoin: round; }
+.b-arrow { position: absolute; left: -8px; top: -8px; overflow: visible; transform-origin: 8px 8px; }
+.b-arrow path { fill: #ffffff; stroke: var(--maws-edge); stroke-width: 1.25; stroke-linejoin: round; }
+.c-dot { position: absolute; left: -9px; top: -9px; width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--c); background: radial-gradient(circle, var(--c) 0 2.5px, transparent 3px); box-shadow: 0 0 0 1.5px #fff, inset 0 0 0 1.5px #fff, 0 1px 4px 1.5px rgb(0 0 0 / 0.2); }
+.c-think { position: absolute; left: -17px; top: -17px; width: 34px; height: 34px; border-radius: 50%; border: 2px solid var(--c); opacity: 0; }
+.label {
+  position: absolute; left: 0; top: 0; height: 18px; padding: 0 7px; border-radius: 9px; white-space: nowrap;
+  display: flex; align-items: center; font: 600 11px/1 var(--font); color: #fff; background: var(--ink);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.7), 0 1px 3px rgb(0 0 0 / 0.25);
+}
+.ripple { position: absolute; left: 0; top: 0; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--c); background: color-mix(in srgb, var(--c) 18%, transparent); }
+.pulse { position: absolute; left: 0; top: 0; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--c); }
+.paths { position: absolute; inset: 0; z-index: 70; pointer-events: none; overflow: visible; }
+.paths path { fill: none; }
+.paths .cand { stroke: rgb(29 29 31 / 0.28); stroke-width: 1; }
+.paths .cand.out { stroke-dasharray: 3 4; stroke: rgb(29 29 31 / 0.18); }
+.paths .chosen { stroke-width: 2.25; }
+.paths .bounds { fill: none; stroke-width: 1; stroke-dasharray: 2 5; }
+
+/* ---------- panel ---------- */
+.panel { background: var(--panel-bg); border-left: 1px solid var(--hairline); overflow-y: auto; padding: 16px 16px 24px; }
+.panel h1 { font-size: 15px; margin: 0 0 4px; letter-spacing: -0.01em; }
+.panel .intro { margin: 0 0 14px; color: var(--panel-text-2); font-size: 12px; }
+.group { border: 0; margin: 0; padding: 10px 0; border-top: 1px solid var(--hairline); min-width: 0; }
+.group legend, .group h2 { float: left; width: 100%; padding: 0; margin: 0 0 7px; font-size: 12px; font-weight: 600; }
+.group legend + *, .group h2 + * { clear: both; }
+.desc { margin: 7px 0 0; color: var(--panel-text-2); font-size: 11.5px; }
+.seg { display: flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--seg-track); }
+.seg label { flex: 1 1 0; position: relative; min-width: 0; }
+.seg input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.seg span { display: block; padding: 4px 4px; border-radius: 5px; text-align: center; font-size: 11.5px; color: var(--panel-text-2); white-space: nowrap; }
+.seg input:checked + span { background: var(--seg-on); color: var(--panel-text); font-weight: 600; box-shadow: 0 0.5px 1.5px rgb(0 0 0 / 0.22), 0 0 0 0.5px rgb(0 0 0 / 0.06); }
+.seg input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 1px; }
+.switch { display: flex; align-items: center; gap: 9px; padding: 3px 0; cursor: pointer; }
+.switch input {
+  appearance: none; -webkit-appearance: none; margin: 0; flex: none; width: 30px; height: 18px; border-radius: 9px;
+  background: rgb(0 0 0 / 0.16); position: relative; cursor: pointer; transition: background 0.15s;
+}
+.switch input::after { content: ""; position: absolute; left: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.3); transition: transform 0.15s; }
+.switch input:checked { background: var(--panel-text); }
+.switch input:checked::after { transform: translateX(12px); }
+.switch input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.btn {
+  font: inherit; font-size: 12px; padding: 4px 12px; border-radius: 6px; color: var(--panel-text); background: #fff; cursor: pointer;
+  border: 0.5px solid rgb(0 0 0 / 0.2); box-shadow: 0 0.5px 1px rgb(0 0 0 / 0.12);
+}
+.btn:active { background: #ececee; }
+.btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.row .seg { flex: 1; }
+.check { display: flex; align-items: center; gap: 7px; margin-top: 9px; font-size: 12px; cursor: pointer; }
+.check input, .agent input { margin: 0; accent-color: #3a3a3c; width: 14px; height: 14px; }
+.check input:focus-visible, .agent input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.strip { position: absolute; left: 16px; right: 16px; }
+.agents { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.agent { min-width: 0; }
+.agent label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+.agent .sw { width: 10px; height: 10px; border-radius: 50%; background: var(--c); flex: none; }
+.agent .nm { font-weight: 600; }
+.agent .ag-app { color: var(--panel-text-2); font-size: 11.5px; }
+.agent .st { margin: 2px 0 0 21px; font: 11px/1.35 var(--mono); color: var(--panel-text-2); min-height: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+details { border-top: 1px solid var(--hairline); padding-top: 10px; }
+summary { font-size: 12px; font-weight: 600; cursor: pointer; }
+summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.consts { margin: 8px 0 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 11px; }
+.consts dt { color: var(--panel-text-2); }
+.consts dd { margin: 0; font-family: var(--mono); }
+.keys { margin: 12px 0 0; font-size: 11px; color: var(--panel-text-2); }
+kbd { font: 10.5px var(--mono); padding: 0 4px; border-radius: 3px; background: #fff; box-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.25); }
+
+@media (max-width: 980px) {
+  .app { grid-template-columns: 1fr; height: auto; }
+  .panel { border-left: 0; border-top: 1px solid var(--hairline); overflow: visible; columns: 2 300px; column-gap: 24px; }
+  .panel > * { break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <main class="stage-area" id="stage-area">
+    <div class="stage" id="stage" data-look="a" role="img" aria-label="Mock macOS desktop: Safari, a code editor and Numbers, with three agent cursors acting in them">
+      <div class="wallpaper"></div>
+      <div class="menubar"><b>Numbers</b><span>File</span><span>Edit</span><span>Insert</span><span>Table</span><span>Format</span><span>Window</span><span class="clock">Thu 30 Oct 14:32</span></div>
+
+      <section class="win" id="win-browser" style="left:28px;top:50px;width:600px;height:430px;z-index:10">
+        <header class="titlebar">
+          <span class="lights"><i></i><i></i><i></i></span>
+          <span class="nav"><span class="chip" id="br-back">‹</span><span class="chip">›</span></span>
+          <span class="url">developer.apple.com/documentation/appkit/nswindow</span>
+        </header>
+        <div class="web">
+          <div class="web-top"><b>Developer</b><span>Documentation</span><span class="crumb">AppKit › NSWindow</span></div>
+          <div class="web-search">
+            <span class="field" id="br-field"><span class="ph">Search documentation</span><span id="br-typed"></span><span class="caret"></span></span>
+            <span class="web-btn" id="br-go">Search</span>
+          </div>
+          <div class="web-results" id="br-results">
+            <p class="recent">Recent: NSPanel · SCContentFilter · collectionBehavior</p>
+            <ol>
+              <li id="br-r1"><b>NSWindow.SharingType</b><span>Enumeration</span></li>
+              <li id="br-r2"><b id="br-r2-link">NSWindow.SharingType.readOnly</b><span>Case</span></li>
+              <li id="br-r3"><b>sharingType</b><span>Instance property</span></li>
+            </ol>
+          </div>
+          <article class="doc" id="br-doc-overview">
+            <p class="kind">Instance property</p>
+            <h2>sharingType</h2>
+            <p class="lede">The level of access other processes have to the window’s content.</p>
+            <pre>var sharingType: NSWindow.SharingType { get set }</pre>
+            <h3>Discussion</h3>
+            <p>The default value is NSWindow.SharingType.readOnly.</p>
+          </article>
+          <article class="doc" id="br-doc-readonly" hidden>
+            <p class="kind">Case</p>
+            <h2>NSWindow.SharingType.readOnly</h2>
+            <p class="lede"><span class="selwrap" id="br-sent"><span class="text-sel" id="br-sent-sel"></span>The window’s contents can be read by another process.</span></p>
+            <pre>case readOnly</pre>
+            <h3>Discussion</h3>
+            <p>Screen recordings and screen sharing include a window with this sharing type.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="win" id="win-editor" style="left:596px;top:64px;width:576px;height:446px;z-index:20">
+        <header class="titlebar">
+          <span class="lights"><i></i><i></i><i></i></span>
+          <span class="title">cua — CursorMotionTests.swift</span>
+          <span class="chip" id="ed-run" style="margin-left:auto">▶&nbsp; Run tests</span>
+        </header>
+        <div class="tabs"><span class="tab on">CursorMotionTests.swift</span><span class="tab">CursorMotion.swift</span></div>
+        <div class="code" id="ed-code"></div>
+        <div class="testpanel">
+          <div class="tp-head"><b>Test results</b><span class="st" id="ed-status">Not run</span></div>
+          <div class="tp-row" id="ed-row">No results yet.</div>
+          <div class="tp-actions"><span class="chip" id="ed-rerun">Re-run failed</span></div>
+        </div>
+      </section>
+
+      <section class="win key" id="win-sheet" style="left:292px;top:372px;width:650px;height:360px;z-index:30">
+        <header class="titlebar">
+          <span class="lights"><i></i><i></i><i></i></span>
+          <span class="title">Cursor latency.numbers</span>
+        </header>
+        <div class="sheet-tools">
+          <span class="chip" id="ss-sum">Σ Sum</span>
+          <span class="chip" id="ss-fill"><i class="swatch"></i>Fill</span>
+          <span class="chip">Sort</span>
+          <span class="chip">Chart</span>
+        </div>
+        <div class="grid" id="ss-grid"><div class="cell-sel" id="ss-sel"></div></div>
+      </section>
+
+      <svg class="paths" id="paths" viewBox="0 0 1200 760" width="1200" height="760" aria-hidden="true"></svg>
+    </div>
+    <section class="strip" id="agent-strip" aria-label="Agents">
+      <ul class="agents" id="agent-list"></ul>
+    </section>
+  </main>
+
+  <aside class="panel" aria-label="Cursor options">
+    <h1>Agent cursor: look and motion</h1>
+    <p class="intro">Mock for cua #235: three agent sessions drive apps in the background while the real pointer stays put. The motion reproduces the vendor cursor (research B §3).</p>
+
+    <fieldset class="group">
+      <legend>Look</legend>
+      <div class="seg">
+        <label><input type="radio" name="look" value="a" checked><span>A · Codex-like</span></label>
+        <label><input type="radio" name="look" value="b"><span>B · MAWS-like</span></label>
+        <label><input type="radio" name="look" value="c"><span>C · Minimal</span></label>
+      </div>
+      <p class="desc" id="desc-look"></p>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>When the action fires</legend>
+      <div class="seg">
+        <label><input type="radio" name="wait" value="wait" checked><span>Waits for the cursor</span></label>
+        <label><input type="radio" name="wait" value="once"><span>At once</span></label>
+      </div>
+      <p class="desc" id="desc-wait"></p>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>Stacking</legend>
+      <div class="seg">
+        <label><input type="radio" name="stack" value="top" checked><span>Above all windows</span></label>
+        <label><input type="radio" name="stack" value="attached"><span>On its window</span></label>
+      </div>
+      <p class="desc" id="desc-stack"></p>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>Motion</legend>
+      <label class="switch"><input type="checkbox" role="switch" id="opt-rock" checked><span>Rock while thinking (±10°)</span></label>
+      <label class="switch"><input type="checkbox" role="switch" id="opt-reduce"><span>Reduce Motion</span></label>
+      <p class="desc" id="desc-reduce"></p>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>Fade after idle</legend>
+      <div class="seg">
+        <label><input type="radio" name="idle" value="1.5"><span>1.5 s</span></label>
+        <label><input type="radio" name="idle" value="3" checked><span>3 s</span></label>
+        <label><input type="radio" name="idle" value="5"><span>5 s</span></label>
+        <label><input type="radio" name="idle" value="never"><span>Never</span></label>
+      </div>
+      <p class="desc">A 0.44 s fade with a 7 pt blur, as the vendor hides it; the next action fades it in at its target.</p>
+    </fieldset>
+
+    <fieldset class="group">
+      <legend>Playback</legend>
+      <div class="row">
+        <button type="button" class="btn" id="btn-pause">Pause</button>
+        <button type="button" class="btn" id="btn-restart">Restart</button>
+        <div class="seg" role="radiogroup" aria-label="Speed">
+          <label><input type="radio" name="speed" value="1" checked><span>1×</span></label>
+          <label><input type="radio" name="speed" value="0.5"><span>½×</span></label>
+          <label><input type="radio" name="speed" value="0.25"><span>¼×</span></label>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="opt-paths">Show path candidates</label>
+    </fieldset>
+
+    <details>
+      <summary>Motion constants reproduced</summary>
+      <dl class="consts">
+        <dt>Scoot</dt><dd>≤ 196 pt · spring 0.24 s, ζ 0.84 · settles &lt; 12 pt/s</dd>
+        <dt>Squash</dt><dd>×(1 + 0.38e) long, ×(1 − 0.18e) thick</dd>
+        <dt>Tilt</dt><dd>e · 76° max · spring 0.055 s, ζ 0.76</dd>
+        <dt>Envelope</dt><dd>e = min(t/0.22, 1)·(1 − t)^0.62</dd>
+        <dt>Path</dt><dd>&gt; 196 pt · 2 base + 18 arcs, lowest cost wins</dd>
+        <dt>Cost</dt><dd>len + 320·detour + 140·energy + 180·maxTurn + 18·turn + 45·arc</dd>
+        <dt>Handles</dt><dd>start 0.4196, end 0.15 · clamp 48…640</dd>
+        <dt>Arcs</dt><dd>size 0.2766 ×[0.55, 0.8, 1.05] · flow 0.5784 ×[0.65, 1, 1.35]</dd>
+        <dt>Progress</dt><dd>response 0.12…2.2 s · ζ 0.9 · Verlet 240 Hz</dd>
+        <dt>Heading</dt><dd>rest −44° · blends to rest after 99 %</dd>
+        <dt>Close enough</dt><dd>≥ 99.5 % and ≤ 3.157 pt</dd>
+        <dt>Press</dt><dd>0.7 scale · 0.1 s + 0.1 s · k 130.5, c 18.85</dd>
+        <dt>Halo</dt><dd>42 pt, blur 12 · ×2.5 at 3000 pt/s</dd>
+        <dt>Rock</dt><dd>±10° · 0.685 s a swing · stop 0.41 s</dd>
+        <dt>Fade</dt><dd>0.44 s · blur 7 pt</dd>
+      </dl>
+    </details>
+    <p class="keys"><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> look · <kbd>Space</kbd> pause · <kbd>P</kbd> paths</p>
+  </aside>
+</div>
+
+<script>
+(() => {
+'use strict';
+
+// ---------------------------------------------------------------- vectors
+const V = (x, y) => ({ x, y });
+const add = (a, b) => V(a.x + b.x, a.y + b.y);
+const sub = (a, b) => V(a.x - b.x, a.y - b.y);
+const mul = (a, s) => V(a.x * s, a.y * s);
+const dot = (a, b) => a.x * b.x + a.y * b.y;
+const len = (a) => Math.hypot(a.x, a.y);
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+const clamp01 = (v) => clamp(v, 0, 1);
+const unitOr = (a, fallback) => { const l = len(a); return l >= 0.001 ? mul(a, 1 / l) : fallback; };
+const wrap180 = (d) => { let r = ((d + 180) % 360 + 360) % 360 - 180; return r === -180 ? 180 : r; };
+const f2 = (n) => n.toFixed(2);
+
+function cubicBezier(x1, y1, x2, y2) {
+  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  const sx = (t) => ((ax * t + bx) * t + cx) * t;
+  const sy = (t) => ((ay * t + by) * t + cy) * t;
+  return (x) => {
+    if (x <= 0) return 0;
+    if (x >= 1) return 1;
+    let lo = 0, hi = 1, t = x;
+    for (let i = 0; i < 26; i++) {
+      const v = sx(t);
+      if (Math.abs(v - x) < 1e-6) break;
+      if (v < x) lo = t; else hi = t;
+      t = (lo + hi) / 2;
+    }
+    return sy(t);
+  };
+}
+const easeInOut = cubicBezier(0.42, 0, 0.58, 1); // SwiftUI .easeInOut and CA kCAMediaTimingFunctionEaseInEaseOut
+const easeOut = cubicBezier(0, 0, 0.58, 1);
+const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+// ---------------------------------------------------------------- vendor constants (MotionConfiguration.live)
+const CFG = Object.freeze({
+  clickAngle: -44,
+  candidateCount: 20,
+  boundsMargin: 20,
+  startHandle: 0.41960295031576633,
+  endpointHandle: 0.15,
+  arcSize: 0.2765523188064277,
+  arcFlow: 0.5783555327868779,
+  straightPathDistanceThreshold: 10,
+  springResponseScaler: 0.9,
+  springResponseMin: 0.12,
+  springResponseMax: 2.2,
+  springDampingFraction: 0.9,
+  scootDistanceThreshold: 196,
+  scootPositionResponse: 0.24,
+  scootPositionDampingFraction: 0.84,
+  scootPositionSettleVelocity: 12,
+  scootAxisResponse: 0.07,
+  scootAxisDampingFraction: 0.82,
+  scootBaseRotationResponse: 0.09,
+  scootBaseRotationDampingFraction: 0.86,
+  scootStretchResponse: 0.095,
+  scootStretchDampingFraction: 0.72,
+  scootStretchMin: 0,
+  scootStretchPivotX: 0.5,
+  scootStretchXAmount: 0.38,
+  scootSquashYAmount: 0.18,
+  scootRotationResponse: 0.055,
+  scootRotationDampingFraction: 0.76,
+  scootRotationMax: 76,
+  terminalTangentBlendStart: 0.99,
+});
+const DEG = Math.PI / 180;
+// Screen space here is y-down. The rest direction k = (sin θ, cos θ) in AppKit's y-up becomes (sin θ, −cos θ): up-left.
+const K = V(Math.sin(CFG.clickAngle * DEG), -Math.cos(CFG.clickAngle * DEG));
+const DT = 1 / 240;                       // velocity-Verlet step
+const CLOSE_PROGRESS = 0.995, CLOSE_DIST = 3.157;
+const FADE_S = 0.44, FADE_BLUR = 7;
+const PRESS_HOLD = 0.1;                   // humanClickInterval
+const PRESS_K = 130.5, PRESS_C = 18.85;   // SwiftUI spring on isPressed and velocity
+const WIGGLE_SWING = 0.684931506849315, WIGGLE_STOP = 0.41, WIGGLE_DEG = 10;
+const SWELL_SPEED = 3000, SWELL_MAX = 2.5;
+const ORIGIN = V(-63, 63);                // the 126-pt frame's AppKit origin (bottom-left) from the hotspot, y-down
+const FRAME_C = V(3.6, 3.6);              // frame centre from the arrow tip (inferred from the (4.5, 4.5) offset)
+const GAP = 0.25;                         // the agent's next call arrives this long after an action
+const REDUCED_EASE_S = 0.2;
+
+// ---------------------------------------------------------------- springs (OpenAI Animation module, Appendix B §1)
+class Spring {
+  constructor(o) {
+    this.dim = typeof o.from === 'number' ? 1 : 2;
+    this.x = this.dim === 1 ? [o.from] : [o.from.x, o.from.y];
+    this.t = this.dim === 1 ? [o.to] : [o.to.x, o.to.y];
+    this.v = this.x.map(() => 0);
+    this.F = this.x.map(() => 0);
+    this.k = Math.min(o.response > 0 ? Math.pow(2 * Math.PI / o.response, 2) : Infinity, 28800);
+    this.c = 2 * Math.sqrt(this.k) * o.damping;
+    this.idle = o.idle ?? 0.06;
+    this.time = o.now;
+    this.ended = false;
+  }
+  get value() { return this.dim === 1 ? this.x[0] : V(this.x[0], this.x[1]); }
+  get velocity() { return this.dim === 1 ? this.v[0] : V(this.v[0], this.v[1]); }
+  set target(to) { this.t = this.dim === 1 ? [to] : [to.x, to.y]; }
+  advance(now) {
+    if (this.ended) return false;
+    if (now - this.time > 1) this.time = now - 1 / 60; // stall clamp
+    while (this.time < now) { this.step(); this.time += DT; }
+    if (this.settled()) { this.x = this.t.slice(); this.v = this.v.map(() => 0); this.ended = true; return false; }
+    return true;
+  }
+  step() {
+    const h = DT * 0.5;
+    for (let i = 0; i < this.dim; i++) {
+      const vHalf = this.v[i] + h * this.F[i];
+      this.x[i] += DT * vHalf;
+      this.F[i] = this.k * (this.t[i] - this.x[i]) - this.c * vHalf;
+      this.v[i] = vHalf + h * this.F[i];
+    }
+  }
+  settled() {
+    let v2 = 0, d2 = 0;
+    for (let i = 0; i < this.dim; i++) { v2 += this.v[i] * this.v[i]; d2 += (this.x[i] - this.t[i]) ** 2; }
+    return v2 <= this.idle * this.idle && d2 <= 0.0001;
+  }
+}
+// A SwiftUI implicit spring animation that keeps following its model value.
+class Follow {
+  constructor(x) { this.x = x; this.v = 0; this.time = null; }
+  advance(now, target) {
+    if (this.time === null) this.time = now;
+    if (now - this.time > 1) this.time = now - 1 / 60;
+    while (this.time < now) {
+      const a = PRESS_K * (target - this.x) - PRESS_C * this.v;
+      this.v += a * DT; this.x += this.v * DT; this.time += DT;
+    }
+    return this.x;
+  }
+  reset(x) { this.x = x; this.v = 0; }
+}
+
+// ---------------------------------------------------------------- path generation and selection (Appendix A)
+function bez(p0, c1, c2, p3, t) {
+  const u = 1 - t;
+  return V(p0.x * u * u * u + c1.x * 3 * t * u * u + c2.x * 3 * t * t * u + p3.x * t * t * t,
+           p0.y * u * u * u + c1.y * 3 * t * u * u + c2.y * 3 * t * t * u + p3.y * t * t * t);
+}
+function straightPath(s, e) {
+  const c1 = add(s, mul(sub(e, s), 1 / 3)), c2 = add(s, mul(sub(e, s), 2 / 3));
+  return { start: s, end: e, arc: null, rotates: false, segments: [{ end: e, c1, c2 }] };
+}
+function enumerateCandidates(s, e) {
+  const d = sub(e, s), dd = len(d);
+  const dir = unitOr(d, V(1, 0));
+  const handle = (f) => Math.max(Math.min(dd * f, dd * 0.9, 640), 48);
+  const hs = handle(CFG.startHandle), he = handle(CFG.endpointHandle);
+  const sc = add(s, mul(K, hs)), ec = sub(e, mul(K, he));
+  const sc65 = add(s, mul(K, hs * 0.65)), ec65 = sub(e, mul(K, he * 0.65));
+  // `side` is decided in the vendor's y-up space (it only sets the order, i.e. the tie-break).
+  const crossUp = -(K.y * dir.x - K.x * dir.y);
+  const side = crossUp >= 0 ? 1 : -1;
+  const n = V(dir.y * side, -dir.x * side);
+  const mid = mul(add(s, e), 0.5);
+  const arcLen = Math.min(Math.max(dd * CFG.arcSize, 50), 520);
+  const flowLen = Math.min(Math.max(dd * CFG.arcFlow, 38), 440);
+  const bias = mul(K, hs * 0.16);
+  const base = (c1, c2) => ({ start: s, end: e, arc: null, rotates: true, segments: [{ end: e, c1, c2 }] });
+  const arced = (apex, flow) => ({
+    start: s, end: e, arc: apex, rotates: true,
+    segments: [{ end: apex, c1: sc, c2: sub(apex, flow) }, { end: e, c1: add(apex, flow), c2: ec }],
+  });
+  const out = [base(sc, ec), base(sc65, ec65)];
+  for (const ka of [0.55, 0.8, 1.05]) {
+    const off = mul(n, arcLen * ka);
+    const apexA = add(add(mid, off), bias), apexB = add(sub(mid, off), bias);
+    for (const kf of [0.65, 1.0, 1.35]) {
+      const flow = mul(dir, flowLen * kf);
+      out.push(arced(apexA, flow));
+      out.push(arced(apexB, flow));
+    }
+  }
+  return out.slice(0, CFG.candidateCount);
+}
+function measure(p, b) {
+  const m = CFG.boundsMargin;
+  const x0 = b.x + m, y0 = b.y + m, x1 = b.x + b.w - m, y1 = b.y + b.h - m;
+  const inside = (q) => { const o = add(q, ORIGIN); return o.x >= x0 && o.x <= x1 && o.y >= y0 && o.y <= y1; };
+  let inBounds = inside(p.start);
+  let length = 0, energy = 0, maxTurn = 0, total = 0, prevH = null, p0 = p.start, prev = p.start;
+  for (const seg of p.segments) {
+    for (let i = 1; i <= 24; i++) {
+      const q = bez(p0, seg.c1, seg.c2, seg.end, i / 24);
+      const step = dist(q, prev);
+      if (inBounds) inBounds = inside(q);
+      const d = sub(q, prev);
+      if (len(d) > 0.01) {
+        const h = Math.atan2(d.y, d.x);
+        if (prevH !== null) {
+          let dh = h - prevH;
+          while (dh > Math.PI) dh -= 2 * Math.PI;
+          while (dh < -Math.PI) dh += 2 * Math.PI;
+          energy += dh * dh; maxTurn = Math.max(maxTurn, Math.abs(dh)); total += Math.abs(dh);
+        }
+        prevH = h;
+      }
+      length += step;
+      prev = q;
+    }
+    p0 = seg.end;
+  }
+  return { length, energy, maxTurn, total, inBounds };
+}
+function selectPath(cands, bounds) {
+  const scored = cands.map((c, i) => {
+    const m = measure(c, bounds);
+    const detour = Math.max(m.length / Math.max(dist(c.end, c.start), 1) - 1, 0);
+    const dir = unitOr(sub(c.end, c.start), V(1, 0));
+    const back = (-0.08 - dot(K, dir)) / 0.92;
+    const backPen = back >= 1 ? 90 : Math.max(back, 0) * 90;
+    const cost = (c.arc ? 45 : 0) + m.length + 320 * detour + 140 * m.energy + 180 * m.maxTurn + 18 * m.total + backPen;
+    return { i, path: c, m, cost };
+  });
+  const inB = scored.filter((x) => x.m.inBounds);
+  const pool = inB.length ? inB : scored;
+  let best = pool[0];
+  for (const x of pool.slice(1)) if (x.cost < best.cost) best = x;
+  return { path: best.path, m: best.m, index: best.i, scored, anyInBounds: inB.length > 0 };
+}
+function buildPath(s, e, bounds) {
+  if (dist(s, e) <= CFG.straightPathDistanceThreshold) {
+    const path = straightPath(s, e);
+    return { path, m: measure(path, bounds), index: -1, scored: null, anyInBounds: true };
+  }
+  return selectPath(enumerateCandidates(s, e), bounds);
+}
+function pointAndTangent(p, q) {
+  const n = p.segments.length;
+  let i, t;
+  if (q >= 1) { i = n - 1; t = 1; } else { const x = Math.max(q, 0) * n; i = Math.min(Math.floor(x), n - 1); t = x - i; }
+  const seg = p.segments[i];
+  const p0 = i === 0 ? p.start : p.segments[i - 1].end;
+  const u = 1 - t;
+  const pt = bez(p0, seg.c1, seg.c2, seg.end, t);
+  const tan = V(
+    (seg.c1.x - p0.x) * 3 * u * u + (seg.c2.x - seg.c1.x) * 6 * u * t + (seg.end.x - seg.c2.x) * 3 * t * t,
+    (seg.c1.y - p0.y) * 3 * u * u + (seg.c2.y - seg.c1.y) * 6 * u * t + (seg.end.y - seg.c2.y) * 3 * t * t);
+  return { pt, tan };
+}
+function travelDirection(v, q) {
+  const tn = unitOr(v, K);
+  const u = (clamp01(q) - CFG.terminalTangentBlendStart) / (1 - CFG.terminalTangentBlendStart);
+  const s = u >= 1 ? 0 : 1 - Math.max(u, 0);
+  const blend = 1 - s * s * s;
+  return unitOr(add(mul(K, blend), mul(tn, 1 - blend)), V(1, 0));
+}
+// Clockwise degrees; 0 when travelling along k (the arrow at rest).
+function arrowAngleDeg(dir) {
+  if (len(dir) < 0.001) return 0;
+  const n = unitOr(dir, V(1, 0));
+  return Math.atan2(n.y, n.x) / DEG + 90 - CFG.clickAngle;
+}
+function springResponse(p, m) {
+  const D = clamp01((m.length - 180) / 760);
+  const detour = clamp01((m.length / Math.max(dist(p.start, p.end), 1) - 1) / 0.55);
+  const turn = clamp01(m.total / (1.4 * Math.PI));
+  const energy = clamp01(m.energy / 1.25);
+  const back = clamp01((-0.08 - dot(unitOr(sub(p.end, p.start), V(1, 0)), K)) / 0.92);
+  const c = 0.42 * detour + 0.38 * turn + 0.2 * energy;
+  const arc = !!p.arc;
+  return clamp((arc ? 0.9 : 1) * CFG.springResponseScaler * (0.42 + 0.22 * D + 0.28 * back + 0.12 * clamp01(c) + (arc ? 0.04 : 0)),
+    CFG.springResponseMin, CFG.springResponseMax);
+}
+function travelAxis(d) {
+  if (len(d) < 0.001) return { deg: 0, pivot: CFG.scootStretchPivotX };
+  let a = Math.atan2(d.y, d.x) / DEG, pivot = 1;
+  while (a <= -90) { a += 180; pivot = 1 - pivot; }
+  while (a > 90) { a -= 180; pivot = 1 - pivot; }
+  return { deg: a, pivot };
+}
+// Time until the vendor releases a click (close enough), simulated with the same springs.
+function closeEnoughMs(s, e, bounds) {
+  let t = 0;
+  if (dist(s, e) <= CFG.scootDistanceThreshold) {
+    const sp = new Spring({ response: CFG.scootPositionResponse, damping: CFG.scootPositionDampingFraction, idle: CFG.scootPositionSettleVelocity, from: s, to: e, now: 0 });
+    const seg = sub(e, s);
+    for (let n = 1; n < 4800; n++) {
+      t = n * DT;
+      const alive = sp.advance(t);
+      const p = alive ? sp.value : e;
+      const q = clamp01(dot(sub(p, s), seg) / dot(seg, seg));
+      if (!alive || (q >= CLOSE_PROGRESS && dist(p, e) <= CLOSE_DIST)) break;
+    }
+  } else {
+    const sel = buildPath(s, e, bounds);
+    const sp = new Spring({ response: springResponse(sel.path, sel.m), damping: CFG.springDampingFraction, idle: 0.01, from: 0, to: 1, now: 0 });
+    for (let n = 1; n < 4800; n++) {
+      t = n * DT;
+      const alive = sp.advance(t);
+      const q = alive ? sp.value : 1;
+      const { pt } = pointAndTangent(sel.path, q);
+      if (!alive || (q >= CLOSE_PROGRESS && dist(pt, e) <= CLOSE_DIST)) break;
+    }
+  }
+  return Math.round(t * 100) * 10;
+}
+
+// ---------------------------------------------------------------- shapes (drawn for this mock)
+function roundedPolygon(pts, cuts) {
+  const n = pts.length;
+  const f = (v) => v.toFixed(2);
+  let d = '';
+  let tipApex = null;
+  for (let i = 0; i < n; i++) {
+    const p = pts[i], prev = pts[(i - 1 + n) % n], next = pts[(i + 1) % n];
+    const a = add(p, mul(unitOr(sub(prev, p), V(0, 0)), cuts[i]));
+    const b = add(p, mul(unitOr(sub(next, p), V(0, 0)), cuts[i]));
+    if (i === 0) tipApex = add(add(mul(a, 0.25), mul(p, 0.5)), mul(b, 0.25));
+    d += `${i === 0 ? 'M' : 'L'}${f(a.x)} ${f(a.y)} Q${f(p.x)} ${f(p.y)} ${f(b.x)} ${f(b.y)} `;
+  }
+  return { d: d + 'Z', tipApex };
+}
+// A: a rounded up-left arrowhead, 18 units, with its visual tip moved onto (0, 0).
+const ARROW_A = (() => {
+  const raw = [V(0, 0), V(16.2, 6.4), V(8.4, 8.4), V(6.4, 16.2)];
+  const first = roundedPolygon(raw, [2.6, 2.4, 1.0, 2.4]);
+  const shifted = raw.map((p) => sub(p, first.tipApex));
+  return roundedPolygon(shifted, [2.6, 2.4, 1.0, 2.4]).d;
+})();
+// B: MAWS's in-page browser cursor arrow (src/preload/browser-cursor.ts), tip at (2, 2).
+const ARROW_B = 'M2 2 L2 17.5 L6.4 13.4 L9.3 19.6 L12.1 18.3 L9.3 12.3 L15.3 12.3 Z';
+
+// ---------------------------------------------------------------- simulation clock
+const sim = { now: 0, speed: 1, paused: false, timers: [] };
+const sleep = (s) => new Promise((resolve) => sim.timers.push({ t: sim.now + s, resolve }));
+function runTimers() {
+  if (!sim.timers.length) return;
+  const due = [], keep = [];
+  for (const x of sim.timers) (x.t <= sim.now ? due : keep).push(x);
+  sim.timers = keep;
+  for (const x of due) x.resolve();
+}
+
+// ---------------------------------------------------------------- state and stage geometry
+const state = { look: 'a', wait: true, stack: 'top', rock: true, reduce: false, idle: 3, paths: false };
+const stage = document.getElementById('stage');
+const stageArea = document.getElementById('stage-area');
+const pathsSvg = document.getElementById('paths');
+const $ = (s) => document.querySelector(s);
+let scale = 1;
+const strip = document.getElementById('agent-strip');
+function layoutStage() {
+  const narrow = window.matchMedia('(max-width: 980px)').matches;
+  const w = stageArea.clientWidth;
+  const sh = strip.offsetHeight + 12;
+  // Narrow: the stage takes the full width and the area grows to fit it, instead of a fixed share of the height.
+  stageArea.style.height = narrow ? `${Math.round(760 * clamp((w - 32) / 1200, 0.2, 1) + sh + 32)}px` : '';
+  const h = stageArea.clientHeight;
+  scale = clamp(Math.min((w - 32) / 1200, (h - 32 - sh) / 760, 1), 0.2, 1);
+  const sw = 1200 * scale, sv = 760 * scale;
+  const ox = (w - sw) / 2, oy = Math.max(16, (h - sv - sh) / 2);
+  stage.style.transform = `translate(${ox}px, ${oy}px) scale(${scale})`;
+  Object.assign(strip.style, { left: `${ox}px`, right: 'auto', width: `${sw}px`, top: `${oy + sv + 12}px` });
+}
+function rectOf(el) {
+  const r = el.getBoundingClientRect(), s = stage.getBoundingClientRect();
+  return { x: (r.left - s.left) / scale, y: (r.top - s.top) / scale, w: r.width / scale, h: r.height / scale };
+}
+const centerOf = (el) => { const r = rectOf(el); return V(r.x + r.w / 2, r.y + r.h / 2); };
+const STAGE_RECT = { x: 0, y: 0, w: 1200, h: 760 };
+const WINS = ['browser', 'editor', 'sheet'].map((id) => {
+  const el = document.getElementById('win-' + id);
+  return { id, el, z: parseInt(el.style.zIndex, 10),
+    rect: { x: parseFloat(el.style.left), y: parseFloat(el.style.top), w: parseFloat(el.style.width), h: parseFloat(el.style.height) } };
+});
+const winOf = (el) => WINS.find((w) => w.el === el.closest('.win')) || null;
+function topWindowAt(p) {
+  let top = null;
+  for (const w of WINS) {
+    const r = w.rect;
+    if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h && (!top || w.z > top.z)) top = w;
+  }
+  return top;
+}
+
+// ---------------------------------------------------------------- the mock apps
+const CODE = [
+  ['<span class="kw">import</span> XCTest'],
+  ['<span class="kw">@testable import</span> CuaEngine'],
+  [''],
+  ['<span class="kw">final class</span> CursorMotionTests: <span class="ty">XCTestCase</span> {'],
+  ['    <span class="kw">func</span> testScootThreshold() {', 'mk5'],
+  ['        <span class="kw">let</span> m = <span class="ty">MotionConfiguration</span>.live'],
+  ['        XCTAssertEqual(m.scootDistanceThreshold, <span class="selwrap" id="ed-num"><span class="text-sel" id="ed-num-sel"></span><span class="nu" id="ed-num-tx">169</span></span>)', '', 'ln7'],
+  ['    }'],
+  [''],
+  ['    <span class="kw">func</span> testCloseEnoughDistance() {', 'mk10'],
+  ['        <span class="kw">let</span> c = <span class="ty">CloseEnough</span>.default'],
+  ['        XCTAssertEqual(c.distance, <span class="nu">3.157</span>, accuracy: <span class="nu">0.001</span>)'],
+  ['    }'],
+  ['}'],
+];
+document.getElementById('ed-code').innerHTML = CODE.map(([html, mk, id], i) =>
+  `<div class="ln"${id ? ` id="ed-${id}"` : ''}><span class="no">${i + 1}</span><span class="mk"${mk ? ` id="ed-${mk}"` : ''}>${mk ? '◇' : ''}</span><span class="tx">${html}</span></div>`).join('');
+
+const SHEET_COLS = ['A', 'B', 'C', 'D', 'E'];
+const ms = {
+  scoot: closeEnoughMs(V(400, 300), V(550, 300), STAGE_RECT),
+  path: closeEnoughMs(V(200, 150), add(V(200, 150), mul(V(Math.cos(30 * DEG), Math.sin(30 * DEG)), 620)), STAGE_RECT),
+  long: closeEnoughMs(V(1100, 700), sub(V(1100, 700), mul(V(Math.cos(35 * DEG), Math.sin(35 * DEG)), 1050)), STAGE_RECT),
+};
+const SHEET = {
+  1: ['Move', 'Motion (ms)', 'Press (ms)', 'Total (ms)', 'Notes'],
+  2: ['Scoot · 150 pt →', ms.scoot, 200, ms.scoot + 200, ''],
+  3: ['Path · 620 pt ↘', ms.path, 200, '', ''],
+  4: ['Path · 1,050 pt ↖', ms.long, 200, ms.long + 200, ''],
+  5: ['Snap · covered both ends', 0, 200, 200, ''],
+  6: ['Total', '', '', '', ''],
+  7: ['', '', '', '', ''],
+};
+(() => {
+  const grid = document.getElementById('ss-grid');
+  let html = '<div class="hd"></div>' + SHEET_COLS.map((c) => `<div class="hd">${c}</div>`).join('');
+  for (let r = 1; r <= 7; r++) {
+    html += `<div class="hd" id="ss-r${r}">${r}</div>`;
+    SHEET[r].forEach((v, i) => {
+      const id = SHEET_COLS[i] + r;
+      const numeric = typeof v === 'number' || (r > 1 && i >= 1 && i <= 3);
+      html += `<div id="ss-${id}" class="${numeric ? 'num' : ''} r${r}" data-row="${r}">${v}</div>`;
+    });
+  }
+  grid.insertAdjacentHTML('beforeend', html);
+})();
+
+const flash = (sel) => { const el = $(sel); el.classList.add('is-pressed'); sleep(0.18).then(() => el.classList.remove('is-pressed')); };
+
+const Browser = {
+  reset() {
+    this.focus(false); this.query('');
+    $('#br-results').classList.remove('show');
+    document.querySelectorAll('#br-results li').forEach((li) => li.classList.remove('sel'));
+    $('#br-doc-overview').hidden = false; $('#br-doc-readonly').hidden = true;
+    this.selectWidth(0);
+  },
+  focus(on) { $('#br-field').classList.toggle('focus', on); },
+  query(t) { $('#br-typed').textContent = t; $('#br-field').classList.toggle('has', t.length > 0); },
+  results() { $('#br-results').classList.add('show'); this.focus(false); },
+  open() {
+    $('#br-r2').classList.add('sel');
+    $('#br-doc-overview').hidden = true; $('#br-doc-readonly').hidden = false; this.selectWidth(0);
+  },
+  selectTo(x) { const r = rectOf($('#br-sent')); this.selectWidth(clamp(x - r.x, 0, r.w)); },
+  selectWidth(w) { $('#br-sent-sel').style.width = `${w}px`; },
+  back() {
+    $('#br-r2').classList.remove('sel');
+    $('#br-doc-overview').hidden = false; $('#br-doc-readonly').hidden = true; this.selectWidth(0);
+  },
+};
+const Editor = {
+  reset() {
+    $('#ed-num-tx').textContent = '169'; this.selectWidth(0);
+    this.status('Not run', ''); $('#ed-row').textContent = 'No results yet.';
+    for (const id of ['#ed-mk5', '#ed-mk10']) { const m = $(id); m.textContent = '◇'; m.className = 'mk'; }
+    $('#ed-ln7').classList.remove('err');
+  },
+  status(text, cls) { const s = $('#ed-status'); s.textContent = text; s.className = 'st ' + cls; },
+  running() { this.status('◌ Testing…', ''); $('#ed-row').textContent = 'Running 2 tests…'; },
+  mark(id, ok) { const m = $(id); m.textContent = ok ? '✓' : '✕'; m.className = 'mk ' + (ok ? 'ok' : 'bad'); },
+  failed() {
+    this.status('✕ 1 failed · ✓ 1 passed', 'bad');
+    $('#ed-row').textContent = '✕ testScootThreshold: XCTAssertEqual failed: ("196.0") is not equal to ("169.0")';
+    this.mark('#ed-mk5', false); this.mark('#ed-mk10', true); $('#ed-ln7').classList.add('err');
+  },
+  passed() {
+    this.status('✓ 2 passed', 'ok');
+    $('#ed-row').textContent = '✓ testScootThreshold passed (0.002 s) · ✓ testCloseEnoughDistance passed (0.001 s)';
+    this.mark('#ed-mk5', true); this.mark('#ed-mk10', true); $('#ed-ln7').classList.remove('err');
+  },
+  selectTo(x) { const r = rectOf($('#ed-num')); this.selectWidth(clamp(x - r.x, 0, r.w)); },
+  selectWidth(w) { $('#ed-num-sel').style.width = `${w}px`; },
+  type(t) { $('#ed-num-tx').textContent = t; this.selectWidth(0); },
+};
+const Sheet = {
+  cell: (id) => document.getElementById('ss-' + id),
+  resetLedger() {
+    this.set('B6', ''); this.set('D3', '');
+    this.cell('D3').classList.remove('editing');
+    document.querySelectorAll('#ss-grid .r4').forEach((c) => c.classList.remove('filled'));
+    $('#ss-sel').style.display = 'none';
+  },
+  resetResearch() { this.set('E3', ''); },
+  set(id, v) { this.cell(id).textContent = v; },
+  select(a, b = a) {
+    const e1 = typeof a === 'string' ? this.cell(a) : a, e2 = typeof b === 'string' ? this.cell(b) : b;
+    const s = $('#ss-sel');
+    const x = Math.min(e1.offsetLeft, e2.offsetLeft), y = Math.min(e1.offsetTop, e2.offsetTop);
+    const x2 = Math.max(e1.offsetLeft + e1.offsetWidth, e2.offsetLeft + e2.offsetWidth);
+    const y2 = Math.max(e1.offsetTop + e1.offsetHeight, e2.offsetTop + e2.offsetHeight);
+    Object.assign(s.style, { display: 'block', left: `${x - 1}px`, top: `${y - 1}px`, width: `${x2 - x + 1}px`, height: `${y2 - y + 1}px` });
+  },
+  selectRow(r) { this.select(this.cell('A' + r), this.cell('E' + r)); },
+  sum() { const v = [2, 3, 4, 5].reduce((n, r) => n + Number(this.cell('B' + r).textContent), 0); this.set('B6', String(v)); this.select('B6'); },
+};
+
+// ---------------------------------------------------------------- the cursor
+class Cursor {
+  constructor(agent) {
+    this.agent = agent;
+    this.pos = V(600, 380);
+    this.visible = false; this.alpha = 0; this.blur = FADE_BLUR; this.fade = null;
+    this.angle = 0;            // style.angle, clockwise degrees
+    this.baseOff = 0;          // cursorScootBaseRotationOffset
+    this.tilt = 0;             // style.scootTiltAngle
+    this.axis = 0; this.stretchY = 1; this.stretchX = 1; this.pivot = 0.5;
+    this.sp = { base: null, axis: null, stretch: null, tilt: null };
+    this.vel = V(0, 0);        // style.velocity, y-up, pt/s
+    this.velX = new Follow(0); this.velY = new Follow(0);
+    this.pressed = false; this.press = new Follow(1);
+    this.wig = 0; this.wigTw = null; this.wigToken = 0;
+    this.loading = false; this.loadMix = 0;
+    this.motion = null; this.seq = 0;
+    this.win = null; this.lastActive = -1e9;
+    this.fx = [];
+  }
+  touch() { this.lastActive = sim.now; }
+
+  hardReset() {
+    this.resetMotion();
+    this.visible = false; this.alpha = 0; this.blur = FADE_BLUR; this.fade = null;
+    this.angle = 0; this.pressed = false; this.press.reset(1);
+    this.velX.reset(0); this.velY.reset(0);
+    this.loading = false; this.loadMix = 0; this.wig = 0; this.wigTw = null; this.wigToken++; this.wiggling = false;
+    for (const f of this.fx) f.el.remove();
+    this.fx = [];
+  }
+
+  // --- motion (Appendix B §3)
+  moveTo(p, o = {}) {
+    this.touch();
+    if (o.win) this.win = o.win;
+    this.seq++;
+    return new Promise((resolve) => {
+      let settled = false;
+      const fire = (why) => { if (!settled) { settled = true; resolve(why); } };
+      const start = this.pos;
+      const wasVisible = this.visible;
+      this.resetMotion();
+      if (!wasVisible) {
+        // A hidden cursor does not glide in: it appears at the target with the 0.44 s fade and unblur.
+        this.pos = V(p.x, p.y); this.angle = 0;
+        this.agent.status('Fades in at the target');
+        this.fadeIn().then(() => fire('shown'));
+        return;
+      }
+      const d = dist(start, p);
+      if (state.stack === 'attached' && this.win && topWindowAt(start) !== this.win && topWindowAt(p) !== this.win) {
+        this.pos = V(p.x, p.y);
+        if (d > CFG.straightPathDistanceThreshold) this.angle = 0;
+        this.agent.status('Snap · target covered at both ends');
+        this.agent.drawPaths(null);
+        fire('done');
+        return;
+      }
+      const m = {
+        fire,
+        satisfied: o.timing === 'finished',
+        next() { if (!this.satisfied) { this.satisfied = true; fire('near'); } },
+        done() { fire('done'); },
+      };
+      if (state.reduce) this.startEase(start, p, m);
+      else if (o.straight) this.startPath(start, p, m, { path: straightPath(start, p), m: null, index: -1, scored: null, anyInBounds: true }, o.label || 'Drag');
+      else if (d <= CFG.scootDistanceThreshold) this.startScoot(start, p, m);
+      else this.startPath(start, p, m, buildPath(start, p, this.win ? this.win.rect : STAGE_RECT), 'Path');
+    });
+  }
+  resetMotion() {
+    const mo = this.motion;
+    this.motion = null;
+    if (mo) {
+      if (mo.kind === 'path') mo.finish(); // stop(immediately:) emits .finished(current): both handlers fire
+      else mo.m.fire('interrupted');       // a scoot drops its handlers; resolved here so a script never hangs
+    }
+    this.resetScootEffects();
+    this.vel = V(0, 0);
+  }
+  resetScootEffects() {
+    this.sp = { base: null, axis: null, stretch: null, tilt: null };
+    this.baseOff = 0; this.tilt = 0; this.axis = 0; this.stretchY = 1; this.stretchX = 1; this.pivot = CFG.scootStretchPivotX;
+  }
+  setSpring(key, value, target, response, damping) {
+    const s = this.sp[key];
+    if (s && !s.ended) s.target = target;
+    else this.sp[key] = new Spring({ response, damping, idle: 0.01, from: value, to: target, now: sim.now });
+  }
+  setBase(target) { this.setSpring('base', this.baseOff, this.baseOff + wrap180(target - this.baseOff), CFG.scootBaseRotationResponse, CFG.scootBaseRotationDampingFraction); }
+  setAxis(target) { this.setSpring('axis', this.axis, this.axis + wrap180(target - this.axis), CFG.scootAxisResponse, CFG.scootAxisDampingFraction); }
+  setStretch(target) { this.setSpring('stretch', this.stretchY, target, CFG.scootStretchResponse, CFG.scootStretchDampingFraction); }
+  setTilt(target) { this.setSpring('tilt', this.tilt, target, CFG.scootRotationResponse, CFG.scootRotationDampingFraction); }
+
+  startScoot(s, e, m) {
+    const d = unitOr(sub(e, s), K);
+    this.baseOff = wrap180(this.angle - 0);
+    const spring = new Spring({ response: CFG.scootPositionResponse, damping: CFG.scootPositionDampingFraction, idle: CFG.scootPositionSettleVelocity, from: s, to: e, now: sim.now });
+    const ax = travelAxis(d);
+    this.setBase(0);
+    this.setAxis(ax.deg);
+    this.motion = { kind: 'scoot', s, e, d, ax, spring, m };
+    this.agent.status(`Scoot · ${Math.round(dist(s, e))} pt`);
+    this.agent.drawPaths({ kind: 'line', s, e });
+  }
+  tickScoot(mo, now) {
+    const alive = mo.spring.advance(now);
+    const p = alive ? mo.spring.value : mo.e;
+    const seg = sub(mo.e, mo.s), L2 = dot(seg, seg);
+    const t = L2 < 0.001 ? 1 : clamp01(dot(sub(p, mo.s), seg) / L2);
+    const env = clamp01(Math.min(t / 0.22, 1) * Math.pow(Math.max(1 - t, 0), 0.62));
+    this.pos = p;
+    this.setAxis(mo.ax.deg);
+    this.setStretch(1 - CFG.scootSquashYAmount * env * (1 - CFG.scootStretchMin));
+    this.stretchX = 1 + CFG.scootStretchXAmount * env;
+    this.pivot = env * mo.ax.pivot + (1 - env) * CFG.scootStretchPivotX;
+    this.setTilt(env * clamp(0.75 * mo.d.x + 0.62 * -mo.d.y, -1, 1) * CFG.scootRotationMax);
+    this.vel = V(0, 0);
+    if (!alive) {
+      this.motion = null;
+      mo.m.next();
+      this.pos = mo.e;
+      this.resetScootEffects();
+      this.angle = 0;
+      mo.m.done();
+      this.agent.motionEnded();
+    } else if (t >= CLOSE_PROGRESS && dist(p, mo.e) <= CLOSE_DIST) {
+      mo.m.next();
+    }
+  }
+  startPath(s, e, m, sel, label) {
+    const meas = sel.m || measure(sel.path, this.win ? this.win.rect : STAGE_RECT);
+    const R = springResponse(sel.path, meas);
+    const spring = new Spring({ response: R, damping: CFG.springDampingFraction, idle: 0.01, from: 0, to: 1, now: sim.now });
+    if (sel.path.rotates) this.angle = arrowAngleDeg(pointAndTangent(sel.path, 0).tan);
+    const mo = { kind: 'path', path: sel.path, spring, m, finished: false };
+    mo.finish = () => this.finishPath(mo, mo.spring.value);
+    this.motion = mo;
+    const L = Math.round(dist(s, e));
+    if (label === 'Path') {
+      const arc = sel.path.arc ? ' arc' : ' base';
+      const note = sel.anyInBounds ? '' : ' · none in bounds';
+      this.agent.status(`Path · ${L} pt · ${f2(R)} s · #${sel.index + 1}/20${arc}${note}`);
+      this.agent.drawPaths({ kind: 'cands', sel, bounds: this.win ? this.win.rect : null });
+    } else {
+      this.agent.status(`${label} · ${L} pt · ${f2(R)} s`);
+      this.agent.drawPaths({ kind: 'line', s, e });
+    }
+  }
+  tickPath(mo, now) {
+    const alive = mo.spring.advance(now);
+    if (!alive) { this.finishPath(mo, mo.spring.value); return; }
+    const q = mo.spring.value;
+    const { pt, tan } = pointAndTangent(mo.path, q);
+    const prev = this.pos;
+    this.pos = pt;
+    if (mo.path.rotates) this.angle = arrowAngleDeg(travelDirection(tan, q));
+    if (q >= CLOSE_PROGRESS && dist(pt, mo.path.end) <= CLOSE_DIST) mo.m.next();
+    const v = mul(tan, mo.spring.velocity * mo.path.segments.length);
+    const vv = len(v) > 0 ? v : sub(pt, prev);
+    this.vel = V(vv.x, -vv.y);
+  }
+  finishPath(mo, q) {
+    if (mo.finished) return;
+    mo.finished = true;
+    const { pt, tan } = pointAndTangent(mo.path, q);
+    this.pos = pt;
+    if (mo.path.rotates) this.angle = arrowAngleDeg(travelDirection(tan, q));
+    if (this.motion === mo) this.motion = null;
+    mo.m.next();
+    this.vel = V(0, 0);
+    mo.m.done();
+    this.agent.motionEnded();
+  }
+  // Reduce Motion: a straight, short ease; no heading, squash, swell or rock.
+  startEase(s, e, m) {
+    this.angle = 0;
+    this.motion = { kind: 'ease', s, e, t0: sim.now, m };
+    this.agent.status(`Ease · ${Math.round(dist(s, e))} pt · ${REDUCED_EASE_S} s`);
+    this.agent.drawPaths({ kind: 'line', s, e });
+  }
+  tickEase(mo, now) {
+    const u = clamp01((now - mo.t0) / REDUCED_EASE_S);
+    this.pos = add(mo.s, mul(sub(mo.e, mo.s), easeOutCubic(u)));
+    if (u >= 1) { this.motion = null; mo.m.next(); mo.m.done(); this.agent.motionEnded(); }
+  }
+
+  // --- press, fades, thinking
+  async pressOnce() {
+    this.setPressed(true);
+    await sleep(PRESS_HOLD);
+    this.setPressed(false);
+    await sleep(PRESS_HOLD);
+    this.touch();
+  }
+  setPressed(on) {
+    this.touch();
+    if (on === this.pressed) return;
+    this.pressed = on;
+    if (on && this.visible) this.spawnFx();
+  }
+  spawnFx() {
+    if (state.look === 'a') return; // the vendor press is the arrow's scale only: no ripple
+    const el = document.createElement('div');
+    el.className = state.look === 'b' ? 'ripple' : 'pulse';
+    this.agent.layer.appendChild(el);
+    this.fx.push({ el, kind: state.look, at: V(this.pos.x, this.pos.y), t0: sim.now, still: state.reduce });
+  }
+  fadeIn() {
+    this.visible = true;
+    return new Promise((resolve) => { this.fade = { t0: sim.now, a0: this.alpha, a1: 1, b0: this.blur, b1: 0, done: resolve }; });
+  }
+  fadeOut() {
+    if (this.fade && this.fade.done) this.fade.done();
+    this.visible = false;
+    this.fade = { t0: sim.now, a0: this.alpha, a1: 0, b0: this.blur, b1: FADE_BLUR, done: null };
+    this.agent.status('Faded out (idle)');
+    this.agent.drawPaths(null);
+  }
+  setLoading(on) {
+    if (on === this.loading) return;
+    this.loading = on;
+    this.syncWiggle();
+  }
+  syncWiggle() {
+    const want = this.loading && state.rock && !state.reduce;
+    if (want && !this.wiggling) this.startWiggle();
+    else if (!want && this.wiggling) this.stopWiggle();
+  }
+  startWiggle() {
+    this.wiggling = true;
+    const token = ++this.wigToken, cur = this.wig;
+    const target = Math.abs(-WIGGLE_DEG - cur) < Math.abs(WIGGLE_DEG - cur) ? -WIGGLE_DEG : WIGGLE_DEG;
+    this.wigTw = {
+      from: cur, to: target, t0: sim.now, dur: Math.abs(target - cur) / (2 * WIGGLE_DEG) * WIGGLE_SWING,
+      then: () => {
+        if (token !== this.wigToken) return;
+        this.wigTw = { from: target, to: -target, t0: sim.now, dur: WIGGLE_SWING, repeat: true };
+      },
+    };
+  }
+  stopWiggle() {
+    this.wiggling = false;
+    this.wigToken++;
+    this.wigTw = { from: this.wig, to: 0, t0: sim.now, dur: WIGGLE_STOP };
+  }
+
+  // --- per frame
+  update(now) {
+    const mo = this.motion;
+    if (mo) {
+      if (mo.kind === 'scoot') this.tickScoot(mo, now);
+      else if (mo.kind === 'path') this.tickPath(mo, now);
+      else this.tickEase(mo, now);
+    }
+    const sp = this.sp;
+    if (sp.base) { sp.base.advance(now); this.baseOff = sp.base.value; if (!this.motion || this.motion.kind === 'scoot') this.angle = this.baseOff; if (sp.base.ended) sp.base = null; }
+    if (sp.axis) { sp.axis.advance(now); this.axis = sp.axis.value; if (sp.axis.ended) sp.axis = null; }
+    if (sp.stretch) { sp.stretch.advance(now); this.stretchY = clamp(sp.stretch.value, CFG.scootStretchMin, 1); if (sp.stretch.ended) sp.stretch = null; }
+    if (sp.tilt) { sp.tilt.advance(now); this.tilt = sp.tilt.value; if (sp.tilt.ended) sp.tilt = null; }
+    this.velX.advance(now, this.vel.x);
+    this.velY.advance(now, this.vel.y);
+    this.press.advance(now, this.pressed ? 0.7 : 1);
+    // rock
+    const w = this.wigTw;
+    if (w) {
+      const u = w.dur > 0 ? (now - w.t0) / w.dur : 1;
+      if (w.repeat) {
+        const cycle = Math.floor(u), ph = u - cycle;
+        this.wig = cycle % 2 === 0 ? w.from + (w.to - w.from) * easeInOut(ph) : w.to + (w.from - w.to) * easeInOut(ph);
+      } else if (u >= 1) {
+        this.wig = w.to; this.wigTw = null; if (w.then) w.then();
+      } else {
+        this.wig = w.from + (w.to - w.from) * easeInOut(u);
+      }
+    }
+    this.loadMix += clamp((this.loading ? 1 : 0) - this.loadMix, -1, 1) * Math.min(1, (now - (this.lastNow ?? now)) / 0.2);
+    this.lastNow = now;
+    // fade
+    const f = this.fade;
+    if (f) {
+      const u = clamp01((now - f.t0) / FADE_S), e = easeInOut(u);
+      this.alpha = f.a0 + (f.a1 - f.a0) * e;
+      this.blur = f.b0 + (f.b1 - f.b0) * e;
+      if (u >= 1) { this.fade = null; if (f.done) f.done(); }
+    }
+    // idle fade (the owner's rule; the vendor has no idle timeout)
+    if (this.visible && !this.fade && !this.motion && !this.pressed && Number.isFinite(state.idle) && now - this.lastActive >= state.idle) this.fadeOut();
+  }
+}
+
+// ---------------------------------------------------------------- agents
+const ABORT = Symbol('abort');
+const LABEL_OFFSET = { a: V(15, 15), b: V(16, 21), c: V(13, 12) };
+class Agent {
+  constructor(def, index) {
+    Object.assign(this, def);
+    this.index = index;
+    this.enabled = true;
+    this.gen = 0;
+    this.cur = new Cursor(this);
+    this.dragHook = null;
+    this.pathView = null;
+    this.layer = document.createElement('div');
+    this.layer.className = 'agent-layer';
+    this.layer.style.setProperty('--c', def.color);
+    this.layer.style.setProperty('--ink', def.ink);
+    this.layer.innerHTML = `
+      <div class="cur">
+        <div class="look look-a"><div class="a-rot"><div class="a-halo"></div>
+          <svg class="a-arrow" width="28" height="28" viewBox="-6 -6 28 28" aria-hidden="true"><path d="${ARROW_A}"/></svg></div></div>
+        <div class="look look-b"><svg class="b-arrow" width="32" height="32" viewBox="-6 -6 32 32" aria-hidden="true"><path d="${ARROW_B}"/></svg></div>
+        <div class="look look-c"><div class="c-think"></div><div class="c-dot"></div></div>
+        <div class="label">${def.name}</div>
+      </div>`;
+    stage.insertBefore(this.layer, pathsSvg);
+    const q = (s) => this.layer.querySelector(s);
+    this.el = { cur: q('.cur'), rot: q('.a-rot'), halo: q('.a-halo'), arrowA: q('.a-arrow'), arrowB: q('.b-arrow'),
+      dot: q('.c-dot'), think: q('.c-think'), label: q('.label') };
+    this.labelText = def.name;
+    this.pathGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    this.pathGroup.style.color = def.color;
+    pathsSvg.appendChild(this.pathGroup);
+    // panel row
+    const li = document.createElement('li');
+    li.className = 'agent';
+    li.style.setProperty('--c', def.color);
+    li.innerHTML = `<label><input type="checkbox" checked><i class="sw"></i><span class="nm">${def.name}</span><span class="ag-app">${def.app}</span></label><div class="st" aria-live="off"></div>`;
+    document.getElementById('agent-list').appendChild(li);
+    this.statusEl = li.querySelector('.st');
+    li.querySelector('input').addEventListener('change', (ev) => this.setEnabled(ev.target.checked));
+    this.status('Hidden');
+  }
+  status(text) { if (this.statusText !== text) { this.statusText = text; this.statusEl.textContent = text; } }
+  check(g) { if (g !== this.gen || !this.enabled) throw ABORT; }
+  setEnabled(on) {
+    this.enabled = on;
+    this.gen++;
+    this.dragHook = null;
+    this.cur.resetMotion();
+    this.cur.setPressed(false);
+    this.cur.setLoading(false);
+    if (on) { this.resetUI(); this.run(0.4); }
+    else { if (this.cur.visible) this.cur.fadeOut(); this.status('Off'); this.drawPaths(null); }
+  }
+  restart(delay) {
+    this.gen++;
+    this.dragHook = null;
+    this.cur.hardReset();
+    this.drawPaths(null);
+    this.status('Hidden');
+    if (this.enabled) this.run(delay);
+  }
+  async run(delay) {
+    const g = this.gen;
+    try {
+      await this.wait(delay, g);
+      for (;;) { this.resetUI(); await this.script(this, g); }
+    } catch (e) {
+      if (e !== ABORT) console.error(e);
+    }
+  }
+  // --- script verbs
+  async wait(s, g) { await sleep(s); this.check(g); }
+  async click(target, fire, g) {
+    const el = typeof target === 'string' ? $(target) : target;
+    const p = centerOf(el), win = winOf(el);
+    if (state.wait) {
+      await this.cur.moveTo(p, { timing: 'closeEnough', win }); this.check(g);
+      this.status('Click');
+      await this.cur.pressOnce(); this.check(g);
+      fire(); this.cur.touch();
+    } else {
+      fire(); this.cur.touch();
+      const arrival = this.cur.moveTo(p, { timing: 'closeEnough', win });
+      const seq = this.cur.seq;
+      arrival.then((why) => { if (why !== 'interrupted' && seq === this.cur.seq && g === this.gen) this.cur.pressOnce(); });
+    }
+    await this.wait(GAP, g);
+  }
+  async drag(from, to, win, progress, g) {
+    if (state.wait) {
+      await this.cur.moveTo(from, { timing: 'finished', win }); this.check(g);
+      this.cur.setPressed(true);
+      this.dragHook = () => progress(this.cur.pos);
+      await this.cur.moveTo(to, { timing: 'finished', win, straight: true, label: 'Drag' }); this.check(g);
+      this.dragHook = null;
+      progress(to);
+      this.cur.setPressed(false);
+    } else {
+      progress(to); this.cur.touch();
+      (async () => {
+        const first = this.cur.moveTo(from, { timing: 'finished', win });
+        const seq = this.cur.seq;
+        const why = await first;
+        if (why === 'interrupted' || seq !== this.cur.seq || g !== this.gen) return;
+        this.cur.setPressed(true);
+        await this.cur.moveTo(to, { timing: 'finished', win, straight: true, label: 'Drag' });
+        this.cur.setPressed(false);
+      })();
+    }
+    await this.wait(GAP, g);
+  }
+  async type(text, set, g) {
+    this.status('Typing');
+    for (let i = 1; i <= text.length; i++) { set(text.slice(0, i)); this.cur.touch(); await this.wait(0.045, g); }
+    await this.wait(GAP, g);
+  }
+  async think(s, g) {
+    this.cur.setLoading(true);
+    this.status(state.rock && !state.reduce ? 'Thinking · rocking' : 'Thinking');
+    try { await this.wait(s, g); } finally { this.cur.setLoading(false); }
+  }
+  async rest(g) {
+    this.status(Number.isFinite(state.idle) ? `Done · fades after ${state.idle} s idle` : 'Done · stays visible');
+    await this.wait(Number.isFinite(state.idle) ? state.idle + 2.4 : 4, g);
+  }
+  motionEnded() {
+    if (this.pathView) this.pathView.endAt = sim.now;
+  }
+  // --- path candidates overlay
+  drawPaths(view) {
+    this.pathView = view ? { ...view, endAt: null } : null;
+    const g = this.pathGroup;
+    if (!view) { g.innerHTML = ''; return; }
+    const d = (p) => {
+      let s = `M${p.start.x.toFixed(1)} ${p.start.y.toFixed(1)}`;
+      for (const seg of p.segments) s += ` C${seg.c1.x.toFixed(1)} ${seg.c1.y.toFixed(1)} ${seg.c2.x.toFixed(1)} ${seg.c2.y.toFixed(1)} ${seg.end.x.toFixed(1)} ${seg.end.y.toFixed(1)}`;
+      return s;
+    };
+    if (view.kind === 'line') {
+      g.innerHTML = `<path class="chosen" stroke="currentColor" stroke-dasharray="4 4" d="M${view.s.x} ${view.s.y} L${view.e.x} ${view.e.y}"/>`;
+      return;
+    }
+    let html = '';
+    if (view.bounds) {
+      const b = view.bounds, m = CFG.boundsMargin;
+      html += `<rect class="bounds" stroke="currentColor" x="${b.x + m}" y="${b.y + m}" width="${b.w - 2 * m}" height="${b.h - 2 * m}"/>`;
+    }
+    if (view.sel.scored) for (const c of view.sel.scored) if (c.path !== view.sel.path) html += `<path class="cand${c.m.inBounds ? '' : ' out'}" d="${d(c.path)}"/>`;
+    html += `<path class="chosen" stroke="currentColor" d="${d(view.sel.path)}"/>`;
+    g.innerHTML = html;
+  }
+  // --- render
+  render(now) {
+    const c = this.cur, el = this.el, look = state.look;
+    const hx = Math.round(c.pos.x), hy = Math.round(c.pos.y); // the vendor rounds the window origin to whole points
+    el.cur.style.transform = `translate(${hx}px, ${hy}px)`;
+    const z = state.stack === 'attached' && c.win ? c.win.z + 1 : 60;
+    if (this.z !== z) { this.z = z; this.layer.style.zIndex = z; }
+    const a = c.alpha;
+    const blur = c.blur > 0.05 ? `blur(${c.blur.toFixed(2)}px)` : '';
+    // label
+    const text = state.reduce && c.loading ? `${this.name} · thinking` : this.name;
+    if (text !== this.labelText) { this.labelText = text; el.label.textContent = text; this.labelW = 0; }
+    if (!this.labelW) this.labelW = el.label.offsetWidth;
+    const off = LABEL_OFFSET[look];
+    let lx = off.x, ly = off.y;
+    if (hx + lx + this.labelW > 1194) lx = -off.x - this.labelW;
+    if (hy + ly + 18 > 754) ly = -off.y - 18;
+    el.label.style.transform = `translate(${lx}px, ${ly}px)`;
+    el.label.style.opacity = a;
+    el.label.style.filter = blur;
+
+    const pressRaw = c.press.x;                        // 1 at rest, toward 0.7 while pressed
+    const pressK = state.reduce ? 1 : pressRaw;        // Reduce Motion: no scale, an opacity dip instead
+    const pressDim = state.reduce ? 0.45 + 0.55 * clamp01((pressRaw - 0.7) / 0.3) : 1;
+    if (look === 'a') {
+      const rot = c.angle + c.wig;
+      const phi = c.axis * DEG;
+      const offA = -9 + 18 * clamp01(c.pivot);
+      const A = V(FRAME_C.x + Math.cos(phi) * offA, FRAME_C.y + Math.sin(phi) * offA);
+      el.rot.style.transform = `rotate(${rot.toFixed(3)}deg) translate(${A.x.toFixed(3)}px, ${A.y.toFixed(3)}px) rotate(${c.axis.toFixed(3)}deg) scale(${c.stretchX.toFixed(4)}, ${c.stretchY.toFixed(4)}) rotate(${(-c.axis).toFixed(3)}deg) translate(${(-A.x).toFixed(3)}px, ${(-A.y).toFixed(3)}px)`;
+      const s = clamp01(Math.abs((c.velX.x + c.velY.x) / 2) / SWELL_SPEED);
+      const swell = state.reduce ? 1 : (1 - s) + SWELL_MAX * s;
+      const sp = 0.75 * pressK;
+      const cx = FRAME_C.x + swell * (-10.5 + sp * 7.5), cy = FRAME_C.y + swell * (-10.5 + sp * 8.5);
+      el.halo.style.transform = `translate(${(cx - 45).toFixed(3)}px, ${(cy - 45).toFixed(3)}px) scale(${(sp * swell).toFixed(4)})`;
+      el.halo.style.opacity = a;
+      el.arrowA.style.transform = `rotate(${c.tilt.toFixed(3)}deg) scale(${sp.toFixed(4)})`;
+      el.arrowA.style.opacity = a * pressDim;
+      el.arrowA.style.filter = `drop-shadow(0 0.5px 1px rgb(0 0 0 / 0.35))${blur ? ' ' + blur : ''}`;
+    } else if (look === 'b') {
+      el.arrowB.style.transform = `rotate(${c.wig.toFixed(3)}deg)`;
+      el.arrowB.style.opacity = a * pressDim;
+      el.arrowB.style.filter = `drop-shadow(0 0 3px ${this.color}) drop-shadow(0 0 6px ${this.color}8c)${blur ? ' ' + blur : ''}`;
+    } else {
+      el.dot.style.opacity = a * pressDim;
+      el.dot.style.filter = blur;
+      const rocking = state.rock && !state.reduce;
+      el.think.style.opacity = rocking ? a * c.loadMix * 0.85 : 0;
+      el.think.style.transform = `scale(${(1 + 0.35 * Math.abs(c.wig) / WIGGLE_DEG).toFixed(4)})`;
+    }
+    // press effects stay at the press point
+    c.fx = c.fx.filter((fx) => {
+      if (fx.kind !== look) { fx.el.remove(); return false; }
+      const dur = fx.kind === 'b' ? 0.45 : 0.35;
+      const u = clamp01((now - fx.t0) / dur);
+      if (u >= 1) { fx.el.remove(); return false; }
+      const e = easeOut(u);
+      const half = fx.kind === 'b' ? 12 : 9;
+      const sc = fx.still ? 1 : fx.kind === 'b' ? 0.4 + 0.6 * e : 1 + 1.6 * e;
+      fx.el.style.transform = `translate(${fx.at.x - half}px, ${fx.at.y - half}px) scale(${sc.toFixed(4)})`;
+      fx.el.style.opacity = (0.9 * (1 - e) * a).toFixed(3);
+      return true;
+    });
+    // paths overlay
+    const pv = this.pathView;
+    if (!state.paths || !pv) this.pathGroup.style.opacity = 0;
+    else this.pathGroup.style.opacity = pv.endAt === null ? 1 : clamp01(1 - (now - pv.endAt - 0.8) / 0.6);
+  }
+  resetUI() { this.reset(); }
+}
+
+// ---------------------------------------------------------------- scripts
+const AGENTS = [
+  {
+    id: 'research', name: 'Research agent', app: 'Safari', color: '#2f6feb', ink: '#1f5fd6', delay: 0.6,
+    reset() { Browser.reset(); Sheet.resetResearch(); },
+    async script(a, g) {
+      await a.click('#br-field', () => Browser.focus(true), g);
+      await a.type('sharingType', (t) => Browser.query(t), g);
+      await a.click('#br-go', () => { flash('#br-go'); Browser.results(); }, g);
+      await a.think(1.4, g);
+      await a.click('#br-r2-link', () => Browser.open(), g);
+      const r = rectOf($('#br-sent'));
+      await a.drag(V(r.x + 1, r.y + r.h / 2), V(r.x + r.w - 1, r.y + r.h / 2), WINS[0], (p) => Browser.selectTo(p.x), g);
+      await a.think(1.8, g);
+      await a.click('#ss-E3', () => Sheet.select('E3'), g);
+      a.status('Set value'); Sheet.set('E3', '.readOnly: visible to capture'); a.cur.touch();
+      await a.wait(GAP, g);
+      await a.think(1.0, g);
+      await a.click('#br-back', () => { flash('#br-back'); Browser.back(); }, g);
+      await a.rest(g);
+    },
+  },
+  {
+    id: 'fix', name: 'Fix-tests agent', app: 'Xcode', color: '#c9663f', ink: '#a64c2a', delay: 2.0,
+    reset() { Editor.reset(); },
+    async script(a, g) {
+      await a.click('#ed-run', () => { flash('#ed-run'); Editor.running(); }, g);
+      await a.wait(0.9, g); Editor.failed();
+      await a.think(2.0, g);
+      const r = rectOf($('#ed-num'));
+      await a.drag(V(r.x + 0.5, r.y + r.h / 2), V(r.x + r.w - 0.5, r.y + r.h / 2), WINS[1], (p) => Editor.selectTo(p.x), g);
+      await a.type('196', (t) => Editor.type(t), g);
+      await a.click('#ed-rerun', () => { flash('#ed-rerun'); Editor.running(); }, g);
+      await a.wait(0.9, g); Editor.passed();
+      await a.think(1.4, g);
+      await a.rest(g);
+    },
+  },
+  {
+    id: 'ledger', name: 'Ledger agent', app: 'Numbers', color: '#12896b', ink: '#0b6e55', delay: 3.6,
+    reset() { Sheet.resetLedger(); },
+    async script(a, g) {
+      await a.click('#ss-B2', () => Sheet.select('B2'), g);
+      const b2 = centerOf(Sheet.cell('B2')), b5 = centerOf(Sheet.cell('B5'));
+      await a.drag(b2, b5, WINS[2], (p) => {
+        let last = 2;
+        for (let r = 2; r <= 5; r++) if (p.y >= rectOf(Sheet.cell('B' + r)).y) last = r;
+        Sheet.select('B2', 'B' + last);
+      }, g);
+      await a.click('#ss-sum', () => { flash('#ss-sum'); Sheet.sum(); }, g);
+      await a.think(1.6, g);
+      await a.click('#ss-D3', () => { Sheet.select('D3'); Sheet.cell('D3').classList.add('editing'); }, g);
+      await a.type('=B3+C3', (t) => Sheet.set('D3', t), g);
+      Sheet.cell('D3').classList.remove('editing');
+      Sheet.set('D3', String(Number(Sheet.cell('B3').textContent) + Number(Sheet.cell('C3').textContent)));
+      await a.think(1.2, g);
+      await a.click('#ss-r4', () => Sheet.selectRow(4), g);
+      await a.click('#ss-fill', () => { flash('#ss-fill'); document.querySelectorAll('#ss-grid .r4').forEach((c) => c.classList.add('filled')); }, g);
+      await a.rest(g);
+    },
+  },
+];
+const agents = AGENTS.map((def, i) => {
+  const ag = new Agent(def, i);
+  ag.reset = def.reset;
+  ag.script = def.script;
+  return ag;
+});
+
+// ---------------------------------------------------------------- panel
+const DESC = {
+  look: {
+    a: 'Rounded arrow, white stroke, frosted halo that swells with speed. Long moves turn it toward its travel; hops of 196 pt or less stretch, squash and tilt it; a click springs it toward 70 %.',
+    b: 'The MAWS browser cursor: white arrow, dark edge, session-coloured glow, 24 px press ripple. Same paths and springs as A, but it stays upright.',
+    c: 'A session-coloured ring and centre dot on the target, which stays readable through it. No arrow; a click sends out a pulse, and a wider ring breathes while the agent thinks.',
+  },
+  wait: {
+    wait: 'A click fires once the cursor is close enough (99.5 %, within 3.157 pt), after a 0.1 s press and release; a drag waits for it to stop. Each action pays the motion as latency.',
+    once: 'The app changes the moment the agent acts. The cursor catches up, and is redirected mid-flight when the next action comes first.',
+  },
+  stack: {
+    top: 'Always visible, even over a window that covers its target (watch the Re-run button under Numbers).',
+    attached: 'Just above its target window, as the vendor does for a background app: a window in front hides it. A move covered at both ends snaps.',
+  },
+  reduce: {
+    off: '',
+    on: 'Straight 0.2 s eases; no heading, squash, tilt, swell or rock. Presses dim instead of shrinking; the label says “thinking”.',
+  },
+};
+function syncDescs() {
+  $('#desc-look').textContent = DESC.look[state.look];
+  $('#desc-wait').textContent = DESC.wait[state.wait ? 'wait' : 'once'];
+  $('#desc-stack').textContent = DESC.stack[state.stack];
+  $('#desc-reduce').textContent = DESC.reduce[state.reduce ? 'on' : 'off'];
+  $('#desc-reduce').hidden = !state.reduce;
+}
+function setLook(v) {
+  state.look = v;
+  stage.dataset.look = v;
+  document.querySelector(`input[name="look"][value="${v}"]`).checked = true;
+  for (const ag of agents) ag.labelW = 0;
+  syncDescs();
+}
+document.querySelectorAll('input[name="look"]').forEach((i) => i.addEventListener('change', () => setLook(i.value)));
+document.querySelectorAll('input[name="wait"]').forEach((i) => i.addEventListener('change', () => { state.wait = i.value === 'wait'; syncDescs(); }));
+document.querySelectorAll('input[name="stack"]').forEach((i) => i.addEventListener('change', () => { state.stack = i.value; syncDescs(); }));
+document.querySelectorAll('input[name="idle"]').forEach((i) => i.addEventListener('change', () => { state.idle = i.value === 'never' ? Infinity : Number(i.value); }));
+document.querySelectorAll('input[name="speed"]').forEach((i) => i.addEventListener('change', () => { sim.speed = Number(i.value); }));
+const rockBox = $('#opt-rock'), reduceBox = $('#opt-reduce'), pathsBox = $('#opt-paths');
+rockBox.addEventListener('change', () => { state.rock = rockBox.checked; agents.forEach((ag) => ag.cur.syncWiggle()); });
+reduceBox.addEventListener('change', () => { state.reduce = reduceBox.checked; agents.forEach((ag) => ag.cur.syncWiggle()); syncDescs(); });
+pathsBox.addEventListener('change', () => { state.paths = pathsBox.checked; });
+const pauseBtn = $('#btn-pause');
+function togglePause() { sim.paused = !sim.paused; pauseBtn.textContent = sim.paused ? 'Play' : 'Pause'; }
+pauseBtn.addEventListener('click', togglePause);
+function restartAll() {
+  Browser.reset(); Editor.reset(); Sheet.resetLedger(); Sheet.resetResearch();
+  agents.forEach((ag) => ag.restart(ag.delay));
+}
+$('#btn-restart').addEventListener('click', restartAll);
+document.addEventListener('keydown', (ev) => {
+  if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+  const t = ev.target;
+  if (ev.key === ' ' && t && (t.tagName === 'BUTTON' || t.tagName === 'INPUT' || t.tagName === 'SUMMARY')) return;
+  if (ev.key === '1' || ev.key === '2' || ev.key === '3') setLook('abc'[Number(ev.key) - 1]);
+  else if (ev.key === ' ') { ev.preventDefault(); togglePause(); }
+  else if (ev.key === 'p' || ev.key === 'P') { pathsBox.checked = !pathsBox.checked; state.paths = pathsBox.checked; }
+});
+if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) { reduceBox.checked = true; state.reduce = true; }
+syncDescs();
+
+// ---------------------------------------------------------------- loop
+layoutStage();
+window.addEventListener('resize', layoutStage);
+let lastTs = null;
+function frame(ts) {
+  const dt = lastTs === null ? 0 : Math.min(0.1, (ts - lastTs) / 1000);
+  lastTs = ts;
+  if (!sim.paused) sim.now += dt * sim.speed;
+  runTimers();
+  for (const ag of agents) { ag.cur.update(sim.now); if (ag.dragHook) ag.dragHook(); }
+  for (const ag of agents) ag.render(sim.now);
+  requestAnimationFrame(frame);
+}
+restartAll();
+requestAnimationFrame(frame);
+window.__cursorMock = { agents, state, sim, CFG, enumerateCandidates, buildPath, springResponse, closeEnoughMs };
+})();
+</script>
+</body>
+</html>

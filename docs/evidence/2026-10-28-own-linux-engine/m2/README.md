@@ -11,38 +11,59 @@ What this proves (Plan of Work, M2): Acceptance 6, and Acceptance 2–5 for the 
 gnome-text-editor's dedicated-mode case runs on the engine directly (`--desktop dedicated`); its facade-level run is
 M3's (Decision Log, M2 pre-flight).
 
-## The differential run (`diff/`, run `m2-wire`, harness and engine at e0168c63)
+## The differential run (`diff/`)
 
 `node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$BUILT" --scene
 gedit,chrome,over-budget,retention,chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target --ops all`
-(Concrete Steps' M2 scenes, plus `paste-target`, the GTK 3 window the paste cases need). Three blocks; the stub engine
-failed both the witness and the audit (the run is valid).
+(Concrete Steps' M2 scenes, plus `paste-target`, the GTK 3 window the paste cases need), three blocks. `diff/results.jsonl`
+and `diff/summary.md` hold four runs, all with the same engine build (`cua-engine 0.2.0 (e0168c63871c)`; the review
+round changed only the harness):
 
-Every verdict passes except one: `desktop get_screenshot`, cold 36.4 ms against 33.6. That is M1a's parity listing,
-unchanged: a fresh engine's first desktop capture is the vendor's own `GetImage` (the MIT-SHM segment is made after the
-first answer), and M1a recorded it as **parity** under Acceptance 3's rule over three sittings (Decision Log, M1a.4;
-`m1a/README.md`, item 3). M2 does not touch the capture path. Every other operation of M1a's set passes again on the M2
-engine (over-budget retained ids equal to the pinned build's; the bus-call bound held on gedit, Chrome and the
-over-budget page).
+| run | harness | what it is |
+|---|---|---|
+| `m2-review` | e871a099 | the verdict run, every judge of the M2.3 review in place |
+| `m2-review-launch` | e871a099 | `desktop launch_app` alone, 21 blocks |
+| `m2-review-foreground` | e629eb3d | gnome-text-editor's dedicated `type_text` and `restore_refused` again, each sample recording the changes its allowance excused |
+| `m2-wire` | e0168c63 | the first sitting, before the review; its verdicts as recorded then |
+
+In each run the stub engine failed both the witness and the audit, and the foreground negative check (another window
+raised and the top one raised back, so the order ends as it began) failed the foreground allowance on the stacking
+order (`m2-wire` predates that check): every run is valid.
+
+**`m2-review`'s verdict line:** `run valid; FAIL: desktop launch_app cua`. Every text and clipboard verdict and every
+safety case passes. The one failure is `desktop launch_app`'s cold request, 4.37 ms against the newest build's 4.02:
+three cold samples a side (cua 3.84, 4.37, 4.45; newest 3.21, 4.02, 5.73; pinned 3.38, 4.90, 5.09), which the medians
+alone judge, too few for the noise rule. In `m2-wire` the same verdict passed (3.1 against 3.5), and `m2-review-launch`,
+21 blocks of the operation alone, passes it: cold 2.9 against 3.4, warm 0.7 against 0.7 (`run valid; every verdict
+PASS`). M2 does not touch `launch_app`; it is M1a's.
+
+`desktop get_screenshot` passed outright in `m2-review` (cold 30.4 against 33.5). In `m2-wire` its cold request was
+36.44 against 33.58 and the run exited nonzero on it; the harness now declares that series in `deviations.mjs` `PARITY`
+(Decision Log, M1a.4: a fresh engine's first desktop capture is the vendor's own `GetImage`, the MIT-SHM segment made
+after the first answer). Re-judged from `m2-wire`'s rows with the current judges, it is **parity**, not a pass: 36.44
+lies within the pinned build's own spread of cold samples in that run, 32.22–40.05. Every other operation of M1a's set
+passes again on the M2 engine (over-budget retained ids equal to the pinned build's; the bus-call bound held on gedit,
+Chrome and the over-budget page).
 
 ### The text and clipboard commands (Acceptance 2–4)
 
-Medians in ms, cold / warm, 3 blocks (6 samples a block; `clipboard_release` 11). The bar is built from the vendor
-samples that succeeded; "–" where neither build succeeded. "Applied" counts cua's samples whose text landed exactly
-once where the caret or selection was (read through AT-SPI).
+`m2-review`. Medians in ms, cold / warm, 3 blocks (6 samples a block; `clipboard_release` 11). The bar is built from the
+vendor samples that succeeded, and no sample whose preparation failed (`prepare_error`) is timed; "–" where neither
+build succeeded. "Applied" counts cua's samples whose text landed exactly once where the caret or selection was (read
+through AT-SPI). "Route" is the route each cua request must take and took (Decision Log, M2.2), on every sample.
 
-| scene | op | pinned | newest | cua | bar | cua applied | verdict |
-|---|---|---|---|---|---|---|---|
-| gedit | `type_text` | 10207.7 / 10204.3 (fails, PasteText) | 921.2 / 929.5 | 171.5 / 159.9 | 921.2 / 929.5 | 18/18 | PASS |
-| gedit | `type_text`, preselected range | 10207.8 / 10204.3 (fails) | 943.6 / 939.8 | 167.2 / 160.2 | 943.6 / 939.8 | 18/18 | PASS |
-| gedit | `type_text`, cua `--desktop dedicated` | – | – | 173.5 / 160.8 | – | 18/18, witness clean | PASS |
-| gedit | `type_characters` `Hi 42!` | no such command | 570.7 / 568.2 | 107.2 / 101.9 | 570.7 / 568.2 | 18/18 | PASS |
-| gedit | `clipboard_read` | 533.2 / 565.4 (12 of 18 fail) | 552.9 / 557.7 | 38.1 / 34.5 | 533.2 / 557.7 | 18/18 | PASS |
-| gedit | `clipboard_write` | fails (see below) | 10202.7 / 10202.9 (fails, PasteText) | 169.4 / 162.1 | – | 18/18 | PASS, declared |
-| gedit | `clipboard_release` | 3.0 / 0.1 | 3.2 / 0.1 | 2.6 / 0.1 | 3.0 / 0.1 | – | PASS (warm same within noise) |
-| chrome-textarea | `type_text` | 1045.1 / 1010.4 | 1028.5 / 2437.6 (17 of 18 false errors) | 175.4 / 169.1 | 1028.5 / 1010.4 | 18/18 | PASS |
-| chrome-address-bar | `type_text`, one line | 1125.4 / 1168.2 | 1157.8 / 1127.7 | 189.1 / 184.0 | 1125.4 / 1127.7 | 18/18, read back exactly | PASS |
-| gnome-text-editor | `type_text`, cua `--desktop dedicated` | fails | fails | 73.6 / 67.8 | – | 18/18 | PASS, declared |
+| scene | op | pinned | newest | cua | bar | cua applied | route | verdict |
+|---|---|---|---|---|---|---|---|---|
+| gedit | `type_text` | 10208.2 / 10204.3 (fails, PasteText) | 907.4 / 909.3 | 184.0 / 160.5 | 907.4 / 909.3 | 18/18 | background 18/18 | PASS |
+| gedit | `type_text`, preselected range | 10210.3 / 10204.6 (fails) | 918.5 / 907.9 | 170.8 / 163.5 | 918.5 / 907.9 | 18/18 | background 18/18 | PASS |
+| gedit | `type_text`, cua `--desktop dedicated` | – | – | 169.6 / 161.1 | – | 18/18, witness clean | background 18/18 | PASS |
+| gedit | `type_characters` `Hi 42!` | no such command | 571.6 / 568.6 | 110.9 / 102.2 | 571.6 / 568.6 | 18/18 | background 18/18 | PASS |
+| gedit | `clipboard_read` | 549.3 / 564.2 (12 of 18 fail) | 588.9 / 565.0 | 39.3 / 33.3 | 549.3 / 564.2 | 18/18 | – | PASS |
+| gedit | `clipboard_write` | fails (see below) | 10202.6 / 10202.9 (fails, PasteText) | 161.4 / 178.8 | – | 18/18 | background 18/18 | PASS, declared |
+| gedit | `clipboard_release` | 4.2 / 0.1 (20 samples untimed, `prepare_error`) | 3.2 / 0.1 | 3.1 / 0.1 | 3.2 / 0.1 | – | – | PASS (warm same within noise) |
+| chrome-textarea | `type_text` | 1045.4 / 990.1 | 955.9 / 2425.0 (17 of 18 false errors) | 175.9 / 164.9 | 955.9 / 990.1 | 18/18 | background 18/18 | PASS |
+| chrome-address-bar | `type_text`, one line | 1123.1 / 1154.0 | 1083.1 / 1118.1 | 214.6 / 190.1 | 1083.1 / 1118.1 | 18/18, read back exactly | background 18/18 | PASS |
+| gnome-text-editor | `type_text`, cua `--desktop dedicated` | fails | fails | 86.6 / 71.1 | – | 18/18 | foreground 18/18 | PASS, declared |
 
 - **The text** of Acceptance 6, `cua171 안녕 é 🙂\nline2` with a combining acute after the e, read back exactly in gedit,
   the textarea page and gnome-text-editor; the address bar's single line `cua171 안녕 é 🙂` read back exactly.
@@ -55,44 +76,61 @@ once where the caret or selection was (read through AT-SPI).
   the whole safety-case phase. cua: PasteText 0, InsertText 0, SetTextContents 0 everywhere; the pinned build calls
   PasteText in gedit's `type_text` and the newest in `clipboard_write`. (The engine's sources name none of the three.)
 - **Speed:** cua is at or below the bar on every text and clipboard command, cold and warm, often five to sixty
-  times faster; `clipboard_release`'s warm median (0.13 against 0.12 ms, a map removal in every engine) passes as
-  "same within noise" under Acceptance 3's rule, interval [0, 0.02] over 30 samples a side.
-- **Vendor findings, recorded, not the bar:** the pinned build's `clipboard_read` failed 12 of 18 (`editable element
-  has no selected text to Copy` in its own window from the second block on), so its `clipboard_write` samples got a
-  handle it never issued (`prepare_error` in `results.jsonl`); the newest build answered 17 of 18 Chrome textarea
-  pastes with a false error after a correct edit (the regression Acceptance 6's address-bar case covers; this sitting's
-  address-bar pastes were all answered success).
+  times faster; `clipboard_release`'s warm median (0.13 against the newest build's 0.11 ms, a map removal in every
+  engine) passes as "same within noise" under Acceptance 3's rule: interval [0, 0.03] over 30 samples a side, within
+  the bound on its upper end, max(5% of the bar, 1 ms) = 1 ms. Re-judged with the bound, `m2-wire`'s noise pass holds
+  too ([−0.01, 0.02] against the newest build once the pinned build's unprepared samples are out of its median), and
+  so do M1a's recorded ones (`m1a/`, desktop `click` first: [−0.1, 0.47] and [−0.05, 0.6] on 86.5 ms, bound 4.33).
+- **No cua sample's preparation failed** (`prepare_error`, which would fail its verdict). **Vendor findings, recorded,
+  not the bar:** the pinned build's `clipboard_read` failed 12 of 18 again (`editable element has no selected text to
+  Copy` in its own window from the second block on), so 12 of its `clipboard_write` samples and 20 of its
+  `clipboard_release` samples were sent a handle it never issued (`prepare_error` in `results.jsonl`; those samples are
+  not timed); the newest build answered 17 of 18 Chrome textarea pastes with a false error after a correct edit (the
+  regression Acceptance 6's address-bar case covers; this sitting's address-bar pastes were all answered success).
 
 ### The witness, keyed to the route (Acceptance 5; Decision Log, M2.2)
 
-cua reports the route of every text request on its `--stats` line. In shared mode every cua text request took the
-background route, and the witness and the X request audit were clean on every one. The two dedicated-mode cases:
+The route each cua text request must take is fixed before it is sent (`text.mjs` `expectedRoute`): the foreground
+route for gnome-text-editor in dedicated mode, the background route on every other scene. cua reports the route it took
+on its `--stats` line; a request whose route differs from the expected one, or that records none, fails its witness,
+and the foreground allowance is granted only where both are the foreground route. In `m2-review` every cua text
+request took its expected route (the table's route column), and in shared mode the witness and the X request audit
+were clean on every one. The two dedicated-mode cases:
 
-- **gedit, `--desktop dedicated`** (`type_text_dedicated`): the route stayed `background` (gedit takes it), and the
+- **gedit, `--desktop dedicated`** (`type_text_dedicated`): expected and taken `background` on 18/18, and the
   witness, which allows nothing on that route, stayed clean on 18/18.
-- **gnome-text-editor, `--desktop dedicated`** (`type_text`): the route was `foreground` on 18/18. The witness allowed
-  exactly the target's activation (the active window and the input focus going into it, the stacking order changed
-  only by its raise), nothing changed in the 300 ms after each request, and no grab was left. The audit is not
-  required on the foreground route, whose activation and XTEST input are the route itself.
+- **gnome-text-editor, `--desktop dedicated`** (`type_text`): expected and taken `foreground` on 18/18. The witness
+  allowed exactly the target's activation: the active window and the input focus going into it, and each change of
+  the stacking order the target's raise. The witness records the order on both sides of every change, read after each
+  notify, and judges each one; `m2-review-foreground` keeps what the allowance excused on every sample (18 stacking
+  changes, each the target rising to the top). Nothing changed in the 300 ms after each request, and no grab was left.
+  The audit is not required where the foreground route is expected, its activation and XTEST input being the route
+  itself.
+- **The foreground negative check** (each review run): the window just below the top raised, then the top one raised
+  back, inside one span. The order ends as it began, which the earlier before-and-after comparison could not tell from
+  a raise of the top window; judged as a foreground request on the top window, the allowance failed it on the stacking
+  order.
 
 ### The paste safety cases (Acceptance 6; `diff/summary.md`, "Paste safety cases")
 
-cua alone, after the blocks, each on windows of its own. Every case passed:
+cua alone, after the blocks, each on windows of its own, each ending every engine, clipboard owner and target window
+it started however it ended. Every case passed in `m2-review` (and in `m2-wire`; `restore_refused` again in
+`m2-review-foreground`); the timings are `m2-review`'s:
 
 | case | what it showed |
 |---|---|
 | `focus_change` (3 trials) | the prior owner held the engine's snapshot `TARGETS` while the harness moved the focus to the page's other field: `requested field or selection changed before dispatch; nothing was sent`, neither field changed, the prior text kept |
 | `focus_change_takeover` (retake 0, 20, 50 ms) | the same, and the prior owner took CLIPBOARD back as soon as the engine owned it: nothing sent, the new owner's text intact |
-| `silent_owner` | the prior owner never answered: `clipboard capture timed out: … within 500 ms; nothing was sent` (640 ms), and the next paste went in, so both locks were released |
+| `silent_owner` | the prior owner never answered: `clipboard capture timed out: … within 500 ms; nothing was sent` (654 ms), and the next paste went in, so both locks were released |
 | `concurrent` (3 trials) | two engines pasted distinct markers at once: each once in its own window, nothing crossed, the prior text kept |
-| `contention` | two engines, 20 pastes each with random gaps of 0–30 ms: every paste succeeded, each field holds exactly its own markers in order, the prior text kept (median 185 ms, max 262) |
+| `contention` | two engines, 20 pastes each with random gaps of 0–30 ms: every paste succeeded, each field holds exactly its own markers in order, the prior text kept (median 182 ms, max 238) |
 | `late_page` | the page inserts 3 s after its paste event: unconfirmed at 2.2 s, then the text once at the caret, the next request at once |
 | `ignored_page` | unconfirmed at 2.2 s, the field unchanged, the next request at once |
 | `stalled_incr` | 100 KB, the INCR transfer never acknowledged: unconfirmed at 2.1 s (the engine saw the stall), the next request at once |
 | `late_convert` | a conversion 1.5 s after the chord was served the paste itself; 3 s after, with the chord's time and with CurrentTime, refused; never the prior text |
 | `unreadable` | a field with no Text interface: unconfirmed, the application received the text once |
-| `caret_placed` (gedit) | a caret placed, the focus moved to a toolbar button, `type_text` naming the field: clicked, the caret put back, the text at the caret |
-| `restore_refused` (gnome-text-editor, dedicated) | the focus moved to the search bar: clicked through XTEST, GTK 4 refused the caret's restore, the text went in once; the foreground route's witness allowance held |
+| `caret_placed` (gedit) | a caret placed, the focus moved to a toolbar button, `type_text` naming the field: clicked, the caret put back, the text at the caret; the route expected and taken `background`, the witness clean |
+| `restore_refused` (gnome-text-editor, dedicated) | the focus moved to the search bar: clicked through XTEST, GTK 4 refused the caret's restore, the text went in once; the route expected and taken `foreground`, the witness allowance held |
 
 The unconfirmed answers are all `Paste was sent once and could not be confirmed; read the field before retrying`,
 never a sentence that permits a retry.

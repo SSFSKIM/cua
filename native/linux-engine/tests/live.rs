@@ -540,6 +540,16 @@ fn capture_luma(engine: &mut Engine, id: u64) -> image::GrayImage {
     image::load_from_memory(&bytes).unwrap().to_luma8()
 }
 
+/// Whether the first `text` node, depth first, has the `focused` state.
+fn text_is_focused(node: &Value) -> bool {
+    if node["role"] == json!("text") {
+        return node["states"].as_array().is_some_and(|s| s.contains(&json!("focused")));
+    }
+    node["children"]
+        .as_array()
+        .is_some_and(|c| c.iter().any(text_is_focused))
+}
+
 /// CLIPBOARD's `UTF8_STRING` as another X client reads it (no INCR: the test's text is small).
 fn read_clipboard_text() -> Option<String> {
     use x11rb::connection::Connection;
@@ -595,6 +605,20 @@ fn clipboard_read_copies_the_selection_under_a_handle_and_release_frees_it() {
         read_text(&mut engine, id).filter(|t| t == TEXT)
     });
     let target = json!({"window": {"id": id}});
+
+    // Copy goes through the window's focused element, and a GTK 3 window that has never had the input focus has
+    // none (on the CI runner the window can come up unfocused). The test's own display: activate it, and wait for
+    // its text view to report the focus.
+    engine.request("activate_window", target.clone()).unwrap();
+    poll("the text view has the focus", || {
+        let state = engine
+            .request(
+                "get_window_state",
+                json!({"window": {"id": id}, "include_screenshot": false}),
+            )
+            .ok()?;
+        text_is_focused(&state["ax_tree"]).then_some(())
+    });
 
     // Nothing selected: the application has nothing to Copy, and no handle is made.
     engine

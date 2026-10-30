@@ -3,6 +3,8 @@
 //! vendor's restore of a caret or selection after the focusing click (behaviour §7.4); and the read of the offsets the
 //! paste should have filled. `PasteText`, `InsertText` and `SetTextContents` are never called (Constraints).
 
+use std::time::Instant;
+
 use anyhow::Result;
 
 use crate::atspi::call_all;
@@ -112,15 +114,17 @@ pub fn restore(bus: &mut Bus, element: &ObjRef, before: &TextState) -> Result<bo
     Ok(bool_of(&result) == Some(true))
 }
 
-/// The field's character count and its text at offsets `at..at + len`, read together; None when either cannot be
-/// read.
-pub fn read(bus: &mut Bus, element: &ObjRef, at: i32, len: i32) -> Result<Option<(i32, String)>> {
+/// The field's character count and its text at offsets `at..at + len`, read together and waited for no later than
+/// `deadline`; None when either cannot be read or the deadline came first.
+pub fn read(bus: &mut Bus, element: &ObjRef, at: i32, len: i32, deadline: Instant) -> Result<Option<(i32, String)>> {
     let range = [Arg::I32(at), Arg::I32(at.saturating_add(len))];
     let calls = [
         call(element, PROPERTIES, "Get", &COUNT),
         call(element, TEXT, "GetText", &range),
     ];
-    let results = call_all(bus, &calls)?;
+    let Some(results) = bus.calls_until(&calls, deadline)? else {
+        return Ok(None);
+    };
     let text = match results[1].as_ref().ok().and_then(|v| v.first()) {
         Some(Value::Str(s)) => Some(s.clone()),
         _ => None,

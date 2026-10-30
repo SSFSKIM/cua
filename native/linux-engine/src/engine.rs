@@ -6,6 +6,8 @@ mod clipboard;
 mod elements;
 mod keyboard;
 mod paste;
+#[cfg(test)]
+mod paste_faults;
 mod pointer;
 mod way;
 mod windows;

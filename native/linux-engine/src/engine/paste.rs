@@ -64,6 +64,8 @@ struct Report {
     expected: Option<(i32, i32)>,
     /// The requests the paste's owner saw: whose, which target atom, the outcome, the timestamp and when.
     log: Vec<String>,
+    /// A press of the chord whose delivery is unknown.
+    delivery: Option<String>,
 }
 
 /// The text a snapshot holds, as a field would show it pasted: its UTF-8 formats first, then `STRING` (Latin-1).
@@ -129,6 +131,7 @@ impl Engine {
                 "observed": report.observed,
                 "expected": report.expected,
                 "log": report.log,
+                "delivery": report.delivery,
             }),
         );
         result
@@ -155,7 +158,12 @@ impl Engine {
         let way = self.way_for(request.window.map(|_| window), Kind::Paste)?;
         self.extra.insert(
             "paste_route".into(),
-            json!({"family": family.map(|f| f.name), "chord": chord}),
+            json!({
+                "family": family.map(|f| f.name),
+                "chord": chord,
+                "window": format!("{window:#x}"),
+                "resource_id_mask": format!("{:#x}", self.x.conn.setup().resource_id_mask),
+            }),
         );
         let keycodes = chord_keycodes(&self.x, chord)?;
         // The element: the one named, resolved with its ancestors for the focusing click's point; else the window's
@@ -241,7 +249,8 @@ impl Engine {
             let expected = match insertion.filter(|_| request.text.is_some()) {
                 Some((state, at)) => {
                     let len = paste::offsets(text, feff);
-                    field::read(bus, &element.target, at, len)?.map(|(_, before)| Expected {
+                    let until = Instant::now() + crate::dbus::IO_TIMEOUT;
+                    field::read(bus, &element.target, at, len, until)?.map(|(_, before)| Expected {
                         text: text.to_string(),
                         at,
                         len,
@@ -346,16 +355,25 @@ fn dispatch_and_confirm(
     pasted.dispatched(time);
     // Before the press goes out, so a request the press causes is never earlier than it.
     let dispatched_at = Instant::now();
-    let held = match route.acquire(x, delivery.keycodes) {
-        Ok(held) => held,
-        Err(error) => {
-            // The X server refused the chord's press: nothing reached the window.
-            pasted.settled();
-            bail!("the X server refused the paste chord ({error:#}); nothing was pasted");
+    let chord = send_chord(x, route, delivery.keycodes);
+    let release_failure = chord.release_failed.as_ref().map(|error| {
+        format!(
+            "a key of the paste chord could not be released ({error:#}) and may still be held; inspect the window \
+             before retrying"
+        )
+    });
+    report.delivery = chord
+        .uncertain
+        .as_ref()
+        .map(|error| format!("unacknowledged: {error:#}"));
+    if let Some(error) = chord.rejected {
+        // The server named a press of the chord as an error, so its last key, the one that pastes, never arrived.
+        pasted.settled();
+        match release_failure {
+            Some(failure) => bail!("the X server refused the paste chord ({error:#}); nothing was pasted; {failure}"),
+            None => bail!("the X server refused the paste chord ({error:#}); nothing was pasted"),
         }
-    };
-    // A release that fails after the press went out changes nothing about what was sent: the answer is the field's.
-    let _ = route.release(x, &held);
+    }
     // 5. Confirm, while the transfer is served within its bounds.
     let is_target = |requestor: u32| paste::same_client(requestor, window, delivery.resource_id_mask);
     let confirm_deadline = dispatched_at + paste::CONFIRM_WAIT;
@@ -366,8 +384,11 @@ fn dispatch_and_confirm(
         if !report.confirmed
             && now < confirm_deadline
             && let Some(e) = &expected
-            && let Ok(Some((count, read))) = field::read(bus, &element.target, e.at, e.len)
-            && e.confirmed_by(count, &read)
+            && confirmed_before(
+                |until| field::read(bus, &element.target, e.at, e.len, until),
+                e,
+                confirm_deadline,
+            )
         {
             report.confirmed = true;
             report.confirm_ms = Some(dispatched_at.elapsed().as_secs_f64() * 1000.0);
@@ -394,7 +415,10 @@ fn dispatch_and_confirm(
         .map(|s| {
             let whose = if is_target(s.requestor) { "target" } else { "other" };
             let at = s.at.saturating_duration_since(dispatched_at).as_millis();
-            format!("{whose} {} {:?} t{} +{at}ms", s.target, s.outcome, s.time)
+            format!(
+                "{whose} {:#x} {} {:?} t{} +{at}ms",
+                s.requestor, s.target, s.outcome, s.time
+            )
         })
         .collect();
     report.transfer = Some(match transfer {
@@ -402,15 +426,157 @@ fn dispatch_and_confirm(
         Transfer::Served => "served",
         Transfer::Ended => "ended",
     });
-    // 6. Answer, after the cleanup.
+    // 6. Answer, after the cleanup. A key left held is reported whatever the field shows.
     if report.confirmed {
         pasted.confirmed();
-        return Ok(());
+        return match release_failure {
+            Some(failure) => bail!("Paste was applied, but {failure}"),
+            None => Ok(()),
+        };
     }
     if transfer == Transfer::Served {
         pasted.settled();
     } else {
         drop(pasted);
     }
-    bail!(UNCONFIRMED)
+    match release_failure {
+        Some(failure) => bail!("{UNCONFIRMED}; also, {failure}"),
+        None => bail!(UNCONFIRMED),
+    }
+}
+
+/// What sending the paste chord did.
+#[derive(Default)]
+struct Chord {
+    /// The server answered a press with an X error naming it: that key, and the chord's last (the one that pastes),
+    /// were not delivered.
+    rejected: Option<anyhow::Error>,
+    /// A press whose delivery is unknown: the acknowledgement never came (a lost connection, for one). The paste may
+    /// have been sent.
+    uncertain: Option<anyhow::Error>,
+    /// A key that could not be released, after one retry.
+    release_failed: Option<anyhow::Error>,
+}
+
+/// Whether a send's error is the server's rejection of that request, proof that it was not delivered.
+fn rejected_by_server(error: &anyhow::Error) -> bool {
+    matches!(
+        error.downcast_ref::<x11rb::errors::ReplyError>(),
+        Some(x11rb::errors::ReplyError::X11Error(_))
+    )
+}
+
+/// Presses the chord's keys in order, one at a time, stopping at the first that fails; then releases what may be down,
+/// last first: a key whose press went unacknowledged (not in the bookkeeping, so released alone), then every key
+/// pressed. Each release is attempted, and one that fails is tried once more; no press is ever sent again.
+fn send_chord(x: &X11, route: &mut Route, keycodes: &[u8]) -> Chord {
+    let mut chord = Chord::default();
+    let mut held = Vec::new();
+    let mut unacknowledged = None;
+    for &keycode in keycodes {
+        match route.acquire(x, &[keycode]) {
+            Ok(acquired) => held.extend(acquired),
+            Err(error) if rejected_by_server(&error) => {
+                chord.rejected = Some(error);
+                break;
+            }
+            Err(error) => {
+                chord.uncertain = Some(error);
+                unacknowledged = Some(keycode);
+                break;
+            }
+        }
+    }
+    if let Some(keycode) = unacknowledged
+        && let Err(error) = route
+            .release_unheld(x, keycode)
+            .or_else(|_| route.release_unheld(x, keycode))
+    {
+        chord.release_failed = Some(error);
+    }
+    let (released, unreleased) = route.release_tracked(x, &held);
+    if released.is_err() {
+        let (again, _) = route.release_tracked(x, &unreleased);
+        if let Err(error) = again
+            && chord.release_failed.is_none()
+        {
+            chord.release_failed = Some(error);
+        }
+    }
+    chord
+}
+
+/// One confirming read, bounded by the confirmation's deadline: the read itself waits no later than it, and its result
+/// counts only if it came before it, so a reply that arrives late never confirms a paste that applied late.
+fn confirmed_before(
+    read: impl FnOnce(Instant) -> Result<Option<(i32, String)>>,
+    expected: &Expected,
+    deadline: Instant,
+) -> bool {
+    Instant::now() < deadline
+        && matches!(read(deadline), Ok(Some((count, text))) if expected.confirmed_by(count, &text))
+        && Instant::now() < deadline
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn expected() -> Expected {
+        Expected {
+            text: "cua171".into(),
+            at: 0,
+            len: 6,
+            feff_after_astral: false,
+            count_before: 0,
+            before: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_confirming_reply_that_arrives_after_the_deadline_does_not_confirm() {
+        let deadline = Instant::now() + Duration::from_millis(50);
+        let late = |_: Instant| {
+            // the provider delays its confirming GetText past the deadline
+            std::thread::sleep(Duration::from_millis(80));
+            Ok(Some((6, "cua171".to_string())))
+        };
+        assert!(!confirmed_before(late, &expected(), deadline));
+    }
+
+    #[test]
+    fn a_confirming_reply_in_time_confirms_and_the_read_is_given_the_deadline() {
+        let deadline = Instant::now() + Duration::from_millis(500);
+        let mut given = None;
+        let read = |until: Instant| {
+            given = Some(until);
+            Ok(Some((6, "cua171".to_string())))
+        };
+        assert!(confirmed_before(read, &expected(), deadline));
+        assert_eq!(
+            given,
+            Some(deadline),
+            "the read waits no later than the confirmation's deadline"
+        );
+        assert!(!confirmed_before(
+            |_| Ok(Some((6, "cua17".into()))),
+            &expected(),
+            deadline
+        ));
+        assert!(
+            !confirmed_before(|_| Ok(None), &expected(), deadline),
+            "a read the deadline cut short"
+        );
+        let past = Instant::now() - Duration::from_millis(1);
+        let mut read_at_all = false;
+        assert!(!confirmed_before(
+            |_| {
+                read_at_all = true;
+                Ok(Some((6, "cua171".into())))
+            },
+            &expected(),
+            past
+        ));
+        assert!(!read_at_all, "no read starts after the deadline");
+    }
 }

@@ -112,12 +112,16 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   is no failure). Then the lock, the snapshot and CLIPBOARD taken; the field and the desktop focus revalidated
   (`requested field or selection changed before dispatch; nothing was sent`); the chord sent once; the field read
   every 20 ms for up to 2 s for the inserted segment where the caret or selection was (for Gecko, without the U+FEFF
-  it adds after each character beyond the BMP), while the target's selection transfer is followed, counting only
-  requests from the target's X client (its window's resource-id base); and the cleanup. The answer is success when the
-  segment is read back, else `Paste was sent once and could not be confirmed; read the field before retrying`; only a
-  refusal before dispatch or a chord the X server rejected says that nothing was sent or pasted. An unconfirmed paste
-  whose target was not served in full opens the 10 s `CurrentTime` refusal. `PasteText`, `InsertText` and
-  `SetTextContents` are never called.
+  it adds after each character beyond the BMP), each read bounded by that deadline and counted only if it ends
+  before it, while the target's selection transfer is followed, counting only requests from the target's X client
+  (its window's resource-id base); and the cleanup. The answer is success when the segment is read back, else
+  `Paste was sent once and could not be confirmed; read the field before retrying`. Only a refusal before dispatch, or
+  a chord press the X server answered with an X error naming it (so the chord's last key never arrived), says that
+  nothing was sent or pasted; a press whose acknowledgement never came may have arrived, and is answered as sent. The
+  chord's keys are pressed one at a time and every key that may be down is released (a failed release tried once
+  more, no press sent again); a key that still could not be released is reported in the answer, success included. An
+  unconfirmed paste whose target was not served in full opens the 10 s `CurrentTime` refusal. `PasteText`,
+  `InsertText` and `SetTextContents` are never called.
 
 ## Flags
 

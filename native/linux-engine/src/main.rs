@@ -12,6 +12,8 @@ mod dbus;
 mod desktop;
 mod engine;
 mod families;
+#[cfg(test)]
+mod fault;
 mod field;
 mod input;
 mod keys;

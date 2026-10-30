@@ -23,7 +23,7 @@ use super::*;
 /// One clipboard test at a time: they share the display's CLIPBOARD.
 /// Also keeps one connection open for the whole run: Xvfb resets when its last client goes, and a client connecting
 /// during the reset is refused.
-fn serial() -> MutexGuard<'static, ()> {
+pub(crate) fn serial() -> MutexGuard<'static, ()> {
     static SERIAL: Mutex<()> = Mutex::new(());
     static KEEPER: std::sync::OnceLock<RustConnection> = std::sync::OnceLock::new();
     let guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());

@@ -376,6 +376,12 @@ impl Session {
         })
     }
 
+    /// Releases a key the bookkeeping does not hold: one whose press may have been delivered though its acknowledgement
+    /// never came. No press is sent.
+    pub fn release_unheld(&mut self, x: &X11, keycode: u8) -> Result<()> {
+        send_key(x, self.target, self.now(), keycode, false, self.state())
+    }
+
     /// Places the pointer at a root point: Enter and Motion to the deepest viewable child under it, or one
     /// Motion to the implicit-grab window while a button is held (behaviour §8.2).
     pub fn move_to(&mut self, x: &X11, root_x: i16, root_y: i16) -> Result<()> {
@@ -546,8 +552,14 @@ fn send_key(x: &X11, target: Window, time: u32, keycode: u8, press: bool, state:
         state: state.into(),
         same_screen: true,
     };
-    x.conn.send_event(false, target, EventMask::NO_EVENT, event)?.check()?;
-    Ok(())
+    let send = || -> Result<()> {
+        x.conn.send_event(false, target, EventMask::NO_EVENT, event)?.check()?;
+        Ok(())
+    };
+    #[cfg(test)]
+    return crate::fault::key(keycode, press, send);
+    #[cfg(not(test))]
+    send()
 }
 
 #[cfg(test)]

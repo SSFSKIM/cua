@@ -1,0 +1,53 @@
+{
+  "engines": [
+    "vendor",
+    "cua"
+  ],
+  "ok": true,
+  "differences": [],
+  "expected": [
+    {
+      "kind": "engine-declaration",
+      "case": "native/app/typetext",
+      "cells": [
+        "exercise"
+      ],
+      "declaration": "linux-text-typetext-m2",
+      "vendorDefect": "linux-x64-vendor-engine-typetext-not-inserted",
+      "reason": "Plan of Work M2 makes typeText positive: cua returns successfully, inserts the marker exactly once and leaves gedit alive. The pinned x64 vendor engine still answers `editable Paste did not insert text`, inserts nothing and leaves gedit alive, the declared vendor defect named above."
+    },
+    {
+      "kind": "engine-declaration",
+      "case": "native/app/paste",
+      "cells": [
+        "exercise"
+      ],
+      "declaration": "linux-text-paste-m2",
+      "vendorDefect": "linux-x64-vendor-engine-paste-not-inserted",
+      "reason": "Plan of Work M2 makes paste positive: cua returns successfully, inserts the marker exactly once and leaves gedit alive. The pinned x64 vendor engine still answers `editable Paste did not insert text`, inserts nothing and leaves gedit alive, the declared vendor defect named above. The two leading errors are the case's intentional html and md format-refusal probes, which the facade rejects before either engine is called."
+    }
+  ],
+  "cases": 31,
+  "cells": 66,
+  "recordedCases": 33,
+  "vendorDefects": [
+    {
+      "id": "linux-x64-vendor-engine-typetext-not-inserted",
+      "case": "native/app/typetext",
+      "platform": "linux",
+      "reason": "On the #171 x86-64 VM the pinned vendor engine (sky_linux_x64, under cua's own host, the only one Linux serves) answers typeText with `editable Paste did not insert text` after its 10 s EditableText.PasteText attempt; gedit (GTK 3) survives and the marker never reaches the text. Plan of Work M2's positive oracle requires success, exactly one marker and a surviving window, so this is recorded vendor behaviour, not passing coverage. This declaration names x64 only; arm64's distinct crash outcome will be measured and declared with M5's native-suite run."
+    },
+    {
+      "id": "linux-x64-vendor-engine-paste-not-inserted",
+      "case": "native/app/paste",
+      "platform": "linux",
+      "reason": "On the #171 x86-64 VM the pinned vendor engine (sky_linux_x64, under cua's own host, the only one Linux serves) answers paste with `editable Paste did not insert text` after its 10 s EditableText.PasteText attempt; gedit (GTK 3) survives and the marker never reaches the text. Plan of Work M2's positive oracle requires success, exactly one marker and a surviving window, so this is recorded vendor behaviour, not passing coverage. This declaration names x64 only; arm64's distinct crash outcome will be measured and declared with M5's native-suite run."
+    }
+  ],
+  "pendingCells": [],
+  "pendingObligations": [],
+  "pendingUnexpectedPasses": [],
+  "provisionalCells": [],
+  "allAssertionsPassed": false,
+  "doubleCases": 0
+}

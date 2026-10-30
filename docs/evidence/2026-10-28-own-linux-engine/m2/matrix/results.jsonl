@@ -1,0 +1,303 @@
+{"run":"m2-matrix","kind":"meta","experiment":"matrix","commit":"e0168c63871cfa140ea81e2f97ec6a8f9d73adc1","cua_version":"cua-engine 0.2.0 (e0168c63871c)","families":["gedit","gnome-text-editor","firefox","chrome","gnome-terminal","xterm"],"load":false,"audit":true,"occlusion":"covered","started":"2026-10-30T08:51:18.795Z"}
+{"run":"m2-matrix","kind":"stub-check","ok":true,"witness":{"clean":false,"fields":["stacking","active","focus"],"samples":50,"max_gap_ms":10.8},"witness_failed_it":true,"audit":{"traced":true,"requests":124,"forbidden":["_NET_ACTIVE_WINDOW ClientMessage","XTEST FakeInput","XTEST FakeInput","_NET_ACTIVE_WINDOW ClientMessage"]},"audit_failed_it":true}
+{"run":"m2-matrix","kind":"matrix-identity","family":"gedit","title":"GTK3 gedit","occlusion":"covered","wm_class":"gedit / Gedit","source":"at_spi","oracle_walk":null,"tree_unsettled":false,"toolkit":"gtk","toolkit_version":"3.24.41","nodes":498,"source_pinned":"at_spi","targets":{"field":true,"button":false,"document":false},"kindOf":"editor","targets_by_engine":{"pinned":{"field":true,"button":false,"document":false},"newest":{"field":true,"button":false,"document":false},"cua":{"field":true,"button":false,"document":false},"cua:none":{"field":true,"button":false,"document":false}}}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"pinned","op":"key","i":0,"key":"x","ok":true,"ms":269.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"pinned","op":"key","i":1,"key":"BackSpace","ok":true,"ms":269.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"pinned","op":"key","i":2,"key":"x","ok":true,"ms":268.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"pinned","op":"key","i":3,"key":"BackSpace","ok":true,"ms":268.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"pinned","op":"key","i":4,"key":"x","ok":true,"ms":268.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"pinned","op":"type_text","i":0,"ok":false,"error":"editable Paste did not insert text","ms":10203.4,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"pinned","op":"type_text","i":1,"ok":false,"error":"editable Paste did not insert text","ms":10203.8,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"pinned","op":"click","i":0,"target":"end","point":{"x":450,"y":577},"ok":true,"ms":214.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"pinned","op":"click","i":1,"target":"start","point":{"x":65,"y":59},"ok":true,"ms":214.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"pinned","op":"click","i":2,"target":"end","point":{"x":450,"y":577},"ok":true,"ms":214.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"pinned","op":"click","i":3,"target":"start","point":{"x":65,"y":59},"ok":true,"ms":215.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"pinned","op":"click","i":4,"target":"end","point":{"x":450,"y":577},"ok":true,"ms":216.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"newest","op":"key","i":0,"key":"x","ok":true,"ms":236.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"newest","op":"key","i":1,"key":"BackSpace","ok":true,"ms":235.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"newest","op":"key","i":2,"key":"x","ok":true,"ms":235.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"newest","op":"key","i":3,"key":"BackSpace","ok":true,"ms":236.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"newest","op":"key","i":4,"key":"x","ok":true,"ms":236.3,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"newest","op":"type_text","i":0,"ok":true,"ms":801,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"newest","op":"type_text","i":1,"ok":true,"ms":805.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"newest","op":"click","i":0,"target":"end","point":{"x":450,"y":577},"ok":true,"ms":216.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"newest","op":"click","i":1,"target":"start","point":{"x":65,"y":59},"ok":true,"ms":215.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"newest","op":"click","i":2,"target":"end","point":{"x":450,"y":577},"ok":true,"ms":215.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"newest","op":"click","i":3,"target":"start","point":{"x":65,"y":59},"ok":true,"ms":215.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"newest","op":"click","i":4,"target":"end","point":{"x":450,"y":577},"ok":true,"ms":215.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua","op":"key","i":0,"key":"x","ok":true,"ms":102.4,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua","op":"key","i":1,"key":"BackSpace","ok":true,"ms":101.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua","op":"key","i":2,"key":"x","ok":true,"ms":101,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua","op":"key","i":3,"key":"BackSpace","ok":true,"ms":101.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua","op":"key","i":4,"key":"x","ok":true,"ms":101.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua","op":"type_text","i":0,"ok":true,"ms":146.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua","op":"type_text","i":1,"ok":true,"ms":141.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua","op":"click","i":0,"target":"end","point":{"x":450,"y":577},"ok":true,"ms":113.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua","op":"click","i":1,"target":"start","point":{"x":65,"y":59},"ok":true,"ms":114.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua","op":"click","i":2,"target":"end","point":{"x":450,"y":577},"ok":true,"ms":113.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua","op":"click","i":3,"target":"start","point":{"x":65,"y":59},"ok":true,"ms":113.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua","op":"click","i":4,"target":"end","point":{"x":450,"y":577},"ok":true,"ms":113.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua:none","op":"key","i":0,"key":"x","ok":true,"ms":101.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua:none","op":"key","i":1,"key":"BackSpace","ok":true,"ms":101.3,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua:none","op":"key","i":2,"key":"x","ok":true,"ms":101.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua:none","op":"key","i":3,"key":"BackSpace","ok":true,"ms":101.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua:none","op":"key","i":4,"key":"x","ok":true,"ms":101.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua:none","op":"click","i":0,"target":"end","point":{"x":450,"y":577},"ok":true,"ms":113.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua:none","op":"click","i":1,"target":"start","point":{"x":65,"y":59},"ok":true,"ms":114.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua:none","op":"click","i":2,"target":"end","point":{"x":450,"y":577},"ok":true,"ms":114,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua:none","op":"click","i":3,"target":"start","point":{"x":65,"y":59},"ok":true,"ms":113.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gedit","engine":"cua:none","op":"click","i":4,"target":"end","point":{"x":450,"y":577},"ok":true,"ms":114,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-audit","family":"gedit","engine":"pinned","ok":true,"clean":true,"traced":true,"requests":175,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-audit","family":"gedit","engine":"newest","ok":true,"clean":true,"traced":true,"requests":202,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-audit","family":"gedit","engine":"cua","ok":true,"clean":true,"traced":true,"requests":234,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-identity","family":"gnome-text-editor","title":"GTK4 gnome-text-editor","occlusion":"covered","wm_class":"gnome-text-editor / gnome-text-editor","source":"at_spi","oracle_walk":null,"tree_unsettled":false,"toolkit":"GTK","toolkit_version":"4.14.5","nodes":64,"source_pinned":"at_spi","targets":{"field":true,"button":false,"document":false},"kindOf":"editor","targets_by_engine":{"pinned":{"field":true,"button":false,"document":false},"newest":{"field":true,"button":false,"document":false},"cua":{"field":true,"button":false,"document":false},"cua:none":{"field":true,"button":false,"document":false}}}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"pinned","op":"key","i":0,"key":"x","ok":true,"ms":270.5,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"pinned","op":"key","i":1,"key":"x","ok":true,"ms":270.2,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"pinned","op":"key","i":2,"key":"x","ok":true,"ms":269.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"pinned","op":"key","i":3,"key":"x","ok":true,"ms":269.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"pinned","op":"key","i":4,"key":"x","ok":true,"ms":270,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"pinned","op":"type_text","i":0,"ok":false,"error":"window does not expose a Paste action","ms":329.2,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"pinned","op":"type_text","i":1,"ok":false,"error":"window does not expose a Paste action","ms":335.3,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"pinned","op":"click","i":0,"target":"end","point":{"x":450,"y":603},"ok":true,"ms":215.8,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"pinned","op":"click","i":1,"target":"start","point":{"x":60,"y":64},"ok":true,"ms":215.1,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"pinned","op":"click","i":2,"target":"end","point":{"x":450,"y":603},"ok":true,"ms":215.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"pinned","op":"click","i":3,"target":"start","point":{"x":60,"y":64},"ok":true,"ms":216.3,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"pinned","op":"click","i":4,"target":"end","point":{"x":450,"y":603},"ok":true,"ms":216.2,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"newest","op":"key","i":0,"key":"x","ok":true,"ms":236.9,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"newest","op":"key","i":1,"key":"x","ok":true,"ms":236.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"newest","op":"key","i":2,"key":"x","ok":true,"ms":236.4,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"newest","op":"key","i":3,"key":"x","ok":true,"ms":236.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"newest","op":"key","i":4,"key":"x","ok":true,"ms":236.4,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"newest","op":"type_text","i":0,"ok":false,"error":"cannot identify the focused text field; focus it or specify element_id; no text was sent","ms":804.1,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"newest","op":"type_text","i":1,"ok":false,"error":"cannot identify the focused text field; focus it or specify element_id; no text was sent","ms":801.4,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"newest","op":"click","i":0,"target":"end","point":{"x":450,"y":603},"ok":true,"ms":216.3,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"newest","op":"click","i":1,"target":"start","point":{"x":60,"y":64},"ok":true,"ms":215.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"newest","op":"click","i":2,"target":"end","point":{"x":450,"y":603},"ok":true,"ms":217.1,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"newest","op":"click","i":3,"target":"start","point":{"x":60,"y":64},"ok":true,"ms":216.9,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"newest","op":"click","i":4,"target":"end","point":{"x":450,"y":603},"ok":true,"ms":218.5,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua","op":"key","i":0,"key":"x","ok":true,"ms":103.2,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua","op":"key","i":1,"key":"x","ok":true,"ms":101.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua","op":"key","i":2,"key":"x","ok":true,"ms":101.2,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua","op":"key","i":3,"key":"x","ok":true,"ms":102.1,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua","op":"key","i":4,"key":"x","ok":true,"ms":101.1,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua","op":"type_text","i":0,"ok":false,"error":"org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first","ms":2.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua","op":"type_text","i":1,"ok":false,"error":"org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first","ms":0.5,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua","op":"click","i":0,"target":"end","point":{"x":450,"y":603},"ok":true,"ms":114.4,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua","op":"click","i":1,"target":"start","point":{"x":60,"y":64},"ok":true,"ms":114.1,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua","op":"click","i":2,"target":"end","point":{"x":450,"y":603},"ok":true,"ms":114.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua","op":"click","i":3,"target":"start","point":{"x":60,"y":64},"ok":true,"ms":114.3,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua","op":"click","i":4,"target":"end","point":{"x":450,"y":603},"ok":true,"ms":113.9,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua:none","op":"key","i":0,"key":"x","ok":true,"ms":102.1,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua:none","op":"key","i":1,"key":"x","ok":true,"ms":101.5,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua:none","op":"key","i":2,"key":"x","ok":true,"ms":101.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua:none","op":"key","i":3,"key":"x","ok":true,"ms":101.5,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua:none","op":"key","i":4,"key":"x","ok":true,"ms":101.2,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua:none","op":"click","i":0,"target":"end","point":{"x":450,"y":603},"ok":true,"ms":113.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua:none","op":"click","i":1,"target":"start","point":{"x":60,"y":64},"ok":true,"ms":113.9,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua:none","op":"click","i":2,"target":"end","point":{"x":450,"y":603},"ok":true,"ms":113.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua:none","op":"click","i":3,"target":"start","point":{"x":60,"y":64},"ok":true,"ms":114.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-text-editor","engine":"cua:none","op":"click","i":4,"target":"end","point":{"x":450,"y":603},"ok":true,"ms":113.8,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-audit","family":"gnome-text-editor","engine":"pinned","ok":true,"clean":true,"traced":true,"requests":175,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-audit","family":"gnome-text-editor","engine":"newest","ok":true,"clean":true,"traced":true,"requests":202,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-audit","family":"gnome-text-editor","engine":"cua","ok":true,"clean":true,"traced":true,"requests":217,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-identity","family":"firefox","title":"Firefox","occlusion":"covered","wm_class":"Navigator / firefox","source":"at_spi","oracle_walk":null,"tree_unsettled":false,"toolkit":"Gecko","toolkit_version":"159.0","nodes":68,"source_pinned":"at_spi","targets":{"field":true,"button":true,"document":false},"kindOf":"page","targets_by_engine":{"pinned":{"field":true,"button":true,"document":false},"newest":{"field":true,"button":true,"document":false},"cua":{"field":true,"button":true,"document":false},"cua:none":{"field":true,"button":true,"document":false}}}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"pinned","op":"key","i":0,"key":"x","ok":true,"ms":268.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"pinned","op":"key","i":1,"key":"BackSpace","ok":true,"ms":268.4,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"pinned","op":"key","i":2,"key":"x","ok":true,"ms":268.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"pinned","op":"key","i":3,"key":"BackSpace","ok":true,"ms":268.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"pinned","op":"key","i":4,"key":"x","ok":true,"ms":268.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"pinned","op":"type_text","i":0,"ok":false,"error":"clipboard paste timed out","ms":10203,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"pinned","op":"type_text","i":1,"ok":false,"error":"clipboard paste timed out","ms":10203.5,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"pinned","op":"click","i":0,"point":{"x":640,"y":220},"ok":true,"ms":215.3,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"pinned","op":"click","i":1,"point":{"x":640,"y":220},"ok":true,"ms":215,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"pinned","op":"click","i":2,"point":{"x":640,"y":220},"ok":true,"ms":216.1,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"pinned","op":"click","i":3,"point":{"x":640,"y":220},"ok":true,"ms":216.2,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"pinned","op":"click","i":4,"point":{"x":640,"y":220},"ok":true,"ms":214.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"newest","op":"key","i":0,"key":"x","ok":true,"ms":236.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"newest","op":"key","i":1,"key":"BackSpace","ok":true,"ms":235.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"newest","op":"key","i":2,"key":"x","ok":true,"ms":235.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"newest","op":"key","i":3,"key":"BackSpace","ok":true,"ms":235.4,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"newest","op":"key","i":4,"key":"x","ok":true,"ms":235.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"newest","op":"type_text","i":0,"ok":true,"ms":808.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"newest","op":"type_text","i":1,"ok":true,"ms":813.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"newest","op":"click","i":0,"point":{"x":640,"y":220},"ok":true,"ms":215.5,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"newest","op":"click","i":1,"point":{"x":640,"y":220},"ok":true,"ms":215.5,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"newest","op":"click","i":2,"point":{"x":640,"y":220},"ok":true,"ms":215.8,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"newest","op":"click","i":3,"point":{"x":640,"y":220},"ok":true,"ms":215.3,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"newest","op":"click","i":4,"point":{"x":640,"y":220},"ok":true,"ms":217.2,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua","op":"key","i":0,"key":"x","ok":true,"ms":103.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua","op":"key","i":1,"key":"BackSpace","ok":true,"ms":101.4,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua","op":"key","i":2,"key":"x","ok":true,"ms":101.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua","op":"key","i":3,"key":"BackSpace","ok":true,"ms":100.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua","op":"key","i":4,"key":"x","ok":true,"ms":101.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua","op":"type_text","i":0,"ok":true,"ms":150.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua","op":"type_text","i":1,"ok":true,"ms":143.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua","op":"click","i":0,"point":{"x":640,"y":220},"ok":true,"ms":113.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua","op":"click","i":1,"point":{"x":640,"y":220},"ok":true,"ms":114,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua","op":"click","i":2,"point":{"x":640,"y":220},"ok":true,"ms":113.8,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua","op":"click","i":3,"point":{"x":640,"y":220},"ok":true,"ms":114,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua","op":"click","i":4,"point":{"x":640,"y":220},"ok":true,"ms":113.8,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua:none","op":"key","i":0,"key":"x","ok":true,"ms":101.3,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua:none","op":"key","i":1,"key":"BackSpace","ok":true,"ms":101.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua:none","op":"key","i":2,"key":"x","ok":true,"ms":101.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua:none","op":"key","i":3,"key":"BackSpace","ok":true,"ms":101,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua:none","op":"key","i":4,"key":"x","ok":true,"ms":101.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua:none","op":"click","i":0,"point":{"x":640,"y":220},"ok":true,"ms":113.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua:none","op":"click","i":1,"point":{"x":640,"y":220},"ok":true,"ms":113.8,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua:none","op":"click","i":2,"point":{"x":640,"y":220},"ok":true,"ms":113.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua:none","op":"click","i":3,"point":{"x":640,"y":220},"ok":true,"ms":113.9,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"firefox","engine":"cua:none","op":"click","i":4,"point":{"x":640,"y":220},"ok":true,"ms":114.9,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-audit","family":"firefox","engine":"pinned","ok":true,"clean":true,"traced":true,"requests":179,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-audit","family":"firefox","engine":"newest","ok":true,"clean":true,"traced":true,"requests":206,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-audit","family":"firefox","engine":"cua","ok":true,"clean":true,"traced":true,"requests":287,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-identity","family":"chrome","title":"Chrome","occlusion":"covered","wm_class":"google-chrome / Google-chrome","source":"at_spi","oracle_walk":null,"tree_unsettled":false,"toolkit":"Chromium","toolkit_version":"1.0","nodes":222,"source_pinned":"at_spi","targets":{"field":true,"button":true,"document":false},"kindOf":"page","targets_by_engine":{"pinned":{"field":true,"button":true,"document":false},"newest":{"field":true,"button":true,"document":false},"cua":{"field":true,"button":true,"document":false},"cua:none":{"field":true,"button":true,"document":false}}}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"pinned","op":"key","i":0,"key":"x","ok":true,"ms":269.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"pinned","op":"key","i":1,"key":"BackSpace","ok":true,"ms":268.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"pinned","op":"key","i":2,"key":"x","ok":true,"ms":269.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"pinned","op":"key","i":3,"key":"BackSpace","ok":true,"ms":269,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"pinned","op":"key","i":4,"key":"x","ok":true,"ms":268.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"pinned","op":"type_text","i":0,"ok":true,"ms":872.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"pinned","op":"type_text","i":1,"ok":true,"ms":865.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"pinned","op":"click","i":0,"point":{"x":525,"y":220},"ok":true,"ms":215.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"pinned","op":"click","i":1,"point":{"x":525,"y":220},"ok":true,"ms":215.3,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"pinned","op":"click","i":2,"point":{"x":525,"y":220},"ok":true,"ms":215.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"pinned","op":"click","i":3,"point":{"x":525,"y":220},"ok":true,"ms":215.3,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"pinned","op":"click","i":4,"point":{"x":525,"y":220},"ok":true,"ms":215.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"newest","op":"key","i":0,"key":"x","ok":true,"ms":237.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"newest","op":"key","i":1,"key":"BackSpace","ok":true,"ms":237.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"newest","op":"key","i":2,"key":"x","ok":true,"ms":236.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"newest","op":"key","i":3,"key":"BackSpace","ok":true,"ms":236.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"newest","op":"key","i":4,"key":"x","ok":true,"ms":235.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"newest","op":"type_text","i":0,"ok":true,"ms":832.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"newest","op":"type_text","i":1,"ok":true,"ms":927.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"newest","op":"click","i":0,"point":{"x":525,"y":220},"ok":true,"ms":217.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"newest","op":"click","i":1,"point":{"x":525,"y":220},"ok":true,"ms":215.4,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"newest","op":"click","i":2,"point":{"x":525,"y":220},"ok":true,"ms":215.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"newest","op":"click","i":3,"point":{"x":525,"y":220},"ok":true,"ms":215.4,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"newest","op":"click","i":4,"point":{"x":525,"y":220},"ok":true,"ms":215,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua","op":"key","i":0,"key":"x","ok":true,"ms":103.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua","op":"key","i":1,"key":"BackSpace","ok":true,"ms":101.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua","op":"key","i":2,"key":"x","ok":true,"ms":101.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua","op":"key","i":3,"key":"BackSpace","ok":true,"ms":101.4,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua","op":"key","i":4,"key":"x","ok":true,"ms":101.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua","op":"type_text","i":0,"ok":true,"ms":173.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua","op":"type_text","i":1,"ok":true,"ms":155.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua","op":"click","i":0,"point":{"x":525,"y":220},"ok":true,"ms":113.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua","op":"click","i":1,"point":{"x":525,"y":220},"ok":true,"ms":114,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua","op":"click","i":2,"point":{"x":525,"y":220},"ok":true,"ms":113.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua","op":"click","i":3,"point":{"x":525,"y":220},"ok":true,"ms":113.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua","op":"click","i":4,"point":{"x":525,"y":220},"ok":true,"ms":113.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua:none","op":"key","i":0,"key":"x","ok":true,"ms":101.3,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua:none","op":"key","i":1,"key":"x","ok":true,"ms":101.2,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua:none","op":"key","i":2,"key":"x","ok":true,"ms":101.1,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua:none","op":"key","i":3,"key":"x","ok":true,"ms":101.3,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua:none","op":"key","i":4,"key":"x","ok":true,"ms":101.1,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua:none","op":"click","i":0,"point":{"x":525,"y":220},"ok":true,"ms":113.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua:none","op":"click","i":1,"point":{"x":525,"y":220},"ok":true,"ms":113.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua:none","op":"click","i":2,"point":{"x":525,"y":220},"ok":true,"ms":113.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua:none","op":"click","i":3,"point":{"x":525,"y":220},"ok":true,"ms":113.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"chrome","engine":"cua:none","op":"click","i":4,"point":{"x":525,"y":220},"ok":true,"ms":114,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-audit","family":"chrome","engine":"pinned","ok":true,"clean":true,"traced":true,"requests":163,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-audit","family":"chrome","engine":"newest","ok":true,"clean":true,"traced":true,"requests":190,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-audit","family":"chrome","engine":"cua","ok":true,"clean":true,"traced":true,"requests":206,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-identity","family":"gnome-terminal","title":"gnome-terminal (VTE)","occlusion":"covered","wm_class":"gnome-terminal-server / Gnome-terminal","source":"at_spi","oracle_walk":null,"tree_unsettled":false,"toolkit":"gtk","toolkit_version":"3.24.41","nodes":49,"source_pinned":"at_spi","targets":{"field":false,"button":false,"document":false},"kindOf":"terminal","targets_by_engine":{"pinned":{"field":false,"button":false,"document":false},"newest":{"field":false,"button":false,"document":false},"cua":{"field":false,"button":false,"document":false},"cua:none":{"field":false,"button":false,"document":false}}}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"pinned","op":"key","i":0,"key":"x","ok":true,"ms":269.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"pinned","op":"key","i":1,"key":"x","ok":true,"ms":268.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"pinned","op":"key","i":2,"key":"x","ok":true,"ms":269.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"pinned","op":"key","i":3,"key":"x","ok":true,"ms":268.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"pinned","op":"key","i":4,"key":"x","ok":true,"ms":268.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"pinned","op":"type_text","i":0,"ok":false,"error":"window does not expose a Paste action","ms":327.5,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"pinned","op":"type_text","i":1,"ok":false,"error":"window does not expose a Paste action","ms":331.5,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"pinned","op":"click","i":0,"point":{"x":319,"y":194},"ok":true,"ms":215.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"pinned","op":"click","i":1,"point":{"x":319,"y":194},"ok":true,"ms":215.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"pinned","op":"click","i":2,"point":{"x":319,"y":194},"ok":true,"ms":216,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"pinned","op":"click","i":3,"point":{"x":319,"y":194},"ok":true,"ms":215.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"pinned","op":"click","i":4,"point":{"x":319,"y":194},"ok":true,"ms":215.3,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"newest","op":"key","i":0,"key":"x","ok":true,"ms":238,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"newest","op":"key","i":1,"key":"x","ok":true,"ms":236.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"newest","op":"key","i":2,"key":"x","ok":true,"ms":235.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"newest","op":"key","i":3,"key":"x","ok":true,"ms":239,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"newest","op":"key","i":4,"key":"x","ok":true,"ms":237.3,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"newest","op":"type_text","i":0,"ok":false,"error":"cannot identify the focused text field; focus it or specify element_id; no text was sent","ms":857.8,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"newest","op":"type_text","i":1,"ok":false,"error":"cannot identify the focused text field; focus it or specify element_id; no text was sent","ms":827,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"newest","op":"click","i":0,"point":{"x":319,"y":194},"ok":true,"ms":216.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"newest","op":"click","i":1,"point":{"x":319,"y":194},"ok":true,"ms":215.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"newest","op":"click","i":2,"point":{"x":319,"y":194},"ok":true,"ms":216.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"newest","op":"click","i":3,"point":{"x":319,"y":194},"ok":true,"ms":216.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"newest","op":"click","i":4,"point":{"x":319,"y":194},"ok":true,"ms":216.4,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua","op":"key","i":0,"key":"x","ok":true,"ms":102.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua","op":"key","i":1,"key":"x","ok":true,"ms":101,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua","op":"key","i":2,"key":"x","ok":true,"ms":101.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua","op":"key","i":3,"key":"x","ok":true,"ms":101.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua","op":"key","i":4,"key":"x","ok":true,"ms":101.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua","op":"type_text","i":0,"ok":true,"ms":138.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua","op":"type_text","i":1,"ok":true,"ms":137,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua","op":"click","i":0,"point":{"x":319,"y":194},"ok":true,"ms":113.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua","op":"click","i":1,"point":{"x":319,"y":194},"ok":true,"ms":114.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua","op":"click","i":2,"point":{"x":319,"y":194},"ok":true,"ms":113.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua","op":"click","i":3,"point":{"x":319,"y":194},"ok":true,"ms":113.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua","op":"click","i":4,"point":{"x":319,"y":194},"ok":true,"ms":114.3,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua:none","op":"key","i":0,"key":"x","ok":true,"ms":101.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua:none","op":"key","i":1,"key":"x","ok":true,"ms":101.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua:none","op":"key","i":2,"key":"x","ok":true,"ms":101.4,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua:none","op":"key","i":3,"key":"x","ok":true,"ms":101.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua:none","op":"key","i":4,"key":"x","ok":true,"ms":101.3,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua:none","op":"click","i":0,"point":{"x":319,"y":194},"ok":true,"ms":113.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua:none","op":"click","i":1,"point":{"x":319,"y":194},"ok":true,"ms":113.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua:none","op":"click","i":2,"point":{"x":319,"y":194},"ok":true,"ms":113.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua:none","op":"click","i":3,"point":{"x":319,"y":194},"ok":true,"ms":113.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"gnome-terminal","engine":"cua:none","op":"click","i":4,"point":{"x":319,"y":194},"ok":true,"ms":113.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-audit","family":"gnome-terminal","engine":"pinned","ok":true,"clean":true,"traced":true,"requests":175,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-audit","family":"gnome-terminal","engine":"newest","ok":true,"clean":true,"traced":true,"requests":202,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-audit","family":"gnome-terminal","engine":"cua","ok":true,"clean":true,"traced":true,"requests":225,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-identity","family":"xterm","title":"xterm","occlusion":"covered","wm_class":"xterm / XTerm","source":"x11","oracle_walk":null,"tree_unsettled":false,"source_pinned":"x11","targets":{"field":false,"button":false,"document":false},"kindOf":"terminal","targets_by_engine":{"pinned":{"field":false,"button":false,"document":false},"newest":{"field":false,"button":false,"document":false},"cua":{"field":false,"button":false,"document":false},"cua:none":{"field":false,"button":false,"document":false}}}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"pinned","op":"key","i":0,"key":"x","ok":true,"ms":269,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"pinned","op":"key","i":1,"key":"x","ok":true,"ms":268.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"pinned","op":"key","i":2,"key":"x","ok":true,"ms":268.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"pinned","op":"key","i":3,"key":"x","ok":true,"ms":268.9,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"pinned","op":"key","i":4,"key":"x","ok":true,"ms":268.4,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"pinned","op":"type_text","i":0,"ok":false,"error":"AT-SPI provider with process ID 3527553 is unavailable for X11 window 35651598","ms":206.4,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"pinned","op":"type_text","i":1,"ok":false,"error":"AT-SPI provider with process ID 3527553 is unavailable for X11 window 35651598","ms":207.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"pinned","op":"click","i":0,"point":{"x":320,"y":197},"ok":true,"ms":215.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"pinned","op":"click","i":1,"point":{"x":320,"y":197},"ok":true,"ms":214.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"pinned","op":"click","i":2,"point":{"x":320,"y":197},"ok":true,"ms":214.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"pinned","op":"click","i":3,"point":{"x":320,"y":197},"ok":true,"ms":214.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"pinned","op":"click","i":4,"point":{"x":320,"y":197},"ok":true,"ms":214.7,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"newest","op":"key","i":0,"key":"x","ok":true,"ms":237.3,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"newest","op":"key","i":1,"key":"x","ok":true,"ms":235.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"newest","op":"key","i":2,"key":"x","ok":true,"ms":235.8,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"newest","op":"key","i":3,"key":"x","ok":true,"ms":235.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"newest","op":"key","i":4,"key":"x","ok":true,"ms":236.9,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"newest","op":"type_text","i":0,"ok":false,"error":"sent paste shortcut to the window but could not confirm a clipboard read; no second paste or typing was sent: clipboard paste timed out","ms":10202.8,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"newest","op":"type_text","i":1,"ok":false,"error":"sent paste shortcut to the window but could not confirm a clipboard read; no second paste or typing was sent: clipboard paste timed out","ms":10203.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"newest","op":"click","i":0,"point":{"x":320,"y":197},"ok":true,"ms":217,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"newest","op":"click","i":1,"point":{"x":320,"y":197},"ok":true,"ms":215.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"newest","op":"click","i":2,"point":{"x":320,"y":197},"ok":true,"ms":215.4,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"newest","op":"click","i":3,"point":{"x":320,"y":197},"ok":true,"ms":216.3,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"newest","op":"click","i":4,"point":{"x":320,"y":197},"ok":true,"ms":216.6,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua","op":"key","i":0,"key":"x","ok":true,"ms":104.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua","op":"key","i":1,"key":"x","ok":true,"ms":102,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua","op":"key","i":2,"key":"x","ok":true,"ms":101.8,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua","op":"key","i":3,"key":"x","ok":true,"ms":102.2,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua","op":"key","i":4,"key":"x","ok":true,"ms":101.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua","op":"type_text","i":0,"ok":false,"error":"XTerm has no verified paste route; nothing was sent","ms":0.9,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua","op":"type_text","i":1,"ok":false,"error":"XTerm has no verified paste route; nothing was sent","ms":0.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua","op":"click","i":0,"point":{"x":320,"y":197},"ok":true,"ms":114.1,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua","op":"click","i":1,"point":{"x":320,"y":197},"ok":true,"ms":114.3,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua","op":"click","i":2,"point":{"x":320,"y":197},"ok":true,"ms":114.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua","op":"click","i":3,"point":{"x":320,"y":197},"ok":true,"ms":115.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua","op":"click","i":4,"point":{"x":320,"y":197},"ok":true,"ms":115.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua:none","op":"key","i":0,"key":"x","ok":true,"ms":101.6,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua:none","op":"key","i":1,"key":"x","ok":true,"ms":102.1,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua:none","op":"key","i":2,"key":"x","ok":true,"ms":101.3,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua:none","op":"key","i":3,"key":"x","ok":true,"ms":101.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua:none","op":"key","i":4,"key":"x","ok":true,"ms":101.7,"witness":true,"effect":false}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua:none","op":"click","i":0,"point":{"x":320,"y":197},"ok":true,"ms":114.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua:none","op":"click","i":1,"point":{"x":320,"y":197},"ok":true,"ms":114.9,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua:none","op":"click","i":2,"point":{"x":320,"y":197},"ok":true,"ms":114.5,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua:none","op":"click","i":3,"point":{"x":320,"y":197},"ok":true,"ms":115.2,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-sample","family":"xterm","engine":"cua:none","op":"click","i":4,"point":{"x":320,"y":197},"ok":true,"ms":114.8,"witness":true,"effect":true}
+{"run":"m2-matrix","kind":"matrix-audit","family":"xterm","engine":"pinned","ok":true,"clean":true,"traced":true,"requests":179,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-audit","family":"xterm","engine":"newest","ok":true,"clean":true,"traced":true,"requests":206,"forbidden":[]}
+{"run":"m2-matrix","kind":"matrix-audit","family":"xterm","engine":"cua","ok":true,"clean":true,"traced":true,"requests":214,"forbidden":[]}
+{"run":"m2-matrix","kind":"experiment-summary","markdown":["| family | ToolkitName | X11 class (instance / class) | tree (nodes) | click pinned / newest / cua | key pinned / newest / cua | type_text pinned / newest / cua | witness | background route | run |","|---|---|---|---|---|---|---|---|---|---|","| GTK3 gedit | gtk 3.24.41 | gedit / Gedit | at_spi (498) | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 2/2 / 2/2 | clean | takes | m2-matrix |","| GTK4 gnome-text-editor | GTK 4.14.5 | gnome-text-editor / gnome-text-editor | at_spi (64) | 0/5 / 0/5 / 0/5 | 0/5 / 0/5 / 0/5 | 0/2 (2 failed) / 0/2 (2 failed) / 0/2 (2 failed) | clean | ignores | m2-matrix |","| Firefox | Gecko 159.0 | Navigator / firefox | at_spi (68) | 0/5 / 0/5 / 0/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 2/2 / 2/2 | clean | partial: takes keys; ignores clicks | m2-matrix |","| Chrome | Chromium 1.0 | google-chrome / Google-chrome | at_spi (222) | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 2/2 / 2/2 / 2/2 | clean | takes | m2-matrix |","| gnome-terminal (VTE) | gtk 3.24.41 | gnome-terminal-server / Gnome-terminal | at_spi (49) | 5/5 / 5/5 / 5/5 | 5/5 / 5/5 / 5/5 | 0/2 (2 failed) / 0/2 (2 failed) / 2/2 | clean | takes | m2-matrix |","| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 / 5/5 | 0/5 / 0/5 / 0/5 | 0/2 (2 failed) / 0/2 (2 failed) / 0/2 (2 failed) | clean | partial: takes clicks; ignores keys | m2-matrix |","","Without the redirect (`cua:none`, `--retention none`) beside cua with session retention:","","| family | ToolkitName | X11 class (instance / class) | tree (nodes) | click cua / cua:none | key cua / cua:none | type_text  | witness | background route | run |","|---|---|---|---|---|---|---|---|---|---|","| GTK3 gedit | gtk 3.24.41 | gedit / Gedit | at_spi (498) | 5/5 / 5/5 | 5/5 / 5/5 |  | clean | takes | m2-matrix |","| GTK4 gnome-text-editor | GTK 4.14.5 | gnome-text-editor / gnome-text-editor | at_spi (64) | 0/5 / 0/5 | 0/5 / 0/5 |  | clean | ignores | m2-matrix |","| Firefox | Gecko 159.0 | Navigator / firefox | at_spi (68) | 0/5 / 0/5 | 5/5 / 5/5 |  | clean | partial: takes keys; ignores clicks | m2-matrix |","| Chrome | Chromium 1.0 | google-chrome / Google-chrome | at_spi (222) | 5/5 / 4/5 | 5/5 / 0/5 |  | clean | partial: partial | m2-matrix |","| gnome-terminal (VTE) | gtk 3.24.41 | gnome-terminal-server / Gnome-terminal | at_spi (49) | 5/5 / 5/5 | 5/5 / 5/5 |  | clean | takes | m2-matrix |","| xterm | none (no AT-SPI provider) | xterm / XTerm | x11 | 5/5 / 5/5 | 0/5 / 0/5 |  | clean | partial: takes clicks; ignores keys | m2-matrix |","","Families that do not take the background route:","","- GTK4 gnome-text-editor (gnome-text-editor / gnome-text-editor; GTK): ignores (run `m2-matrix`)","- Firefox (Navigator / firefox; Gecko): takes keys; ignores clicks (run `m2-matrix`)","- xterm (xterm / XTerm; no AT-SPI provider): takes clicks; ignores keys (run `m2-matrix`)","","Background left alone (Acceptance 5): every request in a witness span; each engine's keys and clicks audited through xtrace in an untimed pass:","","| family | witness pinned / newest / cua | audit pinned / newest / cua | cua |","|---|---|---|---|","| GTK3 gedit | clean / clean / clean | clean / clean / clean | PASS |","| GTK4 gnome-text-editor | clean / clean / clean | clean / clean / clean | PASS |","| Firefox | clean / clean / clean | clean / clean / clean | PASS |","| Chrome | clean / clean / clean | clean / clean / clean | PASS |","| gnome-terminal (VTE) | clean / clean / clean | clean / clean / clean | PASS |","| xterm | clean / clean / clean | clean / clean / clean | PASS |","","The run is complete."],"complete":true,"failed":[],"finished":"2026-10-30T08:59:36.204Z"}

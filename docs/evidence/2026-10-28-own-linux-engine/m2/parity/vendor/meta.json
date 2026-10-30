@@ -1,0 +1,2309 @@
+{
+  "schema": 1,
+  "pendingEnvironment": [],
+  "pendingObligations": [],
+  "host": "cua",
+  "observedHost": "cua",
+  "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+  "harnessCommit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+  "node": "v24.22.1",
+  "runtimeRelease": "26.928.40906-linux-x64",
+  "ownNode": {
+    "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+    "version": "v24.22.0"
+  },
+  "nodeMode": "managed",
+  "nodeOverride": null,
+  "hostVersion": "0.5.0",
+  "apiVersion": "0.5.0",
+  "device": "cua-171",
+  "platform": "linux",
+  "surfaces": [
+    "computer",
+    "browser"
+  ],
+  "sandbox": "per-case",
+  "caseConfigurations": {
+    "secrets/native-live/linux/type-text": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/invalid-label": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/reserved-label": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/unsupported-shape": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/disabled": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/unavailable": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/unknown-label": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/unsafe-store": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/refuse/unreadable-store": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/errors/post-read-sanitized": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/reports/labels-not-values": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/no-substitution/embedded-marker": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/no-substitution/unsupported-methods-and-fields": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "secrets/native-live/no-substitution/javascript-strings": {
+      "surfaces": [
+        "browser"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/cua/computer": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/cua/computer.target": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/cua/computer.launch-app": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/cua/getapp": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/cua/listapps": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/cua/listwindows": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/getaxstate": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/getscreenshot": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/getaxstateandscreenshot": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/click": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/drag": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/app/scroll": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/scroll": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/selecttext": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/setvalue": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/target-app-decorated-tab/performsecondaryaction": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/app/presskey": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/app/typetext": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    },
+    "native/app/paste": {
+      "surfaces": [
+        "computer"
+      ],
+      "sandbox": "scoped"
+    }
+  },
+  "service": "cua",
+  "backend": "fixture-services+native",
+  "profile": "me",
+  "suite": "native",
+  "through": null,
+  "caseIds": [
+    "secrets/native-live/linux/type-text",
+    "secrets/native-live/refuse/invalid-label",
+    "secrets/native-live/refuse/reserved-label",
+    "secrets/native-live/refuse/unsupported-shape",
+    "secrets/native-live/refuse/disabled",
+    "secrets/native-live/refuse/unavailable",
+    "secrets/native-live/refuse/unknown-label",
+    "secrets/native-live/refuse/unsafe-store",
+    "secrets/native-live/refuse/unreadable-store",
+    "secrets/native-live/errors/post-read-sanitized",
+    "secrets/native-live/reports/labels-not-values",
+    "secrets/native-live/no-substitution/embedded-marker",
+    "secrets/native-live/no-substitution/unsupported-methods-and-fields",
+    "secrets/native-live/no-substitution/javascript-strings",
+    "native/cua/computer",
+    "native/cua/computer.target",
+    "native/cua/computer.launch-app",
+    "native/cua/getapp",
+    "native/cua/listapps",
+    "native/cua/listwindows",
+    "native/target-app-decorated-tab/getaxstate",
+    "native/target-app-decorated-tab/getscreenshot",
+    "native/target-app-decorated-tab/getaxstateandscreenshot",
+    "native/target-app-decorated-tab/click",
+    "native/target-app-decorated-tab/drag",
+    "native/app/scroll",
+    "native/target-app-decorated-tab/scroll",
+    "native/target-app-decorated-tab/selecttext",
+    "native/target-app-decorated-tab/setvalue",
+    "native/target-app-decorated-tab/performsecondaryaction",
+    "native/app/presskey",
+    "native/app/typetext",
+    "native/app/paste"
+  ],
+  "caseCells": {
+    "secrets/native-live/linux/type-text": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/invalid-label": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/reserved-label": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/unsupported-shape": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/disabled": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/unavailable": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/unknown-label": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/unsafe-store": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/refuse/unreadable-store": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/errors/post-read-sanitized": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/reports/labels-not-values": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/no-substitution/embedded-marker": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/no-substitution/unsupported-methods-and-fields": [
+      "setup",
+      "exercise"
+    ],
+    "secrets/native-live/no-substitution/javascript-strings": [
+      "setup",
+      "exercise"
+    ],
+    "native/cua/computer": [
+      "exercise",
+      "end-task"
+    ],
+    "native/cua/computer.target": [
+      "exercise",
+      "end-task"
+    ],
+    "native/cua/computer.launch-app": [
+      "exercise",
+      "end-task"
+    ],
+    "native/cua/getapp": [
+      "exercise",
+      "end-task"
+    ],
+    "native/cua/listapps": [
+      "exercise",
+      "end-task"
+    ],
+    "native/cua/listwindows": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/getaxstate": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/getscreenshot": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/getaxstateandscreenshot": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/click": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/drag": [
+      "exercise",
+      "end-task"
+    ],
+    "native/app/scroll": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/scroll": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/selecttext": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/setvalue": [
+      "exercise",
+      "end-task"
+    ],
+    "native/target-app-decorated-tab/performsecondaryaction": [
+      "exercise",
+      "end-task"
+    ],
+    "native/app/presskey": [
+      "exercise",
+      "end-task"
+    ],
+    "native/app/typetext": [
+      "exercise",
+      "end-task"
+    ],
+    "native/app/paste": [
+      "exercise",
+      "end-task"
+    ]
+  },
+  "pending": [],
+  "limitations": [
+    {
+      "case": "secrets/native-live/linux/type-text",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/invalid-label",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/reserved-label",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/unsupported-shape",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/disabled",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/unavailable",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/unknown-label",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/unsafe-store",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/refuse/unreadable-store",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/errors/post-read-sanitized",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/reports/labels-not-values",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/no-substitution/embedded-marker",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/no-substitution/unsupported-methods-and-fields",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    },
+    {
+      "case": "secrets/native-live/no-substitution/javascript-strings",
+      "notes": [
+        "Real selected Linux facade, production secret wrapper and scratch fileStore; downstream native service is a recorder double, not live native input."
+      ]
+    }
+  ],
+  "caseProofs": {
+    "secrets/native-live/linux/type-text": "service-boundary-double",
+    "secrets/native-live/refuse/invalid-label": "service-boundary-double",
+    "secrets/native-live/refuse/reserved-label": "service-boundary-double",
+    "secrets/native-live/refuse/unsupported-shape": "service-boundary-double",
+    "secrets/native-live/refuse/disabled": "service-boundary-double",
+    "secrets/native-live/refuse/unavailable": "service-boundary-double",
+    "secrets/native-live/refuse/unknown-label": "service-boundary-double",
+    "secrets/native-live/refuse/unsafe-store": "service-boundary-double",
+    "secrets/native-live/refuse/unreadable-store": "service-boundary-double",
+    "secrets/native-live/errors/post-read-sanitized": "service-boundary-double",
+    "secrets/native-live/reports/labels-not-values": "service-boundary-double",
+    "secrets/native-live/no-substitution/embedded-marker": "service-boundary-double",
+    "secrets/native-live/no-substitution/unsupported-methods-and-fields": "service-boundary-double",
+    "secrets/native-live/no-substitution/javascript-strings": "service-boundary-double",
+    "native/cua/computer": "native-live",
+    "native/cua/computer.target": "native-live",
+    "native/cua/computer.launch-app": "native-live",
+    "native/cua/getapp": "native-live",
+    "native/cua/listapps": "native-live",
+    "native/cua/listwindows": "native-live",
+    "native/target-app-decorated-tab/getaxstate": "native-live",
+    "native/target-app-decorated-tab/getscreenshot": "native-live",
+    "native/target-app-decorated-tab/getaxstateandscreenshot": "native-live",
+    "native/target-app-decorated-tab/click": "native-live",
+    "native/target-app-decorated-tab/drag": "native-live",
+    "native/app/scroll": "native-live",
+    "native/target-app-decorated-tab/scroll": "native-live",
+    "native/target-app-decorated-tab/selecttext": "native-live",
+    "native/target-app-decorated-tab/setvalue": "native-live",
+    "native/target-app-decorated-tab/performsecondaryaction": "native-live",
+    "native/app/presskey": "native-live",
+    "native/app/typetext": "native-live",
+    "native/app/paste": "native-live"
+  },
+  "engine": "vendor",
+  "engineBin": null,
+  "engineAnswered": [
+    {
+      "case": "native/cua/computer",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-3R9l2m/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-3R9l2m/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/cua/computer.target",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-JYpJuy/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-JYpJuy/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/cua/computer.launch-app",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-ijSdRf/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-ijSdRf/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/cua/getapp",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-2YtgSK/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-2YtgSK/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/cua/listapps",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-wMPXRF/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-wMPXRF/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/cua/listwindows",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-z9DaWY/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-z9DaWY/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/target-app-decorated-tab/getaxstate",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-cOLxkV/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-cOLxkV/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/target-app-decorated-tab/getscreenshot",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-vMeAhE/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-vMeAhE/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/target-app-decorated-tab/getaxstateandscreenshot",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-OYSK82/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-OYSK82/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/target-app-decorated-tab/click",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-64qKbq/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-64qKbq/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/target-app-decorated-tab/drag",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-hG9ZmL/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-hG9ZmL/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/app/scroll",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-MhDJJZ/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-MhDJJZ/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/target-app-decorated-tab/scroll",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-VAQyXH/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-VAQyXH/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/target-app-decorated-tab/selecttext",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-DYJNjn/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-DYJNjn/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/target-app-decorated-tab/setvalue",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-pOZ10w/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-pOZ10w/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/target-app-decorated-tab/performsecondaryaction",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-B2WG4X/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-B2WG4X/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/app/presskey",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-HoeKKY/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-HoeKKY/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/app/typetext",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-fU0Oqo/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-fU0Oqo/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    },
+    {
+      "case": "native/app/paste",
+      "requested": "vendor",
+      "expected": "/Users/new/.cp/cua-m4t1-cap-Ow2rK2/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+      "error": null,
+      "observed": [
+        {
+          "exe": "/Users/new/.cp/cua-m4t1-cap-Ow2rK2/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+          "kind": "vendor",
+          "parent": "trusted-worker.mjs"
+        }
+      ]
+    }
+  ],
+  "complete": true,
+  "connections": [
+    "connection-1",
+    "connection-2",
+    "connection-3",
+    "connection-4",
+    "connection-5",
+    "connection-6",
+    "connection-7",
+    "connection-8",
+    "connection-9",
+    "connection-10",
+    "connection-11",
+    "connection-12",
+    "connection-13",
+    "connection-14",
+    "connection-15",
+    "connection-16",
+    "connection-17",
+    "connection-18",
+    "connection-19",
+    "connection-20",
+    "connection-21",
+    "connection-22",
+    "connection-23",
+    "connection-24",
+    "connection-25",
+    "connection-26",
+    "connection-27",
+    "connection-28",
+    "connection-29",
+    "connection-30",
+    "connection-31",
+    "connection-32",
+    "connection-33",
+    "connection-34"
+  ],
+  "hostAttestations": [
+    {
+      "connection": "connection-1",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-oWGaf2",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-oWGaf2/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "7ebbf55a-778d-45f9-8caa-ac3f16c401e2"
+      }
+    },
+    {
+      "connection": "connection-2",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-OFOS5z",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-OFOS5z/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "fd8584b6-17cd-4c2d-add7-19d7464019ba"
+      }
+    },
+    {
+      "connection": "connection-3",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-9hKjrA",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-9hKjrA/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "de741cc3-2ca8-4d86-9bf0-1f9ee8611ce5"
+      }
+    },
+    {
+      "connection": "connection-4",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-1tTAfd",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-1tTAfd/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "2fb7dd45-951a-4533-b40c-0fa747555a34"
+      }
+    },
+    {
+      "connection": "connection-5",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-lwCicl",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-lwCicl/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "cd9bc7cd-435e-4e52-8127-08ab827a8158"
+      }
+    },
+    {
+      "connection": "connection-6",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-TL5hMz",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-TL5hMz/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "4620c137-21d4-4ac1-af3e-4a634e73614d"
+      }
+    },
+    {
+      "connection": "connection-7",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-H6mf5P",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-H6mf5P/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "2e783524-68d9-4ae6-96d1-8a95bb2669fe"
+      }
+    },
+    {
+      "connection": "connection-8",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-O74sKu",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-O74sKu/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "c1a1835e-5a86-4ba8-8c09-9fc843453057"
+      }
+    },
+    {
+      "connection": "connection-9",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-30Fsjy",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-30Fsjy/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "1ebfc9de-9e75-48c8-a98e-fd8afad3e9ca"
+      }
+    },
+    {
+      "connection": "connection-10",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-H3at6P",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-H3at6P/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "1cdb31c9-6e72-4904-927d-88e555e8d1af"
+      }
+    },
+    {
+      "connection": "connection-11",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-N79Cg8",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-N79Cg8/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "174dbda6-513c-490e-97a2-045af583cf14"
+      }
+    },
+    {
+      "connection": "connection-12",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-3qcLH4",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-3qcLH4/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "0abb8b4c-0821-42e3-bf66-d4c801f4fbb7"
+      }
+    },
+    {
+      "connection": "connection-13",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-MSmiZ2",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-MSmiZ2/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "9db3a996-902e-4615-982f-2fcda16611bb"
+      }
+    },
+    {
+      "connection": "connection-14",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-gXxs5f",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-gXxs5f/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "536cc186-52fa-43d6-8545-accf28283e31"
+      }
+    },
+    {
+      "connection": "connection-15",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-uTCYE0",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-uTCYE0/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "4f0898c6-e31f-4997-8872-6da013a52ecd"
+      }
+    },
+    {
+      "connection": "connection-16",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-3R9l2m",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-3R9l2m/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 239,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "c9ab2e6a-7bd5-45ec-8fac-9c3756dda1dd"
+      }
+    },
+    {
+      "connection": "connection-17",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-JYpJuy",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-JYpJuy/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 235,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "cae9c1b4-11ed-4576-9bda-3a7a0edd3ace"
+      }
+    },
+    {
+      "connection": "connection-18",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-ijSdRf",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-ijSdRf/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 216,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "7d25048c-9c68-49b1-8897-8a92d6013579"
+      }
+    },
+    {
+      "connection": "connection-19",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-2YtgSK",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-2YtgSK/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 235,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "367db5f6-7f7d-461b-9f46-e2b5e50203a0"
+      }
+    },
+    {
+      "connection": "connection-20",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-wMPXRF",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-wMPXRF/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 240,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "fb870811-0098-4745-89f6-54e7afe646bb"
+      }
+    },
+    {
+      "connection": "connection-21",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-z9DaWY",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-z9DaWY/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 238,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "1acc9e66-7fa9-496d-be3b-b95053ee628a"
+      }
+    },
+    {
+      "connection": "connection-22",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-cOLxkV",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-cOLxkV/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 259,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "a7bf8dc5-8581-4124-aa7a-e006722d620d"
+      }
+    },
+    {
+      "connection": "connection-23",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-vMeAhE",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-vMeAhE/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 243,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "8bacf55e-9035-4e84-a209-e34afb37b75e"
+      }
+    },
+    {
+      "connection": "connection-24",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-OYSK82",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-OYSK82/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 272,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "ce90ae62-714a-4729-a8e0-f37fcf4816d8"
+      }
+    },
+    {
+      "connection": "connection-25",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-64qKbq",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-64qKbq/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 243,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "91434c76-6939-4a71-9424-53d5d0b978b8"
+      }
+    },
+    {
+      "connection": "connection-26",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-hG9ZmL",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-hG9ZmL/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 243,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "67166793-5f64-4b2a-926e-1e41b2147ffb"
+      }
+    },
+    {
+      "connection": "connection-27",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-MhDJJZ",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-MhDJJZ/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 249,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "7bf7c05e-546a-45d7-8ba6-709b5ced7990"
+      }
+    },
+    {
+      "connection": "connection-28",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-VAQyXH",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-VAQyXH/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 239,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "5d4b8c63-bf55-475f-992e-80f532b5b50f"
+      }
+    },
+    {
+      "connection": "connection-29",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-DYJNjn",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-DYJNjn/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 242,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "2d380467-a92b-4d4c-961f-a44cc0671a8f"
+      }
+    },
+    {
+      "connection": "connection-30",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-pOZ10w",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-pOZ10w/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 256,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "f7e0a1d6-efd8-477b-8a16-75cc3f765f8d"
+      }
+    },
+    {
+      "connection": "connection-31",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-B2WG4X",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-B2WG4X/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 240,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "e17dceef-81f7-4e8d-b234-d6f0ac14eba5"
+      }
+    },
+    {
+      "connection": "connection-32",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-HoeKKY",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-HoeKKY/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 220,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "c462a123-aee0-4e84-94f8-afcd19bf23e2"
+      }
+    },
+    {
+      "connection": "connection-33",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-fU0Oqo",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-fU0Oqo/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 237,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "9ebad2ce-1ee1-4c2c-935b-184bdf44962b"
+      }
+    },
+    {
+      "connection": "connection-34",
+      "host": "cua",
+      "serverInfo": {
+        "name": "cua-repl-host",
+        "version": "0.5.0"
+      },
+      "executionFacts": {
+        "checkout": "/Users/new/Developer/GitHub/cua-parity",
+        "home": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF",
+        "commit": "e0168c63871cfa140ea81e2f97ec6a8f9d73adc1",
+        "dirty": false,
+        "release": "26.928.40906-linux-x64",
+        "node": "v24.22.1",
+        "runtimeNode": "v24.21.0",
+        "platform": "linux",
+        "ownNode": {
+          "path": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/node/24.22.0/bin/node",
+          "version": "v24.22.0"
+        },
+        "browserRoute": {
+          "route": "cua",
+          "recordPath": "/Users/new/.local/share/cua-parity-remote/parity-dr8EDF/chrome/cua-registration.json",
+          "chatgptRecordPath": null,
+          "manifests": []
+        },
+        "answeringHost": {
+          "home": "/Users/new/.cp/cua-m4t1-cap-Ow2rK2",
+          "ownNode": {
+            "path": "/Users/new/.cp/cua-m4t1-cap-Ow2rK2/node/24.22.0/bin/node",
+            "version": "v24.22.0"
+          },
+          "nodeMode": "managed"
+        }
+      },
+      "_meta": {
+        "codex/nodeReplExecutionDurationMs": 269,
+        "cua/replHost": {
+          "host": "cua",
+          "version": "0.5.0"
+        },
+        "cua/taskId": "9bdbd725-4203-4ca9-bdac-b98e1481e27e"
+      }
+    }
+  ],
+  "vendorDefects": [
+    {
+      "id": "linux-x64-vendor-engine-typetext-not-inserted",
+      "case": "native/app/typetext",
+      "platform": "linux",
+      "reason": "On the #171 x86-64 VM the pinned vendor engine (sky_linux_x64, under cua's own host, the only one Linux serves) answers typeText with `editable Paste did not insert text` after its 10 s EditableText.PasteText attempt; gedit (GTK 3) survives and the marker never reaches the text. Plan of Work M2's positive oracle requires success, exactly one marker and a surviving window, so this is recorded vendor behaviour, not passing coverage. This declaration names x64 only; arm64's distinct crash outcome will be measured and declared with M5's native-suite run."
+    },
+    {
+      "id": "linux-x64-vendor-engine-paste-not-inserted",
+      "case": "native/app/paste",
+      "platform": "linux",
+      "reason": "On the #171 x86-64 VM the pinned vendor engine (sky_linux_x64, under cua's own host, the only one Linux serves) answers paste with `editable Paste did not insert text` after its 10 s EditableText.PasteText attempt; gedit (GTK 3) survives and the marker never reaches the text. Plan of Work M2's positive oracle requires success, exactly one marker and a surviving window, so this is recorded vendor behaviour, not passing coverage. This declaration names x64 only; arm64's distinct crash outcome will be measured and declared with M5's native-suite run."
+    }
+  ],
+  "coveredCases": 31,
+  "recordedCases": 33
+}

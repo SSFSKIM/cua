@@ -167,7 +167,7 @@ pub const FAMILIES: &[Family] = &[
         feff_after_astral: false,
         drop_changes_desktop: true,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
-                   m31-drag-partial, m31-drag-partial-top, m31-dnd-visible",
+                   m31-drag-partial, m31-drag-partial-top, m31-dnd-visible, m31-dnd-candidate, m31-dnd-candidate-stats",
     },
     Family {
         name: "Chromium",
@@ -228,11 +228,13 @@ pub const FAMILIES: &[Family] = &[
         drop_changes_desktop: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
                    m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600; m3/kinds/ \
-                   runs m31-kinds-covered, m31-kinds-partial, m31-drag-covered, m31-drag-partial",
+                   runs m31-kinds-covered, m31-kinds-partial, m31-kinds-partial-deep, m31-move-covered, \
+                   m31-drag-covered, m31-drag-partial, m31-drag-partial-deep, m31-dnd-covered",
     },
-    // GTK 4 reads input only as XInput 2 events: a synthetic key, click, scroll, drag or pointer move never arrives, covered
-    // or visible, in every engine (M0.4; M3.1), so these take the foreground route in dedicated mode and are refused in
-    // shared mode, as its paste chord is. Its element actions through AT-SPI take effect (M0.4's element-click run).
+    // GTK 4 reads input only as XInput 2 events: a synthetic key, click, scroll, drag or pointer move never arrives,
+    // covered or visible, in every engine (M0.4; M3.1), so these take the foreground route in dedicated mode and are
+    // refused in shared mode, as its paste chord is. Its element actions through AT-SPI take effect (M0.4's
+    // element-click run).
     Family {
         name: "GTK 4",
         toolkit: Some("GTK"),
@@ -269,7 +271,7 @@ pub const FAMILIES: &[Family] = &[
         feff_after_astral: false,
         drop_changes_desktop: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible; m3/kinds/ runs m31-kinds-covered, \
-                   m31-kinds-visible, m31-drag-covered, m31-drag-visible-new",
+                   m31-kinds-visible, m31-move-covered, m31-drag-covered, m31-drag-visible-new",
     },
     // Qt (kate on Qt 5.15, qtcreator on Qt 6.4) takes synthetic clicks and keys (M0.4) but no synthetic wheel event,
     // covered or visible, in every engine (M3.1): probably because its xcb backend reads the wheel through XInput 2.
@@ -286,7 +288,7 @@ pub const FAMILIES: &[Family] = &[
         }],
         feff_after_astral: false,
         drop_changes_desktop: false,
-        evidence: "m3/kinds/ runs m31-kinds-covered, m31-kinds-visible",
+        evidence: "m3/kinds/ runs m31-kinds-covered, m31-kinds-visible, m31-qt-covered, m31-qt-visible",
     },
     // A VTE terminal pastes with Ctrl+Shift+V; Ctrl+V inserts the next key literally in a shell.
     Family {

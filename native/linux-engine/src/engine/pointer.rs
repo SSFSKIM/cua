@@ -367,7 +367,13 @@ impl Engine {
                 let (dropped, waited) = crate::dnd::signature_within(before, || self.x.standing(window));
                 self.extra.insert(
                     "dnd".into(),
-                    json!({ "in_front": false, "started": started, "late": late, "signature": dropped, "settle_ms": waited.as_secs_f64() * 1000.0 }),
+                    json!({
+                        "in_front": false,
+                        "started": started,
+                        "late": late,
+                        "signature": dropped,
+                        "settle_ms": waited.as_secs_f64() * 1000.0,
+                    }),
                 );
                 let app = self.x.get_window(window)?.app;
                 bail!(if dropped {

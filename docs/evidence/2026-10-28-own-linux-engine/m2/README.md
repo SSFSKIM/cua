@@ -16,19 +16,23 @@ M3's (Decision Log, M2 pre-flight).
 `node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$BUILT" --scene
 gedit,chrome,over-budget,retention,chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target --ops all`
 (Concrete Steps' M2 scenes, plus `paste-target`, the GTK 3 window the paste cases need), three blocks. `diff/results.jsonl`
-and `diff/summary.md` hold four runs, all with the same engine build (`cua-engine 0.2.0 (e0168c63871c)`; the review
-round changed only the harness):
+and `diff/summary.md` hold six runs, all with the same engine build (`cua-engine 0.2.0 (e0168c63871c)`; the review
+rounds changed only the harness):
 
 | run | harness | what it is |
 |---|---|---|
 | `m2-review` | e871a099 | the verdict run, every judge of the M2.3 review in place |
 | `m2-review-launch` | e871a099 | `desktop launch_app` alone, 21 blocks |
 | `m2-review-foreground` | e629eb3d | gnome-text-editor's dedicated `type_text` and `restore_refused` again, each sample recording the changes its allowance excused |
+| `m2-review2-foreground` | 6dc52571 | the same two again under the second review's stacking judge: the restack events recorded and judged on every sample |
+| `m2-review2-cases` | 6dc52571 | every paste safety case again, with failed cleanups failing their case |
 | `m2-wire` | e0168c63 | the first sitting, before the review; its verdicts as recorded then |
 
-In each run the stub engine failed both the witness and the audit, and the foreground negative check (another window
-raised and the top one raised back, so the order ends as it began) failed the foreground allowance on the stacking
-order (`m2-wire` predates that check): every run is valid.
+In each run the stub engine failed both the witness and the audit, and every review run's foreground checks held
+(below; `m2-wire` predates them): every run is valid. The foreground judge of the first review round (`m2-review`,
+`m2-review-foreground`) read the stacking order from `_NET_CLIENT_LIST_STACKING` alone; the second round's
+(`m2-review2-*`) judges the restack events, and its two runs are the stacking evidence for gnome-text-editor's
+dedicated case and `restore_refused`.
 
 **`m2-review`'s verdict line:** `run valid; FAIL: desktop launch_app cua`. Every text and clipboard verdict and every
 safety case passes. The one failure is `desktop launch_app`'s cold request, 4.37 ms against the newest build's 4.02:
@@ -99,23 +103,30 @@ were clean on every one. The two dedicated-mode cases:
 
 - **gedit, `--desktop dedicated`** (`type_text_dedicated`): expected and taken `background` on 18/18, and the
   witness, which allows nothing on that route, stayed clean on 18/18.
-- **gnome-text-editor, `--desktop dedicated`** (`type_text`): expected and taken `foreground` on 18/18. The witness
-  allowed exactly the target's activation: the active window and the input focus going into it, and each change of
-  the stacking order the target's raise. The witness records the order on both sides of every change, read after each
-  notify, and judges each one; `m2-review-foreground` keeps what the allowance excused on every sample (18 stacking
-  changes, each the target rising to the top). Nothing changed in the 300 ms after each request, and no grab was left.
-  The audit is not required where the foreground route is expected, its activation and XTEST input being the route
-  itself.
-- **The foreground negative check** (each review run): the window just below the top raised, then the top one raised
-  back, inside one span. The order ends as it began, which the earlier before-and-after comparison could not tell from
-  a raise of the top window; judged as a foreground request on the top window, the allowance failed it on the stacking
-  order.
+- **gnome-text-editor, `--desktop dedicated`** (`type_text`): expected and taken `foreground` on 18/18 (in
+  `m2-review` and in `m2-review2-foreground`). The witness allowed exactly the target's activation: the active window
+  and the input focus going into it, and the stacking changed only by the target's raise. The stacking is judged on
+  the restack events, which the server reports one by one and never coalesces: with `SubstructureNotify` on the root,
+  the witness records the root's children when the span begins and every restack, map, unmap, creation and
+  destruction of one in order, and only the target's window manager frame may move, only to the top.
+  `m2-review2-foreground` keeps them on every sample: one `ConfigureNotify` each, the target's frame placed above the
+  previous top frame, and 189 creations and destructions of unmapped windows,
+  which change nothing stacked; the 18 samples' witness clean. `_NET_CLIENT_LIST_STACKING` stays a
+  second record, each change read back the target's raise. Nothing changed in the 300 ms after each request, and no
+  grab was left. The audit is not required where the foreground route is expected, its activation and XTEST input being
+  the route itself.
+- **The foreground checks** (each review run; `m2-review2-*`'s line in `diff/summary.md`): judged as foreground requests,
+  another window raised and the top one raised back 50 ms apart fails; the same two raises under one server grab
+  (`xprobe restack-grabbed`), where the property read after its two notifies shows no change at all and the first
+  round's judge passed it, fails on the two restack events; and the target raised, with the window manager's property
+  rewrites, passes.
 
 ### The paste safety cases (Acceptance 6; `diff/summary.md`, "Paste safety cases")
 
 cua alone, after the blocks, each on windows of its own, each ending every engine, clipboard owner and target window
-it started however it ended. Every case passed in `m2-review` (and in `m2-wire`; `restore_refused` again in
-`m2-review-foreground`); the timings are `m2-review`'s:
+it started however it ended; a disposal that fails fails its case. Every case passed in `m2-review` and again in
+`m2-review2-cases`, with no cleanup failure (and in `m2-wire`; `restore_refused` also in both foreground runs); the
+timings are `m2-review`'s:
 
 | case | what it showed |
 |---|---|

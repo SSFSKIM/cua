@@ -444,3 +444,76 @@ The cases' bus trace (101 calls of 8 connections): PasteText 0, InsertText 0, Se
 
 run valid; every verdict PASS, finished 2026-10-30T12:21:53.500Z
 
+## m2-review2-foreground
+
+commit 6dc5257162f6513c48f9e20016fa6189b99a6fd8; cua-engine 0.2.0 (e0168c63871c); occlusion covered; 3 blocks; 7 warm tree reads and 5 warm inputs per block
+
+negative check: the witness failed the activating stub (stacking, active, focus); the X request audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput, 124 requests traced)
+
+foreground checks: the allowance failed another window raised and the top one raised back; failed the same two raises under one server grab (2 restack events, 0 property changes read); passed the target raised
+
+| scene | op | engine | cold ms | warm ms | n warm | bus calls cold / warm | awaited alone | wasted max | witness clean | audit | effect | equal | verdict |
+|---|---|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---|
+| gnome-text-editor | type_text | pinned | 349 | 369.3 | 15 | – | – | – | 18/18 | clean | – | 18/18 |  |
+| gnome-text-editor | type_text | newest | 780.4 | 786.2 | 15 | – | – | – | 18/18 | clean | – | 0/18 |  |
+| gnome-text-editor | type_text | cua | 68.2 | 63.4 | 15 | – | – | – | 18/18 | **_NET_ACTIVE_WINDOW ClientMessage, ConfigureWindow stack-mode, SetInputFocus, XTEST FakeInput** | 18/18 | 18/18 (18 declared) | PASS (declared: type_text) |
+| gnome-text-editor | type_text | **bar** | – | – | | | | | | | | | |
+
+Text commands (M2): the clipboard after each sample (the harness's prior text kept, or for clipboard_write what its owner set between the read and the write), the route cua's request must take and the routes it reported (a sample whose route differs fails its witness), the witness's allowance for the foreground route, and the text calls of each engine's bus pass:
+
+| scene | op | engine | clipboard kept | expected route | routes | foreground allowed | PasteText / InsertText / SetTextContents |
+|---|---|---|---|---|---|---|---|
+| gnome-text-editor | type_text | pinned | 18/18 | – | – | – | 0 / 0 / 0 |
+| gnome-text-editor | type_text | newest | 18/18 | – | – | – | 0 / 0 / 0 |
+| gnome-text-editor | type_text | cua | 18/18 | foreground | foreground | stacking, focus, active | 0 / 0 / 0 |
+
+Paste safety cases (cua alone; safety.mjs):
+
+| scene | case | trial | verdict | answer | ms | detail |
+|---|---|---:|---|---|---:|---|
+| gnome-text-editor | restore_refused | 0 | PASS | success | 63 | route foreground |
+
+The cases' bus trace (101 calls of 8 connections): PasteText 0, InsertText 0, SetTextContents 0.
+
+run valid; every verdict PASS, finished 2026-10-30T12:52:04.412Z
+
+## m2-review2-cases
+
+commit 6dc5257162f6513c48f9e20016fa6189b99a6fd8; cua-engine 0.2.0 (e0168c63871c); occlusion covered; 3 blocks; 7 warm tree reads and 5 warm inputs per block
+
+negative check: the witness failed the activating stub (stacking, active, focus); the X request audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput, 124 requests traced)
+
+foreground checks: the allowance failed another window raised and the top one raised back; failed the same two raises under one server grab (2 restack events, 0 property changes read); passed the target raised
+
+| scene | op | engine | cold ms | warm ms | n warm | bus calls cold / warm | awaited alone | wasted max | witness clean | audit | effect | equal | verdict |
+|---|---|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---|
+
+Paste safety cases (cua alone; safety.mjs):
+
+| scene | case | trial | verdict | answer | ms | detail |
+|---|---|---:|---|---|---:|---|
+| chrome-textarea | focus_change | 0 | PASS | `requested field or selection changed before dispatch; nothing was sent` | 147.15823498368263 |  |
+| chrome-textarea | focus_change | 1 | PASS | `requested field or selection changed before dispatch; nothing was sent` | 142.03955399990082 |  |
+| chrome-textarea | focus_change | 2 | PASS | `requested field or selection changed before dispatch; nothing was sent` | 145.29976800084114 |  |
+| chrome-textarea | focus_change_takeover | 0 | PASS | `requested field or selection changed before dispatch; nothing was sent` | 146.78666499257088 | retake after 0 ms |
+| chrome-textarea | focus_change_takeover | 1 | PASS | `requested field or selection changed before dispatch; nothing was sent` | 145.46600100398064 | retake after 20 ms |
+| chrome-textarea | focus_change_takeover | 2 | PASS | `requested field or selection changed before dispatch; nothing was sent` | 147.19372099637985 | retake after 50 ms |
+| chrome-textarea | silent_owner | 0 | PASS | `clipboard capture timed out: the clipboard owner did not answer TARGETS within 500 ms; not` | 635 | next request 155 ms |
+| chrome-textarea | concurrent | 0 | PASS | success, success | 214,181 |  |
+| chrome-textarea | concurrent | 1 | PASS | success, success | 201,170 |  |
+| chrome-textarea | concurrent | 2 | PASS | success, success | 222,191 |  |
+| chrome-textarea | contention | 0 | PASS | 40 pastes | 161 | max 207 ms |
+| chrome-textarea | late_page | 0 | PASS | `Paste was sent once and could not be confirmed; read the field before retrying` | 2154 | next request 3 ms |
+| chrome-textarea | ignored_page | 0 | PASS | `Paste was sent once and could not be confirmed; read the field before retrying` | 2140 | next request 6 ms |
+| paste-target | stalled_incr | 0 | PASS | `Paste was sent once and could not be confirmed; read the field before retrying` | 2141 | next request 4 ms; transfer ended |
+| paste-target | late_convert | 0 | PASS | `Paste was sent once and could not be confirmed; read the field before retrying` | 2129 | late-convert:1500 |
+| paste-target | late_convert | 1 | PASS | `Paste was sent once and could not be confirmed; read the field before retrying` | 2130 | late-convert:3000 |
+| paste-target | late_convert | 2 | PASS | `Paste was sent once and could not be confirmed; read the field before retrying` | 2129 | late-convert-current:3000 |
+| paste-target | unreadable | 0 | PASS | `Paste was sent once and could not be confirmed; read the field before retrying` | 140 |  |
+| gedit | caret_placed | 0 | PASS | success | 168 | route background |
+| gnome-text-editor | restore_refused | 0 | PASS | success | 60 | route foreground |
+
+The cases' bus trace (22721 calls of 174 connections): PasteText 0, InsertText 0, SetTextContents 0.
+
+run valid; every verdict PASS, finished 2026-10-30T12:53:22.602Z
+

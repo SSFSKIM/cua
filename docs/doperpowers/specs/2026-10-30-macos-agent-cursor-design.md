@@ -20,7 +20,7 @@ Vocabulary used throughout:
 ## Progress
 
 - [x] (2026-10-30) Design session (cua_repl#1ea561bc, coordinating #171 in parallel): three research readings (engine hooks, the vendor cursor's behaviour and logic, prior art and macOS overlay technique), three question rounds with the owner, an animated look mockup; design approved by the owner.
-- [ ] Spec review (independent spec review and the execution section's buildability review).
+- [x] (2026-10-30) Spec review: round 1 (spec review and buildability review, twelve findings) and round 2 (three findings), all folded (Decision Log).
 - [ ] M1 — The cursor in the engine: overlay, motion, states.
 - [ ] M2 — Identity, settings, lifecycle wiring and the harness.
 - [ ] M3 — The attended proof on the MacBook, the plugin bump, the docs.
@@ -146,7 +146,7 @@ Energy: nothing animates while the cursor is hidden; the rock animates only whil
 
 Three calls, none of which waits (O5):
 - **`begin` and `end`** around every execute request, in the universal prologue and its `defer` in `Methods.swift` (EH §2): `begin` marks the session active (cancels a fade, clears taken over, fades a hidden cursor back in at its last point in the request's app when the request is keyboard-only), `end` marks it idle and starts the 5 s timer. They are pure bookkeeping on the hub's lock.
-- **`act`**, placed after an action's target is resolved and before the event or accessibility action goes out, at the points located in EH §2:
+- **`act`**, placed after an action's target is resolved and before its event goes out (for the accessibility-only methods, right after their operation returns, below), at the points located in EH §2:
   - `deliverPointer` in `native/engine/Sources/Engine/Input.swift`: every coordinate click, right click, double click and drag, and route-1 fallback clicks;
   - the element click's point in `Input.swift` (route 1);
   - scroll in `native/engine/Sources/Engine/ScrollDrag.swift`;

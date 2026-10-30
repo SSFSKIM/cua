@@ -1,9 +1,10 @@
 //! Per-family settings (Design, Device mode and the foreground route; Text and clipboard; Clicks, scroll, drag, move):
 //! what an application family needs that the engine's defaults do not give it, keyed by its X11 class (`WM_CLASS`'s
 //! class part) or its AT-SPI `Application.ToolkitName` (with the toolkit's major version where it matters), each entry
-//! with the evidence runs that showed it. M1a.4 started it with the drag pacing; M2 adds each family's paste route,
-//! the input kinds it ignores on the background route with their conditions (the paste chord so far; M3 adds the
-//! clicks and keys) and how its Text reports characters beyond the BMP.
+//! with the evidence runs that showed it. M1a.4 started it with the drag pacing; M2 adds each family's paste route
+//! and how its Text reports characters beyond the BMP; the input kinds it ignores on the background route, with their
+//! conditions, came with M2 (the paste chord, `type_characters`' keys) and M3 (coordinate and right clicks, and the
+//! keys of `press_key`, `key_down` and `key_up`).
 //!
 //! An unlisted family takes everything on the background route: a drag sends the pinned build's events (one motion per
 //! pixel of the path, behaviour §10.4) with no wait after a sample, after the press or before the release, and text
@@ -34,8 +35,11 @@ impl DragPacing {
 pub enum Kind {
     /// The paste chord of `type_text` and `clipboard_write`.
     Paste,
-    /// Synthetic keys: `type_characters` reads it now; `press_key`, `key_down` and `key_up` from M3.
+    /// Synthetic keys: `press_key`, `key_down`, `key_up` and `type_characters`.
     Keys,
+    /// Synthetic button presses at a point: a coordinate `click` into a window (its chord included) and an element's
+    /// right click, which presses button 3 at the element's visible point. An element's primary click is its action.
+    Clicks,
 }
 
 /// When a listed kind is ignored.
@@ -43,8 +47,6 @@ pub enum Kind {
 pub enum When {
     Always,
     /// Unless the window is fully unobscured (`cover.rs`; any doubt counts as obscured).
-    // M3 lists Gecko's coordinate clicks under it (Decision Log, M1a.3); the paste route already honours it.
-    #[allow(dead_code)]
     UnlessUnobscured,
 }
 
@@ -143,7 +145,9 @@ pub const FAMILIES: &[Family] = &[
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller",
     },
     // Gecko's Text answers a U+FEFF after each character beyond the BMP (M0.4), which the paste's confirmation strips
-    // there and only there, so a real U+FEFF still counts.
+    // there and only there, so a real U+FEFF still counts. Gecko ignores synthetic coordinate clicks while any of its
+    // window is covered or off the screen, by a rule that is neither the click point nor the visible area (M0.4 at
+    // 1280×781; M1a.3 at 800×600), and takes them while it is fully unobscured.
     Family {
         name: "Gecko",
         toolkit: Some("Gecko"),
@@ -155,13 +159,17 @@ pub const FAMILIES: &[Family] = &[
             release: Duration::from_millis(30),
         },
         paste: DEFAULT_PASTE,
-        ignores: &[],
+        ignores: &[Ignored {
+            kind: Kind::Clicks,
+            when: When::UnlessUnobscured,
+        }],
         feff_after_astral: true,
-        evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text)",
+        evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
+                   m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600",
     },
-    // GTK 4 reads input only as XInput 2 events: a synthetic key never arrives, covered or visible, in every engine
-    // (M0.4), so its paste chord and its keys take the foreground route in dedicated mode and are refused in shared
-    // mode.
+    // GTK 4 reads input only as XInput 2 events: a synthetic key or click never arrives, covered or visible, in every
+    // engine (M0.4), so its paste chord, its keys and its clicks take the foreground route in dedicated mode and are
+    // refused in shared mode. Its element actions through AT-SPI take effect (M0.4's element-click run).
     Family {
         name: "GTK 4",
         toolkit: Some("GTK"),
@@ -176,6 +184,10 @@ pub const FAMILIES: &[Family] = &[
             },
             Ignored {
                 kind: Kind::Keys,
+                when: When::Always,
+            },
+            Ignored {
+                kind: Kind::Clicks,
                 when: When::Always,
             },
         ],
@@ -324,6 +336,23 @@ mod tests {
                 .all(|f| f.name == "Gecko"),
             "the U+FEFF rule is Gecko's alone"
         );
+    }
+
+    #[test]
+    fn coordinate_clicks_are_ignored_by_gtk_4_always_and_by_gecko_unless_unobscured() {
+        let clicks = |class, toolkit: Option<Toolkit>| {
+            family(FAMILIES, Some(class), toolkit.as_ref()).and_then(|f| f.ignores(Kind::Clicks))
+        };
+        assert_eq!(
+            clicks("gnome-text-editor", Some(toolkit("GTK", Some("4.14.2")))),
+            Some(When::Always)
+        );
+        assert_eq!(clicks("firefox", None), Some(When::UnlessUnobscured));
+        assert_eq!(clicks("XTerm", None), None, "xterm takes synthetic clicks");
+        assert_eq!(clicks("Google-chrome", None), None);
+        assert_eq!(clicks("Gedit", Some(toolkit("GTK", Some("3.24.41")))), None);
+        let keys = |class| family(FAMILIES, Some(class), None).and_then(|f| f.ignores(Kind::Keys));
+        assert_eq!(keys("firefox"), None, "Gecko takes synthetic keys, covered or not");
     }
 
     #[test]

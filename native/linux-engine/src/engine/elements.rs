@@ -8,8 +8,10 @@ use serde_json::Value;
 
 use super::Engine;
 use super::pointer::{CLICK_HOLD, wheel};
+use super::way::Way;
 use crate::atspi::{self, Association};
 use crate::dbus::Bus;
+use crate::families::Kind;
 use crate::resolve;
 use crate::route::{Inputs, Target};
 use crate::tree::ObjRef;
@@ -66,11 +68,24 @@ impl Engine {
         Ok((x, bus, inputs))
     }
 
+    /// An element click: the primary click through the element's action 0, which every family takes; the right click
+    /// at its visible point, which a family that ignores synthetic clicks (`families.rs`) has refused in shared mode
+    /// and sent through the foreground route in dedicated mode, once the element resolved.
     pub(super) fn element_click(&mut self, window: u32, element: &str, button: MouseButton) -> Result<Value> {
         let element = self.resolve_element(window, element)?;
+        let target = match button {
+            MouseButton::Right => {
+                let way = self.route_for(Some(window), Kind::Clicks)?;
+                if way == Way::Foreground {
+                    self.enter(window)?;
+                }
+                way.target(window)
+            }
+            _ => Target::Window(window),
+        };
         let (x, bus, inputs) = self.parts()?;
         match button {
-            MouseButton::Right => match right_click(x, bus, inputs, &element) {
+            MouseButton::Right => match right_click(x, bus, inputs, &element, target) {
                 Ok(()) => Ok(Value::Null),
                 Err(RightClick::Click(error)) => Err(error),
                 Err(RightClick::Point(error)) => {
@@ -155,16 +170,17 @@ fn do_action(x: &mut X11, bus: &mut Bus, inputs: &mut Inputs, element: &Element,
 }
 
 /// A right click at the element's visible point, clipped by the window and by every `viewport` and `scroll pane`
-/// ancestor (behaviour §7.2). The session opens first and the point is found inside it, as the vendor orders them;
-/// a failure to find the point closes it like any other error.
+/// ancestor (behaviour §7.2), on `target`'s route. The session opens first and the point is found inside it, as the
+/// vendor orders them; a failure to find the point closes it like any other error.
 fn right_click(
     x: &mut X11,
     bus: &mut Bus,
     inputs: &mut Inputs,
     element: &Element,
+    target: Target,
 ) -> std::result::Result<(), RightClick> {
     let mut point_failed = false;
-    let result = inputs.with_route(x, Target::Window(element.info.id), |x, route, _| {
+    let result = inputs.with_route(x, target, |x, route, _| {
         let (rx, ry) = visible_point(bus, element, "right-clicking").inspect_err(|_| point_failed = true)?;
         route.place(x, rx, ry)?;
         route.button(x, 3, true)?;

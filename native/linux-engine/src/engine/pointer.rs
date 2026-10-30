@@ -8,8 +8,11 @@ use serde_json::Value;
 use x11rb::protocol::xproto::ConnectionExt as _;
 
 use super::Engine;
+use super::keyboard::target_of;
+use super::way::Way;
 use crate::desktop::Desktop;
 use crate::families::DragPacing;
+use crate::families::Kind;
 use crate::input::chord_keycodes;
 use crate::route::{Route, Target};
 use crate::wire::{
@@ -122,7 +125,9 @@ fn drag_along(x: &X11, route: &mut Route, keycodes: &[u8], points: &[(i16, i16)]
 
 impl Engine {
     /// A click at coordinates (window-relative, or the desktop's), or on the desktop at the pointer; element clicks
-    /// are `elements.rs`'s. The chord is parsed before anything else, as the vendor's errors come first.
+    /// are `elements.rs`'s. The chord is parsed before anything else, as the vendor's errors come first; a window whose
+    /// family ignores synthetic clicks is refused in shared mode, and in dedicated mode activated and clicked through
+    /// the desktop at the same window-relative point.
     pub(super) fn click(&mut self, input: Option<Value>) -> Result<Value> {
         let input: ClickInput = parse_input(input)?;
         let keycodes = chord(&self.x, input.key.as_deref())?;
@@ -154,8 +159,15 @@ impl Engine {
         let button = input.mouse_button.unwrap_or(MouseButton::Left).button();
         let count = input.click_count.unwrap_or(1);
         let hold = input.duration.map(Duration::from_millis).unwrap_or(CLICK_HOLD);
+        // a family that ignores synthetic clicks (families.rs): refused in shared mode, the foreground route in
+        // dedicated mode
+        let window = input.window.map(|w| w.id);
+        let way = self.route_for(window, Kind::Clicks)?;
+        if let (Way::Foreground, Some(window)) = (way, window) {
+            self.enter(window)?;
+        }
         let Engine { x, inputs, .. } = self;
-        inputs.with_route(x, Target::of(input.window), |x, route, _| {
+        inputs.with_route(x, target_of(way, window), |x, route, _| {
             let at = match position {
                 Some((px, py)) => {
                     let (rx, ry) = route.root_point(x, px, py)?;

@@ -44,7 +44,8 @@ impl Way {
     pub(super) fn target(self, window: Window) -> Target {
         match self {
             Way::Background => Target::Window(window),
-            Way::Foreground | Way::Desktop => Target::Desktop,
+            Way::Foreground => Target::Foreground(window),
+            Way::Desktop => Target::Desktop,
         }
     }
 }
@@ -59,6 +60,16 @@ impl Engine {
     /// ignores it; on the foreground route the window is activated and holds the X input focus before this returns.
     /// The route is recorded as the `--stats` line's `route`.
     pub(super) fn way_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Way> {
+        let way = self.route_for(window, kind)?;
+        if let (Way::Foreground, Some(window)) = (way, window) {
+            self.enter(window)?;
+        }
+        Ok(way)
+    }
+
+    /// [`Engine::way_for`]'s choice alone, with nothing activated yet: for a request that checks its own input
+    /// before the foreground route activates the window, so that one refused for its input changes nothing.
+    pub(super) fn route_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Way> {
         let way = match window {
             None => Way::Desktop,
             Some(window) => {
@@ -75,18 +86,26 @@ impl Engine {
                 }
             }
         };
-        self.extra.insert("route".into(), json!(way.name()));
-        if let (Way::Foreground, Some(window)) = (way, window) {
-            activate(&self.x, window)?;
-            let deadline = Instant::now() + ACTIVATION_WAIT;
-            while !focus_is_within(&self.x, window)? {
-                if Instant::now() >= deadline {
-                    bail!("window {window} did not take the input focus when activated; nothing was sent");
-                }
-                std::thread::sleep(FOCUS_POLL);
-            }
-        }
+        self.record_route(way);
         Ok(way)
+    }
+
+    /// The route on the `--stats` line, for the harness's witness.
+    pub(super) fn record_route(&mut self, way: Way) {
+        self.extra.insert("route".into(), json!(way.name()));
+    }
+
+    /// The foreground route's start: the window activated, and holding the X input focus.
+    pub(super) fn enter(&mut self, window: Window) -> Result<()> {
+        activate(&self.x, window)?;
+        let deadline = Instant::now() + ACTIVATION_WAIT;
+        while !focus_is_within(&self.x, window)? {
+            if Instant::now() >= deadline {
+                bail!("window {window} did not take the input focus when activated; nothing was sent");
+            }
+            std::thread::sleep(FOCUS_POLL);
+        }
+        Ok(())
     }
 }
 

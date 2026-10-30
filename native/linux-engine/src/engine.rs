@@ -134,6 +134,7 @@ impl Engine {
             "clipboard_write" => self.clipboard_write(request.input),
             "type_text" => self.type_text(request.input),
             "type_characters" => self.type_characters(request.input),
+            "capabilities" => self.capabilities(request.input),
             "server" => Err(anyhow!("server command cannot be nested")),
             command if wire::COMMANDS.contains(&command) => Err(anyhow!(wire::not_available(command))),
             command => Err(anyhow!("unknown command `{command}`")),
@@ -334,6 +335,16 @@ impl Engine {
             screenshots.push(json!({ "filepath": self.save_screenshot(&rgb, width, height)? }));
         }
         Ok(json!({ "ax_tree": tree, "ax_tree_source": source, "screenshots": screenshots, "window": info }))
+    }
+
+    /// `capabilities` (Design, The capability report): the backend's capabilities and the device mode.
+    fn capabilities(&mut self, input: Option<Value>) -> Result<Value> {
+        let _: NoInput = parse_input(input)?;
+        Ok(crate::caps::report(
+            self.cfg.desktop,
+            env!("CARGO_PKG_VERSION"),
+            env!("CUA_ENGINE_GIT_SHA"),
+        ))
     }
 
     /// `get_screenshot`: the desktop, one entry (behaviour §16).

@@ -4,6 +4,7 @@
 
 mod apps;
 mod atspi;
+mod caps;
 mod capture;
 mod clipboard;
 mod copy;

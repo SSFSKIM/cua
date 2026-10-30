@@ -1,8 +1,11 @@
 //! Which route a request's input takes, and the input state that outlives a request (behaviour §8.1, §11.3): a
 //! request naming a window goes through that window's background session, one without a window through the desktop
-//! (XTEST). Keys held with `key_down` keep their target: a window's session stays open across requests (its
-//! redirect, synthetic focus and time anchor reused with no X requests) until its last hold is released, and the
-//! held keys' counts are shared with every later request to the same target.
+//! (XTEST), and one whose window's family ignores the background route, in dedicated mode, through the desktop after
+//! the window is activated (the foreground route; Design, Device mode). Keys held with `key_down` keep their target: a
+//! window's session stays open across requests (its redirect, synthetic focus and time anchor reused with no X
+//! requests) until its last hold is released, and the held keys' counts are shared with every later request to the
+//! same target. The desktop's counts are one set, whichever window a foreground hold was made for: XTEST's keys are
+//! the server's.
 
 use std::collections::HashMap;
 
@@ -13,11 +16,13 @@ use crate::desktop::Desktop;
 use crate::input::{Pacing, Session};
 use crate::x11::X11;
 
-/// A request's input target: a window (the background route) or the desktop.
+/// A request's input target: a window (the background route), the desktop, or a window reached through the desktop
+/// once activated (the foreground route).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Target {
     Desktop,
     Window(Window),
+    Foreground(Window),
 }
 
 impl Target {
@@ -67,10 +72,11 @@ pub struct Inputs {
     pub holds: Holds,
 }
 
-/// A request's route while it runs.
+/// A request's route while it runs: a window's session, or the desktop, with the window a foreground request's
+/// window-relative points are relative to.
 pub enum Route<'a> {
     Window(&'a mut Session),
-    Desktop(&'a mut Desktop),
+    Desktop(&'a mut Desktop, Option<Window>),
 }
 
 impl Inputs {
@@ -93,7 +99,10 @@ impl Inputs {
         body: impl FnOnce(&mut X11, &mut Route, &mut Holds) -> Result<T>,
     ) -> Result<T> {
         match target {
-            Target::Desktop => body(x, &mut Route::Desktop(&mut self.desktop), &mut self.holds),
+            Target::Desktop => body(x, &mut Route::Desktop(&mut self.desktop, None), &mut self.holds),
+            Target::Foreground(window) => {
+                body(x, &mut Route::Desktop(&mut self.desktop, Some(window)), &mut self.holds)
+            }
             Target::Window(window) => {
                 let mut session = match self.sessions.remove(&window) {
                     Some(session) => session,
@@ -127,14 +136,14 @@ impl Route<'_> {
     pub fn acquire(&mut self, x: &X11, keycodes: &[u8]) -> Result<Vec<u8>> {
         match self {
             Route::Window(session) => session.acquire(x, keycodes),
-            Route::Desktop(desktop) => desktop.acquire(x, keycodes),
+            Route::Desktop(desktop, _) => desktop.acquire(x, keycodes),
         }
     }
 
     pub fn release(&mut self, x: &X11, keycodes: &[u8]) -> Result<()> {
         match self {
             Route::Window(session) => session.release(x, keycodes),
-            Route::Desktop(desktop) => desktop.release(x, keycodes),
+            Route::Desktop(desktop, _) => desktop.release(x, keycodes),
         }
     }
 
@@ -142,15 +151,17 @@ impl Route<'_> {
     pub fn release_tracked(&mut self, x: &X11, keycodes: &[u8]) -> (Result<()>, Vec<u8>) {
         match self {
             Route::Window(session) => session.release_tracked(x, keycodes),
-            Route::Desktop(desktop) => desktop.release_tracked(x, keycodes),
+            Route::Desktop(desktop, _) => desktop.release_tracked(x, keycodes),
         }
     }
 
-    /// A request's point in root coordinates: window-relative on the background route, as given on the desktop.
+    /// A request's point in root coordinates: window-relative on the background and foreground routes, as given on
+    /// the desktop.
     pub fn root_point(&self, x: &X11, px: i16, py: i16) -> Result<(i16, i16)> {
         match self {
             Route::Window(session) => x.desktop_position(session.target, px, py),
-            Route::Desktop(_) => Ok((px, py)),
+            Route::Desktop(_, Some(window)) => x.desktop_position(*window, px, py),
+            Route::Desktop(_, None) => Ok((px, py)),
         }
     }
 
@@ -158,7 +169,7 @@ impl Route<'_> {
     pub fn place(&mut self, x: &X11, rx: i16, ry: i16) -> Result<()> {
         match self {
             Route::Window(session) => session.move_to(x, rx, ry),
-            Route::Desktop(_) => Desktop::move_path(x, rx, ry),
+            Route::Desktop(..) => Desktop::move_path(x, rx, ry),
         }
     }
 
@@ -166,7 +177,7 @@ impl Route<'_> {
     pub fn place_again(&mut self, x: &X11, rx: i16, ry: i16) -> Result<()> {
         match self {
             Route::Window(session) => session.move_to(x, rx, ry),
-            Route::Desktop(_) => Desktop::motion(x, rx, ry),
+            Route::Desktop(..) => Desktop::motion(x, rx, ry),
         }
     }
 
@@ -174,7 +185,7 @@ impl Route<'_> {
     pub fn release_unheld(&mut self, x: &X11, keycode: u8) -> Result<()> {
         match self {
             Route::Window(session) => session.release_unheld(x, keycode),
-            Route::Desktop(_) => Desktop::release_unheld(x, keycode),
+            Route::Desktop(..) => Desktop::release_unheld(x, keycode),
         }
     }
 
@@ -182,14 +193,14 @@ impl Route<'_> {
     pub fn session(&self) -> Option<&Session> {
         match self {
             Route::Window(session) => Some(session),
-            Route::Desktop(_) => None,
+            Route::Desktop(..) => None,
         }
     }
 
     pub fn button(&mut self, x: &X11, button: u8, press: bool) -> Result<()> {
         match self {
             Route::Window(session) => session.button(x, button, press),
-            Route::Desktop(_) => Desktop::button(x, button, press),
+            Route::Desktop(..) => Desktop::button(x, button, press),
         }
     }
 }
@@ -219,6 +230,19 @@ mod tests {
         assert!(!holds.contains(Target::Desktop, &[0xffe3, 0xffe1]), "the desktop");
         assert!(holds.take(Target::Desktop, &[0xffe3, 0xffe1]).is_none());
         assert!(holds.any_for(Target::Window(7)));
+    }
+
+    #[test]
+    fn a_foreground_hold_is_its_window_s_and_not_the_background_route_s_nor_the_desktop_s() {
+        let mut holds = Holds::default();
+        holds.insert(hold(Target::Foreground(7), &[0xffe3]));
+        assert!(holds.contains(Target::Foreground(7), &[0xffe3]));
+        assert!(!holds.contains(Target::Window(7), &[0xffe3]));
+        assert!(!holds.contains(Target::Desktop, &[0xffe3]));
+        assert!(
+            !holds.any_for(Target::Window(7)),
+            "no background session is kept open for it"
+        );
     }
 
     #[test]

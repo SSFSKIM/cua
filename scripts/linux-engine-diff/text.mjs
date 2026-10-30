@@ -137,6 +137,10 @@ const typeText = {
   },
   effect: (ctx, input, before, after) => (ctx.sceneName === 'chrome-address-bar' ? (after?.text === null ? null : after.text === SINGLE_LINE) : landed(before, after, input.text)),
   check: (ctx) => clipboardAfter(ctx, ctx.prior.text),
+  // the foreground route leaves its window active: the front window takes the focus back, outside every span
+  restore: (ctx) => {
+    if (ctx.sceneName === 'gnome-text-editor') ctx.desktop.focusFront();
+  },
   // the address bar given back its page's address, untimed and witnessed
   cleanup: async (ctx) => {
     if (ctx.sceneName !== 'chrome-address-bar') return;

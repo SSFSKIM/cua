@@ -305,4 +305,4 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `stub-activating.mjs` | the negative check's stub engine |
 | `events.mjs`, `xprobe/src/record.rs` | M1a.2's input events experiment and its recorder window |
 | `pages/` | the Chrome scenes (`input.html` the pointer and key scene, `text.html` the text scene) and `gtk-table.py`, the large-table scene |
-| `text.mjs`, `safety.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases, the clipboard owner and reader, the paste-target window |
+| `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |

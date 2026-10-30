@@ -12,7 +12,7 @@ import {
   judgeLateConvert,
   judgeRefusal,
   judgeUnconfirmed,
-} from '../../scripts/linux-engine-diff/safety.mjs';
+} from '../../scripts/linux-engine-diff/safety-judge.mjs';
 
 const TEXT = 'cua171 안녕 é 🙂\nline2';
 const UNCONFIRMED = 'Paste was sent once and could not be confirmed; read the field before retrying';

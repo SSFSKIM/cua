@@ -146,6 +146,26 @@ pub const CLOSED_KEPT: usize = 32;
 /// A conversion stamped more than 24 days before the newest merged paste is no longer refused for it.
 const SPAN_LIMIT: u32 = 1 << 31;
 
+/// How far apart two times may be for "which is earlier" to be judged on the wrapping clock: a paste's own times, and
+/// neighbouring pastes' ends, are milliseconds to seconds apart. Pastes merge in the order they closed, so beyond this
+/// the one merged later is taken as the later.
+const NEAR: u32 = 60_000;
+
+/// Whether `a` comes a little before `b`.
+fn before(a: u32, b: u32) -> bool {
+    a != b && b.wrapping_sub(a) <= NEAR
+}
+
+/// `b` when it is a little before `a`, else `a`.
+fn earlier(a: u32, b: u32) -> u32 {
+    if before(b, a) { b } else { a }
+}
+
+/// `b` when it is a little after `a`, else `a`.
+fn later(a: u32, b: u32) -> u32 {
+    if before(a, b) { b } else { a }
+}
+
 /// Every closed paste's refusal, bounded in memory without expiry (Design, Serving generations): the newest
 /// `CLOSED_KEPT` exactly, and the older ones merged into one span from the oldest merged ownership to the newest merged
 /// cleanup, which refuses a little more than they did (the gaps between them), never less.
@@ -172,27 +192,29 @@ impl Refusals {
     }
 
     fn merge(&mut self, old: Closed) {
-        let merged = match self.merged {
-            None => Merged {
-                from: old.owned_at,
-                through: old.cleaned_at,
-                current_time_until: old.current_time_until,
-            },
-            Some(m) => {
-                let through = old.cleaned_at;
-                let from = if through.wrapping_sub(m.from) > SPAN_LIMIT {
-                    through.wrapping_sub(SPAN_LIMIT)
-                } else {
-                    m.from
-                };
-                Merged {
-                    from,
-                    through,
-                    current_time_until: m.current_time_until.max(old.current_time_until),
-                }
-            }
-        };
-        self.merged = Some(merged);
+        // A paste's own span: its ownership to its cleanup, widened to its Ctrl+V's timestamp, which comes from the
+        // input session's clock and can fall just outside.
+        let (mut from, mut through) = (old.owned_at, old.cleaned_at);
+        if let Some(dispatched) = old.dispatched {
+            from = earlier(from, dispatched);
+            through = later(through, dispatched);
+        }
+        let mut current_time_until = old.current_time_until;
+        if let Some(m) = self.merged {
+            // Back to the older pastes' start (unless this one starts a little before it), and this paste's end
+            // (unless theirs is a little later).
+            from = earlier(m.from, from);
+            through = later(through, m.through);
+            current_time_until = current_time_until.max(m.current_time_until);
+        }
+        if through.wrapping_sub(from) > SPAN_LIMIT {
+            from = through.wrapping_sub(SPAN_LIMIT);
+        }
+        self.merged = Some(Merged {
+            from,
+            through,
+            current_time_until,
+        });
     }
 
     pub fn refuses(&self, time: u32, now: Instant) -> bool {
@@ -324,6 +346,33 @@ mod tests {
         assert!(!refusals.refuses(last + 51, now), "a later request is served");
         assert!(!refusals.refuses(999, now), "before every paste");
         assert!(!refusals.refuses(0, now), "confirmed pastes refuse no CurrentTime");
+    }
+
+    /// The Ctrl+V's timestamp comes from the input session's own clock, so it can lie outside the ownership interval;
+    /// it stays refused once its paste is merged.
+    #[test]
+    fn a_merged_paste_keeps_refusing_a_ctrl_v_outside_its_ownership() {
+        let now = Instant::now();
+        let mut refusals = Refusals::default();
+        refusals.push(Closed::new(1_000, Some(999), 1_010, true, now));
+        refusals.push(Closed::new(2_000, Some(2_020), 2_010, true, now));
+        assert!(
+            refusals.refuses(999, now) && refusals.refuses(2_020, now),
+            "kept: refused as dispatched"
+        );
+        for i in 0..CLOSED_KEPT as u32 {
+            let at = 5_000 + 100 * i;
+            refusals.push(Closed::new(at, Some(at + 1), at + 50, true, now));
+        }
+        assert!(
+            refusals.refuses(999, now),
+            "a Ctrl+V before its paste's ownership, merged"
+        );
+        assert!(
+            refusals.refuses(2_020, now),
+            "a Ctrl+V after its paste's cleanup, merged"
+        );
+        assert!(!refusals.refuses(998, now));
     }
 
     #[test]

@@ -956,12 +956,17 @@ fn a_takeover_handled_late_does_not_cost_the_next_paste_its_clipboard() {
     let mut c = clipboard();
     let first = c.take(text(&c, "first"), text(&c, "before")).unwrap();
     first.confirmed();
+    owner::PAUSED.store(false, Ordering::SeqCst);
     owner::CLEAR_PAUSE_MS.store(300, Ordering::SeqCst);
     let external = TestOwner::start(Behaviour::Serve(vec![("UTF8_STRING", b"theirs".to_vec())]));
-    // The owner thread has the clear and is held up in it.
-    sleep(Duration::from_millis(100));
+    // The retake is asked for only once the owner thread is held up in the clear, between its check and its
+    // conclusion.
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !owner::PAUSED.load(Ordering::SeqCst) {
+        assert!(Instant::now() < deadline, "the clear handler reached its pause");
+        sleep(Duration::from_millis(1));
+    }
     let next = c.take(text(&c, "second"), text(&c, "restored")).unwrap();
-    sleep(Duration::from_millis(400));
     owner::CLEAR_PAUSE_MS.store(0, Ordering::SeqCst);
     assert!(!next.lost(), "the engine took CLIPBOARD after the takeover");
     assert!(c.owns());
@@ -969,6 +974,76 @@ fn a_takeover_handled_late_does_not_cost_the_next_paste_its_clipboard() {
     next.confirmed();
     assert_eq!(text_of(convert("UTF8_STRING", Asking::default())), "restored");
     drop(external);
+}
+
+/// A take the request thread gave up on, after the owner thread had already started it, still ends with the
+/// guarded cleanup: the snapshot served, never the abandoned paste's text, and its window refused. The next take is
+/// answered for itself.
+#[test]
+#[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+fn a_take_abandoned_after_the_owner_started_it_is_cleaned_up() {
+    let _serial = serial();
+    clear_clipboard();
+    let mut c = clipboard();
+    let (conn, _) = x11rb::connect(None).unwrap();
+    let warm = c.take(text(&c, "warm"), text(&c, "before")).unwrap();
+    warm.confirmed();
+    owner::TAKE_PAUSE_MS.store(owner::TAKE_WAIT.as_millis() as u64 + 500, Ordering::SeqCst);
+    let started = server_time(&conn);
+    let abandoned = c.take(text(&c, "abandoned"), text(&c, "the snapshot"));
+    owner::TAKE_PAUSE_MS.store(0, Ordering::SeqCst);
+    assert_eq!(
+        abandoned.err().map(|e| e.to_string()).as_deref(),
+        Some("clipboard owner did not take CLIPBOARD")
+    );
+    // The owner thread completes the take after its pause.
+    sleep(Duration::from_millis(800));
+    assert_eq!(
+        text_of(convert(
+            "UTF8_STRING",
+            Asking {
+                time: server_time(&conn),
+                ..Default::default()
+            }
+        )),
+        "the snapshot",
+        "the abandoned paste's text is not served"
+    );
+    assert_eq!(
+        convert(
+            "UTF8_STRING",
+            Asking {
+                time: started.wrapping_add(600),
+                ..Default::default()
+            }
+        ),
+        Answer::Refused,
+        "a time while the abandoned paste held CLIPBOARD"
+    );
+    let next = c.take(text(&c, "next"), text(&c, "after")).unwrap();
+    assert!(!next.lost());
+    assert_eq!(
+        text_of(convert(
+            "UTF8_STRING",
+            Asking {
+                time: server_time(&conn),
+                ..Default::default()
+            }
+        )),
+        "next"
+    );
+    next.confirmed();
+    sleep(Duration::from_millis(50));
+    assert_eq!(
+        text_of(convert(
+            "UTF8_STRING",
+            Asking {
+                time: server_time(&conn),
+                ..Default::default()
+            }
+        )),
+        "after"
+    );
 }
 
 /// Refusal by timestamp has no expiry: a conversion stamped in the first paste's window stays refused after more

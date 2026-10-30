@@ -145,8 +145,9 @@ variants included; their evidence is written either way. The run's `end` row kee
   build's witness or audit is. The negative check drives the stub through a proxy too, and the run is valid only when
   the witness and the audit both fail it. `--no-audit` leaves the pass out.
 - **Deviations** (`deviations.mjs`): a difference from the pinned build passes only when a declared deviation names
-  its operation, its field and cua's exact answer. The text and clipboard commands are checked apart, cua alone: each
-  must answer `<command> is not available in this engine build`.
+  its operation, its field and cua's exact answer. (In M1a the text and clipboard commands were checked apart, cua
+  alone, each refused with `<command> is not available in this engine build`; M2 replaced that with its text
+  operations, below.)
 - **`--via vendor-js --vendor-js <@oai/sky directory>`** (`vendor-js.mjs`): every engine driven through OpenAI's own
   JavaScript client, OAI_SKY_LINUX_BIN set in the harness's process to the engine; each block reaches its engine
   through a path of its own, so the client's per-path process cache starts it fresh and the block ends it. Element
@@ -232,6 +233,56 @@ variants included; their evidence is written either way. The run's `end` row kee
   produced its cell and nothing threw (`dragCompleteness`); a family's error leaves its remaining kinds unmeasured
   and the run incomplete, while a lane that misses is a measured outcome.
 
+## M2's additions: text, clipboard and the paste safety cases
+
+- **Text operations** (`text.mjs`, kind `text`), each on every engine's own window, apart from the scene's other
+  windows, so a document they grow never changes another operation's scene:
+  - `gedit`: `type_text` (Acceptance 6's `cua171 안녕 é 🙂\nline2`, the acute a combining mark, at the caret),
+    `type_text_selection` (a preselected range replaced), `type_text_dedicated` (cua alone with `--desktop dedicated`:
+    gedit takes the background route, so its witness must stay clean), `type_characters` (`Hi 42!`, the newest build
+    the reference), `clipboard_read` (the application's Copy of the selected first word; its effect is the clipboard),
+    `clipboard_write` (a handle read untimed, then the harness's own owner takes CLIPBOARD, then the write: cua leaves
+    that owner's text, the vendor builds the snapshot, a declared deviation), `clipboard_release`;
+  - `chrome-textarea` (`pages/text.html`): `type_text`;
+  - `chrome-address-bar` (a Chrome window's address bar, focused with Ctrl+L and its text selected): `type_text` of a
+    single line, which must read back exactly;
+  - `gnome-text-editor`: `type_text`, cua with `--desktop dedicated` (GTK 4 ignores the background route).
+
+  A sample's prior clipboard is the harness's own text (`clip.mjs`, `xprobe clip-own`), and the field is read through
+  the harness's own bus reads (`oracle.mjs`): the effect is the paste landing exactly once where the caret or the
+  selection was; `clipboard_kept` records whether CLIPBOARD (read with a real timestamp, `xprobe clip-read`) holds what
+  it held. The bar is built from the vendor samples that succeeded (no vendor success, no bar); every cua request must
+  succeed, take effect and keep the clipboard, whatever the vendor builds did. A text operation's reference answer is
+  that of a build whose route applied it in the block; where neither does (gnome-text-editor; gedit's
+  `clipboard_write`), cua's success is a declared deviation.
+- **The witness by route**: cua reports the route each text request took on its `--stats` line. A `foreground`
+  request may activate its target and move the pointer and nothing else (`witness.mjs` `judgeForegroundSpan`: the
+  active window and the focus end in the target, the stacking order changes only by its raise; then a quiet 300 ms span
+  and no grab left, `xprobe grabs`); every other route must leave the witness unchanged. A foreground route's
+  activation and XTEST input are the route itself, so its audit is not required.
+- **The bus trace**: a pass per text operation and engine, a fresh process under `dbus-monitor`, counts
+  `PasteText`, `InsertText` and `SetTextContents`; cua's must be 0 (vendor counts recorded). The safety cases' whole
+  phase is watched the same way.
+- **Paste safety cases** (`safety.mjs`, kind `case`, cua alone, after the blocks, on windows of their own):
+  `chrome-textarea`: `focus_change` (the prior owner holds the engine's snapshot `TARGETS` while the harness moves the
+  focus to the page's other field through AT-SPI: `requested field or selection changed before dispatch; nothing was
+  sent`, neither field changed), `focus_change_takeover` (the same, and the prior owner takes CLIPBOARD back 0, 20 or
+  50 ms after the engine takes it: nothing sent, the new owner's text intact), `concurrent` (two engines paste distinct
+  markers at once into their own windows), `contention` (two engines, 20 pastes each with random gaps of 0–30 ms),
+  `late_page` (the page inserts the paste's text 3 s after its paste event: unconfirmed, then the text once),
+  `ignored_page` (unconfirmed, the field unchanged, the next request answered at once); `paste-target`
+  (`pages/paste-target.py`, a GTK 3 window whose conversions the harness controls, made on its own X connection so the
+  engine attributes them to the target): `stalled_incr` (100 KB, the INCR transfer never acknowledged), `late_convert`
+  (a conversion 1.5 s after the chord, served the paste itself, never the prior clipboard; 3 s after it, with the
+  chord's timestamp and with CurrentTime, refused), `unreadable` (no Text interface: unconfirmed, the text received
+  once); `gedit`: `caret_placed` (a caret placed, the focus moved to a toolbar button, then `type_text` naming the
+  field: clicked, the caret put back, the text at the caret); `gnome-text-editor`: `restore_refused` (dedicated mode,
+  the focus moved to the search bar with Ctrl+F through the desktop route: clicked through XTEST, GTK 4 refuses the
+  caret's restore, the text goes in once, the foreground route's witness allowance).
+- **The matrix** (`--experiment matrix`): `gnome-terminal` joins (VTE, paste chord Ctrl+Shift+V; its recorder shows what
+  it receives, so a paste is confirmed in the terminal's text), and cua's `type_text` runs beside the vendor builds'.
+- `--via vendor-js` refuses the text operations and the cases: their facade-level proof is the facade suites.
+
 ## Files
 
 | File | What it is |
@@ -253,4 +304,5 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `wire-check.mjs`, `stub-replay.mjs`, `record-wire.mjs`, `fixtures/wire/` | the wire fixtures |
 | `stub-activating.mjs` | the negative check's stub engine |
 | `events.mjs`, `xprobe/src/record.rs` | M1a.2's input events experiment and its recorder window |
-| `pages/` | the Chrome scenes (`input.html` the pointer and key scene) and `gtk-table.py`, the large-table scene |
+| `pages/` | the Chrome scenes (`input.html` the pointer and key scene, `text.html` the text scene) and `gtk-table.py`, the large-table scene |
+| `text.mjs`, `safety.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases, the clipboard owner and reader, the paste-target window |

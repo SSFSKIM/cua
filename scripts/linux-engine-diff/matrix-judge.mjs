@@ -246,7 +246,7 @@ const cell = (s) => {
 };
 
 /** The matrix table: one row per family, its identity, each operation's effects per engine, the classification. */
-export function renderMatrix(families, { engines = ['pinned', 'newest', 'cua'], textEngines = ['pinned', 'newest'] } = {}) {
+export function renderMatrix(families, { engines = ['pinned', 'newest', 'cua'], textEngines = ['pinned', 'newest', 'cua'] } = {}) {
   const head = [
     'family',
     'ToolkitName',

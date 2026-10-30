@@ -1,10 +1,12 @@
-// The differential run's operations (Acceptance 2–5: every command but text and clipboard, on the scenes): what each
-// sends, which window it goes to, what it prepares untimed before the request, and how its effect reads back.
+// The differential run's operations (Acceptance 2–5, on the scenes): what each sends, which window it goes to, what it
+// prepares untimed before the request, and how its effect reads back. M2's text and clipboard operations are text.mjs's,
+// its paste safety cases safety.mjs's.
 //
 // Kinds: `desktop` (no scene window), `read` (a tree read of the scene's shared window), `shot` (a read with its
 // screenshot, on each engine's own window), `input` (window-targeted input on each engine's own window: witnessed,
 // audited, its effect read back) and `retention` (a change to a retained window, then a screenshot and an input).
-// `background` marks the background route, whose audit must be clean; activate_window is the one window request that
+// `text` (M2: a text or clipboard command on each engine's own window, witnessed, audited, its effect and the clipboard
+// read back) and `case` (M2's paste safety cases, cua alone, run apart from the blocks). `background` marks the background route, whose audit must be clean; activate_window is the one window request that
 // changes the desktop on purpose, so neither its witness nor its audit is expected clean.
 //
 // A sample runs: `prepare` (untimed: companion requests, the harness's change to the window), the before-state, the
@@ -14,7 +16,9 @@
 // says what a cold sample measures: `spawn` (the engine's start and its first request) or `request` (the request
 // alone, where untimed preparation must come first).
 
+import { CASE_OPS } from './safety.mjs';
 import { activeWindow } from './scenes.mjs';
+import { TEXT_OPS, TEXT_SCENE_OPS } from './text.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -27,7 +31,7 @@ const companion = (ctx, fn) => (ctx.witnessed ? ctx.witnessed(fn) : fn());
 /** Which operations each scene runs. */
 export const SCENE_OPS = {
   desktop: ['list_windows', 'list_apps', 'get_screenshot', 'launch_app'],
-  gedit: ['tree', 'tree_shot', 'press_key', 'click'],
+  gedit: ['tree', 'tree_shot', 'press_key', 'click', ...TEXT_SCENE_OPS.gedit, ...CASE_OPS.gedit],
   chrome: ['tree', 'tree_shot', 'press_key', 'click'],
   'chrome-input': ['click_element', 'right_click', 'right_click_fallback', 'secondary_action', 'move', 'drag', 'scroll', 'scroll_element_hidden', 'key_down', 'key_up', 'activate_window'],
   'over-budget': ['tree'],
@@ -35,10 +39,11 @@ export const SCENE_OPS = {
   'gtk-table': ['tree'],
   calc: ['tree'],
   retention: ['after_resize', 'after_remap', 'after_covered_change'],
+  'chrome-textarea': [...TEXT_SCENE_OPS['chrome-textarea'], ...CASE_OPS['chrome-textarea']],
+  'chrome-address-bar': TEXT_SCENE_OPS['chrome-address-bar'],
+  'gnome-text-editor': [...TEXT_SCENE_OPS['gnome-text-editor'], ...CASE_OPS['gnome-text-editor']],
+  'paste-target': CASE_OPS['paste-target'],
 };
-
-/** The commands the text and clipboard deviation covers: cua's refusals, checked apart (no vendor runs them here). */
-export const REFUSED = ['type_text', 'clipboard_read', 'clipboard_write', 'clipboard_release'];
 
 const GEDIT = [910, 756];
 const CHROME = [1050, 780];
@@ -320,13 +325,15 @@ export const OPS = {
   click,
   ...inputScene,
   ...Object.fromEntries(Object.entries(retention).map(([name, op]) => [name, { ...op, request: ({ scene }) => ['get_window_state', { window: { id: scene.id }, include_screenshot: true }] }])),
+  ...TEXT_OPS,
+  ...Object.fromEntries(Object.values(CASE_OPS).flat().map((name) => [name, { kind: 'case' }])),
 };
 
 /** Whether an operation goes to each engine's own window (screenshots, input, retention). */
-export const ownWindow = (op) => ['shot', 'input', 'retention'].includes(OPS[op].kind);
+export const ownWindow = (op) => ['shot', 'input', 'retention', 'text'].includes(OPS[op].kind);
 /** Whether an operation is window-targeted (witnessed). */
 export const targeted = (op) => OPS[op].kind !== 'desktop';
 /** Whether an operation's samples carry a screenshot to compare. */
 export const shotOf = (op) => OPS[op].kind === 'shot' || OPS[op].kind === 'retention' || OPS[op].shot === true;
 /** Whether an operation is window-targeted input (audited, its effect read back). */
-export const inputOp = (op) => OPS[op].kind === 'input' || OPS[op].kind === 'retention';
+export const inputOp = (op) => ['input', 'retention', 'text'].includes(OPS[op].kind);

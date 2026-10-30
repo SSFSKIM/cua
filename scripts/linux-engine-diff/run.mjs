@@ -5,7 +5,9 @@
 // retained window is never the window another is measured on. Every window-targeted request runs inside a witness
 // span; input effects are read back; accessibility-bus calls are counted, and each input operation's X requests
 // audited, in separate untimed passes. The operations are ops.mjs's; `--via vendor-js` drives every engine through
-// OpenAI's own JavaScript client (vendor-js.mjs) instead of over the wire.
+// OpenAI's own JavaScript client (vendor-js.mjs) instead of over the wire. M2's text and clipboard commands (text.mjs)
+// run in the blocks over the wire, their accessibility-bus calls in a pass of their own; its paste safety cases
+// (safety.mjs) run after the blocks, cua alone.
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -16,15 +18,18 @@ import { fileURLToPath } from 'node:url';
 import { auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { startMonitor } from './busmon.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
-import { declaredDeviation, describe as describeDeviation } from './deviations.mjs';
+import { declaredDeviation } from './deviations.mjs';
 import { Engine } from './engine.mjs';
 import { normalizeAnswer } from './events.mjs';
 import { compareShots, xprobeDiff } from './images.mjs';
 import { compareStates, normalizeState, retainedIds } from './normalize.mjs';
-import { OPS, REFUSED, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs';
+import { OPS, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs';
+import { Oracle } from './oracle.mjs';
 import { writeSummary } from './report.mjs';
+import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
 import { blockOrder, judgeCalls, judgeOperation, runOutcome } from './stats.mjs';
+import { resolveField } from './text.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
 import { startWitness } from './witness.mjs';
 
@@ -33,6 +38,10 @@ export { SCENE_OPS };
 const here = dirname(fileURLToPath(import.meta.url));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const VENDORS = ['pinned', 'newest'];
+/** The text calls no cua request may make (Constraints: never called; Acceptance 6: "the accessibility-bus trace of the whole run"). */
+export const FORBIDDEN_TEXT_CALLS = ['PasteText', 'InsertText', 'SetTextContents'];
+const isCase = (op) => OPS[op].kind === 'case';
+const isText = (op) => OPS[op].kind === 'text';
 
 /**
  * The plan: each scene's operations that `ops` names. An operation no scene has, an operation none of the scenes
@@ -143,6 +152,7 @@ export async function pollEffect(read, judge, { gapMs = 120, deadlineMs = 2500 }
 /** The answer a sample is compared by: its state, its screenshot, or its normalized answer. */
 function answerDigest(op, scene, response, labelPattern) {
   if (!response.ok) return sha(JSON.stringify(normalizeAnswer(response)));
+  if (op === 'clipboard_read') return sha(JSON.stringify(answerOf(op, response)));
   const kind = OPS[op].kind;
   if (op === 'list_windows' || op === 'list_apps') return sha(JSON.stringify(response.output));
   if (op === 'get_screenshot') return sha(JSON.stringify(response.output.map(() => ({}))));
@@ -158,6 +168,13 @@ function answerDigest(op, scene, response, labelPattern) {
     return sha(JSON.stringify(rendered === undefined ? normalized : { normalized, rendered }));
   }
   return sha(JSON.stringify(normalizeAnswer(response)));
+}
+
+/** A non-state answer as compared: a clipboard handle by its kind (each engine names its own handles). */
+export function answerOf(op, response) {
+  const answer = normalizeAnswer(response);
+  if (op === 'clipboard_read' && answer.ok) return { ok: true, output: typeof answer.output === 'string' ? '<handle>' : answer.output };
+  return answer;
 }
 
 /** Where two answers differ, for the deviations: the answer's success, its error, or its output. */
@@ -176,7 +193,7 @@ export function differingField(reference, candidate) {
 export async function runSample(s) {
   const { desktop, witness, engine, target, op, i } = s;
   const def = OPS[op];
-  const ctx = { desktop, scene: target, engine, i, witness };
+  const ctx = { desktop, scene: target, sceneName: s.sceneName, engine, i, witness };
   const spans = [];
   const span = async (tag, fn) => {
     if (!witness || !target) return { value: await fn(), witness: null };
@@ -186,11 +203,18 @@ export async function runSample(s) {
   };
   // every request the engine under measurement sends besides the timed one runs inside a witness span of its own; the
   // harness's own changes to the window (a resize, a remap) stay outside the spans
-  ctx.witnessed = (fn) => span(`${s.label}:${s.sceneName}:${op}:companion`, fn).then((r) => r.value);
+  ctx.witnessed = (fn) =>
+    span(`${s.label}:${s.sceneName}:${op}:companion`, () => {
+      if (!engine.started) engine.start();
+      return fn();
+    }).then((r) => r.value);
   const needsIds = target?.elements && typeof engine.resolveElements === 'function';
   if (def.prepare || needsIds) {
-    if (!engine.started) engine.start();
+    // a text operation's preparation is the harness's own (a caret, a clipboard owner) unless it sends a companion,
+    // so its cold sample still times the engine's start
+    if (!engine.started && !isText(op)) engine.start();
     if (needsIds) {
+      if (!engine.started) engine.start();
       // read once per engine process and window: the client keeps its numbering for the window
       engine.ids ??= new Map();
       if (!engine.ids.has(target.id)) engine.ids.set(target.id, await ctx.witnessed(() => engine.resolveElements(target, target.elements)));
@@ -209,7 +233,9 @@ export async function runSample(s) {
     }
     return engine.request(command, input);
   };
-  const answered = await span(`${s.label}:${s.sceneName}:${op}`, send);
+  const tag = `${s.label}:${s.sceneName}:${op}`;
+  // a text command's witness is judged by the route the engine reports the request took (Decision Log, M2.2)
+  const answered = witness && target && isText(op) ? await routeWitness(witness, tag, target.id, send) : await span(tag, send);
   const { response, ms, sinceSpawnMs, stats } = answered.value;
   const row = { kind: 'sample', engine: s.label, scene: s.sceneName, op, block: s.block, series: i === 0 ? 'cold' : 'warm', i };
   row.ms = Math.round((i === 0 && startedInSpan ? sinceSpawnMs : ms) * 100) / 100;
@@ -221,8 +247,10 @@ export async function runSample(s) {
     row.stats = { calls: stats.bus.calls, waits_alone: stats.bus.waits_alone, max_in_flight: stats.bus.max_in_flight, connections: stats.bus.connections };
     if (stats.tree) row.stats.tree = stats.tree;
     if (stats.capture) row.stats.capture = stats.capture;
+    if (stats.paste) row.stats.paste = { confirmed: stats.paste.confirmed, confirm_ms: stats.paste.confirm_ms, transfer: stats.paste.transfer, clicked: stats.paste.clicked, restored: stats.paste.restored };
+    if (stats.route) row.route = stats.route;
   }
-  if (def.after) await def.after(ctx);
+  if (def.after) await def.after(ctx, response);
   if (def.effect && row.ok && def.read && !def.follow) {
     row.effect = await pollEffect(() => def.read(ctx), (after) => def.effect(ctx, input, before, after));
   }
@@ -236,11 +264,16 @@ export async function runSample(s) {
   }
   if (def.changeEffect && row.ok) row.effect = await def.changeEffect(ctx);
   if (row.effect === null) delete row.effect;
+  if (def.check) Object.assign(row, await def.check(ctx, response));
+  if (def.cleanup) await def.cleanup(ctx, response);
   if (def.restore) await def.restore(ctx);
-  if (answered.witness) {
-    const all = [answered.witness, ...spans.filter((w) => w !== answered.witness)];
+  const main = answered.judged ?? answered.witness;
+  if (main) {
+    const all = [main, ...spans.filter((w) => w !== answered.witness)];
     row.witness = all.every((w) => w.clean);
     if (!row.witness) row.witness_fields = [...new Set(all.flatMap((w) => w.fields))];
+    if (!row.witness && answered.report) row.witness_changes = (answered.report.changes ?? []).slice(0, 20);
+    if (answered.judged?.allowed?.length) row.witness_allowed = answered.judged.allowed;
   }
   return { row, response };
 }
@@ -278,6 +311,34 @@ export function launchEntry(dir) {
   return { env: { XDG_DATA_HOME: join(dir, 'launch'), XDG_DATA_DIRS: '/nonexistent' }, count: () => (existsSync(marker) ? readFileSync(marker, 'utf8').split('\n').filter(Boolean).length : 0) };
 }
 
+/**
+ * Opens one window of a scene: gedit on a scratch file, a harness page in Chrome, a family's application; M2's text
+ * scenes with their field resolved (text.mjs).
+ */
+export async function openScene(desktop, scene, role, { text = false } = {}) {
+  if (scene === 'gedit') {
+    const opened = await desktop.openGedit(role, GEDIT_TEXT);
+    opened.originalLength = (await desktop.geditText(opened)).length;
+    return text ? resolveField(desktop, opened, scene) : opened;
+  }
+  if (scene === 'chrome-textarea') return resolveField(desktop, await desktop.openChrome(role, 'text.html', { stem: 'textarea', query: 'paste=plain' }), scene);
+  if (scene === 'chrome-address-bar') return resolveField(desktop, await desktop.openChrome(role, 'scene.html', { stem: 'addressbar' }), scene);
+  if (scene === 'gnome-text-editor') return resolveField(desktop, await desktop.openFamilyScene('gnome-text-editor', role), scene);
+  if (FAMILY_OF[scene]) return desktop.openFamilyScene(FAMILY_OF[scene], role);
+  const opened = await desktop.openChrome(role, PAGE_OF[scene], { stem: scene === 'retention' ? 'retention' : undefined });
+  if (scene === 'chrome-input') opened.elements = await desktop.elementsByName(opened, INPUT_ELEMENTS);
+  return opened;
+}
+
+/** The engine a candidate runs an operation with: its flags plus the operation's own (M2: `--desktop dedicated`). */
+export function engineSpecFor(spec, op, scene) {
+  if (VENDORS.includes(spec.label) || !OPS[op].cuaArgs) return spec;
+  return { ...spec, args: [...spec.args, ...OPS[op].cuaArgs(scene)] };
+}
+
+/** Whether an engine runs an operation: a candidate-only operation (`cuaOnly`) is not sent to the vendor builds. */
+export const runsOp = (label, op) => !(OPS[op].cuaOnly && VENDORS.includes(label));
+
 export async function runDiff(args) {
   const run = args.run ?? `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
   mkdirSync(args.out, { recursive: true });
@@ -295,6 +356,10 @@ export async function runDiff(args) {
   const makeEngine = (spec, env) => (via === 'vendor-js' ? new VendorJsEngine({ label: spec.label, bin: spec.bin, skyDir: args.vendorJs, env }) : new Engine({ ...spec, env: env ? { ...process.env, ...env } : undefined }));
   const labels = engines.map((e) => e.label);
   const plan = planOps(args.scenes, args.ops);
+  if (via === 'vendor-js' && plan.some((p) => isText(p.op) || isCase(p.op))) {
+    throw new Error("M2's text operations and paste cases run over the wire; their facade-level proof is the facade suites (repl-parity's native text cases, the native baseline)");
+  }
+  const blockPlan = plan.filter((p) => !isCase(p.op));
   const samplesFor = (op) => (inputOp(op) ? args.samplesInput : args.samplesTree);
 
   emit({
@@ -315,6 +380,7 @@ export async function runDiff(args) {
   });
 
   const desktop = new Desktop({ cua: args.cua, run });
+  if (plan.some((p) => isText(p.op) || isCase(p.op))) desktop.oracle ??= new Oracle();
   // Every scene label of this run: equivalent windows differ in their own label and list each other's (gedit's
   // recent files), so comparisons across windows replace them all.
   const labelPattern = new RegExp(`cua171-diff-${run.replace(/[^A-Za-z0-9_-]/g, '\\$&')}-[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*`, 'g');
@@ -330,24 +396,19 @@ export async function runDiff(args) {
     // Scenes: one shared window per scene for tree reads, one window per engine for screenshots and input.
     const windows = {};
     for (const scene of args.scenes.filter((s) => s !== 'desktop')) {
-      const ops = plan.filter((p) => p.scene === scene).map((p) => p.op);
-      const open = async (role) => {
-        if (scene === 'gedit') {
-          const opened = await desktop.openGedit(role, GEDIT_TEXT);
-          opened.originalLength = (await desktop.geditText(opened)).length;
-          return opened;
-        }
-        if (FAMILY_OF[scene]) return desktop.openFamilyScene(FAMILY_OF[scene], role);
-        const opened = await desktop.openChrome(role, PAGE_OF[scene], { stem: scene === 'retention' ? 'retention' : undefined });
-        if (scene === 'chrome-input') opened.elements = await desktop.elementsByName(opened, INPUT_ELEMENTS);
-        return opened;
-      };
-      windows[scene] = { shared: ops.some((op) => !ownWindow(op)) ? await open('read') : null, own: {} };
-      if (ops.some(ownWindow)) {
+      // the safety cases open windows of their own (safety.mjs)
+      const ops = blockPlan.filter((p) => p.scene === scene).map((p) => p.op);
+      const open = (role, text = false) => openScene(desktop, scene, role, { text });
+      windows[scene] = { shared: ops.some((op) => !ownWindow(op)) ? await open('read') : null, own: {}, text: {} };
+      if (ops.some((op) => ownWindow(op) && !isText(op))) {
         for (const label of labels) windows[scene].own[label] = await open(label.replace(/[^a-z0-9]+/gi, '_'));
       }
+      // the text operations on windows of their own, so a document they grow never changes another operation's scene
+      for (const label of labels.filter((l) => ops.some((op) => isText(op) && runsOp(l, op)))) {
+        windows[scene].text[label] = await open(`text_${label.replace(/[^a-z0-9]+/gi, '_')}`, true);
+      }
     }
-    const needsStub = plan.some((p) => inputOp(p.op));
+    const needsStub = plan.some((p) => inputOp(p.op) || isCase(p.op));
     const stubScene = needsStub ? await desktop.openChrome('stub', 'scene.html') : null;
     await desktop.openFront(args.occlusion);
     witness = await startWitness(XPROBE);
@@ -356,9 +417,9 @@ export async function runDiff(args) {
     if (stubScene && !(await negativeCheck(desktop, witness, stubScene, emit, { audit: args.audit }))) valid = false;
 
     for (let block = 0; block < args.blocks; block++) {
-      for (const { scene: sceneName, op } of plan) {
-        for (const label of blockOrder(labels, block)) {
-          const spec = engines.find((e) => e.label === label);
+      for (const { scene: sceneName, op } of blockPlan) {
+        for (const label of blockOrder(labels, block).filter((l) => runsOp(l, op))) {
+          const spec = engineSpecFor(engines.find((e) => e.label === label), op, sceneName);
           const target = measuredTarget(windows, sceneName, op, label);
           if (target && args.occlusion === 'visible') desktop.raise(target);
           const engine = makeEngine(spec, OPS[op].apps ? launch.env : undefined);
@@ -375,7 +436,7 @@ export async function runDiff(args) {
               row.items = response.output.length;
             }
             row.digest = answerDigest(op, sceneName, response, labelPattern);
-            if (!['read', 'shot', 'retention'].includes(OPS[op].kind)) answers.set(`${label}|${sceneName}|${op}|${block}|${i}`, normalizeAnswer(response));
+            if (!['read', 'shot', 'retention'].includes(OPS[op].kind)) answers.set(`${label}|${sceneName}|${op}|${block}|${i}`, answerOf(op, response));
             if (row.ok && shotOf(op)) {
               // every sample's screenshot is kept for the comparison after the blocks
               const shot = op === 'get_screenshot' ? response.output[0] : response.output.screenshots[0];
@@ -433,7 +494,7 @@ export async function runDiff(args) {
     const audits = {};
     if (args.audit) {
       for (const { scene: sceneName, op } of auditPlan(plan)) {
-        for (const spec of engines) {
+        for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
           const target = measuredTarget(windows, sceneName, op, spec.label);
           const proxy = await startProxy();
           const engine = makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY });
@@ -454,29 +515,45 @@ export async function runDiff(args) {
       }
     }
 
-    // The declared refusals: cua's answer to each text and clipboard command (no vendor runs them in M1a).
-    if (plan.some((p) => p.scene === 'chrome' || p.scene === 'gedit' || p.scene === 'chrome-input')) {
-      const someWindow = Object.values(windows).flatMap((w) => [w.shared, ...Object.values(w.own)]).find(Boolean);
-      const engine = makeEngine(engines.find((e) => e.label === 'cua'));
-      engine.start();
-      for (const command of REFUSED) {
-        const input = command === 'clipboard_release' ? { handle: 'cua171-none' } : command.startsWith('clipboard') ? { window: { id: someWindow.id } } : { window: { id: someWindow.id }, text: 'cua171' };
-        const { response } = await engine.request(command, input);
-        // the pinned build's JavaScript has no type_characters (the newest build's command); nothing to check there
-        if (via === 'vendor-js' && /^the vendor client has no /.test(String(response.error))) {
-          emit({ kind: 'refusal', op: command, ok: false, error: response.error, declared: null, pass: null, not_in_client: true });
-          continue;
+    // The text commands' accessibility-bus calls, in their own untimed pass: one sample per engine, a fresh process with
+    // a monitor on the bus, every connection that appeared counted (Acceptance 6: no PasteText, InsertText or
+    // SetTextContents in the run's trace).
+    if (args.counts && via === 'wire') {
+      for (const { scene: sceneName, op } of blockPlan.filter((p) => isText(p.op))) {
+        for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
+          const target = measuredTarget(windows, sceneName, op, spec.label);
+          const engine = makeEngine({ ...spec, stats: false });
+          const monitor = await startMonitor(busAddress);
+          let ok = false;
+          try {
+            ok = (await runSample({ desktop, witness: null, engine, target, op, i: 0, block: 'bus', label: spec.label, sceneName })).row.ok;
+          } finally {
+            await engine.close();
+          }
+          const calls = await monitor.stop();
+          emit({ kind: 'text-bus', engine: spec.label, scene: sceneName, op, ok, calls: calls.calls, forbidden: Object.fromEntries(FORBIDDEN_TEXT_CALLS.map((m) => [m, calls.by_member[m] ?? 0])) });
+          desktop.focusFront();
         }
-        const deviation = declaredDeviation({ op: command, scene: 'refusals', field: 'error', candidate: normalizeAnswer(response) });
-        emit({ kind: 'refusal', op: command, ok: response.ok === true, error: response.error ?? null, declared: deviation ? describeDeviation(deviation) : null, pass: Boolean(deviation) });
       }
-      await engine.close();
+    }
+
+    // The paste safety cases (safety.mjs): cua alone, on windows of their own, the bus watched for the whole phase.
+    const casePlan = plan.filter((p) => isCase(p.op));
+    if (casePlan.length) {
+      const monitor = await startMonitor(busAddress);
+      try {
+        await runCases({ desktop, witness, cua: args.cua, emit, plan: casePlan, openScene: (scene, role) => openScene(desktop, scene, role, { text: true }) });
+      } finally {
+        const calls = await monitor.stop();
+        emit({ kind: 'case-bus', calls: calls.calls, connections: calls.connections, forbidden: Object.fromEntries(FORBIDDEN_TEXT_CALLS.map((m) => [m, calls.by_member[m] ?? 0])) });
+      }
     }
 
     // Screenshots: every sample's against the pinned build's of its block, before any verdict is drawn.
     const written = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
     const rows = written.filter((r) => r.kind === 'sample');
     const countRows = written.filter((r) => r.kind === 'counts');
+    const busRows = written.filter((r) => r.kind === 'text-bus');
     const imageOf = new Map();
     for (const c of compareShots(shots, xprobeDiff(XPROBE))) {
       const { image, pair, ...rest } = c;
@@ -487,18 +564,26 @@ export async function runDiff(args) {
     // Verdicts: each sample's answer against the pinned build's of its block, a difference excused only by a declared
     // deviation, then the operation judged per candidate.
     const verdicts = [];
-    for (const { scene: sceneName, op } of plan) {
+    for (const { scene: sceneName, op } of blockPlan) {
       const opRows = rows.filter((r) => r.scene === sceneName && r.op === op);
       // The reference is the pinned build's answer in the same block: a scene's own windows change across blocks
-      // (gedit marks a document modified, a counter grows), and so does the window list.
-      const reference = (block) => mode(opRows.filter((r) => r.engine === 'pinned' && r.block === block).map((r) => r.digest));
+      // (gedit marks a document modified, a counter grows), and so does the window list. A text command's is the
+      // answer of a build whose route applied it in that block (the newest build's for its own type_characters).
+      const refEngine = (block) => OPS[op].reference ?? (isText(op) ? (VENDORS.find((v) => opRows.some((r) => r.engine === v && r.block === block && r.ok)) ?? 'pinned') : 'pinned');
+      const refRows = (block) => {
+        const mine = opRows.filter((r) => r.engine === refEngine(block) && r.block === block);
+        return isText(op) && mine.some((r) => r.ok) ? mine.filter((r) => r.ok) : mine;
+      };
+      const reference = (block) => mode(refRows(block).map((r) => r.digest));
       const refAnswer = (block) => {
         const digest = reference(block);
-        const r = opRows.find((x) => x.engine === 'pinned' && x.block === block && x.digest === digest);
-        return r ? answers.get(`pinned|${sceneName}|${op}|${block}|${r.i}`) : null;
+        const r = refRows(block).find((x) => x.digest === digest);
+        return r ? answers.get(`${r.engine}|${sceneName}|${op}|${block}|${r.i}`) : null;
       };
       const refKept = keep[`pinned|${sceneName}|${op}`];
       for (const r of opRows) {
+        // an operation no vendor build runs has no answer to equal
+        if (OPS[op].cuaOnly) continue;
         const image = imageOf.get(`${r.engine}|${r.scene}|${r.op}|${r.block}|${r.i}`);
         r.equal = r.digest === reference(r.block) && image !== false;
         if (!r.equal && image !== false && answers.has(`${r.engine}|${sceneName}|${op}|${r.block}|${r.i}`)) {
@@ -512,9 +597,26 @@ export async function runDiff(args) {
         }
       }
       for (const candidate of labels.filter((l) => !VENDORS.includes(l))) {
-        const opAudits = args.audit && targeted(op) ? Object.fromEntries(labels.map((l) => [l, audits[`${sceneName}|${op}|${l}`]])) : null;
-        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire' });
+        const mine = opRows.filter((r) => r.engine === candidate);
+        const routes = [...new Set(mine.map((r) => r.route).filter(Boolean))];
+        // the foreground route's activation and desktop input are the route itself, which its witness allowance judges;
+        // the audit's forbidden requests are the background route's
+        const foreground = routes.includes('foreground');
+        const opAudits = args.audit && targeted(op) && !foreground ? Object.fromEntries(labels.map((l) => [l, audits[`${sceneName}|${op}|${l}`]])) : null;
+        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op) });
         const extra = {};
+        if (routes.length) extra.routes = routes;
+        if (foreground) extra.audit_note = 'foreground route: the activation and the desktop input are the route itself; judged by the witness allowance';
+        if (isText(op) && via === 'wire' && args.counts) {
+          // Acceptance 6: no PasteText, InsertText or SetTextContents from cua
+          const bus = busRows.find((r) => r.scene === sceneName && r.op === op && r.engine === candidate);
+          const forbidden = bus ? Object.entries(bus.forbidden).filter(([, n]) => n > 0).map(([m, n]) => `${m} ${n}`) : null;
+          extra.text_bus = bus ? { ok: bus.ok, forbidden: bus.forbidden } : null;
+          if (!bus || !bus.ok || forbidden.length) {
+            verdict.pass = false;
+            verdict.reasons.push(!bus ? `${candidate}: the bus pass did not run` : !bus.ok ? `${candidate}: the bus pass's request failed` : `${candidate}: called ${forbidden.join(', ')}`);
+          }
+        }
         if (op === 'tree' && via === 'wire') {
           // the bus-call bound (Design, Observation; Acceptance 4): the cold and the warm count pass, each measured,
           // cua's calls at most the vendor's plus M0's constant; a missing or failed count fails it
@@ -546,13 +648,27 @@ export async function runDiff(args) {
     }
     // the equal flags are folded into the verdicts; record the per-sample equality summary too
     for (const label of labels) {
-      for (const { scene: sceneName, op } of plan) {
+      // an operation no vendor build runs (cuaOnly) has no answer to equal
+      for (const { scene: sceneName, op } of blockPlan.filter((p) => !OPS[p.op].cuaOnly)) {
         const mine = rows.filter((r) => r.engine === label && r.scene === sceneName && r.op === op && r.digest);
         if (mine.length) emit({ kind: 'equality', engine: label, scene: sceneName, op, equal: mine.filter((r) => r.equal).length, of: mine.length, declared: mine.filter((r) => r.deviation).length });
       }
     }
-    const refusals = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'refusal');
-    for (const r of refusals.filter((x) => x.pass !== null)) verdicts.push({ kind: 'verdict', scene: 'refusals', op: r.op, candidate: 'cua', pass: r.pass });
+    // the safety cases: each passes when it ran and every trial passed; the phase's bus trace has no forbidden call
+    const after = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
+    for (const { scene: sceneName, op } of casePlan) {
+      const trials = after.filter((r) => r.kind === 'case' && r.scene === sceneName && r.op === op);
+      const row = { kind: 'verdict', scene: sceneName, op, candidate: 'cua', pass: trials.length > 0 && trials.every((t) => t.pass), reasons: trials.length ? trials.flatMap((t) => t.reasons) : ['the case did not run'] };
+      verdicts.push(row);
+      emit(row);
+    }
+    const caseBus = after.find((r) => r.kind === 'case-bus');
+    if (casePlan.length) {
+      const forbidden = caseBus ? Object.entries(caseBus.forbidden).filter(([, n]) => n > 0).map(([m, n]) => `${m} ${n}`) : ['the trace did not run'];
+      const row = { kind: 'verdict', scene: 'cases', op: 'bus_trace', candidate: 'cua', pass: forbidden.length === 0, reasons: forbidden };
+      verdicts.push(row);
+      emit(row);
+    }
     outcome = runOutcome(verdicts, { valid });
     emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, finished: new Date().toISOString() });
   } finally {
@@ -566,12 +682,13 @@ export async function runDiff(args) {
   return outcome.code === 0;
 }
 
-/** The operations the X request audit covers: every window-targeted one (reads and screenshots included). */
-export const auditPlan = (plan) => plan.filter((p) => targeted(p.op));
+/** The operations the X request audit covers: every window-targeted one of the blocks (reads and screenshots included). */
+export const auditPlan = (plan) => plan.filter((p) => targeted(p.op) && !isCase(p.op));
 
-/** The window an engine's samples of an operation go to: none (desktop), its own, or the scene's shared one. */
+/** The window an engine's samples of an operation go to: none (desktop), its own (a text window for M2's), or the scene's shared one. */
 export function measuredTarget(windows, sceneName, op, label) {
   if (sceneName === 'desktop') return null;
+  if (isText(op)) return windows[sceneName].text[label];
   return ownWindow(op) ? windows[sceneName].own[label] : windows[sceneName].shared;
 }
 

@@ -1,6 +1,7 @@
 // The declared deviations (Design, Verification system: "its output equals the vendor's, or differs only as a
 // declared deviation listed in scripts/linux-engine-diff/deviations.mjs, each naming this spec's section"; Interfaces:
-// `[{op, scene?, field, reason, section}]`). A deviation excuses a difference from the pinned build only in its own
+// `[{op, scene?, field, reason, section}]`). A deviation excuses a difference from the reference build (the pinned
+// build; for a text command, a build whose route applied it in that block, text.mjs) only in its own
 // operation (and scene, when it names one) and its own field, and only when cua's answer is the one declared
 // (`answer`), so a declared difference never covers an undeclared one beside it.
 //
@@ -8,16 +9,18 @@
 // expected cua's own sentence; the pinned and newest builds answer the same `element has no visible bounds in this
 // window`), and the private screenshot directory (file paths are not compared).
 
-/** The sentence an engine-build refusal answers (Plan of Work, M1a, Decisions). */
-export const refusalSentence = (command) => `${command} is not available in this engine build`;
-
-const refused = (op) => ({
+/**
+ * A text command that cua applies where no vendor build's route does (the bar is the union of what either build
+ * succeeds at, so with no vendor success there is no answer to equal): only cua's success is declared, and its effect
+ * is still judged on every sample.
+ */
+const appliedWhereNoVendorDoes = (op, scene, why) => ({
   op,
-  scene: 'refusals',
-  field: 'error',
-  answer: (c) => c.ok === false && c.error === refusalSentence(op),
-  reason: `refused in this engine build rather than reproduce the vendor's text and clipboard failures; M2 brings the one verified paste route`,
-  section: 'Plan of Work, M1a, Decisions; M2',
+  scene,
+  field: 'answer',
+  answer: (c) => c.ok === true,
+  reason: `cua's paste route applies the text here and neither vendor build does: ${why}`,
+  section: 'Purpose ("Text arrives"); Design, Text and clipboard',
 });
 
 /** The paste route's refusal while an earlier unconfirmed paste's `CurrentTime` refusal runs (Decision Log, M2.1). */
@@ -33,7 +36,16 @@ const previousUnconfirmed = (op) => ({
 });
 
 export const DEVIATIONS = [
-  ...['type_text', 'clipboard_read', 'clipboard_write', 'clipboard_release'].map(refused),
+  appliedWhereNoVendorDoes('type_text', 'gnome-text-editor', 'GTK 4 ignores the background route, where both builds send their text, and cua takes the foreground route in dedicated mode (M0.4 matrix; Decision Log, M2 pre-flight)'),
+  appliedWhereNoVendorDoes('clipboard_write', 'gedit', "both builds paste a snapshot with EditableText.PasteText, which inserts nothing in gedit and fails after 10 s (R/F §7); cua pastes it with the family's chord"),
+  {
+    op: 'clipboard_write',
+    field: 'clipboard',
+    answer: (c) => c.clipboard_kept === true,
+    reason:
+      "cua's cleanup leaves the clipboard as it found it (or as a competing owner set it meanwhile), where both vendor builds leave the written snapshot on CLIPBOARD; the difference shows only when something changed the clipboard between the clipboard_read and the clipboard_write",
+    section: 'Decision Log, M0.1 folded (clipboard_write restores the clipboard)',
+  },
   {
     op: 'type_characters',
     scene: 'events',

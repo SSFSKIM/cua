@@ -85,6 +85,34 @@ export function renderSummary(lines) {
         out.push(`| ${scene} | ${engine} | ${mine.filter((r) => r.ok).length}/${mine.length} | ${most('over')} | ${most('mad')} | ${bad ? `block ${bad.block} sample ${bad.i}: ${bad.reason}` : ''} |`);
       }
     }
+    const textBus = rows.filter((r) => r.kind === 'text-bus');
+    const textSamples = samples.filter((r) => r.clipboard_kept !== undefined || r.route !== undefined);
+    if (textBus.length || textSamples.length) {
+      out.push('', "Text commands (M2): the clipboard after each sample (the harness's prior text kept, or for clipboard_write what its owner set between the read and the write), the route cua reports, the witness's allowance for the foreground route, and the text calls of each engine's bus pass:", '');
+      out.push('| scene | op | engine | clipboard kept | routes | foreground allowed | PasteText / InsertText / SetTextContents |', '|---|---|---|---|---|---|---|');
+      for (const key of [...new Set([...textSamples, ...textBus].map((r) => `${r.scene}|${r.op}|${r.engine}`))]) {
+        const [scene, op, engine] = key.split('|');
+        const mine = textSamples.filter((r) => r.scene === scene && r.op === op && r.engine === engine);
+        const bus = textBus.find((r) => r.scene === scene && r.op === op && r.engine === engine);
+        const routes = [...new Set(mine.map((r) => r.route).filter(Boolean))].join(', ') || '–';
+        const allowed = [...new Set(mine.flatMap((r) => r.witness_allowed ?? []))].join(', ') || '–';
+        const calls = bus ? ['PasteText', 'InsertText', 'SetTextContents'].map((m) => bus.forbidden[m]).join(' / ') : '–';
+        out.push(`| ${scene} | ${op} | ${engine} | ${frac(mine, 'clipboard_kept')} | ${routes} | ${allowed} | ${calls} |`);
+      }
+    }
+    const cases = rows.filter((r) => r.kind === 'case');
+    if (cases.length) {
+      out.push('', "Paste safety cases (cua alone; safety.mjs):", '');
+      out.push('| scene | case | trial | verdict | answer | ms | detail |', '|---|---|---:|---|---|---:|---|');
+      for (const c of cases) {
+        const answer = c.answer ? (c.answer.ok ? 'success' : `\`${String(c.answer.error).slice(0, 90)}\``) : c.answers ? c.answers.map((a) => (a.ok ? 'success' : a.error)).join(', ') : c.pastes !== undefined ? `${c.pastes} pastes` : '–';
+        const ms = c.ms ?? c.ms_median ?? '–';
+        const detail = [c.mode, c.retake_delay_ms !== undefined ? `retake after ${c.retake_delay_ms} ms` : null, c.route ? `route ${c.route}` : null, c.next_ms !== undefined ? `next request ${c.next_ms} ms` : null, c.transfer ? `transfer ${c.transfer}` : null, c.ms_max !== undefined ? `max ${c.ms_max} ms` : null].filter(Boolean).join('; ');
+        out.push(`| ${c.scene} | ${c.op} | ${c.trial ?? '–'} | ${c.pass ? 'PASS' : `FAIL: ${c.reasons.join('; ')}`} | ${answer} | ${ms} | ${detail} |`);
+      }
+      const bus = rows.find((r) => r.kind === 'case-bus');
+      if (bus) out.push('', `The cases' bus trace (${bus.calls} calls of ${bus.connections} connections): PasteText ${bus.forbidden.PasteText}, InsertText ${bus.forbidden.InsertText}, SetTextContents ${bus.forbidden.SetTextContents}.`);
+    }
     const refusals = rows.filter((r) => r.kind === 'refusal');
     if (refusals.length) {
       out.push('', "Declared refusals (cua alone; the text and clipboard commands are M2's, `deviations.mjs`):", '');

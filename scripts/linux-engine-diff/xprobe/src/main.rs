@@ -13,7 +13,10 @@
 //! - `xprobe close <window>`: asks the window's client to close it (`WM_DELETE_WINDOW`), for harness-owned windows.
 //! - `xprobe record <x> <y> <width> <height> [focus]`: a recorder window that prints the input events it receives
 //!   (`record.rs`).
+//! - `xprobe clip-own <text>`, `clip-read`, `grabs`, `within <window> <ancestor>`: the clipboard owner and reader and
+//!   the desktop checks of M2's text cases (`clip.rs`).
 
+mod clip;
 mod record;
 
 use std::io::{BufRead, Write};
@@ -40,7 +43,11 @@ fn main() {
         Some("imgdiff") if (3..=4).contains(&args.len()) => imgdiff(&args[1], &args[2], args.get(3)),
         Some("close") if args.len() == 2 => close(&args[1]),
         Some("record") => record::record(&args[1..]),
-        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window> | record <x> <y> <w> <h> [focus]".into()),
+        Some("clip-own") => clip::own(&args[1..]),
+        Some("clip-read") if args.len() == 1 => clip::read(),
+        Some("grabs") if args.len() == 1 => clip::grabs(),
+        Some("within") => clip::within(&args[1..]),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window> | record <x> <y> <w> <h> [focus] | clip-own <text> | clip-read | grabs | within <window> <ancestor>".into()),
     };
     if let Err(error) = result {
         eprintln!("xprobe: {error}");
@@ -48,7 +55,7 @@ fn main() {
     }
 }
 
-fn parse_window(text: &str) -> Result<Window> {
+pub(crate) fn parse_window(text: &str) -> Result<Window> {
     let window = match text.strip_prefix("0x") {
         Some(hex) => u32::from_str_radix(hex, 16)?,
         None => text.parse()?,
@@ -56,7 +63,7 @@ fn parse_window(text: &str) -> Result<Window> {
     Ok(window)
 }
 
-fn atom(conn: &RustConnection, name: &str) -> Result<u32> {
+pub(crate) fn atom(conn: &RustConnection, name: &str) -> Result<u32> {
     Ok(conn.intern_atom(false, name.as_bytes())?.reply()?.atom)
 }
 

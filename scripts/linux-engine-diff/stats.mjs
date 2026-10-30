@@ -70,9 +70,11 @@ export function summarizeEngine(rows) {
     n_cold: cold.length,
     n_warm: warm.length,
     ok: rows.length > 0 && rows.every((r) => r.ok),
+    any_ok: rows.some((r) => r.ok),
     witness: all('witness'),
     effect: all('effect'),
     equal: all('equal'),
+    clipboard: all('clipboard_kept'),
   };
 }
 
@@ -105,14 +107,21 @@ export function auditVerdict(audit, timedRows) {
   return 'clean';
 }
 
-export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true }) {
+/**
+ * `text` (M2's text and clipboard commands): the bar is built from the vendor samples that succeeded (the union of what
+ * either build succeeds at; a build that only failed sets no bar, and with none there is no speed judgement), every
+ * candidate request must answer success, and the clipboard is judged on every candidate sample that records it.
+ */
+export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true, text = false }) {
   const engines = {};
   for (const label of new Set(rows.map((r) => r.engine))) {
     engines[label] = summarizeEngine(rows.filter((r) => r.engine === label));
   }
   const vendorRows = vendors.map((v) => engines[v]).filter(Boolean);
+  // the speed bar's samples: with `text`, a vendor build's successes only
+  const barEngines = text ? vendors.map((v) => rows.filter((r) => r.engine === v && r.ok)).filter((x) => x.length).map(summarizeEngine) : vendorRows;
   const best = (series, exact = false) => {
-    const values = vendorRows.map((e) => (exact ? e.exact[series] : e[series])).filter((v) => v !== null);
+    const values = barEngines.map((e) => (exact ? e.exact[series] : e[series])).filter((v) => v !== null);
     return values.length ? Math.min(...values) : null;
   };
   const bar = { cold: best('cold'), warm: best('warm') };
@@ -122,7 +131,7 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   if (!c) return { engines, bar, speed: false, pass: false, reasons: [`no samples from ${candidate}`] };
   // a failed request fails the verdict where a vendor build answered every request; where the vendors' answers are
   // errors too, the answers are compared (`equal`)
-  if (!c.ok && (vendorRows.length === 0 || vendorRows.some((e) => e.ok))) reasons.push(`${candidate}: a request failed`);
+  if (!c.ok && (text || vendorRows.length === 0 || vendorRows.some((e) => e.ok))) reasons.push(`${candidate}: a request failed`);
   let speed = true;
   for (const series of ['cold', 'warm']) {
     if (exactBar[series] === null || c.exact[series] === null) continue;
@@ -134,7 +143,8 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
       if (judgeSpeed) reasons.push(`${candidate}: ${series} ${shown(c.exact[series])} ms > bar ${shown(exactBar[series])} ms`);
     }
   }
-  if (vendorRows.some((e) => e.witness === true) && c.witness !== true) reasons.push(`${candidate}: the witness changed`);
+  // a text command's witness is judged whatever the vendor builds did (by the route each request took, run.mjs)
+  if ((text || vendorRows.some((e) => e.witness === true)) && c.witness !== true) reasons.push(`${candidate}: the witness changed`);
   // the X request audit (audits: engine -> {clean, oks}), required wherever a vendor build's witness or audit is clean
   if (audits) {
     const verdictOf = (engine) => auditVerdict(audits[engine], rows.filter((r) => r.engine === engine));
@@ -145,5 +155,6 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   const missed = missedEffects(rows, candidate);
   if (missed.length) reasons.push(`${candidate}: the effect was not verified on ${missed.length} sample${missed.length === 1 ? '' : 's'} (${missed.slice(0, 5).join(', ')})`);
   if (c.equal === false) reasons.push(`${candidate}: the output differs from the vendor's`);
+  if (text && c.clipboard === false) reasons.push(`${candidate}: the clipboard was not left as it was before the paste`);
   return { engines, bar, speed, pass: reasons.length === 0, reasons };
 }

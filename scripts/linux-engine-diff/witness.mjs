@@ -57,3 +57,47 @@ export async function startWitness(xprobe, { tailMs = 20 } = {}) {
     },
   };
 }
+
+/**
+ * Whether a stacking order changed only by raising `target` to the top: `after` is `before` with the target moved to
+ * the end (the stacking list is bottom first).
+ */
+export function raisedOnly(before, after, target) {
+  if (!before.includes(target)) return false;
+  const expected = [...before.filter((w) => w !== target), target];
+  return expected.length === after.length && expected.every((w, i) => after[i] === w);
+}
+
+/**
+ * The witness of a request that took the foreground route (Decision Log, M2.2: the allowance is keyed to the route the
+ * request actually took, read from the engine's record, never to the desktop mode). On a dedicated desktop the route
+ * may activate its target window and move the pointer, and nothing else: every change of the active window goes to the
+ * target, every change of the input focus goes into it (`focusWithin`), the stacking order changes only by the target's
+ * raise (`stackingRaised`, from the orders before and after the span), and the pointer may move. On its way the window
+ * manager may pass through no active window and no input focus (None or PointerRoot), so long as the last change goes
+ * to the target. Anything else, a protocol error included, is a violation. Returns `{clean, fields, allowed}`:
+ * `fields` the violations, `allowed` the fields that changed within the allowance.
+ */
+export function judgeForegroundSpan(report, { target, focusWithin, stackingRaised }) {
+  if (!report || report.error) return { clean: false, fields: ['protocol'], allowed: [] };
+  const bad = new Set();
+  const allowed = new Set();
+  const changes = report.changes ?? [];
+  const toTarget = (to) => Array.isArray(to) && to.length === 1 && to[0] === target;
+  const noneActive = (to) => Array.isArray(to) && (to.length === 0 || (to.length === 1 && to[0] === 0));
+  const last = (field) => changes.filter((c) => c.field === field && !c.notify).at(-1);
+  for (const c of changes) {
+    if (c.field === 'pointer') allowed.add('pointer');
+    else if (c.field === 'active') {
+      if (c.notify || toTarget(c.to) || (noneActive(c.to) && toTarget(last('active').to))) allowed.add('active');
+      else bad.add('active');
+    } else if (c.field === 'focus') {
+      if (focusWithin(c.to) || ([0, 1].includes(c.to) && focusWithin(last('focus').to))) allowed.add('focus');
+      else bad.add('focus');
+    } else if (c.field === 'stacking') {
+      if (stackingRaised) allowed.add('stacking');
+      else bad.add('stacking');
+    } else bad.add(c.field);
+  }
+  return { clean: bad.size === 0, fields: [...bad], allowed: [...allowed] };
+}

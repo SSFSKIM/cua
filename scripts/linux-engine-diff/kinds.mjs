@@ -263,7 +263,7 @@ async function series(ctx, spec, scene, kind, n) {
 
 export async function runKinds(args, { desktop, emit }) {
   if (!args.vendor) throw new Error('the kinds experiment needs --vendor');
-  if (!['covered', 'visible', 'partial', 'partial-deep'].includes(args.occlusion)) throw new Error('--occlusion is covered, visible, partial or partial-deep');
+  if (!['covered', 'visible', 'partial', 'partial-deep', 'partial-top'].includes(args.occlusion)) throw new Error('--occlusion is covered, visible or partial(-deep, -top)');
   const names = familyNames(args.families?.length ? args.families : Object.keys(KIND_FAMILIES));
   const kindsAsked = args.ops && args.ops !== 'all' ? args.ops : null;
   const n = args.samplesTrials ?? 10;

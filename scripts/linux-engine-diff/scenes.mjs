@@ -195,11 +195,18 @@ export class Desktop {
   /**
    * A scene window put in an occlusion condition before its request, the focus in front: `covered` (the front window
    * over the whole screen), `visible` (the window raised above the other scene windows, the front window in its
-   * corner), `partial` (the window raised, the front window over its bottom half) or `partial-deep` (over its bottom
-   * 70%).
+   * corner), `partial` (the window raised, the front window over its bottom half), `partial-deep` (over its bottom
+   * 70%) or `partial-top` (over its top 55%, where the targets are).
    */
   arrange(scene, occlusion) {
     if (occlusion === 'covered') return this.arrangeFront('covered');
+    if (occlusion === 'partial-top') {
+      // the window raised, the front window over its top 55%, where the targets are: the window partly visible, the
+      // points under the cover
+      xdotool('windowraise', scene.id);
+      configure(this.front.id, 0, 0, 1280, scene.window.y + Math.round(scene.window.height * 0.55));
+      return this.focusFront();
+    }
     if (occlusion === 'partial' || occlusion === 'partial-deep') {
       xdotool('windowraise', scene.id);
       const y = scene.window.y + Math.round(scene.window.height * (occlusion === 'partial' ? 0.5 : 0.3));

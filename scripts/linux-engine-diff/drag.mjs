@@ -121,15 +121,14 @@ export const xtermCell = (offset) => [2 + 6 * offset + 3, 2 + 6];
 
 /**
  * A terminal's character cell from its window's size hints (a terminal resizes in whole cells: the increment is the
- * cell, the base size the border and padding), as a character's centre on the first line.
+ * cell), from the first cell's corner `origin` (window-relative), as a character's centre on the first line.
  */
-export function terminalCell(id) {
+export function terminalCell(id, origin) {
   const hints = execFileSync('xprop', ['-id', String(id), 'WM_NORMAL_HINTS'], { encoding: 'utf8', timeout: 5000 });
   const pair = (label) => hints.match(new RegExp(`${label}: (\\d+) by (\\d+)`))?.slice(1).map(Number) ?? null;
   const [cw, ch] = pair('program specified resize increment') ?? [0, 0];
   if (!cw || !ch) throw new Error(`window ${id} names no resize increment`);
-  const [bw, bh] = pair('program specified base size') ?? [0, 0];
-  return (offset) => [Math.floor(bw / 2) + cw * offset + Math.floor(cw / 2), Math.floor(bh / 2) + Math.floor(ch / 2)];
+  return (offset) => [origin.x + cw * offset + Math.floor(cw / 2), origin.y + Math.floor(ch / 2)];
 }
 
 /**
@@ -168,7 +167,13 @@ export async function locate(ctx, scene, kinds) {
   }
   if (kinds.includes('scale4')) at.scale4 = FAMILIES['gtk4-input'].places.scale;
   if (kinds.includes('select')) {
-    if (scene.family === 'gnome-terminal') at.text = { cell: terminalCell(scene.id) };
+    if (scene.family === 'gnome-terminal') {
+      // VTE's terminal widget, below gnome-terminal's own header bar: its first cell at the widget's corner
+      const node = preorder((await desktop.state(scene)).ax_tree).find((x) => x.role === 'terminal');
+      if (!node) throw new Error(`${scene.label}: no terminal in its tree`);
+      const e = oracle.extents(node.id);
+      at.text = { cell: terminalCell(scene.id, { x: e.x - origin.x + 1, y: e.y - origin.y + 1 }) };
+    }
     else if (scene.kindOf === 'terminal') at.text = { cell: xtermCell };
     else if (scene.pixels) at.text = { cell: writerGenCell, pixels: true };
     else {
@@ -499,7 +504,7 @@ export async function runDrag(args, { desktop, emit }) {
       let measuring = null;
       process.stdout.write(`family ${family}: ${kinds.join(', ')}\n`);
       const scenes = {};
-      const ctx = { desktop, oracle, witness, emit, family, occlusion: args.occlusion };
+      const ctx = { desktop, oracle, witness, emit, family, occlusion: args.occlusion, cua: args.cua };
       try {
         // the browsers show the drag page; gedit gets classic scroll bars (GTK 3's overlay ones hide until hovered)
         const page = ['chrome', 'firefox', 'electron'].includes(family) ? PAGE : null;

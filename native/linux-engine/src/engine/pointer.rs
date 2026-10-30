@@ -4,11 +4,12 @@
 use std::time::Duration;
 
 use anyhow::{Result, bail};
-use serde_json::Value;
+use serde_json::{Value, json};
 use x11rb::protocol::xproto::ConnectionExt as _;
 
-use super::Engine;
+use super::{DesktopMode, Engine};
 use crate::desktop::Desktop;
+use crate::dnd::DndWatch;
 use crate::families::DragPacing;
 use crate::families::Kind;
 use crate::input::chord_keycodes;
@@ -94,10 +95,31 @@ fn click_once(
     released.and(keys_released)
 }
 
+/// A drag cancelled before its drop because the target began a drag and drop (`dnd.rs`).
+#[derive(Debug)]
+pub(super) struct DropCancelled;
+
+impl std::fmt::Display for DropCancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("drag and drop cancelled before the drop")
+    }
+}
+
+impl std::error::Error for DropCancelled {}
+
 /// The drag after the pointer is placed at its first point: the chord, the press, every sample, the release.
 /// `pacing.step` follows each sample, the last included (where the vendor waits 1 ms, behaviour §10.4),
-/// `pacing.press` follows the press and `pacing.release` precedes the release (`families.rs`).
-fn drag_along(x: &X11, route: &mut Route, keycodes: &[u8], points: &[(i16, i16)], pacing: &DragPacing) -> Result<()> {
+/// `pacing.press` follows the press and `pacing.release` precedes the release (`families.rs`). With a watch on
+/// `XdndSelection`, a drag the target turns into a drag and drop stops there: Escape is pressed and released, then the
+/// button, so the drag and drop is cancelled before anything drops, and the answer is [`DropCancelled`].
+fn drag_along(
+    x: &X11,
+    route: &mut Route,
+    keycodes: &[u8],
+    points: &[(i16, i16)],
+    pacing: &DragPacing,
+    mut watch: Option<&mut DndWatch>,
+) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
     let dragged = (|| -> Result<()> {
@@ -108,6 +130,16 @@ fn drag_along(x: &X11, route: &mut Route, keycodes: &[u8], points: &[(i16, i16)]
         for (sx, sy) in drag_samples(points) {
             route.place_again(x, sx, sy)?;
             std::thread::sleep(pacing.step);
+            if let Some(watch) = watch.as_deref_mut()
+                && watch.started(x)
+            {
+                let escape = chord_keycodes(x, "Escape")?;
+                let held = route.acquire(x, &escape)?;
+                route.release(x, &held)?;
+                pressed = false;
+                route.button(x, 1, false)?;
+                return Err(DropCancelled.into());
+            }
         }
         std::thread::sleep(pacing.release);
         pressed = false;
@@ -253,8 +285,18 @@ impl Engine {
         };
         let pacing = self.drag_pacing_for(window);
         let target = self.target_for(input.window.map(|w| w.id), Kind::Drag)?;
+        // in shared mode, a background drag into a family whose drop changes the desktop watches for a drag and drop
+        let mut watch = match target {
+            Target::Window(window)
+                if self.cfg.desktop == DesktopMode::Shared
+                    && self.family_of(window).is_some_and(|f| f.drop_changes_desktop) =>
+            {
+                Some(DndWatch::start(&mut self.x, window)?)
+            }
+            _ => None,
+        };
         let Engine { x, inputs, .. } = self;
-        inputs.with_route(x, target, |x, route, _| {
+        let dragged = inputs.with_route(x, target, |x, route, _| {
             let points = input
                 .path
                 .iter()
@@ -265,9 +307,20 @@ impl Engine {
             }
             route.place(x, points[0].0, points[0].1)?;
             let keycodes = chord(x, input.key.as_deref())?;
-            drag_along(x, route, &keycodes, &points, &pacing)
-        })?;
-        Ok(Value::Null)
+            drag_along(x, route, &keycodes, &points, &pacing, watch.as_mut())
+        });
+        if let Some(watch) = watch {
+            self.extra
+                .insert("dnd".into(), json!({ "cancelled": watch.is_started() }));
+            watch.stop(&mut self.x);
+        }
+        match dragged {
+            Err(error) if error.downcast_ref::<DropCancelled>().is_some() => {
+                let window = window.expect("a cancelled drag named its window");
+                bail!(crate::dnd::cancelled(&self.x.get_window(window)?.app))
+            }
+            other => other.map(|()| Value::Null),
+        }
     }
 
     /// `drag_handle`: desktop only; start, move and end are the JavaScript's to order (behaviour §10.5). The vendor's

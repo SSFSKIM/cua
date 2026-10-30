@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import { auditNothingSent, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, deviceSentence, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
 import { OPS, SCENE_OPS } from '../../scripts/linux-engine-diff/ops.mjs';
+import { DEVICE_REFUSAL, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
 import { planOps, routeOf, runsOp } from '../../scripts/linux-engine-diff/run.mjs';
+import { runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
 
 const GET = '000:<:0010: 12: Request(20): GetProperty delete=false(0x00) window=0x012000f8 property=0x43("WM_CLASS") type=0x0';
 const KEY = '000:<:02db: 44: Request(25): SendEvent propagate=false(0x00) destination=0x012000f8 event-mask=0 KeyPress(2) detail=0x35';
@@ -20,8 +22,8 @@ test('a refused request is audited for nothing sent: a SendEvent of any kind, or
 });
 
 test("Acceptance 8's cases: each kind and condition, refused in shared mode, foreground in dedicated, the rest background", () => {
-  const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'gnome-text-editor'], Object.values(DEVICE_SCENE_OPS).flat().filter((op) => op !== 'capabilities'));
-  assert.equal(plan.length, 21);
+  const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'gnome-text-editor'], Object.values(DEVICE_SCENE_OPS).flat().filter((op) => op !== 'capabilities'));
+  assert.equal(plan.length, 29);
   for (const { op, scene } of plan) {
     const def = OPS[op];
     assert.ok(SCENE_OPS[scene].includes(op));
@@ -76,4 +78,15 @@ test("capabilities answers the X11 backend's report for the engine's own version
   assert.equal(capabilitiesAnswer(output, 'cua-engine 0.3.1 (abc)'), false);
   assert.equal(judgeDevice('capabilities', [row({ ok: true, answer_ok: true })], null).pass, true, 'no audit for an answer');
   assert.ok(DEVICE_OPS.capabilities.cuaOnly);
+});
+
+test("a declared refusal is a recorded loss: listed apart, never a pass, not a failure; only the Device mode sentence matches", () => {
+  assert.ok(declaredRefusal({ op: 'drag', scene: 'chrome-input' }));
+  assert.equal(declaredRefusal({ op: 'drag', scene: 'gedit' }), null, 'only where declared');
+  assert.ok(DEVICE_REFUSAL.test(deviceSentence('Google-chrome')));
+  assert.ok(!DEVICE_REFUSAL.test('drag path must contain at least two points'));
+  const verdict = (pass, extra = {}) => ({ kind: 'verdict', candidate: 'cua', scene: 'chrome-input', op: 'drag', pass, reasons: [], ...extra });
+  const outcome = runOutcome([verdict(true, { op: 'move' }), verdict(false, { verdict: 'declared refusal' })], { valid: true });
+  assert.deepEqual(outcome, { valid: true, pass: true, failed: [], parity: [], refused: ['chrome-input drag cua'], code: 0 });
+  assert.match(verdictLine(outcome), /^no verdict FAIL; declared refusal \(a loss, not a pass\): chrome-input drag cua$/);
 });

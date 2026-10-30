@@ -11,6 +11,7 @@ mod copy;
 mod cover;
 mod dbus;
 mod desktop;
+mod dnd;
 mod engine;
 mod families;
 #[cfg(test)]

@@ -63,6 +63,7 @@ const ATOM_NAMES: &[&str] = &[
     "_NET_WM_STATE_MODAL",
     "_NET_WM_PID",
     "AT_SPI_BUS",
+    "XdndSelection",
 ];
 
 pub struct X11 {
@@ -736,12 +737,18 @@ impl X11 {
         self.shm.prepare(&self.conn);
     }
 
-    /// The pointer's current image through XFixes.
-    fn cursor_image(&mut self) -> Result<crate::capture::Cursor> {
+    /// XFixes, its version negotiated once per connection.
+    pub fn ensure_xfixes(&mut self) -> Result<()> {
         if !self.xfixes_ready {
             self.conn.xfixes_query_version(4, 0)?.reply()?;
             self.xfixes_ready = true;
         }
+        Ok(())
+    }
+
+    /// The pointer's current image through XFixes.
+    fn cursor_image(&mut self) -> Result<crate::capture::Cursor> {
+        self.ensure_xfixes()?;
         let reply = self.conn.xfixes_get_cursor_image()?.reply()?;
         let expected = reply.width as usize * reply.height as usize;
         if reply.cursor_image.len() != expected {

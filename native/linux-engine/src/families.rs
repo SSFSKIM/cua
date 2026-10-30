@@ -92,6 +92,9 @@ pub struct Family {
     pub ignores: &'static [Ignored],
     /// Its `Text` follows each character beyond the BMP with a U+FEFF, one offset more (Gecko, M0.4's matrix).
     pub feff_after_astral: bool,
+    /// Its HTML5 drag and drop changes the desktop when it drops (Chrome, M1a.4 and M3.1): a background drag that
+    /// becomes one is cancelled before the drop in shared mode (`dnd.rs`).
+    pub drop_changes_desktop: bool,
     /// The runs that showed it (`docs/evidence/2026-10-28-own-linux-engine/`).
     pub evidence: &'static str,
 }
@@ -134,7 +137,10 @@ pub const FAMILIES: &[Family] = &[
     // selection can end early, and a dwell after the press or before the release alone does not help. Chromium takes
     // every kind with 500 µs after each sample (less leaves canvas strokes and thumb drags short; a dwell before the
     // release adds nothing); Gecko takes canvas strokes with 300 µs and HTML5 drops only with 30 ms before the release
-    // as well. The other families of M0.4's matrix matched the pinned build with no wait at all.
+    // as well. The other families of M0.4's matrix matched the pinned build with no wait at all. Fully covered, a
+    // Chromium window ignores background text-selection, scrollbar-thumb and drag-and-drop drags in every engine
+    // (range and canvas drags still land; with half the window covered and the path visible every drag lands, M3.1):
+    // its drags take the clicks' `unless_unobscured` of Gecko.
     Family {
         name: "Chromium",
         toolkit: Some("Chromium"),
@@ -146,15 +152,21 @@ pub const FAMILIES: &[Family] = &[
             release: Duration::ZERO,
         },
         paste: DEFAULT_PASTE,
-        ignores: &[],
+        ignores: &[Ignored {
+            kind: Kind::Drag,
+            when: When::UnlessUnobscured,
+        }],
         feff_after_astral: false,
-        evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller",
+        drop_changes_desktop: true,
+        evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
+                   m31-drag-partial",
     },
     // Gecko's Text answers a U+FEFF after each character beyond the BMP (M0.4), which the paste's confirmation strips
     // there and only there, so a real U+FEFF still counts. Gecko ignores synthetic coordinate clicks while any of its
     // window is covered or off the screen, by a rule that is neither the click point nor the visible area (M0.4 at
     // 1280×781; M1a.3 at 800×600), and takes them while it is fully unobscured; its scrolls and pointer moves likewise
-    // (M3.1: ignored fully covered, taken with half the window covered, so the clicks' predicate covers them).
+    // (M3.1: ignored fully covered, taken with half the window covered, so the clicks' predicate covers them), and its
+    // drags.
     Family {
         name: "Gecko",
         toolkit: Some("Gecko"),
@@ -179,13 +191,18 @@ pub const FAMILIES: &[Family] = &[
                 kind: Kind::Move,
                 when: When::UnlessUnobscured,
             },
+            Ignored {
+                kind: Kind::Drag,
+                when: When::UnlessUnobscured,
+            },
         ],
         feff_after_astral: true,
+        drop_changes_desktop: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
                    m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600; m3/kinds/ \
-                   runs m31-kinds-covered, m31-kinds-partial",
+                   runs m31-kinds-covered, m31-kinds-partial, m31-drag-covered, m31-drag-partial",
     },
-    // GTK 4 reads input only as XInput 2 events: a synthetic key, click, scroll or pointer move never arrives, covered
+    // GTK 4 reads input only as XInput 2 events: a synthetic key, click, scroll, drag or pointer move never arrives, covered
     // or visible, in every engine (M0.4; M3.1), so these take the foreground route in dedicated mode and are refused in
     // shared mode, as its paste chord is. Its element actions through AT-SPI take effect (M0.4's element-click run).
     Family {
@@ -216,10 +233,32 @@ pub const FAMILIES: &[Family] = &[
                 kind: Kind::Move,
                 when: When::Always,
             },
+            Ignored {
+                kind: Kind::Drag,
+                when: When::Always,
+            },
         ],
         feff_after_astral: false,
+        drop_changes_desktop: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible; m3/kinds/ runs m31-kinds-covered, \
-                   m31-kinds-visible",
+                   m31-kinds-visible, m31-drag-covered, m31-drag-visible-new",
+    },
+    // Qt (kate on Qt 5.15, qtcreator on Qt 6.4) takes synthetic clicks and keys (M0.4) but no synthetic wheel event,
+    // covered or visible, in every engine (M3.1): probably because its xcb backend reads the wheel through XInput 2.
+    Family {
+        name: "Qt",
+        toolkit: Some("Qt"),
+        toolkit_major: None,
+        classes: &[],
+        drag: DragPacing::NONE,
+        paste: DEFAULT_PASTE,
+        ignores: &[Ignored {
+            kind: Kind::Scroll,
+            when: When::Always,
+        }],
+        feff_after_astral: false,
+        drop_changes_desktop: false,
+        evidence: "m3/kinds/ runs m31-kinds-covered, m31-kinds-visible",
     },
     // A VTE terminal pastes with Ctrl+Shift+V; Ctrl+V inserts the next key literally in a shell.
     Family {
@@ -231,6 +270,7 @@ pub const FAMILIES: &[Family] = &[
         paste: PasteRoute::Chord("ctrl+shift+v"),
         ignores: &[],
         feff_after_astral: false,
+        drop_changes_desktop: false,
         evidence: "M2.2's terminal paste (task-14 report; m2/ from M2.3)",
     },
     // xterm pastes PRIMARY, not CLIPBOARD, by default, and ignores synthetic keys (`allowSendEvents` false, M0.4): no
@@ -247,6 +287,7 @@ pub const FAMILIES: &[Family] = &[
             when: When::Always,
         }],
         feff_after_astral: false,
+        drop_changes_desktop: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible",
     },
 ];
@@ -282,6 +323,7 @@ mod tests {
             paste: DEFAULT_PASTE,
             ignores: &[],
             feff_after_astral: false,
+            drop_changes_desktop: false,
             evidence: "test",
         },
         Family {
@@ -293,6 +335,7 @@ mod tests {
             paste: PasteRoute::Unverified,
             ignores: &[],
             feff_after_astral: false,
+            drop_changes_desktop: false,
             evidence: "test",
         },
     ];
@@ -398,6 +441,45 @@ mod tests {
                 assert_eq!(ignores(class, None), None, "{class} takes background {kind:?}");
             }
             assert_eq!(ignores("Gedit", Some(toolkit("GTK", Some("3.24.41")))), None);
+        }
+    }
+
+    #[test]
+    fn drags_are_ignored_by_gtk_4_always_and_by_gecko_and_chromium_unless_unobscured() {
+        let drag = |class, toolkit: Option<Toolkit>| {
+            family(FAMILIES, Some(class), toolkit.as_ref()).and_then(|f| f.ignores(Kind::Drag))
+        };
+        assert_eq!(
+            drag("gnome-text-editor", Some(toolkit("GTK", Some("4.14.2")))),
+            Some(When::Always)
+        );
+        assert_eq!(drag("firefox", None), Some(When::UnlessUnobscured));
+        assert_eq!(drag("Google-chrome", None), Some(When::UnlessUnobscured));
+        assert_eq!(
+            drag("cua-electron-fixture", Some(toolkit("Chromium", Some("1.0")))),
+            Some(When::UnlessUnobscured),
+            "Electron is Chromium by its toolkit"
+        );
+        for (class, toolkit) in [("kate", Some(toolkit("Qt", Some("5.15.13")))), ("XTerm", None)] {
+            assert_eq!(drag(class, toolkit), None, "{class} takes background drags");
+        }
+        assert_eq!(drag("Gedit", Some(toolkit("GTK", Some("3.24.41")))), None);
+        let chromium = family(FAMILIES, Some("Google-chrome"), None).unwrap();
+        for kind in [Kind::Clicks, Kind::Keys, Kind::Scroll, Kind::Move, Kind::Paste] {
+            assert_eq!(chromium.ignores(kind), None, "Chromium takes {kind:?} covered");
+        }
+    }
+
+    #[test]
+    fn qt_ignores_background_scrolls_at_any_version_and_takes_the_rest() {
+        for version in ["5.15.13", "6.4.2"] {
+            let qt = family(FAMILIES, Some("kate"), Some(&toolkit("Qt", Some(version)))).expect("Qt is listed");
+            assert_eq!(qt.ignores(Kind::Scroll), Some(When::Always), "{version}");
+            for kind in [Kind::Clicks, Kind::Keys, Kind::Paste, Kind::Drag] {
+                assert_eq!(qt.ignores(kind), None, "{kind:?}: M0.4 and M3.1 measured it taken");
+            }
+            assert_eq!(qt.paste, DEFAULT_PASTE);
+            assert_eq!(qt.drag, DragPacing::NONE);
         }
     }
 

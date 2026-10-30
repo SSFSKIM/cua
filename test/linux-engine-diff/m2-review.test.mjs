@@ -178,7 +178,7 @@ test("a listed operation above the bar is parity when cua's median lies within t
 test('a parity verdict neither fails the run nor counts as a pass', () => {
   const verdict = (pass, extra = {}) => ({ kind: 'verdict', candidate: 'cua', scene: 'desktop', op: 'get_screenshot', pass, reasons: [], ...extra });
   const outcome = runOutcome([verdict(true), verdict(false, { verdict: 'parity', parity: [{ series: 'cold' }] })], { valid: true });
-  assert.deepEqual(outcome, { valid: true, pass: true, failed: [], parity: ['desktop get_screenshot cua'], code: 0 });
+  assert.deepEqual(outcome, { valid: true, pass: true, failed: [], parity: ['desktop get_screenshot cua'], refused: [], code: 0 });
   assert.equal(runOutcome([verdict(false, { verdict: 'fail', reasons: ['x'] })], { valid: true }).code, 1);
 });
 

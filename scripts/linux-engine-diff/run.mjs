@@ -19,7 +19,7 @@ import { auditForeground, auditNothingSent, auditRequests, parseXtrace, startPro
 import { startMonitor } from './busmon.mjs';
 import { stacking, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
-import { declaredDeviation, declaredParity } from './deviations.mjs';
+import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe } from './deviations.mjs';
 import { judgeDevice } from './device.mjs';
 import { Engine } from './engine.mjs';
 import { medianDifferenceInterval, normalizeAnswer } from './events.mjs';
@@ -450,6 +450,14 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
   // and its size (a case moves it and puts it back)
   if (scene === 'device-gtk4') return withApp(desktop, await desktop.openFamilyScene('gtk4-input', role));
   if (scene === 'device-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role));
+  if (scene === 'device-qt') {
+    const { openFamily } = await import('./families.mjs');
+    const { DRAG_DOC, verticalScrollBar } = await import('./drag.mjs');
+    desktop.oracle ??= new Oracle();
+    const opened = await openFamily(desktop, desktop.oracle, 'kate', role, { doc: DRAG_DOC });
+    opened.scrollbar = await verticalScrollBar(desktop, desktop.oracle, opened);
+    return withApp(desktop, opened);
+  }
   if (scene === 'device-firefox') {
     const { openFamily, FAMILIES } = await import('./families.mjs');
     desktop.oracle ??= new Oracle();
@@ -843,6 +851,14 @@ export async function runDiff(args) {
         if (declared.length) extra.deviations = declared;
         // a reason added beside the judge (the bus trace, the bus-call bound, the foreground audit) is a failure, parity or not
         if (verdict.reasons.length) verdict.verdict = 'fail';
+        // a declared refusal (M3.1): every cua sample the Device mode sentence with the witness unchanged, in place of
+        // the judge's verdict; anything else fails
+        const refusal = declaredRefusal({ op, scene: sceneName });
+        if (refusal) {
+          const bad = mine.filter((r) => r.ok || !DEVICE_REFUSAL.test(String(r.error ?? '')) || r.witness !== true);
+          extra.refusal = describe(refusal);
+          Object.assign(verdict, bad.length ? { pass: false, verdict: 'fail', reasons: [`${candidate}: ${bad.length} of ${mine.length} samples not the declared refusal with the witness unchanged`] } : { pass: false, verdict: 'declared refusal', reasons: [] });
+        }
         const row = { kind: 'verdict', scene: sceneName, op, candidate, ...verdict, ...extra };
         verdicts.push(row);
         emit(row);
@@ -878,7 +894,7 @@ export async function runDiff(args) {
       emit(row);
     }
     outcome = runOutcome(verdicts, { valid });
-    emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, finished: new Date().toISOString() });
+    emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, finished: new Date().toISOString() });
   } finally {
     if (witness) await witness.stop();
     await desktop.closeAll();

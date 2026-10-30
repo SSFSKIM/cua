@@ -124,5 +124,30 @@ export function declaredParity({ op, scene, series }, list = PARITY) {
   return list.find((p) => p.op === op && p.scene === scene && p.series === series) ?? null;
 }
 
+/** The Device mode sentence (Design, Device mode and the foreground route), whatever the application. */
+export const DEVICE_REFUSAL = / does not accept background input; use a dedicated desktop or activate the window first$/;
+
+/**
+ * The declared refusals (M3.1): an operation of the differential run that the vendor builds send and that lands, which
+ * cua refuses in shared mode because the scene's window is in a condition its family lists (families.rs), so its
+ * input would be ignored in other cases of the same kind. A loss against the vendor, recorded plainly: its verdict is
+ * **declared refusal**, listed apart and never a pass, and holds only while every cua sample answers the Device mode
+ * sentence with the witness unchanged; anything else fails. `[{op, scene, reason, section}]`.
+ */
+export const REFUSALS = [
+  {
+    op: 'drag',
+    scene: 'chrome-input',
+    reason:
+      "the scene's Chrome window is fully covered, where Chromium ignores background text-selection, scrollbar-thumb and drag-and-drop drags in every engine; cua refuses every drag into a Chromium window that is not fully unobscured, because it cannot tell before sending a drag that would land (this pad's, a range's, a canvas's) from one that would not",
+    section: 'Decision Log, M3.1 (Chromium Drag unless_unobscured); m3/kinds/ run m31-drag-covered',
+  },
+];
+
+/** The declared refusal of an operation on a scene, or null. */
+export function declaredRefusal({ op, scene }, list = REFUSALS) {
+  return list.find((r) => r.op === op && r.scene === scene) ?? null;
+}
+
 /** A deviation as recorded in results.jsonl and summary.md (without its matcher). */
 export const describe = ({ answer, ...rest }) => rest;

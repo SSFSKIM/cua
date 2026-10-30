@@ -80,7 +80,7 @@ export function renderSummary(lines) {
         const noise = v?.noise?.length ? ` (same within noise: ${v.noise.map((n) => `${n.series} ${Math.round(n.candidate * 100) / 100} against ${Math.round(n.bar * 100) / 100}, [${n.interval.join(', ')}]`).join('; ')})` : '';
         const r2 = (x) => Math.round(x * 100) / 100;
         const parity = v?.parity?.length ? ` (${v.parity.map((p) => `${p.series} ${r2(p.candidate)} against ${r2(p.bar)}, within the ${p.against} build's spread [${p.spread.join(', ')}]; ${p.section}`).join('; ')})` : '';
-        const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`;
+        const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : v.verdict === 'declared refusal' ? `**declared refusal**, a loss, not a pass (${v.refusal?.section ?? ''})` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`;
         const a = audits.find((r) => r.scene === scene && r.op === op && r.engine === engine);
         const audit = a ? (a.clean ? 'clean' : `**${[...new Set(a.forbidden.map((f) => f.what))].join(', ') || 'not traced'}**`) : '–';
         const wasted = mine.map((r) => r.stats?.tree?.wasted_calls).filter((w) => typeof w === 'number');

@@ -11,8 +11,9 @@ M1a builds it up from M0's spike. It answers every command of the pinned helper 
 desktop) on the observation side (M1a.1); `press_key`, `key_down`, `key_up`, `click`, `move`, `move_relative`,
 `scroll`, `drag`, `drag_handle`, `perform_secondary_action`, `activate_window` and `launch_app` on the input side
 (M1a.2). M2.1 adds the clipboard core and `clipboard_read` and `clipboard_release`; M2.2 the paste route for
-`type_text` and `clipboard_write`, and `type_characters`. `capabilities` (M3) answers
-`capabilities is not available in this engine build`.
+`type_text` and `clipboard_write`, and `type_characters`. M3.1 adds `capabilities` (`caps.rs`: the X11 backend's
+fixed capabilities, the device mode, the version and the commit) and applies the device mode to every input kind a
+family ignores on the background route (below).
 
 ```bash
 cargo build --release
@@ -76,6 +77,21 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   as the family of the window under its start asks, in place of the vendor's 8 ms between their points.
 - **Elements and windows** (`engine/elements.rs`, `engine/windows.rs`): element clicks through action 0 or a right
   click at the visible point, named actions, the element scroll, `activate_window` and `launch_app`.
+- **The device mode** (`engine/way.rs`, `families.rs`, `route.rs`): a family lists, per input kind, whether it ignores
+  the background route always or unless its window is fully unobscured (`cover.rs`): the paste chord, keys
+  (`press_key`, `key_down`, `key_up`, `type_characters`), clicks (a coordinate `click` into a window and an element's
+  right click), scroll (at a point, the window's centre or an element), `drag` and `move`. GTK 4 ignores all of these
+  always; Gecko its clicks, scrolls and moves unless unobscured; Qt its scrolls; xterm its keys (and has no verified
+  paste route). Element actions through AT-SPI are never listed. For a listed kind and condition, `--desktop shared`
+  refuses with `<app> does not accept background input; use a dedicated desktop or activate the window first`
+  before anything is sent; `--desktop dedicated` activates the window (`_NET_ACTIVE_WINDOW`, a raise, the input
+  focus), waits for it to hold the focus, and sends the input through XTEST at the same window-relative points (the
+  foreground route); a request whose input is refused for itself (a bad key) activates nothing. A hold made on the
+  foreground route is released on it, the window activated again first. Every request that consults the table
+  records its route on the `--stats` line (`route`: `background`, `foreground` or `desktop`).
+- **Drag and drop into Chrome** (`dnd.rs`): in shared mode a background drag into a family whose drop changes the
+  desktop watches `XdndSelection` through XFixes; when the target's own client takes it (a drag and drop has
+  begun), Escape is pressed and released, then the button, and the drag is refused before anything drops.
 
 ## How it uses the clipboard
 
@@ -137,7 +153,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | Flag | Values (default first) | What it changes |
 |---|---|---|
 | `--mouse-size-px` | 0 | a positive value stamps the pointer into desktop screenshots (the XFixes cursor at its native size; the value sizes the fallback arrow drawn without XFixes) |
-| `--desktop` | `shared`, `dedicated` | the device mode: whether a family that ignores the background route's paste chord or keys is refused, or reached through the foreground route, for `type_text`, `clipboard_write` and `type_characters` (M2; M3 adds the clicks and `press_key`'s keys) |
+| `--desktop` | `shared`, `dedicated` | the device mode: whether input of a kind the window's family ignores on the background route is refused, or sent through the foreground route (above); `capabilities` reports it |
 | `--window-calls` | 32 | W: calls in flight at most |
 | `--window-bytes` | 4194304 | R: reply bytes received and not consumed, plus the reservation per call in flight, stay under it; a larger reply is still read whole |
 | `--call-reservation` | 4096 | bytes reserved per call in flight |

@@ -17,16 +17,18 @@ export function runOutcome(verdicts, { valid }) {
   const name = (v) => `${v.scene} ${v.op} ${v.candidate}`;
   const judged = verdicts.filter((v) => v.kind === 'verdict');
   const parity = judged.filter((v) => !v.pass && v.verdict === 'parity').map(name);
-  const failed = judged.filter((v) => !v.pass && v.verdict !== 'parity').map(name);
+  // a declared refusal (deviations.mjs REFUSALS) is a recorded loss: listed apart, never a pass, not a failure
+  const refused = judged.filter((v) => !v.pass && v.verdict === 'declared refusal').map(name);
+  const failed = judged.filter((v) => !v.pass && !['parity', 'declared refusal'].includes(v.verdict)).map(name);
   const pass = failed.length === 0;
-  return { valid, pass, failed, parity, code: valid && pass ? 0 : 1 };
+  return { valid, pass, failed, parity, refused, code: valid && pass ? 0 : 1 };
 }
 
 /** A run's verdicts in one line: its failures, else every verdict PASS; a parity verdict listed apart either way. */
-export function verdictLine({ pass, failed, parity = [] }, strong = (s) => s) {
-  const listed = parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : '';
+export function verdictLine({ pass, failed, parity = [], refused = [] }, strong = (s) => s) {
+  const listed = `${parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : ''}${refused.length ? `; ${strong('declared refusal')} (a loss, not a pass): ${refused.join(', ')}` : ''}`;
   if (!pass) return `${strong('FAIL')}: ${failed.join(', ')}${listed}`;
-  return `${parity.length ? 'no verdict FAIL' : 'every verdict PASS'}${listed}`;
+  return `${parity.length || refused.length ? 'no verdict FAIL' : 'every verdict PASS'}${listed}`;
 }
 
 /** The engine order of block `index`: rotated, so every engine takes every position across the sitting. */

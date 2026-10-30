@@ -48,6 +48,7 @@ export const SCENE_OPS = {
   'device-gtk4': DEVICE_SCENE_OPS['device-gtk4'],
   'device-firefox': DEVICE_SCENE_OPS['device-firefox'],
   'device-xterm': DEVICE_SCENE_OPS['device-xterm'],
+  'device-qt': DEVICE_SCENE_OPS['device-qt'],
 };
 
 const GEDIT = [910, 756];

@@ -787,8 +787,16 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   - The owner drops every stalled INCR transfer, a paste's or not. `Watch` reports transfer progress, which M2.2 needs for the 500 ms start bound.
   - Speed, on a private Xvfb with the pinned vendor alongside: `clipboard_read` takes 21–39 ms on gedit against 425–525 ms, and 41–50 ms on Chrome's omnibox against 283–296 ms. M2.3 removes `clipboard_read` and `clipboard_release` from `deviations.mjs`'s refusals.
   - The hostile clients M2's Decisions name were each handled within the bounds: a silent owner, an owner stalling mid-INCR, a requestor stalling INCR acknowledgements, a late `ConvertSelection`, an external takeover, and lock contention.
-  Evidence: `.doperpowers/sde/…/task-13-report.md` (local); `ci-gate --gates engine-linux` GREEN on 4489e02b, the tree of 7b4a6773.
-  Date/Author: 2026-10-29, the plan-executor (session linux171), from the M2.1 executor's report.
+  - The task review's three rounds of fixes, which M2.2 relies on:
+    - The 64 MiB cap is checked against each chunk's actual length, and the budget is subtracted without underflow.
+    - The cleanup's end time is estimated from an anchor taken before ownership, so it errs late, never early.
+    - The owner thread is the only writer of ownership: takes and `SelectionClear` handling run on it, one at a time.
+    - Closed pastes beyond the last 32 merge into one refused span, which includes each paste's Ctrl+V time, so a refused timestamp is never served later.
+    - Each take carries a token and its own restore payload. A take its caller abandoned is cleaned up by the owner thread when it completes, and it never publishes its payload.
+    - Shared serving state changes only at decided points: ownership, content and the active paste are published together, after verification and the abandonment decision. A snapshot uses only settled content, waiting within the 500 ms `TARGETS` bound while a take is in progress.
+    - `Watch` logs each request's requestor window, target, time and outcome, which M2.2's attribution needs.
+  Evidence: `.doperpowers/sde/…/task-13-report.md` (local); `ci-gate --gates engine-linux` GREEN on 50729a3d (run 40988152129).
+  Date/Author: 2026-10-29, the plan-executor (session linux171), from the M2.1 executor's report and its task review.
 
 ## Outcomes & Retrospective
 

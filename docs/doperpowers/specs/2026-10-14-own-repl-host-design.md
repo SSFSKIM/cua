@@ -390,7 +390,7 @@ HOME=/tmp/cua-repl-test-home npm test
 npm run test:mods
 claude plugin validate .
 # all pass; only declared platform/vendor-absent skips and the known CLAUDE.md warning
-node --test test/repl-parity/                         # inventory and comparator, no live runtime
+node --test test/repl-parity/*.test.mjs                         # inventory and comparator, no live runtime
 node scripts/extract-meriyah.mjs                    # M1: exact 7.0.0 asset/version; mismatch fails
 ```
 

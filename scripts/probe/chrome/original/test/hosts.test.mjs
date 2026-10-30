@@ -1,4 +1,4 @@
-// Run: node --test scripts/probe/chrome/original/test/  (prototype helpers; deliberately outside `npm test`)
+// Run: node --test scripts/probe/chrome/original/test/*.test.mjs  (prototype helpers; deliberately outside `npm test`)
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {parsePs, parseLsofSockets, selectBackends, desktopRunning, CHROME_EXECUTABLE} from '../hosts.mjs';

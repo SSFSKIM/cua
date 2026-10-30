@@ -258,7 +258,7 @@ node scripts/browser-parity.mjs run --service vendor --device mini --out /tmp/pa
 #   "attested: vendor (# Selected Browser ... ) at <sha>"; one line per case: "case <id> ok" / "case <id> FAIL <reason>"
 node scripts/browser-parity.mjs run --service vendor --device mini --out /tmp/parity/vendor-2
 node scripts/browser-parity.mjs diff /tmp/parity/vendor-1 /tmp/parity/vendor-2          # "0 differences (N cases, M cells)"
-node --test test/browser-parity/                                                        # comparator and inventory tests pass
+node --test test/browser-parity/*.test.mjs                                                        # comparator and inventory tests pass
 ssh -o BatchMode=yes mini 'mkdir -p /tmp/bench-browser && ...'                          # fixture and MiniWoB 33c3b4d as TASKS.md expects
 #   then the controller subagent per test/browser-parity/bench-controller-brief.md, three runs → evidence dir /vendor/run-{1,2,3}
 node scripts/bench-summary.mjs docs/evidence/2026-10-<dd>-own-browser-service-benchmark   # per-task medians; "cua runs: none" until M5

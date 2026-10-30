@@ -24,7 +24,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 
-import { clipRead, grabs, startOwner, within } from './clip.mjs';
+import { clipRead, grabs, startOwner, toplevel, within } from './clip.mjs';
 import { Engine } from './engine.mjs';
 import { PAGES } from './scenes.mjs';
 import {
@@ -48,12 +48,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * The witness of one request whose route is known beforehand (`expected`: text.mjs `expectedRoute`, null where none
  * applies), judged by `judgeRouteSpan` against the route the engine reports it took (Decision Log, M2.2): the foreground
  * route's allowance only where both are the foreground route, and then nothing may change after the request ends (a
- * quiet span) or stay grabbed; a route other than the expected one fails.
+ * quiet span) or stay grabbed; a route other than the expected one fails. Where the foreground route is expected, the
+ * target's top-level (its window manager frame) is read before the span, for the restack judge.
  */
 export async function routeWitness(witness, tag, target, expected, fn) {
+  const frame = expected === 'foreground' ? toplevel(target) : null;
   const result = await witness.span(tag, fn);
   const route = result.value?.stats?.route ?? null;
-  const judged = judgeRouteSpan(result.report, { expected, reported: route, target, focusWithin: (w) => within(w, target) });
+  const judged = judgeRouteSpan(result.report, { expected, reported: route, target, frame, focusWithin: (w) => within(w, target) });
   if (!judged.foreground) return { ...result, route, judged };
   const quiet = await witness.span(`${tag}:after`, () => sleep(300));
   const held = grabs();
@@ -130,7 +132,8 @@ const stamp = () => Date.now().toString(36);
 
 /**
  * The cases. Every engine, clipboard owner and target window a case starts is ended when the case ends, however it
- * ends (`guarded`): a case that throws half-way through its setup leaves nothing running into the next.
+ * ends (`guarded`): a case that throws half-way through its setup leaves nothing running into the next, and a cleanup
+ * that fails fails the case.
  */
 export class Cases {
   constructor({ desktop, witness, cua, emit }) {
@@ -139,41 +142,60 @@ export class Cases {
     this.pending = [];
   }
 
-  /** A cleanup the running case owes, run when it ends (`releaseAll`). */
-  defer(fn) {
-    this.pending.push(fn);
+  /**
+   * A cleanup the running case owes, run when it ends (`releaseAll`); `what` names it in a failure. Each disposal
+   * establishes for itself that what it ends is already gone (an engine or owner that has exited, a window the case
+   * closed) and returns quietly then; anything it throws is a failure.
+   */
+  defer(fn, what = 'cleanup') {
+    this.pending.push({ fn, what });
   }
 
-  /** Every cleanup owed, newest first, each whatever the others did. */
+  /** Every cleanup owed, newest first, each whatever the others did; returns the failures, `what: message`. */
   async releaseAll() {
-    for (const fn of this.pending.splice(0).reverse()) {
+    const failures = [];
+    for (const { fn, what } of this.pending.splice(0).reverse()) {
       try {
         await fn();
-      } catch {
-        // already gone; the rest still run
+      } catch (error) {
+        failures.push(`${what}: ${error?.message ?? error}`);
       }
     }
+    return failures;
   }
 
-  /** `fn` as one case: its cleanups run when it ends, by its answer or by an exception. */
+  /**
+   * `fn` as one case: its cleanups run when it ends, by its answer or by an exception. A failed cleanup fails the case:
+   * a case that answered throws `cleanup failed: …`; a case that threw keeps its own error, the failures attached as
+   * `cleanupFailures`.
+   */
   async guarded(fn) {
+    let value;
+    let thrown = null;
     try {
-      return await fn();
-    } finally {
-      await this.releaseAll();
+      value = await fn();
+    } catch (error) {
+      thrown = error instanceof Error ? error : new Error(String(error));
     }
+    const failures = await this.releaseAll();
+    if (thrown) {
+      if (failures.length) thrown.cleanupFailures = failures;
+      throw thrown;
+    }
+    if (failures.length) throw new Error(`cleanup failed: ${failures.join('; ')}`);
+    return value;
   }
 
   engine(args = []) {
     const engine = new Engine({ label: 'cua', bin: this.cua, args, stats: true });
-    this.defer(() => engine.close());
+    this.defer(() => engine.close(), 'engine');
     return engine.start();
   }
 
   /** A harness owner of CLIPBOARD (`clip.mjs`), stopped when the case ends. */
   async owner(text) {
     const owner = await startOwner(text);
-    this.defer(() => owner.stop());
+    this.defer(() => owner.stop(), 'clipboard owner');
     return owner;
   }
 
@@ -195,7 +217,15 @@ export class Cases {
     return openTarget(this.desktop, mode, (scene) =>
       this.defer(async () => {
         if (this.desktop.windows.includes(scene)) await this.desktop.close([scene]);
-      }),
+        // gone only when its process group is: signal 0 to a group that has ended answers ESRCH
+        try {
+          process.kill(-scene.pid, 0);
+        } catch (error) {
+          if (error.code === 'ESRCH') return;
+          throw error;
+        }
+        throw new Error(`${scene.label}'s process group ${scene.pid} is still running`);
+      }, 'target window'),
     );
   }
 
@@ -479,7 +509,7 @@ export class Cases {
     const control = nodes.find((n) => n.role === 'push button' && (n.states ?? []).includes('focusable') && n.id !== scene.field);
     const engine = this.engine(dedicated ? ['--desktop', 'dedicated'] : []);
     // the foreground route leaves its window active: the front window takes the focus back when the case ends
-    if (dedicated) this.defer(() => this.desktop.focusFront());
+    if (dedicated) this.defer(() => this.desktop.focusFront(), 'the focus given back');
     const before = textOf(this.oracle, scene.field);
     const placed = 6;
     let caretSet = false;
@@ -526,7 +556,7 @@ export class Cases {
     }
     // the expected route, then its allowance (judgeRouteSpan): a route other than the expected one fails here
     if (!span.judged.clean) reasons.push(`the witness changed beyond the ${expected} route's allowance (${span.judged.fields.join(', ')})`);
-    return this.record(sceneName, op, 0, { pass: reasons.length === 0, reasons }, { answer: span.value.response, ms: Math.round(span.value.ms), route: span.route, route_expected: expected, witness_allowed: span.judged.allowed, witness_changes: (span.report?.changes ?? []).slice(0, 30), paste });
+    return this.record(sceneName, op, 0, { pass: reasons.length === 0, reasons }, { answer: span.value.response, ms: Math.round(span.value.ms), route: span.route, route_expected: expected, witness_allowed: span.judged.allowed, witness_changes: (span.report?.changes ?? []).slice(0, 30), witness_restacks: (span.report?.restacks ?? []).slice(0, 30), paste });
   }
 }
 
@@ -552,7 +582,7 @@ export async function runCases({ desktop, witness, cua, emit, plan, openScene })
       all = (await cases.guarded(fn)) && all;
     } catch (error) {
       all = false;
-      emit({ kind: 'case', scene, op, trial: null, pass: false, reasons: [`threw: ${error.message}`] });
+      emit({ kind: 'case', scene, op, trial: null, pass: false, reasons: [`threw: ${error.message}`, ...(error.cleanupFailures ?? []).map((f) => `cleanup failed: ${f}`)] });
       process.stdout.write(`case ${scene} ${op} threw: ${error.stack}\n`);
     }
   };

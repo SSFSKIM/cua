@@ -50,8 +50,11 @@ test('the stacking order may change only by the target rising to the top', () =>
 
 test("the foreground route's witness allows the target's activation and the pointer, nothing else", () => {
   const target = 0x1200005;
-  const facts = { target, focusWithin: (w) => w === target || w === target + 1 };
+  // the spans carry the restack record (judgeRestacks): here nothing was restacked
+  const facts = { target, frame: 0x47a900, focusWithin: (w) => w === target || w === target + 1 };
+  const none = { tree: [], restacks: [] };
   const report = {
+    ...none,
     changes: [
       { field: 'active', notify: true },
       { field: 'active', from: [0x400001], to: [target] },
@@ -62,9 +65,10 @@ test("the foreground route's witness allows the target's activation and the poin
     ],
   };
   assert.deepEqual(judgeForegroundSpan(report, facts), { clean: true, fields: [], allowed: ['active', 'stacking', 'focus', 'pointer'] });
-  assert.deepEqual(judgeForegroundSpan({ changes: [] }, facts), { clean: true, fields: [], allowed: [] });
+  assert.deepEqual(judgeForegroundSpan({ ...none, changes: [] }, facts), { clean: true, fields: [], allowed: [] });
   // the window manager passes through no active window and no focus on its way to the target
   const through = {
+    ...none,
     changes: [
       { field: 'active', from: [0x400001], to: [0] },
       { field: 'focus', from: 0x400002, to: 1 },
@@ -74,20 +78,22 @@ test("the foreground route's witness allows the target's activation and the poin
   };
   assert.deepEqual(judgeForegroundSpan(through, facts), { clean: true, fields: [], allowed: ['active', 'focus'] });
   // but not to end there
-  assert.deepEqual(judgeForegroundSpan({ changes: [through.changes[0]] }, facts).fields, ['active']);
-  assert.deepEqual(judgeForegroundSpan({ changes: [through.changes[1]] }, facts).fields, ['focus']);
-  const elsewhere = { changes: [{ field: 'active', from: [target], to: [0x400001] }] };
+  assert.deepEqual(judgeForegroundSpan({ ...none, changes: [through.changes[0]] }, facts).fields, ['active']);
+  assert.deepEqual(judgeForegroundSpan({ ...none, changes: [through.changes[1]] }, facts).fields, ['focus']);
+  const elsewhere = { ...none, changes: [{ field: 'active', from: [target], to: [0x400001] }] };
   assert.deepEqual(judgeForegroundSpan(elsewhere, facts).fields, ['active'], 'the active window went to another window');
-  assert.deepEqual(judgeForegroundSpan({ changes: [{ field: 'focus', from: target, to: 0x400002 }] }, facts).fields, ['focus']);
-  assert.deepEqual(judgeForegroundSpan({ changes: [{ field: 'protocol', note: 'x' }] }, facts).fields, ['protocol']);
+  assert.deepEqual(judgeForegroundSpan({ ...none, changes: [{ field: 'focus', from: target, to: 0x400002 }] }, facts).fields, ['focus']);
+  assert.deepEqual(judgeForegroundSpan({ ...none, changes: [{ field: 'protocol', note: 'x' }] }, facts).fields, ['protocol']);
   assert.equal(judgeForegroundSpan({ error: 'no span' }, facts).clean, false);
 });
 
 test('each change of the stacking order is judged: only the target rises', () => {
   const [a, b, target] = [0x400001, 0x400002, 0x1200005];
-  const facts = { target, focusWithin: (w) => w === target };
+  const facts = { target, frame: 0x47a900, focusWithin: (w) => w === target };
+  const none = { tree: [], restacks: [] };
   // another window raised and the order restored: the orders before and after the span are the same
   const raisedAndRestored = {
+    ...none,
     changes: [
       { field: 'stacking', notify: true },
       { field: 'stacking', from: [a, b, target], to: [a, target, b] },
@@ -102,7 +108,7 @@ test('each change of the stacking order is judged: only the target rises', () =>
   // a window that appears is not the target's raise
   assert.deepEqual(judgeForegroundSpan({ changes: [{ field: 'stacking', from: [a, target], to: [a, target, b] }] }, facts).fields, ['stacking']);
   // a notify that leaves the order as it was (the window manager rewriting it, the target already on top) is allowed
-  assert.deepEqual(judgeForegroundSpan({ changes: [{ field: 'stacking', notify: true }] }, facts), { clean: true, fields: [], allowed: ['stacking'] });
+  assert.deepEqual(judgeForegroundSpan({ ...none, changes: [{ field: 'stacking', notify: true }] }, facts), { clean: true, fields: [], allowed: ['stacking'] });
   // a change recorded without its orders (a witness that records only the lengths) cannot be judged
   assert.deepEqual(judgeForegroundSpan({ changes: [{ field: 'stacking', from_len: 3, to_len: 3 }] }, facts).fields, ['stacking']);
 });

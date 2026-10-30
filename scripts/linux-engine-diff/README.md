@@ -262,18 +262,28 @@ variants included; their evidence is written either way. The run's `end` row kee
   none for `clipboard_read` and `clipboard_release`), and cua reports the route it took on its `--stats` line. A request
   whose reported route differs from the expected one, a missing record included, fails its witness (`witness.mjs`
   `judgeRouteSpan`). Where both are `foreground`, the request may activate its target and move the pointer and nothing
-  else (`judgeForegroundSpan`: the active window and the focus end in the target, and each change of the stacking
-  order is the target's raise, the witness recording the orders on both sides of every change; then a quiet 300 ms
-  span and no grab left, `xprobe grabs`); every other request must leave the witness unchanged. A foreground route's
-  activation and XTEST input are the route itself, so where the foreground route is expected the audit is not
-  required. A run with a foreground request also runs the foreground negative check (`foregroundNegativeCheck`):
-  another window raised and the top one raised back, which the allowance must fail, or the run is invalid.
+  else (`judgeForegroundSpan`: the active window and the focus end in the target; the stacking is judged on the
+  restack events, `judgeRestacks`, and only the target's top-level, its window manager frame from `xprobe toplevel`,
+  may move, and only to the top; then a quiet 300 ms span and no grab left, `xprobe grabs`); every other request must
+  leave the witness unchanged. The restack events come from `SubstructureNotify` on the root: the witness records the
+  root's children when a span begins and every `ConfigureNotify`, `CirculateNotify`, map, unmap, creation, destruction
+  and reparenting of one in order (`xprobe/src/restack.rs`). They are never coalesced, unlike
+  `_NET_CLIENT_LIST_STACKING`, which is read after its notify and so shows only the latest of quick changes: that
+  property stays a second record (each change read back with its orders must be the target's raise), and its
+  same-value rewrites pass only because no forbidden restack accompanies them. A foreground route's activation and
+  XTEST input are the route itself, so where the foreground route is expected the audit is not required. A run with a
+  foreground request also runs the foreground checks (`foregroundNegativeCheck`): another window raised and the top
+  one raised back, 50 ms apart and under one server grab (`xprobe restack-grabbed`), which the allowance must fail,
+  and the target raised, which it must pass, or the run is invalid.
 - **A failed preparation**: a sample whose engine could not make the handle it needs (`prepare_error`: both Copy
   attempts failed, so a handle no engine issued is sent) times another request than the operation's, so no engine's
   such sample is in the medians; a cua sample of that kind fails its verdict, a vendor build's is recorded.
 - **Every cleanup a case owes runs when it ends** (`Cases.guarded`): the engines, clipboard owners and target windows
   a case starts, whether it ends by its verdict or by an exception half-way through its setup; a sample's clipboard
-  owner ends with the sample the same way (`runSample`).
+  owner ends with the sample the same way (`runSample`). Each disposal establishes that what it ends is gone (an
+  engine or owner that has exited, a target window's process group answering ESRCH); a disposal that fails fails the
+  case, after every other disposal has run: a case that passed throws `cleanup failed: …`, and a case that threw keeps
+  its own error with the failures attached.
 - **The bus trace**: a pass per text operation and engine, a fresh process under `dbus-monitor`, counts
   `PasteText`, `InsertText` and `SetTextContents`; cua's must be 0 (vendor counts recorded). The safety cases' whole
   phase is watched the same way.

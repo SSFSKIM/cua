@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { startMonitor } from './busmon.mjs';
-import { stacking, within } from './clip.mjs';
+import { stacking, toplevel, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
 import { declaredDeviation, declaredParity } from './deviations.mjs';
 import { Engine } from './engine.mjs';
@@ -287,7 +287,10 @@ async function measureSample(s, ctx) {
     row.witness = all.every((w) => w.clean);
     if (!row.witness) row.witness_fields = [...new Set(all.flatMap((w) => w.fields))];
     // what the witness saw, wherever it failed or an allowance excused a change (each stacking change with its orders)
-    if ((!row.witness || answered.judged?.allowed?.length) && answered.report) row.witness_changes = (answered.report.changes ?? []).slice(0, 20);
+    if ((!row.witness || answered.judged?.allowed?.length) && answered.report) {
+      row.witness_changes = (answered.report.changes ?? []).slice(0, 20);
+      row.witness_restacks = (answered.report.restacks ?? []).slice(0, 20);
+    }
     if (answered.judged?.allowed?.length) row.witness_allowed = answered.judged.allowed;
   }
   return { row, response };
@@ -313,32 +316,55 @@ export async function negativeCheck(desktop, witness, stubScene, emit, { audit =
 }
 
 /**
- * The foreground allowance's negative check: inside one span, the window just below the top is raised and the top
- * window raised back over it, so the stacking order ends as it began. Judged as a foreground request whose target is the
- * top window, the span must fail on the stacking order: the witness judges each of its changes, not the orders before
- * and after. Returns whether it did.
+ * The foreground allowance's checks, on the two top windows of the desktop. Each span is judged as a foreground request
+ * on one of them; the allowance must fail the first two and pass the third, or the run is invalid:
+ * - `spaced`: the window just below the top raised, then the top window raised back 50 ms later, inside one span;
+ * - `coalesced`: the same two raises under one server grab (`xprobe restack-grabbed`), so the window manager processes
+ *   them together and `_NET_CLIENT_LIST_STACKING` may show no change at all: only the restack events tell;
+ * - `raised`: the window below the top raised, judged with it as the target: its frame rises to the top, with the
+ *   window manager's property rewrites, which the allowance passes. The top window is raised back after the span.
+ * Each judgement names the target's frame (`toplevel`). Returns whether all three held.
  */
 export async function foregroundNegativeCheck(witness, emit) {
   const order = stacking();
   if (order.length < 2) {
     emit({ kind: 'stub-check-foreground', witness_failed_it: false, why: 'fewer than two windows to restack' });
-    process.stdout.write('foreground negative check: fewer than two windows to restack\n');
+    process.stdout.write('foreground checks: fewer than two windows to restack\n');
     return false;
   }
-  const [other, target] = order.slice(-2);
+  const [other, top] = order.slice(-2);
   const raise = (w) => execFileSync('xdotool', ['windowraise', String(w)]);
-  const { report } = await witness.span('stub:foreground', async () => {
+  const judge = (report, target) => judgeForegroundSpan(report, { target, frame: toplevel(target), focusWithin: (w) => within(w, target) });
+  const shown = (report) => ({ changes: (report.changes ?? []).slice(0, 10), restacks: (report.restacks ?? []).slice(0, 10) });
+  const spaced = await witness.span('stub:foreground:spaced', async () => {
     raise(other);
     await sleep(50);
-    raise(target);
+    raise(top);
     await sleep(50);
   });
-  const judged = judgeForegroundSpan(report, { target, focusWithin: (w) => within(w, target) });
+  const coalesced = await witness.span('stub:foreground:coalesced', async () => {
+    execFileSync(XPROBE, ['restack-grabbed', String(other), String(top)]);
+    await sleep(100);
+  });
   const restored = stacking().join() === order.join();
-  const failedIt = judged.fields.includes('stacking');
-  emit({ kind: 'stub-check-foreground', target, raised: other, restored, witness: judged, changes: (report.changes ?? []).slice(0, 10), witness_failed_it: failedIt });
-  process.stdout.write(`foreground negative check: the allowance ${failedIt ? 'failed' : 'PASSED'} another window raised and the order restored (${judged.fields.join(', ') || 'no violation'}; order ${restored ? 'restored' : 'not restored'})\n`);
-  return failedIt;
+  const raised = await witness.span('stub:foreground:raised', async () => {
+    raise(other);
+    await sleep(100);
+  });
+  raise(top);
+  await sleep(100);
+  const checks = {
+    spaced: { ...judge(spaced.report, top), ...shown(spaced.report) },
+    coalesced: { ...judge(coalesced.report, top), ...shown(coalesced.report) },
+    raised: { ...judge(raised.report, other), ...shown(raised.report) },
+  };
+  const held = checks.spaced.fields.includes('stacking') && checks.coalesced.fields.includes('stacking') && checks.raised.clean && checks.raised.allowed.includes('stacking');
+  emit({ kind: 'stub-check-foreground', top, other, restored, checks, witness_failed_it: held });
+  const line = (name, c) => `${name}: ${c.clean ? 'clean' : c.fields.join(', ')}`;
+  process.stdout.write(
+    `foreground checks: ${held ? 'held' : 'DID NOT HOLD'} (${line('another raised and the top raised back', checks.spaced)}; ${line('the same under one server grab', checks.coalesced)}; ${line('the target raised', checks.raised)}; order ${restored ? 'restored' : 'not restored'})\n`,
+  );
+  return held;
 }
 
 /**

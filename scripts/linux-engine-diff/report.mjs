@@ -40,7 +40,15 @@ export function renderSummary(lines) {
       out.push(`negative check: the witness ${stub.witness_failed_it ? 'failed' : '**passed (run invalid)**'} the activating stub (${stub.witness.fields.join(', ') || 'no change'})${audit}`, '');
     }
     const foreground = rows.find((r) => r.kind === 'stub-check-foreground');
-    if (foreground) {
+    if (foreground?.checks) {
+      // M2.3 review round 2: the spaced and coalesced negatives and the positive raise (run.mjs foregroundNegativeCheck)
+      const { spaced, coalesced, raised } = foreground.checks;
+      const verdict = (c, mustFail) => (mustFail ? (c.fields.includes('stacking') ? 'failed' : '**passed (run invalid)**') : c.clean ? 'passed' : `**failed (run invalid): ${c.fields.join(', ')}**`);
+      out.push(
+        `foreground checks: the allowance ${verdict(spaced, true)} another window raised and the top one raised back; ${verdict(coalesced, true)} the same two raises under one server grab (${coalesced.restacks.length} restack events, ${coalesced.changes.filter((c) => c.from).length} property changes read); ${verdict(raised, false)} the target raised`,
+        '',
+      );
+    } else if (foreground) {
       const how = foreground.why ?? `${foreground.witness.fields.join(', ') || 'no violation'}; the order ${foreground.restored ? 'restored' : 'not restored'} at the span's end`;
       out.push(`foreground negative check: the foreground allowance ${foreground.witness_failed_it ? 'failed' : '**passed (run invalid)**'} another window raised and the top one raised back (${how})`, '');
     }

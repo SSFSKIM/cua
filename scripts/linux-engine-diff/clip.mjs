@@ -24,6 +24,11 @@ export function within(window, ancestor) {
   return JSON.parse(execFileSync(XPROBE, ['within', String(window), String(ancestor)], { encoding: 'utf8', timeout: 10000 }).trim()).within;
 }
 
+/** The root child X window `window` lies in: a managed client's window manager frame (`xprobe toplevel`). */
+export function toplevel(window) {
+  return JSON.parse(execFileSync(XPROBE, ['toplevel', String(window)], { encoding: 'utf8', timeout: 10000 }).trim()).toplevel;
+}
+
 /** The window manager's stacking order, bottom first (`_NET_CLIENT_LIST_STACKING`). */
 export function stacking() {
   const text = execFileSync('xprop', ['-root', '_NET_CLIENT_LIST_STACKING'], { encoding: 'utf8' });

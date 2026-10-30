@@ -51,11 +51,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * quiet span) or stay grabbed; a route other than the expected one fails. Where the foreground route is expected, the
  * target's top-level (its window manager frame) is read before the span, for the restack judge.
  */
-export async function routeWitness(witness, tag, target, expected, fn) {
-  const frame = expected === 'foreground' ? toplevel(target) : null;
+export async function routeWitness(witness, tag, target, expected, fn, { inFront = false } = {}) {
+  const frame = expected === 'foreground' || inFront ? toplevel(target) : null;
   const result = await witness.span(tag, fn);
   const route = result.value?.stats?.route ?? null;
-  const judged = judgeRouteSpan(result.report, { expected, reported: route, target, frame, focusWithin: (w) => within(w, target) });
+  // the in-front allowance (witness.mjs): only for a case that declares it, and a request the engine recorded as made
+  // to a window already in front
+  const front = inFront && result.value?.stats?.dnd?.in_front === true;
+  const judged = judgeRouteSpan(result.report, { expected, reported: route, target, frame, focusWithin: (w) => within(w, target), inFront: front });
   if (!judged.foreground) return { ...result, route, judged };
   const quiet = await witness.span(`${tag}:after`, () => sleep(300));
   const held = grabs();

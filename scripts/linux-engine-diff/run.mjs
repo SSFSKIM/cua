@@ -33,7 +33,7 @@ import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
 import { auditVerdict, blockOrder, judgeCalls, judgeOperation, runOutcome, verdictLine } from './stats.mjs';
 import { resolveField } from './text.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
-import { judgeForegroundSpan, startWitness } from './witness.mjs';
+import { judgeForegroundSpan, judgeInFrontSpan, startWitness } from './witness.mjs';
 
 export { SCENE_OPS };
 
@@ -257,7 +257,7 @@ async function measureSample(s, ctx) {
   // a cua text command's route is known beforehand: its witness is judged against it and the route the engine reports
   // taking (Decision Log, M2.2); a vendor build's is judged strictly
   const expected = VENDORS.includes(s.label) ? null : routeOf(op, s.sceneName);
-  const answered = witness && target && (isText(op) || isDevice(op)) ? await routeWitness(witness, tag, target.id, expected, send) : await span(tag, send);
+  const answered = witness && target && (isText(op) || isDevice(op)) ? await routeWitness(witness, tag, target.id, expected, send, { inFront: OPS[op].inFront === true }) : await span(tag, send);
   const { response, ms, sinceSpawnMs, stats } = answered.value;
   const row = { kind: 'sample', engine: s.label, scene: s.sceneName, op, block: s.block, series: i === 0 ? 'cold' : 'warm', i };
   if (expected) row.route_expected = expected;
@@ -335,6 +335,55 @@ export async function negativeCheck(desktop, witness, stubScene, emit, { audit =
   emit({ kind: 'stub-check', ok: value.response.ok, witness: w, witness_failed_it: witnessFailed, audit: audited ? { traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.map((f) => f.what) } : null, audit_failed_it: auditFailed });
   process.stdout.write(`negative check: the witness ${witnessFailed ? 'failed' : 'PASSED'} the activating stub (${w.fields.join(', ') || 'no change'})${audited ? `; the audit ${auditFailed ? 'failed' : 'PASSED'} it (${[...new Set(audited.forbidden.map((f) => f.what))].join(', ') || 'nothing forbidden'})` : ''}\n`);
   return witnessFailed && (auditFailed ?? true);
+}
+
+/**
+ * The in-front allowance's checks (witness.mjs `judgeInFrontSpan`), on the top window of the desktop activated, judged
+ * with it as the target; the allowance must pass `own` and fail `other` and `restacked`, or the run is invalid:
+ * - `own`: the top window activated again, already active (as Chrome's drop activates its own window): the window
+ *   manager's no-op raise and its property rewrites, which the allowance passes;
+ * - `other`: the window below it activated through the window manager, then the top one again;
+ * - `restacked`: the window below raised and the top one raised back under one server grab (`xprobe restack-grabbed`),
+ *   which leaves the stacking property as it was: only the restack events tell.
+ * Returns whether all three held.
+ */
+export async function inFrontNegativeCheck(witness, emit) {
+  const order = stacking();
+  if (order.length < 2) {
+    emit({ kind: 'stub-check-in-front', witness_failed_it: false, why: 'fewer than two windows' });
+    process.stdout.write('in-front checks: fewer than two windows\n');
+    return false;
+  }
+  const [other, top] = order.slice(-2);
+  const activate = (w) => execFileSync('xdotool', ['windowactivate', '--sync', String(w)]);
+  activate(top);
+  await sleep(200);
+  const judge = (report) => judgeInFrontSpan(report, { target: top, frame: toplevel(top) });
+  const own = await witness.span('stub:in-front:own', async () => {
+    activate(top);
+    await sleep(100);
+  });
+  const switched = await witness.span('stub:in-front:other', async () => {
+    activate(other);
+    await sleep(100);
+    activate(top);
+    await sleep(100);
+  });
+  const restacked = await witness.span('stub:in-front:restacked', async () => {
+    execFileSync(XPROBE, ['restack-grabbed', String(other), String(top)]);
+    await sleep(100);
+  });
+  const shown = (report) => ({ changes: (report.changes ?? []).slice(0, 10), restacks: (report.restacks ?? []).slice(0, 10), focus: (report.focus ?? []).slice(0, 10) });
+  const checks = {
+    own: { ...judge(own.report), ...shown(own.report) },
+    other: { ...judge(switched.report), ...shown(switched.report) },
+    restacked: { ...judge(restacked.report), ...shown(restacked.report) },
+  };
+  const held = checks.own.clean && !checks.other.clean && checks.restacked.fields.includes('stacking');
+  emit({ kind: 'stub-check-in-front', top, other, checks, witness_failed_it: held });
+  const line = (name, c) => `${name}: ${c.clean ? 'clean' : c.fields.join(', ')}`;
+  process.stdout.write(`in-front checks: ${held ? 'held' : 'DID NOT HOLD'} (${line('the target activated again', checks.own)}; ${line('another window activated and the target again', checks.other)}; ${line('another raised and the target raised back under one server grab', checks.restacked)})\n`);
+  return held;
 }
 
 /**
@@ -595,6 +644,8 @@ export async function runDiff(args) {
     // the foreground route's allowance, wherever a request is expected to take that route
     const foregroundPlanned = plan.some((p) => routeOf(p.op, p.scene) === 'foreground' || p.op === 'restore_refused');
     if (foregroundPlanned && !(await foregroundNegativeCheck(witness, emit))) valid = false;
+    // the in-front allowance's controls, in every run with the stub's
+    if (stubScene && !(await inFrontNegativeCheck(witness, emit))) valid = false;
 
     // One engine's series of an operation in a block: a fresh process, its cold sample and `n - 1` warm ones.
     const measureSeries = async ({ sceneName, op, label, block, n }) => {

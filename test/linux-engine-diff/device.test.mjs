@@ -133,3 +133,15 @@ test('a cancel forced too late passes only if every answer is honest and the dro
   assert.equal(judgeDevice('chrome_dnd_late_shared', [nothing], background).pass, false, 'never late: the case proved nothing');
   assert.equal(judgeDevice('chrome_dnd_late_shared', [{ ...mayHave, ok: true, error: undefined }], background).pass, false);
 });
+
+test('the in-front drop passes only where the engine recorded the window in front and the desktop ended as it began', () => {
+  assert.equal(DEVICE_OPS.chrome_dnd_in_front_shared.inFront, true, 'the witness allowance is declared for this case alone');
+  assert.equal(Object.values(DEVICE_OPS).filter((d) => d.inFront).length, 1);
+  const good = row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true });
+  const audit = { clean: true, kind: 'background' };
+  assert.deepEqual(judgeDevice('chrome_dnd_in_front_shared', [good], audit), { pass: true, reasons: [] });
+  assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, dnd: { in_front: false } }], audit).pass, false, 'not the in-front path');
+  assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, desktop_same: false }], audit).pass, false);
+  assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, witness: false }], audit).pass, false);
+  assert.equal(judgeDevice('chrome_dnd_in_front_shared', [good], { clean: false, kind: 'background', forbidden: ['_NET_ACTIVE_WINDOW ClientMessage'] }).pass, false, 'the engine sent an activation');
+});

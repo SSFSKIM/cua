@@ -32,6 +32,7 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 import { readGtk4Status } from './families.mjs';
+import { stacking } from './clip.mjs';
 import { activeWindow, configure } from './scenes.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -44,6 +45,12 @@ export const dndCancelledSentence = (app) =>
   `${app} began a drag and drop, which changes the desktop; it was cancelled before the drop, so nothing was dropped. Use a dedicated desktop, or activate the window first`;
 export const dndMayHaveDroppedSentence = (app) =>
   `${app} began a drag and drop, which changes the desktop, and it could not be cancelled in time: the drop may have happened and the desktop changed. Use a dedicated desktop, or activate the window first`;
+
+/** The desktop state a drop could change: the active window, the X input focus, the stacking order. */
+export function desktopState() {
+  const focus = execFileSync('xdotool', ['getwindowfocus'], { encoding: 'utf8' }).trim();
+  return { active: activeWindow(), focus: Number(focus), stacking: stacking() };
+}
 
 const DEDICATED = ['--desktop', 'dedicated'];
 const LATE = ['--dnd-cancel-after-release'];
@@ -148,7 +155,7 @@ function offscreen(ctx) {
 const covered = (ctx) => ctx.desktop.arrangeFront('covered');
 
 /** The scene window fully visible and already in front: activated (the active window, the focus, on top). */
-function inFront(ctx) {
+function alreadyInFront(ctx) {
   visible(ctx);
   execFileSync('xdotool', ['windowactivate', '--sync', String(ctx.scene.id)]);
 }
@@ -160,9 +167,11 @@ function inFront(ctx) {
  * A case: `device` its expectation, `scene` where it runs, `condition` the arrangement before each sample, `read` what
  * the window counts, `request`, and `effect` (from the counts before and after) for the cases that must take effect.
  */
-function device({ device: expect, condition = covered, read, request, effect, route, args }) {
+function device({ device: expect, condition = covered, read, request, effect, route, args, inFront = false }) {
   const dedicated = expect === 'foreground';
   return {
+    // the witness's in-front allowance (witness.mjs), for the request the engine records as made to a window in front
+    inFront,
     kind: 'input',
     device: expect,
     cuaOnly: true,
@@ -174,6 +183,7 @@ function device({ device: expect, condition = covered, read, request, effect, ro
     prepare: async (ctx) => {
       condition(ctx);
       await sleep(300);
+      if (inFront) ctx.desktopBefore = desktopState();
     },
     read,
     request,
@@ -195,6 +205,8 @@ function device({ device: expect, condition = covered, read, request, effect, ro
         out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
       }
       if (dedicated && response.ok) out.activated = activeWindow() === ctx.scene.id;
+      // in front: the desktop at the end as it was at the start
+      if (inFront) out.desktop_same = JSON.stringify(desktopState()) === JSON.stringify(ctx.desktopBefore);
       return out;
     },
     // the foreground route leaves its window active: the front window takes the focus back, outside every span
@@ -259,7 +271,7 @@ export const DEVICE_OPS = {
   // is already in front, the desktop unchanged; an honest answer when the cancel comes too late; the drop through the
   // foreground route in dedicated mode
   chrome_dnd_shared: device({ device: 'cancel', condition: visible, read: dropStatus, request: dndDrag }),
-  chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: inFront, read: dropStatus, request: dndDrag, effect: rose('drops') }),
+  chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, read: dropStatus, request: dndDrag, effect: rose('drops'), inFront: true }),
   chrome_dnd_late_shared: device({ device: 'late', condition: visible, read: dropStatus, request: dndDrag, args: LATE }),
   chrome_dnd_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndDrag, effect: rose('drops') }),
   // Qt (`device-qt`, kate on a long document): its scroll bar's value
@@ -341,6 +353,10 @@ export function judgeDevice(op, rows, audit) {
   if (expect === 'foreground' || expect === 'background') {
     bad('a request failed', (r) => r.ok);
     bad('the effect was not verified', (r) => r.effect === true);
+  }
+  if (DEVICE_OPS[op].inFront) {
+    bad('the engine did not record the window as in front', (r) => r.dnd?.in_front === true);
+    bad('the desktop at the end was not as at the start', (r) => r.desktop_same === true);
   }
   if (expect === 'foreground') {
     bad('not the foreground route', (r) => r.route === 'foreground');

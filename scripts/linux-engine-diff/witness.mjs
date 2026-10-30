@@ -80,13 +80,46 @@ export function raisedOnly(before, after, target) {
  */
 export function judgeRestacks(report, frame) {
   if (!Array.isArray(report?.tree) || !Array.isArray(report?.restacks)) return { clean: false, raised: false, violations: ['no restack record'] };
-  const order = report.tree.map(([id, mapped, or]) => ({ id, mapped: Boolean(mapped), or: Boolean(or) }));
+  const { order, at, apply } = stackReplay(report.tree);
+  const visible = () => order.filter((w) => w.mapped).map((w) => w.id);
+  // the orders a raise of the frame may leave: above every mapped window that is not override-redirect, or above all
+  // of them; the others in their order
+  const raisedTo = (before) => {
+    const rest = before.filter((id) => id !== frame);
+    const isOr = (id) => order[at(id)]?.or;
+    const last = rest.reduce((k, id, i) => (isOr(id) ? k : i), -1);
+    return [
+      [...rest.slice(0, last + 1), frame, ...rest.slice(last + 1)],
+      [...rest, frame],
+    ];
+  };
+  const violations = [];
+  let raised = false;
+  for (const e of report.restacks) {
+    const before = visible();
+    apply(e);
+    const after = visible();
+    if (sameOrder(before, after)) continue;
+    if ((e.kind === 'configure' || e.kind === 'circulate') && frame && e.window === frame && raisedTo(before).some((o) => sameOrder(after, o))) raised = true;
+    else violations.push(e);
+  }
+  return { clean: violations.length === 0, raised, violations };
+}
+
+const sameOrder = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+/**
+ * The root's children replayed through a span's restack record (`report.tree` the order when the span began, bottom
+ * first, each `[id, mapped, override_redirect]`): `apply(e)` moves the order on by one restack, map, unmap, creation,
+ * destruction or reparenting.
+ */
+function stackReplay(tree) {
+  const order = tree.map(([id, mapped, or]) => ({ id, mapped: Boolean(mapped), or: Boolean(or) }));
   const at = (id) => order.findIndex((w) => w.id === id);
   const take = (id, or) => {
     const i = at(id);
     return i >= 0 ? order.splice(i, 1)[0] : { id, mapped: false, or: Boolean(or) };
   };
-  const visible = () => order.filter((w) => w.mapped).map((w) => w.id);
   const apply = (e) => {
     if (e.kind === 'configure') {
       const w = take(e.window, e.or);
@@ -106,29 +139,70 @@ export function judgeRestacks(report, frame) {
       order.push({ id: e.window, mapped: false, or: Boolean(e.or) });
     } else if (e.kind === 'destroy' || e.kind === 'reparent') take(e.window);
   };
-  // the orders a raise of the frame may leave: above every mapped window that is not override-redirect, or above all
-  // of them; the others in their order
-  const raisedTo = (before) => {
-    const rest = before.filter((id) => id !== frame);
-    const isOr = (id) => order[at(id)]?.or;
-    const last = rest.reduce((k, id, i) => (isOr(id) ? k : i), -1);
-    return [
-      [...rest.slice(0, last + 1), frame, ...rest.slice(last + 1)],
-      [...rest, frame],
-    ];
-  };
-  const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  return { order, at, apply };
+}
+
+/**
+ * The X server's per-client resource-id mask (Xorg's `resource-id-mask`, 0x1fffff): two windows whose ids agree outside
+ * it were made by the same client, as the engine attributes a paste's requests and an XDND source (`dnd.rs`).
+ */
+const CLIENT_MASK = 0x1fffff;
+
+/**
+ * The witness of a background request the engine recorded as made to a window already in front (`--stats` `dnd`
+ * `in_front`: the active window, holding the focus, fully unobscured; Decision Log, M3.1, Chrome drag and drop): Chrome's
+ * drop then asks the window manager to activate its own window, already active, and the window manager rewrites
+ * `_NET_CLIENT_LIST_STACKING` with the same order. The allowance rests on the ordered event records, never on a value
+ * read back, so a change coalesced inside a same-value notify cannot hide (M2.3's rules), and over the whole span:
+ * - every `_NET_ACTIVE_WINDOW` request names the target or its frame (that the engine sent none is its X request
+ *   audit's to show);
+ * - every restack, map, unmap, creation or destruction leaves the order of the mapped managed windows (not
+ *   override-redirect) as it was, with the target's frame on top when the span began, and moves no mapped window but
+ *   the target client's own (its override-redirect drag windows);
+ * - every focus event is the target's, its frame's or its client's windows', or the root's under a keyboard grab or its
+ *   release (modes Grab and Ungrab, which do not move the focus);
+ * - a value read back changed is a violation; a property notify is allowed only beside event records with none.
+ * Returns `{clean, fields, allowed, violations}`.
+ */
+export function judgeInFrontSpan(report, { target, frame, root }) {
+  if (!report || report.error) return { clean: false, fields: ['protocol'], allowed: [], violations: ['no record'] };
+  const top = root ?? report.root;
+  const ours = (w) => w === frame || (w & ~CLIENT_MASK) === (target & ~CLIENT_MASK);
+  const bad = new Set();
   const violations = [];
-  let raised = false;
-  for (const e of report.restacks) {
-    const before = visible();
-    apply(e);
-    const after = visible();
-    if (same(before, after)) continue;
-    if ((e.kind === 'configure' || e.kind === 'circulate') && frame && e.window === frame && raisedTo(before).some((o) => same(after, o))) raised = true;
-    else violations.push(e);
+  const violate = (field, what) => {
+    bad.add(field);
+    violations.push(what);
+  };
+  if (!Array.isArray(report.tree) || !Array.isArray(report.restacks)) violate('stacking', 'no restack record');
+  else {
+    const { order, apply } = stackReplay(report.tree);
+    const managed = () => order.filter((w) => w.mapped && !w.or).map((w) => w.id);
+    const foreign = () => order.filter((w) => w.mapped && !ours(w.id)).map((w) => w.id);
+    if (managed().at(-1) !== frame) violate('stacking', 'the target was not on top when the span began');
+    for (const e of report.restacks) {
+      const before = [managed(), foreign()];
+      apply(e);
+      if (!sameOrder(before[0], managed()) || !sameOrder(before[1], foreign())) violate('stacking', e);
+    }
   }
-  return { clean: violations.length === 0, raised, violations };
+  if (!Array.isArray(report.focus)) violate('focus', 'no focus record');
+  else {
+    for (const e of report.focus) {
+      if (e.kind === 'activate') {
+        if (e.window !== target && e.window !== frame) violate('active', e);
+      } else if (!ours(e.window) && !(e.window === top && (e.mode === 1 || e.mode === 2))) violate('focus', e);
+    }
+  }
+  const notified = new Set();
+  for (const c of report.changes ?? []) {
+    if (c.notify) notified.add(c.field);
+    else violate(c.field, c);
+  }
+  // a notify is excused only beside event records with no violation
+  for (const field of notified) if (bad.size) bad.add(field);
+  const allowed = [...notified].filter((f) => !bad.has(f));
+  return { clean: bad.size === 0, fields: [...bad], allowed, violations };
 }
 
 /** FocusIn's detail `Pointer`: an event about the window under the pointer while the focus is PointerRoot. */
@@ -220,11 +294,17 @@ export function judgeForegroundSpan(report, { target, frame, focusWithin }) {
  * one, a missing record included, is a violation of its own. With no expected route (a vendor build, an operation that
  * pastes nothing) the span is judged strictly whatever is reported. Returns `{clean, fields, allowed, foreground}`.
  */
-export function judgeRouteSpan(report, { expected, reported, target, frame, focusWithin }) {
+export function judgeRouteSpan(report, { expected, reported, target, frame, focusWithin, inFront = false, root }) {
   const fields = [];
   if (expected && reported !== expected) fields.push(`route ${reported ?? 'not recorded'}, expected ${expected}`);
   const foreground = expected === 'foreground' && reported === 'foreground';
-  const judged = foreground ? judgeForegroundSpan(report, { target, frame, focusWithin }) : { ...judgeSpan(report), allowed: [] };
+  // the in-front allowance: only a background request the engine recorded as made to a window already in front
+  const front = inFront && expected === 'background' && reported === 'background';
+  const judged = foreground
+    ? judgeForegroundSpan(report, { target, frame, focusWithin })
+    : front
+      ? judgeInFrontSpan(report, { target, frame, root })
+      : { ...judgeSpan(report), allowed: [] };
   fields.push(...judged.fields);
   return { clean: fields.length === 0, fields, allowed: judged.allowed, foreground };
 }

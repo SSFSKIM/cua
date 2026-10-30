@@ -23,18 +23,13 @@ import { Engine } from './engine.mjs';
 import { FAMILIES, openFamily } from './families.mjs';
 import { Oracle } from './oracle.mjs';
 import { DND_REFUSAL } from './deviations.mjs';
+import { desktopState } from './device.mjs';
 import { negativeCheck } from './run.mjs';
-import { XPROBE, activeWindow } from './scenes.mjs';
-import { stacking } from './clip.mjs';
+import { XPROBE } from './scenes.mjs';
 import { judgeRestacks, startWitness } from './witness.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** The desktop state a drop could change: the active window, the X input focus, the stacking order. */
-export function desktopState() {
-  const focus = execFileSync('xdotool', ['getwindowfocus'], { encoding: 'utf8' }).trim();
-  return { active: activeWindow(), focus: Number(focus), stacking: stacking() };
-}
 
 /** Which fields of the desktop state differ between two reads. */
 export function changedFields(a, b) {

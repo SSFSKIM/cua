@@ -283,7 +283,8 @@ export function terminalLaunch(ctx, extra) {
   }
   const record = join(ctx.dir, `${ctx.label}.input`);
   writeFileSync(record, '');
-  const script = `printf '\\033[?1000h'; stty raw -echo; exec cat >> "$1"`;
+  // with `motion`, every pointer motion is reported too (mode 1003)
+  const script = `printf '\\033[?${ctx.motion ? 1003 : 1000}h'; stty raw -echo; exec cat >> "$1"`;
   return { cmd: 'xterm', args: ['-T', ctx.label, ...extra, '-e', 'sh', '-c', script, 'sh', record], match: (w) => w.title === ctx.label, record };
 }
 
@@ -303,7 +304,7 @@ export function vteLaunch(ctx) {
   const record = join(ctx.dir, `${ctx.label}.input`);
   const pidfile = join(ctx.dir, `${ctx.label}.pid`);
   writeFileSync(record, '');
-  const script = `echo $$ > "$2"; printf '\\033]0;%s\\007\\033[?1000h' "$3"; stty raw -echo; exec tee -a "$1"`;
+  const script = `echo $$ > "$2"; printf '\\033]0;%s\\007\\033[?${ctx.motion ? 1003 : 1000}h' "$3"; stty raw -echo; exec tee -a "$1"`;
   return { cmd: 'gnome-terminal', args: ['--wait', '--title', ctx.label, '--', 'sh', '-c', script, 'sh', record, pidfile, ctx.label], match: (w) => w.title === ctx.label, record, pidfile };
 }
 
@@ -311,7 +312,7 @@ export function vteLaunch(ctx) {
  * Opens a family's window on the harness's desktop: launched, found, sized and placed, its objects resolved.
  * Returns the scene: `{kind: 'family', family, id, pid, group, ...targets}`.
  */
-export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null } = {}) {
+export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null, motion = false } = {}) {
   const family = FAMILIES[name];
   if (!family) throw new Error(`unknown family ${name}`);
   const label = desktop.label(name.replace(/[^a-z0-9]+/gi, ''), role);
@@ -320,7 +321,7 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
     const opened = await desktop.openChrome(role, page ?? 'matrix.html');
     scene = { ...opened, family: name, kindOf: family.kind };
   } else {
-    const ctx = { label, dir: join(desktop.dir, label), geometry, page, doc };
+    const ctx = { label, dir: join(desktop.dir, label), geometry, page, doc, motion };
     mkdirSync(ctx.dir, { recursive: true });
     const spec = family.launch(ctx);
     const child = spawn(spec.cmd, spec.args, { stdio: 'ignore', detached: true, env: { ...process.env, ...(spec.env ?? {}), ...env } });

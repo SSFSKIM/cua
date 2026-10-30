@@ -3,12 +3,14 @@ import { test } from 'node:test';
 
 import { DRAG_FAMILIES, dragEngines, runPath } from '../../scripts/linux-engine-diff/drag.mjs';
 import { FAMILIES } from '../../scripts/linux-engine-diff/families.mjs';
-import { KIND_FAMILIES, cellVerdict, kindLanes, scrolled, wheelReported } from '../../scripts/linux-engine-diff/kinds.mjs';
+import { KIND_FAMILIES, cellVerdict, kindLanes, motionReported, scrolled, wheelReported } from '../../scripts/linux-engine-diff/kinds.mjs';
 
 test("M3.1's measurement covers every family of the matrix, scroll in each and drag in each", () => {
   const matrix = ['gedit', 'gnome-text-editor', 'kate', 'qtcreator', 'firefox', 'chrome', 'electron', 'writer', 'writer-gen', 'xterm', 'xterm-allow', 'gnome-terminal'];
   for (const family of matrix) {
     assert.ok(KIND_FAMILIES[family]?.includes('scroll'), `${family} scroll`);
+    // GTK 4's move is read in its harness scene, whose motion count reads it directly
+    if (family !== 'gnome-text-editor') assert.ok(KIND_FAMILIES[family].includes('move'), `${family} move`);
     assert.ok(DRAG_FAMILIES[family]?.length, `${family} drag`);
   }
   for (const family of [...Object.keys(KIND_FAMILIES), ...Object.keys(DRAG_FAMILIES)]) assert.ok(FAMILIES[family], family);
@@ -57,4 +59,11 @@ test("GTK 4's scale is dragged at its fixed place, a quarter and three quarters 
 test('the kinds lanes narrow to those asked for, never without cua and the control', () => {
   assert.deepEqual(kindLanes({ vendor: 'v', newest: 'n', cua: 'c', lanes: ['pinned', 'cua', 'xtest'] }).map((l) => l.label), ['pinned', 'cua', 'xtest']);
   assert.throws(() => kindLanes({ vendor: 'v', cua: 'c', lanes: ['pinned', 'cua'] }), /need xtest/);
+});
+
+test('a pointer motion reaches a terminal as a mode-1003 report with no button down', () => {
+  assert.equal(motionReported('', '\x1b[MC!!'), true);
+  assert.equal(motionReported('', '\x1b[M !!'), false, 'a press of button 1');
+  assert.equal(motionReported('\x1b[MC!!', '\x1b[MC!!'), false, 'only what arrived since');
+  assert.equal(motionReported(undefined, ''), null);
 });

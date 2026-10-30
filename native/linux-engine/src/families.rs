@@ -153,7 +153,8 @@ pub const FAMILIES: &[Family] = &[
     // Gecko's Text answers a U+FEFF after each character beyond the BMP (M0.4), which the paste's confirmation strips
     // there and only there, so a real U+FEFF still counts. Gecko ignores synthetic coordinate clicks while any of its
     // window is covered or off the screen, by a rule that is neither the click point nor the visible area (M0.4 at
-    // 1280×781; M1a.3 at 800×600), and takes them while it is fully unobscured.
+    // 1280×781; M1a.3 at 800×600), and takes them while it is fully unobscured; its scrolls and pointer moves likewise
+    // (M3.1: ignored fully covered, taken with half the window covered, so the clicks' predicate covers them).
     Family {
         name: "Gecko",
         toolkit: Some("Gecko"),
@@ -165,17 +166,28 @@ pub const FAMILIES: &[Family] = &[
             release: Duration::from_millis(30),
         },
         paste: DEFAULT_PASTE,
-        ignores: &[Ignored {
-            kind: Kind::Clicks,
-            when: When::UnlessUnobscured,
-        }],
+        ignores: &[
+            Ignored {
+                kind: Kind::Clicks,
+                when: When::UnlessUnobscured,
+            },
+            Ignored {
+                kind: Kind::Scroll,
+                when: When::UnlessUnobscured,
+            },
+            Ignored {
+                kind: Kind::Move,
+                when: When::UnlessUnobscured,
+            },
+        ],
         feff_after_astral: true,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
-                   m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600",
+                   m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600; m3/kinds/ \
+                   runs m31-kinds-covered, m31-kinds-partial",
     },
-    // GTK 4 reads input only as XInput 2 events: a synthetic key or click never arrives, covered or visible, in every
-    // engine (M0.4), so its paste chord, its keys and its clicks take the foreground route in dedicated mode and are
-    // refused in shared mode. Its element actions through AT-SPI take effect (M0.4's element-click run).
+    // GTK 4 reads input only as XInput 2 events: a synthetic key, click, scroll or pointer move never arrives, covered
+    // or visible, in every engine (M0.4; M3.1), so these take the foreground route in dedicated mode and are refused in
+    // shared mode, as its paste chord is. Its element actions through AT-SPI take effect (M0.4's element-click run).
     Family {
         name: "GTK 4",
         toolkit: Some("GTK"),
@@ -196,9 +208,18 @@ pub const FAMILIES: &[Family] = &[
                 kind: Kind::Clicks,
                 when: When::Always,
             },
+            Ignored {
+                kind: Kind::Scroll,
+                when: When::Always,
+            },
+            Ignored {
+                kind: Kind::Move,
+                when: When::Always,
+            },
         ],
         feff_after_astral: false,
-        evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible",
+        evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible; m3/kinds/ runs m31-kinds-covered, \
+                   m31-kinds-visible",
     },
     // A VTE terminal pastes with Ctrl+Shift+V; Ctrl+V inserts the next key literally in a shell.
     Family {
@@ -359,6 +380,25 @@ mod tests {
         assert_eq!(clicks("Gedit", Some(toolkit("GTK", Some("3.24.41")))), None);
         let keys = |class| family(FAMILIES, Some(class), None).and_then(|f| f.ignores(Kind::Keys));
         assert_eq!(keys("firefox"), None, "Gecko takes synthetic keys, covered or not");
+    }
+
+    #[test]
+    fn scroll_and_move_are_ignored_by_gtk_4_always_and_by_gecko_unless_unobscured() {
+        for kind in [Kind::Scroll, Kind::Move] {
+            let ignores = |class, toolkit: Option<Toolkit>| {
+                family(FAMILIES, Some(class), toolkit.as_ref()).and_then(|f| f.ignores(kind))
+            };
+            assert_eq!(
+                ignores("gnome-text-editor", Some(toolkit("GTK", Some("4.14.2")))),
+                Some(When::Always),
+                "{kind:?}"
+            );
+            assert_eq!(ignores("firefox", None), Some(When::UnlessUnobscured), "{kind:?}");
+            for class in ["Google-chrome", "XTerm", "Gnome-terminal"] {
+                assert_eq!(ignores(class, None), None, "{class} takes background {kind:?}");
+            }
+            assert_eq!(ignores("Gedit", Some(toolkit("GTK", Some("3.24.41")))), None);
+        }
     }
 
     #[test]

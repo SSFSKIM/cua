@@ -99,7 +99,7 @@ export function parseArgs(argv) {
     if (['matrix', 'element-click', 'partial-cover', 'events'].includes(a.experiment)) require('vendor', 'newest');
     if (['qt-bridge', 'engine-readiness', 'drag', 'kinds', 'dnd'].includes(a.experiment)) require('vendor');
     // the drag and kinds experiments also measure a window with its bottom half covered (Gecko's cover condition)
-    if (!['covered', 'visible', ...(['drag', 'kinds'].includes(a.experiment) ? ['partial'] : [])].includes(a.occlusion)) throw new Error(`--occlusion ${a.occlusion} is not one ${a.experiment} takes`);
+    if (!['covered', 'visible', ...(['drag', 'kinds'].includes(a.experiment) ? ['partial', 'partial-deep'] : [])].includes(a.occlusion)) throw new Error(`--occlusion ${a.occlusion} is not one ${a.experiment} takes`);
     // the events experiment's desktop-only commands through OpenAI's JavaScript client
     if (a.via && !(a.experiment === 'events' && ['wire', 'vendor-js'].includes(a.via))) throw new Error('--via is wire or vendor-js, and among the experiments only events takes it');
     if (a.via === 'vendor-js' && !a.vendorJs) throw new Error(`--via vendor-js needs --vendor-js <@oai/sky directory>\n${USAGE}`);

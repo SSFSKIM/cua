@@ -1,7 +1,7 @@
 // Which input kinds each family ignores on the background route (#171 M3.1; Design, Device mode and the foreground
 // route; Decision Log, M3 pre-flight). M0.4's matrix measured clicks, keys and text; this measures what it did not,
-// scroll (and, where the family has a reader, a pointer move), with the click alongside as the reference for the
-// cover condition. Drags are drag.mjs's, which also runs here's occlusions and control lane. A kind shown ignored is
+// scroll and the pointer move, in every family, with the click alongside, where the family has a reader for it, as
+// the reference for the cover condition. Drags are drag.mjs's, which also runs here's occlusions and control lane. A kind shown ignored is
 // listed in families.rs with the run that showed it; a kind not shown ignored stays on the background route.
 //
 // Per family and kind, every lane sends the same request `--trials` times (10 by default) to its own window of the
@@ -15,8 +15,8 @@
 //   reader or the target, not the family, and decides nothing.
 //
 // Occlusions (`--occlusion`): `covered` (the front window over the whole screen), `visible` (each window raised above
-// the others, the front window in a corner) and `partial` (each window raised, the front window over its bottom half,
-// every target point in the top half).
+// the others, the front window in a corner), `partial` (each window raised, the front window over its bottom half,
+// every target point in the top half) and `partial-deep` (over its bottom 70%, every target point in the top 30%).
 
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -33,21 +33,30 @@ import { startWitness } from './witness.mjs';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** The kinds each family runs. Browsers show pages/input.html, whose status counts pointer moves, presses and the scroll. */
+// A pointer move's effect: the page's or the GTK 4 scene's motion count, a terminal's motion report (mouse reporting
+// 1003, every motion), and elsewhere a toolbar button's hover highlight, read as pixels: the moves alternate between
+// the button and the middle of the window, so each changes what is highlighted (gnome-text-editor's GTK 4 is the
+// GTK 4 scene's, whose motion count reads it directly).
 export const KIND_FAMILIES = {
   chrome: ['scroll', 'move', 'click'],
   firefox: ['scroll', 'move', 'click'],
   electron: ['scroll', 'move', 'click'],
-  gedit: ['scroll'],
+  gedit: ['scroll', 'move'],
   'gnome-text-editor': ['scroll'],
   'gtk4-input': ['scroll', 'move', 'click'],
-  kate: ['scroll'],
-  qtcreator: ['scroll'],
-  writer: ['scroll'],
-  'writer-gen': ['scroll'],
-  xterm: ['scroll'],
-  'xterm-allow': ['scroll'],
-  'gnome-terminal': ['scroll'],
+  kate: ['scroll', 'move'],
+  qtcreator: ['scroll', 'move'],
+  writer: ['scroll', 'move'],
+  'writer-gen': ['scroll', 'move'],
+  xterm: ['scroll', 'move'],
+  'xterm-allow': ['scroll', 'move'],
+  'gnome-terminal': ['scroll', 'move'],
 };
+
+/** Writer through gen has no tree: its first toolbar's first button (New), window-relative, from a capture (M3.1). */
+export const WRITER_GEN_BUTTON = { x: 15, y: 33 };
+/** A hover took effect when more pixels than this changed (a caret's few dozen do not count). */
+export const HOVER_PIXELS = 40;
 
 const BROWSERS = ['chrome', 'firefox', 'electron'];
 /** A scroll's pixels: three wheel steps. */
@@ -73,6 +82,12 @@ export function kindLanes(args) {
 export function scrolled(direction, before, after) {
   if (typeof before !== 'number' || typeof after !== 'number') return null;
   return direction === 'down' ? after > before : after < before;
+}
+
+/** Whether a terminal's program received a pointer motion: a mode-1003 report with no button down (`C`, 32 + 32 + 3). */
+export function motionReported(before, after) {
+  if (typeof before !== 'string' || typeof after !== 'string') return null;
+  return /\x1b\[MC/.test(after.slice(before.length));
 }
 
 /**
@@ -118,9 +133,38 @@ function target(scene, kind, i) {
     if (kind === 'move') return { x: i % 2 ? 400 : 200, y: list.y };
     return list;
   }
-  if (scene.kindOf === 'terminal') return { x: Math.round(w.width / 2), y: Math.round(w.height / 2) };
-  // an editor or a document: the middle of its window
+  if (scene.kindOf === 'terminal') {
+    // a move to a cell of its own each run
+    if (kind === 'move') return { x: i % 2 ? 100 : 300, y: Math.round(w.height / 2) };
+    return { x: Math.round(w.width / 2), y: Math.round(w.height / 2) };
+  }
+  // an editor or a document: a move alternates between a toolbar button and the middle of the window
+  if (kind === 'move' && i % 2 === 0) return scene.hover;
   return { x: Math.round(w.width / 2), y: Math.round(w.height / 2) };
+}
+
+/** A toolbar button near the window's top to hover, window-relative: from the tree, or Writer through gen's fixed one. */
+export async function hoverTarget(desktop, oracle, scene) {
+  if (scene.pixels) return WRITER_GEN_BUTTON;
+  const { preorder } = await import('./normalize.mjs');
+  const nodes = scene.source === 'at_spi' ? preorder((await desktop.state(scene)).ax_tree) : scene.frame ? oracle.walk(scene.frame, { prune: ['menu', 'popup menu'] }) : [];
+  const w = scene.window;
+  for (const n of nodes.filter((x) => ['push button', 'toggle button'].includes(x.role))) {
+    try {
+      const e = oracle.extents(n.id);
+      if (e.w >= 12 && e.h >= 12 && e.x >= w.x && e.x + e.w <= w.x + w.width && e.y >= w.y && e.y + e.h <= w.y + 200) return { x: Math.round(e.x - w.x + e.w / 2), y: Math.round(e.y - w.y + e.h / 2) };
+    } catch {
+      // not a component
+    }
+  }
+  throw new Error(`${scene.label}: no toolbar button to hover`);
+}
+
+/** How many pixels of two captures differ (a channel by more than 32), the whole window compared. */
+function pixelsOver(xprobe, a, b) {
+  if (!a || !b) return null;
+  const d = JSON.parse(execFileSync(xprobe, ['imgdiff', a, b, '0'], { encoding: 'utf8' }));
+  return d.over;
 }
 
 /** The value a kind's effect is judged by: a scroll position, a count, a terminal's received bytes, or a capture. */
@@ -136,7 +180,7 @@ async function readValue(ctx, scene, kind) {
       return s === null ? null : kind === 'scroll' ? s.scroll : kind === 'move' ? s.moves : s.presses;
     }
     if (scene.kindOf === 'terminal') return readFileSync(scene.record, 'latin1');
-    if (scene.pixels || !scene.scrollbar) return await captureWindow(ctx.cua, scene, ctx.dir);
+    if (kind === 'move' || scene.pixels || !scene.scrollbar) return await captureWindow(ctx.cua, scene, ctx.dir);
     return Number(oracle.currentValue(scene.scrollbar));
   } catch {
     return null;
@@ -145,7 +189,11 @@ async function readValue(ctx, scene, kind) {
 
 /** Whether a run took effect, from the values before and after. */
 function judge(scene, kind, input, before, after) {
-  if (scene.kindOf === 'terminal') return wheelReported(before, after);
+  if (scene.kindOf === 'terminal') return kind === 'move' ? motionReported(before, after) : wheelReported(before, after);
+  if (kind === 'move' && !['page', 'gtk4-input'].includes(scene.kindOf)) {
+    const over = pixelsOver(XPROBE, before, after);
+    return over === null ? null : over > HOVER_PIXELS;
+  }
   if (scene.pixels || (kind === 'scroll' && !['page', 'gtk4-input'].includes(scene.kindOf) && !scene.scrollbar)) return pixelsChanged(before, after);
   if (kind === 'scroll') return scrolled(input.direction, before, after);
   return grew(before, after);
@@ -215,7 +263,7 @@ async function series(ctx, spec, scene, kind, n) {
 
 export async function runKinds(args, { desktop, emit }) {
   if (!args.vendor) throw new Error('the kinds experiment needs --vendor');
-  if (!['covered', 'visible', 'partial'].includes(args.occlusion)) throw new Error('--occlusion is covered, visible or partial');
+  if (!['covered', 'visible', 'partial', 'partial-deep'].includes(args.occlusion)) throw new Error('--occlusion is covered, visible, partial or partial-deep');
   const names = familyNames(args.families?.length ? args.families : Object.keys(KIND_FAMILIES));
   const kindsAsked = args.ops && args.ops !== 'all' ? args.ops : null;
   const n = args.samplesTrials ?? 10;
@@ -249,12 +297,14 @@ export async function runKinds(args, { desktop, emit }) {
           // a terminal runs its recorder (mouse reporting on), so a wheel event arrives as a report; a document long
           // enough to scroll everywhere else
           const doc = FAMILIES[family].kind === 'terminal' ? null : DRAG_DOC;
-          scenes[l.label] = await openFamily(desktop, oracle, family, `kinds${l.label.replace(/[^a-z0-9]+/gi, '')}`, { page, doc, env, geometry });
+          // a terminal's recorder reports every motion (mode 1003) as well as the buttons and the wheel
+          scenes[l.label] = await openFamily(desktop, oracle, family, `kinds${l.label.replace(/[^a-z0-9]+/gi, '')}`, { page, doc, env, geometry, motion: true });
           if (page) scenes[l.label].kindOf = 'page';
           // an editor's or a document's effect is its vertical scroll bar's value, where it has one
           if (scenes[l.label].kindOf !== 'terminal' && !page && !scenes[l.label].pixels && family !== 'gtk4-input') {
             scenes[l.label].scrollbar = await verticalScrollBar(desktop, oracle, scenes[l.label]).catch(() => null);
           }
+          if (kinds.includes('move') && !page && !['terminal', 'gtk4-input'].includes(scenes[l.label].kindOf)) scenes[l.label].hover = await hoverTarget(desktop, oracle, scenes[l.label]);
         }
         desktop.arrangeFront(args.occlusion === 'covered' ? 'covered' : 'visible');
         await sleep(1000);
@@ -263,7 +313,7 @@ export async function runKinds(args, { desktop, emit }) {
           for (const spec of lanes) runs.push(...(await series(ctx, spec, scenes[spec.label], kind, n)));
           const verdict = cellVerdict(runs, n);
           const took = Object.fromEntries(lanes.map((l) => [l.label, runs.filter((r) => r.engine === l.label && r.took === true).length]));
-          const reader = scenes.cua.kindOf === 'terminal' ? 'wheel report' : scenes.cua.pixels || (!['page', 'gtk4-input'].includes(scenes.cua.kindOf) && !scenes.cua.scrollbar) ? 'pixels' : scenes.cua.kindOf === 'page' ? 'page status' : scenes.cua.kindOf === 'gtk4-input' ? 'status line' : 'scroll bar value';
+          const reader = scenes.cua.kindOf === 'terminal' ? (kind === 'move' ? 'motion report' : 'wheel report') : kind === 'move' && !['page', 'gtk4-input'].includes(scenes.cua.kindOf) ? 'hover pixels' : scenes.cua.pixels || (!['page', 'gtk4-input'].includes(scenes.cua.kindOf) && !scenes.cua.scrollbar) ? 'pixels' : scenes.cua.kindOf === 'page' ? 'page status' : scenes.cua.kindOf === 'gtk4-input' ? 'status line' : 'scroll bar value';
           const witnessClean = runs.filter((r) => r.engine !== 'xtest').every((r) => r.witness) ? 'clean' : '**changed**';
           const row = { kind: 'kinds-cell', family, input: kind, occlusion: args.occlusion, n, took, reader, verdict, background_witness: witnessClean };
           emit(row);

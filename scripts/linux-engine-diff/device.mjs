@@ -51,6 +51,13 @@ const GTK4 = { button: { x: 300, y: 103 }, list: { x: 300, y: 300 }, scale: { x0
 /** The input page's pad, in the top half of Firefox's window (below its own bars). */
 const PAD = { x: 520, y: 200 };
 
+/** GTK 4's scale dragged from a quarter to three quarters along on even samples, back on odd ones. */
+function scalePath(i) {
+  const { x0, x1, y } = GTK4.scale;
+  const along = (f) => Math.round(x0 + 12 + (x1 - x0 - 24) * f);
+  return i % 2 === 0 ? [{ x: along(0.25), y }, { x: along(0.75), y }] : [{ x: along(0.75), y }, { x: along(0.25), y }];
+}
+
 const rose = (key) => (before, after) => typeof before?.[key] === 'number' && after?.[key] === before[key] + 1;
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -133,6 +140,10 @@ export const DEVICE_OPS = {
   gtk4_key_down_shared: device({ device: 'refusal', read: gtk4, request: (ctx) => ['key_down', { window: { id: ctx.scene.id }, key: 'x' }] }),
   gtk4_right_click_shared: device({ device: 'refusal', read: gtk4, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.button, mouse_button: 'right' }] }),
   gtk4_element_click: device({ device: 'background', read: gtk4, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.button }], effect: rose('presses') }),
+  gtk4_scroll_shared: device({ device: 'refusal', read: gtk4, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...at(GTK4.list) }] }),
+  gtk4_scroll_dedicated: device({ device: 'foreground', read: gtk4, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...at(GTK4.list) }], effect: (before, after) => typeof before?.scroll === 'number' && after?.scroll > before.scroll }),
+  gtk4_drag_shared: device({ device: 'refusal', read: gtk4, request: (ctx) => ['drag', { window: { id: ctx.scene.id }, path: scalePath(ctx.i) }] }),
+  gtk4_drag_dedicated: device({ device: 'foreground', read: gtk4, request: (ctx) => ['drag', { window: { id: ctx.scene.id }, path: scalePath(ctx.i) }], effect: (before, after) => typeof before?.scale === 'number' && typeof after?.scale === 'number' && after.scale !== before.scale }),
   // gnome-text-editor (GTK 4): typeText in shared mode
   gte_type_text_shared: device({ device: 'refusal', read: fieldText, request: (ctx) => ['type_text', { window: { id: ctx.scene.id }, text: 'cua171 refused' }] }),
   // Firefox (`device-firefox`): coordinate clicks refused with any overlap and with part of the window off the screen,
@@ -173,7 +184,7 @@ for (const op of Object.values(DEVICE_OPS)) {
 }
 
 export const DEVICE_SCENE_OPS = {
-  'device-gtk4': ['gtk4_click_shared', 'gtk4_click_dedicated', 'gtk4_key_shared', 'gtk4_key_dedicated', 'gtk4_key_down_shared', 'gtk4_right_click_shared', 'gtk4_element_click'],
+  'device-gtk4': ['gtk4_click_shared', 'gtk4_click_dedicated', 'gtk4_key_shared', 'gtk4_key_dedicated', 'gtk4_key_down_shared', 'gtk4_right_click_shared', 'gtk4_element_click', 'gtk4_scroll_shared', 'gtk4_scroll_dedicated', 'gtk4_drag_shared', 'gtk4_drag_dedicated'],
   'device-firefox': ['firefox_click_overlap_shared', 'firefox_click_offscreen_shared', 'firefox_right_click_overlap_shared', 'firefox_click_overlap_dedicated', 'firefox_click_visible_shared', 'firefox_element_click_covered'],
   'device-xterm': ['xterm_key_shared', 'xterm_key_dedicated', 'xterm_click_shared'],
   'gnome-text-editor': ['gte_type_text_shared'],

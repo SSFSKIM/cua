@@ -307,7 +307,7 @@ fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_an
             "click",
             json!({"window": firefox.target(), "x": 40, "y": 40, "mouse_button": "right", "click_count": 2})
         ),
-        Err(refusal),
+        Err(refusal.clone()),
     );
     shared
         .request("press_key", json!({"window": firefox.target(), "key": "a"}))
@@ -315,6 +315,17 @@ fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_an
     let keyed = firefox.inputs();
     assert_eq!(keyed.len(), 2, "keys are not listed for Gecko: {keyed:?}");
     assert!(sent(&keyed));
+    // its scrolls and pointer moves follow the clicks' rule
+    for (command, input) in [
+        (
+            "scroll",
+            json!({"window": firefox.target(), "x": 40, "y": 40, "direction": "down", "pixels": 100}),
+        ),
+        ("move", json!({"window": firefox.target(), "x": 60, "y": 60})),
+    ] {
+        assert_eq!(shared.request(command, input), Err(refusal.clone()), "{command}");
+    }
+    assert_eq!(firefox.inputs(), vec![], "nothing was sent");
     drop(shared);
 
     let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
@@ -335,4 +346,21 @@ fn clicks_to_a_window_that_ignores_them_while_covered_are_refused_when_shared_an
         "real button events, through XTEST"
     );
     assert_eq!(cover.inputs(), vec![], "nothing reached the window that covered it");
+    // covered again: a scroll through the foreground route, one wheel step as real button 5 events
+    firefox.unfocus();
+    cover.raise();
+    dedicated
+        .request(
+            "scroll",
+            json!({"window": firefox.target(), "x": 300, "y": 180, "direction": "down", "pixels": 100}),
+        )
+        .unwrap();
+    assert!(firefox.has_focus() && firefox.above(&cover));
+    assert_eq!(
+        firefox.inputs(),
+        vec![
+            Input::ButtonPress { button: 5, sent: false },
+            Input::ButtonRelease { button: 5, sent: false }
+        ]
+    );
 }

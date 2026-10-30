@@ -887,6 +887,35 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `m2/release/`.
   Date/Author: 2026-10-30, the plan-executor (session linux171).
 
+- Decision (2026-10-30, M3 pre-flight): M3 runs as three loop tasks, each reviewed clean before the next, since each consumes the one before.
+  - **M3.1, the engine's device mode and capability report** (`native/linux-engine/`, the differential harness):
+    - `capabilities` (`caps.rs`), its `desktop` from `--desktop`;
+    - `families.rs`'s kinds applied to every input command that can be ignored: coordinate and right clicks, and keys (`press_key`, `key_down`, `key_up`, beside `type_characters` and the paste chord);
+    - the foreground route in `dedicated` mode for each listed kind, its route on `--stats`;
+    - the Chrome drag-and-drop item (below);
+    - the engine's version 0.3.0.
+    It proves Acceptance 8 on the engine through the differential harness, with the witness keyed to the expected route (M2.3's rules), and 2–5 for the commands it changes.
+  - **M3.2, cua's own Linux service and the truncation line**:
+    - `src/services/engine/linux/{client,ids,settle,methods,service}.mjs` as in the design, with `MIN_ENGINE_VERSION` 0.3.0;
+    - `CUA_SKY_SERVICE` naming it for the `cua` selection on Linux in `src/runtime/launch.mjs`, and `CUA_DESKTOP_MODE` passed to the trusted worker, which hands it to the engine as `--desktop`;
+    - `capabilities` read at setup, a missing capability turned into one sentence;
+    - service unit tests with a fake engine speaking the wire;
+    - the facade's truncation line, with its tests and its declared facade-scenario difference.
+    Its live proof: the vendor JavaScript and cua's service, each driving the same cua-engine on the scenes, render the same states with the same element numbers. It consumes M3.1's wire.
+  - **M3.3, doctor, provisioning, the proof and the plugin**:
+    - doctor's service row (`cua`), the capability report (the engine started for it), and the `org.a11y.Status` `IsEnabled` check;
+    - `deploy/cloud-vm/cua-provision.sh`;
+    - the facade suites with cua's service on the cua lane: repl-parity, and `compare --engines` (Acceptance 2 through the facade);
+    - Acceptance 1, both no vendor process and no vendor module, Acceptance 6's gnome-text-editor case in `dedicated` mode through the facade, and Acceptance 8 sampled through the facade;
+    - the plugin bump, and evidence `m3/`.
+    The release and its pin follow the branch review, as in M2.
+  - A gap closed in the spirit of the device-mode design: M0's matrix measured clicks, keys and text, not scroll or drag, while M1a's drag experiment saw no engine select anything in gnome-text-editor. M3.1 measures scroll and drag on the background route in each listed family: GTK 4; Gecko covered, partly covered and visible; xterm. A kind shown ignored is listed, with the run that showed it, under the same `shared` refusal and `dedicated` foreground route. A kind not shown ignored stays on the background route. Without this, an ignored scroll or drag would answer success with nothing done, which the design rules out ("an ignored click leaves no reliable trace to detect").
+  - The Chrome drag-and-drop item stays decided on measurement, by M3.1:
+    - First record what an HTML5 drop changes in each engine (stacking, focus, the active window, a pointer or keyboard grab) and whether it is restored.
+    - Then measure the candidate: the engine watches `XdndSelection` through XFixes. In `shared` mode it cancels before the drop (Escape, then the release) and refuses with a sentence naming drag-and-drop; in `dedicated` mode it allows the drop.
+    - The decision and its sentence go to the design session before they are folded.
+  Date/Author: 2026-10-30, the plan-executor (session linux171).
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

@@ -286,7 +286,8 @@ async function measureSample(s, ctx) {
     const all = [main, ...spans.filter((w) => w !== answered.witness)];
     row.witness = all.every((w) => w.clean);
     if (!row.witness) row.witness_fields = [...new Set(all.flatMap((w) => w.fields))];
-    if (!row.witness && answered.report) row.witness_changes = (answered.report.changes ?? []).slice(0, 20);
+    // what the witness saw, wherever it failed or an allowance excused a change (each stacking change with its orders)
+    if ((!row.witness || answered.judged?.allowed?.length) && answered.report) row.witness_changes = (answered.report.changes ?? []).slice(0, 20);
     if (answered.judged?.allowed?.length) row.witness_allowed = answered.judged.allowed;
   }
   return { row, response };

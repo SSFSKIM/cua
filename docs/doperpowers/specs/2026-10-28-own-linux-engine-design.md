@@ -798,6 +798,20 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `.doperpowers/sde/…/task-13-report.md` (local); `ci-gate --gates engine-linux` GREEN on 50729a3d (run 40988152129).
   Date/Author: 2026-10-29, the plan-executor (session linux171), from the M2.1 executor's report and its task review.
 
+- Decision (2026-10-29, M2.2): the paste route as built.
+  - The 10 s `CurrentTime` window opens only for an unconfirmed paste whose Ctrl+V was actually sent. A transfer counts only the target client's requests made after the chord. A transfer is "not started" or "stalled" when 500 ms pass after the target's last request with nothing in flight.
+  - The element is found and observed after the session's synthetic `FocusIn`: background Chrome reports its address bar focused only then.
+  - The GTK 4 check reads `Application.Version`, because GTK 4.14 has no `ToolkitVersion`. `<App>` in the Device-mode sentence is `list_windows`' `app` field. `families.rs` now has M3's shape: kind and condition per family.
+  - Eight new refusals before dispatch, cua's own, each ending `nothing was sent`; the vendor's sentences and their order are kept where they exist.
+  - An empty `type_text` focuses the element and answers success with no clipboard work. A `type_text` without a window pastes into whatever holds the X focus, through XTEST, as the vendor's windowless requests use the desktop route.
+  - A paste is confirmed only when the inserted segment matches and the field changed, so pasting over identical text answers unconfirmed.
+  - A context menu opened for Copy that has no Copy item is closed with Escape.
+  - Speed on a private Xvfb, per paste, confirmed: 41–174 ms across gedit, Chrome's textarea and address bar (Chrome in the background), Firefox, gnome-terminal (Ctrl+Shift+V) and gnome-text-editor in `dedicated` mode, against about 840 ms for the vendor. gnome-text-editor in `shared` mode and xterm are refused with nothing sent.
+  - `type_characters`, which M2's outcome names and the pre-flight's task list left out, is built in M2.2, after Keys: the layout's characters through the same key routes and family rules as `press_key`.
+  - The foreground route in `dedicated` mode is the desktop route (XTEST), so a focusing click moves the real pointer. On a dedicated desktop the witness allows exactly the changes the foreground route exists to make: the target window activated (active window, its raise, the X input focus) and the pointer's position. It allows nothing else: no other window's state, no grab left behind, no change after the request ends. The plan-executor decided this and sent it to the design session to check.
+  Evidence: `.doperpowers/sde/…/task-14-report.md` (local); `ci-gate` (engine-linux, plugin, test) GREEN on 9531b4c6 (run 40993434518).
+  Date/Author: 2026-10-29, the plan-executor (session linux171), from the M2.2 executor's report.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

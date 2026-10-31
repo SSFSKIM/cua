@@ -399,8 +399,10 @@ fn a_chromium_drag_takes_the_background_route_only_along_a_visible_path() {
 
 /// A window of the test's own, classed `Google-chrome`, whose client takes `XdndSelection` once a drag's held motion
 /// reaches it, as an XDND source does when its drag and drop begins, and, with `OnRelease::Focuses`, takes the X input
-/// focus on the button's release unless an Escape came first, as Chrome's drop activates its window; it records the
-/// input events it receives until told to stop.
+/// focus on the button's release unless an Escape came first, as Chrome's drop activates its window. With
+/// `OnRelease::TakesLate` it takes nothing during the drag: shortly after the button's release it takes `XdndSelection`
+/// and the input focus, a drag and drop that began after the drag's last motion. It records the input events it
+/// receives until told to stop.
 fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<Vec<Input>>) {
     let (ready, window) = mpsc::channel();
     let (stop, stopped) = mpsc::channel();
@@ -427,18 +429,32 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
             .atom;
         probe.conn.sync().unwrap();
         ready.send(probe.id).unwrap();
+        let take = |probe: &Probe| {
+            probe
+                .conn
+                .set_selection_owner(probe.id, selection, x11rb::CURRENT_TIME)
+                .unwrap();
+            probe.conn.flush().unwrap();
+        };
+        let focus = |probe: &Probe| {
+            probe
+                .conn
+                .set_input_focus(
+                    x11rb::protocol::xproto::InputFocus::PARENT,
+                    probe.id,
+                    x11rb::CURRENT_TIME,
+                )
+                .unwrap();
+            probe.conn.flush().unwrap();
+        };
         let mut seen = Vec::new();
-        let mut taken = false;
+        let mut taken = on_release == OnRelease::TakesLate;
         while stopped.try_recv().is_err() {
             while let Some(event) = probe.conn.poll_for_event().unwrap() {
                 let sent = event.sent_event();
                 match event {
                     Event::MotionNotify(_) if !taken => {
-                        probe
-                            .conn
-                            .set_selection_owner(probe.id, selection, x11rb::CURRENT_TIME)
-                            .unwrap();
-                        probe.conn.flush().unwrap();
+                        take(&probe);
                         taken = true;
                     }
                     Event::KeyPress(_) => seen.push(Input::KeyPress { sent }),
@@ -446,16 +462,15 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
                     Event::ButtonPress(e) => seen.push(Input::ButtonPress { button: e.detail, sent }),
                     Event::ButtonRelease(e) => {
                         seen.push(Input::ButtonRelease { button: e.detail, sent });
-                        if on_release == OnRelease::Focuses && !seen.contains(&Input::KeyPress { sent: true }) {
-                            probe
-                                .conn
-                                .set_input_focus(
-                                    x11rb::protocol::xproto::InputFocus::PARENT,
-                                    probe.id,
-                                    x11rb::CURRENT_TIME,
-                                )
-                                .unwrap();
-                            probe.conn.flush().unwrap();
+                        let escaped = seen.contains(&Input::KeyPress { sent: true });
+                        match on_release {
+                            OnRelease::Focuses if !escaped => focus(&probe),
+                            OnRelease::TakesLate => {
+                                sleep(LATE_TAKE);
+                                take(&probe);
+                                focus(&probe);
+                            }
+                            _ => {}
                         }
                     }
                     _ => {}
@@ -468,11 +483,15 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
     (window.recv().unwrap(), stop, handle)
 }
 
+/// How long after the release a late drag and drop begins (`OnRelease::TakesLate`): well inside the engine's settle.
+const LATE_TAKE: Duration = Duration::from_millis(30);
+
 /// What the drag source does on the button's release.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OnRelease {
     Nothing,
     Focuses,
+    TakesLate,
 }
 
 /// The input focus on no window, so a drop's activation shows.
@@ -612,4 +631,199 @@ fn a_drag_into_chrome_already_in_front_drops_when_shared() {
         ],
         "the drop goes ahead, no Escape"
     );
+}
+
+/// A drag and drop that begins only after the drag's release (the source takes `XdndSelection` and the focus shortly
+/// after it, where no look during the drag could see it) is still watched for: the answer says the drop may have
+/// happened, never success or that nothing was dropped, and Escape follows to end it.
+#[test]
+fn a_drag_and_drop_that_begins_after_the_release_answers_that_the_drop_may_have_happened() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::TakesLate);
+    focus_nothing();
+    let mut shared = Engine::start();
+    let app = app_of(&mut shared, window);
+    assert_eq!(
+        shared.request("drag", json!({"window": {"id": window}, "path": path})),
+        Err(format!(
+            "{app} began a drag and drop, which changes the desktop, and it could not be cancelled in time: the drop \
+             may have happened and the desktop changed. Use a dedicated desktop, or activate the window first"
+        ))
+    );
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+        ],
+        "the release, then the Escape"
+    );
+}
+
+/// An override-redirect window of the test's own over `rect`, as a notification or a menu covers part of a window.
+fn override_redirect(conn: &RustConnection, (x, y, width, height): (i16, i16, u16, u16)) -> Window {
+    let root = conn.setup().roots[0].root;
+    let id = conn.generate_id().unwrap();
+    let aux = CreateWindowAux::new().override_redirect(1);
+    conn.create_window(0, id, root, x, y, width, height, 0, WindowClass::INPUT_OUTPUT, 0, &aux)
+        .unwrap();
+    conn.map_window(id).unwrap();
+    conn.sync().unwrap();
+    id
+}
+
+/// The window put in front as a window manager leaves its active window: the input focus, `_NET_ACTIVE_WINDOW`, and
+/// the top of `_NET_CLIENT_LIST_STACKING`.
+fn in_front(window: Window) {
+    let (conn, screen) = x11rb::connect(None).expect("an X connection");
+    let root = conn.setup().roots[screen].root;
+    conn.set_input_focus(x11rb::protocol::xproto::InputFocus::PARENT, window, x11rb::CURRENT_TIME)
+        .unwrap();
+    let stacking = conn
+        .intern_atom(false, b"_NET_CLIENT_LIST_STACKING")
+        .unwrap()
+        .reply()
+        .unwrap()
+        .atom;
+    conn.change_property32(PropMode::REPLACE, root, stacking, AtomEnum::WINDOW, &[window])
+        .unwrap();
+    conn.sync().unwrap();
+    set_active_window(Some(window));
+}
+
+/// The drop's signature already holds when the drag begins (Chrome active, focused and on top of the managed windows)
+/// while an override-redirect window over a corner, away from the path, keeps it from counting as in front, so the
+/// drag is watched: a take seen during the drag is cancelled in time (Escape, then the release) and said so; with the
+/// Escape held past the release, the answer says the drop may have happened, though no part of the signature can show
+/// a change (Acceptance 8; the design session's ruling of 2026-10-31).
+#[test]
+fn with_the_signature_already_held_the_answer_follows_the_order_of_the_take_and_the_release() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (conn, _) = x11rb::connect(None).expect("an X connection");
+    let corner = override_redirect(&conn, (360, 260, 40, 40));
+    let in_time = || {
+        let (window, stop, recorder) = drag_source(OnRelease::Focuses);
+        in_front(window);
+        // the corner above the source's window, which opened after it
+        conn.configure_window(corner, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))
+            .unwrap();
+        conn.sync().unwrap();
+        (window, stop, recorder)
+    };
+    let (window, stop, recorder) = in_time();
+    let mut shared = Engine::start();
+    let app = app_of(&mut shared, window);
+    let answer = shared.request("drag", json!({"window": {"id": window}, "path": path}));
+    set_active_window(None);
+    assert_eq!(
+        answer,
+        Err(format!(
+            "{app} began a drag and drop, which changes the desktop; it was cancelled before the drop, so nothing was \
+             dropped. Use a dedicated desktop, or activate the window first"
+        )),
+        "the take came before the release: cancelled in time"
+    );
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+        ],
+        "Escape before the release"
+    );
+    drop(shared);
+    let (window, stop, recorder) = in_time();
+    let mut late = Engine::start_with(&["--dnd-cancel-after-release"]);
+    let answer = late.request("drag", json!({"window": {"id": window}, "path": path}));
+    set_active_window(None);
+    assert_eq!(
+        answer,
+        Err(format!(
+            "{app} began a drag and drop, which changes the desktop, and it could not be cancelled in time: the drop \
+             may have happened and the desktop changed. Use a dedicated desktop, or activate the window first"
+        )),
+        "the Escape after the release: never that nothing was dropped"
+    );
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+        ]
+    );
+    conn.destroy_window(corner).unwrap();
+    conn.sync().unwrap();
+}
+
+/// On the foreground route a request is refused for its own input before the window is activated, as `press_key` is:
+/// a move with a bad chord, a scroll of no pixels and one with a bad chord, a drag of one point and one with a bad
+/// chord, and characters the layout cannot type each answer their error and leave the window unfocused, nothing sent.
+#[test]
+fn a_foreground_request_refused_for_its_input_activates_nothing() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let chrome = Probe::open("Google-chrome", (400, 0, 320, 200));
+    let xterm = Probe::open("XTerm", (0, 300, 320, 200));
+    let _cover = Probe::open("Cover", (0, 0, 800, 220));
+    let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+    let cases = [
+        (
+            &firefox,
+            "move",
+            json!({"window": firefox.target(), "x": 40, "y": 40, "key": "nosuchkey"}),
+        ),
+        (
+            &firefox,
+            "scroll",
+            json!({"window": firefox.target(), "x": 40, "y": 40, "direction": "down", "pixels": 0}),
+        ),
+        (
+            &firefox,
+            "scroll",
+            json!({"window": firefox.target(), "x": 40, "y": 40, "direction": "down", "key": "nosuchkey"}),
+        ),
+        (
+            &chrome,
+            "drag",
+            json!({"window": chrome.target(), "path": [{"x": 20, "y": 20}]}),
+        ),
+        (
+            &chrome,
+            "drag",
+            json!({"window": chrome.target(), "path": [{"x": 20, "y": 20}, {"x": 60, "y": 60}], "key": "nosuchkey"}),
+        ),
+        (
+            &xterm,
+            "type_characters",
+            json!({"window": xterm.target(), "text": "a\u{7}"}),
+        ),
+    ];
+    for (probe, command, input) in cases {
+        probe.unfocus();
+        assert!(dedicated.request(command, input.clone()).is_err(), "{command} {input}");
+        assert!(
+            !probe.has_focus(),
+            "{command} {input}: a refused request activates nothing"
+        );
+    }
+    for probe in [&firefox, &chrome, &xterm] {
+        assert_eq!(probe.inputs(), vec![], "nothing was sent");
+    }
+    // the same move well formed takes the foreground route
+    firefox.unfocus();
+    dedicated
+        .request("move", json!({"window": firefox.target(), "x": 40, "y": 40}))
+        .unwrap();
+    assert!(firefox.has_focus(), "activated");
 }

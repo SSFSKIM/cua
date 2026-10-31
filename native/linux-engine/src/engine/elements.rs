@@ -7,7 +7,7 @@ use anyhow::{Result, anyhow, bail};
 use serde_json::Value;
 
 use super::Engine;
-use super::pointer::{CLICK_HOLD, wheel};
+use super::pointer::{CLICK_HOLD, check_wheel, wheel};
 use super::way::Way;
 use crate::atspi::{self, Association};
 use crate::dbus::Bus;
@@ -131,7 +131,10 @@ impl Engine {
     /// extents within the window (no ancestor clipping, no state check), then the wheel.
     pub(super) fn element_scroll(&mut self, window: u32, element: &str, input: &ScrollInput) -> Result<Value> {
         let element = self.resolve_element(window, element)?;
-        let target = self.target_for(Some(window), Kind::Scroll)?;
+        let way = self.route_for(Some(window), Kind::Scroll)?;
+        // the foreground route activates only once the amount and the chord are known good
+        self.enter_checked(way, Some(window), |x| check_wheel(x, input))?;
+        let target = way.target(window);
         let (x, bus, inputs) = self.parts()?;
         inputs.with_route(x, target, |x, route, _| {
             let bounds = atspi::extents(bus, &element.target)?.map_err(anyhow::Error::msg)?;

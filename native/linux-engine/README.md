@@ -87,18 +87,28 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   refuses with `<app> does not accept background input; use a dedicated desktop or activate the window first`
   before anything is sent; `--desktop dedicated` activates the window (`_NET_ACTIVE_WINDOW`, a raise, the input
   focus), waits for it to hold the focus, and sends the input through XTEST at the same window-relative points (the
-  foreground route); a request whose input is refused for itself (a bad key) activates nothing. A hold made on the
+  foreground route); a request whose input is refused for itself (a bad key or chord, a scroll of no pixels, a drag
+  of fewer than two points, characters the layout cannot type) activates nothing. A hold made on the
   foreground route is released on it, the window activated again first. Every request that consults the table
   records its route on the `--stats` line (`route`: `background`, `foreground` or `desktop`).
 - **Drag and drop into Chrome** (`dnd.rs`): Chrome's HTML5 drop activates, focuses and raises its window (the
   Chromium toolkit's other applications, Electron among them, change nothing). In shared mode a background drag into
-  Chrome watches `XdndSelection` through XFixes, unless Chrome's window is already the active window, holds the focus
-  and is fully unobscured (any doubt counts as not), where the drop goes ahead. When Chrome's own client takes the
-  selection (a drag and drop has begun), Escape is pressed and released on the background route, then the button,
-  and the drag is refused: `… it was cancelled before the drop, so nothing was dropped. Use a dedicated desktop, or
-  activate the window first`, said only if within 300 ms Chrome's window did not newly become active, focused or top
-  of the stacking order; if it did, the answer is that the drop may have happened and the desktop changed. The
-  `--stats` line's `dnd` records whether the window was in front, the watch saw a start, and the signature and wait.
+  Chrome watches `XdndSelection` through XFixes, from the drag's start through 300 ms after its release, unless
+  Chrome's window is already the active window, holds the focus and is fully unobscured (any doubt counts as not),
+  where the drop goes ahead. The answer follows the order of what the engine saw and sent:
+  - Chrome's own client takes the selection (a drag and drop has begun) before the release: Escape is pressed and
+    released on the background route, then the button, and the drag is refused: `… it was cancelled before the drop,
+    so nothing was dropped. Use a dedicated desktop, or activate the window first`; unless within 300 ms Chrome's
+    window newly becomes active, focused or top of the stacking order (the cross-check), when the answer is that the
+    drop may have happened and the desktop changed;
+  - the take comes only after the release: Escape follows, and the answer is that the drop may have happened;
+  - no take within the 300 ms: an ordinary drag, answered success;
+  - a take whose cancel could not be sent: `… it was cancelled, but whether the drop landed cannot be confirmed. …`.
+
+  The watch keeps every selection report the connection reads meanwhile, so the input session's server-time probe
+  cannot lose one. The `--stats` line's `dnd` records whether the window was in front, the watch saw a start, the
+  outcome (`in_time`, `late`, `no_start`, `undecided`), whether the signature already held at the start, and the
+  cross-check and its wait.
 
 ## How it uses the clipboard
 

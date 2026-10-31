@@ -50,6 +50,11 @@ impl Way {
     }
 }
 
+/// The input target of a route into an optional window: the desktop when no window is named.
+pub(super) fn target_of(way: Way, window: Option<Window>) -> Target {
+    window.map_or(Target::Desktop, |window| way.target(window))
+}
+
 /// The Device mode sentence, in shared mode, for a kind the family ignores on the background route.
 pub(super) fn no_background_input(app: &str) -> String {
     format!("{app} does not accept background input; use a dedicated desktop or activate the window first")
@@ -102,6 +107,22 @@ impl Engine {
     pub(super) fn target_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Target> {
         let way = self.way_for(window, kind)?;
         Ok(window.map_or(Target::Desktop, |window| way.target(window)))
+    }
+
+    /// The foreground route's start for a request that checks its own input first (`check`: its chord, its path, its
+    /// amount), as `press_key` does: a request refused for its input activates nothing. On the other routes nothing
+    /// happens here, and the request checks its input inside the route, in the vendor's order.
+    pub(super) fn enter_checked(
+        &mut self,
+        way: Way,
+        window: Option<Window>,
+        check: impl FnOnce(&crate::x11::X11) -> Result<()>,
+    ) -> Result<()> {
+        if let (Way::Foreground, Some(window)) = (way, window) {
+            check(&self.x)?;
+            self.enter(window)?;
+        }
+        Ok(())
     }
 
     /// The route on the `--stats` line, for the harness's witness.

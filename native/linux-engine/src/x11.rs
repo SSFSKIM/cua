@@ -88,6 +88,10 @@ pub struct X11 {
     shm: crate::shm::Shm,
     /// How the last desktop screenshot was read: `shm` or `get_image`.
     pub last_desktop_read: Option<&'static str>,
+    /// While a drag's watch on `XdndSelection` runs (`dnd.rs`): the selection-owner reports read by anything on this
+    /// connection, kept for the watch, so a reader that drains events for its own reply (the server-time probe)
+    /// cannot lose one.
+    selection_reports: Option<Vec<x11rb::protocol::xfixes::SelectionNotifyEvent>>,
 }
 
 /// Lossy UTF-8, trailing NULs stripped, Unicode-trimmed, empty as None (behaviour §3, `property_text`).
@@ -167,6 +171,7 @@ impl X11 {
             last_capture_wait: None,
             shm: crate::shm::Shm::new(),
             last_desktop_read: None,
+            selection_reports: None,
         })
     }
 
@@ -506,6 +511,9 @@ impl X11 {
         if let Event::DestroyNotify(e) = &event {
             self.retained.remove(&e.window);
         }
+        if let (Event::XfixesSelectionNotify(e), Some(reports)) = (&event, self.selection_reports.as_mut()) {
+            reports.push(*e);
+        }
         if let Some(readiness) = &self.readiness {
             readiness.note(&event);
         }
@@ -760,6 +768,22 @@ impl X11 {
     /// After a desktop screenshot's answer: the MIT-SHM segment for the next one, where the display allows it.
     pub fn prepare_desktop(&mut self) {
         self.shm.prepare(&self.conn);
+    }
+
+    /// Selection-owner reports are kept from now on for [`X11::take_selection_reports`], until
+    /// [`X11::stop_selection_reports`].
+    pub fn keep_selection_reports(&mut self) {
+        self.selection_reports = Some(Vec::new());
+    }
+
+    /// Every selection-owner report that arrived since the last call: the events read meanwhile are noted first.
+    pub fn take_selection_reports(&mut self) -> Vec<x11rb::protocol::xfixes::SelectionNotifyEvent> {
+        self.drain_events();
+        self.selection_reports.as_mut().map(std::mem::take).unwrap_or_default()
+    }
+
+    pub fn stop_selection_reports(&mut self) {
+        self.selection_reports = None;
     }
 
     /// XFixes, its version negotiated once per connection.

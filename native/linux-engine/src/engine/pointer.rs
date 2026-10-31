@@ -1,16 +1,16 @@
 //! Coordinate clicks, `move`, `move_relative`, `scroll`, `drag` and `drag_handle` (behaviour §10) on either route:
 //! the vendor's arithmetic, its order of placing, pressing the chord and pressing the button, and its holds.
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
 use x11rb::protocol::xproto::ConnectionExt as _;
 
-use super::way::Way;
+use super::way::target_of;
 use super::{DesktopMode, Engine};
 use crate::desktop::Desktop;
-use crate::dnd::DndWatch;
+use crate::dnd::{DndWatch, Outcome, SETTLE, Standing};
 use crate::families::DragPacing;
 use crate::families::Kind;
 use crate::input::chord_keycodes;
@@ -96,45 +96,71 @@ fn click_once(
     released.and(keys_released)
 }
 
-/// A drag cancelled before its drop because the target began a drag and drop (`dnd.rs`).
+/// A drag stopped because the target began a drag and drop (`dnd.rs`): its answer is the guard's [`Outcome`].
 #[derive(Debug)]
 pub(super) struct DropCancelled;
 
 impl std::fmt::Display for DropCancelled {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("drag and drop cancelled before the drop")
+        f.write_str("drag and drop cancelled")
     }
 }
 
 impl std::error::Error for DropCancelled {}
 
+/// How often a released drag looks for a late take of `XdndSelection` during the settle.
+const LATE_POLL: Duration = Duration::from_millis(5);
+
+/// A shared-mode drag's watch for a drag and drop (`dnd.rs`): the watch, the window's standing when the drag began,
+/// whether the Escape is held until after the release (measurement only, `--dnd-cancel-after-release`), and the
+/// outcome the order of events gave (None while nothing was decided: the drag's own error, if any, stands).
+pub(super) struct DropGuard {
+    watch: DndWatch,
+    before: Standing,
+    late: bool,
+    outcome: Option<Outcome>,
+}
+
+fn escape(x: &X11, route: &mut Route) -> Result<()> {
+    let held = route.acquire(x, &chord_keycodes(x, "Escape")?)?;
+    route.release(x, &held)
+}
+
+/// The cancel of a drag and drop seen before the release: Escape, then the release, so the drop never comes. Until both
+/// went out the order cannot tell (`Undecided`); then it was in time.
+fn cancel_in_time(x: &X11, route: &mut Route, guard: &mut DropGuard, pressed: &mut bool) -> Result<()> {
+    guard.outcome = Some(Outcome::Undecided);
+    escape(x, route)?;
+    *pressed = false;
+    route.button(x, 1, false)?;
+    guard.outcome = Some(Outcome::InTime);
+    Err(DropCancelled.into())
+}
+
 /// The drag after the pointer is placed at its first point: the chord, the press, every sample, the release.
 /// `pacing.step` follows each sample, the last included (where the vendor waits 1 ms, behaviour §10.4),
-/// `pacing.press` follows the press and `pacing.release` precedes the release (`families.rs`). With a watch on
-/// `XdndSelection` (always on the background route), a drag the target turns into a drag and drop stops there:
-/// Escape is pressed and released, then the button, so the drag and drop is cancelled before anything drops, and the
-/// answer is [`DropCancelled`]; with `late` (measurement only) the drag goes on to its release and Escape follows it.
+/// `pacing.press` follows the press and `pacing.release` precedes the release (`families.rs`). With a guard (always on
+/// the background route), `XdndSelection` is looked at after every sample and once more just before the release: a
+/// take there stops the drag, Escape is pressed and released, then the button, so the drag and drop is cancelled before
+/// anything drops ([`Outcome::InTime`]). After the release it is watched through `SETTLE`: a take then (or, with `late`,
+/// measurement only, the take the drag went on past) is answered [`Outcome::Late`], Escape sent to end the drag and drop;
+/// none is [`Outcome::NoStart`], an ordinary drag. A stopped drag answers [`DropCancelled`].
 /// With `hold` (measurement only, `--drag-dnd-wait-ms`), the release waits up to its bound for the target's client to
 /// take `XdndSelection`, and after a take the last point is nudged by a pixel and back, so a drag and drop that starts
 /// after the last sample still sees the pointer over its target; the wait is answered in `waited`.
 #[allow(clippy::too_many_arguments)]
 fn drag_along(
-    x: &X11,
+    x: &mut X11,
     route: &mut Route,
     keycodes: &[u8],
     points: &[(i16, i16)],
     pacing: &DragPacing,
-    mut watch: Option<&mut DndWatch>,
-    late: bool,
-    mut hold: Option<(&mut DndWatch, std::time::Duration)>,
-    waited: &mut Option<(bool, std::time::Duration)>,
+    mut guard: Option<&mut DropGuard>,
+    mut hold: Option<(&mut DndWatch, Duration)>,
+    waited: &mut Option<(bool, Duration)>,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
-    let escape = |route: &mut Route| -> Result<()> {
-        let held = route.acquire(x, &chord_keycodes(x, "Escape")?)?;
-        route.release(x, &held)
-    };
     let dragged = (|| -> Result<()> {
         route.place_again(x, points[0].0, points[0].1)?;
         route.button(x, 1, true)?;
@@ -143,20 +169,17 @@ fn drag_along(
         for (sx, sy) in drag_samples(points) {
             route.place_again(x, sx, sy)?;
             std::thread::sleep(pacing.step);
-            if let Some(watch) = watch.as_deref_mut()
-                && !late
-                && watch.started(x)
+            if let Some(guard) = guard.as_deref_mut()
+                && !guard.late
+                && guard.watch.started(x)
             {
-                escape(route)?;
-                pressed = false;
-                route.button(x, 1, false)?;
-                return Err(DropCancelled.into());
+                return cancel_in_time(x, route, guard, &mut pressed);
             }
         }
         if let Some((hold, bound)) = hold.as_mut() {
-            let since = std::time::Instant::now();
+            let since = Instant::now();
             while !hold.started(x) && since.elapsed() < *bound {
-                std::thread::sleep(std::time::Duration::from_millis(2));
+                std::thread::sleep(Duration::from_millis(2));
             }
             let taken = hold.is_started();
             *waited = Some((taken, since.elapsed()));
@@ -167,13 +190,30 @@ fn drag_along(
             }
         }
         std::thread::sleep(pacing.release);
+        // the last look before the release
+        if let Some(guard) = guard.as_deref_mut()
+            && !guard.late
+            && guard.watch.started(x)
+        {
+            return cancel_in_time(x, route, guard, &mut pressed);
+        }
         pressed = false;
         route.button(x, 1, false)?;
-        if let Some(watch) = watch.as_deref_mut()
-            && watch.started(x)
-        {
-            escape(route)?;
-            return Err(DropCancelled.into());
+        if let Some(guard) = guard.as_deref_mut() {
+            // a drag and drop that began after the last look, or that the measurement option let run past it
+            let released = Instant::now();
+            loop {
+                if guard.watch.started(x) {
+                    guard.outcome = Some(Outcome::Late);
+                    escape(x, route)?;
+                    return Err(DropCancelled.into());
+                }
+                if released.elapsed() >= SETTLE {
+                    break;
+                }
+                std::thread::sleep(LATE_POLL);
+            }
+            guard.outcome = Some(Outcome::NoStart);
         }
         Ok(())
     })();
@@ -244,10 +284,15 @@ impl Engine {
 
     /// `move`: the chord pressed, the pointer placed (the background `move_to`, or the desktop's path), the chord
     /// released (behaviour §10.2). The chord is parsed inside the target, as the vendor's (a bad one still costs a
-    /// window its FocusIn and FocusOut pair, traced).
+    /// window its FocusIn and FocusOut pair, traced); on the foreground route it is checked before the window is
+    /// activated, so a request refused for its input activates nothing.
     pub(super) fn move_pointer(&mut self, input: Option<Value>) -> Result<Value> {
         let input: MoveInput = parse_input(input)?;
-        let target = self.target_for(input.window.map(|w| w.id), Kind::Move)?;
+        let window = input.window.map(|w| w.id);
+        let way = self.route_for(window, Kind::Move)?;
+        // the foreground route activates only once the chord is known good
+        self.enter_checked(way, window, |x| chord(x, input.key.as_deref()).map(drop))?;
+        let target = target_of(way, window);
         let Engine { x, inputs, .. } = self;
         inputs.with_route(x, target, |x, route, _| {
             let (rx, ry) = route.root_point(x, input.x, input.y)?;
@@ -273,7 +318,8 @@ impl Engine {
     }
 
     /// `scroll`: wheel steps at an element, a point, the window's centre, or (on the desktop) the pointer. Element
-    /// and mixed-input refusals come before the target is opened, the others inside it, as the vendor's (traced).
+    /// and mixed-input refusals come before the target is opened, the others inside it, as the vendor's (traced); on
+    /// the foreground route all of them come before the window is activated.
     pub(super) fn scroll(&mut self, input: Option<Value>) -> Result<Value> {
         let input: ScrollInput = parse_input(input)?;
         if let Some(element) = &input.element_id {
@@ -285,7 +331,15 @@ impl Engine {
             }
             return self.element_scroll(window.id, element, &input);
         }
-        let target = self.target_for(input.window.map(|w| w.id), Kind::Scroll)?;
+        let window = input.window.map(|w| w.id);
+        let way = self.route_for(window, Kind::Scroll)?;
+        self.enter_checked(way, window, |x| {
+            if input.x.is_some() != input.y.is_some() {
+                bail!("x and y must be provided together");
+            }
+            check_wheel(x, &input)
+        })?;
+        let target = target_of(way, window);
         let Engine { x, inputs, .. } = self;
         inputs.with_route(x, target, |x, route, _| {
             let at = match (input.x, input.y, input.window) {
@@ -307,7 +361,8 @@ impl Engine {
 
     /// `drag`: the path translated to the root (inside the window's session, which is opened first), checked, the
     /// pointer placed at its start, then the chord parsed and pressed, the button pressed, the path walked and
-    /// everything released (behaviour §10.4; the chord's place traced).
+    /// everything released (behaviour §10.4; the chord's place traced). On the foreground route the path's length and
+    /// the chord are checked before the window is activated, so a request refused for its input activates nothing.
     pub(super) fn drag(&mut self, input: Option<Value>) -> Result<Value> {
         let input: DragInput = parse_input(input)?;
         // the target's family decides the waits: the window named, or on the desktop the window under the start
@@ -328,11 +383,15 @@ impl Engine {
                 .unwrap_or_default(),
             None => Vec::new(),
         };
-        let way = self.route_along(input.window.map(|w| w.id), Kind::Drag, &samples)?;
-        if let (Way::Foreground, Some(target)) = (way, input.window) {
-            self.enter(target.id)?;
-        }
-        let target = input.window.map_or(Target::Desktop, |w| way.target(w.id));
+        let named = input.window.map(|w| w.id);
+        let way = self.route_along(named, Kind::Drag, &samples)?;
+        self.enter_checked(way, named, |x| {
+            if input.path.len() < 2 {
+                bail!("drag path must contain at least two points");
+            }
+            chord(x, input.key.as_deref()).map(drop)
+        })?;
+        let target = target_of(way, named);
         // in shared mode, a background drag into a family whose drop changes the desktop watches for a drag and drop,
         // unless the window is already in front (active, focused, fully unobscured), where the drop changes nothing
         let mut guard = match target {
@@ -346,12 +405,16 @@ impl Engine {
                 if in_front {
                     None
                 } else {
-                    Some((DndWatch::start(&mut self.x, window)?, standing))
+                    Some(DropGuard {
+                        watch: DndWatch::start(&mut self.x, window)?,
+                        before: standing,
+                        late: self.cfg.dnd_cancel_late,
+                        outcome: None,
+                    })
                 }
             }
             _ => None,
         };
-        let late = self.cfg.dnd_cancel_late;
         // measurement only: a Chromium drag not otherwise watched holds its release for a late drag and drop
         let mut hold = match target {
             Target::Window(window) | Target::Foreground(window)
@@ -388,8 +451,7 @@ impl Engine {
                 &keycodes,
                 &points,
                 &pacing,
-                guard.as_mut().map(|(w, _)| w),
-                late,
+                guard.as_mut(),
                 hold.as_mut().map(|w| (w, bound)),
                 &mut waited,
             );
@@ -415,38 +477,38 @@ impl Engine {
                 );
             }
         }
-        let Some((watch, before)) = guard else {
+        let Some(guard) = guard else {
             return dragged.map(|()| Value::Null);
         };
-        let started = watch.is_started();
-        watch.stop(&mut self.x);
-        match dragged {
-            Err(error) if error.downcast_ref::<DropCancelled>().is_some() => {
-                // the answer says nothing dropped only if the drop's signature does not show
-                let window = window.expect("a cancelled drag named its window");
-                let (dropped, waited) = crate::dnd::signature_within(before, || self.x.standing(window));
-                self.extra.insert(
-                    "dnd".into(),
-                    json!({
-                        "in_front": false,
-                        "started": started,
-                        "late": late,
-                        "signature": dropped,
-                        "settle_ms": waited.as_secs_f64() * 1000.0,
-                    }),
-                );
-                let app = self.x.get_window(window)?.app;
-                bail!(if dropped {
-                    crate::dnd::may_have_dropped(&app)
-                } else {
-                    crate::dnd::cancelled(&app)
-                })
-            }
-            other => {
-                self.extra
-                    .insert("dnd".into(), json!({ "in_front": false, "started": started }));
-                other.map(|()| Value::Null)
-            }
+        let started = guard.watch.is_started();
+        guard.watch.stop(&mut self.x);
+        let Some(outcome) = guard.outcome else {
+            // the drag failed before anything was decided: its own error is the answer
+            self.extra
+                .insert("dnd".into(), json!({ "in_front": false, "started": started }));
+            return dragged.map(|()| Value::Null);
+        };
+        // the cross-check of an in-time cancel: the drop's signature, where a change can show
+        let window = named.expect("a watched drag named its window");
+        let (signature, settled) = match outcome {
+            Outcome::InTime => crate::dnd::signature_within(guard.before, || self.x.standing(window)),
+            _ => (false, Duration::ZERO),
+        };
+        self.extra.insert(
+            "dnd".into(),
+            json!({
+                "in_front": false,
+                "started": started,
+                "late": guard.late,
+                "outcome": outcome.name(),
+                "held_at_start": guard.before.any(),
+                "signature": signature,
+                "settle_ms": settled.as_secs_f64() * 1000.0,
+            }),
+        );
+        match crate::dnd::answer(outcome, signature, &self.x.get_window(window)?.app) {
+            Some(sentence) => bail!(sentence),
+            None => dragged.map(|()| Value::Null),
         }
     }
 
@@ -486,6 +548,15 @@ impl Engine {
         }
         Ok(Value::Null)
     }
+}
+
+/// The wheel's own input checked as [`wheel`] checks it (`pixels`, then the chord), for the foreground route to check
+/// before it activates the window.
+pub(super) fn check_wheel(x: &X11, input: &ScrollInput) -> Result<()> {
+    if input.pixels.unwrap_or(DEFAULT_PIXELS) == 0 {
+        bail!("pixels must be non-zero");
+    }
+    chord(x, input.key.as_deref()).map(drop)
 }
 
 /// The wheel once its point is known: `pixels` checked, the chord parsed, the pointer placed, then the chord

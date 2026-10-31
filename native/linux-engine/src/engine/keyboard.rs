@@ -7,20 +7,14 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 
 use super::Engine;
-use super::way::Way;
+use super::way::{Way, target_of};
 use crate::families::Kind;
 use crate::input::{chord_keycodes, keymap};
 use crate::keys::{literal_keycodes, parse_chord, resolve};
 use crate::route::{Hold, Target};
 use crate::wire::{KeyInput, PressKeyInput, TypeCharactersInput, parse_input};
-use x11rb::protocol::xproto::Window;
 
 const EMPTY_KEY: &str = "key must be a non-empty string";
-
-/// The input target of a route into an optional window: the desktop when no window is named.
-pub(super) fn target_of(way: Way, window: Option<Window>) -> Target {
-    window.map_or(Target::Desktop, |window| way.target(window))
-}
 
 impl Engine {
     /// On the background route the target is opened before the chord is parsed, as the vendor orders it (a bad key on
@@ -152,15 +146,19 @@ impl Engine {
     /// session opens first, as the newest build's does; the whole text is resolved before any key goes out, and the
     /// first character the layout cannot produce (a control character, one on no key, one only at a higher level)
     /// refuses it with nothing sent. A family that ignores synthetic keys (`families.rs`) is refused in shared mode
-    /// and typed through the foreground route in dedicated mode.
+    /// and typed through the foreground route in dedicated mode, the text resolved before the window is activated.
     pub(super) fn type_characters(&mut self, input: Option<Value>) -> Result<Value> {
         let input: TypeCharactersInput = parse_input(input)?;
         let window = input.window.id;
-        let way = self.way_for(Some(window), Kind::Keys)?;
+        let way = self.route_for(Some(window), Kind::Keys)?;
+        let resolved = |x: &crate::x11::X11| {
+            literal_keycodes(&input.text, &keymap(x)?)
+                .map_err(|c| anyhow!("Character {c:?} is not on the keyboard layout"))
+        };
+        self.enter_checked(way, Some(window), |x| resolved(x).map(drop))?;
         let Engine { x, inputs, .. } = self;
         let sent = inputs.with_route(x, way.target(window), |x, route, _| {
-            let keys = literal_keycodes(&input.text, &keymap(x)?)
-                .map_err(|c| anyhow!("Character {c:?} is not on the keyboard layout"))?;
+            let keys = resolved(x)?;
             let mut sent = 0u64;
             for keycodes in &keys {
                 route

@@ -1,25 +1,28 @@
 //! A drag that becomes a drag and drop (#171 M3.1; Plan of Work, M3, "Open, decided on measurement"): an XDND source
 //! takes the `XdndSelection` selection when its drag and drop starts, so a background-route drag into a window whose
 //! family's drop changes the desktop (`families.rs`: Chrome activates, focuses and raises its window on a drop) watches
-//! that selection through XFixes, and a take by the target's own X client (its windows share the resource-id base, as
-//! the paste route attributes its requests) means the drop is coming. In shared mode the drag is then cancelled before
-//! the drop (Escape on the background route, then the release) and refused, unless the window is already active,
-//! focused and fully unobscured, where the drop changes nothing the person sees. The answer stays honest if the cancel
-//! came too late: the drop's signature (the window newly active, focused or on top) within `SETTLE` says the drop may
-//! have happened.
+//! that selection through XFixes, from the drag's start through `SETTLE` after its release; a take by the target's own
+//! X client (its windows share the resource-id base, as the paste route attributes its requests) means a drag and drop
+//! began. In shared mode the answer follows the order of what the engine saw and sent ([`Outcome`], the design
+//! session's ruling of 2026-10-31): a take seen before the release is cancelled before the drop (Escape on the
+//! background route, then the release), so nothing was dropped; a take seen only after the release may have dropped; no
+//! take within the settle is an ordinary drag; anything the order cannot tell gets the answer that the drop cannot be
+//! confirmed. The drop's signature (the window newly active, focused or on top) cross-checks an in-time cancel where it
+//! can see a change. A window already active, focused and fully unobscured is not watched: its drop changes nothing the
+//! person sees.
 
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use x11rb::connection::Connection;
-use x11rb::protocol::Event;
 use x11rb::protocol::xfixes::{ConnectionExt as _, SelectionEventMask};
 use x11rb::protocol::xproto::Window;
 
 use crate::x11::X11;
 
-/// How long after a cancel the drop's signature is looked for: Chrome's activation follows its drop within
-/// milliseconds (M3.1's late-cancel runs measured it).
+/// How long after an in-time cancel the drop's signature is looked for, and how long after a drag's release a late take
+/// of `XdndSelection` is still watched for: Chrome's activation follows its drop within milliseconds (M3.1's
+/// late-cancel runs measured it).
 pub const SETTLE: Duration = Duration::from_millis(300);
 const SETTLE_POLL: Duration = Duration::from_millis(10);
 
@@ -31,12 +34,57 @@ pub fn cancelled(app: &str) -> String {
     )
 }
 
-/// The answer when the cancel came too late: the drop's signature showed.
+/// The answer when the cancel came too late: the take was seen only after the release, or the drop's signature showed.
 pub fn may_have_dropped(app: &str) -> String {
     format!(
         "{app} began a drag and drop, which changes the desktop, and it could not be cancelled in time: the drop may \
          have happened and the desktop changed. Use a dedicated desktop, or activate the window first"
     )
+}
+
+/// The answer when a drag and drop began and the order of events cannot tell whether the cancel came in time.
+pub fn cannot_confirm(app: &str) -> String {
+    format!(
+        "{app} began a drag and drop, which changes the desktop; it was cancelled, but whether the drop landed cannot \
+         be confirmed. Use a dedicated desktop, or activate the window first"
+    )
+}
+
+/// What the order of a watched drag's events says about its drop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Outcome {
+    /// The target's client took `XdndSelection` before the release, and Escape went out before the release: cancelled
+    /// in time.
+    InTime,
+    /// The take was seen only after the release went out, or (the measurement option that holds the Escape) the
+    /// Escape followed the release: the drop may have happened.
+    Late,
+    /// No take within `SETTLE` after the release: no drag and drop began, an ordinary drag.
+    NoStart,
+    /// A take was seen and the cancel's own sends failed before the release went out, so the order cannot tell.
+    Undecided,
+}
+
+impl Outcome {
+    pub fn name(self) -> &'static str {
+        match self {
+            Outcome::InTime => "in_time",
+            Outcome::Late => "late",
+            Outcome::NoStart => "no_start",
+            Outcome::Undecided => "undecided",
+        }
+    }
+}
+
+/// The answer to a watched drag: None for success (no drag and drop began), else the sentence it is refused with.
+/// `signature` is whether the drop's signature showed after an in-time cancel, the cross-check.
+pub fn answer(outcome: Outcome, signature: bool, app: &str) -> Option<String> {
+    match outcome {
+        Outcome::NoStart => None,
+        Outcome::InTime if !signature => Some(cancelled(app)),
+        Outcome::InTime | Outcome::Late => Some(may_have_dropped(app)),
+        Outcome::Undecided => Some(cannot_confirm(app)),
+    }
 }
 
 /// What a drop changes in a window's standing on the desktop: whether it is the active window, holds the X input
@@ -52,6 +100,11 @@ impl Standing {
     /// Whether `after` shows the drop's signature against `self`: the window became active, focused or on top.
     pub fn changed_to(self, after: Standing) -> bool {
         (after.active && !self.active) || (after.focused && !self.focused) || (after.top && !self.top)
+    }
+
+    /// Whether any part of the signature already holds, so a drop could not show it.
+    pub fn any(self) -> bool {
+        self.active || self.focused || self.top
     }
 }
 
@@ -74,19 +127,21 @@ pub fn taken_by_target(owner: Window, target: Window, resource_id_mask: u32) -> 
     owner != x11rb::NONE && (owner & !resource_id_mask) == (target & !resource_id_mask)
 }
 
-/// The watch on `XdndSelection` for one drag; the other events it reads are handed back to the engine at its end.
+/// The watch on `XdndSelection` for one drag. It owns the selection's reports while it runs: whatever else reads the
+/// connection's events meanwhile (the server-time probe, the input session) keeps them for it
+/// (`X11::take_selection_reports`).
 pub struct DndWatch {
     selection: u32,
     target: Window,
     mask: u32,
     started: bool,
-    others: Vec<Event>,
 }
 
 impl DndWatch {
     pub fn start(x: &mut X11, target: Window) -> Result<DndWatch> {
         x.ensure_xfixes()?;
         let selection = x.atom("XdndSelection");
+        x.keep_selection_reports();
         x.conn
             .xfixes_select_selection_input(x.root, selection, SelectionEventMask::SET_SELECTION_OWNER)?
             .check()?;
@@ -95,18 +150,14 @@ impl DndWatch {
             target,
             mask: x.conn.setup().resource_id_mask,
             started: false,
-            others: Vec::new(),
         })
     }
 
-    /// Whether the target has begun a drag and drop, from the events that have arrived so far.
-    pub fn started(&mut self, x: &X11) -> bool {
-        while let Ok(Some(event)) = x.conn.poll_for_event() {
-            match event {
-                Event::XfixesSelectionNotify(e) if e.selection == self.selection => {
-                    self.started |= taken_by_target(e.owner, self.target, self.mask);
-                }
-                other => self.others.push(other),
+    /// Whether the target has begun a drag and drop, from the reports that have arrived so far.
+    pub fn started(&mut self, x: &mut X11) -> bool {
+        for report in x.take_selection_reports() {
+            if report.selection == self.selection {
+                self.started |= taken_by_target(report.owner, self.target, self.mask);
             }
         }
         self.started
@@ -117,15 +168,13 @@ impl DndWatch {
         self.started
     }
 
-    /// The watch ended: the selection no longer watched, the other events read meanwhile noted as usual.
+    /// The watch ended: the selection no longer watched, its reports no longer kept.
     pub fn stop(self, x: &mut X11) {
         let _ = x
             .conn
             .xfixes_select_selection_input(x.root, self.selection, SelectionEventMask::default());
         let _ = x.conn.flush();
-        for event in self.others {
-            x.note_event(event);
-        }
+        x.stop_selection_reports();
     }
 }
 
@@ -156,6 +205,25 @@ mod tests {
             "Google-chrome began a drag and drop, which changes the desktop, and it could not be cancelled in time: \
              the drop may have happened and the desktop changed. Use a dedicated desktop, or activate the window first"
         );
+        assert_eq!(
+            cannot_confirm("Google-chrome"),
+            "Google-chrome began a drag and drop, which changes the desktop; it was cancelled, but whether the drop \
+             landed cannot be confirmed. Use a dedicated desktop, or activate the window first"
+        );
+    }
+
+    #[test]
+    fn the_answer_follows_the_order_of_the_take_the_escape_and_the_release() {
+        let app = "Google-chrome";
+        assert_eq!(answer(Outcome::NoStart, false, app), None, "no drag and drop: a drag");
+        assert_eq!(answer(Outcome::InTime, false, app), Some(cancelled(app)));
+        assert_eq!(
+            answer(Outcome::InTime, true, app),
+            Some(may_have_dropped(app)),
+            "the signature contradicts an in-time cancel"
+        );
+        assert_eq!(answer(Outcome::Late, false, app), Some(may_have_dropped(app)));
+        assert_eq!(answer(Outcome::Undecided, false, app), Some(cannot_confirm(app)));
     }
 
     const BACK: Standing = Standing {
@@ -177,6 +245,7 @@ mod tests {
         };
         assert!(!front.changed_to(front), "already in front: nothing to see");
         assert!(!front.changed_to(BACK), "losing the front is not a drop's doing");
+        assert!(!BACK.any() && front.any() && Standing { top: true, ..BACK }.any());
     }
 
     #[test]

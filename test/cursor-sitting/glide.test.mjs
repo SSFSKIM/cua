@@ -94,12 +94,13 @@ test('what covers the target window, by the engine\'s own occlusion rule: a wind
   assert.equal(coverOver(list, 99, chrome, [9]), null, 'a target not on screen: nothing can be ruled out');
 });
 
-const gated = ({scroll = true, covered = false, cover = true} = {}) => {
+// The scroll's row recorded on its reply at 10 s, the second click's on its reply 2 s later (rows carry `at`, ms).
+const gated = ({scroll = true, covered = false, cover = true, gapMs = 2000} = {}) => {
   const r = rows();
   const at = r.findIndex(x => x.orderTarget === 'second-target');
-  const extra = [{kind: 'cell', ok: scroll, role: 'glide-scroll', ...(scroll ? {} : {error: 'refused'})},
+  const extra = [{kind: 'cell', ok: scroll, role: 'glide-scroll', at: 10_000, ...(scroll ? {} : {error: 'refused'})},
     ...(cover ? [{kind: 'task', task: 'glide-cover', result: {ok: !covered, covers: covered ? [{number: 3}] : []}}] : [])];
-  return [...r.slice(0, at), ...extra, ...r.slice(at)];
+  return [...r.slice(0, at), ...extra, {...r[at], at: 10_000 + gapMs}, ...r.slice(at + 1)];
 };
 
 test('the order needs the cursor to have reached its start, and nothing over Chrome\'s window that could make the engine snap', () => {
@@ -112,4 +113,24 @@ test('the order needs the cursor to have reached its start, and nothing over Chr
   assert.match(covered.reason, /snap/);
   assert.match(orderFromMeta(gated({cover: false})).targets['second-target'].reason, /no reading of what covers/);
   assert.match(orderFromMeta(rows()).targets['second-target'].reason, /positioning scroll/, 'a run without the scroll\'s row decides nothing');
+});
+
+test('the order needs the cursor still visible at its start when the click is sent: the idle fade would make it fade in, not glide', async () => {
+  const {VISIBLE_START_MS} = await import('../../scripts/cursor-sitting/glide.mjs');
+  assert.equal(orderFromMeta(gated({gapMs: 2000})).targets['second-target'].verdict, 'pass');
+  // the click's request begins about engineMs before its reply: 10 s + gap - 60 ms after the scroll's reply at 10 s
+  const late = orderFromMeta(gated({gapMs: VISIBLE_START_MS + 60 + 1})).targets['second-target'];
+  assert.equal(late.verdict, 'undetermined');
+  assert.match(late.reason, /idle/);
+  assert.ok(VISIBLE_START_MS < 5000 && VISIBLE_START_MS >= 3000, 'under the engine\'s 5 s idle, with a margin');
+  const untimed = gated().map(r => (r.role === 'glide-scroll' ? {...r, at: undefined} : r));
+  assert.match(orderFromMeta(untimed).targets['second-target'].reason, /no time/);
+});
+
+test('the window-list probe is compiled before the cursor is positioned, never between the scroll and the click', async () => {
+  const {PLANS} = await import('../../scripts/cursor-sitting/plans.mjs');
+  const steps = PLANS[1]({noClip: true});
+  const ready = steps.findIndex(s => s.task === 'window-list-ready');
+  assert.ok(ready >= 0 && steps[ready].required === true);
+  assert.ok(ready < steps.findIndex(s => s.task === 'glide-start') && ready < steps.findIndex(s => s.open));
 });

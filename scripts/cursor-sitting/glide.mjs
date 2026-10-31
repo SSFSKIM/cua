@@ -115,7 +115,10 @@ export function orderFromMeta(rows) {
     : !scroll.ok ? `the positioning scroll failed (${scroll.error ?? 'no answer'}): the cursor may never have reached its start`
       : !cover || at(cover) < at(scroll) || at(cover) > at(second) ? 'no reading of what covers Chrome\'s window right before the click: a snap cannot be ruled out'
         : !cover.result?.ok ? `something lay over Chrome's window right before the click (${cover.result?.problem ?? 'the reading failed'}): the engine may snap instead of gliding`
-          : null;
+          : !Number.isFinite(scroll.at) || !Number.isFinite(second.at) ? 'no time of the positioning scroll\'s reply or of the click\'s: whether the cursor was still shown at its start is not known'
+            : second.at - second.meta.engineMs - scroll.at > VISIBLE_START_MS
+              ? `the click was sent about ${(second.at - second.meta.engineMs - scroll.at).toFixed(0)} ms after the positioning scroll's reply, past ${VISIBLE_START_MS} ms (the engine's 5 s idle less a margin): the cursor may have faded, and would fade in at the target rather than glide`
+              : null;
   const floor = arrivalFloor(start.dMin);
   const doneMs = second.meta.engineMs + FRAME_MS, glideMs = floor.seconds * 1000;
   return {
@@ -175,10 +178,16 @@ export function coverOver(list, number, bounds, enginePids = []) {
   return list.slice(0, at).filter(w => w.onScreen !== false && !enginePids.includes(w.ownerPid) && (w.layer < 20 || w.layer === 101) && meets(w.bounds));
 }
 
+// How long after the positioning scroll's reply the click's request may begin with the cursor surely still shown at
+// its start: the engine fades it 5 s after its last request ends (CursorLifecycle.swift idleSeconds), less 1 s for the
+// rows' times being taken on the replies and for the transport.
+export const VISIBLE_START_MS = 4000;
+
 export const WINDOW_LIST_SCRIPT = fileURLToPath(new URL('./window-list.swift', import.meta.url));
 // Every on-screen window, front to back, by its owner's pid, number, layer and bounds (./window-list.swift, compiled
 // once like the target guard's probe): no names, so no Screen Recording.
+export const windowListProbe = ({cache = PROBE_CACHE} = {}) => compiled(WINDOW_LIST_SCRIPT, cache);
 export function liveWindowList({cache = PROBE_CACHE} = {}) {
-  const bin = compiled(WINDOW_LIST_SCRIPT, cache);
+  const bin = windowListProbe({cache});
   return JSON.parse(execFileSync(bin, [], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000}).trim()).windows;
 }

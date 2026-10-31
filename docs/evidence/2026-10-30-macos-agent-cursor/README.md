@@ -323,7 +323,10 @@ items into `$OUT2` (`$S drive 1-check --out "$OUT2" --dry-run`, likewise 1, 3 an
      - Right before the second click, `glide-cover` reads what lies over Chrome's run window by the engine's own
        occlusion rule (every on-screen window in front of it, not the engine's, below layer 20 or at the pop-up menu
        level). With both ends covered the engine snaps rather than glides, so the order is undetermined unless that
-       reading is there and empty.
+       reading is there and empty. Its probe is compiled before the first click (`window-list-ready`), so nothing slow
+       runs between the scroll and the click.
+     - The engine fades the cursor 5 s after its last request. The order is also undetermined when the click is sent
+       more than 4 s after the scroll's reply, because the cursor would then fade in at the checkbox instead of gliding.
      - `order-meta` compares the second click's `engineMs` plus one frame (16.7 ms) with the earliest arrival the engine
        could plan for a move that long. That arrival comes from the motion reference's springs and arrival rule
        (`scripts/cursor-sitting/glide.mjs`): a lower bound, so a "pass" holds for the real distance.

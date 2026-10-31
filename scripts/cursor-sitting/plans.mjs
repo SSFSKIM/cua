@@ -68,6 +68,7 @@ export const PLANS = Object.freeze({
   // glide to the checkbox is at least that far.
   1: ({clip = null, noClip = false} = {}) => (noClip ? [
     {say: 'Acceptance 1, without a clip: TextEdit and Chrome for Testing both in the background, the order from the engine\'s numbers'},
+    {task: 'window-list-ready', required: true},
     {open: 'a', scenes: ['textedit', 'chrome']},
     {run: 'a', cell: ALIGN_CLICK, label: 'TextEdit: the format bar\'s alignment', orderTarget: 'first-target'},
     {run: 'a', cell: ALIGNMENT, label: 'TextEdit: the alignment read back'},

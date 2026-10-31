@@ -5,7 +5,8 @@
 //
 //   cursor-sitting.mjs prepare
 //       Compiles the target guard's window probe (scripts/accept/front-window.swift) into the harness cache, once, so the
-//       sitting's first cell does not wait for it (./cursor-sitting/target-guard.mjs).
+//       sitting's first cell does not wait for it (./cursor-sitting/target-guard.mjs), and item 1's window-list probe
+//       (./cursor-sitting/window-list.swift; `drive 1 --no-clip` also compiles it before it positions the cursor).
 //   cursor-sitting.mjs save --home <dir> --to <new dir>
 //       Before the sitting: `cua engine status --json`, a copy of <home>'s whole engine directory (its socket, lock,
 //       build scratch and staging left out) and of ~/.config/cua/engine.json, checked against a manifest of the tree
@@ -93,7 +94,7 @@ import {parseArgs} from 'node:util';
 import {ORDER_TARGETS, route3Plan, writeFrames, writeLag, writeOrder} from './cursor-sitting/clip.mjs';
 import {frameSummary, glideFrames, motionSpans, readFrameUpdates} from './cursor-sitting/frames.mjs';
 import {liveSourceSwitch, switchSource, writeConsent} from './cursor-sitting/input-source.mjs';
-import {writeOrderFromMeta} from './cursor-sitting/glide.mjs';
+import {windowListProbe, writeOrderFromMeta} from './cursor-sitting/glide.mjs';
 import {restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
 import {PLANS} from './cursor-sitting/plans.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
@@ -245,6 +246,7 @@ export async function main(argv) {
   const {values, positionals} = parseArgs({args: rest, options: OPTIONS, allowPositionals: true});
   if (command === 'prepare') {
     print(`the target guard's window probe: ${liveTargetGuard().compile()}`);
+    print(`item 1's window-list probe: ${windowListProbe()}`);
     return 0;
   }
   if (command === 'save') {

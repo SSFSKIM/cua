@@ -19,7 +19,7 @@ import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {readFocus, runWindowBounds} from './focus.mjs';
 import {capVerdict, frameSummary, glideFrames, probeSpans, readFrameUpdates} from './frames.mjs';
-import {BUILT_IN_SCREEN, coverOver, farPoint, liveWindowList, overlaysAbove, plannedSettle} from './glide.mjs';
+import {BUILT_IN_SCREEN, coverOver, farPoint, liveWindowList, overlaysAbove, plannedSettle, windowListProbe} from './glide.mjs';
 import {liveSourceSwitch, restoreAfterFailure, sourceTargetProblem, switchSource} from './input-source.mjs';
 import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
 import {openDriven} from './session.mjs';
@@ -188,6 +188,9 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
       // engine's own occlusion rule (./glide.mjs coverOver, CursorAttachment.swift occluded), from the whole window list.
       // A cover can make the engine snap rather than glide (CursorHub.perform: both ends occluded), so the judgement
       // needs none.
+      // Before the cursor is positioned: glide-cover's probe compiled now, so no compile runs between the scroll and the
+      // click, where the cursor's idle fade could start.
+      'window-list-ready': async () => ({ok: true, probe: windowListProbe()}),
       'glide-cover': async ([scene]) => {
         const record = io.scene(scene), b = runWindowBounds(guard.windows(record.pid), record.window.number);
         if (!b) return {ok: false, problem: `the ${scene} scene's run window is not on screen`};

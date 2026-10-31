@@ -38,7 +38,7 @@ final class CursorPanels: CursorRenderer, @unchecked Sendable {
   func apply(_ commit: CursorCommit) {
     MainActor.assumeIsolated {
       signposted("cursor.apply") {
-        let overlay = overlays[commit.connection] ?? CursorOverlay(debug: debug)
+        let overlay = overlays[commit.connection] ?? CursorOverlay(connection: commit.connection, debug: debug)
         overlays[commit.connection] = overlay
         overlay.apply(commit)
       }
@@ -149,6 +149,8 @@ private final class CursorOverlay {
   private var label = ""
   private var registered: CGWindowID?
   private let debug: CursorDebug?
+  /// The connection whose cursor this is: its motion signposts name it.
+  private let connection: Int
   /// The arm's frame-rate range for every animation (CursorDebug.animationFrameRate), nil for each animation's own.
   private let frameRate: CAFrameRateRange?
   /// The fade whose blur is installed now; a later fade replaces it.
@@ -156,7 +158,8 @@ private final class CursorOverlay {
   /// The stroke opacity the shadow path was made for.
   private var shadowStrokeOpacity: CGFloat?
 
-  init(debug: CursorDebug?) {
+  init(connection: Int, debug: CursorDebug?) {
+    self.connection = connection
     self.debug = debug
     frameRate = debug?.animationFrameRate
     rocker = CursorRock(frameRate: frameRate)
@@ -250,6 +253,7 @@ private final class CursorOverlay {
   }
 
   func close() {
+    stopped()
     if let registered { EngineWindows.shared.remove(registered) }
     cursor.layer?.removeAllAnimations()
     panel.orderOut(nil)
@@ -342,6 +346,7 @@ private final class CursorOverlay {
     heading.transform = cursorHeadingTransform(last)
     haloLayer.transform = cursorSwellTransform(last.swell, side: CursorHalo.side, anchor: haloLayer.anchorPoint)
     for (layer, key) in [(cursorLayer, "glide"), (heading, "heading"), (haloLayer, "swell")] { CursorKeyframes.remove(key, from: layer) }
+    if samples.count <= 1 { stopped() }  // a snap: the earlier motion removed, none installed
     if samples.count > 1 {
       let step = motion.trajectory.step, duration = motion.trajectory.duration
       func keyframes(_ keyPath: String, _ values: [NSValue], on layer: CALayer, key: String) {
@@ -351,8 +356,8 @@ private final class CursorOverlay {
       }
       // The motion's span on `log show`'s clock, for counting the window server's frames during it (the kit's frames.mjs).
       let begin = continuousTicks(host: motion.beginTime), end = continuousTicks(host: motion.beginTime + duration)
-      let mode = String(describing: motion.trajectory.mode)
-      timingSignposts.emitEvent("cursor.motion", "begin=\(begin) end=\(end) ms=\(duration * 1000, format: .fixed(precision: 1)) mode=\(mode, privacy: .public)")
+      let mode = String(describing: motion.trajectory.mode), connection = connection
+      timingSignposts.emitEvent("cursor.motion", "begin=\(begin) end=\(end) ms=\(duration * 1000, format: .fixed(precision: 1)) mode=\(mode, privacy: .public) cursor=\(connection)")
       keyframes("position", samples.map { layerPosition($0.position) }, on: cursorLayer, key: "glide")
       if !reduceMotion {
         keyframes("transform", samples.map { NSValue(caTransform3D: cursorHeadingTransform($0)) }, on: heading, key: "heading")
@@ -400,6 +405,7 @@ private final class CursorOverlay {
     let color = commit.identity.color.withAlphaComponent(1).cgColor
     if shape.fillColor != color { shape.fillColor = color }
     if commit.phase == .hidden {
+      if phase != .hidden { stopped() }
       // Nothing animates while hidden (the spec's Design, energy).
       for layer in [rock, press, heading] { layer.removeAllAnimations() }
       if debug != .legacyLayers { rock.filters = nil }
@@ -408,6 +414,13 @@ private final class CursorOverlay {
     }
     phase = commit.phase
     shown = nowShown
+  }
+
+  /// Marks that this cursor's motion was removed with no new one to follow (a snap, a hide, a close), so a sitting cuts
+  /// the motion's span there (the kit's frames.mjs; a new motion's own `cursor.motion` marks a replacement).
+  private func stopped() {
+    let connection = connection
+    timingSignposts.emitEvent("cursor.stop", "cursor=\(connection)")
   }
 
   /// A fade in or out over 0.44 s, ease-in-out, with the arrow blurring out (7) or in (0): the blur filter is installed for

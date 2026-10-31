@@ -22,7 +22,7 @@ Vocabulary used throughout:
 - [x] (2026-10-30) Design session (cua_repl#1ea561bc, coordinating #171 in parallel): three research readings (engine hooks, the vendor cursor's behaviour and logic, prior art and macOS overlay technique), three question rounds with the owner, an animated look mockup; design approved by the owner.
 - [x] (2026-10-30) Spec review: round 1 (spec review and buildability review, twelve findings) and round 2 (three findings), all folded (Decision Log).
 - [x] (2026-10-30) M1 — The cursor in the engine: overlay, motion, states. Built a5e37a47..be05d750, task-review fixes 3827cbda and 8d1f156f; review clean; 564 engine tests; hosted engine-swift and test GREEN on 7d8e27a3 (run 41146110438).
-- [ ] M2 — Identity, settings, lifecycle wiring and the harness. (2026-10-30: built, 88ec92ef..0196629b; in task review.)
+- [x] (2026-10-30) M2 — Identity, settings, lifecycle wiring and the harness. Built 88ec92ef..0196629b, task-review fixes cb39e42e and 41958220; review clean; 577 engine tests, the touched JS files 618/618 under a fresh HOME; hosted test, engine-swift and plugin GREEN on 360403b1 (run 41149995622).
 - [ ] M3 — The attended proof on the MacBook, the plugin bump, the docs.
 
 ## Owner decisions this design carries

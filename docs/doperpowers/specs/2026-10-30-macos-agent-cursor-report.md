@@ -213,3 +213,11 @@ route-hook test in RouteTests:
 ### Task review
 
 Reviewer: doperpowers:task-reviewer. Round 1 (290f12bf..be05d750): five Important (an explicit hide installed an already-finished fade; a superseded click could dip at a later scroll; taken over kept a glide moving; live Reduce Motion changes did not reach an installed motion or restart the rock; the activity option held off idle sleep) and two Minor (the fill ratio, per the design session; the reduced-motion dip's duration), all fixed in 3827cbda. Round 2: one Important regression (a replanned motion kept the old settle deadline) and one Minor (taken over left a playing dip and the halo's relaxation), fixed in 8d1f156f. Round 3: clean. 564 engine tests, 0 failures.
+
+## M2
+
+Built 88ec92ef..0196629b by one task executor (decisions in the spec's Decision Log, "M2 build"): the engine's `cursor` request and `engine.json`'s `cursor` key; each session's identity resolved on the trusted side (MAWS's variables, then `sminos who --session <id>`, bounded at 500 ms and cached, then the project folder) with a hash colour; `end_task`'s hide; the remote `cua/cursor` initialize key; the `cursor:` line in `cua engine status` and doctor; the harness's desktop checks skipping the engine's windows. Engine tests 577/577; full `npm test` 4260 pass with one environment failure (`serve-lazy.test.mjs` under an inherited `CUA_FEEDBACK_DIR`, a logged friction), the file passing 29/29 without it.
+
+### Task review
+
+Round 1: two Important. A failed sminos lookup shared by concurrent callers rejected every caller after the first instead of falling back; the optional `cursor` RPC's timeout closed the whole engine connection, failing an execute in flight (both reproduced by the reviewer). The controller added a third item: the matrix oracle's front-window reading skips the engine's windows too (Decision Log). Fixed in cb39e42e. Round 2: the new concurrent-lookup test reached the real sminos lookup and failed on a clean HOME; fixed in 41958220. Round 3: clean.

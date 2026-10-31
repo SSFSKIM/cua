@@ -164,7 +164,9 @@ impl Engine {
             PasteRoute::Chord(chord) => chord,
             PasteRoute::Unverified => bail!(paste::no_paste_route(&info.app)),
         };
-        let way = self.way_for(request.window.map(|_| window), Kind::Paste)?;
+        // the route chosen first (a refusal before anything else), the window activated only once the chord and the
+        // element are known good, so a request refused for its input activates nothing
+        let way = self.route_for(request.window.map(|_| window), Kind::Paste)?;
         self.extra.insert(
             "paste_route".into(),
             json!({
@@ -190,6 +192,7 @@ impl Engine {
                 })?
                 .map_err(anyhow::Error::msg)?),
         };
+        self.enter_checked(way, request.window.map(|_| window), |_| Ok(()))?;
         let feff = family.is_some_and(|f| f.feff_after_astral);
         let target = way.target(window);
         let resource_id_mask = self.x.conn.setup().resource_id_mask;

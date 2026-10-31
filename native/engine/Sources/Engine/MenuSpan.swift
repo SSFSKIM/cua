@@ -319,7 +319,7 @@ func recordHeldMenu(_ item: AXUIElement, app key: String, pid: pid_t, connection
 extension Engine {
   /// The record with its activation for the app's primary window (the observed window), restored by activation only.
   /// Once it holds, the agent cursor acts a click at the item's midpoint: from the agent's side it clicked the menu
-  /// title, though nothing is pressed (MenuRecord.swift). The hook only enqueues; the cursor queue reads the item's frame
+  /// title, though nothing is pressed (MenuRecord.swift). The hook only enqueues; the cursor's geometry queue reads the item's frame
   /// (else the observed one) and, as a menu-bar item has no window of its own, the app's primary window, so no
   /// accessibility read for the cursor holds the request. Attached there, the cursor is raised above the menu bar while
   /// the app is frontmost or has a menu open (Cursor/CursorAttachment.swift), else at that window's level.

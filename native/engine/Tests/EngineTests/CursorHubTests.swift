@@ -273,6 +273,54 @@ final class CursorHubTests: XCTestCase {
     XCTAssertEqual(commit.motion?.dips.count, 1, "a click: the press dip")
   }
 
+  /// Re-review of cc207f11 (the reviewer's regression test, adopted): a stalled geometry read (a slow app's
+  /// accessibility answer) never holds the attachment's updates: switching apps lowers a raised cursor at once.
+  func testAStalledGeometryReadDoesNotHoldTheAttachment() throws {
+    let world = World(), renderer = RecordingRenderer()
+    world.front = 600
+    let reading = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+    let lowered = DispatchSemaphore(value: 0)
+    var e = world.environment(main: { block in
+      block()
+      if renderer.last?.attachment.level == 0 { lowered.signal() }
+    }, elementFrame: { _ in
+      reading.signal()
+      release.wait()
+      return CGRect(x: 300, y: 10, width: 60, height: 22)
+    })
+    e.appWindow = { _ in 20 }
+    let hub = CursorHub(environment: e, renderer: renderer)
+    click(hub, CGPoint(x: 300, y: 400))
+    XCTAssertEqual(renderer.last?.attachment.level, 102)
+    hub.act(connection: 1, app: app, window: nil, .menuBarItem(AXUIElementCreateApplication(600), pid: 600, storedFrame: nil))
+    XCTAssertEqual(reading.wait(timeout: .now() + 2), .success)
+    world.front = 500
+    world.workspace.post(name: NSWorkspace.didDeactivateApplicationNotification, object: nil)
+    world.workspace.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+    let drop = lowered.wait(timeout: .now() + .milliseconds(250))
+    release.signal()
+    hub.drain()
+    XCTAssertEqual(drop, .success, "switching apps lowers an already-shown cursor without waiting for the item's reads")
+    XCTAssertEqual(renderer.last?.attachment.level, 0, "and it stays lowered once the read returns")
+  }
+
+  /// A geometry read that returns after a newer plan (or a hide) superseded its action is dropped: no late move.
+  func testAGeometryReadThatReturnsAfterANewerPlanIsDropped() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let reading = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+    let hub = hub(world, renderer, elementFrame: { _ in
+      reading.signal()
+      release.wait()
+      return CGRect(x: 1000, y: 600, width: 40, height: 20)
+    })
+    hub.act(connection: 1, app: app, window: 20, .element(AXUIElementCreateApplication(600), storedFrame: nil))
+    XCTAssertEqual(reading.wait(timeout: .now() + 2), .success)
+    hub.act(connection: 1, app: app, window: 20, .click(CGPoint(x: 400, y: 300)))
+    release.signal()
+    hub.drain()
+    XCTAssertEqual(try XCTUnwrap(renderer.last?.motion).trajectory.end, CGPoint(x: 400, y: 600), "the click's point, not the element's")
+  }
+
   func testADisabledCursorReadsNothingForAMenuBarItem() {
     let world = World(), renderer = RecordingRenderer()
     var read = false

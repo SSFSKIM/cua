@@ -6,20 +6,47 @@ import QuartzCore
 // The agent cursor's hub (the spec's Design, "Rendering and the main thread", "Hooks", "Lifecycle and identity"; #235).
 // One per engine, one cursor per connection. Thread-safe and never blocking: the hooks call it from request threads,
 // where it only bumps a generation under its lock and enqueues; a serial cursor queue (never main) keeps every cursor's
-// state, plans the motion and runs the state timers; one `main.async` block per change hands the renderer the whole
+// state, plans the motion and runs the state timers (a second serial queue reads an action's accessibility geometry, so
+// a slow app never holds them); one `main.async` block per change hands the renderer the whole
 // desired state (a commit), so nothing the cursor does runs on the main thread per frame and no action waits for it
 // (O5). Nothing here can fail an action: a cursor that cannot be placed simply does not move.
 
 /// What an action did, for the cursor. Points are global, top-left origin (the engine's posting space).
 enum CursorAction: @unchecked Sendable {
   case click(CGPoint)          // coordinate or element click: glide, then the press dip on arrival
-  case element(AXUIElement, storedFrame: CGRect?)   // accessibility action: the cursor queue reads the current frame
+  case element(AXUIElement, storedFrame: CGRect?)   // accessibility action: the geometry queue reads the current frame
                                                     // after the action is sent, falls back to storedFrame; glide, dip
   case menuBarItem(AXUIElement, pid: pid_t, storedFrame: CGRect?)  // a recorded menu-bar click: the item's current frame
                                                     // (else storedFrame) and the app's primary window, both read on
-                                                    // the cursor queue (an item has no window); glide, dip
+                                                    // the geometry queue (an item has no window); glide, dip
   case drag([CGPoint])         // glide to the first point, dip, trace the path, rest at the last
   case scroll(CGPoint)         // glide, no dip
+}
+
+/// Where an action sends the cursor, its accessibility geometry resolved: the points (global, top-left), the window it
+/// attaches to, whether it dips on arrival and whether it traces a drag.
+struct CursorAim {
+  let points: [CGPoint]
+  let window: CGWindowID?
+  let dips: Bool
+  let drag: Bool
+
+  init(points: [CGPoint], window: CGWindowID?, dips: Bool, drag: Bool) {
+    self.points = points
+    self.window = window
+    self.dips = dips
+    self.drag = drag
+  }
+
+  /// An action that names its points itself (nil: one whose geometry must be read first).
+  init?(_ action: CursorAction, window: CGWindowID?) {
+    switch action {
+    case .click(let p): self.init(points: [p], window: window, dips: true, drag: false)
+    case .scroll(let p): self.init(points: [p], window: window, dips: false, drag: false)
+    case .drag(let path): self.init(points: path, window: window, dips: true, drag: true)
+    case .element, .menuBarItem: return nil
+    }
+  }
 }
 
 /// A motion the renderer installs: the trajectory in the panel's coordinates from `beginTime` (host time,
@@ -97,6 +124,10 @@ final class CursorHub: @unchecked Sendable {
   let environment: CursorEnvironment
   private let renderer: CursorRenderer?
   private let queue = DispatchQueue(label: "cua.engine.cursor", qos: .userInitiated)
+  /// Where an action's accessibility geometry is read (an element's or a menu-bar item's frame, its window): a slow app
+  /// can stall each read up to the accessibility timeout, so never on `queue`, whose attachment updates (an app switch,
+  /// the window-state check) must stay runnable.
+  private let geometry = DispatchQueue(label: "cua.engine.cursor.geometry", qos: .userInitiated)
   private let lock = NSLock()
   /// Per connection, the generation of its newest plan, hide or close; read by the main-thread commit.
   private var generations: [Int: Int] = [:]
@@ -151,14 +182,33 @@ final class CursorHub: @unchecked Sendable {
     }
   }
 
-  /// An action reached a hook. `window` nil: no move (for `.element`, the element's own window is read instead).
+  /// An action reached a hook. `window` nil: no move (for `.element`, the element's own window is read instead; for
+  /// `.menuBarItem`, the app's primary window). An action naming accessibility geometry has it read on the geometry
+  /// queue, only for an enabled cursor and a plan not yet superseded, and is planned on the cursor queue when the read
+  /// returns, unless superseded meanwhile.
   func act(connection: Int, app: String, window: CGWindowID?, _ action: CursorAction) {
     let generation = bump(connection)
-    queue.async { [self] in perform(connection: connection, app: app, window: window, action, generation: generation) }
+    queue.async { [self] in
+      guard current(connection) == generation else { return }  // a newer plan, a hide or a close superseded it
+      let cursor = model(connection)
+      guard cursor.enabled else { commit(cursor); return }
+      if let aim = CursorAim(action, window: window) {
+        perform(connection: connection, app: app, aim, generation: generation)
+        return
+      }
+      geometry.async { [self] in
+        guard current(connection) == generation else { return }
+        let aim = resolve(action, window: window)
+        queue.async { [self] in
+          guard let aim else { if let cursor = cursors[connection] { commit(cursor) }; return }
+          perform(connection: connection, app: app, aim, generation: generation)
+        }
+      }
+    }
   }
 
   /// The accessibility-only element methods' hook: `operation` runs first, on the caller's thread, and only when it
-  /// answers success is the cursor pointed at the element, whose frame the cursor queue then reads (after the action, as
+  /// answers success is the cursor pointed at the element, whose frame the geometry queue then reads (after the action, as
   /// the action may have scrolled it into view). The operation's answer is passed through.
   @discardableResult
   func afterElementAction(connection: Int, app: String, element: AXUIElement, storedFrame: CGRect?, _ operation: () throws -> Bool) rethrows -> Bool {
@@ -214,8 +264,13 @@ final class CursorHub: @unchecked Sendable {
     }
   }
 
-  /// Waits until everything enqueued so far has run (the tests' and the probe's barrier).
-  func drain() { queue.sync {} }
+  /// Waits until everything enqueued so far has run (the tests' and the probe's barrier): the cursor queue, a geometry
+  /// read it handed on, and the plan that read handed back.
+  func drain() {
+    queue.sync {}
+    geometry.sync {}
+    queue.sync {}
+  }
 
   /// The state timers' work, due now (the live timer calls it; the tests call it after moving their clock).
   func tick() { queue.sync { runDue() } }
@@ -244,31 +299,29 @@ final class CursorHub: @unchecked Sendable {
     return cursor
   }
 
-  private func perform(connection: Int, app: String, window: CGWindowID?, _ action: CursorAction, generation: Int) {
+  /// The accessibility reads an action names (on the geometry queue): the point and the window the cursor goes to.
+  private func resolve(_ action: CursorAction, window: CGWindowID?) -> CursorAim? {
+    switch action {
+    case .element(let element, let stored):
+      guard let frame = environment.elementFrame(element) ?? stored else { return nil }
+      return CursorAim(points: [CGPoint(x: frame.midX, y: frame.midY)], window: window ?? environment.elementWindow(element), dips: true, drag: false)
+    case .menuBarItem(let item, let pid, let stored):
+      guard let frame = environment.elementFrame(item) ?? stored, let point = clickablePoint(frame: frame, visibleIn: nil) else { return nil }
+      return CursorAim(points: [point], window: window ?? environment.appWindow(pid), dips: true, drag: false)
+    case .click, .scroll, .drag:
+      return CursorAim(action, window: window)
+    }
+  }
+
+  private func perform(connection: Int, app: String, _ aim: CursorAim, generation: Int) {
     guard current(connection) == generation else { return }  // a newer plan, a hide or a close superseded it
     let cursor = model(connection)
     defer { commit(cursor) }
     guard cursor.enabled else { return }
-    // The points and the window the action names; an action with neither a point nor a window does not move.
-    var points: [CGPoint]
-    var target = window
-    let dips: Bool
-    switch action {
-    case .click(let p): points = [p]; dips = true
-    case .scroll(let p): points = [p]; dips = false
-    case .drag(let path): points = path; dips = true
-    case .element(let element, let stored):
-      let frame = environment.elementFrame(element) ?? stored
-      guard let frame else { return }
-      points = [CGPoint(x: frame.midX, y: frame.midY)]
-      if target == nil { target = environment.elementWindow(element) }
-      dips = true
-    case .menuBarItem(let item, let pid, let stored):
-      guard let frame = environment.elementFrame(item) ?? stored, let point = clickablePoint(frame: frame, visibleIn: nil) else { return }
-      points = [point]
-      if target == nil { target = environment.appWindow(pid) }
-      dips = true
-    }
+    // An action with neither a point nor a window does not move.
+    let points = aim.points
+    let target = aim.window
+    let dips = aim.dips
     guard let target, let first = points.first else { return }
     let screens = environment.screens()
     guard let screen = screens.screen(containing: first) else { return }
@@ -305,7 +358,7 @@ final class CursorHub: @unchecked Sendable {
       trajectory = snapTrajectory(to: local[0])
     }
     let arrival = trajectory.arrival
-    if case .drag = action, local.count > 1 {
+    if aim.drag, local.count > 1 {
       for next in local.dropFirst() {
         trajectory = trajectory.followed(by: planStraight(from: trajectory.samples[trajectory.samples.count - 1], to: next,
                                                           bounds: bounds, reduceMotion: reduce))

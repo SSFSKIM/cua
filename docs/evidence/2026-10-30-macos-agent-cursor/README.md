@@ -76,7 +76,8 @@ What only the owner does, all of it at the MacBook's console:
 - **Reduce motion** and **Increase contrast** off (System Settings, Accessibility, Display); item 9 turns Reduce motion
   on and off again.
 - The keyboard's input source on a Latin layout (ABC or U.S.) for the whole sitting: on another source cua's engine
-  types by pasting, which would change item 7 and the timing.
+  types by pasting, which would change item 7, and press_key goes through the input method's composition, which would
+  change the timing. `timing` checks it with TextEdit in front and refuses a judged series under any other source.
 - Work on the MacBook's built-in display (item 6's menu-bar check is about its camera housing); keep the Mac on power.
 - **Do Not Disturb** on, so no notification lands in the recording or on a window being timed.
 - No session of yours on cua's engine (yours use the vendor engine unless you set `CUA_NATIVE_ENGINE=cua`): the
@@ -175,6 +176,26 @@ nothing after it disturbs the Mac).
 | 8 Remote devices | `$S remote run --kit "$KIT" --run "$RUN" --out "$OUT"` | watches two cursors, "Loop A" in green and "loop-bravo" in its own colour, and a third session's click land with no cursor | `$KIT/relay.log`, `$KIT/agent.log` (outside the evidence); `remote-cursors` |
 | 13 Click speed | `$S timing clicks --run "$RUN" --out "$OUT"` | for the first minute watches the cursor's start on the fixture's button presses (route 3: it may lag the click by up to 100 ms), then leaves the Mac untouched | 20 samples a side of coordinate clicks, element clicks (with each one's route) and drags; `timing.md`; `route-3-lag` |
 | 12 Typing speed | `$S timing typing --run "$RUN" --out "$OUT"` | leaves the Mac untouched (about 5 minutes) | 20 samples a side of a 200-character type_text and of 30 press_key calls; `timing.md` |
+| 12 under the owner's source | after 12, the owner switches to their own source (2-Set Korean): `$S timing typing --owner-source --run "$RUN" --out "$OUT"`, then back to the Latin layout | leaves the Mac untouched | the same series, recorded with the source's reading in `item-12-owner-source.jsonl`, never judged (`timing-recorded.md`) |
+
+Every timing series first reads the input source through the approved bundle's probe (`--probe input-source current`)
+with TextEdit in front, and refuses before any session opens unless it is a plain, ASCII-capable keyboard layout whose
+keys are translated with that same layout; the reading is kept in the series' first rows and in `timing.md`.
+
+**The cursor's arms** (only if 12 or 13 fails with the defaults, or the design session asks): each arm takes one part of
+what a visible cursor costs the window server away, through engine.json's `cursorDebug`, which the engine reads at
+launch and strictly (`panelOut`: the panel never ordered in, every commit still made; `noBackdrop`: the halo's blur
+hidden, its tint left; `noRock`: no rock; `legacyLayers`: the sitting's first build's layers, the arrow's blur filter
+always installed and its shadow found from its alpha). `$S timing typing|clicks --arm <arm> --run "$RUN" --out "$OUT"`
+writes the key (engine.json kept in `engine.json.before` meanwhile), stops the engine so the sessions relaunch it,
+checks `cua engine status --json`'s `status.cursorDebug`, runs the series, then puts engine.json back and stops the
+engine again; a failure on the way does the same. Each arm records in `item-<n>-<arm>.jsonl` and `timing-recorded.md`,
+never judged; on against an arm, and an arm against off, go to the design session. For the finer split, every timing
+series keeps the engine's timing signposts over its run in `$OUT/signposts-<item>.ndjson` (`log show --signpost`, read
+when the series ends; `log stream` does not carry signposts): the request by method, `cursor.begin`/`end`/`commit`,
+`cursor.apply` with `cursor.place`, `cursor.install`, `cursor.transition` and `cursor.caCommit`, `cursor.windowList`,
+`main.sync.wait`/`run`, `route3.hold`, `route3.release`, `route3.guard.frontmost`/`windowOrder`, and
+`pressKey.keyboardTarget`/`minimizedCheck`/`post`.
 
 The timing commands judge as they finish, by #171's noise rule (`scripts/cursor-sitting/stats.mjs`, reusing
 `scripts/linux-engine-diff/`'s bootstrap and bound): the bootstrap 95 % interval of median(on) − median(off) must

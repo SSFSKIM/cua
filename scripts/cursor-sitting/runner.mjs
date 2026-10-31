@@ -16,6 +16,7 @@ import {runProbe, startWatch, stopWatch} from '../native-matrix/live-device.mjs'
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {openDriven} from './session.mjs';
+import {latinSourceProblem} from './timing.mjs';
 import {liveTargetGuard} from './target-guard.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
@@ -53,12 +54,18 @@ export function focusStep({label, answer, pid, equalTo, store}) {
   return {ok: same, label, reading, equalTo, same, ...(problem ? {problem} : {}), ...(earlier?.problem ? {earlierProblem: earlier.problem} : {}), ...(earlier ? {} : {earlierProblem: `no reading named ${equalTo}`})};
 }
 
-// engine.json with the device switch off, the other keys kept. `text`: the file's bytes, or null when there is none.
-export function cursorOffSettings(text) {
+// engine.json with `patch` written over it, the other keys kept. `text`: the file's bytes, or null when there is none.
+function patchedSettings(text, patch) {
   const settings = text === null ? {} : JSON.parse(text);
   if (settings === null || typeof settings !== 'object' || Array.isArray(settings)) throw new Error('~/.config/cua/engine.json is not a JSON object; the switch is not written');
-  return `${JSON.stringify({...settings, cursor: false}, null, 2)}\n`;
+  return `${JSON.stringify({...settings, ...patch}, null, 2)}\n`;
 }
+
+// engine.json with the device switch off, the other keys kept.
+export const cursorOffSettings = text => patchedSettings(text, {cursor: false});
+
+// engine.json with the cursor's diagnostic arm `arm` (`cursorDebug`), the other keys kept.
+export const cursorDebugSettings = (text, arm) => patchedSettings(text, {cursorDebug: arm});
 
 // The Mac's io for `runSteps`. `run`: the harness scenes' run directory; `out`: the item's evidence directory.
 export function liveIo({run, out, quiet = false, home = homedir()}) {
@@ -91,20 +98,25 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
         try { return JSON.parse(text.trim().split('\n').at(-1)); } catch { return {ok: false, error: 'the scenes CLI printed no answer'}; }
       },
       'engine-stop': async () => cli(['engine', 'stop', '--json']),
-      'engine-status': async ([expect]) => {
+      // The device switch as the running engine reports it; with `arm`, its cursorDebug must be that arm too.
+      'engine-status': async ([expect, arm]) => {
         const status = cli(['engine', 'status', '--json']);
         const line = execFileSync(process.execPath, [CLI, 'engine', 'status'], {encoding: 'utf8', timeout: 60_000}).split('\n').find(l => l.startsWith('cursor:')) ?? null;
-        return {ok: status.cursor === expect, cursor: status.cursor, line, build: status.build, approved: status.approved};
+        const cursorDebug = status.status?.cursorDebug ?? null;
+        return {ok: status.cursor === expect && (arm === undefined || cursorDebug === arm), cursor: status.cursor, cursorDebug, line, build: status.build, approved: status.approved};
       },
       // The file's bytes kept in the item's directory first (or that there was none), then the switch written.
-      'engine-json-off': async () => {
-        const text = existsSync(settingsFile) ? readFileSync(settingsFile, 'utf8') : null;
-        if (existsSync(before) || existsSync(`${before}.absent`)) throw new Error(`${before} exists from an earlier run: restore engine.json from it by hand, then remove it`);
-        if (text === null) writeFileSync(`${before}.absent`, ''); else writeFileSync(before, text, {mode: 0o600});
-        mkdirSync(join(settingsFile, '..'), {recursive: true, mode: 0o700});
-        writeFileSync(`${settingsFile}.sitting.tmp`, cursorOffSettings(text), {mode: 0o600});
-        renameSync(`${settingsFile}.sitting.tmp`, settingsFile);
-        return {ok: true, file: settingsFile, existed: text !== null};
+      'engine-json-off': async () => writeSettings(cursorOffSettings),
+      // Likewise, the cursor's diagnostic arm written (the engine reads it at its next launch).
+      'engine-json-arm': async ([arm]) => ({...writeSettings(text => cursorDebugSettings(text, arm)), arm}),
+      // The keyboard's input source as the approved bundle's probe reads it, TextEdit in front: `latin` requires a
+      // Latin keyboard layout (./timing.mjs latinSourceProblem), `record` only keeps the reading.
+      'input-source': async ([mode]) => {
+        const answer = runProbe(enginePaths().bundle, ['input-source', 'current']);
+        const reading = answer && {id: answer.id ?? null, name: answer.name ?? null, keyboardLayout: answer.keyboardLayout ?? null,
+          asciiCapable: answer.asciiCapable ?? null, layout: answer.layout ?? null, perContextInput: answer.perContextInput ?? null};
+        const problem = latinSourceProblem(reading);
+        return {ok: mode === 'record' || problem === null, mode, reading, ...(problem ? {problem} : {})};
       },
       'engine-json-restore': async () => {
         if (existsSync(`${before}.absent`)) { rmSync(settingsFile, {force: true}); rmSync(`${before}.absent`); return {ok: true, removed: true}; }
@@ -128,12 +140,25 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
         return {ok: engine.length === 0, lines: lines.length, engineActivations: engine.length};
       },
     },
-    // What the finally puts back.
+    // What the finally puts back: engine.json, and the engine stopped so none keeps running under the changed file.
     cleanup: async ctx => {
-      if (ctx.settingsChanged) await ctx.io.tasks['engine-json-restore']();
+      if (ctx.settingsChanged) {
+        await ctx.io.tasks['engine-json-restore']();
+        await ctx.io.tasks['engine-stop']();
+      }
       if (ctx.watch) stopWatch(ctx.watch);
     },
   };
+  function writeSettings(write) {
+    const text = existsSync(settingsFile) ? readFileSync(settingsFile, 'utf8') : null;
+    if (existsSync(before) || existsSync(`${before}.absent`)) throw new Error(`${before} exists from an earlier run: restore engine.json from it by hand, then remove it`);
+    const written = write(text);  // refuses a file that is not an object before anything is kept or written
+    if (text === null) writeFileSync(`${before}.absent`, ''); else writeFileSync(before, text, {mode: 0o600});
+    mkdirSync(join(settingsFile, '..'), {recursive: true, mode: 0o700});
+    writeFileSync(`${settingsFile}.sitting.tmp`, written, {mode: 0o600});
+    renameSync(`${settingsFile}.sitting.tmp`, settingsFile);
+    return {ok: true, file: settingsFile, existed: text !== null};
+  }
   return io;
 }
 
@@ -201,13 +226,15 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
       else if (step.close) { const exit = await ctx.sessions[step.close].close(); delete ctx.sessions[step.close]; record({step: n, kind: 'close', session: step.close, exit}); }
       else if (step.task) {
         const result = await io.tasks[step.task](step.args ?? [], ctx);
-        if (step.task === 'engine-json-off') ctx.settingsChanged = true;
+        if (step.task === 'engine-json-off' || step.task === 'engine-json-arm') ctx.settingsChanged = true;
         if (step.task === 'engine-json-restore') ctx.settingsChanged = false;
         if (step.task === 'watch-start') ctx.watch = result.watch;
         if (step.task === 'watch-stop') ctx.watch = null;
         if (result?.ok === false) failed++;
         record({step: n, kind: 'task', task: step.task, args: step.args ?? [], result});
         log(`  ${JSON.stringify(result)}`);
+        // A required precondition that does not hold stops the item here (its finally still puts everything back).
+        if (step.required && result?.ok === false) throw new Error(`${step.task} refused: ${result.problem ?? JSON.stringify(result)}`);
       }
     }
   } finally {

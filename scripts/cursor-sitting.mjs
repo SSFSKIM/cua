@@ -20,11 +20,19 @@
 //       spoken (`say`; --quiet prints them only); an instruction the owner confirms waits for <out>/go, which the
 //       operator creates (`touch`) once the owner says done. --engine is item 11's (the side-by-side: vendor, then cua);
 //       --other-session gives item 2's second session another Claude Code session's sminos name.
-//   cursor-sitting.mjs timing typing|clicks --run <dir> --out <dir> [--samples 20] [--quiet] [--dry-run]
+//   cursor-sitting.mjs timing typing|clicks --run <dir> --out <dir> [--samples 20] [--arm <arm> | --owner-source]
+//                     [--quiet] [--dry-run]
 //       Acceptance 12 (typing) or 13 (clicks): interleaved cursor-on and cursor-off samples (./cursor-sitting/timing.mjs),
-//       recorded in <out>/item-12.jsonl or item-13.jsonl, then judged as `judge` does.
+//       recorded in <out>/item-12.jsonl or item-13.jsonl, then judged as `judge` does. Refused, before any session
+//       opens, unless the input source is a Latin keyboard layout with TextEdit in front. --arm runs the series with
+//       engine.json's `cursorDebug` set to one of the engine's cursor arms (panelOut, noBackdrop, noRock,
+//       legacyLayers), engine.json put back and the engine stopped after; --owner-source runs it under whatever source
+//       the owner has, the reading kept. Either is recorded in item-<n>-<arm>.jsonl or item-<n>-owner-source.jsonl and
+//       never judged: `judge` lists it in <out>/timing-recorded.md. The engine's timing signposts over the series are
+//       kept in <out>/signposts-<item>.ndjson (`log show --signpost`).
 //   cursor-sitting.mjs judge --out <dir>
-//       The timing items' verdicts by #171's noise rule (./cursor-sitting/stats.mjs), written to <out>/timing.md.
+//       The timing items' verdicts by #171's noise rule (./cursor-sitting/stats.mjs), written to <out>/timing.md; the
+//       recorded, unjudged series the same way to <out>/timing-recorded.md.
 //   cursor-sitting.mjs verdict <item> <watch id> pass|fail [note…] --out <dir>
 //       The owner's verdict on what an item asked them to watch, appended to <out>/verdicts.jsonl.
 //   cursor-sitting.mjs summary --out <dir>
@@ -44,12 +52,13 @@ import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopb
 import {liveIo, runSteps} from './cursor-sitting/runner.mjs';
 import {judgeTiming} from './cursor-sitting/stats.mjs';
 import {liveTargetGuard} from './cursor-sitting/target-guard.mjs';
-import {SERIES, timingRows, timingSteps} from './cursor-sitting/timing.mjs';
+import {CURSOR_ARMS, SERIES, timingItem, timingRows, timingSteps} from './cursor-sitting/timing.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'string'}, aside: {type: 'string'}, run: {type: 'string'}, out: {type: 'string'},
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
+  arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false},
   quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
@@ -71,24 +80,51 @@ const readJsonl = file => (existsSync(file) ? readFileSync(file, 'utf8').split('
 // An item's last attempt: its rows from the last `start` on.
 const lastAttempt = rows => rows.slice(Math.max(0, rows.map(r => r.kind).lastIndexOf('start')));
 
-// The timing items' judgements from their recorded rows. -> [{item, kind, pass, series, routes?}].
-function judgeAll(out) {
-  return Object.entries(TIMING_ITEM).flatMap(([kind, item]) => {
+// The timing items' judgements from their recorded rows: the judged items (12, 13), or with `recorded` every arm and
+// owner-source series beside them (item-12-<name>.jsonl), by the same rule but never a verdict on the item.
+// -> [{item, kind, pass, series, routes?, source}].
+function judgeAll(out, {recorded = false} = {}) {
+  const items = Object.entries(TIMING_ITEM).flatMap(([kind, item]) => (recorded
+    ? readdirSync(out).map(f => f.match(new RegExp(`^item-(${item}-[\\w-]+)\\.jsonl$`))?.[1]).filter(Boolean).sort().map(name => [kind, name])
+    : [[kind, String(item)]]));
+  return items.flatMap(([kind, item]) => {
     const rows = lastAttempt(readJsonl(join(out, `item-${item}.jsonl`)));
     if (!rows.length) return [];
     const timed = timingRows(rows, kind);
     const judged = judgeTiming(timed, {series: SERIES[kind]});
     const routes = kind === 'clicks' ? Object.entries(timed.filter(r => r.series === 'element click').reduce((m, r) => ({...m, [r.route ?? 'none']: (m[r.route ?? 'none'] ?? 0) + 1}), {})) : null;
-    return [{item, kind, ...judged, ...(routes ? {routes: Object.fromEntries(routes)} : {})}];
+    const source = rows.find(r => r.kind === 'task' && r.task === 'input-source')?.result ?? null;
+    return [{item, kind, ...judged, ...(routes ? {routes: Object.fromEntries(routes)} : {}), source}];
   });
 }
 
+// The engine's timing signposts since `since` (native/engine/Sources/Engine/Signposts.swift), as `log show` keeps them,
+// in <out>/signposts-<item>.ndjson; a failure to read them is said and changes no verdict.
+function keepSignposts(out, item, since) {
+  const pad = n => String(n).padStart(2, '0');
+  const start = `${since.getFullYear()}-${pad(since.getMonth() + 1)}-${pad(since.getDate())} ${pad(since.getHours())}:${pad(since.getMinutes())}:${pad(since.getSeconds())}`;
+  const file = join(out, `signposts-${item}.ndjson`);
+  try {
+    const text = execFileSync('/usr/bin/log', ['show', '--signpost', '--style', 'ndjson', '--start', start, '--predicate',
+      'subsystem == "io.github.ssfskim.cua.engine" AND category == "timing"'], {encoding: 'utf8', maxBuffer: 512 * 1024 * 1024, timeout: 120_000});
+    writeFileSync(file, text);
+    print(`the engine's signposts since ${start}: ${file}`);
+  } catch (error) { print(`the engine's signposts were not read (${error.message.split('\n')[0]})`); }
+}
+
 const fmt = v => (v === null || v === undefined ? '–' : Number(v).toFixed(2));
-function timingMarkdown(judged) {
-  const lines = ['# Acceptance 12 and 13: timing, cursor on against cursor off', '',
-    'Judged by #171\'s noise rule (scripts/cursor-sitting/stats.mjs): the bootstrap 95 % interval of median(on) − median(off) must include 0, or lie wholly below it, with its upper end at most max(5 % of the off median, 1 ms), whatever the medians.', ''];
+function timingMarkdown(judged, {recorded = false} = {}) {
+  const lines = recorded
+    ? ['# Acceptance 12 and 13: the recorded series (arms, the owner\'s input source), not judged', '',
+      'The same rule\'s numbers for each series, for the design session; no verdict on the acceptance item comes from them.', '']
+    : ['# Acceptance 12 and 13: timing, cursor on against cursor off', '',
+      'Judged by #171\'s noise rule (scripts/cursor-sitting/stats.mjs): the bootstrap 95 % interval of median(on) − median(off) must include 0, or lie wholly below it, with its upper end at most max(5 % of the off median, 1 ms), whatever the medians.', ''];
   for (const j of judged) {
-    lines.push(`## Acceptance ${j.item} (${j.kind}): ${j.pass ? 'PASS' : 'FAIL'}`, '', '| series | n on / off | median on (ms) | median off (ms) | 95 % interval of the difference (ms) | bound (ms) | verdict |', '|---|---|---|---|---|---|---|');
+    const verdict = recorded ? `recorded (the rule would say ${j.pass ? 'pass' : 'fail'})` : j.pass ? 'PASS' : 'FAIL';
+    const reading = j.source?.reading;
+    lines.push(`## Acceptance ${j.item} (${j.kind}): ${verdict}`, '',
+      `Input source: ${reading ? `${reading.name ?? reading.id} (${reading.id}; keys translated with ${reading.layout})` : 'not checked (a run before the kit checked it)'}.`, '',
+      '| series | n on / off | median on (ms) | median off (ms) | 95 % interval of the difference (ms) | bound (ms) | verdict |', '|---|---|---|---|---|---|---|');
     for (const s of j.series) lines.push(`| ${s.series} | ${s.n.on} / ${s.n.off} | ${fmt(s.medians.on)} | ${fmt(s.medians.off)} | ${s.interval ? `[${fmt(s.interval[0])}, ${fmt(s.interval[1])}]` : '–'} | ${fmt(s.bound)} | ${s.verdict} |`);
     if (j.errors) lines.push('', `${j.errors} timed call(s) failed and are not in the samples (item-${j.item}.jsonl has their errors).`);
     if (j.routes) lines.push('', `The element clicks' routes: ${Object.entries(j.routes).map(([r, n]) => `route ${r} × ${n}`).join(', ')}.`);
@@ -159,16 +195,29 @@ export async function main(argv) {
     const kind = positionals[0], samples = Number(values.samples ?? 20);
     if (!SERIES[kind]) throw new Error('timing takes typing or clicks');
     if (!Number.isInteger(samples) || samples < 1) throw new Error('--samples takes a positive whole number');
-    const code = await drive(timingSteps(kind, samples), {item: TIMING_ITEM[kind], values});
+    const series = {arm: values.arm ?? null, ownerSource: values['owner-source']};
+    if (series.arm !== null && !CURSOR_ARMS.includes(series.arm)) throw new Error(`--arm takes one of ${CURSOR_ARMS.join(', ')}`);
+    const item = timingItem(kind, series);
+    const started = new Date();
+    const code = await drive(timingSteps(kind, samples, series), {item, values});
     if (values['dry-run']) return code;
-    const out = absolute(values, 'out'), judged = judgeAll(out);
+    const out = absolute(values, 'out');
+    keepSignposts(out, item, started);
+    if (item !== String(TIMING_ITEM[kind])) {
+      const recorded = judgeAll(out, {recorded: true});
+      writeFileSync(join(out, 'timing-recorded.md'), timingMarkdown(recorded, {recorded: true}));
+      print(timingMarkdown(recorded.filter(j => j.item === item), {recorded: true}));
+      return code;
+    }
+    const judged = judgeAll(out);
     writeFileSync(join(out, 'timing.md'), timingMarkdown(judged));
     print(timingMarkdown(judged.filter(j => j.kind === kind)));
     return judged.find(j => j.kind === kind)?.pass ? code : 1;
   }
   if (command === 'judge') {
-    const out = absolute(values, 'out'), judged = judgeAll(out);
+    const out = absolute(values, 'out'), judged = judgeAll(out), recorded = judgeAll(out, {recorded: true});
     writeFileSync(join(out, 'timing.md'), timingMarkdown(judged));
+    if (recorded.length) writeFileSync(join(out, 'timing-recorded.md'), timingMarkdown(recorded, {recorded: true}));
     print(timingMarkdown(judged));
     return judged.length && judged.every(j => j.pass) ? 0 : 1;
   }

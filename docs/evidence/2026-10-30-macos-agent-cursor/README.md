@@ -246,6 +246,7 @@ REC="$HOME/.local/share/cua-235/recordings"; mkdir -p "$REC"   # item 1's clip a
 | 2. Item 3 and the look | 4 | watches, verdicts, 30 s of looking |
 | 3. The recorder's proof, then item 1, recorded | 4–6 | places the two windows (again if the kit refuses), watches |
 | 4. Item 5 | 5 | says go, clicks the arrow's tip on the cue, watches |
+| (the fallback, if neither of item 1's clicks went by route 3: item 13's first minute) | 1–2 | watches the cursor's start on route 3 |
 | **Unattended** (the owner may leave) | **about 35 (34–55)** | nobody touches the Mac |
 | 5. Item 13: coordinate click and drag at 40, element click at 20 | 10 (+10 if element click reruns at 40) | |
 | 6. Item 12: type_text and press_key at 20 | 6 (+10 if one reruns at 40) | |
@@ -303,6 +304,17 @@ items into `$OUT2` (`$S drive 1-check --out "$OUT2" --dry-run`, likewise 1, 3 an
      design session, skip item 1, and go on with item 5.
    - **Item 1.** `$S drive 1 --run "$RUN" --out "$OUT2" --clip "$REC/item-1-2026-10-31.mov"`. The windows are already
      placed, so the owner only says done again.
+   - **Then decide how item 13's `route-3-lag` is judged:** `$S clip routes --out "$OUT2"`. Its answer comes from the
+     routes item 1's two clicks recorded, which are known only once they have run.
+     - If either click went by route 3, that click's lag is measured from item 1's clip after the sitting (`clip lag`,
+       "Afterwards"), and the owner may leave after item 5 as planned.
+     - If neither did, the fallback applies. Neither outcome can be known in advance: an element's action goes by route
+       1, or by route 3 (a held activation first) when its app does not believe it has focus (`actionRoute`,
+       `Input.swift`; FocusHold.swift), which is how every element click on item 13's background fixture went in the
+       first sitting. Under the fallback, item 13 runs first after item 5 anyway, and the owner
+       stays to watch its first minute: the cursor's start on the fixture's button presses, which go by route 3. Then the
+       operator records `$S verdict 13 route-3-lag pass|fail "<the owner's words>" --out "$OUT2"`, and the owner may
+       leave. That adds 1–2 minutes with the owner.
    - **The placement** (the proof's and item 1's). The owner places TextEdit and Chrome for Testing side by side, touching, with their top and bottom edges level,
      so that together they fill a rectangle with nothing else in it, then clicks the operator's terminal, whose window
      must stay off them. The kit then reads where both windows are and records exactly their rectangle. It refuses,
@@ -337,8 +349,9 @@ items into `$OUT2` (`$S drive 1-check --out "$OUT2" --dry-run`, likewise 1, 3 an
    `bounds` and its `accessibility` wait. A reading that still finds no focused app with accessibility on is a finding
    for the design session, not a kit retry. The fixture must not be moved or clicked between the two readings.
 
-   That is the owner's last step. Tell them the Mac must stay unlocked and untouched from here until the operator
-   says it is done (about 35–55 minutes): any input lands in a timed series, and a locked screen stops one.
+   That is the owner's last step, unless `clip routes` said the fallback applies: then it is the first minute of item 13
+   (below). Tell them the Mac must stay unlocked and untouched from then until the operator says it is done (about
+   35–55 minutes): any input lands in a timed series, and a locked screen stops one.
 
 ### Unattended
 
@@ -350,8 +363,9 @@ series whose scene is gone from the front (a locked screen, say) rather than tim
    samples a side, since both were undetermined at 20 on the first build. Element click starts at 20. If it is
    undetermined, rerun it alone: `$S timing clicks --series element-click --samples 40 --run "$RUN" --out "$OUT2"`.
    `judge` takes each series from the last run that covers it, so a 40-sample run's verdict replaces the earlier one
-   for every series it covers, and only those: never keep the better of the two. The `route-3-lag` watch (the cursor's
-   start on route-3 clicks) has no owner at the Mac and keeps no verdict this sitting.
+   for every series it covers, and only those: never keep the better of the two. The `route-3-lag` watch is either
+   the owner's, during this block's first minute (the fallback, decided after item 1), or measured from item 1's clip
+   afterwards.
 6. **Item 12, typing speed.** `$S timing typing --run "$RUN" --out "$OUT2"` (type_text and press_key at 20). Rerun an
    undetermined one alone at 40: `--series type-text` or `--series press-key`, with `--samples 40`.
 7. **The `legacyLayers` arm, recorded.** `$S timing clicks --arm legacyLayers --run "$RUN" --out "$OUT2"`, then
@@ -367,7 +381,8 @@ series whose scene is gone from the front (a locked screen, say) rather than tim
 
 ### Afterwards
 
-10. **Item 1's order**, below.
+10. **Item 1's order**, below, and **item 13's `route-3-lag` from the clip** when `clip routes` named a route-3 click
+    (after the order, below).
 11. **Keep or restore: ask the owner asynchronously.** Send the owner the question with the timing verdicts: keep this
     branch's engine, or have the saved one put back? Act on the answer when it comes ("After the sitting: put the saved
     engine back", below). The restore needs no one at the Mac unless the grants did not survive, and then it waits for
@@ -410,6 +425,30 @@ frame before each into `$OUT2/item-1-frames/`; check each for privacy as above.
 The join to the request's clock assumes the cursor's first frame shows at the first click's action start
 (`actionInterval.startedAt`) plus the motion plan's 20 ms lead. It is flagged when that would start the clip before the
 recorder was launched, or more than 3 s after. The order itself never depends on the join.
+
+**Item 13's `route-3-lag` from the clip** (only for a click `clip routes` named as route 3). It uses the same frames
+directory. For each route-3 click, judge two frames, both read from the frames on the clip's own clock, with no join
+to the request meta:
+- **change:** the control's first changed frame (the same frame `clip order` took);
+- **start:** the cursor's first moving frame. For the first target, whose cursor fades in at it, that is its first
+  visible frame (`clip order`'s arrival). For the second target it is the first frame, among
+  `second-target-start-f<index>.jpg` (the same frames cropped to TextEdit's window, where the cursor rests), in which
+  the cursor has left its resting place at the alignment button.
+
+```sh
+$S clip lag --frames "$REC/item-1-2026-10-31-frames" --out "$OUT2" second-target <change> <start>
+# item-1-route3-lag.md: the lag measured as start − change, and bounded by the frames' own times: each event lies
+# between its frame and the one before, so (start − 1) − change < lag ≤ start − (change − 1)
+```
+
+The verdict is against Acceptance 13's 100 ms: pass when the bound's top is at most 100 ms, fail when its bottom is
+over, else undetermined. The resolution is the frame interval: at 30 fps a frame every 33.3 ms, so a measured lag up
+to 67 ms passes and one over 133 ms fails; at the 57–60 fps screencapture recorded in the live check (16.7 ms), up to
+83 ms passes and over 117 ms fails. `lag` appends item 13's `route-3-lag` verdict when the bound decides it. An
+undetermined lag keeps no verdict, since the owner has gone by then. It copies the four frames it used into
+`$OUT2/item-1-frames/`; check them for privacy as above. Route 3's screen freeze holds the control's redraw as well as
+the cursor's start, so both show only once the hold ends. The lag from the frames is what the owner would have seen
+on the screen, which is what the watch asks.
 
 The same frames show the agent's cursor in a `screencapture -v` recording, which is item 5's last clause:
 `$S verdict 5 recording pass "the cursor in item 1's clip: item-1-frames/second-target-arrival-f<index>.jpg" --out

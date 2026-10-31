@@ -23,8 +23,12 @@ import {appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSyn
 import {join} from 'node:path';
 import {insideRepository, REPO_ROOT} from './recording.mjs';
 
-// Item 1's two clicks, by the scene each lands in.
+// Item 1's two clicks, by the scene each lands in, and the scene its cursor starts from: the first fades in at its own
+// target; the second glides from the first target, in TextEdit.
 export const ORDER_TARGETS = Object.freeze({'first-target': 'textedit', 'second-target': 'chrome'});
+export const START_SCENES = Object.freeze({'first-target': 'textedit', 'second-target': 'textedit'});
+// Acceptance 13: on a route-3 click the cursor's start may lag the click by up to this (Hooks, route 3's screen freeze).
+export const ROUTE3_LAG_MS = 100;
 export const RECORDING_START_MAX_MS = 3000;
 export const FRAMES_BEFORE_MS = 300;
 export const FRAMES_AFTER_MS = 1500;
@@ -113,8 +117,15 @@ export function writeFrames({rows, dir, exec = run}) {
     if (!range) throw new Error(`the clip has no frames from ${window[0]} s to ${window[1]} s, where the ${target}'s click lies`);
     const crop = cropOf(recording.windows[scene], recording.region, scale, video);
     extractFrames({clip: recording.clip, range, crop, dir, target, exec});
-    targets[target] = {scene, click, window, crop,
-      frames: Array.from({length: range[1] - range[0] + 1}, (_, k) => ({index: range[0] + k, pts: video.pts[range[0] + k], file: frameFile(target, range[0] + k)}))};
+    const framesOf = prefix => Array.from({length: range[1] - range[0] + 1}, (_, k) => ({index: range[0] + k, pts: video.pts[range[0] + k], file: frameFile(prefix, range[0] + k)}));
+    targets[target] = {scene, click, window, crop, frames: framesOf(target)};
+    // The same frames where the cursor starts from, when that is another window (route-3 lag, judgeLag).
+    const startScene = START_SCENES[target];
+    if (startScene !== scene) {
+      const startCrop = cropOf(recording.windows[startScene], recording.region, scale, video);
+      extractFrames({clip: recording.clip, range, crop: startCrop, dir, target: `${target}-start`, exec});
+      Object.assign(targets[target], {startScene, startCrop, startFrames: framesOf(`${target}-start`)});
+    }
   }
   const record = {clip: recording.clip, sha256, region: recording.region, scale,
     video: {width: video.width, height: video.height, frames: video.pts.length, firstPts: video.pts[0]},
@@ -197,6 +208,74 @@ export function writeOrder({dir, out, judged, now = () => new Date().toISOString
       if (frame) copyFileSync(join(dir, frame.file), join(kept, `${target}-${role}-f${String(index).padStart(6, '0')}.jpg`));
     }
     appendFileSync(join(out, 'verdicts.jsonl'), `${JSON.stringify({item: '1', id: `order-${target}`, verdict: t.pass ? 'pass' : 'fail', note: orderNote(t, judgement.join), at: now()})}\n`);
+  }
+  return judgement;
+}
+
+// Which way item 13's route-3-lag watch goes this sitting, from item 1's recorded routes: measured from the clip for each
+// click that went by route 3, else (none did) the fallback, the owner watching the first minute of item 13.
+// -> {routes: {target: route}, fromClip: [target], fallback}.
+export function route3Plan(rows) {
+  const {clicks} = clipEvidence(rows);
+  const routes = Object.fromEntries(Object.keys(ORDER_TARGETS).map(target => {
+    const route = clicks[target].route;
+    if (route === null || route === undefined) throw new Error(`the ${target}'s click kept no route in its meta`);
+    return [target, String(route)];
+  }));
+  const fromClip = Object.keys(routes).filter(target => routes[target] === '3');
+  return {routes, fromClip, fallback: fromClip.length === 0};
+}
+
+// The route-3 lag of each judged target ({change, start}: the control's first changed frame, the cursor's first moving
+// frame, both clip indices; for the first target, whose cursor fades in at it, its first visible frame), from the frames
+// alone: measured as the difference of their times, and bounded, since each event lies between its frame and the one
+// before: (start − 1) − change < lag ≤ start − (change − 1). Within ROUTE3_LAG_MS when the bound's top is, over when
+// its bottom is, else undetermined at this frame rate. -> {targets: {target: {...}}, verdict: pass|fail|undetermined}.
+export function judgeLag(record, judged, {limitMs = ROUTE3_LAG_MS} = {}) {
+  const targets = {};
+  const route3 = Object.keys(record.targets).filter(target => String(record.targets[target].click.route) === '3');
+  if (!route3.length) throw new Error('item 1 has no route-3 click: the route-3 lag is the owner\'s watch of item 13 (the fallback)');
+  for (const [target, {change, start}] of Object.entries(judged)) {
+    const t = record.targets[target];
+    if (!t) throw new Error(`no target ${target}`);
+    if (String(t.click.route) !== '3') throw new Error(`the ${target}'s click went by route ${t.click.route}, not route 3: its lag is not what route-3-lag asks`);
+    const ofList = (list, index, what) => { const f = list.find(x => x.index === index); if (!f) throw new Error(`frame ${index} is not among the ${target}'s extracted ${what} frames`); return f; };
+    const startList = t.startFrames ?? t.frames;
+    const c = ofList(t.frames, change, 'control'), cBefore = ofList(t.frames, change - 1, 'control');
+    const st = ofList(startList, start, 'start'), stBefore = ofList(startList, start - 1, 'start');
+    const measuredMs = (st.pts - c.pts) * 1000;
+    const bounds = [(stBefore.pts - c.pts) * 1000, (st.pts - cBefore.pts) * 1000];
+    const verdict = bounds[1] <= limitMs ? `within ${limitMs} ms` : bounds[0] > limitMs ? `over ${limitMs} ms` : 'undetermined';
+    targets[target] = {change: {index: c.index, pts: c.pts}, start: {index: st.index, pts: st.pts, scene: t.startScene ?? t.scene}, measuredMs, bounds, verdict,
+      resolutionMs: (c.pts - cBefore.pts + st.pts - stBefore.pts) * 1000 / 2};
+  }
+  const missing = route3.filter(target => !judged[target]);
+  if (missing.length) throw new Error(`the route-3 click${missing.length > 1 ? 's' : ''} ${missing.join(', ')} need${missing.length > 1 ? '' : 's'} <change> <start> frames`);
+  const all = Object.values(targets).map(t => t.verdict);
+  return {targets, limitMs, verdict: all.some(v => v.startsWith('over')) ? 'fail' : all.includes('undetermined') ? 'undetermined' : 'pass'};
+}
+
+// `clip lag`: the judgement into <out>/item-1-route3-lag.json and .md, the judged frames and the one before each into
+// item-1-frames/, and item 13's route-3-lag verdict appended when the frames decide it. -> the judgement.
+export function writeLag({dir, out, judged, now = () => new Date().toISOString()}) {
+  const record = JSON.parse(readFileSync(join(dir, 'frames.json'), 'utf8'));
+  const judgement = judgeLag(record, judged);
+  writeFileSync(join(out, 'item-1-route3-lag.json'), `${JSON.stringify({clip: record.clip, sha256: record.sha256, judged, ...judgement}, null, 2)}\n`);
+  const describe = (target, t) => `${target}: the control first changed at frame ${t.change.index} (${t.change.pts.toFixed(3)} s), the cursor first moved at frame ${t.start.index} (${t.start.pts.toFixed(3)} s, in ${t.start.scene}): ${Math.round(t.measuredMs)} ms, the lag between ${Math.round(t.bounds[0])} and ${Math.round(t.bounds[1])} ms at this frame rate (a frame every ${Math.round(t.resolutionMs)} ms): ${t.verdict}`;
+  writeFileSync(join(out, 'item-1-route3-lag.md'), ['# Acceptance 13: the cursor\'s start on route 3, from item 1\'s clip', '',
+    `Both quantities are read from the frames, on the clip's own clock: the control's first changed frame and the cursor's first moving frame. Each event lies between its frame and the one before, so the lag is bounded by those frames' times; it is judged against ${judgement.limitMs} ms only where the bound decides it. The clip: \`${record.clip}\` (outside the repository), SHA-256 ${record.sha256}.`, '',
+    ...Object.entries(judgement.targets).map(([target, t]) => `- ${describe(target, t)}.`), '', `Verdict: ${judgement.verdict}.`, ''].join('\n'));
+  const kept = join(out, 'item-1-frames');
+  mkdirSync(kept, {recursive: true});
+  for (const [target, t] of Object.entries(judgement.targets)) {
+    const lists = {change: record.targets[target].frames, start: record.targets[target].startFrames ?? record.targets[target].frames};
+    for (const [role, list, index] of [['change', lists.change, t.change.index], ['before-change', lists.change, t.change.index - 1], ['start', lists.start, t.start.index], ['before-start', lists.start, t.start.index - 1]]) {
+      const frame = list.find(f => f.index === index);
+      copyFileSync(join(dir, frame.file), join(kept, `${target}-lag-${role}-f${String(index).padStart(6, '0')}.jpg`));
+    }
+  }
+  if (judgement.verdict !== 'undetermined') {
+    appendFileSync(join(out, 'verdicts.jsonl'), `${JSON.stringify({item: '13', id: 'route-3-lag', verdict: judgement.verdict, note: `from item 1's clip: ${Object.entries(judgement.targets).map(([target, t]) => describe(target, t)).join('; ')}`, at: now()})}\n`);
   }
   return judgement;
 }

@@ -59,6 +59,14 @@
 //       the arrow's tip reaches it; the first target's arrival is the cursor's first frame) and writes
 //       <out>/item-1-order.json and .md, copies those frames and the one before each into <out>/item-1-frames/, and
 //       appends the verdicts order-first-target and order-second-target. Exit 1 when either control changed after.
+//   cursor-sitting.mjs clip routes --out <evidence dir>
+//   cursor-sitting.mjs clip lag --frames <dir> --out <evidence dir> <target> <change> <start> […]
+//       Item 13's route-3-lag from item 1's clip: `routes`, right after item 1, says which of its clicks went by route 3
+//       (their lag comes from the clip) or that none did (the fallback: the owner watches item 13's first minute);
+//       `lag` takes, for each route-3 click, the control's first changed frame and the cursor's first moving frame (its
+//       first visible frame for the first target), bounds the lag by those frames' times, writes
+//       <out>/item-1-route3-lag.json and .md, copies the frames, and appends item 13's route-3-lag verdict when the
+//       bound decides it against 100 ms. Exit 1 unless it passes.
 //   cursor-sitting.mjs remote prepare|enroll|run --kit <dir> [--port n] [--run <dir> --out <dir>] [--quiet] [--dry-run]
 //       Acceptance 8's loopback device (./cursor-sitting/remote.mjs): prepare the kit (and print what it still needs),
 //       enrol it on a loopback relay, then run: the relay and the agent started, three client sessions driven
@@ -68,7 +76,7 @@ import {appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync} fr
 import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
-import {ORDER_TARGETS, writeFrames, writeOrder} from './cursor-sitting/clip.mjs';
+import {ORDER_TARGETS, route3Plan, writeFrames, writeLag, writeOrder} from './cursor-sitting/clip.mjs';
 import {liveSourceSwitch, switchSource, writeConsent} from './cursor-sitting/input-source.mjs';
 import {restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
 import {PLANS} from './cursor-sitting/plans.mjs';
@@ -304,7 +312,30 @@ export async function main(argv) {
       print(readFileSync(join(out, 'item-1-order.md'), 'utf8'));
       return judgement.pass ? 0 : 1;
     }
-    throw new Error('clip takes frames or order');
+    if (sub === 'routes') {
+      const plan = route3Plan(lastAttempt(readJsonl(join(absolute(values, 'out'), 'item-1.jsonl'))));
+      print(`item 1's routes: ${Object.entries(plan.routes).map(([target, route]) => `${target} route ${route}`).join(', ')}`);
+      print(plan.fallback
+        ? 'route-3-lag: no click of item 1 went by route 3, so the fallback applies: the owner stays and watches the first minute of item 13, then gives its verdict'
+        : `route-3-lag: from item 1's clip, after the sitting (clip lag), for ${plan.fromClip.join(' and ')}; the owner may leave after item 5`);
+      return 0;
+    }
+    if (sub === 'lag') {
+      const usage = 'clip lag takes <target> <change> <start> for each route-3 click of item 1 (frame indices, as frames.json numbers them)';
+      const args = positionals.slice(1);
+      if (!args.length || args.length % 3) throw new Error(usage);
+      const judged = {};
+      for (let k = 0; k < args.length; k += 3) {
+        const [target, change, start] = args.slice(k, k + 3);
+        if (!ORDER_TARGETS[target] || !/^\d+$/.test(change) || !/^\d+$/.test(start)) throw new Error(usage);
+        judged[target] = {change: Number(change), start: Number(start)};
+      }
+      const out = absolute(values, 'out');
+      const judgement = writeLag({dir: absolute(values, 'frames'), out, judged});
+      print(readFileSync(join(out, 'item-1-route3-lag.md'), 'utf8'));
+      return judgement.verdict === 'pass' ? 0 : 1;
+    }
+    throw new Error('clip takes frames, order, routes or lag');
   }
   if (command === 'remote') {
     const kit = absolute(values, 'kit'), sub = positionals[0];

@@ -150,8 +150,66 @@ test('clip frames extracts each click\'s frames from a real clip, numbered by th
   assert.equal(second.frames[0].index, 36);
   assert.equal(second.frames.at(-1).index, 179);
   for (const f of [second.frames[0], second.frames.at(-1)]) assert.ok(existsSync(join(frames, f.file)), f.file);
-  assert.equal(readdirSync(frames).filter(f => f.startsWith('second-target-')).length, second.frames.length);
+  // Where the cursor starts its glide to the second target: TextEdit's window, the same frames cropped there.
+  assert.equal(second.startScene, 'textedit');
+  assert.deepEqual(second.startFrames.map(f => f.index), second.frames.map(f => f.index));
+  assert.ok(existsSync(join(frames, second.startFrames[0].file)) && second.startFrames[0].file.startsWith('second-target-start-'));
+  assert.equal(record.targets['first-target'].startFrames, undefined, 'the first target\'s cursor starts in its own window');
+  assert.equal(readdirSync(frames).filter(f => /^second-target-f/.test(f)).length, second.frames.length);
   const size = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=width,height', '-of', 'json', join(frames, second.frames[0].file)], {encoding: 'utf8'})).streams[0];
   assert.deepEqual([size.width, size.height], [120, 100]);
   await assert.rejects(main(['clip', 'frames', '--out', out, '--frames', frames]), /exists/);
+});
+
+// Item 13's route-3-lag, from item 1's clip (the design session's round 4): for each route-3 click of item 1, the
+// control's first changed frame against the cursor's first moving frame, both read from the frames.
+test('which way the route-3 lag goes is item 1\'s recorded routes: the clip for each route-3 click, else the owner\'s watch', async () => {
+  const {route3Plan} = await import('../../scripts/cursor-sitting/clip.mjs');
+  const rows = route => itemRows().map(r => (r.orderTarget === 'second-target' ? {...r, route} : r));
+  assert.deepEqual(route3Plan(rows(3)), {routes: {'first-target': '1', 'second-target': '3'}, fromClip: ['second-target'], fallback: false});
+  assert.deepEqual(route3Plan(rows('1')), {routes: {'first-target': '1', 'second-target': '1'}, fromClip: [], fallback: true});
+  assert.throws(() => route3Plan(rows(null)), /second-target's click kept no route/);
+});
+
+const lagRecord = () => {
+  const record = framesRecord();
+  record.targets['second-target'].click.route = '3';
+  // The cursor starts from TextEdit, where it rests: the second target's start frames are TextEdit's crop.
+  record.targets['second-target'].startFrames = record.targets['second-target'].frames.map(f => ({...f, file: frameFile('second-target-start', f.index)}));
+  return record;
+};
+
+test('the lag: the cursor\'s first moving frame against the control\'s first changed frame, bounded by the frames\' own times', async () => {
+  const {judgeLag} = await import('../../scripts/cursor-sitting/clip.mjs');
+  // 60 fps: change first seen at 200, the cursor first moving at 203: 50 ms measured, the true lag inside (33.3, 66.7).
+  const ok = judgeLag(lagRecord(), {'second-target': {change: 200, start: 203}});
+  const t = ok.targets['second-target'];
+  assert.ok(Math.abs(t.measuredMs - 50) < 1e-6);
+  assert.ok(Math.abs(t.bounds[0] - 100 / 3) < 1e-6 && Math.abs(t.bounds[1] - 200 / 3) < 1e-6);
+  assert.equal(t.verdict, 'within 100 ms');
+  assert.equal(ok.verdict, 'pass');
+  assert.equal(judgeLag(lagRecord(), {'second-target': {change: 200, start: 196}}).verdict, 'pass', 'a cursor that starts first is not late');
+  assert.equal(judgeLag(lagRecord(), {'second-target': {change: 200, start: 208}}).verdict, 'fail', '(116.7, 150) ms is over 100 ms for certain');
+  const near = judgeLag(lagRecord(), {'second-target': {change: 200, start: 206}});
+  assert.equal(near.verdict, 'undetermined', '(83.3, 116.7) ms straddles 100 ms');
+  assert.throws(() => judgeLag(lagRecord(), {'first-target': {change: 100, start: 100}}), /first-target's click went by route 1, not route 3/);
+  assert.throws(() => judgeLag(framesRecord(), {}), /no route-3 click/);
+});
+
+test('clip lag writes its judgement, copies its frames, and records item 13\'s route-3-lag verdict when the frames decide it', async t => {
+  const dir = scratch(t), frames = join(dir, 'frames'), out = join(dir, 'out');
+  mkdirSync(frames); mkdirSync(out);
+  const record = lagRecord();
+  writeFileSync(join(frames, 'frames.json'), JSON.stringify(record));
+  for (const target of Object.values(record.targets)) for (const f of [...target.frames, ...(target.startFrames ?? [])]) writeFileSync(join(frames, f.file), `jpeg ${f.file}`);
+  assert.equal(await quietly(() => main(['clip', 'lag', '--frames', frames, '--out', out, 'second-target', '200', '203'])), 0);
+  assert.equal(JSON.parse(readFileSync(join(out, 'item-1-route3-lag.json'), 'utf8')).verdict, 'pass');
+  assert.match(readFileSync(join(out, 'item-1-route3-lag.md'), 'utf8'), /second-target.*50 ms/);
+  assert.deepEqual(readdirSync(join(out, 'item-1-frames')).filter(f => f.includes('-lag-')).sort(),
+    ['second-target-lag-before-change-f000199.jpg', 'second-target-lag-before-start-f000202.jpg', 'second-target-lag-change-f000200.jpg', 'second-target-lag-start-f000203.jpg']);
+  const verdicts = readFileSync(join(out, 'verdicts.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(verdicts.map(v => [v.item, v.id, v.verdict]), [['13', 'route-3-lag', 'pass']]);
+  assert.match(verdicts[0].note, /^from item 1's clip: second-target/);
+  assert.equal(await quietly(() => main(['clip', 'lag', '--frames', frames, '--out', out, 'second-target', '200', '206'])), 1, 'undetermined: no verdict');
+  assert.equal(readFileSync(join(out, 'verdicts.jsonl'), 'utf8').trim().split('\n').length, 1);
 });

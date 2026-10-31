@@ -71,6 +71,12 @@
 //                                            the session's run directory, which the kernel may read; the engine creates
 //                                            it (outside every sandbox, never through a symbolic link), since the
 //                                            worker writes nothing in the default mode (#117)
+//   CUA_CURSOR_LABEL, CUA_CURSOR_COLOR, CUA_CURSOR   computer surface, darwin, cua's engine selected: the session's agent
+//                                            cursor (#235), its label (when any source gives one), its #rrggbb colour
+//                                            and, when off, CUA_CURSOR=0: the connection's `cursor` context, resolved
+//                                            on this trusted side (./cursor-identity.mjs, the sminos name among its
+//                                            sources, or a remote client's checked context), else resolved here from
+//                                            `ambient` without the sminos name. The service reads only these
 //   BROWSER_USE_AVAILABLE_BACKENDS=chrome    browser surface: the service considers Chrome backends only (no
 //                                            BROWSER_USE_DISABLE_AMBIENT_NETWORK or BROWSER_USE_SECURITY_MODE)
 //   BROWSER_USE_BACKEND_PATHS                browser surface: cua's host sockets (src/chrome/discovery.mjs), an empty
@@ -184,6 +190,7 @@ import {removeCompatSettings, SESSION_ID, writeCompatSettings} from '../sandbox/
 import {engineDirectory, enginePaths, installedEngine} from './engine.mjs';
 import {engineSettingsPath, readEngineSettings} from './engine-sign.mjs';
 import {plistString} from '../services/engine/client.mjs';
+import {cursorContext, cursorEnv} from './cursor-identity.mjs';
 
 export {NODE_FLOOR};
 
@@ -238,8 +245,9 @@ const CELL_ENV_ALLOWLIST = 'CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV';
 // CUA_BROWSER_BACKENDS configured any. `replHost` (replHostFor) is the connection's, resolved once at its open so every
 // launch of it (an idle relaunch too) runs what it resolved then; a caller that gives none, a single launch, has it
 // resolved here from `ambient` and `home`, the own host's Node through `resolveOwnNode` (replHostFor's). A `cua`
-// selection carries the Node it resolved (`node`), which the launch runs.
-export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsProjectDir, secretsUnavailable, ambient = process.env, browserBackends = null, replHost, resolveOwnNode, sandbox}) {
+// selection carries the Node it resolved (`node`), which the launch runs. `cursor` ({label, color, enabled}) is the
+// connection's agent cursor context (./cursor-identity.mjs resolveCursorContext).
+export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], services, secretsDir, secretsProjectDir, secretsUnavailable, ambient = process.env, browserBackends = null, replHost, resolveOwnNode, sandbox, cursor = null}) {
   if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) fail('invalid_session_id', 'session id must be 1-128 letters, digits or dashes');
   const enabled = canonicalSurfaces(surfaces);
   if (secretsUnavailable !== undefined && (typeof secretsUnavailable !== 'string' || !REASON.test(secretsUnavailable))) fail('invalid_secrets_reason', 'the secrets-unavailable reason must be a lowercase code');
@@ -303,7 +311,8 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   if (enabled.includes('computer')) {
     if (linux) Object.assign(env, {OAI_SKY_LINUX_BIN: linuxEngine?.path ?? p.skyLinuxBin, CUA_SKY_SERVICE: p.skyVendorService});
     else {
-      Object.assign(env, cuaEngine ? {CUA_SKY_SERVICE: ENGINE_SERVICE, CUA_ENGINE_APP: cuaEngine.bundlePath} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp, CUA_SKY_SERVICE: p.skyVendorService});
+      Object.assign(env, cuaEngine ? {CUA_SKY_SERVICE: ENGINE_SERVICE, CUA_ENGINE_APP: cuaEngine.bundlePath, ...cursorEnv(cursor ?? cursorContext({env: ambient}))}
+        : {SKY_CUA_SERVICE_PATH: p.skyServiceApp, CUA_SKY_SERVICE: p.skyVendorService});
       env.CUA_ENGINE_SCREENSHOTS = join(cwd, 'screenshots');
     }
   }

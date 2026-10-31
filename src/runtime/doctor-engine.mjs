@@ -11,8 +11,9 @@
 // When cua's engine is preferred, the row reads the approved location through engine.mjs inspectEngine: the bundle and
 // its records, the signature as a match and a kind (never the identity), and an engine's `status`, which gives the
 // three grants (Input Monitoring the intervention tap's), whether the socket's owner is the approved bundle, the probe
-// mode's ability, the route-4 overrides the engine read at launch and the apps `routeAdvice` names. An engine already
-// running is read and left alone. Only when sessions do drive cua's engine does inspectEngine launch the approved bundle
+// mode's ability, the route-4 overrides the engine read at launch, the apps `routeAdvice` names and the agent cursor's
+// device switch (`cursor: on`, or `cursor: off (engine.json)`; #235), the running engine's, else engine.json's. An
+// engine already running is read and left alone. Only when sessions do drive cua's engine does inspectEngine launch the approved bundle
 // to read it, and stop it after (never a pending or unapproved one). When the vendor's engine is preferred, nothing is
 // launched, connected to or signed: the row says so, how to select cua's, and what the approved location holds, from
 // its files only. Off macOS, or without the computer surface, no native engine applies.
@@ -203,6 +204,8 @@ function factsReport(selection, facts, settings) {
     socket: {path: status?.socket ?? null, ownerIsApproved: status ? ownsSocket(facts) : null},
     permissions, probe: {canPostHid: owned ? status.canPostHid === true : null},
     routes: status ? status.routes ?? {} : settings.routes, routeAdvice: status ? status.routeAdvice ?? [] : null,
+    // The agent cursor's device switch: the running engine's ('on' | 'off'; null for one with no cursor), else engine.json's.
+    cursor: status ? (status.cursor === 'on' || status.cursor === 'off' ? status.cursor : null) : settings.cursor === false ? 'off' : 'on',
   };
 }
 
@@ -251,7 +254,18 @@ function installedRow(selection, facts, settings) {
     parts.push(facts.status.canPostHid === true ? 'the probe mode can post HID events (cua-engine --probe keystroke)' : 'the probe mode cannot post HID events, so the harnesses\' keystroke cells refuse');
   }
   parts.push(...routeWords(report, settings, facts.status, say));
+  parts.push(...cursorWords(report, settings, facts.status));
   return {row: result('engine', worst(verdicts), `cua's engine is selected (${SOURCE_WORDS[selection.preferred.reason]('cua')}): ${parts.join('; ')}`), report};
+}
+
+// The agent cursor's device switch, as `cua engine status` says it too; a file the running engine has not read is noted.
+function cursorWords(report, settings, status) {
+  if (report.cursor === null) return ['cursor: none (this engine has no agent cursor)'];
+  const words = [report.cursor === 'off' ? 'cursor: off (engine.json)' : 'cursor: on'];
+  const filed = settings.cursor === false ? 'off' : settings.cursor === true || settings.cursor === undefined ? 'on' : null;
+  if (status && filed && filed !== report.cursor)
+    words.push(`${SETTINGS} now turns it ${filed}, which the running engine has not read: cua engine stop applies it at the next launch`);
+  return words;
 }
 
 function signatureWords(signature, say) {
@@ -310,13 +324,14 @@ function routeWords(report, settings, status, say) {
 }
 
 // engine.json's keys the engine reads at launch (native/engine/Sources/Engine/Config.swift), checked as it checks them:
-// a value it refuses stops it at start. -> {routes: {...} | null, problem: string | null}.
+// a value it refuses stops it at start. -> {routes: {...} | null, cursor: boolean | undefined, problem: string | null}.
 function settingsOf(config) {
   let settings;
   try { settings = config(); } catch { return {routes: null, problem: null}; } // unreadable: nativeEngineFor refused already
   if (!settings || typeof settings !== 'object') return {routes: null, problem: null};
   const problems = [];
   if (settings.peerPolicy !== undefined && settings.peerPolicy !== 'uid') problems.push(`peerPolicy in ${SETTINGS} must be "uid" (or absent)`);
+  if (settings.cursor !== undefined && typeof settings.cursor !== 'boolean') problems.push(`cursor in ${SETTINGS} must be true or false (or absent)`);
   let routes = {};
   if (settings.routes !== undefined) {
     const table = settings.routes;
@@ -324,5 +339,6 @@ function settingsOf(config) {
     if (valid) routes = {...table};
     else { routes = null; problems.push(`routes in ${SETTINGS} must map bundle ids to 4, the foreground route (or be absent)`); }
   }
-  return {routes, problem: problems.length ? `${problems.join(', and ')}, so the engine refuses to start (exit 78)` : null};
+  return {routes, cursor: typeof settings.cursor === 'boolean' ? settings.cursor : undefined,
+    problem: problems.length ? `${problems.join(', and ')}, so the engine refuses to start (exit 78)` : null};
 }

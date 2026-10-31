@@ -38,6 +38,13 @@
 // model so in profiles_list's description. `project` (an absolute path, src/secrets/project.mjs) gives the connection
 // the project tier of the secret store: the stdio `serve` passes the project it was started in; the HTTP agent never
 // does, so a device's remote clients see the global tier only.
+//
+// The agent cursor (#235, docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, "Lifecycle and identity"): a
+// connection whose sessions can show one (cua's engine on macOS) or hand one to a device (`devices`) resolves its cursor
+// context once, from the open (src/runtime/cursor-identity.mjs resolveCursorContext, `resolveCursor` a seam for tests:
+// the label's sources, the sminos name among them, bounded at 500 ms), never holding the open up: each launch waits for
+// it, and passes it to the launch's worker environment; a device session's open sends it as `cua/cursor`
+// (src/mcp/target.mjs). `cursor` is a remote client's checked context (src/mcp/http.mjs), whose fields come first.
 import {rmSync} from 'node:fs';
 import {join} from 'node:path';
 import {createServer, settingsFrom} from './server.mjs';
@@ -53,13 +60,15 @@ import {chromeFacts} from '../profiles/chrome.mjs';
 import {profileReadiness} from '../profiles/commands.mjs';
 import {listLiveBackends} from '../profiles/inventory.mjs';
 import {assertSandboxConfines, assertSandboxFits, sandboxState as sandboxStateFor} from '../runtime/sandbox.mjs';
+import {resolveCursorContext} from '../runtime/cursor-identity.mjs';
 
 const SERVICES = {computer: {sky: SKY_SERVICE}, browser: {browser: BROWSER_SERVICE}};
 
 export async function openConnection({home, env = process.env, sessionId, input, output, host = {platform: process.platform, arch: process.arch},
   devices = null, settings = settingsFrom(env, {platform: host.platform, devices: devices !== null}),
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), prepareLaunch = launch => launch, chrome = chromeFacts({host, env}),
-  listBackends, onWithdrawn, probeUserns, verifyHelper, browserBackends = null, project = null, idleTimer, onProfilesList, resolveOwnNode, engine}) {
+  listBackends, onWithdrawn, probeUserns, verifyHelper, browserBackends = null, project = null, idleTimer, onProfilesList, resolveOwnNode, engine,
+  cursor = null, resolveCursor = resolveCursorContext}) {
   const {secrets: secretsEnabled, sandbox, ...serverSettings} = settings;
   const runtime = resolveRuntime({home, host});
   // The readiness listing runs under this connection's own mode (src/profiles/inventory.mjs listLiveBackends).
@@ -101,8 +110,8 @@ export async function openConnection({home, env = process.env, sessionId, input,
     // (own_host_node_unavailable), and the handshake records follow the host selected. A new connection resolves again,
     // so a Node installed meanwhile takes effect on the next connection.
     const replHost = replHostFor({platform: runtime.manifest.platform, surfaces: serverSettings.surfaces, ambient: env, home, resolveOwnNode, engine});
-    const launchFor = () => buildLaunch({
-      runtime, home, sessionId, ambient: env, replHost, surfaces: serverSettings.surfaces, sandbox,
+    const launchFor = (extra = {}) => buildLaunch({
+      ...extra, runtime, home, sessionId, ambient: env, replHost, surfaces: serverSettings.surfaces, sandbox,
       services: Object.assign({}, ...serverSettings.surfaces.map(s => SERVICES[s])),
       secretsDir: secrets.dir, secretsProjectDir: secrets.projectDir, secretsUnavailable: secrets.unavailable?.code,
       browserBackends: browserBackends && {hostPaths: browserBackends.hostPaths(), defaultInstance: browserBackends.defaultInstance()},
@@ -112,12 +121,16 @@ export async function openConnection({home, env = process.env, sessionId, input,
     const planned = launchFor();
     assertSandboxFits(sandbox, planned);
     await assertSandboxConfines(sandbox, {platform: runtime.manifest.platform, launch: planned, probe: probeUserns, verifyHelper});
+    // The agent cursor's context, resolving from now; a launch and a device session's open wait for it.
+    const cursorContext = planned.env.CUA_ENGINE_APP || devices !== null ? resolveCursor({env, given: cursor, log: diagnostics}) : null;
     // The launch itself (lazy-runtime.mjs): on the first call that needs the runtime, after the MAWS backends' hellos
     // (so the launch prefers the in-app browser's instance and the first listBrowsers finds its host).
     const start = async ({signal}) => {
       if (browserBackends && !signal.aborted) await Promise.race([browserBackends.waitForHellos(), new Promise(resolve => signal.addEventListener('abort', resolve, {once: true}))]);
       if (signal.aborted) return null;
-      launch = prepareLaunch(launchFor());
+      const resolved = cursorContext ? await cursorContext : null;
+      if (signal.aborted) return null;
+      launch = prepareLaunch(launchFor(resolved ? {cursor: resolved} : {}));
       assertSandboxFits(sandbox, launch);
       createLaunchDirs(launch);
       return spawnUpstream(launch);
@@ -142,6 +155,7 @@ export async function openConnection({home, env = process.env, sessionId, input,
     }};
     server = createServer({input, output, sessionId, upstream, secrets, profiles, diagnostics,
       sandboxState: sandboxStateFor(sandbox, planned.cwd), onWithdrawn, devices, inAppBrowser: Boolean(browserBackends), nativeEngine: planned.nativeEngine,
+      cursorContext: cursorContext ? () => cursorContext : null,
       ...(idleTimer ? {idleTimer} : {}), ...serverSettings});
   } catch (error) {
     await release();

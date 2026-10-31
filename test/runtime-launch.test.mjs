@@ -14,6 +14,7 @@ import {parsePin, resolveRuntime, runtimeFor} from '../src/runtime/manifest.mjs'
 import {scratch, scratchUserHome, fixturePin} from './fixtures/runtime-fixture.mjs';
 import {fakeInstalledHome} from './fixtures/installed-home.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
+import {hashColor} from '../src/runtime/cursor-identity.mjs';
 import {STORE_RELATIVE, connectionSecrets} from '../src/secrets/store.mjs';
 import {openConnection} from '../src/mcp/connection.mjs';
 import {listLiveBackends} from '../src/profiles/inventory.mjs';
@@ -1093,6 +1094,27 @@ test('with cua\'s engine the launch names cua\'s service and the approved bundle
   assert.deepEqual(buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}}).env, vendor.env);
   // No attestation without the computer surface.
   assert.equal(launchWith({host: 'cua', reason: 'browser_only', node: NODE24}, BROWSER).nativeEngine, null);
+});
+
+// The agent cursor (#235's spec, "Lifecycle and identity"): with cua's engine, the worker gets the session's three cursor
+// variables, the connection's resolved context or, given none, MAWS's from the caller's environment with the project
+// folder's name and the hash colour; with the vendor's engine, none.
+test('with cua\'s engine the worker gets the session\'s cursor label, colour and switch; with the vendor\'s, nothing of the cursor', t => {
+  const {home, runtime} = fixtureRuntime(t);
+  const cuaEngine = {engine: 'cua', reason: 'explicit', status: 'pass', app: {bundlePath: APP.bundlePath, engineVersion: APP.engineVersion, build: APP.build}};
+  const launchWith = (extra, replHost = {host: 'cua', reason: 'cua_engine', node: NODE24, engine: cuaEngine}) =>
+    buildLaunch({runtime, home, sessionId: SESSION, surfaces: COMPUTER, services: {sky: SKY_SERVICE}, replHost, ...extra});
+  const cursorOf = env => Object.fromEntries(Object.entries(env).filter(([key]) => key.startsWith('CUA_CURSOR')));
+  assert.deepEqual(cursorOf(launchWith({ambient: AMBIENT, cursor: {label: 'linux171', color: '#8250df', enabled: false}}).env),
+    {CUA_CURSOR_LABEL: 'linux171', CUA_CURSOR_COLOR: '#8250df', CUA_CURSOR: '0'}, 'the connection\'s resolved context');
+  const maws = {...AMBIENT, CUA_CURSOR_LABEL: 'Research', CUA_CURSOR_COLOR: '#2f6feb', CLAUDE_PROJECT_DIR: '/Users/someone/Developer/cua-235'};
+  assert.deepEqual(cursorOf(launchWith({ambient: maws}).env), {CUA_CURSOR_LABEL: 'Research', CUA_CURSOR_COLOR: '#2f6feb'}, 'MAWS\'s, from the caller');
+  const plain = {...AMBIENT, CLAUDE_PROJECT_DIR: '/Users/someone/Developer/cua-235', CLAUDE_CODE_SESSION_ID: 'b93055dd-d0e2-41ed-817f-ba9da4ffd2b6', CUA_CURSOR: '0'};
+  assert.deepEqual(cursorOf(launchWith({ambient: plain}).env), {CUA_CURSOR_LABEL: 'cua-235', CUA_CURSOR_COLOR: hashColor('b93055dd-d0e2-41ed-817f-ba9da4ffd2b6'), CUA_CURSOR: '0'});
+  assert.equal('CLAUDE_CODE_SESSION_ID' in launchWith({ambient: plain}).env, false, 'nothing else of the caller\'s reaches the worker');
+  const vendor = launchWith({ambient: maws, cursor: {label: 'x', color: '#8250df', enabled: true}},
+    {host: 'vendor', reason: 'macos_native_peer_requires_vendor', engine: {engine: 'vendor', reason: 'default', status: 'pass'}});
+  assert.deepEqual(cursorOf(vendor.env), {}, 'the vendor engine draws its own cursor and reads none of these');
 });
 
 // The route A/B's switch (src/services/engine/service.mjs) never comes from the caller's environment: only the harness

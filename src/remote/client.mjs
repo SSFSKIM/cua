@@ -3,7 +3,10 @@
 // (src/mcp/http.mjs). Built on Node's own fetch, so the plugin's copy runs without node_modules.
 //
 // - Open: `initialize` with the local client's own params (the device's runtime sees the real client and its
-//   elicitation capability), then `notifications/initialized`; later requests carry Mcp-Session-Id and the negotiated
+//   elicitation capability) and, given the session's agent cursor context (`cursor`: {label, color, enabled}, resolved
+//   on this side, src/runtime/cursor-identity.mjs), that context as `cua/cursor` (a null label left out), which the
+//   device checks and uses for that session alone (src/mcp/http.mjs; #235's spec, "Remote devices"); then
+//   `notifications/initialized`; later requests carry Mcp-Session-Id and the negotiated
 //   MCP-Protocol-Version, every request the bearer. Once open the session holds the standing GET, as Claude Code's
 //   client does (a session holding a stream never reads Idle for eviction mid-task), reopened while the session lives.
 // - Requests carry this client's own ids. An answer is a JSON body or an SSE stream; the response settles its request,
@@ -108,7 +111,7 @@ const sleep = (ms, signal) => new Promise(resolve => {
 });
 
 // `signal` cancels the open (DeviceError `cancelled`; a session already granted is deleted); it has no effect once open.
-export async function openDeviceSession({endpoint, credential, initializeParams, fetch = globalThis.fetch,
+export async function openDeviceSession({endpoint, credential, initializeParams, cursor = null, fetch = globalThis.fetch,
   onMessage = () => {}, diagnostics = () => {}, backoff = {firstMs: 1000, maxMs: 15_000, budgetMs: 90_000},
   headTimeoutMs = 30_000, signal}) {
   if (signal?.aborted) throw new DeviceError('cancelled', 'the open was cancelled');
@@ -222,7 +225,8 @@ export async function openDeviceSession({endpoint, credential, initializeParams,
 
   const initId = ++nextId;
   let response;
-  try { response = await postWithin({jsonrpc: '2.0', id: initId, method: 'initialize', params: initializeParams}, signal); } catch (error) {
+  const params = cursor ? {...initializeParams, 'cua/cursor': Object.fromEntries(Object.entries(cursor).filter(([, value]) => value !== null))} : initializeParams;
+  try { response = await postWithin({jsonrpc: '2.0', id: initId, method: 'initialize', params}, signal); } catch (error) {
     if (signal?.aborted) throw new DeviceError('cancelled', 'the open was cancelled');
     throw error instanceof DeviceError ? error : offline(why(error));
   }

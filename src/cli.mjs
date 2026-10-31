@@ -84,7 +84,8 @@ ${darwin ? `  engine build [--sign adhoc] [--sign-wait <ms>] [--json]      build
                                                                first sign on a Mac, e.g. 600000)
   engine approve [--json]                                      approve the built engine: its grants (the owner at the console
                                                                when one is missing), a relaunch and one capture, then approved
-  engine status [--json]                                       the engine's bundle, signature, approval and running grants
+  engine status [--json]                                       the engine's bundle, signature, approval and running grants,
+                                                               and whether the agent cursor is on
   engine stop [--json]                                         stop the running engine (refused while a session uses it)
 ` : `  engine build [--json]                                        build cua's Linux engine from this checkout (cargo build
                                                                --release) and install it in CUA_HOME as a local build
@@ -829,6 +830,9 @@ export function engineStatusLines(status) {
   const s = status.status;
   lines.push(s ? `running: pid ${s.pid}, accessibility ${s.accessibility}, screen recording ${s.screenRecording}, input monitoring ${s.inputMonitoring}, ${s.connections} other connection(s)`
     : 'running: no');
+  // The agent cursor's device switch (#235): the running engine's, else engine.json's.
+  lines.push(status.cursor === 'on' ? 'cursor: on' : status.cursor === 'off' ? 'cursor: off (engine.json)'
+    : s ? 'cursor: none (the running engine has no agent cursor)' : 'cursor: unknown (~/.config/cua/engine.json cannot be read)');
   return lines;
 }
 

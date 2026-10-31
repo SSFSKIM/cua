@@ -53,11 +53,20 @@
 // session. Messages reach a session's connection in the order their POSTs arrived, also
 // when one waits for this check.
 //
+// The agent cursor of a remote session (#235, docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, "Remote
+// devices"): the client resolves its session's cursor on its own side and sends it in the initialize parameters as
+// `cua/cursor` ({label, color, enabled}); each field is checked here (src/runtime/cursor-identity.mjs remoteCursor), a
+// refused one logged and left to the device's own resolution, and the result goes to that session's open alone, where
+// it takes the place of the cursor variables for that session's launch. The key is taken out of the initialize the
+// runtime sees. A client too old to send it gets the device's own resolution; the device's `"cursor": false` in
+// engine.json wins either way.
+//
 // `open` is the connection opener, a seam for tests.
 import {randomUUID} from 'node:crypto';
 import {PassThrough} from 'node:stream';
 import {createInterface} from 'node:readline';
 import {openConnection} from './connection.mjs';
+import {remoteCursor} from '../runtime/cursor-identity.mjs';
 import {credentialMatches} from '../remote/device.mjs';
 import {WORK_TOOLS, statusResult} from './surface.mjs';
 
@@ -348,13 +357,17 @@ export function createMcpHttp({home, env = process.env, clientCredential, allowe
     let session;
     const input = new PassThrough();
     const output = new PassThrough();
+    const {'cua/cursor': givenCursor, ...params} = message.params ?? {};
+    const cursor = remoteCursor(givenCursor);
+    if (cursor.refused.length) diagnostics(`session ${sessionId}: cua/cursor: ${cursor.refused.join(', ')} refused (the device's own in their place)`);
+    if (givenCursor !== undefined) message = {...message, params};
     const opened = (async () => {
       if (evict) {
         diagnostics(`session ${evict.id}: evicted, being Idle, for a new session at the cap of ${maxSessions}`);
         await endSession(evict, 'eof');
       }
       return open({home, env, sessionId, input, output, onProfilesList, diagnostics: line => diagnostics(`session ${sessionId}: ${line}`),
-        onWithdrawn: requestId => { if (session) withdraw(session, requestId); }});
+        onWithdrawn: requestId => { if (session) withdraw(session, requestId); }, cursor: cursor.cursor});
     })();
     opening.add(opened);
     let connection;

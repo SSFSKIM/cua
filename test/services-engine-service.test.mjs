@@ -7,7 +7,7 @@
 // host does. Synthetic trees only; no app is observed or driven.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
@@ -17,7 +17,8 @@ import {approvalMemory} from '../src/mcp/approval-memory.mjs';
 import {createSkyService} from '../src/services/sky.mjs';
 import {bind_mac_app} from '../src/cua-api/bind-mac-app.mjs';
 import {createEngineClient} from '../src/services/engine/client.mjs';
-import {METHODS, createService} from '../src/services/engine/service.mjs';
+import {METHODS, createService, cursorParams} from '../src/services/engine/service.mjs';
+import {infoPlist} from '../scripts/spike/engine/assemble.mjs';
 
 const APPS = {
   TextEdit: {appPath: '/System/Applications/TextEdit.app', bundleIdentifier: 'com.apple.TextEdit', displayName: 'TextEdit', isRunning: true, pid: 501},
@@ -512,4 +513,53 @@ test('Chrome: the tool surface carries the vendor\'s Chrome flag, and the approv
   assert.equal(meta['codex/computerUseChrome'], true);
   assert.equal(record.asked[0].meta.riskLevel, 'high');
   assert.match(record.asked[0].meta.subtitle, /^Allowing Computer Use to use this app introduces new risks/);
+});
+
+// The agent cursor (#235's spec, "Lifecycle and identity", Interfaces): the session's cursor request is made from the
+// three variables the launcher put in the worker's environment, sent on the service's own connection at connect, and
+// end_task's turn-ended hook hides it.
+test('the cursor request the service sends for each environment: the label, a #rrggbb colour, and CUA_CURSOR=0\'s off switch', () => {
+  assert.deepEqual(cursorParams({}), {enabled: true});
+  assert.deepEqual(cursorParams({CUA_CURSOR_LABEL: 'Research', CUA_CURSOR_COLOR: '#2f6feb'}), {label: 'Research', color: '#2f6feb', enabled: true});
+  assert.deepEqual(cursorParams({CUA_CURSOR_LABEL: 'linux171', CUA_CURSOR_COLOR: '#8250df', CUA_CURSOR: '0'}), {label: 'linux171', color: '#8250df', enabled: false});
+  assert.deepEqual(cursorParams({CUA_CURSOR_LABEL: '', CUA_CURSOR_COLOR: 'blue', CUA_CURSOR: '1'}), {enabled: true}, 'what is not a label or a colour is not sent');
+  assert.deepEqual(cursorParams(undefined), {enabled: true});
+});
+
+// The service as the trusted worker makes it: its own client, from CUA_ENGINE_APP (a fixture bundle with the engine's
+// Info.plist), the socket beside it, and the turn-ended hook it registers.
+async function ownService(t, env, {handlers = {}} = {}) {
+  const s = shortScratch('cua-esc-');
+  t.after(s.cleanup);
+  const app = join(s.dir, 'cua Engine.app');
+  mkdirSync(join(app, 'Contents'), {recursive: true});
+  writeFileSync(join(app, 'Contents', 'Info.plist'), infoPlist({version: '0.1.0', build: 'b1'}));
+  const engine = await startFakeEngine(t, join(s.dir, 'engine.sock'), {handlers: {
+    'execute:list_apps': () => [], cursor: () => ({cursor: 'on', reason: null}), ...handlers}});
+  const hooks = [];
+  const nodeRepl = {env: {CUA_ENGINE_APP: app, ...env}, nativePipe: nativePipe(), launchServices: {openApplication: async () => assert.fail('no launch')},
+    setResponseMeta: () => {}, withSuspendedTimeout: fn => fn(), addTurnEndedHandler: hook => { hooks.push(hook); return () => {}; }};
+  const service = createService({nodeRepl});
+  const turnEnded = () => Promise.all(hooks.map(hook => hook.run({session_id: 's', turn_id: 't'})));
+  return {service, engine, hooks, turnEnded};
+}
+
+test('the service tells the engine its session\'s cursor at connect, and end_task\'s turn-ended hook hides it', async t => {
+  const {service, engine, hooks, turnEnded} = await ownService(t, {CUA_CURSOR_LABEL: 'linux171', CUA_CURSOR_COLOR: '#8250df'});
+  assert.equal(hooks.length, 1);
+  assert.ok(Number.isSafeInteger(hooks[0].timeoutMs) && hooks[0].timeoutMs > 0);
+  await turnEnded();
+  assert.equal(engine.received.length, 0, 'a session that never reached the engine has no cursor to hide');
+  await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]});
+  await turnEnded();
+  assert.deepEqual(engine.received.map(r => [r.method, r.method === 'cursor' ? r.params : r.params?.method ?? null]),
+    [['ping', null], ['cursor', {label: 'linux171', color: '#8250df', enabled: true}], ['execute', 'list_apps'], ['cursor', {hide: true}]]);
+});
+
+test('against an engine without the cursor method the session goes on, and end_task sends it nothing', async t => {
+  const {service, engine, turnEnded} = await ownService(t, {CUA_CURSOR: '0'}, {handlers: {cursor: undefined}});
+  assert.deepEqual(await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]}), []);
+  await turnEnded();
+  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'cursor', 'execute']);
+  assert.deepEqual(engine.received[1].params, {enabled: false});
 });

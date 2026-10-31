@@ -23,6 +23,13 @@
 // The cell's budget: the connect (with any launch wait) and every request but the ones the caller marks `suspend: false`
 // run under `nodeRepl.withSuspendedTimeout`, so an engine launch, an action, a settle or an app's launch wait never spends
 // the cell's own time; suspensions nest. Errors are ./protocol.mjs's, the vendor's classes.
+//
+// The agent cursor (docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, "Lifecycle and identity"): with a
+// `cursor` context ({label?, color?, enabled}, the service's), every new connection sends the `cursor` request right
+// after its ping, so it reaches the engine before anything else the connection sends (the engine answers one request at
+// a time, in order); `hideCursor` (end_task) sends `{hide: true}` on the live connection, in turn behind any request in
+// flight, and never connects or launches an engine for it. Neither is awaited by a request, and nothing that comes of
+// them fails one: an engine without the method answers methodNotFound, and that connection is sent no more of them.
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {
@@ -37,6 +44,9 @@ const FIRST_CONNECT_MS = 250;
 const LAUNCH_WAIT_MS = 5_000;
 const RETRY_MS = 100;
 const PING_MS = 1_000;
+// The bound on a cursor request's answer (bookkeeping on the engine's side, answered at once).
+const CURSOR_MS = 5_000;
+const METHOD_NOT_FOUND = -32601;
 const UNIFIED_LOG = 'log show --last 10m --info --predicate \'subsystem == "io.github.ssfskim.cua.engine"\'';
 
 export const socketPathFor = appPath => join(dirname(appPath), 'engine.sock');
@@ -133,9 +143,9 @@ function within(promise, ms, message) {
 
 // `nodeRepl` is the trusted worker's (nativePipe, launchServices, withSuspendedTimeout); `expected` the bundle's
 // {engineVersion, build} or a function reading them (bundleIdentity by default, read at each connect, so a replaced
-// bundle is seen).
+// bundle is seen); `cursor` the session's cursor request params, or null for none.
 export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFor(appPath), expected = () => bundleIdentity(appPath),
-  firstConnectMs = FIRST_CONNECT_MS, launchWaitMs = LAUNCH_WAIT_MS, deadlineGraceMs = DEADLINE_GRACE_MS}) {
+  firstConnectMs = FIRST_CONNECT_MS, launchWaitMs = LAUNCH_WAIT_MS, deadlineGraceMs = DEADLINE_GRACE_MS, cursor = null}) {
   let connection = null;
   let identity = null;
   let connecting = null;
@@ -175,6 +185,7 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
           const checked = check(answer, want);
           connection = candidate;
           identity = checked;
+          if (cursor) sendCursor(candidate, cursor);
           return checked;
         } catch (error) {
           candidate.close();
@@ -201,6 +212,13 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
       if (!(error instanceof NotYet)) throw error;
       throw new SkyComputerUseTransportError(`cua engine did not start: nothing answered at ${socketPath} within ${launchWaitMs} ms of launching ${appPath}. The engine logs why it stopped (a peerPolicy in ~/.config/cua/engine.json it does not have, a lock or socket another engine holds) to the unified log: ${UNIFIED_LOG}`, {cause: error.cause});
     }
+  }
+
+  // One cursor request on `target`, its outcome only recorded: methodNotFound marks the connection as having no cursor.
+  function sendCursor(target, params) {
+    return target.call('cursor', params, CURSOR_MS).catch(error => {
+      if (error instanceof SkyComputerUseError && error.code === METHOD_NOT_FOUND) target.noCursor = true;
+    });
   }
 
   // Resolves the engine's identity ({serverApiVersion, engineVersion, build}) once a checked connection is live; the
@@ -239,6 +257,15 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     // The engine's `status` answer (its identity, grants and other connections).
     async status() {
       return (await call('status', {}, {suspend: false})).result;
+    },
+    // end_task: the session's cursor fades at once, on the live connection only (in turn behind a request in flight).
+    async hideCursor() {
+      const target = connection;
+      if (!cursor || !target || target.closed || target.noCursor) return;
+      const run = () => (target.closed || target.noCursor ? undefined : sendCursor(target, {hide: true}));
+      const queued = tail.then(run, run);
+      tail = queued.then(() => {}, () => {});
+      await queued;
     },
     close() { connection?.close(); },
   };

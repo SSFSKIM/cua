@@ -77,12 +77,23 @@ test('engine approve with no bundle refuses, naming cua engine build', onMac, t 
 test('the status lines say whether the signature is the configured identity without naming it', () => {
   const lines = engineStatusLines({bundlePath: '/e/cua Engine.app', exists: true, engineVersion: '0.1.0', build: 'f'.repeat(64),
     signature: {kind: 'identity', identityMatches: true}, approved: false, approvedBuild: 'a'.repeat(64), approvedAt: null, pending: null, running: true,
-    status: {pid: 7, accessibility: true, screenRecording: false, inputMonitoring: true, connections: 1}});
+    status: {pid: 7, accessibility: true, screenRecording: false, inputMonitoring: true, connections: 1, cursor: 'on'}, cursor: 'on'});
   assert.deepEqual(lines, [
     'engine: /e/cua Engine.app (version 0.1.0, build ffffffffffff), signed with the configured identity',
     'approved: no (approved.json names build aaaaaaaaaaaa); run cua engine approve with the owner at the console',
     'running: pid 7, accessibility true, screen recording false, input monitoring true, 1 other connection(s)',
+    'cursor: on',
   ]);
+});
+
+test('the cursor line: on, off (engine.json), none for an engine without one, unknown when engine.json cannot be read', () => {
+  const base = {bundlePath: '/e/cua Engine.app', exists: true, engineVersion: '0.1.0', build: 'f'.repeat(64), signature: {kind: 'identity', identityMatches: true},
+    approved: true, approvedAt: 'when', pending: null};
+  const running = {running: true, status: {pid: 7, accessibility: true, screenRecording: true, inputMonitoring: true, connections: 0}};
+  assert.equal(engineStatusLines({...base, running: false, status: null, cursor: 'off'}).at(-1), 'cursor: off (engine.json)');
+  assert.equal(engineStatusLines({...base, running: false, status: null, cursor: 'on'}).at(-1), 'cursor: on');
+  assert.equal(engineStatusLines({...base, ...running, cursor: null}).at(-1), 'cursor: none (the running engine has no agent cursor)');
+  assert.equal(engineStatusLines({...base, running: false, status: null, cursor: null}).at(-1), 'cursor: unknown (~/.config/cua/engine.json cannot be read)');
 });
 
 test('the status lines say what they do not know when the signature could not be read', () => {

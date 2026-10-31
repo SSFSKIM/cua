@@ -88,6 +88,10 @@ final class CursorSystem: @unchecked Sendable {
       guard let window = elementAttribute(element, kAXWindowAttribute) else { return nil }
       return windowNumber(of: window, pid: pid(of: element), frame: frame(of: window))
     }
+    e.appWindow = { pid in
+      guard let window = primaryWindow(of: prepare(AXUIElementCreateApplication(pid))) else { return nil }
+      return windowNumber(of: window, pid: pid, frame: frame(of: window))
+    }
     e.workspaceCenter = NSWorkspace.shared.notificationCenter
     e.distributedCenter = DistributedNotificationCenter.default()
     e.appCenter = NotificationCenter.default

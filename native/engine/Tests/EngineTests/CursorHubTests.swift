@@ -238,6 +238,54 @@ final class CursorHubTests: XCTestCase {
     XCTAssertEqual(try XCTUnwrap(renderer.last?.motion).trajectory.end, CGPoint(x: 540, y: 590))
   }
 
+  /// A recorded menu-bar click (MenuSpan.swift): the hook only enqueues the item; its frame and the app's primary window
+  /// (a menu-bar item has none of its own) are read on the cursor queue, so a slow app's accessibility answers never
+  /// hold the request. The readers here block until released: the hook returns while they are blocked.
+  func testAMenuBarItemIsResolvedOnTheCursorQueueNotTheRequestThread() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let release = DispatchSemaphore(value: 0)
+    let reads = NSLock()
+    var readsMade: [String] = []
+    var e = world.environment(elementFrame: { _ in
+      reads.withLock { readsMade.append("frame") }
+      release.wait()
+      return CGRect(x: 300, y: 10, width: 60, height: 22)
+    })
+    e.appWindow = { pid in
+      reads.withLock { readsMade.append("window") }
+      return pid == 600 ? 20 : nil
+    }
+    let hub = CursorHub(environment: e, renderer: renderer)
+    let returned = DispatchSemaphore(value: 0)
+    let app = app
+    DispatchQueue.global().async {
+      hub.act(connection: 1, app: app, window: nil, .menuBarItem(AXUIElementCreateApplication(600), pid: 600, storedFrame: nil))
+      returned.signal()
+    }
+    XCTAssertEqual(returned.wait(timeout: .now() + 2), .success, "the hook returned while the frame read was blocked")
+    release.signal()
+    hub.drain()
+    XCTAssertEqual(reads.withLock { readsMade }, ["frame", "window"], "both read later, on the cursor queue")
+    let commit = try XCTUnwrap(renderer.last)
+    XCTAssertTrue(commit.shown)
+    XCTAssertEqual(commit.attachment.window, 20, "attached to the app's primary window")
+    XCTAssertEqual(commit.motion?.trajectory.end, CGPoint(x: 330, y: 879), "the item's midpoint, flipped")
+    XCTAssertEqual(commit.motion?.dips.count, 1, "a click: the press dip")
+  }
+
+  func testADisabledCursorReadsNothingForAMenuBarItem() {
+    let world = World(), renderer = RecordingRenderer()
+    var read = false
+    var e = world.environment(elementFrame: { _ in read = true; return CGRect(x: 0, y: 0, width: 10, height: 10) })
+    e.appWindow = { _ in read = true; return 20 }
+    let hub = CursorHub(environment: e, renderer: renderer)
+    hub.configure(connection: 1, nil, enabled: false)
+    hub.act(connection: 1, app: app, window: nil, .menuBarItem(AXUIElementCreateApplication(600), pid: 600, storedFrame: nil))
+    hub.drain()
+    XCTAssertFalse(read)
+    XCTAssertFalse(renderer.commits.contains { $0.shown })
+  }
+
   func testAFailedAccessibilityOperationPointsNowhere() {
     let world = World(), renderer = RecordingRenderer()
     var read = false

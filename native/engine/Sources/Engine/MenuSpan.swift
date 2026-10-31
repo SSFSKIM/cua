@@ -318,20 +318,18 @@ func recordHeldMenu(_ item: AXUIElement, app key: String, pid: pid_t, connection
 
 extension Engine {
   /// The record with its activation for the app's primary window (the observed window), restored by activation only.
-  /// Once it holds, the agent cursor acts a click at the item's midpoint (its frame read now, else the observed one):
-  /// from the agent's side it clicked the menu title, though nothing is pressed (MenuRecord.swift). A menu-bar item has
-  /// no window of its own, so the cursor is attached to the app's primary window: raised above the menu bar while the
-  /// app is frontmost or has a menu open (Cursor/CursorAttachment.swift), else at that window's level.
+  /// Once it holds, the agent cursor acts a click at the item's midpoint: from the agent's side it clicked the menu
+  /// title, though nothing is pressed (MenuRecord.swift). The hook only enqueues; the cursor queue reads the item's frame
+  /// (else the observed one) and, as a menu-bar item has no window of its own, the app's primary window, so no
+  /// accessibility read for the cursor holds the request. Attached there, the cursor is raised above the menu bar while
+  /// the app is frontmost or has a menu open (Cursor/CursorAttachment.swift), else at that window's level.
   func holdMenuRecord(_ item: AXUIElement, storedFrame: CGRect?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
                       context: ExecutionContext, meta: inout InputMeta) throws {
     try recordHeldMenu(item, app: app.key, pid: appPid, connection: context.connection, activations: heldActivations, activation: {
       let application = prepare(AXUIElementCreateApplication(appPid))
       return FakeActivation(pid: appPid, window: primaryWindow(of: application) ?? application, restoresByActivationOnly: true)
     }, beforeActivating: guarding.checkInFlight, announce: {
-      guard let point = clickablePoint(frame: frame(of: item) ?? storedFrame, visibleIn: nil) else { return }
-      let window = primaryWindow(of: prepare(AXUIElementCreateApplication(appPid)))
-      let windowID = window.flatMap { windowNumber(of: $0, pid: appPid, frame: frame(of: $0)) }
-      cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point))
+      cursor.act(connection: context.connection.id, app: app.key, window: nil, .menuBarItem(item, pid: appPid, storedFrame: storedFrame))
     }, meta: &meta)
   }
 }

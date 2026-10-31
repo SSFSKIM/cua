@@ -923,7 +923,8 @@ final class MenuSpanTests: XCTestCase {
 
   /// A recorded menu-bar click moves the cursor (the M3 sitting's ruling: from the agent's side it clicked the menu
   /// title), once the record holds, as every pointer hook fires only for a click that was not refused; a refused record
-  /// (a user event, a failed guard) announces nothing.
+  /// (a user event, a failed guard) announces nothing. The announcement only enqueues (CursorHubTests: the item is
+  /// resolved on the cursor queue).
   func testTheRecordAnnouncesTheCursorOnlyWhenItHolds() {
     var announced = 0
     var meta = meta()

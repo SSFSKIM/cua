@@ -15,6 +15,9 @@ enum CursorAction: @unchecked Sendable {
   case click(CGPoint)          // coordinate or element click: glide, then the press dip on arrival
   case element(AXUIElement, storedFrame: CGRect?)   // accessibility action: the cursor queue reads the current frame
                                                     // after the action is sent, falls back to storedFrame; glide, dip
+  case menuBarItem(AXUIElement, pid: pid_t, storedFrame: CGRect?)  // a recorded menu-bar click: the item's current frame
+                                                    // (else storedFrame) and the app's primary window, both read on
+                                                    // the cursor queue (an item has no window); glide, dip
   case drag([CGPoint])         // glide to the first point, dip, trace the path, rest at the last
   case scroll(CGPoint)         // glide, no dip
 }
@@ -66,6 +69,8 @@ struct CursorEnvironment: @unchecked Sendable {
   var frontmostPid: () -> pid_t? = { nil }
   var elementFrame: (AXUIElement) -> CGRect? = { _ in nil }
   var elementWindow: (AXUIElement) -> CGWindowID? = { _ in nil }
+  /// The app's primary window, by its pid (a menu-bar item's attachment).
+  var appWindow: (pid_t) -> CGWindowID? = { _ in nil }
   var reduceMotion: () -> Bool = { false }
   var increaseContrast: () -> Bool = { false }
   /// The centres the attachment's events arrive on: NSWorkspace's and the distributed one (the screen lock).
@@ -257,6 +262,11 @@ final class CursorHub: @unchecked Sendable {
       guard let frame else { return }
       points = [CGPoint(x: frame.midX, y: frame.midY)]
       if target == nil { target = environment.elementWindow(element) }
+      dips = true
+    case .menuBarItem(let item, let pid, let stored):
+      guard let frame = environment.elementFrame(item) ?? stored, let point = clickablePoint(frame: frame, visibleIn: nil) else { return }
+      points = [point]
+      if target == nil { target = environment.appWindow(pid) }
       dips = true
     }
     guard let target, let first = points.first else { return }

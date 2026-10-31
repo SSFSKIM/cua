@@ -4,7 +4,7 @@
 // writes its file. The recorder here is a stand-in process: nothing is captured.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {spawnSync} from 'node:child_process';
+import {spawn, spawnSync} from 'node:child_process';
 import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -74,10 +74,16 @@ test('the clip stays outside the repository, is a new .mov, by absolute path', t
 
 // A stand-in recorder that behaves as screencapture -v did on the MacBook (2026-10-31): on a terminal it says it is
 // recording, and a character typed there (read raw) stops it and writes the movie; on a pipe it says nothing and takes
-// no stop. EXIT_AT_ONCE: it cannot record; SILENT: it records but never says so; NO_FILE: it stops without a movie.
+// no stop. EXIT_AT_ONCE: it cannot record; SILENT: it records but never says so; NO_FILE: it stops without a movie;
+// IGNORE_INPUT: it prompts, then ignores its terminal's input, SIGTERM, SIGHUP and SIGINT (only SIGKILL ends it).
 const STAND_IN = `
 const file = process.argv.at(-1);
 if (process.env.EXIT_AT_ONCE) { process.stderr.write('could not start'); process.exit(1); }
+if (process.env.IGNORE_INPUT) {
+  for (const sig of ['SIGTERM', 'SIGHUP', 'SIGINT']) process.on(sig, () => {});
+  process.stdout.write('type any character (or ctrl-c) to stop screen recording\\n');
+  setInterval(() => {}, 1000);
+} else
 if (process.stdin.isTTY && !process.env.SILENT) {
   process.stdin.setRawMode(true);
   process.stdout.write('type any character (or ctrl-c) to stop screen recording\\n');
@@ -161,4 +167,40 @@ process.stdout.write(JSON.stringify({stopped: stopped.ok, refused: refused.ok, a
   const answer = JSON.parse(ran.stdout);
   assert.deepEqual([answer.stopped, answer.refused], [true, false]);
   assert.ok(ended - answer.at < 1500, `the process lived ${ended - answer.at} ms after its last answer`);
+});
+
+const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const childOf = pid => Number(spawnSync('pgrep', ['-P', String(pid)], {encoding: 'utf8'}).stdout.trim().split('\n')[0]) || null;
+const gone = async (pids, ms) => { const until = Date.now() + ms; while (pids.some(alive) && Date.now() < until) await new Promise(r => setTimeout(r, 50)); return !pids.some(alive); };
+// The bound after a stop request: the grace, then SIGTERM's two seconds before SIGKILL, and the polls' slack.
+const GRACE_S = 0.3, BOUND_MS = (GRACE_S + 2) * 1000 + 1500;
+
+test('a recorder that ignores its terminal and every polite signal is ended once the grace after the cap has run out', async t => {
+  const dir = scratch(t);
+  const started = await startRecording({recorder: standIn(join(dir, 'x.mov')), env: {...process.env, IGNORE_INPUT: '1'}, capSeconds: 0.5, graceSeconds: GRACE_S});
+  assert.equal(started.ok, true, started.problem);
+  const recorder = childOf(started.handle.child.pid);
+  assert.ok(recorder > 0);
+  const exit = await started.handle.exited;
+  assert.ok(exit.at - started.spawnAt < 500 + BOUND_MS, `the terminal ended ${exit.at - started.spawnAt} ms after its launch`);
+  assert.equal(exit.code, 128 + 9, 'the recorder was killed (SIGKILL), its terminal exits with that');
+  assert.equal(await gone([recorder], 500), true, 'the recorder is gone');
+});
+
+test('a killed kit leaves neither the terminal nor a recorder that ignores its input alive past the bound', async t => {
+  const dir = scratch(t);
+  // A kit that starts a recording (cap 30 s, so only the kit's death can stop it), says the pids, and waits.
+  const kit = spawn(process.execPath, ['--input-type=module', '-e', `
+import {startRecording} from ${JSON.stringify(new URL('../../scripts/cursor-sitting/recording.mjs', import.meta.url).href)};
+const started = await startRecording({recorder: [process.execPath, '-e', process.env.STAND_IN, ${JSON.stringify(join(dir, 'y.mov'))}], capSeconds: 30, graceSeconds: ${GRACE_S}});
+process.stdout.write(JSON.stringify({ok: started.ok, terminal: started.handle?.child.pid}) + '\\n');
+setInterval(() => {}, 1000);`], {stdio: ['ignore', 'pipe', 'inherit'], env: {...process.env, STAND_IN, IGNORE_INPUT: '1'}});
+  t.after(() => kit.kill('SIGKILL'));
+  const said = JSON.parse(await new Promise(resolve => kit.stdout.once('data', chunk => resolve(String(chunk)))));
+  assert.equal(said.ok, true);
+  const recorder = childOf(said.terminal);
+  assert.ok(recorder > 0 && alive(recorder));
+  const killedAt = Date.now();
+  kit.kill('SIGKILL');
+  assert.equal(await gone([said.terminal, recorder], BOUND_MS), true, `still alive ${Date.now() - killedAt} ms after the kit was killed`);
 });

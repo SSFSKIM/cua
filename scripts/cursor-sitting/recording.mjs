@@ -21,6 +21,9 @@ export const RECORDING_CAP_S = 300;
 export const START_CHECK_MS = 1500;
 // How long a stop may take: the recorder writes its movie after the stop (about 0.1 s for a 2 s clip).
 export const STOP_MS = 60_000;
+// How long the recorder has to write its movie and exit once the stop is typed, before its terminal ends it (SIGTERM,
+// then SIGKILL): well past a movie's writing (about 0.1 s for 2 s), well short of the kit's own STOP_MS.
+export const RECORDER_GRACE_S = 20;
 // The pty the recorder runs on, and the interpreter that runs it.
 export const RECORDER_PTY = fileURLToPath(new URL('./recorder-pty.py', import.meta.url));
 const PYTHON = '/usr/bin/python3';
@@ -102,12 +105,12 @@ function within(promise, ms) {
 }
 
 // Starts `recorder` ([command, ...arguments]) on a terminal of its own (./recorder-pty.py, which types the stop at
-// `capSeconds`), and checks within `startCheckMs` that it said it is recording and is still running: one that cannot
+// `capSeconds`, and ends a recorder still running `graceSeconds` after any stop), and checks within `startCheckMs` that it said it is recording and is still running: one that cannot
 // record (a missing permission, a bad region) exits at once, and one that says nothing would take no stop.
 // -> {ok, handle, spawnAt, readyAt (its first output's time)} or {ok: false, problem}.
-export async function startRecording({recorder, capSeconds = RECORDING_CAP_S, env = process.env, now = Date.now, startCheckMs = START_CHECK_MS}) {
+export async function startRecording({recorder, capSeconds = RECORDING_CAP_S, graceSeconds = RECORDER_GRACE_S, env = process.env, now = Date.now, startCheckMs = START_CHECK_MS}) {
   const spawnAt = now();
-  const child = spawn(PYTHON, ['-I', RECORDER_PTY, String(capSeconds), ...recorder], {stdio: ['pipe', 'pipe', 'pipe'], env});
+  const child = spawn(PYTHON, ['-I', RECORDER_PTY, String(capSeconds), String(graceSeconds), ...recorder], {stdio: ['pipe', 'pipe', 'pipe'], env});
   let readyAt = null, said = '';
   let ready;
   const saidSomething = new Promise(done => { ready = done; });

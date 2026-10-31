@@ -272,7 +272,7 @@ export function parseDragStatus(texts) {
     select: select === null ? null : select.slice('select '.length),
     range: num(line('range '), 'range'),
     scroller: num(line('scroller '), 'scroller'),
-    dnd: { starts: num(line('dnd '), 'starts'), drops: num(line('dnd '), 'drops') },
+    dnd: { starts: num(line('dnd '), 'starts'), drops: num(line('dnd '), 'drops'), downs: num(line('dnd '), 'downs'), detail: num(line('dnd '), 'detail'), gap: num(line('dnd '), 'gap'), selects: num(line('dnd '), 'selects') },
     canvas: { strokes: num(line('canvas '), 'strokes'), moves: num(line('canvas '), 'moves'), dev: num(line('canvas '), 'dev') },
   };
 }

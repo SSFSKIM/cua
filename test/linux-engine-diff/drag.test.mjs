@@ -5,8 +5,9 @@ import { CORNERS, DRAG_FAMILIES, dragEngines, judgeCell, judgeRuns, pagePath, pa
 import { FAMILIES } from '../../scripts/linux-engine-diff/families.mjs';
 
 test("the drag page's status lines parse into each kind's value", () => {
-  const s = parseDragStatus(['Range', 'select pha_bravo_charlie_de', 'range 75', 'scroller 117', 'dnd starts 2 drops 1', 'canvas strokes 3 moves 2 dev 140']);
-  assert.deepEqual(s, { select: 'pha_bravo_charlie_de', range: 75, scroller: 117, dnd: { starts: 2, drops: 1 }, canvas: { strokes: 3, moves: 2, dev: 140 } });
+  const s = parseDragStatus(['Range', 'select pha_bravo_charlie_de', 'range 75', 'scroller 117', 'dnd starts 2 drops 1 downs 3 detail 2 gap 412 selects 1', 'canvas strokes 3 moves 2 dev 140']);
+  assert.deepEqual(s, { select: 'pha_bravo_charlie_de', range: 75, scroller: 117, dnd: { starts: 2, drops: 1, downs: 3, detail: 2, gap: 412, selects: 1 }, canvas: { strokes: 3, moves: 2, dev: 140 } });
+  assert.equal(parseDragStatus(['dnd starts 0 drops 0 downs 1 detail 1 gap -1 selects 0']).dnd.gap, -1, 'no press before it');
   assert.equal(parseDragStatus([]).range, null, 'a missing line is unknown, never zero');
 });
 

@@ -196,7 +196,7 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   const exactBar = { cold: best('cold', true), warm: best('warm', true) };
   const c = engines[candidate];
   const reasons = [];
-  if (!c) return { engines, bar, speed: false, noise: [], parity: [], undetermined: [], pass: false, verdict: 'fail', reasons: [`no samples from ${candidate}`] };
+  if (!c) return { engines, bar, speed: false, noise: [], parity: [], undetermined: [], intervals: [], labels: [], pass: false, verdict: 'fail', reasons: [`no samples from ${candidate}`] };
   // a failed request fails the verdict where a vendor build answered every request; where the vendors' answers are
   // errors too, the answers are compared (`equal`)
   if (!c.ok && (text || vendorRows.length === 0 || vendorRows.some((e) => e.ok))) reasons.push(`${candidate}: a request failed`);

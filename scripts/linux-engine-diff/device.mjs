@@ -216,6 +216,8 @@ function device({ device: expect, condition = covered, read, request, effect, ro
       if (dedicated && response.ok) out.activated = activeWindow() === ctx.scene.id;
       // in front: the desktop at the end as it was at the start
       if (inFront) out.desktop_same = JSON.stringify(desktopState()) === JSON.stringify(ctx.desktopBefore);
+      // a drag-and-drop case's page counts, before and after, for the record
+      if (read === dropStatus) out.drop_status = { before: ctx.before, after: await read(ctx) };
       return out;
     },
     // the foreground route leaves its window active: the front window takes the focus back, outside every span

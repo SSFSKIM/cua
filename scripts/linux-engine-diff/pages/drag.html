@@ -43,7 +43,7 @@
   <p id="s-select">select none</p>
   <p id="s-range">range 0</p>
   <p id="s-scroll">scroller 0</p>
-  <p id="s-dnd">dnd starts 0 drops 0</p>
+  <p id="s-dnd">dnd starts 0 drops 0 downs 0 detail 0 gap -1 selects 0</p>
   <p id="s-canvas">canvas strokes 0 moves 0 dev -1</p>
 </div>
 <script>
@@ -64,8 +64,18 @@
     clearTimeout(back);
     back = setTimeout(() => { $('scroller').scrollTop = 0; }, 2000);
   });
-  const dnd = { starts: 0, drops: 0 };
-  const showDnd = () => line('s-dnd', `dnd starts ${dnd.starts} drops ${dnd.drops}`);
+  // the drag source's presses too (M3.1): how many, the click count Chrome gave the last (`detail`), the page-clock gap
+  // in ms from the press before it, and how many selections began anywhere, so a drag read as a repeated click shows
+  const dnd = { starts: 0, drops: 0, downs: 0, detail: 0, gap: -1, selects: 0, last: null };
+  const showDnd = () => line('s-dnd', `dnd starts ${dnd.starts} drops ${dnd.drops} downs ${dnd.downs} detail ${dnd.detail} gap ${dnd.gap} selects ${dnd.selects}`);
+  $('source').addEventListener('mousedown', (e) => {
+    dnd.downs += 1;
+    dnd.detail = e.detail;
+    dnd.gap = dnd.last === null ? -1 : Math.round(e.timeStamp - dnd.last);
+    dnd.last = e.timeStamp;
+    showDnd();
+  });
+  document.addEventListener('selectstart', () => { dnd.selects += 1; showDnd(); });
   $('source').addEventListener('dragstart', (e) => { dnd.starts += 1; e.dataTransfer.setData('text/plain', 'cua171'); showDnd(); });
   $('target').addEventListener('dragover', (e) => e.preventDefault());
   $('target').addEventListener('drop', (e) => { e.preventDefault(); dnd.drops += 1; showDnd(); });

@@ -549,7 +549,7 @@ The same frames show the agent's cursor in a `screencapture -v` recording, which
 - Item 6's camera-housing case reaches TextEdit's Help menu item only (the kit's accepted limit).
 - Typing and click speed, accepted by the owner on 2026-10-31 (the spec's Decision Log; Acceptance 12 and 13 amended):
   `press_key` costs about 1 ms a key while the cursor moves (+32 ms per 30 keys at the second sitting's judged run), up
-  to about 1.8 ms in a large TextEdit document and within noise on a fresh one, from TextEdit's redraw under a busier
+  to about 1.8 ms in a large TextEdit document and too close to call on a fresh one (+6 ms per 30 keys, undetermined), from TextEdit's redraw under a busier
   compositor while the cursor's panel shows: a stated limit. Coordinate click (+1.87 ms) and drag (+0.99 ms),
   undetermined at 40 samples a side, are within about 2 ms, not proven within 1 ms: a stated gap.
 

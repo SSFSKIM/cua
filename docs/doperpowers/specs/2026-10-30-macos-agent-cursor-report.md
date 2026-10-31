@@ -840,3 +840,264 @@ Not in that run, and open:
 - press_key: the decision waits on the next run; then the design note's two candidates.
 - Item 5's recording clause: no verdict. The next run records no clip.
 - Keep or restore: the owner chose to keep this branch's build (answered 2026-10-31, after the sitting). The next run replaces it with the scratch build `3cdf06462f92`, which then stays installed. The saved engine stays at `$SAVED`.
+
+## M3, after the second sitting: the unattended runs and the owner's acceptances (2026-10-31)
+
+After the second sitting, two unattended blocks ran: the first unattended run (20:04–20:34Z) and the third block of the
+day (20:48–21:07Z), counting the second sitting as the first. Between and after them the kit and the engine were fixed,
+the design session ruled, and the owner accepted two limits. One owner run was started at 21:36Z and stopped at 22:20Z
+without its step. Every time below is UTC. The unified log's PDT time (UTC−7) is converted.
+
+The records:
+- `docs/evidence/2026-10-30-macos-agent-cursor/sitting-2026-10-31b/` (aec2eb15), the first unattended run: `item-1.jsonl`,
+  `item-12-still.jsonl`, `item-12-fps60.jsonl`, `item-12-control.jsonl`, `timing-recorded.md`, the three
+  `coverage-12-*.json`, `windowserver-cpu.tsv` and `loadavg.tsv`;
+- `sitting-2026-10-31c/` (5e4969c5), the third block: the same kinds of file for item 1, fps60 and the control, with the
+  block's own `run.log`, `probe.log` and `maws-supervisor-cpu.tsv`;
+- `sitting-2026-10-31d/`, the last owner run: only the consent copied from the second sitting, not committed. That run's
+  log is outside the repository, at `~/.local/share/cua-235/sitting-2026-10-31d/run.log`.
+
+The engine's signposts and the operator's build, approve, scene and per-series logs are at
+`~/.local/share/cua-235/sitting-2026-10-31b/` and `…/sitting-2026-10-31c/`. Each evidence directory has the signposts'
+SHA-256s.
+
+| time (Z) | what | record |
+|---|---|---|
+| 20:04:52 | build `3cdf06462f92` approved | `approve.log`, outside the repository |
+| 20:06:11, 20:06:49 | item 1, `drive 1 --no-clip`: two starts, the second refused at its Chrome click | `item-1.jsonl` |
+| 20:08:17–20:08:28 | `--still`, first start: stopped before any sample | `item-12-still.jsonl` |
+| 20:12:36–20:15:29 | `--still`, second start: every on cell refused, then stopped | `item-12-still.jsonl` |
+| 20:16:02–20:21:44 | `--still`, 20 samples a side | `item-12-still.jsonl` |
+| 20:22:06–20:27:34 | `--arm fps60`: the cap check, then 20 samples a side | `item-12-fps60.jsonl` |
+| 20:28:10–20:33:40 | `--control`, 20 samples a side | `item-12-control.jsonl` |
+| 20:40–20:47 | the kit's fixes 941ad92a and 7704399b, reviewed clean | `task-8-report.md` |
+| 20:48:50–20:49 | the third block's early start, stopped | `run-early-stop.log`, outside the repository |
+| 20:59:50–21:00:25 | the cap probe on a quiet display, bundle and scratch | `probe.log` |
+| 21:00:33–21:00:49 | item 1, refused at its session's open | `item-1.jsonl`, `run.log` |
+| 21:00:51–21:06:25 | `--arm fps60` on a fresh document | `item-12-fps60.jsonl` |
+| 21:06:41–21:06:58 | `--control`, refused at its tidy session | `item-12-control.jsonl`, `run.log` |
+| 21:09–21:32 | the rulings, the owner's decisions, the cap-default build | the spec's Decision Log, `fps60-default-report.md` |
+| 21:36:29–22:20 | the last owner run, stopped without the hide | `run.log`, outside the repository |
+
+### The first unattended run (20:04–20:34Z)
+
+`cua engine build` installed `3cdf06462f92` (head 798a16a4; 1b2d2f96 after it changes only the kit), and
+`cua engine approve` approved it at 20:04:52.188Z. `approve.log` records no prompt, and the owner was not needed. The
+owner had chosen to keep this branch's build, so it stayed installed after the run. The scenes came up at
+20:05:33–20:05:40Z (TextEdit, Chrome for Testing, the Electron fixture).
+
+**Item 1, refused.** The first start (20:06:11.620Z) holds only its `window-list-ready` row, and the records do not say
+why it stopped. The second (20:06:49.687Z) ran:
+- TextEdit's alignment click (route 3, 146.7 ms) and the positioning scroll (route 2′);
+- then `glide-cover` found three windows over Chrome for Testing's run window (1000 × 760 pt at (80, 60)):
+  - cmux's 19462 (pid 95245, 1438 × 825 pt at (26, 59));
+  - the owner's Chrome's 46436 (pid 92136, 1512 × 898 pt at (0, 33));
+  - the kit's own Electron fixture's 47426 (pid 93114, 720 × 560 pt at (140, 100));
+- the checkbox click and its read-back failed: "sceneOption is not in the chrome window's text".
+
+No order verdict was recorded. The kit never moves the owner's windows, so item 1 was left for a run with Chrome and cmux
+hidden.
+
+**Two interruptions, each stopped by the kit's guards.** The `--still` series started three times:
+- **First start, 20:08:17.775Z.** At 20:08:28.506Z the cleanup row records the frontmost as pid 36558, not TextEdit's
+  91447. No cell had run. The design session placed it: the owner opened Activity Monitor through Spotlight at 20:08:27Z.
+  The operator's idle read at 20:09:05Z (29.5 s) puts a later input at about 20:08:35Z.
+- **Second start, 20:12:36.275Z** (HID idle 1.8 s by the operator's read). All 11 on cells (`still on 0` to `still on 10`,
+  20:12:45–20:15:14Z) were refused with −10016, "The user changed '/System/Applications/TextEdit.app'". Every one's
+  `hidIdleMs` traces back to one input at 20:12:38.547Z, between the two sessions' opens (20:12:38.052 and 20:12:38.920Z):
+  from 6,841 ms at the first to 155,499 ms at the last. The records do not name that input's source. The 11 off cells ran
+  and are in `item-12-still.jsonl`. At 20:15:29.695Z the key guard refused `off 11` with cmux (pid 95245) frontmost, and
+  the run stopped. The ledger notes it at 20:15:44Z: the owner had touched the Mac again.
+- **Third start, 20:16:02.753Z** (HID idle 20.4 s), ran to 20:21:44Z with no refusal.
+
+Neither interrupted start contributes a sample: `judge` reads each series' last run, and the third start's is complete.
+Each cleanup recorded `source-left-after-failure`, and the source left was ABC, the owner's own.
+
+**The recorded series** (`timing-recorded.md`, never judged), all under ABC. Each series' signposts cover all 40 samples
+(`coverage-12-*.json`, 14, 15 and 14 reads):
+
+| series | type_text: on / off (ms), interval, bound | type_text | press_key ×30: on / off (ms), interval, bound | press_key |
+|---|---|---|---|---|
+| `--still` | not in the series | – | 249.58 / 234.63, [−1.18, 22.97], 11.73 | undetermined, +14.95 |
+| `--arm fps60` | 528.78 / 530.60, [−14.29, 14.63], 26.53 | same within noise | 271.05 / 253.79, [−36.18, 59.48], 12.69 | undetermined, +17.26 |
+| `--control` | 540.40 / 535.23, [−12.68, 19.15], 26.76 | same within noise | 408.99 / 356.04, [5.49, 86.18], 17.80 | slower, +52.95 |
+
+TextEdit was not relaunched between these series. press_key's off median rose from 234.63 to 253.79 to 356.04 ms over
+them.
+
+**The fps60 cap check: "not capped", and void.** Before the fps60 series the kit ran the cursor probe twice from the
+approved bundle (`open -n -g -a … --args --probe cursor --glides 2 [--debug fps60]`):
+- default, pid 7641: 2 glides at 119.5 Hz, a frame every 8.3 ms, and the rock at 120 Hz;
+- fps60, pid 8689: 119.8 Hz, every 8.3 ms, the rock at 120 Hz.
+
+The verdict was "not capped", against task 8's 16.7 ms on the unbundled scratch executable. The diagnosis
+(`task-8-report.md`, "The fps60 arm in the approved bundle reads "not capped"") reads the display as held at 120 Hz by
+another client:
+- WindowServer's CPU was 33–43 % in the 16 s before the probes (20:21:50–20:22:06Z), while nothing of the kit's drew.
+  The same file's quiet stretches read 1.3–2 %.
+- The owner's full-screen Chrome and cmux were on that display.
+- A read-only `log show` at 20:36Z held 7,063 `FrameUpdate` signposts in a minute, about 118 a second, against about 3 on
+  task 8's idle display.
+- `FrameUpdate` is display-wide. Its `contributors` field is empty on almost every frame, and the rest of the message
+  names no window or client. A capped animation runs at the display's rate whenever any client asks for 120, so the
+  count cannot tell a cap ignored from a cap overridden. The 20:22Z signposts were mostly gone from the store (4 left).
+- The records cannot show that the arm was applied: the kit dropped the probe's own arm echo. The arguments were parsed,
+  since the probe exits 64 on an unknown one and both sides answered with glides.
+
+### The diagnosis and the kit's fixes (20:40–20:47Z)
+
+- **941ad92a.** The probe's `debug` echo is kept, and a side that does not report the arm it was asked for reads
+  `undetermined`. The check counts 1.5 s of the `FrameUpdate` stream before the probes (`quiet`). A "not capped" with the
+  display already at 100 Hz or more reads `undetermined (held)`.
+- **Its review (reviewer-medium) found a P2:** the quiet window was counted by delivery, the frames `log stream` handed
+  over while the check slept. The stream delivers late, so a held display could read quiet, and stale frames could make
+  a quiet display read held.
+- **7704399b.** The window's start and end are marked on `Date.now()`'s clock. The stream keeps each frame's own `log`
+  timestamp. After the drain, the quiet rate counts the frames whose timestamps fall inside the window, the way the glides
+  are counted against their spans. The new test runs the production stream adapter over a late `log stream`. On
+  941ad92a it read a held display at 40 Hz, where 120 was expected. `frames.test.mjs` 11/11, the kit 158/158. The
+  re-review of 941ad92a..7704399b was clean (20:47Z).
+- No GUI, probe or install ran for either.
+
+### The third block (20:48–21:07Z)
+
+**The early start, stopped at 20:49Z.** `run.sh` started on 7704399b at 20:48Z. Its idle gate passed at 20:48:50Z (HID
+idle 31 s, 0 other connections), and its quiet check read 9 `FrameUpdate` in 5 s at 20:48:58Z. The owner had not yet
+hidden Chrome and cmux. The script was stopped after about 4 s of the bundle probe's drawing, and it was given a gate on
+the two being hidden. The owner then left without hiding them; the last HID input was at 20:48:18–19Z. So by the design
+session's ruling the block ran without the hide: the gate was dropped, a quiet-check retry was added, and so was a
+sampler for `maws-supervisor`. That process had been at 225–290 % CPU since 20:35:05Z (the design session's reading).
+In the block's own 5 s samples it read 0.0–224.6 %.
+
+**The run, from 20:59:50Z** (HID idle 691 s, 0 other connections, Chrome and cmux both visible). The quiet check read
+11 `FrameUpdate` in 5 s. Then, before any scene was up, the kit's cap check ran against the approved bundle and the
+scratch executable, back to back (`probe.log`):
+
+| binary | quiet before the probes | default: interval, rate, rock | fps60: interval, rate, rock | verdict |
+|---|---|---|---|---|
+| bundle `3cdf06462f92` | 2 frames in 1.5 s, 1.3 Hz | 8.3 ms, 119.1 Hz, 113 Hz | 16.7 ms, 62.7 Hz, 59 Hz | capped |
+| scratch executable | 4 frames in 1.5 s, 2.7 Hz | 8.3 ms, 118.8 Hz, 116 Hz | 16.7 ms, 62 Hz, 61 Hz | capped |
+
+So the bundle takes the cap, and the first run's "not capped" was the held display.
+
+**Item 1, refused.** TextEdit came up at 21:00:28Z, and its recorded window was 47652 (500 × 500 pt at (0, 482)).
+Chrome for Testing came up at 21:00:33Z with its record on screen (47655). Item 1 started at 21:00:33.585Z and was refused
+at its session's open: "the textedit app's front window is window 47653, not the run's window 47652". `order-meta` then
+had no glide-start reading. Chrome went down, and TextEdit was relaunched on a fresh 824-byte document before each later
+series.
+
+**The fps60 series, 21:00:51–21:06:25Z.** TextEdit's relaunch at 21:00:50Z recorded window 47669 (612 × 862 pt at
+(151, 70)). The series' own cap check (row at 21:01:06Z, probe pids 12953 and 14518) read:
+- the quiet window 21:00:52.179–21:00:53.679Z: 127 frames, 84.7 Hz;
+- default 119.8 Hz and fps60 118.9 Hz, both every 8.3 ms, the rock 120 against 120 Hz.
+
+The verdict was "not capped": the 100 Hz threshold let a display held at 84.7 Hz through, where `undetermined (held)` was
+meant. The series' numbers, recorded:
+- type_text 571.31 / 566.52 ms, [−24.84, 21.63], bound 28.33: same within noise;
+- press_key ×30 302.57 / 296.52 ms, [−29.76, 44.20], bound 14.83: undetermined, +6.05.
+
+The signposts cover all 40 samples. The operator's idle read at 21:07:10Z (53.7 s) places an HID input at about
+21:06:17Z. That is inside the series' last sample, `typing on 19` (21:06:16.285–21:06:18.171Z). Successful cells carry
+no `hidIdleMs`, so the records cannot show which samples it touched, and they do not name its source.
+
+**The control, refused.** TextEdit's relaunch at 21:06:41Z recorded window 47685 (500 × 500 pt at (0, 482)). The overlay
+check at 21:06:42.186Z found window 47686 (610 × 860 pt at (152, 71)) over it. The tidy session's open was refused: "the
+textedit app's front window is window 47686, not the run's window 47685". The block ended at 21:06:58Z with the source
+restored to ABC, the scenes down and no `engine.json`.
+
+**The cause, from the unified log.** At TextEdit's launch at 21:00:28Z it opened the run's document and then, at
+21:00:29.8Z, after the log line "No windows open yet", its launch-time Open panel through `openAndSavePanelService`. By
+the Decision Log that was 1.3 s after the document. That panel was the second window the guards saw.
+`fps60-default-report.md` read AppKit's code to find the gate:
+- the untitled document, or the Open panel in its place, opens only when `NSRequiresOpenUntitledWindowAtLaunch` is on
+  and no window is open yet;
+- TextEdit reads RTF in the background, so the check can find no window yet;
+- "No windows open yet" is AppKit's automatic-termination reason string, not the decision itself.
+
+The Decision Log reads the fps60 series' held quiet window and the second window as one cause. The records hold nothing
+that ties the 84.7 Hz to the panel's window, since `FrameUpdate` names no window. In both refusals the recorded window
+was 500 × 500 pt at (0, 482), and the other had the document's usual bounds. The records do not say which of the two
+was the panel.
+
+### The rulings, the owner's decisions, and what was built (21:09–21:32Z)
+
+The spec's Decision Log, at its head, has three entries dated 2026-10-31 for this part. Newest first:
+- **Building the rulings** (f55fb8b0, 296fc5d3, 0f0f2da8; the entry is 9f021c76).
+- **The owner** (through the design session, cua_repl#1ea561bc:148; spec abf36915).
+- **The unattended runs and the design session's rulings** (cua_repl#1ea561bc:132–147; spec 8f35f074).
+
+The design session's rulings:
+- **fps60 becomes the cursor's default**, with an `uncapped` arm kept so that the cap check has a full-rate side. The
+  pose test shows nothing visible changes (worst 2.1e-6 pt), and the cap halves WindowServer's frames for the cursor on
+  an idle display.
+- **press_key gets no more timed runs.** The Decision Log reads the residual as following TextEdit's redraw of a growing
+  document under a busier compositor, not the cursor's own frames. Its numbers:
+  - +15.0 ms per 30 keys with the cursor still, undetermined;
+  - +6 on the fresh document, undetermined, with that run's cap void;
+  - +53.0 for the control on a grown document, slower;
+  - press_key's off medians of 234, 254 and 356 ms over one session's series.
+- **Two kit fixes:** the TextEdit scene's second window, and a held-display threshold of 50 Hz.
+- **Then one short owner run.**
+
+The owner's decisions (21:17Z by the ledger) amend Acceptance 12 and 13:
+- **press_key is a stated limit** ("Accept as a stated limit"): about 1 ms a key while the cursor moves (+32 ms per 30
+  keys at the second sitting's judged run), up to about 1.8 ms in a large TextEdit document (+53). On a fresh one the series
+  read +6 ms per 30 keys, undetermined by the rule (the amendment first said "within noise"; corrected to undetermined).
+- **Coordinate click and drag are a stated gap** ("Accept as a stated gap"): +1.87 and +0.99 ms, undetermined at 40
+  samples a side, within about 2 ms and not proven within 1 ms.
+- type_text and element click pass.
+- The pull request lists both among its limits, and the last owner run goes "when it's ready".
+- 75c924c8 puts both among the runbook's known limits.
+
+What was built (`fps60-default-report.md`, from 5e4969c5):
+- **f55fb8b0:** `HELD_HZ` goes from 100 to 50. The test's five cases are 120, 84.7, 50, 49 and 3 Hz, and on the old code
+  it failed at 84.7.
+- **296fc5d3:** `CursorFrameRate` caps every cursor animation at 30–60 Hz, preferring 60. The `uncapped` arm restores
+  the old rates exactly, and `fps60` is removed rather than kept as an alias that does nothing. engine.json still parses
+  strictly, so a leftover `"cursorDebug": "fps60"` stops the engine with the list of arms. The cap check now probes
+  `--debug uncapped` first, then the default, and runs only before the `--arm uncapped` series.
+- **0f0f2da8:** the TextEdit scene launches with `-NSRequiresOpenUntitledWindowAtLaunch NO`, a launch argument, so no
+  defaults are written. `up textedit` records the window only after it has been TextEdit's one on-screen window for
+  2.5 s. It fails, recording nothing, on a second window or on none within 20 s.
+
+The checks:
+- engine 612/612; the pose guard, uncapped against the default, worst 2.1e-6 pt;
+- the kit 158/158, the scenes 131/131, the matrix and kit together 517/517;
+- the hosted gates `test` and `engine-swift` GREEN on 0f0f2da8 (run 41243373099);
+- reviewer-medium on 8f35f074..0f0f2da8: clean.
+
+None of it was seen on the screen: the next live cap check and scene up are the proof.
+
+### The last owner run (21:36–22:20Z)
+
+`run.sh` started on 9f021c76 at 21:36:29Z:
+- **The build.** `a457ad42dac7`, the cap default, was built at 21:37:06Z and approved at 21:37:12.739Z, unattended
+  (`approve.log` records no prompt). Its status line: approved, all three grants, 0 other connections, `cursor: on`.
+- **The scenes.** On the fix's first live launch, TextEdit came up at 21:37:20Z with one window, 47741 (610 × 860 pt at
+  (152, 71)), recorded after the 2.5 s hold. Chrome for Testing came up at 21:37:26Z. Its record named window 47753
+  (500 × 500 pt at (0, 482)) and was re-pointed to 47744 at 21:37:27Z.
+- **The wait.** At 21:37:27Z the script printed `READY FOR HIDE` and waited for Chrome and cmux to be hidden.
+
+The cue to the owner went out only at about 22:06Z. The session's Monitor delivered the ready line only together with
+its expiry notice, after the design session asked for status. Lines the same monitor wrote seconds earlier had arrived at
+once (`~/.claude/friction-tracker/general/live/monitor-event-delivered-only-at-expiry.md`). The ledger's line from that
+time reads "monitor event not acted on". The friction entry, written after, places the delay in the delivery. The owner
+waited about 30 minutes with the test windows up.
+
+With no hide by the 22:20Z deadline, the script was stopped and the scenes taken down. That is from the ledger: `run.log`
+has no line after 21:37:27Z, and its `scenes.log` no `down` rows. `a457ad42dac7` stays installed and approved.
+
+### What is left
+
+1. **One owner slot of about 3 minutes, on the design session's GO.**
+   `~/.local/share/cua-235/sitting-2026-10-31d/run-slot.sh` writes its records to `sitting-2026-10-31e/`. The scenes come up, and the session tells the owner to hide Chrome and
+   cmux as soon as it starts the script, without waiting on a Monitor. The script then waits for HID idle of 15 s and a
+   quiet check under 50 `FrameUpdate` in 5 s. Then:
+   - the cap check on `a457ad42dac7`, uncapped against the default: the first live proof that the cap is the default
+     and that `uncapped` lifts it;
+   - item 1, `drive 1 --no-clip`, then `order-meta`;
+   - the scenes down, and the summary.
+2. **The whole-branch review** at the spec's rung (reviewer-high on fc15e1b8..9f021c76, dispatched 22:21Z), running.
+3. **The pull request**, with press_key's limit and the click gap among its limits.
+
+Not in that slot, and open: item 5's recording clause still has no verdict, since no clip is recorded.

@@ -19,6 +19,7 @@ use x11rb::protocol::xproto::Window;
 use super::Engine;
 use super::elements::{Element, visible_point};
 use super::pointer::CLICK_HOLD;
+use super::way::Way;
 use crate::atspi::{self, Association};
 use crate::clipboard::{Clipboard, Payload, TRANSFER_WAIT};
 use crate::copy;
@@ -192,6 +193,19 @@ impl Engine {
                 })?
                 .map_err(anyhow::Error::msg)?),
         };
+        // on the foreground route the named element must be editable before the window is activated; the observation
+        // inside the route (step 1) still decides, as on the background route
+        if way == Way::Foreground
+            && let Ok(element) = &named
+        {
+            let bus = self
+                .bus
+                .as_mut()
+                .ok_or_else(|| anyhow!("AT-SPI accessibility bus is unavailable"))?;
+            if !observe(bus, &element.target)?.editable {
+                bail!(NOT_EDITABLE);
+            }
+        }
         self.enter_checked(way, request.window.map(|_| window), |_| Ok(()))?;
         let feff = family.is_some_and(|f| f.feff_after_astral);
         let target = way.target(window);
@@ -225,7 +239,7 @@ impl Engine {
             // 1. Observe.
             let mut seen = observe(bus, &element.target)?;
             if named && !seen.editable {
-                bail!("element is not editable; refresh get_window_state() and choose an editable element");
+                bail!(NOT_EDITABLE);
             }
             // 2. Focus only if needed, then put back the caret or selection the click moved.
             if named && !seen.focused {
@@ -322,6 +336,9 @@ fn click_for_focus(
         }
     }
 }
+
+/// A named target that implements no editable text.
+const NOT_EDITABLE: &str = "element is not editable; refresh get_window_state() and choose an editable element";
 
 fn observe(bus: &mut crate::dbus::Bus, element: &ObjRef) -> Result<Observation> {
     field::observe(bus, element)?.map_err(anyhow::Error::msg)

@@ -52,6 +52,9 @@ pub struct Config {
     /// Measurement only (`--dnd-cancel-after-release`): a drag and drop the engine would cancel is cancelled only
     /// after the release, too late, so the harness can check the answer then.
     pub dnd_cancel_late: bool,
+    /// Measurement only (`--dnd-defer-take`): a drag and drop that begins during a watched drag is left unseen until
+    /// after the release, so the after-release watch finds it and the next request reports it (Acceptance 8).
+    pub dnd_defer_take: bool,
     /// Measurement only (`--drag-dnd-wait-ms`): before a Chromium drag's release, wait up to this long for the target's
     /// client to take `XdndSelection`, then nudge the last point, so a drag and drop that starts late still drops.
     pub dnd_wait: std::time::Duration,
@@ -79,6 +82,8 @@ pub struct Engine {
     clipboard: Option<crate::clipboard::Clipboard>,
     /// `clipboard_read`'s snapshots, until released or the engine exits.
     handles: crate::clipboard::Handles,
+    /// A watched drag's after-release watch (`dnd::LateWatch`), until the next request looks at it.
+    late_watch: Option<crate::dnd::LateWatch>,
 }
 
 fn merge(into: &mut BusStats, from: BusStats) {
@@ -111,6 +116,7 @@ impl Engine {
             launched: apps::Launched::default(),
             clipboard: None,
             handles: crate::clipboard::Handles::new(),
+            late_watch: None,
         })
     }
 
@@ -118,7 +124,20 @@ impl Engine {
         self.x.drain_events();
         self.launched.reap();
         let started = Instant::now();
+        // a drag and drop that began after the last drag's release is this request's answer, the request not run
+        let late = self.late_watch.take().and_then(|watch| watch.stop());
+        if let Some(late) = &late {
+            self.extra.insert(
+                "late_dnd".into(),
+                json!({
+                    "app": late.app,
+                    "after_release_ms": late.after_release.as_secs_f64() * 1000.0,
+                    "escaped": late.escaped,
+                }),
+            );
+        }
         let result = match request.command.as_str() {
+            _ if late.is_some() => Err(anyhow!(crate::dnd::late_notice(&late.as_ref().expect("checked").app))),
             "list_windows" => self.list_windows(request.input),
             "list_apps" => self.list_apps(request.input),
             "get_screenshot" => self.get_screenshot(request.input),

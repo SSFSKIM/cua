@@ -40,7 +40,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
        [--teardown-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
-       [--drag-release-dwell-ms <ms>] [--drag-dnd-wait-ms <ms>] [--dnd-cancel-after-release] [--stats]
+       [--drag-release-dwell-ms <ms>] [--drag-dnd-wait-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take] [--stats]
        cua-engine --version";
 
 fn version() -> String {
@@ -69,6 +69,7 @@ fn default_config() -> Config {
         mouse_size_px: 0,
         desktop: engine::DesktopMode::Shared,
         dnd_cancel_late: false,
+        dnd_defer_take: false,
         dnd_wait: std::time::Duration::ZERO,
     }
 }
@@ -109,6 +110,10 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             }
             "--dnd-cancel-after-release" => {
                 cfg.dnd_cancel_late = true;
+                takes_value = false;
+            }
+            "--dnd-defer-take" => {
+                cfg.dnd_defer_take = true;
                 takes_value = false;
             }
             "--mouse-size-px" => cfg.mouse_size_px = number(value, arg)? as u32,

@@ -10,7 +10,7 @@ use x11rb::protocol::xproto::ConnectionExt as _;
 use super::way::target_of;
 use super::{DesktopMode, Engine};
 use crate::desktop::Desktop;
-use crate::dnd::{DndWatch, Outcome, SETTLE, Standing};
+use crate::dnd::{DndWatch, LateWatch, Outcome, Standing};
 use crate::families::DragPacing;
 use crate::families::Kind;
 use crate::input::chord_keycodes;
@@ -108,9 +108,6 @@ impl std::fmt::Display for DropCancelled {
 
 impl std::error::Error for DropCancelled {}
 
-/// How often a released drag looks for a late take of `XdndSelection` during the settle.
-const LATE_POLL: Duration = Duration::from_millis(5);
-
 /// A shared-mode drag's watch for a drag and drop (`dnd.rs`): the watch, the window's standing when the drag began,
 /// whether the Escape is held until after the release (measurement only, `--dnd-cancel-after-release`), and the
 /// outcome the order of events gave (None while nothing was decided: the drag's own error, if any, stands).
@@ -118,7 +115,19 @@ pub(super) struct DropGuard {
     watch: DndWatch,
     before: Standing,
     late: bool,
+    /// Measurement only (`--dnd-defer-take`): a take during the drag is left unseen until after the release, so the
+    /// after-release watch is what finds it.
+    defer: bool,
     outcome: Option<Outcome>,
+    /// The watch that goes on after the release, off the request path (`dnd::LateWatch`), subscribed before the drag.
+    after: Option<LateWatch>,
+}
+
+impl DropGuard {
+    /// Whether a take during the drag is acted on before the release.
+    fn looks(&self) -> bool {
+        !self.late && !self.defer
+    }
 }
 
 fn escape(x: &X11, route: &mut Route) -> Result<()> {
@@ -170,7 +179,7 @@ fn drag_along(
             route.place_again(x, sx, sy)?;
             std::thread::sleep(pacing.step);
             if let Some(guard) = guard.as_deref_mut()
-                && !guard.late
+                && guard.looks()
                 && guard.watch.started(x)
             {
                 return cancel_in_time(x, route, guard, &mut pressed);
@@ -192,7 +201,7 @@ fn drag_along(
         std::thread::sleep(pacing.release);
         // the last look before the release
         if let Some(guard) = guard.as_deref_mut()
-            && !guard.late
+            && guard.looks()
             && guard.watch.started(x)
         {
             return cancel_in_time(x, route, guard, &mut pressed);
@@ -200,19 +209,13 @@ fn drag_along(
         pressed = false;
         route.button(x, 1, false)?;
         if let Some(guard) = guard.as_deref_mut() {
-            // a drag and drop that began after the last look, or that the measurement option let run past it
-            let released = Instant::now();
-            loop {
-                if guard.watch.started(x) {
-                    guard.outcome = Some(Outcome::Late);
-                    escape(x, route)?;
-                    return Err(DropCancelled.into());
-                }
-                if released.elapsed() >= SETTLE {
-                    break;
-                }
-                std::thread::sleep(LATE_POLL);
+            // measurement only: the take the drag went on past, its Escape after the release
+            if guard.late && guard.watch.started(x) {
+                guard.outcome = Some(Outcome::Late);
+                escape(x, route)?;
+                return Err(DropCancelled.into());
             }
+            // no take seen by the release: a plain drag, answered now; the after-release watch goes on (`drag`)
             guard.outcome = Some(Outcome::NoStart);
         }
         Ok(())
@@ -405,11 +408,15 @@ impl Engine {
                 if in_front {
                     None
                 } else {
+                    // the after-release watch subscribes before the drag begins, so no take can fall between
+                    let escape = chord_keycodes(&self.x, "Escape")?;
                     Some(DropGuard {
                         watch: DndWatch::start(&mut self.x, window)?,
                         before: standing,
                         late: self.cfg.dnd_cancel_late,
+                        defer: self.cfg.dnd_defer_take,
                         outcome: None,
+                        after: Some(LateWatch::start(window, escape[0])?),
                     })
                 }
             }
@@ -477,17 +484,26 @@ impl Engine {
                 );
             }
         }
-        let Some(guard) = guard else {
+        let Some(mut guard) = guard else {
             return dragged.map(|()| Value::Null);
         };
         let started = guard.watch.is_started();
         guard.watch.stop(&mut self.x);
+        let after = guard.after.take().expect("a guard starts its after-release watch");
         let Some(outcome) = guard.outcome else {
             // the drag failed before anything was decided: its own error is the answer
+            after.done();
             self.extra
                 .insert("dnd".into(), json!({ "in_front": false, "started": started }));
             return dragged.map(|()| Value::Null);
         };
+        // no take by the release: answered now as a plain drag, the watch handed over until the next request
+        if outcome == Outcome::NoStart {
+            self.late_watch =
+                Some(after.released(self.x.get_window(named.expect("a watched drag named its window"))?.app));
+        } else {
+            after.done();
+        }
         // the cross-check of an in-time cancel: the drop's signature, where a change can show
         let window = named.expect("a watched drag named its window");
         let (signature, settled) = match outcome {

@@ -634,23 +634,35 @@ fn a_drag_into_chrome_already_in_front_drops_when_shared() {
 }
 
 /// A drag and drop that begins only after the drag's release (the source takes `XdndSelection` and the focus shortly
-/// after it, where no look during the drag could see it) is still watched for: the answer says the drop may have
-/// happened, never success or that nothing was dropped, and Escape follows to end it.
+/// after it, where no look during the drag could see it): the drag answers at its release as a plain drag, the watch
+/// goes on off the request path and sends the cancel's Escape at once on the late take, and the next request on the
+/// connection answers the notice, not run (the design session's ruling, 2026-10-31). The request after that runs.
 #[test]
-fn a_drag_and_drop_that_begins_after_the_release_answers_that_the_drop_may_have_happened() {
+fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_request() {
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::TakesLate);
     focus_nothing();
     let mut shared = Engine::start();
     let app = app_of(&mut shared, window);
+    let started = Instant::now();
     assert_eq!(
         shared.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null),
+        "no take by the release: a plain drag"
+    );
+    let answered = started.elapsed();
+    sleep(SETTLE);
+    assert_eq!(
+        shared.request("list_windows", json!({})),
         Err(format!(
-            "{app} began a drag and drop, which changes the desktop, and it could not be cancelled in time: the drop \
-             may have happened and the desktop changed. Use a dedicated desktop, or activate the window first"
+            "{app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this \
+             request was not run, so read the window before sending it again"
         ))
     );
-    sleep(SETTLE);
+    assert!(
+        shared.request("list_windows", json!({})).is_ok(),
+        "the notice is given once"
+    );
     stop.send(()).unwrap();
     assert_eq!(
         recorder.join().unwrap(),
@@ -660,7 +672,57 @@ fn a_drag_and_drop_that_begins_after_the_release_answers_that_the_drop_may_have_
             Input::KeyPress { sent: true },
             Input::KeyRelease { sent: true },
         ],
-        "the release, then the Escape"
+        "the release, then the watch's Escape"
+    );
+    // the same drag unwatched (dedicated mode: the same route and pacing) takes about as long: no settle on the
+    // request path
+    let (window, stop, recorder) = drag_source(OnRelease::Nothing);
+    let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+    let started = Instant::now();
+    dedicated
+        .request("drag", json!({"window": {"id": window}, "path": path}))
+        .unwrap();
+    let unwatched = started.elapsed();
+    stop.send(()).unwrap();
+    let _ = recorder.join();
+    assert!(
+        answered < unwatched + Duration::from_millis(150),
+        "no settle on the request path: {answered:?} against {unwatched:?} unwatched"
+    );
+}
+
+/// The measurement option that leaves a take during the drag unseen until after the release (Acceptance 8's forced
+/// late-take case): the drop goes ahead, the drag answers success, and the next request carries the notice.
+#[test]
+fn a_take_left_unseen_until_the_release_is_reported_by_the_next_request() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::Focuses);
+    focus_nothing();
+    let mut deferred = Engine::start_with(&["--dnd-defer-take"]);
+    let app = app_of(&mut deferred, window);
+    assert_eq!(
+        deferred.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null)
+    );
+    sleep(SETTLE);
+    let notice = deferred.request("capabilities", json!({}));
+    assert_eq!(
+        notice,
+        Err(format!(
+            "{app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this \
+             request was not run, so read the window before sending it again"
+        ))
+    );
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+        ],
+        "the drop went ahead at the release; the Escape came after"
     );
 }
 

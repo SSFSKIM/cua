@@ -93,7 +93,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   records its route on the `--stats` line (`route`: `background`, `foreground` or `desktop`).
 - **Drag and drop into Chrome** (`dnd.rs`): Chrome's HTML5 drop activates, focuses and raises its window (the
   Chromium toolkit's other applications, Electron among them, change nothing). In shared mode a background drag into
-  Chrome watches `XdndSelection` through XFixes, from the drag's start through 300 ms after its release, unless
+  Chrome watches `XdndSelection` through XFixes, from the drag's start, unless
   Chrome's window is already the active window, holds the focus and is fully unobscured (any doubt counts as not),
   where the drop goes ahead. The answer follows the order of what the engine saw and sent:
   - Chrome's own client takes the selection (a drag and drop has begun) before the release: Escape is pressed and
@@ -101,13 +101,18 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     so nothing was dropped. Use a dedicated desktop, or activate the window first`; unless within 300 ms Chrome's
     window newly becomes active, focused or top of the stacking order (the cross-check), when the answer is that the
     drop may have happened and the desktop changed;
-  - the take comes only after the release: Escape follows, and the answer is that the drop may have happened;
-  - no take within the 300 ms: an ordinary drag, answered success;
+  - no take by the release: the drag answers at once as a plain drag (it claims nothing about drops). A watch on its
+    own X connection, subscribed before the drag began, goes on off the request path for 300 ms or until the next
+    request: a take then gets the cancel's Escape at once (synthetic, to Chrome's window, never XTEST), and the next
+    request on the connection is answered, not run, with `<app> started a drag and drop after your drag ended; it may
+    have dropped and changed the desktop; this request was not run, so read the window before sending it again`
+    (`--stats` `late_dnd`). Known limit: a take later than 300 ms, or after the next request has begun, is not seen;
+    M3.1 measured none after the release in 240 takes, idle and under load;
   - a take whose cancel could not be sent: `… it was cancelled, but whether the drop landed cannot be confirmed. …`.
 
   The watch keeps every selection report the connection reads meanwhile, so the input session's server-time probe
   cannot lose one. The `--stats` line's `dnd` records whether the window was in front, the watch saw a start, the
-  outcome (`in_time`, `late`, `no_start`, `undecided`), whether the signature already held at the start, and the
+  outcome (`in_time`, `late` for the measurement option's Escape after the release, `no_start`, `undecided`), whether the signature already held at the start, and the
   cross-check and its wait.
 
 ## How it uses the clipboard
@@ -184,6 +189,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
 | `--drag-dnd-wait-ms` | off | before a Chromium drag's release, wait up to this long for the target's client to take `XdndSelection`, then nudge the last point by a pixel and back (measurement only: the event-driven option measured against a press dwell for Chrome's late drag-and-drop starts; `--stats` `dnd_wait`) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
+| `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
 | `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, and how a desktop screenshot was read (`shm` or `get_image`) |
 
 ## Dependencies

@@ -126,6 +126,7 @@ export const PLANS = Object.freeze({
   5: () => [
     {say: 'Acceptance 5: never in the way, over the Electron fixture (frontmost, so your click is the only thing that could move the focus)'},
     {task: 'activate', args: ['electron']},
+    {wait: 1500},  // the focus reading right after the activation found no focused app (2026-10-30)
     {task: 'watch-start'},
     {open: 'a', scenes: ['electron']},
     // The focus proof, with no input but the agent's: the system's focused app, its focused window and the focused
@@ -138,13 +139,16 @@ export const PLANS = Object.freeze({
     {wait: 1500},
     {task: 'focus', args: ['with the cursor shown', 'electron', 'before the cursor']},
     {run: 'a', cell: PRESSED, label: 'the fixture\'s count before'},
-    {owner: 'Next the agent presses the fixture\'s button, and you then click the arrow\'s tip where it rests on the button. Say go when ready.'},
+    {owner: 'Next the agent presses the fixture\'s button, and you then click the arrow\'s tip where it rests on the button. Keep the pointer off the fixture until the cue, and say go when ready.'},
+    {run: 'a', cell: OBSERVE('electron'), label: 'observe before the press'},
     {run: 'a', cell: CLICK_CONTROL_TIMED('fixtureButton'), label: 'the agent presses the button'},
     {cue: 'Click the arrow\'s tip now.', ms: 3000},
     {watch: 'when you clicked, the cursor turned half-transparent', id: 'taken-over'},
     {run: 'a', cell: INTERVENTION_PROBE('electron', [0.5, 0.9]), label: 'the next action, with no observation first (refused when the ledger saw your click on the fixture)'},
     {wait: 5500},
     {run: 'a', cell: PRESSED, label: 'the fixture\'s count after (the agent\'s press and yours)'},
+    {wait: 3000},
+    {run: 'a', cell: OBSERVE('electron'), label: 'observe before the scroll'},
     {run: 'a', cell: SCROLL_AT('electron', [0.5, 0.5]), label: 'a scroll, so the cursor shows over the fixture'},
     {run: 'a', cell: SHOT('electron'), label: 'the agent\'s screenshot while the cursor shows'},
     {watch: 'the cursor is on screen over the fixture now, and the saved screenshot (the item\'s image file) has no cursor in it', id: 'screenshot'},

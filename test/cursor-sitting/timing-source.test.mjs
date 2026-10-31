@@ -49,16 +49,17 @@ test('an arm series sets cursorDebug, relaunches the engine, checks the running 
   assert.ok(steps.findIndex(s => s.task === 'engine-status') > steps.findIndex(s => s.open === 'off'), 'read once the sessions launched the engine');
   assert.equal(steps.find(s => s.task === 'engine-status').required, true);
   assert.ok(steps.findIndex(s => s.task === 'engine-json-restore') > steps.findIndex(s => s.close === 'on'));
-  assert.throws(() => timingSteps('typing', 2, {arm: 'noRockFilter'}), /panelOut, noBackdrop, noRock, legacyLayers, fps60/);
+  assert.throws(() => timingSteps('typing', 2, {arm: 'noRockFilter'}), /panelOut, noBackdrop, noRock, legacyLayers, uncapped/);
   assert.throws(() => timingSteps('typing', 2, {arm: 'noRock', ownerSource: true}), /one at a time/);
-  assert.deepEqual(CURSOR_ARMS, ['panelOut', 'noBackdrop', 'noRock', 'legacyLayers', 'fps60']);
+  assert.deepEqual(CURSOR_ARMS, ['panelOut', 'noBackdrop', 'noRock', 'legacyLayers', 'uncapped']);
+  assert.throws(() => timingSteps('typing', 2, {arm: 'fps60'}), /the arm is one of/, 'the cap is the default now, not an arm');
 });
 
-test('the fps60 arm\'s series first proves its cap: the probe\'s glides with and without the arm, before engine.json changes', () => {
+test('the uncapped arm\'s series first proves the default\'s cap: the probe\'s glides with and without the arm, before engine.json changes', () => {
   for (const kind of ['typing', 'clicks']) {
-    const steps = timingSteps(kind, 2, {arm: 'fps60'});
+    const steps = timingSteps(kind, 2, {arm: 'uncapped'});
     const tasks = steps.filter(s => s.task).map(s => [s.task, ...(s.args ?? [])].join(' '));
-    assert.deepEqual(tasks.slice(4, 8), ['input-source latin', 'glide-frames fps60', 'engine-json-arm fps60', 'engine-stop']);
+    assert.deepEqual(tasks.slice(4, 8), ['input-source latin', 'glide-frames uncapped', 'engine-json-arm uncapped', 'engine-stop']);
     const check = steps.find(s => s.task === 'glide-frames');
     assert.notEqual(check.required, true, 'recorded: a cap that did not take effect is the finding, not a reason to stop');
     assert.ok(steps.indexOf(check) < steps.findIndex(s => s.open === 'on'));
@@ -239,9 +240,9 @@ test('a control series is the default arm recorded under its own item, never the
   const tasks = steps => steps.filter(s => s.task).map(s => [s.task, ...(s.args ?? [])].join(' '));
   assert.deepEqual(tasks(control), tasks(plain), 'the same source, guard and sessions as the judged series, no arm');
   assert.match(control.find(s => s.say).say, /control.*recorded, not judged/);
-  for (const other of [{arm: 'fps60'}, {still: true}, {source: 'com.apple.inputmethod.Korean.2SetKorean'}, {ownerSource: true}]) {
+  for (const other of [{arm: 'uncapped'}, {still: true}, {source: 'com.apple.inputmethod.Korean.2SetKorean'}, {ownerSource: true}]) {
     assert.throws(() => timingSteps('typing', 2, {control: true, ...other}), /one at a time/, JSON.stringify(other));
   }
   const {main} = await import('../../scripts/cursor-sitting.mjs');
-  await assert.rejects(main(['timing', 'typing', '--control', '--arm', 'fps60', '--dry-run', '--out', '/tmp/x']), /one at a time/);
+  await assert.rejects(main(['timing', 'typing', '--control', '--arm', 'uncapped', '--dry-run', '--out', '/tmp/x']), /one at a time/);
 });

@@ -15,8 +15,8 @@ import Foundation
 // `--glides <n>` (at most 5) it fades a cursor in over its own transparent target and glides it n times across the main
 // screen, nothing else animating, then lets it rock for a second, and prints each glide's span and the rock's in mach
 // continuous ticks (the clock of `log show`'s signposts) with the probe's pid: the kit counts WindowServer's frames
-// inside each span, with and without `--debug fps60`, to prove the arm's frame-rate cap took effect on this Mac (#235's
-// task-8 report).
+// inside each span, with and without `--debug uncapped`, to prove the default's frame-rate cap took effect on this Mac
+// (#235's task-8 report).
 
 enum CursorProbe {
   static func run(_ arguments: [String]) -> Int32 {

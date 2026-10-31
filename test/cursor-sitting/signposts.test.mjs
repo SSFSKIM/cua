@@ -1,5 +1,5 @@
 // The series' signposts (scripts/cursor-sitting/signposts.mjs; #235's task-8 report): the engine's read in chunks while
-// the series runs, a FrameUpdate stream for the fps60 cap's proof only, and a coverage check that reads a series whose
+// the series runs, a FrameUpdate stream for the 60 Hz cap's proof only, and a coverage check that reads a series whose
 // signposts do not cover every sample as incomplete. Checked without a Mac: a fake `log stream` and a fake `log show`.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';

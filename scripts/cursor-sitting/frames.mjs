@@ -1,5 +1,6 @@
-// The frames the window server composited during the cursor probe's glides (#235's task-8 report), so the arm that caps
-// the cursor's frame rate (`fps60`) is proven to have taken effect, or shown not to, in the same run as its timing.
+// The frames the window server composited during the cursor probe's glides (#235's task-8 report), so the cursor's
+// default 60 Hz cap is proven to have taken effect, or shown not to, against the arm that lifts it (`uncapped`), in the
+// same run as that arm's timing.
 // WindowServer marks every frame it composites with a FrameUpdate signpost (subsystem com.apple.SkyLight, category
 // tracing); a stream of them runs only while the probe glides, before the series' sessions open (./signposts.mjs
 // startFrameStream). The probe's `--glides` prints each glide's span in mach continuous ticks, the clock those
@@ -7,8 +8,8 @@
 // WindowServer composite, plus whatever else drew meanwhile (the display runs at the highest rate anything on it asks
 // for).
 export const FRAME_UPDATE_PREDICATE = 'process == "WindowServer" AND subsystem == "com.apple.SkyLight" AND category == "tracing" AND signpostName == "FrameUpdate"';
-// On the MacBook's 120 Hz ProMotion display a default glide's frames come a display frame (8.3 ms) apart, a capped one's
-// two (16.7 ms). The verdict reads the median interval, which a burst of another app's frames inside a glide (the
+// On the MacBook's 120 Hz ProMotion display an uncapped glide's frames come a display frame (8.3 ms) apart, a capped
+// one's two (16.7 ms). The verdict reads the median interval, which a burst of another app's frames inside a glide (the
 // count is the whole display's) barely moves, where it can lift the rate past 66 Hz (measured, #235's task-8 report).
 export const CAPPED_INTERVAL_MS = 14, FULL_INTERVAL_MS = 10;
 // The display before the probes: a second and a half of it, held from 50 frames a second (idle, it composites a few a
@@ -48,19 +49,20 @@ export function frameSummary(rows) {
     intervalMs: round(median(rows.map(r => r.intervalMs).filter(x => x !== null)))};
 }
 
-// Whether the cap took effect: `capped`'s glides' frames about 60 a second apart where `base`'s (no arm, the same probe,
-// the same run) came at the display's full rate; each side's frameSummary. -> {verdict: capped | not capped |
-// undetermined, why}.
+// Whether the cap took effect: `capped`'s glides' frames (the default's) about 60 a second apart where `base`'s (the
+// uncapped arm's, the same probe, the same run) came at the display's full rate; each side's frameSummary. -> {verdict:
+// capped | not capped | undetermined, why}.
 export function capVerdict(base, capped) {
   if (!base?.glides || !capped?.glides || base.intervalMs == null || capped.intervalMs == null) return {verdict: 'undetermined', why: 'no glide was counted on one side'};
   const said = side => `a frame every ${side.intervalMs} ms (${side.hz} Hz)`;
   if (capped.intervalMs < CAPPED_INTERVAL_MS) return {verdict: 'not capped', why: `the capped glides composited ${said(capped)}, under ${CAPPED_INTERVAL_MS} ms apart`};
-  if (base.intervalMs > FULL_INTERVAL_MS) return {verdict: 'undetermined', why: `the default glides composited ${said(base)}, over ${FULL_INTERVAL_MS} ms apart: the display did not run at its full rate for them, so a cap cannot show`};
-  return {verdict: 'capped', why: `capped ${said(capped)} against the default's ${said(base)}`};
+  if (base.intervalMs > FULL_INTERVAL_MS) return {verdict: 'undetermined', why: `the uncapped glides composited ${said(base)}, over ${FULL_INTERVAL_MS} ms apart: the display did not run at its full rate for them, so a cap cannot show`};
+  return {verdict: 'capped', why: `capped ${said(capped)} against the uncapped ${said(base)}`};
 }
 
-// The fps60 arm's cap check (the runner's glide-frames task): `probe` (the approved bundle's, args -> its answer) glides
-// without the arm and then with it, and `readFrames` (since -> FrameUpdate times, or a promise of them) counts each
+// The default's cap check (the runner's glide-frames task, before the `uncapped` arm's series): `probe` (the approved
+// bundle's, args -> its answer) glides with `arm`, the arm that lifts the cap (the uncapped side, `base`), and then with
+// no arm (the default, `capped`), and `readFrames` (since -> FrameUpdate times, or a promise of them) counts each
 // side's frames. It does not
 // stop the series for a failed count: a read that fails, or a probe that failed with its exit confirmed, is an
 // undetermined verdict, with the pids of the probes that did run, so the series' own count still leaves their glides
@@ -69,13 +71,13 @@ export function capVerdict(base, capped) {
 export async function glideFramesCheck(arm, {probe, readFrames, glides = 2, now = () => Date.now()}) {
   const since = new Date(now() - 2000), sides = [], pids = [];
   try {
-    for (const extra of [[], ['--debug', arm]]) {
+    for (const extra of [['--debug', arm], []]) {
       const side = probeSpans(probe(['cursor', '--glides', String(glides), ...extra]));
       sides.push(side);
       if (Number.isInteger(side.pid)) pids.push(side.pid);
     }
-    // The probe names the arm it ran with: none on the first side, `arm` on the second, or the arm may never have taken.
-    const named = [[null, sides[0]], [arm, sides[1]]].find(([asked, side]) => side.debug !== asked);
+    // The probe names the arm it ran with: `arm` on the first side, none on the second, or the arm may never have taken.
+    const named = [[arm, sides[0]], [null, sides[1]]].find(([asked, side]) => side.debug !== asked);
     if (named) return {ok: false, arm, verdict: 'undetermined', why: `the probe reported the arm ${JSON.stringify(named[1].debug ?? 'none given')} where ${JSON.stringify(named[0])} was asked: the arm may never have taken`, pids};
     const times = await readFrames(since);
     const [base, capped] = sides.map(side => {
@@ -83,7 +85,7 @@ export async function glideFramesCheck(arm, {probe, readFrames, glides = 2, now 
       return {pid: side.pid, ...frameSummary(rows), rock: side.rock ? glideFrames([side.rock], times)[0] : null, rows};
     });
     // A glide with no frames is a gap in the collection, not a rate: frameSummary would pass over it.
-    const empty = [['default', base], [arm, capped]].flatMap(([name, side]) => side.rows.filter(r => r.frames === 0).map(() => name));
+    const empty = [[arm, base], ['default', capped]].flatMap(([name, side]) => side.rows.filter(r => r.frames === 0).map(() => name));
     if (empty.length) return {ok: false, arm, verdict: 'undetermined', why: `a glide with no frames (${empty.join(', ')}): the frames were not all collected`, base, capped, pids};
     const {verdict, why} = capVerdict(base, capped);
     return {ok: verdict === 'capped', arm, verdict, why, base, capped, pids};

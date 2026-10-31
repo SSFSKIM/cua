@@ -79,16 +79,17 @@ final class EngineSettingsTests: XCTestCase {
     XCTAssertEqual(try parse(#"{"cursorDebug": "noBackdrop"}"#).cursorDebug, .noBackdrop)
     XCTAssertEqual(try parse(#"{"cursorDebug": "noRock"}"#).cursorDebug, .noRock)
     XCTAssertEqual(try parse(#"{"cursorDebug": "legacyLayers", "cursor": true}"#).cursorDebug, .legacyLayers)
-    XCTAssertEqual(try parse(#"{"cursorDebug": "fps60"}"#).cursorDebug, .fps60)
+    XCTAssertEqual(try parse(#"{"cursorDebug": "uncapped"}"#).cursorDebug, .uncapped)
   }
 
   func testAnyOtherCursorDebugValueStopsTheEngineNamingTheSettingAndItsArms() {
     for text in [#"{"cursorDebug": "panelout"}"#, #"{"cursorDebug": ""}"#, #"{"cursorDebug": null}"#, #"{"cursorDebug": true}"#,
-                 #"{"cursorDebug": ["noRock"]}"#, #"{"cursorDebug": "noRockFilter"}"#, #"{"cursorDebug": "fps120"}"#] {
+                 #"{"cursorDebug": ["noRock"]}"#, #"{"cursorDebug": "noRockFilter"}"#, #"{"cursorDebug": "fps120"}"#,
+                 #"{"cursorDebug": "fps60"}"#] {
       XCTAssertThrowsError(try parse(text), text) { error in
         let message = (error as? EngineSettings.Invalid)?.message ?? ""
         XCTAssertTrue(message.contains("cursorDebug") && message.contains("/h/.config/cua/engine.json")
-                      && ["panelOut", "noBackdrop", "noRock", "legacyLayers", "fps60"].allSatisfy(message.contains), message)
+                      && ["panelOut", "noBackdrop", "noRock", "legacyLayers", "uncapped"].allSatisfy(message.contains), message)
       }
     }
   }

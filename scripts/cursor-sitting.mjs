@@ -42,14 +42,15 @@
 //       required. Refused, before any session opens, unless the input source is a
 //       Latin keyboard layout with TextEdit in front. --arm runs the series with
 //       engine.json's `cursorDebug` set to one of the engine's cursor arms (panelOut, noBackdrop, noRock,
-//       legacyLayers, fps60), engine.json put back and the engine stopped after; --owner-source runs it under whatever source
+//       legacyLayers, uncapped), engine.json put back and the engine stopped after; --owner-source runs it under whatever source
 //       the owner has, the reading kept. Either is recorded in item-<n>-<arm>.jsonl or item-<n>-owner-source.jsonl and
 //       never judged: `judge` lists it in <out>/timing-recorded.md. The engine's timing signposts over the series are
 //       read into <out>/signposts-<item>.ndjson in chunks while it runs (`log show` every 20 s; ./cursor-sitting/
 //       signposts.mjs) and checked against every sample (<out>/coverage-<item>.json: a series they do not cover reads
-//       incomplete). The fps60 arm (the cursor's animations capped at 60 Hz) first proves its cap with the cursor
-//       probe's glides, with and without the arm, their frames counted from a FrameUpdate stream that runs only then,
-//       before any session opens (./cursor-sitting/frames.mjs); its verdict is kept in the item's rows.
+//       incomplete). The uncapped arm (the cursor's animations at their own rates, as before the default's 60 Hz cap)
+//       first proves the default's cap with the cursor probe's glides, with the arm and without it, their frames counted
+//       from a FrameUpdate stream that runs only then, before any session opens (./cursor-sitting/frames.mjs); its
+//       verdict is kept in the item's rows.
 //   cursor-sitting.mjs source consent yes|no --out <dir>
 //   cursor-sitting.mjs source restore --out <dir>
 //       The input source (./cursor-sitting/input-source.mjs): `consent` records the owner's answer to the kit switching
@@ -197,7 +198,9 @@ function timingMarkdown(judged, {recorded = false} = {}) {
     if (j.coverage) lines.push('', `Signposts (coverage-${j.item}.json): ${coverageLine(j.coverage)}.`);
     if (j.capCheck) {
       const {base, capped} = j.capCheck, rock = base?.rock && capped?.rock ? `; rock ${base.rock.hz} against ${capped.rock.hz} Hz` : '';
-      lines.push('', `The fps60 cap, from the cursor probe's glides before the series: default ${base?.hz ?? '–'} Hz (a frame every ${base?.intervalMs ?? '–'} ms), fps60 ${capped?.hz ?? '–'} Hz (every ${capped?.intervalMs ?? '–'} ms)${rock}: **${j.capCheck.verdict}** (${j.capCheck.why}).`);
+      // A run before the cap became the default (2026-10-31) capped under the fps60 arm against the default.
+      const [uncappedSide, cappedSide] = j.capCheck.arm === 'fps60' ? ['the default then', 'the fps60 arm'] : [`the ${j.capCheck.arm} arm`, 'the default'];
+      lines.push('', `The 60 Hz cap, from the cursor probe's glides before the series: uncapped (${uncappedSide}) ${base?.hz ?? '–'} Hz (a frame every ${base?.intervalMs ?? '–'} ms), capped (${cappedSide}) ${capped?.hz ?? '–'} Hz (every ${capped?.intervalMs ?? '–'} ms)${rock}: **${j.capCheck.verdict}** (${j.capCheck.why}).`);
     }
     lines.push('');
   }

@@ -30,19 +30,25 @@ test('judge reads the last attempt of each timing item and writes timing.md', as
   assert.equal(code, 0);
 });
 
-test('the recorded timing lists the fps60 arm\'s cap check', async t => {
+test('the recorded timing lists the cap check before the uncapped arm\'s series, and an fps60 arm\'s from before the cap was the default', async t => {
   const out = scratch(t);
-  const capCheck = {ok: true, verdict: 'capped', why: '62 Hz capped against 118 Hz default', pids: [5, 6],
+  const capCheck = {ok: true, arm: 'uncapped', verdict: 'capped', why: '62 Hz capped against 118 Hz uncapped', pids: [5, 6],
     base: {pid: 5, glides: 2, frames: 170, ms: 1427.1, hz: 118, intervalMs: 8.3, rock: {frames: 119, hz: 119, intervalMs: 8.3}},
     capped: {pid: 6, glides: 2, frames: 90, ms: 1427.1, hz: 62, intervalMs: 16.7, rock: {frames: 61, hz: 61, intervalMs: 16.7}}};
   const rows = typingRows();
-  rows.splice(3, 0, {kind: 'task', task: 'glide-frames', args: ['fps60'], result: capCheck});
-  writeFileSync(join(out, 'item-12-fps60.jsonl'), jsonl(rows));
+  rows.splice(3, 0, {kind: 'task', task: 'glide-frames', args: ['uncapped'], result: capCheck});
+  writeFileSync(join(out, 'item-12-uncapped.jsonl'), jsonl(rows));
+  // A record of 2026-10-31, when the cap was the fps60 arm and the default was uncapped.
+  const old = typingRows();
+  old.splice(3, 0, {kind: 'task', task: 'glide-frames', args: ['fps60'], result: {...capCheck, arm: 'fps60'}});
+  writeFileSync(join(out, 'item-12-fps60.jsonl'), jsonl(old));
   writeFileSync(join(out, 'item-12.jsonl'), jsonl(typingRows()));
   await quietly(() => main(['judge', '--out', out]));
   const md = readFileSync(join(out, 'timing-recorded.md'), 'utf8');
-  assert.match(md, /fps60 cap.*default 118 Hz.*fps60 62 Hz.*rock 119 against 61 Hz.*\*\*capped\*\*/);
-  assert.doesNotMatch(readFileSync(join(out, 'timing.md'), 'utf8'), /fps60 cap/);
+  const [fps60, uncapped] = md.split('## ').filter(s => /^Acceptance 12-(fps60|uncapped)/.test(s));
+  assert.match(uncapped, /60 Hz cap.*uncapped \(the uncapped arm\) 118 Hz.*capped \(the default\) 62 Hz.*rock 119 against 61 Hz.*\*\*capped\*\*/);
+  assert.match(fps60, /60 Hz cap.*uncapped \(the default then\) 118 Hz.*capped \(the fps60 arm\) 62 Hz/);
+  assert.doesNotMatch(readFileSync(join(out, 'timing.md'), 'utf8'), /60 Hz cap/);
 });
 
 test('a series whose signposts do not cover every sample reads incomplete, never silently short', async t => {

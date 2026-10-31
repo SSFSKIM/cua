@@ -185,8 +185,9 @@ keys are translated with that same layout; the reading is kept in the series' fi
 **The cursor's arms** (only if 12 or 13 fails with the defaults, or the design session asks): each arm takes one part of
 what a visible cursor costs the window server away, through engine.json's `cursorDebug`, which the engine reads at
 launch and strictly (`panelOut`: the panel never ordered in, every commit still made; `noBackdrop`: the halo's blur
-hidden, its tint left; `noRock`: no rock; `fps60`: every animation of the cursor's layers capped at 60 Hz, where the
-default glide runs at the ProMotion display's 120; `legacyLayers`: the sitting's first build's layers, the arrow's blur filter
+hidden, its tint left; `noRock`: no rock; `uncapped`: the cursor's animations at their own rates, the glide at the
+ProMotion display's 120, where the default caps every animation of the cursor's layers at 60 Hz (the default since
+2026-10-31; the `fps60` arm of the earlier runs, now gone); `legacyLayers`: the sitting's first build's layers, the arrow's blur filter
 always installed and its shadow found from its alpha). `$S timing typing|clicks --arm <arm> --run "$RUN" --out "$OUT"`
 writes the key (engine.json kept in `engine.json.before` meanwhile), stops the engine so the sessions relaunch it,
 checks `cua engine status --json`'s `status.cursorDebug`, runs the series, then puts engine.json back and stops the
@@ -444,16 +445,19 @@ series whose scene is gone from the front (a locked screen, say) rather than tim
      judged, so it never replaces the judged item 12's last attempt. It runs with the usual source, guard and chunked
      signposts; read the arm and `--still` series against it rather than against the judged run an hour earlier, since
      the off medians drift.
-   - `$S timing typing --arm fps60 --run "$RUN" --out "$OUT2"` (and `clicks`, 20 each, under ABC) asks whether the
-     cost follows the frame rate: the arm caps every animation of the cursor's layers at 60 Hz (Core Animation's
-     `preferredFrameRateRange`, 30–60, preferring 60), where the default glide runs at 120 on this display.
-     - Before the sessions open, the `glide-frames` task proves the cap: the approved bundle's cursor probe glides twice
-       and rocks for a second on its own transparent window, nothing driven (about 4 s a side, drawn over the screen),
-       without the arm and then with it, and the window server's frames inside each glide are counted from its
-       `FrameUpdate` signposts. The verdict, in the item's rows and `timing-recorded.md`, reads the median interval
-       between frames: `capped` (the arm's glides a frame at least 14 ms apart, the default's at most 10: 16.7 against
-       8.3 ms on this display), `not capped`, or `undetermined` (the default's did not reach full rate, so no cap
-       could show). It never stops the series.
+   - `$S timing typing --arm uncapped --run "$RUN" --out "$OUT2"` (and `clicks`, 20 each, under ABC) asks whether the
+     cost follows the frame rate: the default caps every animation of the cursor's layers at 60 Hz (Core Animation's
+     `preferredFrameRateRange`, 30–60, preferring 60), and the arm lifts the cap, the glide running at 120 on this
+     display as it did before the cap became the default. Read it against the `--control` series (the default, capped).
+     - Before the sessions open, the `glide-frames` task proves the default's cap: the approved bundle's cursor probe
+       glides twice and rocks for a second on its own transparent window, nothing driven (about 4 s a side, drawn over
+       the screen), with the arm and then without it, and the window server's frames inside each glide are counted
+       from its `FrameUpdate` signposts. The verdict, in the item's rows and `timing-recorded.md`, reads the median
+       interval between frames: `capped` (the default's glides a frame at least 14 ms apart, the arm's at most 10: 16.7
+       against 8.3 ms on this display), `not capped`, or `undetermined`: the arm's did not reach full rate, so no cap
+       could show; a probe did not report the arm it was asked for; or the display already drew at 50 Hz or more in
+       the 1.5 s before the probes, held by another client, so a `not capped` cannot be told from a cap overridden.
+       It never stops the series.
      - The FrameUpdate stream runs for this check only, before any session opens: a live stream makes each of
        WindowServer's frame signposts cost it more, and more of them on the cursor-on side, so no timed sample runs
        under one. The series' own frames per glide are not counted (a read after the fact drops some).

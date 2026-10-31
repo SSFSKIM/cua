@@ -10,8 +10,9 @@ import QuartzCore
 // per frame. Layers are layer-backed views where AppKit needs a view (the halo's backdrop) and plain layers elsewhere.
 // What a visible cursor makes the window server do every frame is kept small (#235's Decision Log, 2026-10-31): the
 // arrow's shadow has an explicit path, so it is not found from the layer's rendered alpha, and the arrow's blur filter is
-// installed only for the 0.44 s fades that use it. `CursorDebug` (engine.json `cursorDebug`) takes one part away, puts
-// the layers back as they were, or caps every animation at 60 Hz, for an attended sitting's arms. Each installed motion
+// installed only for the 0.44 s fades that use it, and every animation asks for at most 60 Hz (CursorFrameRate).
+// `CursorDebug` (engine.json `cursorDebug`) takes one part away, puts the layers back as they were, or lifts the cap,
+// for an attended sitting's arms. Each installed motion
 // is marked by a `cursor.motion` signpost with its span, so a sitting can count the frames the window server composited
 // during each glide.
 
@@ -151,7 +152,7 @@ private final class CursorOverlay {
   private let debug: CursorDebug?
   /// The connection whose cursor this is: its motion signposts name it.
   private let connection: Int
-  /// The arm's frame-rate range for every animation (CursorDebug.animationFrameRate), nil for each animation's own.
+  /// The frame-rate range for every animation (CursorFrameRate), nil for each animation's own (the `uncapped` arm).
   private let frameRate: CAFrameRateRange?
   /// The fade whose blur is installed now; a later fade replaces it.
   private var blurringFade = 0
@@ -161,7 +162,7 @@ private final class CursorOverlay {
   init(connection: Int, debug: CursorDebug?) {
     self.connection = connection
     self.debug = debug
-    frameRate = debug?.animationFrameRate
+    frameRate = CursorFrameRate.range(for: debug)
     rocker = CursorRock(frameRate: frameRate)
     panel = CursorWindow(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isOpaque = false
@@ -350,7 +351,7 @@ private final class CursorOverlay {
     if samples.count > 1 {
       let step = motion.trajectory.step, duration = motion.trajectory.duration
       func keyframes(_ keyPath: String, _ values: [NSValue], on layer: CALayer, key: String) {
-        // Under the arm's cap, one animation per run of changing values (changingRuns): a held value undoes the cap.
+        // Under the cap, one animation per run of changing values (changingRuns): a held value undoes the cap.
         let animations = CursorKeyframes.animations(keyPath, values, step: step, begin: layerTime(motion.beginTime, layer), frameRate: frameRate)
         CursorKeyframes.install(animations, on: layer, key: key)
       }

@@ -4,7 +4,7 @@
 // `log stream --signpost` delivers everything (plain `log stream` carries none), but it makes every signpost cost its
 // emitter about 80 µs instead of 2 (measured, 1,200 intervals a second): far too much to run under timed samples, where
 // the cursor-on side emits more of them. So the engine's signposts are read in chunks while the series runs, `log show`
-// in the gaps between samples, well inside what the store keeps, de-duplicated at the chunk edges. A FrameUpdate stream (`startFrameStream`) runs only for the fps60 cap's
+// in the gaps between samples, well inside what the store keeps, de-duplicated at the chunk edges. A FrameUpdate stream (`startFrameStream`) runs only for the 60 Hz cap's
 // proof, before any session opens. `signpostCoverage` then checks every sample against the engine's requests, so a
 // series whose signposts do not cover it reads incomplete, never silently short.
 import {execFile, spawn as nodeSpawn} from 'node:child_process';
@@ -71,7 +71,7 @@ function stream(predicate, line, {spawn, readyMs}) {
   };
 }
 
-// A FrameUpdate stream, for the fps60 cap's proof only, waited on until it delivers (or `readyMs` passes).
+// A FrameUpdate stream, for the 60 Hz cap's proof only, waited on until it delivers (or `readyMs` passes).
 // -> {started, frameTimes(), stop() -> {ok, error?, times, walls}}: `times` the frames' mach continuous ticks so far,
 // in order (the probe's glide spans' clock); `walls` their log timestamps as epoch ms, in order (Date.now()'s clock, for
 // a window the kit marks itself).

@@ -25,7 +25,8 @@ enum PeerPolicy: String {
 }
 
 /// One diagnostic arm of the agent cursor, `cursorDebug` in engine.json, read at launch: each takes one part of what a
-/// visible cursor costs the window server away, so a sitting can attribute the cost (#235's Decision Log, 2026-10-31).
+/// visible cursor costs the window server away, or puts one back as an earlier build had it, so a sitting can attribute
+/// the cost (#235's Decision Log, 2026-10-31).
 enum CursorDebug: String, CaseIterable, Sendable {
   /// The panel is never ordered in; every commit, keyframe install and transition still runs.
   case panelOut
@@ -36,9 +37,10 @@ enum CursorDebug: String, CaseIterable, Sendable {
   /// The layers as the sitting's build had them: the rock layer's blur filter installed for the panel's whole life, and
   /// the arrow's shadow with no explicit path.
   case legacyLayers
-  /// Every animation of the cursor's layers asks Core Animation for at most 60 Hz, where the default glide asks for up to
-  /// 120 on a ProMotion display (CursorEffects.swift, `animationFrameRate`).
-  case fps60
+  /// The cursor's animations at their own frame rates, as before the 60 Hz cap became the default: the glide's keyframes
+  /// one animation each asking for up to 120 Hz on a ProMotion display, every other animation Core Animation's default
+  /// range (CursorEffects.swift, `CursorFrameRate`). The cap check's uncapped side (the kit's frames.mjs).
+  case uncapped
 }
 
 struct EngineSettings {

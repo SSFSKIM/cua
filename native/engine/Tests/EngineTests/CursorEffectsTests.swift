@@ -50,12 +50,20 @@ final class CursorEffectsTests: XCTestCase {
     XCTAssertFalse(keys().contains("rockOut"))
   }
 
-  // The `fps60` arm (engine.json `cursorDebug`; #235's Decision Log, 2026-10-31): every animation of the cursor's layers
-  // asks for at most 60 Hz; with no arm, each keeps its own.
-  func testTheFps60ArmAsksAtMostSixtyHertzAndNoOtherArmChangesTheRate() {
+  // The 60 Hz cap is the default (#235's Decision Log, 2026-10-31): every animation of the cursor's layers asks for at
+  // most 60 Hz under no arm and under every arm but `uncapped` (engine.json `cursorDebug`), where each keeps its own.
+  func testTheCursorAsksAtMostSixtyHertzUnlessTheUncappedArmIsOn() {
     let capped = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
-    XCTAssertEqual(CursorDebug.fps60.animationFrameRate, capped)
-    for arm in CursorDebug.allCases where arm != .fps60 { XCTAssertNil(arm.animationFrameRate, arm.rawValue) }
+    XCTAssertEqual(CursorFrameRate.capped, capped)
+    XCTAssertEqual(CursorFrameRate.range(for: nil), capped, "no arm: capped")
+    XCTAssertNil(CursorFrameRate.range(for: .uncapped))
+    for arm in CursorDebug.allCases where arm != .uncapped { XCTAssertEqual(CursorFrameRate.range(for: arm), capped, arm.rawValue) }
+    // The dips and the rock are capped unless told otherwise.
+    let press = CALayer(), layer = CALayer(), rock = CursorRock()
+    CursorDips.schedule([CACurrentMediaTime() + 0.5], on: press, reduceMotion: false)
+    XCTAssertEqual(press.animation(forKey: "dip0")?.preferredFrameRateRange, capped)
+    rock.update(true, on: layer, at: CACurrentMediaTime())
+    XCTAssertEqual(layer.animation(forKey: "rock")?.preferredFrameRateRange, capped)
   }
 
   func testTheDipsAndTheRockCarryTheCappedRateAndKeepTheirOwnWithoutIt() {
@@ -74,7 +82,7 @@ final class CursorEffectsTests: XCTestCase {
     }
   }
 
-  // Under the arm a keyframe animation runs as one animation per run of changing values: a held value from one frame to
+  // Under the cap a keyframe animation runs as one animation per run of changing values: a held value from one frame to
   // the next takes the window server back to the display's full rate (measured, #235's task-8 report).
   func testTheChangingRunsArePartedByEveryHold() {
     let v = { (xs: [Double]) in xs.map { NSValue(point: NSPoint(x: $0, y: 0)) } }
@@ -90,24 +98,24 @@ final class CursorEffectsTests: XCTestCase {
     XCTAssertEqual(changingRuns([t(0.1), t(0.2), t(0.2)]), [0...1])
   }
 
-  func testTheArmsKeyframesKeepEveryRunAtItsOwnTimeAndTheDefaultsAreOneAnimation() {
+  func testTheCappedKeyframesKeepEveryRunAtItsOwnTimeAndTheUncappedAreOneAnimation() {
     let v = [0, 1, 2, 2, 2, 3, 4, 4].map { NSValue(point: NSPoint(x: $0, y: 0)) }
     let step = 0.01
     let plain = CursorKeyframes.animations("position", v, step: step, begin: 100, frameRate: nil)
     XCTAssertEqual(plain.count, 1)
     XCTAssertEqual(plain[0].beginTime, 100)
     XCTAssertEqual(plain[0].duration, 0.07, accuracy: 1e-12)
-    XCTAssertEqual(plain[0].preferredFrameRateRange, CursorKeyframes.defaultFrameRate)
-    let capped = CursorKeyframes.animations("position", v, step: step, begin: 100, frameRate: CursorDebug.fps60.animationFrameRate)
+    XCTAssertEqual(plain[0].preferredFrameRateRange, CursorKeyframes.uncappedFrameRate)
+    let capped = CursorKeyframes.animations("position", v, step: step, begin: 100, frameRate: CursorFrameRate.capped)
     let close = { (a: [Double], b: [Double]) in a.count == b.count && zip(a, b).allSatisfy { abs($0 - $1) < 1e-12 } }
     XCTAssertTrue(close(capped.map(\.beginTime), [100, 100.04]), "\(capped.map(\.beginTime))")
     XCTAssertTrue(close(capped.map(\.duration), [0.02, 0.02]), "\(capped.map(\.duration))")
     XCTAssertEqual(capped.map { ($0.values as? [NSValue])?.map(\.pointValue.x) ?? [] }, [[0, 1, 2], [2, 3, 4]])
     // The latest-begun animation wins in Core Animation, so only the first fills backwards; each holds its end after.
     XCTAssertEqual(capped.map(\.fillMode), [.both, .forwards])
-    XCTAssertTrue(capped.allSatisfy { !$0.isRemovedOnCompletion && $0.preferredFrameRateRange == CursorDebug.fps60.animationFrameRate })
+    XCTAssertTrue(capped.allSatisfy { !$0.isRemovedOnCompletion && $0.preferredFrameRateRange == CursorFrameRate.capped })
     XCTAssertEqual(plain[0].fillMode, .backwards)
-    XCTAssertTrue(plain[0].isRemovedOnCompletion, "the default's animation is as it always was")
+    XCTAssertTrue(plain[0].isRemovedOnCompletion, "the uncapped animation is as the cursor drew before the cap")
     let layer = CALayer()
     CursorKeyframes.install(capped, on: layer, key: "glide")
     XCTAssertEqual(Set(layer.animationKeys() ?? []), ["glide", "glide#1"])

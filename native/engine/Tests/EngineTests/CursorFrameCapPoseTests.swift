@@ -4,9 +4,10 @@ import QuartzCore
 import XCTest
 @testable import Engine
 
-// The fps60 arm draws exactly what the default draws (#235's task-8 report, the design session's follow-up): its
-// frame-rate range changes no value, and its keyframes, split at every hold (CursorKeyframes, changingRuns), move no
-// time. Core Animation's own evaluation decides it: two layer trees, the default's and the arm's, are given the same
+// The capped cursor, the default since 2026-10-31, draws exactly what the uncapped one draws (the `uncapped` arm, the
+// cursor before the cap; #235's task-8 report, the design session's follow-up): its frame-rate range changes no value,
+// and its keyframes, split at every hold (CursorKeyframes, changingRuns), move no time. Core Animation's own
+// evaluation decides it: two layer trees, the uncapped and the capped, are given the same
 // motion through the panel's own builders, attached to an offscreen CARenderer (a layer has no presentation without a
 // context; nothing is rendered), and their presentation is sampled every 5 ms across glides, a drag, the press dip, a
 // fade and the rock by stopping the root's clock at each time. Every animated property is compared: the glide's
@@ -14,7 +15,7 @@ import XCTest
 // arrow's blur and the rock's rotation.
 
 final class CursorFrameCapPoseTests: XCTestCase {
-  private static let capped = CursorDebug.fps60.animationFrameRate!
+  private static let capped = CursorFrameRate.range(for: nil)!
   private static let sampleStep = 0.005
   /// CursorHalo.side (66 pt, main-actor isolated there).
   private static let haloSide: CGFloat = 66
@@ -124,7 +125,7 @@ final class CursorFrameCapPoseTests: XCTestCase {
     for tree in trees { tree.rocker.update(false, on: tree.rock, at: host) }
   }
 
-  /// Every sample where the arm's pose differs from the default's: [(ms from the motion's begin, property, default, arm)].
+  /// Every sample where the capped pose differs from the uncapped: [(ms from the motion's begin, property, uncapped, capped)].
   private func differences(_ trajectory: Trajectory, name: String) -> (mismatches: [String], runs: [String: Int], sampled: Int, largest: [String: Double]) {
     root.sublayers?.forEach { $0.removeFromSuperlayer() }
     root.speed = 1
@@ -156,7 +157,7 @@ final class CursorFrameCapPoseTests: XCTestCase {
         // Core Animation interpolates in its own float arithmetic, and a run's fraction is found from its own begin:
         // the same pose to a ten-thousandth of a point, a millionth of a scale, an angle or an opacity.
         if !(worst <= (property == "position" ? 1e-4 : 1e-6)) {
-          mismatches.append("\(name) at \(String(format: "%.1f", (t - begin) * 1000)) ms: \(property) default \(plain) fps60 \(armed) (by \(worst))")
+          mismatches.append("\(name) at \(String(format: "%.1f", (t - begin) * 1000)) ms: \(property) uncapped \(plain) capped \(armed) (by \(worst))")
         }
       }
       t += Self.sampleStep
@@ -168,7 +169,7 @@ final class CursorFrameCapPoseTests: XCTestCase {
 
   private let bounds = CGRect(x: 0, y: 0, width: 1512, height: 945)
 
-  func testTheArmDrawsTheDefaultsPoseEvery5msAcrossGlidesADragTheDipTheFadeAndTheRock() throws {
+  func testTheCapDrawsTheUncappedPoseEvery5msAcrossGlidesADragTheDipTheFadeAndTheRock() throws {
     let start = CursorState.rest(at: CGPoint(x: 200, y: 700))
     let path = plan(from: start, to: CGPoint(x: 1300, y: 300), bounds: bounds, reduceMotion: false)
     let backward = plan(from: .rest(at: CGPoint(x: 1300, y: 300)), to: CGPoint(x: 150, y: 600), bounds: bounds, reduceMotion: false)
@@ -184,13 +185,13 @@ final class CursorFrameCapPoseTests: XCTestCase {
       let (mismatches, runs, sampled, largest) = differences(trajectory, name: name)
       XCTAssertGreaterThan(sampled, Int(trajectory.duration / Self.sampleStep), name)
       XCTAssertTrue(mismatches.isEmpty, "\(mismatches.count) of \(sampled) samples differ; the first: \(mismatches.prefix(12).joined(separator: "; "))")
-      report.append("\(name) \(Int((trajectory.duration * 1000).rounded())) ms: \(sampled) samples, fps60 runs \(runs.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")), largest difference \(largest.sorted { $0.key < $1.key }.map { "\($0.key) \(String(format: "%.1e", $0.value))" }.joined(separator: ", "))")
+      report.append("\(name) \(Int((trajectory.duration * 1000).rounded())) ms: \(sampled) samples, capped runs \(runs.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")), largest difference \(largest.sorted { $0.key < $1.key }.map { "\($0.key) \(String(format: "%.1e", $0.value))" }.joined(separator: ", "))")
       if name == "drag" { XCTAssertGreaterThan(runs["glide"] ?? 0, 1, "the drag's position holds between its glide and its trace: split, not kept") }
     }
     print("CursorFrameCapPoseTests: " + report.joined(separator: "; "))
   }
 
-  /// The comparison sees a difference when there is one: an arm whose runs were shifted by one sample would be caught.
+  /// The comparison sees a difference when there is one: a capped tree whose runs were shifted by one sample would be caught.
   func testTheComparisonCatchesAShiftedRun() throws {
     let trajectory = plan(from: .rest(at: CGPoint(x: 200, y: 700)), to: CGPoint(x: 1300, y: 300), bounds: bounds, reduceMotion: false)
     root.sublayers?.forEach { $0.removeFromSuperlayer() }

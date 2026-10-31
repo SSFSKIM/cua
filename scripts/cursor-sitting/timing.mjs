@@ -23,10 +23,11 @@
 // kinds of series are recorded under their own item and never judged: one under the owner's own source (the source
 // read and kept, not required), and an arm, run with engine.json's `cursorDebug` set to one of the engine's diagnostic
 // arms (the engine relaunched with it, the running arm checked, engine.json put back and the engine stopped after).
-// The `fps60` arm, which caps the cursor's animations at 60 Hz, first proves its cap: the approved bundle's cursor probe
-// glides with and without it, and the window server's frames during those glides are counted (./frames.mjs); every
-// series then counts the frames during its own glides (cursor-sitting.mjs), so the arm's timing is read beside the rate
-// its glides actually ran at.
+// The cursor's animations are capped at 60 Hz by default (#235's Decision Log, 2026-10-31); the `uncapped` arm lifts the
+// cap, as the cursor was before. Its series first proves the cap: the approved bundle's cursor probe glides with the arm
+// and without it, and the window server's frames during those glides are counted (./frames.mjs); every series then
+// counts the frames during its own glides (cursor-sitting.mjs), so the arm's timing is read beside the rate its glides
+// actually ran at.
 import {CLEAR_SELECTION, CLICK_AT, CLICK_CONTROL_TIMED, DRAG, PRIME, STILL_SAMPLE, TYPING_SAMPLE} from './cells.mjs';
 import {sampleOrder} from './stats.mjs';
 
@@ -37,9 +38,9 @@ export const STILL_WAIT_MS = 1200, STILL_TAIL_MS = 250, STILL_WAIT_MAX_MS = 4000
 const A = [0.1, 0.35], B = [0.9, 0.85];
 
 // The engine's cursor arms, engine.json `cursorDebug` (native/engine/Sources/Engine/Config.swift, CursorDebug).
-export const CURSOR_ARMS = Object.freeze(['panelOut', 'noBackdrop', 'noRock', 'legacyLayers', 'fps60']);
-// The arm whose cap the series proves first (the glide-frames task).
-export const FRAME_CAP_ARM = 'fps60';
+export const CURSOR_ARMS = Object.freeze(['panelOut', 'noBackdrop', 'noRock', 'legacyLayers', 'uncapped']);
+// The arm that lifts the default's frame-rate cap: its series first proves the cap against it (the glide-frames task).
+export const UNCAPPED_ARM = 'uncapped';
 
 // Why the input source `reading` (the probe's `input-source current`) is not a Latin keyboard layout, or null when it
 // is: a plain keyboard layout (no input method), ASCII-capable, and the layout key events are translated with now.
@@ -151,7 +152,7 @@ export function timingSteps(kind, samples, {arm = null, ownerSource = false, sou
     {task: 'select-source', args: source ? ['named', 'textedit', source] : [ownerSource ? 'owner' : 'latin', 'textedit'], required: true},
     {task: 'input-source', args: [ownerSource || source ? 'record' : 'latin'], required: true},
     ...(still ? [{task: 'still-plan', args: ['textedit', A, B, STILL_WAIT_MS], required: true}] : []),
-    ...(arm === FRAME_CAP_ARM ? [{task: 'glide-frames', args: [arm]}] : []),
+    ...(arm === UNCAPPED_ARM ? [{task: 'glide-frames', args: [arm]}] : []),
     ...(arm ? [{task: 'engine-json-arm', args: [arm]}, {task: 'engine-stop'}] : []),
     ...sessions(kind === 'typing' ? ['textedit'] : ['textedit', 'electron']),
     ...(arm ? [{task: 'engine-status', args: ['on', arm], required: true}] : []),

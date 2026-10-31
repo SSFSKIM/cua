@@ -30,7 +30,7 @@ import {liveTargetGuard} from './target-guard.mjs';
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const SCENES_CLI = fileURLToPath(new URL('../repl-parity/scenes-mac.mjs', import.meta.url));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-// The glides the fps60 arm's cap check counts on each side (about 4 s of probe a side), and how long it lets the series'
+// The glides the cap check counts on each side (about 4 s of probe a side), and how long it lets the series'
 // frame stream deliver the last of them.
 const GLIDE_CHECK_GLIDES = 2, FRAME_STREAM_SETTLE_MS = 1000;
 
@@ -102,9 +102,9 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
       'engine-json-off': async () => writeSettings(cursorOffSettings),
       // Likewise, the cursor's diagnostic arm written (the engine reads it at its next launch).
       'engine-json-arm': async ([arm]) => ({...writeSettings(text => cursorDebugSettings(text, arm)), arm}),
-      // The cap of an arm that caps the cursor's frame rate (fps60), proven before its series (./frames.mjs): the approved
-      // bundle's cursor probe glides twice and rocks, on its own transparent window, nothing driven, without the arm and
-      // then with it; the window server's frames inside each glide and the rock counted. Recorded, never stopping the
+      // The default's 60 Hz cap, proven before the series of the arm that lifts it (`uncapped`; ./frames.mjs): the
+      // approved bundle's cursor probe glides twice and rocks, on its own transparent window, nothing driven, with the
+      // arm and then without it; the window server's frames inside each glide and the rock counted. Recorded, never stopping the
       // series (./frames.mjs glideFramesCheck): a cap that does not take effect is the finding, and a count that fails is
       // undetermined; only a probe whose end is unconfirmed (stuck) stops it. The probes' pids are kept, so the series'
       // own count leaves their glides out.

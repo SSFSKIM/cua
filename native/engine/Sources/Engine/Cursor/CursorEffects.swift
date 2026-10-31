@@ -5,14 +5,19 @@ import QuartzCore
 // and the thinking rock, kept apart from the panel so they can be checked on plain layers, headless. Every host time is
 // CACurrentMediaTime's.
 
-extension CursorDebug {
-  /// The frame-rate range every animation of the cursor's layers asks for under this arm, nil for each animation's own.
-  /// `fps60`'s 30–60 Hz, preferring 60: measured on the MacBook's 120 Hz ProMotion display (macOS 26.6.2), WindowServer
-  /// then composites a glide at about 60 frames a second where the default composites about 120, as long as nothing
-  /// else on the display asks for more (the rate is the display's: any 120 Hz animation on it takes the glide to 120
-  /// again) and no capped animation holds a value from one frame to the next (`changingRuns`; #235's task-8 report).
-  var animationFrameRate: CAFrameRateRange? {
-    self == .fps60 ? CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60) : nil
+/// The frame rate the cursor's animations ask for (#235's Decision Log, 2026-10-31: the 60 Hz cap is the default).
+enum CursorFrameRate {
+  /// 30–60 Hz, preferring 60, on every animation of the cursor's layers: measured on the MacBook's 120 Hz ProMotion
+  /// display (macOS 26.6.2), WindowServer then composites a glide at about 60 frames a second where the uncapped glide
+  /// composites about 120, as long as nothing else on the display asks for more (the rate is the display's: any 120 Hz
+  /// animation on it takes the glide to 120 again) and no capped animation holds a value from one frame to the next
+  /// (`changingRuns`; #235's task-8 report). It draws the uncapped poses (CursorFrameCapPoseTests).
+  static let capped = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+
+  /// The range every animation of the cursor's layers asks for under `arm`: the cap, or nil for each animation's own
+  /// under `uncapped`.
+  static func range(for arm: CursorDebug?) -> CAFrameRateRange? {
+    arm == .uncapped ? nil : capped
   }
 }
 
@@ -41,11 +46,11 @@ func changingRuns(_ values: [NSValue]) -> [ClosedRange<Int>] {
 /// A motion's keyframe animations on one of the cursor's layers (the spec's Rendering: the trajectory installed as
 /// keyframes, played by the render server).
 enum CursorKeyframes {
-  /// The default glide's range: up to the display's 120 Hz on ProMotion.
-  static let defaultFrameRate = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+  /// The uncapped glide's range: up to the display's 120 Hz on ProMotion.
+  static let uncappedFrameRate = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
 
-  /// `values`, one every `step` from `begin` (the layer's time), as keyframe animations. With no `frameRate` (no arm), one
-  /// animation over them all, as the default always drew. With one (the fps60 arm), one animation per changing run
+  /// `values`, one every `step` from `begin` (the layer's time), as keyframe animations. With no `frameRate` (the
+  /// `uncapped` arm), one animation over them all, as the cursor drew before the cap. With one (the default), one animation per changing run
   /// (changingRuns), each at its run's own begin and length, so no time moves. Core Animation applies a layer's
   /// animations in the order of their begin times, the latest winning (measured, macOS 26.6.2), so a run that has not
   /// begun must not fill backwards over an earlier one: the first run fills backwards (the leading hold) and forwards,
@@ -62,7 +67,7 @@ enum CursorKeyframes {
       animation.duration = Double(run.count - 1) * step
       animation.calculationMode = .linear
       animation.beginTime = begin + Double(run.lowerBound) * step
-      animation.preferredFrameRateRange = frameRate ?? defaultFrameRate
+      animation.preferredFrameRateRange = frameRate ?? uncappedFrameRate
       if frameRate == nil {
         animation.fillMode = .backwards
       } else {
@@ -135,9 +140,9 @@ enum CursorDips {
   static let reducedDuration = 0.1, reducedOpacity = 0.45
 
   /// Replaces every dip `layer` has scheduled with `dips`: a motion that supersedes another cancels the dips the old one
-  /// had not played, whether it has dips of its own or none (a scroll's, a frozen cursor's). `frameRate`: the arm's
-  /// range (CursorDebug.animationFrameRate), nil for the default.
-  static func schedule(_ dips: [TimeInterval], on layer: CALayer, reduceMotion: Bool, frameRate: CAFrameRateRange? = nil) {
+  /// had not played, whether it has dips of its own or none (a scroll's, a frozen cursor's). `frameRate`: the cursor's
+  /// range (CursorFrameRate), nil for each dip's own (the `uncapped` arm).
+  static func schedule(_ dips: [TimeInterval], on layer: CALayer, reduceMotion: Bool, frameRate: CAFrameRateRange? = CursorFrameRate.capped) {
     for key in layer.animationKeys() ?? [] where key.hasPrefix(keyPrefix) { layer.removeAnimation(forKey: key) }
     for (i, dip) in dips.enumerated() {
       let animation = dipAnimation(reduceMotion: reduceMotion)
@@ -194,10 +199,10 @@ final class CursorRock {
   private(set) var rocking = false
   /// When the rock now playing began (host time); nil while it is not rocking.
   private(set) var startedAt: TimeInterval?
-  /// The arm's frame-rate range for every animation of the rock (CursorDebug.animationFrameRate), nil for the default.
+  /// The frame-rate range for every animation of the rock (CursorFrameRate), nil for each one's own (the `uncapped` arm).
   private let frameRate: CAFrameRateRange?
 
-  init(frameRate: CAFrameRateRange? = nil) {
+  init(frameRate: CAFrameRateRange? = CursorFrameRate.capped) {
     self.frameRate = frameRate
   }
 

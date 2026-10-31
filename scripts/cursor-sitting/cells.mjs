@@ -173,3 +173,13 @@ if (index === null) throw new Error("${control} is not in the ${scene} window's 
 ${timed('await __app.click(index)')}
 return {ms};`);
 };
+
+// The timing diagnosis's typing arm (./diagnose.mjs): clicks at the fractions `clicks` in order (untimed; the cursor
+// glides to each where it is on), a pause of `waitMs` (0: the keys start while the last glide plays; 2500: after it has
+// settled), then `count` timed press_key calls ("x"). -> {press_key: total, each}.
+export const KEYS_AFTER = (scene, {clicks = [], waitMs = 0, count = 30} = {}) => cell(`${head(scene)}
+${clicks.map(f => `await __app.click(${at(scene, f)});`).join('\n')}
+${waitMs ? `await new Promise(resolve => setTimeout(resolve, ${waitMs}));` : ''}
+const each = [];
+for (let i = 0; i < ${count}; i++) { const t = performance.now(); await __app.pressKey("x"); each.push(performance.now() - t); }
+return {press_key: each.reduce((a, b) => a + b, 0), each};`);

@@ -23,10 +23,13 @@
 // kinds of series are recorded under their own item and never judged: one under the owner's own source (the source
 // read and kept, not required), and an arm, run with engine.json's `cursorDebug` set to one of the engine's diagnostic
 // arms (the engine relaunched with it, the running arm checked, engine.json put back and the engine stopped after).
-import {CLICK_AT, CLICK_CONTROL_TIMED, DRAG, PRIME, TYPING_SAMPLE} from './cells.mjs';
+import {CLICK_AT, CLICK_CONTROL_TIMED, DRAG, PRIME, STILL_SAMPLE, TYPING_SAMPLE} from './cells.mjs';
 import {sampleOrder} from './stats.mjs';
 
 export const SAMPLE_GAP_MS = 6000;
+// The still series' wait after its glide click, at least: the planned settle plus STILL_TAIL_MS (the halo's swell relaxes
+// after the tip settles), and under the 5 s fade.
+export const STILL_WAIT_MS = 1200, STILL_TAIL_MS = 250, STILL_WAIT_MAX_MS = 4000;
 const A = [0.1, 0.35], B = [0.9, 0.85];
 
 // The engine's cursor arms, engine.json `cursorDebug` (native/engine/Sources/Engine/Config.swift, CursorDebug).
@@ -44,8 +47,9 @@ export function latinSourceProblem(reading) {
 
 // The item a series records under: the judged item (12 or 13), or that item with the arm's name, `owner-source`, or
 // `source-<the named source's last part>` (com.apple.inputmethod.Korean.2SetKorean: 12-source-2SetKorean).
-export function timingItem(kind, {arm = null, ownerSource = false, source = null} = {}) {
+export function timingItem(kind, {arm = null, ownerSource = false, source = null, still = false} = {}) {
   const item = kind === 'typing' ? '12' : '13';
+  if (still) return `${item}-still`;
   if (source) return `${item}-source-${source.split('.').at(-1).replace(/[^\w-]/g, '-')}`;
   return arm ? `${item}-${arm}` : ownerSource ? `${item}-owner-source` : item;
 }
@@ -83,11 +87,14 @@ const sessions = scenes => [
 // `source`: a recorded typing series under that named input source (the design session's ruling, 2026-10-31: the
 // owner's own source is ABC, so the input-method series runs under 2-Set Korean), selected and read back like the
 // others, the owner's recorded source selected again after it (and, on a failure, by the runner's cleanup).
-export function timingSteps(kind, samples, {arm = null, ownerSource = false, source = null} = {}) {
+// `still`: a recorded press_key series with the cursor visible but still (./cells.mjs STILL_SAMPLE): after the glide
+// click, a wait the still-plan task sizes from the planned settle, kept free of the rock, then the keys; under ABC, the
+// owner's source back after it.
+export function timingSteps(kind, samples, {arm = null, ownerSource = false, source = null, still = false} = {}) {
   if (!SERIES[kind]) throw new Error('timing takes typing or clicks');
   if (arm !== null && !CURSOR_ARMS.includes(arm)) throw new Error(`the arm is one of ${CURSOR_ARMS.join(', ')}`);
-  if ([arm !== null, ownerSource, source !== null].filter(Boolean).length > 1) throw new Error('an arm, the owner\'s source and a named source are recorded one at a time');
-  if (source !== null && kind !== 'typing') throw new Error('a named source is for the typing series');
+  if ([arm !== null, ownerSource, source !== null, still].filter(Boolean).length > 1) throw new Error('an arm, the owner\'s source, a named source and the still series are recorded one at a time');
+  if ((source !== null || still) && kind !== 'typing') throw new Error('a named source and the still series are for the typing series');
   const counts = typeof samples === 'number' ? Object.fromEntries(SERIES[kind].map(name => [name, samples])) : samples;
   if (!Object.keys(counts).length || Object.entries(counts).some(([name, n]) => !SERIES[kind].includes(name) || !Number.isInteger(n) || n < 1))
     throw new Error(`the counts name ${kind} series with a whole number of samples each`);
@@ -95,6 +102,7 @@ export function timingSteps(kind, samples, {arm = null, ownerSource = false, sou
   const at = i => SERIES[kind].filter(name => (counts[name] ?? 0) > i);
   const sample = (side, i) => {
     const covers = at(i);
+    if (still) return [{run: side, cell: results => STILL_SAMPLE('textedit', A, B, results['still plan']?.waitMs ?? STILL_WAIT_MS), label: `still ${side} ${i}`, keys: 'textedit', sample: {side, i, covers: ['press_key x30']}}];
     if (kind === 'typing') {
       const cell = TYPING_SAMPLE('textedit', A, B, {typeText: covers.includes('type_text'), pressKey: covers.includes('press_key x30')});
       return [{run: side, cell, label: `typing ${side} ${i}`, keys: 'textedit', sample: {side, i, covers}}];
@@ -107,17 +115,27 @@ export function timingSteps(kind, samples, {arm = null, ownerSource = false, sou
     ];
   };
   const what = arm ? `, the cursor's ${arm} arm (recorded, not judged)` : ownerSource ? ', under the owner\'s own input source (recorded, not judged)'
-    : source ? `, under the input source ${source} (recorded, not judged)` : '';
+    : source ? `, under the input source ${source} (recorded, not judged)` : still ? ', press_key with the cursor still after its glide (recorded, not judged)' : '';
   return [
     // The series this run asks for, recorded first: a run that fails before its first sample still supersedes them
     // (seriesRuns), so an earlier verdict on them never outlives a rerun that was asked for.
     {series: Object.keys(counts), counts},
     {say: `Acceptance ${kind === 'typing' ? 12 : 13}${what}: ${Object.entries(counts).map(([name, n]) => `${name} ${n}`).join(', ')} samples a side, interleaved; nobody uses the Mac until the last sample`},
     {task: 'activate', args: ['textedit'], required: true},
+    // A window of TextEdit's own on top of its run window (the second sitting: a 53 × 48 pt one, likely the popover a
+    // drag's text selection leaves) stands between the run window and the keys and refuses the selection: dismissed by
+    // a click in the run window's text through a cursor-off session, opened only when there is one, then required gone.
+    {task: 'overlay-check', args: ['textedit']},
+    {open: 'tidy', scenes: ['textedit'], env: {CUA_CURSOR: '0'}, when: results => Boolean(results.overlays?.length)},
+    {run: 'tidy', cell: CLICK_AT('textedit', [0.5, 0.92]), label: 'a click in the run window\'s text, dismissing what lies over it', when: results => Boolean(results.overlays?.length)},
+    {wait: 500, when: results => Boolean(results.overlays?.length)},
+    {close: 'tidy', when: results => Boolean(results.overlays?.length)},
+    {task: 'overlay-check', args: ['textedit', 'none'], required: true},
     // With the owner's yes (./input-source.mjs), the source is selected here, only once the scene's own launch and run
     // window are checked to be on top (the target guard's check), and read back; then the series' own check, as before.
     {task: 'select-source', args: source ? ['named', 'textedit', source] : [ownerSource ? 'owner' : 'latin', 'textedit'], required: true},
     {task: 'input-source', args: [ownerSource || source ? 'record' : 'latin'], required: true},
+    ...(still ? [{task: 'still-plan', args: ['textedit', A, B, STILL_WAIT_MS], required: true}] : []),
     ...(arm ? [{task: 'engine-json-arm', args: [arm]}, {task: 'engine-stop'}] : []),
     ...sessions(kind === 'typing' ? ['textedit'] : ['textedit', 'electron']),
     ...(arm ? [{task: 'engine-status', args: ['on', arm], required: true}] : []),
@@ -126,7 +144,7 @@ export function timingSteps(kind, samples, {arm = null, ownerSource = false, sou
     ...sampleOrder(longest).flatMap((pair, i) => pair.flatMap(side => [...sample(side, i), {wait: SAMPLE_GAP_MS}])),
     {close: 'off'}, {close: 'on'},
     ...(arm ? [{task: 'engine-json-restore'}, {task: 'engine-stop'}] : []),
-    ...(source ? [{task: 'select-source', args: ['owner', 'textedit'], required: true}] : []),
+    ...(source || still ? [{task: 'select-source', args: ['owner', 'textedit'], required: true}] : []),
   ];
 }
 

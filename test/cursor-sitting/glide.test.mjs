@@ -64,3 +64,22 @@ test('order-meta writes its judgement and appends both order verdicts', async t 
   const verdicts = readFileSync(join(out, 'verdicts.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
   assert.deepEqual(verdicts.map(v => [v.id, v.verdict]), [['order-first-target', 'undetermined'], ['order-second-target', 'pass']]);
 });
+
+test('the planned settle of a move, from the reference: what the still series waits out', async () => {
+  const {plannedSettle} = await import('../../scripts/cursor-sitting/glide.mjs');
+  for (const c of vectors.cases.filter(v => v.panelHeight === 900)) {
+    const toGlobal = p => ({x: p.x, y: c.panelHeight - p.y});
+    const planned = plannedSettle(toGlobal(c.from), toGlobal(c.to), {width: 1440, height: 900, menuBar: 30});
+    assert.equal(planned.mode, c.mode, c.name);
+    assert.ok(Math.abs(planned.settleSeconds - c.settleTime) < 1e-9, `${c.name}: ${planned.settleSeconds} against ${c.settleTime}`);
+  }
+});
+
+test('overlays: the scene\'s own on-screen windows above its run window, front to back', async () => {
+  const {overlaysAbove} = await import('../../scripts/cursor-sitting/glide.mjs');
+  const w = (number, width, height, onScreen = true) => ({number, bounds: {x: 0, y: 0, width, height}, onScreen});
+  assert.deepEqual(overlaysAbove([w(9, 53, 48), w(7, 700, 700), w(5, 40, 40)], 7).map(o => o.number), [9]);
+  assert.deepEqual(overlaysAbove([w(9, 53, 48, false), w(7, 700, 700)], 7), []);
+  assert.deepEqual(overlaysAbove([w(7, 700, 700)], 7), []);
+  assert.deepEqual(overlaysAbove([w(9, 53, 48)], 7).map(o => o.number), [9], 'a run window not on screen: everything is above it');
+});

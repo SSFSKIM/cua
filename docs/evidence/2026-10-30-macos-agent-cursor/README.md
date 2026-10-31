@@ -403,6 +403,19 @@ series whose scene is gone from the front (a locked screen, say) rather than tim
      in the run's `input-source` row.
    - After the series, and on a failure alike, the owner's recorded source (ABC) is selected again and read back.
      With another window on top at a failure it is left as it is, printed with `!!!`; then run `source restore`.
+   **Recorded questions, for the next unattended run** (each under its own item, never judged):
+   - `$S timing typing --still --run "$RUN" --out "$OUT2"` asks whether press_key's cost is confined to the cursor
+     moving (`item-12-still.jsonl`, ABC, the owner's source back after it). Each side's sample is a prime, a click
+     that glides, a wait, then 30 timed press_key calls with the cursor visible and still.
+     - The wait is sized by `still-plan` from the glide's planned settle (the motion reference, for the run window's
+       real corner points), plus 250 ms for the halo's swell, and at least 1.2 s: about 1.4 s for a usual TextEdit
+       window.
+     - The wait is kept free of the rock: the rock starts only after 0.3 s with no request of the session in flight,
+       so untimed observations, which leave a still cursor still, run at most 100 ms apart until the keys start.
+   - Every guarded series now first checks for a window of TextEdit's own over its run window. At the second sitting a
+     53 × 48 pt one, likely the popover a drag's text selection leaves, made the selection refuse. If one is there, a
+     cursor-off session clicks once in the run window's text to dismiss it, and the series goes on only once none is
+     left.
 9. **The source back, the scenes down, the verdicts.** `$S source restore --out "$OUT2"` (the owner's source, read
    back; exit 1 says it is not), `$SC down all --run "$RUN"`, `$S judge --out "$OUT2"`, `$S summary --out "$OUT2"`,
    then `kill "$(cat "$SIT/caffeinate.pid")"`.

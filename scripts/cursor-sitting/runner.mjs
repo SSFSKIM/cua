@@ -18,11 +18,11 @@ import {FIXTURE_ACCESSIBILITY_FILE} from '../native-matrix/fixtures/electron-fix
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {readFocus, runWindowBounds} from './focus.mjs';
-import {farPoint} from './glide.mjs';
+import {BUILT_IN_SCREEN, farPoint, overlaysAbove, plannedSettle} from './glide.mjs';
 import {liveSourceSwitch, restoreAfterFailure, sourceTargetProblem, switchSource} from './input-source.mjs';
 import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
 import {openDriven} from './session.mjs';
-import {latinSourceProblem} from './timing.mjs';
+import {latinSourceProblem, STILL_TAIL_MS, STILL_WAIT_MAX_MS} from './timing.mjs';
 import {liveTargetGuard} from './target-guard.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
@@ -145,6 +145,26 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
         ctx.results['glide start'] = far;
         return {ok: true, bounds, ...far};
       },
+      // The scene's own windows over its run window (./glide.mjs overlaysAbove), kept as `overlays`; with `none`,
+      // ok only when there are none.
+      'overlay-check': async ([scene, expect], ctx) => {
+        const record = io.scene(scene);
+        const overlays = overlaysAbove(guard.windows(record.pid), record.window.number).map(w => ({number: w.number, bounds: w.bounds}));
+        ctx.results.overlays = overlays;
+        if (expect === 'none' && overlays.length) return {ok: false, overlays, problem: `the ${scene} scene's own window${overlays.length > 1 ? 's' : ''} ${overlays.map(o => `${o.number} (${o.bounds.width} × ${o.bounds.height} pt)`).join(', ')} still lie${overlays.length > 1 ? '' : 's'} over its run window`};
+        return {ok: true, overlays};
+      },
+      // The still series' wait: the motion the engine plans for its glide click (./glide.mjs plannedSettle, from the
+      // run window's bounds now), plus the tail; refused when that does not fit under the fade.
+      'still-plan': async ([scene, from, to, floorMs], ctx) => {
+        const record = io.scene(scene), b = runWindowBounds(guard.windows(record.pid), record.window.number);
+        if (!b) return {ok: false, problem: `the ${scene} scene's run window is not on screen`};
+        const point = f => ({x: b.x + f[0] * b.width, y: b.y + f[1] * b.height});
+        const planned = plannedSettle(point(from), point(to));
+        const waitMs = Math.max(floorMs, Math.ceil(planned.settleSeconds * 1000 + STILL_TAIL_MS));
+        ctx.results['still plan'] = {waitMs};
+        return {ok: waitMs <= STILL_WAIT_MAX_MS, waitMs, planned, bounds: b, screen: BUILT_IN_SCREEN, ...(waitMs > STILL_WAIT_MAX_MS ? {problem: `the glide's planned settle (${planned.settleSeconds} s) does not fit under the fade`} : {})};
+      },
       'record-stop': async (_args, ctx) => {
         if (!ctx.recording) return {ok: false, problem: 'no recording is running'};
         const {handle, clip} = ctx.recording;
@@ -239,6 +259,7 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
       n++;
       log(`[${item}.${n}] ${describe(step)}`);
       if (dryRun) { record({step: n, kind: 'plan', text: describe(step)}); continue; }
+      if (step.when && !step.when(ctx.results)) { record({step: n, kind: 'skipped', text: describe(step)}); continue; }
       if (step.open) {
         ctx.sessions[step.open] = await io.open({name: step.open, engine: step.engine ?? engine, env: step.env ?? {}, scenes: step.scenes.map(io.scene), device: step.device ?? null});
         record({step: n, kind: 'open', session: step.open, env: step.env ?? {}, engine: step.engine ?? engine});

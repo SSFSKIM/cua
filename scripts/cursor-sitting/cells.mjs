@@ -189,6 +189,21 @@ ${body}
 return {${[typeText && 'type_text: typed', pressKey && 'press_key: each.reduce((a, b) => a + b, 0), each'].filter(Boolean).join(', ')}};`);
 };
 
+// The still sample (a recorded typing series: is press_key's cost confined to the cursor moving?): primed at `from`, a
+// click at `to` that glides, then `waitMs` with untimed observations at most 100 ms apart, so no 0.3 s passes with no
+// request in flight and the rock cannot start (thinking starts only then, CursorHub), until the glide has settled, then
+// 30 timed press_key calls with the cursor visible and still. -> {press_key, each, keptAlive}.
+export const STILL_SAMPLE = (scene, from, to, waitMs) => cell(`${head(scene)}
+${prime(scene, from)}
+await __app.click(${at(scene, to)});
+const __until = performance.now() + ${Number(waitMs)};
+let keptAlive = 0;
+while (performance.now() < __until) { await observe(); keptAlive++; await new Promise(resolve => setTimeout(resolve, 100)); }
+let t;
+const each = [];
+for (let i = 0; i < 30; i++) { t = performance.now(); await __app.pressKey("x"); each.push(performance.now() - t); }
+return {press_key: each.reduce((a, b) => a + b, 0), each, keptAlive};`);
+
 // An element click on `control` alone, timed, with nothing after it, so the result's meta is the click's: its route
 // (Acceptance 13: route 3 is the engine's route for the fixture's button in the background), its receipt and round
 // trip (Acceptance 1's recording). -> {ms, before}: the control's value before the click.

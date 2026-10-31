@@ -24,7 +24,7 @@
 //       screen recording of the TextEdit and Chrome for Testing windows (./cursor-sitting/recording.mjs), and
 //       1-check's: a few seconds of the same rectangle, nothing driven, which proves the recorder before item 1.
 //   cursor-sitting.mjs timing typing|clicks --run <dir> --out <dir> [--series <id>,…] [--samples <n>]
-//                     [--arm <arm> | --owner-source | --source <input source id>] [--quiet] [--dry-run]
+//                     [--arm <arm> | --owner-source | --source <input source id> | --still] [--quiet] [--dry-run]
 //       Acceptance 12 (typing) or 13 (clicks): interleaved cursor-on and cursor-off samples (./cursor-sitting/timing.mjs),
 //       recorded in <out>/item-12.jsonl or item-13.jsonl, then judged as `judge` does. Each series has its own count a
 //       side: a judged run starts coordinate click and drag at 40, element click, type_text and press_key at 20; an arm
@@ -32,7 +32,11 @@
 //       press-key) and --samples sets them all: the rerun of an undetermined series is `--series <id> --samples 40`.
 //       With the owner's yes recorded (`source consent`), the source is selected first (ABC; the owner's own for
 //       --owner-source; the named one for --source, a typing series recorded as item-12-source-<name>.jsonl, never
-//       judged, the owner's source selected again after it) and read back, or the run stops. Refused, before any session opens, unless the input source is a
+//       judged, the owner's source selected again after it) and read back, or the run stops. --still records press_key
+//       alone with the cursor visible but still after its glide (item-12-still.jsonl, never judged; ABC, the owner's
+//       source after it): is the press_key cost confined to the cursor moving? Before every series, a window of
+//       TextEdit's own over its run window is dismissed by a click through a cursor-off session, and its absence
+//       required. Refused, before any session opens, unless the input source is a
 //       Latin keyboard layout with TextEdit in front. --arm runs the series with
 //       engine.json's `cursorDebug` set to one of the engine's cursor arms (panelOut, noBackdrop, noRock,
 //       legacyLayers), engine.json put back and the engine stopped after; --owner-source runs it under whatever source
@@ -99,7 +103,7 @@ const SCRIPT = fileURLToPath(import.meta.url);
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'string'}, aside: {type: 'string'}, run: {type: 'string'}, out: {type: 'string'},
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
-  arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'}, source: {type: 'string'}, 'no-clip': {type: 'boolean', default: false},
+  arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'}, source: {type: 'string'}, 'no-clip': {type: 'boolean', default: false}, still: {type: 'boolean', default: false},
   quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
@@ -243,10 +247,12 @@ export async function main(argv) {
     const kind = positionals[0], samples = values.samples === undefined ? null : Number(values.samples);
     if (!SERIES[kind]) throw new Error('timing takes typing or clicks');
     if (samples !== null && (!Number.isInteger(samples) || samples < 1)) throw new Error('--samples takes a positive whole number');
-    const series = {arm: values.arm ?? null, ownerSource: values['owner-source'], source: values.source ?? null};
+    const series = {arm: values.arm ?? null, ownerSource: values['owner-source'], source: values.source ?? null, still: values.still};
     if (series.source !== null && !/^[A-Za-z0-9._-]+$/.test(series.source)) throw new Error('--source takes an input source id (com.apple.inputmethod.Korean.2SetKorean)');
     if (series.arm !== null && !CURSOR_ARMS.includes(series.arm)) throw new Error(`--arm takes one of ${CURSOR_ARMS.join(', ')}`);
-    const counts = sampleCounts(kind, {samples, only: values.series ? values.series.split(',') : null, recorded: series.arm !== null || series.ownerSource || series.source !== null});
+    if (series.still && values.series) throw new Error('--still records press_key only');
+    const counts = sampleCounts(kind, {samples, only: series.still ? ['press-key'] : values.series ? values.series.split(',') : null,
+      recorded: series.arm !== null || series.ownerSource || series.source !== null || series.still});
     const item = timingItem(kind, series);
     const started = new Date();
     const code = await drive(timingSteps(kind, counts, series), {item, values});

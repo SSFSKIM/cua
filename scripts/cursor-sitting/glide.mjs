@@ -45,7 +45,7 @@ function motionReference() {
   if (reference) return reference;
   const source = readFileSync(REFERENCE, 'utf8').replace(/^#!.*\n/, '');
   const context = vm.createContext({process: {stdout: {write: () => true}}});
-  vm.runInContext(`${source}\n;globalThis.__reference = {Spring, CFG, DT, V};`, context);
+  vm.runInContext(`${source}\n;globalThis.__reference = {Spring, CFG, DT, V, vectorsFor};`, context);
   return (reference = context.__reference);
 }
 
@@ -126,4 +126,26 @@ export function writeOrderFromMeta({rows, out, now = () => new Date().toISOStrin
     appendFileSync(join(out, 'verdicts.jsonl'), `${JSON.stringify({item: '1', id: `order-${target}`, verdict: t.verdict, note: `from the engine's numbers (no clip): ${t.reason}`, at: now()})}\n`);
   }
   return judged;
+}
+
+// The MacBook's built-in display, as the cursor's panel spans it: its full frame, and the menu bar's height that the
+// visible frame (the path choice's preference) leaves out. An assumption where no reading is given.
+export const BUILT_IN_SCREEN = Object.freeze({width: 1512, height: 982, menuBar: 37});
+
+// The motion the engine plans for a coordinate move from `from` to `to` (global top-left points) on `screen`, by the
+// reference's own vectorsFor (mode, path choice, response, settle). -> {mode, settleSeconds, distance}.
+export function plannedSettle(from, to, screen = BUILT_IN_SCREEN) {
+  const {V, vectorsFor} = motionReference();
+  const H = screen.height;
+  const v = vectorsFor({name: 'planned', panelHeight: H, bounds: {x: 0, y: 0, w: screen.width, h: H - screen.menuBar},
+    from: V(from.x, H - from.y), to: V(to.x, H - to.y)});
+  return {mode: v.mode, settleSeconds: v.settleTime, distance: v.distance};
+}
+
+// The windows of a scene's process above its run window `number` (front to back, on screen only): what can stand
+// between the run window and the keys, like the 53 × 48 pt window over TextEdit's at the second sitting.
+export function overlaysAbove(windows, number) {
+  const shown = (windows ?? []).filter(w => w.onScreen !== false);
+  const at = shown.findIndex(w => w.number === number);
+  return (at < 0 ? shown : shown.slice(0, at)).filter(w => w.number !== number);
 }

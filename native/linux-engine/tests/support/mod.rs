@@ -54,21 +54,33 @@ impl Engine {
 
     /// An engine, leaving any window on the display open.
     pub fn spawn() -> Engine {
-        Engine::spawn_with(&[])
+        Engine::spawn_with(&[], &[])
     }
 
     /// An engine started with these options after `server` (`--desktop dedicated`), on a display with no unconfirmed
     /// paste's window open.
     pub fn start_with(options: &[&str]) -> Engine {
-        clear_display_record();
-        Engine::spawn_with(options)
+        Engine::start_with_env(options, &[])
     }
 
-    fn spawn_with(options: &[&str]) -> Engine {
+    /// [`Engine::start_with`] with these variables in the engine's environment (the live build's fault injection).
+    pub fn start_with_env(options: &[&str], env: &[(&str, &str)]) -> Engine {
+        clear_display_record();
+        Engine::spawn_with(options, env)
+    }
+
+    fn spawn_with(options: &[&str], env: &[(&str, &str)]) -> Engine {
         let bin = engine_bin();
         let mut child = Command::new(&bin)
             .arg("server")
             .args(options)
+            .envs(env.iter().copied())
+            // an engine given an injected fault says so on stderr; the test reads its effect, not the message
+            .stderr(if env.is_empty() {
+                Stdio::inherit()
+            } else {
+                Stdio::null()
+            })
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
@@ -89,6 +101,28 @@ impl Engine {
             lines,
             next_id: 1,
         }
+    }
+
+    /// One request, or None when the engine exits instead of answering (its stdout closed).
+    pub fn try_request(&mut self, command: &str, input: Value) -> Option<Result<Value, String>> {
+        let id = self.next_id;
+        self.next_id += 1;
+        let line = json!({"id": id, "command": command, "input": input}).to_string();
+        let stdin = self.stdin.as_mut().unwrap();
+        writeln!(stdin, "{line}").ok()?;
+        stdin.flush().ok()?;
+        let answer = match self.lines.recv_timeout(REQUEST_TIMEOUT) {
+            Ok(answer) => answer,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return None,
+            Err(_) => panic!("no answer to {command} within {REQUEST_TIMEOUT:?}"),
+        };
+        let answer: Value = serde_json::from_str(&answer).unwrap_or_else(|e| panic!("not JSON ({e}): {answer}"));
+        assert_eq!(answer["id"], json!(id), "answers come in request order");
+        Some(if answer["ok"] == json!(true) {
+            Ok(answer["output"].clone())
+        } else {
+            Err(answer["error"].as_str().unwrap_or("").to_string())
+        })
     }
 
     /// One request; the output on success, the error sentence otherwise.

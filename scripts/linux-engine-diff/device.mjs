@@ -17,8 +17,8 @@
 //   the drop may have happened, or that nothing was dropped only where nothing dropped and the witness is unchanged),
 //   at least one answer says the drop may have happened, and the background audit is clean;
 // - `late-take` (the take left unseen until after the release, `--dnd-defer-take`): the drag answers as a plain drag at
-//   its release, the next request on the same engine answers the late drag-and-drop notice (not run), and wherever the
-//   drop landed the witness shows the change the notice reports;
+//   its release, a read on the same engine runs, the first acting request answers the late drag-and-drop notice (not
+//   run), and wherever the drop landed the witness shows the change the notice reports;
 // - the cancel and the late case again with the drop's signature already held when the drag begins (Chrome active,
 //   focused and on top, a corner covered by an override-redirect window so the drag is watched): the engine records the
 //   bits held, and the answers follow the order of the take and the release, not the signature;
@@ -252,9 +252,12 @@ function device({ device: expect, condition = covered, read, request, effect, ro
         out.unchanged = ctx.before !== null && after !== null && JSON.stringify(after) === JSON.stringify(ctx.before);
       }
       if (expect === 'late-take') {
-        // the drag answered as a plain drag; the next request on the same engine carries the late drag and drop
+        // the drag answered as a plain drag; on the same engine a read runs, and the first acting request (a pointer
+        // move into the window, harmless had it run) carries the late drag and drop
         out.expected_notice = dndLateNotice(ctx.scene.app);
-        const next = await ctx.engine.request('list_windows', {});
+        const read = await ctx.engine.request('list_windows', {});
+        out.read_ok = read.response.ok === true;
+        const next = await ctx.engine.request('move', { window: { id: ctx.scene.id }, x: 10, y: 10 });
         out.next_ok = next.response.ok === true;
         out.next_error = next.response.ok ? null : String(next.response.error);
         out.late_dnd = next.stats?.late_dnd ?? null;
@@ -426,7 +429,8 @@ export function judgeDevice(op, rows, audit) {
   }
   if (expect === 'late-take') {
     bad('the drag did not answer as a plain drag', (r) => r.ok);
-    bad('the next request did not carry the late drag and drop', (r) => r.next_ok === false && r.next_error === r.expected_notice);
+    bad('the read after the drag did not run', (r) => r.read_ok === true);
+    bad('the next acting request did not carry the late drag and drop', (r) => r.next_ok === false && r.next_error === r.expected_notice);
     // the notice says the desktop may have changed: where the drop landed, the witness must show it
     bad('a drop the witness did not record', (r) => !r.dropped || r.witness === false);
     if (!rows.some((r) => r.dropped && r.witness === false)) reasons.push('no drop landed: the case showed no change for the notice to report');

@@ -448,7 +448,8 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
             probe.conn.flush().unwrap();
         };
         let mut seen = Vec::new();
-        let mut taken = on_release == OnRelease::TakesLate;
+        let mut taken = matches!(on_release, OnRelease::TakesLate | OnRelease::NeverTakes);
+        let mut late_take: Option<Instant> = None;
         while stopped.try_recv().is_err() {
             while let Some(event) = probe.conn.poll_for_event().unwrap() {
                 let sent = event.sent_event();
@@ -457,7 +458,12 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
                         take(&probe);
                         taken = true;
                     }
-                    Event::KeyPress(_) => seen.push(Input::KeyPress { sent }),
+                    Event::KeyPress(_) => {
+                        if let Some(took) = late_take.take() {
+                            *TAKE_TO_ESCAPE.lock().unwrap() = Some(took.elapsed());
+                        }
+                        seen.push(Input::KeyPress { sent })
+                    }
                     Event::KeyRelease(_) => seen.push(Input::KeyRelease { sent }),
                     Event::ButtonPress(e) => seen.push(Input::ButtonPress { button: e.detail, sent }),
                     Event::ButtonRelease(e) => {
@@ -468,6 +474,7 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
                             OnRelease::TakesLate => {
                                 sleep(LATE_TAKE);
                                 take(&probe);
+                                late_take = Some(Instant::now());
                                 focus(&probe);
                             }
                             _ => {}
@@ -492,7 +499,12 @@ enum OnRelease {
     Nothing,
     Focuses,
     TakesLate,
+    /// No take at all, during the drag or after it: an ordinary drag.
+    NeverTakes,
 }
+
+/// How long the last late take (`OnRelease::TakesLate`) waited for the engine's Escape, as its source saw it.
+static TAKE_TO_ESCAPE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
 
 /// The input focus on no window, so a drop's activation shows.
 fn focus_nothing() {
@@ -633,17 +645,19 @@ fn a_drag_into_chrome_already_in_front_drops_when_shared() {
     );
 }
 
-/// A drag and drop that begins only after the drag's release (the source takes `XdndSelection` and the focus shortly
-/// after it, where no look during the drag could see it): the drag answers at its release as a plain drag, the watch
-/// goes on off the request path and sends the cancel's Escape at once on the late take, and the next request on the
-/// connection answers the notice, not run (the design session's ruling, 2026-10-31). The request after that runs.
+/// A drag and drop that begins only after the drag's release (the source takes `XdndSelection` and the focus 30 ms
+/// after it, where no look during the drag could see it): the drag answers at its release as a plain drag; the watch,
+/// told the instant the button went up, sends the cancel's Escape within a few milliseconds of the take, before the
+/// drag's own teardown (100 ms) is over; a read runs, and the first acting request answers the notice, not run, with
+/// nothing sent (the design session's rulings, 2026-10-31).
 #[test]
-fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_request() {
+fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_acting_request() {
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::TakesLate);
     focus_nothing();
     let mut shared = Engine::start();
     let app = app_of(&mut shared, window);
+    *TAKE_TO_ESCAPE.lock().unwrap() = None;
     let started = Instant::now();
     assert_eq!(
         shared.request("drag", json!({"window": {"id": window}, "path": path})),
@@ -652,16 +666,21 @@ fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_request
     );
     let answered = started.elapsed();
     sleep(SETTLE);
+    let waited = TAKE_TO_ESCAPE
+        .lock()
+        .unwrap()
+        .expect("the watch's Escape reached the source");
+    assert!(
+        waited < Duration::from_millis(50),
+        "the Escape {waited:?} after the take: at once, not after the teardown"
+    );
+    assert!(shared.request("list_windows", json!({})).is_ok(), "a read runs");
     assert_eq!(
-        shared.request("list_windows", json!({})),
+        shared.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
         Err(format!(
             "{app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this \
              request was not run, so read the window before sending it again"
         ))
-    );
-    assert!(
-        shared.request("list_windows", json!({})).is_ok(),
-        "the notice is given once"
     );
     stop.send(()).unwrap();
     assert_eq!(
@@ -672,7 +691,7 @@ fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_request
             Input::KeyPress { sent: true },
             Input::KeyRelease { sent: true },
         ],
-        "the release, then the watch's Escape"
+        "the release, the watch's Escape, and nothing of the refused click"
     );
     // the same drag unwatched (dedicated mode: the same route and pacing) takes about as long: no settle on the
     // request path
@@ -691,28 +710,46 @@ fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_request
     );
 }
 
-/// The measurement option that leaves a take during the drag unseen until after the release (Acceptance 8's forced
-/// late-take case): the drop goes ahead, the drag answers success, and the next request carries the notice.
+/// The forced late take (`--dnd-defer-take`) with a key held at the server: the release of the held key runs and the
+/// key is up at the server, a read runs, the first acting request (a click) answers the notice, not run, and the one
+/// after it runs.
 #[test]
-fn a_take_left_unseen_until_the_release_is_reported_by_the_next_request() {
+fn a_late_drag_and_drop_lets_releases_and_reads_run_and_refuses_the_next_acting_request() {
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::Focuses);
     focus_nothing();
     let mut deferred = Engine::start_with(&["--dnd-defer-take"]);
     let app = app_of(&mut deferred, window);
+    let (conn, _) = x11rb::connect(None).expect("an X connection");
+    let shift = keycode_of(&conn, 0xffe1);
+    let held = |conn: &RustConnection| {
+        let keys = conn.query_keymap().unwrap().reply().unwrap().keys;
+        keys[usize::from(shift / 8)] & (1 << (shift % 8)) != 0
+    };
+    deferred.request("key_down", json!({"key": "shift"})).unwrap();
+    assert!(held(&conn), "Shift down at the server");
     assert_eq!(
         deferred.request("drag", json!({"window": {"id": window}, "path": path})),
         Ok(Value::Null)
     );
     sleep(SETTLE);
-    let notice = deferred.request("capabilities", json!({}));
     assert_eq!(
-        notice,
+        deferred.request("key_up", json!({"key": "shift"})),
+        Ok(Value::Null),
+        "a release runs"
+    );
+    assert!(!held(&conn), "Shift up at the server");
+    assert!(deferred.request("list_windows", json!({})).is_ok(), "a read runs");
+    assert_eq!(
+        deferred.request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
         Err(format!(
             "{app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this \
              request was not run, so read the window before sending it again"
         ))
     );
+    deferred
+        .request("click", json!({"window": {"id": window}, "x": 50, "y": 50}))
+        .unwrap();
     stop.send(()).unwrap();
     assert_eq!(
         recorder.join().unwrap(),
@@ -721,8 +758,80 @@ fn a_take_left_unseen_until_the_release_is_reported_by_the_next_request() {
             Input::ButtonRelease { button: 1, sent: true },
             Input::KeyPress { sent: true },
             Input::KeyRelease { sent: true },
+            Input::KeyRelease { sent: false },
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
         ],
-        "the drop went ahead at the release; the Escape came after"
+        "the drop went ahead at the release, the Escape came after, Shift's release through XTEST (the source has the \
+         focus since its drop), the refused click sent nothing, the next one ran"
+    );
+}
+
+/// The keycode of a keysym on the server's keyboard mapping.
+fn keycode_of(conn: &RustConnection, keysym: u32) -> u8 {
+    let setup = conn.setup();
+    let (min, max) = (setup.min_keycode, setup.max_keycode);
+    let map = conn.get_keyboard_mapping(min, max - min + 1).unwrap().reply().unwrap();
+    let per = usize::from(map.keysyms_per_keycode);
+    let at = map
+        .keysyms
+        .iter()
+        .position(|&k| k == keysym)
+        .expect("the keysym is mapped");
+    min + (at / per) as u8
+}
+
+/// A watch that fails after the release (the live build's fault injection) never lets the next acting request run
+/// as though nothing happened. Its connection killed by the server: a read runs, the click is refused with the
+/// watch-failure sentence and sends nothing. Its thread panicked: the engine's release profile aborts on a panic, so
+/// the engine ends instead of answering, and nothing more is sent.
+#[test]
+fn a_failed_after_release_watch_never_lets_the_next_acting_request_run() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
+    focus_nothing();
+    let mut lost = Engine::start_with_env(&[], &[("CUA_ENGINE_FAULT", "late-watch-disconnect")]);
+    let app = app_of(&mut lost, window);
+    assert_eq!(
+        lost.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null)
+    );
+    sleep(SETTLE);
+    assert!(lost.request("list_windows", json!({})).is_ok(), "a read runs");
+    let sentence = lost
+        .request("click", json!({"window": {"id": window}, "x": 50, "y": 50}))
+        .expect_err("the click is refused");
+    assert!(
+        sentence.starts_with(&format!("the drag-and-drop watch after your drag into {app} failed ("))
+            && sentence.ends_with(
+                "), so a drop may have happened unseen and changed the desktop; this request was not run, so read the \
+                 window before sending it again"
+            ),
+        "{sentence}"
+    );
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+        ],
+        "the refused click sent nothing"
+    );
+    let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
+    let mut panicked = Engine::start_with_env(&[], &[("CUA_ENGINE_FAULT", "late-watch-panic")]);
+    let dragged = panicked.try_request("drag", json!({"window": {"id": window}, "path": path}));
+    assert_eq!(dragged, None, "the engine ended instead of answering");
+    assert_eq!(
+        panicked.try_request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        None
+    );
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    let seen = recorder.join().unwrap();
+    assert!(
+        !seen.iter().skip(2).any(|i| matches!(i, Input::ButtonPress { .. })),
+        "nothing after the drag: {seen:?}"
     );
 }
 

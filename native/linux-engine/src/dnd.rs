@@ -178,9 +178,9 @@ impl DndWatch {
     }
 }
 
-/// The notice the next request on the connection answers when a drag and drop began after a drag's release (the
-/// design session's ruling, 2026-10-31): the request is not run, as a paste refused for an earlier unconfirmed one is
-/// not (`paste::previous_unconfirmed`), so the agent reads the desktop before it acts again.
+/// The notice an acting request answers when a drag and drop began after a drag's release (the design session's
+/// rulings, 2026-10-31): the request is not run, as a paste refused for an earlier unconfirmed one is not
+/// (`paste::previous_unconfirmed`), so the agent reads the desktop before it acts again.
 pub fn late_notice(app: &str) -> String {
     format!(
         "{app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this request \
@@ -188,33 +188,58 @@ pub fn late_notice(app: &str) -> String {
     )
 }
 
+/// The notice an acting request answers when the after-release watch itself failed: nothing says whether a drag and
+/// drop began, so it may have dropped unseen.
+pub fn watch_failed_notice(app: &str, why: &str) -> String {
+    format!(
+        "the drag-and-drop watch after your drag into {app} failed ({why}), so a drop may have happened unseen and \
+         changed the desktop; this request was not run, so read the window before sending it again"
+    )
+}
+
 /// A drag and drop that began after the drag's release, as the after-release watch saw it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LateDrop {
-    pub app: String,
-    /// How long after the release the watch saw the take.
+    /// How long after the release the watch saw the take (zero for a take it held from before the release).
     pub after_release: Duration,
+    /// How long after the release the cancel's Escape went out.
+    pub escape_after_release: Duration,
     /// Whether the cancel's Escape went out.
     pub escaped: bool,
 }
 
+/// How the after-release watch ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WatchEnd {
+    /// No take by the target's client while it watched: nothing to report.
+    Quiet,
+    /// A take after the release: cancelled at once, to be reported.
+    Late(LateDrop),
+    /// The watch could not keep watching (its connection failed, a round trip failed, the thread panicked): whether a
+    /// drag and drop began cannot be told.
+    Failed(String),
+}
+
 enum Note {
-    /// The drag released with no take seen by the engine: watch on, off the request path, through `SETTLE`.
-    Released { app: String, at: Instant },
+    /// The drag's button was released, at `at`, with no take seen by the engine: watch on, off the request path,
+    /// through `SETTLE` from `at`, and cancel a take at once.
+    Released { at: Instant },
     /// The drag ended otherwise (a take seen before the release, an error): nothing more to watch.
     Done,
-    /// The next request has come, or the engine ends: look one last time and end.
+    /// An acting request has come, or the engine ends: look one last time and end.
     Stop,
 }
 
 /// The after-release watch of one guarded drag: its own X connection, subscribed to `XdndSelection` before the drag
 /// begins, so no take between the drag's last look and the watch can go unseen. While the drag runs it only records;
-/// once told the drag released with no take seen, a take by the target's client (now or within `SETTLE`) is cancelled at
-/// once (Escape, synthetic, to the target window: the background route, never XTEST) and kept as a [`LateDrop`] for the
-/// next request to report.
+/// once told of the release (the instant the button went up), a take by the target's client is cancelled at once
+/// (Escape, synthetic, to the target window: the background route, never XTEST), and the watch ends at `SETTLE` after
+/// the release, at an acting request, or at the engine's end. Its end ([`WatchEnd`]) is the engine's to report.
 pub struct LateWatch {
     notes: std::sync::mpsc::Sender<Note>,
-    thread: Option<std::thread::JoinHandle<Option<LateDrop>>>,
+    thread: Option<std::thread::JoinHandle<WatchEnd>>,
+    /// The application the reports name, set once the drag hands the watch over.
+    pub app: String,
 }
 
 impl LateWatch {
@@ -227,18 +252,21 @@ impl LateWatch {
             Ok(Ok(())) => Ok(LateWatch {
                 notes,
                 thread: Some(thread),
+                app: String::new(),
             }),
             Ok(Err(error)) => Err(anyhow::anyhow!("the drag-and-drop watch could not start: {error}")),
             Err(_) => Err(anyhow::anyhow!("the drag-and-drop watch did not start")),
         }
     }
 
-    /// The drag released with no take seen: the watch goes on alone.
-    pub fn released(self, app: String) -> LateWatch {
-        let _ = self.notes.send(Note::Released {
-            app,
-            at: Instant::now(),
-        });
+    /// The drag's button went up at `at` with no take seen: from now a take is cancelled at once.
+    pub fn released(&self, at: Instant) {
+        let _ = self.notes.send(Note::Released { at });
+    }
+
+    /// Handed over to the engine once the drag's route is cleaned up, naming the application for its reports.
+    pub fn handed_over(mut self, app: String) -> LateWatch {
+        self.app = app;
         self
     }
 
@@ -250,10 +278,30 @@ impl LateWatch {
         }
     }
 
-    /// One last look, then the late drag and drop it saw, if any.
-    pub fn stop(mut self) -> Option<LateDrop> {
+    /// Whether the watch has ended by itself (its settle over, a take cancelled, a failure).
+    pub fn finished(&self) -> bool {
+        self.thread.as_ref().is_none_or(|t| t.is_finished())
+    }
+
+    /// One last look (a round trip, so every take before now is counted), then how the watch ended; a thread that
+    /// panicked is a failed watch.
+    pub fn stop(mut self) -> WatchEnd {
         let _ = self.notes.send(Note::Stop);
-        self.thread.take().and_then(|t| t.join().ok().flatten())
+        match self.thread.take().map(|t| t.join()) {
+            Some(Ok(end)) => end,
+            Some(Err(_)) => WatchEnd::Failed("the watch's thread panicked".into()),
+            None => WatchEnd::Quiet,
+        }
+    }
+
+    /// A watch around a thread of the caller's (unit tests of the join).
+    #[cfg(test)]
+    fn around(thread: std::thread::JoinHandle<WatchEnd>) -> LateWatch {
+        LateWatch {
+            notes: std::sync::mpsc::channel().0,
+            thread: Some(thread),
+            app: "app".into(),
+        }
     }
 }
 
@@ -268,12 +316,68 @@ impl Drop for LateWatch {
 
 const LATE_POLL: Duration = Duration::from_millis(2);
 
+/// The watch's loop, apart from its connection: `on_release` runs when the release is known (the live tests' fault
+/// injection), `look` reads the reports so far (a take's server time, or an error),
+/// `sync` makes a round trip, `cancel` sends the Escape stamped with the take's time and says whether it went out.
+fn watch_loop(
+    inbox: &std::sync::mpsc::Receiver<Note>,
+    mut on_release: impl FnMut(),
+    mut look: impl FnMut() -> Result<Option<u32>>,
+    mut sync: impl FnMut() -> Result<()>,
+    mut cancel: impl FnMut(u32) -> bool,
+) -> WatchEnd {
+    let mut taken: Option<(u32, Instant)> = None;
+    let mut released: Option<Instant> = None;
+    loop {
+        let stopping = match inbox.try_recv() {
+            Ok(Note::Released { at }) => {
+                released = Some(at);
+                on_release();
+                false
+            }
+            Ok(Note::Done) | Err(std::sync::mpsc::TryRecvError::Disconnected) => return WatchEnd::Quiet,
+            Ok(Note::Stop) => {
+                // every take the server made before now has been reported once this round trip is back
+                if let Err(error) = sync() {
+                    return WatchEnd::Failed(format!("{error:#}"));
+                }
+                true
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => false,
+        };
+        match look() {
+            Ok(Some(time)) => {
+                taken.get_or_insert((time, Instant::now()));
+            }
+            Ok(None) => {}
+            Err(error) => return WatchEnd::Failed(format!("{error:#}")),
+        }
+        if let Some(at) = released {
+            if let Some((time, seen)) = taken {
+                let escaped = cancel(time);
+                return WatchEnd::Late(LateDrop {
+                    after_release: seen.saturating_duration_since(at),
+                    escape_after_release: at.elapsed(),
+                    escaped,
+                });
+            }
+            if at.elapsed() >= SETTLE {
+                return WatchEnd::Quiet;
+            }
+        }
+        if stopping {
+            return WatchEnd::Quiet;
+        }
+        std::thread::sleep(LATE_POLL);
+    }
+}
+
 fn watch_after_release(
     target: Window,
     escape: u8,
     inbox: std::sync::mpsc::Receiver<Note>,
     ready: std::sync::mpsc::Sender<std::result::Result<(), String>>,
-) -> Option<LateDrop> {
+) -> WatchEnd {
     use x11rb::protocol::Event;
     use x11rb::protocol::xproto::{ConnectionExt as _, EventMask, KEY_PRESS_EVENT, KEY_RELEASE_EVENT, KeyPressEvent};
     let subscribe = || -> Result<(x11rb::rust_connection::RustConnection, Window, u32)> {
@@ -291,22 +395,27 @@ fn watch_after_release(
             subscribed
         }
         Err(error) => {
-            let _ = ready.send(Err(format!("{error:#}")));
-            return None;
+            let message = format!("{error:#}");
+            let _ = ready.send(Err(message.clone()));
+            return WatchEnd::Failed(message);
         }
     };
     let mask = conn.setup().resource_id_mask;
-    let mut taken: Option<u32> = None;
-    let mut released: Option<(String, Instant)> = None;
-    let look = |taken: &mut Option<u32>| {
-        while let Ok(Some(event)) = conn.poll_for_event() {
+    let look = || -> Result<Option<u32>> {
+        let mut take = None;
+        while let Some(event) = conn.poll_for_event()? {
             if let Event::XfixesSelectionNotify(e) = event
                 && e.selection == selection
                 && taken_by_target(e.owner, target, mask)
             {
-                taken.get_or_insert(e.timestamp);
+                take.get_or_insert(e.timestamp);
             }
         }
+        Ok(take)
+    };
+    let sync = || -> Result<()> {
+        conn.get_input_focus()?.reply()?;
+        Ok(())
     };
     let cancel = |time: u32| -> bool {
         [KEY_PRESS_EVENT, KEY_RELEASE_EVENT].into_iter().all(|response_type| {
@@ -329,40 +438,32 @@ fn watch_after_release(
                 .is_ok_and(|c| c.check().is_ok())
         })
     };
-    loop {
-        let stopping = match inbox.try_recv() {
-            Ok(Note::Released { app, at }) => {
-                released = Some((app, at));
-                false
-            }
-            Ok(Note::Done) | Err(std::sync::mpsc::TryRecvError::Disconnected) => return None,
-            Ok(Note::Stop) => {
-                // a round trip: every take the server made before now has been reported
-                let _ = conn.get_input_focus().map(|c| c.reply());
-                true
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) => false,
-        };
-        look(&mut taken);
-        if let Some((app, at)) = &released {
-            if let Some(time) = taken {
-                let escaped = cancel(time);
-                return Some(LateDrop {
-                    app: app.clone(),
-                    after_release: at.elapsed(),
-                    escaped,
-                });
-            }
-            if at.elapsed() >= SETTLE {
-                return None;
+    watch_loop(&inbox, || inject_fault(&conn, root), look, sync, cancel)
+}
+
+/// The live tests' faults in the after-release watch (`CUA_ENGINE_FAULT`, only in a build with the `live` feature,
+/// never a release asset): `late-watch-disconnect` has the server close the watch's connection, as a lost connection
+/// does; `late-watch-panic` panics the watch's thread.
+#[cfg(feature = "live")]
+fn inject_fault(conn: &x11rb::rust_connection::RustConnection, root: Window) {
+    use x11rb::protocol::xproto::ConnectionExt as _;
+    match std::env::var("CUA_ENGINE_FAULT").as_deref() {
+        Ok("late-watch-disconnect") => {
+            // a resource of the watch's own, then the client that owns it killed
+            if let Ok(pixmap) = conn.generate_id() {
+                let depth = conn.setup().roots[0].root_depth;
+                let _ = conn.create_pixmap(depth, pixmap, root, 1, 1);
+                let _ = conn.kill_client(pixmap);
+                let _ = conn.flush();
             }
         }
-        if stopping {
-            return None;
-        }
-        std::thread::sleep(LATE_POLL);
+        Ok("late-watch-panic") => panic!("injected: late-watch-panic"),
+        _ => {}
     }
 }
+
+#[cfg(not(feature = "live"))]
+fn inject_fault(_: &x11rb::rust_connection::RustConnection, _: Window) {}
 
 #[cfg(test)]
 mod tests {
@@ -447,5 +548,93 @@ mod tests {
             }
         });
         assert!(seen && waited < SETTLE, "the third read shows it");
+    }
+
+    #[test]
+    fn a_watch_whose_connection_fails_or_whose_round_trip_fails_ends_failed_never_quiet() {
+        let (notes, inbox) = std::sync::mpsc::channel();
+        notes.send(Note::Released { at: Instant::now() }).unwrap();
+        let end = watch_loop(
+            &inbox,
+            || {},
+            || Err(anyhow::anyhow!("connection lost")),
+            || Ok(()),
+            |_| true,
+        );
+        assert_eq!(end, WatchEnd::Failed("connection lost".into()));
+        let (notes, inbox) = std::sync::mpsc::channel();
+        notes.send(Note::Stop).unwrap();
+        let end = watch_loop(
+            &inbox,
+            || {},
+            || Ok(None),
+            || Err(anyhow::anyhow!("no reply")),
+            |_| true,
+        );
+        assert_eq!(end, WatchEnd::Failed("no reply".into()));
+    }
+
+    #[test]
+    fn a_watch_whose_thread_panicked_ends_failed() {
+        let thread = std::thread::spawn(|| -> WatchEnd { std::panic::resume_unwind(Box::new("injected")) });
+        while !thread.is_finished() {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            LateWatch::around(thread).stop(),
+            WatchEnd::Failed("the watch's thread panicked".into())
+        );
+    }
+
+    #[test]
+    fn a_take_after_the_release_is_cancelled_at_once_and_timed_from_the_release() {
+        let (notes, inbox) = std::sync::mpsc::channel();
+        let released = Instant::now();
+        notes.send(Note::Released { at: released }).unwrap();
+        let mut looks = 0;
+        let mut escaped_at = None;
+        let end = watch_loop(
+            &inbox,
+            || {},
+            || {
+                looks += 1;
+                Ok((released.elapsed() >= Duration::from_millis(30)).then_some(7))
+            },
+            || Ok(()),
+            |time| {
+                escaped_at = Some((time, released.elapsed()));
+                true
+            },
+        );
+        let WatchEnd::Late(late) = end else { panic!("{end:?}") };
+        let (time, at) = escaped_at.expect("the Escape went out");
+        assert_eq!(time, 7, "stamped with the take's time");
+        assert!(late.escaped && looks > 1);
+        assert!(late.after_release >= Duration::from_millis(30), "{late:?}");
+        assert!(
+            at - late.after_release < Duration::from_millis(10),
+            "the Escape within a poll of the take: {late:?}, Escape at {at:?}"
+        );
+    }
+
+    #[test]
+    fn the_watch_ends_at_the_settle_counted_from_the_release() {
+        let (notes, inbox) = std::sync::mpsc::channel();
+        // the release 250 ms before the watch hears of it: 50 ms of the settle remain
+        notes
+            .send(Note::Released {
+                at: Instant::now() - Duration::from_millis(250),
+            })
+            .unwrap();
+        let started = Instant::now();
+        assert_eq!(
+            watch_loop(&inbox, || {}, || Ok(None), || Ok(()), |_| true),
+            WatchEnd::Quiet
+        );
+        assert!(
+            started.elapsed() < Duration::from_millis(120),
+            "{:?}",
+            started.elapsed()
+        );
     }
 }

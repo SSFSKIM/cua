@@ -82,8 +82,50 @@ pub struct Engine {
     clipboard: Option<crate::clipboard::Clipboard>,
     /// `clipboard_read`'s snapshots, until released or the engine exits.
     handles: crate::clipboard::Handles,
-    /// A watched drag's after-release watch (`dnd::LateWatch`), until the next request looks at it.
+    /// A watched drag's after-release watch (`dnd::LateWatch`), until it ends by itself or an acting request stops it.
     late_watch: Option<crate::dnd::LateWatch>,
+    /// What an ended watch left to report (a late drag and drop, or the watch's own failure), with the application:
+    /// the first acting request answers it, not run.
+    late_pending: Option<(String, crate::dnd::WatchEnd)>,
+}
+
+/// Whether a request sends input or changes state, and so is refused while a late drag and drop or a failed watch is
+/// unreported (the design session's ruling, 2026-10-31). Reads run (`list_windows`, `list_apps`, `get_screenshot`,
+/// `get_window_state`, `clipboard_read`, `capabilities`), and so do releases of what is held (`key_up`,
+/// `clipboard_release`, `drag_handle`'s `end`), so a held key or button is never left down at the server; unknown
+/// commands answer their own error.
+pub fn acts(command: &str, input: Option<&Value>) -> bool {
+    match command {
+        "press_key"
+        | "key_down"
+        | "click"
+        | "move"
+        | "move_relative"
+        | "scroll"
+        | "drag"
+        | "perform_secondary_action"
+        | "activate_window"
+        | "launch_app"
+        | "clipboard_write"
+        | "type_text"
+        | "type_characters" => true,
+        "drag_handle" => input.and_then(|i| i.get("action")).and_then(Value::as_str) != Some("end"),
+        _ => false,
+    }
+}
+
+/// The `--stats` line's record of a reported after-release watch.
+fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
+    match end {
+        crate::dnd::WatchEnd::Late(late) => json!({
+            "app": app,
+            "after_release_ms": late.after_release.as_secs_f64() * 1000.0,
+            "escape_after_release_ms": late.escape_after_release.as_secs_f64() * 1000.0,
+            "escaped": late.escaped,
+        }),
+        crate::dnd::WatchEnd::Failed(why) => json!({ "app": app, "failed": why }),
+        crate::dnd::WatchEnd::Quiet => json!({ "app": app }),
+    }
 }
 
 fn merge(into: &mut BusStats, from: BusStats) {
@@ -117,6 +159,7 @@ impl Engine {
             clipboard: None,
             handles: crate::clipboard::Handles::new(),
             late_watch: None,
+            late_pending: None,
         })
     }
 
@@ -124,20 +167,28 @@ impl Engine {
         self.x.drain_events();
         self.launched.reap();
         let started = Instant::now();
-        // a drag and drop that began after the last drag's release is this request's answer, the request not run
-        let late = self.late_watch.take().and_then(|watch| watch.stop());
-        if let Some(late) = &late {
-            self.extra.insert(
-                "late_dnd".into(),
-                json!({
-                    "app": late.app,
-                    "after_release_ms": late.after_release.as_secs_f64() * 1000.0,
-                    "escaped": late.escaped,
-                }),
-            );
+        // the last watched drag's after-release watch: an acting request stops it (a round trip first, so every take
+        // before now counts); any other request only collects it once it has ended by itself
+        let acting = acts(&request.command, request.input.as_ref());
+        if self.late_watch.as_ref().is_some_and(|w| acting || w.finished()) {
+            let watch = self.late_watch.take().expect("checked");
+            let app = watch.app.clone();
+            match watch.stop() {
+                crate::dnd::WatchEnd::Quiet => {}
+                end => self.late_pending = Some((app, end)),
+            }
+        }
+        // a late drag and drop, or a watch that failed, is the first acting request's answer, the request not run;
+        // reads and releases run meanwhile, and the report waits for the request that would act
+        let refusal = if acting { self.late_pending.take() } else { None };
+        if let Some((app, end)) = &refusal {
+            self.extra.insert("late_dnd".into(), late_stats(app, end));
         }
         let result = match request.command.as_str() {
-            _ if late.is_some() => Err(anyhow!(crate::dnd::late_notice(&late.as_ref().expect("checked").app))),
+            _ if refusal.is_some() => Err(anyhow!(match refusal.as_ref().expect("checked") {
+                (app, crate::dnd::WatchEnd::Failed(why)) => crate::dnd::watch_failed_notice(app, why),
+                (app, _) => crate::dnd::late_notice(app),
+            })),
             "list_windows" => self.list_windows(request.input),
             "list_apps" => self.list_apps(request.input),
             "get_screenshot" => self.get_screenshot(request.input),
@@ -422,5 +473,51 @@ impl Engine {
         if let Some(dir) = self.shot_dir.take() {
             let _ = std::fs::remove_dir_all(dir);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::acts;
+    use serde_json::json;
+
+    #[test]
+    fn a_late_drag_and_drop_refuses_only_requests_that_send_input_or_change_state() {
+        for command in [
+            "press_key",
+            "key_down",
+            "click",
+            "move",
+            "move_relative",
+            "scroll",
+            "drag",
+            "perform_secondary_action",
+            "activate_window",
+            "launch_app",
+            "clipboard_write",
+            "type_text",
+            "type_characters",
+        ] {
+            assert!(acts(command, None), "{command} acts");
+        }
+        for command in [
+            "list_windows",
+            "list_apps",
+            "get_screenshot",
+            "get_window_state",
+            "clipboard_read",
+            "capabilities",
+            "key_up",
+            "clipboard_release",
+            "no_such_command",
+        ] {
+            assert!(!acts(command, None), "{command} runs");
+        }
+        assert!(acts("drag_handle", Some(&json!({"action": "start", "x": 1, "y": 1}))));
+        assert!(acts("drag_handle", Some(&json!({"action": "move_to", "x": 1, "y": 1}))));
+        assert!(
+            !acts("drag_handle", Some(&json!({"action": "end"}))),
+            "a held button's release runs"
+        );
     }
 }

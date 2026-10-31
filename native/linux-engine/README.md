@@ -102,12 +102,21 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     window newly becomes active, focused or top of the stacking order (the cross-check), when the answer is that the
     drop may have happened and the desktop changed;
   - no take by the release: the drag answers at once as a plain drag (it claims nothing about drops). A watch on its
-    own X connection, subscribed before the drag began, goes on off the request path for 300 ms or until the next
-    request: a take then gets the cancel's Escape at once (synthetic, to Chrome's window, never XTEST), and the next
-    request on the connection is answered, not run, with `<app> started a drag and drop after your drag ended; it may
-    have dropped and changed the desktop; this request was not run, so read the window before sending it again`
-    (`--stats` `late_dnd`). Known limit: a take later than 300 ms, or after the next request has begun, is not seen;
-    M3.1 measured none after the release in 240 takes, idle and under load;
+    own X connection, subscribed before the drag began and told the instant the button went up, goes on off the
+    request path for 300 ms from the release, or until a request that acts stops it. A take then gets the cancel's
+    Escape at once (synthetic, to Chrome's window, never XTEST). The first request that sends input or changes state
+    (`press_key`, `key_down`, `click`, `move`, `move_relative`, `scroll`, `drag`, `drag_handle`'s start and moves,
+    `perform_secondary_action`, `activate_window`, `launch_app`, `clipboard_write`, `type_text`, `type_characters`) is
+    answered, not run, with `<app> started a drag and drop after your drag ended; it may have dropped and changed the
+    desktop; this request was not run, so read the window before sending it again` (`--stats` `late_dnd`). Reads
+    (`list_windows`, `list_apps`, `get_screenshot`, `get_window_state`, `clipboard_read`, `capabilities`) and releases
+    of what is held (`key_up`, `clipboard_release`, `drag_handle`'s end) run meanwhile, so no key or button stays down
+    at the server. A watch that failed (its connection lost, a round trip failed) is reported the same way: `the
+    drag-and-drop watch after your drag into <app> failed (<why>), so a drop may have happened unseen and changed the
+    desktop; …`; a panicking watch ends the engine (the release profile aborts on a panic). The live tests inject both
+    through `CUA_ENGINE_FAULT`, honoured only in a build with the `live` feature, never a release asset. Known limit: a take later
+    than 300 ms after the release, or after an acting request has begun, is not seen; M3.1 measured none after the
+    release in 240 takes, idle and under load;
   - a take whose cancel could not be sent: `… it was cancelled, but whether the drop landed cannot be confirmed. …`.
 
   The watch keeps every selection report the connection reads meanwhile, so the input session's server-time probe

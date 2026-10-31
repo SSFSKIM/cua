@@ -208,6 +208,7 @@ fn drag_along(
         }
         pressed = false;
         route.button(x, 1, false)?;
+        let released_at = Instant::now();
         if let Some(guard) = guard.as_deref_mut() {
             // measurement only: the take the drag went on past, its Escape after the release
             if guard.late && guard.watch.started(x) {
@@ -215,7 +216,11 @@ fn drag_along(
                 escape(x, route)?;
                 return Err(DropCancelled.into());
             }
-            // no take seen by the release: a plain drag, answered now; the after-release watch goes on (`drag`)
+            // no take seen by the release: a plain drag, answered now; the after-release watch, told the instant the
+            // button went up, cancels a late take at once from here on and ends 300 ms after it (`drag`)
+            if let Some(after) = &guard.after {
+                after.released(released_at);
+            }
             guard.outcome = Some(Outcome::NoStart);
         }
         Ok(())
@@ -499,8 +504,13 @@ impl Engine {
         };
         // no take by the release: answered now as a plain drag, the watch handed over until the next request
         if outcome == Outcome::NoStart {
-            self.late_watch =
-                Some(after.released(self.x.get_window(named.expect("a watched drag named its window"))?.app));
+            let window = named.expect("a watched drag named its window");
+            // the watch is handed over whatever the window's name reads as: a late take must still be reported
+            let app = self
+                .x
+                .get_window(window)
+                .map_or_else(|_| format!("window {window}"), |w| w.app);
+            self.late_watch = Some(after.handed_over(app));
         } else {
             after.done();
         }

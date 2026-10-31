@@ -450,12 +450,17 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
         let mut seen = Vec::new();
         let mut taken = matches!(on_release, OnRelease::TakesLate | OnRelease::NeverTakes);
         let mut late_take: Option<Instant> = None;
+        let mut took_at: Option<Instant> = None;
+        let mut pressed_at: Option<Instant> = None;
+        *TAKE_TO_RELEASE.lock().unwrap() = None;
+        *PRESS_TO_RELEASE.lock().unwrap() = None;
         while stopped.try_recv().is_err() {
             while let Some(event) = probe.conn.poll_for_event().unwrap() {
                 let sent = event.sent_event();
                 match event {
                     Event::MotionNotify(_) if !taken => {
                         take(&probe);
+                        took_at = Some(Instant::now());
                         taken = true;
                     }
                     Event::KeyPress(_) => {
@@ -465,9 +470,14 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
                         seen.push(Input::KeyPress { sent })
                     }
                     Event::KeyRelease(_) => seen.push(Input::KeyRelease { sent }),
-                    Event::ButtonPress(e) => seen.push(Input::ButtonPress { button: e.detail, sent }),
+                    Event::ButtonPress(e) => {
+                        pressed_at = Some(Instant::now());
+                        seen.push(Input::ButtonPress { button: e.detail, sent })
+                    }
                     Event::ButtonRelease(e) => {
                         seen.push(Input::ButtonRelease { button: e.detail, sent });
+                        *TAKE_TO_RELEASE.lock().unwrap() = took_at.map(|t| t.elapsed());
+                        *PRESS_TO_RELEASE.lock().unwrap() = pressed_at.map(|t| t.elapsed());
                         let escaped = seen.contains(&Input::KeyPress { sent: true });
                         match on_release {
                             OnRelease::Focuses if !escaped => focus(&probe),
@@ -505,6 +515,11 @@ enum OnRelease {
 
 /// How long the last late take (`OnRelease::TakesLate`) waited for the engine's Escape, as its source saw it.
 static TAKE_TO_ESCAPE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
+
+/// How long after its take of `XdndSelection` the last drag's source saw the button's release (None: no take), and how
+/// long after the press: what the release schedule after a take is measured by.
+static TAKE_TO_RELEASE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
+static PRESS_TO_RELEASE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
 
 /// The input focus on no window, so a drop's activation shows.
 fn focus_nothing() {
@@ -643,6 +658,47 @@ fn a_drag_into_chrome_already_in_front_drops_when_shared() {
         ],
         "the drop goes ahead, no Escape"
     );
+}
+
+/// A drag and drop the engine lets drop (Chrome already in front in shared mode, or a dedicated desktop) holds its
+/// release until 350 ms after the source's take, spacing the path's remaining steps (task 18: Chrome sends XdndDrop only
+/// once its target has accepted, and a source that stalls after its drag starts accepts up to about 200 ms after the
+/// take); a drag whose source takes nothing keeps its own pace.
+#[test]
+fn a_drag_and_drop_the_engine_lets_drop_is_released_no_sooner_than_350_ms_after_the_take() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    for args in [&[][..], &["--desktop", "dedicated"][..]] {
+        let (window, stop, recorder) = drag_source(OnRelease::Nothing);
+        in_front(window);
+        let mut engine = Engine::start_with(args);
+        let dragged = engine.request("drag", json!({"window": {"id": window}, "path": path}));
+        set_active_window(None);
+        dragged.unwrap();
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        let after_take = TAKE_TO_RELEASE.lock().unwrap().expect("the source took XdndSelection");
+        assert!(
+            after_take >= Duration::from_millis(345),
+            "{args:?}: released {after_take:?} after the take"
+        );
+        assert!(
+            after_take < Duration::from_millis(600),
+            "{args:?}: released {after_take:?} after the take"
+        );
+    }
+    // no take: the drag keeps its pace, its path of about 180 steps well under the 350 ms
+    let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
+    in_front(window);
+    let mut engine = Engine::start();
+    let dragged = engine.request("drag", json!({"window": {"id": window}, "path": path}));
+    set_active_window(None);
+    dragged.unwrap();
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    recorder.join().unwrap();
+    let whole = PRESS_TO_RELEASE.lock().unwrap().expect("a press and a release");
+    assert!(whole < Duration::from_millis(300), "a plain drag took {whole:?}");
 }
 
 /// A drag and drop that begins only after the drag's release (the source takes `XdndSelection` and the focus 30 ms

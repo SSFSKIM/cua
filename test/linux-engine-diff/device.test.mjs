@@ -5,6 +5,7 @@ import { auditNothingSent, parseXtrace } from '../../scripts/linux-engine-diff/a
 import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndMayHaveDroppedSentence, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
 import { OPS, SCENE_OPS } from '../../scripts/linux-engine-diff/ops.mjs';
 import { DEVICE_REFUSAL, DND_REFUSAL, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
+import { pagePath } from '../../scripts/linux-engine-diff/drag.mjs';
 import { planOps, routeOf, runsOp } from '../../scripts/linux-engine-diff/run.mjs';
 import { runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
 
@@ -23,7 +24,7 @@ test('a refused request is audited for nothing sent: a SendEvent of any kind, or
 
 test("Acceptance 8's cases: each kind and condition, refused in shared mode, foreground in dedicated, the rest background", () => {
   const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'device-chrome', 'device-chrome-dnd', 'gnome-text-editor'], Object.values(DEVICE_SCENE_OPS).flat().filter((op) => op !== 'capabilities'));
-  assert.equal(plan.length, 41);
+  assert.equal(plan.length, 43);
   for (const { op, scene } of plan) {
     const def = OPS[op];
     assert.ok(SCENE_OPS[scene].includes(op));
@@ -41,6 +42,8 @@ test("Acceptance 8's cases: each kind and condition, refused in shared mode, for
   assert.equal(routeOf('chrome_drag_visible_path_shared', 'device-chrome'), 'background', 'a visible path in a partly covered window');
   assert.equal(routeOf('gtk4_element_click', 'device-gtk4'), null, 'an element action records no route');
   assert.equal(routeOf('chrome_dnd_in_front_shared', 'device-chrome-dnd'), 'background', 'Chrome already in front');
+  assert.equal(routeOf('chrome_dnd_short_in_front_shared', 'device-chrome-dnd'), 'background', 'the short drop, in front');
+  assert.deepEqual(pagePath('dnd-short', 0), [[530, 185], [570, 185]], 'the short drop: 40 px, from the near source into the zone');
   assert.deepEqual(OPS.chrome_dnd_late_shared.cuaArgs('device-chrome-dnd'), ['--dnd-cancel-after-release'], 'the forced-late cancel');
   // the signature already held, a corner covered: the in-time cancel and the forced-late one (the design session's ruling)
   assert.equal(OPS.chrome_dnd_obscured_in_front_shared.device, 'cancel');
@@ -150,8 +153,8 @@ test('a cancel forced too late passes only if every answer is honest and the dro
 });
 
 test('the in-front drop passes only where the engine recorded the window in front and the desktop ended as it began', () => {
-  assert.equal(DEVICE_OPS.chrome_dnd_in_front_shared.inFront, true, 'the witness allowance is declared for this case alone');
-  assert.equal(Object.values(DEVICE_OPS).filter((d) => d.inFront).length, 1);
+  assert.equal(DEVICE_OPS.chrome_dnd_in_front_shared.inFront, true, 'the witness allowance is declared for the in-front drops alone');
+  assert.deepEqual(Object.keys(DEVICE_OPS).filter((op) => DEVICE_OPS[op].inFront), ['chrome_dnd_in_front_shared', 'chrome_dnd_short_in_front_shared']);
   const good = row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true });
   const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
   assert.deepEqual(judgeDevice('chrome_dnd_in_front_shared', [good], audit), { pass: true, reasons: [] });

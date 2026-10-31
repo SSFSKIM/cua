@@ -58,6 +58,9 @@ pub struct Config {
     /// Measurement only (`--drag-dnd-wait-ms`): before a Chromium drag's release, wait up to this long for the target's
     /// client to take `XdndSelection`, then nudge the last point, so a drag and drop that starts late still drops.
     pub dnd_wait: std::time::Duration,
+    /// How long after a Chromium drag source's take a drag the engine lets drop is released at the soonest
+    /// (`dnd::RELEASE_AFTER_TAKE`; `--drag-dnd-after-take-ms`, measurement only, sets another, 0 none).
+    pub dnd_after_take: std::time::Duration,
 }
 
 pub struct Engine {

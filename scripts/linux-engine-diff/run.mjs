@@ -303,6 +303,7 @@ async function measureSample(s, ctx) {
     if (stats.dnd) row.dnd = stats.dnd;
     if (stats.event_time) row.event_time = stats.event_time;
     if (stats.dnd_wait) row.dnd_wait = stats.dnd_wait;
+    if (stats.after_take) row.after_take = stats.after_take;
   }
   if (def.after) await def.after(ctx, response);
   if (def.effect && row.ok && def.read && !def.follow) {
@@ -569,6 +570,7 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
     opened.kindOf = 'page';
     opened.dndAt = await locate({ desktop, oracle: desktop.oracle }, opened, ['dnd']);
     opened.dndPath = runPath(opened.dndAt, 'dnd', 0);
+    opened.dndShortPath = runPath(opened.dndAt, 'dnd-short', 0);
     return withApp(desktop, opened);
   }
   if (scene === 'device-firefox' || scene === 'device-chrome') {

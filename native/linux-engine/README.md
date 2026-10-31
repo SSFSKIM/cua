@@ -119,6 +119,16 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     release in 240 takes, idle and under load;
   - a take whose cancel could not be sent: `… it was cancelled, but whether the drop landed cannot be confirmed. …`.
 
+  Where the engine lets the drop happen (Chrome already in front, or a dedicated desktop; and every Chromium window,
+  whose drop changes nothing), it watches the take too, and once the target's client takes `XdndSelection` it spaces
+  the path's remaining steps so the release comes no sooner than 350 ms after the take, no step shorter than the
+  family's own (`dnd.rs` `RELEASE_AFTER_TAKE`; `--stats` `after_take`). Chromium sends XdndDrop at the release only if
+  its target has accepted by then, and the target accepts only after the renderer has answered an earlier position; a
+  browser that stalls just after its drag starts (task 18: 16 of about 45 drags and drops in a full verdict run) accepted 169 to
+  204 ms after the take, so a fast release dropped nothing. A drag whose source takes nothing keeps its pace. Known
+  limit: a stall whose accept comes later than about 350 ms less the observed accept-to-release margin still misses,
+  unseen, and a take seen only after the path's last step changes nothing.
+
   The watch keeps every selection report the connection reads meanwhile, so the input session's server-time probe
   cannot lose one. The `--stats` line's `dnd` records whether the window was in front, the watch saw a start, the
   outcome (`in_time`, `late` for the measurement option's Escape after the release, `no_start`, `undecided`), whether the signature already held at the start, and the
@@ -196,6 +206,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
+| `--drag-dnd-after-take-ms` | 350 | how long after a Chromium drag source's take a drag the engine lets drop is released at the soonest, its remaining steps spaced to it (measurement only; 0 turns the spacing off) |
 | `--drag-dnd-wait-ms` | off | before a Chromium drag's release, wait up to this long for the target's client to take `XdndSelection`, then nudge the last point by a pixel and back (measurement only: the event-driven option measured against a press dwell for Chrome's late drag-and-drop starts; `--stats` `dnd_wait`) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |

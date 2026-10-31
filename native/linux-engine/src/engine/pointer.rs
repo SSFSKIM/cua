@@ -154,9 +154,12 @@ fn cancel_in_time(x: &X11, route: &mut Route, guard: &mut DropGuard, pressed: &m
 /// anything drops ([`Outcome::InTime`]). After the release it is watched through `SETTLE`: a take then (or, with `late`,
 /// measurement only, the take the drag went on past) is answered [`Outcome::Late`], Escape sent to end the drag and drop;
 /// none is [`Outcome::NoStart`], an ordinary drag. A stopped drag answers [`DropCancelled`].
-/// With `hold` (measurement only, `--drag-dnd-wait-ms`), the release waits up to its bound for the target's client to
-/// take `XdndSelection`, and after a take the last point is nudged by a pixel and back, so a drag and drop that starts
-/// after the last sample still sees the pointer over its target; the wait is answered in `waited`.
+/// With `hold`, a drag the engine lets drop into Chromium: once the target's client is seen taking `XdndSelection`, the
+/// samples still to send are spaced so the release comes no sooner than `after_take` after the take, no step shorter than
+/// `pacing.step` (`dnd::RELEASE_AFTER_TAKE`, task 18), and `scheduled` records it; a take seen only after the last
+/// sample changes nothing. With the hold's bound (measurement only, `--drag-dnd-wait-ms`), the release waits up to it for
+/// the take, and after a take the last point is nudged by a pixel and back, so a drag and drop that starts after the last
+/// sample still sees the pointer over its target; the wait is answered in `waited`.
 #[allow(clippy::too_many_arguments)]
 fn drag_along(
     x: &mut X11,
@@ -167,6 +170,8 @@ fn drag_along(
     mut guard: Option<&mut DropGuard>,
     mut hold: Option<(&mut DndWatch, Duration)>,
     waited: &mut Option<(bool, Duration)>,
+    after_take: Duration,
+    scheduled: &mut Option<Value>,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
@@ -175,9 +180,28 @@ fn drag_along(
         route.button(x, 1, true)?;
         pressed = true;
         std::thread::sleep(pacing.press);
-        for (sx, sy) in drag_samples(points) {
+        let samples = drag_samples(points);
+        let count = samples.len();
+        // the take, when it was seen, and how many samples were still to send then
+        let mut taken: Option<(Instant, usize)> = None;
+        let mut since_take = 0;
+        for (i, (sx, sy)) in samples.into_iter().enumerate() {
             route.place_again(x, sx, sy)?;
-            std::thread::sleep(pacing.step);
+            let mut wait = pacing.step;
+            if let Some((watch, _)) = hold.as_mut()
+                && !after_take.is_zero()
+            {
+                match taken {
+                    Some((at, left)) => {
+                        since_take += 1;
+                        let due = crate::dnd::step_due(at, after_take, since_take, left);
+                        wait = wait.max(due.saturating_duration_since(Instant::now()));
+                    }
+                    None if watch.started(x) => taken = Some((Instant::now(), count - 1 - i)),
+                    None => {}
+                }
+            }
+            std::thread::sleep(wait);
             if let Some(guard) = guard.as_deref_mut()
                 && guard.looks()
                 && guard.watch.started(x)
@@ -185,7 +209,9 @@ fn drag_along(
                 return cancel_in_time(x, route, guard, &mut pressed);
             }
         }
-        if let Some((hold, bound)) = hold.as_mut() {
+        if let Some((hold, bound)) = hold.as_mut()
+            && !bound.is_zero()
+        {
             let since = Instant::now();
             while !hold.started(x) && since.elapsed() < *bound {
                 std::thread::sleep(Duration::from_millis(2));
@@ -205,6 +231,10 @@ fn drag_along(
             && guard.watch.started(x)
         {
             return cancel_in_time(x, route, guard, &mut pressed);
+        }
+        if let Some((at, left)) = taken {
+            *scheduled =
+                Some(json!({ "steps_after_take": left, "release_after_take_ms": at.elapsed().as_secs_f64() * 1000.0 }));
         }
         pressed = false;
         route.button(x, 1, false)?;
@@ -427,19 +457,23 @@ impl Engine {
             }
             _ => None,
         };
-        // measurement only: a Chromium drag not otherwise watched holds its release for a late drag and drop
+        // a Chromium drag the engine lets drop (no guard: in front, or a dedicated desktop) is watched for its take, so
+        // its release comes no sooner than the take's delay after it (`dnd::RELEASE_AFTER_TAKE`); the measurement hold
+        // (`--drag-dnd-wait-ms`) uses the same watch
         let mut hold = match target {
             Target::Window(window) | Target::Foreground(window)
                 if guard.is_none()
-                    && !self.cfg.dnd_wait.is_zero()
+                    && !(self.cfg.dnd_wait.is_zero() && self.cfg.dnd_after_take.is_zero())
                     && self
                         .family_of(window)
-                        .is_some_and(|f| matches!(f.name, "Chrome" | "Chromium")) =>
+                        .is_some_and(|f| crate::dnd::release_waits_after_take(f.name)) =>
             {
                 Some(DndWatch::start(&mut self.x, window)?)
             }
             _ => None,
         };
+        let after_take = self.cfg.dnd_after_take;
+        let mut scheduled = None;
         let bound = self.cfg.dnd_wait;
         let mut waited = None;
         // the time field the drag's events carried at its end, beside the server's time read just after (M3.1: whether
@@ -466,6 +500,8 @@ impl Engine {
                 guard.as_mut(),
                 hold.as_mut().map(|w| (w, bound)),
                 &mut waited,
+                after_take,
+                &mut scheduled,
             );
             if let Some(event) = route.event_time()
                 && let Ok(server) = crate::input::server_time(x)
@@ -479,6 +515,9 @@ impl Engine {
                 "event_time".into(),
                 json!({ "event": event, "server": server, "ahead_ms": i64::from(event) - i64::from(server) }),
             );
+        }
+        if let Some(scheduled) = scheduled {
+            self.extra.insert("after_take".into(), scheduled);
         }
         if let Some(hold) = hold {
             hold.stop(&mut self.x);

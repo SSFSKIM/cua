@@ -127,6 +127,26 @@ pub fn taken_by_target(owner: Window, target: Window, resource_id_mask: u32) -> 
     owner != x11rb::NONE && (owner & !resource_id_mask) == (target & !resource_id_mask)
 }
 
+/// How long after a Chromium drag source takes `XdndSelection` a drag the engine lets drop is released at the soonest
+/// (task 18, evidence `m3/drop-misses/task18/`). Chromium sends XdndDrop at the release only once its target has
+/// accepted (`XDragDropClient::HandleMouseReleased`), and the target accepts a position only after the renderer has
+/// answered an earlier one. When the browser stalls just after its drag starts (16 of about 45 drags and drops in a full verdict run),
+/// it accepts 169-204 ms after the take; a release before that drops nothing. 350 ms is the landed drops' own pace
+/// (about 150 ms of margin). A stall whose accept comes later than about this delay still misses, unseen.
+pub const RELEASE_AFTER_TAKE: Duration = Duration::from_millis(350);
+
+/// Whether a drag into this family is a Chromium drag and drop whose release waits for the take's delay
+/// ([`RELEASE_AFTER_TAKE`]): Chrome's X11 drag code, which Electron and other Chromium browsers share.
+pub fn release_waits_after_take(family: &str) -> bool {
+    matches!(family, "Chrome" | "Chromium")
+}
+
+/// When the `done`-th of the `left` steps a drag still had at its source's take ends at the soonest: those steps
+/// spread evenly over `after_take`, so the last of them, and the release after it, comes `after_take` after the take.
+pub fn step_due(taken: Instant, after_take: Duration, done: usize, left: usize) -> Instant {
+    taken + after_take.mul_f64(done as f64 / left.max(1) as f64)
+}
+
 /// The watch on `XdndSelection` for one drag. It owns the selection's reports while it runs: whatever else reads the
 /// connection's events meanwhile (the server-time probe, the input session) keeps them for it
 /// (`X11::take_selection_reports`).
@@ -468,6 +488,27 @@ fn inject_fault(_: &x11rb::rust_connection::RustConnection, _: Window) {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_steps_after_a_take_spread_over_the_release_s_delay() {
+        let taken = Instant::now();
+        let after = RELEASE_AFTER_TAKE;
+        assert_eq!(after, Duration::from_millis(350));
+        assert_eq!(step_due(taken, after, 0, 200), taken);
+        assert_eq!(
+            step_due(taken, after, 200, 200),
+            taken + after,
+            "the last step ends the delay after the take"
+        );
+        assert_eq!(step_due(taken, after, 100, 200), taken + after / 2);
+        assert_eq!(
+            step_due(taken, after, 1, 1),
+            taken + after,
+            "one step left carries the whole delay"
+        );
+        let dues: Vec<Instant> = (0..=40).map(|done| step_due(taken, after, done, 40)).collect();
+        assert!(dues.windows(2).all(|w| w[0] <= w[1]), "never earlier for a later step");
+    }
 
     #[test]
     fn a_take_counts_only_from_the_target_s_own_client() {

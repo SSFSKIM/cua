@@ -13,6 +13,7 @@
   #scroller div { height: 400px; background: linear-gradient(#f4f4f4, #c8c8c8); }
   #source { position: absolute; left: 360px; top: 130px; width: 100px; height: 50px; background: #6a8fd0; color: #ffffff; }
   #target { position: absolute; left: 560px; top: 120px; width: 200px; height: 100px; background: #d8e8d0; }
+  #near { position: absolute; left: 505px; top: 165px; width: 50px; height: 40px; background: #6a8fd0; }
   #canvas { position: absolute; left: 20px; top: 350px; width: 400px; height: 200px; background: #eeeeee; touch-action: none; }
   #status { position: absolute; left: 460px; top: 350px; margin: 0; font-size: 16px; }
   #status p { margin: 2px 0; }
@@ -28,7 +29,8 @@
        It goes back to its top by itself 2 s after it last scrolled, so every drag of its thumb starts from the top
        (a thumb drag moves the content by how far the thumb went: one short drag would otherwise leave the thumb
        where the next press misses it).
-     - source and target: HTML5 drag and drop; the status line counts drag starts and drops on the target.
+     - source and target: HTML5 drag and drop; the status line counts drag starts and drops on the target. `near` is a
+       second source 5 px from the target, for a short drag and drop (about 40 px, task 18).
      - canvas: a path-tracking target that draws what plain pointermove events (no coalesced events) report while the
        button is down; the status line counts the moves of the last stroke and the farthest of the path's corners from
        the stroke drawn (CORNERS, canvas pixels), so a drag whose motions arrive merged shows a large deviation.
@@ -38,6 +40,7 @@
 <div id="scroller" aria-label="Scroller"><div></div></div>
 <div id="source" draggable="true" aria-label="Source">drag me</div>
 <div id="target" aria-label="Target"></div>
+<div id="near" draggable="true" aria-label="Near source"></div>
 <canvas id="canvas" width="400" height="200" aria-label="Canvas"></canvas>
 <div id="status">
   <p id="s-select">select none</p>
@@ -72,29 +75,34 @@
   const dnd = { starts: 0, drops: 0, downs: 0, detail: 0, gap: -1, selects: 0, ends: 0, effect: -1, lat: -1, dur: -1, ups: 0, at: 0, last: null, started: null };
   const EFFECTS = { none: 0, copy: 1, move: 2, link: 3 };
   const showDnd = () => line('s-dnd', `dnd starts ${dnd.starts} drops ${dnd.drops} downs ${dnd.downs} detail ${dnd.detail} gap ${dnd.gap} selects ${dnd.selects} ends ${dnd.ends} effect ${dnd.effect} lat ${dnd.lat} dur ${dnd.dur} ups ${dnd.ups} at ${dnd.at}`);
-  $('source').addEventListener('mousedown', (e) => {
+  const down = (e) => {
     dnd.downs += 1;
     dnd.detail = e.detail;
     dnd.gap = dnd.last === null ? -1 : Math.round(e.timeStamp - dnd.last);
     dnd.last = e.timeStamp;
     dnd.at = Math.round(performance.timeOrigin + e.timeStamp) % 1e9;
     showDnd();
-  });
+  };
   document.addEventListener('mouseup', () => { dnd.ups += 1; showDnd(); });
   document.addEventListener('selectstart', () => { dnd.selects += 1; showDnd(); });
-  $('source').addEventListener('dragstart', (e) => {
+  const dragstart = (e) => {
     dnd.starts += 1;
     dnd.started = e.timeStamp;
     dnd.lat = dnd.last === null ? -1 : Math.round(e.timeStamp - dnd.last);
     e.dataTransfer.setData('text/plain', 'cua171');
     showDnd();
-  });
-  $('source').addEventListener('dragend', (e) => {
+  };
+  const dragend = (e) => {
     dnd.ends += 1;
     dnd.effect = EFFECTS[e.dataTransfer?.dropEffect] ?? 9;
     dnd.dur = dnd.started === null ? -1 : Math.round(e.timeStamp - dnd.started);
     showDnd();
-  });
+  };
+  for (const id of ['source', 'near']) {
+    $(id).addEventListener('mousedown', down);
+    $(id).addEventListener('dragstart', dragstart);
+    $(id).addEventListener('dragend', dragend);
+  }
   $('target').addEventListener('dragover', (e) => e.preventDefault());
   $('target').addEventListener('drop', (e) => { e.preventDefault(); dnd.drops += 1; showDnd(); });
 

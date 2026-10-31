@@ -100,6 +100,9 @@ export function pagePath(kind, i) {
       return [[313, 160], [313, 220]];
     case 'dnd':
       return [[410, 155], [440, 160], [660, 170]];
+    case 'dnd-short':
+      // the near source to 10 px inside the target: a short drag and drop, 40 px (task 18)
+      return [[530, 185], [570, 185]];
     case 'canvas':
       return CORNERS.map(([x, y]) => [x + 20, y + 350]);
     default:

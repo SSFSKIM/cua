@@ -69,19 +69,29 @@ export function sourceTargetProblem({record, problem, frontmost}) {
 }
 
 // Selects the source for `which` from the recorded consent in `out`, and says whether it holds; refused, with nothing
-// selected, when `targetProblem` names one. -> the task's result.
-export function switchSource({out, which, sources, targetProblem = null}) {
+// selected, when `targetProblem` names one. `beforeSelect` runs right before the TIS call, after the consent and the
+// target are checked, so a caller learns of every attempt (a failed read-back included) and of nothing else.
+// -> the task's result.
+export function switchSource({out, which, sources, targetProblem = null, beforeSelect = () => {}}) {
   const consent = readConsent(out), id = sourceToSelect(consent, which);
   if (!id) return {ok: true, which, switched: false, reason: consent ? 'the owner said no: they switch by hand' : 'no answer recorded (source consent): nothing is switched'};
   if (targetProblem) return {ok: false, which, switched: false, requested: id, problem: `${id} not selected: ${targetProblem}`};
+  beforeSelect();
   const answer = sources.select(id), problem = selectionProblem(answer, id);
   return {ok: problem === null, which, switched: true, requested: id, current: answer?.current ?? null, ...(problem ? {problem} : {})};
 }
 
-// After a run that failed (`ctx.error`) once a selection was tried (`ctx.sourceChanged`, set before the selection, so a
-// failed read-back counts), the owner's recorded source put back and read back; null when there is nothing to undo. A
-// run that ended well keeps its source for the next series; `source restore` ends the sitting.
-export function restoreAfterFailure({ctx, out, sources}) {
-  if (!ctx.sourceChanged || !ctx.error) return null;
+// After a run that failed, by a thrown failure (`ctx.error`) or an ordinary failed result (`ctx.failed`), once a
+// selection was attempted (`ctx.sourceChanged`, set right before the TIS call, so a failed read-back counts), the
+// owner's recorded source put back and read back; null when there is nothing to undo. With `targetProblem` (the
+// scene's window no longer on top) nothing is selected, since it would change another window's source: the result says
+// the source was left as it is, and `source restore` puts it back. A run that ended well keeps its source for the next
+// series; `source restore` ends the sitting.
+export function restoreAfterFailure({ctx, out, sources, targetProblem = null}) {
+  if (!ctx.sourceChanged || !(ctx.error || ctx.failed > 0)) return null;
+  if (targetProblem) {
+    return {ok: false, which: 'owner', switched: false, left: true,
+      problem: `the input source was left as it is: ${targetProblem}; put the owner's back with \`cursor-sitting.mjs source restore --out ${out}\` once the scene is back on top (or the scenes are down)`};
+  }
   return switchSource({out, which: 'owner', sources});
 }

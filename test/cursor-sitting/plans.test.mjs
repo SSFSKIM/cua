@@ -347,15 +347,13 @@ test('every timing series needs TextEdit brought to the front, and records the s
   assert.deepEqual(timingSteps('clicks', {'element click': 40})[0].series, ['element click']);
 });
 
-test('a run that fails after selecting a source has the owner\'s put back; one that ends well, or never selected, does not', async t => {
-  const out = scratch(t), log = [];
-  const io = {...fakeIo(log, {failTask: 'input-source'}), cleanup: async ctx => { log.push(`cleanup sourceChanged=${ctx.sourceChanged} failed=${Boolean(ctx.error)}`); }};
-  await assert.rejects(runSteps(timingSteps('typing', 1), {item: '12', out, io, log: () => {}}), /input-source failed/);
-  assert.equal(log.at(-1), 'cleanup sourceChanged=true failed=true');
-  const ok = [], fine = {...fakeIo(ok), cleanup: async ctx => { ok.push(`cleanup sourceChanged=${ctx.sourceChanged} failed=${Boolean(ctx.error)}`); }};
-  await runSteps(timingSteps('typing', 1), {item: '12', out, io: fine, log: () => {}});
-  assert.equal(ok.at(-1), 'cleanup sourceChanged=true failed=false');
-  const none = [], early = {...fakeIo(none, {failTask: 'activate'}), cleanup: async ctx => { none.push(`cleanup sourceChanged=${ctx.sourceChanged}`); }};
-  await assert.rejects(runSteps(timingSteps('typing', 1), {item: '12', out, io: early, log: () => {}}));
-  assert.equal(none.at(-1), 'cleanup sourceChanged=false');
+test('the cleanup sees how the run ended: a thrown failure, an ordinary failed result, or neither', async t => {
+  const out = scratch(t);
+  const ending = async (io, steps) => { let seen; await runSteps(steps, {item: '12', out, io: {...io, cleanup: async ctx => { seen = {failed: ctx.failed, error: Boolean(ctx.error)}; }}, log: () => {}}).catch(() => {}); return seen; };
+  assert.deepEqual(await ending(fakeIo([], {failTask: 'input-source'}), timingSteps('typing', 1)), {failed: 0, error: true});
+  const refusing = fakeIo([]);
+  const open = refusing.open;
+  refusing.open = async options => { const s = await open(options); return {...s, run: async () => ({ok: false, error: 'refused', images: []})}; };
+  assert.deepEqual(await ending(refusing, timingSteps('typing', 1)), {failed: 2, error: false}, 'two cells answered ok: false, nothing thrown');
+  assert.deepEqual(await ending(fakeIo([]), timingSteps('typing', 1)), {failed: 0, error: false});
 });

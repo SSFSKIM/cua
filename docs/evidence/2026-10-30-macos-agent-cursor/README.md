@@ -284,8 +284,11 @@ items into `$OUT2` (`$S drive 1-check --out "$OUT2" --dry-run`, likewise 1, 3 an
      the front first, or the series stops. The selection goes only while the harness's own TextEdit launch has its
      run window on top of the frontmost app: with per-document input sources it changes the source of whatever window
      has the keys. If the source read back is not the one selected (ABC not enabled, say), the series stops before any
-     session opens. A series that fails at any point after a selection was tried puts the owner's source back itself,
-     recorded as its last row (`source-restored-after-failure`). The series' own
+     session opens. A series that fails at any point after a selection was attempted (by a thrown failure or a cell
+     that answered failed) puts the owner's source back itself, onto the scene's own window only, recorded as its last
+     row (`source-restored-after-failure`). If that window is no longer on top, it selects nothing (that would change
+     another window's source), records `source-left-after-failure`, and prints a `!!!` line. The operator then runs
+     `$S source restore --out "$OUT2"` once the scene is back on top, or after `$SC down all`. The series' own
      check (a Latin layout for a judged series) runs after the selection, as before. With a no, nothing is switched:
      the owner stays to switch by hand before 5 and again before 8, and this sitting is not hands-off.
 2. **Item 3, states and timing, and a look check.** `$S drive 3 --run "$RUN" --out "$OUT2"`, with the same watches as

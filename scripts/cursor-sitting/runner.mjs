@@ -50,6 +50,12 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
   const settingsFile = engineJsonOf(home), before = join(out, 'engine.json.before');
   const guard = liveTargetGuard({bundle: enginePaths().bundle});
   let sources = null;
+  // Why a source may not be selected for `scene` now (its launch, its run window on top of the frontmost app), or null.
+  const sourceTarget = scene => {
+    try { const record = io.scene(scene); return sourceTargetProblem({record, problem: guard.problem(record), frontmost: guard.frontmost()}); } catch (error) {
+      return `the ${scene} scene could not be read (${error.message.split('\n')[0]})`;
+    }
+  };
   const io = {
     scene: id => {
       const record = readState(run).scenes[id];
@@ -136,11 +142,8 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
       },
       // The input source selected for a series from the owner's recorded answer, and read back (./input-source.mjs),
       // only while the scene's own launch has its run window on top of the frontmost app.
-      'select-source': async ([which, scene]) => {
-        const record = io.scene(scene);
-        const targetProblem = sourceTargetProblem({record, problem: guard.problem(record), frontmost: guard.frontmost()});
-        return switchSource({out, which, sources: sources ??= liveSourceSwitch(), targetProblem});
-      },
+      'select-source': async ([which, scene], ctx) => switchSource({out, which, sources: sources ??= liveSourceSwitch(), targetProblem: sourceTarget(scene),
+        beforeSelect: () => { ctx.sourceChanged = true; ctx.sourceScene = scene; }}),
       'watch-start': async () => ({ok: true, watch: startWatch(enginePaths().bundle, out)}),
       'watch-stop': async (_args, ctx) => {
         const lines = ctx.watch ? stopWatch(ctx.watch) : [];
@@ -157,9 +160,11 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
       }
       if (ctx.watch) stopWatch(ctx.watch);
       if (ctx.recording) { const {handle, clip} = ctx.recording; ctx.recording = null; await stopRecording(handle, {file: clip}); }
-      // A failed run that had tried a selection: the owner's source back (recorded as the run's last row).
-      const restored = restoreAfterFailure({ctx, out, sources: sources ??= liveSourceSwitch()});
-      return restored ? [{task: 'source-restored-after-failure', result: restored}] : [];
+      // A failed run that had attempted a selection: the owner's source back, onto the scene's own window only
+      // (recorded as the run's last row); left as it is, and said loudly, when that window is no longer on top.
+      const restored = restoreAfterFailure({ctx, out, sources: sources ??= liveSourceSwitch(), targetProblem: ctx.sourceChanged ? sourceTarget(ctx.sourceScene) : null});
+      if (restored?.left) process.stderr.write(`\n!!! ${restored.problem}\n\n`);
+      return restored ? [{task: restored.left ? 'source-left-after-failure' : 'source-restored-after-failure', result: restored}] : [];
     },
   };
   function writeSettings(write) {
@@ -200,7 +205,7 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
   const file = join(out, `item-${item}.jsonl`);
   const rows = [];
   const record = row => { const full = {item, at: Date.now(), ...row}; rows.push(full); if (!dryRun) appendFileSync(file, JSON.stringify(full) + '\n'); };
-  const ctx = {io, sessions: {}, results: {}, watch: null, recording: null, settingsChanged: false, sourceChanged: false, error: null};
+  const ctx = {io, sessions: {}, results: {}, watch: null, recording: null, settingsChanged: false, sourceChanged: false, sourceScene: null, error: null, failed: 0};
   let failed = 0, n = 0;
   const runCell = async step => {
     const code = typeof step.cell === 'function' ? step.cell(ctx.results) : step.cell;
@@ -241,8 +246,6 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
       else if (step.close) { const exit = await ctx.sessions[step.close].close(); delete ctx.sessions[step.close]; record({step: n, kind: 'close', session: step.close, exit}); }
       else if (step.series) record({step: n, kind: 'series', series: step.series, counts: step.counts});
       else if (step.task) {
-        // A selection is tracked before it is made: one that fails to read back has still changed the source.
-        if (step.task === 'select-source') ctx.sourceChanged = true;
         const result = await io.tasks[step.task](step.args ?? [], ctx);
         if (step.task === 'engine-json-off' || step.task === 'engine-json-arm') ctx.settingsChanged = true;
         if (step.task === 'engine-json-restore') ctx.settingsChanged = false;
@@ -259,6 +262,7 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
     ctx.error = error;
     throw error;
   } finally {
+    ctx.failed = failed;  // how the run ended, for the cleanup: a thrown failure, or failed results
     if (!dryRun) {
       for (const [name, session] of Object.entries(ctx.sessions)) { try { await session.close(); } catch (error) { log(`closing ${name}: ${error.message}`); } }
       const notes = await io.cleanup?.(ctx);

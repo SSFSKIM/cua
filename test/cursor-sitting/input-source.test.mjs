@@ -92,3 +92,34 @@ test('the source is selected only for the scene\'s own window: its launch, its r
   assert.match(refused.problem, /not selected: another TextEdit window is on top/);
   rmSync(out, {recursive: true, force: true});
 });
+
+test('an attempt is marked only right before the TIS call: never for a refused target or no yes, always for a failed read-back', () => {
+  const out = mkdtempSync(join(tmpdir(), 'cua-235-src-'));
+  const marks = [];
+  const mark = label => () => marks.push(label);
+  const select = reads => ({select: id => ({requested: id, status: 0, current: {id: reads ?? id}})});
+  switchSource({out, which: 'latin', sources: select(), beforeSelect: mark('no yes')});
+  writeConsent(out, {consent: true, reading: KOREAN});
+  switchSource({out, which: 'latin', sources: select(), targetProblem: 'an owner window is on top', beforeSelect: mark('refused')});
+  const wrong = switchSource({out, which: 'latin', sources: select(KOREAN.id), beforeSelect: mark('read back wrong')});
+  assert.equal(wrong.ok, false);
+  switchSource({out, which: 'latin', sources: select(), beforeSelect: mark('selected')});
+  assert.deepEqual(marks, ['read back wrong', 'selected']);
+  rmSync(out, {recursive: true, force: true});
+});
+
+test('the restore after a failure: also after an ordinary failed result, and never onto a window that is not the scene\'s', async () => {
+  const {restoreAfterFailure} = await import('../../scripts/cursor-sitting/input-source.mjs');
+  const out = mkdtempSync(join(tmpdir(), 'cua-235-src-'));
+  writeConsent(out, {consent: true, reading: KOREAN});
+  const asked = [];
+  const sources = {select: id => { asked.push(id); return {requested: id, status: 0, current: {id}}; }};
+  assert.equal(restoreAfterFailure({ctx: {sourceChanged: true, failed: 1}, out, sources}).ok, true, 'a cell that answered ok: false');
+  assert.deepEqual(asked, [KOREAN.id]);
+  const left = restoreAfterFailure({ctx: {sourceChanged: true, error: new Error('x')}, out, sources, targetProblem: 'an owner window is on top'});
+  assert.equal(left.ok, false);
+  assert.equal(left.left, true);
+  assert.match(left.problem, /left as it is: an owner window is on top; .*source restore/);
+  assert.deepEqual(asked, [KOREAN.id], 'nothing selected onto the owner\'s window');
+  rmSync(out, {recursive: true, force: true});
+});

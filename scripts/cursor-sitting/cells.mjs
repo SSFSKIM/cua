@@ -168,17 +168,26 @@ return {primed: true};`);
 
 // The typing sample of Acceptance 12: primed at `to`, a click at `from` (a long glide where the cursor is on), then a
 // timed type_text of 200 characters while it glides; a click back at `to` (another long glide), then 30 timed
-// press_key calls. A rerun of one series leaves the other's timed calls out (`typeText`, `pressKey`), the clicks kept.
-// -> {type_text?, press_key?, each?}.
-export const TYPING_SAMPLE = (scene, from, to, {typeText = true, pressKey = true} = {}) => cell(`${head(scene)}
-${prime(scene, to)}
+// press_key calls. A rerun of one series keeps the long glide in flight as its timed calls start (`typeText`,
+// `pressKey`): press_key alone is primed at `from` and clicks `to` once, so the keys go out during that glide, not after
+// a click away and straight back (which returns inside the plan's 20 ms lead, the cursor barely moving); type_text alone
+// is the sample up to its type_text. -> {type_text?, press_key?, each?}.
+export const TYPING_SAMPLE = (scene, from, to, {typeText = true, pressKey = true} = {}) => {
+  const keys = 'const each = [];\nfor (let i = 0; i < 30; i++) { t = performance.now(); await __app.pressKey("x"); each.push(performance.now() - t); }';
+  const typed = 't = performance.now(); await __app.typeText("abcdefghij".repeat(20)); typed = performance.now() - t;';
+  const body = typeText
+    ? `${prime(scene, to)}
 await __app.click(${at(scene, from)});
-let t, typed;
-${typeText ? 't = performance.now(); await __app.typeText("abcdefghij".repeat(20)); typed = performance.now() - t;' : ''}
+${typed}
+${pressKey ? `await __app.click(${at(scene, to)});\n${keys}` : ''}`
+    : `${prime(scene, from)}
 await __app.click(${at(scene, to)});
-const each = [];
-${pressKey ? 'for (let i = 0; i < 30; i++) { t = performance.now(); await __app.pressKey("x"); each.push(performance.now() - t); }' : ''}
+${keys}`;
+  return cell(`${head(scene)}
+let t, typed;
+${body}
 return {${[typeText && 'type_text: typed', pressKey && 'press_key: each.reduce((a, b) => a + b, 0), each'].filter(Boolean).join(', ')}};`);
+};
 
 // An element click on `control` alone, timed, with nothing after it, so the result's meta is the click's: its route
 // (Acceptance 13: route 3 is the engine's route for the fixture's button in the background), its receipt and round

@@ -210,6 +210,7 @@ test('clip lag writes its judgement, copies its frames, and records item 13\'s r
   const verdicts = readFileSync(join(out, 'verdicts.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
   assert.deepEqual(verdicts.map(v => [v.item, v.id, v.verdict]), [['13', 'route-3-lag', 'pass']]);
   assert.match(verdicts[0].note, /^from item 1's clip: second-target/);
-  assert.equal(await quietly(() => main(['clip', 'lag', '--frames', frames, '--out', out, 'second-target', '200', '206'])), 1, 'undetermined: no verdict');
-  assert.equal(readFileSync(join(out, 'verdicts.jsonl'), 'utf8').trim().split('\n').length, 1);
+  assert.equal(await quietly(() => main(['clip', 'lag', '--frames', frames, '--out', out, 'second-target', '200', '206'])), 1, 'undetermined');
+  const after = readFileSync(join(out, 'verdicts.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(after.map(v => [v.id, v.verdict]), [['route-3-lag', 'pass'], ['route-3-lag', 'undetermined']], 'the rejudgement reopens the clause: the earlier pass no longer stands');
 });

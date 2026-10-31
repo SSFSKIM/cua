@@ -280,8 +280,12 @@ items into `$OUT2` (`$S drive 1-check --out "$OUT2" --dry-run`, likewise 1, 3 an
      back to it at the end?" Record the answer: `$S source consent yes --out "$OUT2"` (or `no`). The kit keeps the
      source they are on at that moment as theirs (`$OUT2/input-source.json`).
    - With a yes, each timing series selects its source itself, with TextEdit in front, and reads it back: ABC
-     (`com.apple.keylayout.ABC`) for 13, 12 and the arm, the owner's own for the Korean series. If the source read
-     back is not the one selected (ABC not enabled, say), the series stops before any session opens. The series' own
+     (`com.apple.keylayout.ABC`) for 13, 12 and the arm, the owner's own for the Korean series. TextEdit must come to
+     the front first, or the series stops. The selection goes only while the harness's own TextEdit launch has its
+     run window on top of the frontmost app: with per-document input sources it changes the source of whatever window
+     has the keys. If the source read back is not the one selected (ABC not enabled, say), the series stops before any
+     session opens. A series that fails at any point after a selection was tried puts the owner's source back itself,
+     recorded as its last row (`source-restored-after-failure`). The series' own
      check (a Latin layout for a judged series) runs after the selection, as before. With a no, nothing is switched:
      the owner stays to switch by hand before 5 and again before 8, and this sitting is not hands-off.
 2. **Item 3, states and timing, and a look check.** `$S drive 3 --run "$RUN" --out "$OUT2"`, with the same watches as
@@ -362,8 +366,9 @@ series whose scene is gone from the front (a locked screen, say) rather than tim
 5. **Item 13, click speed.** `$S timing clicks --run "$RUN" --out "$OUT2"`. Coordinate click and drag start at 40
    samples a side, since both were undetermined at 20 on the first build. Element click starts at 20. If it is
    undetermined, rerun it alone: `$S timing clicks --series element-click --samples 40 --run "$RUN" --out "$OUT2"`.
-   `judge` takes each series from the last run that covers it, so a 40-sample run's verdict replaces the earlier one
-   for every series it covers, and only those: never keep the better of the two. The `route-3-lag` watch is either
+   `judge` takes each series from the last run that asked for it (each run records its series first), so a 40-sample
+   run's verdict replaces the earlier one for every series it asked for, and only those, even when it failed before
+   its first sample: never keep the better of the two. The `route-3-lag` watch is either
    the owner's, during this block's first minute (the fallback, decided after item 1), or measured from item 1's clip
    afterwards.
 6. **Item 12, typing speed.** `$S timing typing --run "$RUN" --out "$OUT2"` (type_text and press_key at 20). Rerun an
@@ -444,8 +449,9 @@ $S clip lag --frames "$REC/item-1-2026-10-31-frames" --out "$OUT2" second-target
 The verdict is against Acceptance 13's 100 ms: pass when the bound's top is at most 100 ms, fail when its bottom is
 over, else undetermined. The resolution is the frame interval: at 30 fps a frame every 33.3 ms, so a measured lag up
 to 67 ms passes and one over 133 ms fails; at the 57–60 fps screencapture recorded in the live check (16.7 ms), up to
-83 ms passes and over 117 ms fails. `lag` appends item 13's `route-3-lag` verdict when the bound decides it. An
-undetermined lag keeps no verdict, since the owner has gone by then. It copies the four frames it used into
+83 ms passes and over 117 ms fails. `lag` appends item 13's `route-3-lag` verdict every time it judges: pass, fail, or
+`undetermined`, which `summary` shows as the last word, so a rejudgement that no longer decides the clause leaves it
+open rather than an earlier pass standing. It copies the four frames it used into
 `$OUT2/item-1-frames/`; check them for privacy as above. Route 3's screen freeze holds the control's redraw as well as
 the cursor's start, so both show only once the hold ends. The lag from the frames is what the owner would have seen
 on the screen, which is what the watch asks.

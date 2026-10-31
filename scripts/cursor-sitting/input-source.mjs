@@ -57,10 +57,31 @@ export function liveSourceSwitch({cache = PROBE_CACHE} = {}) {
   return {current: () => run(['current']).current, select: id => run(['select', id])};
 }
 
-// Selects the source for `which` from the recorded consent in `out`, and says whether it holds. -> the task's result.
-export function switchSource({out, which, sources}) {
+// Why the source must not be selected now, or null: with per-document input sources a selection changes the source of
+// whatever window has the keys, so it goes only while the scene's recorded launch has its run window in front
+// (`problem`: the target guard's reading of `record`, ./target-guard.mjs) and that window is on top of the frontmost
+// application (`frontmost`: {pid, topWindow}, the engine's windows passed over).
+export function sourceTargetProblem({record, problem, frontmost}) {
+  if (problem) return problem;
+  if (frontmost?.pid !== record.pid) return `the frontmost is process ${frontmost?.pid ?? 'none'}, not the ${record.id} scene's ${record.pid}`;
+  if (frontmost.topWindow?.number !== record.window.number) return `the frontmost app's top window is ${frontmost.topWindow?.number ?? 'none'}, not the run window ${record.window.number}`;
+  return null;
+}
+
+// Selects the source for `which` from the recorded consent in `out`, and says whether it holds; refused, with nothing
+// selected, when `targetProblem` names one. -> the task's result.
+export function switchSource({out, which, sources, targetProblem = null}) {
   const consent = readConsent(out), id = sourceToSelect(consent, which);
   if (!id) return {ok: true, which, switched: false, reason: consent ? 'the owner said no: they switch by hand' : 'no answer recorded (source consent): nothing is switched'};
+  if (targetProblem) return {ok: false, which, switched: false, requested: id, problem: `${id} not selected: ${targetProblem}`};
   const answer = sources.select(id), problem = selectionProblem(answer, id);
   return {ok: problem === null, which, switched: true, requested: id, current: answer?.current ?? null, ...(problem ? {problem} : {})};
+}
+
+// After a run that failed (`ctx.error`) once a selection was tried (`ctx.sourceChanged`, set before the selection, so a
+// failed read-back counts), the owner's recorded source put back and read back; null when there is nothing to undo. A
+// run that ended well keeps its source for the next series; `source restore` ends the sitting.
+export function restoreAfterFailure({ctx, out, sources}) {
+  if (!ctx.sourceChanged || !ctx.error) return null;
+  return switchSource({out, which: 'owner', sources});
 }

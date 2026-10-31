@@ -256,7 +256,8 @@ export function judgeLag(record, judged, {limitMs = ROUTE3_LAG_MS} = {}) {
 }
 
 // `clip lag`: the judgement into <out>/item-1-route3-lag.json and .md, the judged frames and the one before each into
-// item-1-frames/, and item 13's route-3-lag verdict appended when the frames decide it. -> the judgement.
+// item-1-frames/, and item 13's route-3-lag verdict appended: pass, fail, or undetermined (the clause open). -> the
+// judgement.
 export function writeLag({dir, out, judged, now = () => new Date().toISOString()}) {
   const record = JSON.parse(readFileSync(join(dir, 'frames.json'), 'utf8'));
   const judgement = judgeLag(record, judged);
@@ -274,8 +275,8 @@ export function writeLag({dir, out, judged, now = () => new Date().toISOString()
       copyFileSync(join(dir, frame.file), join(kept, `${target}-lag-${role}-f${String(index).padStart(6, '0')}.jpg`));
     }
   }
-  if (judgement.verdict !== 'undetermined') {
-    appendFileSync(join(out, 'verdicts.jsonl'), `${JSON.stringify({item: '13', id: 'route-3-lag', verdict: judgement.verdict, note: `from item 1's clip: ${Object.entries(judgement.targets).map(([target, t]) => describe(target, t)).join('; ')}`, at: now()})}\n`);
-  }
+  // Every judgement is recorded, an undetermined one too, so a rejudgement that no longer decides the clause reopens it
+  // rather than leaving an earlier pass standing (`summary` shows the last word on each watch).
+  appendFileSync(join(out, 'verdicts.jsonl'), `${JSON.stringify({item: '13', id: 'route-3-lag', verdict: judgement.verdict, note: `from item 1's clip: ${Object.entries(judgement.targets).map(([target, t]) => describe(target, t)).join('; ')}`, at: now()})}\n`);
   return judgement;
 }

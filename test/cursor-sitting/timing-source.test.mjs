@@ -33,7 +33,7 @@ test('every timing series selects and checks the source first, with TextEdit in 
       assert.ok(check > 0 && check < steps.findIndex(s => s.open), JSON.stringify(options));
       assert.deepEqual(steps.slice(0, check).filter(s => s.task).map(s => s.task), ['activate', 'select-source']);
       const select = steps.find(s => s.task === 'select-source');
-      assert.deepEqual(select.args, [options.ownerSource ? 'owner' : 'latin'], 'ABC for a judged series and an arm, the owner\'s own for theirs');
+      assert.deepEqual(select.args, [options.ownerSource ? 'owner' : 'latin', 'textedit'], 'ABC for a judged series and an arm, the owner\'s own for theirs, in TextEdit\'s run window');
       assert.equal(select.required, true, 'a selection that does not read back stops the series');
       assert.equal(steps[check].required, true, 'a refusal stops the series');
       assert.deepEqual(steps[check].args, [options.ownerSource ? 'record' : 'latin']);
@@ -44,7 +44,7 @@ test('every timing series selects and checks the source first, with TextEdit in 
 test('an arm series sets cursorDebug, relaunches the engine, checks the running arm, and puts engine.json back', () => {
   const steps = timingSteps('typing', 2, {arm: 'panelOut'});
   const tasks = steps.filter(s => s.task).map(s => [s.task, ...(s.args ?? [])].join(' '));
-  assert.deepEqual(tasks, ['activate textedit', 'select-source latin', 'input-source latin', 'engine-json-arm panelOut', 'engine-stop', 'activate textedit',
+  assert.deepEqual(tasks, ['activate textedit', 'select-source latin textedit', 'input-source latin', 'engine-json-arm panelOut', 'engine-stop', 'activate textedit',
     'engine-status on panelOut', 'engine-json-restore', 'engine-stop']);
   assert.ok(steps.findIndex(s => s.task === 'engine-status') > steps.findIndex(s => s.open === 'off'), 'read once the sessions launched the engine');
   assert.equal(steps.find(s => s.task === 'engine-status').required, true);

@@ -324,3 +324,38 @@ test('a typing rerun of one series times only that one, and its rows name only i
     {kind: 'cell', ok: false, sample: {side: 'off', i: 0, covers: ['press_key x30']}, error: 'x'}], 'typing'),
   [{series: 'press_key x30', side: 'on', i: 0, ms: 900}, {series: 'press_key x30', side: 'off', i: 0, ms: null, error: 'x'}]);
 });
+
+test('a press_key-only typing sample primes at the far end and sends one long-glide click before the timed keys', () => {
+  const cell = timingSteps('typing', {'press_key x30': 40}).find(s => s.sample).cell;
+  const at = [...cell.matchAll(/await __app\.click\(/g)].map(m => m.index);
+  const clicks = at.map(k => cell.slice(k, cell.indexOf('})()', k)));
+  assert.equal(clicks.length, 2, 'the prime and one glide, not away and straight back');
+  assert.match(clicks[0], /\* 0\.1\)/, 'primed at the start corner');
+  assert.match(clicks[1], /\* 0\.9\)/, 'the glide to the far corner');
+  assert.ok(at[1] < cell.indexOf('pressKey'), 'the glide is in flight when the keys start');
+  const full = timingSteps('typing', 2).find(s => s.sample).cell;
+  assert.equal([...full.matchAll(/await __app\.click\(/g)].length, 3, 'the full sample is unchanged');
+});
+
+test('every timing series needs TextEdit brought to the front, and records the series it asked for first', () => {
+  for (const kind of ['typing', 'clicks']) {
+    const steps = timingSteps(kind, 2);
+    assert.ok(steps.filter(s => s.task === 'activate').every(s => s.required === true), 'a refused activation stops the series');
+    assert.deepEqual(steps[0].series, SERIES[kind], 'the run declares its series before anything can fail');
+    assert.deepEqual(steps.find(s => s.task === 'select-source').args.slice(1), ['textedit'], 'the selection names the scene it is for');
+  }
+  assert.deepEqual(timingSteps('clicks', {'element click': 40})[0].series, ['element click']);
+});
+
+test('a run that fails after selecting a source has the owner\'s put back; one that ends well, or never selected, does not', async t => {
+  const out = scratch(t), log = [];
+  const io = {...fakeIo(log, {failTask: 'input-source'}), cleanup: async ctx => { log.push(`cleanup sourceChanged=${ctx.sourceChanged} failed=${Boolean(ctx.error)}`); }};
+  await assert.rejects(runSteps(timingSteps('typing', 1), {item: '12', out, io, log: () => {}}), /input-source failed/);
+  assert.equal(log.at(-1), 'cleanup sourceChanged=true failed=true');
+  const ok = [], fine = {...fakeIo(ok), cleanup: async ctx => { ok.push(`cleanup sourceChanged=${ctx.sourceChanged} failed=${Boolean(ctx.error)}`); }};
+  await runSteps(timingSteps('typing', 1), {item: '12', out, io: fine, log: () => {}});
+  assert.equal(ok.at(-1), 'cleanup sourceChanged=true failed=false');
+  const none = [], early = {...fakeIo(none, {failTask: 'activate'}), cleanup: async ctx => { none.push(`cleanup sourceChanged=${ctx.sourceChanged}`); }};
+  await assert.rejects(runSteps(timingSteps('typing', 1), {item: '12', out, io: early, log: () => {}}));
+  assert.equal(none.at(-1), 'cleanup sourceChanged=false');
+});

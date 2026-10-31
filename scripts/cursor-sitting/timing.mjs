@@ -73,7 +73,7 @@ export function sampleCounts(kind, {samples = null, only = null, recorded = fals
 const sessions = scenes => [
   {open: 'on', scenes},
   {open: 'off', scenes, env: {CUA_CURSOR: '0'}},
-  {task: 'activate', args: ['textedit']},
+  {task: 'activate', args: ['textedit'], required: true},
 ];
 
 // The steps of `kind` with `samples` a side (./runner.mjs runs them): a number for every series, or {series name: n}
@@ -102,11 +102,14 @@ export function timingSteps(kind, samples, {arm = null, ownerSource = false} = {
   };
   const what = arm ? `, the cursor's ${arm} arm (recorded, not judged)` : ownerSource ? ', under the owner\'s own input source (recorded, not judged)' : '';
   return [
+    // The series this run asks for, recorded first: a run that fails before its first sample still supersedes them
+    // (seriesRuns), so an earlier verdict on them never outlives a rerun that was asked for.
+    {series: Object.keys(counts), counts},
     {say: `Acceptance ${kind === 'typing' ? 12 : 13}${what}: ${Object.entries(counts).map(([name, n]) => `${name} ${n}`).join(', ')} samples a side, interleaved; nobody uses the Mac until the last sample`},
-    {task: 'activate', args: ['textedit']},
-    // With the owner's yes (./input-source.mjs), the source is selected here, TextEdit in front, and read back; then
-    // the series' own check of it, as before.
-    {task: 'select-source', args: [ownerSource ? 'owner' : 'latin'], required: true},
+    {task: 'activate', args: ['textedit'], required: true},
+    // With the owner's yes (./input-source.mjs), the source is selected here, only once the scene's own launch and run
+    // window are checked to be on top (the target guard's check), and read back; then the series' own check, as before.
+    {task: 'select-source', args: [ownerSource ? 'owner' : 'latin', 'textedit'], required: true},
     {task: 'input-source', args: [ownerSource ? 'record' : 'latin'], required: true},
     ...(arm ? [{task: 'engine-json-arm', args: [arm]}, {task: 'engine-stop'}] : []),
     ...sessions(kind === 'typing' ? ['textedit'] : ['textedit', 'electron']),
@@ -132,16 +135,19 @@ export function timingRows(rows, kind) {
   });
 }
 
-// Each series' rows from the last run (the rows from a `start` on) that covers it. -> {series name: {rows, startedAt}}.
+// Each series' rows from the last run (the rows from a `start` on) that covers it: that asked for it (its `series` row),
+// whatever it yielded, or, in a run recorded before runs declared their series, that has its samples.
+// -> {series name: {rows, startedAt}}.
 export function seriesRuns(rows, kind) {
   const starts = rows.map((r, k) => (r.kind === 'start' ? k : -1)).filter(k => k >= 0);
   const runs = (starts[0] === 0 ? starts : [0, ...starts]).map((from, n, all) => rows.slice(from, all[n + 1] ?? rows.length));
   const found = {};
   for (const run of runs) {
     const timed = timingRows(run, kind);
+    const declared = run.find(r => r.kind === 'series')?.series ?? null;
     for (const name of SERIES[kind]) {
       const own = timed.filter(t => t.series === name);
-      if (own.length) found[name] = {rows: own, startedAt: run[0]?.at ?? null};
+      if (declared ? declared.includes(name) : own.length) found[name] = {rows: own, startedAt: run[0]?.at ?? null};
     }
   }
   return found;

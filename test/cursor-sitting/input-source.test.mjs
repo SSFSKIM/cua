@@ -58,3 +58,37 @@ const hasSwiftc = process.platform === 'darwin' && (() => { try { execFileSync('
 test('the probe type-checks (it is never run by the tests: selecting would change this Mac\'s keyboard)', {skip: hasSwiftc ? false : 'needs swiftc'}, () => {
   execFileSync('/usr/bin/swiftc', ['-typecheck', SOURCE_SCRIPT], {stdio: 'pipe', timeout: 300_000});
 });
+
+test('after a failure the owner\'s source is put back, if a selection was tried; nothing otherwise', async () => {
+  const {restoreAfterFailure} = await import('../../scripts/cursor-sitting/input-source.mjs');
+  const {mkdtempSync} = await import('node:fs');
+  const out = mkdtempSync(join(tmpdir(), 'cua-235-src-'));
+  writeConsent(out, {consent: true, reading: KOREAN});
+  const asked = [];
+  const sources = {select: id => { asked.push(id); return {requested: id, status: 0, current: {id}}; }};
+  assert.equal(restoreAfterFailure({ctx: {sourceChanged: true}, out, sources}), null, 'a run that ended well keeps its source for the next series');
+  assert.equal(restoreAfterFailure({ctx: {sourceChanged: false, error: new Error('x')}, out, sources}), null);
+  assert.deepEqual(asked, []);
+  const restored = restoreAfterFailure({ctx: {sourceChanged: true, error: new Error('x')}, out, sources});
+  assert.equal(restored.ok, true);
+  assert.deepEqual(asked, [KOREAN.id]);
+  rmSync(out, {recursive: true, force: true});
+});
+
+test('the source is selected only for the scene\'s own window: its launch, its run window in front, and it on top of the frontmost app', async () => {
+  const {sourceTargetProblem} = await import('../../scripts/cursor-sitting/input-source.mjs');
+  const record = {id: 'textedit', pid: 11, window: {number: 70}};
+  assert.equal(sourceTargetProblem({record, problem: null, frontmost: {pid: 11, topWindow: {number: 70}}}), null);
+  assert.match(sourceTargetProblem({record, problem: 'the textedit app\'s front window is window 71, not the run\'s window 70', frontmost: {pid: 11, topWindow: {number: 71}}}), /window 71/);
+  assert.match(sourceTargetProblem({record, problem: null, frontmost: {pid: 40, topWindow: {number: 3}}}), /frontmost is process 40/);
+  assert.match(sourceTargetProblem({record, problem: null, frontmost: {pid: 11, topWindow: {number: 71}}}), /top window is 71, not the run window 70/);
+  assert.match(sourceTargetProblem({record, problem: null, frontmost: null}), /frontmost is process none/);
+  const out = mkdtempSync(join(tmpdir(), 'cua-235-src-'));
+  writeConsent(out, {consent: true, reading: KOREAN});
+  let selected = false;
+  const refused = switchSource({out, which: 'latin', sources: {select: () => { selected = true; }}, targetProblem: 'another TextEdit window is on top'});
+  assert.equal(refused.ok, false);
+  assert.equal(selected, false, 'nothing selected');
+  assert.match(refused.problem, /not selected: another TextEdit window is on top/);
+  rmSync(out, {recursive: true, force: true});
+});

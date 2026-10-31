@@ -5,6 +5,7 @@ import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {main} from '../../scripts/cursor-sitting.mjs';
+import {timingSteps} from '../../scripts/cursor-sitting/timing.mjs';
 
 const scratch = t => { const dir = mkdtempSync(join(tmpdir(), 'cua-235-cli-')); t.after(() => rmSync(dir, {recursive: true, force: true})); return dir; };
 const quietly = async run => { const write = process.stdout.write; process.stdout.write = () => true; try { return await run(); } finally { process.stdout.write = write; } };
@@ -68,4 +69,24 @@ test('each series is judged from the last run that covers it: a rerun of element
   assert.match(md, /\| element click \| 40 \/ 40 \|/);
   assert.match(md, /\| coordinate click \| 20 \/ 20 \|/);
   assert.match(md, /## Acceptance 13 \(clicks\): PASS/);
+});
+
+test('a rerun that fails before its first sample still supersedes the series it asked for: the old pass does not stand', async t => {
+  const out = scratch(t);
+  const pass = [{kind: 'start'}, ...Array.from({length: 20}, (_, i) => ['on', 'off'].flatMap(side => ['coordinate click', 'element click', 'drag'].map(series => ({kind: 'cell', ok: true, route: '3', sample: {side, i, series}, value: {ms: 40}})))).flat()];
+  const rerun = [...timingSteps('clicks', {'element click': 40}).filter(s => s.series), {kind: 'task', task: 'select-source', result: {ok: false, problem: 'read back wrong'}}];
+  assert.equal(rerun[0].kind ?? 'series', 'series');
+  writeFileSync(join(out, 'item-13.jsonl'), jsonl([...pass, {kind: 'start'}, ...rerun.map(s => (s.series ? {kind: 'series', series: s.series} : s))]));
+  assert.equal(await quietly(() => main(['judge', '--out', out])), 1);
+  const md = readFileSync(join(out, 'timing.md'), 'utf8');
+  assert.match(md, /\| element click \| 0 \/ 0 \|.*too few samples/);
+  assert.match(md, /\| coordinate click \| 20 \/ 20 \|.*same within noise/);
+});
+
+test('summary shows an undetermined verdict as the last word on its watch', async t => {
+  const out = scratch(t);
+  writeFileSync(join(out, 'item-13.jsonl'), jsonl([{kind: 'start'}, {kind: 'watch', id: 'route-3-lag', text: 'the cursor may start up to 100 ms after'}]));
+  writeFileSync(join(out, 'verdicts.jsonl'), jsonl([{item: '13', id: 'route-3-lag', verdict: 'pass', note: 'first'}, {item: '13', id: 'route-3-lag', verdict: 'undetermined', note: 'again'}]));
+  await quietly(() => main(['summary', '--out', out]));
+  assert.match(readFileSync(join(out, 'summary.md'), 'utf8'), /route-3-lag`: .* — \*\*undetermined\*\* \(again\)/);
 });

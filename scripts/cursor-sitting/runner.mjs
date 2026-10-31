@@ -54,7 +54,12 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
     },
     goFile: join(out, 'go'),
     tasks: {
-      activate: async ([scene]) => JSON.parse(execFileSync(process.execPath, [SCENES_CLI, 'activate', scene, '--run', run], {encoding: 'utf8', timeout: 30_000}).trim().split('\n').at(-1)),
+      // The scene's process brought to the front (its answer's `ok`, false when another stayed in front).
+      activate: async ([scene]) => {
+        let text;
+        try { text = execFileSync(process.execPath, [SCENES_CLI, 'activate', scene, '--run', run], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000}); } catch (error) { text = String(error.stdout ?? ''); }
+        try { return JSON.parse(text.trim().split('\n').at(-1)); } catch { return {ok: false, error: 'the scenes CLI printed no answer'}; }
+      },
       'engine-stop': async () => cli(['engine', 'stop', '--json']),
       'engine-status': async ([expect]) => {
         const status = cli(['engine', 'status', '--json']);

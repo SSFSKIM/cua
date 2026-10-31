@@ -29,6 +29,20 @@ test('a faster median with a tight interval passes', () => {
   const v = judgeOperation(rows, opts);
   assert.equal(v.pass, true, v.reasons.join('; '));
   assert.deepEqual(v.undetermined, []);
+  assert.deepEqual(v.labels.map((l) => [l.series, l.label]), [['warm', 'faster']]);
+});
+
+test('a passing series is labelled by its interval: faster, same (within noise), or within the bound', async () => {
+  const { speedLabel } = await import('../../scripts/linux-engine-diff/stats.mjs');
+  assert.equal(speedLabel([-3, -1]), 'faster');
+  assert.equal(speedLabel([-1, 0.5]), 'same (within noise)');
+  assert.equal(speedLabel([0.2, 0.6]), 'within the bound');
+  // a small measured loss inside the bound passes, labelled as such and never as noise
+  const v = judgeOperation(rowsOf('warm', { pinned: flat(24, 40), newest: flat(24, 45), cua: flat(24, 40.5) }), opts);
+  assert.equal(v.pass, true, v.reasons.join('; '));
+  assert.deepEqual(v.labels.map((l) => [l.series, l.label]), [['warm', 'within the bound']]);
+  assert.deepEqual(v.noise, []);
+  assert.equal(v.intervals[0].label, 'within the bound');
 });
 
 test('under 20 samples a side a series is undetermined whichever way its median points, never judged on medians', () => {
@@ -66,7 +80,7 @@ test("the events experiment's groups go through the same guard: a faster median 
   const [wide] = eventSpeeds([row], { minSamples: 20 });
   assert.notEqual(wide.verdict, 'pass');
   const tight = { route: 'window', records: { ...row.records, cua: records('cua', flat(24, 30)) } };
-  assert.equal(eventSpeeds([tight], { minSamples: 20 })[0].verdict, 'pass');
+  assert.equal(eventSpeeds([tight], { minSamples: 20 })[0].verdict, 'faster');
 });
 
 test('an undetermined series is topped up to 20 samples a side, then 40', async () => {

@@ -114,11 +114,11 @@ test('a differential verdict whose interval includes 0 but reaches past the boun
   const interval = medianDifferenceInterval(rows.filter((r) => r.engine === 'cua' && r.series === 'warm').map((r) => r.ms), rows.filter((r) => r.engine === 'pinned' && r.series === 'warm').map((r) => r.ms));
   assert.ok(interval[0] <= 0 && interval[1] > 1, `the interval ${interval} includes 0 and reaches past 1 ms`);
   assert.equal(v.pass, false);
-  assert.equal(v.noise.length, 0);
+  assert.equal(v.noise.filter((n) => n.series === 'warm').length, 0);
   assert.match(v.reasons.join('; '), /cua: warm .* ms against the bar 10 ms, undetermined: the interval \[.*\] reaches past 1 ms/);
   // the same spread, narrow: a pass within noise
   const narrow = [...series('pinned', spread(10, 0.1)), ...series('newest', spread(10.5, 0.1)), ...series('cua', spread(10.01, 0.1))];
-  assert.equal(judgeOperation(narrow, { vendors: VENDORS, candidate: 'cua', noise: medianDifferenceInterval }).noise.length, 1);
+  assert.equal(judgeOperation(narrow, { vendors: VENDORS, candidate: 'cua', noise: medianDifferenceInterval }).noise.filter((n) => n.series === 'warm').length, 1);
 });
 
 /** A desktop group of `n` block samples an engine, the engines' times around their centres. */

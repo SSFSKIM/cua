@@ -136,6 +136,17 @@ export const MIN_NOISE_SAMPLES = 20;
 export const noiseBound = (bar) => Math.max(0.05 * bar, 1);
 
 /**
+ * A passing series' label (Acceptance 3, spec 948c30d4), always shown with its interval: `faster` when the interval
+ * lies wholly below 0, `within the bound` when it lies wholly above 0 (a small measured loss inside the bound, never
+ * called noise), `same (within noise)` when it includes 0.
+ */
+export function speedLabel(interval) {
+  if (interval[1] < 0) return 'faster';
+  if (interval[0] > 0) return 'within the bound';
+  return 'same (within noise)';
+}
+
+/**
  * A series judged by its bootstrap interval of cua's median minus the bar build's, whichever way the medians point
  * (Acceptance 3's interval guard): `same` when its upper end, the worst plausible loss, is within `noiseBound`; `loss`
  * when it lies above 0 and reaches past the bound; `wide` otherwise (undetermined: more samples, else a failure).
@@ -158,14 +169,15 @@ export function noiseVerdict(interval, bar) {
  * The speed (Acceptance 3, revised by the design session at M3.1): a series is judged only when the candidate and the
  * bar build each have `MIN_NOISE_SAMPLES` samples, and only through the interval guard, whichever way the medians
  * point: the bootstrap 95% interval (`noise`) of the candidate's median minus the bar build's passes when its upper end
- * is within `noiseBound` (a median above the bar is then listed as the same within noise, `noise`), is a loss when it
+ * is within `noiseBound` (listed in `labels` as `faster`, `same (within noise)` (also `noise`) or `within the bound`,
+ * `speedLabel`), is a loss when it
  * lies above 0, and is otherwise undetermined. A series with fewer samples is undetermined too, never judged on its
  * medians. An undetermined series is listed in `undetermined` (`{series, samples, interval}`) for the run to top up;
  * as a verdict it fails. A series `parity` declares (deviations.mjs `PARITY`) whose interval does not pass and whose
  * median lies within the bar build's own spread of samples is parity: the verdict is then `parity`, neither a pass nor
  * a failure (an open interval still lists it in `undetermined`, flagged `parity`, so the run samples it on). With `judgeSpeed` false (through the vendor client) the speed is recorded, not judged.
  * Every judged series' interval is kept in `intervals`. Returns `{engines, bar, speed, noise, parity, undetermined,
- * intervals, pass, verdict, reasons}`.
+ * intervals, labels, pass, verdict, reasons}`.
  */
 export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true, text = false, noise: interval = null, parity: parityList = [] }) {
   const engines = {};
@@ -196,6 +208,8 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   const undetermined = [];
   // every judged series' interval, kept in the verdict so a run can be judged again offline under another reading
   const intervals = [];
+  // every passing series with its label (`speedLabel`)
+  const labels = [];
   const timedOf = (engine, series) => timedMs(rows.filter((r) => r.engine === engine && r.series === series));
   const barTimes = (v, series) => timedMs(barRowsOf(v).filter((r) => r.series === series));
   const shown = (v) => Math.round(v * 100) / 100;
@@ -221,7 +235,10 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
     const bound = noiseBound(exactBar[series]);
     intervals.push({ series, samples, against: barEngine, candidate: c.exact[series], bar: exactBar[series], interval: ci, bound });
     if (ci[1] <= bound) {
-      if (c.exact[series] > exactBar[series]) noise.push({ series, candidate: c.exact[series], bar: exactBar[series], against: barEngine, interval: ci });
+      const label = speedLabel(ci);
+      intervals.at(-1).label = label;
+      labels.push({ series, label, candidate: c.exact[series], bar: exactBar[series], against: barEngine, interval: ci, bound });
+      if (label === 'same (within noise)') noise.push({ series, candidate: c.exact[series], bar: exactBar[series], against: barEngine, interval: ci });
       continue;
     }
     const wide = ci[0] <= 0;
@@ -259,5 +276,5 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   if (c.equal === false) reasons.push(`${candidate}: the output differs from the vendor's`);
   if (text && c.clipboard === false) reasons.push(`${candidate}: the clipboard was not left as it was before the paste`);
   const verdict = reasons.length ? 'fail' : parity.length ? 'parity' : 'pass';
-  return { engines, bar, speed, noise, parity, undetermined: judgeSpeed ? undetermined : [], intervals, pass: verdict === 'pass', verdict, reasons };
+  return { engines, bar, speed, noise, parity, undetermined: judgeSpeed ? undetermined : [], intervals, labels, pass: verdict === 'pass', verdict, reasons };
 }

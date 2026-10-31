@@ -380,7 +380,9 @@ variants included; their evidence is written either way. The run's `end` row kee
   shortcut): `judgeOperation` and `eventSpeeds` judge a series only when cua and the bar build each have 20 samples,
   and only through the interval guard, whichever way the medians point. The interval passes when its upper end is at
   most max(5% of the bar, 1 ms), is a loss when it lies above 0, and is otherwise undetermined; fewer samples are
-  undetermined too.
+  undetermined too. A passing series is labelled by its interval (`speedLabel`, spec 948c30d4): **faster** (wholly
+  below 0), **same (within noise)** (including 0) or **within the bound** (wholly above 0: a small measured loss, never
+  called noise). The summary lists every "within the bound" pass in one table.
   - The differential run tops every undetermined series up to 20 samples a side, then 40 (`top-up` rows, blocks
     `topup-<level>-<n>`): fresh engines for a cold series, and for a warm one only the rounds it needs. One still
     undetermined at 40 fails.

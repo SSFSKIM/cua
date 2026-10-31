@@ -19,8 +19,11 @@ import { desktopEntry } from './desktop-entry.mjs';
 import { SPEED_GAPS, declaredDeviation, declaredSpeedGap } from './deviations.mjs';
 import { Engine } from './engine.mjs';
 import { XPROBE } from './scenes.mjs';
-import { median, noiseVerdict } from './stats.mjs';
+import { median, noiseVerdict, speedLabel } from './stats.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
+
+/** The verdicts of a passing group (stats.mjs `speedLabel`). */
+const PASSING = ['faster', 'same (within noise)', 'within the bound'];
 
 /** The recorder's top-level window on the private screen (root coordinates); its child covers the lower-right quarter. */
 export const RECORDER = { x: 100, y: 100, width: 800, height: 600 };
@@ -394,8 +397,8 @@ export function medianDifferenceInterval(a, b, { rounds = 2000, seed = 171, stra
  * scenarios' sequences), and the scenarios' own desktop times are recorded beside them as `… in a scenario`.
  * A group is judged only when every engine has `minSamples`, and only through the interval guard, whichever way the
  * medians point (Acceptance 3, revised at M3.1): a bootstrap interval of the median difference whose upper end is
- * within the bound (stats.mjs `noiseBound`: max(5% of the bar, 1 ms)) passes, "same (within noise)" where cua's median
- * is above the bar; otherwise:
+ * within the bound (stats.mjs `noiseBound`: max(5% of the bar, 1 ms)) passes, labelled by its interval (stats.mjs
+ * `speedLabel`: "faster", "same (within noise)" or "within the bound"); otherwise:
  * - a loss a speed gap declares (deviations.mjs) is "declared gap";
  * - an interval that includes 0 but reaches past the bound is "undetermined" while more samples may come (`final`
  *   false: `runEvents` adds rounds), and a failure (`wide`) once they are final;
@@ -436,12 +439,12 @@ export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], cand
     const gap = judged && noise !== 'same' ? declaredSpeedGap({ op: command, route, series }, gaps) : null;
     let verdict;
     if (!judged) verdict = 'too few samples, not judged';
-    else if (noise === 'same') verdict = mine <= bar ? 'pass' : 'same (within noise)';
+    else if (noise === 'same') verdict = speedLabel(interval);
     else if (gap) verdict = 'declared gap';
     else if (noise === 'wide' && !final) verdict = 'undetermined';
     else verdict = 'fail';
     const n = Math.min(...[...vendors, candidate].map((l) => byEngine[l]?.length ?? 0));
-    out.push({ route, command, series, n, medians, bar, faster: fastest, interval, verdict, pass: verdict === 'pass' ? true : verdict === 'fail' ? false : null, ...(gap ? { gap } : {}), ...(noise === 'wide' ? { wide: true } : {}) });
+    out.push({ route, command, series, n, medians, bar, faster: fastest, interval, verdict, pass: PASSING.includes(verdict) ? true : verdict === 'fail' ? false : null, ...(gap ? { gap } : {}), ...(noise === 'wide' ? { wide: true } : {}) });
   }
   return out.sort((a, b) => `${a.route}${a.command}${a.series}`.localeCompare(`${b.route}${b.command}${b.series}`));
 }
@@ -652,12 +655,15 @@ export async function runEvents(args, emit) {
   md.push('', `Request times per route and command (median ms; \`first\` is the request after the engine started, \`later\` the rest; ${judging}):`, '');
   md.push('| route | command | series | n | pinned | newest | cua | cua − faster, 95% interval | verdict |', '|---|---|---|---:|---:|---:|---:|---|---|');
   const f = (v) => (typeof v === 'number' ? Math.round(v * 100) / 100 : '–');
-  const shown = (r) => (via === 'vendor-js' ? (r.medians.cua <= r.bar ? 'at or below (recorded)' : 'above (recorded)') : r.verdict === 'fail' ? (r.wide ? '**fail** (undetermined: the interval reaches past the bound)' : '**fail**') : r.verdict === 'declared gap' ? `**declared gap** (${r.gap.section})` : r.verdict === 'same (within noise)' ? '**same (within noise)**' : r.verdict);
+  const shown = (r) => (via === 'vendor-js' ? (r.medians.cua <= r.bar ? 'at or below (recorded)' : 'above (recorded)') : r.verdict === 'fail' ? (r.wide ? '**fail** (undetermined: the interval reaches past the bound)' : '**fail**') : r.verdict === 'declared gap' ? `**declared gap** (${r.gap.section})` : r.verdict === 'within the bound' ? '**within the bound**' : r.verdict);
   for (const r of speeds) md.push(`| ${r.route} | ${r.command} | ${r.series} | ${r.n} | ${f(r.medians.pinned)} | ${f(r.medians.newest)} | ${f(r.medians.cua)} | ${r.interval ? `[${r.interval[0]}, ${r.interval[1]}]` : '–'} | ${shown(r)} |`);
   if (via !== 'vendor-js') {
     const listed = (verdict) => speeds.filter((s) => s.verdict === verdict);
     const line = (rows, f2) => rows.map((s) => `${s.route} ${s.command} ${s.series} (${f2(s)})`).join('; ');
-    if (listed('same (within noise)').length) md.push('', `Same within noise (cua above the bar, the interval including 0): ${line(listed('same (within noise)'), (s) => `${f(s.medians.cua)} against ${f(s.bar)}, [${s.interval.join(', ')}]`)}.`);
+    if (listed('within the bound').length) {
+      md.push('', 'Within the bound (a small measured loss: the interval wholly above 0, its upper end inside max(5% of the bar, 1 ms)):', '', '| route | command | series | cua | bar | cua − faster, 95% interval |', '|---|---|---|---:|---:|---|');
+      for (const s of listed('within the bound')) md.push(`| ${s.route} | ${s.command} | ${s.series} | ${f(s.medians.cua)} | ${f(s.bar)} | [${s.interval.join(', ')}] |`);
+    }
     if (listed('declared gap').length) md.push('', `Declared speed gaps (deviations.mjs; not a pass): ${line(listed('declared gap'), (s) => `${f(s.medians.cua)} against ${f(s.bar)}, ${s.gap.section}: ${s.gap.reason}`)}.`);
     if (listed('fail').length) md.push('', `cua is slower than the faster vendor build over the wire: ${line(listed('fail'), (s) => `${f(s.medians.cua)} against ${f(s.bar)}, [${s.interval.join(', ')}]`)}.`);
   }

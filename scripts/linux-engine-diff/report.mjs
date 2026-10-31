@@ -77,7 +77,9 @@ export function renderSummary(lines) {
         const eq = equality.find((r) => r.scene === scene && r.op === op && r.engine === engine);
         const v = verdicts.find((r) => r.scene === scene && r.op === op && r.candidate === engine);
         const declared = v?.deviations?.length ? ` (declared: ${v.deviations.join(', ')})` : '';
-        const noise = v?.noise?.length ? ` (same within noise: ${v.noise.map((n) => `${n.series} ${Math.round(n.candidate * 100) / 100} against ${Math.round(n.bar * 100) / 100}, [${n.interval.join(', ')}]`).join('; ')})` : '';
+        // each passing series' label with its interval (Acceptance 3); a run before the labels shows its noise passes
+        const labelled = v?.labels?.length ? ` (${v.labels.map((l) => `${l.series} ${l.label} [${l.interval.join(', ')}]`).join('; ')})` : '';
+        const noise = labelled || (v?.noise?.length ? ` (same within noise: ${v.noise.map((n) => `${n.series} ${Math.round(n.candidate * 100) / 100} against ${Math.round(n.bar * 100) / 100}, [${n.interval.join(', ')}]`).join('; ')})` : '');
         const r2 = (x) => Math.round(x * 100) / 100;
         const parity = v?.parity?.length ? ` (${v.parity.map((p) => `${p.series} ${r2(p.candidate)} against ${r2(p.bar)}, within the ${p.against} build's spread [${p.spread.join(', ')}]; ${p.section}`).join('; ')})` : '';
         const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : v.verdict === 'declared refusal' ? `**declared refusal**, a loss, not a pass (${v.refusal?.section ?? ''})` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`;
@@ -87,6 +89,14 @@ export function renderSummary(lines) {
         out.push(`| ${scene} | ${op} | ${engine} | ${fmt(s.cold)} | ${fmt(s.warm)} | ${s.n_warm} | ${cold ? `${cold.calls} / ${warm?.calls ?? '–'}` : '–'} | ${cold ? `${cold.serial_calls} / ${warm?.serial_calls ?? '–'}` : '–'} | ${wasted.length ? Math.max(...wasted) : '–'} | ${frac(mine, 'witness')} | ${audit} | ${frac(mine, 'effect')} | ${eq ? `${eq.equal}/${eq.of}${eq.declared ? ` (${eq.declared} declared)` : ''}` : '–'} | ${verdict} |`);
       }
       if (bar) out.push(`| ${scene} | ${op} | **bar** | ${fmt(bar.cold)} | ${fmt(bar.warm)} | | | | | | | | | |`);
+    }
+    // every pass that is a small measured loss inside the bound, in one table (Acceptance 3)
+    const bound = verdicts.flatMap((v) => (v.labels ?? []).filter((l) => l.label === 'within the bound').map((l) => ({ ...l, scene: v.scene, op: v.op, candidate: v.candidate })));
+    if (bound.length) {
+      out.push('', 'Within the bound (passes that are a small measured loss: the interval wholly above 0, its upper end inside max(5% of the bar, 1 ms)):', '');
+      out.push('| scene | op | candidate | series | cua ms | bar ms | against | cua − bar, 95% interval | bound |', '|---|---|---|---|---:|---:|---|---|---:|');
+      const r2 = (x) => Math.round(x * 100) / 100;
+      for (const l of bound) out.push(`| ${l.scene} | ${l.op} | ${l.candidate} | ${l.series} | ${r2(l.candidate)} | ${r2(l.bar)} | ${l.against} | [${l.interval.join(', ')}] | ${r2(l.bound)} |`);
     }
     const notes = verdicts.filter((v) => v.first_comparison && !v.first_comparison.equal);
     if (notes.length) {

@@ -227,8 +227,8 @@ test('a median above the bar whose bootstrap interval includes 0 is same within 
   const opts = { vendors: ['pinned', 'newest'], candidate: 'cua', noise: medianDifferenceInterval };
   const v = judgeOperation(rows, opts);
   assert.equal(v.pass, true, v.reasons.join('; '));
-  assert.equal(v.noise.length, 1);
-  assert.equal(v.noise[0].series, 'warm');
+  // the cold series, the same in every engine, is the same within noise too
+  assert.deepEqual(v.noise.map((n) => n.series).sort(), ['cold', 'warm']);
   // a real loss past the bound, its interval above 0, still fails
   const slow = [...series('pinned', noisy(0.11)), ...series('newest', noisy(0.12)), ...series('cua', noisy(1.5))];
   assert.equal(judgeOperation(slow, opts).pass, false);

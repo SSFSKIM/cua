@@ -79,7 +79,7 @@ test("desktop request times are judged from the fresh-engine blocks only; the sc
   const scenarioRow = { route: 'desktop', records: Object.fromEntries(['pinned', 'newest', 'cua'].map((l) => [l, [{ command: 'move', ms: l === 'cua' ? 99 : 1, first: true }]])) };
   const blocks = group({ command: 'move', centres: { pinned: 5, newest: 5, cua: 5 } });
   const speeds = eventSpeeds([scenarioRow], { blocks: [blocks] });
-  assert.equal(speeds.find((s) => s.series === 'first').verdict, 'pass');
+  assert.equal(speeds.find((s) => s.series === 'first').verdict, 'same (within noise)');
   assert.equal(speeds.find((s) => s.series === 'first in a scenario').verdict, 'too few samples, not judged');
 });
 

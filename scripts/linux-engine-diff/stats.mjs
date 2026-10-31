@@ -187,16 +187,28 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   const vendorRows = vendors.map((v) => engines[v]).filter(Boolean);
   // the speed bar's samples: with `text`, a vendor build's successes only
   const barRowsOf = (v) => rows.filter((r) => r.engine === v && (!text || r.ok));
-  const barEngines = vendors.map(barRowsOf).filter((x) => x.length).map(summarizeEngine);
+  const barTimes = (v, series) => timedMs(barRowsOf(v).filter((r) => r.series === series));
+  // a vendor build sampled to the top-ups' end (twice MIN_NOISE_SAMPLES) with fewer than MIN_NOISE_SAMPLES usable samples
+  // has failed the operation in that series and sets no bar there (task 18: the pinned build's Copy succeeding 1 time in
+  // 117 made it the bar a series could never be judged against); before the end it still holds the series open
+  const failedBar = [];
+  for (const series of ['cold', 'warm']) {
+    for (const v of vendors) {
+      const sampled = rows.filter((r) => r.engine === v && r.series === series).length;
+      const usable = barTimes(v, series).length;
+      if (sampled >= 2 * MIN_NOISE_SAMPLES && usable < MIN_NOISE_SAMPLES) failedBar.push({ engine: v, series, usable, sampled });
+    }
+  }
+  const setsBar = (v, series) => barTimes(v, series).length > 0 && !failedBar.some((f) => f.engine === v && f.series === series);
   const best = (series, exact = false) => {
-    const values = barEngines.map((e) => (exact ? e.exact[series] : e[series])).filter((v) => v !== null);
+    const values = vendors.filter((v) => setsBar(v, series)).map((v) => median(barTimes(v, series))).map((m) => (exact ? m : round(m)));
     return values.length ? Math.min(...values) : null;
   };
   const bar = { cold: best('cold'), warm: best('warm') };
   const exactBar = { cold: best('cold', true), warm: best('warm', true) };
   const c = engines[candidate];
   const reasons = [];
-  if (!c) return { engines, bar, speed: false, noise: [], parity: [], undetermined: [], intervals: [], labels: [], pass: false, verdict: 'fail', reasons: [`no samples from ${candidate}`] };
+  if (!c) return { engines, bar, failed_bar: failedBar, speed: false, noise: [], parity: [], undetermined: [], intervals: [], labels: [], pass: false, verdict: 'fail', reasons: [`no samples from ${candidate}`] };
   // a failed request fails the verdict where a vendor build answered every request; where the vendors' answers are
   // errors too, the answers are compared (`equal`)
   if (!c.ok && (text || vendorRows.length === 0 || vendorRows.some((e) => e.ok))) reasons.push(`${candidate}: a request failed`);
@@ -211,15 +223,11 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   // every passing series with its label (`speedLabel`)
   const labels = [];
   const timedOf = (engine, series) => timedMs(rows.filter((r) => r.engine === engine && r.series === series));
-  const barTimes = (v, series) => timedMs(barRowsOf(v).filter((r) => r.series === series));
   const shown = (v) => Math.round(v * 100) / 100;
   for (const series of ['cold', 'warm']) {
     if (exactBar[series] === null || c.exact[series] === null) continue;
     // the build that set the bar, and its samples as the bar counts them (a text command's: its successes)
-    const barEngine = vendors.find((v) => {
-      const xs = barTimes(v, series);
-      return xs.length > 0 && median(xs) === exactBar[series];
-    });
+    const barEngine = vendors.find((v) => setsBar(v, series) && median(barTimes(v, series)) === exactBar[series]);
     const theirs = barEngine ? barTimes(barEngine, series) : [];
     const mine = timedOf(candidate, series);
     const samples = Math.min(mine.length, theirs.length);
@@ -276,5 +284,5 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   if (c.equal === false) reasons.push(`${candidate}: the output differs from the vendor's`);
   if (text && c.clipboard === false) reasons.push(`${candidate}: the clipboard was not left as it was before the paste`);
   const verdict = reasons.length ? 'fail' : parity.length ? 'parity' : 'pass';
-  return { engines, bar, speed, noise, parity, undetermined: judgeSpeed ? undetermined : [], intervals, labels, pass: verdict === 'pass', verdict, reasons };
+  return { engines, bar, failed_bar: failedBar, speed, noise, parity, undetermined: judgeSpeed ? undetermined : [], intervals, labels, pass: verdict === 'pass', verdict, reasons };
 }

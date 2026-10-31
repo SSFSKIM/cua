@@ -77,7 +77,7 @@ export function startLoopback(kit) {
   const log = name => openSync(join(kit, `${name}.log`), 'a', 0o600);
   const relay = spawn(process.execPath, [join(ROOT, 'relay', 'server.mjs'), '--port', String(port), '--devices', paths.relayDevices], {stdio: ['ignore', log('relay'), log('relay')]});
   const agent = spawn(process.execPath, [CLI, 'agent', 'run', '--relay'], {stdio: ['ignore', log('agent'), log('agent')],
-    env: {...process.env, CUA_HOME: paths.deviceHome, CUA_NATIVE_ENGINE: 'cua'}});
+    env: {...process.env, CUA_HOME: paths.deviceHome, CUA_NATIVE_ENGINE: 'cua', CUA_AGENT_MAX_SESSIONS: '3'}});
   const stop = async () => {
     for (const child of [agent, relay]) {
       if (child.exitCode !== null || child.signalCode !== null) continue;
@@ -96,7 +96,8 @@ export function agentConnected(deviceHome) {
 // Acceptance 8's steps: three clients of the loopback device, each resolving its own cursor context.
 export function remoteSteps(kit) {
   const {clientHome, deviceHome, bravo} = kitPaths(kit);
-  const client = extra => ({HOME: clientHome, CUA_HOME: deviceHome, ...extra});
+  // The client's own serve pins no engine (CUA_NATIVE_ENGINE removed): its HOME has none, and the device's agent pins cua's.
+  const client = extra => ({HOME: clientHome, CUA_HOME: deviceHome, CUA_NATIVE_ENGINE: null, ...extra});
   const scenes = ['textedit', 'chrome'];
   return [
     {say: 'Acceptance 8: three sessions through the loopback remote device'},

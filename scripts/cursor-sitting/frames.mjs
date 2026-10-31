@@ -1,57 +1,22 @@
-// The frames the window server composited during each of the cursor's glides (#235's task-8 report), so an arm that caps
+// The frames the window server composited during the cursor probe's glides (#235's task-8 report), so the arm that caps
 // the cursor's frame rate (`fps60`) is proven to have taken effect, or shown not to, in the same run as its timing.
 // WindowServer marks every frame it composites with a FrameUpdate signpost (subsystem com.apple.SkyLight, category
-// tracing), which `log show --signpost` keeps; the engine marks every motion it installs with a `cursor.motion`
-// signpost carrying the motion's span in mach continuous ticks and its cursor (native/engine/Sources/Engine/Cursor/
-// CursorPanel.swift), the clock those signposts are stamped with, and every removal of a cursor's motion with no new
-// one (a snap, a hide, a close) with `cursor.stop`; a motion's span ends where the next of either for its cursor
-// removed it. The cursor probe's `--glides` prints the same spans for its own glides and its rock. The count is the whole display's: what the cursor's animations make WindowServer composite, plus
-// whatever else drew meanwhile (the display runs at the highest rate anything on it asks for).
-import {execFileSync} from 'node:child_process';
-
+// tracing); a stream of them runs only while the probe glides, before the series' sessions open (./signposts.mjs
+// startFrameStream). The probe's `--glides` prints each glide's span in mach continuous ticks, the clock those
+// signposts are stamped with, and its rock's. The count is the whole display's: what the cursor's animations make
+// WindowServer composite, plus whatever else drew meanwhile (the display runs at the highest rate anything on it asks
+// for).
 export const FRAME_UPDATE_PREDICATE = 'process == "WindowServer" AND subsystem == "com.apple.SkyLight" AND category == "tracing" AND signpostName == "FrameUpdate"';
 // On the MacBook's 120 Hz ProMotion display a default glide's frames come a display frame (8.3 ms) apart, a capped one's
 // two (16.7 ms). The verdict reads the median interval, which a burst of another app's frames inside a glide (the
 // count is the whole display's) barely moves, where it can lift the rate past 66 Hz (measured, #235's task-8 report).
 export const CAPPED_INTERVAL_MS = 14, FULL_INTERVAL_MS = 10;
 
-const events = text => text.split('\n').flatMap(line => {
-  if (!line.startsWith('{')) return [];
-  try { return [JSON.parse(line)]; } catch { return []; }
-});
 const median = xs => {
   if (!xs.length) return null;
   const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
-
-// WindowServer's FrameUpdate times in `text` (log show's ndjson), in order.
-export const frameUpdateTimes = text => events(text)
-  .filter(e => e.signpostName === 'FrameUpdate' && e.subsystem === 'com.apple.SkyLight' && e.category === 'tracing' && Number.isFinite(e.machTimestamp))
-  .map(e => e.machTimestamp).sort((a, b) => a - b);
-
-// The engine's motion spans in `text` (its timing signposts as log show's ndjson), leaving out `excludePids`' (the cursor
-// probes a series ran, whose signposts share the engine's subsystem). A motion's install removes its cursor's earlier
-// one at once, and a stop removes it with none to follow, so each span is cut at the first later `cursor.motion` or
-// `cursor.stop` of the same process and cursor (`cut`, its ms the part that played), and one replaced before it began is
-// left out. A build before the cursor field gives null: one cursor a process. -> [{pid, cursor, begin, end, ms, mode,
-// cut}].
-export function motionSpans(text, {excludePids = []} = {}) {
-  const marks = events(text).filter(e => (e.signpostName === 'cursor.motion' || e.signpostName === 'cursor.stop') && !excludePids.includes(e.processID))
-    .map(e => ({e, at: e.machTimestamp, cursor: /cursor=(\d+)/.exec(e.eventMessage ?? '')?.[1] ?? null}))
-    .map(m => ({...m, cursor: m.cursor === null ? null : Number(m.cursor)}));
-  return marks.flatMap(mark => {
-    if (mark.e.signpostName !== 'cursor.motion') return [];
-    const m = /begin=(\d+) end=(\d+) ms=([\d.]+) mode=(\w+)/.exec(mark.e.eventMessage ?? '');
-    if (!m) return [];
-    const begin = Number(m[1]), end = Number(m[2]), ms = Number(m[3]);
-    const removed = Math.min(...marks.filter(o => o !== mark && o.e.processID === mark.e.processID && o.cursor === mark.cursor && o.at > mark.at).map(o => o.at));
-    if (removed <= begin) return [];
-    const cut = removed < end;
-    const until = cut ? removed : end;
-    return [{pid: mark.e.processID, cursor: mark.cursor, begin, end: until, ms: cut ? ms * (until - begin) / (end - begin) : ms, mode: m[4], cut}];
-  });
-}
 
 // A probe's answer (`--probe cursor --glides`) as spans under its pid.
 export function probeSpans(answer) {
@@ -114,15 +79,4 @@ export async function glideFramesCheck(arm, {probe, readFrames, glides = 2, now 
     if (error?.stuck) throw error;
     return {ok: false, arm, verdict: 'undetermined', why: `the frames were not counted: ${String(error.message).split('\n')[0]}`, pids};
   }
-}
-
-const logDate = date => {
-  const pad = n => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
-};
-
-// WindowServer's FrameUpdate times since `since` (a Date, a second's resolution), read now with `log show`.
-export function readFrameUpdates(since, {exec = execFileSync} = {}) {
-  return frameUpdateTimes(exec('/usr/bin/log', ['show', '--signpost', '--style', 'ndjson', '--start', logDate(since), '--predicate', FRAME_UPDATE_PREDICATE],
-    {encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024, timeout: 300_000}));
 }

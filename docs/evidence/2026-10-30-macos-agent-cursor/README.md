@@ -192,11 +192,12 @@ writes the key (engine.json kept in `engine.json.before` meanwhile), stops the e
 checks `cua engine status --json`'s `status.cursorDebug`, runs the series, then puts engine.json back and stops the
 engine again; a failure on the way does the same. Each arm records in `item-<n>-<arm>.jsonl` and `timing-recorded.md`,
 never judged; on against an arm, and an arm against off, go to the design session. For the finer split, every timing
-series keeps the engine's timing signposts over its run in `$OUT/signposts-<item>.ndjson`, streamed while it runs
-(`log stream --signpost`, started before the first step and stopped after the last; plain `log stream` carries no
-signposts, and `log show` after the run lost the second sitting's starts). `$OUT/coverage-<item>.json` checks every
-sample against them: a series whose samples are not all covered, or whose stream failed, reads **incomplete** in
-`timing.md` and `timing-recorded.md`, and so do its frames per glide. The signposts are: the request by method, `cursor.begin`/`end`/`commit`,
+series keeps the engine's timing signposts over its run in `$OUT/signposts-<item>.ndjson`, read in chunks while it
+runs (`log show` every 20 s over the last 20 s and 10 s before, de-duplicated; the store keeps only about 3 minutes
+under load, so a read after the run lost the second sitting's starts, and a live `log stream --signpost` would make
+every signpost cost the engine about 80 µs instead of 2). `$OUT/coverage-<item>.json` checks every sample: each needs a
+`request` interval of its own timed method inside its own cell. A series not wholly covered reads **incomplete** in
+`timing.md` and `timing-recorded.md`. The signposts are: the request by method, `cursor.begin`/`end`/`commit`,
 `cursor.apply` with `cursor.place`, `cursor.install`, `cursor.transition` and `cursor.caCommit`, `cursor.windowList`,
 `main.sync.wait`/`run`, `route3.hold`, `route3.release`, `route3.guard.frontmost`/`windowOrder`, and
 `pressKey.keyboardTarget`/`minimizedCheck`/`post`, the request prologue's steps (`prologue.hidIdle`, `prologue.holds`,
@@ -446,12 +447,9 @@ series whose scene is gone from the front (a locked screen, say) rather than tim
        between frames: `capped` (the arm's glides a frame at least 14 ms apart, the default's at most 10: 16.7 against
        8.3 ms on this display), `not capped`, or `undetermined` (the default's did not reach full rate, so no cap
        could show). It never stops the series.
-     - Every timing series, this one and the default control re-run beside it, also counts the frames during its own
-       glides (the engine's `cursor.motion` signposts against WindowServer's `FrameUpdate`) into
-       `$OUT2/frames-<item>.json`, its median in `timing.md` or `timing-recorded.md`. The count is the whole
-       display's: the display runs at the highest rate anything on it asks for, so a glide during typing reads what
-       TextEdit drew as well. The arm's timing is read beside the rate its glides actually ran at, so a null result
-       cannot mean the cap was ignored.
+     - The FrameUpdate stream runs for this check only, before any session opens: a live stream makes each of
+       WindowServer's frame signposts cost it more, and more of them on the cursor-on side, so no timed sample runs
+       under one. The series' own frames per glide are not counted (a read after the fact drops some).
 9. **The source back, the scenes down, the verdicts.** `$S source restore --out "$OUT2"` (the owner's source, read
    back; exit 1 says it is not), `$SC down all --run "$RUN"`, `$S judge --out "$OUT2"`, `$S summary --out "$OUT2"`,
    then `kill "$(cat "$SIT/caffeinate.pid")"`.

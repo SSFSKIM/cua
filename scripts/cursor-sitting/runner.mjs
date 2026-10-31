@@ -18,7 +18,8 @@ import {FIXTURE_ACCESSIBILITY_FILE} from '../native-matrix/fixtures/electron-fix
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {readFocus, runWindowBounds} from './focus.mjs';
-import {glideFramesCheck, readFrameUpdates} from './frames.mjs';
+import {glideFramesCheck} from './frames.mjs';
+import {startFrameStream} from './signposts.mjs';
 import {BUILT_IN_SCREEN, coverOver, farPoint, liveWindowList, overlaysAbove, plannedSettle, windowListProbe} from './glide.mjs';
 import {liveSourceSwitch, restoreAfterFailure, sourceTargetProblem, switchSource} from './input-source.mjs';
 import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
@@ -49,9 +50,8 @@ export const cursorOffSettings = text => patchedSettings(text, {cursor: false});
 // engine.json with the cursor's diagnostic arm `arm` (`cursorDebug`), the other keys kept.
 export const cursorDebugSettings = (text, arm) => patchedSettings(text, {cursorDebug: arm});
 
-// The Mac's io for `runSteps`. `run`: the harness scenes' run directory; `out`: the item's evidence directory;
-// `frameStream`: the series' FrameUpdate stream (./signposts.mjs), when one runs.
-export function liveIo({run, out, quiet = false, home = homedir(), frameStream = null}) {
+// The Mac's io for `runSteps`. `run`: the harness scenes' run directory; `out`: the item's evidence directory.
+export function liveIo({run, out, quiet = false, home = homedir()}) {
   const cli = (args, env = {}) => JSON.parse(execFileSync(process.execPath, [CLI, ...args], {encoding: 'utf8', env: {...process.env, ...env}, timeout: 60_000}));
   const settingsFile = engineJsonOf(home), before = join(out, 'engine.json.before');
   const guard = liveTargetGuard({bundle: enginePaths().bundle});
@@ -105,9 +105,19 @@ export function liveIo({run, out, quiet = false, home = homedir(), frameStream =
       // series (./frames.mjs glideFramesCheck): a cap that does not take effect is the finding, and a count that fails is
       // undetermined; only a probe whose end is unconfirmed (stuck) stops it. The probes' pids are kept, so the series'
       // own count leaves their glides out.
-      'glide-frames': async ([arm]) => glideFramesCheck(arm, {probe: args => runProbe(enginePaths().bundle, args), glides: GLIDE_CHECK_GLIDES,
-        // From the series' own stream when it runs (./signposts.mjs), once its last frames have arrived; else `log show`.
-        readFrames: frameStream ? async () => { await sleep(FRAME_STREAM_SETTLE_MS); return frameStream.frameTimes(); } : readFrameUpdates}),
+      // The frames come from a FrameUpdate stream that runs for this task only (./signposts.mjs startFrameStream), before
+      // any session opens, so no timed sample runs under it; `log show` drops some even seconds after.
+      'glide-frames': async ([arm]) => {
+        const frames = await startFrameStream();
+        try {
+          return await glideFramesCheck(arm, {probe: args => runProbe(enginePaths().bundle, args), glides: GLIDE_CHECK_GLIDES,
+            readFrames: async () => {
+              if (!frames.started) throw new Error('the FrameUpdate stream did not start');
+              await sleep(FRAME_STREAM_SETTLE_MS);  // the last frames delivered
+              return frames.frameTimes();
+            }});
+        } finally { await frames.stop(); }
+      },
       // The keyboard's input source as the approved bundle's probe reads it, TextEdit in front: `latin` requires a
       // Latin keyboard layout (./timing.mjs latinSourceProblem), `record` only keeps the reading.
       'input-source': async ([mode]) => {
@@ -268,6 +278,7 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
   let failed = 0, n = 0;
   const runCell = async step => {
     const code = typeof step.cell === 'function' ? step.cell(ctx.results) : step.cell;
+    const startedAt = Date.now();  // the cell's own span, which the signposts' coverage checks a sample against
     const answer = await ctx.sessions[step.run].run(code, {keys: step.keys ?? null});
     const {images, ...kept} = answer;
     const saved = images.map((image, k) => {
@@ -277,7 +288,7 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
     });
     ctx.results[step.label] = answer;
     if (!answer.ok) failed++;
-    record({step: n, kind: 'cell', session: step.run, label: step.label, ...(step.sample ? {sample: step.sample} : {}),
+    record({step: n, kind: 'cell', session: step.run, label: step.label, startedAt, ...(step.sample ? {sample: step.sample} : {}),
       ...(step.orderTarget ? {orderTarget: step.orderTarget} : {}), ...(step.role ? {role: step.role} : {}), ...kept, ...(saved.length ? {images: saved} : {})});
     log(`  ${step.run}: ${step.label}: ${answer.ok ? JSON.stringify(answer.value) : `FAILED ${answer.error}`}${answer.route ? ` (route ${answer.route})` : ''}`);
     // A required cell that did not answer ok stops the item here (its finally still puts everything back).

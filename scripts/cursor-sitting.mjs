@@ -43,12 +43,11 @@
 //       legacyLayers, fps60), engine.json put back and the engine stopped after; --owner-source runs it under whatever source
 //       the owner has, the reading kept. Either is recorded in item-<n>-<arm>.jsonl or item-<n>-owner-source.jsonl and
 //       never judged: `judge` lists it in <out>/timing-recorded.md. The engine's timing signposts over the series are
-//       streamed into <out>/signposts-<item>.ndjson while it runs (`log stream --signpost`; ./cursor-sitting/
+//       read into <out>/signposts-<item>.ndjson in chunks while it runs (`log show` every 20 s; ./cursor-sitting/
 //       signposts.mjs) and checked against every sample (<out>/coverage-<item>.json: a series they do not cover reads
-//       incomplete), and the frames the window server composited
-//       during each of the series' cursor glides in <out>/frames-<item>.json (./cursor-sitting/frames.mjs); the fps60
-//       arm (the cursor's animations capped at 60 Hz) first proves its cap with the cursor probe's glides, with and
-//       without the arm, its verdict kept in the item's rows.
+//       incomplete). The fps60 arm (the cursor's animations capped at 60 Hz) first proves its cap with the cursor
+//       probe's glides, with and without the arm, their frames counted from a FrameUpdate stream that runs only then,
+//       before any session opens (./cursor-sitting/frames.mjs); its verdict is kept in the item's rows.
 //   cursor-sitting.mjs source consent yes|no --out <dir>
 //   cursor-sitting.mjs source restore --out <dir>
 //       The input source (./cursor-sitting/input-source.mjs): `consent` records the owner's answer to the kit switching
@@ -89,13 +88,12 @@
 //       enrol it on a loopback relay, then run: the relay and the agent started, three client sessions driven
 //       (recorded as item 8), both stopped.
 import {execFileSync} from 'node:child_process';
-import {appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {ORDER_TARGETS, route3Plan, writeFrames, writeLag, writeOrder} from './cursor-sitting/clip.mjs';
-import {frameSummary, glideFrames, motionSpans, readFrameUpdates} from './cursor-sitting/frames.mjs';
-import {signpostCoverage, startSignpostStreams} from './cursor-sitting/signposts.mjs';
+import {keepSeriesSignposts, signpostCoverage} from './cursor-sitting/signposts.mjs';
 import {liveSourceSwitch, switchSource, writeConsent} from './cursor-sitting/input-source.mjs';
 import {windowListProbe, writeOrderFromMeta} from './cursor-sitting/glide.mjs';
 import {restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
@@ -149,71 +147,21 @@ function judgeAll(out, {recorded = false} = {}) {
     const judged = judgeTiming(timed, {series: SERIES[kind]});
     const routes = kind === 'clicks' ? Object.entries(timed.filter(r => r.series === 'element click').reduce((m, r) => ({...m, [r.route ?? 'none']: (m[r.route ?? 'none'] ?? 0) + 1}), {})) : null;
     const source = all.findLast(r => r.kind === 'task' && r.task === 'input-source')?.result ?? null;
-    const framesFile = join(out, `frames-${item}.json`);
     const attempt = all.findLast(r => r.kind === 'start')?.at ?? null;
-    const frames = framesOf(framesFile, attempt), coverage = coverageOf(join(out, `coverage-${item}.json`), attempt);
+    const coverage = coverageOf(join(out, `coverage-${item}.json`), attempt);
     const capCheck = all.findLast(r => r.kind === 'task' && r.task === 'glide-frames')?.result ?? null;
-    return [{item, kind, ...judged, runs: Object.fromEntries(Object.entries(runs).map(([name, r]) => [name, r.startedAt])), ...(routes ? {routes: Object.fromEntries(routes)} : {}), source, frames, capCheck, coverage}];
+    return [{item, kind, ...judged, runs: Object.fromEntries(Object.entries(runs).map(([name, r]) => [name, r.startedAt])), ...(routes ? {routes: Object.fromEntries(routes)} : {}), source, capCheck, coverage}];
   });
 }
 
-// The engine's timing signposts since `since` (native/engine/Sources/Engine/Signposts.swift), as `log show` still keeps
-// them, in <out>/signposts-<item>.ndjson: only when the series' stream did not start, since the store does not keep a
-// series' start (the second sitting); the coverage check says what it lacks. A failure to read them is said.
-function keepSignposts(out, item, since) {
-  const pad = n => String(n).padStart(2, '0');
-  const start = `${since.getFullYear()}-${pad(since.getMonth() + 1)}-${pad(since.getDate())} ${pad(since.getHours())}:${pad(since.getMinutes())}:${pad(since.getSeconds())}`;
-  const file = join(out, `signposts-${item}.ndjson`);
-  try {
-    const text = execFileSync('/usr/bin/log', ['show', '--signpost', '--style', 'ndjson', '--start', start, '--predicate',
-      'subsystem == "io.github.ssfskim.cua.engine" AND category == "timing"'], {encoding: 'utf8', maxBuffer: 512 * 1024 * 1024, timeout: 120_000});
-    writeFileSync(file, text);
-    print(`the engine's signposts since ${start}: ${file}`);
-  } catch (error) { print(`the engine's signposts were not read (${error.message.split('\n')[0]})`); }
-}
-
-// The frames the window server composited during each of the series' cursor glides (./cursor-sitting/frames.mjs): the
-// engine's `cursor.motion` spans in the signposts just kept, the cursor probes of the item's glide-frames task left out,
-// against WindowServer's FrameUpdate signposts since `since`, in <out>/frames-<item>.json, tied to the item's last
-// attempt (its `start` row's time). An earlier attempt's file is removed first, and a count that fails writes the file
-// as unavailable with its reason, so a rerun never shows another attempt's numbers; neither changes a verdict.
-export function keepGlideFrames(out, item, since, {readFrames = readFrameUpdates, incomplete = null} = {}) {
-  const signposts = join(out, `signposts-${item}.ndjson`), file = join(out, `frames-${item}.json`);
-  rmSync(file, {force: true});
-  const rows = lastAttempt(readJsonl(join(out, `item-${item}.jsonl`))), attempt = rows.find(r => r.kind === 'start')?.at ?? null;
-  try {
-    const probes = rows.filter(r => r.kind === 'task' && r.task === 'glide-frames').flatMap(r => r.result?.pids ?? []);
-    const glides = glideFrames(motionSpans(readFileSync(signposts, 'utf8'), {excludePids: probes}), readFrames(since));
-    const summary = frameSummary(glides);
-    writeFileSync(file, `${JSON.stringify({item, attempt, summary: incomplete ? {...summary, incomplete} : summary, glides}, null, 2)}\n`);
-    print(`the window server's frames per cursor glide: ${framesLine(incomplete ? {...summary, incomplete} : summary)} (${file})`);
-  } catch (error) {
-    const unavailable = `the frames were not counted (${String(error.message).split('\n')[0]})`;
-    writeFileSync(file, `${JSON.stringify({item, attempt, unavailable}, null, 2)}\n`);
-    print(`the frames per cursor glide: unavailable, ${unavailable}`);
-  }
-}
-// An item's frames summary from `file`, if it is the attempt that started at `attempt`; else why it is unavailable.
-function framesOf(file, attempt) {
-  if (!existsSync(file)) return null;
-  const kept = JSON.parse(readFileSync(file, 'utf8'));
-  if ((kept.attempt ?? null) !== attempt) return {unavailable: `the file is another attempt's (started ${kept.attempt ?? 'unknown'}, the item's last at ${attempt ?? 'unknown'})`};
-  return kept.unavailable ? {unavailable: kept.unavailable} : kept.summary ?? null;
-}
-const framesLine = f => (f.unavailable ? `unavailable (${f.unavailable})`
-  : `${f.incomplete ? `**incomplete** (${f.incomplete}): ` : ''}${f.glides ? `${f.glides} glides, a median ${f.frames} frames over ${f.ms} ms, ${f.hz} Hz, a frame every ${f.intervalMs} ms` : 'no glide was recorded'}`);
-
-// Whether the series' signposts cover it (./cursor-sitting/signposts.mjs signpostCoverage), with how its streams ran, in
-// <out>/coverage-<item>.json, tied to the item's last attempt like the frames. -> the coverage.
-export function keepCoverage(out, item, {streams = null} = {}) {
+// Whether the series' signposts cover it (./cursor-sitting/signposts.mjs signpostCoverage), with how their chunked reads
+// went, in <out>/coverage-<item>.json, tied to the item's last attempt (its `start` row's time). -> the coverage.
+export function keepCoverage(out, item, {reads = null} = {}) {
   const rows = lastAttempt(readJsonl(join(out, `item-${item}.jsonl`))), attempt = rows.find(r => r.kind === 'start')?.at ?? null;
   const signposts = join(out, `signposts-${item}.ndjson`);
   const coverage = signpostCoverage(existsSync(signposts) ? readFileSync(signposts, 'utf8') : '', rows);
-  const record = {item, attempt, ...coverage, streams};
-  if (streams && coverage.complete && !(streams.engine?.ok && streams.frames?.ok)) {
-    record.complete = false;
-    record.why = `a signpost stream failed: ${[streams.engine, streams.frames].filter(s => !s?.ok).map(s => s?.error ?? 'not run').join('; ')}`;
-  }
+  // A read that failed is said beside the samples; the samples decide: the next read covers a failed one's span.
+  const record = {item, attempt, ...coverage, reads};
   writeFileSync(join(out, `coverage-${item}.json`), `${JSON.stringify(record, null, 2)}\n`);
   print(`the series' signposts: ${coverageLine(record)}`);
   return record;
@@ -245,7 +193,6 @@ function timingMarkdown(judged, {recorded = false} = {}) {
     if (j.errors) lines.push('', `${j.errors} timed call(s) failed and are not in the samples (item-${j.item}.jsonl has their errors).`);
     if (j.routes) lines.push('', `The element clicks' routes: ${Object.entries(j.routes).map(([r, n]) => `route ${r} × ${n}`).join(', ')}.`);
     if (j.coverage) lines.push('', `Signposts (coverage-${j.item}.json): ${coverageLine(j.coverage)}.`);
-    if (j.frames) lines.push('', `Frames the window server composited per cursor glide${j.frames.unavailable ? '' : ` (frames-${j.item}.json, the whole display's)`}: ${framesLine(j.frames)}.`);
     if (j.capCheck) {
       const {base, capped} = j.capCheck, rock = base?.rock && capped?.rock ? `; rock ${base.rock.hz} against ${capped.rock.hz} Hz` : '';
       lines.push('', `The fps60 cap, from the cursor probe's glides before the series: default ${base?.hz ?? '–'} Hz (a frame every ${base?.intervalMs ?? '–'} ms), fps60 ${capped?.hz ?? '–'} Hz (every ${capped?.intervalMs ?? '–'} ms)${rock}: **${j.capCheck.verdict}** (${j.capCheck.why}).`);
@@ -276,10 +223,10 @@ function summaryMarkdown(out) {
   return lines.join('\n');
 }
 
-async function drive(steps, {item, values, frameStream = null}) {
+async function drive(steps, {item, values}) {
   const out = absolute(values, 'out');
   const run = values['dry-run'] ? values.run ?? '/nonexistent' : absolute(values, 'run');
-  const io = liveIo({run, out, quiet: values.quiet, frameStream});
+  const io = liveIo({run, out, quiet: values.quiet});
   const {failed} = await runSteps(steps, {item, out, io, dryRun: values['dry-run']});
   print(values['dry-run'] ? `dry run: ${steps.length} steps, nothing sent` : `${failed} cell(s) or task(s) failed; recorded in ${join(out, `item-${item}.jsonl`)}`);
   return failed ? 1 : 0;
@@ -331,15 +278,12 @@ export async function main(argv) {
     const started = new Date();
     if (values['dry-run']) return drive(timingSteps(kind, counts, series), {item, values});
     const out = absolute(values, 'out');
-    // The signposts streamed from before the first step to after the last (./cursor-sitting/signposts.mjs).
+    // The engine's signposts read in chunks from before the first step to after the last (./cursor-sitting/signposts.mjs):
+    // no stream runs under the timed samples.
     mkdirSync(out, {recursive: true, mode: 0o700});
-    const streams = await startSignpostStreams({engineFile: join(out, `signposts-${item}.ndjson`)});
-    if (!streams.started) print('!!! the signpost streams did not start: the series runs, and its coverage will say what is missing');
-    let code, kept;
-    try { code = await drive(timingSteps(kind, counts, series), {item, values, frameStream: streams.started ? streams : null}); } finally { kept = await streams.stop(); }
-    if (!streams.started) keepSignposts(out, item, started);
-    const coverage = keepCoverage(out, item, {streams: {engine: kept.engine, frames: {ok: kept.frames.ok, error: kept.frames.error}}});
-    keepGlideFrames(out, item, started, {readFrames: kept.frames.ok ? () => kept.frames.times : readFrameUpdates, incomplete: coverage.complete ? null : coverage.why});
+    const {result: code, signposts} = await keepSeriesSignposts({engineFile: join(out, `signposts-${item}.ndjson`), since: new Date(+started - 1000),
+      run: () => drive(timingSteps(kind, counts, series), {item, values})});
+    keepCoverage(out, item, {reads: signposts});
     if (item !== String(TIMING_ITEM[kind])) {
       const recorded = judgeAll(out, {recorded: true});
       writeFileSync(join(out, 'timing-recorded.md'), timingMarkdown(recorded, {recorded: true}));

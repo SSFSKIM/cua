@@ -1,6 +1,6 @@
-// The series' signposts, streamed while the series runs (scripts/cursor-sitting/signposts.mjs; #235's task-8 report): the
-// engine's into the item's file, WindowServer's FrameUpdate times kept in memory, and a coverage check that reads a
-// series whose signposts do not cover every sample as incomplete. Checked without a Mac: a fake `log stream`.
+// The series' signposts (scripts/cursor-sitting/signposts.mjs; #235's task-8 report): the engine's read in chunks while
+// the series runs, a FrameUpdate stream for the fps60 cap's proof only, and a coverage check that reads a series whose
+// signposts do not cover every sample as incomplete. Checked without a Mac: a fake `log stream` and a fake `log show`.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {EventEmitter} from 'node:events';
@@ -8,7 +8,7 @@ import {PassThrough} from 'node:stream';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {logTimestampMs, signpostCoverage, startSignpostStreams} from '../../scripts/cursor-sitting/signposts.mjs';
+import {keepSeriesSignposts, logTimestampMs, signpostCoverage, startFrameStream, startSignpostChunks} from '../../scripts/cursor-sitting/signposts.mjs';
 
 const scratch = t => { const dir = mkdtempSync(join(tmpdir(), 'cua-235-signposts-')); t.after(() => rmSync(dir, {recursive: true, force: true})); return dir; };
 const HEADER = 'Filtering the log data using "…"\n';
@@ -22,7 +22,16 @@ function fakeSpawn() {
     child.stderr = new PassThrough();
     child.args = args;
     child.exitCode = null;
-    child.kill = signal => { child.killed = signal; setImmediate(() => { child.exitCode = 0; child.stdout.end(); child.emit('exit', 0, signal); }); return true; };
+    // As Node may: `exit` first, then the last of stdout (`late`), then `close` once stdout has ended.
+    child.kill = signal => {
+      child.killed = signal;
+      setImmediate(() => {
+        child.exitCode = 0;
+        child.emit('exit', 0, signal);
+        setImmediate(() => { if (child.late) child.stdout.write(child.late); child.stdout.end(); setImmediate(() => child.emit('close', 0, signal)); });
+      });
+      return true;
+    };
     children.push(child);
     return child;
   };
@@ -36,52 +45,93 @@ test('a log timestamp is read as its instant, microseconds and zone included', (
   assert.equal(logTimestampMs('garbage'), null);
 });
 
-test('the streams start before the series, stream the engine\'s signposts to its file and keep the frame times', async t => {
-  const dir = scratch(t), {spawn, children} = fakeSpawn();
-  const starting = startSignpostStreams({engineFile: join(dir, 'signposts-12.ndjson'), spawn, readyMs: 1000});
+const FRAME = t => `{"signpostName":"FrameUpdate","subsystem":"com.apple.SkyLight","category":"tracing","machTimestamp":${t}}\n`;
+
+test('the frame stream runs log stream --signpost on FrameUpdate and keeps the times, lines split across chunks joined', async () => {
+  const {spawn, children} = fakeSpawn();
+  const starting = startFrameStream({spawn, readyMs: 1000});
   await tick();
-  assert.equal(children.length, 2);
-  for (const child of children) {
-    assert.deepEqual(child.args.slice(0, 4), ['stream', '--signpost', '--style', 'ndjson'], 'log stream --signpost: plain `log stream` carries none');
-  }
-  assert.match(children[0].args.at(-1), /io\.github\.ssfskim\.cua\.engine/);
-  assert.match(children[1].args.at(-1), /FrameUpdate/);
-  for (const child of children) child.stdout.write(HEADER);
-  const streams = await starting;
-  children[0].stdout.write('{"signpostName":"request","machTimestamp":5}\n{"signpostName":"cursor.motion","machTimestamp":6}\n');
-  children[1].stdout.write('{"signpostName":"FrameUpdate","subsystem":"com.apple.SkyLight","category":"tracing","machTimestamp":300}\n{"signpostName":"FrameUpd');
-  children[1].stdout.write('ate","subsystem":"com.apple.SkyLight","category":"tracing","machTimestamp":200}\n');
+  assert.equal(children.length, 1, 'one stream: the frames, and only for the proof');
+  assert.deepEqual(children[0].args.slice(0, 4), ['stream', '--signpost', '--style', 'ndjson'], 'plain `log stream` carries no signposts');
+  assert.match(children[0].args.at(-1), /FrameUpdate/);
+  children[0].stdout.write(HEADER);
+  const frames = await starting;
+  assert.equal(frames.started, true);
+  const line = FRAME(300);
+  children[0].stdout.write(line + line.slice(0, 20));
+  children[0].stdout.write(FRAME(200).slice(0, 0) + line.slice(20).replace('300', '200'));
   await tick();
-  assert.deepEqual(streams.frameTimes(), [200, 300], 'lines split across chunks are joined');
-  const kept = await streams.stop();
-  assert.equal(kept.engine.ok, true);
-  assert.equal(kept.frames.ok, true);
-  assert.deepEqual(kept.frames.times, [200, 300]);
-  assert.equal(children.every(c => c.killed === 'SIGINT'), true);
-  const text = readFileSync(join(dir, 'signposts-12.ndjson'), 'utf8');
-  assert.match(text, /"request".*\n.*"cursor\.motion"/);
-  assert.doesNotMatch(text, /Filtering/);
+  assert.deepEqual(frames.frameTimes(), [200, 300]);
+  const kept = await frames.stop();
+  assert.equal(kept.ok, true);
+  assert.equal(children[0].killed, 'SIGINT');
 });
 
-test('a stream that never starts, or ends before the series does, is not ok, with why', async t => {
-  const dir = scratch(t);
-  const silent = fakeSpawn();
-  const never = await startSignpostStreams({engineFile: join(dir, 'a.ndjson'), spawn: silent.spawn, readyMs: 20});
-  assert.equal(never.started, false);
-  const stopped = await never.stop();
-  assert.equal(stopped.engine.ok, false);
-  assert.match(stopped.engine.error, /did not start/);
-  const early = fakeSpawn();
-  const starting = startSignpostStreams({engineFile: join(dir, 'b.ndjson'), spawn: early.spawn, readyMs: 1000});
+test('stop waits for the stream\'s close, so a frame delivered after its exit is in the snapshot', async () => {
+  const {spawn, children} = fakeSpawn();
+  const starting = startFrameStream({spawn, readyMs: 1000});
   await tick();
-  for (const child of early.children) child.stdout.write(HEADER);
-  const streams = await starting;
-  early.children[1].exitCode = 1;
-  early.children[1].emit('exit', 1, null);
-  const kept = await streams.stop();
-  assert.equal(kept.engine.ok, true);
-  assert.equal(kept.frames.ok, false);
-  assert.match(kept.frames.error, /ended before the series did \(exit 1\)/);
+  children[0].stdout.write(HEADER);
+  const frames = await starting;
+  children[0].late = FRAME(400);
+  assert.deepEqual((await frames.stop()).times, [400]);
+});
+
+test('a stream that never starts, or ends before it is stopped, is not ok, with why', async () => {
+  const silent = fakeSpawn();
+  const never = await startFrameStream({spawn: silent.spawn, readyMs: 20});
+  assert.equal(never.started, false);
+  assert.match((await never.stop()).error, /did not start/);
+  const early = fakeSpawn();
+  const starting = startFrameStream({spawn: early.spawn, readyMs: 1000});
+  await tick();
+  early.children[0].stdout.write(HEADER);
+  const frames = await starting;
+  early.children[0].emit('exit', 1, null);
+  early.children[0].emit('close', 1, null);
+  const kept = await frames.stop();
+  assert.equal(kept.ok, false);
+  assert.match(kept.error, /ended before .* \(exit 1\)/);
+});
+
+// An engine signpost line as `log show` gives it.
+const line = (ms, id, type = 'event') => JSON.stringify({signpostName: 'request', signpostType: type, signpostID: id, processID: 7, machTimestamp: ms * 24_000, timestamp: stamp(ms)});
+
+test('the engine\'s signposts are read in chunks with an overlap, each line kept once, a failed read retried from where it was', async t => {
+  const dir = scratch(t), file = join(dir, 'signposts-12.ndjson');
+  let clock = +at(0);
+  const now = () => new Date(clock);
+  const asked = [];
+  // The store: one line every 2 s; the second read fails.
+  const store = Array.from({length: 40}, (_, k) => ({ms: k * 2000, text: line(k * 2000, k)}));
+  const read = async (start, end) => {
+    asked.push([+start - +at(0), +end - +at(0)]);
+    if (asked.length === 2) throw new Error('log show timed out');
+    return store.filter(e => +at(e.ms) >= +start - 1000 && +at(e.ms) <= +end + 1000).map(e => e.text).join('\n');
+  };
+  const chunks = startSignpostChunks({engineFile: file, since: now(), periodMs: 5, overlapMs: 10_000, read, now});
+  for (const step of [20_000, 40_000, 60_000]) { clock = +at(step); await new Promise(r => setTimeout(r, 15)); }
+  clock = +at(78_000);
+  const kept = await chunks.stop();
+  // Each read starts the overlap before the last good read's end; the one after the failed read starts where it did.
+  assert.deepEqual(asked[0], [-10_000, asked[0][1]]);
+  assert.deepEqual(asked[2][0], asked[1][0], 'a failed read leaves the next to start where it would have');
+  for (let k = 1; k < asked.length; k++) if (k !== 2) assert.equal(asked[k][0], asked[k - 1][1] - 10_000, `read ${k}`);
+  assert.equal(kept.ok, false);
+  assert.deepEqual(kept.failures, ['log show timed out']);
+  const ids = readFileSync(file, 'utf8').trim().split('\n').map(l => JSON.parse(l).signpostID);
+  assert.deepEqual(ids, Array.from({length: 40}, (_, k) => k), 'every line once, in order, none lost at the edges or the failed read');
+});
+
+test('a series\' signposts are kept by chunked reads only: no stream runs under its timed samples', async t => {
+  const dir = scratch(t), file = join(dir, 'signposts-12.ndjson');
+  let reads = 0;
+  const {result, signposts} = await keepSeriesSignposts({engineFile: file, run: async () => 'ran',
+    read: async () => { reads++; return line(1000, 1); }, spawn: () => { throw new Error('no stream may start for a series'); }});
+  assert.equal(result, 'ran');
+  assert.ok(reads >= 1);
+  assert.equal(signposts.ok, true);
+  assert.match(readFileSync(file, 'utf8'), /"signpostID":1/);
 });
 
 // The engine's signposts as log stream gives them, at local wall times; the item's rows at Date.now() times.
@@ -91,23 +141,36 @@ const stamp = ms => {
   // As log prints it in -0700: the UTC hour minus 7.
   return `2026-10-31 ${pad(d.getUTCHours() - 7)}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}.${pad(d.getUTCMilliseconds(), 3)}000-0700`;
 };
-const signpost = ms => JSON.stringify({signpostName: 'request', subsystem: 'io.github.ssfskim.cua.engine', timestamp: stamp(ms)});
+// A request interval's begin as log streams it (its message the method), and a cursor's window-state read.
+const request = (ms, method) => JSON.stringify({signpostName: 'request', signpostType: 'begin', eventMessage: method, subsystem: 'io.github.ssfskim.cua.engine', timestamp: stamp(ms)});
+const windowList = ms => JSON.stringify({signpostName: 'cursor.windowList', signpostType: 'begin', eventMessage: '', subsystem: 'io.github.ssfskim.cua.engine', timestamp: stamp(ms)});
+// Six press_key samples, each cell from its startedAt to its row's at, with the 6 s waits (no row) between them.
 const rows = () => [{kind: 'start', at: +at(0)}, {kind: 'task', at: +at(1000)},
-  ...Array.from({length: 6}, (_, i) => ({kind: 'cell', ok: true, at: +at(2000 + i * 1000), sample: {side: i % 2 ? 'off' : 'on', i: i >> 1}})),
-  {kind: 'cell', ok: false, at: +at(9000), sample: {side: 'on', i: 3}}, {kind: 'close', at: +at(10_000)}];
+  ...Array.from({length: 6}, (_, i) => ({kind: 'cell', ok: true, startedAt: +at(7000 + i * 7000), at: +at(7500 + i * 7000), sample: {side: i % 2 ? 'off' : 'on', i: i >> 1, covers: ['press_key x30']}})),
+  {kind: 'cell', ok: false, startedAt: +at(49_000), at: +at(49_100), sample: {side: 'on', i: 3, covers: ['press_key x30']}}, {kind: 'close', at: +at(50_000)}];
+const pressKeys = i => request(7100 + i * 7000, 'press_key');
 
-test('a series is complete only when every sample\'s cell has an engine signpost of its own', () => {
-  const all = [1500, ...Array.from({length: 6}, (_, i) => 1500 + i * 1000 + 200)].map(signpost).join('\n');
+test('a sample is covered only by a request of its own timed method inside its own cell', () => {
+  const all = Array.from({length: 6}, (_, i) => pressKeys(i)).join('\n');
   const complete = signpostCoverage(all, rows());
   assert.equal(complete.complete, true);
   assert.deepEqual([complete.samples, complete.covered], [6, 6], 'a failed cell is not a sample');
-  assert.equal(complete.first, +at(1500));
   // The read lost the series' start (the second sitting): the first three samples have none.
-  const late = [4700, 5700, 6700].map(signpost).join('\n');
-  const short = signpostCoverage(late, rows());
+  const short = signpostCoverage([3, 4, 5].map(pressKeys).join('\n'), rows());
   assert.equal(short.complete, false);
   assert.deepEqual(short.missing, [{side: 'on', i: 0}, {side: 'off', i: 0}, {side: 'on', i: 1}]);
-  assert.match(short.why, /3 of 6 samples have no engine signpost; the first signpost is 3\.7 s after the series' first sample began/);
+  assert.match(short.why, /3 of 6 samples have no request signpost of their own; the first signpost is 21\.1 s after the series' first sample began/);
+  // A visible cursor's window-state reads in the 6 s wait, a request of another method, or one just outside the cell,
+  // do not cover it.
+  const borrowed = [windowList(6600), request(7200, 'click'), request(6900, 'press_key'), ...[1, 2, 3, 4, 5].map(pressKeys)].join('\n');
+  assert.deepEqual(signpostCoverage(borrowed, rows()).missing, [{side: 'on', i: 0}]);
+  // A typing sample needs both its methods.
+  const typing = [{kind: 'start', at: +at(0)}, {kind: 'cell', ok: true, startedAt: +at(1000), at: +at(3000), sample: {side: 'on', i: 0, covers: ['type_text', 'press_key x30']}}];
+  assert.equal(signpostCoverage(request(1500, 'type_text'), typing).complete, false);
+  assert.equal(signpostCoverage([request(1500, 'type_text'), request(2500, 'press_key')].join('\n'), typing).complete, true);
+  // Clicks: each sample names its one series.
+  const clicks = [{kind: 'start', at: +at(0)}, {kind: 'cell', ok: true, startedAt: +at(1000), at: +at(1100), sample: {side: 'off', i: 0, series: 'drag'}}];
+  assert.equal(signpostCoverage(request(1050, 'drag'), clicks).complete, true);
   assert.equal(signpostCoverage('', rows()).complete, false);
   assert.match(signpostCoverage('', rows()).why, /no engine signpost/);
 });

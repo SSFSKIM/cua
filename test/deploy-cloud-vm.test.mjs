@@ -11,6 +11,7 @@ import {gunzipSync} from 'node:zlib';
 import {fileURLToPath} from 'node:url';
 import {CUA_EXTENSION_ID} from '../src/chrome/extension.mjs';
 import {DEFAULT_BASE_URL} from '../scripts/extension-pack.mjs';
+import {A11Y_ENABLE_COMMAND} from '../src/runtime/linux-desktop.mjs';
 
 const dir = fileURLToPath(new URL('../deploy/cloud-vm/', import.meta.url));
 const render = (...args) => spawnSync('bash', [`${dir}render.sh`, ...args], {encoding: 'utf8'});
@@ -58,6 +59,36 @@ test('cua-provision.sh force-installs cua\'s own extension: its id is CUA_EXTENS
   const script = readFileSync(`${dir}cua-provision.sh`, 'utf8');
   assert.equal(script.match(/^EXTENSION_ID=([a-p]{32})\b/m)?.[1], CUA_EXTENSION_ID);
   assert.doesNotMatch(script, /hehggadaopoacecdllhhajmbjkdcmajg|cua login|codex\.login|Sign in to ChatGPT/);
+});
+
+// #171 M3: a provisioned VM's desktop is the agent's, and its session has AT-SPI's IsEnabled on before any application
+// starts, which Qt 6 needs to put its tree on the bus (doctor's accessibility.enabled row names the same command).
+test('cua-provision.sh turns org.a11y.Status IsEnabled on at the session\'s start, after the bus and before Chrome', () => {
+  const script = readFileSync(`${dir}cua-provision.sh`, 'utf8');
+  const autostart = script.match(/IFS= read -r -d '' autostart <<'CONF' \|\| true\n([\s\S]*?)\nCONF\n/)?.[1];
+  assert.ok(autostart, 'the session\'s autostart');
+  const lines = autostart.split('\n');
+  const at = prefix => lines.findIndex(line => line.startsWith(prefix));
+  assert.ok(at(`${A11Y_ENABLE_COMMAND} `) > at('/usr/libexec/at-spi-bus-launcher --launch-immediately'), autostart);
+  assert.ok(at(`${A11Y_ENABLE_COMMAND} `) < at('google-chrome '), autostart);
+});
+
+test('cua-provision.sh sets "desktop": "dedicated" in the user\'s engine.json, beside its other keys, keeping a mode already set', t => {
+  const script = readFileSync(`${dir}cua-provision.sh`, 'utf8');
+  const filter = script.match(/^desktop_filter='([^']*)'$/m)?.[1];
+  assert.ok(filter, 'the filter the script applies to engine.json');
+  assert.match(script, /^settings="\$home\/\.config\/cua\/engine\.json"$/m);
+  if (spawnSync('jq', ['--version']).error) return t.skip('jq is not installed here');
+  const apply = input => {
+    const run = spawnSync('jq', ['-c', filter], {input, encoding: 'utf8'});
+    return run.status === 0 ? JSON.parse(run.stdout) : {refused: run.status};
+  };
+  assert.deepEqual(apply('{}'), {desktop: 'dedicated'});
+  assert.deepEqual(apply('{"engine": "cua", "signingIdentity": "x"}'), {engine: 'cua', signingIdentity: 'x', desktop: 'dedicated'});
+  assert.deepEqual(apply('{"desktop": "shared"}'), {desktop: 'shared'}, 'the owner\'s mode stays');
+  assert.deepEqual(apply('{"desktop": null}'), {desktop: 'dedicated'});
+  assert.equal(typeof apply('[1]').refused, 'number', 'anything but an object is refused');
+  assert.equal(typeof apply('{').refused, 'number');
 });
 
 test('render.sh refuses anything that is not plain (it lands in a shell-sourced file)', () => {

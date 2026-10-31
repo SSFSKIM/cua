@@ -224,3 +224,32 @@ test('the demonstrations of items 9 and 11 start with the harness\'s TextEdit wi
     assert.ok(!steps.slice(activated, firstMove).some(s => s.owner || s.cue), 'nothing the owner does comes between');
   }
 });
+
+test('a focus reading serves the proof only when trusted, of the scene\'s app and its named window, with a value hash', async () => {
+  const {focusProblem} = await import('../../scripts/cursor-sitting/runner.mjs');
+  const good = {accessibility: true, focusedApp: {pid: 7, bundleId: 'io.github.ssfskim.cua.fixture.electron'}, focusedWindow: {pid: 7, bounds: {x: 140, y: 100, width: 720, height: 560}}, named: true, valueHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'};
+  assert.equal(focusProblem(good, 7), null);
+  assert.match(focusProblem({...good, accessibility: false}, 7), /not trusted/);
+  assert.match(focusProblem({...good, focusedApp: null}, 7), /focused app is none/);
+  assert.match(focusProblem({...good, focusedApp: {pid: 8}}, 7), /focused app is 8/);
+  assert.match(focusProblem({...good, focusedWindow: null}, 7), /focused window belongs to none/);
+  assert.match(focusProblem({...good, named: false}, 7), /not the scene's run window/);
+  assert.match(focusProblem({...good, valueHash: null}, 7), /value hash was not read/);
+  assert.match(focusProblem(undefined, 7), /not trusted/);
+});
+
+test('two failed focus readings never pass as unchanged; two usable equal ones do, a changed one does not', async () => {
+  const {focusStep} = await import('../../scripts/cursor-sitting/runner.mjs');
+  const good = {accessibility: true, focusedApp: {pid: 7, bundleId: 'f'}, focusedWindow: {pid: 7, bounds: {x: 1, y: 2, width: 3, height: 4}}, named: true, valueHash: 'a'.repeat(64)};
+  const twice = (first, second) => { const store = {}; const one = focusStep({label: 'before', answer: first, pid: 7, store}); return [one, focusStep({label: 'after', answer: second, pid: 7, equalTo: 'before', store})]; };
+  for (const failed of [{...good, accessibility: false}, {...good, named: false}, {accessibility: true, focusedApp: null, focusedWindow: null, named: false, valueHash: null}]) {
+    const [one, two] = twice(failed, failed);
+    assert.equal(one.ok, false);
+    assert.equal(two.ok, false, JSON.stringify(failed));
+    assert.ok(two.problem && two.earlierProblem);
+  }
+  assert.deepEqual(twice(good, good).map(r => r.ok), [true, true]);
+  assert.equal(twice(good, {...good, valueHash: 'b'.repeat(64)})[1].ok, false, 'another focused element');
+  assert.equal(twice(good, {...good, focusedWindow: {pid: 7, bounds: {x: 9, y: 2, width: 3, height: 4}}, named: false})[1].ok, false, 'another window');
+  assert.equal(focusStep({label: 'after', answer: good, pid: 7, equalTo: 'missing', store: {}}).ok, false);
+});

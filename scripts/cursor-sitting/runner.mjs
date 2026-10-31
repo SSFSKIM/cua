@@ -30,6 +30,29 @@ export const engineActivations = lines => lines.filter(l => l.kind === 'activate
 export const focusReading = answer => ({focusedApp: answer?.focusedApp ?? null, focusedWindow: answer?.focusedWindow ?? null,
   named: answer?.named ?? null, valueHash: answer?.valueHash ?? null});
 
+// Why a focus probe's answer cannot serve the proof, or null: it must come from a trusted probe, name the scene's
+// process (`pid`) as the focused app and its window as the focused window, the named run window, and carry the focused
+// element's value hash (the fixture's autofocused text field gives one, empty or not).
+export function focusProblem(answer, pid) {
+  if (answer?.accessibility !== true) return 'the focus probe is not trusted for Accessibility';
+  if (answer.focusedApp?.pid !== pid) return `the focused app is ${answer.focusedApp?.pid ?? 'none'}, not the scene's process ${pid}`;
+  if (answer.focusedWindow?.pid !== pid) return `the focused window belongs to ${answer.focusedWindow?.pid ?? 'none'}, not the scene's process ${pid}`;
+  if (answer.named !== true) return 'the focused window is not the scene\'s run window (its bounds differ)';
+  if (typeof answer.valueHash !== 'string' || !/^[0-9a-f]{64}$/.test(answer.valueHash)) return 'the focused element\'s value hash was not read';
+  return null;
+}
+
+// One focus reading kept in `store` under `label`, and its verdict: usable (focusProblem), and with `equalTo`, equal to
+// that earlier reading, both usable (two failed reads would otherwise compare equal). -> the task's result.
+export function focusStep({label, answer, pid, equalTo, store}) {
+  const reading = focusReading(answer), problem = focusProblem(answer, pid);
+  store[label] = {reading, problem};
+  if (equalTo === undefined) return {ok: problem === null, label, reading, ...(problem ? {problem} : {})};
+  const earlier = store[equalTo];
+  const same = problem === null && earlier?.problem === null && JSON.stringify(reading) === JSON.stringify(earlier.reading);
+  return {ok: same, label, reading, equalTo, same, ...(problem ? {problem} : {}), ...(earlier?.problem ? {earlierProblem: earlier.problem} : {}), ...(earlier ? {} : {earlierProblem: `no reading named ${equalTo}`})};
+}
+
 // engine.json with the device switch off, the other keys kept. `text`: the file's bytes, or null when there is none.
 export function cursorOffSettings(text) {
   const settings = text === null ? {} : JSON.parse(text);
@@ -95,11 +118,7 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
       focus: async ([label, scene, equalTo], ctx) => {
         const {pid, window} = io.scene(scene), b = window.bounds;
         const answer = runProbe(enginePaths().bundle, ['focus', '--window', [pid, b.x, b.y, b.width, b.height].join(',')]);
-        const reading = focusReading(answer);
-        (ctx.focus ??= {})[label] = reading;
-        if (equalTo === undefined) return {ok: answer?.accessibility === true, label, reading};
-        const same = JSON.stringify(reading) === JSON.stringify(ctx.focus[equalTo]);
-        return {ok: same, label, reading, equalTo, same};
+        return focusStep({label, answer, pid, equalTo, store: ctx.focus ??= {}});
       },
       'watch-start': async () => ({ok: true, watch: startWatch(enginePaths().bundle, out)}),
       'watch-stop': async (_args, ctx) => {

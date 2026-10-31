@@ -517,3 +517,326 @@ Not in that list, and open from this sitting:
 - The three unrecorded checks above (item 4's attempt 5, item 8's run 2, the probe's run-1 vanish). The design session
   asks the owner whether they recorded them elsewhere.
 - The keep-or-restore decision, still pending.
+
+## M3, the second attended sitting (2026-10-31)
+
+The records place the owner at the MacBook from the input-source consent (14:03:01Z) to about 16:13Z: the
+`route-3-lag` verdict was written at 16:13:00Z, and the last HID input the engine's meta implies is at 16:12:19Z
+(below). They hold nothing between the approval (14:07:09Z) and item 3's first run (15:04:43Z). The timing began at
+15:59:23Z under `caffeinate` and ran unattended after 16:13Z until 16:58:13Z, apart from two interruptions at
+16:38–16:39Z (below). Every time below is UTC. The attribution's own notes give local times (PDT, UTC−7); they are
+converted here.
+
+The records are in `docs/evidence/2026-10-30-macos-agent-cursor/sitting-2026-10-31/` (b43f837a):
+- `verdicts.jsonl`, the verdicts with the owner's words in the notes;
+- `item-*.jsonl`, each run's steps, and `look/item-11-cua.jsonl`, the look check's moves;
+- `timing.md`, the judged series, and `timing-recorded.md`, the arms and the 2-Set Korean series, never judged;
+- `input-source.json`, the consent and the source the kit kept as the owner's;
+- `windowserver-cpu.tsv`, WindowServer's CPU once a second from 16:27:55 to 16:58:42Z;
+- item 5's screenshot, and its activation watcher's `activations.jsonl` and `live-watch.json`.
+
+The engine's signposts (about 400 MB) stay outside the repository, at
+`~/.local/share/cua-235/sitting-2026-10-31/signposts/` with their SHA-256s. The operator's build, approve and
+per-series logs are beside them. The runbook is "The second
+sitting" in that evidence directory's `README.md`.
+
+### What ran, and on which build
+
+One build served the whole sitting: `b23a6e7a18c6`, the timing fixes' reviewed build. It is still installed and
+approved. Each arm's `engine-status` row reads that build, approved, `cursor: on` and the arm's `cursorDebug`.
+`engine.json` held no arm before any arm ran (`existed: false`), and each arm removed its own after its last sample.
+
+The first `engine build` was refused with `engine_busy`. Another session's REPL supervisor had kept its engine socket
+open after its `end_task` (cua #237). The records keep no time for that refusal. Once the socket was gone, the build
+installed and the approval completed at 14:07:09Z (`approve.log`).
+
+The kit was 0c0c15f4, which raised the recorder's start bound to 5 s after the hosted test gate refused two slow
+stand-in recorders. During the sitting, 5cfd0935 and ea71a376 (15:10Z) added a series under a named input source, for
+step 8. The owner's usual source is ABC, and the consent recorded ABC as theirs. The runbook had expected 2-Set Korean,
+the source the first sitting's typing ran under. With ABC as the owner's source, `--owner-source` would have repeated
+the judged condition, so by the design session's ruling step 8 ran under 2-Set Korean. The kit switched the sources
+with the owner's consent.
+
+| time (Z) | what | record |
+|---|---|---|
+| 14:03:01 | the source consent: yes, the owner's source ABC | `input-source.json` |
+| 14:07:09 | build `b23a6e7a18c6` approved | `approve.log`, outside the repository |
+| 15:04:43–15:07:58 | item 3, three runs | `item-3.jsonl` |
+| 15:09:08, 15:24:58 | the look: item 11's moves on cua's engine, twice | `look/item-11-cua.jsonl` |
+| 15:26:37–15:58:51 | the recorder's proof, nine attempts, each refused before recording | `item-1-check.jsonl` |
+| 15:48:14–15:49:00 | item 5, between the proof's seventh and eighth attempts | `item-5.jsonl` |
+| 15:59:23–16:08:42 | item 13: coordinate click and drag at 40 a side, element click at 20 | `item-13.jsonl` |
+| 16:09:12 | element click at 40, refused at its source selection (the popover, below) | `item-13.jsonl` |
+| 16:10:29–16:10:52 | item 11's moves into a scratch directory, which dismissed the popover | outside the repository |
+| 16:11:15–16:20:47 | element click at 40 | `item-13.jsonl` |
+| 16:21:26–16:26:44 | item 12: type_text and press_key at 20 | `item-12.jsonl` |
+| 16:27:16–16:32:49 | the `legacyLayers` arm, typing | `item-12-legacyLayers.jsonl` |
+| 16:33:04–16:38:07 | the `legacyLayers` arm, clicks | `item-13-legacyLayers.jsonl` |
+| 16:38:42, 16:39:09 | the `panelOut` and `noBackdrop` arms, each stopped before its first sample (below) | their items |
+| 16:40:30–16:46:20 | the `panelOut` arm, typing | `item-12-panelOut.jsonl` |
+| 16:46:35–16:52:33 | the `noBackdrop` arm, typing | `item-12-noBackdrop.jsonl` |
+| 16:52:48–16:58:13 | typing under 2-Set Korean, then ABC selected again and read back | `item-12-source-2SetKorean.jsonl` |
+
+Against the runbook:
+- item 1 did not run (below);
+- the `legacyLayers` typing ran before its clicks;
+- `panelOut` and `noBackdrop` ran because press_key failed, as the runbook allows only when 5 or 6 fails.
+
+### The verdicts
+
+Each item's last verdict per watch, with the owner's words where the note carries them:
+
+- **1, it shows where the agent acts:** no verdict. The recording could not be made, and `drive 1 --no-clip` goes to the
+  next unattended run.
+- **3, states and timing:** PASS on all six watches, each "owner ticked it (second run; the owner missed the first)".
+  `item-3.jsonl` holds three runs (15:04:43, 15:06:02 and 15:07:31Z), and the note does not say which of them it names.
+  Run 2's last two actions were refused (below).
+- **3, the look:** PASS. "the owner: 'I think so, but it's not a one-to-one comparison with a video recording, so I
+  can't be sure. They look the same.' (the eight moves, shown twice)".
+- **5, never in the way:** PASS on four watches.
+  - `taken-over`: "owner ticked: half-transparent on their click".
+  - `screenshot`: "owner: cursor on screen over the fixture at the end; the agent's screenshot item-5-step-24-0.jpg has
+    no cursor (checked by the operator)".
+  - `focus`: "both readings usable (accessibility wait primed, 2.2 s) and equal field by field: fixture pid 25295, its
+    window 720x560 at 140,100, named, the same valueHash; the kit's same:false is the readings' key order only (kit
+    defect)". The before-reading (15:48:22.153Z) waited 2221 ms with the probe's priming. The reading with the cursor
+    shown (15:48:25.569Z) waited 0 ms. Both name the fixture's window and hash `e3b0c442…b855`. The kit's row has `ok:
+    false, same: false` because the two `focusedApp` objects carry their keys in different orders (`{pid, bundleId}`
+    against `{bundleId, pid}`). 17853326 compares them with their keys sorted. The verdict is the operator's reading
+    field by field.
+  - `count`: "0 -> 3: the agent's one press (route 1), and the owner clicked the tip several times ('I clicked it many
+    times. It worked as it should'); the fixture counts 'click' only". The count read 0 at 15:48:25.839Z and 3 at
+    15:48:52.031Z.
+  - The activation watcher saw 0 engine activations.
+  - `recording`: no verdict. It was to come from item 1's clip.
+- **12, typing speed:** FAIL. press_key ×30 is slower; type_text is the same within noise (the timing, below).
+- **13, click speed:** `timing.md` reads FAIL, but no series is slower. Element click is the same within noise.
+  Coordinate click and drag are undetermined at 40 a side. By the design session's ruling the rule ends at 40, and an
+  undetermined series becomes a declared gap for the owner, never more sampling: sampling until a pass would bias the
+  verdict.
+  - `route-3-lag`: PASS, by the fallback. "the owner watched the clicks block's first minute (the fallback; item 1's
+    clip could not be made): 'Looked prompt'". The watch row is in item 13's first run (15:59:29Z) and in the element
+    click's rerun (16:11:20Z), and the verdict was written at 16:13:00Z, so the note does not say which run's first
+    minute it was. `summary.md` also shows this verdict under 13-legacyLayers, whose own watch row (16:33:11Z) has no
+    verdict in `verdicts.jsonl`.
+
+### What failed or was refused, and why
+
+**Item 1's recording: nine placements refused.** Each attempt of the recorder's proof stopped at `record-start`, before
+any session opened. The recorder never started: there is no `record-stop` row, and the recordings directory is empty.
+
+| attempt | time (Z) | frontmost | the guard's reason |
+|---|---|---|---|
+| 1 | 15:27:54 | – | Chrome's run window not on screen |
+| 2 | 15:28:58 | cmux, the operator's terminal | its window 19462 (1438 × 825 pt at (26, 59)) over the region |
+| 3 | 15:30:04 | Finder | its window 46699 (920 × 436 pt at (392, 239)) over the region |
+| 4 | 15:34:03 | Chrome for Testing | a harness window frontmost |
+| 5 | 15:43:53 | TextEdit | a harness window frontmost |
+| 6 | 15:45:56 | cmux | its window 19462 over the region |
+| 7 | 15:46:53 | Finder | Chrome at x −810 and TextEdit at x 1500: the region 2973 pt wide, mostly neither window |
+| 8 | 15:52:44 | Finder | the same as 7 (a new clip name, `-b`) |
+| 9 | 15:58:51 | the Electron fixture | its window 46727 (720 × 560 pt at (140, 100)) over the region |
+
+Attempts 7 and 8 followed a click on the wallpaper. On the owner's Mac that click reveals the desktop, which slides
+TextEdit and Chrome off screen. Item 5, run between attempts 7 and 8, left the fixture frontmost, which fits attempt 9.
+The ruling at the sitting dropped the clip: item 1's order comes instead from the engine's own numbers,
+`drive 1 --no-clip` and `order-meta` (17853326), in a later unattended run with the owner's ok. The run then:
+- reads what lies over Chrome's window by the engine's occlusion rule;
+- requires the positioning scroll (99e2f375);
+- compiles the window-list probe before the session opens;
+- reads the order as undetermined when more than 4 s separate the scroll from the click (3a187bfb).
+
+**A TextEdit popover after the drags.** The element click's first rerun stopped at 16:09:13.621Z: "the frontmost app's
+top window is 46610, not the run window 46372". TextEdit had raised a 53 × 48 pt window, unnamed, at (796, 464), after
+the clicks series' drags, and it stayed more than 30 s. It is likely the affordance macOS shows beside a text
+selection (Writing Tools). The kit selects a source only while the run window is on top, since a per-document source
+would change another window's. Item 11's moves, run untimed into a scratch directory at 16:10:29–16:10:52Z, dismissed
+it, and the rerun at 16:11:15Z went ahead.
+- The kit's first answer, 4cb5ec0f, was a click to dismiss such a window first. Its review found that the click could
+  land on the small window itself (P1).
+- 0a79e6a3 replaces it. Each timed drag is followed by `CLEAR_SELECTION`, untimed and required: a caret written by an
+  element action, refused unless its observation is of the run window. No coordinate input is sent while a window other
+  than the run window may hold the focus.
+- e82f2453 anchors the caret at a line the document holds once, since `select_text` refuses a text found twice ("Line"
+  is in the document 60 times).
+
+**Two arms interrupted, and the source left as it was.** The first `panelOut` run stopped at 16:38:55.506Z when the
+owner's Chrome (pid 92136) came to the front. The first `noBackdrop` run stopped at 16:39:22.160Z when cmux (pid 95245)
+did. In both, the target guard refused before the first sample, so neither run timed anything. The records keep only
+the cleanup row; the reruns overwrote their logs. Both were rerun after the owner's ok, at 16:40:30 and 16:46:35Z. The
+element click's run ended the same way at 16:20:48.041Z: two of its cells had answered failed, and at its cleanup cmux
+was in front. Each cleanup recorded `source-left-after-failure`. The source left selected was ABC, the owner's own.
+
+**Five refusals, in three items.** Each refusal's meta now carries `hidIdleMs`, the engine's HID idle read
+(`hidIdleMilliseconds()`) at the refused request. Subtracting it from `receivedAt` gives the time of the last HID input
+before that request. Where two readings trace back to one input, they give the same instant to the millisecond.
+
+| item, time (Z) | sentence | `hidIdleMs` | the input at | reading |
+|---|---|---|---|---|
+| 3 run 2, "the agent acts again", 15:06:27.318 | still interacting | 4154 | 15:06:23.164 | 10.7 s after the cue to click (15:06:12.428Z): the debounce |
+| 3 run 2, "a click, then end_task at once", 15:06:28.584 | user changed | 5420 | 15:06:23.164 | the same input: the sticky flag. The kit's observation at 15:06:27.200Z fell inside the debounce and did not clear it |
+| 5, the next action with no observation first, 15:48:46.110 | still interacting | 2845 | 15:48:43.265 | the designed refusal: the owner's click, 3.2 s after the cue (15:48:40.046Z) |
+| 13, element click off 2, 16:12:01.768 | still interacting | 3345 | 16:11:58.423 | the debounce |
+| 13, element click on 4, 16:12:22.725 | still interacting | 3447 | 16:12:19.278 | the debounce |
+
+- Item 3's runs 1 and 3 had no refusal.
+- Item 13's two are the "2 timed call(s) failed" of `timing.md`, left out of the samples (hence 39 a side). Both
+  inputs fell in that run's first 65 s, before the `route-3-lag` verdict was written. Nothing on disk names them, so by
+  the first sitting's classes they are the owner's by elimination.
+- The run's later meta places the last HID input at the same 16:12:19.278Z. Every `hidIdleMs` from 16:12:22Z to the
+  run's end (73 rows) implies that instant: it reads 466,543 ms at 16:20:05.821Z and 501,644 ms at 16:20:40.922Z.
+- Every prime and element click in that span posted the route-3 guard's activation click (`activationClick:
+  "posted"`), so the engine's own activation clicks did not reset the counter the meta reads. The records do not say
+  whether those clicks go through the HID tap that the spec's design note on HID idle asks about.
+
+**A recorder check that ran after the call for no live GUI.** In task 7's review round, before the sitting, the
+executor's live check of the recorder ran before the design session's "no live GUI runs" message reached it. The check
+drew a probe's own banded window and recorded a region inside it, at most 5 s a run. The report's table lists eight
+recorder runs, while the progress log counts two clips. Every clip and frame was deleted (`task-7-report.md`), and
+this was disclosed to the design session and the owner.
+
+### The timing
+
+Judged by #171's noise rule (`timing.md`), under ABC. Each series comes from the last run that covers it:
+
+| series | n on / off | median on (ms) | median off (ms) | 95 % interval (ms) | bound (ms) | verdict |
+|---|---|---|---|---|---|---|
+| type_text | 20 / 20 | 547.47 | 544.38 | [−16.85, 18.66] | 27.22 | same within noise |
+| press_key ×30 | 20 / 20 | 301.23 | 269.09 | [16.32, 61.77] | 13.45 | slower |
+| coordinate click | 40 / 40 | 5.79 | 3.92 | [−0.70, 3.20] | 1.00 | undetermined |
+| element click | 39 / 39 | 53.45 | 56.62 | [−6.31, 2.56] | 2.83 | same within noise |
+| drag | 40 / 40 | 5.79 | 4.80 | [−0.77, 3.25] | 1.00 | undetermined |
+
+- Element click at 20 (the first run) was undetermined: 57.73 against 55.63 ms, [−0.97, 6.18] against a bound of 2.78.
+  This is from the operator's log (`timing-clicks.log`, outside the repository), since `judge` keeps each series' last
+  run only.
+- The element clicks' routes: route 3 × 78, and none for the two refused.
+- press_key is +32.14 ms per 30 keys, about +1.07 ms a key, against +3.4 ms a key at the first sitting.
+- Element click went from slower (59.92 against 56.23 ms) to the same within noise.
+- The vendor's click returns only after its glide (VC §3), so its keys never run during a glide. cua pays about 1 ms a
+  key during the glide, where the vendor pays 0.34–0.97 s on every click. No vendor arm was run (the Decision Log).
+
+Recorded, never judged (`timing-recorded.md`), the rule's numbers per series:
+
+| series | input source | type_text: on / off (ms), interval, bound | type_text | press_key ×30: on / off (ms), interval, bound | press_key |
+|---|---|---|---|---|---|
+| `legacyLayers` | ABC | 537.16 / 522.32, [−2.18, 40.27], 26.12 | undetermined | 429.02 / 359.63, [40.56, 97.77], 17.98 | slower, +69.39 |
+| `noBackdrop` | ABC | 549.51 / 525.27, [−14.15, 40.85], 26.26 | undetermined | 572.46 / 519.57, [16.14, 120.59], 25.98 | slower, +52.89 |
+| `panelOut` | ABC | 562.94 / 594.16, [−53.94, 0.14], 29.71 | same within noise | 520.43 / 519.55, [−69.70, 61.88], 25.98 | undetermined |
+| default layers | 2-Set Korean | 61.62 / 55.97, [−1.61, 12.40], 2.80 | undetermined | 1089.97 / 969.30, [9.65, 197.28], 48.46 | slower, +120.67 |
+
+13-legacyLayers, clicks at 20 a side, are all undetermined:
+
+| series | on / off (ms) | interval (ms) | bound (ms) |
+|---|---|---|---|
+| coordinate click | 79.21 / 78.71 | [−14.11, 10.50] | 3.94 |
+| element click | 53.44 / 52.57 | [−1.63, 4.78] | 2.63 |
+| drag | 87.90 / 87.90 | [−14.05, 5.94] | 4.39 |
+
+What the recorded series say, as the design session read them:
+- `legacyLayers` brings back the first build's layers, and its press_key costs +69 ms against the fixed build's +32. So
+  the fixes removed about half the cost.
+- `noBackdrop` is still slower, so the halo's blur is not the cost.
+- `panelOut` is too noisy to show that the panel is the cost.
+- The off medians drifted over the hour: press_key off was 269.09 ms in item 12, 359.63 under `legacyLayers`, and
+  519.57 and 519.55 ms under `noBackdrop` and `panelOut`. So each arm is read only as on against off within its own
+  series.
+- 13-legacyLayers measures something else. From its sample 4 on, TextEdit did not believe it had focus, so its
+  coordinate clicks and drags ran route 3's activation guard on both sides: 32 of its 40 rows carry
+  `activationGuardMs`, against none of the judged run's 80. Its 79–88 ms are not comparable with the judged 5.79 ms.
+- type_text took about 60 ms under 2-Set Korean against about 545 ms under ABC. The records do not say why.
+
+### Where the extra time goes
+
+The attribution (`.doperpowers/sde/2026-10-30-macos-agent-cursor-design/sitting-2-attribution.md`; the Decision Log,
+2026-10-31) places the extra time inside the engine's request, in all three series:
+- the legs outside the engine differ by at most 0.1 ms a call;
+- the socket time outside the request signpost differs by at most 0.05 ms;
+- the cursor's hooks are asynchronous (`cursor.end` to request end, +0.01 ms a call), and no series makes a `main.sync`
+  hop on either side.
+
+The time goes to waits on other processes, and those waits grow while the cursor's panel is on screen and WindowServer
+is busier. Per series:
+- **press_key ×30** (signposted samples, 13 on and 14 off of the 20 a side): the request is +36.15 ms of the call's
+  +37.63 (medians). Of it:
+  - `pressKey.keyboardTarget`, the AX focused-element read into TextEdit: +17.55 ms median, +23.20 mean [8.60, 38.97];
+  - the request prologue before `cursor.begin` (the lock check through `CGSessionCopyCurrentDictionary`, the HID idle
+    read, the app resolve): +6.66 median, +6.70 mean [0.40, 13.16];
+  - `pressKey.post` does not move, and the REPL, service and wire together add +2.50 ms [−1.77, 6.64].
+- **Coordinate click** (+1.87 ms): the judged run has no signposts. Its meta puts the extra between `receivedAt` and
+  the first posted event: +2.00 ms [1.00, 3.00], on the engine's 1 ms clock. The REPL, service and post-and-reply legs
+  are +0.05, +0.07 and −0.25 ms. The nearest signposted click is item 12's gliding click, 400 ms after its prime. There
+  only the prologue moves, +0.57 ms [0.15, 1.88] median. The method body (hit test, window number, post) moves +0.12.
+  The rest of the +1.87 lies inside the request, and these data cannot say where.
+- **Drag** (+0.99 ms): the meta alone, +1.00 ms [0.00, 2.00] between `receivedAt` and the first event. The drag runs
+  about 70 ms after the element click, while the on side's cursor glides to the fixture.
+- **WindowServer's CPU** (the arms and the 2-Set Korean series only; the record starts after item 12). Over each sample's own cells, on minus off:
+
+  | series | median on / off (%) | on − off, 95 % |
+  |---|---|---|
+  | 12-legacyLayers | 44.7 / 14.6 | +30.1 [29.2, 32.0] |
+  | 12-noBackdrop | 35.4 / 10.8 | +24.6 [22.8, 26.3] |
+  | 12-source-2SetKorean | 35.2 / 10.8 | +24.3 [23.4, 26.2] |
+  | 12-panelOut | 14.1 / 13.6 | +0.4 [−0.9, 1.8] |
+  | 13-legacyLayers | 48.2 / 29.1 | +19.1 [12.5, 21.7] |
+
+  `panelOut` runs all of the cursor's engine work with the panel off screen. Under it, WindowServer is the same on and
+  off, and so is press_key (520.43 against 519.55 ms). The cost follows the panel being composited, not the engine's
+  cursor work.
+- **The layer fix**, default against `legacyLayers`, press_key:
+  - the prologue's extra halves, +15.51 to +6.66 ms median;
+  - `keyboardTarget`'s extra falls from +33.95 to +17.55 median, but the intervals overlap;
+  - the cursor's own window-list read shortens from 5.3 to 4.25 ms.
+
+  On the signposted subsets the mean request extras are equal (+44.06 against +43.92 ms), so the halving the judged
+  series show is not resolved interval by interval.
+- **Element click**, for completeness: the request is equal, −0.40 ms [−4.65, 4.47]. Route 3's release takes
+  +4.56 ms on the release queue, after the request has returned, so the earlier fix holds.
+
+The limits:
+- **Signpost coverage.** `log show` after each run kept only the tail. Item 13's signposts begin at 16:18:29Z, so the
+  judged coordinate click and drag (15:59–16:08Z) have none, and the element click's rerun has 9 on and 10 off. The
+  attribution's text says it lost "half" of that rerun; its own counts say about three quarters. Item 12 has 27 of its
+  40 samples, 12-legacyLayers 21, 13-legacyLayers about 25.
+- **The prologue is one interval,** and that its two calls are WindowServer round trips is read from the APIs, not
+  measured.
+- **n is 9 to 14 a side** in every signposted comparison.
+
+The kit's answer, for the next run (the reviews' rounds in `task-8-report.md`):
+- 2a755cda streamed the signposts.
+- d74acb61 took the stream off the timed samples. A live `log stream --signpost` costs the emitting engine 78.6 µs an
+  interval against 1.7, about 24 ms a press_key sample, and more on the cursor-on side.
+- d74acb61, faa5364e and 798a16a4 read the engine's signposts with chunked `log show`, only in the 6 s gaps between
+  samples, with a 1 s settle margin, an overdue read forced after 60 s, each read cut at 15 s and recorded. Coverage is
+  checked per cell, and a series not covered reads incomplete.
+- 4ff410f7 and e24948ad added sub-intervals inside the prologue (`prologue.hidIdle`, `prologue.lockCheck`, …) and the
+  coordinate click (`click.hitTest`, `click.windowNumber`, `click.route`, …), behind an `isEnabled` check.
+
+**The design note, not built** (the Decision Log). There are two candidates for the press_key decision after the next
+run. Both touch the request prologue in `Methods.swift`, #211's overlap, so building either is its own ruling.
+- The lock state: seed it at launch and follow `com.apple.screenIsLocked` and `com.apple.screenIsUnlocked`, instead of
+  a `CGSessionCopyCurrentDictionary` round trip on every request. Re-read it directly before any refusal decision.
+- HID idle: IOHIDSystem's `HIDIdleTime` instead of `CGEventSource.secondsSinceLastEventType`. First measure whether the
+  engine's own posts reset either counter, since the intervention ledger depends on the answer.
+
+### What is left
+
+The next unattended run (the Decision Log, b4fd4a5e) takes about 15–17 minutes and needs the owner's ok first. It runs
+on the scratch build `3cdf06462f92`, head 798a16a4; 1b2d2f96 after it changes only the kit. It must be built and
+approved first: the installed engine is still `b23a6e7a18c6`. The run:
+1. item 1, `drive 1 --no-clip`, then `order-meta`;
+2. `timing typing --still`: press_key with the cursor visible and still after its glide, to show whether the cost is
+   confined to motion;
+3. the `fps60` arm (149c24ef, 1b85e7c0). It caps every cursor animation at 60 Hz on this 120 Hz display and splits
+   held keyframe values out. Its proof that the cap took effect runs before the arm's sessions open, from WindowServer's
+   `FrameUpdate` signposts. On the probe it measured a frame every 16.7 ms against the default's 8.3, and the rock at 60
+   against 114 frames a second. A pose test shows its motion equal to the default's (worst 2.1e-6 pt);
+4. a same-session control of the default arm (`--control`, 1b2d2f96), recorded under `item-12-control` (or
+   `item-13-control` for clicks) and never judged, since the off medians drift;
+5. WindowServer's CPU sampled throughout, and the signposts read as above.
+
+Not in that run, and open:
+- Coordinate click and drag: undetermined at 40, a declared gap for the owner.
+- press_key: the decision waits on the next run; then the design note's two candidates.
+- Item 5's recording clause: no verdict. The next run records no clip.
+- Keep or restore: asked asynchronously, still unanswered. The saved engine stays at `$SAVED`.

@@ -176,7 +176,7 @@ nothing after it disturbs the Mac).
 | 8 Remote devices | `$S remote run --kit "$KIT" --run "$RUN" --out "$OUT"` | watches two cursors, "Loop A" in green and "loop-bravo" in its own colour, and a third session's click land with no cursor | `$KIT/relay.log`, `$KIT/agent.log` (outside the evidence); `remote-cursors` |
 | 13 Click speed | `$S timing clicks --run "$RUN" --out "$OUT"` | for the first minute watches the cursor's start on the fixture's button presses (route 3: it may lag the click by up to 100 ms), then leaves the Mac untouched | 20 samples a side of coordinate clicks, element clicks (with each one's route) and drags; `timing.md`; `route-3-lag` |
 | 12 Typing speed | `$S timing typing --run "$RUN" --out "$OUT"` | leaves the Mac untouched (about 5 minutes) | 20 samples a side of a 200-character type_text and of 30 press_key calls; `timing.md` |
-| 12 under the owner's source | after 12, the owner switches to their own source (2-Set Korean): `$S timing typing --owner-source --run "$RUN" --out "$OUT"`, then back to the Latin layout | leaves the Mac untouched | the same series, recorded with the source's reading in `item-12-owner-source.jsonl`, never judged (`timing-recorded.md`) |
+| 12 under the owner's source | after 12, the owner switches to their own source (ABC on this Mac; superseded by step 8 of the second sitting): `$S timing typing --owner-source --run "$RUN" --out "$OUT"`, then back to the Latin layout | leaves the Mac untouched | the same series, recorded with the source's reading in `item-12-owner-source.jsonl`, never judged (`timing-recorded.md`) |
 
 Every timing series first reads the input source through the approved bundle's probe (`--probe input-source current`)
 with TextEdit in front, and refuses before any session opens unless it is a plain, ASCII-capable keyboard layout whose
@@ -284,7 +284,7 @@ items into `$OUT2` (`$S drive 1-check --out "$OUT2" --dry-run`, likewise 1, 3 an
      then `node bin/cua.mjs engine approve`. The owner answers the key prompt and grants the three permissions.
      `node bin/cua.mjs engine status` must show build `b23a6e7a18c6`, approved, all three grants, `cursor: on` and
      `cursorDebug` null. The saved engine stays at `$SAVED` as before.
-   - Ask the owner, while they are on their usual source (2-Set Korean): "May the kit switch your keyboard's input
+   - Ask the owner, while they are on their usual source (ABC on this Mac, as read at consent): "May the kit switch your keyboard's input
      source by itself: to ABC for the judged timing, back to your own source for the series recorded under it, and
      back to it at the end?" Record the answer: `$S source consent yes --out "$OUT2"` (or `no`). The kit keeps the
      source they are on at that moment as theirs (`$OUT2/input-source.json`).

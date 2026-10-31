@@ -1,0 +1,79 @@
+{"item":"4","at":1793418568425,"kind":"start","steps":23,"dryRun":false}
+{"item":"4","at":1793418568425,"step":1,"kind":"say","text":"Acceptance 4: covered and front"}
+{"item":"4","at":1793418568425,"step":2,"kind":"owner","text":"Drag the Chrome for Testing window so that it covers the right half of the TextEdit window, Chrome in front, then say done."}
+{"item":"4","at":1793418579756,"step":3,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"4","at":1793418579815,"step":4,"kind":"cell","session":"a","label":"left, uncovered","ok":true,"value":{"ms":3.1319579999999974,"point":[122,946]},"inCellMs":3.1601249999999936,"route":3,"engine":"cua"}
+{"item":"4","at":1793418581151,"step":6,"kind":"cell","session":"a","label":"right, under Chrome","ok":true,"value":{"ms":85.81308399999989,"point":[1159,1032]},"inCellMs":85.8269580000001,"route":3,"engine":"cua"}
+{"item":"4","at":1793418582508,"step":8,"kind":"cell","session":"a","label":"back left","ok":true,"value":{"ms":99.35483400000021,"point":[122,1290]},"inCellMs":99.36750000000029,"route":3,"engine":"cua"}
+{"item":"4","at":1793418582508,"step":9,"kind":"watch","id":"covered","text":"wherever the cursor passes under the Chrome window, Chrome's window covers it"}
+{"item":"4","at":1793418588675,"step":11,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"4","at":1793418589163,"step":12,"kind":"cell","session":"a","label":"TextEdit frontmost: its Format menu","ok":true,"value":{"ms":6.381499999999505},"inCellMs":419.9112920000007,"route":1,"engine":"cua"}
+{"item":"4","at":1793418589163,"step":13,"kind":"watch","id":"front-menu","text":"with TextEdit frontmost and its menu open, the cursor shows above the menu"}
+{"item":"4","at":1793418589164,"step":14,"kind":"cue","text":"Press Escape to close the menu."}
+{"item":"4","at":1793418601033,"step":16,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":53.5134590000016,"route":null,"engine":"cua"}
+{"item":"4","at":1793418601185,"step":17,"kind":"task","task":"activate","args":["chrome"],"result":{"scene":"chrome","ok":true,"frontmost":{"pid":11181,"bundleId":"com.google.chrome.for.testing"}}}
+{"item":"4","at":1793418601309,"step":18,"kind":"cell","session":"a","label":"TextEdit in the background: its Format menu","ok":false,"error":"the menu bar item Format is not in the text","inCellMs":76.471292000002,"route":null,"engine":"cua"}
+{"item":"4","at":1793418601310,"step":19,"kind":"watch","id":"background-menu","text":"the agent opening a background TextEdit's menu raises the cursor above the menu"}
+{"item":"4","at":1793418601310,"step":20,"kind":"cue","text":"Click an empty part of the Chrome for Testing window to close the menu."}
+{"item":"4","at":1793418610071,"step":21,"kind":"watch","id":"menu-closed","text":"as the menu closes, with no further request, the cursor drops back under the Chrome window within about a quarter second"}
+{"item":"4","at":1793418614312,"step":23,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"4","at":1793418705028,"kind":"start","steps":23,"dryRun":false}
+{"item":"4","at":1793418705029,"step":1,"kind":"say","text":"Acceptance 4: covered and front"}
+{"item":"4","at":1793418705029,"step":2,"kind":"owner","text":"Drag the Chrome for Testing window so that it covers the right half of the TextEdit window, Chrome in front, then say done."}
+{"item":"4","at":1793418716873,"step":3,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"4","at":1793418717026,"step":4,"kind":"cell","session":"a","label":"left, uncovered","ok":true,"value":{"ms":88.57595900000007,"point":[122,946]},"inCellMs":88.59441700000002,"route":3,"engine":"cua"}
+{"item":"4","at":1793418718396,"step":6,"kind":"cell","session":"a","label":"right, under Chrome","ok":true,"value":{"ms":107.75175000000013,"point":[1159,1032]},"inCellMs":107.76579199999992,"route":3,"engine":"cua"}
+{"item":"4","at":1793418719807,"step":8,"kind":"cell","session":"a","label":"back left","ok":true,"value":{"ms":104.86933399999998,"point":[122,1290]},"inCellMs":104.88470800000005,"route":3,"engine":"cua"}
+{"item":"4","at":1793418719807,"step":9,"kind":"watch","id":"covered","text":"wherever the cursor passes under the Chrome window, Chrome's window covers it"}
+{"item":"4","at":1793418725979,"step":11,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"4","at":1793418726493,"step":12,"kind":"cell","session":"a","label":"TextEdit frontmost: its Format menu","ok":true,"value":{"ms":2.5646670000005543},"inCellMs":440.13279200000034,"route":1,"engine":"cua"}
+{"item":"4","at":1793418726493,"step":13,"kind":"watch","id":"front-menu","text":"with TextEdit frontmost and its menu open, the cursor shows above the menu"}
+{"item":"4","at":1793418726494,"step":14,"kind":"cue","text":"Press Escape to close the menu."}
+{"item":"4","at":1793418738512,"step":16,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":67.46808400000009,"route":null,"engine":"cua"}
+{"item":"4","at":1793418738694,"step":17,"kind":"task","task":"activate","args":["chrome"],"result":{"scene":"chrome","ok":true,"frontmost":{"pid":11181,"bundleId":"com.google.chrome.for.testing"}}}
+{"item":"4","at":1793418738833,"step":18,"kind":"cell","session":"a","label":"TextEdit in the background: its Format menu","ok":false,"error":"the menu bar item Format is not in the text","inCellMs":74.96508300000278,"route":null,"engine":"cua"}
+{"item":"4","at":1793418738833,"step":19,"kind":"watch","id":"background-menu","text":"the agent opening a background TextEdit's menu raises the cursor above the menu"}
+{"item":"4","at":1793418738833,"step":20,"kind":"cue","text":"Click an empty part of the Chrome for Testing window to close the menu."}
+{"item":"4","at":1793418747982,"step":21,"kind":"watch","id":"menu-closed","text":"as the menu closes, with no further request, the cursor drops back under the Chrome window within about a quarter second"}
+{"item":"4","at":1793418752229,"step":23,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"4","at":1793418931765,"kind":"start","steps":23,"dryRun":false}
+{"item":"4","at":1793418931766,"step":1,"kind":"say","text":"Acceptance 4: covered and front"}
+{"item":"4","at":1793418931766,"step":2,"kind":"owner","text":"Drag the Chrome for Testing window so that it covers the right half of the TextEdit window, Chrome in front, then say done."}
+{"item":"4","at":1793418943224,"step":3,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"4","at":1793418943334,"step":4,"kind":"cell","session":"a","label":"left, uncovered","ok":true,"value":{"ms":56.81866599999995,"point":[122,946]},"inCellMs":56.842375000000004,"route":3,"engine":"cua"}
+{"item":"4","at":1793418944706,"step":6,"kind":"cell","session":"a","label":"right, under Chrome","ok":true,"value":{"ms":102.5780830000001,"point":[1159,1032]},"inCellMs":102.59270900000001,"route":3,"engine":"cua"}
+{"item":"4","at":1793418946082,"step":8,"kind":"cell","session":"a","label":"back left","ok":true,"value":{"ms":111.912417,"point":[122,1290]},"inCellMs":111.92766700000038,"route":3,"engine":"cua"}
+{"item":"4","at":1793418946082,"step":9,"kind":"watch","id":"covered","text":"wherever the cursor passes under the Chrome window, Chrome's window covers it"}
+{"item":"4","at":1793418952252,"step":11,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"4","at":1793418952742,"step":12,"kind":"cell","session":"a","label":"TextEdit frontmost: its Format menu","ok":true,"value":{"ms":5.488540999998804},"inCellMs":431.18995899999936,"route":1,"engine":"cua"}
+{"item":"4","at":1793418952742,"step":13,"kind":"watch","id":"front-menu","text":"with TextEdit frontmost and its menu open, the cursor shows above the menu"}
+{"item":"4","at":1793418952742,"step":14,"kind":"cue","text":"Press Escape to close the menu."}
+{"item":"4","at":1793418965191,"step":16,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":125.32983299999978,"route":null,"engine":"cua"}
+{"item":"4","at":1793418965344,"step":17,"kind":"task","task":"activate","args":["chrome"],"result":{"scene":"chrome","ok":true,"frontmost":{"pid":11181,"bundleId":"com.google.chrome.for.testing"}}}
+{"item":"4","at":1793418965472,"step":18,"kind":"cell","session":"a","label":"TextEdit in the background: its Format menu","ok":false,"error":"the menu bar item Format is not in the text","inCellMs":79.44945899999948,"route":null,"engine":"cua"}
+{"item":"4","at":1793418965472,"step":19,"kind":"watch","id":"background-menu","text":"the agent opening a background TextEdit's menu raises the cursor above the menu"}
+{"item":"4","at":1793418965472,"step":20,"kind":"cue","text":"Click an empty part of the Chrome for Testing window to close the menu."}
+{"item":"4","at":1793418974239,"step":21,"kind":"watch","id":"menu-closed","text":"as the menu closes, with no further request, the cursor drops back under the Chrome window within about a quarter second"}
+{"item":"4","at":1793418978475,"step":23,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"4","at":1793419137339,"kind":"start","steps":23,"dryRun":false}
+{"item":"4","at":1793419137340,"step":1,"kind":"say","text":"Acceptance 4: covered and front"}
+{"item":"4","at":1793419137340,"step":2,"kind":"owner","text":"Drag the Chrome for Testing window so that it covers the right half of the TextEdit window, Chrome in front, then say done."}
+{"item":"4","at":1793419149972,"step":3,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"4","at":1793419150089,"step":4,"kind":"cell","session":"a","label":"left, uncovered","ok":true,"value":{"ms":59.43312500000002,"point":[122,946]},"inCellMs":59.458708,"route":3,"engine":"cua"}
+{"item":"4","at":1793419151407,"step":6,"kind":"cell","session":"a","label":"right, under Chrome","ok":true,"value":{"ms":61.77029199999993,"point":[1159,1032]},"inCellMs":61.784124999999904,"route":3,"engine":"cua"}
+{"item":"4","at":1793419152764,"step":8,"kind":"cell","session":"a","label":"back left","ok":true,"value":{"ms":86.49737499999992,"point":[122,1290]},"inCellMs":86.51129200000014,"route":3,"engine":"cua"}
+{"item":"4","at":1793419152764,"step":9,"kind":"watch","id":"covered","text":"wherever the cursor passes under the Chrome window, Chrome's window covers it"}
+{"item":"4","at":1793419467870,"kind":"start","steps":17,"dryRun":false}
+{"item":"4","at":1793419467871,"step":1,"kind":"say","text":"Acceptance 4: covered and front"}
+{"item":"4","at":1793419467871,"step":2,"kind":"owner","text":"Drag the Chrome for Testing window so that it covers the right half of the TextEdit window, Chrome in front, then say done."}
+{"item":"4","at":1793419479065,"step":3,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"4","at":1793419479127,"step":4,"kind":"cell","session":"a","label":"left, uncovered (a scroll)","ok":true,"value":{"ms":3.6932919999999854},"inCellMs":3.7038749999999823,"route":"2'","engine":"cua"}
+{"item":"4","at":1793419480393,"step":6,"kind":"cell","session":"a","label":"right, under Chrome (a scroll)","ok":true,"value":{"ms":3.88412500000004},"inCellMs":3.892291000000114,"route":"2'","engine":"cua"}
+{"item":"4","at":1793419481653,"step":8,"kind":"cell","session":"a","label":"back left (a scroll)","ok":true,"value":{"ms":3.6749580000000606},"inCellMs":3.6829999999999927,"route":"2'","engine":"cua"}
+{"item":"4","at":1793419481654,"step":9,"kind":"watch","id":"covered","text":"wherever the cursor passes under the Chrome window, Chrome's window covers it"}
+{"item":"4","at":1793419487839,"step":11,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"4","at":1793419487902,"step":12,"kind":"cell","session":"a","label":"TextEdit frontmost: the cursor shown near the menu bar","ok":true,"value":{"ms":6.034082999998645},"inCellMs":6.044749999999112,"route":"2'","engine":"cua"}
+{"item":"4","at":1793419487902,"step":13,"kind":"cue","text":"Now open TextEdit's Format menu in the menu bar, and keep it open."}
+{"item":"4","at":1793419496646,"step":14,"kind":"watch","id":"front-menu","text":"with TextEdit frontmost and its menu open, the cursor shows above the menu"}
+{"item":"4","at":1793419496647,"step":15,"kind":"cue","text":"Press Escape to close the menu."}
+{"item":"4","at":1793419507140,"step":17,"kind":"close","session":"a","exit":{"code":0,"signal":null}}

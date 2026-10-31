@@ -1,0 +1,18 @@
+{"item":"1","id":"second-target","verdict":"pass","note":"owner: glide to the checkbox and dip seen","at":"2026-10-31T03:38:03.368Z"}
+{"item":"1","id":"first-target","verdict":"pass","note":"owner, second run (first run not seen)","at":"2026-10-31T03:39:16.243Z"}
+{"item":"1","id":"second-target","verdict":"pass","note":"owner: glide and dip seen","at":"2026-10-31T03:39:16.325Z"}
+{"item":"2","id":"two-cursors","verdict":"pass","note":"owner: cursor235 and cua_repl pills, two colours","at":"2026-10-31T03:40:58.987Z"}
+{"item":"2","id":"two-cursors","verdict":"pass","note":"owner: cursor235 and cua_repl, two colours","at":"2026-10-31T03:41:57.701Z"}
+{"item":"2","id":"maws-label","verdict":"pass","note":"owner, second run: Research in blue","at":"2026-10-31T03:41:57.810Z"}
+{"item":"3","id":"fade","verdict":"pass","note":"owner, run 1","at":"2026-10-31T03:45:50.692Z"}
+{"item":"3","id":"fade-in","verdict":"pass","note":"owner, run 1","at":"2026-10-31T03:45:50.771Z"}
+{"item":"3","id":"fade","verdict":"pass","note":"owner, run 1","at":"2026-10-31T03:47:52.628Z"}
+{"item":"3","id":"fade-in","verdict":"pass","note":"owner, run 1","at":"2026-10-31T03:47:52.711Z"}
+{"item":"3","id":"thinking","verdict":"pass","note":"owner, run 2","at":"2026-10-31T03:47:52.793Z"}
+{"item":"3","id":"taken-over","verdict":"pass","note":"owner, run 2","at":"2026-10-31T03:47:52.876Z"}
+{"item":"3","id":"taken-over-cleared","verdict":"pass","note":"owner, run 2","at":"2026-10-31T03:47:52.955Z"}
+{"item":"3","id":"end-task","verdict":"pass","note":"owner, run 2","at":"2026-10-31T03:47:53.036Z"}
+{"item":"4","id":"covered","verdict":"pass","note":"owner, run with scrolls (clicks raised TextEdit by route 3)","at":"2026-10-31T04:08:54.822Z"}
+{"item":"4","id":"front-menu","verdict":"fail","note":"owner: cursor did not show with TextEdit frontmost and the owner-opened Format menu","at":"2026-10-31T04:08:54.915Z"}
+{"item":"10","id":"device-off","verdict":"pass","note":"owner: no cursor; the click brought TextEdit in front (#200)","at":"2026-10-31T04:14:16.233Z"}
+{"item":"10","id":"session-off","verdict":"pass","note":"owner: one cursor only","at":"2026-10-31T04:14:16.316Z"}

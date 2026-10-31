@@ -1,0 +1,32 @@
+{"item":"2","at":1793417973879,"kind":"start","steps":15,"dryRun":false}
+{"item":"2","at":1793417973879,"step":1,"kind":"say","text":"Acceptance 2: two sessions acting at once"}
+{"item":"2","at":1793417975322,"step":2,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"2","at":1793417976488,"step":3,"kind":"open","session":"b","env":{"CLAUDE_CODE_SESSION_ID":"1ea561bc-a60d-4437-a6ac-fa7cd5eda54f"},"engine":"cua"}
+{"item":"2","at":1793417977022,"step":4,"kind":"cell","session":"b","label":"b: the page's checkbox","ok":true,"value":{"ms":7.553833000000054,"before":"0","after":"1","changedWithinMs":355.76470800000004},"inCellMs":420.2923750000001,"route":null,"engine":"cua"}
+{"item":"2","at":1793417977112,"step":4,"kind":"cell","session":"a","label":"a: TextEdit alignment","ok":true,"value":{"ms":76.54874999999993,"clicked":"align center","after":"1","changedWithinMs":492.6066659999999},"inCellMs":563.6512079999998,"route":null,"engine":"cua"}
+{"item":"2","at":1793417978505,"step":6,"kind":"cell","session":"b","label":"b: TextEdit text","ok":true,"value":{"ms":68.12958299999991,"point":[732,1204]},"inCellMs":68.14941599999975,"route":3,"engine":"cua"}
+{"item":"2","at":1793417978846,"step":6,"kind":"cell","session":"a","label":"a: the page's checkbox","ok":true,"value":{"ms":5.579958000000261,"before":"1","after":"0","changedWithinMs":378.8344579999998},"inCellMs":466.51470900000004,"route":null,"engine":"cua"}
+{"item":"2","at":1793417978847,"step":7,"kind":"watch","id":"two-cursors","text":"two cursors, each in its own colour; a's pill reads this session's sminos name, b's the other session's sminos name"}
+{"item":"2","at":1793417985089,"step":9,"kind":"close","session":"b","exit":{"code":0,"signal":null}}
+{"item":"2","at":1793417986395,"step":10,"kind":"open","session":"c","env":{"CUA_CURSOR_LABEL":"Research","CUA_CURSOR_COLOR":"#2f6feb"},"engine":"cua"}
+{"item":"2","at":1793417987134,"step":11,"kind":"cell","session":"c","label":"c: the page's checkbox","ok":true,"value":{"ms":65.9046659999999,"before":"0","after":"1","changedWithinMs":494.39474999999993},"inCellMs":585.792666,"route":null,"engine":"cua"}
+{"item":"2","at":1793417987163,"step":11,"kind":"cell","session":"a","label":"a: TextEdit alignment","ok":true,"value":{"ms":181.7013330000009,"clicked":"align center","after":"1","changedWithinMs":583.6409170000006},"inCellMs":676.1213749999988,"route":null,"engine":"cua"}
+{"item":"2","at":1793417987163,"step":12,"kind":"watch","id":"maws-label","text":"c's pill reads \"Research\" in blue (#2f6feb); a's is unchanged"}
+{"item":"2","at":1793417993401,"step":14,"kind":"close","session":"c","exit":{"code":0,"signal":null}}
+{"item":"2","at":1793417993672,"step":15,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"2","at":1793418076470,"kind":"start","steps":15,"dryRun":false}
+{"item":"2","at":1793418076470,"step":1,"kind":"say","text":"Acceptance 2: two sessions acting at once"}
+{"item":"2","at":1793418077855,"step":2,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"2","at":1793418078977,"step":3,"kind":"open","session":"b","env":{"CLAUDE_CODE_SESSION_ID":"1ea561bc-a60d-4437-a6ac-fa7cd5eda54f"},"engine":"cua"}
+{"item":"2","at":1793418079595,"step":4,"kind":"cell","session":"b","label":"b: the page's checkbox","ok":true,"value":{"ms":55.38474999999994,"before":"1","after":"0","changedWithinMs":406.5804999999999},"inCellMs":490.36354200000005,"route":null,"engine":"cua"}
+{"item":"2","at":1793418079610,"step":4,"kind":"cell","session":"a","label":"a: TextEdit alignment","ok":true,"value":{"ms":110.9720420000001,"clicked":"align left","after":"1","changedWithinMs":514.1241250000003},"inCellMs":570.4997089999997,"route":null,"engine":"cua"}
+{"item":"2","at":1793418080944,"step":6,"kind":"cell","session":"b","label":"b: TextEdit text","ok":true,"value":{"ms":8.770207999999911,"point":[732,1204]},"inCellMs":8.791749999999865,"route":3,"engine":"cua"}
+{"item":"2","at":1793418081394,"step":6,"kind":"cell","session":"a","label":"a: the page's checkbox","ok":true,"value":{"ms":57.843875000000025,"before":"0","after":"1","changedWithinMs":425.5956249999999},"inCellMs":519.841375,"route":null,"engine":"cua"}
+{"item":"2","at":1793418081394,"step":7,"kind":"watch","id":"two-cursors","text":"two cursors, each in its own colour; a's pill reads this session's sminos name, b's the other session's sminos name"}
+{"item":"2","at":1793418087637,"step":9,"kind":"close","session":"b","exit":{"code":0,"signal":null}}
+{"item":"2","at":1793418089037,"step":10,"kind":"open","session":"c","env":{"CUA_CURSOR_LABEL":"Research","CUA_CURSOR_COLOR":"#2f6feb"},"engine":"cua"}
+{"item":"2","at":1793418089627,"step":11,"kind":"cell","session":"c","label":"c: the page's checkbox","ok":true,"value":{"ms":55.0066250000001,"before":"1","after":"0","changedWithinMs":389.87087500000007},"inCellMs":459.36695799999995,"route":null,"engine":"cua"}
+{"item":"2","at":1793418089675,"step":11,"kind":"cell","session":"a","label":"a: TextEdit alignment","ok":true,"value":{"ms":106.58216699999866,"clicked":"align center","after":"1","changedWithinMs":488.6255000000001},"inCellMs":560.6083749999998,"route":null,"engine":"cua"}
+{"item":"2","at":1793418089675,"step":12,"kind":"watch","id":"maws-label","text":"c's pill reads \"Research\" in blue (#2f6feb); a's is unchanged"}
+{"item":"2","at":1793418095913,"step":14,"kind":"close","session":"c","exit":{"code":0,"signal":null}}
+{"item":"2","at":1793418096169,"step":15,"kind":"close","session":"a","exit":{"code":0,"signal":null}}

@@ -1,0 +1,19 @@
+{"item":"10","at":1793419965628,"kind":"start","steps":20,"dryRun":false}
+{"item":"10","at":1793419965628,"step":1,"kind":"say","text":"Acceptance 10: the off switches"}
+{"item":"10","at":1793419965629,"step":2,"kind":"task","task":"engine-json-off","args":[],"result":{"ok":true,"file":"/Users/new/.config/cua/engine.json","existed":false}}
+{"item":"10","at":1793419965734,"step":3,"kind":"task","task":"engine-stop","args":[],"result":{"ok":true,"wasRunning":true,"pid":13591}}
+{"item":"10","at":1793419967939,"step":4,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"10","at":1793419968624,"step":5,"kind":"cell","session":"a","label":"with \"cursor\": false in engine.json","ok":true,"value":{"ms":105.14212500000008,"clicked":"align center","after":"1","changedWithinMs":570.064666},"inCellMs":625.6466670000002,"route":null,"engine":"cua"}
+{"item":"10","at":1793419968624,"step":6,"kind":"watch","id":"device-off","text":"no cursor appears"}
+{"item":"10","at":1793419968840,"step":7,"kind":"task","task":"engine-status","args":["off"],"result":{"ok":true,"cursor":"off","line":"cursor: off (engine.json)","build":"2f9b3bf06ca45450491f6941d7cdf60c354f29e04a5b84ecf2dea45de192ffc0","approved":true}}
+{"item":"10","at":1793419969078,"step":8,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"10","at":1793419969079,"step":9,"kind":"task","task":"engine-json-restore","args":[],"result":{"ok":true,"removed":true}}
+{"item":"10","at":1793419969241,"step":10,"kind":"task","task":"engine-stop","args":[],"result":{"ok":true,"wasRunning":true,"pid":81734}}
+{"item":"10","at":1793419970961,"step":11,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"10","at":1793419971919,"step":12,"kind":"open","session":"b","env":{"CUA_CURSOR":"0"},"engine":"cua"}
+{"item":"10","at":1793419972647,"step":13,"kind":"cell","session":"b","label":"b, with CUA_CURSOR=0","ok":true,"value":{"ms":202.08066700000006,"clicked":"align left","after":"1","changedWithinMs":600.8056250000001},"inCellMs":666.245416,"route":null,"engine":"cua"}
+{"item":"10","at":1793419974288,"step":15,"kind":"cell","session":"a","label":"a, the default","ok":true,"value":{"ms":14.175125000000662,"point":[732,1204]},"inCellMs":14.194416999999703,"route":3,"engine":"cua"}
+{"item":"10","at":1793419974288,"step":16,"kind":"watch","id":"session-off","text":"only a's cursor appeared; b acted with none"}
+{"item":"10","at":1793419974641,"step":17,"kind":"task","task":"engine-status","args":["on"],"result":{"ok":true,"cursor":"on","line":"cursor: on","build":"2f9b3bf06ca45450491f6941d7cdf60c354f29e04a5b84ecf2dea45de192ffc0","approved":true}}
+{"item":"10","at":1793419980885,"step":19,"kind":"close","session":"b","exit":{"code":0,"signal":null}}
+{"item":"10","at":1793419981121,"step":20,"kind":"close","session":"a","exit":{"code":0,"signal":null}}

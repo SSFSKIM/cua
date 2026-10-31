@@ -142,7 +142,7 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
       },
       // The input source selected for a series from the owner's recorded answer, and read back (./input-source.mjs),
       // only while the scene's own launch has its run window on top of the frontmost app.
-      'select-source': async ([which, scene], ctx) => switchSource({out, which, sources: sources ??= liveSourceSwitch(), targetProblem: sourceTarget(scene),
+      'select-source': async ([which, scene, id], ctx) => switchSource({out, which, id: id ?? null, sources: sources ??= liveSourceSwitch(), targetProblem: sourceTarget(scene),
         beforeSelect: () => { ctx.sourceChanged = true; ctx.sourceScene = scene; }}),
       'watch-start': async () => ({ok: true, watch: startWatch(enginePaths().bundle, out)}),
       'watch-stop': async (_args, ctx) => {

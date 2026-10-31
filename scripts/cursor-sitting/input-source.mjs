@@ -28,13 +28,15 @@ export function writeConsent(out, {consent, reading, now = () => new Date().toIS
   return record;
 }
 
-// The source to select for `which` ('latin': the judged series; 'owner': the owner's own), or null when the owner gave
-// no yes (nothing is switched then).
-export function sourceToSelect(consent, which) {
+// The source to select for `which` ('latin': the judged series; 'owner': the owner's own; 'named': `id`, a recorded
+// series under a source the design session names), or null when the owner gave no yes (nothing is switched then).
+export function sourceToSelect(consent, which, id = null) {
+  if (which === 'named' && !id) throw new Error('a named selection names its source');
   if (consent?.consent !== true) return null;
   if (which === 'latin') return LATIN_SOURCE;
   if (which === 'owner') return consent.owner?.id ?? null;
-  throw new Error('the source to select is latin or owner');
+  if (which === 'named') return id;
+  throw new Error('the source to select is latin, owner or named');
 }
 
 // Why a selection's answer ({requested, status, current}) does not hold, or null: the source must be enabled, the
@@ -72,8 +74,8 @@ export function sourceTargetProblem({record, problem, frontmost}) {
 // selected, when `targetProblem` names one. `beforeSelect` runs right before the TIS call, after the consent and the
 // target are checked, so a caller learns of every attempt (a failed read-back included) and of nothing else.
 // -> the task's result.
-export function switchSource({out, which, sources, targetProblem = null, beforeSelect = () => {}}) {
-  const consent = readConsent(out), id = sourceToSelect(consent, which);
+export function switchSource({out, which, id: named = null, sources, targetProblem = null, beforeSelect = () => {}}) {
+  const consent = readConsent(out), id = sourceToSelect(consent, which, named);
   if (!id) return {ok: true, which, switched: false, reason: consent ? 'the owner said no: they switch by hand' : 'no answer recorded (source consent): nothing is switched'};
   if (targetProblem) return {ok: false, which, switched: false, requested: id, problem: `${id} not selected: ${targetProblem}`};
   beforeSelect();

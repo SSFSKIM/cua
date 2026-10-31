@@ -251,7 +251,7 @@ REC="$HOME/.local/share/cua-235/recordings"; mkdir -p "$REC"   # item 1's clip a
 | 5. Item 13: coordinate click and drag at 40, element click at 20 | 10 (+10 if element click reruns at 40) | |
 | 6. Item 12: type_text and press_key at 20 | 6 (+10 if one reruns at 40) | |
 | 7. The `legacyLayers` arm, clicks and typing, 20 each | 12 | |
-| 8. The owner's Korean series, 20 | 6 | |
+| 8. The input-method series under 2-Set Korean (the owner's own source is ABC), 20 | 6 | |
 | 9. The source back, the scenes down, the verdicts | 1 | |
 | **Afterwards** (no one at the Mac) | | |
 | 10. Item 1's order from the clip (the operator) | 15–25 | |
@@ -380,9 +380,16 @@ series whose scene is gone from the front (a locked screen, say) rather than tim
    `$S timing typing --arm legacyLayers --run "$RUN" --out "$OUT2"` (20 each, under ABC). The arm restores the first
    build's layers. If the old cost comes back with it, that confirms the cause rather than a pass by noise. The other
    arms run only if 5 or 6 fails, and their numbers go to the design session.
-8. **The owner's source, recorded.** `$S timing typing --owner-source --run "$RUN" --out "$OUT2"`. The kit selects the
-   owner's own source (the one `source consent` kept) and records its reading; its press_key series is the one
-   compared.
+8. **The input-method series, recorded, under 2-Set Korean.** A change of plan at the sitting (2026-10-31): the owner's
+   own source, as `source consent` recorded it, turned out to be ABC, so `--owner-source` would repeat the judged
+   condition. By the design session's ruling, the series runs under 2-Set Korean instead, enabled on this Mac:
+   `$S timing typing --source com.apple.inputmethod.Korean.2SetKorean --run "$RUN" --out "$OUT2"`.
+   - It is recorded under its own item, `item-12-source-2SetKorean.jsonl`, and never judged (`timing-recorded.md`);
+     its press_key series is the one compared.
+   - It is selected like every series: TextEdit in front, the target guard's check, the read-back. Its reading is kept
+     in the run's `input-source` row.
+   - After the series, and on a failure alike, the owner's recorded source (ABC) is selected again and read back.
+     With another window on top at a failure it is left as it is, printed with `!!!`; then run `source restore`.
 9. **The source back, the scenes down, the verdicts.** `$S source restore --out "$OUT2"` (the owner's source, read
    back; exit 1 says it is not), `$SC down all --run "$RUN"`, `$S judge --out "$OUT2"`, `$S summary --out "$OUT2"`,
    then `kill "$(cat "$SIT/caffeinate.pid")"`.

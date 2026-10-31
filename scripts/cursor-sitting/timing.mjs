@@ -42,9 +42,11 @@ export function latinSourceProblem(reading) {
   return null;
 }
 
-// The item a series records under: the judged item (12 or 13), or that item with the arm's name or `owner-source`.
-export function timingItem(kind, {arm = null, ownerSource = false} = {}) {
+// The item a series records under: the judged item (12 or 13), or that item with the arm's name, `owner-source`, or
+// `source-<the named source's last part>` (com.apple.inputmethod.Korean.2SetKorean: 12-source-2SetKorean).
+export function timingItem(kind, {arm = null, ownerSource = false, source = null} = {}) {
   const item = kind === 'typing' ? '12' : '13';
+  if (source) return `${item}-source-${source.split('.').at(-1).replace(/[^\w-]/g, '-')}`;
   return arm ? `${item}-${arm}` : ownerSource ? `${item}-owner-source` : item;
 }
 
@@ -78,10 +80,14 @@ const sessions = scenes => [
 
 // The steps of `kind` with `samples` a side (./runner.mjs runs them): a number for every series, or {series name: n}
 // (sampleCounts); `arm`, one of CURSOR_ARMS, or `ownerSource`.
-export function timingSteps(kind, samples, {arm = null, ownerSource = false} = {}) {
+// `source`: a recorded typing series under that named input source (the design session's ruling, 2026-10-31: the
+// owner's own source is ABC, so the input-method series runs under 2-Set Korean), selected and read back like the
+// others, the owner's recorded source selected again after it (and, on a failure, by the runner's cleanup).
+export function timingSteps(kind, samples, {arm = null, ownerSource = false, source = null} = {}) {
   if (!SERIES[kind]) throw new Error('timing takes typing or clicks');
   if (arm !== null && !CURSOR_ARMS.includes(arm)) throw new Error(`the arm is one of ${CURSOR_ARMS.join(', ')}`);
-  if (arm !== null && ownerSource) throw new Error('an arm and the owner\'s source are recorded one at a time');
+  if ([arm !== null, ownerSource, source !== null].filter(Boolean).length > 1) throw new Error('an arm, the owner\'s source and a named source are recorded one at a time');
+  if (source !== null && kind !== 'typing') throw new Error('a named source is for the typing series');
   const counts = typeof samples === 'number' ? Object.fromEntries(SERIES[kind].map(name => [name, samples])) : samples;
   if (!Object.keys(counts).length || Object.entries(counts).some(([name, n]) => !SERIES[kind].includes(name) || !Number.isInteger(n) || n < 1))
     throw new Error(`the counts name ${kind} series with a whole number of samples each`);
@@ -100,7 +106,8 @@ export function timingSteps(kind, samples, {arm = null, ownerSource = false} = {
       ...(covers.includes('drag') ? [{run: side, cell: DRAG('textedit', [0.2, 0.5], [0.8, 0.6]), label: `drag ${side} ${i}`, sample: {side, i, series: 'drag'}}] : []),
     ];
   };
-  const what = arm ? `, the cursor's ${arm} arm (recorded, not judged)` : ownerSource ? ', under the owner\'s own input source (recorded, not judged)' : '';
+  const what = arm ? `, the cursor's ${arm} arm (recorded, not judged)` : ownerSource ? ', under the owner\'s own input source (recorded, not judged)'
+    : source ? `, under the input source ${source} (recorded, not judged)` : '';
   return [
     // The series this run asks for, recorded first: a run that fails before its first sample still supersedes them
     // (seriesRuns), so an earlier verdict on them never outlives a rerun that was asked for.
@@ -109,8 +116,8 @@ export function timingSteps(kind, samples, {arm = null, ownerSource = false} = {
     {task: 'activate', args: ['textedit'], required: true},
     // With the owner's yes (./input-source.mjs), the source is selected here, only once the scene's own launch and run
     // window are checked to be on top (the target guard's check), and read back; then the series' own check, as before.
-    {task: 'select-source', args: [ownerSource ? 'owner' : 'latin', 'textedit'], required: true},
-    {task: 'input-source', args: [ownerSource ? 'record' : 'latin'], required: true},
+    {task: 'select-source', args: source ? ['named', 'textedit', source] : [ownerSource ? 'owner' : 'latin', 'textedit'], required: true},
+    {task: 'input-source', args: [ownerSource || source ? 'record' : 'latin'], required: true},
     ...(arm ? [{task: 'engine-json-arm', args: [arm]}, {task: 'engine-stop'}] : []),
     ...sessions(kind === 'typing' ? ['textedit'] : ['textedit', 'electron']),
     ...(arm ? [{task: 'engine-status', args: ['on', arm], required: true}] : []),
@@ -119,6 +126,7 @@ export function timingSteps(kind, samples, {arm = null, ownerSource = false} = {
     ...sampleOrder(longest).flatMap((pair, i) => pair.flatMap(side => [...sample(side, i), {wait: SAMPLE_GAP_MS}])),
     {close: 'off'}, {close: 'on'},
     ...(arm ? [{task: 'engine-json-restore'}, {task: 'engine-stop'}] : []),
+    ...(source ? [{task: 'select-source', args: ['owner', 'textedit'], required: true}] : []),
   ];
 }
 

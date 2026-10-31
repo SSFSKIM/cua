@@ -29,7 +29,7 @@ test('ABC for the judged series, the owner\'s own for the recorded ones, nothing
   assert.equal(sourceToSelect(yes, 'owner'), KOREAN.id);
   assert.equal(sourceToSelect({...yes, consent: false}, 'latin'), null);
   assert.equal(sourceToSelect(null, 'owner'), null);
-  assert.throws(() => sourceToSelect(yes, 'other'), /latin or owner/);
+  assert.throws(() => sourceToSelect(yes, 'other'), /latin, owner or named/);
 });
 
 test('a selection holds only when the source read back is the one selected', () => {
@@ -121,5 +121,20 @@ test('the restore after a failure: also after an ordinary failed result, and nev
   assert.equal(left.left, true);
   assert.match(left.problem, /left as it is: an owner window is on top; .*source restore/);
   assert.deepEqual(asked, [KOREAN.id], 'nothing selected onto the owner\'s window');
+  rmSync(out, {recursive: true, force: true});
+});
+
+test('a named source is selected only with the owner\'s yes, and read back like the others', () => {
+  const id = 'com.apple.inputmethod.Korean.2SetKorean';
+  assert.equal(sourceToSelect({consent: true, owner: {id: LATIN_SOURCE}}, 'named', id), id);
+  assert.equal(sourceToSelect({consent: false, owner: {id: LATIN_SOURCE}}, 'named', id), null);
+  assert.throws(() => sourceToSelect({consent: true, owner: {id: LATIN_SOURCE}}, 'named'), /names its source/);
+  const out = mkdtempSync(join(tmpdir(), 'cua-235-src-'));
+  writeConsent(out, {consent: true, reading: {id: LATIN_SOURCE, name: 'ABC'}});
+  const asked = [];
+  const result = switchSource({out, which: 'named', id, sources: {select: s => { asked.push(s); return {requested: s, status: 0, current: {id: s}}; }}});
+  assert.equal(result.ok, true);
+  assert.deepEqual(asked, [id]);
+  assert.equal(switchSource({out, which: 'named', id, sources: {select: s => ({requested: s, status: 0, current: {id: LATIN_SOURCE}})}}).ok, false, 'a wrong read-back fails closed');
   rmSync(out, {recursive: true, force: true});
 });

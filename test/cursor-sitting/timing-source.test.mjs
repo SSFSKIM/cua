@@ -104,3 +104,16 @@ test('a selection that does not read back stops the series before the check and 
   await assert.rejects(runSteps(timingSteps('clicks', 2), {item: '13', out, io, log: () => {}}), /select-source refused: .*current source reads/);
   assert.deepEqual(log, ['cleanup'], 'neither checked nor opened');
 });
+
+const KOREAN_ID = 'com.apple.inputmethod.Korean.2SetKorean';
+test('a typing series under a named source: recorded under its own item, selected and checked like the others, the owner\'s put back after it', () => {
+  assert.equal(timingItem('typing', {source: KOREAN_ID}), '12-source-2SetKorean');
+  const steps = timingSteps('typing', 2, {source: KOREAN_ID});
+  const tasks = steps.filter(s => s.task).map(s => [s.task, ...(s.args ?? [])].join(' '));
+  assert.deepEqual(tasks, ['activate textedit', `select-source named textedit ${KOREAN_ID}`, 'input-source record', 'activate textedit', 'select-source owner textedit']);
+  assert.ok(steps.filter(s => s.task === 'select-source').every(s => s.required === true));
+  assert.ok(steps.findIndex(s => s.task === 'select-source' && s.args[0] === 'owner') > steps.findIndex(s => s.close === 'on'), 'the owner\'s source comes back after the series');
+  assert.throws(() => timingSteps('typing', 2, {source: KOREAN_ID, ownerSource: true}), /one at a time/);
+  assert.throws(() => timingSteps('typing', 2, {source: KOREAN_ID, arm: 'noRock'}), /one at a time/);
+  assert.throws(() => timingSteps('clicks', 2, {source: KOREAN_ID}), /typing/);
+});

@@ -1101,3 +1101,8 @@ has no line after 21:37:27Z, and its `scenes.log` no `down` rows. `a457ad42dac7`
 3. **The pull request**, with press_key's limit and the click gap among its limits.
 
 Not in that slot, and open: item 5's recording clause still has no verdict, since no clip is recorded.
+
+### The last slot and item 1's declaration (22:40–22:49Z)
+
+The owner said "ready now" at 22:40Z; the slot started on dd7a09235885 (cf6c7b67, approved 22:30:18Z with no prompt). The owner then asked the operator to hide Chrome and cmux ("hie them both", confirmed through the design session: "Yes, cursor235 may hide them"); they were hidden at 22:48:10Z through System Events and shown again at 22:49:12Z. The cap check on dd7a09235885 read capped: the default a frame every 16.7 ms (60.6 Hz, rock 66) against the uncapped arm's 8.3 ms (118.8 Hz, rock 114), on a display at 0.7 Hz before it (`sitting-2026-10-31e/probe.log`). Item 1 was refused at its first session's open, nothing sent: the guard found no on-screen window for Chrome for Testing (record 47854), which had been up since 22:40:54Z; the guard keeps no window reading, so why is not recorded (#239). By the design session's ruling the order is declared from the records (the spec's Decision Log; `.doperpowers/sde/2026-10-30-macos-agent-cursor-design/item-1-order-report.md`): the owner's watch at the first sitting on 2f9b3bf06ca4, and 184 of 184 decidable cursor-on clicks on b23a6e7a18c6 and 3cdf06462f92 done more than a frame before the glide's planned arrival.
+

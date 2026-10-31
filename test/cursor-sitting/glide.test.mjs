@@ -41,14 +41,14 @@ const rows = ({dMin = 470, engineMs = 60} = {}) => [
 ];
 
 test('the order from the engine\'s numbers: before when engineMs plus a frame is under the floor; the fade-in target stays open', () => {
-  const judged = orderFromMeta(rows());
+  const judged = orderFromMeta(gated());
   const second = judged.targets['second-target'];
   assert.equal(second.verdict, 'pass');
   assert.equal(second.doneMs, 60 + FRAME_MS);
   assert.ok(second.plannedGlide.floorMs > second.doneMs);
   assert.equal(judged.targets['first-target'].verdict, 'undetermined');
   assert.match(judged.targets['first-target'].reason, /fades in/);
-  assert.equal(orderFromMeta(rows({dMin: 0, engineMs: 300})).targets['second-target'].verdict, 'undetermined', 'no distance and a slow click: not decided');
+  assert.equal(orderFromMeta(gated().map(r => (r.task === 'glide-start' ? {...r, result: {...r.result, dMin: 0}} : r.orderTarget === 'second-target' ? {...r, meta: {...r.meta, engineMs: 300}} : r))).targets['second-target'].verdict, 'undetermined', 'no distance and a slow click: not decided');
   assert.throws(() => orderFromMeta(rows().filter(r => r.task !== 'glide-start')), /glide-start/);
   assert.throws(() => orderFromMeta(rows().map(r => (r.orderTarget === 'second-target' ? {...r, meta: {}} : r))), /engineMs/);
 });
@@ -56,7 +56,7 @@ test('the order from the engine\'s numbers: before when engineMs plus a frame is
 test('order-meta writes its judgement and appends both order verdicts', async t => {
   const out = mkdtempSync(join(tmpdir(), 'cua-235-glide-'));
   t.after(() => rmSync(out, {recursive: true, force: true}));
-  writeFileSync(join(out, 'item-1.jsonl'), rows().map(r => JSON.stringify(r)).join('\n') + '\n');
+  writeFileSync(join(out, 'item-1.jsonl'), gated().map(r => JSON.stringify(r)).join('\n') + '\n');
   const write = process.stdout.write; process.stdout.write = () => true;
   let code; try { code = await main(['order-meta', '--out', out]); } finally { process.stdout.write = write; }
   assert.equal(code, 0);
@@ -82,4 +82,34 @@ test('overlays: the scene\'s own on-screen windows above its run window, front t
   assert.deepEqual(overlaysAbove([w(9, 53, 48, false), w(7, 700, 700)], 7), []);
   assert.deepEqual(overlaysAbove([w(7, 700, 700)], 7), []);
   assert.deepEqual(overlaysAbove([w(9, 53, 48)], 7).map(o => o.number), [9], 'a run window not on screen: everything is above it');
+});
+
+test('what covers the target window, by the engine\'s own occlusion rule: a window above it, not the engine\'s, at a normal or menu layer', async () => {
+  const {coverOver} = await import('../../scripts/cursor-sitting/glide.mjs');
+  const w = (ownerPid, number, bounds, layer = 0) => ({ownerPid, number, layer, bounds, onScreen: true});
+  const chrome = rect(80, 60, 900, 760);
+  const list = [w(1, 50, rect(0, 0, 1512, 982), 25), w(9, 44, rect(0, 0, 1512, 982)), w(40, 3, rect(800, 700, 400, 200)), w(12, 70, chrome), w(40, 4, rect(0, 0, 300, 300))];
+  assert.deepEqual(coverOver(list, 70, chrome, [9]).map(c => c.number), [3], 'the engine\'s panel and a layer-25 window pass over; the terminal above Chrome covers it; one below does not');
+  assert.deepEqual(coverOver(list.filter(x => x.number !== 3), 70, chrome, [9]), []);
+  assert.equal(coverOver(list, 99, chrome, [9]), null, 'a target not on screen: nothing can be ruled out');
+});
+
+const gated = ({scroll = true, covered = false, cover = true} = {}) => {
+  const r = rows();
+  const at = r.findIndex(x => x.orderTarget === 'second-target');
+  const extra = [{kind: 'cell', ok: scroll, role: 'glide-scroll', ...(scroll ? {} : {error: 'refused'})},
+    ...(cover ? [{kind: 'task', task: 'glide-cover', result: {ok: !covered, covers: covered ? [{number: 3}] : []}}] : [])];
+  return [...r.slice(0, at), ...extra, ...r.slice(at)];
+};
+
+test('the order needs the cursor to have reached its start, and nothing over Chrome\'s window that could make the engine snap', () => {
+  assert.equal(orderFromMeta(gated()).targets['second-target'].verdict, 'pass');
+  const failed = orderFromMeta(gated({scroll: false})).targets['second-target'];
+  assert.equal(failed.verdict, 'undetermined');
+  assert.match(failed.reason, /positioning scroll failed/);
+  const covered = orderFromMeta(gated({covered: true})).targets['second-target'];
+  assert.equal(covered.verdict, 'undetermined');
+  assert.match(covered.reason, /snap/);
+  assert.match(orderFromMeta(gated({cover: false})).targets['second-target'].reason, /no reading of what covers/);
+  assert.match(orderFromMeta(rows()).targets['second-target'].reason, /positioning scroll/, 'a run without the scroll\'s row decides nothing');
 });

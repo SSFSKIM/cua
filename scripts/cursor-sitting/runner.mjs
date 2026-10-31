@@ -19,7 +19,7 @@ import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {readFocus, runWindowBounds} from './focus.mjs';
 import {capVerdict, frameSummary, glideFrames, probeSpans, readFrameUpdates} from './frames.mjs';
-import {BUILT_IN_SCREEN, farPoint, overlaysAbove, plannedSettle} from './glide.mjs';
+import {BUILT_IN_SCREEN, coverOver, farPoint, liveWindowList, overlaysAbove, plannedSettle} from './glide.mjs';
 import {liveSourceSwitch, restoreAfterFailure, sourceTargetProblem, switchSource} from './input-source.mjs';
 import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
 import {openDriven} from './session.mjs';
@@ -184,6 +184,17 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
         ctx.results['still plan'] = {waitMs};
         return {ok: waitMs <= STILL_WAIT_MAX_MS, waitMs, planned, bounds: b, screen: BUILT_IN_SCREEN, ...(waitMs > STILL_WAIT_MAX_MS ? {problem: `the glide's planned settle (${planned.settleSeconds} s) does not fit under the fade`} : {})};
       },
+      // Item 1 without a clip, right before the second click: what lies over the target scene's run window by the
+      // engine's own occlusion rule (./glide.mjs coverOver, CursorAttachment.swift occluded), from the whole window list.
+      // A cover can make the engine snap rather than glide (CursorHub.perform: both ends occluded), so the judgement
+      // needs none.
+      'glide-cover': async ([scene]) => {
+        const record = io.scene(scene), b = runWindowBounds(guard.windows(record.pid), record.window.number);
+        if (!b) return {ok: false, problem: `the ${scene} scene's run window is not on screen`};
+        const covers = coverOver(liveWindowList(), record.window.number, b, guard.enginePids());
+        if (covers === null) return {ok: false, problem: `the ${scene} scene's run window is not in the window list`};
+        return {ok: covers.length === 0, covers, bounds: b, ...(covers.length ? {problem: `${covers.length} window(s) lie over the ${scene} scene's run window`} : {})};
+      },
       'record-stop': async (_args, ctx) => {
         if (!ctx.recording) return {ok: false, problem: 'no recording is running'};
         const {handle, clip} = ctx.recording;
@@ -269,7 +280,7 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
     ctx.results[step.label] = answer;
     if (!answer.ok) failed++;
     record({step: n, kind: 'cell', session: step.run, label: step.label, ...(step.sample ? {sample: step.sample} : {}),
-      ...(step.orderTarget ? {orderTarget: step.orderTarget} : {}), ...kept, ...(saved.length ? {images: saved} : {})});
+      ...(step.orderTarget ? {orderTarget: step.orderTarget} : {}), ...(step.role ? {role: step.role} : {}), ...kept, ...(saved.length ? {images: saved} : {})});
     log(`  ${step.run}: ${step.label}: ${answer.ok ? JSON.stringify(answer.value) : `FAILED ${answer.error}`}${answer.route ? ` (route ${answer.route})` : ''}`);
     // A required cell that did not answer ok stops the item here (its finally still puts everything back).
     if (step.required && !answer.ok) throw new Error(`required cell "${step.label}" failed: ${answer.error}`);

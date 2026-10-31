@@ -56,6 +56,8 @@ export function liveTargetGuard({bundle, cache = PROBE_CACHE} = {}) {
     frontmost: () => { const r = frontWindow({skipPids: enginePids(), exec}); return r?.frontmost?.pid ? {...r.frontmost, topWindow: r.topWindow ?? null} : null; },
     // A process's layer-0 windows, front to back ({number, bounds, onScreen}): where a scene's run window is now.
     windows: pid => appWindows(pid, {exec}),
+    // The approved engine's processes (its cursor panels' owner).
+    enginePids,
     compile: () => { bin ??= compiled(FRONT_WINDOW_SCRIPT, cache); return bin; },
   };
 }

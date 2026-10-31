@@ -376,3 +376,16 @@ test('item 1 without a clip: no owner, no placement, no recording; the glide\'s 
   assert.deepEqual(steps.filter(s => s.orderTarget).map(s => s.orderTarget), ['first-target', 'second-target']);
   assert.equal(steps.at(-1).close, 'a');
 });
+
+test('item 1 without a clip stops on a failed positioning scroll, and reads what covers Chrome right before the second click', async t => {
+  const steps = PLANS[1]({noClip: true});
+  const scroll = steps.find(s => s.role === 'glide-scroll');
+  assert.equal(scroll.required, true);
+  const cover = steps.findIndex(s => s.task === 'glide-cover'), second = steps.findIndex(s => s.orderTarget === 'second-target');
+  assert.ok(cover > steps.indexOf(scroll) && cover < second);
+  const out = scratch(t), log = [];
+  const io = fakeIo(log);
+  const open = io.open;
+  io.open = async options => { const s = await open(options); return {...s, run: async code => (code.includes('__app.scroll(') ? {ok: false, error: 'refused', images: []} : {ok: true, value: {}, route: '1', engine: 'cua', images: []})}; };
+  await assert.rejects(runSteps(steps, {item: 1, out, io, log: () => {}}), /required cell .*glide's known start.* failed/);
+});

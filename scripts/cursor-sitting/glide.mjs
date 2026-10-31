@@ -26,10 +26,13 @@
 // - The first target has no glide: the cursor fades in at it from hidden, so the rule has nothing to compare, and its
 //   verdict stays open (undetermined), its engineMs kept.
 // - A window moved between the bounds' reading and the click.
+import {execFileSync} from 'node:child_process';
 import {appendFileSync, readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import vm from 'node:vm';
+import {compiled} from '../native-matrix/matrix-device.mjs';
+import {PROBE_CACHE} from './target-guard.mjs';
 
 export const REFERENCE = fileURLToPath(new URL('../../native/engine/Tests/EngineTests/Fixtures/cursor-reference/reference.mjs', import.meta.url));
 export const FRAME_MS = 1000 / 60;
@@ -101,6 +104,18 @@ export function orderFromMeta(rows) {
   const start = last.findLast(r => r.kind === 'task' && r.task === 'glide-start')?.result;
   if (!start?.ok) throw new Error('item 1\'s last run has no glide-start reading (the windows\' bounds and the scroll point)');
   const first = click('first-target'), second = click('second-target');
+  // The glide counted on only when the cursor reached its known start (the positioning scroll answered ok, after the
+  // reading and before the click) and nothing lay over Chrome's window right before the click (else the engine may
+  // snap: CursorHub.perform skips the glide when both ends are occluded).
+  const at = row => last.indexOf(row);
+  const scroll = last.findLast(r => r.kind === 'cell' && r.role === 'glide-scroll');
+  const cover = last.findLast(r => r.kind === 'task' && r.task === 'glide-cover');
+  const startRow = last.findLast(r => r.kind === 'task' && r.task === 'glide-start');
+  const gate = !scroll || at(scroll) < at(startRow) || at(scroll) > at(second) ? 'no row of the positioning scroll between the reading and the click: the start is not known'
+    : !scroll.ok ? `the positioning scroll failed (${scroll.error ?? 'no answer'}): the cursor may never have reached its start`
+      : !cover || at(cover) < at(scroll) || at(cover) > at(second) ? 'no reading of what covers Chrome\'s window right before the click: a snap cannot be ruled out'
+        : !cover.result?.ok ? `something lay over Chrome's window right before the click (${cover.result?.problem ?? 'the reading failed'}): the engine may snap instead of gliding`
+          : null;
   const floor = arrivalFloor(start.dMin);
   const doneMs = second.meta.engineMs + FRAME_MS, glideMs = floor.seconds * 1000;
   return {
@@ -108,9 +123,9 @@ export function orderFromMeta(rows) {
       'first-target': {engineMs: first.meta.engineMs, route: first.route ?? null, verdict: 'undetermined',
         reason: 'no glide: the cursor fades in at its first target from hidden, so a planned glide has nothing to compare'},
       'second-target': {engineMs: second.meta.engineMs, route: second.route ?? null, doneMs, plannedGlide: {floorMs: glideMs, mode: floor.mode, response: floor.response ?? null, dMin: start.dMin, from: start.point},
-        verdict: doneMs < glideMs ? 'pass' : 'undetermined',
-        reason: doneMs < glideMs ? `engineMs ${second.meta.engineMs.toFixed(1)} + one frame = ${doneMs.toFixed(1)} ms, under the earliest arrival the engine could plan for a move of at least ${start.dMin.toFixed(0)} pt (${glideMs.toFixed(0)} ms, ${floor.mode})`
-          : `engineMs ${second.meta.engineMs.toFixed(1)} + one frame = ${doneMs.toFixed(1)} ms is not under the earliest possible arrival for a move of at least ${start.dMin.toFixed(0)} pt (${glideMs.toFixed(0)} ms), so the engine's numbers do not decide it`},
+        verdict: !gate && doneMs < glideMs ? 'pass' : 'undetermined',
+        reason: gate ?? (doneMs < glideMs ? `engineMs ${second.meta.engineMs.toFixed(1)} + one frame = ${doneMs.toFixed(1)} ms, under the earliest arrival the engine could plan for a move of at least ${start.dMin.toFixed(0)} pt (${glideMs.toFixed(0)} ms, ${floor.mode})`
+          : `engineMs ${second.meta.engineMs.toFixed(1)} + one frame = ${doneMs.toFixed(1)} ms is not under the earliest possible arrival for a move of at least ${start.dMin.toFixed(0)} pt (${glideMs.toFixed(0)} ms), so the engine's numbers do not decide it`)},
     },
   };
 }
@@ -148,4 +163,22 @@ export function overlaysAbove(windows, number) {
   const shown = (windows ?? []).filter(w => w.onScreen !== false);
   const at = shown.findIndex(w => w.number === number);
   return (at < 0 ? shown : shown.slice(0, at)).filter(w => w.number !== number);
+}
+
+// What lies over a target window by the engine's occlusion rule (CursorAttachment.swift `occluded`): on-screen windows
+// before it in the list (front to back), not the engine's own, at a layer under 20 or the pop-up menu level (101),
+// intersecting its bounds. -> the covering windows, or null when the target is not in the list.
+export function coverOver(list, number, bounds, enginePids = []) {
+  const at = (list ?? []).findIndex(w => w.number === number);
+  if (at < 0) return null;
+  const r = bounds, meets = b => b.x < r.x + r.width && r.x < b.x + b.width && b.y < r.y + r.height && r.y < b.y + b.height;
+  return list.slice(0, at).filter(w => w.onScreen !== false && !enginePids.includes(w.ownerPid) && (w.layer < 20 || w.layer === 101) && meets(w.bounds));
+}
+
+export const WINDOW_LIST_SCRIPT = fileURLToPath(new URL('./window-list.swift', import.meta.url));
+// Every on-screen window, front to back, by its owner's pid, number, layer and bounds (./window-list.swift, compiled
+// once like the target guard's probe): no names, so no Screen Recording.
+export function liveWindowList({cache = PROBE_CACHE} = {}) {
+  const bin = compiled(WINDOW_LIST_SCRIPT, cache);
+  return JSON.parse(execFileSync(bin, [], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000}).trim()).windows;
 }

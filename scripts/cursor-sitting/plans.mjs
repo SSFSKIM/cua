@@ -73,8 +73,11 @@ export const PLANS = Object.freeze({
     {run: 'a', cell: ALIGNMENT, label: 'TextEdit: the alignment read back'},
     {wait: 1500},
     {task: 'glide-start', args: ['textedit', 'chrome'], required: true},
-    {run: 'a', cell: results => SCROLL_AT('textedit', results['glide start']?.fraction ?? [0.1, 0.85]), label: 'TextEdit: a scroll at its point farthest from Chrome (the glide\'s known start)'},
+    // Required: a start the cursor never reached would let the judgement count on a glide that did not happen.
+    {run: 'a', cell: results => SCROLL_AT('textedit', results['glide start']?.fraction ?? [0.1, 0.85]), label: 'TextEdit: a scroll at its point farthest from Chrome (the glide\'s known start)', role: 'glide-scroll', required: true},
     {wait: 1500},
+    // Right before the click: nothing may lie over Chrome's run window, or the engine may snap instead of gliding.
+    {task: 'glide-cover', args: ['chrome']},
     {run: 'a', cell: CLICK_CONTROL_TIMED('sceneOption'), label: 'Chrome for Testing: the page\'s "Scene option" checkbox', orderTarget: 'second-target'},
     {run: 'a', cell: CONTROL_VALUE('sceneOption'), label: 'Chrome for Testing: the checkbox read back'},
     {watch: 'from the engine\'s numbers: TextEdit\'s alignment changes before or while the cursor shows at it (cursor-sitting.mjs order-meta)', id: 'order-first-target'},

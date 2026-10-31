@@ -318,7 +318,12 @@ items into `$OUT2` (`$S drive 1-check --out "$OUT2" --dry-run`, likewise 1, 3 an
      `$S order-meta --out "$OUT2"`.
      - After the first click, the kit reads both run windows' bounds and scrolls once in TextEdit at its point farthest
        from Chrome's window (`glide-start`). The second click's glide then starts at a known point and covers at least
-       the distance to Chrome's window.
+       the distance to Chrome's window. The scroll is required: if it fails, the item stops there, and `order-meta`
+       counts on the start only with the scroll's ok row between the reading and the click.
+     - Right before the second click, `glide-cover` reads what lies over Chrome's run window by the engine's own
+       occlusion rule (every on-screen window in front of it, not the engine's, below layer 20 or at the pop-up menu
+       level). With both ends covered the engine snaps rather than glides, so the order is undetermined unless that
+       reading is there and empty.
      - `order-meta` compares the second click's `engineMs` plus one frame (16.7 ms) with the earliest arrival the engine
        could plan for a move that long. That arrival comes from the motion reference's springs and arrival rule
        (`scripts/cursor-sitting/glide.mjs`): a lower bound, so a "pass" holds for the real distance.

@@ -15,12 +15,17 @@ import {BIND as BIND_APP} from '../native-matrix/goldens-cells.mjs';
 import {prelude} from '../native-matrix/matrix-cells.mjs';
 import {pressed} from '../native-matrix/plan.mjs';
 import {vendorMenuBarIndex} from '../native-matrix/live-checks.mjs';
+import {SCENE_MARKER} from './target-guard.mjs';
 
 const j = JSON.stringify;
+// Every scene cell opens with the scene's marker, so the session's target guard knows what the cell acts on
+// (./target-guard.mjs), then the matrix's prelude.
+const head = scene => `${SCENE_MARKER(scene)}\n${prelude(scene)}`;
 
 // The scene's app bound by path for the later cells, and its window's screenshot size kept in `globalThis.__size`.
-export const BIND = (scene, app) => `${BIND_APP(scene, app)}
-${cell(`${prelude(scene)}
+export const BIND = (scene, app) => `${SCENE_MARKER(scene)}
+${BIND_APP(scene, app)}
+${cell(`${head(scene)}
 const shot = await __app.getScreenshot({emit: false});
 const size = jpegSize(shot);
 if (!size) throw new Error("the ${scene} window's screenshot size could not be read");
@@ -33,18 +38,18 @@ const at = (scene, f) => `(() => { const s = globalThis.__size?.[${j(scene)}]; i
 const timed = act => `const __a0 = performance.now(); ${act}; const ms = performance.now() - __a0;`;
 
 // A coordinate click at fractions `f`. -> {ms, point}.
-export const CLICK_AT = (scene, f) => cell(`${prelude(scene)}
+export const CLICK_AT = (scene, f) => cell(`${head(scene)}
 const point = ${at(scene, f)};
 ${timed('await __app.click(point)')}
 return {ms, point};`);
 
 // A drag from fractions `from` to `to`. -> {ms}.
-export const DRAG = (scene, from, to) => cell(`${prelude(scene)}
+export const DRAG = (scene, from, to) => cell(`${head(scene)}
 ${timed(`await __app.drag(${at(scene, from)}, ${at(scene, to)})`)}
 return {ms};`);
 
 // A scroll at fractions `f`, a page `direction`. -> {ms}.
-export const SCROLL_AT = (scene, f, direction = 'down') => cell(`${prelude(scene)}
+export const SCROLL_AT = (scene, f, direction = 'down') => cell(`${head(scene)}
 ${timed(`await __app.scroll(${at(scene, f)}, ${j(direction)}, 1)`)}
 return {ms};`);
 
@@ -59,7 +64,7 @@ export const CONTROLS = Object.freeze({
 // the click lands at once, the cursor glides after it (O5). -> {ms, before, after, changedWithinMs}.
 export const CLICK_CONTROL = control => {
   const {scene, find} = CONTROLS[control];
-  return cell(`${prelude(scene)}
+  return cell(`${head(scene)}
 let ax = await observe();
 const index = ${find};
 if (index === null) throw new Error("${control} is not in the ${scene} window's text");
@@ -71,7 +76,7 @@ return {ms, before, after: valueOfIndex(ax, ${find}), changedWithinMs};`);
 };
 
 // TextEdit's alignment flipped: align center when it is off, else align left. -> {ms, clicked, after}.
-export const ALIGN_TOGGLE = cell(`${prelude('textedit')}
+export const ALIGN_TOGGLE = cell(`${head('textedit')}
 let ax = await observe();
 const center = indexOfPart(ax, "Description", "align center");
 if (center === null) throw new Error("TextEdit's alignment control is not in its text");
@@ -83,25 +88,25 @@ const changedWithinMs = performance.now() - __a0;
 return {ms, clicked, after: valueOfIndex(ax, indexOfPart(ax, "Description", clicked)), changedWithinMs};`);
 
 // The Electron fixture's press count, read by one observation. -> {pressed}.
-export const PRESSED = cell(`${prelude('electron')}
+export const PRESSED = cell(`${head('electron')}
 const ax = await observe();
 return {pressed: ${pressed}};`);
 
 // An action after the person's click, with no observation first: refused with the engine's userIntervened sentence
 // when the intervention ledger attributed the click to this app (the person still interacting, or the app changed
 // since the agent's last look). -> {refused, sentence}.
-export const INTERVENTION_PROBE = (scene, f) => cell(`${prelude(scene)}
+export const INTERVENTION_PROBE = (scene, f) => cell(`${head(scene)}
 try { await __app.scroll(${at(scene, f)}, "down", 1); return {refused: false, sentence: null}; }
 catch (e) { const s = String(e?.message ?? e); return {refused: /The user (?:is still interacting with|changed) /.test(s), sentence: s.slice(0, 200)}; }`);
 
 // A press_key right after the person's own input: the engine may refuse it with its userIntervened sentence, which the
 // cursor still counts as the session's request (it clears taken over). -> {refused, sentence}.
-export const KEY_AFTER_INPUT = (scene, key) => cell(`${prelude(scene)}
+export const KEY_AFTER_INPUT = (scene, key) => cell(`${head(scene)}
 try { await __app.pressKey(${j(key)}); return {refused: false, sentence: null}; }
 catch (e) { const s = String(e?.message ?? e); if (!/The user (?:is still interacting with|changed) /.test(s)) throw e; return {refused: true, sentence: s.slice(0, 200)}; }`);
 
 // Opens the scene app's menu `title` by its menu-bar item (the engine's menu route). -> {ms}.
-export const OPEN_MENU = (scene, title) => cell(`${prelude(scene)}
+export const OPEN_MENU = (scene, title) => cell(`${head(scene)}
 const vendorMenuBarIndex = ${vendorMenuBarIndex.toString()};
 const ax = await observe();
 const index = vendorMenuBarIndex(ax, ${j(title)});
@@ -110,31 +115,31 @@ ${timed('await __app.click(index)')}
 return {ms};`);
 
 // One get_app_state. -> {inFront}.
-export const OBSERVE = scene => cell(`${prelude(scene)}
+export const OBSERVE = scene => cell(`${head(scene)}
 const ax = await observe();
 return {inFront: inFront(ax)};`);
 
 // A type_text of `chars` characters from a fixed alphabet (one unbroken lower-case run: no word for autocorrect to take).
-export const TYPE_RUN = (scene, chars) => cell(`${prelude(scene)}
+export const TYPE_RUN = (scene, chars) => cell(`${head(scene)}
 const text = "abcdefghij".repeat(Math.ceil(${chars} / 10)).slice(0, ${chars});
 ${timed('await __app.typeText(text)')}
 return {ms, chars: ${chars}};`);
 
 // `count` single press_key calls of `key`, each timed. -> {ms: total, each: [ms]}.
-export const PRESS_KEYS = (scene, key, count) => cell(`${prelude(scene)}
+export const PRESS_KEYS = (scene, key, count) => cell(`${head(scene)}
 const each = [];
 for (let i = 0; i < ${count}; i++) { const t = performance.now(); await __app.pressKey(${j(key)}); each.push(performance.now() - t); }
 return {ms: each.reduce((a, b) => a + b, 0), each};`);
 
 // The scene window's screenshot, emitted into the result (the one cell whose output carries an image). -> {size}.
-export const SHOT = scene => cell(`${prelude(scene)}
+export const SHOT = scene => cell(`${head(scene)}
 const shot = await __app.getScreenshot({emit: false});
 nodeRepl.emitImage(shot);
 return {size: jpegSize(shot)};`);
 
 // The typing sample of Acceptance 12: a coordinate click at `from` (which starts a long glide where the cursor is on),
 // then a timed type_text of 200 characters; a click at `to`, then 30 timed press_key calls. -> {type_text, press_key}.
-export const TYPING_SAMPLE = (scene, from, to) => cell(`${prelude(scene)}
+export const TYPING_SAMPLE = (scene, from, to) => cell(`${head(scene)}
 const text = "abcdefghij".repeat(20);
 await __app.click(${at(scene, from)});
 let t = performance.now(); await __app.typeText(text); const typed = performance.now() - t;
@@ -147,7 +152,7 @@ return {type_text: typed, press_key: each.reduce((a, b) => a + b, 0), each};`);
 // (Acceptance 13: route 3 is the engine's route for the fixture's button in the background). -> {ms}.
 export const CLICK_CONTROL_TIMED = control => {
   const {scene, find} = CONTROLS[control];
-  return cell(`${prelude(scene)}
+  return cell(`${head(scene)}
 const ax = await observe();
 const index = ${find};
 if (index === null) throw new Error("${control} is not in the ${scene} window's text");

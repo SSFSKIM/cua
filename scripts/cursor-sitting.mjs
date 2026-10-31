@@ -3,6 +3,9 @@
 // design.md, M3 and Acceptance 1–13). The runbook, docs/evidence/2026-10-30-macos-agent-cursor/README.md, says when each
 // command runs, what the owner watches or does meanwhile, and what is kept.
 //
+//   cursor-sitting.mjs prepare
+//       Compiles the target guard's window probe (scripts/accept/front-window.swift) into the harness cache, once, so the
+//       sitting's first cell does not wait for it (./cursor-sitting/target-guard.mjs).
 //   cursor-sitting.mjs save --home <dir> --to <new dir>
 //       Before the sitting: `cua engine status --json`, a copy of <home>'s whole engine directory (its socket, lock,
 //       build scratch and staging left out) and of ~/.config/cua/engine.json, checked against a manifest of the tree
@@ -40,6 +43,7 @@ import {PLANS} from './cursor-sitting/plans.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
 import {liveIo, runSteps} from './cursor-sitting/runner.mjs';
 import {judgeTiming} from './cursor-sitting/stats.mjs';
+import {liveTargetGuard} from './cursor-sitting/target-guard.mjs';
 import {SERIES, timingRows, timingSteps} from './cursor-sitting/timing.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
@@ -126,6 +130,10 @@ async function drive(steps, {item, values}) {
 export async function main(argv) {
   const [command, ...rest] = argv;
   const {values, positionals} = parseArgs({args: rest, options: OPTIONS, allowPositionals: true});
+  if (command === 'prepare') {
+    print(`the target guard's window probe: ${liveTargetGuard().compile()}`);
+    return 0;
+  }
   if (command === 'save') {
     const home = absolute(values, 'home');
     const saved = await saveEngine({home, to: absolute(values, 'to'), status: async () => cuaJson(home, ['engine', 'status'])});
@@ -204,7 +212,7 @@ export async function main(argv) {
     }
     throw new Error('remote takes prepare, enroll or run');
   }
-  throw new Error('usage: cursor-sitting.mjs save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | remote prepare|enroll|run (see the header)');
+  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | remote prepare|enroll|run (see the header)');
 }
 
 if (process.argv[1] && SCRIPT === resolve(process.argv[1])) {

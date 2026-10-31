@@ -16,6 +16,7 @@ import {startWatch, stopWatch} from '../native-matrix/live-device.mjs';
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {openDriven} from './session.mjs';
+import {liveTargetGuard} from './target-guard.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const SCENES_CLI = fileURLToPath(new URL('../repl-parity/scenes-mac.mjs', import.meta.url));
@@ -35,13 +36,14 @@ export function cursorOffSettings(text) {
 export function liveIo({run, out, quiet = false, home = homedir()}) {
   const cli = (args, env = {}) => JSON.parse(execFileSync(process.execPath, [CLI, ...args], {encoding: 'utf8', env: {...process.env, ...env}, timeout: 60_000}));
   const settingsFile = engineJsonOf(home), before = join(out, 'engine.json.before');
+  const guard = liveTargetGuard({bundle: enginePaths().bundle});
   return {
     scene: id => {
       const record = readState(run).scenes[id];
       if (!record) throw new Error(`the ${id} scene is not up in ${run} (node scripts/repl-parity/scenes-mac.mjs up ${id} --run ${run})`);
-      return {id, app: record.app, pid: record.pid};
+      return {id, app: record.app, pid: record.pid, at: record.at, window: record.window};
     },
-    open: options => openDriven(options),
+    open: options => openDriven({...options, guard}),
     wait: sleep,
     cue: async text => {
       if (quiet || !existsSync('/usr/bin/say')) return;

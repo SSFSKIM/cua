@@ -3,16 +3,17 @@
 // cursor's environment the step gives it (CUA_CURSOR, CUA_CURSOR_LABEL, CUA_CURSOR_COLOR, CLAUDE_CODE_SESSION_ID). It
 // accepts exactly the approval of a scene's app (#117's matcher, scripts/native-matrix/goldens.mjs isSceneApproval) and
 // declines every other request; every js result must attest the pinned engine (`_meta['cua/nativeEngine']`), and the
-// first that does not stops the session. A cell that sends keys runs only while the scene's process is the frontmost
+// first that does not stops the session. Before a cell acts on a scene, the scene is checked to be the run's own
+// (./target-guard.mjs); a cell that sends keys runs only while the scene's run window is on top of the frontmost
 // application (#162's key guard, scripts/accept/key-guard.mjs).
 import {fileURLToPath} from 'node:url';
 import {FIRST, parseCell} from '../native-baseline/cells.mjs';
 import {isSceneApproval} from '../native-matrix/goldens.mjs';
 import {sendIfFrontmost} from '../accept/key-guard.mjs';
 import {openSession, resultText} from '../accept/mcp-session.mjs';
-import {frontmostProcess} from '../repl-parity/scenes-mac-device.mjs';
 import {SCENES} from '../repl-parity/scenes-mac.mjs';
 import {BIND} from './cells.mjs';
+import {scenesOf} from './target-guard.mjs';
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 export const SCENE_BUNDLE_IDS = Object.freeze(Object.values(SCENES).map(s => s.bundleId));
@@ -38,10 +39,39 @@ export function readReply(reply) {
   return {...parsed, ...base};
 }
 
-// Opens a session, binds `scenes` (records from the run's scene state: {id, app}) and returns
+// The session's dispatch: every scene a cell acts on checked by `guard` right before it goes (a key cell, its window on
+// top of the frontmost application too), the reply's engine attested; the first refusal or wrong engine stops every
+// later cell. `send(code)` answers the raw js reply. -> run(code, {keys}).
+export function gate({name, engine, scenes, guard, send}) {
+  let stopped = null;
+  const records = Object.fromEntries(scenes.map(s => [s.id, s]));
+  const stop = message => { stopped = new Error(`${name}: ${message}; nothing more is sent on this session`); throw stopped; };
+  return async (code, {keys = null} = {}) => {
+    if (stopped) throw stopped;
+    for (const id of [...scenesOf(code), ...(keys ? [keys] : [])]) {
+      if (!records[id]) stop(`refused, nothing sent: the cell acts on the ${id} scene, which this session did not bind`);
+      const problem = guard.problem(records[id]);
+      if (problem) stop(`refused, nothing sent: ${problem}`);
+    }
+    const dispatch = async () => readReply(await send(code));
+    let answer;
+    if (keys) {
+      const record = records[keys];
+      const sent = await sendIfFrontmost({target: {pid: record.pid, bundleId: SCENES[keys].bundleId, window: record.window.number}, keys: ['keys'], frontmost: guard.frontmost, send: dispatch});
+      if (!sent.sent) stop(`refused, nothing sent: keys for ${keys} need its run window on top of the frontmost application (#162's key guard): ${JSON.stringify(sent.skipped.frontmost)}`);
+      answer = sent.result;
+    } else answer = await dispatch();
+    if (answer.engine && answer.engine !== engine) stop(`the ${answer.engine} engine answered, not the pinned ${engine}`);
+    return answer;
+  };
+}
+
+// Opens a session, binds `scenes` (records from the run's scene state: {id, app, pid, at, window}) and returns
 // {run(code, {keys}), endTask(), close(), asked}. `keys`: a scene id whose process must be frontmost for the cell to go.
-// `device`: a registered device's name, switched to with devices_use before the first cell (Acceptance 8's loopback).
-export async function openDriven({name, engine, env, scenes, device = null}) {
+// `guard` (./target-guard.mjs liveTargetGuard): `problem(record)` before every scene cell, `frontmost()` for keys; a
+// changed target is refused and stops the session. `device`: a registered device's name, switched to with devices_use
+// before the first cell (Acceptance 8's loopback).
+export async function openDriven({name, engine, env, scenes, guard, device = null}) {
   const asked = [];
   const session = openSession({args: [CLI, 'serve'], clientName: `cua-cursor-sitting-${name}`, env: serveEnv({engine, env}),
     onServerRequest: msg => {
@@ -49,23 +79,7 @@ export async function openDriven({name, engine, env, scenes, device = null}) {
       asked.push({app: msg?.params?._meta?.tool_params?.app ?? null, answer: accepted ? 'accept (session)' : 'decline'});
       return accepted ? {action: 'accept', content: {}} : {action: 'decline'};
     }});
-  let stopped = null;
-  const pids = Object.fromEntries(scenes.map(s => [s.id, s.pid]));
-  const run = async (code, {keys = null} = {}) => {
-    if (stopped) throw stopped;
-    const send = async () => readReply(await session.js(code, CELL_MS));
-    let answer;
-    if (keys) {
-      const sent = await sendIfFrontmost({target: {pid: pids[keys], bundleId: SCENES[keys].bundleId}, keys: ['keys'], frontmost: () => frontmostProcess(), send});
-      if (!sent.sent) return {ok: false, error: `not sent: ${keys}'s process is not the frontmost application (#162's key guard; bring it to the front)`, skipped: sent.skipped, route: null, engine: null, images: []};
-      answer = sent.result;
-    } else answer = await send();
-    if (answer.engine && answer.engine !== engine) {
-      stopped = new Error(`${name}: the ${answer.engine} engine answered, not the pinned ${engine}; nothing more is sent on this session`);
-      throw stopped;
-    }
-    return answer;
-  };
+  const run = gate({name, engine, scenes, guard, send: code => session.js(code, CELL_MS)});
   // A session that cannot start is ended here: the runner only closes the sessions it was handed.
   try {
     await session.initialize();

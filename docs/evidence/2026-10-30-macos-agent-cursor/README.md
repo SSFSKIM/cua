@@ -103,6 +103,7 @@ None of this needs the owner, draws on the screen or touches the engine.
 ```sh
 npm ci && (cd relay && npm ci)          # ws, for the agent's relay link and the relay
 $SC place-chrome && $SC build-electron  # the scenes' Chrome for Testing and Electron fixture (cached; a no-op when current)
+$S prepare                              # compiles the target guard's window probe once (swiftc; reads no window, draws nothing)
 $S remote prepare --kit "$KIT"          # prints what the kit still needs, then:
 CUA_HOME="$KIT/device-home" node bin/cua.mjs install    # the device home's runtime (about 690 MB unless --archive <zip>)
 $S remote prepare --kit "$KIT"          # "the kit is ready to enrol"
@@ -130,7 +131,11 @@ Every `drive` and `timing` command records into `$OUT/item-<n>.jsonl`. Cues to t
 printed; when a step prints `waiting: once the owner is done, touch …/go`, the operator runs `touch "$OUT/go"` as soon
 as the owner says done. After each item the operator asks the owner each of the item's `WATCH` lines and records the
 answer: `$S verdict <item> <watch id> pass|fail [note] --out "$OUT"`. An item can be run again; the summary reads its
-last attempt. The sessions inherit the operator's environment: run from a Claude Code session, their default label is
+last attempt. Before every cell that acts on a scene, the runner checks from outside the engine that the scene is
+still the run's own (its recorded launch, and its run window the app's front on-screen window; for keys, that window
+on top of the frontmost app): if another window has come in front, the window is minimised, or the process is not
+the scene's launch, the session stops with "refused, nothing sent" and nothing more goes to it. Put the scene back
+(or bring it down and up again) and run the item again. The sessions inherit the operator's environment: run from a Claude Code session, their default label is
 that session's sminos name; from a plain terminal it is the folder's name, `cua-235`.
 
 **0. Recording.** The owner starts a QuickTime screen recording of the whole screen (File, New Screen Recording) and

@@ -12,7 +12,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {BUNDLE_ID} from '../../src/runtime/engine-bundle.mjs';
 import {enginePaths} from '../../src/runtime/engine.mjs';
-import {startWatch, stopWatch} from '../native-matrix/live-device.mjs';
+import {runProbe, startWatch, stopWatch} from '../native-matrix/live-device.mjs';
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {openDriven} from './session.mjs';
@@ -24,6 +24,11 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // The engine's activations among the watcher's lines: the panel never activates the engine (Acceptance 5).
 export const engineActivations = lines => lines.filter(l => l.kind === 'activated' && l.bundleId === BUNDLE_ID);
+
+// What a focus probe's answer says of the focus: the focused app, the focused window, whether it is the named window,
+// and the focused element's value hash there (the probe's own time and grant left out).
+export const focusReading = answer => ({focusedApp: answer?.focusedApp ?? null, focusedWindow: answer?.focusedWindow ?? null,
+  named: answer?.named ?? null, valueHash: answer?.valueHash ?? null});
 
 // engine.json with the device switch off, the other keys kept. `text`: the file's bytes, or null when there is none.
 export function cursorOffSettings(text) {
@@ -37,7 +42,7 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
   const cli = (args, env = {}) => JSON.parse(execFileSync(process.execPath, [CLI, ...args], {encoding: 'utf8', env: {...process.env, ...env}, timeout: 60_000}));
   const settingsFile = engineJsonOf(home), before = join(out, 'engine.json.before');
   const guard = liveTargetGuard({bundle: enginePaths().bundle});
-  return {
+  const io = {
     scene: id => {
       const record = readState(run).scenes[id];
       if (!record) throw new Error(`the ${id} scene is not up in ${run} (node scripts/repl-parity/scenes-mac.mjs up ${id} --run ${run})`);
@@ -85,6 +90,17 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
         rmSync(before);
         return {ok: true, restored: true};
       },
+      // The approved bundle's focus probe, its window named by the scene's run window: the focused app and window and
+      // the focused element's value hash (never a value). With a third argument, the reading must equal that earlier one.
+      focus: async ([label, scene, equalTo], ctx) => {
+        const {pid, window} = io.scene(scene), b = window.bounds;
+        const answer = runProbe(enginePaths().bundle, ['focus', '--window', [pid, b.x, b.y, b.width, b.height].join(',')]);
+        const reading = focusReading(answer);
+        (ctx.focus ??= {})[label] = reading;
+        if (equalTo === undefined) return {ok: answer?.accessibility === true, label, reading};
+        const same = JSON.stringify(reading) === JSON.stringify(ctx.focus[equalTo]);
+        return {ok: same, label, reading, equalTo, same};
+      },
       'watch-start': async () => ({ok: true, watch: startWatch(enginePaths().bundle, out)}),
       'watch-stop': async (_args, ctx) => {
         const lines = ctx.watch ? stopWatch(ctx.watch) : [];
@@ -99,6 +115,7 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
       if (ctx.watch) stopWatch(ctx.watch);
     },
   };
+  return io;
 }
 
 const describe = step => {

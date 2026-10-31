@@ -201,3 +201,26 @@ test('every timed sample runs with the cursor already visible: an untimed prime 
   const clicks = timingSteps('clicks', 2);
   clicks.forEach((s, k) => { if (s.sample?.series === 'coordinate click') { assert.match(clicks[k - 1].label, /^prime /); assert.equal(clicks[k - 1].sample, undefined); } });
 });
+
+test('Acceptance 5\'s focus proof: two readings around the agent\'s own steps, the second required equal, before any owner input', async () => {
+  const {focusReading} = await import('../../scripts/cursor-sitting/runner.mjs');
+  const steps = PLANS[5]();
+  const at = steps.findIndex(s => s.task === 'focus'), again = steps.findIndex((s, k) => k > at && s.task === 'focus');
+  assert.ok(at >= 0 && again > at);
+  assert.equal(steps[again].args[2], steps[at].args[0], 'the second reading is compared with the first');
+  const between = steps.slice(at + 1, again);
+  assert.ok(between.some(s => s.run), 'the cursor is shown between them');
+  assert.ok(!between.some(s => s.cue || s.owner), 'no owner input between them');
+  assert.ok(steps.findIndex(s => s.owner) > again, 'the owner\'s click comes after the proof');
+  assert.deepEqual(focusReading({focusedApp: {pid: 3, bundleId: 'x'}, focusedWindow: {pid: 3, bounds: {}}, named: true, valueHash: 'ab', at: 1, accessibility: true}),
+    {focusedApp: {pid: 3, bundleId: 'x'}, focusedWindow: {pid: 3, bounds: {}}, named: true, valueHash: 'ab'}, 'the probe\'s time and grant are not compared');
+});
+
+test('the demonstrations of items 9 and 11 start with the harness\'s TextEdit window in front of anything that could cover it', () => {
+  for (const steps of [PLANS[9](), PLANS[11]({engine: 'vendor'}), PLANS[11]({engine: 'cua'})]) {
+    const firstMove = steps.findIndex(s => s.run);
+    const activated = steps.findIndex(s => s.task === 'activate' && s.args[0] === 'textedit');
+    assert.ok(activated >= 0 && activated < firstMove, 'TextEdit is brought to the front before the first move');
+    assert.ok(!steps.slice(activated, firstMove).some(s => s.owner || s.cue), 'nothing the owner does comes between');
+  }
+});

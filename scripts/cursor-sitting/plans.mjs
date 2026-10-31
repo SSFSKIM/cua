@@ -11,7 +11,7 @@
 //   {endTask}, {close}              end_task on a session; close it (end_task, then the serve's exit)
 //   {cue, ms}, {owner}, {watch, id}, {wait}, {say}
 //   {task, args?}                   activate <scene> | engine-stop | engine-status | engine-json-off | engine-json-restore
-//                                   | watch-start | watch-stop
+//                                   | watch-start | watch-stop | focus <label> <scene> [<label to equal>]
 import {ALIGN_TOGGLE, CLICK_AT, CLICK_CONTROL, CLICK_CONTROL_TIMED, DRAG, INTERVENTION_PROBE, KEY_AFTER_INPUT, OBSERVE, OPEN_MENU, PRESSED,
   PRESS_KEYS, SCROLL_AT, SHOT, TYPE_RUN} from './cells.mjs';
 
@@ -38,6 +38,8 @@ const moveSteps = session => MOVES.flatMap((move, i) => [{say: `move ${i + 1}: $
 // Acceptance 11's side-by-side: the same moves through the engine `engine` (vendor, then cua).
 export const sideBySide = engine => [
   {say: `Acceptance 11, the ${engine} engine: the same scripted moves in the TextEdit document, 1.5 s apart`},
+  // In front of whatever could cover it (System Settings after item 9, the terminal), so the whole motion is seen.
+  {task: 'activate', args: ['textedit']},
   {open: 'a', engine, scenes: ['textedit']},
   ...moveSteps('a'),
   {watch: `the ${engine} cursor's motion through the moves (judged against the other engine's run)`, id: `motion-${engine}`},
@@ -128,6 +130,15 @@ export const PLANS = Object.freeze({
     {task: 'activate', args: ['electron']},
     {task: 'watch-start'},
     {open: 'a', scenes: ['electron']},
+    // The focus proof, with no input but the agent's: the system's focused app, its focused window and the focused
+    // element (its value's hash, read in the fixture's window) before and after the cursor appears, glides and rests
+    // over the fixture, recorded and required equal. The owner's own click comes after, apart from it.
+    {task: 'focus', args: ['before the cursor', 'electron']},
+    {run: 'a', cell: SCROLL_AT('electron', [0.5, 0.5]), label: 'the cursor appears over the fixture (a scroll: no focus of its own)'},
+    {wait: 1500},
+    {run: 'a', cell: SCROLL_AT('electron', [0.25, 0.75]), label: 'it glides and rests'},
+    {wait: 1500},
+    {task: 'focus', args: ['with the cursor shown', 'electron', 'before the cursor']},
     {run: 'a', cell: PRESSED, label: 'the fixture\'s count before'},
     {owner: 'Next the agent presses the fixture\'s button, and you then click the arrow\'s tip where it rests on the button. Say go when ready.'},
     {run: 'a', cell: CLICK_CONTROL_TIMED('fixtureButton'), label: 'the agent presses the button'},
@@ -204,6 +215,7 @@ export const PLANS = Object.freeze({
   9: () => [
     {say: 'Acceptance 9: Reduce Motion'},
     {owner: 'Turn Reduce motion on (System Settings, Accessibility, Display), then say done.'},
+    {task: 'activate', args: ['textedit']},
     {open: 'a', scenes: ['textedit']},
     ...moveSteps('a'),
     {watch: 'every move is a short straight ease (about 0.15 s) with no squash, tilt, swell or rocking; a click\'s dip is an opacity dip', id: 'reduce-motion'},

@@ -457,11 +457,15 @@ impl Engine {
             }
             _ => None,
         };
-        // a Chromium drag the engine lets drop (no guard: in front, or a dedicated desktop) is watched for its take, so
-        // its release comes no sooner than the take's delay after it (`dnd::RELEASE_AFTER_TAKE`); the measurement hold
-        // (`--drag-dnd-wait-ms`) uses the same watch
-        let mut hold = match target {
-            Target::Window(window) | Target::Foreground(window)
+        // a Chromium drag the engine lets drop (no guard: in front, a dedicated desktop, or the desktop route into the
+        // window under the start) is watched for its take, so its release comes no sooner than the take's delay after
+        // it (`dnd::RELEASE_AFTER_TAKE`); the measurement hold (`--drag-dnd-wait-ms`) uses the same watch
+        let dropping_into = match target {
+            Target::Window(window) | Target::Foreground(window) => Some(window),
+            Target::Desktop => window,
+        };
+        let mut hold = match dropping_into {
+            Some(window)
                 if guard.is_none()
                     && !(self.cfg.dnd_wait.is_zero() && self.cfg.dnd_after_take.is_zero())
                     && self

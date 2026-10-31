@@ -701,6 +701,50 @@ fn a_drag_and_drop_the_engine_lets_drop_is_released_no_sooner_than_350_ms_after_
     assert!(whole < Duration::from_millis(300), "a plain drag took {whole:?}");
 }
 
+/// The window given `WM_STATE` (normal), as a window manager marks the clients it manages, so the engine finds it as
+/// the client under a desktop point (`X11::client_at`); the test's display has no window manager to do it.
+fn managed(window: Window) {
+    let (conn, _) = x11rb::connect(None).expect("an X connection");
+    let state = conn.intern_atom(false, b"WM_STATE").unwrap().reply().unwrap().atom;
+    conn.change_property32(PropMode::REPLACE, window, state, state, &[1, x11rb::NONE])
+        .unwrap();
+    conn.sync().unwrap();
+}
+
+/// The same release schedule on a drag that names no window (the desktop route, XTEST): the engine resolves the window
+/// under the path's start for the drag's pacing, and a Chromium drop there is as much the engine's to let land, in
+/// either mode, as one into a named window in front (task 18 review).
+#[test]
+fn a_windowless_drag_and_drop_over_chromium_is_released_no_sooner_than_350_ms_after_the_take() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    for args in [&[][..], &["--desktop", "dedicated"][..]] {
+        let (window, stop, recorder) = drag_source(OnRelease::Nothing);
+        managed(window);
+        let mut engine = Engine::start_with(args);
+        engine.request("drag", json!({"path": path})).unwrap();
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        let seen = recorder.join().unwrap();
+        assert_eq!(
+            seen,
+            vec![
+                Input::ButtonPress { button: 1, sent: false },
+                Input::ButtonRelease { button: 1, sent: false },
+            ],
+            "{args:?}: the desktop route's press and release, nothing else"
+        );
+        let after_take = TAKE_TO_RELEASE.lock().unwrap().expect("the source took XdndSelection");
+        assert!(
+            after_take >= Duration::from_millis(345),
+            "{args:?}: released {after_take:?} after the take"
+        );
+        assert!(
+            after_take < Duration::from_millis(600),
+            "{args:?}: released {after_take:?} after the take"
+        );
+    }
+}
+
 /// A drag and drop that begins only after the drag's release (the source takes `XdndSelection` and the focus 30 ms
 /// after it, where no look during the drag could see it): the drag answers at its release as a plain drag; the watch,
 /// told the instant the button went up, sends the cancel's Escape within a few milliseconds of the take, before the

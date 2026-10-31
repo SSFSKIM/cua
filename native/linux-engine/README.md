@@ -119,8 +119,9 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     release in 240 takes, idle and under load;
   - a take whose cancel could not be sent: `… it was cancelled, but whether the drop landed cannot be confirmed. …`.
 
-  Where the engine lets the drop happen (Chrome already in front, or a dedicated desktop; and every Chromium window,
-  whose drop changes nothing), it watches the take too, and once the target's client takes `XdndSelection` it spaces
+  Where the engine lets the drop happen (Chrome already in front, or a dedicated desktop; every Chromium window,
+  whose drop changes nothing; and a drag that names no window, through the window under its start), it watches the
+  take too, and once that window's client takes `XdndSelection` it spaces
   the path's remaining steps so the release comes no sooner than 350 ms after the take, no step shorter than the
   family's own (`dnd.rs` `RELEASE_AFTER_TAKE`; `--stats` `after_take`). Chromium sends XdndDrop at the release only if
   its target has accepted by then, and the target accepts only after the renderer has answered an earlier position. A

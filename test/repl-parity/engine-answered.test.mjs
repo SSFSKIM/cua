@@ -17,6 +17,7 @@ function fakeProc(processes) {
     const dir = join(root, pid); fs.mkdirSync(dir);
     fs.writeFileSync(join(dir, 'stat'), `${pid} (${p.comm ?? 'a (b) c'}) S ${p.ppid} 1 1 0 -1`);
     fs.writeFileSync(join(dir, 'cmdline'), (p.cmdline ?? []).join('\0') + '\0');
+    if (p.environ) fs.writeFileSync(join(dir, 'environ'), Object.entries(p.environ).map(([k, v]) => `${k}=${v}`).join('\0') + '\0');
     if (p.exe) fs.symlinkSync(p.exe, join(dir, 'exe'));
   }
   fs.mkdirSync(join(root, 'self'));
@@ -47,15 +48,55 @@ test('engineProcesses finds the engines among the descendants of the root, each 
     104: {ppid: 102, exe: '/usr/bin/gio', cmdline: ['gio', 'launch']},
     105: {ppid: 102, cmdline: []},
   });
-  assert.deepEqual(engineProcesses(100, {proc}), [{pid: 103, exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs'}]);
-  assert.deepEqual(engineProcesses(200, {proc}), [{pid: 201, exe: VENDOR, kind: 'vendor', parent: 'cua'}]);
+  assert.deepEqual(engineProcesses(100, {proc}), [{pid: 103, exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs', service: null}]);
+  assert.deepEqual(engineProcesses(200, {proc}), [{pid: 201, exe: VENDOR, kind: 'vendor', parent: 'cua', service: null}]);
   assert.deepEqual(engineProcesses(999, {proc}), []);
 });
 
-test('mergeObservations keeps each distinct engine once, whatever the pid', () => {
-  const a = {pid: 1, exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs'};
-  assert.deepEqual(mergeObservations([a], [{...a, pid: 2}, {...a, exe: VENDOR, kind: 'vendor'}]),
-    [{exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs'}, {exe: VENDOR, kind: 'vendor', parent: 'trusted-worker.mjs'}]);
+// #171 M3: which service drove the engine is its parent's, the module the trusted worker's sky wrapper loads
+// (CUA_SKY_SERVICE in the worker's environment, read from /proc/<pid>/environ).
+const OWN_SERVICE = '/opt/cua/src/services/engine/linux/service.mjs';
+const VENDOR_SERVICE = '/s/runtimes/r/cua_node/lib/node_modules/@oai/sky/dist/project/cua/sky_js/src/service.js';
+test('serviceKind names cua\'s Linux service and the vendor\'s @oai/sky service by their module, nothing else', async () => {
+  const {serviceKind} = await import('../../scripts/repl-parity/engine-answered.mjs');
+  assert.equal(serviceKind(OWN_SERVICE), 'cua');
+  assert.equal(serviceKind(VENDOR_SERVICE), 'vendor');
+  assert.equal(serviceKind('/opt/cua/src/services/engine/service.mjs'), null, 'the macOS engine service');
+  assert.equal(serviceKind(undefined), null);
+});
+
+test('engineProcesses names the service each engine\'s parent loaded, from its environment', () => {
+  const proc = fakeProc({
+    100: {ppid: 1, exe: '/usr/bin/node', cmdline: ['node', 'serve-native.mjs']},
+    102: {ppid: 100, exe: WORKER[0], cmdline: WORKER, environ: {HOME: '/home/u', CUA_SKY_SERVICE: OWN_SERVICE, CUA_ENGINE_BIN: OWN}},
+    103: {ppid: 102, exe: OWN, cmdline: [OWN, 'server', '--desktop', 'shared']},
+    200: {ppid: 1, exe: '/usr/bin/node', cmdline: ['node', 'serve-native.mjs']},
+    202: {ppid: 200, exe: WORKER[0], cmdline: WORKER, environ: {CUA_SKY_SERVICE: VENDOR_SERVICE, OAI_SKY_LINUX_BIN: VENDOR}},
+    203: {ppid: 202, exe: VENDOR, cmdline: [VENDOR, 'server']},
+  });
+  assert.deepEqual(engineProcesses(100, {proc}), [{pid: 103, exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs', service: 'cua'}]);
+  assert.deepEqual(engineProcesses(200, {proc}), [{pid: 203, exe: VENDOR, kind: 'vendor', parent: 'trusted-worker.mjs', service: 'vendor'}]);
+});
+
+test('mergeObservations keeps each distinct engine and service once, whatever the pid', () => {
+  const a = {pid: 1, exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs', service: 'cua'};
+  assert.deepEqual(mergeObservations([a], [{...a, pid: 2}, {...a, exe: VENDOR, kind: 'vendor'}, {...a, service: 'vendor'}]),
+    [{exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs', service: 'cua'}, {exe: VENDOR, kind: 'vendor', parent: 'trusted-worker.mjs', service: 'cua'},
+      {exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs', service: 'vendor'}]);
+  // An observation recorded before the service was read keeps no service field.
+  assert.deepEqual(mergeObservations([{exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs'}]), [{exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs'}]);
+});
+
+test('engineAnsweredProblem: from M3 each lane\'s engine is driven by its own service, cua\'s engine by cua\'s service', () => {
+  const own = {exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs', service: 'cua'}, vendor = {exe: VENDOR, kind: 'vendor', parent: 'trusted-worker.mjs', service: 'vendor'};
+  assert.equal(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [own]}, 'run'), null);
+  assert.equal(engineAnsweredProblem({requested: 'vendor', expected: VENDOR, observed: [vendor]}, 'run'), null);
+  assert.equal(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [{...own, service: 'vendor'}]}, 'run'),
+    'run: the vendor service drove the engine, not the cua lane\'s (the trusted worker\'s CUA_SKY_SERVICE)');
+  assert.equal(engineAnsweredProblem({requested: 'vendor', expected: VENDOR, observed: [{...vendor, service: null}]}, 'run'),
+    'run: an unknown service drove the engine, not the vendor lane\'s (the trusted worker\'s CUA_SKY_SERVICE)');
+  assert.equal(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [{exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs'}]}, 'run'), null,
+    'an observation recorded before the service was read is judged as it was');
 });
 
 test('engineAnsweredProblem: sound only when the requested engine, at the expected executable, answered alone as the trusted worker\'s child', () => {

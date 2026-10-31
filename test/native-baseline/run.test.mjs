@@ -64,7 +64,7 @@ function fakeDevice({host = 'vendor', geditRunning = false, desktop = geditDeskt
       return result;
     },
     helpers: () => [{path: '~/.local/share/cua/runtimes/r/sky_linux_arm64', origin: 'pinned runtime', ageSeconds: 3}],
-    engines: () => (state.engines ?? [{pid: 9000, exe: SKY_LINUX, kind: 'vendor', parent: 'trusted-worker.mjs'}]),
+    engines: () => (state.engines ?? [{pid: 9000, exe: SKY_LINUX, kind: 'vendor', parent: 'trusted-worker.mjs', service: 'vendor'}]),
     leftovers: () => ({serves: 0, geditRunning: [...desktop.windows.values()].filter(w => !w.crashed && !w.closed).length}),
     crashReports: () => ({files: 1, newest: '2026-10-07T02:00:00.000Z'}),
   };
@@ -144,9 +144,9 @@ test('a Linux vendor-host run records every operation, the method cases and one 
   // The method cases' own windows were taken down by the methods: found gone, their directories removed at once.
   assert.deepEqual(meta.gedit.targetCleanup.map(c => [c.op, c.terminated.length, c.gone.length, c.removed.length]), [['method.typeText', 0, 1, 1], ['method.paste', 0, 1, 1]]);
   assert.deepEqual(meta.leftovers, {serves: 0, geditRunning: 0});
-  assert.deepEqual(meta.service, {surface: 'computer', engine: 'sky', answered: 'vendor'});
+  assert.deepEqual(meta.service, {surface: 'computer', engine: 'vendor', answered: 'vendor'});
   assert.equal(meta.helpersAtBind.helpers[0].origin, 'pinned runtime');
-  assert.deepEqual(meta.nativeEngine, {requested: 'vendor', bin: null, expected: SKY_LINUX, error: null, observed: [{exe: SKY_LINUX, kind: 'vendor', parent: 'trusted-worker.mjs'}]});
+  assert.deepEqual(meta.nativeEngine, {requested: 'vendor', bin: null, expected: SKY_LINUX, error: null, observed: [{exe: SKY_LINUX, kind: 'vendor', parent: 'trusted-worker.mjs', service: 'vendor'}]});
   // No row carries a window title or the typed text.
   assert.doesNotMatch(JSON.stringify(rows), /scratch-0|the quick brown fox|cuabaselinemarker/);
 });

@@ -1,0 +1,13 @@
+1793422672.01 front0=Google Chrome for Testing#44426
+1793422684.72 panel#44879@0 above:Google Chrome for Testing#44426@0 below:TextEdit#44349@0 | front0=Google Chrome for Testing#44426
+1793422693.47 panel#44879@0 above:Google Chrome for Testing#44426@0 below:cmux#19462@0 | front0=TextEdit#44349
+1793422693.57 panel#44879@102 above:- below:제어 센터#43894@25 | front0=TextEdit#44349
+1793422696.83 panel#44879@102 above:- below:제어 센터#43894@25 | front0=TextEdit#44881
+1793422696.94 panel#44879@102 above:- below:제어 센터#43894@25 | front0=TextEdit#44349
+1793422700.20 panel#44879@102 above:- below:제어 센터#43894@25 | front0=TextEdit#44883
+1793422702.66 panel#44879@102 above:- below:제어 센터#43894@25 | front0=TextEdit#44349
+1793422703.41 panel#44879@102 above:- below:제어 센터#43894@25 | front0=TextEdit#44884
+1793422707.67 panel#44879@102 above:- below:제어 센터#43894@25 | front0=TextEdit#44349
+1793422714.96 front0=TextEdit#44349
+1793422724.98 front0=cmux#19462
+1793422725.31 front0=cmux#29183

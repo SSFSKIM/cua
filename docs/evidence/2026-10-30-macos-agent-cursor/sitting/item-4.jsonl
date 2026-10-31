@@ -77,3 +77,33 @@
 {"item":"4","at":1793419496646,"step":14,"kind":"watch","id":"front-menu","text":"with TextEdit frontmost and its menu open, the cursor shows above the menu"}
 {"item":"4","at":1793419496647,"step":15,"kind":"cue","text":"Press Escape to close the menu."}
 {"item":"4","at":1793419507140,"step":17,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"4","at":1793422672079,"kind":"start","steps":17,"dryRun":false}
+{"item":"4","at":1793422672083,"step":1,"kind":"say","text":"Acceptance 4: covered and front"}
+{"item":"4","at":1793422672084,"step":2,"kind":"owner","text":"Drag the Chrome for Testing window so that it covers the right half of the TextEdit window, Chrome in front, then say done."}
+{"item":"4","at":1793422684526,"step":3,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"4","at":1793422684598,"step":4,"kind":"cell","session":"a","label":"left, uncovered (a scroll)","ok":true,"value":{"ms":8.271624999999972},"inCellMs":8.284207999999921,"route":"2'","engine":"cua"}
+{"item":"4","at":1793422685931,"step":6,"kind":"cell","session":"a","label":"right, under Chrome (a scroll)","ok":true,"value":{"ms":7.547416999999996},"inCellMs":7.5570410000000265,"route":"2'","engine":"cua"}
+{"item":"4","at":1793422687197,"step":8,"kind":"cell","session":"a","label":"back left (a scroll)","ok":true,"value":{"ms":4.356000000000222},"inCellMs":4.366625000000113,"route":"2'","engine":"cua"}
+{"item":"4","at":1793422687198,"step":9,"kind":"watch","id":"covered","text":"wherever the cursor passes under the Chrome window, Chrome's window covers it"}
+{"item":"4","at":1793422693441,"step":11,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"4","at":1793422693553,"step":12,"kind":"cell","session":"a","label":"TextEdit frontmost: the cursor shown at the document's top-left, near the menu bar","ok":true,"value":{"ms":7.879499999999098},"inCellMs":7.896208000000115,"route":"2'","engine":"cua"}
+{"item":"4","at":1793422693553,"step":13,"kind":"cue","text":"Now open TextEdit's Format menu in the menu bar, and keep it open."}
+{"item":"4","at":1793422703948,"step":14,"kind":"watch","id":"front-menu","text":"with TextEdit frontmost and its menu open, the cursor shows above the menu"}
+{"item":"4","at":1793422703950,"step":15,"kind":"cue","text":"Press Escape to close the menu."}
+{"item":"4","at":1793422714666,"step":17,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"4","at":1793423160585,"kind":"start","steps":7,"dryRun":false}
+{"item":"4","at":1793423160734,"step":1,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"4","at":1793423161835,"step":2,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"4","at":1793423161898,"step":3,"kind":"cell","session":"a","label":"front, under where the Format menu drops","ok":true,"value":{"ms":2.842375000000004},"inCellMs":2.8533330000000205,"route":"2'","engine":"cua"}
+{"item":"4","at":1793423161898,"step":4,"kind":"cue","text":"Now open TextEdit's Format menu, and keep it open."}
+{"item":"4","at":1793423171807,"step":5,"kind":"watch","id":"front-menu","text":"with TextEdit frontmost and its menu open, the cursor shows above the menu"}
+{"item":"4","at":1793423171809,"step":6,"kind":"cue","text":"Press Escape to close the menu."}
+{"item":"4","at":1793423177867,"step":7,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"4","at":1793423302147,"kind":"start","steps":7,"dryRun":false}
+{"item":"4","at":1793423302474,"step":1,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"4","at":1793423303519,"step":2,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"4","at":1793423303580,"step":3,"kind":"cell","session":"a","label":"front, under where the Format menu drops","ok":true,"value":{"ms":7.614874999999984},"inCellMs":7.6250839999999585,"route":"2'","engine":"cua"}
+{"item":"4","at":1793423303580,"step":4,"kind":"cue","text":"Now open TextEdit's Format menu, and keep it open."}
+{"item":"4","at":1793423308530,"step":5,"kind":"watch","id":"front-menu","text":"with TextEdit frontmost and its menu open, the cursor shows above the menu"}
+{"item":"4","at":1793423308531,"step":6,"kind":"cue","text":"Press Escape to close the menu."}
+{"item":"4","at":1793423311763,"step":7,"kind":"close","session":"a","exit":{"code":0,"signal":null}}

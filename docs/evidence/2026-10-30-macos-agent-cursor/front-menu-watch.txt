@@ -1,0 +1,5 @@
+1793423302.07 front0=TextEdit#44349
+1793423303.61 panel#44939@102 above:- below:제어 센터#7523@25 | front0=TextEdit#44349
+1793423307.68 panel#44939@102 above:- below:제어 센터#7523@25 | front0=TextEdit#44927
+1793423309.48 panel#44939@102 above:- below:제어 센터#7523@25 | front0=TextEdit#44349
+1793423312.03 front0=TextEdit#44349

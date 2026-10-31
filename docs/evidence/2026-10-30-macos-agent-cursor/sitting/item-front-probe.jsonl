@@ -1,0 +1,5 @@
+{"item":"front-probe","at":1793422811342,"kind":"start","steps":5,"dryRun":false}
+{"item":"front-probe","at":1793422811494,"step":1,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"front-probe","at":1793422812607,"step":2,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"front-probe","at":1793422812669,"step":3,"kind":"cell","session":"a","label":"front scroll","ok":true,"value":{"ms":4.540291999999965},"inCellMs":4.550999999999988,"route":"2'","engine":"cua"}
+{"item":"front-probe","at":1793422817170,"step":5,"kind":"close","session":"a","exit":{"code":0,"signal":null}}

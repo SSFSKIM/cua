@@ -41,3 +41,6 @@
 {"item":"7","id":"key-after-fade","verdict":"pass","note":"owner + captures: the press_key after the fade (refused 'still interacting', which still counts as the session's request) brought it back at its last point","at":"2026-10-31T05:47:32.797Z"}
 {"item":"7","id":"taken-over","verdict":"pass","note":"owner + captures: faint after the owner's click","at":"2026-10-31T05:47:32.875Z"}
 {"item":"7","id":"key-clears","verdict":"pass","note":"owner + captures: full again at the press_key after the owner's click","at":"2026-10-31T05:47:32.956Z"}
+{"item":"9","id":"reduce-motion","verdict":"pass","note":"owner, build bf2b83cf49ae","at":"2026-10-31T05:52:50.360Z"}
+{"item":"11","id":"motion-vendor","verdict":"pass","note":"owner: the vendor's run (one move refused by the vendor: windowNotFoundAtPosition at the right edge)","at":"2026-10-31T05:55:42.824Z"}
+{"item":"11","id":"motion-cua","verdict":"pass","note":"owner: matches the vendor; the look good as is (halo .hudWindow under .aqua, 14 % wash)","at":"2026-10-31T05:55:42.907Z"}

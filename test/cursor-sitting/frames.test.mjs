@@ -2,6 +2,9 @@
 // task-8 report): WindowServer's FrameUpdate times counted inside the spans the probe's `--glides` gives, so the `fps60`
 // arm's cap is proven, or shown not taking effect, in the same run as its timing. Checked without a Mac.
 import {test} from 'node:test';
+import {EventEmitter} from 'node:events';
+import {PassThrough} from 'node:stream';
+import {startFrameStream} from '../../scripts/cursor-sitting/signposts.mjs';
 import assert from 'node:assert/strict';
 import {capCheckWithStream, capVerdict, frameSummary, glideFrames, glideFramesCheck, probeSpans} from '../../scripts/cursor-sitting/frames.mjs';
 
@@ -128,16 +131,13 @@ test('the cap check reads a display another client held at full rate as undeterm
   let calls = 0;
   const probe = () => (++calls === 1 ? {pid: 5, debug: null, glides: [span(0), span(1)], rock: null} : {pid: 6, debug: 'fps60', glides: [span(2), span(3)], rock: null});
   const full = [0, 1, 2, 3].flatMap(k => frames(k * 2000 * MS, 1000, 1000 / 120));
-  const stream = quietFrames => async () => {
-    let arrived = 0;
-    return {started: true, frameTimes: () => full.slice(0, arrived), stop: async () => ({ok: true, times: full}),
-      arrive: n => { arrived += n; }, quietFrames};
-  };
-  const sleeper = s => async ms => { const st = await s; st.arrive?.(Math.round(st.quietFrames * ms / 1000)); };
   for (const [quietHz, verdict] of [[120, 'undetermined'], [3, 'not capped']]) {
     calls = 0;
-    const started = stream(quietHz)();
-    const check = await capCheckWithStream('fps60', {probe, startStream: () => started, settleMs: 0, quietMs: 1000, sleep: sleeper(started)});
+    let clock = 50_000;
+    // The drained stream's frames, with their log times: `quietHz` of them a second in the window the check marks.
+    const walls = Array.from({length: quietHz}, (_, k) => 50_000 + k * (1000 / quietHz));
+    const startStream = async () => ({started: true, frameTimes: () => [], stop: async () => ({ok: true, times: full, walls})});
+    const check = await capCheckWithStream('fps60', {probe, startStream, settleMs: 0, quietMs: 1000, sleep: async ms => { clock += ms; }, now: () => clock});
     assert.equal(check.verdict, verdict, `${quietHz} Hz before the probes`);
     assert.equal(check.quiet.hz, quietHz);
     if (verdict === 'undetermined') assert.match(check.why, /display ran at 120 Hz before the probes.*held/);
@@ -157,4 +157,54 @@ test('a probe that does not report the arm it was asked for is undetermined: the
   let calls = 0;
   const right = () => { const k = calls++; return {pid: 5 + k, debug: k ? 'fps60' : null, glides: [span(2 * k), span(2 * k + 1)], rock: null}; };
   assert.equal((await glideFramesCheck('fps60', {probe: right, readFrames: () => times})).verdict, 'capped');
+});
+
+// A local `log` timestamp ("2026-10-31 13:22:07.139326-0700") for epoch ms `ms`.
+const logStamp = ms => {
+  const d = new Date(ms), p = (n, w = 2) => String(n).padStart(w, '0');
+  const z = -d.getTimezoneOffset(), sign = z >= 0 ? '+' : '-';
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}000${sign}${p(Math.floor(Math.abs(z) / 60))}${p(Math.abs(z) % 60)}`;
+};
+
+test('the quiet window is counted by the frames\' own times after the drain, not by when log stream delivered them', async () => {
+  // The production stream adapter over a fake `log stream` whose lines arrive late: frames of the quiet window only
+  // after it, older queued frames during it.
+  const T0 = Date.UTC(2026, 9, 31, 20, 22, 6);
+  const frameLine = ms => `${JSON.stringify({signpostName: 'FrameUpdate', subsystem: 'com.apple.SkyLight', category: 'tracing', machTimestamp: Math.round(ms * MS), timestamp: logStamp(ms)})}\n`;
+  const every = (from, to, step) => Array.from({length: Math.round((to - from) / step)}, (_, k) => from + k * step);
+  const span = (from, ms) => ({begin: Math.round(from * MS), end: Math.round((from + ms) * MS), ms, mode: 'path'});
+  const glidesAt = [T0 + 3000, T0 + 5000, T0 + 7000, T0 + 9000];
+  for (const [label, quietFrames, staleFrames, verdict, quietHz] of [
+    ['a held display whose quiet frames come late', every(T0, T0 + 1500, 1000 / 120), every(T0 - 1500, T0, 25), 'undetermined', 120],
+    ['a quiet display with stale frames delivered during its window', [], every(T0 - 1500, T0, 1000 / 120), 'not capped', 0],
+  ]) {
+    let clock = T0, child;
+    const spawn = () => {
+      child = new EventEmitter();
+      child.stdout = new PassThrough();
+      child.stderr = new PassThrough();
+      child.exitCode = null;
+      child.kill = () => { setImmediate(() => { child.emit('exit', 0); child.stdout.end(); setImmediate(() => child.emit('close', 0)); }); return true; };
+      setImmediate(() => child.stdout.write('Filtering the log data using "…"\n'));
+      return child;
+    };
+    let sleeps = 0;
+    const sleep = async ms => {
+      sleeps++;
+      if (sleeps === 1) for (const t of staleFrames) child.stdout.write(frameLine(t));  // during the quiet window
+      clock += ms;
+      if (sleeps === 2) {  // the settle: the quiet window's own frames, then every glide's at full rate
+        for (const t of quietFrames) child.stdout.write(frameLine(t));
+        for (const g of glidesAt) for (const t of every(g, g + 1000, 1000 / 120)) child.stdout.write(frameLine(t));
+      }
+      await new Promise(r => setImmediate(r));
+    };
+    let calls = 0;
+    const probe = () => (++calls === 1 ? {pid: 5, debug: null, glides: [span(glidesAt[0], 1000), span(glidesAt[1], 1000)], rock: null}
+      : {pid: 6, debug: 'fps60', glides: [span(glidesAt[2], 1000), span(glidesAt[3], 1000)], rock: null});
+    const check = await capCheckWithStream('fps60', {probe, startStream: () => startFrameStream({spawn, readyMs: 1000}), settleMs: 0, quietMs: 1500,
+      sleep, now: () => clock});
+    assert.equal(check.quiet.hz, quietHz, label);
+    assert.equal(check.verdict, verdict, label);
+  }
 });

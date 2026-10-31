@@ -95,20 +95,23 @@ export async function glideFramesCheck(arm, {probe, readFrames, glides = 2, now 
 // for the check only: started before the probes, drained (stopped, its last lines in) once they end and `settleMs` has
 // let the last frames arrive, and judged from the drained times. A stream that did not start or failed on the way is
 // an undetermined verdict, never a partial count read as a rate.
-// Before the probes the stream counts `quietMs` of the display with nothing of the cursor's drawing: when another client
+// Before the probes the check marks `quietMs` of the display with nothing of the cursor's drawing (its start and end on
+// Date.now()'s clock, `now`) and, once the stream is drained, counts the frames whose own log timestamps fall inside it:
+// log stream delivers late, so counting by delivery would miss the window's frames and take older ones. When another client
 // already holds it at full rate (FULL_INTERVAL_MS's rate or more), every glide composites at full rate whatever its own
 // range asks, and the FrameUpdate count, which names no window, cannot tell a cap ignored from one overridden, so a
 // "not capped" then reads undetermined (#235's task-8 report, the run of 2026-10-31b).
-export async function capCheckWithStream(arm, {probe, startStream, glides = 2, settleMs = 1000, quietMs = QUIET_MS, sleep = ms => new Promise(resolve => setTimeout(resolve, ms))}) {
+export async function capCheckWithStream(arm, {probe, startStream, glides = 2, settleMs = 1000, quietMs = QUIET_MS,
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), now = () => Date.now()}) {
   const frames = await startStream();
   let kept = null;
   const finish = async () => (kept ??= await frames.stop());
   try {
-    let quiet = null;
+    let window = null;
     if (frames.started) {
-      const before = frames.frameTimes().length;
+      const start = now();
       await sleep(quietMs);
-      quiet = {ms: quietMs, frames: frames.frameTimes().length - before, hz: Math.round((frames.frameTimes().length - before) / (quietMs / 1000) * 10) / 10};
+      window = {start, end: now()};
     }
     const check = await glideFramesCheck(arm, {probe, glides, readFrames: async () => {
       if (frames.started) await sleep(settleMs);
@@ -116,6 +119,12 @@ export async function capCheckWithStream(arm, {probe, startStream, glides = 2, s
       if (!frames.started || !kept.ok) throw new Error(`the FrameUpdate stream ${frames.started ? 'failed' : 'did not start'}: ${kept.error ?? 'no reason given'}`);
       return kept.times;
     }});
+    await finish();
+    let quiet = null;
+    if (window && kept?.ok && kept.walls) {
+      const inside = kept.walls.filter(t => t >= window.start && t < window.end).length, ms = window.end - window.start;
+      quiet = {start: window.start, end: window.end, ms, frames: inside, hz: Math.round(inside / (ms / 1000) * 10) / 10};
+    }
     if (check.verdict === 'not capped' && quiet && quiet.hz >= HELD_HZ) {
       return {...check, quiet, verdict: 'undetermined', why: `the display ran at ${quiet.hz} Hz before the probes, with nothing of the cursor's drawing: another client held it at full rate, so a cap cannot show (${check.why})`};
     }

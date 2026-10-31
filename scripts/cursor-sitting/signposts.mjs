@@ -72,18 +72,24 @@ function stream(predicate, line, {spawn, readyMs}) {
 }
 
 // A FrameUpdate stream, for the fps60 cap's proof only, waited on until it delivers (or `readyMs` passes).
-// -> {started, frameTimes(), stop() -> {ok, error?, times}}: the times so far, in order.
+// -> {started, frameTimes(), stop() -> {ok, error?, times, walls}}: `times` the frames' mach continuous ticks so far,
+// in order (the probe's glide spans' clock); `walls` their log timestamps as epoch ms, in order (Date.now()'s clock, for
+// a window the kit marks itself).
 export async function startFrameStream({spawn = nodeSpawn, readyMs = STREAM_READY_MS} = {}) {
-  const times = [];
+  const times = [], walls = [];
   const frames = stream(FRAME_UPDATE_PREDICATE, text => {
     try {
       const e = JSON.parse(text);
-      if (e.signpostName === 'FrameUpdate' && e.subsystem === 'com.apple.SkyLight' && e.category === 'tracing' && Number.isFinite(e.machTimestamp)) times.push(e.machTimestamp);
+      if (e.signpostName === 'FrameUpdate' && e.subsystem === 'com.apple.SkyLight' && e.category === 'tracing' && Number.isFinite(e.machTimestamp)) {
+        times.push(e.machTimestamp);
+        const wall = logTimestampMs(e.timestamp);
+        if (wall !== null) walls.push(wall);
+      }
     } catch {}
   }, {spawn, readyMs});
   const started = await frames.ready;
-  const sorted = () => [...times].sort((a, b) => a - b);
-  return {started, frameTimes: sorted, stop: async () => ({...(await frames.stop()), times: sorted()})};
+  const sorted = list => [...list].sort((a, b) => a - b);
+  return {started, frameTimes: () => sorted(times), stop: async () => ({...(await frames.stop()), times: sorted(times), walls: sorted(walls)})};
 }
 
 const logDate = date => {

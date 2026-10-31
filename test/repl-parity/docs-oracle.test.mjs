@@ -113,3 +113,13 @@ test('Table 3 addition: cua\'s agent cursor paragraph follows the core on a macO
  assert.equal(agentCursorLane(run('darwin',['browser']),{case:'cells/x'}),false);
  assert.equal(agentCursorLane(run('linux',['computer','browser']),{case:'cells/x'}),false);
 });
+test('the binder lane\'s first cell: the computer facade\'s document carries the agent cursor paragraph, the computer-disabled facade\'s does not',async()=>{
+ // The binder banner builds two facades over a macOS Sky double, each emitting its own first-call document into one
+ // text: the run records the lane's host surfaces (browser), not the facades', so the lane flag cannot say which.
+ const {documentComparisonRun}=await import('../../scripts/repl-parity/document-comparison.mjs');
+ const tail='[0] text field "Fixture editor"',served=coreDocument({host:'cua',agentCursor:true})+coreDocument({host:'cua'})+tail;
+ const meta=host=>({host,platform:'darwin',surfaces:['browser'],caseConfigurations:{'api/cua/computer':{surfaces:['browser'],sandbox:'scoped'}}});
+ const row=text=>({case:'api/cua/computer',cell:'bind-fixture-app',ok:true,content:[{type:'text',text}]});
+ assert.equal(documentComparisonRun({meta:meta('vendor'),rows:[row(coreDocument({host:'vendor'}).repeat(2)+tail)]}).rows[0].content[0].text,served);
+ assert.deepEqual(documentComparisonRun({meta:meta('cua'),rows:[row(served)]}).rows[0],row(served),'cua\'s side compares as served');
+});

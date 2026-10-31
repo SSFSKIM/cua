@@ -56,8 +56,10 @@ export function projectDocumentationRow(row,{host,agentCursor=false}={}){
  return {...row,content:transformDocumentContent(row.content,{host,agentCursor})};
 }
 // Additional callers must enumerate their bootstrap/rewrite case and cell scopes before invoking this projection.
+// `agentCursor` is one flag for every document, or one per consecutive document (an array; past its end, none).
 export function transformDocumentContent(content,{host,agentCursor=false}={}){
  assert.ok(['vendor','cua'].includes(host),'explicit document host required');
+ const cursorAt=index=>Array.isArray(agentCursor)?agentCursor[index]===true:agentCursor;
  return content.map(item=>{
   if(item.type!=='text')return item;
   let text=item.text;
@@ -66,8 +68,8 @@ export function transformDocumentContent(content,{host,agentCursor=false}={}){
    if(text.startsWith(complete)){
     // Independent factories may share the cua.core named output. Consume only consecutive, byte-exact default
     // documents at its beginning; a corrupt second document or unrelated suffix stays byte-visible.
-    let prefix='';while(text.startsWith(complete)){prefix+=coreDocument({host:'cua',agentCursor});text=text.slice(complete.length);}text=prefix+text;
-   }else if(text.startsWith(vendorCore+'\n'))text=ownCore+(agentCursor?`\n${AGENT_CURSOR}`:'')+text.slice(vendorCore.length);
+    let prefix='',index=0;while(text.startsWith(complete)){prefix+=coreDocument({host:'cua',agentCursor:cursorAt(index++)});text=text.slice(complete.length);}text=prefix+text;
+   }else if(text.startsWith(vendorCore+'\n'))text=ownCore+(cursorAt(0)?`\n${AGENT_CURSOR}`:'')+text.slice(vendorCore.length);
   }
   const prefix=auxiliary+'\n\n';
   if(text.startsWith(prefix+'# Selected Browser\n'))text=prefix+normalizeSelectedBrowserDocument(text.slice(prefix.length));

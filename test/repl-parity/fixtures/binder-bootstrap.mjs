@@ -5,13 +5,15 @@ export function binderServices(){
  const service=fileURLToPath(new URL('./binder-service.mjs',import.meta.url));
  return {services:{sky:service,binder:service},roots:[fileURLToPath(new URL('../../../',import.meta.url))],env:{},close:async()=>{}};
 }
+// The facades the banner builds, in order. Each emits its own first-call core document, so the lane's first cell
+// carries them back to back; scripts/repl-parity/document-comparison.mjs projects each by its facade's surfaces.
+export const BINDER_FACADES=[{name:'cua',options:{browser:false}},{name:'binderDisabledCua',options:{browser:false,computer:false}}];
 export function binderBanner({facadeURL,bindTabURL,facadeExport='create_tinysky_alt',bindTabExport='bind_tab',stateURL,stateExport='get_state'}={}){
  for(const value of [facadeURL,bindTabURL,stateURL])if(typeof value!=='string'||!value.startsWith('file:'))throw new Error('Binder requires explicit selected module file URLs');
  return `{
  const factory=(await import(${JSON.stringify(facadeURL)}))[${JSON.stringify(facadeExport)}];
  const decorate=(await import(${JSON.stringify(bindTabURL)}))[${JSON.stringify(bindTabExport)}];
- globalThis.cua=await factory({browser:false});
- globalThis.binderDisabledCua=await factory({browser:false,computer:false});
+${BINDER_FACADES.map(({name,options})=>` globalThis.${name}=await factory(${JSON.stringify(options)});`).join('\n')}
  const {Buffer}=await import("node:buffer");
  const decode=value=>Uint8Array.from(Buffer.from(value.base64,'base64'));
  const call=(tab,method,args)=>nodeRepl.rpc('binder',{type:'tab',tab,method,args});

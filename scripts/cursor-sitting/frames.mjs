@@ -11,6 +11,9 @@ export const FRAME_UPDATE_PREDICATE = 'process == "WindowServer" AND subsystem =
 // two (16.7 ms). The verdict reads the median interval, which a burst of another app's frames inside a glide (the
 // count is the whole display's) barely moves, where it can lift the rate past 66 Hz (measured, #235's task-8 report).
 export const CAPPED_INTERVAL_MS = 14, FULL_INTERVAL_MS = 10;
+// The display before the probes: a second and a half of it, held at full rate from 1000 / FULL_INTERVAL_MS frames a
+// second (idle, it composites a few a second: measured 3).
+export const QUIET_MS = 1500, HELD_HZ = 1000 / FULL_INTERVAL_MS;
 
 const median = xs => {
   if (!xs.length) return null;
@@ -21,7 +24,8 @@ const median = xs => {
 // A probe's answer (`--probe cursor --glides`) as spans under its pid.
 export function probeSpans(answer) {
   const pid = answer?.pid ?? null;
-  return {pid, glides: (answer?.glides ?? []).map(g => ({pid, begin: g.begin, end: g.end, ms: g.ms, mode: g.mode})),
+  // `debug`: the arm the probe says it ran with (CursorProbe.swift's final line), undefined when it says none.
+  return {pid, debug: answer?.debug, glides: (answer?.glides ?? []).map(g => ({pid, begin: g.begin, end: g.end, ms: g.ms, mode: g.mode})),
     rock: answer?.rock ? {pid, begin: answer.rock.begin, end: answer.rock.end, ms: answer.rock.ms, mode: 'rock'} : null};
 }
 
@@ -68,6 +72,9 @@ export async function glideFramesCheck(arm, {probe, readFrames, glides = 2, now 
       sides.push(side);
       if (Number.isInteger(side.pid)) pids.push(side.pid);
     }
+    // The probe names the arm it ran with: none on the first side, `arm` on the second, or the arm may never have taken.
+    const named = [[null, sides[0]], [arm, sides[1]]].find(([asked, side]) => side.debug !== asked);
+    if (named) return {ok: false, arm, verdict: 'undetermined', why: `the probe reported the arm ${JSON.stringify(named[1].debug ?? 'none given')} where ${JSON.stringify(named[0])} was asked: the arm may never have taken`, pids};
     const times = await readFrames(since);
     const [base, capped] = sides.map(side => {
       const rows = glideFrames(side.glides, times);
@@ -88,16 +95,30 @@ export async function glideFramesCheck(arm, {probe, readFrames, glides = 2, now 
 // for the check only: started before the probes, drained (stopped, its last lines in) once they end and `settleMs` has
 // let the last frames arrive, and judged from the drained times. A stream that did not start or failed on the way is
 // an undetermined verdict, never a partial count read as a rate.
-export async function capCheckWithStream(arm, {probe, startStream, glides = 2, settleMs = 1000, sleep = ms => new Promise(resolve => setTimeout(resolve, ms))}) {
+// Before the probes the stream counts `quietMs` of the display with nothing of the cursor's drawing: when another client
+// already holds it at full rate (FULL_INTERVAL_MS's rate or more), every glide composites at full rate whatever its own
+// range asks, and the FrameUpdate count, which names no window, cannot tell a cap ignored from one overridden, so a
+// "not capped" then reads undetermined (#235's task-8 report, the run of 2026-10-31b).
+export async function capCheckWithStream(arm, {probe, startStream, glides = 2, settleMs = 1000, quietMs = QUIET_MS, sleep = ms => new Promise(resolve => setTimeout(resolve, ms))}) {
   const frames = await startStream();
   let kept = null;
   const finish = async () => (kept ??= await frames.stop());
   try {
-    return await glideFramesCheck(arm, {probe, glides, readFrames: async () => {
+    let quiet = null;
+    if (frames.started) {
+      const before = frames.frameTimes().length;
+      await sleep(quietMs);
+      quiet = {ms: quietMs, frames: frames.frameTimes().length - before, hz: Math.round((frames.frameTimes().length - before) / (quietMs / 1000) * 10) / 10};
+    }
+    const check = await glideFramesCheck(arm, {probe, glides, readFrames: async () => {
       if (frames.started) await sleep(settleMs);
       await finish();
       if (!frames.started || !kept.ok) throw new Error(`the FrameUpdate stream ${frames.started ? 'failed' : 'did not start'}: ${kept.error ?? 'no reason given'}`);
       return kept.times;
     }});
+    if (check.verdict === 'not capped' && quiet && quiet.hz >= HELD_HZ) {
+      return {...check, quiet, verdict: 'undetermined', why: `the display ran at ${quiet.hz} Hz before the probes, with nothing of the cursor's drawing: another client held it at full rate, so a cap cannot show (${check.why})`};
+    }
+    return {...check, quiet};
   } finally { await finish(); }
 }

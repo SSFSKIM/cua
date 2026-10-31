@@ -46,12 +46,12 @@ test('the cap took effect when the capped glides\' frames come about 60 a second
 
 test('a probe\'s answer gives its glides and its rock as spans under its pid', () => {
   const answer = {pid: 42, debug: 'fps60', glides: [{begin: 10, end: 34_000, ms: 1.4, mode: 'path'}], rock: {begin: 50_000, end: 74_000, ms: 1}};
-  assert.deepEqual(probeSpans(answer), {pid: 42, glides: [{pid: 42, begin: 10, end: 34_000, ms: 1.4, mode: 'path'}], rock: {pid: 42, begin: 50_000, end: 74_000, ms: 1, mode: 'rock'}});
+  assert.deepEqual(probeSpans(answer), {pid: 42, debug: 'fps60', glides: [{pid: 42, begin: 10, end: 34_000, ms: 1.4, mode: 'path'}], rock: {pid: 42, begin: 50_000, end: 74_000, ms: 1, mode: 'rock'}});
   assert.deepEqual(probeSpans({pid: 1, glides: [], rock: null}).rock, null);
 });
 
 test('the fps60 cap check does not stop for a failed count: a failed probe or log read is undetermined, its pids kept', async () => {
-  const answer = pid => ({pid, glides: [{begin: 0, end: 24_000, ms: 1, mode: 'path'}], rock: null});
+  const answer = pid => ({pid, debug: pid === 5 ? null : 'fps60', glides: [{begin: 0, end: 24_000, ms: 1, mode: 'path'}], rock: null});
   const asked = [];
   const probe = args => { asked.push(args.join(' ')); return answer(asked.length === 1 ? 5 : 6); };
   const unread = await glideFramesCheck('fps60', {probe, readFrames: () => { throw new Error('log show timed out\nmore'); }});
@@ -85,7 +85,7 @@ test('a probe whose end is unconfirmed (stuck) stops the series: another cursor 
 });
 
 test('the cap check waits for its frames: the series\' own stream delivers them after the probes end', async () => {
-  const answer = pid => ({pid, glides: [{begin: 0, end: 24_000, ms: 1, mode: 'path'}], rock: null});
+  const answer = pid => ({pid, debug: pid === 1 ? null : 'fps60', glides: [{begin: 0, end: 24_000, ms: 1, mode: 'path'}], rock: null});
   let calls = 0;
   const times = Array.from({length: 120}, (_, k) => k * 200);
   const check = await glideFramesCheck('fps60', {probe: () => answer(++calls), readFrames: async () => { await new Promise(r => setTimeout(r, 5)); return times; }});
@@ -95,7 +95,7 @@ test('the cap check waits for its frames: the series\' own stream delivers them 
 test('the cap is judged from the drained stream: a stream that failed, or a glide with no frames, is undetermined', async () => {
   // Two glides a side, each 1 s; the default's frames every 8.3 ms, the capped one's every 16.7 ms.
   const span = (k, pid) => ({begin: k * 2000 * MS, end: (k * 2000 + 1000) * MS, ms: 1000, mode: 'path', pid});
-  const answer = (pid, first) => ({pid, glides: [span(first, pid), span(first + 1, pid)].map(({pid: _, ...g}) => g), rock: null});
+  const answer = (pid, first) => ({pid, debug: pid === 5 ? null : 'fps60', glides: [span(first, pid), span(first + 1, pid)].map(({pid: _, ...g}) => g), rock: null});
   let calls = 0;
   const probe = () => (++calls === 1 ? answer(5, 0) : answer(6, 2));
   const every = (k, step) => frames(k * 2000 * MS, 1000, step);
@@ -119,4 +119,42 @@ test('the cap is judged from the drained stream: a stream that failed, or a glid
   const never = await capCheckWithStream('fps60', {probe, startStream: async () => ({started: false, frameTimes: () => [], stop: async () => ({ok: false, error: 'log stream did not start within 10 s', times: []})}), settleMs: 0});
   assert.equal(never.verdict, 'undetermined');
   assert.match(never.why, /did not start/);
+});
+
+test('the cap check reads a display another client held at full rate as undetermined, never "not capped"', async () => {
+  // Tonight's run (sitting-2026-10-31b, step 12-fps60.12): both sides at 8.3 ms with the owner's full-screen Chrome and
+  // cmux on the display. The stream's frames before the probes say whether the display was already at full rate.
+  const span = k => ({begin: k * 2000 * MS, end: (k * 2000 + 1000) * MS, ms: 1000, mode: 'path'});
+  let calls = 0;
+  const probe = () => (++calls === 1 ? {pid: 5, debug: null, glides: [span(0), span(1)], rock: null} : {pid: 6, debug: 'fps60', glides: [span(2), span(3)], rock: null});
+  const full = [0, 1, 2, 3].flatMap(k => frames(k * 2000 * MS, 1000, 1000 / 120));
+  const stream = quietFrames => async () => {
+    let arrived = 0;
+    return {started: true, frameTimes: () => full.slice(0, arrived), stop: async () => ({ok: true, times: full}),
+      arrive: n => { arrived += n; }, quietFrames};
+  };
+  const sleeper = s => async ms => { const st = await s; st.arrive?.(Math.round(st.quietFrames * ms / 1000)); };
+  for (const [quietHz, verdict] of [[120, 'undetermined'], [3, 'not capped']]) {
+    calls = 0;
+    const started = stream(quietHz)();
+    const check = await capCheckWithStream('fps60', {probe, startStream: () => started, settleMs: 0, quietMs: 1000, sleep: sleeper(started)});
+    assert.equal(check.verdict, verdict, `${quietHz} Hz before the probes`);
+    assert.equal(check.quiet.hz, quietHz);
+    if (verdict === 'undetermined') assert.match(check.why, /display ran at 120 Hz before the probes.*held/);
+  }
+});
+
+test('a probe that does not report the arm it was asked for is undetermined: the arm may never have taken', async () => {
+  const span = k => ({begin: k * 2000 * MS, end: (k * 2000 + 1000) * MS, ms: 1000, mode: 'path'});
+  const times = [0, 1].flatMap(k => frames(k * 2000 * MS, 1000, 1000 / 120)).concat([2, 3].flatMap(k => frames(k * 2000 * MS, 1000, 1000 / 60)));
+  for (const debugs of [[null, null], ['fps60', 'fps60'], [null, undefined]]) {
+    let calls = 0;
+    const probe = () => { const k = calls++; return {pid: 5 + k, ...(debugs[k] === undefined ? {} : {debug: debugs[k]}), glides: [span(2 * k), span(2 * k + 1)], rock: null}; };
+    const check = await glideFramesCheck('fps60', {probe, readFrames: () => times});
+    assert.equal(check.verdict, 'undetermined', JSON.stringify(debugs));
+    assert.match(check.why, /reported the arm/);
+  }
+  let calls = 0;
+  const right = () => { const k = calls++; return {pid: 5 + k, debug: k ? 'fps60' : null, glides: [span(2 * k), span(2 * k + 1)], rock: null}; };
+  assert.equal((await glideFramesCheck('fps60', {probe: right, readFrames: () => times})).verdict, 'capped');
 });

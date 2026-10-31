@@ -311,6 +311,19 @@ items into `$OUT2` (`$S drive 1-check --out "$OUT2" --dry-run`, likewise 1, 3 an
      design session, skip item 1, and go on with item 5.
    - **Item 1.** `$S drive 1 --run "$RUN" --out "$OUT2" --clip "$REC/item-1-2026-10-31.mov"`. The windows are already
      placed, so the owner only says done again.
+   - **Without a clip** (the ruling at the second sitting, 2026-10-31). On the owner's Mac, clicking the wallpaper reveals
+     the desktop and slides the windows off-screen, so the recording could not be made. Item 1's order then comes from
+     the engine's own numbers: `$S drive 1 --no-clip --run "$RUN" --out "$OUT2"` (no owner, no placement), then
+     `$S order-meta --out "$OUT2"`.
+     - After the first click, the kit reads both run windows' bounds and scrolls once in TextEdit at its point farthest
+       from Chrome's window (`glide-start`). The second click's glide then starts at a known point and covers at least
+       the distance to Chrome's window.
+     - `order-meta` compares the second click's `engineMs` plus one frame (16.7 ms) with the earliest arrival the engine
+       could plan for a move that long. That arrival comes from the motion reference's springs and arrival rule
+       (`scripts/cursor-sitting/glide.mjs`): a lower bound, so a "pass" holds for the real distance.
+     - It leaves the first target undetermined, since the cursor fades in there with no glide to compare.
+     - The limits, written in `item-1-order-meta.md`: "done when the request returns" is the ruling's (Chrome applies
+       the press in its renderer), and a window moved between the reading and the click is not seen.
    - **Then decide how item 13's `route-3-lag` is judged:** `$S clip routes --out "$OUT2"`. Its answer comes from the
      routes item 1's two clicks recorded, which are known only once they have run.
      - If either click went by route 3, that click's lag is measured from item 1's clip after the sitting (`clip lag`,

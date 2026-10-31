@@ -85,3 +85,15 @@ test('a reading whose wait ran out, or whose window is gone, does not serve the 
   assert.equal(after.ok, false, 'compared with a reading that had no window');
   assert.equal(after.accessibility, undefined, 'a scene with no accessibility record is read at once');
 });
+
+test('two readings with the same fields compare equal whatever order the probe wrote the keys in', async () => {
+  const {focusStep} = await import('../../scripts/cursor-sitting/focus.mjs');
+  const one = {accessibility: true, focusedApp: {pid: 7, bundleId: 'f'}, focusedWindow: {pid: 7, bounds: {x: 1, y: 2, width: 3, height: 4}}, named: true, valueHash: 'a'.repeat(64)};
+  const two = {valueHash: 'a'.repeat(64), named: true, focusedWindow: {bounds: {height: 4, width: 3, y: 2, x: 1}, pid: 7}, focusedApp: {bundleId: 'f', pid: 7}, accessibility: true};
+  const store = {};
+  focusStep({label: 'before', answer: one, pid: 7, store});
+  const after = focusStep({label: 'after', answer: two, pid: 7, equalTo: 'before', store});
+  assert.equal(after.same, true);
+  assert.equal(after.ok, true);
+  assert.equal(focusStep({label: 'again', answer: {...two, focusedApp: {bundleId: 'g', pid: 7}}, pid: 7, equalTo: 'before', store}).same, false, 'a changed field still differs');
+});

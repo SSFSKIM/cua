@@ -357,3 +357,19 @@ test('the cleanup sees how the run ended: a thrown failure, an ordinary failed r
   assert.deepEqual(await ending(refusing, timingSteps('typing', 1)), {failed: 2, error: false}, 'two cells answered ok: false, nothing thrown');
   assert.deepEqual(await ending(fakeIo([]), timingSteps('typing', 1)), {failed: 0, error: false});
 });
+
+test('item 1 without a clip: no owner, no placement, no recording; the glide\'s start read before the scroll that sets it', () => {
+  const steps = PLANS[1]({noClip: true});
+  assert.ok(!steps.some(s => s.owner || s.cue), 'no owner');
+  assert.ok(!steps.some(s => /^record-/.test(s.task ?? '')), 'no recording');
+  const start = steps.findIndex(s => s.task === 'glide-start'), scroll = steps.findIndex(s => /farthest from Chrome/.test(s.label ?? ''));
+  assert.ok(start > steps.findIndex(s => s.orderTarget === 'first-target') && start < scroll && scroll < steps.findIndex(s => s.orderTarget === 'second-target'));
+  assert.equal(steps[start].required, true);
+  for (const results of [{}, {'glide start': {fraction: [0.9, 0.15]}}]) {
+    const code = steps[scroll].cell(results);
+    assert.doesNotThrow(() => new AsyncFunction('nodeRepl', 'cua', code));
+  }
+  assert.match(steps[scroll].cell({'glide start': {fraction: [0.9, 0.15]}}), /\* 0\.9\)/);
+  assert.deepEqual(steps.filter(s => s.orderTarget).map(s => s.orderTarget), ['first-target', 'second-target']);
+  assert.equal(steps.at(-1).close, 'a');
+});

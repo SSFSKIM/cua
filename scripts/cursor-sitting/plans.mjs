@@ -62,7 +62,26 @@ export const PLANS = Object.freeze({
   // Recorded (./recording.mjs): the clip of the two windows' rectangle starts once the owner has placed them and runs
   // until the session has closed. Each click is its cell's last call, so its reply's meta (receipt, round trip) is the
   // click's; its control is read back by the next cell.
-  1: ({clip = null} = {}) => [
+  // Without a clip (the ruling at the second sitting: the recording could not be made), no owner and no placement: the
+  // order comes from the engine's numbers (./glide.mjs). Before the second click the cursor is put at a known point, a
+  // scroll in TextEdit at its point farthest from Chrome's window (glide-start reads both windows' bounds then), so the
+  // glide to the checkbox is at least that far.
+  1: ({clip = null, noClip = false} = {}) => (noClip ? [
+    {say: 'Acceptance 1, without a clip: TextEdit and Chrome for Testing both in the background, the order from the engine\'s numbers'},
+    {open: 'a', scenes: ['textedit', 'chrome']},
+    {run: 'a', cell: ALIGN_CLICK, label: 'TextEdit: the format bar\'s alignment', orderTarget: 'first-target'},
+    {run: 'a', cell: ALIGNMENT, label: 'TextEdit: the alignment read back'},
+    {wait: 1500},
+    {task: 'glide-start', args: ['textedit', 'chrome'], required: true},
+    {run: 'a', cell: results => SCROLL_AT('textedit', results['glide start']?.fraction ?? [0.1, 0.85]), label: 'TextEdit: a scroll at its point farthest from Chrome (the glide\'s known start)'},
+    {wait: 1500},
+    {run: 'a', cell: CLICK_CONTROL_TIMED('sceneOption'), label: 'Chrome for Testing: the page\'s "Scene option" checkbox', orderTarget: 'second-target'},
+    {run: 'a', cell: CONTROL_VALUE('sceneOption'), label: 'Chrome for Testing: the checkbox read back'},
+    {watch: 'from the engine\'s numbers: TextEdit\'s alignment changes before or while the cursor shows at it (cursor-sitting.mjs order-meta)', id: 'order-first-target'},
+    {watch: 'from the engine\'s numbers: the checkbox changes before the arrow\'s tip reaches it (cursor-sitting.mjs order-meta)', id: 'order-second-target'},
+    {wait: 6000},
+    {close: 'a'},
+  ] : [
     {say: 'Acceptance 1: TextEdit and Chrome for Testing both in the background (another app in front), recorded'},
     {owner: PLACE_FOR_RECORDING},
     {task: 'record-start', args: [clip, 'textedit', 'chrome'], required: true},
@@ -79,7 +98,7 @@ export const PLANS = Object.freeze({
     {wait: 6000},
     {close: 'a'},
     {task: 'record-stop'},
-  ],
+  ]),
   // The recorder's proof before item 1: a few seconds of the same rectangle, recorded and stopped as item 1 does, with
   // no session and nothing driven, so a recorder that cannot record or does not write its movie is found before item 1
   // relies on it. The operator checks the clip's frames and deletes it (the runbook's step 3).

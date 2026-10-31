@@ -64,6 +64,11 @@ export function focusProblem(answer, pid) {
   return null;
 }
 
+// A value's JSON with every object's keys sorted, so two readings compare by their fields, whatever order the probe
+// wrote them in (the second sitting: {pid, bundleId} against {bundleId, pid}).
+export const canonical = value => JSON.stringify(value, (_key, v) => (v && typeof v === 'object' && !Array.isArray(v)
+  ? Object.fromEntries(Object.keys(v).sort().map(k => [k, v[k]])) : v));
+
 // One focus reading kept in `store` under `label`, and its verdict: usable (focusProblem), and with `equalTo`, equal to
 // that earlier reading, both usable (two failed reads would otherwise compare equal). -> the task's result.
 export function focusStep({label, answer, pid, equalTo, store}) {
@@ -71,7 +76,7 @@ export function focusStep({label, answer, pid, equalTo, store}) {
   store[label] = {reading, problem};
   if (equalTo === undefined) return {ok: problem === null, label, reading, ...(problem ? {problem} : {})};
   const earlier = store[equalTo];
-  const same = problem === null && earlier?.problem === null && JSON.stringify(reading) === JSON.stringify(earlier.reading);
+  const same = problem === null && earlier?.problem === null && canonical(reading) === canonical(earlier.reading);
   return {ok: same, label, reading, equalTo, same, ...(problem ? {problem} : {}), ...(earlier?.problem ? {earlierProblem: earlier.problem} : {}), ...(earlier ? {} : {earlierProblem: `no reading named ${equalTo}`})};
 }
 

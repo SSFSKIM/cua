@@ -51,6 +51,12 @@
 //       The owner's verdict on what an item asked them to watch, appended to <out>/verdicts.jsonl.
 //   cursor-sitting.mjs summary --out <dir>
 //       Every item's cells, tasks, watches and verdicts, and the timing verdicts, in <out>/summary.md.
+//   cursor-sitting.mjs drive 1 --no-clip …, then cursor-sitting.mjs order-meta --out <evidence dir>
+//       Item 1 without a clip (the ruling at the second sitting): no owner, no placement; the order from the engine's
+//       numbers (./cursor-sitting/glide.mjs): each click's engineMs plus one frame against the earliest arrival the
+//       engine could plan for the second click's glide, from a known start (a scroll at TextEdit's point farthest from
+//       Chrome's window). Writes <out>/item-1-order-meta.json and .md and appends both order verdicts (the first target,
+//       which fades in with no glide, undetermined). Exit 1 unless the second target passes.
 //   cursor-sitting.mjs clip frames --out <evidence dir> --frames <new dir outside the repository>
 //   cursor-sitting.mjs clip order --frames <dir> --out <evidence dir> first-target <change> <arrival>
 //                     second-target <change> <arrival>
@@ -79,6 +85,7 @@ import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {ORDER_TARGETS, route3Plan, writeFrames, writeLag, writeOrder} from './cursor-sitting/clip.mjs';
 import {liveSourceSwitch, switchSource, writeConsent} from './cursor-sitting/input-source.mjs';
+import {writeOrderFromMeta} from './cursor-sitting/glide.mjs';
 import {restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
 import {PLANS} from './cursor-sitting/plans.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
@@ -92,7 +99,7 @@ const SCRIPT = fileURLToPath(import.meta.url);
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'string'}, aside: {type: 'string'}, run: {type: 'string'}, out: {type: 'string'},
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
-  arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'}, source: {type: 'string'},
+  arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'}, source: {type: 'string'}, 'no-clip': {type: 'boolean', default: false},
   quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
@@ -226,8 +233,10 @@ export async function main(argv) {
     const item = positionals[0];
     if (!PLANS[item]) throw new Error(`drive takes an item of ${Object.keys(PLANS).join(', ')} (8 is \`remote run\`, 12 and 13 are \`timing\`)`);
     if (item === '11' && !['vendor', 'cua'].includes(values.engine)) throw new Error('drive 11 takes --engine vendor or --engine cua');
-    if (['1', '1-check'].includes(item) && !values['dry-run']) { const problem = clipPathProblem(values.clip, REPO_ROOT); if (problem) throw new Error(`drive ${item} records a clip: ${problem}`); }
-    const steps = PLANS[item]({otherSession: values['other-session'] ?? null, engine: values.engine, clip: values.clip ?? null});
+    const noClip = item === '1' && values['no-clip'];
+    if (noClip && values.clip) throw new Error('drive 1 takes --clip or --no-clip');
+    if ((item === '1-check' || (item === '1' && !noClip)) && !values['dry-run']) { const problem = clipPathProblem(values.clip, REPO_ROOT); if (problem) throw new Error(`drive ${item} records a clip (or, for item 1, --no-clip): ${problem}`); }
+    const steps = PLANS[item]({otherSession: values['other-session'] ?? null, engine: values.engine, clip: values.clip ?? null, noClip});
     return drive(steps, {item: item === '11' ? `11-${values.engine}` : item, values});
   }
   if (command === 'timing') {
@@ -288,6 +297,12 @@ export async function main(argv) {
       return result.ok ? 0 : 1;
     }
     throw new Error('source takes consent or restore');
+  }
+  if (command === 'order-meta') {
+    const out = absolute(values, 'out');
+    const judged = writeOrderFromMeta({rows: readJsonl(join(out, 'item-1.jsonl')), out});
+    print(readFileSync(join(out, 'item-1-order-meta.md'), 'utf8'));
+    return judged.targets['second-target'].verdict === 'pass' ? 0 : 1;
   }
   if (command === 'clip') {
     const sub = positionals[0];

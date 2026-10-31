@@ -18,6 +18,7 @@ import {FIXTURE_ACCESSIBILITY_FILE} from '../native-matrix/fixtures/electron-fix
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {readFocus, runWindowBounds} from './focus.mjs';
+import {farPoint} from './glide.mjs';
 import {liveSourceSwitch, restoreAfterFailure, sourceTargetProblem, switchSource} from './input-source.mjs';
 import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
 import {openDriven} from './session.mjs';
@@ -133,6 +134,16 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
         if (!started.ok) return {...plan, ok: false, problem: started.problem};
         ctx.recording = {handle: started.handle, clip};
         return {...plan, clip, spawnAt: started.spawnAt, readyAt: started.readyAt};
+      },
+      // Item 1 without a clip: both run windows' bounds now, and TextEdit's point farthest from Chrome's window, where a
+      // scroll puts the cursor before the second click (./glide.mjs farPoint); kept for that cell as `glide start`.
+      'glide-start': async ([from, to], ctx) => {
+        const bounds = Object.fromEntries([from, to].map(id => { const r = io.scene(id); return [id, runWindowBounds(guard.windows(r.pid), r.window.number)]; }));
+        const gone = Object.keys(bounds).find(id => !bounds[id]);
+        if (gone) return {ok: false, bounds, problem: `the ${gone} scene's run window is not on screen`};
+        const far = farPoint(bounds[from], bounds[to]);
+        ctx.results['glide start'] = far;
+        return {ok: true, bounds, ...far};
       },
       'record-stop': async (_args, ctx) => {
         if (!ctx.recording) return {ok: false, problem: 'no recording is running'};

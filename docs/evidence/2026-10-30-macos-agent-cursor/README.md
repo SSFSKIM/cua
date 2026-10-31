@@ -413,10 +413,15 @@ series whose scene is gone from the front (a locked screen, say) rather than tim
        window.
      - The wait is kept free of the rock: the rock starts only after 0.3 s with no request of the session in flight,
        so untimed observations, which leave a still cursor still, run at most 100 ms apart until the keys start.
-   - Every guarded series now first checks for a window of TextEdit's own over its run window. At the second sitting a
-     53 × 48 pt one, likely the popover a drag's text selection leaves, made the selection refuse. If one is there, a
-     cursor-off session clicks once in the run window's text to dismiss it, and the series goes on only once none is
-     left.
+   - A window of TextEdit's own over its run window is kept from arising, and never clicked. At the second sitting a
+     53 × 48 pt one, likely the affordance macOS raises beside a text selection (Writing Tools), made the selection
+     refuse after the clicks series' drags.
+     - Each timed drag is followed at once by `CLEAR_SELECTION`, untimed and required: an element action (a caret
+       written after the document's first "Line", no coordinates, no keys). It refuses, sending nothing, unless its
+       observation is of the run window.
+     - Every guarded series first checks for such a window. If one is there, a cursor-off session clears the selection
+       the same way, and the series goes on only once none is left; if the clearing is refused, the series stops for
+       the operator. No coordinate input is sent while a window that is not the run window may be the one in focus.
    - `$S timing typing --arm fps60 --run "$RUN" --out "$OUT2"` (and `clicks`, 20 each, under ABC) asks whether the
      cost follows the frame rate: the arm caps every animation of the cursor's layers at 60 Hz (Core Animation's
      `preferredFrameRateRange`, 30–60, preferring 60), where the default glide runs at 120 on this display.

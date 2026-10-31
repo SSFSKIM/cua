@@ -271,6 +271,8 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
     record({step: n, kind: 'cell', session: step.run, label: step.label, ...(step.sample ? {sample: step.sample} : {}),
       ...(step.orderTarget ? {orderTarget: step.orderTarget} : {}), ...kept, ...(saved.length ? {images: saved} : {})});
     log(`  ${step.run}: ${step.label}: ${answer.ok ? JSON.stringify(answer.value) : `FAILED ${answer.error}`}${answer.route ? ` (route ${answer.route})` : ''}`);
+    // A required cell that did not answer ok stops the item here (its finally still puts everything back).
+    if (step.required && !answer.ok) throw new Error(`required cell "${step.label}" failed: ${answer.error}`);
   };
   record({kind: 'start', steps: steps.length, dryRun});
   try {

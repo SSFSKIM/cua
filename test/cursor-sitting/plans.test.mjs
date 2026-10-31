@@ -78,8 +78,11 @@ test('the timing samples: n a side, interleaved with the leading side alternatin
     assert.deepEqual(leads, ['on', 'off', 'on', 'off']);
     assert.deepEqual(steps.find(s => s.open === 'off').env, {CUA_CURSOR: '0'});
     assert.equal(steps.find(s => s.open === 'on').env, undefined);
-    // every sample is followed by the gap
-    steps.forEach((s, k) => { if (s.sample && (kind === 'typing' || s.sample.series === 'drag')) assert.equal(steps[k + 1].wait, SAMPLE_GAP_MS); });
+    // every sample is followed by the gap (a drag first by the clearing of its selection)
+    steps.forEach((s, k) => {
+      if (kind === 'typing' && s.sample) assert.equal(steps[k + 1].wait, SAMPLE_GAP_MS);
+      if (s.sample?.series === 'drag') { assert.match(steps[k + 1].label, /clear the drag's selection/); assert.equal(steps[k + 2].wait, SAMPLE_GAP_MS); }
+    });
     if (kind === 'typing') assert.ok(sampled.every(s => s.keys === 'textedit'), 'typing goes only while TextEdit is frontmost');
   }
   assert.throws(() => timingSteps('scrolls', 2), /typing or clicks/);

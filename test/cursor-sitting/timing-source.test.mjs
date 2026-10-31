@@ -201,3 +201,16 @@ test('with a window over the run window, the tidy session opens, clicks, closes,
   assert.deepEqual(log, ['open tidy {"CUA_CURSOR":"0"}', 'run tidy', 'close tidy']);
   assert.equal(checks, 2);
 });
+
+test('no coordinate input to an unverified window: every drag is followed by clearing its selection by an element action, and the tidy step uses the same', async () => {
+  const {CLEAR_SELECTION} = await import('../../scripts/cursor-sitting/cells.mjs');
+  assert.ok(!/__app\.(click|drag|scroll|pressKey|typeText)\(/.test(CLEAR_SELECTION), 'no coordinates and no keys');
+  assert.match(CLEAR_SELECTION, /if \(!inFront\(ax\)\) throw/, 'refused unless the observation is of the run window');
+  assert.match(CLEAR_SELECTION, /__app\.selectText\(index, "Line", \{selectionType: "cursor_after"\}\)/);
+  const steps = timingSteps('clicks', 2);
+  steps.forEach((s, k) => { if (s.sample?.series === 'drag') { assert.equal(steps[k + 1].cell, CLEAR_SELECTION); assert.equal(steps[k + 1].required, true); } });
+  assert.ok(!timingSteps('clicks', {'element click': 2}).some(s => s.cell === CLEAR_SELECTION && s.run !== 'tidy'), 'no drag, nothing to clear');
+  const tidy = steps.find(s => s.run === 'tidy');
+  assert.equal(tidy.cell, CLEAR_SELECTION);
+  assert.equal(tidy.required, true);
+});

@@ -27,7 +27,7 @@
 // glides with and without it, and the window server's frames during those glides are counted (./frames.mjs); every
 // series then counts the frames during its own glides (cursor-sitting.mjs), so the arm's timing is read beside the rate
 // its glides actually ran at.
-import {CLICK_AT, CLICK_CONTROL_TIMED, DRAG, PRIME, STILL_SAMPLE, TYPING_SAMPLE} from './cells.mjs';
+import {CLEAR_SELECTION, CLICK_AT, CLICK_CONTROL_TIMED, DRAG, PRIME, STILL_SAMPLE, TYPING_SAMPLE} from './cells.mjs';
 import {sampleOrder} from './stats.mjs';
 
 export const SAMPLE_GAP_MS = 6000;
@@ -117,7 +117,10 @@ export function timingSteps(kind, samples, {arm = null, ownerSource = false, sou
       {run: side, cell: PRIME('textedit', i % 2 ? B : A), label: `prime ${side} ${i}`},
       ...(covers.includes('coordinate click') ? [{run: side, cell: CLICK_AT('textedit', i % 2 ? A : B), label: `coordinate click ${side} ${i}`, sample: {side, i, series: 'coordinate click'}}] : []),
       ...(covers.includes('element click') ? [{run: side, cell: CLICK_CONTROL_TIMED('fixtureButton'), label: `element click ${side} ${i}`, sample: {side, i, series: 'element click'}}] : []),
-      ...(covers.includes('drag') ? [{run: side, cell: DRAG('textedit', [0.2, 0.5], [0.8, 0.6]), label: `drag ${side} ${i}`, sample: {side, i, series: 'drag'}}] : []),
+      ...(covers.includes('drag') ? [{run: side, cell: DRAG('textedit', [0.2, 0.5], [0.8, 0.6]), label: `drag ${side} ${i}`, sample: {side, i, series: 'drag'}},
+        // Untimed: the drag's selection cleared at once by an element action, so no window of TextEdit's own rises over
+        // the run window; a failure stops the series (the next prime is a coordinate click).
+        {run: side, cell: CLEAR_SELECTION, label: `clear the drag's selection ${side} ${i}`, required: true}] : []),
     ];
   };
   const what = arm ? `, the cursor's ${arm} arm (recorded, not judged)` : ownerSource ? ', under the owner\'s own input source (recorded, not judged)'
@@ -128,12 +131,14 @@ export function timingSteps(kind, samples, {arm = null, ownerSource = false, sou
     {series: Object.keys(counts), counts},
     {say: `Acceptance ${kind === 'typing' ? 12 : 13}${what}: ${Object.entries(counts).map(([name, n]) => `${name} ${n}`).join(', ')} samples a side, interleaved; nobody uses the Mac until the last sample`},
     {task: 'activate', args: ['textedit'], required: true},
-    // A window of TextEdit's own on top of its run window (the second sitting: a 53 × 48 pt one, likely the popover a
-    // drag's text selection leaves) stands between the run window and the keys and refuses the selection: dismissed by
-    // a click in the run window's text through a cursor-off session, opened only when there is one, then required gone.
+    // A window of TextEdit's own on top of its run window (the second sitting: a 53 × 48 pt one, likely the affordance a
+    // drag's text selection raises) stands between the run window and the keys and refuses the selection. Each drag
+    // clears its selection (CLEAR_SELECTION); one left from before is dismissed the same way, by an element action with
+    // no coordinate input, through a cursor-off session opened only when there is one, and then required gone. The
+    // cell refuses, sending nothing, when its observation is not of the run window.
     {task: 'overlay-check', args: ['textedit']},
     {open: 'tidy', scenes: ['textedit'], env: {CUA_CURSOR: '0'}, when: results => Boolean(results.overlays?.length)},
-    {run: 'tidy', cell: CLICK_AT('textedit', [0.5, 0.92]), label: 'a click in the run window\'s text, dismissing what lies over it', when: results => Boolean(results.overlays?.length)},
+    {run: 'tidy', cell: CLEAR_SELECTION, label: 'the run document\'s selection cleared by an element action, dismissing what it raised', required: true, when: results => Boolean(results.overlays?.length)},
     {wait: 500, when: results => Boolean(results.overlays?.length)},
     {close: 'tidy', when: results => Boolean(results.overlays?.length)},
     {task: 'overlay-check', args: ['textedit', 'none'], required: true},

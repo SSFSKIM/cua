@@ -11,8 +11,9 @@ builds are the pinned 26.928.40906 and the newest 26.1023.51421. Every run is th
 - `rejudge/`: recorded runs judged again offline under Acceptance 3 as revised at M3.1 (`rejudge.mjs`), again with
   the fix round's judges (below).
 - `drop-misses/`: the open finding on Chrome drops in the full verdict run (below).
-- `device-fix1/`: Acceptance 8's device cases after M3.1's fix round (run m31-fix1-device, below). Where it and
-  `diff/` differ on the drag-and-drop guard, `device-fix1/` is the engine as it stands.
+- `device-fix1/`: Acceptance 8's device cases after M3.1's first fix round (run m31-fix1-device, below).
+- `late-take/` and `device-fix2/`: the second fix round's late-take rate, and the drag-and-drop cases and a speed run on
+  the engine as it stands (below). Where they and earlier runs differ on the guard, `device-fix2/` is current.
 
 ## The engines
 
@@ -286,3 +287,49 @@ which fails as it must). The drag-and-drop cases:
   `m1a4-events-gate.json`: refused, its block rows carry neither round nor step.
 - `m31-verdict-first-sitting.json` is kept as it was: its source run is not in the repository (`drop-misses/` holds an
   excerpt of it).
+
+## Fix round 2 (`late-take/`, `device-fix2/`)
+
+The re-reviews' remaining findings and the design session's ruling on the settle (task-16-report.md, "Fix round 2").
+Engine `cua-engine 0.3.0 (1b0bab1bcb81)`, harness at the same commit, 2026-10-31, on `:0`.
+
+**No settle on the request path.** A watched drag with no take of `XdndSelection` by its release answers at the
+release as a plain drag. A watch on its own X connection, subscribed before the drag, goes on off the request path
+for 300 ms or until the next request; on a take it sends the cancel's Escape at once (synthetic, to Chrome's window),
+and the next request on the connection is answered, not run, with `<app> started a drag and drop after your drag
+ended; it may have dropped and changed the desktop; this request was not run, so read the window before sending it
+again`.
+
+**The late-take rate** (`late-take/`, the dnd experiment's `cua` lane in shared mode, Chrome visible, the round-1
+engine `cua-engine 0.3.0 (af6b2a1eb312)`, whose `--stats` `dnd.outcome` says whether Chrome's take came before the
+release or after it):
+
+| run | load | drags | takes | before the release | after the release | no take |
+|---|---|---:|---:|---:|---:|---:|
+| m31-late-take-idle | none | 60 | 60 | 60 | 0 | 0 |
+| m31-late-take-load | 16 stress-ng workers on 8 cores | 60 | 59 | 59 | 0 | 1 |
+| m31-late-take-load4 | 32 workers | 100 | 93 | 93 | 0 | 7 |
+| m31-fix1-device (`device-fix1/`) | none | 28 watched drops | 28 | 28 | 0 | 0 |
+
+No take came after the release in 240 (95% upper bound by the rule of three: 1.25%). The drags with no take are
+Chrome drag sessions that never started (the open finding's signature; the dnd experiment's grab sampler adds its
+own); they answer as plain drags, as before. This is the known limit as declared: a take later than 300 ms after the
+release, or after the next request has begun, is not seen.
+
+**m31-fix2-device** (`device-fix2/`, 3 blocks): the Chrome drag and drop cases, the path rule's drags,
+gnome-text-editor's refusal and `capabilities`, every verdict passing, run valid, the standing controls held:
+
+| case | answers | drops | witness clean | median ms |
+|---|---|---:|---:|---:|
+| `chrome_drag_visible_path_shared` (watched, no take) | 9 success | – | 9/9 | 402.5 (697.0 in round 1, 398.0 before it) |
+| `chrome_dnd_shared` | 9 cancelled | 0/9 | 9/9 | 427.0 |
+| `chrome_dnd_obscured_in_front_shared` | 9 cancelled | 0/9 | 9/9 | 423.8 |
+| `chrome_dnd_late_shared` (`--dnd-cancel-after-release`) | 9 may have happened | 9/9 | – | 498.8 |
+| `chrome_dnd_obscured_in_front_late_shared` | 9 may have happened | 9/9 | – | 501.6 |
+| **`chrome_dnd_late_take_shared`** (`--dnd-defer-take`) | 9 success, then 9 notices on the next request | 9/9 | 0/9: the change recorded, as the notice reports | 518.7 |
+| `chrome_dnd_in_front_shared` | 9 success | 9/9 | 9/9 (in-front allowance) | 504.1 |
+| `chrome_dnd_covered_dedicated` | 9 success | 9/9 | 9/9 (foreground allowance) | 687.3 |
+
+**m31-fix2-speed** (`device-fix2/`, gedit `click`, 3 blocks): the window route's frozen speed decisions, live. One
+top-up of 17 rounds, then both series decided at 20 a side (`speed-decision` rows: cold faster [-101.03, -96], warm
+faster [-101.93, -100.435]); the verdict judged on those decisions passes.

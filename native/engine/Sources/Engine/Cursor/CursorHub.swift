@@ -185,7 +185,10 @@ final class CursorHub: @unchecked Sendable {
   /// An action reached a hook. `window` nil: no move (for `.element`, the element's own window is read instead; for
   /// `.menuBarItem`, the app's primary window). An action naming accessibility geometry has it read on the geometry
   /// queue, only for an enabled cursor and a plan not yet superseded, and is planned on the cursor queue when the read
-  /// returns, unless superseded meanwhile.
+  /// returns, unless superseded meanwhile: by a newer action (the generation), or by any event that sets the cursor's state
+  /// while it was read (a hide, a close, the screen locking, the person taking over, the session's cursor turned off:
+  /// each bumps the cursor's state epoch on the cursor queue), so a late read restores nothing. An action that arrives
+  /// after such an event reads the new epoch and is planned as usual.
   func act(connection: Int, app: String, window: CGWindowID?, _ action: CursorAction) {
     let generation = bump(connection)
     queue.async { [self] in
@@ -196,11 +199,15 @@ final class CursorHub: @unchecked Sendable {
         perform(connection: connection, app: app, aim, generation: generation)
         return
       }
+      let epoch = cursor.stateEpoch
       geometry.async { [self] in
         guard current(connection) == generation else { return }
         let aim = resolve(action, window: window)
         queue.async { [self] in
-          guard let aim else { if let cursor = cursors[connection] { commit(cursor) }; return }
+          // A state event while it was read (a hide, the screen locking, the person taking over, the cursor turned
+          // off) supersedes it; a close removed the cursor.
+          guard let cursor = cursors[connection], cursor.stateEpoch == epoch else { return }
+          guard let aim else { commit(cursor); return }
           perform(connection: connection, app: app, aim, generation: generation)
         }
       }
@@ -223,7 +230,10 @@ final class CursorHub: @unchecked Sendable {
       let cursor = model(connection)
       if let identity { cursor.identity = identity }
       cursor.enabled = enabled
-      if !enabled { hideNow(cursor) }
+      if !enabled {
+        cursor.stateEpoch += 1
+        hideNow(cursor)
+      }
       commit(cursor)
     }
   }
@@ -233,6 +243,7 @@ final class CursorHub: @unchecked Sendable {
     let generation = bump(connection)
     queue.async { [self] in
       guard let cursor = cursors[connection] else { return }
+      cursor.stateEpoch += 1
       hideNow(cursor)
       commit(cursor, generation: generation)
     }
@@ -257,6 +268,7 @@ final class CursorHub: @unchecked Sendable {
         let before = cursor.lifecycle.phase
         cursor.lifecycle.userActed(now: now)
         guard cursor.lifecycle.phase != before else { continue }
+        cursor.stateEpoch += 1
         cursor.phaseSince = now
         freeze(cursor, now: now)  // taken over is still: whatever plays stops where it is, a dip or the halo's relaxing too
         commit(cursor)
@@ -443,8 +455,12 @@ final class CursorHub: @unchecked Sendable {
     }
   }
 
+  /// The screen locked: every cursor's pending action is superseded (a hidden cursor's first action still being read
+  /// included, so nothing shows until the next action), and a shown cursor fades.
   private func lockScreen() {
-    for cursor in cursors.values where cursor.lifecycle.phase.visible {
+    for cursor in cursors.values {
+      cursor.stateEpoch += 1
+      guard cursor.lifecycle.phase.visible else { continue }
       let generation = bump(cursor.connection)
       hideNow(cursor)
       commit(cursor, generation: generation)
@@ -599,6 +615,8 @@ private final class CursorModel {
   var motion: CursorMotionInstall?
   var plannedReduced = false
   var committed: CursorCommit?
+  /// Bumped by every event that sets the state other than an action: an action's geometry read across one is dropped.
+  var stateEpoch = 0
 
   init(connection: Int, identity: CursorIdentity) {
     self.connection = connection

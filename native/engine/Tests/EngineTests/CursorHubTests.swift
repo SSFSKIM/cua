@@ -321,6 +321,85 @@ final class CursorHubTests: XCTestCase {
     XCTAssertEqual(try XCTUnwrap(renderer.last?.motion).trajectory.end, CGPoint(x: 400, y: 600), "the click's point, not the element's")
   }
 
+  /// Re-review of fd5e63c4 (the reviewer's tests, adopted): any state event that lands while an action's geometry is
+  /// being read supersedes that read, so its late result restores nothing. The person taking over wins over it.
+  func testATakeoverDuringAGeometryReadWinsOverItsResult() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let reading = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+    var held = false
+    let hub = hub(world, renderer, elementFrame: { _ in
+      guard held else { return nil }
+      reading.signal()
+      release.wait()
+      return CGRect(x: 1000, y: 600, width: 40, height: 20)
+    })
+    click(hub, CGPoint(x: 300, y: 400))
+    held = true
+    hub.act(connection: 1, app: app, window: 20, .element(AXUIElementCreateApplication(600), storedFrame: nil))
+    XCTAssertEqual(reading.wait(timeout: .now() + 2), .success)
+    hub.userActed(pid: 600)
+    hub.tick()
+    XCTAssertEqual(hub.phase(connection: 1), .takenOver, "the person took over after the element action")
+    release.signal()
+    hub.drain()
+    XCTAssertEqual(hub.phase(connection: 1), .takenOver, "finishing the old read is not a new agent request")
+    XCTAssertEqual(renderer.last?.phase, .takenOver)
+  }
+
+  /// The supersession is of reads already under way: an action that comes after the takeover is planned as usual.
+  func testAnElementActionAfterATakeoverIsStillPlanned() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer, elementFrame: { _ in CGRect(x: 1000, y: 600, width: 40, height: 20) })
+    click(hub, CGPoint(x: 300, y: 400))
+    hub.userActed(pid: 600)
+    hub.drain()
+    XCTAssertEqual(hub.phase(connection: 1), .takenOver)
+    hub.begin(connection: 1, app: app, keyboardOnly: false)
+    hub.act(connection: 1, app: app, window: 20, .element(AXUIElementCreateApplication(600), storedFrame: nil))
+    hub.end(connection: 1)
+    hub.drain()
+    XCTAssertEqual(renderer.last?.phase, .acting)
+    XCTAssertEqual(try XCTUnwrap(renderer.last?.motion).trajectory.end, CGPoint(x: 1020, y: 290))
+  }
+
+  /// The screen locking while a hidden cursor's first action is still being read: the cursor stays hidden after it.
+  func testAScreenLockDuringAGeometryReadKeepsAHiddenCursorHidden() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let reading = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+    let hub = hub(world, renderer, elementFrame: { _ in
+      reading.signal()
+      release.wait()
+      return CGRect(x: 1000, y: 600, width: 40, height: 20)
+    })
+    hub.begin(connection: 1, app: app, keyboardOnly: false)
+    hub.act(connection: 1, app: app, window: 20, .element(AXUIElementCreateApplication(600), storedFrame: nil))
+    hub.end(connection: 1)
+    XCTAssertEqual(reading.wait(timeout: .now() + 2), .success)
+    world.distributed.post(name: Notification.Name("com.apple.screenIsLocked"), object: nil)
+    hub.tick()
+    XCTAssertEqual(hub.phase(connection: 1), .hidden)
+    release.signal()
+    hub.drain()
+    XCTAssertFalse(renderer.last?.shown ?? false, "an action from before the lock shows no cursor after it")
+  }
+
+  /// Disabling the session's cursor during a read: its result shows nothing.
+  func testDisablingTheCursorDuringAGeometryReadDropsItsResult() {
+    let world = World(), renderer = RecordingRenderer()
+    let reading = DispatchSemaphore(value: 0), release = DispatchSemaphore(value: 0)
+    let hub = hub(world, renderer, elementFrame: { _ in
+      reading.signal()
+      release.wait()
+      return CGRect(x: 1000, y: 600, width: 40, height: 20)
+    })
+    hub.act(connection: 1, app: app, window: 20, .element(AXUIElementCreateApplication(600), storedFrame: nil))
+    XCTAssertEqual(reading.wait(timeout: .now() + 2), .success)
+    hub.configure(connection: 1, nil, enabled: false)
+    release.signal()
+    hub.drain()
+    XCTAssertFalse(renderer.commits.contains { $0.shown })
+  }
+
   func testADisabledCursorReadsNothingForAMenuBarItem() {
     let world = World(), renderer = RecordingRenderer()
     var read = false

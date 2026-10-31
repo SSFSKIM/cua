@@ -1,0 +1,5 @@
+{"item":"12-control","at":1793480801992,"kind":"start","steps":97,"dryRun":false}
+{"item":"12-control","at":1793480801993,"step":1,"kind":"series","series":["type_text","press_key x30"],"counts":{"type_text":20,"press_key x30":20}}
+{"item":"12-control","at":1793480801993,"step":2,"kind":"say","text":"Acceptance 12, the default arm as a same-session control (recorded, not judged): type_text 20, press_key x30 20 samples a side, interleaved; nobody uses the Mac until the last sample"}
+{"item":"12-control","at":1793480802142,"step":3,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":89501,"bundleId":"com.apple.TextEdit"}}}
+{"item":"12-control","at":1793480802186,"step":4,"kind":"task","task":"overlay-check","args":["textedit"],"result":{"ok":true,"overlays":[{"number":47686,"bounds":{"height":860,"width":610,"x":152,"y":71}}]}}

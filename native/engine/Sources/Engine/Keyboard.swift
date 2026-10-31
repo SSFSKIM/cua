@@ -37,9 +37,9 @@ func inputSourceInfo(_ source: TISInputSource) -> InputSourceInfo {
 /// the wait for the main thread, and the body's run there.
 func onMain<T>(_ body: () -> T) -> T {
   if Thread.isMainThread { return body() }
-  let waiting = timingSignposts.beginInterval("main.sync.wait", id: timingSignposts.makeSignpostID())
+  let waiting = timingSignposts.isEnabled ? timingSignposts.beginInterval("main.sync.wait", id: timingSignposts.makeSignpostID()) : nil
   let run: () -> T = {
-    timingSignposts.endInterval("main.sync.wait", waiting)
+    if let waiting { timingSignposts.endInterval("main.sync.wait", waiting) }
     return signposted("main.sync.run", body)
   }
   return DispatchQueue.main.sync(execute: run)

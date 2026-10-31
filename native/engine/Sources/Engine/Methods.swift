@@ -168,8 +168,8 @@ final class Engine: @unchecked Sendable {
     let deadline = (params["deadlineUnixMilliseconds"] as? NSNumber)?.int64Value ?? receivedAt + 120_000
     guard deadline > receivedAt else { throw EngineError(rpc: .deadlineExceeded, "Request deadline exceeded") }
     guard let method = params["method"] as? String else { throw EngineError(rpc: .invalidParams, "Invalid params: method is required") }
-    let interval = timingSignposts.beginInterval("request", id: timingSignposts.makeSignpostID(), "\(method, privacy: .public)")
-    defer { timingSignposts.endInterval("request", interval) }
+    let interval = timingSignposts.isEnabled ? timingSignposts.beginInterval("request", id: timingSignposts.makeSignpostID(), "\(method, privacy: .public)") : nil
+    defer { if let interval { timingSignposts.endInterval("request", interval) } }
     let args = params["args"] as? [String: Any] ?? [:]
     // The prologue's steps are timing intervals of their own (Signposts.swift), so a sitting can place what moves there.
     let hidIdle = signposted("prologue.hidIdle") { hidIdleMilliseconds() }

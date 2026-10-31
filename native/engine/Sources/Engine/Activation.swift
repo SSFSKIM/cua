@@ -155,13 +155,13 @@ final class ScreenUpdateReleases: @unchecked Sendable {
   /// Takes the hold now (`raw`, on the caller's thread) and answers its release, which enqueues the raw release and
   /// returns. Signposted: the hold from its disable to its re-enable, and the re-enable alone.
   func hold(_ raw: () -> () -> Void) -> () -> Void {
-    let held = timingSignposts.beginInterval("route3.hold", id: timingSignposts.makeSignpostID())
+    let held = timingSignposts.isEnabled ? timingSignposts.beginInterval("route3.hold", id: timingSignposts.makeSignpostID()) : nil
     let release = raw()
     let queue = queue
     return {
       queue.async {
         signposted("route3.release") { release() }
-        timingSignposts.endInterval("route3.hold", held)
+        if let held { timingSignposts.endInterval("route3.hold", held) }
       }
     }
   }

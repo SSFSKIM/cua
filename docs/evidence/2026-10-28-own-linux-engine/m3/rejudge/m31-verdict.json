@@ -1,0 +1,906 @@
+{
+ "changed": [],
+ "under": [],
+ "intervals": [
+  {
+   "scene": "desktop",
+   "op": "list_windows",
+   "candidate": 17.955,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 232.265,
+   "interval": [
+    -231.655,
+    -195.635
+   ],
+   "bound": 11.61325,
+   "label": "faster"
+  },
+  {
+   "scene": "desktop",
+   "op": "list_windows",
+   "candidate": 13.38,
+   "series": "warm",
+   "samples": 21,
+   "against": "pinned",
+   "bar": 227.97,
+   "interval": [
+    -224.51,
+    -186.88
+   ],
+   "bound": 11.3985,
+   "label": "faster"
+  },
+  {
+   "scene": "desktop",
+   "op": "list_apps",
+   "candidate": 19.73,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 254.47500000000002,
+   "interval": [
+    -246.44,
+    -218.515
+   ],
+   "bound": 12.723750000000003,
+   "label": "faster"
+  },
+  {
+   "scene": "desktop",
+   "op": "list_apps",
+   "candidate": 12.95,
+   "series": "warm",
+   "samples": 21,
+   "against": "pinned",
+   "bar": 214.91,
+   "interval": [
+    -219.4,
+    -191.32
+   ],
+   "bound": 10.7455,
+   "label": "faster"
+  },
+  {
+   "scene": "desktop",
+   "op": "get_screenshot",
+   "candidate": 32.739999999999995,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 38.375,
+   "interval": [
+    -8.185,
+    1.755
+   ],
+   "bound": 1.9187500000000002,
+   "label": "same (within noise)"
+  },
+  {
+   "scene": "desktop",
+   "op": "get_screenshot",
+   "candidate": 23.71,
+   "series": "warm",
+   "samples": 21,
+   "against": "pinned",
+   "bar": 27.55,
+   "interval": [
+    -4.67,
+    -3.02
+   ],
+   "bound": 1.3775000000000002,
+   "label": "faster"
+  },
+  {
+   "scene": "desktop",
+   "op": "launch_app",
+   "candidate": 3.585,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 3.96,
+   "interval": [
+    -1.335,
+    0.365
+   ],
+   "bound": 1,
+   "label": "same (within noise)"
+  },
+  {
+   "scene": "desktop",
+   "op": "launch_app",
+   "candidate": 0.72,
+   "series": "warm",
+   "samples": 21,
+   "against": "newest",
+   "bar": 0.64,
+   "interval": [
+    -0.03,
+    0.2
+   ],
+   "bound": 1,
+   "label": "same (within noise)"
+  },
+  {
+   "scene": "gedit",
+   "op": "tree",
+   "candidate": 95.66499999999999,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 713.52,
+   "interval": [
+    -650.38,
+    -594.425
+   ],
+   "bound": 35.676,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "tree",
+   "candidate": 91.53,
+   "series": "warm",
+   "samples": 21,
+   "against": "newest",
+   "bar": 725.23,
+   "interval": [
+    -655.23,
+    -603.23
+   ],
+   "bound": 36.261500000000005,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "tree_shot",
+   "candidate": 138.49,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 823.14,
+   "interval": [
+    -738.295,
+    -648.56
+   ],
+   "bound": 41.157000000000004,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "tree_shot",
+   "candidate": 109.24,
+   "series": "warm",
+   "samples": 21,
+   "against": "newest",
+   "bar": 785.23,
+   "interval": [
+    -714.75,
+    -664.95
+   ],
+   "bound": 39.261500000000005,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "press_key",
+   "candidate": 107.67,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 239.765,
+   "interval": [
+    -132.595,
+    -131.7
+   ],
+   "bound": 11.98825,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "press_key",
+   "candidate": 101.3,
+   "series": "warm",
+   "samples": 20,
+   "against": "newest",
+   "bar": 235.81,
+   "interval": [
+    -134.95,
+    -134.26
+   ],
+   "bound": 11.790500000000002,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "click",
+   "candidate": 121.36500000000001,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 219.25,
+   "interval": [
+    -99.31,
+    -96.01
+   ],
+   "bound": 10.9625,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "click",
+   "candidate": 113.92,
+   "series": "warm",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 214.90499999999997,
+   "interval": [
+    -101.24,
+    -100.83
+   ],
+   "bound": 10.745249999999999,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "type_text",
+   "candidate": 187.615,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 1055.63,
+   "interval": [
+    -901.77,
+    -844.83
+   ],
+   "bound": 52.78150000000001,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "type_text",
+   "candidate": 171.87,
+   "series": "warm",
+   "samples": 20,
+   "against": "newest",
+   "bar": 1050.44,
+   "interval": [
+    -906.265,
+    -861.125
+   ],
+   "bound": 52.522000000000006,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "type_text_selection",
+   "candidate": 188.7,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 1041.1399999999999,
+   "interval": [
+    -867.565,
+    -821.36
+   ],
+   "bound": 52.056999999999995,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "type_text_selection",
+   "candidate": 175.345,
+   "series": "warm",
+   "samples": 20,
+   "against": "newest",
+   "bar": 1014.36,
+   "interval": [
+    -855.94,
+    -825.08
+   ],
+   "bound": 50.718,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "type_characters",
+   "candidate": 107.965,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 572.5799999999999,
+   "interval": [
+    -465.38,
+    -463.72
+   ],
+   "bound": 28.628999999999998,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "type_characters",
+   "candidate": 102.055,
+   "series": "warm",
+   "samples": 20,
+   "against": "newest",
+   "bar": 568.7,
+   "interval": [
+    -467.38,
+    -466.04
+   ],
+   "bound": 28.435000000000002,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "clipboard_read",
+   "candidate": 47.655,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 667.35,
+   "interval": [
+    -638.775,
+    -604.765
+   ],
+   "bound": 33.3675,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "clipboard_read",
+   "candidate": 41.555,
+   "series": "warm",
+   "samples": 20,
+   "against": "newest",
+   "bar": 698.74,
+   "interval": [
+    -687.36,
+    -638.405
+   ],
+   "bound": 34.937000000000005,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "clipboard_release",
+   "candidate": 2.725,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 2.76,
+   "interval": [
+    -0.36,
+    0.195
+   ],
+   "bound": 1,
+   "label": "same (within noise)"
+  },
+  {
+   "scene": "gedit",
+   "op": "clipboard_release",
+   "candidate": 0.13,
+   "series": "warm",
+   "samples": 30,
+   "against": "newest",
+   "bar": 0.12,
+   "interval": [
+    -0.01,
+    0.02
+   ],
+   "bound": 1,
+   "label": "same (within noise)"
+  },
+  {
+   "scene": "chrome",
+   "op": "tree",
+   "candidate": 74.58500000000001,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 553.425,
+   "interval": [
+    -525.64,
+    -454.115
+   ],
+   "bound": 27.67125,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome",
+   "op": "tree",
+   "candidate": 71.65,
+   "series": "warm",
+   "samples": 21,
+   "against": "pinned",
+   "bar": 597.18,
+   "interval": [
+    -554.66,
+    -509.68
+   ],
+   "bound": 29.858999999999998,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome",
+   "op": "tree_shot",
+   "candidate": 127.275,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 726.335,
+   "interval": [
+    -641.62,
+    -586.135
+   ],
+   "bound": 36.316750000000006,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome",
+   "op": "tree_shot",
+   "candidate": 96.74,
+   "series": "warm",
+   "samples": 21,
+   "against": "pinned",
+   "bar": 744.02,
+   "interval": [
+    -659.5,
+    -609.11
+   ],
+   "bound": 37.201,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome",
+   "op": "press_key",
+   "candidate": 106.375,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 240.29500000000002,
+   "interval": [
+    -134.3,
+    -133.525
+   ],
+   "bound": 12.014750000000001,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome",
+   "op": "press_key",
+   "candidate": 101.315,
+   "series": "warm",
+   "samples": 20,
+   "against": "newest",
+   "bar": 236.46,
+   "interval": [
+    -135.44,
+    -134.97
+   ],
+   "bound": 11.823,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome",
+   "op": "click",
+   "candidate": 118.83500000000001,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 219.04000000000002,
+   "interval": [
+    -100.59,
+    -99.55
+   ],
+   "bound": 10.952000000000002,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome",
+   "op": "click",
+   "candidate": 113.93,
+   "series": "warm",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 215.02499999999998,
+   "interval": [
+    -101.29,
+    -100.925
+   ],
+   "bound": 10.751249999999999,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "click_element",
+   "candidate": 152.285,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 464.57,
+   "interval": [
+    -338.95,
+    -302.78
+   ],
+   "bound": 23.2285,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "click_element",
+   "candidate": 144.92000000000002,
+   "series": "warm",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 457.90999999999997,
+   "interval": [
+    -335.105,
+    -292.985
+   ],
+   "bound": 22.8955,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "right_click",
+   "candidate": 166.805,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 491.745,
+   "interval": [
+    -349.68,
+    -309.555
+   ],
+   "bound": 24.58725,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "right_click",
+   "candidate": 158.935,
+   "series": "warm",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 470.04,
+   "interval": [
+    -339.23,
+    -302.1
+   ],
+   "bound": 23.502000000000002,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "right_click_fallback",
+   "candidate": 258.78,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 953.995,
+   "interval": [
+    -726.71,
+    -681.65
+   ],
+   "bound": 47.69975,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "right_click_fallback",
+   "candidate": 249.85500000000002,
+   "series": "warm",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 923.645,
+   "interval": [
+    -707.345,
+    -653.55
+   ],
+   "bound": 46.18225,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "secondary_action",
+   "candidate": 153.42000000000002,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 463.29,
+   "interval": [
+    -344.185,
+    -296.665
+   ],
+   "bound": 23.164500000000004,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "secondary_action",
+   "candidate": 147.81,
+   "series": "warm",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 461.74,
+   "interval": [
+    -334.985,
+    -294.17
+   ],
+   "bound": 23.087000000000003,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "move",
+   "candidate": 106.255,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 206.51999999999998,
+   "interval": [
+    -100.96,
+    -99.745
+   ],
+   "bound": 10.326,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "move",
+   "candidate": 101.36,
+   "series": "warm",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 202.39,
+   "interval": [
+    -101.285,
+    -100.82
+   ],
+   "bound": 10.1195,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "drag",
+   "candidate": 4.325,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 420.09000000000003,
+   "interval": [
+    -421.11,
+    -413.405
+   ],
+   "bound": 21.004500000000004,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "drag",
+   "candidate": 1.1349999999999998,
+   "series": "warm",
+   "samples": 20,
+   "against": "newest",
+   "bar": 415.89,
+   "interval": [
+    -417.61,
+    -410.825
+   ],
+   "bound": 20.7945,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "scroll",
+   "candidate": 214.89499999999998,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 314.74,
+   "interval": [
+    -100.7,
+    -99.13
+   ],
+   "bound": 15.737000000000002,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "scroll",
+   "candidate": 210.47,
+   "series": "warm",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 311.45,
+   "interval": [
+    -101.175,
+    -100.66
+   ],
+   "bound": 15.5725,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "scroll_element_hidden",
+   "candidate": 153.91500000000002,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 476.225,
+   "interval": [
+    -352.54,
+    -308.25
+   ],
+   "bound": 23.81125,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "scroll_element_hidden",
+   "candidate": 143.675,
+   "series": "warm",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 467.55,
+   "interval": [
+    -348.195,
+    -304.965
+   ],
+   "bound": 23.3775,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "key_down",
+   "candidate": 5.789999999999999,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 206.055,
+   "interval": [
+    -200.775,
+    -199.8
+   ],
+   "bound": 10.302750000000001,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "key_down",
+   "candidate": 0.79,
+   "series": "warm",
+   "samples": 20,
+   "against": "newest",
+   "bar": 202.45,
+   "interval": [
+    -201.8,
+    -201.45
+   ],
+   "bound": 10.1225,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "key_up",
+   "candidate": 100.69,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 100.74,
+   "interval": [
+    -0.1,
+    0.015
+   ],
+   "bound": 5.037,
+   "label": "same (within noise)"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "key_up",
+   "candidate": 100.68,
+   "series": "warm",
+   "samples": 20,
+   "against": "newest",
+   "bar": 100.86,
+   "interval": [
+    -0.28,
+    -0.045
+   ],
+   "bound": 5.043,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "activate_window",
+   "candidate": 3.83,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 4.609999999999999,
+   "interval": [
+    -1.98,
+    0.45
+   ],
+   "bound": 1,
+   "label": "same (within noise)"
+  },
+  {
+   "scene": "chrome-input",
+   "op": "activate_window",
+   "candidate": 0.42,
+   "series": "warm",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 0.57,
+   "interval": [
+    -0.32,
+    -0.06
+   ],
+   "bound": 1,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-textarea",
+   "op": "type_text",
+   "candidate": 184.70999999999998,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 1093.815,
+   "interval": [
+    -955.42,
+    -886.005
+   ],
+   "bound": 54.69075000000001,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-textarea",
+   "op": "type_text",
+   "candidate": 176.33,
+   "series": "warm",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 1096.87,
+   "interval": [
+    -934.92,
+    -897.46
+   ],
+   "bound": 54.8435,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-address-bar",
+   "op": "type_text",
+   "candidate": 201.42000000000002,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 1373.66,
+   "interval": [
+    -1216.91,
+    -1149.15
+   ],
+   "bound": 68.683,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome-address-bar",
+   "op": "type_text",
+   "candidate": 200.82,
+   "series": "warm",
+   "samples": 20,
+   "against": "newest",
+   "bar": 1318.54,
+   "interval": [
+    -1157.83,
+    -1091.055
+   ],
+   "bound": 65.927,
+   "label": "faster"
+  }
+ ]
+}

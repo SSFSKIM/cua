@@ -10,8 +10,10 @@ import QuartzCore
 // per frame. Layers are layer-backed views where AppKit needs a view (the halo's backdrop) and plain layers elsewhere.
 // What a visible cursor makes the window server do every frame is kept small (#235's Decision Log, 2026-10-31): the
 // arrow's shadow has an explicit path, so it is not found from the layer's rendered alpha, and the arrow's blur filter is
-// installed only for the 0.44 s fades that use it. `CursorDebug` (engine.json `cursorDebug`) takes one part away, or
-// puts the layers back as they were, for an attended sitting's arms.
+// installed only for the 0.44 s fades that use it. `CursorDebug` (engine.json `cursorDebug`) takes one part away, puts
+// the layers back as they were, or caps every animation at 60 Hz, for an attended sitting's arms. Each installed motion
+// is marked by a `cursor.motion` signpost with its span, so a sitting can count the frames the window server composited
+// during each glide.
 
 /// The engine's own on-screen windows, which the screenshot path's shareable-content cache leaves out of its key
 /// (Screenshot.swift), so a cursor appearing never costs a screenshot a re-list.
@@ -140,13 +142,15 @@ private final class CursorOverlay {
   private let pill: NSView
   private let pillText = CATextLayer()
   private var installedMotion: Int?
-  private let rocker = CursorRock()
+  private let rocker: CursorRock
   private var phase: CursorPhase = .hidden
   private var shown = false
   private var screenFrame: CGRect = .zero
   private var label = ""
   private var registered: CGWindowID?
   private let debug: CursorDebug?
+  /// The arm's frame-rate range for every animation (CursorDebug.animationFrameRate), nil for each animation's own.
+  private let frameRate: CAFrameRateRange?
   /// The fade whose blur is installed now; a later fade replaces it.
   private var blurringFade = 0
   /// The stroke opacity the shadow path was made for.
@@ -154,6 +158,8 @@ private final class CursorOverlay {
 
   init(debug: CursorDebug?) {
     self.debug = debug
+    frameRate = debug?.animationFrameRate
+    rocker = CursorRock(frameRate: frameRate)
     panel = CursorWindow(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isOpaque = false
     panel.backgroundColor = .clear
@@ -338,16 +344,27 @@ private final class CursorOverlay {
     for (layer, key) in [(cursorLayer, "glide"), (heading, "heading"), (haloLayer, "swell")] { layer.removeAnimation(forKey: key) }
     if samples.count > 1 {
       let duration = motion.trajectory.duration
-      func keyframes(_ keyPath: String, _ values: [Any], on layer: CALayer, key: String) {
+      func keyframes(_ keyPath: String, _ values: [NSValue], on layer: CALayer, key: String) {
+        // Under the arm's cap, only the part of the values that changes (changingSpan): a held value undoes the cap.
+        var span = 0...(values.count - 1)
+        if frameRate != nil {
+          guard let changing = changingSpan(values) else { return }
+          span = changing
+        }
+        let step = motion.trajectory.step
         let animation = CAKeyframeAnimation(keyPath: keyPath)
-        animation.values = values
-        animation.duration = duration
+        animation.values = Array(values[span])
+        animation.duration = Double(span.count - 1) * step
         animation.calculationMode = .linear
-        animation.beginTime = layerTime(motion.beginTime, layer)
+        animation.beginTime = layerTime(motion.beginTime + Double(span.lowerBound) * step, layer)
         animation.fillMode = .backwards
-        animation.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        animation.preferredFrameRateRange = frameRate ?? CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
         layer.add(animation, forKey: key)
       }
+      // The motion's span on `log show`'s clock, for counting the window server's frames during it (the kit's frames.mjs).
+      let begin = continuousTicks(host: motion.beginTime), end = continuousTicks(host: motion.beginTime + duration)
+      let mode = String(describing: motion.trajectory.mode)
+      timingSignposts.emitEvent("cursor.motion", "begin=\(begin) end=\(end) ms=\(duration * 1000, format: .fixed(precision: 1)) mode=\(mode, privacy: .public)")
       keyframes("position", samples.map { layerPosition($0.position) }, on: cursorLayer, key: "glide")
       if !reduceMotion {
         keyframes("transform", samples.map { NSValue(caTransform3D: headingTransform($0)) }, on: heading, key: "heading")
@@ -355,7 +372,7 @@ private final class CursorOverlay {
       }
     }
     // A new motion cancels the old one's unplayed dips, with or without dips of its own.
-    CursorDips.schedule(motion.dips, on: press, reduceMotion: reduceMotion)
+    CursorDips.schedule(motion.dips, on: press, reduceMotion: reduceMotion, frameRate: frameRate)
   }
 
   /// The heading (clockwise on screen, so negative in the panel's y-up layers) and the stretch along the travel axis.
@@ -402,6 +419,7 @@ private final class CursorOverlay {
       animation.toValue = shownTarget
       animation.duration = 0.2
       animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+      if let frameRate { animation.preferredFrameRateRange = frameRate }
       cursorLayer.opacity = shownTarget
       cursorLayer.add(animation, forKey: "opacity")
     }
@@ -431,6 +449,7 @@ private final class CursorOverlay {
     animation.beginTime = layerTime(host, layer)
     animation.fillMode = .backwards
     layer.opacity = to
+    if let frameRate { animation.preferredFrameRateRange = frameRate }
     layer.add(animation, forKey: "opacity")
     let blur = CABasicAnimation(keyPath: "filters.blur.inputRadius")
     blur.fromValue = blurTo == 0 ? 7 : 0
@@ -439,6 +458,7 @@ private final class CursorOverlay {
     blur.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
     blur.beginTime = layerTime(host, rock)
     blur.fillMode = .backwards
+    if let frameRate { blur.preferredFrameRateRange = frameRate }
     if debug != .legacyLayers {
       if rock.filters?.isEmpty ?? true { rock.filters = arrowBlur().map { [$0] } }
       blurringFade += 1

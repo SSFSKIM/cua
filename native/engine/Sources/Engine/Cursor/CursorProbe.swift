@@ -11,7 +11,12 @@ import Foundation
 // colour bands (`--backdrop`'s), settled (a request kept in flight) or rocking, its layer tree's clock stopped at a fixed
 // phase (`rocking`: 0.6 s into the rock), prints the region to capture (global top-left points) and holds it for
 // `--seconds` (default 2, at most 5): a still that two builds, or two `--debug` arms (engine.json's `cursorDebug`
-// values, `legacyLayers` the sitting's layers), give at the same phase, for a pixel diff of the cursor's look.
+// values, `legacyLayers` the sitting's layers), give at the same phase, for a pixel diff of the cursor's look. With
+// `--glides <n>` (at most 5) it fades a cursor in over its own transparent target and glides it n times across the main
+// screen, nothing else animating, then lets it rock for a second, and prints each glide's span and the rock's in mach
+// continuous ticks (the clock of `log show`'s signposts) with the probe's pid: the kit counts WindowServer's frames
+// inside each span, with and without `--debug fps60`, to prove the arm's frame-rate cap took effect on this Mac (#235's
+// task-8 report).
 
 enum CursorProbe {
   static func run(_ arguments: [String]) -> Int32 {
@@ -20,6 +25,7 @@ enum CursorProbe {
     var backdrop = false
     var pose: CursorPose?
     var debug: CursorDebug?
+    var glides: Int?
     var index = 0
     while index < arguments.count {
       switch arguments[index] {
@@ -36,16 +42,20 @@ enum CursorProbe {
           return Probe.emit(["error": "--debug needs one of \(CursorDebug.allCases.map(\.rawValue).joined(separator: ", "))"], status: 64)
         }
         debug = arm; index += 2
+      case "--glides":
+        guard index + 1 < arguments.count, let n = Int(arguments[index + 1]), (1...5).contains(n) else { return Probe.emit(["error": "--glides needs 1 ≤ n ≤ 5"], status: 64) }
+        glides = n; index += 2
       case "--seconds":
         guard index + 1 < arguments.count, let s = Double(arguments[index + 1]), s > 0, s <= 600 else { return Probe.emit(["error": "--seconds needs 0 < n ≤ 600"], status: 64) }
         seconds = s; index += 2
       default:
-        return Probe.emit(["error": "usage: --probe cursor [--backdrop] | --probe cursor --window <window number> [--seconds <n>] | --probe cursor --pose settled|rocking [--debug <arm>] [--seconds <n>]"], status: 64)
+        return Probe.emit(["error": "usage: --probe cursor [--backdrop] | --probe cursor --window <window number> [--seconds <n>] | --probe cursor --pose settled|rocking [--debug <arm>] [--seconds <n>] | --probe cursor --glides <n> [--debug <arm>]"], status: 64)
       }
     }
     if pose != nil, window != nil || backdrop { return Probe.emit(["error": "--pose draws over its own backdrop: no --window or --backdrop"], status: 64) }
     if pose != nil, let seconds, seconds > 5 { return Probe.emit(["error": "--pose holds for at most 5 s"], status: 64) }
-    let (held, painted, posed, arm) = (window, backdrop, pose, debug)
+    if glides != nil, window != nil || backdrop || pose != nil || seconds != nil { return Probe.emit(["error": "--glides runs alone, with --debug at most"], status: 64) }
+    let (held, painted, posed, arm, glided) = (window, backdrop, pose, debug, glides)
     let duration = seconds ?? (pose == nil ? 10 : 2)
     return MainActor.assumeIsolated {
       let application = NSApplication.shared
@@ -53,7 +63,7 @@ enum CursorProbe {
       let system = CursorSystem(), panels = CursorPanels(debug: arm)
       let hub = CursorHub(environment: system.environment, renderer: panels, system: system)
       Thread {
-        let status = posed.map { still(hub, panels: panels, pose: $0, seconds: duration) }
+        let status = glided.map { glide(hub, panels: panels, times: $0, arm: arm) } ?? posed.map { still(hub, panels: panels, pose: $0, seconds: duration) }
           ?? held.map { hold(hub, window: $0, seconds: duration) } ?? scripted(hub, backdrop: painted)
         DispatchQueue.main.async { exit(status) }
       }.start()
@@ -144,6 +154,48 @@ enum CursorProbe {
     hub.drain()
     usleep(100_000)
     return Probe.emit(["steps": steps.count + 3, "hidden": faded == .hidden], status: faded == .hidden ? 0 : 1)
+  }
+
+  /// `times` long glides across the main screen's visible frame, back and forth, after a fade-in at the first end, each
+  /// left to settle before the next, then a second of the thinking rock; each glide's span and the rock's (mach
+  /// continuous ticks, as `log show` stamps signposts) in the final line, for counting the window server's frames.
+  private static func glide(_ hub: CursorHub, panels: CursorPanels, times: Int, arm: CursorDebug?) -> Int32 {
+    guard let (window, frame, primaryHeight) = DispatchQueue.main.sync(execute: {
+      MainActor.assumeIsolated { makeTarget(backdrop: false).map { ($0.0, $0.1, NSScreen.screens.first?.frame.maxY ?? 0) } }
+    }) else { return Probe.emit(["error": "no screen"], status: 2) }
+    usleep(150_000)  // the target ordered in and listed
+    let ends = [CGPoint(x: frame.minX + frame.width * 0.15, y: primaryHeight - frame.midY),
+                CGPoint(x: frame.minX + frame.width * 0.85, y: primaryHeight - frame.midY)]
+    let connection = 1, app = "cua-cursor-probe"
+    hub.begin(connection: connection, app: app, keyboardOnly: false)  // in flight throughout: no rock, no fade
+    hub.act(connection: connection, app: app, window: window, .click(ends[0]))
+    hub.drain()
+    usleep(useconds_t((CursorLifecycle.fadeSeconds + 0.2) * 1_000_000))
+    var spans: [[String: Any]] = []
+    for i in 1...times {
+      hub.act(connection: connection, app: app, window: window, .scroll(ends[i % 2]))  // a glide with no dip
+      hub.drain()
+      guard let motion = hub.lastCommit(connection: connection)?.motion else { continue }
+      let begin = motion.beginTime, duration = motion.trajectory.duration
+      spans.append(["mode": "\(motion.trajectory.mode)", "ms": (duration * 10_000).rounded() / 10,
+                    "begin": continuousTicks(host: begin), "end": continuousTicks(host: begin + duration)])
+      usleep(useconds_t((max(0, begin - CACurrentMediaTime()) + duration + 0.15) * 1_000_000))
+    }
+    hub.end(connection: connection)  // thinking 0.3 s later: the rock
+    var rock: [String: Any]?
+    let deadline = monotonicMilliseconds() + 1_500
+    while rock == nil && monotonicMilliseconds() < deadline {
+      usleep(50_000)
+      if let started = DispatchQueue.main.sync(execute: { MainActor.assumeIsolated { panels.rockStartedAt(connection: connection) } }) {
+        rock = ["ms": 1000.0, "begin": continuousTicks(host: started), "end": continuousTicks(host: started + 1)]
+        usleep(useconds_t((max(0, started + 1 - CACurrentMediaTime()) + 0.05) * 1_000_000))
+      }
+    }
+    hub.closed(connection: connection)
+    hub.drain()
+    usleep(100_000)
+    let rocked = rock != nil || arm == .noRock
+    return Probe.emit(["glides": spans, "rock": rock ?? NSNull(), "debug": arm?.rawValue ?? NSNull(), "pid": Int(getpid())], status: spans.count == times && rocked ? 0 : 1)
   }
 
   /// One cursor over the probe's colour bands, its layer clock stopped (`--pose`): settled, a request kept in flight, so

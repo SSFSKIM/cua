@@ -36,6 +36,9 @@ enum CursorDebug: String, CaseIterable, Sendable {
   /// The layers as the sitting's build had them: the rock layer's blur filter installed for the panel's whole life, and
   /// the arrow's shadow with no explicit path.
   case legacyLayers
+  /// Every animation of the cursor's layers asks Core Animation for at most 60 Hz, where the default glide asks for up to
+  /// 120 on a ProMotion display (CursorEffects.swift, `animationFrameRate`).
+  case fps60
 }
 
 struct EngineSettings {

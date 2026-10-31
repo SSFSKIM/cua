@@ -1,3 +1,4 @@
+import Foundation
 import os
 
 // The engine's timing signposts (#235's spec, Decision Log 2026-10-31; the timing diagnosis's list): the request, the
@@ -14,4 +15,14 @@ func signposted<T>(_ name: StaticString, _ body: () throws -> T) rethrows -> T {
   let state = timingSignposts.beginInterval(name, id: timingSignposts.makeSignpostID())
   defer { timingSignposts.endInterval(name, state) }
   return try body()
+}
+
+/// Host time `host` (CACurrentMediaTime's seconds, the mach absolute clock) as mach continuous ticks, the clock `log show`
+/// stamps every signpost with (its `machTimestamp`): a motion's span in these ticks lets the kit count the window server's
+/// frames inside it (`cursor.motion`, CursorPanel.swift).
+func continuousTicks(host: TimeInterval) -> UInt64 {
+  var timebase = mach_timebase_info()
+  mach_timebase_info(&timebase)
+  let asleep = mach_continuous_time() &- mach_absolute_time()
+  return UInt64(max(0, host) * 1e9 * Double(timebase.denom) / Double(timebase.numer)) &+ asleep
 }

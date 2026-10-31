@@ -49,6 +49,61 @@ final class CursorEffectsTests: XCTestCase {
     XCTAssertTrue(keys().contains("rock"))
     XCTAssertFalse(keys().contains("rockOut"))
   }
+
+  // The `fps60` arm (engine.json `cursorDebug`; #235's Decision Log, 2026-10-31): every animation of the cursor's layers
+  // asks for at most 60 Hz; with no arm, each keeps its own.
+  func testTheFps60ArmAsksAtMostSixtyHertzAndNoOtherArmChangesTheRate() {
+    let capped = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+    XCTAssertEqual(CursorDebug.fps60.animationFrameRate, capped)
+    for arm in CursorDebug.allCases where arm != .fps60 { XCTAssertNil(arm.animationFrameRate, arm.rawValue) }
+  }
+
+  func testTheDipsAndTheRockCarryTheCappedRateAndKeepTheirOwnWithoutIt() {
+    let capped = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+    for (frameRate, expected) in [(capped, capped), (nil, CAFrameRateRange.default)] as [(CAFrameRateRange?, CAFrameRateRange)] {
+      for reduceMotion in [false, true] {
+        let press = CALayer()
+        CursorDips.schedule([CACurrentMediaTime() + 0.5, CACurrentMediaTime() + 0.9], on: press, reduceMotion: reduceMotion, frameRate: frameRate)
+        for key in dipKeys(press) { XCTAssertEqual(press.animation(forKey: key)?.preferredFrameRateRange, expected, key) }
+      }
+      let layer = CALayer(), rock = CursorRock(frameRate: frameRate)
+      rock.update(true, on: layer, at: CACurrentMediaTime())
+      for key in ["rockIn", "rock"] { XCTAssertEqual(layer.animation(forKey: key)?.preferredFrameRateRange, expected, key) }
+      rock.update(false, on: layer, at: CACurrentMediaTime())
+      XCTAssertEqual(layer.animation(forKey: "rockOut")?.preferredFrameRateRange, expected, "rockOut")
+    }
+  }
+
+  // Under the arm a keyframe animation runs over the part of its values that changes: a held value from one frame to the
+  // next takes the window server back to the display's full rate (measured, #235's task-8 report).
+  func testTheChangingSpanLeavesOutTheLeadingAndTrailingHeldValues() {
+    let v = { (xs: [Double]) in xs.map { NSValue(point: NSPoint(x: $0, y: 0)) } }
+    XCTAssertEqual(changingSpan(v([0, 1, 2, 3])), 0...3)
+    XCTAssertEqual(changingSpan(v([0, 1, 2, 2, 2])), 0...2, "the settled tail: held from the third sample on")
+    XCTAssertEqual(changingSpan(v([5, 5, 5, 6, 7])), 2...4, "a heading held along a straight path, then blended back")
+    XCTAssertEqual(changingSpan(v([5, 5, 6, 6])), 1...2)
+    XCTAssertEqual(changingSpan(v([1, 2, 2, 3])), 0...3, "a hold inside the span stays")
+    XCTAssertNil(changingSpan(v([4, 4, 4])), "never changes: nothing to animate")
+    XCTAssertNil(changingSpan(v([4])))
+    XCTAssertNil(changingSpan([]))
+    let t = { (a: CGFloat) in NSValue(caTransform3D: CATransform3DMakeRotation(a, 0, 0, 1)) }
+    XCTAssertEqual(changingSpan([t(0.1), t(0.2), t(0.2)]), 0...1)
+  }
+}
+
+/// The clock the cursor's motion signposts carry (Signposts.swift): host time as mach continuous ticks, what `log show`
+/// stamps every signpost with, so the kit can count the window server's frames inside a glide.
+final class ContinuousTicksTests: XCTestCase {
+  func testHostTimeBecomesTheContinuousClockOfNow() {
+    var timebase = mach_timebase_info()
+    mach_timebase_info(&timebase)
+    let before = mach_continuous_time()
+    let ticks = continuousTicks(host: CACurrentMediaTime())
+    let after = mach_continuous_time()
+    let slack = UInt64(1_000_000 * Double(timebase.denom) / Double(timebase.numer))  // 1 ms
+    XCTAssertGreaterThanOrEqual(ticks + slack, before)
+    XCTAssertLessThanOrEqual(ticks, after + slack)
+  }
 }
 
 /// The arrow's explicit shadow path (CursorPanel.swift): the fill and the outer half of its stroke, at a width scaled by

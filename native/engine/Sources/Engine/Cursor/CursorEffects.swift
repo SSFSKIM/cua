@@ -5,6 +5,30 @@ import QuartzCore
 // and the thinking rock, kept apart from the panel so they can be checked on plain layers, headless. Every host time is
 // CACurrentMediaTime's.
 
+extension CursorDebug {
+  /// The frame-rate range every animation of the cursor's layers asks for under this arm, nil for each animation's own.
+  /// `fps60`'s 30–60 Hz, preferring 60: measured on the MacBook's 120 Hz ProMotion display (macOS 26.6.2), WindowServer
+  /// then composites a glide at about 60 frames a second where the default composites about 120, as long as nothing
+  /// else on the display asks for more (the rate is the display's: any 120 Hz animation on it takes the glide to 120
+  /// again) and no capped animation holds a value from one frame to the next (`changingSpan`; #235's task-8 report).
+  var animationFrameRate: CAFrameRateRange? {
+    self == .fps60 ? CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60) : nil
+  }
+}
+
+/// The indices of `values`, a keyframe animation's evenly spaced values, from the last of its leading equal values to the
+/// first of its trailing equal values: the part that changes. Nil when no value differs from the first. Under a capped
+/// frame rate an animation runs over this part only, because while any capped animation holds its value WindowServer
+/// composites at the display's full rate (measured on the MacBook, macOS 26.6.2: a glide's settled tail took the
+/// capped 60 Hz back to 120), and a glide's position and heading hold after the tip settles, a heading all along a
+/// straight path.
+func changingSpan(_ values: [NSValue]) -> ClosedRange<Int>? {
+  guard let first = values.first, let last = values.last,
+        let changes = values.firstIndex(where: { !$0.isEqual(first) }) else { return nil }
+  let settles = values.lastIndex(where: { !$0.isEqual(last) })! + 1
+  return (changes - 1)...settles
+}
+
 enum CursorDips {
   /// The key prefix of a dip's animation on its layer.
   static let keyPrefix = "dip"
@@ -12,11 +36,13 @@ enum CursorDips {
   static let reducedDuration = 0.1, reducedOpacity = 0.45
 
   /// Replaces every dip `layer` has scheduled with `dips`: a motion that supersedes another cancels the dips the old one
-  /// had not played, whether it has dips of its own or none (a scroll's, a frozen cursor's).
-  static func schedule(_ dips: [TimeInterval], on layer: CALayer, reduceMotion: Bool) {
+  /// had not played, whether it has dips of its own or none (a scroll's, a frozen cursor's). `frameRate`: the arm's
+  /// range (CursorDebug.animationFrameRate), nil for the default.
+  static func schedule(_ dips: [TimeInterval], on layer: CALayer, reduceMotion: Bool, frameRate: CAFrameRateRange? = nil) {
     for key in layer.animationKeys() ?? [] where key.hasPrefix(keyPrefix) { layer.removeAnimation(forKey: key) }
     for (i, dip) in dips.enumerated() {
       let animation = dipAnimation(reduceMotion: reduceMotion)
+      if let frameRate { animation.preferredFrameRateRange = frameRate }
       animation.beginTime = layer.convertTime(dip, from: nil)
       layer.add(animation, forKey: "\(keyPrefix)\(i)")
     }
@@ -69,6 +95,12 @@ final class CursorRock {
   private(set) var rocking = false
   /// When the rock now playing began (host time); nil while it is not rocking.
   private(set) var startedAt: TimeInterval?
+  /// The arm's frame-rate range for every animation of the rock (CursorDebug.animationFrameRate), nil for the default.
+  private let frameRate: CAFrameRateRange?
+
+  init(frameRate: CAFrameRateRange? = nil) {
+    self.frameRate = frameRate
+  }
 
   /// Rocks `layer` from `host` on, or brings it back to rest, when that differs from what it does now.
   func update(_ rock: Bool, on layer: CALayer, at host: TimeInterval) {
@@ -88,7 +120,7 @@ final class CursorRock {
     ramp.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
     ramp.beginTime = layer.convertTime(host, from: nil)
     ramp.fillMode = .backwards
-    layer.add(ramp, forKey: "rockIn")
+    add(ramp, to: layer, forKey: "rockIn")
     let swing = CABasicAnimation(keyPath: "transform.rotation.z")
     swing.fromValue = radians
     swing.toValue = -radians
@@ -97,7 +129,7 @@ final class CursorRock {
     swing.repeatCount = .infinity
     swing.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
     swing.beginTime = layer.convertTime(host + Self.swing / 2, from: nil)
-    layer.add(swing, forKey: "rock")
+    add(swing, to: layer, forKey: "rock")
   }
 
   private func halt(_ layer: CALayer) {
@@ -109,6 +141,11 @@ final class CursorRock {
     back.toValue = 0
     back.duration = Self.stop
     back.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-    layer.add(back, forKey: "rockOut")
+    add(back, to: layer, forKey: "rockOut")
+  }
+
+  private func add(_ animation: CAAnimation, to layer: CALayer, forKey key: String) {
+    if let frameRate { animation.preferredFrameRateRange = frameRate }
+    layer.add(animation, forKey: key)
   }
 }

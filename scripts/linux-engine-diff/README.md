@@ -352,6 +352,8 @@ variants included; their evidence is written either way. The run's `end` row kee
   and the control `xtest` (the window activated, then a windowless request at root coordinates through XTEST). A cell
   the control takes and no background lane takes is a kind the family ignores (`ignored`), the evidence for a listing
   in `families.rs`.
+- **Load** (`--load`, `--load-factor <workers per core>`): stress-ng's CPU workers for the experiment's length, ended
+  with it, an interrupted experiment included.
 - **Occlusions** (`--occlusion`, `Desktop.arrange`): `covered`, `visible`, `partial` (the front window over the scene
   window's bottom half), `partial-deep` (its bottom 70%) and `partial-top` (its top 55%, where the targets are). The
   drag experiment takes the same lanes and occlusions.

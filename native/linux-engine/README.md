@@ -172,6 +172,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
+| `--drag-dnd-wait-ms` | off | before a Chromium drag's release, wait up to this long for the target's client to take `XdndSelection`, then nudge the last point by a pixel and back (measurement only: the event-driven option measured against a press dwell for Chrome's late drag-and-drop starts; `--stats` `dnd_wait`) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, and how a desktop screenshot was read (`shm` or `get_image`) |
 

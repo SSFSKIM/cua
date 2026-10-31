@@ -126,6 +126,15 @@ impl Inputs {
 }
 
 impl Route<'_> {
+    /// The time field an event sent now on this route carries: the background session's, or None through XTEST, whose
+    /// events the server stamps itself.
+    pub fn event_time(&self) -> Option<u32> {
+        match self {
+            Route::Window(session) => Some(session.now()),
+            Route::Desktop(..) => None,
+        }
+    }
+
     /// Presses each keycode not already held for this target (behaviour §11.3).
     pub fn acquire(&mut self, x: &X11, keycodes: &[u8]) -> Result<Vec<u8>> {
         match self {

@@ -273,6 +273,8 @@ async function measureSample(s, ctx) {
     if (stats.paste) row.stats.paste = { confirmed: stats.paste.confirmed, confirm_ms: stats.paste.confirm_ms, transfer: stats.paste.transfer, clicked: stats.paste.clicked, restored: stats.paste.restored, focus_ms: stats.paste.focus_ms, clicks: stats.paste.clicks };
     if (stats.route) row.route = stats.route;
     if (stats.dnd) row.dnd = stats.dnd;
+    if (stats.event_time) row.event_time = stats.event_time;
+    if (stats.dnd_wait) row.dnd_wait = stats.dnd_wait;
   }
   if (def.after) await def.after(ctx, response);
   if (def.effect && row.ok && def.read && !def.follow) {

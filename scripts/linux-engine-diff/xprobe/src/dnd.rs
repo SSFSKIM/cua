@@ -50,11 +50,13 @@ pub fn selection_watch(names: &[String]) -> Result<()> {
                     .find(|(a, _)| *a == e.selection)
                     .map_or("?", |(_, n)| n.as_str());
                 println!(
-                    "{{\"selection\":{},\"owner\":{},\"subtype\":{},\"t_ms\":{:.1}}}",
+                    "{{\"selection\":{},\"owner\":{},\"subtype\":{},\"t_ms\":{:.1},\"timestamp\":{},\"selection_timestamp\":{}}}",
                     json_str(name),
                     e.owner,
                     u8::from(e.subtype),
-                    started.elapsed().as_secs_f64() * 1000.0
+                    started.elapsed().as_secs_f64() * 1000.0,
+                    e.timestamp,
+                    e.selection_timestamp
                 );
             }
         }

@@ -367,6 +367,9 @@ impl Engine {
         };
         let bound = self.cfg.dnd_wait;
         let mut waited = None;
+        // the time field the drag's events carried at its end, beside the server's time read just after (M3.1: whether
+        // a background event's time can run ahead of the server's)
+        let mut times = None;
         let Engine { x, inputs, .. } = self;
         let dragged = inputs.with_route(x, target, |x, route, _| {
             let points = input
@@ -379,7 +382,7 @@ impl Engine {
             }
             route.place(x, points[0].0, points[0].1)?;
             let keycodes = chord(x, input.key.as_deref())?;
-            drag_along(
+            let dragged = drag_along(
                 x,
                 route,
                 &keycodes,
@@ -389,8 +392,20 @@ impl Engine {
                 late,
                 hold.as_mut().map(|w| (w, bound)),
                 &mut waited,
-            )
+            );
+            if let Some(event) = route.event_time()
+                && let Ok(server) = crate::input::server_time(x)
+            {
+                times = Some((event, server));
+            }
+            dragged
         });
+        if let Some((event, server)) = times {
+            self.extra.insert(
+                "event_time".into(),
+                json!({ "event": event, "server": server, "ahead_ms": i64::from(event) - i64::from(server) }),
+            );
+        }
         if let Some(hold) = hold {
             hold.stop(&mut self.x);
             if let Some((taken, wait)) = waited {

@@ -24,11 +24,14 @@
 //!   server grab (`focus.rs`).
 //! - `xprobe quarantine`: whether cua's display-wide unconfirmed-paste window is open, and for how long (`clip.rs`).
 //! - `xprobe selection-watch <selection>...`: every owner change of the selections until stdin closes (`dnd.rs`).
+//! - `xprobe request-watch`: every client's `SetSelectionOwner` and `GrabPointer`, and the grabs' replies, through
+//!   RECORD, until stdin closes (`requests.rs`).
 
 mod clip;
 mod dnd;
 mod focus;
 mod record;
+mod requests;
 mod restack;
 
 use std::io::{BufRead, Write};
@@ -65,7 +68,8 @@ fn main() {
         Some("focus-grabbed") => focus::focus_grabbed(&args[1..]),
         Some("quarantine") if args.len() == 1 => clip::quarantine(),
         Some("selection-watch") => dnd::selection_watch(&args[1..]),
-        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window> | record <x> <y> <w> <h> [focus] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | focus-grabbed <window>... | quarantine | selection-watch <selection>...".into()),
+        Some("request-watch") if args.len() == 1 => requests::request_watch(),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window> | record <x> <y> <w> <h> [focus] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch".into()),
     };
     if let Err(error) = result {
         eprintln!("xprobe: {error}");

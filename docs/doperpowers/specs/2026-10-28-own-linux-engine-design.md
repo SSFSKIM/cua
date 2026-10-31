@@ -994,6 +994,10 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `m3/` (`t18-verdict`, the sweeps, `t18-verdict-fix`); `.doperpowers/sde/…/task-18-report.md` (local); `ci-gate --gates engine-linux,test` GREEN on a769edcd (run 41217324433).
   Date/Author: 2026-10-31, the plan-executor (session linux171), from the follow-up's report; the fix's statement, the short-drop coverage and the bar rule by the design session (cua_repl session 1ea561bc).
 
+- Decision (2026-10-31, the drop-miss follow-up's task review): three gaps closed (65db9c55..48443307). With no vendor bar left, cua's 20-usable-sample minimum still applies to every series a vendor build ran, including those where no vendor build ever succeeded; a candidate-only operation (`type_text_dedicated`) has no speed verdict and is never topped up. The 350 ms floor after a take also covers a windowless (desktop-route) drag whose starting window is a Chromium window, reusing the window resolved for its pacing, while the `shared`-mode cancellation guard stays for background drags into a window. The RECORD watchers share one collector supervisor, so a collector that fails mid-record ends the watcher with an error, never a partial record.
+  Evidence: task-18-report.md (local), "Fix round 1"; `ci-gate --gates engine-linux,test` GREEN on 48443307 (run 41232808191).
+  Date/Author: 2026-10-31, the plan-executor (session linux171), from the fixer's report and the task review.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

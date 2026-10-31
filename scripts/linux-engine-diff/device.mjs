@@ -255,8 +255,8 @@ function device({ device: expect, condition = covered, read, request, effect, ro
         // the drag answered as a plain drag; on the same engine a read runs, and the first acting request (a pointer
         // move into the window, harmless had it run) carries the late drag and drop
         out.expected_notice = dndLateNotice(ctx.scene.app);
-        const read = await ctx.engine.request('list_windows', {});
-        out.read_ok = read.response.ok === true;
+        const listed = await ctx.engine.request('list_windows', {});
+        out.read_ok = listed.response.ok === true;
         const next = await ctx.engine.request('move', { window: { id: ctx.scene.id }, x: 10, y: 10 });
         out.next_ok = next.response.ok === true;
         out.next_error = next.response.ok ? null : String(next.response.error);

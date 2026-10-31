@@ -13,7 +13,7 @@ builds are the pinned 26.928.40906 and the newest 26.1023.51421. Every run is th
 - `drop-misses/`: the open finding on Chrome drops in the full verdict run (below).
 - `device-fix1/`: Acceptance 8's device cases after M3.1's first fix round (run m31-fix1-device, below).
 - `late-take/` and `device-fix2/`: the second fix round's late-take rate, and the drag-and-drop cases and a speed run on
-  the engine as it stands (below). Where they and earlier runs differ on the guard, `device-fix2/` is current.
+  the engine of fix round 2 (below); `device-fix3/`: the drag-and-drop cases after fix round 3, the current engine.
 
 ## The engines
 
@@ -333,3 +333,23 @@ gnome-text-editor's refusal and `capabilities`, every verdict passing, run valid
 **m31-fix2-speed** (`device-fix2/`, gedit `click`, 3 blocks): the window route's frozen speed decisions, live. One
 top-up of 17 rounds, then both series decided at 20 a side (`speed-decision` rows: cold faster [-101.03, -96], warm
 faster [-101.93, -100.435]); the verdict judged on those decisions passes.
+
+## Fix round 3 (`device-fix3/`)
+
+The last review items (task-16-report.md, "Fix round 3"). Engine `cua-engine 0.3.0 (9381f166e106)`, 2026-10-31, on `:0`:
+- The watch is told the instant the drag's button goes up, so a late take is cancelled at once and the settle runs
+  from the real release.
+- A watch that fails refuses the first acting request with the watch-failure sentence, never "nothing happened".
+- Only requests that send input or change state are refused: reads and releases (`key_up`, `clipboard_release`,
+  `drag_handle`'s end) run.
+
+**m31-fix3-device** (`device-fix3/`, 3 blocks): every Chrome drag-and-drop case, the watched drag with no take, and
+`capabilities`. The run is valid, every verdict passes, and the standing controls held. The harness's working tree
+carried one uncommitted fix to the late-take case at the run (a variable that shadowed the case's page reader),
+committed right after it.
+- The forced late take (`chrome_dnd_late_take_shared`): 9 plain answers. The read after each ran. The first acting
+  request (a pointer move) answered the notice 9 of 9. All 9 drops were recorded by the witness. The watch's Escape
+  went out 1.6 to 7.0 ms after the release (`late_dnd.escape_after_release_ms`; the take was held from before the
+  release, `after_release_ms` 0).
+- In time: 0/9 drops, both visible and with the signature held.
+- A watched drag with no take: 400.6 ms.

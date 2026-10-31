@@ -221,3 +221,7 @@ Built 88ec92ef..0196629b by one task executor (decisions in the spec's Decision 
 ### Task review
 
 Round 1: two Important. A failed sminos lookup shared by concurrent callers rejected every caller after the first instead of falling back; the optional `cursor` RPC's timeout closed the whole engine connection, failing an execute in flight (both reproduced by the reviewer). The controller added a third item: the matrix oracle's front-window reading skips the engine's windows too (Decision Log). Fixed in cb39e42e. Round 2: the new concurrent-lookup test reached the real sminos lookup and failed on a clean HOME; fixed in 41958220. Round 3: clean.
+
+## Whole-branch review (before the sitting)
+
+`doperpowers:reviewer-high` on fc15e1b8..b767314a (M1 and M2), lens: the cursor never delays, fails or reorders an action, nor adds main-thread work on the typing path. Verdict incorrect, three P2s, each reproduced headless: an unanswered cursor hide delayed the next action by the cursor timeout (303 ms at a 300 ms bound); every unchanged keyboard request sent a render commit to the main thread (100 extra commits for 100 requests); a lost-update race on a connection's generation could drop its first action's cursor. One fixer, f65701fb and d6fc600f (578 engine tests; 53/53 client and service tests). Re-review: correct, no material findings (the delay 303 ms → 1 ms, zero extra commits).

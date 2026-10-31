@@ -53,9 +53,10 @@ export function latinSourceProblem(reading) {
 
 // The item a series records under: the judged item (12 or 13), or that item with the arm's name, `owner-source`, or
 // `source-<the named source's last part>` (com.apple.inputmethod.Korean.2SetKorean: 12-source-2SetKorean).
-export function timingItem(kind, {arm = null, ownerSource = false, source = null, still = false} = {}) {
+export function timingItem(kind, {arm = null, ownerSource = false, source = null, still = false, control = false} = {}) {
   const item = kind === 'typing' ? '12' : '13';
   if (still) return `${item}-still`;
+  if (control) return `${item}-control`;
   if (source) return `${item}-source-${source.split('.').at(-1).replace(/[^\w-]/g, '-')}`;
   return arm ? `${item}-${arm}` : ownerSource ? `${item}-owner-source` : item;
 }
@@ -96,10 +97,12 @@ const sessions = scenes => [
 // `still`: a recorded press_key series with the cursor visible but still (./cells.mjs STILL_SAMPLE): after the glide
 // click, a wait the still-plan task sizes from the planned settle, kept free of the rock, then the keys; under ABC, the
 // owner's source back after it.
-export function timingSteps(kind, samples, {arm = null, ownerSource = false, source = null, still = false} = {}) {
+// `control`: the default arm's series again, recorded under its own item and never judged (a same-session control beside
+// an arm or --still, since the off medians drift over a sitting), so it never replaces the judged item's last attempt.
+export function timingSteps(kind, samples, {arm = null, ownerSource = false, source = null, still = false, control = false} = {}) {
   if (!SERIES[kind]) throw new Error('timing takes typing or clicks');
   if (arm !== null && !CURSOR_ARMS.includes(arm)) throw new Error(`the arm is one of ${CURSOR_ARMS.join(', ')}`);
-  if ([arm !== null, ownerSource, source !== null, still].filter(Boolean).length > 1) throw new Error('an arm, the owner\'s source, a named source and the still series are recorded one at a time');
+  if ([arm !== null, ownerSource, source !== null, still, control].filter(Boolean).length > 1) throw new Error('an arm, the owner\'s source, a named source, the still series and the control are recorded one at a time');
   if ((source !== null || still) && kind !== 'typing') throw new Error('a named source and the still series are for the typing series');
   const counts = typeof samples === 'number' ? Object.fromEntries(SERIES[kind].map(name => [name, samples])) : samples;
   if (!Object.keys(counts).length || Object.entries(counts).some(([name, n]) => !SERIES[kind].includes(name) || !Number.isInteger(n) || n < 1))
@@ -124,7 +127,8 @@ export function timingSteps(kind, samples, {arm = null, ownerSource = false, sou
     ];
   };
   const what = arm ? `, the cursor's ${arm} arm (recorded, not judged)` : ownerSource ? ', under the owner\'s own input source (recorded, not judged)'
-    : source ? `, under the input source ${source} (recorded, not judged)` : still ? ', press_key with the cursor still after its glide (recorded, not judged)' : '';
+    : source ? `, under the input source ${source} (recorded, not judged)` : still ? ', press_key with the cursor still after its glide (recorded, not judged)'
+    : control ? ', the default arm as a same-session control (recorded, not judged)' : '';
   return [
     // The series this run asks for, recorded first: a run that fails before its first sample still supersedes them
     // (seriesRuns), so an earlier verdict on them never outlives a rerun that was asked for.

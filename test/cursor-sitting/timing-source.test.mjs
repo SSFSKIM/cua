@@ -231,3 +231,17 @@ test('the selection is cleared at an anchor the scene document holds exactly onc
   for (const anchor of anchors) assert.equal(occurrences(anchor, 'abcdefghij'.repeat(20) + 'x'.repeat(30) + plain), 1);
   assert.match(CLEAR_SELECTION, /textNotFound\|Could not find the requested text/, 'only a missing anchor moves on to the next');
 });
+
+test('a control series is the default arm recorded under its own item, never the judged one', async () => {
+  assert.equal(timingItem('typing', {control: true}), '12-control');
+  assert.equal(timingItem('clicks', {control: true}), '13-control');
+  const plain = timingSteps('typing', 2), control = timingSteps('typing', 2, {control: true});
+  const tasks = steps => steps.filter(s => s.task).map(s => [s.task, ...(s.args ?? [])].join(' '));
+  assert.deepEqual(tasks(control), tasks(plain), 'the same source, guard and sessions as the judged series, no arm');
+  assert.match(control.find(s => s.say).say, /control.*recorded, not judged/);
+  for (const other of [{arm: 'fps60'}, {still: true}, {source: 'com.apple.inputmethod.Korean.2SetKorean'}, {ownerSource: true}]) {
+    assert.throws(() => timingSteps('typing', 2, {control: true, ...other}), /one at a time/, JSON.stringify(other));
+  }
+  const {main} = await import('../../scripts/cursor-sitting.mjs');
+  await assert.rejects(main(['timing', 'typing', '--control', '--arm', 'fps60', '--dry-run', '--out', '/tmp/x']), /one at a time/);
+});

@@ -439,6 +439,11 @@ series whose scene is gone from the front (a locked screen, say) rather than tim
      - Every guarded series first checks for such a window. If one is there, a cursor-off session clears the selection
        the same way, and the series goes on only once none is left; if the clearing is refused, the series stops for
        the operator. No coordinate input is sent while a window that is not the run window may be the one in focus.
+   - `$S timing typing --control --run "$RUN" --out "$OUT2"` (and `clicks`; `--series press-key` for press_key alone) is
+     the same-session control: the default arm's series again, under its own item (`item-12-control.jsonl`), never
+     judged, so it never replaces the judged item 12's last attempt. It runs with the usual source, guard and chunked
+     signposts; read the arm and `--still` series against it rather than against the judged run an hour earlier, since
+     the off medians drift.
    - `$S timing typing --arm fps60 --run "$RUN" --out "$OUT2"` (and `clicks`, 20 each, under ABC) asks whether the
      cost follows the frame rate: the arm caps every animation of the cursor's layers at 60 Hz (Core Animation's
      `preferredFrameRateRange`, 30–60, preferring 60), where the default glide runs at 120 on this display.

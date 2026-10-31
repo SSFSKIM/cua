@@ -268,12 +268,12 @@ export const DEVICE_OPS = {
   chrome_drag_covered_path_shared: device({ device: 'refusal', condition: topCovered, read: page, request: padDrag }),
   chrome_drag_covered_dedicated: device({ device: 'foreground', condition: covered, read: page, request: padDrag, effect: rose('drags') }),
   // Chrome's HTML5 drag and drop (`device-chrome-dnd`): cancelled before the drop in shared mode; let through when Chrome
-  // is already in front, the desktop unchanged; an honest answer when the cancel comes too late. The drop in dedicated
-  // mode is the dnd experiment's (its `dedicated` lane): through the foreground route, Chrome's own override-redirect
-  // drag windows restack beside its frame's raise, which the foreground allowance (witness.mjs) does not excuse
+  // is already in front, the desktop unchanged; an honest answer when the cancel comes too late; the drop through the
+  // foreground route in dedicated mode, Chrome's own drag windows coming and going beside its frame's raise
   chrome_dnd_shared: device({ device: 'cancel', condition: visible, read: dropStatus, request: dndDrag }),
   chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, read: dropStatus, request: dndDrag, effect: rose('drops'), inFront: true }),
   chrome_dnd_late_shared: device({ device: 'late', condition: visible, read: dropStatus, request: dndDrag, args: LATE }),
+  chrome_dnd_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndDrag, effect: rose('drops') }),
   // Qt (`device-qt`, kate on a long document): its scroll bar's value
   qt_scroll_shared: device({ device: 'refusal', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }] }),
   qt_scroll_dedicated: device({ device: 'foreground', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }], effect: higher }),
@@ -300,7 +300,7 @@ export const DEVICE_SCENE_OPS = {
   // the scroll last: its series ends with the page put back at its top (`reset`)
   'device-firefox': ['firefox_click_overlap_shared', 'firefox_click_offscreen_shared', 'firefox_right_click_overlap_shared', 'firefox_click_overlap_dedicated', 'firefox_click_visible_shared', 'firefox_element_click_covered', 'firefox_move_overlap_shared', 'firefox_move_covered_dedicated', 'firefox_drag_overlap_shared', 'firefox_drag_covered_dedicated', 'firefox_scroll_overlap_shared', 'firefox_scroll_covered_dedicated'],
   'device-chrome': ['chrome_drag_visible_path_shared', 'chrome_drag_covered_path_shared', 'chrome_drag_covered_dedicated'],
-  'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared'],
+  'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared', 'chrome_dnd_covered_dedicated'],
   'device-qt': ['qt_scroll_shared', 'qt_scroll_dedicated'],
   'device-xterm': ['xterm_key_shared', 'xterm_key_dedicated', 'xterm_click_shared'],
   'gnome-text-editor': ['gte_type_text_shared'],

@@ -257,7 +257,7 @@ async function measureSample(s, ctx) {
   // a cua text command's route is known beforehand: its witness is judged against it and the route the engine reports
   // taking (Decision Log, M2.2); a vendor build's is judged strictly
   const expected = VENDORS.includes(s.label) ? null : routeOf(op, s.sceneName);
-  const answered = witness && target && (isText(op) || isDevice(op)) ? await routeWitness(witness, tag, target.id, expected, send, { inFront: OPS[op].inFront === true }) : await span(tag, send);
+  const answered = witness && target && (isText(op) || isDevice(op)) ? await routeWitness(witness, tag, target.id, expected, send, { inFront: OPS[op].inFront === true, opensWindows: command === 'click' && input.mouse_button === 'right' }) : await span(tag, send);
   const { response, ms, sinceSpawnMs, stats } = answered.value;
   const row = { kind: 'sample', engine: s.label, scene: s.sceneName, op, block: s.block, series: i === 0 ? 'cold' : 'warm', i };
   if (expected) row.route_expected = expected;
@@ -399,7 +399,9 @@ export async function inFrontNegativeCheck(witness, emit) {
  *   focus-grabbed`), which only the focus events show;
  * - `activated`: the other window activated through the window manager (`xdotool windowactivate`), judged with it as
  *   the target: activated, raised and focused, which the allowance passes. The top window is activated again after it.
- * Each judgement names the target's frame (`toplevel`). Returns whether all five held.
+ * - `popup`: an override-redirect window of another client (`xprobe popup`) mapped and destroyed, judged with the top
+ *   window as the target: only the target client's own override-redirect windows may come and go.
+ * Each judgement names the target's frame (`toplevel`). Returns whether all six held.
  */
 export async function foregroundNegativeCheck(witness, emit) {
   const order = stacking();
@@ -445,6 +447,12 @@ export async function foregroundNegativeCheck(witness, emit) {
   });
   activate(top);
   await sleep(100);
+  // another client's override-redirect window (the harness's own) mapped and destroyed inside the span: the target
+  // client's own may come and go (Decision Log, M3.1), another's may not
+  const popup = await witness.span('stub:foreground:popup', async () => {
+    execFileSync(XPROBE, ['popup', '40', '40', '120', '80', '100']);
+    await sleep(50);
+  });
   const shownFocus = (report) => ({ ...shown(report), focus: (report.focus ?? []).slice(0, 10) });
   const checks = {
     spaced: { ...judge(spaced.report, top), ...shown(spaced.report) },
@@ -452,6 +460,7 @@ export async function foregroundNegativeCheck(witness, emit) {
     raised: { ...judge(raised.report, other), ...shown(raised.report) },
     switched: { ...judge(switched.report, top), ...shownFocus(switched.report) },
     activated: { ...judge(activated.report, other), ...shownFocus(activated.report) },
+    popup: { ...judge(popup.report, top), ...shown(popup.report) },
   };
   const held =
     checks.spaced.fields.includes('stacking') &&
@@ -460,11 +469,12 @@ export async function foregroundNegativeCheck(witness, emit) {
     checks.raised.allowed.includes('stacking') &&
     checks.switched.fields.includes('focus') &&
     checks.activated.clean &&
-    checks.activated.allowed.includes('active');
+    checks.activated.allowed.includes('active') &&
+    checks.popup.fields.includes('stacking');
   emit({ kind: 'stub-check-foreground', top, other, restored, checks, witness_failed_it: held });
   const line = (name, c) => `${name}: ${c.clean ? 'clean' : c.fields.join(', ')}`;
   process.stdout.write(
-    `foreground checks: ${held ? 'held' : 'DID NOT HOLD'} (${line('another raised and the top raised back', checks.spaced)}; ${line('the same under one server grab', checks.coalesced)}; ${line('the target raised', checks.raised)}; ${line('the focus and the active window switched away and back under one server grab', checks.switched)}; ${line('the target activated', checks.activated)}; order ${restored ? 'restored' : 'not restored'})\n`,
+    `foreground checks: ${held ? 'held' : 'DID NOT HOLD'} (${line('another raised and the top raised back', checks.spaced)}; ${line('the same under one server grab', checks.coalesced)}; ${line('the target raised', checks.raised)}; ${line('the focus and the active window switched away and back under one server grab', checks.switched)}; ${line('the target activated', checks.activated)}; ${line("another client's override-redirect window mapped", checks.popup)}; order ${restored ? 'restored' : 'not restored'})\n`,
   );
   return held;
 }

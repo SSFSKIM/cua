@@ -78,10 +78,13 @@ export function raisedOnly(before, after, target) {
  * above them all, the rest in their order. Returns `{clean, raised,
  * violations}`; with no record, `clean` is false.
  */
-export function judgeRestacks(report, frame) {
+export function judgeRestacks(report, frame, { popup = () => false, opensWindows = false } = {}) {
   if (!Array.isArray(report?.tree) || !Array.isArray(report?.restacks)) return { clean: false, raised: false, violations: ['no restack record'] };
   const { order, at, apply } = stackReplay(report.tree);
-  const visible = () => order.filter((w) => w.mapped).map((w) => w.id);
+  // the target client's own override-redirect windows (`popup`) are left out of the order judged
+  const own = (w) => w.or && popup(w.id);
+  const visible = () => order.filter((w) => w.mapped && !own(w)).map((w) => w.id);
+  const openAtStart = new Set(order.filter((w) => w.mapped && own(w)).map((w) => w.id));
   // the orders a raise of the frame may leave: above every mapped window that is not override-redirect, or above all
   // of them; the others in their order
   const raisedTo = (before) => {
@@ -103,6 +106,8 @@ export function judgeRestacks(report, frame) {
     if ((e.kind === 'configure' || e.kind === 'circulate') && frame && e.window === frame && raisedTo(before).some((o) => sameOrder(after, o))) raised = true;
     else violations.push(e);
   }
+  // a popup still open at the end: only where the input opens one (a right click's menu); a drag's are gone by then
+  if (!opensWindows) for (const w of order.filter((x) => x.mapped && own(x) && !openAtStart.has(x.id))) violations.push({ kind: 'left open', window: w.id });
   return { clean: violations.length === 0, raised, violations };
 }
 
@@ -147,6 +152,7 @@ function stackReplay(tree) {
  * it were made by the same client, as the engine attributes a paste's requests and an XDND source (`dnd.rs`).
  */
 const CLIENT_MASK = 0x1fffff;
+const sameClient = (a, b) => (a & ~CLIENT_MASK) === (b & ~CLIENT_MASK);
 
 /**
  * The witness of a background request the engine recorded as made to a window already in front (`--stats` `dnd`
@@ -167,7 +173,7 @@ const CLIENT_MASK = 0x1fffff;
 export function judgeInFrontSpan(report, { target, frame, root }) {
   if (!report || report.error) return { clean: false, fields: ['protocol'], allowed: [], violations: ['no record'] };
   const top = root ?? report.root;
-  const ours = (w) => w === frame || (w & ~CLIENT_MASK) === (target & ~CLIENT_MASK);
+  const ours = (w) => w === frame || sameClient(w, target);
   const bad = new Set();
   const violations = [];
   const violate = (field, what) => {
@@ -252,11 +258,14 @@ export function judgeFocus(report, { target, frame }) {
  * violation. Returns `{clean, fields, allowed}`: `fields` the violations, `allowed` the fields that changed within the
  * allowance.
  */
-export function judgeForegroundSpan(report, { target, frame, focusWithin }) {
+export function judgeForegroundSpan(report, { target, frame, focusWithin, opensWindows = false }) {
   if (!report || report.error) return { clean: false, fields: ['protocol'], allowed: [] };
   const bad = new Set();
   const allowed = new Set();
-  const restacks = judgeRestacks(report, frame);
+  // the target client's own override-redirect windows answering the input (Decision Log, M3.1): with no target,
+  // nothing is the target's
+  const popup = (w) => typeof target === 'number' && sameClient(w, target);
+  const restacks = judgeRestacks(report, frame, { popup, opensWindows });
   if (!restacks.clean || !frame) bad.add('stacking');
   else if (restacks.raised) allowed.add('stacking');
   const focus = judgeFocus(report, { target, frame });
@@ -294,14 +303,14 @@ export function judgeForegroundSpan(report, { target, frame, focusWithin }) {
  * one, a missing record included, is a violation of its own. With no expected route (a vendor build, an operation that
  * pastes nothing) the span is judged strictly whatever is reported. Returns `{clean, fields, allowed, foreground}`.
  */
-export function judgeRouteSpan(report, { expected, reported, target, frame, focusWithin, inFront = false, root }) {
+export function judgeRouteSpan(report, { expected, reported, target, frame, focusWithin, inFront = false, root, opensWindows = false }) {
   const fields = [];
   if (expected && reported !== expected) fields.push(`route ${reported ?? 'not recorded'}, expected ${expected}`);
   const foreground = expected === 'foreground' && reported === 'foreground';
   // the in-front allowance: only a background request the engine recorded as made to a window already in front
   const front = inFront && expected === 'background' && reported === 'background';
   const judged = foreground
-    ? judgeForegroundSpan(report, { target, frame, focusWithin })
+    ? judgeForegroundSpan(report, { target, frame, focusWithin, opensWindows })
     : front
       ? judgeInFrontSpan(report, { target, frame, root })
       : { ...judgeSpan(report), allowed: [] };

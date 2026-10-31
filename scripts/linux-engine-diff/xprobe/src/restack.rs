@@ -8,10 +8,14 @@
 //! - `xprobe toplevel <window>`: the root child the window lies in (a managed client's window manager frame).
 //! - `xprobe restack-grabbed <window>...`: under one server grab, raises each window in turn (`ConfigureWindow`
 //!   stack mode `Above`), the harness's coalesced negative check.
+//! - `xprobe popup <x> <y> <width> <height> <ms>`: an override-redirect window of xprobe's own, mapped for `ms` and
+//!   destroyed: another client's popup, which the foreground route's witness must fail (M3.1).
 
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
-use x11rb::protocol::xproto::{ConfigureWindowAux, ConnectionExt as _, MapState, Place, StackMode, Window};
+use x11rb::protocol::xproto::{
+    ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, MapState, Place, StackMode, Window, WindowClass,
+};
 use x11rb::rust_connection::RustConnection;
 
 use crate::Result;
@@ -120,6 +124,39 @@ pub fn restack_grabbed(args: &[String]) -> Result<()> {
     // a round trip: the grab and the raises have reached the server
     conn.get_input_focus()?.reply()?;
     println!("{{\"raised\":{}}}", windows.len());
+    Ok(())
+}
+
+/// An override-redirect window of xprobe's own at the given place, mapped for `ms` milliseconds, then destroyed.
+pub fn popup(args: &[String]) -> Result<()> {
+    let [x, y, width, height, ms] = args else {
+        return Err("popup <x> <y> <width> <height> <ms>".into());
+    };
+    let (conn, screen) = x11rb::connect(None)?;
+    let screen = &conn.setup().roots[screen];
+    let id = conn.generate_id()?;
+    let aux = CreateWindowAux::new()
+        .override_redirect(1)
+        .background_pixel(screen.black_pixel);
+    conn.create_window(
+        0,
+        id,
+        screen.root,
+        x.parse()?,
+        y.parse()?,
+        width.parse()?,
+        height.parse()?,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &aux,
+    )?;
+    conn.map_window(id)?;
+    conn.get_input_focus()?.reply()?;
+    std::thread::sleep(std::time::Duration::from_millis(ms.parse()?));
+    conn.destroy_window(id)?;
+    conn.get_input_focus()?.reply()?;
+    println!("{{\"popup\":{id}}}");
     Ok(())
 }
 

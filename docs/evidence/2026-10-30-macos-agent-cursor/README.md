@@ -199,7 +199,9 @@ sample against them: a series whose samples are not all covered, or whose stream
 `timing.md` and `timing-recorded.md`, and so do its frames per glide. The signposts are: the request by method, `cursor.begin`/`end`/`commit`,
 `cursor.apply` with `cursor.place`, `cursor.install`, `cursor.transition` and `cursor.caCommit`, `cursor.windowList`,
 `main.sync.wait`/`run`, `route3.hold`, `route3.release`, `route3.guard.frontmost`/`windowOrder`, and
-`pressKey.keyboardTarget`/`minimizedCheck`/`post`.
+`pressKey.keyboardTarget`/`minimizedCheck`/`post`, the request prologue's steps (`prologue.hidIdle`, `prologue.holds`,
+`prologue.lockCheck`, `prologue.resolveApp`), and a coordinate click's (`click.inputPrologue`, `click.coordinatePoint`,
+`click.hitTest`, `click.owner`, `click.windowNumber`, `click.route`, `click.deliver`).
 
 The timing commands judge as they finish, by #171's noise rule (`scripts/cursor-sitting/stats.mjs`, reusing
 `scripts/linux-engine-diff/`'s bootstrap and bound): the bootstrap 95 % interval of median(on) − median(off) must

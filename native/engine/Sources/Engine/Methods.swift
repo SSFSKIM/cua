@@ -171,15 +171,19 @@ final class Engine: @unchecked Sendable {
     let interval = timingSignposts.beginInterval("request", id: timingSignposts.makeSignpostID(), "\(method, privacy: .public)")
     defer { timingSignposts.endInterval("request", interval) }
     let args = params["args"] as? [String: Any] ?? [:]
-    let context = ExecutionContext(connection: connection, receivedAt: receivedAt, hidIdleMs: hidIdleMilliseconds(),
+    // The prologue's steps are timing intervals of their own (Signposts.swift), so a sitting can place what moves there.
+    let hidIdle = signposted("prologue.hidIdle") { hidIdleMilliseconds() }
+    let context = ExecutionContext(connection: connection, receivedAt: receivedAt, hidIdleMs: hidIdle,
                                    deadline: deadline, lineage: params["lineage"] as? String)
     // The lock screen, then every app-scoped method resolves, so the forbidden list holds on every call whoever the
     // client is. An input method refused here carries the input meta like any other error of an input method (nothing
     // posted).
     // A request on the connection holds off the menu span's idle bound while it runs; a span that lapsed while idle takes
     // its record with it before anything reads the record (MenuSpan.swift).
-    if let lapsed = connection.menuSpan.requestBegan() { connection.menuRecords[lapsed] = nil }
-    _ = connection.focusHold.requestBegan()  // the focus hold's bound likewise (FocusHold.swift); a lapse there clears nothing
+    signposted("prologue.holds") {
+      if let lapsed = connection.menuSpan.requestBegan() { connection.menuRecords[lapsed] = nil }
+      _ = connection.focusHold.requestBegan()  // the focus hold's bound likewise (FocusHold.swift); a lapse there clears nothing
+    }
     var target: ResolvedApp?
     // Only a request on the record (an observation of the held app, or a press or record on it) restarts the idle bound,
     // and only one that observes or acts on the focus hold's app restarts that one's.
@@ -189,8 +193,8 @@ final class Engine: @unchecked Sendable {
       connection.focusHold.requestEnded(onRecord: focusHoldRenews(method: method, app: target?.key, heldApp: connection.focusHold.app))
     }
     do {
-      try refuseWhenLocked(isLocked: screenLocked)
-      if method != "list_apps" && (args["app"] != nil || args["pid"] != nil) { target = try resolveApp(args) }
+      try signposted("prologue.lockCheck") { try refuseWhenLocked(isLocked: screenLocked) }
+      if method != "list_apps" && (args["app"] != nil || args["pid"] != nil) { target = try signposted("prologue.resolveApp") { try resolveApp(args) } }
     } catch let error as EngineError where inputMethods.contains(method) {
       throw withMeta(error, InputMeta(context))
     }

@@ -266,7 +266,7 @@ extension Engine {
 
     var meta = InputMeta(context)
     do {
-      let (app, appPid, guarding) = try inputPrologue(args, context, meta: &meta)
+      let (app, appPid, guarding) = try signposted("click.inputPrologue") { try inputPrologue(args, context, meta: &meta) }
       let foreground = routeFourOverride(app.bundleIdentifier, routes: routes)
 
       if let token {
@@ -304,25 +304,34 @@ extension Engine {
         }
         context.connection.clearMenuRecord(app: app.key)
       } else {
-        let placed = try coordinatePoint(numberArg(args["x"])!, numberArg(args["y"])!, app: app, appPid: appPid, context: context)
-        let hit = hitTest(window: placed.window, at: placed.point)
-        let owner = hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
-        try refuseForbiddenOwner(owner)
-        actionTargets(owner, app: app, connection: context.connection)
-        let windowID = windowNumber(of: placed.window, pid: appPid, frame: placed.windowFrame)
+        // Each step a timing interval of its own (Signposts.swift), so a sitting can place what moves in a click.
+        let placed = try signposted("click.coordinatePoint") {
+          try coordinatePoint(numberArg(args["x"])!, numberArg(args["y"])!, app: app, appPid: appPid, context: context)
+        }
+        let (hit, owner) = signposted("click.hitTest") { () -> (AXUIElement?, pid_t) in
+          let hit = hitTest(window: placed.window, at: placed.point)
+          return (hit, hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid)
+        }
+        try signposted("click.owner") {
+          try refuseForbiddenOwner(owner)
+          actionTargets(owner, app: app, connection: context.connection)
+        }
+        let windowID = signposted("click.windowNumber") { windowNumber(of: placed.window, pid: appPid, frame: placed.windowFrame) }
         let target = ClickTarget(point: placed.point, windowFrame: placed.windowFrame, windowID: windowID, pid: owner)
-        let route = coordinateClickRoute(forced: forced, foreground: foreground)
-        let sparing = button == .left ? nil : activationSparing(button: button, target: pointArea(placed.point, hitFrame: hit.flatMap { frame(of: $0) }))
-        let activation = route == .activation
-          ? FakeActivation(pid: owner, appPid: appPid, window: placed.window, windowFrame: placed.windowFrame, windowID: windowID, sparing: sparing) : nil
+        let (route, activation) = signposted("click.route") { () -> (InputRoute, FakeActivation?) in
+          let route = coordinateClickRoute(forced: forced, foreground: foreground)
+          let sparing = button == .left ? nil : activationSparing(button: button, target: pointArea(placed.point, hitFrame: hit.flatMap { frame(of: $0) }))
+          return (route, route == .activation
+            ? FakeActivation(pid: owner, appPid: appPid, window: placed.window, windowFrame: placed.windowFrame, windowID: windowID, sparing: sparing) : nil)
+        }
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
           try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
-            try deliverClick(target, route: route, button: button, count: count, activation: activation, activations: heldActivations,
+            try signposted("click.deliver") { try deliverClick(target, route: route, button: button, count: count, activation: activation, activations: heldActivations,
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                              targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
                              beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
                              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
-                             post: { $0.postToPid($1) }, meta: &meta)
+                             post: { $0.postToPid($1) }, meta: &meta) }
           }
         }
       }

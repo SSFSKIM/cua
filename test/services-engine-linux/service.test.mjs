@@ -32,15 +32,60 @@ test('setup answers the vendor\'s target and its 20 methods in order, starting t
   assert.equal(engine.spawns().length, 1, 'one engine per service');
 });
 
-test('setup refuses an old engine, an engine path not configured and a device mode it does not know', async t => {
+test('an engine the service cannot drive: setup still answers the methods, every method then refuses with the sentence before anything is sent, and the next call retries', async t => {
+  const OLD = 'cua-engine 0.2.0 is older than 0.3.0, which this cua needs; run cua install --engine';
   const old = fakeLinuxEngine(t, {version: 'cua-engine 0.2.0 (8b49b6825ae5)'});
-  await assert.rejects(service(t, old).handleRpc({type: 'setup'}), {message: 'cua-engine 0.2.0 is older than 0.3.0, which this cua needs; run cua install --engine'});
+  const svc = service(t, old);
+  assert.deepEqual(await svc.handleRpc({type: 'setup'}), {target: 'linux', methods: LINUX_METHODS}, 'the facade gets its methods, never a rejected setup');
+  for (const [method, input] of [['list_windows'], ['click', {window: W, x: 1, y: 1}], ['clipboard_release', {handle: 'h'}], ['get_window_state', {window: W}], ['type_text', {window: W, text: 'x'}]])
+    await assert.rejects(execute(svc, method, input), {message: OLD}, method);
+  await assert.rejects(svc.handleRpc({type: 'drag_start', handle_id: 'h', point: {x: 1, y: 1}}), {message: OLD});
+  assert.deepEqual(old.spawns(), [], 'no server was started, so nothing was sent');
+  // Installing the right engine needs no new session: the next call checks the version again and starts it.
+  old.setVersion('cua-engine 0.3.0 (fixed000)');
+  assert.deepEqual(await execute(svc, 'list_windows'), WINDOWS);
+  assert.equal(old.spawns().length, 1);
+
+  const missing = `${old.dir}/absent`;
+  const unspawnable = service(t, {path: missing});
+  assert.deepEqual((await unspawnable.handleRpc({type: 'setup'})).methods, LINUX_METHODS);
+  await assert.rejects(execute(unspawnable, 'press_key', {key: 'a'}), {message: `cua-engine at ${missing} could not be run (ENOENT); run cua install --engine`});
+
   const unconfigured = createService({env: {}});
-  await assert.rejects(unconfigured.handleRpc({type: 'setup'}), {message: 'cua: cua-engine is not configured for this runtime (CUA_ENGINE_BIN) [engine_not_configured]'});
-  await assert.rejects(service(t, fakeLinuxEngine(t), {env: {CUA_DESKTOP_MODE: 'mine'}}).handleRpc({type: 'setup'}), {message: 'CUA_DESKTOP_MODE must be shared or dedicated'});
+  assert.deepEqual((await unconfigured.handleRpc({type: 'setup'})).methods, LINUX_METHODS);
+  await assert.rejects(execute(unconfigured, 'list_windows'), {message: 'cua: cua-engine is not configured for this runtime (CUA_ENGINE_BIN) [engine_not_configured]'});
+  const badMode = service(t, fakeLinuxEngine(t), {env: {CUA_DESKTOP_MODE: 'mine'}});
+  assert.deepEqual((await badMode.handleRpc({type: 'setup'})).methods, LINUX_METHODS);
+  await assert.rejects(execute(badMode, 'list_windows'), {message: 'CUA_DESKTOP_MODE must be shared or dedicated'});
+
   const shared = fakeLinuxEngine(t);
   await service(t, shared).handleRpc({type: 'setup'});
   assert.deepEqual(shared.spawns()[0].args, ['server', '--desktop', 'shared'], 'shared when the launch names none');
+});
+
+test('the capability is checked against the engine that receives the command: one restarted during the settle is judged by its own report', async t => {
+  // The first engine reports background input and dies on clipboard_release; the one started after it reports none.
+  const engine = fakeLinuxEngine(t);
+  engine.behave(`import {existsSync, writeFileSync} from 'node:fs';
+    const marker = ${JSON.stringify(`${engine.dir}/first-started`)};
+    export function answer(command, input, ctx) {
+      if (command === 'capabilities') {
+        const first = !existsSync(marker);
+        if (first) writeFileSync(marker, String(ctx.pid));
+        return {output: {backend: first ? 'x11' : 'later', tree: 'at_spi', input: {background: first, desktop: true}, capture: {window: 'retained', desktop: true},
+          text: {paste: 'verified'}, desktop: ctx.desktop}};
+      }
+      if (command === 'clipboard_release') return {exit: 1};
+    }`);
+  const svc = service(t, engine);
+  await execute(svc, 'press_key', {window: W, key: 'a'});
+  // The click waits out the settle the key deferred; meanwhile clipboard_release, which never waits, ends the engine.
+  const click = execute(svc, 'click', {window: W, x: 1, y: 1});
+  await assert.rejects(execute(svc, 'clipboard_release', {handle: 'h'}), {message: /^cua-engine stopped \(exit=1\)/});
+  await assert.rejects(click, {message: 'cua-engine cannot send input to a window in the background on this desktop: its later backend reports no input.background capability'});
+  const [, second] = engine.spawns();
+  assert.ok(second, 'a second engine was started for the click');
+  assert.deepEqual(engine.requests().filter(r => r.pid === second.pid).map(r => r.command), ['capabilities'], 'the second engine never received the click');
 });
 
 test('get_window_state numbers the tree as the vendor does, keeps the native ids, reads the screenshot into a data URL and passes truncated through', async t => {

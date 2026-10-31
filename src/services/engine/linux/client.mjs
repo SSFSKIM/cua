@@ -4,8 +4,9 @@
 // Starting. Before each start the client runs `<engine> --version` and refuses an engine older than
 // MIN_ENGINE_VERSION, the oldest whose wire this service relies on (0.3.0: `capabilities` and `--desktop`), or one whose
 // version line it cannot read; nothing is spawned then. It spawns `<engine> server --desktop <mode>` and sends
-// `capabilities` as the new process's first request, keeping the answer for the service. Requests made while it starts
-// wait for it, in call order.
+// `capabilities` as the new process's first request, keeping that process's answer. A request may carry a check of the
+// report, made against the process the request is then written to. Requests made while it starts wait for it, in call
+// order.
 //
 // The wire is the vendor's (R/A §1.6): one `{id, command, input}` line per request on stdin, ids increasing from 1 for
 // the client's life; each stdout line `{id, ok, output | error, restart?}` settles the pending request with that id, so
@@ -56,7 +57,8 @@ function checkVersion(path, timeoutMs) {
 export function createEngineClient({path, desktop = 'shared', versionTimeoutMs = VERSION_TIMEOUT_MS}) {
   let child = null;
   let starting = null;
-  let capabilities = null;
+  // Each process's capability report, so a request is judged by the report of the process it is sent to.
+  const reports = new WeakMap();
   let nextId = 1;
   let stdoutBuffer = '';
   let stderrTail = '';
@@ -66,7 +68,6 @@ export function createEngineClient({path, desktop = 'shared', versionTimeoutMs =
   function retire(proc, error) {
     if (child === proc) {
       child = null;
-      capabilities = null;
       stdoutBuffer = '';
       stderrTail = '';
     }
@@ -138,7 +139,7 @@ export function createEngineClient({path, desktop = 'shared', versionTimeoutMs =
       const proc = launch();
       child = proc;
       try {
-        capabilities = await send(proc, 'capabilities', {});
+        reports.set(proc, await send(proc, 'capabilities', {}));
       } catch (error) {
         retire(proc, error);
         throw error;
@@ -149,14 +150,17 @@ export function createEngineClient({path, desktop = 'shared', versionTimeoutMs =
   }
 
   return {
-    // Sends `command` with `input`; resolves to its output.
-    async request(command, input) {
-      return send(await engine(), command, input);
+    // Sends `command` with `input`; resolves to its output. `check`, when given, is called with the capability report of
+    // the process the request is about to be written to, with nothing awaited in between, so no restart can come
+    // between the check and the dispatch; it throws to refuse, and then nothing is sent.
+    async request(command, input, check) {
+      const proc = await engine();
+      check?.(reports.get(proc));
+      return send(proc, command, input);
     },
     // The capability report of the running engine, which is started if there is none.
     async capabilities() {
-      await engine();
-      return capabilities;
+      return reports.get(await engine());
     },
     close() {
       if (child) retire(child, new Error('cua-engine was closed'));

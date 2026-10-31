@@ -11,9 +11,11 @@
 // - Screenshots: each file the engine wrote is read in the request and answered as {filepath, data_url} (JPEG), the
 //   shape the vendor's service hands the facade.
 // - Capabilities (Design, "The capability report"): a method that needs what the engine's report lacks (a value false,
-//   null or absent) is refused in one sentence naming it, before anything is waited for or sent. Window-targeted input
-//   needs input.background, input with no window input.desktop, text paste text.paste, a desktop screenshot
-//   capture.desktop, an observation tree and, with its screenshot (the default), capture.window.
+//   null or absent) is refused in one sentence naming it, with nothing sent. The report checked is that of the engine
+//   process the request would be written to (./client.mjs request's check), so an engine restarted while the request
+//   waited is judged by its own report. Window-targeted input needs input.background, input with no window
+//   input.desktop, text paste text.paste, a desktop screenshot capture.desktop, an observation tree and, with its
+//   screenshot (the default), capture.window.
 // Every input passes to the engine as the caller gave it (an absent one as {}), field for field: what cua-engine
 // validates, it refuses with its own sentence.
 import {readFile} from 'node:fs/promises';
@@ -31,20 +33,21 @@ const inputRoute = request => (request?.window != null ? 'input.background' : 'i
 
 // `engine` (./client.mjs), `settler` (./settle.mjs), `ids` (./ids.mjs) -> {method: function}, in the vendor's order.
 export function createLinuxMethods({engine, settler, ids}) {
-  async function need(path) {
-    const caps = await engine.capabilities();
-    const value = path.split('.').reduce((at, key) => at?.[key], caps);
-    if (value === undefined || value === null || value === false)
-      throw new Error(`cua-engine cannot ${CANNOT[path]} on this desktop: its ${caps?.backend ?? 'unknown'} backend reports no ${path} capability`);
-  }
+  // The check of a capability report that refuses unless it has every one of `paths`.
+  const needs = (...paths) => caps => {
+    for (const path of paths) {
+      const value = path.split('.').reduce((at, key) => at?.[key], caps);
+      if (value === undefined || value === null || value === false)
+        throw new Error(`cua-engine cannot ${CANNOT[path]} on this desktop: its ${caps?.backend ?? 'unknown'} backend reports no ${path} capability`);
+    }
+  };
   const capture = async shot => ({filepath: shot.filepath, data_url: `data:image/jpeg;base64,${(await readFile(shot.filepath)).toString('base64')}`});
 
-  // An input method: the capability `gate` names for its request, the wait, the request (its element id translated
-  // when `resolve`), the defer.
+  // An input method: the wait, the request (its element id translated when `resolve`) checked for the capability
+  // `gate` names for it, the defer.
   const input = (command, {gate = null, resolve = false} = {}) => async request => {
-    if (gate) await need(gate(request));
     await settler.wait();
-    await engine.request(command, (resolve ? ids.resolve(request) : request) ?? {});
+    await engine.request(command, (resolve ? ids.resolve(request) : request) ?? {}, gate ? needs(gate(request)) : undefined);
     settler.defer();
   };
   const read = command => async () => {
@@ -54,15 +57,14 @@ export function createLinuxMethods({engine, settler, ids}) {
 
   function dragHandle() {
     let state = 'idle';
-    const step = async input => {
+    const step = async (input, check) => {
       await settler.wait();
-      await engine.request('drag_handle', input);
+      await engine.request('drag_handle', input, check);
     };
     return {
       async start(point) {
         if (state !== 'idle') throw new Error('drag handle can only be started once');
-        await need('input.desktop');
-        await step(Object.assign({action: 'start'}, point));
+        await step(Object.assign({action: 'start'}, point), needs('input.desktop'));
         state = 'dragging';
         settler.defer();
       },
@@ -97,9 +99,8 @@ export function createLinuxMethods({engine, settler, ids}) {
     drag_handle: dragHandle,
     activate_window: input('activate_window'),
     async get_screenshot() {
-      await need('capture.desktop');
       await settler.wait();
-      return Promise.all((await engine.request('get_screenshot', {})).map(capture));
+      return Promise.all((await engine.request('get_screenshot', {}, needs('capture.desktop'))).map(capture));
     },
     list_apps: read('list_apps'),
     list_windows: read('list_windows'),
@@ -112,10 +113,8 @@ export function createLinuxMethods({engine, settler, ids}) {
     type_text: input('type_text', {gate: () => 'text.paste', resolve: true}),
     launch_app: input('launch_app'),
     async get_window_state(request) {
-      await need('tree');
-      if (request?.include_screenshot !== false) await need('capture.window');
       await settler.wait();
-      const state = await engine.request('get_window_state', request ?? {});
+      const state = await engine.request('get_window_state', request ?? {}, needs('tree', ...(request?.include_screenshot !== false ? ['capture.window'] : [])));
       const screenshots = await Promise.all(state.screenshots.map(capture));
       ids.assign(state.ax_tree, state.window, Boolean(request.query?.trim()));
       return {...state, screenshots};

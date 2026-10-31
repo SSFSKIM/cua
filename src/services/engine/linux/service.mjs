@@ -13,10 +13,13 @@
 //   {type: 'drag_end', handle_id}                  -> undefined; the handle is forgotten
 //
 // with the vendor's sentences for a method it does not have and a drag handle never started. Setup also starts the
-// engine: its version is checked (MIN_ENGINE_VERSION) and its capability report read, so an engine this service cannot
-// drive fails setup with the sentence saying why, and the facade (src/cua-api/sky.mjs, which keeps a failed setup)
-// rejects every computer method with it. The method list never depends on the report: a method whose capability is
-// missing is refused when called. A window state's other fields pass through, `truncated` among them, which the
+// engine: its version is checked (MIN_ENGINE_VERSION) and its capability report read. Setup always answers with the
+// methods, even when the engine cannot be driven (too old, not runnable, not configured): the facade's Sky proxy
+// (src/cua-api/sky.mjs) answers every member of a failed setup, `then` included, with a rejecting function, so a
+// rejected setup would leave the facade's bootstrap pending for ever. Instead every method then refuses with the
+// sentence saying why, before anything is sent, and each call tries again (the version check and the start), so
+// installing the right engine needs no new session. The method list never depends on the report: a method whose
+// capability is missing is refused when called. A window state's other fields pass through, `truncated` among them, which the
 // facade renders as its truncation line (src/cua-api/bind-linux-app.mjs).
 //
 // Configuration, from the trusted worker's environment, which the launch sets: CUA_ENGINE_BIN, the engine (the
@@ -50,8 +53,11 @@ export function createService({env = process.env, settler = new ActionSettler()}
   async function handleRpc(message) {
     switch (message.type) {
       case 'setup':
-        client();
-        await engine.capabilities();
+        // Starting the engine here reads its report early; a failure is not setup's to answer (below).
+        try {
+          client();
+          await engine.capabilities();
+        } catch { /* every method answers with the failure */ }
         return {target: 'linux', methods: [...LINUX_METHODS]};
       case 'execute': {
         const method = Object.getOwnPropertyDescriptor(client(), message.method)?.value;

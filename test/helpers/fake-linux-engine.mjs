@@ -25,12 +25,12 @@ export const TREE = {id: ':1.5/org/a11y/atspi/accessible/1', role: 'frame', name
   {id: ':1.5/org/a11y/atspi/accessible/3', role: 'text', name: 'Document', states: ['enabled', 'editable'], children: []},
 ]};
 
-const SERVER = ({dir, version}) => `#!${process.execPath}
-import {appendFileSync} from 'node:fs';
+const SERVER = ({dir}) => `#!${process.execPath}
+import {appendFileSync, readFileSync} from 'node:fs';
 import {createInterface} from 'node:readline';
 const dir = ${JSON.stringify(dir)};
 const args = process.argv.slice(2);
-if (args[0] === '--version') { process.stdout.write(${JSON.stringify(version)} + '\\n'); process.exit(0); }
+if (args[0] === '--version') { process.stdout.write(readFileSync(dir + '/version.txt', 'utf8') + '\\n'); process.exit(0); }
 appendFileSync(dir + '/spawns.jsonl', JSON.stringify({pid: process.pid, args}) + '\\n');
 const desktop = args.includes('--desktop') ? args[args.indexOf('--desktop') + 1] : 'shared';
 const {answer} = await import(dir + '/behaviour.mjs');
@@ -65,17 +65,20 @@ createInterface({input: process.stdin}).on('line', async line => {
 });
 `;
 
-// -> {path, dir, shot, spawns(), requests(), behave(source)}. `version` is the line `--version` prints; `behaviour` the
-// answer module's source (see above); behave() replaces it for processes started afterwards.
+// -> {path, dir, shot, spawns(), requests(), behave(source), setVersion(line)}. `version` is the line `--version` prints
+// (setVersion changes it, as installing another engine would); `behaviour` the answer module's source (see above);
+// behave() replaces it for processes started afterwards.
 export function fakeLinuxEngine(t, {version = 'cua-engine 0.3.0 (fake0000)', behaviour = 'export function answer() {}'} = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cua-fake-linux-engine-'));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
   const path = join(dir, 'cua-engine.mjs');
-  writeFileSync(path, SERVER({dir, version}));
+  writeFileSync(path, SERVER({dir}));
+  const setVersion = line => writeFileSync(join(dir, 'version.txt'), line);
+  setVersion(version);
   chmodSync(path, 0o755);
   writeFileSync(join(dir, 'shot.jpg'), SHOT_BYTES);
   const behave = source => writeFileSync(join(dir, 'behaviour.mjs'), source);
   behave(behaviour);
   const lines = name => (existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : []);
-  return {path, dir, shot: join(dir, 'shot.jpg'), spawns: () => lines('spawns.jsonl'), requests: () => lines('requests.jsonl'), behave};
+  return {path, dir, shot: join(dir, 'shot.jpg'), spawns: () => lines('spawns.jsonl'), requests: () => lines('requests.jsonl'), behave, setVersion};
 }

@@ -22,7 +22,8 @@
 //
 // usage: node scripts/linux-engine-diff/services.mjs --vendor-js <@oai/sky directory> --engine <cua-engine> --out <dir>
 //          [--scenes gedit,chrome,over-budget]
-// exit 0 when every step of every scene is equal; the scenes' windows are closed either way.
+// exit 0 when every step of every scene is equal across lanes and gives its expected outcome in each (EXPECT below);
+// the scenes' windows are closed either way.
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {mkdirSync, writeFileSync} from 'node:fs';
@@ -106,12 +107,30 @@ const STEPS = [
   ['unknown-action', async ({sky, ctx}) => sky.perform_secondary_action({window: ctx.window, element_id: ctx.actionTarget, action: 'cua171-no-such-action'})],
 ];
 
+// What each step must give in each lane, beside being equal across lanes: the ordinary steps succeed with their window,
+// state, tree or screenshot present; the two negative steps fail with the sentence they exist to reach. An outcome
+// that is equal across lanes but not this (both lanes failing alike, a window not found) fails the step.
+const isState = value => typeof value === 'string' && value.startsWith('Accessibility source: ') && value.split('\n').length > 1;
+const EXPECT = {
+  window: o => typeof o.value?.id === 'number',
+  state: o => isState(o.value),
+  tree: o => typeof o.value?.tree?.id === 'string' && typeof o.value.tree.native_id === 'string' && o.value.tree.children.length > 0,
+  query: o => typeof o.value === 'string' && o.value.length > 0,
+  'state-after-query': o => isState(o.value),
+  screenshot: o => isState(o.value?.state) && o.value.screenshots === 1 && Array.isArray(o.value.size) && o.value.size[0] > 0,
+  'unknown-id': o => o.error === 'Unknown element ID 999999 for this window; refresh get_window_state()',
+  'unknown-action': o => /^AT-SPI action "cua171-no-such-action" is unavailable/.test(o.error ?? ''),
+};
+
 const desktop = new Desktop({cua: values.engine, run: `services-${process.pid}`});
 const rows = [];
 const setup = [];
 try {
   for (const {sky} of lanes) setup.push({target: sky.target, methods: Object.keys(sky).filter(key => key !== 'target')});
-  rows.push({scene: '-', step: 'setup', equal: JSON.stringify(setup[0]) === JSON.stringify(setup[1]), vendor: summarize(setup[0]), cua: summarize(setup[1])});
+  const setupExpected = lane => lane.target === 'linux' && lane.methods.length === 20 && lane.methods.includes('get_window_state');
+  const setupEqual = JSON.stringify(setup[0]) === JSON.stringify(setup[1]);
+  rows.push({scene: '-', step: 'setup', ok: setupEqual && setupExpected(setup[0]) && setupExpected(setup[1]), equal: setupEqual,
+    expected: {vendor: setupExpected(setup[0]), cua: setupExpected(setup[1])}, vendor: summarize(setup[0]), cua: summarize(setup[1])});
   for (const name of SCENES) {
     const scene = name === 'gedit' ? await desktop.openGedit('services', 'cua171 services scene\nline two\n')
       : name === 'chrome' ? await desktop.openChrome('services', 'scene.html')
@@ -121,13 +140,15 @@ try {
     for (const [step, run] of STEPS) {
       const outcomes = {};
       for (const {lane, sky} of lanes) outcomes[lane] = await settled(() => run({sky, scene, ctx: contexts[lane]}));
-      const row = {scene: name, step, equal: JSON.stringify(outcomes.vendor) === JSON.stringify(outcomes.cua), vendor: summarize(outcomes.vendor), cua: summarize(outcomes.cua)};
+      const equal = JSON.stringify(outcomes.vendor) === JSON.stringify(outcomes.cua);
+      const expected = {vendor: EXPECT[step](outcomes.vendor), cua: EXPECT[step](outcomes.cua)};
+      const row = {scene: name, step, ok: equal && expected.vendor && expected.cua, equal, expected, vendor: summarize(outcomes.vendor), cua: summarize(outcomes.cua)};
       if (outcomes.vendor.error || outcomes.cua.error) Object.assign(row, {vendorError: outcomes.vendor.error ?? null, cuaError: outcomes.cua.error ?? null});
       if (step === 'tree') row.nodes = {vendor: contexts.vendor.nodes, cua: contexts.cua.nodes};
       if (step === 'state' || step === 'state-after-query') row.lines = {vendor: outcomes.vendor.value?.split('\n').length, cua: outcomes.cua.value?.split('\n').length};
       if (step === 'screenshot') row.jpeg = {vendor: contexts.vendor.jpeg, cua: contexts.cua.jpeg};
       rows.push(row);
-      console.log(`${row.equal ? 'EQUAL' : 'DIFFERENT'} ${name} ${step}${row.nodes ? ` (${row.nodes.cua} nodes)` : ''}${row.vendorError ? ` [${row.vendorError}]` : ''}`);
+      console.log(`${row.ok ? 'PASS' : 'FAIL'} ${row.equal ? 'equal' : 'different'} expected=${expected.vendor}/${expected.cua} ${name} ${step}${row.nodes ? ` (${row.nodes.cua} nodes)` : ''}${row.vendorError ? ` [${row.vendorError}]` : ''}`);
     }
   }
 } finally {
@@ -139,10 +160,11 @@ const engineVersion = execFileSync(values.engine, ['--version'], {encoding: 'utf
 const commit = execFileSync('git', ['rev-parse', 'HEAD'], {encoding: 'utf8'}).trim();
 mkdirSync(values.out, {recursive: true});
 writeFileSync(join(values.out, 'results.jsonl'), `${rows.map(row => JSON.stringify(row)).join('\n')}\n`);
-const allEqual = rows.every(row => row.equal);
-const table = rows.map(row => `| ${row.scene} | ${row.step} | ${row.equal ? 'equal' : '**different**'} | ${row.nodes?.cua ?? row.lines?.cua ?? ''} | ${row.vendorError ?? ''} |`);
-writeFileSync(join(values.out, 'summary.md'), [`# Two services, one engine: ${allEqual ? 'every step equal' : 'DIFFERENCES'}`, '',
+const allPass = rows.every(row => row.ok);
+const table = rows.map(row => `| ${row.scene} | ${row.step} | ${row.ok ? 'pass' : '**FAIL**'} | ${row.equal ? 'equal' : '**different**'} | ${row.expected.vendor && row.expected.cua ? 'yes' : `**no** (vendor ${row.expected.vendor}, cua ${row.expected.cua})`} | ${row.nodes?.cua ?? row.lines?.cua ?? ''} | ${row.vendorError ?? ''} |`);
+writeFileSync(join(values.out, 'summary.md'), [`# Two services, one engine: ${allPass ? 'every step passes' : 'FAILURES'}`, '',
   `Engine: \`${engineVersion}\` (${values.engine}); checkout ${commit}; scenes ${SCENES.join(', ')}; ${new Date().toISOString()}.`, '',
-  '| scene | step | vendor service vs cua service | nodes / rendered lines (cua) | both lanes\' error |', '|---|---|---|---|---|', ...table, ''].join('\n'));
-console.log(allEqual ? 'VERDICT: every step equal' : 'VERDICT: differences');
-process.exit(allEqual ? 0 : 1);
+  'A step passes when the two lanes are equal and each gives the step\'s expected outcome: the ordinary steps succeed with their window, state, tree or screenshot present; `unknown-id` and `unknown-action` fail with the sentence they exist to reach.', '',
+  '| scene | step | verdict | vendor service vs cua service | expected outcome | nodes / rendered lines (cua) | both lanes\' error |', '|---|---|---|---|---|---|---|', ...table, ''].join('\n'));
+console.log(allPass ? 'VERDICT: every step passes' : 'VERDICT: failures');
+process.exit(allPass ? 0 : 1);

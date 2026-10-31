@@ -1097,7 +1097,7 @@ has no line after 21:37:27Z, and its `scenes.log` no `down` rows. `a457ad42dac7`
      and that `uncapped` lifts it;
    - item 1, `drive 1 --no-clip`, then `order-meta`;
    - the scenes down, and the summary.
-2. **The whole-branch review** at the spec's rung (reviewer-high on fc15e1b8..9f021c76, dispatched 22:21Z), running.
+2. **The whole-branch review** at the spec's rung (reviewer-high on fc15e1b8..9f021c76, dispatched 22:21Z): one P2, a keyboard revival in another app left `cursor.app` naming the last pointer app, so a later display change moved the cursor to that app's old point. Fixed in cf6c7b67 (test first; CursorHubTests 44/44, swift test 613/0); the re-review found nothing material. The engine built from cf6c7b67, dd7a09235885, was approved at 22:30:18Z with no prompt.
 3. **The pull request**, with press_key's limit and the click gap among its limits.
 
 Not in that slot, and open: item 5's recording clause still has no verdict, since no clip is recorded.

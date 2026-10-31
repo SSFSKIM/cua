@@ -259,7 +259,7 @@ keep it alive.
 | state | what you see | when |
 |---|---|---|
 | acting | the arrow moving to its target or resting there; a dip at a click | an action |
-| thinking | the arrow rocking gently | once the motion settles, until the next action |
+| thinking | the arrow rocking gently | once the motion settles and no request has been in flight for 0.3 s, until the next action |
 | taken over | the whole cursor half-transparent and still | you click or type in the app the agent is driving (the engine's Input Monitoring grant detects it), until the session's next request |
 | fading | it fades out over about 0.44 s | 5 s after the session's last request ends (never while one runs); at once on `end_task` |
 

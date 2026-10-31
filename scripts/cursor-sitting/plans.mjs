@@ -32,7 +32,10 @@ export const MOVES = Object.freeze([
   {what: 'a scroll (a glide, no dip)', cell: SCROLL_AT('textedit', [0.5, 0.6])},
   {what: 'three targets in quick succession (retargeting)', cell: [CLICK_AT('textedit', [0.2, 0.35]), CLICK_AT('textedit', [0.8, 0.35]), CLICK_AT('textedit', [0.5, 0.8])]},
 ]);
+// Each move starts from a fresh observation: after a click or drag changed the document, the engine refuses the next
+// action until the state is re-read (seen live 2026-10-30).
 const moveSteps = session => MOVES.flatMap((move, i) => [{say: `move ${i + 1}: ${move.what}`},
+  {run: session, cell: OBSERVE('textedit'), label: 'observe before the move'},
   ...[move.cell].flat().map(cell => ({run: session, cell, label: move.what})), {wait: 1500}]);
 
 // Acceptance 11's side-by-side: the same moves through the engine `engine` (vendor, then cua).

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {keepGlideFrames, main} from '../../scripts/cursor-sitting.mjs';
+import {keepCoverage, keepGlideFrames, main} from '../../scripts/cursor-sitting.mjs';
 import {timingSteps} from '../../scripts/cursor-sitting/timing.mjs';
 
 const scratch = t => { const dir = mkdtempSync(join(tmpdir(), 'cua-235-cli-')); t.after(() => rmSync(dir, {recursive: true, force: true})); return dir; };
@@ -76,6 +76,38 @@ test('a frames count that failed, or that is another attempt\'s, is reported una
   await quietly(async () => keepGlideFrames(out, '12-fps60', new Date(), {readFrames: () => []}));
   assert.equal(JSON.parse(readFileSync(join(out, 'frames-12-fps60.json'), 'utf8')).summary.glides, 0);
   assert.ok(existsSync(join(out, 'frames-12-fps60.json')));
+});
+
+test('a series whose signposts do not cover every sample reads incomplete, its frames too, never silently short', async t => {
+  const out = scratch(t);
+  // Item 12's rows with times: the start at 1 000 000, each sample's cell 1 s after the row before it.
+  const rows = typingRows().slice(2).map((r, k) => ({...r, at: 1_000_000 + k * 1000}));
+  writeFileSync(join(out, 'item-12.jsonl'), jsonl(rows));
+  const stamp = ms => { const d = new Date(ms), p = (n, w = 2) => String(n).padStart(w, '0');
+    const z = -d.getTimezoneOffset(), sign = z >= 0 ? '+' : '-', h = Math.floor(Math.abs(z) / 60), m = Math.abs(z) % 60;
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}000${sign}${p(h)}${p(m)}`; };
+  const signposts = from => rows.filter(r => r.kind === 'cell').slice(from).map(r => JSON.stringify({signpostName: 'request', timestamp: stamp(r.at - 500)})).join('\n');
+  // The second sitting's loss: the first 13 samples' signposts are gone.
+  writeFileSync(join(out, 'signposts-12.ndjson'), signposts(13));
+  const ok = {ok: true};
+  const short = await quietly(async () => keepCoverage(out, '12', {streams: {engine: ok, frames: ok}}));
+  assert.equal(short.complete, false);
+  assert.equal(short.missing.length, 13);
+  await quietly(async () => keepGlideFrames(out, '12', new Date(), {readFrames: () => [], incomplete: short.why}));
+  await quietly(() => main(['judge', '--out', out]));
+  let md = readFileSync(join(out, 'timing.md'), 'utf8');
+  assert.match(md, /Signposts \(coverage-12\.json\): \*\*incomplete\*\*: 13 of 40 samples have no engine signpost/);
+  assert.match(md, /per cursor glide.*\*\*incomplete\*\* \(13 of 40/);
+  // Every sample covered, but a stream that ended early still makes it incomplete.
+  writeFileSync(join(out, 'signposts-12.ndjson'), signposts(0));
+  const early = await quietly(async () => keepCoverage(out, '12', {streams: {engine: ok, frames: {ok: false, error: 'log stream ended before the series did (exit 1)'}}}));
+  assert.equal(early.complete, false);
+  assert.match(early.why, /stream failed: log stream ended before the series did/);
+  const whole = await quietly(async () => keepCoverage(out, '12', {streams: {engine: ok, frames: ok}}));
+  assert.equal(whole.complete, true);
+  await quietly(() => main(['judge', '--out', out]));
+  md = readFileSync(join(out, 'timing.md'), 'utf8');
+  assert.match(md, /Signposts \(coverage-12\.json\): complete, every one of 40 samples has engine signposts/);
 });
 
 test('a timing item that is missing a series fails the judgement', async t => {

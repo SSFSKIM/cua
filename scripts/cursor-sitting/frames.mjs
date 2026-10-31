@@ -89,12 +89,13 @@ export function capVerdict(base, capped) {
 }
 
 // The fps60 arm's cap check (the runner's glide-frames task): `probe` (the approved bundle's, args -> its answer) glides
-// without the arm and then with it, and `readFrames` (since -> FrameUpdate times) counts each side's frames. It does not
+// without the arm and then with it, and `readFrames` (since -> FrameUpdate times, or a promise of them) counts each
+// side's frames. It does not
 // stop the series for a failed count: a read that fails, or a probe that failed with its exit confirmed, is an
 // undetermined verdict, with the pids of the probes that did run, so the series' own count still leaves their glides
 // out. A probe whose end is unconfirmed (runProbe's `stuck`: never identified, or alive after SIGKILL) is rethrown and
 // stops the series, since it may still be drawing a cursor over the display the series measures.
-export function glideFramesCheck(arm, {probe, readFrames, glides = 2, now = () => Date.now()}) {
+export async function glideFramesCheck(arm, {probe, readFrames, glides = 2, now = () => Date.now()}) {
   const since = new Date(now() - 2000), sides = [], pids = [];
   try {
     for (const extra of [[], ['--debug', arm]]) {
@@ -102,7 +103,7 @@ export function glideFramesCheck(arm, {probe, readFrames, glides = 2, now = () =
       sides.push(side);
       if (Number.isInteger(side.pid)) pids.push(side.pid);
     }
-    const times = readFrames(since);
+    const times = await readFrames(since);
     const [base, capped] = sides.map(side => {
       const rows = glideFrames(side.glides, times);
       return {pid: side.pid, ...frameSummary(rows), rock: side.rock ? glideFrames([side.rock], times)[0] : null, rows};

@@ -192,8 +192,11 @@ writes the key (engine.json kept in `engine.json.before` meanwhile), stops the e
 checks `cua engine status --json`'s `status.cursorDebug`, runs the series, then puts engine.json back and stops the
 engine again; a failure on the way does the same. Each arm records in `item-<n>-<arm>.jsonl` and `timing-recorded.md`,
 never judged; on against an arm, and an arm against off, go to the design session. For the finer split, every timing
-series keeps the engine's timing signposts over its run in `$OUT/signposts-<item>.ndjson` (`log show --signpost`, read
-when the series ends; `log stream` does not carry signposts): the request by method, `cursor.begin`/`end`/`commit`,
+series keeps the engine's timing signposts over its run in `$OUT/signposts-<item>.ndjson`, streamed while it runs
+(`log stream --signpost`, started before the first step and stopped after the last; plain `log stream` carries no
+signposts, and `log show` after the run lost the second sitting's starts). `$OUT/coverage-<item>.json` checks every
+sample against them: a series whose samples are not all covered, or whose stream failed, reads **incomplete** in
+`timing.md` and `timing-recorded.md`, and so do its frames per glide. The signposts are: the request by method, `cursor.begin`/`end`/`commit`,
 `cursor.apply` with `cursor.place`, `cursor.install`, `cursor.transition` and `cursor.caCommit`, `cursor.windowList`,
 `main.sync.wait`/`run`, `route3.hold`, `route3.release`, `route3.guard.frontmost`/`windowOrder`, and
 `pressKey.keyboardTarget`/`minimizedCheck`/`post`.

@@ -29,8 +29,9 @@ import {liveTargetGuard} from './target-guard.mjs';
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const SCENES_CLI = fileURLToPath(new URL('../repl-parity/scenes-mac.mjs', import.meta.url));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
-// The glides the fps60 arm's cap check counts on each side (about 4 s of probe a side).
-const GLIDE_CHECK_GLIDES = 2;
+// The glides the fps60 arm's cap check counts on each side (about 4 s of probe a side), and how long it lets the series'
+// frame stream deliver the last of them.
+const GLIDE_CHECK_GLIDES = 2, FRAME_STREAM_SETTLE_MS = 1000;
 
 // The engine's activations among the watcher's lines: the panel never activates the engine (Acceptance 5).
 export const engineActivations = lines => lines.filter(l => l.kind === 'activated' && l.bundleId === BUNDLE_ID);
@@ -48,8 +49,9 @@ export const cursorOffSettings = text => patchedSettings(text, {cursor: false});
 // engine.json with the cursor's diagnostic arm `arm` (`cursorDebug`), the other keys kept.
 export const cursorDebugSettings = (text, arm) => patchedSettings(text, {cursorDebug: arm});
 
-// The Mac's io for `runSteps`. `run`: the harness scenes' run directory; `out`: the item's evidence directory.
-export function liveIo({run, out, quiet = false, home = homedir()}) {
+// The Mac's io for `runSteps`. `run`: the harness scenes' run directory; `out`: the item's evidence directory;
+// `frameStream`: the series' FrameUpdate stream (./signposts.mjs), when one runs.
+export function liveIo({run, out, quiet = false, home = homedir(), frameStream = null}) {
   const cli = (args, env = {}) => JSON.parse(execFileSync(process.execPath, [CLI, ...args], {encoding: 'utf8', env: {...process.env, ...env}, timeout: 60_000}));
   const settingsFile = engineJsonOf(home), before = join(out, 'engine.json.before');
   const guard = liveTargetGuard({bundle: enginePaths().bundle});
@@ -103,7 +105,9 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
       // series (./frames.mjs glideFramesCheck): a cap that does not take effect is the finding, and a count that fails is
       // undetermined; only a probe whose end is unconfirmed (stuck) stops it. The probes' pids are kept, so the series'
       // own count leaves their glides out.
-      'glide-frames': async ([arm]) => glideFramesCheck(arm, {probe: args => runProbe(enginePaths().bundle, args), readFrames: readFrameUpdates, glides: GLIDE_CHECK_GLIDES}),
+      'glide-frames': async ([arm]) => glideFramesCheck(arm, {probe: args => runProbe(enginePaths().bundle, args), glides: GLIDE_CHECK_GLIDES,
+        // From the series' own stream when it runs (./signposts.mjs), once its last frames have arrived; else `log show`.
+        readFrames: frameStream ? async () => { await sleep(FRAME_STREAM_SETTLE_MS); return frameStream.frameTimes(); } : readFrameUpdates}),
       // The keyboard's input source as the approved bundle's probe reads it, TextEdit in front: `latin` requires a
       // Latin keyboard layout (./timing.mjs latinSourceProblem), `record` only keeps the reading.
       'input-source': async ([mode]) => {

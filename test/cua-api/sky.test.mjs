@@ -55,6 +55,16 @@ const scenarios = [
       assert.deepEqual(record.result, [[{filepath: '/s.png', bytes: {uint8: [1, 2]}, data_url: dataUrl([1, 2])}], [{filepath: '/w.png', bytes: {uint8: [3]}, data_url: dataUrl([3])}],
         'x11:1 frame W', {filepath: '/a.wav', bytes: {uint8: [4]}, data_url: dataUrl([4])}]);
     }},
+  {name: 'a Linux window state keeps the fields beside its tree and screenshots, truncated among them (#171 Observation)',
+    options: {setup: {target: 'linux', methods: ['get_window_state']}, answer: () => ({window: {id: 3}, ax_tree_source: 'at_spi', ax_tree: {id: '0', role: 'frame', children: []},
+      screenshots: [], truncated: {nodes: 4, depth: 0, failed: 1}})},
+    run: async sky => {
+      const state = await sky.get_window_state({window: {id: 3}});
+      return [Object.keys(state), state.truncated];
+    },
+    check(record) {
+      assert.deepEqual(record.result, [['window', 'ax_tree_source', 'ax_tree', 'screenshots', 'truncated'], {nodes: 4, depth: 0, failed: 1}]);
+    }},
   {name: 'a macOS window state is passed through as the service answers it',
     options: {setup: {target: 'mac', methods: ['get_window_state']}, answer: () => ({ax_tree: 'plain'})},
     run: async sky => sky.get_window_state({}),

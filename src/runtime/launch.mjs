@@ -56,14 +56,20 @@
 //   SKY_CUA_SERVICE_PATH                     computer surface, darwin, the vendor engine selected: relocated helper app,
 //                                            opened by the vendor through LaunchServices (never with cua's engine, so
 //                                            nothing may open the vendor helper)
-//   OAI_SKY_LINUX_BIN                        computer surface, linux: the relocated sky_linux helper, which the vendor
-//                                            spawns as a child over stdio (pinned rather than resolved by the vendor), or
-//                                            with cua's engine selected (nativeEngineFor, #171) cua-engine, installed under
-//                                            <home>/engine/linux or named by CUA_LINUX_ENGINE_BIN, behind the vendor
-//                                            service until cua's own (M3)
+//   OAI_SKY_LINUX_BIN                        computer surface, linux, the vendor engine selected: the relocated
+//                                            sky_linux helper, which the vendor service spawns as a child over stdio
+//                                            (pinned rather than resolved by the vendor)
 //   CUA_SKY_SERVICE                          computer surface: the sky service module the trusted wrapper delegates to:
-//                                            the vendor's (@oai/sky/service), or on macOS with cua's engine selected
-//                                            (nativeEngineFor) cua's own, src/services/engine/service.mjs, on either host
+//                                            the vendor's (@oai/sky/service), or with cua's engine selected
+//                                            (nativeEngineFor) cua's own: on macOS src/services/engine/service.mjs, on
+//                                            either host; on Linux (#171 M3) src/services/engine/linux/service.mjs, so
+//                                            no vendor module serves the computer surface there
+//   CUA_ENGINE_BIN                           computer surface, linux, cua's engine selected: cua-engine, installed under
+//                                            <home>/engine/linux or named by CUA_LINUX_ENGINE_BIN (its canonical path,
+//                                            the selection's), which cua's Linux service spawns as a child over stdio
+//   CUA_DESKTOP_MODE                         computer surface, linux, cua's engine selected: the device mode
+//                                            (desktopModeFor: shared or dedicated), which cua's Linux service passes to
+//                                            the engine as --desktop
 //   CUA_ENGINE_APP                           computer surface, darwin, cua's engine selected: the approved engine bundle
 //                                            (src/runtime/engine.mjs installedEngine), which cua's service connects to at
 //                                            the engine.sock beside it and launches when nothing answers there
@@ -98,7 +104,7 @@
 // elsewhere; docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, EngineAttestation). CUA_REPL_HOST, CUA_NODE,
 // CUA_NATIVE_ENGINE and CUA_LINUX_ENGINE_BIN are read by the proxy only and never reach the runtime's environment. A
 // Linux launch also carries `engineRoot`, <home>/engine, and `linuxEngine`, the cua engine its computer surface runs
-// ({path: its canonical path, the one OAI_SKY_LINUX_BIN names; lookup: the path it was found by; source}, null for the
+// ({path: its canonical path, the one CUA_ENGINE_BIN names; lookup: the path it was found by; source}, null for the
 // vendor's), which the scoped preflight protects, the lookup's links included. Deliberately never set:
 // NODE_REPL_SANDBOX_ALLOWED_UNIX_SOCKETS, NODE_REPL_UNTRUSTED_ENV_ALLOWLIST (cells see only what the vendor launcher
 // adds), SKY_CUA_SERVICE_NATIVE_PIPE_PATH, NODE_REPL_HOST_SERVICES_PIPE_PATH, NODE_REPL_WORKER_WRAPPER,
@@ -206,6 +212,9 @@ export const SERVICE_SUPPORT_DIRS = [ownedPath('../secrets')];
 export const ENGINE_SERVICE_DIR = join(ownedPath('../services'), 'engine');
 // The module CUA_SKY_SERVICE names when cua's engine is selected (nativeEngineFor).
 export const ENGINE_SERVICE = join(ENGINE_SERVICE_DIR, 'service.mjs');
+// cua's own Linux service (#171 M3), CUA_SKY_SERVICE for cua's engine on Linux. It lies under src/services, the sky
+// wrapper's directory, which the launch already trusts with the wrapper.
+export const LINUX_ENGINE_SERVICE = join(ENGINE_SERVICE_DIR, 'linux', 'service.mjs');
 // cua's own browser service (docs/doperpowers/specs/2026-10-13-own-browser-service-design.md), trusted with the browser
 // surface.
 export const BROWSER_SERVICE_IMPL_DIR = ownedPath('../browser-service');
@@ -298,11 +307,15 @@ export function buildLaunch({runtime, home, sessionId, surfaces = ['computer'], 
   // The engine a macOS computer session drives (nativeEngineFor): cua's own service and the approved bundle, on either
   // host, or the vendor's service and helper (a selection that names no engine is the vendor's: today's path).
   const cuaEngine = !linux && enabled.includes('computer') && replHost.engine?.engine === 'cua' ? replHost.engine.app : null;
-  // On Linux cua's engine runs behind the vendor service until cua's own service (M3): the vendor's sky_linux replaced.
+  // On Linux cua's engine runs behind cua's own service (#171 M3), in the device mode the session resolves; the vendor
+  // engine behind the vendor's service.
   const linuxEngine = linux && enabled.includes('computer') && replHost.engine?.engine === 'cua' ? replHost.engine.bin : null;
   if (enabled.includes('computer')) {
-    if (linux) Object.assign(env, {OAI_SKY_LINUX_BIN: linuxEngine?.path ?? p.skyLinuxBin, CUA_SKY_SERVICE: p.skyVendorService});
-    else {
+    if (linux) {
+      Object.assign(env, linuxEngine
+        ? {CUA_SKY_SERVICE: LINUX_ENGINE_SERVICE, CUA_ENGINE_BIN: linuxEngine.path, CUA_DESKTOP_MODE: desktopModeFor({env: ambient}).mode}
+        : {OAI_SKY_LINUX_BIN: p.skyLinuxBin, CUA_SKY_SERVICE: p.skyVendorService});
+    } else {
       Object.assign(env, cuaEngine ? {CUA_SKY_SERVICE: ENGINE_SERVICE, CUA_ENGINE_APP: cuaEngine.bundlePath} : {SKY_CUA_SERVICE_PATH: p.skyServiceApp, CUA_SKY_SERVICE: p.skyVendorService});
       env.CUA_ENGINE_SCREENSHOTS = join(cwd, 'screenshots');
     }
@@ -507,7 +520,8 @@ function canonicalEngine(lookup, source) {
 // The device mode cua's engine runs in on Linux (#171, Design "Device mode") -> {mode: 'shared' | 'dedicated', reason:
 // 'explicit' | 'settings' | 'default'}: CUA_DESKTOP_MODE in `env` (unset or empty: not set), else `desktop` in
 // ~/.config/cua/engine.json, else shared. Any other value is refused (invalid_setting), as is an engine.json that cannot
-// be read. Doctor reports it; cua's own service passes it to the engine (M3).
+// be read. Doctor reports it; a launch with cua's engine names it to cua's own service (CUA_DESKTOP_MODE), which passes
+// it to the engine (M3).
 const DESKTOP_MODES = ['shared', 'dedicated'];
 export function desktopModeFor({env, config = () => readEngineSettings({env})}) {
   const value = env.CUA_DESKTOP_MODE;

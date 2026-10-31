@@ -11,6 +11,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
+import {realpathSync, rmSync} from 'node:fs';
 import {createInterface} from 'node:readline';
 import {PassThrough} from 'node:stream';
 import {dirname, join} from 'node:path';
@@ -26,6 +27,7 @@ import {kernelNode} from './kernel-harness.mjs';
 import {alive, descendants, texts} from './supervisor-harness.mjs';
 import {linuxNativeRuntime, sha256} from '../fixtures/linux-native-runtime.mjs';
 import {pinnedApprovals} from '../../scripts/accept/lib.mjs';
+import {fakeLinuxEngine} from '../helpers/fake-linux-engine.mjs';
 
 const {node, skip} = kernelNode();
 const own = {skip};
@@ -47,9 +49,10 @@ const GEDIT = 'org.gnome.gedit';
 // memory (#117 M3). Its idle timer is the test's: `stop()` fires it, so the runtime goes through the connection's own
 // idle stop, and resolves that stop's teardown. The client offers form elicitation, accepts the approval of the
 // fixture's app and declines anything else, recording each request it is asked in `asked`.
-async function linuxSession(t, {surfaces, secrets = {}}) {
+// `engine`, when given, is the ambient's engine selection (CUA_NATIVE_ENGINE, CUA_LINUX_ENGINE_BIN).
+async function linuxSession(t, {surfaces, secrets = {}, engine = {}}) {
   const fixture = linuxNativeRuntime(t, {node, secrets});
-  const ambient = {HOME: fixture.home, USER: 'u', TMPDIR: process.env.TMPDIR, LANG: 'C.UTF-8', CUA_REPL_HOST: 'cua', ...DESKTOP};
+  const ambient = {HOME: fixture.home, USER: 'u', TMPDIR: process.env.TMPDIR, LANG: 'C.UTF-8', CUA_REPL_HOST: 'cua', ...DESKTOP, ...engine};
   const services = {...(surfaces.includes('computer') ? {sky: LINUX_SKY} : {}), ...(surfaces.includes('browser') ? {browser: BROWSER_SERVICE} : {})};
   const launch = buildLaunch({runtime: fixture.runtime, home: fixture.home, sessionId: 'linux-native-1', surfaces, services, secretsDir: fixture.secretsDir, ambient, resolveOwnNode: () => node});
   // The pinned wrapper fixture imports the production module: its directory is trusted as it is when that is registered.
@@ -217,4 +220,31 @@ test('a combined Linux session on the own host has both surfaces, the scoped def
   assertConfined(browserOnly.fixture.launches(), {worker: 'restricted'});
   assert.equal(browserOnly.fixture.helperLog().length, 0, 'no computer-use helper without the computer surface');
   assert.equal('OAI_SKY_LINUX_BIN' in browserOnly.launch.env, false);
+});
+
+test('with CUA_NATIVE_ENGINE=cua a Linux computer session runs cua\'s own Linux service: cua-engine is the trusted worker\'s child, and no vendor Sky module is loaded (#171 M3)', own, async t => {
+  const engine = fakeLinuxEngine(t);
+  const session = await linuxSession(t, {surfaces: ['computer'], engine: {CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: engine.path}});
+  // The vendor's service module is gone: anything that imported it would fail.
+  rmSync(session.fixture.runtime.paths.skyVendorService);
+  const first = ok(await session.js(`const windows = await cua.listWindows({emit: false});
+    const app = await cua.getApp({windowId: windows[0].id});
+    const state = await app.getAXState({emit: false});
+    await app.typeText('hello'); await app.pressKey('ctrl+a');
+    nodeRepl.write(JSON.stringify({target: cua.computer.target, windows: windows.map(w => w.id), state}));`));
+  const answer = JSON.parse(texts(first).at(-1));
+  assert.deepEqual([answer.target, answer.windows], ['linux', [7, 8]]);
+  assert.match(answer.state, /^Accessibility source: at_spi\n0 frame scratch\n\t1 push button Save/);
+  assert.equal(session.launch.env.CUA_ENGINE_BIN, realpathSync(engine.path));
+  assert.equal(session.launch.env.CUA_DESKTOP_MODE, 'shared');
+  assert.deepEqual(engine.requests().filter(r => r.command !== 'list_windows').map(({command, input}) => [command, input.element_id ?? input.text ?? input.key ?? null]),
+    [['capabilities', null], ['get_window_state', null], ['get_window_state', null], ['type_text', 'hello'], ['press_key', 'ctrl+a']], 'the capabilities first, at setup');
+  assert.deepEqual(engine.spawns().map(s => s.args), [['server', '--desktop', 'shared']]);
+  assert.deepEqual(session.fixture.helperLog(), [], 'the vendor\'s sky_linux never ran');
+  assert.deepEqual(session.asked, [{method: 'elicitation/create', app: GEDIT, action: 'accept'}], 'the wrapper\'s approval still comes first');
+  const [{pid}] = engine.spawns();
+  const [worker] = session.worker();
+  assert.equal(descendants(session.group()).find(p => p.pid === pid)?.ppid, worker.pid, 'cua-engine is the trusted worker\'s own child');
+  assert.equal((await session.terminate()).confirmed, true);
+  assert.equal(alive(pid), false, 'the engine goes with the runtime');
 });

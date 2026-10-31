@@ -191,3 +191,13 @@ test('the remote clients resolve their own cursor contexts: a MAWS label and col
   assert.equal(opens[1].env.CLAUDE_CODE_SESSION_ID, null);
   assert.equal(opens[2].env.CUA_CURSOR, '0');
 });
+
+test('every timed sample runs with the cursor already visible: an untimed prime at the opposite point before its first click', async () => {
+  const {PRIME_MS} = await import('../../scripts/cursor-sitting/cells.mjs');
+  const typing = timingSteps('typing', 2).find(s => s.sample).cell;
+  const first = typing.indexOf('await __app.click(');
+  assert.ok(typing.slice(first, typing.indexOf('typeText')).includes(`setTimeout(resolve, ${PRIME_MS})`), 'the prime and its pause come before the click the type_text follows');
+  assert.ok(typing.indexOf(`setTimeout(resolve, ${PRIME_MS})`) < typing.indexOf('performance.now(); await __app.typeText'), 'the prime is outside the timed call');
+  const clicks = timingSteps('clicks', 2);
+  clicks.forEach((s, k) => { if (s.sample?.series === 'coordinate click') { assert.match(clicks[k - 1].label, /^prime /); assert.equal(clicks[k - 1].sample, undefined); } });
+});

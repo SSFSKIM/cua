@@ -4,13 +4,15 @@
 // cursor-on session's cursor has faded before the cursor-off session acts and nothing of either is animating when the
 // next sample starts. Every time is the cell's own, performance.now() around the awaited call, so MCP and the REPL's
 // dispatch are not in it.
-//   typing  in the run's TextEdit document, TextEdit frontmost (the key guard): a click at one corner of the text, so
-//           the cursor-on session's cursor starts a long glide, then a type_text of 200 characters; a click at the
-//           other corner, then 30 single press_key calls ("x"), their total one sample.
-//   clicks  TextEdit frontmost and the Electron fixture behind it: a coordinate click in TextEdit (corners alternating),
+//   typing  in the run's TextEdit document, TextEdit frontmost (the key guard): an untimed prime at one corner (the
+//           cursor-on session's cursor fades in there: ./cells.mjs PRIME), a click at the other corner, so it starts a
+//           long glide, then a type_text of 200 characters while it glides; a click back, another long glide, then 30
+//           single press_key calls ("x"), their total one sample.
+//   clicks  TextEdit frontmost and the Electron fixture behind it: an untimed prime at the opposite corner, then a
+//           coordinate click in TextEdit (corners alternating, so it glides),
 //           an element click on the fixture's button (the engine's route 3 for a background fixture; each sample's
 //           route is recorded), and a drag across TextEdit's text.
-import {CLICK_AT, CLICK_CONTROL_TIMED, DRAG, TYPING_SAMPLE} from './cells.mjs';
+import {CLICK_AT, CLICK_CONTROL_TIMED, DRAG, PRIME, TYPING_SAMPLE} from './cells.mjs';
 import {sampleOrder} from './stats.mjs';
 
 export const SAMPLE_GAP_MS = 6000;
@@ -33,6 +35,7 @@ export function timingSteps(kind, samples) {
   const sample = (side, i) => (kind === 'typing'
     ? [{run: side, cell: TYPING_SAMPLE('textedit', A, B), label: `typing ${side} ${i}`, keys: 'textedit', sample: {side, i}}]
     : [
+      {run: side, cell: PRIME('textedit', i % 2 ? B : A), label: `prime ${side} ${i}`},
       {run: side, cell: CLICK_AT('textedit', i % 2 ? A : B), label: `coordinate click ${side} ${i}`, sample: {side, i, series: 'coordinate click'}},
       {run: side, cell: CLICK_CONTROL_TIMED('fixtureButton'), label: `element click ${side} ${i}`, sample: {side, i, series: 'element click'}},
       {run: side, cell: DRAG('textedit', [0.2, 0.5], [0.8, 0.6]), label: `drag ${side} ${i}`, sample: {side, i, series: 'drag'}},

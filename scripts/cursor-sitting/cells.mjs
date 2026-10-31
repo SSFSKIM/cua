@@ -137,10 +137,24 @@ const shot = await __app.getScreenshot({emit: false});
 nodeRepl.emitImage(shot);
 return {size: jpegSize(shot)};`);
 
-// The typing sample of Acceptance 12: a coordinate click at `from` (which starts a long glide where the cursor is on),
-// then a timed type_text of 200 characters; a click at `to`, then 30 timed press_key calls. -> {type_text, press_key}.
+// What makes the cursor-on session's cursor visible before a sample, outside the timed calls: after the 6 s gap it has
+// faded, and an action on a hidden cursor fades it in at its target with no glide, so the sample's first click would
+// otherwise time a snap. The prime is a click at `f`, then a pause for the fade-in. The cursor-off session sends the
+// same calls.
+export const PRIME_MS = 400;
+const prime = (scene, f) => `await __app.click(${at(scene, f)}); await new Promise(resolve => setTimeout(resolve, ${PRIME_MS}));`;
+
+// A prime at `f` alone, for the click sample (Acceptance 13). -> {primed}.
+export const PRIME = (scene, f) => cell(`${head(scene)}
+${prime(scene, f)}
+return {primed: true};`);
+
+// The typing sample of Acceptance 12: primed at `to`, a click at `from` (a long glide where the cursor is on), then a
+// timed type_text of 200 characters while it glides; a click back at `to` (another long glide), then 30 timed
+// press_key calls. -> {type_text, press_key, each}.
 export const TYPING_SAMPLE = (scene, from, to) => cell(`${head(scene)}
 const text = "abcdefghij".repeat(20);
+${prime(scene, to)}
 await __app.click(${at(scene, from)});
 let t = performance.now(); await __app.typeText(text); const typed = performance.now() - t;
 await __app.click(${at(scene, to)});

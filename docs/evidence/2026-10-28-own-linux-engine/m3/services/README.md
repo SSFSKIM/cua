@@ -1,7 +1,7 @@
 # M3.2: cua's own Linux service against the vendor's, on one engine
 
-M3.2's live proof, on the #171 VM's `:0` (Ubuntu 24.04, X11), on checkout dd2255b4. The engine is built from this
-branch: `cua-engine 0.3.0 (9381f166e106)`, whose sources are unchanged at that checkout.
+M3.2's live proof, on the #171 VM's `:0` (Ubuntu 24.04, X11), on checkout 88167c0d (M3.2's fix round 1). The engine is
+built from this branch: `cua-engine 0.3.0 (9381f166e106)`, whose sources are unchanged at that checkout.
 
 ## The same states and the same element numbers
 
@@ -33,9 +33,14 @@ the layer the numbering lives in, the numbered tree. A run through two `cua serv
 sandbox and the approvals, which neither service owns, and could not run the vendor service on cua's engine after M3,
 since the `cua` selection now loads cua's service.
 
-Result (`summary.md`, `results.jsonl`, which hold digests and counts, never a tree's text): **all 25 rows are equal**.
-That covers the setup row and 8 steps on each of the 3 scenes: the same rendered states, the same element numbers, the
-same native ids and the same sentences.
+A step passes only when the two lanes are equal and each lane gives the step's expected outcome. The ordinary steps
+must succeed with their window, state, tree or screenshot present. The two negative steps must fail with the sentence
+they exist to reach: the refresh sentence for an unknown number, and the engine's unavailable-action sentence. So two
+lanes failing alike fail the step. Fix round 1 added this rule; the first run had compared equality alone.
+
+Result (`summary.md`, `results.jsonl`, which hold digests and counts, never a tree's text): **all 25 rows pass**. That
+covers the setup row and 8 steps on each of the 3 scenes: the same rendered states, the same element numbers, the same
+native ids and the same sentences.
 
 ```
 ~/.local/share/cua-171/task17/services.sh docs/evidence/2026-10-28-own-linux-engine/m3/services

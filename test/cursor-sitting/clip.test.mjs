@@ -67,9 +67,9 @@ function framesRecord({spawnAt = 8000} = {}) {
     }};
 }
 
-test('the order: before, while (within a frame either way), after; the clip put on the engine\'s clock at the cursor\'s first frame', () => {
+test('the order compares first frames: an earlier change is before, the same frame while, a later one after; the clip put on the engine\'s clock at the cursor\'s first frame', () => {
   const record = framesRecord();
-  const judged = judgeOrder(record, {'first-target': {change: 101, arrival: 100}, 'second-target': {change: 200, arrival: 236}});
+  const judged = judgeOrder(record, {'first-target': {change: 100, arrival: 100}, 'second-target': {change: 200, arrival: 236}});
   // The anchor: the cursor's first frame (first-target's arrival, 100 / 60 s) is the first click's start plus the plan's lead.
   assert.equal(judged.join.anchor.wall, 9990 + 10 + CURSOR_LEAD_MS);
   assert.ok(Math.abs(judged.join.offsetMs - (10020 - 100 / 60 * 1000)) < 1e-6);
@@ -86,11 +86,15 @@ test('the order: before, while (within a frame either way), after; the clip put 
   const late = judgeOrder(record, {'first-target': {change: 100, arrival: 100}, 'second-target': {change: 240, arrival: 236}});
   assert.equal(late.targets['second-target'].order, 'after');
   assert.equal(late.pass, false);
-  assert.equal(judgeOrder(record, {'first-target': {change: 99, arrival: 100}, 'second-target': {change: 237, arrival: 236}}).targets['second-target'].order, 'while');
+  const oneFrame = judgeOrder(record, {'first-target': {change: 101, arrival: 100}, 'second-target': {change: 235, arrival: 236}});
+  assert.equal(oneFrame.targets['first-target'].order, 'after', 'a change one frame after the arrival is after');
+  assert.equal(oneFrame.targets['first-target'].pass, false);
+  assert.equal(oneFrame.targets['second-target'].order, 'before', 'a change one frame before it is before');
+  assert.equal(oneFrame.pass, false);
 });
 
 test('a join that would start the clip before its recorder was launched is flagged, not trusted', () => {
-  const judged = judgeOrder(framesRecord({spawnAt: 9500}), {'first-target': {change: 101, arrival: 100}, 'second-target': {change: 200, arrival: 236}});
+  const judged = judgeOrder(framesRecord({spawnAt: 9500}), {'first-target': {change: 100, arrival: 100}, 'second-target': {change: 200, arrival: 236}});
   assert.equal(judged.join.consistent, false);
   assert.match(judged.join.problem, /before its recorder was launched/);
   assert.equal(judged.pass, true, 'the order comes from the frames alone');
@@ -107,13 +111,13 @@ test('clip order writes the order, copies the judged frames into the evidence, a
   const record = framesRecord();
   writeFileSync(join(frames, 'frames.json'), JSON.stringify(record));
   for (const target of Object.values(record.targets)) for (const f of target.frames) writeFileSync(join(frames, f.file), `jpeg ${f.index}`);
-  const code = await quietly(() => main(['clip', 'order', '--frames', frames, '--out', out, 'first-target', '101', '100', 'second-target', '200', '236']));
+  const code = await quietly(() => main(['clip', 'order', '--frames', frames, '--out', out, 'first-target', '100', '100', 'second-target', '200', '236']));
   assert.equal(code, 0);
   const order = JSON.parse(readFileSync(join(out, 'item-1-order.json'), 'utf8'));
   assert.equal(order.targets['second-target'].order, 'before');
   assert.match(readFileSync(join(out, 'item-1-order.md'), 'utf8'), /second-target.*before/);
   assert.deepEqual(readdirSync(join(out, 'item-1-frames')).sort(), [
-    'first-target-arrival-f000100.jpg', 'first-target-before-arrival-f000099.jpg', 'first-target-before-change-f000100.jpg', 'first-target-change-f000101.jpg',
+    'first-target-arrival-f000100.jpg', 'first-target-before-arrival-f000099.jpg', 'first-target-before-change-f000099.jpg', 'first-target-change-f000100.jpg',
     'second-target-arrival-f000236.jpg', 'second-target-before-arrival-f000235.jpg', 'second-target-before-change-f000199.jpg', 'second-target-change-f000200.jpg']);
   const verdicts = readFileSync(join(out, 'verdicts.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
   assert.deepEqual(verdicts.map(v => [v.item, v.id, v.verdict]), [['1', 'order-first-target', 'pass'], ['1', 'order-second-target', 'pass']]);

@@ -9,7 +9,8 @@
 //           frames.json (each frame's index in the clip and its presentation time). The window around a click spans
 //           every start the recorder could have had (its first frame 0–RECORDING_START_MAX_MS after its launch), from
 //           FRAMES_BEFORE_MS before the click to FRAMES_AFTER_MS after it, past the longest glide (0.97 s).
-//   order   the judged frames, by index: each target's change and arrival (the first-target's arrival being the
+//   order   the judged frames, by index (the order compares first frames: an earlier change is before, the same frame
+//           while, a later one after, and fails): each target's change and arrival (the first-target's arrival being the
 //           cursor's first frame, as it fades in at its first target). Judged by eye, since the arrow and its frosted
 //           halo cover the very control whose pixels change, which no pixel difference tells apart.
 // The join: the cursor's first frame is put at the first click's action start plus the motion plan's lead (CURSOR_LEAD_MS,
@@ -148,7 +149,9 @@ export function judgeOrder(record, judged, {leadMs = CURSOR_LEAD_MS, startMaxMs 
     const event = index => { const f = frameOf(target, index), wallMs = offsetMs + f.pts * 1000; return {index, pts: f.pts, wallMs, sinceReceivedMs: wallMs - meta.receivedAt}; };
     const change = event(judged[target].change), arrival = event(judged[target].arrival);
     const framesApart = arrival.index - change.index;
-    const order = framesApart > 1 ? 'before' : framesApart >= -1 ? 'while' : 'after';
+    // First frames compared (the Decision Log): a change in an earlier frame is before, in the same frame while, in a
+    // later frame after.
+    const order = framesApart > 0 ? 'before' : framesApart === 0 ? 'while' : 'after';
     targets[target] = {label, change, arrival, framesApart, msApart: (arrival.pts - change.pts) * 1000, order, pass: order !== 'after',
       request: {receivedAt: meta.receivedAt, engineMs: meta.engineMs ?? null, actionInterval: meta.actionInterval ?? null, route}};
   }
@@ -158,7 +161,7 @@ export function judgeOrder(record, judged, {leadMs = CURSOR_LEAD_MS, startMaxMs 
 const ms = v => `${Math.round(v)} ms`;
 // The verdict note of one target's order.
 export function orderNote(t, join) {
-  const how = t.order === 'while' ? 'while it arrived (within a frame)' : `${t.order} by ${Math.abs(t.framesApart)} frames (${ms(Math.abs(t.msApart))})`;
+  const how = t.order === 'while' ? 'while it arrived (in the same frame)' : `${t.order} by ${Math.abs(t.framesApart)} frames (${ms(Math.abs(t.msApart))})`;
   return `from the recording's frames: the control changed at frame ${t.change.index} (${t.change.pts.toFixed(3)} s), the arrow's tip reached it at frame ${t.arrival.index} (${t.arrival.pts.toFixed(3)} s): ${how}`
     + `; on the request's clock the change came ${ms(t.change.sinceReceivedMs)} and the arrival ${ms(t.arrival.sinceReceivedMs)} after the engine received the click (its round trip ${t.request.engineMs === null ? 'not kept' : ms(t.request.engineMs)})`
     + (join.consistent ? '' : `; the clock join is not trusted: ${join.problem}`);
@@ -167,7 +170,7 @@ export function orderNote(t, join) {
 export function orderMarkdown(judgement, record) {
   const lines = ['# Acceptance 1: each control\'s change against the cursor\'s arrival, from the recording', '',
     `The clip: \`${record.clip}\` (outside the repository), SHA-256 ${record.sha256}, ${record.video.width} × ${record.video.height} px of the region ${record.region.width} × ${record.region.height} pt at (${record.region.x}, ${record.region.y}).`, '',
-    'The order is the frames\' own: "while" is within one frame either way. The times after receipt put the clip on the engine\'s clock by the cursor\'s first frame (the first click\'s action start plus the plan\'s 20 ms lead); they support the order and never decide it.', '',
+    'The order is the frames\' own, first frame against first frame: "before" is an earlier frame, "while" the same frame, "after" a later one, which fails. The times after receipt put the clip on the engine\'s clock by the cursor\'s first frame (the first click\'s action start plus the plan\'s 20 ms lead); they support the order and never decide it.', '',
     '| target | change: frame (s) | arrival: frame (s) | order | change after receipt | arrival after receipt | round trip | route |', '|---|---|---|---|---|---|---|---|'];
   for (const [target, t] of Object.entries(judgement.targets)) {
     lines.push(`| ${target} (${t.label}) | ${t.change.index} (${t.change.pts.toFixed(3)}) | ${t.arrival.index} (${t.arrival.pts.toFixed(3)}) | ${t.order}${t.order === 'while' ? '' : ` by ${Math.abs(t.framesApart)} frames, ${ms(Math.abs(t.msApart))}`} | ${ms(t.change.sinceReceivedMs)} | ${ms(t.arrival.sinceReceivedMs)} | ${t.request.engineMs === null ? '–' : ms(t.request.engineMs)} | ${t.request.route ?? '–'} |`);

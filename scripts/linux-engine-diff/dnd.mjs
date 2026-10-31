@@ -164,6 +164,8 @@ async function series(ctx, spec, scene, family, n) {
       await sleep(400);
       const before = desktopState();
       const drops = (await readEffect(ctx, scene, at, 'dnd')).drops;
+      // `--no-grabs`: no sampler during the drag (its own grabs can fail Chrome's), the grab after the answer still read
+      const probes = ctx.grabs ? undefined : { startGrabs: async () => ({ stop: async () => [] }) };
       const { value, w, report, during, afterAnswer, grabAfter, owners } = await withDropProbes(async ({ xdnd, grabs }) => {
         const { value, witness: w, report } = await witness.span(`${spec.label}:dnd`, () => engine.request('drag', { window: { id: scene.id }, path: runPath(at, 'dnd', i) }));
         const during = await grabs.stop();
@@ -171,7 +173,7 @@ async function series(ctx, spec, scene, family, n) {
         const grabAfter = JSON.parse(execFileSync(XPROBE, ['grabs'], { encoding: 'utf8' }));
         const owners = await xdnd.stop();
         return { value, w, report, during, afterAnswer, grabAfter, owners };
-      });
+      }, probes);
       await sleep(1000);
       const later = desktopState();
       const dropped = (await readEffect(ctx, scene, at, 'dnd')).drops;
@@ -243,7 +245,7 @@ export async function runDnd(args, { desktop, emit }) {
     '| family | lane | drops | refused / may have dropped | witness changed | took XdndSelection | grab during | grab after | changed at the answer | changed 1 s later |',
     '|---|---|---:|---|---|---:|---:|---:|---|---|',
   ];
-  const ctx = { desktop, oracle, witness, emit, occlusion: args.occlusion };
+  const ctx = { desktop, oracle, witness, emit, occlusion: args.occlusion, grabs: args.grabs !== false };
   try {
     if (!(await negativeCheck(desktop, witness, stubScene, emit))) throw new Error('the witness did not fail the activating stub; the run is invalid');
     for (const family of args.families?.length ? args.families : ['chrome']) {

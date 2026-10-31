@@ -365,7 +365,16 @@ variants included; their evidence is written either way. The run's `end` row kee
   per lane, drags along `pages/drag.html`'s drag-and-drop path, each recorded with the `XdndSelection` owners, the
   grabs during and after, the desktop (active window, focus, stacking) before, at the answer and 1 s later, the
   witness, the drop, and cua's answer (the declared refusal, or that the drop may have happened). `cua:active` is cua
-  with the window activated before each drag; `--variant` adds the dedicated and forced-late lanes.
+  with the window activated before each drag; `--variant` adds the dedicated and forced-late lanes. `--no-grabs` leaves
+  out the 100 ms grab sampler, whose own grabs can fail Chrome's drag-start grab.
+- **The drop-miss instruments** (task 18, run beside any run; none is started by the harness): `xprobe request-watch`
+  records through RECORD every client's `SetSelectionOwner`, core and XInput 2 pointer and keyboard grabs with their
+  replies, server grabs, XDND client messages sent over the wire (Chrome short-circuits its own), and synthetic
+  (`SendEvent`) or XTEST key, button and focus events, motions counted (`XPROBE_EVERY_MOTION=1` lists each); `xprobe
+  cursor-watch` the displayed cursor's changes (a drag source's grab cursor shows its negotiated operation);
+  `xprobe crossing-watch` the crossing events clients receive and the real pointer. The drag page's `dnd` line also
+  counts dragends with the last drop effect, the press-to-dragstart and dragstart-to-dragend times, the page's mouseups
+  and the last press's wall clock (`at`), which lines a drag up with those records.
 - **Acceptance 8's cases** (`device.mjs`, the scenes `device-gtk4`, `device-firefox`, `device-xterm`, `device-qt`,
   `device-chrome`, `device-chrome-dnd`, and `gnome-text-editor`'s and `desktop`'s): cua alone, each judged by its
   expectation (refusal with the Device mode sentence and nothing sent; the foreground route in dedicated mode; the

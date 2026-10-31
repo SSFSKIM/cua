@@ -24,10 +24,17 @@
 //!   server grab (`focus.rs`).
 //! - `xprobe quarantine`: whether cua's display-wide unconfirmed-paste window is open, and for how long (`clip.rs`).
 //! - `xprobe selection-watch <selection>...`: every owner change of the selections until stdin closes (`dnd.rs`).
-//! - `xprobe request-watch`: every client's `SetSelectionOwner` and `GrabPointer`, and the grabs' replies, through
-//!   RECORD, until stdin closes (`requests.rs`).
+//! - `xprobe request-watch`: every client's `SetSelectionOwner`, pointer and keyboard grabs (core and XInput 2) with
+//!   their replies, and synthetic or XTEST key, button and focus events, through RECORD, until stdin closes
+//!   (`requests.rs`).
+//! - `xprobe crossing-watch`: the crossing events clients receive (core and XInput 2), through RECORD, and the real
+//!   pointer, until stdin closes (`crossing.rs`).
+//! - `xprobe cursor-watch`: every change of the displayed cursor with its theme name, through XFixes, until stdin
+//!   closes (`cursor.rs`).
 
 mod clip;
+mod crossing;
+mod cursor;
 mod dnd;
 mod focus;
 mod record;
@@ -70,7 +77,9 @@ fn main() {
         Some("quarantine") if args.len() == 1 => clip::quarantine(),
         Some("selection-watch") => dnd::selection_watch(&args[1..]),
         Some("request-watch") if args.len() == 1 => requests::request_watch(),
-        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window> | record <x> <y> <w> <h> [focus] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | overlay <x> <y> <w> <h> [below <window>] | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch".into()),
+        Some("crossing-watch") if args.len() == 1 => crossing::crossing_watch(),
+        Some("cursor-watch") if args.len() == 1 => cursor::cursor_watch(),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window> | record <x> <y> <w> <h> [focus] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | overlay <x> <y> <w> <h> [below <window>] | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch | crossing-watch | cursor-watch".into()),
     };
     if let Err(error) = result {
         eprintln!("xprobe: {error}");

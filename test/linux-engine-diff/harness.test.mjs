@@ -368,6 +368,10 @@ test('the Interfaces command line parses, with M0 variants', () => {
   assert.throws(() => parseArgs(['--check-wire']), /--vendor-js/);
   assert.throws(() => parseArgs(['--vendor', '/v', '--scene', 'gedit', '--ops', 'all', '--out', 'o']), /--newest/);
   assert.throws(() => parseArgs(['--bogus']), /unknown/);
+  // the dnd experiment samples grabs unless told not to (its sampler's own grabs can fail Chrome's)
+  const dnd = ['--experiment', 'dnd', '--cua', '/c', '--vendor', '/v', '--out', 'o'];
+  assert.notEqual(parseArgs(dnd).grabs, false);
+  assert.equal(parseArgs([...dnd, '--no-grabs']).grabs, false);
 });
 
 // ---------------------------------------------------------------------------------------------------------------

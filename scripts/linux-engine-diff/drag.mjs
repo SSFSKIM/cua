@@ -272,7 +272,7 @@ export function parseDragStatus(texts) {
     select: select === null ? null : select.slice('select '.length),
     range: num(line('range '), 'range'),
     scroller: num(line('scroller '), 'scroller'),
-    dnd: { starts: num(line('dnd '), 'starts'), drops: num(line('dnd '), 'drops'), downs: num(line('dnd '), 'downs'), detail: num(line('dnd '), 'detail'), gap: num(line('dnd '), 'gap'), selects: num(line('dnd '), 'selects') },
+    dnd: Object.fromEntries(['starts', 'drops', 'downs', 'detail', 'gap', 'selects', 'ends', 'effect', 'lat', 'dur', 'ups', 'at'].map((key) => [key, num(line('dnd '), key)])),
     canvas: { strokes: num(line('canvas '), 'strokes'), moves: num(line('canvas '), 'moves'), dev: num(line('canvas '), 'dev') },
   };
 }

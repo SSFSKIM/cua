@@ -120,17 +120,20 @@ final class CursorHub: @unchecked Sendable {
 
   // MARK: The hooks' interface
 
-  /// Every execute request, in its prologue.
+  /// Every execute request, in its prologue. Only a change the person can see (a reappearance, a cancelled fade, taken
+  /// over cleared, a transition that came due) is rendered; otherwise only the bookkeeping changes, here.
   func begin(connection: Int, app: String?, keyboardOnly: Bool) {
     queue.async { [self] in
       let cursor = model(connection)
       let now = environment.now()
+      let before = cursor.lifecycle.phase
       cursor.lifecycle.tick(now: now)
+      var changed = false
       switch cursor.lifecycle.begin(app: app, keyboardOnly: keyboardOnly, now: now) {
       case .none: break
-      case .reappear(let point): reappear(cursor, at: point, now: now)
+      case .reappear(let point): reappear(cursor, at: point, now: now); changed = true
       }
-      commit(cursor)
+      if changed || cursor.lifecycle.phase != before { commit(cursor) } else { rearm() }
     }
   }
 
@@ -230,7 +233,9 @@ final class CursorHub: @unchecked Sendable {
     if let cursor = cursors[connection] { return cursor }
     let cursor = CursorModel(connection: connection, identity: placeholderIdentity(connection: connection))
     cursors[connection] = cursor
-    if current(connection) == nil { lock.withLock { generations[connection] = 0 } }
+    // One acquisition: a request thread's bump between a separate check and set would be overwritten with 0, and its
+    // queued plan then dropped as superseded.
+    lock.withLock { if generations[connection] == nil { generations[connection] = 0 } }
     return cursor
   }
 

@@ -541,4 +541,24 @@ final class CursorHubTests: XCTestCase {
     XCTAssertTrue(commit.shown)
     XCTAssertEqual(try XCTUnwrap(commit.motion).trajectory.end, CGPoint(x: 400, y: 600))
   }
+
+  func testKeyboardRequestsThatChangeNothingVisibleRenderNothing() {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    let before = renderer.commits.count
+    for _ in 0..<100 {
+      hub.begin(connection: 1, app: app, keyboardOnly: true)
+      hub.end(connection: 1)
+    }
+    hub.drain()
+    XCTAssertEqual(renderer.commits.count, before, "an unchanged cursor is not handed to the main thread again")
+    hub.userActed(pid: 600)
+    hub.drain()
+    XCTAssertEqual(renderer.last?.phase, .takenOver)
+    hub.begin(connection: 1, app: app, keyboardOnly: true)
+    hub.end(connection: 1)
+    hub.drain()
+    XCTAssertNotEqual(renderer.last?.phase, .takenOver, "a keyboard request clearing taken over is still rendered")
+  }
 }

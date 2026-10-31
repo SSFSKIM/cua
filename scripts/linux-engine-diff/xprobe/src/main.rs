@@ -33,6 +33,7 @@
 //!   closes (`cursor.rs`).
 
 mod clip;
+mod collector;
 mod crossing;
 mod cursor;
 mod dnd;

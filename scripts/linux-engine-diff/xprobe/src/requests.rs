@@ -14,14 +14,14 @@
 //!   counted rather than listed.
 
 use std::collections::{HashMap, VecDeque};
-use std::io::{Read, Write};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::record::{self, ConnectionExt as _};
 use x11rb::protocol::xproto::ConnectionExt as _;
 
 use crate::Result;
+use crate::collector::{COLLECTOR_END, Collector, print_lines, stdin_closed};
 
 const SET_SELECTION_OWNER: u8 = 22;
 const SEND_EVENT: u8 = 25;
@@ -462,7 +462,8 @@ pub fn request_watch() -> Result<()> {
     control
         .record_create_context(context, header, &[u32::from(record::CS::ALL_CLIENTS)], &ranges)?
         .check()?;
-    let watcher = std::thread::spawn(move || -> std::result::Result<(), String> {
+    // the collector's error or early end fails the watch, so a record cut short never reads as complete
+    let mut collector = Collector::spawn(move || {
         let mut parser = Parser::new(xi, xtest)
             .with_atoms(atoms)
             .every_motion(std::env::var_os("XPROBE_EVERY_MOTION").is_some_and(|v| v == "1"));
@@ -479,20 +480,23 @@ pub fn request_watch() -> Result<()> {
                 )],
                 _ => Vec::new(),
             };
-            let mut stdout = std::io::stdout().lock();
-            for line in lines {
-                let _ = writeln!(stdout, "{line}");
-            }
-            let _ = stdout.flush();
+            print_lines(&lines).map_err(|e| e.to_string())?;
         }
         Ok(())
     });
-    // until stdin closes
-    let mut sink = Vec::new();
-    let _ = std::io::stdin().read_to_end(&mut sink);
+    // until stdin closes, the collector watched meanwhile
+    let closed = stdin_closed();
+    loop {
+        collector.check_running()?;
+        if closed.recv_timeout(Duration::from_millis(10)).is_ok() {
+            break;
+        }
+    }
+    collector.check_running()?;
     control.record_disable_context(context)?;
+    // a round trip, so the disable has been processed and the collector's data ends
     control.get_input_focus()?.reply()?;
-    let _ = watcher.join();
+    collector.finish(COLLECTOR_END)?;
     control.record_free_context(context)?;
     control.flush()?;
     Ok(())

@@ -372,7 +372,9 @@ variants included; their evidence is written either way. The run's `end` row kee
   replies, server grabs, XDND client messages sent over the wire (Chrome short-circuits its own), and synthetic
   (`SendEvent`) or XTEST key, button and focus events, motions counted (`XPROBE_EVERY_MOTION=1` lists each); `xprobe
   cursor-watch` the displayed cursor's changes (a drag source's grab cursor shows its negotiated operation);
-  `xprobe crossing-watch` the crossing events clients receive and the real pointer. The drag page's `dnd` line also
+  `xprobe crossing-watch` the crossing events clients receive and the real pointer. The two RECORD watchers exit
+  nonzero, naming the cause, when their record is cut short (the collector failed or its data ended before stdin
+  closed), so a partial record never reads as complete. The drag page's `dnd` line also
   counts dragends with the last drop effect, the press-to-dragstart and dragstart-to-dragend times, the page's mouseups
   and the last press's wall clock (`at`), which lines a drag up with those records.
 - **Acceptance 8's cases** (`device.mjs`, the scenes `device-gtk4`, `device-firefox`, `device-xterm`, `device-qt`,

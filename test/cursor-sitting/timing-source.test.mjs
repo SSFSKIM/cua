@@ -206,11 +206,28 @@ test('no coordinate input to an unverified window: every drag is followed by cle
   const {CLEAR_SELECTION} = await import('../../scripts/cursor-sitting/cells.mjs');
   assert.ok(!/__app\.(click|drag|scroll|pressKey|typeText)\(/.test(CLEAR_SELECTION), 'no coordinates and no keys');
   assert.match(CLEAR_SELECTION, /if \(!inFront\(ax\)\) throw/, 'refused unless the observation is of the run window');
-  assert.match(CLEAR_SELECTION, /__app\.selectText\(index, "Line", \{selectionType: "cursor_after"\}\)/);
+  assert.match(CLEAR_SELECTION, /__app\.selectText\(index, anchor, \{selectionType: "cursor_after"\}\)/);
   const steps = timingSteps('clicks', 2);
   steps.forEach((s, k) => { if (s.sample?.series === 'drag') { assert.equal(steps[k + 1].cell, CLEAR_SELECTION); assert.equal(steps[k + 1].required, true); } });
   assert.ok(!timingSteps('clicks', {'element click': 2}).some(s => s.cell === CLEAR_SELECTION && s.run !== 'tidy'), 'no drag, nothing to clear');
   const tidy = steps.find(s => s.run === 'tidy');
   assert.equal(tidy.cell, CLEAR_SELECTION);
   assert.equal(tidy.required, true);
+});
+
+// The engine's select_text needs exactly one match (TextSelection.swift uniqueMatch: every occurrence, overlapping,
+// counted; two or more is "not found"), so the anchors are checked against the scene's document as the harness writes it.
+const occurrences = (text, hay) => { let n = 0; for (let i = hay.indexOf(text); i >= 0; i = hay.indexOf(text, i + 1)) n++; return n; };
+
+test('the selection is cleared at an anchor the scene document holds exactly once, moving on only when one is not found', async () => {
+  const {CLEAR_SELECTION} = await import('../../scripts/cursor-sitting/cells.mjs');
+  const {textEditDocument} = await import('../../scripts/repl-parity/scenes-mac.mjs');
+  const plain = textEditDocument().lines.join('\n');
+  assert.equal(occurrences('Line', plain), 60, 'the bare word matches every numbered line');
+  const anchors = JSON.parse(CLEAR_SELECTION.match(/const anchors = (\[[^\]]*\]);/)?.[1] ?? '[]');
+  assert.ok(anchors.length >= 2, 'more than one anchor, should typing have broken the first');
+  for (const anchor of anchors) assert.equal(occurrences(anchor, plain), 1, `${anchor} is in the document once`);
+  // the typing series' text and keys ("abcdefghij" x 20, x x 30) cannot make an anchor appear twice
+  for (const anchor of anchors) assert.equal(occurrences(anchor, 'abcdefghij'.repeat(20) + 'x'.repeat(30) + plain), 1);
+  assert.match(CLEAR_SELECTION, /textNotFound\|Could not find the requested text/, 'only a missing anchor moves on to the next');
 });

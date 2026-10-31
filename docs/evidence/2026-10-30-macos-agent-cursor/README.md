@@ -422,8 +422,9 @@ series whose scene is gone from the front (a locked screen, say) rather than tim
      53 × 48 pt one, likely the affordance macOS raises beside a text selection (Writing Tools), made the selection
      refuse after the clicks series' drags.
      - Each timed drag is followed at once by `CLEAR_SELECTION`, untimed and required: an element action (a caret
-       written after the document's first "Line", no coordinates, no keys). It refuses, sending nothing, unless its
-       observation is of the run window.
+       written after a line the scene's document holds exactly once, its title first, since select_text refuses a text
+       found twice; no coordinates, no keys). It refuses, sending nothing, unless its observation is of the run
+       window.
      - Every guarded series first checks for such a window. If one is there, a cursor-off session clears the selection
        the same way, and the series goes on only once none is left; if the clearing is refused, the series stops for
        the operator. No coordinate input is sent while a window that is not the run window may be the one in focus.

@@ -15,6 +15,7 @@ import {BIND as BIND_APP} from '../native-matrix/goldens-cells.mjs';
 import {prelude} from '../native-matrix/matrix-cells.mjs';
 import {pressed} from '../native-matrix/plan.mjs';
 import {vendorMenuBarIndex} from '../native-matrix/live-checks.mjs';
+import {textEditDocument} from '../repl-parity/scenes-mac.mjs';
 import {SCENE_MARKER} from './target-guard.mjs';
 
 const j = JSON.stringify;
@@ -191,16 +192,23 @@ return {${[typeText && 'type_text: typed', pressKey && 'press_key: each.reduce((
 
 // The selection a drag leaves in TextEdit's document cleared by an element action, no coordinates and no keys: the
 // document's text area found in an observation that is of the run window (else refused: nothing is sent), and a caret
-// put after its first "Line" (every scene document has "Line 01" to "Line 60") by writing its selected range. A
+// written after an anchor the scene's document holds exactly once (select_text refuses a text found twice:
+// TextSelection.swift uniqueMatch): its title line first, at the top where the view rests, then its last and middle
+// numbered lines, each tried only when the one before is not found (which sends nothing). A
 // selection in TextEdit raises a small window of its own beside it (likely macOS's Writing Tools affordance; the second
 // sitting's 53 x 48 pt window over the run window), which stood between the run window and the keys. -> {cleared}.
+const CLEAR_ANCHORS = (lines => [lines[0], lines.at(-1), lines[Math.floor(lines.length / 2)]])(textEditDocument().lines);
 export const CLEAR_SELECTION = cell(`${head('textedit')}
 const ax = await observe();
 if (!inFront(ax)) throw new Error("the observation is not of TextEdit's run window (another of its windows is in front): nothing sent");
 const index = indexOfPart(ax, "ID", "First Text View");
 if (index === null) throw new Error("the run document's text area is not in the observation: nothing sent");
-await __app.selectText(index, "Line", {selectionType: "cursor_after"});
-return {cleared: true};`);
+const anchors = ${j(CLEAR_ANCHORS)};
+for (const anchor of anchors) {
+  try { await __app.selectText(index, anchor, {selectionType: "cursor_after"}); return {cleared: true, anchor}; }
+  catch (error) { if (!/textNotFound|Could not find the requested text/.test(String(error?.message ?? error))) throw error; }
+}
+throw new Error("none of " + anchors.join(", ") + " is in the run document exactly once: nothing sent");`);
 
 // The still sample (a recorded typing series: is press_key's cost confined to the cursor moving?): primed at `from`, a
 // click at `to` that glides, then `waitMs` with untimed observations at most 100 ms apart, so no 0.3 s passes with no

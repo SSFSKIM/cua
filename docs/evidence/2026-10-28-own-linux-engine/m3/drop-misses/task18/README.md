@@ -88,3 +88,35 @@ Results:
   - A target that accepts at the first position shows a single status cursor, so every such drag would wait the full
     bound.
   - The rule depends on Chrome's cursor sequence.
+  - The replay counts coincidences only. It does not say whether the misidentified drags would have released early or
+    waited.
+
+## The fix (a769edcd) and its runs (`fix.md`, `t18-verdict-fix/`, `vendor-short/`)
+
+The design session chose (a) and stated it as time. Where the engine lets the drop happen (Chrome in front, a dedicated
+desktop, Chromium windows), once the source's take is seen, the remaining steps are spaced so that the release comes
+no sooner than 350 ms after the take. No step is shorter than before (`dnd.rs` `RELEASE_AFTER_TAKE`).
+
+- **The short drop reproduces the miss in isolation.** It runs 40 px, from the page's `near` source to just inside the
+  zone; `fix.md` has the full sweep. A release within 25 ms of the take lands 13–15 of 24, at 50 ms 22 of 24, and at
+  75 ms or more 24 of 24 in every cell. With the fix: 12/12 in front (472 ms against 160 before) and 12/12 dedicated
+  (399 against 84). The long in-front drop is unchanged within its spread (511 against 498).
+- **The vendor builds on the same short drop, in front.** pinned 11/12 at 280 ms, missing on its fastest drag (262);
+  newest 12/12 at 258 ms; cua 12/12 at 469 ms. This is a speed gap against the newest build, declared for M4 in the
+  engine README.
+- **The full verdict run on the fix (`t18-verdict-fix`, every scene, 3 blocks).**
+  - Every drop case passes: in front 9/9, dedicated 9/9, short in front 9/9, short dedicated 9/9; the cancel, late,
+    late-take and obscured cases too.
+  - 21 real-path drags stalled. Their accepts came 148–275 ms after the take, a new maximum. Every scheduled release
+    came after its accept.
+  - The run exits 1 on two gedit clipboard series, not on any drop. The pinned build's Copy in its own gedit
+    succeeded 1 time in 117 (clipboard_read cold) and 5 in 105 (warm), and clipboard_release warm has 80 of 90
+    `prepare_error`. Those few fast successes made the pinned build the bar, and it can never reach 20 usable samples.
+- **The bar rule** (the design session, test-first in `test/linux-engine-diff/bar-rule.test.mjs`). A vendor build
+  sampled to the top-ups' end (40) with fewer than 20 usable samples has failed the operation and sets no bar in that
+  series. The rule binds the vendor builds only.
+  - The offline re-judge of `t18-verdict-fix` (`t18-verdict-fix/rejudge-bar-rule.json`) moves exactly those two
+    verdicts from fail to pass: clipboard_read faster against the newest build ([−637, −604] cold, [−623, −607] warm),
+    and clipboard_release warm the same within noise ([−0.01, 0.01]).
+  - m31-verdict's re-judge changes nothing (`rejudge-m31-verdict-bar-rule.json`).
+  - The gate is a fresh full run on the reviewed final engine.

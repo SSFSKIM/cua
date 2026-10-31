@@ -123,11 +123,16 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   whose drop changes nothing), it watches the take too, and once the target's client takes `XdndSelection` it spaces
   the path's remaining steps so the release comes no sooner than 350 ms after the take, no step shorter than the
   family's own (`dnd.rs` `RELEASE_AFTER_TAKE`; `--stats` `after_take`). Chromium sends XdndDrop at the release only if
-  its target has accepted by then, and the target accepts only after the renderer has answered an earlier position; a
-  browser that stalls just after its drag starts (task 18: 16 of about 45 drags and drops in a full verdict run) accepted 169 to
-  204 ms after the take, so a fast release dropped nothing. A drag whose source takes nothing keeps its pace. Known
-  limit: a stall whose accept comes later than about 350 ms less the observed accept-to-release margin still misses,
-  unseen, and a take seen only after the path's last step changes nothing.
+  its target has accepted by then, and the target accepts only after the renderer has answered an earlier position. A
+  browser that stalls just after its drag starts (task 18: 16 and 21 stalls in two full verdict runs) accepted 148 to
+  275 ms after the take, so a fast release dropped nothing, and a short drop (40 px) released within about 50 ms of the
+  take dropped nothing even without a stall. A drag whose source takes nothing keeps its pace. Known limits, for M4:
+  - an accept later than 350 ms after the take still misses, unseen (the latest seen was 275 ms), and a take seen only
+    after the path's last step changes nothing;
+  - a speed gap: the short Chrome drop (40 px, in front) takes 469 ms, against the newest vendor build's 258 and the
+    pinned build's 280 (which lands 11 of 12). A lead: release when Chrome's accept cursor shows, with the take plus
+    350 ms as the ceiling, which helps only if reading the accept cursor has no false positives (task 18's replay of it
+    matched Chrome's accept in 85 to 100% of drags by condition, without saying which way the rest failed).
 
   The watch keeps every selection report the connection reads meanwhile, so the input session's server-time probe
   cannot lose one. The `--stats` line's `dnd` records whether the window was in front, the watch saw a start, the

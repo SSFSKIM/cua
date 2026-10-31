@@ -130,9 +130,10 @@ pub fn taken_by_target(owner: Window, target: Window, resource_id_mask: u32) -> 
 /// How long after a Chromium drag source takes `XdndSelection` a drag the engine lets drop is released at the soonest
 /// (task 18, evidence `m3/drop-misses/task18/`). Chromium sends XdndDrop at the release only once its target has
 /// accepted (`XDragDropClient::HandleMouseReleased`), and the target accepts a position only after the renderer has
-/// answered an earlier one. When the browser stalls just after its drag starts (16 of about 45 drags and drops in a full verdict run),
-/// it accepts 169-204 ms after the take; a release before that drops nothing. 350 ms is the landed drops' own pace
-/// (about 150 ms of margin). A stall whose accept comes later than about this delay still misses, unseen.
+/// answered an earlier one. When the browser stalls just after its drag starts (16 and 21 stalls in two full verdict
+/// runs), it accepts 148-275 ms after the take, and a short drop released within about 50 ms of the take misses even
+/// without a stall; a release before the accept drops nothing. 350 ms is the landed drops' own pace. An accept later
+/// than this delay still misses, unseen (README, known limits).
 pub const RELEASE_AFTER_TAKE: Duration = Duration::from_millis(350);
 
 /// Whether a drag into this family is a Chromium drag and drop whose release waits for the take's delay

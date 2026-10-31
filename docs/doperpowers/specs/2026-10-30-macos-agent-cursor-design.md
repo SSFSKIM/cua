@@ -22,7 +22,7 @@ Vocabulary used throughout:
 - [x] (2026-10-30) Design session (cua_repl#1ea561bc, coordinating #171 in parallel): three research readings (engine hooks, the vendor cursor's behaviour and logic, prior art and macOS overlay technique), three question rounds with the owner, an animated look mockup; design approved by the owner.
 - [x] (2026-10-30) Spec review: round 1 (spec review and buildability review, twelve findings) and round 2 (three findings), all folded (Decision Log).
 - [x] (2026-10-30) M1 — The cursor in the engine: overlay, motion, states. Built a5e37a47..be05d750, task-review fixes 3827cbda and 8d1f156f; review clean; 564 engine tests; hosted engine-swift and test GREEN on 7d8e27a3 (run 41146110438).
-- [ ] M2 — Identity, settings, lifecycle wiring and the harness.
+- [ ] M2 — Identity, settings, lifecycle wiring and the harness. (2026-10-30: built, 88ec92ef..0196629b; in task review.)
 - [ ] M3 — The attended proof on the MacBook, the plugin bump, the docs.
 
 ## Owner decisions this design carries
@@ -373,6 +373,15 @@ Environment, read by the service: `CUA_CURSOR` (`0` turns the session's cursor o
 
 ## Decision Log
 
+- Decision (2026-10-30, M2 build, from its executor; commits 88ec92ef..0196629b):
+  - The sminos lookup is the documented `sminos who --session <id>` (the call the sminos plugin's own address mod makes), the CLI found through Claude Code's `plugins/installed_plugins.json`, bounded at 500 ms and cached per session (a live run: 246 ms). The session directory is `CLAUDE_PROJECT_DIR`, else the process's cwd. With no label from any source the engine keeps its placeholder ("Agent N").
+  - The hash colour is computed on the trusted side (FNV-1a of `CLAUDE_CODE_SESSION_ID`, else of the label) and passed as `CUA_CURSOR_COLOR`; a test keeps the JS palette equal to the Swift one.
+  - `CUA_CURSOR` other than `0` or `1` is logged and leaves the cursor on; it never fails the session. A malformed `cursor` request is refused as `invalidParams` and changes nothing; an empty label keeps the current one.
+  - The service sends `cursor` on every new engine connection right after the ping; a `methodNotFound` stops it for that socket only. The end_task hide sends only on a live connection and never connects to or launches an engine.
+  - With `"cursor": false` the engine runs a hub that draws nothing. The per-session settings live on `ConnectionState.cursor` (`Cursor/CursorSession.swift`).
+  - A remote client's invalid `cua/cursor` field is dropped with a log line and the device's own value fills it; the key is removed before the runtime sees the initialize.
+  - The harness finds the engine's processes by matching the process table's command lines against the approved bundle path; the composition guard skips them through a new `front-window.swift --skip-pid`.
+  - `cua engine status` and doctor say `cursor: none (…)` for an engine older than this branch.
 - Decision (2026-10-30, M1 task review): the activity option is `.userInitiatedAllowingIdleSystemSleep`. The spec named `.userInitiated`, which contains `.idleSystemSleepDisabled` (checked headless by the reviewer), against its own stated intent that a visible cursor never holds off sleep.
 - Decision (2026-10-30, the design session, cua_repl#1ea561bc:51): the arrow's fill is solid, 1.0, in every state, and thinking is carried by the rock alone. This resolves a conflict in the spec in favour of the approved artefact: the look ("filled with the session's colour") and the look reference (`.a-arrow path { fill: var(--c) }`, thinking changing only the angle) against the state table's "fill a little stronger", which carried over the vendor's 16→24 % from a different, faint arrow. Increase Contrast now changes only the stroke. Both the build's 0.8→1.0 and the ratio's 0.66→1.0 are rejected. The design session also accepted the build's halo (`.hudWindow`, `.aqua`, the 14 % wash, inside the mockup's 12–20 % tint), the spliced-velocity scoot (the vendor's own retarget keeps v and F, VC Appendix B), the drag trace, teal's pill, `type_text`/`paste` as keyboard activity and the taken-over mapping.
 - Decision (2026-10-30, M1 build, from its executor; commits a5e37a47..be05d750):

@@ -146,7 +146,9 @@ export function dndLanes(args) {
     // a variant named `active…` activates its window before each drag, as `cua:active` does
     ...args.variants.map((v) => ({ ...v, bin: args.cua, ...(v.label.startsWith('cua:active') ? { activate: true } : {}) })),
   ];
-  return args.lanes ? all.filter((l) => args.lanes.includes(l.label)) : all.filter((l) => l.label !== 'cua:active');
+  const lanes = args.lanes ? all.filter((l) => args.lanes.includes(l.label)) : all.filter((l) => l.label !== 'cua:active');
+  // the short drop is measured in front for every lane, the vendor builds' included (task 18)
+  return args.dndShort ? lanes.map((l) => ({ ...l, activate: true })) : lanes;
 }
 
 /** One lane's drags into its own window: the run rows, each emitted. */
@@ -167,7 +169,7 @@ async function series(ctx, spec, scene, family, n) {
       // `--no-grabs`: no sampler during the drag (its own grabs can fail Chrome's), the grab after the answer still read
       const probes = ctx.grabs ? undefined : { startGrabs: async () => ({ stop: async () => [] }) };
       const { value, w, report, during, afterAnswer, grabAfter, owners } = await withDropProbes(async ({ xdnd, grabs }) => {
-        const { value, witness: w, report } = await witness.span(`${spec.label}:dnd`, () => engine.request('drag', { window: { id: scene.id }, path: runPath(at, 'dnd', i) }));
+        const { value, witness: w, report } = await witness.span(`${spec.label}:dnd`, () => engine.request('drag', { window: { id: scene.id }, path: runPath(at, ctx.path, i) }));
         const during = await grabs.stop();
         const afterAnswer = desktopState();
         const grabAfter = JSON.parse(execFileSync(XPROBE, ['grabs'], { encoding: 'utf8' }));
@@ -245,7 +247,7 @@ export async function runDnd(args, { desktop, emit }) {
     '| family | lane | drops | refused / may have dropped | witness changed | took XdndSelection | grab during | grab after | changed at the answer | changed 1 s later |',
     '|---|---|---:|---|---|---:|---:|---:|---|---|',
   ];
-  const ctx = { desktop, oracle, witness, emit, occlusion: args.occlusion, grabs: args.grabs !== false };
+  const ctx = { desktop, oracle, witness, emit, occlusion: args.occlusion, grabs: args.grabs !== false, path: args.dndShort ? 'dnd-short' : 'dnd' };
   try {
     if (!(await negativeCheck(desktop, witness, stubScene, emit))) throw new Error('the witness did not fail the activating stub; the run is invalid');
     for (const family of args.families?.length ? args.families : ['chrome']) {

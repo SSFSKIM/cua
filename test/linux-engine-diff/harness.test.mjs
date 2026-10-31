@@ -349,7 +349,7 @@ test('readiness when the contents never change is immediate', () => {
 // ---------------------------------------------------------------------------------------------------------------
 // the command line
 
-test('the Interfaces command line parses, with M0 variants', () => {
+test('the Interfaces command line parses, with M0 variants', async () => {
   const a = parseArgs([
     '--vendor', '/v', '--newest', '/n', '--cua', '/c', '--scene', 'gedit,chrome', '--ops', 'all', '--out', 'o',
     '--variant', 'W16=--window-calls 16', '--variant', 'seq=--tree sequential --bus per-request',
@@ -372,6 +372,12 @@ test('the Interfaces command line parses, with M0 variants', () => {
   const dnd = ['--experiment', 'dnd', '--cua', '/c', '--vendor', '/v', '--out', 'o'];
   assert.notEqual(parseArgs(dnd).grabs, false);
   assert.equal(parseArgs([...dnd, '--no-grabs']).grabs, false);
+  // the short drop: every lane, the vendor builds' included, activated before each drag
+  const { dndLanes } = await import('../../scripts/linux-engine-diff/dnd.mjs');
+  const short = parseArgs([...dnd, '--newest', '/n', '--dnd-short', '--lanes', 'pinned,newest,cua']);
+  assert.equal(short.dndShort, true);
+  assert.deepEqual(dndLanes(short).map((l) => [l.label, l.activate]), [['pinned', true], ['newest', true], ['cua', true]]);
+  assert.deepEqual(dndLanes(parseArgs([...dnd, '--lanes', 'pinned,cua'])).map((l) => l.activate ?? false), [false, false]);
 });
 
 // ---------------------------------------------------------------------------------------------------------------

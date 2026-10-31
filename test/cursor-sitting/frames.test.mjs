@@ -97,7 +97,7 @@ test('a probe\'s answer gives its glides and its rock as spans under its pid', (
   assert.deepEqual(probeSpans({pid: 1, glides: [], rock: null}).rock, null);
 });
 
-test('the fps60 cap check never throws: a failed probe or log read is undetermined, its pids kept', () => {
+test('the fps60 cap check does not stop for a failed count: a failed probe or log read is undetermined, its pids kept', () => {
   const answer = pid => ({pid, glides: [{begin: 0, end: 24_000, ms: 1, mode: 'path'}], rock: null});
   const asked = [];
   const probe = args => { asked.push(args.join(' ')); return answer(asked.length === 1 ? 5 : 6); };
@@ -115,4 +115,18 @@ test('the fps60 cap check never throws: a failed probe or log read is undetermin
   const counted = glideFramesCheck('fps60', {probe, readFrames: () => []});
   assert.equal(counted.verdict, 'undetermined', 'no frames: nothing counted on either side');
   assert.deepEqual(counted.pids, [5, 6]);
+});
+
+test('a probe whose end is unconfirmed (stuck) stops the series: another cursor probe may still be drawing', () => {
+  const answer = pid => ({pid, glides: [{begin: 0, end: 24_000, ms: 1, mode: 'path'}], rock: null});
+  for (const message of ['the cursor probe did not finish within 60 s and its process was never identified', 'the cursor probe (pid 6) did not exit after SIGKILL']) {
+    let calls = 0;
+    const probe = () => { if (++calls === 2) throw Object.assign(new Error(message), {stuck: true}); return answer(5); };
+    assert.throws(() => glideFramesCheck('fps60', {probe, readFrames: () => []}), error => error.stuck === true && error.message === message);
+  }
+  // A probe stopped with its exit confirmed is an ordinary failure: undetermined, and the series goes on.
+  let calls = 0;
+  const stopped = glideFramesCheck('fps60', {probe: () => { if (++calls === 2) throw new Error('the cursor probe did not finish within 60 s; its process was stopped'); return answer(5); }, readFrames: () => []});
+  assert.equal(stopped.verdict, 'undetermined');
+  assert.deepEqual(stopped.pids, [5]);
 });

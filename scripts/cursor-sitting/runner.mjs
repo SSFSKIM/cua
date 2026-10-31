@@ -100,8 +100,9 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
       // The cap of an arm that caps the cursor's frame rate (fps60), proven before its series (./frames.mjs): the approved
       // bundle's cursor probe glides twice and rocks, on its own transparent window, nothing driven, without the arm and
       // then with it; the window server's frames inside each glide and the rock counted. Recorded, never stopping the
-      // series (./frames.mjs glideFramesCheck, which never throws): a cap that does not take effect is the finding, and a
-      // count that fails is undetermined. The probes' pids are kept, so the series' own count leaves their glides out.
+      // series (./frames.mjs glideFramesCheck): a cap that does not take effect is the finding, and a count that fails is
+      // undetermined; only a probe whose end is unconfirmed (stuck) stops it. The probes' pids are kept, so the series'
+      // own count leaves their glides out.
       'glide-frames': async ([arm]) => glideFramesCheck(arm, {probe: args => runProbe(enginePaths().bundle, args), readFrames: readFrameUpdates, glides: GLIDE_CHECK_GLIDES}),
       // The keyboard's input source as the approved bundle's probe reads it, TextEdit in front: `latin` requires a
       // Latin keyboard layout (./timing.mjs latinSourceProblem), `record` only keeps the reading.

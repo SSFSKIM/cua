@@ -89,9 +89,11 @@ export function capVerdict(base, capped) {
 }
 
 // The fps60 arm's cap check (the runner's glide-frames task): `probe` (the approved bundle's, args -> its answer) glides
-// without the arm and then with it, and `readFrames` (since -> FrameUpdate times) counts each side's frames. It never
-// throws, since it never stops the series: a probe or a read that fails is an undetermined verdict, with the pids of the
-// probes that did run, so the series' own count still leaves their glides out.
+// without the arm and then with it, and `readFrames` (since -> FrameUpdate times) counts each side's frames. It does not
+// stop the series for a failed count: a read that fails, or a probe that failed with its exit confirmed, is an
+// undetermined verdict, with the pids of the probes that did run, so the series' own count still leaves their glides
+// out. A probe whose end is unconfirmed (runProbe's `stuck`: never identified, or alive after SIGKILL) is rethrown and
+// stops the series, since it may still be drawing a cursor over the display the series measures.
 export function glideFramesCheck(arm, {probe, readFrames, glides = 2, now = () => Date.now()}) {
   const since = new Date(now() - 2000), sides = [], pids = [];
   try {
@@ -108,6 +110,7 @@ export function glideFramesCheck(arm, {probe, readFrames, glides = 2, now = () =
     const {verdict, why} = capVerdict(base, capped);
     return {ok: verdict === 'capped', arm, verdict, why, base, capped, pids};
   } catch (error) {
+    if (error?.stuck) throw error;
     return {ok: false, arm, verdict: 'undetermined', why: `the frames were not counted: ${String(error.message).split('\n')[0]}`, pids};
   }
 }

@@ -31,18 +31,19 @@ export function transformCoreDocument(source){
  // Table 3 amendment (2026-10-15): only these two grammar repairs follow the literal Windows deletions.
  source=replaceOnce(source,'Linux always return full accessibility state.','Linux always returns full accessibility state.');
  source=replaceOnce(source,"Linux app `paste` support only `text` and use the platform's native text input.","Linux app `paste` supports only `text` and uses the platform's native text input.");
- // Table 3 amendment (2026-10-30, #235): what the person sees while an agent acts on macOS, after Native apps' last paragraph.
- source=replaceOnce(source,'Coordinates are relative to the selected window.\n','Coordinates are relative to the selected window.\n\nOn macOS, unless the user has turned it off, a cursor labelled with this session\'s name shows the user where each of your actions in an app lands, and fades a few seconds after your last one. Your actions do not wait for it, it is not the user\'s pointer, and your screenshots do not show it.\n');
  // No surviving ChatGPT/Codex/Orbit product prose in this pinned core: do not rename identifiers, URLs or Sky.
  return source;
 }
 const ownCore=transformCoreDocument(vendorCore);
-export function coreDocument({host,requestMeta}={}){
+// Table 3 addition (2026-10-30, #235): cua's own paragraph after the core, before the policy, where cua's host serves a
+// macOS computer surface (cua's own engine, whose agent cursor it describes). `agentCursor` says the lane is one.
+export const AGENT_CURSOR="While you act in an app, a cursor labelled with this session's name shows the user where each action lands, unless the user has turned it off, and fades a few seconds after your last action. Your actions do not wait for it, it is not the user's pointer, and your screenshots do not show it.\n";
+export function coreDocument({host,requestMeta,agentCursor=false}={}){
  assert.ok(['vendor','cua'].includes(host),'explicit document host required');
  const policies=requestMeta?.['openai/confirmation_policies'];
  const candidate=policies&&typeof policies==='object'&&!Array.isArray(policies)?policies.computer_use:undefined;
  const policy=typeof candidate==='string'&&candidate.trim()!==''&&Buffer.byteLength(candidate,'utf8')<=12000?candidate:confirmations;
- return `${host==='vendor'?vendorCore:ownCore}\n${policy}`;
+ return host==='vendor'?`${vendorCore}\n${policy}`:`${ownCore}\n${agentCursor?`${AGENT_CURSOR}\n`:''}${policy}`;
 }
 // Only Name and ID in the first Selected Browser header are volatile. Type, service version, prose, URLs and
 // repeated occurrences of an identity elsewhere are not substitutions. Refuse a malformed header instead of hiding it.
@@ -50,12 +51,12 @@ export function normalizeSelectedBrowserDocument(text){
  assert.match(text,/^# Selected Browser\n- Name: [^\n]+\n- Type: [^\n]+\n- ID: [^\n]+\n/,'selected browser identity header malformed');
  const lines=text.split('\n');lines[1]='- Name: <browser-name>';lines[3]='- ID: <browser-id>';return lines.join('\n');
 }
-export function projectDocumentationRow(row,{host}={}){
+export function projectDocumentationRow(row,{host,agentCursor=false}={}){
  if(!/^cells\/documentation\//.test(row.case??'')||!Array.isArray(row.content))return row;
- return {...row,content:transformDocumentContent(row.content,{host})};
+ return {...row,content:transformDocumentContent(row.content,{host,agentCursor})};
 }
 // Additional callers must enumerate their bootstrap/rewrite case and cell scopes before invoking this projection.
-export function transformDocumentContent(content,{host}={}){
+export function transformDocumentContent(content,{host,agentCursor=false}={}){
  assert.ok(['vendor','cua'].includes(host),'explicit document host required');
  return content.map(item=>{
   if(item.type!=='text')return item;
@@ -65,8 +66,8 @@ export function transformDocumentContent(content,{host}={}){
    if(text.startsWith(complete)){
     // Independent factories may share the cua.core named output. Consume only consecutive, byte-exact default
     // documents at its beginning; a corrupt second document or unrelated suffix stays byte-visible.
-    let prefix='';while(text.startsWith(complete)){prefix+=coreDocument({host:'cua'});text=text.slice(complete.length);}text=prefix+text;
-   }else if(text.startsWith(vendorCore+'\n'))text=ownCore+text.slice(vendorCore.length);
+    let prefix='';while(text.startsWith(complete)){prefix+=coreDocument({host:'cua',agentCursor});text=text.slice(complete.length);}text=prefix+text;
+   }else if(text.startsWith(vendorCore+'\n'))text=ownCore+(agentCursor?`\n${AGENT_CURSOR}`:'')+text.slice(vendorCore.length);
   }
   const prefix=auxiliary+'\n\n';
   if(text.startsWith(prefix+'# Selected Browser\n'))text=prefix+normalizeSelectedBrowserDocument(text.slice(prefix.length));

@@ -15,6 +15,9 @@ import {browserDouble} from './browser-client-harness.mjs';
 const {node, skip} = kernelNode();
 const doc = name => readFileSync(new URL(`../../docs/cua-api/${name}`, import.meta.url), 'utf8');
 const CORE = `${doc('core.md')}\n${doc('confirmations.md')}`;
+// A macOS computer surface is served only by cua's own engine on this host, so its core carries the agent cursor's
+// paragraph (src/cua-api/documentation.mjs).
+const MAC_CORE = `${doc('core.md')}\n${doc('agent-cursor.md')}\n${doc('confirmations.md')}`;
 const BROWSERS = [{id: 'b1', name: 'Chrome', type: 'extension', metadata: {extensionInstanceId: 'inst-1'}}];
 const browserAnswer = browserDouble({list_browsers: BROWSERS, get_browser_documentation: 'DOC b1', list_tabs: {tabs: [{id: 't1', title: 'One'}]}, browser_user_open_tabs: {tabs: []}});
 const SKY = {
@@ -49,7 +52,7 @@ test('the first cell installs cua and agent for the enabled surfaces and writes 
   const first = ok(await exec('nodeRepl.write(JSON.stringify([Object.keys(cua).sort(), cua.initialize === cua.getState, typeof agent, cua.browsers === agent.browsers, cua.computer.target]));', {turn: 1}));
   assert.deepEqual(JSON.parse(first.output), [['browsers', 'computer', 'createBrowserTab', 'getApp', 'getBrowser', 'getState', 'getTab', 'initialize', 'listApps', 'listBrowsers', 'listTabs', 'rewriteDocumentation'],
     true, 'object', true, 'mac']);
-  assert.deepEqual(first.named_outputs, [CORE], 'the core document and the bundled policy, once');
+  assert.deepEqual(first.named_outputs, [MAC_CORE], 'the core document, the agent cursor\'s paragraph and the bundled policy, once');
   assert.deepEqual(services.sort(), ['browser.setup', 'sky.setup']);
   const setup = ok(await exec('nodeRepl.write(typeof cua.listWindows);'));
   assert.equal(setup.output, 'undefined', 'listWindows is Linux\'s');
@@ -63,7 +66,7 @@ test('a selected browser\'s documents come before the state; emit:false suppress
   const state = {apps: [{id: 'com.apple.Notes', displayName: 'Notes'}], browsers: [{...BROWSERS[0], tabs: [{id: 't1', title: 'One'}]}]};
   assert.deepEqual(selected.named_outputs, [`${doc('other-browser-apis.md')}\n\nDOC b1`, JSON.stringify(state)]);
   const rewritten = ok(await exec('await cua.rewriteDocumentation(); await cua.rewriteDocumentation();', {turn: 2}));
-  assert.deepEqual(rewritten.named_outputs, [CORE, `${doc('other-browser-apis.md')}\n\nDOC b1`], 'each document once for this request');
+  assert.deepEqual(rewritten.named_outputs, [MAC_CORE, `${doc('other-browser-apis.md')}\n\nDOC b1`], 'each document once for this request');
   const app = ok(await exec('const notes = await cua.getApp("Notes"); await cua.listApps({emit: false}); nodeRepl.write(typeof notes.getAXState);'));
   assert.deepEqual([app.output, app.named_outputs], ['function', ['AX Notes']], 'getApp emits the initial state; listApps({emit:false}) nothing');
 });
@@ -80,6 +83,7 @@ test('computer-only on Linux: no agent and no browser members; listWindows and a
   const {exec, services} = facadeKernel(t, {surfaces: 'computer', target: 'linux'});
   const first = ok(await exec('nodeRepl.write(JSON.stringify([Object.keys(cua).sort(), typeof agent, cua.computer.target]));'));
   assert.deepEqual(JSON.parse(first.output), [['computer', 'getApp', 'getState', 'initialize', 'listApps', 'listWindows', 'rewriteDocumentation'], 'undefined', 'linux']);
+  assert.deepEqual(first.named_outputs, [CORE], 'no agent cursor paragraph off macOS');
   assert.deepEqual(services, ['sky.setup']);
   const refused = await exec('await cua.getApp("gedit");');
   assert.equal(refused.error, 'linux getApp requires { windowId } from listApps() or listWindows().');

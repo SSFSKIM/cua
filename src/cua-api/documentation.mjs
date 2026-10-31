@@ -10,11 +10,16 @@
 // here is always core-cua-repl's, so browser confirmations are always excluded as a duplicate) and the training/Orbit
 // CUA_REPL_BROWSER_ENV branch that suppressed the policy. The protocol key `openai/confirmation_policies` is the
 // client's, not a product name, and stays.
+// One addition of cua's own, not the vendor's (the surface inventory's Table 3 addition of 2026-10-30, #235): with
+// `agentCursor()` true, agent-cursor.md (what the person sees while the agent acts: cua's agent cursor) follows the core,
+// before the policy. The facade answers it from the computer surface's target: on macOS this host serves only cua's
+// own engine (src/runtime/launch.mjs refuses cua's host with the vendor engine, whose helper takes only the vendor
+// host as a peer), so a macOS computer surface here is always one cua's agent cursor draws for.
 import {readFile} from 'node:fs/promises';
 
 const DOCUMENTS = new URL('../../docs/cua-api/', import.meta.url);
 // The vendor's document names (tinysky-alt-<name>.md) and the files that hold them here.
-const FILES = {'core-cua-repl': 'core.md', confirmations: 'confirmations.md', 'other-browser-apis': 'other-browser-apis.md'};
+const FILES = {'core-cua-repl': 'core.md', confirmations: 'confirmations.md', 'other-browser-apis': 'other-browser-apis.md', 'agent-cursor': 'agent-cursor.md'};
 const POLICY_MAX_BYTES = 12_000;
 
 export function read_documentation(name) {
@@ -30,11 +35,12 @@ function confirmationPolicyOverride(requestMeta) {
   return undefined;
 }
 
-export function create_documentation(read) {
+export function create_documentation(read, {agentCursor = () => false} = {}) {
   return {
     read,
     async read_core() {
-      const core = await read('core-cua-repl');
+      const base = await read('core-cua-repl');
+      const core = agentCursor() ? `${base}\n${await read('agent-cursor')}` : base;
       const policy = confirmationPolicyOverride(globalThis.nodeRepl?.requestMeta) ?? await read('confirmations');
       return policy === '' ? core : `${core}\n${policy}`;
     },

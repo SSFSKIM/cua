@@ -169,8 +169,8 @@ until the next plugin update). Without the plugin, register the same script your
 
 Ask for the task in plain words: "open Notes and read my latest note", "in Preview, rotate this image and save".
 The first call returns the `cua` API document to the model, which then writes small JavaScript cells against that API.
-On cua's own host the document is a port of OpenAI's, with the recorded exclusions and one addition, what the person sees
-while an agent acts on macOS (Licences and sources; The agent cursor, below). That first
+On cua's own host the document is a port of OpenAI's, with the recorded exclusions and, for a macOS computer session
+(cua's own engine), one paragraph of cua's on the agent cursor (Licences and sources; The agent cursor, below). That first
 call is also when `cua serve` launches the runtime (a few seconds; see Process footprint below), so it takes longer than
 the ones after it. The server adds rules covering what that document leaves out: how to run a task, in the host notes
 it appends to the server instructions (see Operating guidance for agents), and the native quirks (index-first

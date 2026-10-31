@@ -161,8 +161,6 @@ On macOS, use `cua.getApp("Example App")` with an app name, path, or bundle ID. 
 
 Linux input stays bound to the selected window. Sky sends it without activating that window or moving the desktop pointer. The app can still activate a new window or grab the pointer during a held click, drag, or menu interaction. Coordinates are relative to the selected window.
 
-On macOS, unless the user has turned it off, a cursor labelled with this session's name shows the user where each of your actions in an app lands, and fades a few seconds after your last one. Your actions do not wait for it, it is not the user's pointer, and your screenshots do not show it.
-
 ## Workflow
 
 After performing one or more UI actions, call `getAXState()` before deciding what to do next. This keeps you in the current UI state and forces you to re-derive fresh element indices from the latest accessibility text instead of reusing stale ones.

@@ -10,6 +10,7 @@ source comment cannot go inside them; this file carries it instead.
 | `core.md` | `docs/tinysky-alt-core-cua-repl.md:1-214` | the first-call document (`cua.core`), followed by one confirmations policy |
 | `confirmations.md` | `docs/tinysky-alt-confirmations.md:1-78` | the bundled "Computer Use Confirmations Policy", appended to `core.md` unless the request's metadata supplies a valid override |
 | `other-browser-apis.md` | `docs/tinysky-alt-other-browser-apis.md:1-18` | the auxiliary "Other Browser APIs" document, emitted once before the first selected browser's documentation |
+| `agent-cursor.md` | none: cua's own text (the surface inventory's "Table 3 addition (2026-10-30, #235)") | what the person sees while the agent acts, read after `core.md` and before the policy only where the facade's computer surface is macOS's (`src/cua-api/documentation.mjs`): there cua's host serves only cua's own engine, whose agent cursor it describes (`docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md`) |
 
 `confirmations.md` and `other-browser-apis.md` are byte-for-byte copies. `core.md` is the vendor document with exactly
 the edits of the surface inventory's Tables 2 and 3
@@ -19,11 +20,8 @@ clauses and sentences at :160, :162, :164, :170, :198, :204, :205 and :206, and 
 After those deletions, the surface inventory's "Table 3 amendment (2026-10-15, owner ruling)" repairs the grammar of the
 two sentences they broke: "Linux always return" becomes "Linux always returns" (:170), and "Linux app `paste` support
 only `text` and use" becomes "supports … uses" (:204). Product names appear in the vendor's prose only inside the
-removed text, so no rename remains. The surface inventory's "Table 3 amendment (2026-10-30, #235)" then adds one
-paragraph after the Native apps section's last one: what the person sees while an agent acts on macOS (cua's agent
-cursor, `docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md`), the only text in `core.md` that is not the
-vendor's. Everything else is the vendor's wording. `test/cua-api/core-documentation.test.mjs`
-applies the same edits, then the amendments, to the pinned vendor documents (SHA-256-checked copies under
+removed text, so no rename remains. Everything else is the vendor's wording. `test/cua-api/core-documentation.test.mjs`
+applies the same edits, then the amendment, to the pinned vendor documents (SHA-256-checked copies under
 `test/cua-api/fixtures/vendor-docs/`) and requires these bytes.
 
 Not ported: `docs/tinysky-alt-core-node-repl.md`, the dormant alternate first-call document (Table 2). #120's

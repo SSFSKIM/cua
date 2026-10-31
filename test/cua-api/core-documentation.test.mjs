@@ -10,6 +10,7 @@ import {createHash} from 'node:crypto';
 import {readFileSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {applyEdits} from '../../src/repl-host/instructions.mjs';
+import {create_documentation} from '../../src/cua-api/documentation.mjs';
 
 const DOCS = new URL('../../docs/cua-api/', import.meta.url);
 const VENDOR = new URL('./fixtures/vendor-docs/', import.meta.url);
@@ -60,21 +61,14 @@ const AMENDMENT_EDITS = [
   ['Linux app `paste` support only `text` and use the platform\'s native text input.', 'Linux app `paste` supports only `text` and uses the platform\'s native text input.'],
 ];
 
-// The surface inventory's "Table 3 amendment (2026-10-30, #235)": one sentence pair added after the Native apps
-// section's last paragraph, what the person sees while an agent acts on macOS (the agent cursor's spec,
-// docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, M3), applied after the 2026-10-15 amendment.
-const ADDITION_EDITS = [
-  ['Coordinates are relative to the selected window.\n', 'Coordinates are relative to the selected window.\n\nOn macOS, unless the user has turned it off, a cursor labelled with this session\'s name shows the user where each of your actions in an app lands, and fades a few seconds after your last one. Your actions do not wait for it, it is not the user\'s pointer, and your screenshots do not show it.\n'],
-];
-
 test('the vendor fixtures are the pinned chatgpt-26.928.40906 documents', () => {
   for (const [name, hash] of Object.entries(PINNED)) assert.equal(sha(read(VENDOR, name)), hash, name);
   const dir = process.env.CUA_VENDOR_DOCS;
   if (dir) for (const name of Object.keys(PINNED)) assert.equal(readFileSync(join(dir, name), 'utf8'), read(VENDOR, name), `${name} against ${dir}`);
 });
 
-test('core.md is the vendor first-call document with exactly the Table 2/3 edits, then the Table 3 amendments', () => {
-  assert.equal(read(DOCS, 'core.md'), applyEdits(applyEdits(applyEdits(read(VENDOR, 'tinysky-alt-core-cua-repl.md'), CORE_EDITS), AMENDMENT_EDITS), ADDITION_EDITS));
+test('core.md is the vendor first-call document with exactly the Table 2/3 edits, then the Table 3 amendment', () => {
+  assert.equal(read(DOCS, 'core.md'), applyEdits(applyEdits(read(VENDOR, 'tinysky-alt-core-cua-repl.md'), CORE_EDITS), AMENDMENT_EDITS));
 });
 
 test('the confirmations policy and the "Other Browser APIs" document are the vendor bytes', () => {
@@ -90,7 +84,19 @@ test('no excluded provider, platform or product name survives in the first-call 
 });
 
 test('docs/cua-api holds only the shipped documents and their provenance', () => {
-  assert.deepEqual(readdirSync(DOCS).sort(), ['PROVENANCE.md', 'confirmations.md', 'core.md', 'other-browser-apis.md']);
+  assert.deepEqual(readdirSync(DOCS).sort(), ['PROVENANCE.md', 'agent-cursor.md', 'confirmations.md', 'core.md', 'other-browser-apis.md']);
+});
+
+// The surface inventory's "Table 3 addition (2026-10-30, #235)": cua's own paragraph, not the vendor's, on what the
+// person sees while the agent acts (docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, M3).
+const AGENT_CURSOR = 'While you act in an app, a cursor labelled with this session\'s name shows the user where each action lands, unless the user has turned it off, and fades a few seconds after your last action. Your actions do not wait for it, it is not the user\'s pointer, and your screenshots do not show it.\n';
+
+test('agent-cursor.md is the Table 3 addition\'s paragraph, and the core carries it only where the facade asks for it', async () => {
+  assert.equal(read(DOCS, 'agent-cursor.md'), AGENT_CURSOR);
+  const read_ = async name => `<${name}>`;
+  assert.equal(await create_documentation(read_).read_core(), '<core-cua-repl>\n<confirmations>');
+  assert.equal(await create_documentation(read_, {agentCursor: () => false}).read_core(), '<core-cua-repl>\n<confirmations>');
+  assert.equal(await create_documentation(read_, {agentCursor: () => true}).read_core(), '<core-cua-repl>\n<agent-cursor>\n<confirmations>');
 });
 
 test('the documents ship with the package, so an installed plugin reads them without the source tree', () => {

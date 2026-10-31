@@ -18,11 +18,14 @@ import {create_documentation, read_documentation} from './documentation.mjs';
 import {get_apps, get_state, UnreachableCaseError} from './get-state.mjs';
 
 export async function create_tinysky_alt(options = {}) {
-  const documentation = create_documentation(read_documentation);
-  const [agent, computer] = await Promise.all([
+  let computer;
+  // cua's own addition: the agent cursor's paragraph for a macOS computer surface (./documentation.mjs).
+  const documentation = create_documentation(read_documentation, {agentCursor: () => computer?.target === 'mac'});
+  const [agent, loaded] = await Promise.all([
     setupBrowser({browser: options.browser, exclude_browser_confirmations: documentation.exclude_browser_confirmations}),
     loadComputer(options),
   ]);
+  computer = loaded;
   const emitter = create_bootstrap_emitter(documentation);
   await emitter.emit();
   const cua = {

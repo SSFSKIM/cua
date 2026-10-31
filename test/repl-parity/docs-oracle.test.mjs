@@ -97,3 +97,19 @@ test('Table 3 amendment permits only the two approved grammar repairs and reject
  assert.throws(()=>check(approved.replace("platform's native text input.",'platform’s native text input.')),'the amendment preserves the ASCII apostrophe');
  assert.deepEqual(check(fixture('vendor-core.md'),'vendor'),{ok:true},'pinned vendor observations stay unamended');
 });
+
+test('Table 3 addition: cua\'s agent cursor paragraph follows the core on a macOS computer lane only, and is the shipped document',async()=>{
+ const {AGENT_CURSOR}=await import('../../scripts/repl-parity/docs-oracle.mjs');
+ const {agentCursorLane}=await import('../../scripts/repl-parity/document-comparison.mjs');
+ assert.equal(AGENT_CURSOR,readFileSync(new URL('../../docs/cua-api/agent-cursor.md',import.meta.url),'utf8'));
+ const base=fixture('cua-core.md'),policy=fixture('vendor-confirmations.md');
+ assert.equal(coreDocument({host:'cua',agentCursor:true}),`${base}\n${AGENT_CURSOR}\n${policy}`);
+ assert.equal(coreDocument({host:'vendor',agentCursor:true}),coreDocument({host:'vendor'}),'the vendor\'s document never carries it');
+ const vendorText=coreDocument({host:'vendor'})+'tail';
+ assert.equal(transformDocumentContent([{type:'text',text:vendorText}],{host:'vendor',agentCursor:true})[0].text,coreDocument({host:'cua',agentCursor:true})+'tail');
+ assert.equal(transformDocumentContent([{type:'text',text:vendorText}],{host:'vendor'})[0].text,coreDocument({host:'cua'})+'tail');
+ const run=(platform,surfaces)=>({meta:{platform,surfaces,caseConfigurations:{'cells/x':{surfaces}}}});
+ assert.equal(agentCursorLane(run('darwin',['computer','browser']),{case:'cells/x'}),true);
+ assert.equal(agentCursorLane(run('darwin',['browser']),{case:'cells/x'}),false);
+ assert.equal(agentCursorLane(run('linux',['computer','browser']),{case:'cells/x'}),false);
+});

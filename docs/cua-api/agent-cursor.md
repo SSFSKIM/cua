@@ -1,0 +1,1 @@
+While you act in an app, a cursor labelled with this session's name shows the user where each action lands, unless the user has turned it off, and fades a few seconds after your last action. Your actions do not wait for it, it is not the user's pointer, and your screenshots do not show it.

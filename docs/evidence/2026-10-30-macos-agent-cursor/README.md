@@ -226,7 +226,7 @@ caf2f462 or later with no engine change; the kit's own changes are not in the bu
 - item 5, the owner's click: its focus proof was unmet (both first readings ran before the fixture's accessibility was
   on, and run 2 named a window that had moved), which the kit now waits for and re-reads; item 1's clip answers its
   "appears in a screen recording";
-- the timing, unattended: 13, 12 and the `legacyLayers` arm, then the owner's Korean series;
+- the timing, unattended: 13, 12 and the `legacyLayers` arm, then the input-method series under 2-Set Korean;
 - keep or restore, asked afterwards.
 
 Every step that needs the owner comes first. After item 5 the owner may leave the Mac, unlocked and untouched;
@@ -280,7 +280,7 @@ items into `$OUT2` (`$S drive 1-check --out "$OUT2" --dry-run`, likewise 1, 3 an
      back to it at the end?" Record the answer: `$S source consent yes --out "$OUT2"` (or `no`). The kit keeps the
      source they are on at that moment as theirs (`$OUT2/input-source.json`).
    - With a yes, each timing series selects its source itself, with TextEdit in front, and reads it back: ABC
-     (`com.apple.keylayout.ABC`) for 13, 12 and the arm, the owner's own for the Korean series. TextEdit must come to
+     (`com.apple.keylayout.ABC`) for 13, 12 and the arm, 2-Set Korean for step 8's input-method series (the owner's own being ABC), the owner's own again after it. TextEdit must come to
      the front first, or the series stops. The selection goes only while the harness's own TextEdit launch has its
      run window on top of the frontmost app: with per-document input sources it changes the source of whatever window
      has the keys. If the source read back is not the one selected (ABC not enabled, say), the series stops before any

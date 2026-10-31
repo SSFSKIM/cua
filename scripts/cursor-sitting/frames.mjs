@@ -11,9 +11,11 @@ export const FRAME_UPDATE_PREDICATE = 'process == "WindowServer" AND subsystem =
 // two (16.7 ms). The verdict reads the median interval, which a burst of another app's frames inside a glide (the
 // count is the whole display's) barely moves, where it can lift the rate past 66 Hz (measured, #235's task-8 report).
 export const CAPPED_INTERVAL_MS = 14, FULL_INTERVAL_MS = 10;
-// The display before the probes: a second and a half of it, held at full rate from 1000 / FULL_INTERVAL_MS frames a
-// second (idle, it composites a few a second: measured 3).
-export const QUIET_MS = 1500, HELD_HZ = 1000 / FULL_INTERVAL_MS;
+// The display before the probes: a second and a half of it, held from 50 frames a second (idle, it composites a few a
+// second: measured 3). Not only at full rate: a capped glide asks for 60, and a client drawing near that rate or above
+// it can lift the glide's frames to the display's (a window at 84.7 Hz let a void cap read "not capped", the run of
+// 2026-10-31c).
+export const QUIET_MS = 1500, HELD_HZ = 50;
 
 const median = xs => {
   if (!xs.length) return null;
@@ -98,9 +100,9 @@ export async function glideFramesCheck(arm, {probe, readFrames, glides = 2, now 
 // Before the probes the check marks `quietMs` of the display with nothing of the cursor's drawing (its start and end on
 // Date.now()'s clock, `now`) and, once the stream is drained, counts the frames whose own log timestamps fall inside it:
 // log stream delivers late, so counting by delivery would miss the window's frames and take older ones. When another client
-// already holds it at full rate (FULL_INTERVAL_MS's rate or more), every glide composites at full rate whatever its own
-// range asks, and the FrameUpdate count, which names no window, cannot tell a cap ignored from one overridden, so a
-// "not capped" then reads undetermined (#235's task-8 report, the run of 2026-10-31b).
+// already holds it (HELD_HZ or more), a glide can composite at the display's rate whatever its own range asks, and the
+// FrameUpdate count, which names no window, cannot tell a cap ignored from one overridden, so a "not capped" then reads
+// undetermined (#235's task-8 report, the runs of 2026-10-31b and 2026-10-31c).
 export async function capCheckWithStream(arm, {probe, startStream, glides = 2, settleMs = 1000, quietMs = QUIET_MS,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), now = () => Date.now()}) {
   const frames = await startStream();
@@ -126,7 +128,7 @@ export async function capCheckWithStream(arm, {probe, startStream, glides = 2, s
       quiet = {start: window.start, end: window.end, ms, frames: inside, hz: Math.round(inside / (ms / 1000) * 10) / 10};
     }
     if (check.verdict === 'not capped' && quiet && quiet.hz >= HELD_HZ) {
-      return {...check, quiet, verdict: 'undetermined', why: `the display ran at ${quiet.hz} Hz before the probes, with nothing of the cursor's drawing: another client held it at full rate, so a cap cannot show (${check.why})`};
+      return {...check, quiet, verdict: 'undetermined', why: `the display ran at ${quiet.hz} Hz before the probes, with nothing of the cursor's drawing: another client held it (from ${HELD_HZ} Hz), so a cap cannot show (${check.why})`};
     }
     return {...check, quiet};
   } finally { await finish(); }

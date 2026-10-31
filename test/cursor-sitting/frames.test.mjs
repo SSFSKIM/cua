@@ -124,23 +124,26 @@ test('the cap is judged from the drained stream: a stream that failed, or a glid
   assert.match(never.why, /did not start/);
 });
 
-test('the cap check reads a display another client held at full rate as undetermined, never "not capped"', async () => {
+test('the cap check reads a display another client held at 50 Hz or more as undetermined, never "not capped"', async () => {
   // Tonight's run (sitting-2026-10-31b, step 12-fps60.12): both sides at 8.3 ms with the owner's full-screen Chrome and
   // cmux on the display. The stream's frames before the probes say whether the display was already at full rate.
   const span = k => ({begin: k * 2000 * MS, end: (k * 2000 + 1000) * MS, ms: 1000, mode: 'path'});
   let calls = 0;
   const probe = () => (++calls === 1 ? {pid: 5, debug: null, glides: [span(0), span(1)], rock: null} : {pid: 6, debug: 'fps60', glides: [span(2), span(3)], rock: null});
   const full = [0, 1, 2, 3].flatMap(k => frames(k * 2000 * MS, 1000, 1000 / 120));
-  for (const [quietHz, verdict] of [[120, 'undetermined'], [3, 'not capped']]) {
+  // Held from 50 Hz: the run of 2026-10-31c's quiet window, 127 frames in 1.5 s (84.7 Hz), let a void cap read
+  // "not capped" (sitting-2026-10-31c/item-12-fps60.jsonl).
+  for (const [count, quietMs, quietHz, verdict] of [[120, 1000, 120, 'undetermined'], [127, 1500, 84.7, 'undetermined'], [50, 1000, 50, 'undetermined'],
+    [49, 1000, 49, 'not capped'], [3, 1000, 3, 'not capped']]) {
     calls = 0;
     let clock = 50_000;
-    // The drained stream's frames, with their log times: `quietHz` of them a second in the window the check marks.
-    const walls = Array.from({length: quietHz}, (_, k) => 50_000 + k * (1000 / quietHz));
+    // The drained stream's frames, with their log times: `count` of them in the `quietMs` window the check marks.
+    const walls = Array.from({length: count}, (_, k) => 50_000 + k * (quietMs / count));
     const startStream = async () => ({started: true, frameTimes: () => [], stop: async () => ({ok: true, times: full, walls})});
-    const check = await capCheckWithStream('fps60', {probe, startStream, settleMs: 0, quietMs: 1000, sleep: async ms => { clock += ms; }, now: () => clock});
+    const check = await capCheckWithStream('fps60', {probe, startStream, settleMs: 0, quietMs, sleep: async ms => { clock += ms; }, now: () => clock});
     assert.equal(check.verdict, verdict, `${quietHz} Hz before the probes`);
     assert.equal(check.quiet.hz, quietHz);
-    if (verdict === 'undetermined') assert.match(check.why, /display ran at 120 Hz before the probes.*held/);
+    if (verdict === 'undetermined') assert.match(check.why, new RegExp(`display ran at ${quietHz} Hz before the probes.*held`));
   }
 });
 

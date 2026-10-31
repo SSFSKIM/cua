@@ -285,3 +285,42 @@ test('the runner keeps an order target on its cell\'s row', async t => {
 test('item 5 asks for the recording clause, which item 1\'s clip answers', () => {
   assert.ok(PLANS[5]().some(s => s.watch && s.id === 'recording'));
 });
+
+test('the recorder\'s check before item 1 records the same rectangle for a few seconds, with no session, after the same placement', () => {
+  const check = PLANS['1-check']({clip: '/rec/check.mov'}), item = PLANS[1]({clip: '/rec/item-1.mov'});
+  assert.deepEqual(check.map(s => s.task ?? (s.owner ? 'owner' : s.wait ? 'wait' : 'say')), ['say', 'owner', 'record-start', 'wait', 'record-stop']);
+  assert.equal(check.find(s => s.owner).owner, item.find(s => s.owner).owner);
+  assert.deepEqual(check.find(s => s.task === 'record-start').args, ['/rec/check.mov', 'textedit', 'chrome']);
+  assert.equal(check.find(s => s.task === 'record-start').required, true);
+  assert.ok(check.find(s => s.wait).wait <= 5000, 'a few seconds');
+  assert.ok(!check.some(s => s.open || s.run), 'nothing is driven');
+});
+
+test('per-series counts: a judged clicks run starts coordinate click and drag at 40 and element click at 20, each sample primed', async () => {
+  const {JUDGED_SAMPLES, sampleCounts} = await import('../../scripts/cursor-sitting/timing.mjs');
+  assert.deepEqual(sampleCounts('clicks'), {'coordinate click': 40, 'element click': 20, drag: 40});
+  assert.deepEqual(sampleCounts('typing'), {type_text: 20, 'press_key x30': 20});
+  assert.equal(JUDGED_SAMPLES['element click'], 20);
+  assert.deepEqual(sampleCounts('clicks', {recorded: true}), {'coordinate click': 20, 'element click': 20, drag: 20}, 'an arm or the owner\'s source: 20 each');
+  assert.deepEqual(sampleCounts('clicks', {samples: 40, only: ['element-click']}), {'element click': 40}, 'a rerun of the undetermined series only');
+  assert.throws(() => sampleCounts('clicks', {only: ['press-key']}), /clicks series are coordinate-click, element-click, drag/);
+  const steps = timingSteps('clicks', sampleCounts('clicks'));
+  const count = (series, side) => steps.filter(s => s.sample?.series === series && s.sample.side === side).length;
+  assert.deepEqual([count('coordinate click', 'on'), count('element click', 'on'), count('drag', 'off')], [40, 20, 40]);
+  steps.forEach((s, k) => { if (s.sample && s.sample.series !== 'drag' && !steps[k - 1].sample) assert.match(steps[k - 1].label, /^prime /, 'the first timed call of every sample follows its prime'); });
+  const rerun = timingSteps('clicks', {'element click': 40});
+  assert.deepEqual([...new Set(rerun.filter(s => s.sample).map(s => s.sample.series))], ['element click']);
+  assert.equal(rerun.filter(s => /^prime /.test(s.label ?? '')).length, 80);
+});
+
+test('a typing rerun of one series times only that one, and its rows name only it', () => {
+  const steps = timingSteps('typing', {'press_key x30': 40});
+  const sampled = steps.filter(s => s.sample);
+  assert.equal(sampled.length, 80);
+  assert.deepEqual(sampled[0].sample.covers, ['press_key x30']);
+  assert.ok(!sampled[0].cell.includes('typeText'), 'no type_text in a press_key-only sample');
+  assert.ok(sampled[0].cell.includes('pressKey'));
+  assert.deepEqual(timingRows([{kind: 'cell', ok: true, sample: {side: 'on', i: 0, covers: ['press_key x30']}, value: {press_key: 900}},
+    {kind: 'cell', ok: false, sample: {side: 'off', i: 0, covers: ['press_key x30']}, error: 'x'}], 'typing'),
+  [{series: 'press_key x30', side: 'on', i: 0, ms: 900}, {series: 'press_key x30', side: 'off', i: 0, ms: null, error: 'x'}]);
+});

@@ -13,7 +13,7 @@
 //   cursor-sitting.mjs restore --home <dir> --from <saved dir> --aside <new dir>
 //       After the sitting: `cua engine stop`, the current engine directory and engine.json moved to --aside, the saved
 //       ones put back and checked, `cua engine status` read for the saved build, approved. Exit 1 says what follows.
-//   cursor-sitting.mjs drive <1|2|3|4|5|6|7|9|10|11> --run <scenes run dir> --out <evidence dir> [--engine vendor|cua]
+//   cursor-sitting.mjs drive <1|1-check|2|3|4|5|6|7|9|10|11> --run <scenes run dir> --out <evidence dir> [--engine vendor|cua]
 //                     [--other-session <Claude Code session id>] [--clip <new .mov outside the repository>] [--quiet]
 //                     [--dry-run]
 //       One item's scripted steps (./cursor-sitting/plans.mjs) on the harness scenes the run directory holds
@@ -21,17 +21,28 @@
 //       spoken (`say`; --quiet prints them only); an instruction the owner confirms waits for <out>/go, which the
 //       operator creates (`touch`) once the owner says done. --engine is item 11's (the side-by-side: vendor, then cua);
 //       --other-session gives item 2's second session another Claude Code session's sminos name; --clip is item 1's
-//       screen recording of the TextEdit and Chrome for Testing windows (./cursor-sitting/recording.mjs).
-//   cursor-sitting.mjs timing typing|clicks --run <dir> --out <dir> [--samples 20] [--arm <arm> | --owner-source]
-//                     [--quiet] [--dry-run]
+//       screen recording of the TextEdit and Chrome for Testing windows (./cursor-sitting/recording.mjs), and
+//       1-check's: a few seconds of the same rectangle, nothing driven, which proves the recorder before item 1.
+//   cursor-sitting.mjs timing typing|clicks --run <dir> --out <dir> [--series <id>,…] [--samples <n>]
+//                     [--arm <arm> | --owner-source] [--quiet] [--dry-run]
 //       Acceptance 12 (typing) or 13 (clicks): interleaved cursor-on and cursor-off samples (./cursor-sitting/timing.mjs),
-//       recorded in <out>/item-12.jsonl or item-13.jsonl, then judged as `judge` does. Refused, before any session
-//       opens, unless the input source is a Latin keyboard layout with TextEdit in front. --arm runs the series with
+//       recorded in <out>/item-12.jsonl or item-13.jsonl, then judged as `judge` does. Each series has its own count a
+//       side: a judged run starts coordinate click and drag at 40, element click, type_text and press_key at 20; an arm
+//       or the owner's source, 20 each. --series picks series (coordinate-click, element-click, drag; type-text,
+//       press-key) and --samples sets them all: the rerun of an undetermined series is `--series <id> --samples 40`.
+//       With the owner's yes recorded (`source consent`), the source is selected first (ABC; the owner's own for
+//       --owner-source) and read back, or the run stops. Refused, before any session opens, unless the input source is a
+//       Latin keyboard layout with TextEdit in front. --arm runs the series with
 //       engine.json's `cursorDebug` set to one of the engine's cursor arms (panelOut, noBackdrop, noRock,
 //       legacyLayers), engine.json put back and the engine stopped after; --owner-source runs it under whatever source
 //       the owner has, the reading kept. Either is recorded in item-<n>-<arm>.jsonl or item-<n>-owner-source.jsonl and
 //       never judged: `judge` lists it in <out>/timing-recorded.md. The engine's timing signposts over the series are
 //       kept in <out>/signposts-<item>.ndjson (`log show --signpost`).
+//   cursor-sitting.mjs source consent yes|no --out <dir>
+//   cursor-sitting.mjs source restore --out <dir>
+//       The input source (./cursor-sitting/input-source.mjs): `consent` records the owner's answer to the kit switching
+//       their source, with the source they are on now (kept as theirs), in <out>/input-source.json; `restore` selects
+//       that source again at the end and reads it back. Exit 1 when the read-back is not the one selected.
 //   cursor-sitting.mjs judge --out <dir>
 //       The timing items' verdicts by #171's noise rule (./cursor-sitting/stats.mjs), written to <out>/timing.md; the
 //       recorded, unjudged series the same way to <out>/timing-recorded.md.
@@ -58,6 +69,7 @@ import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {ORDER_TARGETS, writeFrames, writeOrder} from './cursor-sitting/clip.mjs';
+import {liveSourceSwitch, switchSource, writeConsent} from './cursor-sitting/input-source.mjs';
 import {restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
 import {PLANS} from './cursor-sitting/plans.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
@@ -65,13 +77,13 @@ import {liveIo, runSteps} from './cursor-sitting/runner.mjs';
 import {clipPathProblem, REPO_ROOT} from './cursor-sitting/recording.mjs';
 import {judgeTiming} from './cursor-sitting/stats.mjs';
 import {liveTargetGuard} from './cursor-sitting/target-guard.mjs';
-import {CURSOR_ARMS, SERIES, timingItem, timingRows, timingSteps} from './cursor-sitting/timing.mjs';
+import {CURSOR_ARMS, sampleCounts, SERIES, seriesRuns, timingItem, timingSteps} from './cursor-sitting/timing.mjs';
 
 const SCRIPT = fileURLToPath(import.meta.url);
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'string'}, aside: {type: 'string'}, run: {type: 'string'}, out: {type: 'string'},
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
-  arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'},
+  arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'},
   quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
@@ -94,20 +106,22 @@ const readJsonl = file => (existsSync(file) ? readFileSync(file, 'utf8').split('
 const lastAttempt = rows => rows.slice(Math.max(0, rows.map(r => r.kind).lastIndexOf('start')));
 
 // The timing items' judgements from their recorded rows: the judged items (12, 13), or with `recorded` every arm and
-// owner-source series beside them (item-12-<name>.jsonl), by the same rule but never a verdict on the item.
-// -> [{item, kind, pass, series, routes?, source}].
+// owner-source series beside them (item-12-<name>.jsonl), by the same rule but never a verdict on the item. Each series
+// comes from the last run that covers it (./cursor-sitting/timing.mjs seriesRuns): a rerun of one series replaces that
+// series' verdict only. -> [{item, kind, pass, series, runs, routes?, source}].
 function judgeAll(out, {recorded = false} = {}) {
   const items = Object.entries(TIMING_ITEM).flatMap(([kind, item]) => (recorded
     ? readdirSync(out).map(f => f.match(new RegExp(`^item-(${item}-[\\w-]+)\\.jsonl$`))?.[1]).filter(Boolean).sort().map(name => [kind, name])
     : [[kind, String(item)]]));
   return items.flatMap(([kind, item]) => {
-    const rows = lastAttempt(readJsonl(join(out, `item-${item}.jsonl`)));
-    if (!rows.length) return [];
-    const timed = timingRows(rows, kind);
+    const all = readJsonl(join(out, `item-${item}.jsonl`));
+    if (!all.length) return [];
+    const runs = seriesRuns(all, kind);
+    const timed = SERIES[kind].flatMap(name => runs[name]?.rows ?? []);
     const judged = judgeTiming(timed, {series: SERIES[kind]});
     const routes = kind === 'clicks' ? Object.entries(timed.filter(r => r.series === 'element click').reduce((m, r) => ({...m, [r.route ?? 'none']: (m[r.route ?? 'none'] ?? 0) + 1}), {})) : null;
-    const source = rows.find(r => r.kind === 'task' && r.task === 'input-source')?.result ?? null;
-    return [{item, kind, ...judged, ...(routes ? {routes: Object.fromEntries(routes)} : {}), source}];
+    const source = all.findLast(r => r.kind === 'task' && r.task === 'input-source')?.result ?? null;
+    return [{item, kind, ...judged, runs: Object.fromEntries(Object.entries(runs).map(([name, r]) => [name, r.startedAt])), ...(routes ? {routes: Object.fromEntries(routes)} : {}), source}];
   });
 }
 
@@ -139,6 +153,8 @@ function timingMarkdown(judged, {recorded = false} = {}) {
       `Input source: ${reading ? `${reading.name ?? reading.id} (${reading.id}; keys translated with ${reading.layout})` : 'not checked (a run before the kit checked it)'}.`, '',
       '| series | n on / off | median on (ms) | median off (ms) | 95 % interval of the difference (ms) | bound (ms) | verdict |', '|---|---|---|---|---|---|---|');
     for (const s of j.series) lines.push(`| ${s.series} | ${s.n.on} / ${s.n.off} | ${fmt(s.medians.on)} | ${fmt(s.medians.off)} | ${s.interval ? `[${fmt(s.interval[0])}, ${fmt(s.interval[1])}]` : '–'} | ${fmt(s.bound)} | ${s.verdict} |`);
+    const started = Object.entries(j.runs ?? {}).filter(([, at]) => Number.isFinite(at));
+    if (new Set(started.map(([, at]) => at)).size > 1) lines.push('', `Each series is taken from the last run that covers it: ${started.map(([name, at]) => `${name} from the run started ${new Date(at).toISOString()}`).join('; ')}.`);
     if (j.errors) lines.push('', `${j.errors} timed call(s) failed and are not in the samples (item-${j.item}.jsonl has their errors).`);
     if (j.routes) lines.push('', `The element clicks' routes: ${Object.entries(j.routes).map(([r, n]) => `route ${r} × ${n}`).join(', ')}.`);
     lines.push('');
@@ -201,19 +217,20 @@ export async function main(argv) {
     const item = positionals[0];
     if (!PLANS[item]) throw new Error(`drive takes an item of ${Object.keys(PLANS).join(', ')} (8 is \`remote run\`, 12 and 13 are \`timing\`)`);
     if (item === '11' && !['vendor', 'cua'].includes(values.engine)) throw new Error('drive 11 takes --engine vendor or --engine cua');
-    if (item === '1' && !values['dry-run']) { const problem = clipPathProblem(values.clip, REPO_ROOT); if (problem) throw new Error(`drive 1 records a clip: ${problem}`); }
+    if (['1', '1-check'].includes(item) && !values['dry-run']) { const problem = clipPathProblem(values.clip, REPO_ROOT); if (problem) throw new Error(`drive ${item} records a clip: ${problem}`); }
     const steps = PLANS[item]({otherSession: values['other-session'] ?? null, engine: values.engine, clip: values.clip ?? null});
     return drive(steps, {item: item === '11' ? `11-${values.engine}` : item, values});
   }
   if (command === 'timing') {
-    const kind = positionals[0], samples = Number(values.samples ?? 20);
+    const kind = positionals[0], samples = values.samples === undefined ? null : Number(values.samples);
     if (!SERIES[kind]) throw new Error('timing takes typing or clicks');
-    if (!Number.isInteger(samples) || samples < 1) throw new Error('--samples takes a positive whole number');
+    if (samples !== null && (!Number.isInteger(samples) || samples < 1)) throw new Error('--samples takes a positive whole number');
     const series = {arm: values.arm ?? null, ownerSource: values['owner-source']};
     if (series.arm !== null && !CURSOR_ARMS.includes(series.arm)) throw new Error(`--arm takes one of ${CURSOR_ARMS.join(', ')}`);
+    const counts = sampleCounts(kind, {samples, only: values.series ? values.series.split(',') : null, recorded: series.arm !== null || series.ownerSource});
     const item = timingItem(kind, series);
     const started = new Date();
-    const code = await drive(timingSteps(kind, samples, series), {item, values});
+    const code = await drive(timingSteps(kind, counts, series), {item, values});
     if (values['dry-run']) return code;
     const out = absolute(values, 'out');
     keepSignposts(out, item, started);
@@ -246,6 +263,21 @@ export async function main(argv) {
     writeFileSync(join(out, 'summary.md'), summaryMarkdown(out));
     print(`wrote ${join(out, 'summary.md')}`);
     return 0;
+  }
+  if (command === 'source') {
+    const out = absolute(values, 'out'), sub = positionals[0], sources = liveSourceSwitch();
+    if (sub === 'consent') {
+      const answer = positionals[1];
+      if (!['yes', 'no'].includes(answer)) throw new Error('source consent takes yes or no (the owner\'s answer)');
+      print(writeConsent(out, {consent: answer === 'yes', reading: sources.current()}));
+      return 0;
+    }
+    if (sub === 'restore') {
+      const result = switchSource({out, which: 'owner', sources});
+      print(result);
+      return result.ok ? 0 : 1;
+    }
+    throw new Error('source takes consent or restore');
   }
   if (command === 'clip') {
     const sub = positionals[0];
@@ -302,7 +334,7 @@ export async function main(argv) {
     }
     throw new Error('remote takes prepare, enroll or run');
   }
-  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | clip frames|order | remote prepare|enroll|run (see the header)');
+  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | source consent|restore | clip frames|order | remote prepare|enroll|run (see the header)');
 }
 
 if (process.argv[1] && SCRIPT === resolve(process.argv[1])) {

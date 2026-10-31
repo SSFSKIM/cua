@@ -53,13 +53,18 @@ export const sideBySide = engine => [
   {close: 'a'},
 ];
 
+// What the owner does before item 1's recording, and before its check: the rectangle the two windows fill is what the
+// kit records (./recording.mjs recordingPlan).
+const PLACE_FOR_RECORDING = 'Place the TextEdit and Chrome for Testing windows side by side, touching, with their top and bottom edges level, so that together they fill a rectangle with nothing else in it. Then click the operator\'s terminal so neither is in front; its window must not overlap them. Say done.';
+export const RECORDING_CHECK_MS = 3000;
+
 export const PLANS = Object.freeze({
   // Recorded (./recording.mjs): the clip of the two windows' rectangle starts once the owner has placed them and runs
   // until the session has closed. Each click is its cell's last call, so its reply's meta (receipt, round trip) is the
   // click's; its control is read back by the next cell.
   1: ({clip = null} = {}) => [
     {say: 'Acceptance 1: TextEdit and Chrome for Testing both in the background (another app in front), recorded'},
-    {owner: 'Place the TextEdit and Chrome for Testing windows side by side, touching, with their top and bottom edges level, so that together they fill a rectangle with nothing else in it. Then click the operator\'s terminal so neither is in front; its window must not overlap them. Say done.'},
+    {owner: PLACE_FOR_RECORDING},
     {task: 'record-start', args: [clip, 'textedit', 'chrome'], required: true},
     {open: 'a', scenes: ['textedit', 'chrome']},
     {run: 'a', cell: ALIGN_CLICK, label: 'TextEdit: the format bar\'s alignment', orderTarget: 'first-target'},
@@ -73,6 +78,16 @@ export const PLANS = Object.freeze({
     {watch: 'from the recording\'s frames: the checkbox changes before or while the arrow\'s tip reaches it (cursor-sitting.mjs clip order)', id: 'order-second-target'},
     {wait: 6000},
     {close: 'a'},
+    {task: 'record-stop'},
+  ],
+  // The recorder's proof before item 1: a few seconds of the same rectangle, recorded and stopped as item 1 does, with
+  // no session and nothing driven, so a recorder that cannot record or does not write its movie is found before item 1
+  // relies on it. The operator checks the clip's frames and deletes it (the runbook's step 3).
+  '1-check': ({clip = null} = {}) => [
+    {say: 'Before item 1: a few seconds\' recording of the harness windows, to prove the recorder'},
+    {owner: PLACE_FOR_RECORDING},
+    {task: 'record-start', args: [clip, 'textedit', 'chrome'], required: true},
+    {wait: RECORDING_CHECK_MS},
     {task: 'record-stop'},
   ],
   2: ({otherSession = null} = {}) => [

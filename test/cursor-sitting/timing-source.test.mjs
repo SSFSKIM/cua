@@ -25,13 +25,16 @@ test('a Latin source is a plain ASCII-capable keyboard layout that key events ar
   assert.match(latinSourceProblem(null), /could not be read/);
 });
 
-test('every timing series checks the source first, with TextEdit in front, before any session opens; a judged one requires Latin', () => {
+test('every timing series selects and checks the source first, with TextEdit in front, before any session opens; a judged one requires Latin', () => {
   for (const kind of ['typing', 'clicks']) {
     for (const options of [{}, {arm: 'noRock'}, {ownerSource: true}]) {
       const steps = timingSteps(kind, 2, options);
       const check = steps.findIndex(s => s.task === 'input-source');
       assert.ok(check > 0 && check < steps.findIndex(s => s.open), JSON.stringify(options));
-      assert.deepEqual(steps.slice(0, check).filter(s => s.task).map(s => s.task), ['activate']);
+      assert.deepEqual(steps.slice(0, check).filter(s => s.task).map(s => s.task), ['activate', 'select-source']);
+      const select = steps.find(s => s.task === 'select-source');
+      assert.deepEqual(select.args, [options.ownerSource ? 'owner' : 'latin'], 'ABC for a judged series and an arm, the owner\'s own for theirs');
+      assert.equal(select.required, true, 'a selection that does not read back stops the series');
       assert.equal(steps[check].required, true, 'a refusal stops the series');
       assert.deepEqual(steps[check].args, [options.ownerSource ? 'record' : 'latin']);
     }
@@ -41,7 +44,7 @@ test('every timing series checks the source first, with TextEdit in front, befor
 test('an arm series sets cursorDebug, relaunches the engine, checks the running arm, and puts engine.json back', () => {
   const steps = timingSteps('typing', 2, {arm: 'panelOut'});
   const tasks = steps.filter(s => s.task).map(s => [s.task, ...(s.args ?? [])].join(' '));
-  assert.deepEqual(tasks, ['activate textedit', 'input-source latin', 'engine-json-arm panelOut', 'engine-stop', 'activate textedit',
+  assert.deepEqual(tasks, ['activate textedit', 'select-source latin', 'input-source latin', 'engine-json-arm panelOut', 'engine-stop', 'activate textedit',
     'engine-status on panelOut', 'engine-json-restore', 'engine-stop']);
   assert.ok(steps.findIndex(s => s.task === 'engine-status') > steps.findIndex(s => s.open === 'off'), 'read once the sessions launched the engine');
   assert.equal(steps.find(s => s.task === 'engine-status').required, true);
@@ -71,6 +74,7 @@ test('a refused source stops the series before any session opens, and the readin
     open: async ({name}) => { log.push(`open ${name}`); return {run: async () => ({ok: true, value: {}, images: []}), close: async () => ({})}; },
     tasks: {
       activate: async () => ({ok: true}),
+      'select-source': async ([which]) => ({ok: true, which, switched: false}),
       'input-source': async ([mode]) => { const problem = latinSourceProblem(korean); return {ok: mode === 'record' || problem === null, mode, reading: korean, problem}; },
     },
     cleanup: async () => log.push('cleanup'),
@@ -83,4 +87,20 @@ test('a refused source stops the series before any session opens, and the readin
   const {failed} = await runSteps(timingSteps('typing', 1, {ownerSource: true}), {item: '12-owner-source', out, io, log: () => {}});
   assert.equal(failed, 0, 'the owner\'s own source is recorded, not refused');
   assert.ok(log.includes('open on') && log.includes('open off'));
+});
+
+test('a selection that does not read back stops the series before the check and before any session opens', async t => {
+  const out = scratch(t), log = [];
+  const io = {
+    scene: id => ({id}), wait: async () => {}, cue: async () => {}, waitGo: async () => {}, goFile: '/dev/null',
+    open: async ({name}) => { log.push(`open ${name}`); return {run: async () => ({ok: true, value: {}, images: []}), close: async () => ({})}; },
+    tasks: {
+      activate: async () => ({ok: true}),
+      'select-source': async ([which]) => ({ok: false, which, switched: true, requested: 'com.apple.keylayout.ABC', problem: 'com.apple.keylayout.ABC was selected, but the current source reads com.apple.inputmethod.Korean.2SetKorean'}),
+      'input-source': async () => { log.push('checked'); return {ok: true}; },
+    },
+    cleanup: async () => log.push('cleanup'),
+  };
+  await assert.rejects(runSteps(timingSteps('clicks', 2), {item: '13', out, io, log: () => {}}), /select-source refused: .*current source reads/);
+  assert.deepEqual(log, ['cleanup'], 'neither checked nor opened');
 });

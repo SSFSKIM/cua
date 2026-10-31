@@ -53,3 +53,19 @@ test('save and restore take an explicit home only', async () => {
   await assert.rejects(main(['save', '--to', '/tmp/x']), /--home <absolute path> is required/);
   await assert.rejects(main(['restore', '--home', 'relative', '--from', '/a', '--aside', '/b']), /--home <absolute path> is required/);
 });
+
+test('each series is judged from the last run that covers it: a rerun of element click alone replaces only its verdict', async t => {
+  const out = scratch(t);
+  const run = (series, n, ms) => [{kind: 'start'}, ...Array.from({length: n}, (_, i) => ['on', 'off'].flatMap(side => series.map(s => ({kind: 'cell', ok: true, route: '3',
+    sample: {side, i, series: s}, value: {ms: ms[s](side, i)}})))).flat()];
+  const steady = () => 40, noisy = (side, i) => (side === 'on' ? 40 + (i % 2 ? 30 : -30) : 40);
+  writeFileSync(join(out, 'item-13.jsonl'), jsonl([
+    ...run(['coordinate click', 'element click', 'drag'], 20, {'coordinate click': steady, 'element click': noisy, drag: steady}),
+    ...run(['element click'], 40, {'element click': steady}),
+  ]));
+  assert.equal(await quietly(() => main(['judge', '--out', out])), 0);
+  const md = readFileSync(join(out, 'timing.md'), 'utf8');
+  assert.match(md, /\| element click \| 40 \/ 40 \|/);
+  assert.match(md, /\| coordinate click \| 20 \/ 20 \|/);
+  assert.match(md, /## Acceptance 13 \(clicks\): PASS/);
+});

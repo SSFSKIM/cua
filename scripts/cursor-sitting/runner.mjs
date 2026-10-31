@@ -18,6 +18,7 @@ import {FIXTURE_ACCESSIBILITY_FILE} from '../native-matrix/fixtures/electron-fix
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {readFocus, runWindowBounds} from './focus.mjs';
+import {liveSourceSwitch, switchSource} from './input-source.mjs';
 import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
 import {openDriven} from './session.mjs';
 import {latinSourceProblem} from './timing.mjs';
@@ -48,6 +49,7 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
   const cli = (args, env = {}) => JSON.parse(execFileSync(process.execPath, [CLI, ...args], {encoding: 'utf8', env: {...process.env, ...env}, timeout: 60_000}));
   const settingsFile = engineJsonOf(home), before = join(out, 'engine.json.before');
   const guard = liveTargetGuard({bundle: enginePaths().bundle});
+  let sources = null;
   const io = {
     scene: id => {
       const record = readState(run).scenes[id];
@@ -132,6 +134,8 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
         ctx.recording = null;
         return stopRecording(handle, {file: clip});
       },
+      // The input source selected for a series from the owner's recorded answer, and read back (./input-source.mjs).
+      'select-source': async ([which]) => switchSource({out, which, sources: sources ??= liveSourceSwitch()}),
       'watch-start': async () => ({ok: true, watch: startWatch(enginePaths().bundle, out)}),
       'watch-stop': async (_args, ctx) => {
         const lines = ctx.watch ? stopWatch(ctx.watch) : [];

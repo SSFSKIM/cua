@@ -1,6 +1,6 @@
 # The agent cursor's attended sitting (#235, M3): the runbook
 
-Status: **first sitting run 2026-10-30 (items 1–11 done, verdicts in `sitting/`; 12–13 failed); the second sitting (items 3, 1 recorded, 5, then 13, 12 and the arms) is prepared** (below). This is the kit for M3 of
+Status: **first sitting run 2026-10-30 (items 1–11 done, verdicts in `sitting/`; 12–13 failed); the second sitting is prepared: the owner about 25 minutes (items 3, 1 recorded, 5), then the timing unattended** (below). This is the kit for M3 of
 `docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md`: Acceptance 1–13 on the owner's MacBook, with the
 branch's engine built and approved, `CUA_NATIVE_ENGINE=cua`, #117's harness scenes, the owner watching and a screen
 recording running. When it has run, this file gets its outcome at the top and the sitting's records land in
@@ -214,7 +214,7 @@ The owner stops the recording. The recording stays outside the repository
 (`~/.local/share/cua-235/recordings/<DATE>.mov`, with its SHA-256 in this file's outcome); clips of items 1, 3, 5 and 11
 are exported at 720p (QuickTime, File, Export As) and committed under `sitting/clips/` when each is under 25 MB.
 
-## The second sitting: about 65 minutes (50–80), of which the owner's hands and eyes about 30
+## The second sitting: the owner about 25 minutes, then about 35–55 minutes unattended
 
 The first sitting passed items 1–11 except two clauses, and failed 12 and 13 (the execution record's sitting section,
 `docs/doperpowers/specs/2026-10-30-macos-agent-cursor-report.md`). The spec's Decision Log (2026-10-31, the second
@@ -226,10 +226,13 @@ caf2f462 or later with no engine change; the kit's own changes are not in the bu
 - item 5, the owner's click: its focus proof was unmet (both first readings ran before the fixture's accessibility was
   on, and run 2 named a window that had moved), which the kit now waits for and re-reads; item 1's clip answers its
   "appears in a screen recording";
-- the hands-off timing: 13, 12 and the `legacyLayers` arm, then the owner's Korean series;
-- keep or restore.
+- the timing, unattended: 13, 12 and the `legacyLayers` arm, then the owner's Korean series;
+- keep or restore, asked afterwards.
 
-It records into a directory of its own, so the first sitting's records stay as they were. The paths above hold, plus:
+Every step that needs the owner comes first. After item 5 the owner may leave the Mac, unlocked and untouched;
+whether they do is their call. The kit switches the input source itself, with the owner's yes, so nobody has to be at
+the Mac for the rest. The sitting records into a directory of its own, so the first sitting's records stay as they
+were. The paths above hold, plus:
 
 ```sh
 OUT2="$REPO/docs/evidence/2026-10-30-macos-agent-cursor/sitting-2026-10-31"; mkdir -p "$OUT2"
@@ -238,36 +241,69 @@ REC="$HOME/.local/share/cua-235/recordings"; mkdir -p "$REC"   # item 1's clip a
 
 | part | minutes | the owner |
 |---|---|---|
-| 1. Install and approve; a Latin source | 8–12 | the key prompt, the three grants, the source |
+| **With the owner** | **about 25 (22–28)** | |
+| 1. Install and approve; the input-source question | 9–13 | the key prompt, the three grants, a yes or no |
 | 2. Item 3 and the look | 4 | watches, verdicts, 30 s of looking |
-| 3. Item 1, recorded | 4–7 | places the two windows (again if the kit refuses the placement), watches |
+| 3. The recorder's proof, then item 1, recorded | 4–6 | places the two windows (again if the kit refuses), watches |
 | 4. Item 5 | 5 | says go, clicks the arrow's tip on the cue, watches |
-| 5. Item 13: 20 samples a side, then 40 if undetermined | 5–15 | the first minute watching route 3's starts, then away from the Mac |
-| 6. Item 12, likewise | 6–17 | away |
-| 7. The `legacyLayers` arm, clicks and typing | 11 | away |
-| 8. The Korean series | 6 | switches the source, then away |
-| 9. Keep or restore | 2–5 | decides; re-grants only if the restore lost the grants |
+| **Unattended** (the owner may leave) | **about 35 (34–55)** | nobody touches the Mac |
+| 5. Item 13: coordinate click and drag at 40, element click at 20 | 10 (+10 if element click reruns at 40) | |
+| 6. Item 12: type_text and press_key at 20 | 6 (+10 if one reruns at 40) | |
+| 7. The `legacyLayers` arm, clicks and typing, 20 each | 12 | |
+| 8. The owner's Korean series, 20 | 6 | |
+| 9. The source back, the scenes down, the verdicts | 1 | |
+| **Afterwards** (no one at the Mac) | | |
+| 10. Item 1's order from the clip (the operator) | 15–25 | |
+| 11. Keep or restore: a question to the owner, asked asynchronously | | answers when they can |
 
-The 13 and 12 times are the first sitting's (4.9 and 5.3 minutes at 20 samples a side) and double at 40. Coordinate
-click and drag were undetermined at 20 on the first build, so expect 13's rerun. The order analysis of item 1 (below)
-is the operator's after the sitting and needs no owner.
+The times per sample come from the first sitting's records (`sitting/item-13.jsonl`, `item-12.jsonl`), per side:
+- a clicks sample: the prime 0.47 s, the coordinate click 0.07 s, the element click 0.45 s (its observation and the
+  click), the drag 0.07 s, then the 6 s gap, so 7.1 s (6.6 s without the element click);
+- a typing sample: one cell of 1.7 s (the prime, two clicks, the type_text and 30 press_keys), then the 6 s gap, so
+  7.7 s.
 
 **Before it** (the operator, unattended): bring the scenes up as in "The scenes", re-placing nothing yet; dry-run the
-items into `$OUT2` (`$S drive 1 --out "$OUT2" --dry-run`, likewise 3 and 5, `$S timing clicks --out "$OUT2" --dry-run`,
-`$S timing typing --out "$OUT2" --dry-run`); check that `ffmpeg -version` and `ffprobe -version` answer
-(`brew install ffmpeg` if not), for the analysis afterwards.
+items into `$OUT2` (`$S drive 1-check --out "$OUT2" --dry-run`, likewise 1, 3 and 5, `$S timing clicks --out "$OUT2"
+--dry-run`, `$S timing typing --out "$OUT2" --dry-run`); check that `ffmpeg -version` and `ffprobe -version` answer
+(`brew install ffmpeg` if not), for the recorder's proof and the analysis.
 
-1. **Install and approve.** `CUA_SIGNING_IDENTITY=1AAFD20666E9358859B39E8F447572FBE39F52B0 node bin/cua.mjs engine
-   build --sign-wait 600000`, then `node bin/cua.mjs engine approve`. The owner answers the key prompt and grants the
-   three permissions. `node bin/cua.mjs engine status` must show build `b23a6e7a18c6`, approved, all three grants,
-   `cursor: on` and `cursorDebug` null. The saved engine stays at `$SAVED` as before. **The owner switches the input
-   source to a Latin layout (ABC or U.S.).**
+### With the owner
+
+1. **Install and approve, and the input-source question.**
+   - `CUA_SIGNING_IDENTITY=1AAFD20666E9358859B39E8F447572FBE39F52B0 node bin/cua.mjs engine build --sign-wait 600000`,
+     then `node bin/cua.mjs engine approve`. The owner answers the key prompt and grants the three permissions.
+     `node bin/cua.mjs engine status` must show build `b23a6e7a18c6`, approved, all three grants, `cursor: on` and
+     `cursorDebug` null. The saved engine stays at `$SAVED` as before.
+   - Ask the owner, while they are on their usual source (2-Set Korean): "May the kit switch your keyboard's input
+     source by itself: to ABC for the judged timing, back to your own source for the series recorded under it, and
+     back to it at the end?" Record the answer: `$S source consent yes --out "$OUT2"` (or `no`). The kit keeps the
+     source they are on at that moment as theirs (`$OUT2/input-source.json`).
+   - With a yes, each timing series selects its source itself, with TextEdit in front, and reads it back: ABC
+     (`com.apple.keylayout.ABC`) for 13, 12 and the arm, the owner's own for the Korean series. If the source read
+     back is not the one selected (ABC not enabled, say), the series stops before any session opens. The series' own
+     check (a Latin layout for a judged series) runs after the selection, as before. With a no, nothing is switched:
+     the owner stays to switch by hand before 5 and again before 8, and this sitting is not hands-off.
 2. **Item 3, states and timing, and a look check.** `$S drive 3 --run "$RUN" --out "$OUT2"`, with the same watches as
    before. The rock now begins a moment after the cursor settles (0.3 s with no request in flight). Then the owner
    looks at the cursor for about 30 s, resting and rocking, against what they approved:
    `$S verdict 3 look pass|fail "<the owner's words>" --out "$OUT2"`.
-3. **Item 1, recorded.** `$S drive 1 --run "$RUN" --out "$OUT2" --clip "$REC/item-1-2026-10-31.mov"`.
-   - The owner places TextEdit and Chrome for Testing side by side, touching, with their top and bottom edges level,
+3. **The recorder's proof, then item 1, recorded.**
+   - **The proof first** (about a minute, nothing driven): `$S drive 1-check --run "$RUN" --out "$OUT2" --clip
+     "$REC/check-2026-10-31.mov"`. The owner places the windows as item 1 needs (below). The kit records their
+     rectangle for 3 s and stops the recorder the way item 1 will. Then the operator checks, in this order:
+     - the `record-stop` row in `$OUT2/item-1-check.jsonl` is `ok` with `bytes` and `sha256`: the stop wrote a movie;
+     - `ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames,width,height -of csv=p=0
+       "$REC/check-2026-10-31.mov"` gives a frame count above 0 and a width twice the region's (`record-start`'s
+       `region.width`, at the built-in display's 2 px per pt);
+     - its first and last frames hold only the two harness windows. Extract them with `ffmpeg -v error -i
+       "$REC/check-2026-10-31.mov" -vf "select='eq(n,0)'" -frames:v 1 "$REC/check-first.jpg"` (the last frame likewise,
+       with `n` = the count − 1), and open them as images.
+
+     Then delete the clip and both frames. If any check fails, item 1's clip cannot be had this sitting. Tell the
+     design session, skip item 1, and go on with item 5.
+   - **Item 1.** `$S drive 1 --run "$RUN" --out "$OUT2" --clip "$REC/item-1-2026-10-31.mov"`. The windows are already
+     placed, so the owner only says done again.
+   - **The placement** (the proof's and item 1's). The owner places TextEdit and Chrome for Testing side by side, touching, with their top and bottom edges level,
      so that together they fill a rectangle with nothing else in it, then clicks the operator's terminal, whose window
      must stay off them. The kit then reads where both windows are and records exactly their rectangle. It refuses,
      before any session opens and with nothing recorded, when part of the rectangle wider than 16 pt holds neither
@@ -280,7 +316,8 @@ items into `$OUT2` (`$S drive 1 --out "$OUT2" --dry-run`, likewise 3 and 5, `$S 
      session). It runs on a pseudo-terminal of its own (`scripts/cursor-sitting/recorder-pty.py`), because it writes
      its movie only when a character is typed at its terminal. On a pipe it ignores the character, a signal kills it
      with no movie, and `-V` takes no stop at all (checked on the MacBook, 2026-10-31). The kit types that character at
-     `record-stop`, at a 300 s cap, or when the kit itself goes away. A recorder that exits at once, or does not print
+     `record-stop`, at a 300 s cap, or when the kit itself goes away, and it ends a recorder still running 20 s after any
+     of those (SIGTERM, then SIGKILL), so no recorder outlives the kit. A recorder that exits at once, or does not print
      its "type any character" prompt within 1.5 s, refuses the item the same way.
    - The owner watches `first-target` and `second-target` as before, and the operator records the two verdicts. The
      clip stops after the session has closed; the record keeps its region, both windows' bounds, the recorder's launch
@@ -299,23 +336,45 @@ items into `$OUT2` (`$S drive 1 --out "$OUT2" --dry-run`, likewise 3 and 5, `$S 
    AXManualAccessibility when it is off. Both `focus` rows must be `ok` (the second with `same: true`), each with its
    `bounds` and its `accessibility` wait. A reading that still finds no focused app with accessibility on is a finding
    for the design session, not a kit retry. The fixture must not be moved or clicked between the two readings.
-5. **Item 13, click speed.** `$S timing clicks --run "$RUN" --out "$OUT2"` (20 samples a side). The owner watches the
-   cursor's start on the fixture's button presses for the first minute (`route-3-lag`), then leaves the Mac untouched.
-   An undetermined series is run again with `--samples 40`. The 40-sample run's verdict counts for every kind it
-   covers, including one already passed at 20: never keep the better of the two. `judge` reads only an item's last
-   attempt, so it does this by itself.
-6. **Item 12, typing speed.** `$S timing typing --run "$RUN" --out "$OUT2"`, judged and topped up the same way.
-7. **The `legacyLayers` arm, recorded.** `$S timing clicks --arm legacyLayers --run "$RUN" --out "$OUT2"`, then
-   `$S timing typing --arm legacyLayers --run "$RUN" --out "$OUT2"`. The arm restores the first build's layers. If the
-   old cost comes back with it, that confirms the cause rather than a pass by noise. The other arms run only if 5 or 6
-   fails, and their numbers go to the design session.
-8. **The owner's source, recorded.** The owner switches back to 2-Set Korean; `$S timing typing --owner-source --run
-   "$RUN" --out "$OUT2"` (its press_key series is the one compared).
-9. **Keep or restore.** Ask the owner whether to keep this engine or have the saved one put back ("After the sitting"
-   below). Then `$SC down all --run "$RUN"`, `$S judge --out "$OUT2"` and `$S summary --out "$OUT2"`.
 
-**After the sitting: item 1's order** (the operator alone; ffmpeg's load must not overlap a timing series, so never
-during 5–8). The order comes from the clip's own frames: for each click, the first frame where its control changes
+   That is the owner's last step. Tell them the Mac must stay unlocked and untouched from here until the operator
+   says it is done (about 35–55 minutes): any input lands in a timed series, and a locked screen stops one.
+
+### Unattended
+
+Keep the Mac awake for the whole block, so neither the display nor the screen saver locks it:
+`nohup caffeinate -di -t 5400 >/dev/null 2>&1 & echo $! > "$SIT/caffeinate.pid"`. The kit's own guards stop a
+series whose scene is gone from the front (a locked screen, say) rather than time it.
+
+5. **Item 13, click speed.** `$S timing clicks --run "$RUN" --out "$OUT2"`. Coordinate click and drag start at 40
+   samples a side, since both were undetermined at 20 on the first build. Element click starts at 20. If it is
+   undetermined, rerun it alone: `$S timing clicks --series element-click --samples 40 --run "$RUN" --out "$OUT2"`.
+   `judge` takes each series from the last run that covers it, so a 40-sample run's verdict replaces the earlier one
+   for every series it covers, and only those: never keep the better of the two. The `route-3-lag` watch (the cursor's
+   start on route-3 clicks) has no owner at the Mac and keeps no verdict this sitting.
+6. **Item 12, typing speed.** `$S timing typing --run "$RUN" --out "$OUT2"` (type_text and press_key at 20). Rerun an
+   undetermined one alone at 40: `--series type-text` or `--series press-key`, with `--samples 40`.
+7. **The `legacyLayers` arm, recorded.** `$S timing clicks --arm legacyLayers --run "$RUN" --out "$OUT2"`, then
+   `$S timing typing --arm legacyLayers --run "$RUN" --out "$OUT2"` (20 each, under ABC). The arm restores the first
+   build's layers. If the old cost comes back with it, that confirms the cause rather than a pass by noise. The other
+   arms run only if 5 or 6 fails, and their numbers go to the design session.
+8. **The owner's source, recorded.** `$S timing typing --owner-source --run "$RUN" --out "$OUT2"`. The kit selects the
+   owner's own source (the one `source consent` kept) and records its reading; its press_key series is the one
+   compared.
+9. **The source back, the scenes down, the verdicts.** `$S source restore --out "$OUT2"` (the owner's source, read
+   back; exit 1 says it is not), `$SC down all --run "$RUN"`, `$S judge --out "$OUT2"`, `$S summary --out "$OUT2"`,
+   then `kill "$(cat "$SIT/caffeinate.pid")"`.
+
+### Afterwards
+
+10. **Item 1's order**, below.
+11. **Keep or restore: ask the owner asynchronously.** Send the owner the question with the timing verdicts: keep this
+    branch's engine, or have the saved one put back? Act on the answer when it comes ("After the sitting: put the saved
+    engine back", below). The restore needs no one at the Mac unless the grants did not survive, and then it waits for
+    the owner's next time at the Mac.
+
+**After the sitting: item 1's order** (the operator alone; ffmpeg's load must not overlap a timing series, so only
+once the unattended block has ended). The order comes from the clip's own frames: for each click, the first frame where its control changes
 against the first frame where the arrow's tip reaches it. The request meta is put on the same clock as support. The
 procedure:
 

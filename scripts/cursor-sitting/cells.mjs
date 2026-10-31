@@ -168,16 +168,17 @@ return {primed: true};`);
 
 // The typing sample of Acceptance 12: primed at `to`, a click at `from` (a long glide where the cursor is on), then a
 // timed type_text of 200 characters while it glides; a click back at `to` (another long glide), then 30 timed
-// press_key calls. -> {type_text, press_key, each}.
-export const TYPING_SAMPLE = (scene, from, to) => cell(`${head(scene)}
-const text = "abcdefghij".repeat(20);
+// press_key calls. A rerun of one series leaves the other's timed calls out (`typeText`, `pressKey`), the clicks kept.
+// -> {type_text?, press_key?, each?}.
+export const TYPING_SAMPLE = (scene, from, to, {typeText = true, pressKey = true} = {}) => cell(`${head(scene)}
 ${prime(scene, to)}
 await __app.click(${at(scene, from)});
-let t = performance.now(); await __app.typeText(text); const typed = performance.now() - t;
+let t, typed;
+${typeText ? 't = performance.now(); await __app.typeText("abcdefghij".repeat(20)); typed = performance.now() - t;' : ''}
 await __app.click(${at(scene, to)});
 const each = [];
-for (let i = 0; i < 30; i++) { t = performance.now(); await __app.pressKey("x"); each.push(performance.now() - t); }
-return {type_text: typed, press_key: each.reduce((a, b) => a + b, 0), each};`);
+${pressKey ? 'for (let i = 0; i < 30; i++) { t = performance.now(); await __app.pressKey("x"); each.push(performance.now() - t); }' : ''}
+return {${[typeText && 'type_text: typed', pressKey && 'press_key: each.reduce((a, b) => a + b, 0), each'].filter(Boolean).join(', ')}};`);
 
 // An element click on `control` alone, timed, with nothing after it, so the result's meta is the click's: its route
 // (Acceptance 13: route 3 is the engine's route for the fixture's button in the background), its receipt and round

@@ -116,7 +116,7 @@ export const PLANS = Object.freeze({
     {wait: 6000},
     // Neither engine opens a menu from a menu-bar click (MenuRecord.swift), so the person opens it while the cursor shows.
     {task: 'activate', args: ['textedit']},
-    {run: 'a', cell: SCROLL_AT('textedit', [0.3, 0.3]), label: 'TextEdit frontmost: the cursor shown near the menu bar'},
+    {run: 'a', cell: SCROLL_AT('textedit', [0.08, 0.12]), label: 'TextEdit frontmost: the cursor shown at the document\'s top-left, near the menu bar'},
     {cue: 'Now open TextEdit\'s Format menu in the menu bar, and keep it open.', ms: 3000},
     {watch: 'with TextEdit frontmost and its menu open, the cursor shows above the menu', id: 'front-menu'},
     {cue: 'Press Escape to close the menu.', ms: 2500},
@@ -179,8 +179,10 @@ export const PLANS = Object.freeze({
     {watch: 'the next action shows it again', id: 'after-lock'},
     {wait: 6000},
     {run: 'a', cell: OPEN_MENU('textedit', 'Help'), label: 'TextEdit\'s Help menu, its menu-bar item nearest the camera housing'},
-    {watch: 'the cursor is drawn in the menu bar\'s row, at the Help menu', id: 'menu-bar-row'},
-    {cue: 'Press Escape to close the menu.', ms: 2500},
+    {watch: 'the cursor is drawn in the menu bar\'s row, at the Help menu (the engine records the click and opens no menu)', id: 'menu-bar-row'},
+    // The recorded menu roots every later observation of this connection at the menu (MenuRecord.swift): a new session.
+    {close: 'a'},
+    {open: 'a', scenes: ['textedit']},
     {owner: 'Put the TextEdit document into full screen with its green button, then say done.'},
     ...reobserve('a', 'textedit'),
     {run: 'a', cell: CLICK_AT('textedit', [0.5, 0.5]), label: 'in full screen'},

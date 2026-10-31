@@ -16,3 +16,5 @@
 {"item":"4","id":"front-menu","verdict":"fail","note":"owner: cursor did not show with TextEdit frontmost and the owner-opened Format menu","at":"2026-10-31T04:08:54.915Z"}
 {"item":"10","id":"device-off","verdict":"pass","note":"owner: no cursor; the click brought TextEdit in front (#200)","at":"2026-10-31T04:14:16.233Z"}
 {"item":"10","id":"session-off","verdict":"pass","note":"owner: one cursor only","at":"2026-10-31T04:14:16.316Z"}
+{"item":"8","id":"remote-cursors","verdict":"fail","note":"owner: no cursor appeared for any of the three remote sessions; cells landed, engine cua","at":"2026-10-31T04:22:48.952Z"}
+{"item":"8","id":"remote-cursors","verdict":"pass","note":"owner, run 3 with both windows wholly visible (run 2's windows were likely covered)","at":"2026-10-31T04:55:38.533Z"}

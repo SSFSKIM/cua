@@ -1,0 +1,5 @@
+{
+ "rounds": null,
+ "groups": [],
+ "refused": "its block rows carry neither round nor step, so their rounds cannot be recovered"
+}

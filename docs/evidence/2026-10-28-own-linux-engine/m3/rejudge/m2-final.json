@@ -1,4 +1,5 @@
 {
+ "via": "wire",
  "changed": [
   {
    "scene": "desktop",
@@ -680,6 +681,217 @@
    "bar": 1158.89,
    "against": "newest",
    "old": "pass (at or below the bar)"
+  }
+ ],
+ "intervals": [
+  {
+   "scene": "desktop",
+   "op": "list_windows",
+   "candidate": 13.565000000000001,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 144.68,
+   "interval": [
+    -139.99,
+    -127.13
+   ],
+   "bound": 7.234000000000001,
+   "label": "faster"
+  },
+  {
+   "scene": "desktop",
+   "op": "list_windows",
+   "candidate": 7.42,
+   "series": "warm",
+   "samples": 21,
+   "against": "pinned",
+   "bar": 124.06,
+   "interval": [
+    -132.26,
+    -105.23
+   ],
+   "bound": 6.203,
+   "label": "faster"
+  },
+  {
+   "scene": "desktop",
+   "op": "list_apps",
+   "candidate": 13.685,
+   "series": "cold",
+   "samples": 20,
+   "against": "newest",
+   "bar": 119.63499999999999,
+   "interval": [
+    -116.355,
+    -103.055
+   ],
+   "bound": 5.98175,
+   "label": "faster"
+  },
+  {
+   "scene": "desktop",
+   "op": "list_apps",
+   "candidate": 9.73,
+   "series": "warm",
+   "samples": 21,
+   "against": "newest",
+   "bar": 127.75,
+   "interval": [
+    -130.78,
+    -113.09
+   ],
+   "bound": 6.3875,
+   "label": "faster"
+  },
+  {
+   "scene": "desktop",
+   "op": "get_screenshot",
+   "candidate": 33.730000000000004,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 35.83,
+   "interval": [
+    -5.78,
+    2.18
+   ],
+   "bound": 1.7915
+  },
+  {
+   "scene": "desktop",
+   "op": "get_screenshot",
+   "candidate": 24.27,
+   "series": "warm",
+   "samples": 21,
+   "against": "pinned",
+   "bar": 27.39,
+   "interval": [
+    -3.71,
+    -2.53
+   ],
+   "bound": 1.3695000000000002,
+   "label": "faster"
+  },
+  {
+   "scene": "desktop",
+   "op": "launch_app",
+   "candidate": 4.02,
+   "series": "cold",
+   "samples": 20,
+   "against": "pinned",
+   "bar": 4.445,
+   "interval": [
+    -1.255,
+    0.68
+   ],
+   "bound": 1,
+   "label": "same (within noise)"
+  },
+  {
+   "scene": "desktop",
+   "op": "launch_app",
+   "candidate": 0.68,
+   "series": "warm",
+   "samples": 21,
+   "against": "pinned",
+   "bar": 0.67,
+   "interval": [
+    -0.1,
+    0.08
+   ],
+   "bound": 1,
+   "label": "same (within noise)"
+  },
+  {
+   "scene": "gedit",
+   "op": "tree",
+   "candidate": 74.3,
+   "series": "warm",
+   "samples": 21,
+   "against": "newest",
+   "bar": 601.29,
+   "interval": [
+    -562.06,
+    -498.51
+   ],
+   "bound": 30.0645,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "tree_shot",
+   "candidate": 101.99,
+   "series": "warm",
+   "samples": 21,
+   "against": "newest",
+   "bar": 718.2,
+   "interval": [
+    -641.25,
+    -573.24
+   ],
+   "bound": 35.910000000000004,
+   "label": "faster"
+  },
+  {
+   "scene": "gedit",
+   "op": "clipboard_release",
+   "candidate": 0.13,
+   "series": "warm",
+   "samples": 30,
+   "against": "newest",
+   "bar": 0.11,
+   "interval": [
+    0,
+    0.04
+   ],
+   "bound": 1,
+   "label": "same (within noise)"
+  },
+  {
+   "scene": "chrome",
+   "op": "tree",
+   "candidate": 65.14,
+   "series": "warm",
+   "samples": 21,
+   "against": "newest",
+   "bar": 514.2,
+   "interval": [
+    -541.51,
+    -420.5
+   ],
+   "bound": 25.710000000000004,
+   "label": "faster"
+  },
+  {
+   "scene": "chrome",
+   "op": "tree_shot",
+   "candidate": 92.28,
+   "series": "warm",
+   "samples": 21,
+   "against": "pinned",
+   "bar": 609.62,
+   "interval": [
+    -545.89,
+    -497.61
+   ],
+   "bound": 30.481,
+   "label": "faster"
+  },
+  {
+   "scene": "over-budget",
+   "op": "tree",
+   "candidate": 983.83,
+   "series": "warm",
+   "samples": 21,
+   "against": "pinned",
+   "bar": 7026.09,
+   "interval": [
+    -6154.95,
+    -5881.34
+   ],
+   "bound": 351.3045,
+   "label": "faster"
   }
  ]
 }

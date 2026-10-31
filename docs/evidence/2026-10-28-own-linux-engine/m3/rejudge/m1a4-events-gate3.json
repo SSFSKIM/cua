@@ -1,0 +1,311 @@
+{
+ "rounds": 31,
+ "groups": [
+  {
+   "command": "click",
+   "series": "first",
+   "n20": 60,
+   "at20": "same (within noise)",
+   "interval20": [
+    -0.005,
+    0.58
+   ],
+   "recorded": {
+    "n": 93,
+    "verdict": "same (within noise)",
+    "interval": [
+     -0.05,
+     0.6
+    ]
+   }
+  },
+  {
+   "command": "click",
+   "series": "later",
+   "n20": 80,
+   "at20": "faster",
+   "interval20": [
+    -17.405,
+    -17.12
+   ],
+   "recorded": {
+    "n": 124,
+    "verdict": "pass",
+    "interval": [
+     -17.395,
+     -17.175
+    ]
+   }
+  },
+  {
+   "command": "drag_handle",
+   "series": "first",
+   "n20": 40,
+   "at20": "same (within noise)",
+   "interval20": [
+    -0.045,
+    0.15
+   ],
+   "recorded": {
+    "n": 62,
+    "verdict": "pass",
+    "interval": [
+     -0.1,
+     0.12
+    ]
+   }
+  },
+  {
+   "command": "drag_handle",
+   "series": "later",
+   "n20": 80,
+   "at20": "faster",
+   "interval20": [
+    -29.895,
+    -29.74
+   ],
+   "recorded": {
+    "n": 124,
+    "verdict": "pass",
+    "interval": [
+     -29.93,
+     -29.74
+    ]
+   }
+  },
+  {
+   "command": "drag",
+   "series": "first",
+   "n20": 40,
+   "at20": "faster",
+   "interval20": [
+    -59.195,
+    -58.46
+   ],
+   "recorded": {
+    "n": 62,
+    "verdict": "pass",
+    "interval": [
+     -59.315,
+     -58.82
+    ]
+   }
+  },
+  {
+   "command": "drag",
+   "series": "later",
+   "n20": 40,
+   "at20": "faster",
+   "interval20": [
+    -60.175,
+    -58.475
+   ],
+   "recorded": {
+    "n": 62,
+    "verdict": "pass",
+    "interval": [
+     -60.14,
+     -59.04
+    ]
+   }
+  },
+  {
+   "command": "key_down",
+   "series": "first",
+   "n20": 80,
+   "at20": "faster",
+   "interval20": [
+    -0.85,
+    -0.735
+   ],
+   "recorded": {
+    "n": 124,
+    "verdict": "pass",
+    "interval": [
+     -0.88,
+     -0.76
+    ]
+   }
+  },
+  {
+   "command": "key_down",
+   "series": "later",
+   "n20": 100,
+   "at20": "faster",
+   "interval20": [
+    -0.47,
+    -0.39
+   ],
+   "recorded": {
+    "n": 155,
+    "verdict": "pass",
+    "interval": [
+     -0.46,
+     -0.39
+    ]
+   }
+  },
+  {
+   "command": "key_up",
+   "series": "later",
+   "n20": 80,
+   "at20": "same (within noise)",
+   "interval20": [
+    -0.03,
+    0.01
+   ],
+   "recorded": {
+    "n": 124,
+    "verdict": "pass",
+    "interval": [
+     -0.02,
+     0.005
+    ]
+   }
+  },
+  {
+   "command": "move_relative",
+   "series": "first",
+   "n20": 20,
+   "at20": "faster",
+   "interval20": [
+    -0.295,
+    -0.19
+   ],
+   "recorded": {
+    "n": 31,
+    "verdict": "pass",
+    "interval": [
+     -0.28,
+     -0.2
+    ]
+   }
+  },
+  {
+   "command": "move_relative",
+   "series": "later",
+   "n20": 60,
+   "at20": "faster",
+   "interval20": [
+    -0.12,
+    -0.05
+   ],
+   "recorded": {
+    "n": 93,
+    "verdict": "pass",
+    "interval": [
+     -0.11,
+     -0.06
+    ]
+   }
+  },
+  {
+   "command": "move",
+   "series": "first",
+   "n20": 20,
+   "at20": "same (within noise)",
+   "interval20": [
+    -0.43,
+    0.02
+   ],
+   "recorded": {
+    "n": 31,
+    "verdict": "pass",
+    "interval": [
+     -0.43,
+     0.02
+    ]
+   }
+  },
+  {
+   "command": "move",
+   "series": "later",
+   "n20": 60,
+   "at20": "declared gap",
+   "interval20": [
+    2.31,
+    2.49
+   ],
+   "recorded": {
+    "n": 93,
+    "verdict": "declared gap",
+    "interval": [
+     2.32,
+     2.49
+    ]
+   }
+  },
+  {
+   "command": "press_key",
+   "series": "first",
+   "n20": 140,
+   "at20": "faster",
+   "interval20": [
+    -34.165,
+    -34.03
+   ],
+   "recorded": {
+    "n": 217,
+    "verdict": "pass",
+    "interval": [
+     -34.15,
+     -34.03
+    ]
+   }
+  },
+  {
+   "command": "press_key",
+   "series": "later",
+   "n20": 160,
+   "at20": "faster",
+   "interval20": [
+    -33.925,
+    -33.81
+   ],
+   "recorded": {
+    "n": 248,
+    "verdict": "pass",
+    "interval": [
+     -33.92,
+     -33.83
+    ]
+   }
+  },
+  {
+   "command": "scroll",
+   "series": "first",
+   "n20": 20,
+   "at20": "faster",
+   "interval20": [
+    -0.31,
+    -0.055
+   ],
+   "recorded": {
+    "n": 31,
+    "verdict": "pass",
+    "interval": [
+     -0.38,
+     -0.1
+    ]
+   }
+  },
+  {
+   "command": "scroll",
+   "series": "later",
+   "n20": 40,
+   "at20": "faster",
+   "interval20": [
+    -17.305,
+    -16.91
+   ],
+   "recorded": {
+    "n": 62,
+    "verdict": "pass",
+    "interval": [
+     -17.315,
+     -16.875
+    ]
+   }
+  }
+ ]
+}

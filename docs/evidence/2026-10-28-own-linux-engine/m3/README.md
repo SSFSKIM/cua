@@ -8,8 +8,11 @@ builds are the pinned 26.928.40906 and the newest 26.1023.51421. Every run is th
 - `kinds/`: the measurements behind the device mode's listings (Plan of Work, M3 pre-flight: scroll and drag measured
   in every family of M0's matrix, the move with them), and the Chrome drag-and-drop item.
 - `diff/`: the verdict run. It covers Acceptance 8 on the engine, and Acceptance 2–5 for the commands M3.1 changes.
-- `rejudge/`: recorded runs judged again offline under Acceptance 3 as revised at M3.1 (`rejudge.mjs`).
+- `rejudge/`: recorded runs judged again offline under Acceptance 3 as revised at M3.1 (`rejudge.mjs`), again with
+  the fix round's judges (below).
 - `drop-misses/`: the open finding on Chrome drops in the full verdict run (below).
+- `device-fix1/`: Acceptance 8's device cases after M3.1's fix round (run m31-fix1-device, below). Where it and
+  `diff/` differ on the drag-and-drop guard, `device-fix1/` is the engine as it stands.
 
 ## The engines
 
@@ -110,7 +113,8 @@ In every browser, the source takes `XdndSelection` 15–53 ms into cua's drag, h
 after), maps override-redirect drag windows and cycles a keyboard grab. Under full cover (m31-dnd-covered) no drop
 lands in any engine.
 
-The candidate, Chrome visible, 10 drags a lane:
+The candidate, Chrome visible, 10 drags a lane (the answer rule as it stood then: "nothing was dropped" unless the
+signature showed; since the fix round the answer follows the order of the take and the release, below):
 - `cua`, shared:
   - m31-dnd-candidate: 0/10 drops. All 10 answers are the declared refusal, the witness is clean, the desktop is
     unchanged, and the selection was taken 10/10.
@@ -231,3 +235,54 @@ build's 20/20. At idle (M1a.4) the thumbs land as the pinned build's.
 itself, so it can make Chrome's drag-start pointer grab fail. That fits its misses in every lane, the pinned build's
 included: 1 to 2 of 10 idle, 3 of 20 under load. The drag experiment, which has no sampler, saw none. No sampler runs
 during the verdict run's drop cases, so it does not explain the finding.
+
+## Fix round 1 (`device-fix1/`, `rejudge/`)
+
+The task review's fixes (task-16-report.md, "Fix round 1"). Engine `cua-engine 0.3.0 (af6b2a1eb312)`, harness at the
+same commit, 2026-10-31, on `:0`.
+
+**The drop guard answers by the order of events** (the design session's ruling of 2026-10-31). The engine watches
+`XdndSelection` from the drag's start through 300 ms after the release. A take seen before the release is cancelled
+(Escape, then the release) and answered "nothing was dropped" unless the activation signature then changes; a take seen
+only after the release is answered "the drop may have happened", Escape following; no take within the settle is an
+ordinary drag; a take whose cancel could not be sent is answered "it was cancelled, but whether the drop landed cannot
+be confirmed". `--stats` `dnd` records the `outcome` and whether the signature already held (`held_at_start`).
+
+**m31-fix1-device**: every device case of Acceptance 8, 4 blocks (12 timed samples a case, 2 audited), run valid,
+**every verdict passes** (41 of 41), the standing controls held (the stub; the foreground checks; the in-front checks,
+now with another client's override-redirect window raised across the target's frame and back under one server grab,
+which fails as it must). The drag-and-drop cases:
+
+| case | arrangement | answers | drops | witness clean | engine's outcome | median ms |
+|---|---|---|---:|---:|---|---:|
+| `chrome_dnd_shared` | Chrome visible, not active | 12 cancelled | 0/12 | 12/12 | in_time 12 | 424.0 |
+| `chrome_dnd_obscured_in_front_shared` | Chrome active, focused, on top; a corner covered by an override-redirect overlay | 12 cancelled | 0/12 | 12/12 | in_time 12, signature held at the start 12 | 423.4 |
+| `chrome_dnd_late_shared` | visible, `--dnd-cancel-after-release` | 12 may have happened | 12/12 | (not judged) | late 12 | 509.3 |
+| `chrome_dnd_obscured_in_front_late_shared` | in front, corner covered, forced late | 12 may have happened | 12/12 | (not judged) | late 12, held 12 | 500.3 |
+| `chrome_dnd_in_front_shared` | in front, fully unobscured (unwatched) | 12 success | 12/12 | 12/12 (in-front allowance) | – | 501.3 |
+| `chrome_dnd_covered_dedicated` | covered, dedicated | 12 success | 12/12 | 12/12 (foreground allowance) | – | 688.8 |
+
+- The design session asked for the in-time cancel to be proven under the signature-held, partly covered arrangement
+  before the rule relies on it there: 12 timed and 2 audited in-time cancels, 0 drops (and 3 of 3 in a smoke run
+  before it). Rule (a) holds in that arrangement.
+- The forced-late case under the same arrangement is the one the review found: before the fix the answer there was
+  "nothing was dropped" although every drop landed (the signature cannot change when it already holds; the engine's
+  live test `with_the_signature_already_held_…` shows it against 8e5aa0a2's engine).
+- No Chrome drop missed in this run (the in-front and dedicated cases 12/12 each). The open finding below is a full
+  verdict run's; this run had only the device scenes, where M3.1 never reproduced it either.
+- **The guard's cost on an ordinary drag.** A watched drag with no take now waits out the 300 ms settle:
+  `chrome_drag_visible_path_shared` (a background drag into a partly covered Chrome, not in front) answers in 697.0 ms
+  median, against 398.0 in `m31-verdict`. Only shared-mode background drags into Chrome not already in front pay it.
+
+**The re-judges with the fixed judges** (`rejudge/`):
+- `m31-verdict.json`: the same verdicts, the same 60 intervals; nothing changes under the declared-refusal rule
+  (chrome-input's covered drag stays a declared refusal: its speed passes).
+- `m2-final.json`: the same 20 changed verdicts and 32 under-20 series; it now lists the 14 intervals of the series
+  judged on 20 a side (the earlier file predates the field).
+- `m1a4-vendor-js-final.json`: a run through the vendor client is not judged on speed: nothing changes, nothing listed.
+- `m1a4-events-gate3.json` (`--events`): the events experiment's desktop groups under the schedule (20 rounds, then 40
+  for a group undetermined at 20). Every group is decided at 20 rounds, each the same outcome the run recorded at 31
+  (pass as faster or same within noise, desktop `move` later the declared gap); no recorded events run ever topped up.
+  `m1a4-events-gate.json`: refused, its block rows carry neither round nor step.
+- `m31-verdict-first-sitting.json` is kept as it was: its source run is not in the repository (`drop-misses/` holds an
+  excerpt of it).

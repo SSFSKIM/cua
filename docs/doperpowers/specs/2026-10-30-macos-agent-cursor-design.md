@@ -370,6 +370,10 @@ Environment, read by the service: `CUA_CURSOR` (`0` turns the session's cursor o
   Evidence: the spike's method and numbers in the execution record (`2026-10-30-macos-agent-cursor-report.md`, M1); the spike itself is not in the tree.
 - Observation (2026-10-30, M1 build): the press dip, played on the vendor's press spring (stiffness 130.5, damping 18.85, about 0.55 s response) pressed for 0.1 s, reaches about 0.86 scale, not the 0.7 target the Design names: the spring never gets there in 0.1 s. That is the vendor's own visible dip, so it is kept; the test pins it between 0.7 and 0.9.
   Evidence: `native/engine/Tests/EngineTests/CursorEffectsTests.swift`, the execution record's M1 build section.
+- Observation (2026-10-31, the timing fixes): SkyLight counts the screen-update hold per connection. `SLSDisableUpdate` adds an entry and disables updates only when there was none; `SLSReenableUpdate` removes one entry, and only the last re-enables updates and waits on the window server. An unbalanced re-enable is logged with a backtrace. `CALayer.render(in:)` skips CA filters and the window server's backdrop, so only a composited capture proves a filter change. `log stream` carries no signposts on this Mac, while `log show --signpost` does.
+  Evidence: `.doperpowers/sde/2026-10-30-macos-agent-cursor-design/task-4-report.md` (the disassembly listings in `task-4-nesting/`).
+- Observation (2026-10-31, parity-browser, which runs only by hand): M3's agent-cursor paragraph left 20 undeclared differences in the binder double's `bind-fixture-app` cells. The cell writes two facades' first-call documents, one with the computer surface and one without, but the comparison flagged the paragraph from the run's recorded surfaces, which are `['browser']` for every non-native case. The projection now flags each document from the banner's declared facades (b2e07997). M3's flag had been tested only on runs made up for the test.
+  Evidence: runs 41190691634 (red) and 41192366675 (green); `task-5-report.md`.
 
 ## Decision Log
 

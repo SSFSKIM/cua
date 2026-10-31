@@ -1,0 +1,25 @@
+== private Xvfb, CUA_LINUX_ENGINE_BIN = the head build, dedicated
+dbus-daemon[2446587]: [session uid=501 pid=2446587] Activating service name='org.a11y.Bus' requested by ':1.2' (uid=501 pid=2446600 comm="/usr/bin/dbus-send --session --print-reply --dest=" label="unconfined")
+dbus-daemon[2446587]: [session uid=501 pid=2446587] Successfully activated service 'org.a11y.Bus'
+pass	display	X display :99 has XTEST, Composite and XFIXES
+pass	accessibility.bus	AT-SPI (org.a11y.Bus) is activatable on the session bus at unix:path=/tmp/dbus-bt4GUpNSfo,guid=5cda68657927444b9e3938e36ae6463e; it starts on first use
+pass	accessibility.enabled	org.a11y.Status IsEnabled is true on the session bus at unix:path=/tmp/dbus-bt4GUpNSfo,guid=5cda68657927444b9e3938e36ae6463e, so Qt applications put their accessibility trees on the bus
+warn	engine	cua's engine is selected (CUA_NATIVE_ENGINE=cua): sessions here run /Users/new/.local/share/cua-171/task19/cua-engine-m3, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), behind service cua (cua's own Linux service); installed: the pinned cua-engine 0.2.0 (linux-engine-v0.2.0) at /Users/new/.local/share/cua/engine/linux/cua-engine, SHA-256 2a0036acfb331f612ab2ce79b8a5ae902e29232f406ce1d3395ab83b1b0c543c; device mode dedicated (CUA_DESKTOP_MODE=dedicated); capabilities, from cua-engine started for this check and stopped: backend x11, build bcf64d68401c, capture.desktop true, capture.window retained, desktop dedicated, input.background true, input.desktop true, text.literal true, text.paste verified, tree at_spi, version 0.3.0
+report.engine.service=cua capabilities={"backend":"x11","build":"bcf64d68401c","capture":{"desktop":true,"window":"retained"},"desktop":"dedicated","input":{"background":true,"desktop":true},"text":{"literal":true,"paste":"verified"},"tree":"at_spi","version":"0.3.0"} unread=null
+== private Xvfb, the installed engine (0.2.0 until the release)
+dbus-daemon[2446641]: [session uid=501 pid=2446641] Activating service name='org.a11y.Bus' requested by ':1.2' (uid=501 pid=2446654 comm="/usr/bin/dbus-send --session --print-reply --dest=" label="unconfined")
+dbus-daemon[2446641]: [session uid=501 pid=2446641] Successfully activated service 'org.a11y.Bus'
+pass	display	X display :99 has XTEST, Composite and XFIXES
+pass	accessibility.bus	AT-SPI (org.a11y.Bus) is activatable on the session bus at unix:path=/tmp/dbus-wpZJGqNhM1,guid=5997e950ea7e2d98600fb9106ae6463f; it starts on first use
+pass	accessibility.enabled	org.a11y.Status IsEnabled is true on the session bus at unix:path=/tmp/dbus-wpZJGqNhM1,guid=5997e950ea7e2d98600fb9106ae6463f, so Qt applications put their accessibility trees on the bus
+fail	engine	cua's engine is selected (CUA_NATIVE_ENGINE=cua): sessions here run the pinned cua-engine 0.2.0 (linux-engine-v0.2.0) at /Users/new/.local/share/cua/engine/linux/cua-engine, SHA-256 2a0036acfb331f612ab2ce79b8a5ae902e29232f406ce1d3395ab83b1b0c543c, behind service cua (cua's own Linux service); device mode shared (the default: CUA_DESKTOP_MODE=dedicated, or "desktop": "dedicated" in ~/.config/cua/engine.json, gives the agent the desktop); its capability report could not be read, and sessions here fail the same way: cua-engine 0.2.0 is older than 0.3.0, which this cua needs; run cua install --engine
+report.engine.service=cua capabilities=null unread="cua-engine 0.2.0 is older than 0.3.0, which this cua needs; run cua install --engine"
+== no display
+fail	display	DISPLAY is not set: the computer surface drives an X11 display (Xorg, Xvfb or a VNC session; Wayland only through XWayland); export DISPLAY (for example :0) where cua runs
+pass	accessibility.bus	AT-SPI (org.a11y.Bus) is on the session bus at unix:path=/run/user/501/bus
+pass	accessibility.enabled	org.a11y.Status IsEnabled is true on the session bus at unix:path=/run/user/501/bus, so Qt applications put their accessibility trees on the bus
+warn	engine	cua's engine is selected (CUA_NATIVE_ENGINE=cua): sessions here run /Users/new/.local/share/cua-171/task19/cua-engine-m3, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), behind service cua (cua's own Linux service); installed: the pinned cua-engine 0.2.0 (linux-engine-v0.2.0) at /Users/new/.local/share/cua/engine/linux/cua-engine, SHA-256 2a0036acfb331f612ab2ce79b8a5ae902e29232f406ce1d3395ab83b1b0c543c; device mode shared (the default: CUA_DESKTOP_MODE=dedicated, or "desktop": "dedicated" in ~/.config/cua/engine.json, gives the agent the desktop); its capability report is unread: no X display is reachable here (DISPLAY is not set; see display), and cua-engine starts only on one
+report.engine.service=cua capabilities=null unread="DISPLAY is not set"
+== doctor engines left (server --desktop dedicated or shared from this script): 0
+2427129 node scripts/linux-engine-diff.mjs --vendor /Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin
+2427155 /Users/new/.local/share/cua-171/task19/cua-engine-m3 server

@@ -1,0 +1,217 @@
+{
+ "engine": "cua",
+ "engineBin": "/Users/new/.local/share/cua-171/task19/engine/cua-engine",
+ "text": "cua171 안녕 é 🙂\nline2",
+ "steps": [
+  {
+   "name": "preconditions",
+   "status": "PASS",
+   "detail": {
+    "display": ":0",
+    "engine": "cua"
+   }
+  },
+  {
+   "name": "shared: bind the gnome-text-editor window by X11 id",
+   "status": "PASS",
+   "detail": {
+    "windowId": 18874372,
+    "app": "org.gnome.TextEditor"
+   }
+  },
+  {
+   "name": "shared: click is refused with the device sentence, and nothing reached the window or the desktop",
+   "status": "PASS",
+   "detail": {
+    "what": "click",
+    "answer": {
+     "ok": false,
+     "error": "org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first"
+    },
+    "before": {
+     "text": "",
+     "caret": 0,
+     "active": "0x1200004"
+    },
+    "after": {
+     "text": "",
+     "caret": 0,
+     "active": "0x1200004"
+    }
+   }
+  },
+  {
+   "name": "shared: pressKey is refused with the device sentence, and nothing reached the window or the desktop",
+   "status": "PASS",
+   "detail": {
+    "what": "pressKey",
+    "answer": {
+     "ok": false,
+     "error": "org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first"
+    },
+    "before": {
+     "text": "",
+     "caret": 0,
+     "active": "0x1200004"
+    },
+    "after": {
+     "text": "",
+     "caret": 0,
+     "active": "0x1200004"
+    }
+   }
+  },
+  {
+   "name": "shared: typeText is refused with the device sentence, and nothing reached the window or the desktop",
+   "status": "PASS",
+   "detail": {
+    "what": "typeText",
+    "answer": {
+     "ok": false,
+     "error": "org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first"
+    },
+    "before": {
+     "text": "",
+     "caret": 0,
+     "active": "0x1200004"
+    },
+    "after": {
+     "text": "",
+     "caret": 0,
+     "active": "0x1200004"
+    }
+   }
+  },
+  {
+   "name": "shared: end_task",
+   "status": "PASS",
+   "detail": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "d6079ba1-499c-42d7-a76a-7a74015ef0be"
+   }
+  },
+  {
+   "name": "shared: the window's app was asked once and accepted, nothing else asked",
+   "status": "PASS",
+   "detail": {
+    "asked": [
+     {
+      "method": "elicitation/create",
+      "app": "org.gnome.TextEditor",
+      "action": "accept"
+     }
+    ],
+    "otherRequests": 0
+   }
+  },
+  {
+   "name": "shared: cua serve exited cleanly",
+   "status": "PASS",
+   "detail": {
+    "code": 0,
+    "signal": null
+   }
+  },
+  {
+   "name": "dedicated: bind the gnome-text-editor window by X11 id",
+   "status": "PASS",
+   "detail": {
+    "windowId": 20971524,
+    "app": "org.gnome.TextEditor"
+   }
+  },
+  {
+   "name": "dedicated: typeText of Acceptance 6's string returns success and reads back exactly, once, the window left active",
+   "status": "PASS",
+   "detail": {
+    "what": "typeText",
+    "answer": {
+     "ok": true
+    },
+    "before": {
+     "text": "",
+     "caret": 0,
+     "active": "0x1400004"
+    },
+    "after": {
+     "text": "cua171 안녕 é 🙂\nline2",
+     "caret": 20,
+     "active": "0x1400004"
+    }
+   }
+  },
+  {
+   "name": "dedicated: a key takes effect (BackSpace removes the last character)",
+   "status": "PASS",
+   "detail": {
+    "what": "pressKey",
+    "answer": {
+     "ok": true
+    },
+    "before": {
+     "text": "cua171 안녕 é 🙂\nline2",
+     "caret": 20,
+     "active": "0x1400004"
+    },
+    "after": {
+     "text": "cua171 안녕 é 🙂\nline",
+     "caret": 19,
+     "active": "0x1400004"
+    }
+   }
+  },
+  {
+   "name": "dedicated: a coordinate click takes effect (the caret moves from the end to the click, near the field's start)",
+   "status": "PASS",
+   "detail": {
+    "what": "click",
+    "answer": {
+     "ok": true
+    },
+    "before": {
+     "text": "cua171 안녕 é 🙂\nline",
+     "caret": 19,
+     "active": "0x1400004"
+    },
+    "after": {
+     "text": "cua171 안녕 é 🙂\nline",
+     "caret": 1,
+     "active": "0x1400004"
+    }
+   }
+  },
+  {
+   "name": "dedicated: end_task",
+   "status": "PASS",
+   "detail": {
+    "status": "ended",
+    "ended": true,
+    "taskId": "b4beefda-6428-4ffa-aed0-c40aa7773fc4"
+   }
+  },
+  {
+   "name": "dedicated: the window's app was asked once and accepted, nothing else asked",
+   "status": "PASS",
+   "detail": {
+    "asked": [
+     {
+      "method": "elicitation/create",
+      "app": "org.gnome.TextEditor",
+      "action": "accept"
+     }
+    ],
+    "otherRequests": 0
+   }
+  },
+  {
+   "name": "dedicated: cua serve exited cleanly",
+   "status": "PASS",
+   "detail": {
+    "code": 0,
+    "signal": null
+   }
+  }
+ ],
+ "status": "PASS"
+}

@@ -1,4 +1,209 @@
-# #171 M3.1: the device mode's measurements and the verdict run
+# #171 M3: cua's own Linux service, the device mode and the capability report
+
+On the #171 VM (`dc-linux171-1e68`, Ubuntu 24.04.4, x86-64, 8 vCPU, X11 on `:0`, Openbox), 2026-10-30 and 2026-10-31.
+The vendor builds are the pinned 26.928.40906 and the newest 26.1023.51421. M3 ran as three loop tasks and a follow-up
+(Decision Log, "M3 pre-flight" and the 2026-10-31 entries); this directory holds the evidence of all of them.
+
+| part | directory | what it holds |
+|---|---|---|
+| M3.1, the engine's device mode and capability report | `kinds/`, `diff/`, `rejudge/`, `device-fix1/`, `device-fix2/`, `device-fix3/`, `late-take/` | the measurements behind `families.rs`, the Chrome drag-and-drop guard, M3.1's verdict run and its fix rounds ([M3.1](#m31-the-device-modes-measurements-and-the-verdict-run), below) |
+| M3.2, cua's own Linux service | `services/` | the two services render the same states and numbers on one engine; no vendor module with cua's engine ([its README](services/README.md)) |
+| the drop-miss follow-up | `drop-misses/`, `drop-misses/task18/` | the mechanism of M3.1's Chrome drop misses and the 350 ms release floor ([its README](drop-misses/task18/README.md)) |
+| M3's gate | `gate/` | the fresh full verdict run on the final engine, `m3-gate`: **it exits 1** (below) |
+| M3.3, doctor, provisioning and the facade proof | `doctor/`, `provision/`, `facade/`, `accept/`, `parity/`, `baseline/` | below |
+
+The engine of every M3.3 run and of the gate is one frozen release build of the head's engine sources: the engine
+sources last changed at 1b7debef, built at bcf64d68, `cua-engine 0.3.0 (bcf64d68401c)`, SHA-256
+`01955bef9ff69fa9af948c50c324edb07dfbd303474e179f7f0c7f42e163032d`. No M3.3 commit touches `native/linux-engine/`.
+Until 0.3.0 is released and pinned, the installed engine is 0.2.0, which cua's service refuses (`MIN_ENGINE_VERSION`
+0.3.0), so the facade runs name the build: `--engine-bin` for the suites, `CUA_LINUX_ENGINE_BIN` for the fixtures.
+
+## M3's gate: the full verdict run (`gate/`, run `m3-gate`): it fails
+
+**The gate is not met.** `m3-gate` is a fresh full differential verdict run on the build above, at checkout bcf64d68,
+2026-10-31 19:38–22:00Z:
+
+```
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua <the build> \
+  --scene desktop,gedit,chrome,chrome-input,over-budget,retention,chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target,device-gtk4,device-firefox,device-xterm,device-qt,device-chrome,device-chrome-dnd \
+  --ops all --blocks 3 --run m3-gate
+```
+
+Every M3 scene and device case: Concrete Steps' scenes for M3, `chrome-input` (M3.1's drag scenes), `paste-target`
+(the paste safety cases' GTK 3 target), and each `device-*` scene. Its verdict line:
+
+> run valid; **FAIL**: device-chrome-dnd chrome_dnd_short_in_front_shared cua; **declared refusal** (a loss, not a
+> pass): chrome-input drag cua
+
+It **exits 1**. The run is valid: the stub engine failed both the witness and the audit, and the foreground and
+in-front standing controls held.
+
+**The one failing verdict.** `chrome_dnd_short_in_front_shared`, the follow-up's 40 px drop into Chrome already in
+front, took effect on 8 of 9 samples. The sample that did not is block 2's cold sample (`i` 0):
+- it answered success in 133.4 ms, where the other eight took 461.9–477.2 ms;
+- it carries no `after_take` record: the engine saw no take of `XdndSelection` before its release, so the 350 ms floor
+  never started (each of the other eight released 350.1 ms after its take);
+- the drag page counted the press and a mouseup (`downs` 66 to 67, `ups` 15 to 16), and no `dragstart` (`starts` 66 to 66)
+  and no drop;
+- the witness is clean, and the desktop unchanged.
+
+The design session has the finding; the plan-executor recommended a bounded isolated reproduction (the short in-front
+drop, about 100 fresh-engine samples, with the instruments, and the pinned and newest lanes) before any engine change.
+M3 does not merge on this run.
+
+**Everything else passes.** Every other verdict of the run passes. 66 speed series are judged on 20 or more samples a
+side:
+- 60 are **faster**;
+- 6 are **same (within noise)**, each interval's upper end inside the bound;
+- none is **within the bound**, so M3 has no "within the bound" table to give;
+- none is undetermined, and none stands at parity or as a speed gap.
+
+The 6 same-within-noise series:
+
+| scene | op | series | cua − bar, 95% interval (ms) |
+|---|---|---|---|
+| desktop | get_screenshot | cold | [−6.085, 0.19] |
+| desktop | launch_app | cold | [−0.535, 0.14] |
+| desktop | launch_app | warm | [−0.12, 0.07] |
+| gedit | clipboard_release | cold | [−1.975, 0.37] |
+| gedit | clipboard_release | warm | [0, 0.025] |
+| chrome-input | key_up | cold | [−0.31, 0.02] |
+
+The reference operations (cua against the bar, the faster vendor build, medians in ms, cold / warm):
+
+| scene | op | cua | bar |
+|---|---|---|---|
+| gedit | tree read | 95.2 / 93.3 | 715.7 / 700.3 |
+| gedit | tree with screenshot | 130.9 / 105.3 | 824.5 / 838.2 |
+| gedit | press_key | 108.4 / 101.3 | 240.8 / 236.0 |
+| gedit | click | 121.2 / 113.9 | 219.1 / 215.0 |
+| gedit | type_text | 185.6 / 168.4 | 1018.4 / 1022.5 |
+| chrome | tree read | 80.0 / 62.2 | 572.4 / 597.0 |
+| chrome | tree with screenshot | 132.5 / 94.3 | 710.0 / 680.4 |
+| over-budget | tree read | 983.5 / 974.7 | 7238.7 / 7100.8 |
+
+Every device case of Acceptance 8 other than the failing one passes, the Chrome drag-and-drop cases included (the
+cancel, late, late-take, obscured, in-front and dedicated drops, and the short dedicated drop 9/9), with every case's
+route as expected and its witness clean within its route's allowance. The paste safety cases all pass.
+`chrome-input`'s covered drag is the declared refusal it has been since M3.1 (the path rule), listed as a loss.
+`results.jsonl` and `summary.md` are the run's own files, committed as they came out.
+
+## M3.3: doctor
+
+`src/runtime/doctor-engine.mjs`'s Linux engine row now names the service and reads the capability report;
+`src/runtime/linux-desktop.mjs` adds the `accessibility.enabled` row. On `:0` (`doctor/doctor-cua.json`, the rows that
+matter and the report's `engine` object, from `CUA_NATIVE_ENGINE=cua CUA_LINUX_ENGINE_BIN=<the build> cua doctor --json`):
+
+- `engine` (warn, for `CUA_LINUX_ENGINE_BIN`, a harness setting): "sessions here run <the build> … **behind service
+  cua (cua's own Linux service)**; installed: the pinned cua-engine 0.2.0 …; device mode shared …; capabilities, from
+  cua-engine started for this check and stopped: backend x11, build bcf64d68401c, capture.desktop true,
+  capture.window retained, desktop shared, input.background true, input.desktop true, text.literal true, text.paste
+  verified, tree at_spi, version 0.3.0". The report's `engine.service` is `cua`, and `engine.capabilities` the object.
+- `accessibility.enabled` (pass): "org.a11y.Status IsEnabled is true on the session bus at unix:path=/run/user/501/bus,
+  so Qt applications put their accessibility trees on the bus".
+
+Off `:0` (`doctor/live.txt`, with the same build under another file name, `cua-engine-m3`): on a private Xvfb and session bus in `dedicated` mode the report reads `desktop
+dedicated`; with the installed 0.2.0 the row fails with the service's own sentence (`cua-engine 0.2.0 is older than
+0.3.0, which this cua needs; run cua install --engine`), as a session's first computer call would; with no `DISPLAY`
+doctor starts nothing and warns that the report is unread (`no X display is reachable here (DISPLAY is not set; see
+display), and cua-engine starts only on one`). No engine doctor started was left running.
+
+## M3.3: provisioning (`provision/live.txt`)
+
+`deploy/cloud-vm/cua-provision.sh`'s two steps, run for real without root and away from the owner's session:
+- **engine.json**, the step cut from the script and run against scratch homes: an absent file becomes `{"desktop":
+  "dedicated"}`; `{"engine":"cua"}` becomes `{"engine":"cua","desktop":"dedicated"}`; `{"desktop":"shared"}` stays (the
+  owner's mode); a second run changes nothing; `[1]` stops the run with "is not a JSON object: fix or remove it".
+- **IsEnabled**, the autostart's command on a private session bus with AT-SPI's own launcher and GSettings in memory
+  (so the owner's dconf is untouched): doctor's `accessibility.enabled` row read `warn … IsEnabled is false` before
+  and `pass … true` after.
+
+## M3.3: the facade proof
+
+All on `:0`, cua's service on the cua lane.
+
+### Acceptance 1: no vendor process, no vendor module (`accept/`)
+
+`scripts/accept/linux-native.mjs`, a real `cua serve` computer session (bind gedit, read it, `typeText`, a screenshot,
+`launch_app`), run under `strace -f -e trace=openat,execve` while a sampler ran `pgrep -fc sky_linux` every 50 ms and
+recorded each `cua-engine` process with its parent and that parent's `CUA_SKY_SERVICE`:
+
+| lane | fixture | `pgrep -fc sky_linux`, most at once (samples) | `@oai/sky` files opened | engine processes | cua Linux service files opened |
+|---|---|---:|---:|---|---:|
+| `CUA_NATIVE_ENGINE=cua` (the build) | **PASS** 11/11 | **0** (3,539) | **0** | `cua-engine --version`, `cua-engine server --desktop shared`, the trusted worker's child, its service `src/services/engine/linux/service.mjs` | 5 |
+| `CUA_NATIVE_ENGINE=vendor`, the control | 10/11 (the declared x64 vendor text failure) | 1 (3,802) | 60 | `sky_linux_x64 server` | 0 |
+
+The control shows the sampler and the trace see a vendor engine and module when there is one. `modules.json` holds
+the derived record, `watch-*.json` the sampler's; the raw traces stay on the VM. Doctor shows the service as `cua`
+(above).
+
+### Acceptance 6's gnome-text-editor case and Acceptance 8, through the facade (`facade/device-mode.json`)
+
+`scripts/accept/linux-device-mode.mjs` (new): a `cua serve` session in each device mode binds a gnome-text-editor
+window of its own (GTK 4, listed for clicks, keys and paste) and sends it a coordinate click, a key and `typeText`
+through the real facade; the field is read through the fixture's own AT-SPI reads, never through the engine. **PASS,
+15/15**:
+
+| mode | input | answer | the field and the desktop |
+|---|---|---|---|
+| shared | click, `pressKey('BackSpace')`, `typeText` | each `org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first` | text and caret unchanged, the active window unchanged |
+| dedicated | `typeText('cua171 안녕 é 🙂\nline2')` | success | reads back exactly that string, once; the window active |
+| dedicated | `pressKey('BackSpace')` | success | the last character removed |
+| dedicated | click near the field's start | success | the caret from 19 to 1 |
+
+Each session asked the window's approval once, ended its task and exited cleanly.
+
+### repl-parity, the native suite (`parity/`)
+
+Prepared at, and run from, 5e439324 (both lanes from one controller commit), the cua lane on the build (`--engine-bin`):
+
+| Lane | Result |
+|---|---|
+| vendor (`--engine vendor`) | complete, `RECORDED_VENDOR_DEFECT`: 31 covered, the 2 declared vendor defects (the x64 vendor text failure) |
+| cua (`--engine cua --engine-bin <the build>`) | complete, **`PASS`**: 33 covered |
+| `diff … --expected scripts/repl-parity/expected/native-linux.json` (`parity/diff.json`) | **`ok: true`**, 0 differences, the 2 declared (`linux-text-typetext-m2`, `linux-text-paste-m2`) |
+
+Each lane's engine observation now carries the service its trusted worker loaded (CUA_SKY_SERVICE, read from the
+worker's environment; `scripts/repl-parity/engine-answered.mjs`), and a lane is sound only when its engine ran behind
+its own service: the vendor lane's `sky_linux_x64` behind `@oai/sky`, the cua lane's `cua-engine` behind cua's service.
+Both lanes passed that check on every native case.
+
+### The native baseline and `compare --engines` (`baseline/`): Acceptance 2 through the facade
+
+Prepared at, and run from, 5e439324; experiment `171-m3-20261031`; three runs a lane, interleaved (`cv/run-n`, then
+`cc/run-n`), the default plan (5 cold, 30 warm, 10 tasks), the cua lane on the build. `compare --engines cv cc`
+(`baseline/engines.md`): **VERDICT: PASS**. The attested differences are exactly the two the Linux comparison permits
+from M3: the engine (`sky_linux_x64` against `cua-engine`) and the service (`computer surface, answered by vendor`
+against `answered by cua`). The typeText and paste method cases are judged as positive: every cua sample returned, kept
+gedit alive and read its text back.
+
+| Operation (engine-answered) | vendor median, ms | cua median, ms |
+|---|---:|---:|
+| warm.getAXState | 510.9 | 92.2 |
+| warm.getScreenshot | 648.9 | 113.2 |
+| bind.getApp | 563.5 | 147.0 |
+| task.total (the pressKey task) | 18921.6 | 9540.6 |
+| warm.getState / warm.listApps | 22.0 / 21.4 | 17.4 / 17.2 |
+| method.typeText | 10237.7, every sample `editable Paste did not insert text` | 168.2, every sample returned, gedit alive, the text read back |
+| method.paste | 10235.5, the same failure | 165.8, the same success |
+
+No cua median is above the vendor's on an operation the engine answers. Eight operations no engine answers
+(`cold.miss.initialize`, `cold.miss.tools_list`, `cold.miss.total`, `warm.noop`, the binder's paste-format,
+selectText and scroll-by-pages refusals, `end_task`) have cua medians 0.1 to 24.6 ms above the vendor lane's, inside
+the tolerance rule; `engines.md` lists them.
+
+### The Linux acceptance fixture
+
+`CUA_NATIVE_ENGINE=cua CUA_LINUX_ENGINE_BIN=<the build> node scripts/accept/linux-native.mjs` on the VM's default home:
+**PASS**, 11 of 11 steps (`accept/accept-linux-native-cua.json`), the run Acceptance 1's sampler and trace watched
+(above).
+
+## M3.3: the plugin
+
+`.claude-plugin/plugin.json` and `marketplace.json` 0.19.0 to 0.20.0, in a commit of its own (ef139029) so it can be
+renumbered if another initiative's bump merges first.
+
+## M3.1: the device mode's measurements and the verdict run
 
 On the #171 VM (`dc-linux171-1e68`, Ubuntu 24.04.4, x86-64, 8 vCPU, X11 on `:0`, Openbox), 2026-10-30. The vendor
 builds are the pinned 26.928.40906 and the newest 26.1023.51421. Every run is the differential harness
@@ -15,7 +220,7 @@ builds are the pinned 26.928.40906 and the newest 26.1023.51421. Every run is th
 - `late-take/` and `device-fix2/`: the second fix round's late-take rate, and the drag-and-drop cases and a speed run on
   the engine of fix round 2 (below); `device-fix3/`: the drag-and-drop cases after fix round 3, the current engine.
 
-## The engines
+### The engines
 
 The background measurements (`kinds`, `drag`, `m31-dnd-visible`, `m31-dnd-covered`) ran on a copy of the engine
 built at c15441ec (`cua-engine 0.2.0 (c15441ecd0ba)`). That build has the device mode for clicks and keys only, so
@@ -43,7 +248,7 @@ The occlusions:
 - `partial`, `partial-deep` and `partial-top`: the front window over the window's bottom 50%, its bottom 70%, or its
   top 55% (where the targets are).
 
-## What the listings rest on (families.rs)
+### What the listings rest on (families.rs)
 
 | family | kind and condition | runs |
 |---|---|---|
@@ -67,7 +272,7 @@ Gecko under a partial cover:
   move, select and range.
 - So `unless_unobscured` refuses some requests that would land. The design session kept the window-level rule.
 
-### Chromium's drags under a cover over the targets (m31-drag-partial-top, condition 1)
+#### Chromium's drags under a cover over the targets (m31-drag-partial-top, condition 1)
 
 | family | kind | path (window y) against the cover (to y) | changed: pinned / cua / xtest |
 |---|---|---|---|
@@ -87,7 +292,7 @@ cover. The path rule refuses the covered range drags (taken 9/10) and Electron's
 0/10 under full cover). Those are its loss, declared in `deviations.mjs`, and the evidence for two M4 candidates:
 decide by the AT-SPI role at the path's start, and measure which part of the path decides.
 
-## Qt's move and hover
+### Qt's move and hover
 
 - m31-qt-covered and m31-qt-visible: plain Qt 5 and Qt 6 widgets take background moves (9/9/9: run 0 moves to the
   pointer's own position) and clicks 10/10.
@@ -99,7 +304,7 @@ decide by the AT-SPI role at the path's start, and measure which part of the pat
   and the limit keeps the general wording: a hover effect that reads the real pointer position does not follow a
   background move.
 
-## Chrome's HTML5 drag and drop (`--experiment dnd`)
+### Chrome's HTML5 drag and drop (`--experiment dnd`)
 
 m31-dnd-visible, 10 drags a lane, the windows visible, the focus on a front xterm:
 
@@ -132,7 +337,7 @@ signature showed; since the fix round the answer follows the order of the take a
     the release within the few milliseconds before that read. The 300 ms settle is a margin, not a measured need.
 - The pinned build, in the same run: 8/10 drops, each changing the desktop.
 
-## The verdict run (`diff/`, run m31-verdict)
+### The verdict run (`diff/`, run m31-verdict)
 
 `m31-verdict`, run at 91b2746e, ran the scenes `desktop`, `gedit`, `chrome`, `chrome-input`, `chrome-textarea`,
 `chrome-address-bar` and `gnome-text-editor`, and every device scene, with `--ops all` and 3 blocks. Every series was
@@ -172,7 +377,11 @@ open finding below); chrome-input's covered drag is a declared refusal.
   - m2-final's exit 0 depended on the old rule. `rejudge/m31-verdict-first-sitting.json` shows the same for this
     milestone's first sitting.
 
-## The open finding: Chrome drops missed in the full verdict run (`drop-misses/`)
+### The open finding: Chrome drops missed in the full verdict run (`drop-misses/`), since explained
+
+The drop-miss follow-up found the mechanism (Chrome's drag session starts, and the release beats its accept) and built the
+350 ms release floor after the take (a769edcd, 1b7debef); its full run on the fix landed every drop, 36 of 36
+(`drop-misses/task18/README.md`). M3.1's record of the finding follows as it stood.
 
 **Three full sittings missed drops in Chrome:**
 - The first sitting (`verdict-first-sitting.jsonl`): in-front 2 of 9, dedicated 1 of 9.
@@ -237,7 +446,7 @@ itself, so it can make Chrome's drag-start pointer grab fail. That fits its miss
 included: 1 to 2 of 10 idle, 3 of 20 under load. The drag experiment, which has no sampler, saw none. No sampler runs
 during the verdict run's drop cases, so it does not explain the finding.
 
-## Fix round 1 (`device-fix1/`, `rejudge/`)
+### Fix round 1 (`device-fix1/`, `rejudge/`)
 
 The task review's fixes (task-16-report.md, "Fix round 1"). Engine `cua-engine 0.3.0 (af6b2a1eb312)`, harness at the
 same commit, 2026-10-31, on `:0`.
@@ -288,7 +497,7 @@ which fails as it must). The drag-and-drop cases:
 - `m31-verdict-first-sitting.json` is kept as it was: its source run is not in the repository (`drop-misses/` holds an
   excerpt of it).
 
-## Fix round 2 (`late-take/`, `device-fix2/`)
+### Fix round 2 (`late-take/`, `device-fix2/`)
 
 The re-reviews' remaining findings and the design session's ruling on the settle (task-16-report.md, "Fix round 2").
 Engine `cua-engine 0.3.0 (1b0bab1bcb81)`, harness at the same commit, 2026-10-31, on `:0`.
@@ -334,7 +543,7 @@ gnome-text-editor's refusal and `capabilities`, every verdict passing, run valid
 top-up of 17 rounds, then both series decided at 20 a side (`speed-decision` rows: cold faster [-101.03, -96], warm
 faster [-101.93, -100.435]); the verdict judged on those decisions passes.
 
-## Fix round 3 (`device-fix3/`)
+### Fix round 3 (`device-fix3/`)
 
 The last review items (task-16-report.md, "Fix round 3"). Engine `cua-engine 0.3.0 (9381f166e106)`, 2026-10-31, on `:0`:
 - The watch is told the instant the drag's button goes up, so a late take is cancelled at once and the settle runs

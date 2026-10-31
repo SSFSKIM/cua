@@ -19,8 +19,11 @@ clauses and sentences at :160, :162, :164, :170, :198, :204, :205 and :206, and 
 After those deletions, the surface inventory's "Table 3 amendment (2026-10-15, owner ruling)" repairs the grammar of the
 two sentences they broke: "Linux always return" becomes "Linux always returns" (:170), and "Linux app `paste` support
 only `text` and use" becomes "supports … uses" (:204). Product names appear in the vendor's prose only inside the
-removed text, so no rename remains. Everything else is the vendor's wording. `test/cua-api/core-documentation.test.mjs`
-applies the same edits, then the amendment, to the pinned vendor documents (SHA-256-checked copies under
+removed text, so no rename remains. The surface inventory's "Table 3 amendment (2026-10-30, #235)" then adds one
+paragraph after the Native apps section's last one: what the person sees while an agent acts on macOS (cua's agent
+cursor, `docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md`), the only text in `core.md` that is not the
+vendor's. Everything else is the vendor's wording. `test/cua-api/core-documentation.test.mjs`
+applies the same edits, then the amendments, to the pinned vendor documents (SHA-256-checked copies under
 `test/cua-api/fixtures/vendor-docs/`) and requires these bytes.
 
 Not ported: `docs/tinysky-alt-core-node-repl.md`, the dormant alternate first-call document (Table 2). #120's

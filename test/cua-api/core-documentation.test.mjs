@@ -60,14 +60,21 @@ const AMENDMENT_EDITS = [
   ['Linux app `paste` support only `text` and use the platform\'s native text input.', 'Linux app `paste` supports only `text` and uses the platform\'s native text input.'],
 ];
 
+// The surface inventory's "Table 3 amendment (2026-10-30, #235)": one sentence pair added after the Native apps
+// section's last paragraph, what the person sees while an agent acts on macOS (the agent cursor's spec,
+// docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, M3), applied after the 2026-10-15 amendment.
+const ADDITION_EDITS = [
+  ['Coordinates are relative to the selected window.\n', 'Coordinates are relative to the selected window.\n\nOn macOS, unless the user has turned it off, a cursor labelled with this session\'s name shows the user where each of your actions in an app lands, and fades a few seconds after your last one. Your actions do not wait for it, it is not the user\'s pointer, and your screenshots do not show it.\n'],
+];
+
 test('the vendor fixtures are the pinned chatgpt-26.928.40906 documents', () => {
   for (const [name, hash] of Object.entries(PINNED)) assert.equal(sha(read(VENDOR, name)), hash, name);
   const dir = process.env.CUA_VENDOR_DOCS;
   if (dir) for (const name of Object.keys(PINNED)) assert.equal(readFileSync(join(dir, name), 'utf8'), read(VENDOR, name), `${name} against ${dir}`);
 });
 
-test('core.md is the vendor first-call document with exactly the Table 2/3 edits, then the Table 3 amendment', () => {
-  assert.equal(read(DOCS, 'core.md'), applyEdits(applyEdits(read(VENDOR, 'tinysky-alt-core-cua-repl.md'), CORE_EDITS), AMENDMENT_EDITS));
+test('core.md is the vendor first-call document with exactly the Table 2/3 edits, then the Table 3 amendments', () => {
+  assert.equal(read(DOCS, 'core.md'), applyEdits(applyEdits(applyEdits(read(VENDOR, 'tinysky-alt-core-cua-repl.md'), CORE_EDITS), AMENDMENT_EDITS), ADDITION_EDITS));
 });
 
 test('the confirmations policy and the "Other Browser APIs" document are the vendor bytes', () => {

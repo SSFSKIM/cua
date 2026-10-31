@@ -31,6 +31,8 @@ export function transformCoreDocument(source){
  // Table 3 amendment (2026-10-15): only these two grammar repairs follow the literal Windows deletions.
  source=replaceOnce(source,'Linux always return full accessibility state.','Linux always returns full accessibility state.');
  source=replaceOnce(source,"Linux app `paste` support only `text` and use the platform's native text input.","Linux app `paste` supports only `text` and uses the platform's native text input.");
+ // Table 3 amendment (2026-10-30, #235): what the person sees while an agent acts on macOS, after Native apps' last paragraph.
+ source=replaceOnce(source,'Coordinates are relative to the selected window.\n','Coordinates are relative to the selected window.\n\nOn macOS, unless the user has turned it off, a cursor labelled with this session\'s name shows the user where each of your actions in an app lands, and fades a few seconds after your last one. Your actions do not wait for it, it is not the user\'s pointer, and your screenshots do not show it.\n');
  // No surviving ChatGPT/Codex/Orbit product prose in this pinned core: do not rename identifiers, URLs or Sky.
  return source;
 }

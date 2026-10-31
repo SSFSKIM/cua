@@ -169,7 +169,8 @@ until the next plugin update). Without the plugin, register the same script your
 
 Ask for the task in plain words: "open Notes and read my latest note", "in Preview, rotate this image and save".
 The first call returns the `cua` API document to the model, which then writes small JavaScript cells against that API.
-On cua's own host the document is a port of OpenAI's, with the recorded exclusions (Licences and sources). That first
+On cua's own host the document is a port of OpenAI's, with the recorded exclusions and one addition, what the person sees
+while an agent acts on macOS (Licences and sources; The agent cursor, below). That first
 call is also when `cua serve` launches the runtime (a few seconds; see Process footprint below), so it takes longer than
 the ones after it. The server adds rules covering what that document leaves out: how to run a task, in the host notes
 it appends to the server instructions (see Operating guidance for agents), and the native quirks (index-first
@@ -244,6 +245,44 @@ remote machine and back (Remote control, 4). The agent's HTTP sessions never lis
 
 Be aware that binding an app hands the model that app's whole front window as text, chat lists and inboxes included.
 For a messaging app, open the room you mean before asking.
+
+### The agent cursor (macOS, cua's own engine)
+
+With cua's own macOS engine (`CUA_NATIVE_ENGINE=cua`, #117), every session that acts on the Mac shows its own cursor
+where it acts: a small rounded arrow with a frosted halo, in the session's colour, with a pill naming the session. The
+engine posts the agent's clicks, drags and scrolls straight to the app, so your pointer never moves; the cursor is how
+you see where they land. It glides to each target along a curve and dips at a click, but the action goes out at once
+and never waits for the glide, so the cursor can arrive up to about a second after its click (on the actions that need
+route 3's fake activation its start can lag the click by up to 100 ms more). Keyboard-only actions do not move it but
+keep it alive.
+
+| state | what you see | when |
+|---|---|---|
+| acting | the arrow moving to its target or resting there; a dip at a click | an action |
+| thinking | the arrow rocking gently | once the motion settles, until the next action |
+| taken over | the whole cursor half-transparent and still | you click or type in the app the agent is driving (the engine's Input Monitoring grant detects it), until the session's next request |
+| fading | it fades out over about 0.44 s | 5 s after the session's last request ends (never while one runs); at once on `end_task` |
+
+The next action brings a faded cursor back at its target, and a key press brings it back at its last point in that
+app. It sits on the window it acts in: whatever covers that window covers the cursor too, and while that app is
+frontmost or has a menu open the cursor rises above menus. It hides while that window is on another Space, minimised or
+closed, and while the screen is locked. It never takes a click, the focus or the front position (a click on it reaches
+the window underneath). Screen recordings and screen sharing show it; the agent's own screenshots do not. Several
+sessions show several cursors, each in its own colour. With Reduce Motion on, every move is a short straight ease and a
+click's dip an opacity dip; with Increase Contrast, its outline is drawn at full strength.
+
+The pill reads `CUA_CURSOR_LABEL` when set (MAWS sets it, and `CUA_CURSOR_COLOR`, for the sessions it supervises),
+else the Claude Code session's sminos name (with the sminos plugin installed), else the project folder's name; the
+colour, unless given, is one of eight picked by the session's id. A session driving a remote cua device sends its own
+label, colour and switch with the session, so the device draws them as the client resolved them.
+
+It is on by default. `"cursor": false` in `~/.config/cua/engine.json` turns it off for every session on the Mac,
+read when the engine starts (stop it with `cua engine stop`; the next session relaunches it); `CUA_CURSOR=0` in a
+session's server environment turns that session's off (Configuration). `cua engine status` and `cua doctor`'s engine
+row report `cursor: on` or `cursor: off (engine.json)`. The vendor engine, still the default, shows OpenAI's own cursor
+instead, and these switches do not reach it. The design and its acceptance are
+`docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md`; the attended proof is
+`docs/evidence/2026-10-30-macos-agent-cursor/`.
 
 ### What cua changes in results
 

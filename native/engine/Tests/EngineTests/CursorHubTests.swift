@@ -262,6 +262,79 @@ final class CursorHubTests: XCTestCase {
     XCTAssertTrue(try XCTUnwrap(renderer.last).shown)
   }
 
+  /// Acceptance 4's failing order (M3 sitting, item 4): scrolls with TextEdit behind another app, the cursor fading out,
+  /// TextEdit activated (the harness's `open -a`) while it is hidden, then a scroll in TextEdit.
+  func testTheTargetActivatedWhileHiddenThenAnActionShowsTheCursorRaised() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    hub.begin(connection: 1, app: app, keyboardOnly: false)
+    hub.act(connection: 1, app: app, window: 20, .scroll(CGPoint(x: 300, y: 400)))
+    hub.end(connection: 1)
+    hub.drain()
+    XCTAssertEqual(renderer.last?.attachment.level, 0)
+    for _ in 0..<3 { world.clock.t += 2.5; hub.tick() }
+    XCTAssertEqual(hub.phase(connection: 1), .hidden)
+    world.front = 600
+    world.workspace.post(name: NSWorkspace.didDeactivateApplicationNotification, object: nil)
+    world.workspace.post(name: NSWorkspace.didActivateApplicationNotification, object: nil)
+    hub.drain()
+    world.clock.t += 0.06
+    hub.begin(connection: 1, app: app, keyboardOnly: false)
+    hub.act(connection: 1, app: app, window: 20, .scroll(CGPoint(x: 460, y: 310)))
+    hub.end(connection: 1)
+    hub.drain()
+    let commit = try XCTUnwrap(renderer.last)
+    XCTAssertTrue(commit.shown)
+    XCTAssertEqual(commit.phase, .acting)
+    XCTAssertEqual(commit.motion?.fadeIn, true, "fades in at the scroll's point")
+    XCTAssertEqual(commit.attachment.level, 102)
+  }
+
+  /// The activation notification itself names the app now in front: NSWorkspace's frontmostApplication still answers
+  /// the previous app while the notification is delivered (measured on the MacBook: it caught up 1–17 ms later), so a
+  /// check that read it then kept a shown cursor at the window's level until the next quarter-second check.
+  func testTheTargetActivatedWhileShownRaisesTheCursorAtTheNotification() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let target = try XCTUnwrap(launchedApp(), "a running app to stand for the target")
+    world.list[1] = ListedWindow(number: 20, owner: target.processIdentifier, layer: 0, bounds: world.list[1].bounds)
+    let front = FrontmostApp(center: world.workspace, initial: 500)
+    var e = world.environment()
+    e.frontmostPid = { front.pid }  // what the live system reads; the stale workspace reading is never consulted
+    let hub = CursorHub(environment: e, renderer: renderer)
+    hub.begin(connection: 1, app: app, keyboardOnly: false)
+    hub.act(connection: 1, app: app, window: 20, .scroll(CGPoint(x: 300, y: 400)))
+    hub.end(connection: 1)
+    hub.drain()
+    XCTAssertEqual(renderer.last?.attachment.level, 0, "behind another app")
+    world.workspace.post(name: NSWorkspace.didDeactivateApplicationNotification, object: nil)
+    world.workspace.post(name: NSWorkspace.didActivateApplicationNotification, object: nil,
+                         userInfo: [NSWorkspace.applicationUserInfoKey: target])
+    hub.drain()
+    let commit = try XCTUnwrap(renderer.last)
+    XCTAssertEqual(commit.attachment.level, 102, "raised at the notification, with no check tick")
+    XCTAssertTrue(commit.shown)
+    world.clock.t += 0.06
+    hub.act(connection: 1, app: app, window: 20, .scroll(CGPoint(x: 460, y: 310)))
+    hub.drain()
+    XCTAssertEqual(renderer.last?.attachment.level, 102)
+  }
+
+  func testTheFrontmostAppIsTheOneTheLastActivationNamed() throws {
+    let app = try XCTUnwrap(launchedApp(), "a running app to name")
+    let center = NotificationCenter()
+    let front = FrontmostApp(center: center, initial: 500)
+    XCTAssertEqual(front.pid, 500)
+    center.post(name: NSWorkspace.didActivateApplicationNotification, object: nil, userInfo: [:])
+    XCTAssertEqual(front.pid, 500, "a notification naming no app changes nothing")
+    center.post(name: NSWorkspace.didActivateApplicationNotification, object: nil, userInfo: [NSWorkspace.applicationUserInfoKey: app])
+    XCTAssertEqual(front.pid, app.processIdentifier)
+  }
+
+  /// An app LaunchServices knows (the test process itself has no pid there); only its identity is used, nothing is sent.
+  private func launchedApp() -> NSRunningApplication? {
+    NSWorkspace.shared.runningApplications.first { $0.processIdentifier > 0 && $0.processIdentifier != 500 && $0.processIdentifier != 600 }
+  }
+
   func testASpaceChangeHidesTheCursorAndChangingBackShowsIt() throws {
     let world = World(), renderer = RecordingRenderer()
     let hub = hub(world, renderer)

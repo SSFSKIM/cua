@@ -839,4 +839,4 @@ Not in that run, and open:
 - Coordinate click and drag: undetermined at 40, a declared gap for the owner.
 - press_key: the decision waits on the next run; then the design note's two candidates.
 - Item 5's recording clause: no verdict. The next run records no clip.
-- Keep or restore: asked asynchronously, still unanswered. The saved engine stays at `$SAVED`.
+- Keep or restore: the owner chose to keep this branch's build (answered 2026-10-31, after the sitting). The next run replaces it with the scratch build `3cdf06462f92`, which then stays installed. The saved engine stays at `$SAVED`.

@@ -239,7 +239,8 @@ and dry-runs `timing typing` and `timing clicks` against `$OUT2`.
    approved: `$S verdict 3 look pass|fail "<the owner's words>" --out "$OUT2"`.
 3. **Item 13, click speed.** `$S timing clicks --run "$RUN" --out "$OUT2"` (20 samples a side). An undetermined series
    is run again with `--samples 40`; coordinate click and drag were undetermined at 20 on the first build, so expect
-   it.
+   it. The 40-sample run's verdict counts for every kind it covers, including one already passed at 20: never keep the
+   better of the two. `judge` reads only an item's last attempt, so it does this by itself.
 4. **Item 12, typing speed.** `$S timing typing --run "$RUN" --out "$OUT2"`, judged and topped up the same way.
 5. **The `legacyLayers` arm, recorded.** `$S timing clicks --arm legacyLayers …` and `$S timing typing --arm
    legacyLayers …` on the same scenes, into `$OUT2`. The arm restores the first build's layers. If the old cost comes

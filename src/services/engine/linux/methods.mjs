@@ -20,8 +20,8 @@
 // validates, it refuses with its own sentence.
 import {readFile} from 'node:fs/promises';
 
-// What a missing capability stops, in the refusal's words.
-const CANNOT = {
+// What a missing capability stops, in the refusal's words (cua doctor's engine row names them too).
+export const CANNOT = {
   'input.background': 'send input to a window in the background',
   'input.desktop': 'send input to the desktop',
   'text.paste': 'paste text',

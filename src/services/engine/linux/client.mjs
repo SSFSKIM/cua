@@ -40,9 +40,9 @@ export function isOlder(found, wanted) {
 const bounded = text => (text.length > 200 ? `${text.slice(0, 200)}…` : text);
 
 // Resolves once the engine at `path` is new enough; rejects with the sentence that says why not.
-function checkVersion(path, timeoutMs) {
+function checkVersion(path, timeoutMs, env) {
   return new Promise((resolve, reject) => {
-    execFile(path, ['--version'], {timeout: timeoutMs}, (error, stdout) => {
+    execFile(path, ['--version'], {timeout: timeoutMs, env}, (error, stdout) => {
       if (error) return reject(new Error(`cua-engine at ${path} could not be run (${error.code ?? error.signal ?? error.message}); ${REMEDY}`));
       const line = stdout.split('\n')[0].trim();
       const found = engineVersionOf(line);
@@ -53,8 +53,8 @@ function checkVersion(path, timeoutMs) {
   });
 }
 
-// `path` the engine; `desktop` the device mode it is started in.
-export function createEngineClient({path, desktop = 'shared', versionTimeoutMs = VERSION_TIMEOUT_MS}) {
+// `path` the engine; `desktop` the device mode it is started in; `env` its environment (this process's when absent).
+export function createEngineClient({path, desktop = 'shared', env, versionTimeoutMs = VERSION_TIMEOUT_MS}) {
   let child = null;
   let starting = null;
   // Each process's capability report, so a request is judged by the report of the process it is sent to.
@@ -97,7 +97,7 @@ export function createEngineClient({path, desktop = 'shared', versionTimeoutMs =
   }
 
   function launch() {
-    const proc = spawn(path, ['server', '--desktop', desktop], {stdio: ['pipe', 'pipe', 'pipe']});
+    const proc = spawn(path, ['server', '--desktop', desktop], {env, stdio: ['pipe', 'pipe', 'pipe']});
     for (const stream of [proc.stdin, proc.stdout, proc.stderr]) stream.unref?.();
     proc.stdin.on('error', error => retire(proc, error));
     proc.stdout.setEncoding('utf8');
@@ -135,7 +135,7 @@ export function createEngineClient({path, desktop = 'shared', versionTimeoutMs =
     if (starting) return starting;
     if (child) return Promise.resolve(child);
     starting = (async () => {
-      await checkVersion(path, versionTimeoutMs);
+      await checkVersion(path, versionTimeoutMs, env);
       const proc = launch();
       child = proc;
       try {

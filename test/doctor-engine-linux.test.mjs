@@ -8,7 +8,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdirSync, realpathSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {engineCheck} from '../src/runtime/doctor-engine.mjs';
+import {defaultReadLinuxCapabilities, engineCheck} from '../src/runtime/doctor-engine.mjs';
+import {fakeLinuxEngine} from './helpers/fake-linux-engine.mjs';
 import {inspectRuntime} from '../src/runtime/doctor.mjs';
 import {replHostFor} from '../src/runtime/launch.mjs';
 import {CuaError} from '../src/runtime/errors.mjs';
@@ -22,30 +23,98 @@ const PINNED = {version: '0.1.0', release: 'linux-engine-v0.1.0', sha256: SHA};
 const facts = over => ({path: PATH, exists: true, executable: true, sha256: SHA, build: 'pinned', version: '0.1.0', release: 'linux-engine-v0.1.0', pinned: PINNED, current: true, ...over});
 const NONE = facts({exists: false, executable: false, sha256: null, build: null, version: null, release: null, current: false});
 
+// The X11 backend's capability report (Design, "The capability report"), as cua-engine answers it in `desktop` mode.
+const CAPS = (desktop = 'shared', over = {}) => ({backend: 'x11', tree: 'at_spi', input: {background: true, desktop: true}, capture: {window: 'retained', desktop: true},
+  text: {paste: 'verified', literal: true}, desktop, version: '0.3.0', build: 'b1d0', ...over});
+const CAPS_WORDS = mode => `capabilities, from cua-engine started for this check and stopped: backend x11, tree at_spi, input.background true, input.desktop true, `
+  + `capture.window retained, capture.desktop true, text.paste verified, text.literal true, desktop ${mode}, version 0.3.0, build b1d0`;
+
 // The row for `env` on Linux, with the selection computed as doctor computes it (replHostFor with the same inputs).
-async function row(env = {}, {read = facts(), config = {}, defaultEngine = 'vendor', installed} = {}) {
-  const fullEnv = {HOME: '/nonexistent-home', CUA_SHIM_SURFACES: 'computer,browser', ...env};
+// `capabilities` answers the engine's capability read (a report, or an Error it throws); every read is recorded.
+async function row(env = {}, {read = facts(), config = {}, defaultEngine = 'vendor', installed, capabilities = ({desktop}) => CAPS(desktop)} = {}) {
+  const fullEnv = {HOME: '/nonexistent-home', CUA_SHIM_SURFACES: 'computer,browser', DISPLAY: ':9', ...env};
   const engine = {defaultEngine, config: () => config, installed: () => (installed ?? read.executable) ? {path: read.path} : null};
   let session;
   try { session = replHostFor({platform: 'linux', surfaces: surfacesFrom(fullEnv.CUA_SHIM_SURFACES), ambient: fullEnv, home: HOME, resolveOwnNode: () => '/usr/bin/node', engine}); } catch (error) {
     if (!(error instanceof CuaError)) throw error;
     session = {code: error.code, message: error.message};
   }
-  const reads = [];
-  const result = await engineCheck({env: fullEnv, platform: 'linux', arch: 'x64', home: HOME, session, engine, inspectLinux: options => { reads.push(options); return read; }});
-  return {...result, reads};
+  const reads = [], started = [];
+  const readCapabilities = async options => {
+    started.push(options);
+    const answer = capabilities(options);
+    if (answer instanceof Error) throw answer;
+    return answer;
+  };
+  const result = await engineCheck({env: fullEnv, platform: 'linux', arch: 'x64', home: HOME, session, engine, inspectLinux: options => { reads.push(options); return read; }, readCapabilities});
+  return {...result, reads, started};
 }
 
-test('cua\'s engine selected and the pinned one installed: pass, with its version, release, hash and the device mode', async () => {
-  const {row: check, report, reads} = await row({CUA_NATIVE_ENGINE: 'cua'});
+test('cua\'s engine selected and the pinned one installed: pass, with its version, release, hash, service cua, the device mode and the capabilities', async () => {
+  const {row: check, report, reads, started} = await row({CUA_NATIVE_ENGINE: 'cua'});
   assert.equal(check.name, 'engine');
   assert.equal(check.status, 'pass', check.detail);
   assert.equal(check.detail, `cua's engine is selected (CUA_NATIVE_ENGINE=cua): sessions here run the pinned cua-engine 0.1.0 (linux-engine-v0.1.0) at ${PATH}, SHA-256 ${SHA}, `
-    + 'behind the vendor\'s service until cua\'s own; device mode shared (the default: CUA_DESKTOP_MODE=dedicated, or "desktop": "dedicated" in ~/.config/cua/engine.json, gives the agent the desktop)');
+    + 'behind service cua (cua\'s own Linux service); device mode shared (the default: CUA_DESKTOP_MODE=dedicated, or "desktop": "dedicated" in ~/.config/cua/engine.json, gives the agent the desktop); '
+    + CAPS_WORDS('shared'));
   assert.deepEqual(reads, [{home: HOME, arch: 'x64'}]);
-  assert.deepEqual(report, {selected: 'cua', reason: 'explicit', refused: null, preferred: {engine: 'cua', reason: 'explicit'}, runs: {path: PATH, source: 'installed'},
+  assert.equal(started.length, 1, 'the engine is started once, for its report');
+  assert.deepEqual([started[0].path, started[0].desktop, started[0].env.DISPLAY], [PATH, 'shared', ':9']);
+  assert.deepEqual(report, {selected: 'cua', reason: 'explicit', refused: null, preferred: {engine: 'cua', reason: 'explicit'}, service: 'cua', runs: {path: PATH, source: 'installed'},
     installed: {path: PATH, exists: true, executable: true, sha256: SHA, version: '0.1.0', build: 'pinned', release: 'linux-engine-v0.1.0', current: true},
-    pinned: PINNED, desktop: {mode: 'shared', reason: 'default'}});
+    pinned: PINNED, desktop: {mode: 'shared', reason: 'default'}, capabilities: CAPS('shared'), capabilitiesUnread: null});
+});
+
+// The capability report (Design, "The capability report"; Doctor): doctor starts the engine sessions here would run, in
+// the device mode they would run it in, with the session's display and bus, reads `capabilities`, and stops it. It
+// starts nothing without a display, and nothing it does not recognize.
+test('the capability report: read in the resolved device mode, from the session\'s display and bus, and printed', async () => {
+  const dedicated = await row({CUA_NATIVE_ENGINE: 'cua', CUA_DESKTOP_MODE: 'dedicated', XAUTHORITY: '/home/u/.Xauthority', XDG_RUNTIME_DIR: '/run/user/7', SECRET_TOKEN: 'x'});
+  assert.equal(dedicated.row.status, 'pass', dedicated.row.detail);
+  assert.ok(dedicated.row.detail.endsWith(`; device mode dedicated (CUA_DESKTOP_MODE=dedicated); ${CAPS_WORDS('dedicated')}`), dedicated.row.detail);
+  const [{desktop, env}] = dedicated.started;
+  assert.equal(desktop, 'dedicated');
+  assert.deepEqual(env, {DISPLAY: ':9', XAUTHORITY: '/home/u/.Xauthority', XDG_RUNTIME_DIR: '/run/user/7', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/7/bus', HOME: '/nonexistent-home'},
+    'the desktop session the launch hands a session, and nothing else of doctor\'s environment');
+  // A capability the backend lacks is named with what it stops (the service refuses those methods).
+  const lacking = await row({CUA_NATIVE_ENGINE: 'cua'}, {capabilities: ({desktop: mode}) => CAPS(mode, {backend: 'wayland', input: {background: false, desktop: true}, capture: {window: 'portal', desktop: true}})});
+  assert.equal(lacking.row.status, 'warn');
+  assert.match(lacking.row.detail, /backend wayland, .*input\.background false, .*capture\.window portal, .*; it reports no input\.background capability, so sessions here cannot send input to a window in the background$/);
+});
+
+test('no X display: the engine is not started, its capability report unread, the display row named', async () => {
+  const unset = await row({CUA_NATIVE_ENGINE: 'cua', DISPLAY: undefined});
+  assert.equal(unset.started.length, 0);
+  assert.equal(unset.row.status, 'warn');
+  assert.match(unset.row.detail, /; its capability report is unread: no X display is reachable here \(DISPLAY is not set; see display\), and cua-engine starts only on one$/);
+  assert.deepEqual([unset.report.capabilities, unset.report.capabilitiesUnread], [null, 'DISPLAY is not set']);
+  // A display that refuses the engine is the same case, in the engine's words.
+  const refused = await row({CUA_NATIVE_ENGINE: 'cua'}, {capabilities: () => new Error('cua-engine stopped (exit=1): Error failed to connect to the X server: Connection refused (os error 111)')});
+  assert.equal(refused.started.length, 1);
+  assert.equal(refused.row.status, 'warn');
+  assert.match(refused.row.detail, /; its capability report is unread: no X display is reachable here \(cua-engine stopped \(exit=1\): Error failed to connect to the X server: Connection refused \(os error 111\); see display\), and cua-engine starts only on one$/);
+});
+
+test('an engine sessions would refuse, or one that fails its report, fails the row with its own sentence', async () => {
+  const old = await row({CUA_NATIVE_ENGINE: 'cua'}, {capabilities: () => new Error('cua-engine 0.2.0 is older than 0.3.0, which this cua needs; run cua install --engine')});
+  assert.equal(old.row.status, 'fail');
+  assert.match(old.row.detail, /; its capability report could not be read, and sessions here fail the same way: cua-engine 0\.2\.0 is older than 0\.3\.0, which this cua needs; run cua install --engine$/);
+  assert.equal(old.report.capabilitiesUnread, 'cua-engine 0.2.0 is older than 0.3.0, which this cua needs; run cua install --engine');
+  const crashed = await row({CUA_NATIVE_ENGINE: 'cua'}, {capabilities: () => new Error('cua-engine stopped (signal=SIGSEGV)')});
+  assert.equal(crashed.row.status, 'fail');
+});
+
+test('what doctor does not start: a file it does not recognize, an invalid device mode, the vendor engine', async () => {
+  const unknown = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({build: 'unknown', version: null, release: null, sha256: 'd'.repeat(64), current: false})});
+  assert.equal(unknown.started.length, 0);
+  assert.equal(unknown.row.status, 'fail');
+  assert.match(unknown.row.detail, /; its capability report is unread: doctor does not start a file it does not recognize$/);
+  const invalid = await row({CUA_NATIVE_ENGINE: 'cua', CUA_DESKTOP_MODE: 'mine'});
+  assert.equal(invalid.started.length, 0);
+  const vendor = await row({});
+  assert.equal(vendor.started.length, 0);
+  assert.equal(vendor.report.service, 'vendor');
+  assert.match(vendor.row.detail, /the vendor's sky_linux helper behind the vendor's service/);
 });
 
 test('an engine that is not this cua\'s pinned one is flagged: a local build or an older release warns, an unknown file fails', async () => {
@@ -73,14 +142,14 @@ test('CUA_LINUX_ENGINE_BIN is named as what sessions run, a harness setting, bes
   const {row: check, report} = await row({CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built});
   assert.equal(check.status, 'warn');
   assert.ok(check.detail.startsWith(`cua's engine is selected (CUA_NATIVE_ENGINE=cua): sessions here run ${built}, which CUA_LINUX_ENGINE_BIN names in place of the installed engine `
-    + '(a harness setting), behind the vendor\'s service until cua\'s own; installed: the pinned cua-engine 0.1.0'), check.detail);
+    + '(a harness setting), behind service cua (cua\'s own Linux service); installed: the pinned cua-engine 0.1.0'), check.detail);
   assert.deepEqual(report.runs, {path: built, source: 'override'});
   assert.equal(report.installed.path, PATH, 'what the home holds, apart from what runs');
 });
 
 test('the device mode set in either place is reported; an invalid one fails the row', async () => {
-  assert.match((await row({CUA_NATIVE_ENGINE: 'cua', CUA_DESKTOP_MODE: 'dedicated'})).row.detail, /; device mode dedicated \(CUA_DESKTOP_MODE=dedicated\)$/);
-  assert.match((await row({CUA_NATIVE_ENGINE: 'cua'}, {config: {desktop: 'dedicated'}})).row.detail, /; device mode dedicated \("desktop": "dedicated" in ~\/\.config\/cua\/engine\.json\)$/);
+  assert.match((await row({CUA_NATIVE_ENGINE: 'cua', CUA_DESKTOP_MODE: 'dedicated'})).row.detail, /; device mode dedicated \(CUA_DESKTOP_MODE=dedicated\); capabilities, /);
+  assert.match((await row({CUA_NATIVE_ENGINE: 'cua'}, {config: {desktop: 'dedicated'}})).row.detail, /; device mode dedicated \("desktop": "dedicated" in ~\/\.config\/cua\/engine\.json\); capabilities, /);
   const invalid = await row({CUA_NATIVE_ENGINE: 'cua', CUA_DESKTOP_MODE: 'mine'});
   assert.equal(invalid.row.status, 'fail');
   assert.match(invalid.row.detail, /; CUA_DESKTOP_MODE must be shared or dedicated$/);
@@ -90,7 +159,7 @@ test('the device mode set in either place is reported; an invalid one fails the 
 test('the vendor engine preferred: skip, saying how to select cua\'s and what this home holds', async () => {
   const {row: check, report, reads} = await row({}, {read: NONE});
   assert.equal(check.status, 'skip');
-  assert.equal(check.detail, 'cua\'s engine is not selected: the default engine is the vendor\'s, so Linux computer sessions use the vendor\'s sky_linux helper. '
+  assert.equal(check.detail, 'cua\'s engine is not selected: the default engine is the vendor\'s, so Linux computer sessions use the vendor\'s sky_linux helper behind the vendor\'s service. '
     + `CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ~/.config/cua/engine.json, selects cua's own: no engine is installed in this cua home (${PATH}): cua install --engine installs the pinned cua-engine 0.1.0 (linux-engine-v0.1.0)`);
   assert.equal(reads.length, 1);
   assert.deepEqual([report.selected, report.preferred, report.runs, report.installed.exists], ['vendor', {engine: 'vendor', reason: 'default'}, null, false]);
@@ -128,7 +197,7 @@ test('doctor on Linux reports the placed engine through its own inspection, and 
   const stubs = {inspectHelper: async () => ({socket: '/x', holders: []}), inspectSecrets: async () => ({dir: '/none', exists: false}), inspectAgent: async () => [],
     inspectChrome: async () => [], inspectLinux: async () => [], verifySignatures: async () => [], linuxHelper: () => ({path: '/h', sha256: SHA})};
   const report = await inspectRuntime({home, host: {platform: 'linux', arch: 'x64'}, env: {CUA_NATIVE_ENGINE: 'cua', CUA_SHIM_SURFACES: 'computer'}, resolveOwnNode: () => '/usr/bin/node',
-    engine: {config: () => ({})}, ...stubs});
+    engine: {config: () => ({})}, readLinuxCapabilities: () => assert.fail('not started without a display'), ...stubs});
   const engine = report.checks.find(c => c.name === 'engine');
   assert.notEqual(engine.status, 'skip', engine.detail);
   assert.deepEqual(report.engine.runs, {path: join(home, 'engine', 'linux', 'cua-engine'), source: 'installed'});
@@ -138,3 +207,31 @@ test('doctor on Linux reports the placed engine through its own inspection, and 
   assert.match(host.detail, /^cua host \(linux\) on Node \/usr\/bin\/node: /);
   assert.doesNotMatch(host.detail, /native engine/);
 });
+
+// The default read is the service's own start (src/services/engine/linux/client.mjs): the version check, then
+// `server --desktop <mode>` and `capabilities` as the first request; the engine is stopped once it has answered.
+test('the default capability read starts the engine as a session does, reads its report and stops it', async t => {
+  const engine = fakeLinuxEngine(t);
+  const caps = await defaultReadLinuxCapabilities({path: engine.path, desktop: 'dedicated', env: {HOME: '/nonexistent-home'}});
+  assert.deepEqual([caps.backend, caps.desktop, caps.build], ['x11', 'dedicated', 'fake']);
+  assert.deepEqual(engine.spawns().map(s => s.args), [['server', '--desktop', 'dedicated']]);
+  assert.deepEqual(engine.requests().map(r => r.command), ['capabilities']);
+  await waitGone(engine.spawns()[0].pid);
+  // An engine older than the service needs is refused before anything is spawned, with the service's sentence.
+  engine.setVersion('cua-engine 0.2.0 (old)');
+  await assert.rejects(defaultReadLinuxCapabilities({path: engine.path, desktop: 'shared', env: {}}), {message: /^cua-engine 0\.2\.0 is older than 0\.3\.0, which this cua needs; run cua install --engine$/});
+  assert.equal(engine.spawns().length, 1);
+  // An engine that never answers is stopped at the deadline.
+  engine.setVersion('cua-engine 0.3.0 (fake0000)');
+  engine.behave('export function answer() { return new Promise(() => {}); }');
+  await assert.rejects(defaultReadLinuxCapabilities({path: engine.path, desktop: 'shared', env: {}, timeoutMs: 300}), {message: /^cua-engine did not answer capabilities within 0\.3 s$/});
+  await waitGone(engine.spawns()[1].pid);
+});
+
+async function waitGone(pid) {
+  for (let i = 0; i < 100; i++) {
+    try { process.kill(pid, 0); } catch { return; }
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.fail(`engine ${pid} still runs`);
+}

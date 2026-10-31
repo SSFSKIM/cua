@@ -95,8 +95,12 @@ export function rejudgeEvents(rows, run) {
       return { ...x, round: x.round ?? first + k };
     });
   };
-  const blockRows = mine
-    .filter((r) => r.kind === 'events-blocks')
+  const recordedBlocks = mine.filter((r) => r.kind === 'events-blocks');
+  // a run recorded before requests carried their step has no request key to count rounds by
+  if (recordedBlocks.some((b) => Object.values(b.records).flat().some((x) => x.round === undefined && x.step === undefined))) {
+    return { rounds: null, groups: [], refused: 'its block rows carry neither round nor step, so their rounds cannot be recovered' };
+  }
+  const blockRows = recordedBlocks
     .map((b) => ({ ...b, records: Object.fromEntries(Object.entries(b.records).map(([label, list]) => [label, withRounds(list, b.first_round ?? 0)])) }));
   const upTo = (limit) =>
     blockRows.map((b) => {

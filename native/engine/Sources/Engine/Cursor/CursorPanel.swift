@@ -339,27 +339,15 @@ private final class CursorOverlay {
     }
     cursor.setFrameOrigin(NSPoint(x: last.position.x - side / 2, y: last.position.y - side / 2))
     layoutPill(tip: last.position)
-    heading.transform = headingTransform(last)
-    haloLayer.transform = swellTransform(last.swell, haloLayer)
-    for (layer, key) in [(cursorLayer, "glide"), (heading, "heading"), (haloLayer, "swell")] { layer.removeAnimation(forKey: key) }
+    heading.transform = cursorHeadingTransform(last)
+    haloLayer.transform = cursorSwellTransform(last.swell, side: CursorHalo.side, anchor: haloLayer.anchorPoint)
+    for (layer, key) in [(cursorLayer, "glide"), (heading, "heading"), (haloLayer, "swell")] { CursorKeyframes.remove(key, from: layer) }
     if samples.count > 1 {
-      let duration = motion.trajectory.duration
+      let step = motion.trajectory.step, duration = motion.trajectory.duration
       func keyframes(_ keyPath: String, _ values: [NSValue], on layer: CALayer, key: String) {
-        // Under the arm's cap, only the part of the values that changes (changingSpan): a held value undoes the cap.
-        var span = 0...(values.count - 1)
-        if frameRate != nil {
-          guard let changing = changingSpan(values) else { return }
-          span = changing
-        }
-        let step = motion.trajectory.step
-        let animation = CAKeyframeAnimation(keyPath: keyPath)
-        animation.values = Array(values[span])
-        animation.duration = Double(span.count - 1) * step
-        animation.calculationMode = .linear
-        animation.beginTime = layerTime(motion.beginTime + Double(span.lowerBound) * step, layer)
-        animation.fillMode = .backwards
-        animation.preferredFrameRateRange = frameRate ?? CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
-        layer.add(animation, forKey: key)
+        // Under the arm's cap, one animation per run of changing values (changingRuns): a held value undoes the cap.
+        let animations = CursorKeyframes.animations(keyPath, values, step: step, begin: layerTime(motion.beginTime, layer), frameRate: frameRate)
+        CursorKeyframes.install(animations, on: layer, key: key)
       }
       // The motion's span on `log show`'s clock, for counting the window server's frames during it (the kit's frames.mjs).
       let begin = continuousTicks(host: motion.beginTime), end = continuousTicks(host: motion.beginTime + duration)
@@ -367,29 +355,13 @@ private final class CursorOverlay {
       timingSignposts.emitEvent("cursor.motion", "begin=\(begin) end=\(end) ms=\(duration * 1000, format: .fixed(precision: 1)) mode=\(mode, privacy: .public)")
       keyframes("position", samples.map { layerPosition($0.position) }, on: cursorLayer, key: "glide")
       if !reduceMotion {
-        keyframes("transform", samples.map { NSValue(caTransform3D: headingTransform($0)) }, on: heading, key: "heading")
-        keyframes("transform", samples.map { NSValue(caTransform3D: swellTransform($0.swell, haloLayer)) }, on: haloLayer, key: "swell")
+        keyframes("transform", samples.map { NSValue(caTransform3D: cursorHeadingTransform($0)) }, on: heading, key: "heading")
+        keyframes("transform", samples.map { NSValue(caTransform3D: cursorSwellTransform($0.swell, side: CursorHalo.side, anchor: haloLayer.anchorPoint)) },
+                  on: haloLayer, key: "swell")
       }
     }
     // A new motion cancels the old one's unplayed dips, with or without dips of its own.
     CursorDips.schedule(motion.dips, on: press, reduceMotion: reduceMotion, frameRate: frameRate)
-  }
-
-  /// The heading (clockwise on screen, so negative in the panel's y-up layers) and the stretch along the travel axis.
-  private func headingTransform(_ s: CursorState) -> CATransform3D {
-    var t = CATransform3DMakeRotation(s.axis, 0, 0, 1)
-    t = CATransform3DScale(t, s.stretch, s.squash, 1)
-    t = CATransform3DRotate(t, -s.axis, 0, 0, 1)
-    return CATransform3DConcat(t, CATransform3DMakeRotation(-s.angle, 0, 0, 1))
-  }
-
-  /// The halo's swell, about its centre whatever the view layer's anchor.
-  private func swellTransform(_ swell: CGFloat, _ layer: CALayer) -> CATransform3D {
-    let side = CursorHalo.side
-    let c = CGPoint(x: side / 2 - layer.anchorPoint.x * side, y: side / 2 - layer.anchorPoint.y * side)
-    var t = CATransform3DMakeTranslation(c.x, c.y, 0)
-    t = CATransform3DScale(t, swell, swell, 1)
-    return CATransform3DTranslate(t, -c.x, -c.y, 0)
   }
 
   // MARK: States
@@ -432,7 +404,7 @@ private final class CursorOverlay {
       for layer in [rock, press, heading] { layer.removeAllAnimations() }
       if debug != .legacyLayers { rock.filters = nil }
       haloHost.layer?.removeAllAnimations()
-      cursorLayer.removeAnimation(forKey: "glide")
+      CursorKeyframes.remove("glide", from: cursorLayer)
     }
     phase = commit.phase
     shown = nowShown
@@ -441,24 +413,10 @@ private final class CursorOverlay {
   /// A fade in or out over 0.44 s, ease-in-out, with the arrow blurring out (7) or in (0): the blur filter is installed for
   /// the fade and removed when it has run (the sitting's layers keep it installed).
   private func fade(_ layer: CALayer, from: Float, to: Float, at host: TimeInterval, blurTo: CGFloat) {
-    let animation = CABasicAnimation(keyPath: "opacity")
-    animation.fromValue = from
-    animation.toValue = to
-    animation.duration = CursorLifecycle.fadeSeconds
-    animation.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-    animation.beginTime = layerTime(host, layer)
-    animation.fillMode = .backwards
+    let (animation, blur) = CursorFade.animations(from: from, to: to, blurTo: blurTo, opacityBegin: layerTime(host, layer),
+                                                  blurBegin: layerTime(host, rock), frameRate: frameRate)
     layer.opacity = to
-    if let frameRate { animation.preferredFrameRateRange = frameRate }
     layer.add(animation, forKey: "opacity")
-    let blur = CABasicAnimation(keyPath: "filters.blur.inputRadius")
-    blur.fromValue = blurTo == 0 ? 7 : 0
-    blur.toValue = blurTo
-    blur.duration = CursorLifecycle.fadeSeconds
-    blur.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-    blur.beginTime = layerTime(host, rock)
-    blur.fillMode = .backwards
-    if let frameRate { blur.preferredFrameRateRange = frameRate }
     if debug != .legacyLayers {
       if rock.filters?.isEmpty ?? true { rock.filters = arrowBlur().map { [$0] } }
       blurringFade += 1

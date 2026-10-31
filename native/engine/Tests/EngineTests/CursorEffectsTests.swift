@@ -74,20 +74,45 @@ final class CursorEffectsTests: XCTestCase {
     }
   }
 
-  // Under the arm a keyframe animation runs over the part of its values that changes: a held value from one frame to the
-  // next takes the window server back to the display's full rate (measured, #235's task-8 report).
-  func testTheChangingSpanLeavesOutTheLeadingAndTrailingHeldValues() {
+  // Under the arm a keyframe animation runs as one animation per run of changing values: a held value from one frame to
+  // the next takes the window server back to the display's full rate (measured, #235's task-8 report).
+  func testTheChangingRunsArePartedByEveryHold() {
     let v = { (xs: [Double]) in xs.map { NSValue(point: NSPoint(x: $0, y: 0)) } }
-    XCTAssertEqual(changingSpan(v([0, 1, 2, 3])), 0...3)
-    XCTAssertEqual(changingSpan(v([0, 1, 2, 2, 2])), 0...2, "the settled tail: held from the third sample on")
-    XCTAssertEqual(changingSpan(v([5, 5, 5, 6, 7])), 2...4, "a heading held along a straight path, then blended back")
-    XCTAssertEqual(changingSpan(v([5, 5, 6, 6])), 1...2)
-    XCTAssertEqual(changingSpan(v([1, 2, 2, 3])), 0...3, "a hold inside the span stays")
-    XCTAssertNil(changingSpan(v([4, 4, 4])), "never changes: nothing to animate")
-    XCTAssertNil(changingSpan(v([4])))
-    XCTAssertNil(changingSpan([]))
+    XCTAssertEqual(changingRuns(v([0, 1, 2, 3])), [0...3])
+    XCTAssertEqual(changingRuns(v([0, 1, 2, 2, 2])), [0...2], "the settled tail: held from the third sample on")
+    XCTAssertEqual(changingRuns(v([5, 5, 5, 6, 7])), [2...4], "a heading held along a straight path, then blended back")
+    XCTAssertEqual(changingRuns(v([0, 1, 2, 2, 2, 3, 4])), [0...2, 4...6], "a drag: the glide settles, then the trace")
+    XCTAssertEqual(changingRuns(v([1, 2, 2, 3])), [0...1, 2...3], "a one-step hold parts them too")
+    XCTAssertEqual(changingRuns(v([4, 4, 4])), [], "never changes: nothing to animate")
+    XCTAssertEqual(changingRuns(v([4])), [])
+    XCTAssertEqual(changingRuns([]), [])
     let t = { (a: CGFloat) in NSValue(caTransform3D: CATransform3DMakeRotation(a, 0, 0, 1)) }
-    XCTAssertEqual(changingSpan([t(0.1), t(0.2), t(0.2)]), 0...1)
+    XCTAssertEqual(changingRuns([t(0.1), t(0.2), t(0.2)]), [0...1])
+  }
+
+  func testTheArmsKeyframesKeepEveryRunAtItsOwnTimeAndTheDefaultsAreOneAnimation() {
+    let v = [0, 1, 2, 2, 2, 3, 4, 4].map { NSValue(point: NSPoint(x: $0, y: 0)) }
+    let step = 0.01
+    let plain = CursorKeyframes.animations("position", v, step: step, begin: 100, frameRate: nil)
+    XCTAssertEqual(plain.count, 1)
+    XCTAssertEqual(plain[0].beginTime, 100)
+    XCTAssertEqual(plain[0].duration, 0.07, accuracy: 1e-12)
+    XCTAssertEqual(plain[0].preferredFrameRateRange, CursorKeyframes.defaultFrameRate)
+    let capped = CursorKeyframes.animations("position", v, step: step, begin: 100, frameRate: CursorDebug.fps60.animationFrameRate)
+    let close = { (a: [Double], b: [Double]) in a.count == b.count && zip(a, b).allSatisfy { abs($0 - $1) < 1e-12 } }
+    XCTAssertTrue(close(capped.map(\.beginTime), [100, 100.04]), "\(capped.map(\.beginTime))")
+    XCTAssertTrue(close(capped.map(\.duration), [0.02, 0.02]), "\(capped.map(\.duration))")
+    XCTAssertEqual(capped.map { ($0.values as? [NSValue])?.map(\.pointValue.x) ?? [] }, [[0, 1, 2], [2, 3, 4]])
+    // The latest-begun animation wins in Core Animation, so only the first fills backwards; each holds its end after.
+    XCTAssertEqual(capped.map(\.fillMode), [.both, .forwards])
+    XCTAssertTrue(capped.allSatisfy { !$0.isRemovedOnCompletion && $0.preferredFrameRateRange == CursorDebug.fps60.animationFrameRate })
+    XCTAssertEqual(plain[0].fillMode, .backwards)
+    XCTAssertTrue(plain[0].isRemovedOnCompletion, "the default's animation is as it always was")
+    let layer = CALayer()
+    CursorKeyframes.install(capped, on: layer, key: "glide")
+    XCTAssertEqual(Set(layer.animationKeys() ?? []), ["glide", "glide#1"])
+    CursorKeyframes.install(plain, on: layer, key: "glide")
+    XCTAssertEqual(layer.animationKeys() ?? [], ["glide"], "a new motion replaces every run of the old one")
   }
 }
 

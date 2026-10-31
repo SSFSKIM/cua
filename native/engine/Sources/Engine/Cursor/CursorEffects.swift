@@ -10,23 +10,122 @@ extension CursorDebug {
   /// `fps60`'s 30–60 Hz, preferring 60: measured on the MacBook's 120 Hz ProMotion display (macOS 26.6.2), WindowServer
   /// then composites a glide at about 60 frames a second where the default composites about 120, as long as nothing
   /// else on the display asks for more (the rate is the display's: any 120 Hz animation on it takes the glide to 120
-  /// again) and no capped animation holds a value from one frame to the next (`changingSpan`; #235's task-8 report).
+  /// again) and no capped animation holds a value from one frame to the next (`changingRuns`; #235's task-8 report).
   var animationFrameRate: CAFrameRateRange? {
     self == .fps60 ? CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60) : nil
   }
 }
 
-/// The indices of `values`, a keyframe animation's evenly spaced values, from the last of its leading equal values to the
-/// first of its trailing equal values: the part that changes. Nil when no value differs from the first. Under a capped
-/// frame rate an animation runs over this part only, because while any capped animation holds its value WindowServer
-/// composites at the display's full rate (measured on the MacBook, macOS 26.6.2: a glide's settled tail took the
-/// capped 60 Hz back to 120), and a glide's position and heading hold after the tip settles, a heading all along a
-/// straight path.
-func changingSpan(_ values: [NSValue]) -> ClosedRange<Int>? {
-  guard let first = values.first, let last = values.last,
-        let changes = values.firstIndex(where: { !$0.isEqual(first) }) else { return nil }
-  let settles = values.lastIndex(where: { !$0.isEqual(last) })! + 1
-  return (changes - 1)...settles
+/// The runs of `values`, a keyframe animation's evenly spaced values, over which they change: each a range of indices
+/// whose every step to the next value changes it, the runs parted by the holds between them (one equal step or more).
+/// Empty when no value differs from the next. Under a capped frame rate an animation runs as one keyframe animation per
+/// run, because while any capped animation holds its value WindowServer composites at the display's full rate
+/// (measured on the MacBook, macOS 26.6.2: a glide's settled tail took the capped 60 Hz back to 120), and a glide's
+/// position and heading hold after the tip settles, a heading all along a straight path, a drag's position between its
+/// glide's settle and its trace. An animation waiting to begin or ended, filling the hold, costs no frames (measured
+/// likewise).
+func changingRuns(_ values: [NSValue]) -> [ClosedRange<Int>] {
+  var runs: [ClosedRange<Int>] = []
+  var start: Int?
+  for i in values.indices.dropLast() {
+    if values[i].isEqual(values[i + 1]) {
+      if let from = start { runs.append(from...i); start = nil }
+    } else if start == nil {
+      start = i
+    }
+  }
+  if let from = start { runs.append(from...(values.count - 1)) }
+  return runs
+}
+
+/// A motion's keyframe animations on one of the cursor's layers (the spec's Rendering: the trajectory installed as
+/// keyframes, played by the render server).
+enum CursorKeyframes {
+  /// The default glide's range: up to the display's 120 Hz on ProMotion.
+  static let defaultFrameRate = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+
+  /// `values`, one every `step` from `begin` (the layer's time), as keyframe animations. With no `frameRate` (no arm), one
+  /// animation over them all, as the default always drew. With one (the fps60 arm), one animation per changing run
+  /// (changingRuns), each at its run's own begin and length, so no time moves. Core Animation applies a layer's
+  /// animations in the order of their begin times, the latest winning (measured, macOS 26.6.2), so a run that has not
+  /// begun must not fill backwards over an earlier one: the first run fills backwards (the leading hold) and forwards,
+  /// every later one forwards only, and each stays on the layer once it ends, so every hold shows the run before it
+  /// and the trailing hold the last. A finished, forwards-filled animation costs the window server no frames (measured
+  /// likewise); the next motion's install removes them. Nothing, when the values never change.
+  static func animations(_ keyPath: String, _ values: [NSValue], step: TimeInterval, begin: CFTimeInterval,
+                         frameRate: CAFrameRateRange?) -> [CAKeyframeAnimation] {
+    guard values.count > 1 else { return [] }
+    let runs = frameRate == nil ? [0...(values.count - 1)] : changingRuns(values)
+    return runs.enumerated().map { i, run in
+      let animation = CAKeyframeAnimation(keyPath: keyPath)
+      animation.values = Array(values[run])
+      animation.duration = Double(run.count - 1) * step
+      animation.calculationMode = .linear
+      animation.beginTime = begin + Double(run.lowerBound) * step
+      animation.preferredFrameRateRange = frameRate ?? defaultFrameRate
+      if frameRate == nil {
+        animation.fillMode = .backwards
+      } else {
+        animation.fillMode = i == 0 ? .both : .forwards
+        animation.isRemovedOnCompletion = false
+      }
+      return animation
+    }
+  }
+
+  /// `animations` on `layer` under `key` (the first) and `key#1`, `key#2`…, after removing every earlier one of `key`'s.
+  static func install(_ animations: [CAKeyframeAnimation], on layer: CALayer, key: String) {
+    remove(key, from: layer)
+    for (i, animation) in animations.enumerated() { layer.add(animation, forKey: i == 0 ? key : "\(key)#\(i)") }
+  }
+
+  /// Every animation `install` put on `layer` under `key`.
+  static func remove(_ key: String, from layer: CALayer) {
+    for installed in layer.animationKeys() ?? [] where installed == key || installed.hasPrefix("\(key)#") { layer.removeAnimation(forKey: installed) }
+  }
+}
+
+/// The arrow's heading (clockwise on screen, so negative in the panel's y-up layers) and its stretch along the travel axis.
+func cursorHeadingTransform(_ s: CursorState) -> CATransform3D {
+  var t = CATransform3DMakeRotation(s.axis, 0, 0, 1)
+  t = CATransform3DScale(t, s.stretch, s.squash, 1)
+  t = CATransform3DRotate(t, -s.axis, 0, 0, 1)
+  return CATransform3DConcat(t, CATransform3DMakeRotation(-s.angle, 0, 0, 1))
+}
+
+/// The halo's swell, about the centre of its `side`-point square whatever its layer's `anchor`.
+func cursorSwellTransform(_ swell: CGFloat, side: CGFloat, anchor: CGPoint) -> CATransform3D {
+  let c = CGPoint(x: side / 2 - anchor.x * side, y: side / 2 - anchor.y * side)
+  var t = CATransform3DMakeTranslation(c.x, c.y, 0)
+  t = CATransform3DScale(t, swell, swell, 1)
+  return CATransform3DTranslate(t, -c.x, -c.y, 0)
+}
+
+/// A fade over 0.44 s, ease-in-out: the cursor's opacity `from` to `to`, and the arrow's blur in to 7 or out to 0
+/// (`blurTo`), each beginning at its own layer's time.
+enum CursorFade {
+  static func animations(from: Float, to: Float, blurTo: CGFloat, opacityBegin: CFTimeInterval, blurBegin: CFTimeInterval,
+                         frameRate: CAFrameRateRange?) -> (opacity: CABasicAnimation, blur: CABasicAnimation) {
+    let opacity = CABasicAnimation(keyPath: "opacity")
+    opacity.fromValue = from
+    opacity.toValue = to
+    opacity.duration = CursorLifecycle.fadeSeconds
+    opacity.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+    opacity.beginTime = opacityBegin
+    opacity.fillMode = .backwards
+    let blur = CABasicAnimation(keyPath: "filters.blur.inputRadius")
+    blur.fromValue = blurTo == 0 ? 7 : 0
+    blur.toValue = blurTo
+    blur.duration = CursorLifecycle.fadeSeconds
+    blur.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+    blur.beginTime = blurBegin
+    blur.fillMode = .backwards
+    if let frameRate {
+      opacity.preferredFrameRateRange = frameRate
+      blur.preferredFrameRateRange = frameRate
+    }
+    return (opacity, blur)
+  }
 }
 
 enum CursorDips {

@@ -19,9 +19,11 @@ const VENDORS = ['pinned', 'newest'];
 const SPEED_REASON = /^\S+: (cold|warm)[ :]/;
 
 /**
- * The run's verdicts judged again: `{changed, under}`. `changed`: every verdict whose outcome moves, with its speed
- * reasons before and after. `under`: every series with fewer than 20 samples a side (the candidate's or its bar
- * build's) that the run's rule judged on its medians, with the medians and what that rule made of them.
+ * The run's verdicts judged again: `{changed, under, intervals}`.
+ * - `changed`: every verdict whose outcome moves, with its speed reasons before and after.
+ * - `under`: every series with fewer than 20 samples a side (the candidate's or its bar build's) that the run's rule
+ *   judged on its medians, with the medians and what that rule made of them.
+ * - `intervals`: every series judged on 20 a side, with its interval and bound, for any reading of the guard.
  */
 export function rejudge(rows, run) {
   const mine = rows.filter((r) => r.run === run);
@@ -29,6 +31,7 @@ export function rejudge(rows, run) {
   const verdicts = mine.filter((r) => r.kind === 'verdict' && !r.device && !VENDORS.includes(r.candidate));
   const changed = [];
   const under = [];
+  const intervals = [];
   for (const v of verdicts) {
     const { scene, op, candidate } = v;
     if (!OPS[op] || OPS[op].cuaOnly) continue;
@@ -44,6 +47,8 @@ export function rejudge(rows, run) {
     else if (others.length || speed.length) verdict = 'fail';
     else verdict = now.parity.length ? 'parity' : 'pass';
     if (verdict !== before.verdict) changed.push({ scene, op, candidate, before: before.verdict, after: verdict, speed_before: before.speed, speed_after: speed });
+    // every judged series' interval (the bootstrap is seeded, so it is the run's own)
+    for (const i of now.intervals) intervals.push({ scene, op, candidate, ...i });
     // the series the run's rule judged on medians with fewer than 20 a side (the desktop route's groups were never)
     if (scene === 'desktop') continue;
     for (const series of ['cold', 'warm']) {
@@ -57,7 +62,7 @@ export function rejudge(rows, run) {
       under.push({ scene, op, candidate, series, samples: { [candidate]: times(candidate).length, [bar.e]: times(bar.e).length }, median: cua, bar: bar.m, against: bar.e, old: cua <= bar.m ? 'pass (at or below the bar)' : 'loss (above the bar)' });
     }
   }
-  return { changed, under };
+  return { changed, under, intervals };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

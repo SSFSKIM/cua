@@ -164,7 +164,8 @@ export function noiseVerdict(interval, bar) {
  * as a verdict it fails. A series `parity` declares (deviations.mjs `PARITY`) whose interval does not pass and whose
  * median lies within the bar build's own spread of samples is parity: the verdict is then `parity`, neither a pass nor
  * a failure (an open interval still lists it in `undetermined`, flagged `parity`, so the run samples it on). With `judgeSpeed` false (through the vendor client) the speed is recorded, not judged.
- * Returns `{engines, bar, speed, noise, parity, undetermined, pass, verdict, reasons}`.
+ * Every judged series' interval is kept in `intervals`. Returns `{engines, bar, speed, noise, parity, undetermined,
+ * intervals, pass, verdict, reasons}`.
  */
 export function judgeOperation(rows, { vendors, candidate, audits = null, judgeSpeed = true, text = false, noise: interval = null, parity: parityList = [] }) {
   const engines = {};
@@ -193,6 +194,8 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   const noise = [];
   const parity = [];
   const undetermined = [];
+  // every judged series' interval, kept in the verdict so a run can be judged again offline under another reading
+  const intervals = [];
   const timedOf = (engine, series) => timedMs(rows.filter((r) => r.engine === engine && r.series === series));
   const barTimes = (v, series) => timedMs(barRowsOf(v).filter((r) => r.series === series));
   const shown = (v) => Math.round(v * 100) / 100;
@@ -216,6 +219,7 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
     // Acceptance 3: the bootstrap 95% interval of the candidate's median minus the bar build's
     const ci = interval(mine, theirs);
     const bound = noiseBound(exactBar[series]);
+    intervals.push({ series, samples, against: barEngine, candidate: c.exact[series], bar: exactBar[series], interval: ci, bound });
     if (ci[1] <= bound) {
       if (c.exact[series] > exactBar[series]) noise.push({ series, candidate: c.exact[series], bar: exactBar[series], against: barEngine, interval: ci });
       continue;
@@ -255,5 +259,5 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   if (c.equal === false) reasons.push(`${candidate}: the output differs from the vendor's`);
   if (text && c.clipboard === false) reasons.push(`${candidate}: the clipboard was not left as it was before the paste`);
   const verdict = reasons.length ? 'fail' : parity.length ? 'parity' : 'pass';
-  return { engines, bar, speed, noise, parity, undetermined: judgeSpeed ? undetermined : [], pass: verdict === 'pass', verdict, reasons };
+  return { engines, bar, speed, noise, parity, undetermined: judgeSpeed ? undetermined : [], intervals, pass: verdict === 'pass', verdict, reasons };
 }

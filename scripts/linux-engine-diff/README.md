@@ -289,7 +289,8 @@ variants included; their evidence is written either way. The run's `end` row kee
 - **The desktop route's groups are topped up**: a group of a `desktop` scene operation with fewer than 20 samples an
   engine in a series (the cold series has one a block) gets fresh-engine rounds (`top-up` rows, blocks `topup-<n>`)
   until each engine has 20, and is then judged with the interval and its bound; the judge never passes or fails a
-  desktop group on fewer (`judgeOperation` `minSamples`).
+  desktop group on fewer (`judgeOperation` `minSamples`). Superseded at M3.1: every series is topped up (M3.1's
+  additions, below).
 - **The display-wide unconfirmed-paste window** (`CUA_CLIPBOARD_QUARANTINE`): after an unconfirmed paste every cua
   engine on the display refuses text requests for up to 10 s. The harness waits it out before every text sample, every
   safety case and each late-conversion trial (`clip.mjs` `waitQuarantineOver`, `xprobe quarantine`), and never
@@ -331,7 +332,8 @@ variants included; their evidence is written either way. The run's `end` row kee
   whose bootstrap 95% interval of the candidate's median minus the bar build's includes 0 and reaches at most max(5% of
   the bar, 1 ms) passes as "same within noise", listed in the verdict with its interval, when both sides have at least
   20 samples in the series; a wider interval is undetermined, which fails the verdict (the differential run adds no
-  samples); with fewer samples, the medians alone decide.
+  samples); with fewer samples, the medians alone decide. Superseded at M3.1 (below): no series is judged on its
+  medians.
 - **Parity** (Acceptance 3's parity rule): `deviations.mjs` `PARITY` lists an operation, scene and series whose work
   is identical by construction in every engine (the cold desktop screenshot, Decision Log, M1a.4). Above the bar, it is
   **parity** when cua's median lies within the bar build's own spread of samples of that series in the run, which is
@@ -374,6 +376,17 @@ variants included; their evidence is written either way. The run's `end` row kee
     target client's own windows with its frame on top, and focus events stay with the target. `inFrontNegativeCheck`
     runs beside the stub check in every run: the target's own activation passes, and another window's activation or
     a coalesced restack fails.
+- **The speed rule, revised** (Acceptance 3 as the design session revised it at M3.1, after #235's review found the
+  shortcut): `judgeOperation` and `eventSpeeds` judge a series only when cua and the bar build each have 20 samples,
+  and only through the interval guard, whichever way the medians point. The interval passes when its upper end is at
+  most max(5% of the bar, 1 ms), is a loss when it lies above 0, and is otherwise undetermined; fewer samples are
+  undetermined too.
+  - The differential run tops every undetermined series up to 20 samples a side, then 40 (`top-up` rows, blocks
+    `topup-<level>-<n>`): fresh engines for a cold series, and for a warm one only the rounds it needs. One still
+    undetermined at 40 fails.
+  - A parity-declared series with an open interval is sampled on and rests at parity.
+  - `rejudge.mjs <results.jsonl> <run>` judges a recorded run again offline: the verdicts that change, and the
+    under-20 series the old rule judged on medians.
 - **Declared refusals** (`deviations.mjs` `REFUSALS`): an operation the vendor lands and cua refuses in shared mode,
   recorded as a loss (verdict `declared refusal`, listed apart, never a pass) while every cua sample answers the
   declared sentence with the witness unchanged.
@@ -402,3 +415,4 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `pages/` | the Chrome scenes (`input.html` the pointer and key scene, `text.html` the text scene) and `gtk-table.py`, the large-table scene |
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
+| `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |

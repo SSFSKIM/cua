@@ -1,0 +1,12 @@
+{"item":"3","id":"thinking","verdict":"pass","note":"owner ticked it (second run; the owner missed the first)","at":"2026-10-31T15:08:45.852Z"}
+{"item":"3","id":"fade","verdict":"pass","note":"owner ticked it (second run; the owner missed the first)","at":"2026-10-31T15:08:45.927Z"}
+{"item":"3","id":"fade-in","verdict":"pass","note":"owner ticked it (second run; the owner missed the first)","at":"2026-10-31T15:08:46.004Z"}
+{"item":"3","id":"taken-over","verdict":"pass","note":"owner ticked it (second run; the owner missed the first)","at":"2026-10-31T15:08:46.080Z"}
+{"item":"3","id":"taken-over-cleared","verdict":"pass","note":"owner ticked it (second run; the owner missed the first)","at":"2026-10-31T15:08:46.160Z"}
+{"item":"3","id":"end-task","verdict":"pass","note":"owner ticked it (second run; the owner missed the first)","at":"2026-10-31T15:08:46.242Z"}
+{"item":"3","id":"look","verdict":"pass","note":"the owner: 'I think so, but it's not a one-to-one comparison with a video recording, so I can't be sure. They look the same.' (the eight moves, shown twice)","at":"2026-10-31T15:26:28.766Z"}
+{"item":"5","id":"taken-over","verdict":"pass","note":"owner ticked: half-transparent on their click","at":"2026-10-31T15:50:47.915Z"}
+{"item":"5","id":"screenshot","verdict":"pass","note":"owner: cursor on screen over the fixture at the end; the agent's screenshot item-5-step-24-0.jpg has no cursor (checked by the operator)","at":"2026-10-31T15:50:47.999Z"}
+{"item":"5","id":"focus","verdict":"pass","note":"both readings usable (accessibility wait primed, 2.2 s) and equal field by field: fixture pid 25295, its window 720x560 at 140,100, named, the same valueHash; the kit's same:false is the readings' key order only (kit defect)","at":"2026-10-31T15:50:48.100Z"}
+{"item":"5","id":"count","verdict":"pass","note":"0 -> 3: the agent's one press (route 1), and the owner clicked the tip several times ('I clicked it many times. It worked as it should'); the fixture counts 'click' only","at":"2026-10-31T15:50:48.197Z"}
+{"item":"13","id":"route-3-lag","verdict":"pass","note":"the owner watched the clicks block's first minute (the fallback; item 1's clip could not be made): 'Looked prompt'","at":"2026-10-31T16:13:00.195Z"}

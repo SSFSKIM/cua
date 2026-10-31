@@ -1,0 +1,51 @@
+{"item":"3","at":1793459083872,"kind":"start","steps":22,"dryRun":false}
+{"item":"3","at":1793459083873,"step":1,"kind":"say","text":"Acceptance 3: states and timing, in TextEdit (in the background)"}
+{"item":"3","at":1793459086013,"step":2,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"3","at":1793459087041,"step":3,"kind":"cell","session":"a","label":"a click","ok":true,"value":{"ms":122.8095830000002,"clicked":"align center","after":"1","changedWithinMs":539.6473329999999},"inCellMs":977.07675,"route":null,"engine":"cua","meta":{"engineMs":414.85,"serviceMs":416.398}}
+{"item":"3","at":1793459087041,"step":4,"kind":"watch","id":"thinking","text":"once it settles the arrow rocks gently (thinking)"}
+{"item":"3","at":1793459089543,"step":6,"kind":"watch","id":"fade","text":"about 5 s after the click it fades out over about 0.44 s"}
+{"item":"3","at":1793459094763,"step":8,"kind":"cell","session":"a","label":"the next action","ok":true,"value":{"ms":108.3769169999996,"clicked":"align left","after":"1","changedWithinMs":570.8455419999991},"inCellMs":656.9952499999999,"route":null,"engine":"cua","meta":{"engineMs":460.55,"serviceMs":462.018}}
+{"item":"3","at":1793459094763,"step":9,"kind":"watch","id":"fade-in","text":"it fades back in at the new target (no glide in from where it faded)"}
+{"item":"3","at":1793459095564,"step":11,"kind":"cue","text":"Now click once in the TextEdit document text, away from the cursor."}
+{"item":"3","at":1793459106653,"step":12,"kind":"watch","id":"taken-over","text":"from your click the cursor is half-transparent and still, until it fades at 5 s"}
+{"item":"3","at":1793459112311,"step":14,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":86.38791599999968,"route":null,"engine":"cua","meta":{"engineMs":83.496,"serviceMs":85.166}}
+{"item":"3","at":1793459113005,"step":15,"kind":"cell","session":"a","label":"the agent acts again","ok":true,"value":{"ms":107.9932919999992,"clicked":"align center","after":"1","changedWithinMs":559.664334000001},"inCellMs":626.8010840000024,"route":null,"engine":"cua","meta":{"engineMs":449.277,"serviceMs":451.134}}
+{"item":"3","at":1793459113006,"step":16,"kind":"watch","id":"taken-over-cleared","text":"the agent's next action shows it at full opacity again"}
+{"item":"3","at":1793459114298,"step":18,"kind":"cell","session":"a","label":"a click, then end_task at once","ok":true,"value":{"ms":32.116250000002765,"point":[610,1204]},"inCellMs":32.14316699999836,"route":3,"engine":"cua","meta":{"engineMs":31.09,"serviceMs":31.629,"actionInterval":{"endedAt":1793459114297,"startedAt":1793459114296},"receivedAt":1793459114266}}
+{"item":"3","at":1793459114299,"step":19,"kind":"end_task","session":"a","answer":{"content":[{"type":"text","text":"{\"status\":\"ended\",\"ended\":true,\"taskId\":\"0918f188-9149-4171-906b-93b6e7d5b263\"}"}],"structuredContent":{"status":"ended","ended":true,"taskId":"0918f188-9149-4171-906b-93b6e7d5b263"},"isError":false}}
+{"item":"3","at":1793459114300,"step":20,"kind":"watch","id":"end-task","text":"end_task fades it at once (not 5 s later)"}
+{"item":"3","at":1793459116524,"step":22,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"3","at":1793459162241,"kind":"start","steps":22,"dryRun":false}
+{"item":"3","at":1793459162242,"step":1,"kind":"say","text":"Acceptance 3: states and timing, in TextEdit (in the background)"}
+{"item":"3","at":1793459163209,"step":2,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"3","at":1793459163896,"step":3,"kind":"cell","session":"a","label":"a click","ok":true,"value":{"ms":150.74400000000003,"clicked":"align center","after":"1","changedWithinMs":588.8949590000001},"inCellMs":633.328,"route":null,"engine":"cua","meta":{"engineMs":436.056,"serviceMs":437.599}}
+{"item":"3","at":1793459163897,"step":4,"kind":"watch","id":"thinking","text":"once it settles the arrow rocks gently (thinking)"}
+{"item":"3","at":1793459166397,"step":6,"kind":"watch","id":"fade","text":"about 5 s after the click it fades out over about 0.44 s"}
+{"item":"3","at":1793459171627,"step":8,"kind":"cell","session":"a","label":"the next action","ok":true,"value":{"ms":118.1099579999991,"clicked":"align left","after":"1","changedWithinMs":581.0310829999999},"inCellMs":670.1811669999997,"route":null,"engine":"cua","meta":{"engineMs":460.62,"serviceMs":462.381}}
+{"item":"3","at":1793459171627,"step":9,"kind":"watch","id":"fade-in","text":"it fades back in at the new target (no glide in from where it faded)"}
+{"item":"3","at":1793459172428,"step":11,"kind":"cue","text":"Now click once in the TextEdit document text, away from the cursor."}
+{"item":"3","at":1793459181562,"step":12,"kind":"watch","id":"taken-over","text":"from your click the cursor is half-transparent and still, until it fades at 5 s"}
+{"item":"3","at":1793459187200,"step":14,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":79.24216700000034,"route":null,"engine":"cua","meta":{"engineMs":76.72,"serviceMs":78.368}}
+{"item":"3","at":1793459187319,"step":15,"kind":"cell","session":"a","label":"the agent acts again","ok":false,"error":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry.","inCellMs":66.11504200000127,"route":null,"engine":"cua","meta":{"serviceMs":1.304,"actionInterval":{"endedAt":null,"startedAt":null},"receivedAt":1793459187318,"hidIdleMs":4154}}
+{"item":"3","at":1793459187319,"step":16,"kind":"watch","id":"taken-over-cleared","text":"the agent's next action shows it at full opacity again"}
+{"item":"3","at":1793459188589,"step":18,"kind":"cell","session":"a","label":"a click, then end_task at once","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","inCellMs":4.883166000003257,"route":null,"engine":"cua","meta":{"serviceMs":4.468,"actionInterval":{"endedAt":null,"startedAt":null},"receivedAt":1793459188584,"hidIdleMs":5420}}
+{"item":"3","at":1793459188595,"step":19,"kind":"end_task","session":"a","answer":{"content":[{"type":"text","text":"{\"status\":\"ended\",\"ended\":true,\"taskId\":\"cb6f7172-356a-460a-b16e-5076392b67cc\"}"}],"structuredContent":{"status":"ended","ended":true,"taskId":"cb6f7172-356a-460a-b16e-5076392b67cc"},"isError":false}}
+{"item":"3","at":1793459188595,"step":20,"kind":"watch","id":"end-task","text":"end_task fades it at once (not 5 s later)"}
+{"item":"3","at":1793459190820,"step":22,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"3","at":1793459251524,"kind":"start","steps":22,"dryRun":false}
+{"item":"3","at":1793459251525,"step":1,"kind":"say","text":"Acceptance 3: states and timing, in TextEdit (in the background)"}
+{"item":"3","at":1793459252506,"step":2,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"3","at":1793459253172,"step":3,"kind":"cell","session":"a","label":"a click","ok":true,"value":{"ms":153.14637499999998,"clicked":"align center","after":"1","changedWithinMs":561.8769579999998},"inCellMs":609.6226659999999,"route":null,"engine":"cua","meta":{"engineMs":406.739,"serviceMs":408.201}}
+{"item":"3","at":1793459253172,"step":4,"kind":"watch","id":"thinking","text":"once it settles the arrow rocks gently (thinking)"}
+{"item":"3","at":1793459255673,"step":6,"kind":"watch","id":"fade","text":"about 5 s after the click it fades out over about 0.44 s"}
+{"item":"3","at":1793459260781,"step":8,"kind":"cell","session":"a","label":"the next action","ok":true,"value":{"ms":11.077541000000565,"clicked":"align left","after":"1","changedWithinMs":459.4782500000001},"inCellMs":550.8069999999989,"route":null,"engine":"cua","meta":{"engineMs":446.465,"serviceMs":447.935}}
+{"item":"3","at":1793459260782,"step":9,"kind":"watch","id":"fade-in","text":"it fades back in at the new target (no glide in from where it faded)"}
+{"item":"3","at":1793459261583,"step":11,"kind":"cue","text":"Now click once in the TextEdit document text, away from the cursor."}
+{"item":"3","at":1793459270753,"step":12,"kind":"watch","id":"taken-over","text":"from your click the cursor is half-transparent and still, until it fades at 5 s"}
+{"item":"3","at":1793459276404,"step":14,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":87.59966699999859,"route":null,"engine":"cua","meta":{"engineMs":84.954,"serviceMs":86.828}}
+{"item":"3","at":1793459276997,"step":15,"kind":"cell","session":"a","label":"the agent acts again","ok":true,"value":{"ms":66.21762500000114,"clicked":"align center","after":"1","changedWithinMs":467.6132080000025},"inCellMs":534.6619169999976,"route":null,"engine":"cua","meta":{"engineMs":399.515,"serviceMs":400.914}}
+{"item":"3","at":1793459276998,"step":16,"kind":"watch","id":"taken-over-cleared","text":"the agent's next action shows it at full opacity again"}
+{"item":"3","at":1793459278264,"step":18,"kind":"cell","session":"a","label":"a click, then end_task at once","ok":true,"value":{"ms":3.1439580000005662,"point":[610,1204]},"inCellMs":3.1624589999992168,"route":3,"engine":"cua","meta":{"engineMs":2.372,"serviceMs":2.78,"actionInterval":{"endedAt":1793459278263,"startedAt":1793459278263},"receivedAt":1793459278261,"hidIdleMs":13775}}
+{"item":"3","at":1793459278266,"step":19,"kind":"end_task","session":"a","answer":{"content":[{"type":"text","text":"{\"status\":\"ended\",\"ended\":true,\"taskId\":\"36d86c88-61cb-43ca-bffd-dba5259526c9\"}"}],"structuredContent":{"status":"ended","ended":true,"taskId":"36d86c88-61cb-43ca-bffd-dba5259526c9"},"isError":false}}
+{"item":"3","at":1793459278266,"step":20,"kind":"watch","id":"end-task","text":"end_task fades it at once (not 5 s later)"}
+{"item":"3","at":1793459280494,"step":22,"kind":"close","session":"a","exit":{"code":0,"signal":null}}

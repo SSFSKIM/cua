@@ -15,7 +15,8 @@ import { fileURLToPath } from 'node:url';
 import { declaredParity } from './deviations.mjs';
 import { FIRST_ROUNDS, TOP_UP_TO, blockAnswerMismatches, eventSpeeds, eventStage, medianDifferenceInterval } from './events.mjs';
 import { OPS } from './ops.mjs';
-import { MIN_NOISE_SAMPLES, judgeOperation, median, timedMs } from './stats.mjs';
+import { judgeWithDecisions } from './run.mjs';
+import { MIN_NOISE_SAMPLES, median, timedMs } from './stats.mjs';
 
 const VENDORS = ['pinned', 'newest'];
 /** A verdict reason about speed: the candidate's cold or warm series. */
@@ -45,7 +46,9 @@ export function rejudge(rows, run) {
     const opRows = samples.filter((r) => r.scene === scene && r.op === op && [...VENDORS, candidate].includes(r.engine));
     const text = OPS[op].kind === 'text';
     const parity = ['cold', 'warm'].map((series) => declaredParity({ op, scene, series })).filter(Boolean);
-    const now = judgeOperation(opRows, { vendors: VENDORS, candidate, text, noise: medianDifferenceInterval, parity, judgeSpeed });
+    // a run that recorded its speed decisions (run.mjs speedDecisions) is replayed on the samples each rested on
+    const decided = new Map(mine.filter((r) => r.kind === 'speed-decision' && r.scene === scene && r.op === op && r.candidate === candidate).map((d) => [`${d.candidate}|${d.series}`, d]));
+    const now = judgeWithDecisions(opRows, { vendors: VENDORS, candidate, text, noise: medianDifferenceInterval, parity, judgeSpeed }, decided);
     const before = { verdict: v.verdict ?? (v.pass ? 'pass' : 'fail'), speed: (v.reasons ?? []).filter((x) => SPEED_REASON.test(x)) };
     const others = (v.reasons ?? []).filter((x) => !SPEED_REASON.test(x));
     const speed = judgeSpeed ? now.reasons.filter((x) => SPEED_REASON.test(x)) : [];

@@ -11,7 +11,9 @@ import { withDropProbes } from '../../scripts/linux-engine-diff/dnd.mjs';
 import { FIRST_ROUNDS, TOP_UP_TO, eventStage, settledSpeeds, topUpRoundsFor } from '../../scripts/linux-engine-diff/events.mjs';
 import { rejudge } from '../../scripts/linux-engine-diff/rejudge.mjs';
 import { renderSummary } from '../../scripts/linux-engine-diff/report.mjs';
-import { declaredRefusalVerdict, windowTopUp } from '../../scripts/linux-engine-diff/run.mjs';
+import { declaredRefusalVerdict, judgeWithDecisions, speedDecisions, windowTopUp } from '../../scripts/linux-engine-diff/run.mjs';
+import { judgeOperation } from '../../scripts/linux-engine-diff/stats.mjs';
+import { medianDifferenceInterval } from '../../scripts/linux-engine-diff/events.mjs';
 import { judgeInFrontSpan } from '../../scripts/linux-engine-diff/witness.mjs';
 
 const VENDORS = ['pinned', 'newest'];
@@ -48,14 +50,51 @@ test("the window route's top-up counts the samples the judge counts: no failed p
   const rows = (engine, n, ms, fields = {}) => Array.from({ length: n }, (_, i) => ({ engine, series: 'cold', ms: ms + (i % 3) * 0.01, ok: true, witness: true, block: i, i: 0, ...fields }));
   // 20 rows a side, but 5 of cua's preparations failed: 15 samples the judge times, so 5 more rounds
   const prepared = [...rows('pinned', 20, 40), ...rows('newest', 20, 45), ...rows('cua', 15, 30), ...rows('cua', 5, 30, { prepare_error: 'the caret did not move' })];
-  const plan = windowTopUp(prepared, { vendors: VENDORS, candidates: ['cua'], level: 20, warmPerRound: 4 });
+  const planOf = (opRows, text = false) => windowTopUp(speedDecisions(opRows, { vendors: VENDORS, candidates: ['cua'], text }).open, { warmPerRound: 4 });
+  const plan = planOf(prepared);
   assert.deepEqual([plan.series, plan.rounds, plan.warmRounds], [['cold'], 5, 0]);
   // a text command: the bar build's 8 unsuccessful requests set no bar sample, so its 12 successes call for 8 rounds
   const text = [...rows('pinned', 12, 40), ...rows('pinned', 8, 1, { ok: false }), ...rows('newest', 20, 60), ...rows('cua', 20, 30)];
-  const textPlan = windowTopUp(text, { vendors: VENDORS, candidates: ['cua'], text: true, level: 20, warmPerRound: 4 });
+  const textPlan = planOf(text, true);
   assert.deepEqual([textPlan.rounds, textPlan.open[0].against], [8, 'pinned']);
   // judged at 20 a side: nothing to top up
-  assert.equal(windowTopUp([...rows('pinned', 20, 40), ...rows('newest', 20, 45), ...rows('cua', 20, 30)], { vendors: VENDORS, candidates: ['cua'], level: 20, warmPerRound: 4 }), null);
+  assert.equal(planOf([...rows('pinned', 20, 40), ...rows('newest', 20, 45), ...rows('cua', 20, 30)]), null);
+});
+
+test('a series decided at a look stays decided: the cold samples a warm top-up primes never reopen it', () => {
+  const sample = (engine, series, ms, block, i) => ({ engine, series, ms, ok: true, witness: true, block, i });
+  // 40 cold samples a side whose interval, [-3, 4], is wide past the 2 ms bound (cua spread around the bar), 12 warm
+  const rows = [];
+  for (let b = 0; b < 40; b++) {
+    rows.push(sample('pinned', 'cold', 40, b, 0), sample('newest', 'cold', 45, b, 0), sample('cua', 'cold', b < 16 ? 37 : b < 24 ? 40 : 44, b, 0));
+    if (b < 3) for (let i = 1; i <= 4; i++) rows.push(sample('pinned', 'warm', 30, b, i), sample('newest', 'warm', 31, b, i), sample('cua', 'warm', 20, b, i));
+  }
+  const opts = { vendors: VENDORS, candidate: 'cua', noise: medianDifferenceInterval };
+  const first = speedDecisions(rows, { vendors: VENDORS, candidates: ['cua'] });
+  assert.equal(first.decided.get('cua|cold').verdict, 'undetermined at 40', 'failed at 40: decided');
+  assert.deepEqual(first.open.map((u) => [u.series, u.samples, u.target]), [['warm', 12, 20]]);
+  const plan = windowTopUp(first.open, { warmPerRound: 4 });
+  assert.deepEqual([plan.rounds, plan.warmRounds], [2, 2]);
+  // six warm top-up rounds: each fresh engine's cold sample lands right on the bar
+  const topped = [...rows];
+  for (let r = 0; r < 6; r++) {
+    const block = `topup-0-${r}`;
+    topped.push(sample('pinned', 'cold', 40, block, 0), sample('newest', 'cold', 45, block, 0), sample('cua', 'cold', 40, block, 0));
+    for (let i = 1; i <= 4; i++) topped.push(sample('pinned', 'warm', 30, block, i), sample('newest', 'warm', 31, block, i), sample('cua', 'warm', 20, block, i));
+  }
+  // counted afresh, the extra cold samples turn the failure green (the review's reproduction)
+  assert.equal(judgeOperation(topped, opts).pass, true);
+  // with the decisions frozen: the cold series stays failed on its own 40, the warm series passes on its 36
+  const second = speedDecisions(topped, { vendors: VENDORS, candidates: ['cua'], decided: first.decided });
+  assert.deepEqual(second.open, []);
+  assert.equal(second.decided.get('cua|warm').verdict, 'faster');
+  const verdict = judgeWithDecisions(topped, opts, second.decided);
+  assert.equal(verdict.pass, false);
+  assert.match(verdict.reasons.join('; '), /cold .*undetermined/);
+  assert.ok(!verdict.reasons.some((r) => /warm/.test(r)));
+  // a non-speed failure on a primed sample still counts
+  const missed = [...topped.slice(0, -1), { ...topped.at(-1), effect: false }];
+  assert.ok(judgeWithDecisions(missed, opts, second.decided).reasons.some((r) => /effect was not verified/.test(r)));
 });
 
 test("the re-judge honours the run's transport: through the vendor client nothing is judged on speed", () => {
@@ -157,4 +196,46 @@ test("an events run's desktop groups are judged again on its first 20 rounds, an
   const wide = rejudgeEvents([{ run: 'w', kind: 'events-blocks', rounds: 25, records: { pinned: records(10), newest: records(12), cua: records(0, 6) } }], 'w');
   const g = wide.groups.find((x) => x.series === 'first');
   assert.deepEqual([g.at20, g.at40], ['undetermined', 'short']);
+});
+
+test("a sample's corner overlay goes however the sample ends: a failed request, a failed cleanup beside it", async () => {
+  const { withSampleCleanup } = await import('../../scripts/linux-engine-diff/run.mjs');
+  const { cornerOverlay } = await import('../../scripts/linux-engine-diff/device.mjs');
+  const g = { X: 0, Y: 20, WIDTH: 1050, HEIGHT: 780 };
+  const scene = { dndPath: [{ x: 100, y: 200 }, { x: 400, y: 260 }] };
+  const started = [];
+  const stopped = [];
+  const start = async (args) => {
+    started.push(args);
+    return { stop: async () => stopped.push(args.join(' ')) };
+  };
+  // the request times out after the overlay is up: the timeout is the sample's error, and the overlay still goes
+  const ctx = { scene };
+  await assert.rejects(
+    withSampleCleanup(ctx, async () => {
+      await cornerOverlay(ctx, g, start);
+      throw new Error('engine request timed out after 30000 ms');
+    }),
+    (error) => error.message === 'engine request timed out after 30000 ms' && error.cleanup === undefined,
+  );
+  assert.deepEqual(started.at(-1), ['1002', '752', '40', '40']);
+  assert.deepEqual(stopped, ['1002 752 40 40']);
+  // a clipboard owner whose stop fails: the overlay is stopped anyway, the failure kept beside the sample's error
+  const owner = { scene, prior: { stop: async () => { throw new Error('the owner did not stop'); } } };
+  await assert.rejects(
+    withSampleCleanup(owner, async () => {
+      await cornerOverlay(owner, g, start);
+      throw new Error('the span failed');
+    }),
+    (error) => error.message === 'the span failed' && error.cleanup.map((e) => e.message).join() === 'the owner did not stop',
+  );
+  assert.equal(stopped.length, 2);
+  // a good sample whose overlay will not stop fails
+  const stuck = async () => ({ stop: async () => { throw new Error('xprobe overlay did not exit'); } });
+  const good = { scene };
+  await assert.rejects(withSampleCleanup(good, async () => (await cornerOverlay(good, g, stuck), 'row')), /xprobe overlay did not exit/);
+  // an overlay that would cover the path is refused before it starts
+  const crossing = { scene: { dndPath: [{ x: 1000, y: 750 }, { x: 1020, y: 760 }] } };
+  await assert.rejects(withSampleCleanup(crossing, () => cornerOverlay(crossing, g, start)), /runs under the corner overlay/);
+  assert.equal(started.length, 2, "never started");
 });

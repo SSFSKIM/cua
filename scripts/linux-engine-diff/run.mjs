@@ -200,12 +200,40 @@ export function differingField(reference, candidate) {
  */
 export async function runSample(s) {
   const ctx = { desktop: s.desktop, scene: s.target, sceneName: s.sceneName, engine: s.engine, i: s.i, witness: s.witness, cuaVersion: s.cuaVersion };
+  return withSampleCleanup(ctx, () => measureSample(s, ctx));
+}
+
+/**
+ * `body()` with the sample's unconditional cleanup (Decision Log, M2.3): whatever the sample registers with
+ * `ctx.dispose(fn)` while it runs (a corner overlay, device.mjs), and its clipboard owner (`ctx.prior`), is disposed of
+ * however the sample ends, preparation, a failed or timed-out request included, each cleanup tried on its own in
+ * reverse order of registration. A body that threw keeps its error with the cleanup failures attached (`cleanup`); a
+ * cleanup that fails after a body that did not fails the sample.
+ */
+export async function withSampleCleanup(ctx, body) {
+  const disposers = [() => ctx.prior?.stop()];
+  ctx.dispose = (fn) => disposers.push(fn);
+  let result;
+  let failure = null;
   try {
-    return await measureSample(s, ctx);
-  } finally {
-    // the sample's clipboard owner ends with the sample, however it ends (a check stops it on the way)
-    await ctx.prior?.stop();
+    result = await body();
+  } catch (error) {
+    failure = error;
   }
+  const cleanup = [];
+  for (const fn of disposers.reverse()) {
+    try {
+      await fn();
+    } catch (error) {
+      cleanup.push(error);
+    }
+  }
+  if (failure) {
+    if (cleanup.length) failure.cleanup = cleanup;
+    throw failure;
+  }
+  if (cleanup.length) throw new AggregateError(cleanup, `the sample's cleanup failed: ${cleanup.map((e) => e.message).join('; ')}`);
+  return result;
 }
 
 async function measureSample(s, ctx) {
@@ -592,27 +620,73 @@ export function topUpRounds({ cold, warm }, { min, warmPerRound }) {
   return { rounds: Math.max(min - cold, 0), warm: false };
 }
 
-/** How many times a level's top-up of one operation is planned again when its rounds fell short (failed samples). */
-export const TOP_UP_PASSES = 3;
+/** How many times one operation's top-up is planned, across both levels (20, then 40), when failed samples left a series short. */
+export const TOP_UP_PLANS = 2 * 3;
+
+/** A sample's identity within a run: its engine, block and place in the block. */
+export const sampleKey = (r) => `${r.engine}|${r.block}|${r.i}`;
+/** A speed reason in a verdict: the candidate's cold or warm series (judgeOperation's wording). */
+const SPEED_REASON = /^\S+: (cold|warm)[ :]/;
 
 /**
- * The top-up one operation's series need to reach `level` samples a side (Acceptance 3), or null: the series each
- * candidate's judge leaves undetermined below `level`, counted as the judge counts them (`judgeOperation`'s
- * `undetermined[].samples`: the candidate's and the bar build's eligible timings, without failed preparations, and for
- * a text command without the vendor's unsuccessful requests), never by raw rows. `{series, rounds, warmRounds, open}`:
- * the fresh-engine rounds, and how many of them take the warm samples too.
+ * Acceptance 3's schedule over one operation's series, per candidate (as events.mjs `eventStage` does for the desktop
+ * groups): each series is decided at the first look that judges it, and that decision is frozen with the samples it
+ * rested on (`decided`, by `<candidate>|<series>`: `{keys, samples, verdict}`), so samples a later top-up adds (a fresh
+ * engine's cold sample that primes a warm one) never reopen it. A series is decided when the judge passes or fails it on
+ * 20 samples a side or more, or when it is still undetermined on 40 or more (a failure). The series still open are
+ * returned with their target: 20 below 20 samples a side, 40 below 40. Samples are counted as the judge counts them
+ * (`judgeOperation`'s `undetermined[].samples`). Returns `{decided, open, fresh}`, `fresh` the decisions this look made.
  */
-export function windowTopUp(opRows, { vendors, candidates, text = false, parity = [], level, warmPerRound }) {
-  const open = candidates
-    .flatMap((candidate) => judgeOperation(opRows.filter((r) => [...vendors, candidate].includes(r.engine)), { vendors, candidate, text, noise: medianDifferenceInterval, parity }).undetermined)
-    .filter((u) => u.samples < level);
+export function speedDecisions(opRows, { vendors, candidates, text = false, parity = [], decided = new Map() }) {
+  const next = new Map(decided);
+  const open = [];
+  const fresh = [];
+  for (const candidate of candidates) {
+    const rows = opRows.filter((r) => [...vendors, candidate].includes(r.engine));
+    const v = judgeOperation(rows, { vendors, candidate, text, noise: medianDifferenceInterval, parity });
+    for (const series of ['cold', 'warm']) {
+      const key = `${candidate}|${series}`;
+      if (next.has(key)) continue;
+      const judged = v.intervals.find((i) => i.series === series);
+      const u = v.undetermined.find((x) => x.series === series);
+      if (!judged && !u) continue;
+      if (u && u.samples < 2 * MIN_NOISE_SAMPLES) {
+        open.push({ ...u, candidate, target: u.samples < MIN_NOISE_SAMPLES ? MIN_NOISE_SAMPLES : 2 * MIN_NOISE_SAMPLES });
+        continue;
+      }
+      const decision = { candidate, series, keys: rows.filter((r) => r.series === series).map(sampleKey), samples: u ? u.samples : judged.samples, verdict: u ? 'undetermined at 40' : judged.label ?? 'loss' };
+      next.set(key, decision);
+      fresh.push(decision);
+    }
+  }
+  return { decided: next, open, fresh };
+}
+
+/**
+ * The top-up the open series need (`speedDecisions`' `open`), or null: enough fresh-engine rounds for each to reach its
+ * target, the warm samples taken only in the rounds a warm series needs. `{series, rounds, warmRounds, open}`.
+ */
+export function windowTopUp(open, { warmPerRound }) {
   if (!open.length) return null;
-  const series = [...new Set(open.map((u) => u.series))];
-  const count = (name) => (series.includes(name) ? Math.min(...open.filter((u) => u.series === name).map((u) => u.samples)) : level);
-  const need = topUpRounds({ cold: count('cold'), warm: count('warm') }, { min: level, warmPerRound });
-  // the warm samples only in the rounds the warm series needs, the rest a fresh engine's cold sample alone
-  const warmRounds = series.includes('warm') ? Math.max(0, Math.ceil((level - count('warm')) / warmPerRound)) : 0;
-  return { series, rounds: need.rounds, warmRounds, open };
+  const deficit = (name) => Math.max(0, ...open.filter((u) => u.series === name).map((u) => u.target - u.samples));
+  const warmRounds = Math.ceil(deficit('warm') / warmPerRound);
+  return { series: [...new Set(open.map((u) => u.series))], rounds: Math.max(deficit('cold'), warmRounds), warmRounds, open };
+}
+
+/**
+ * One operation's verdict for a candidate with its frozen speed decisions: the speed judged on each decided series'
+ * own samples (`decided`), everything else (answers, witness, audit, effect) on every sample, the top-ups' included.
+ * Without decisions it is `judgeOperation` itself.
+ */
+export function judgeWithDecisions(rows, options, decided = new Map()) {
+  const frozen = new Map(['cold', 'warm'].map((series) => [series, decided.get(`${options.candidate}|${series}`)]).filter(([, d]) => d));
+  if (!frozen.size) return judgeOperation(rows, options);
+  const speedRows = rows.filter((r) => !frozen.has(r.series) || frozen.get(r.series).keys.includes(sampleKey(r)));
+  const all = judgeOperation(rows, { ...options, judgeSpeed: false });
+  const speed = judgeOperation(speedRows, options);
+  const reasons = [...all.reasons, ...speed.reasons.filter((x) => SPEED_REASON.test(x))];
+  const verdict = reasons.length ? 'fail' : speed.parity.length ? 'parity' : 'pass';
+  return { ...speed, engines: all.engines, reasons, verdict, pass: verdict === 'pass', decisions: [...frozen.values()].map(({ keys, ...d }) => d) };
 }
 
 export async function runDiff(args) {
@@ -757,27 +831,42 @@ export async function runDiff(args) {
     // until each engine has 20 samples in it, then 40 if it is still undetermined; one undetermined at 40 fails. A round
     // is one more series per engine, its cold sample alone unless the warm series is short too; the engines' order
     // rotates on from the blocks'.
+    // each operation's frozen speed decisions, by `<scene>|<op>`, for its verdict (judgeWithDecisions)
+    const speedDecided = new Map();
     if (via === 'wire') {
       let round = 0;
       const candidates = labels.filter((l) => !VENDORS.includes(l));
-      for (const level of SAMPLE_LEVELS) {
-        for (const { scene: sceneName, op } of blockPlan.filter((p) => !isDevice(p.op) && !OPS[p.op].cuaOnly)) {
-          const parity = ['cold', 'warm'].map((series) => declaredParity({ op, scene: sceneName, series })).filter(Boolean);
-          const engineLabels = labels.filter((l) => runsOp(l, op));
-          // planned again while failed samples left a series short of the level, a bounded number of times
-          for (let pass = 0; pass < TOP_UP_PASSES; pass++) {
-            const sampled = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'sample');
-            const opRows = sampled.filter((r) => r.scene === sceneName && r.op === op);
-            const plan = windowTopUp(opRows, { vendors: VENDORS, candidates, text: isText(op), parity, level, warmPerRound: samplesFor(op) });
-            if (!plan) break;
-            emit({ kind: 'top-up', scene: sceneName, op, level, pass, series: plan.series, rounds: plan.rounds, warm_rounds: plan.warmRounds, open: plan.open });
-            for (let r = 0; r < plan.rounds; r++, round++) {
-              for (const label of blockOrder(engineLabels, args.blocks + round)) {
-                await measureSeries({ sceneName, op, label, block: `topup-${level}-${pass}-${r}`, n: r < plan.warmRounds ? 1 + samplesFor(op) : 1 });
-              }
+      for (const { scene: sceneName, op } of blockPlan.filter((p) => !isDevice(p.op) && !OPS[p.op].cuaOnly)) {
+        const parity = ['cold', 'warm'].map((series) => declaredParity({ op, scene: sceneName, series })).filter(Boolean);
+        const engineLabels = labels.filter((l) => runsOp(l, op));
+        let decided = new Map();
+        // each look freezes the series it decides (speedDecisions); the rest are topped up to 20, then 40, planned
+        // again while failed samples left one short, a bounded number of times; what is still open after that is
+        // decided as it stands
+        for (let look = 0; ; look++) {
+          const sampled = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'sample');
+          const opRows = sampled.filter((r) => r.scene === sceneName && r.op === op);
+          const looked = speedDecisions(opRows, { vendors: VENDORS, candidates, text: isText(op), parity, decided });
+          decided = looked.decided;
+          for (const d of looked.fresh) emit({ kind: 'speed-decision', scene: sceneName, op, look, ...d });
+          const plan = look < TOP_UP_PLANS ? windowTopUp(looked.open, { warmPerRound: samplesFor(op) }) : null;
+          if (!plan) {
+            for (const u of looked.open) {
+              const rows = opRows.filter((r) => [...VENDORS, u.candidate].includes(r.engine) && r.series === u.series);
+              const d = { candidate: u.candidate, series: u.series, keys: rows.map(sampleKey), samples: u.samples, verdict: 'undetermined, the top-ups spent' };
+              decided.set(`${u.candidate}|${u.series}`, d);
+              emit({ kind: 'speed-decision', scene: sceneName, op, look, ...d });
+            }
+            break;
+          }
+          emit({ kind: 'top-up', scene: sceneName, op, look, series: plan.series, rounds: plan.rounds, warm_rounds: plan.warmRounds, open: plan.open.map(({ candidate, series, samples, target, interval }) => ({ candidate, series, samples, target, interval })) });
+          for (let r = 0; r < plan.rounds; r++, round++) {
+            for (const label of blockOrder(engineLabels, args.blocks + round)) {
+              await measureSeries({ sceneName, op, label, block: `topup-${look}-${r}`, n: r < plan.warmRounds ? 1 + samplesFor(op) : 1 });
             }
           }
         }
+        speedDecided.set(`${sceneName}|${op}`, decided);
       }
     }
     // Accessibility-bus calls, in their own untimed pass: a fresh process per engine, the cold read then a warm one.
@@ -942,7 +1031,8 @@ export async function runDiff(args) {
         const opAudits = args.audit && targeted(op) && !foreground ? Object.fromEntries(labels.map((l) => [l, audits[`${sceneName}|${op}|${l}`]])) : null;
         const parity = ['cold', 'warm'].map((series) => declaredParity({ op, scene: sceneName, series })).filter(Boolean);
         // every series judged on 20 samples a side through its interval (the top-up above), never on fewer
-        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op), noise: medianDifferenceInterval, parity });
+        // each series' speed on the samples its decision rested on (speedDecisions), the rest on every sample
+        const verdict = judgeWithDecisions(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op), noise: medianDifferenceInterval, parity }, speedDecided.get(`${sceneName}|${op}`));
         const extra = {};
         if (routes.length) extra.routes = routes;
         if (isText(op) && routeOf(op, sceneName)) extra.route_expected = routeOf(op, sceneName);

@@ -16,6 +16,9 @@
 // - `late` (the same, the cancel forced after the release, `--dnd-cancel-after-release`): every answer is honest (that
 //   the drop may have happened, or that nothing was dropped only where nothing dropped and the witness is unchanged),
 //   at least one answer says the drop may have happened, and the background audit is clean;
+// - `late-take` (the take left unseen until after the release, `--dnd-defer-take`): the drag answers as a plain drag at
+//   its release, the next request on the same engine answers the late drag-and-drop notice (not run), and wherever the
+//   drop landed the witness shows the change the notice reports;
 // - the cancel and the late case again with the drop's signature already held when the drag begins (Chrome active,
 //   focused and on top, a corner covered by an override-redirect window so the drag is watched): the engine records the
 //   bits held, and the answers follow the order of the take and the release, not the signature;
@@ -46,6 +49,8 @@ export const deviceSentence = (app) => `${app} does not accept background input;
 /** The answers to a drag Chrome turned into a drag and drop, in shared mode (dnd.rs). */
 export const dndCancelledSentence = (app) =>
   `${app} began a drag and drop, which changes the desktop; it was cancelled before the drop, so nothing was dropped. Use a dedicated desktop, or activate the window first`;
+export const dndLateNotice = (app) =>
+  `${app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this request was not run, so read the window before sending it again`;
 export const dndMayHaveDroppedSentence = (app) =>
   `${app} began a drag and drop, which changes the desktop, and it could not be cancelled in time: the drop may have happened and the desktop changed. Use a dedicated desktop, or activate the window first`;
 
@@ -57,6 +62,8 @@ export function desktopState() {
 
 const DEDICATED = ['--desktop', 'dedicated'];
 const LATE = ['--dnd-cancel-after-release'];
+/** The measurement option that leaves a take during the drag unseen until after the release (dnd.rs `LateWatch`). */
+const DEFER = ['--dnd-defer-take'];
 /** How long a refused request's window is watched for anything arriving after the answer. */
 const QUIET_MS = 400;
 
@@ -187,9 +194,21 @@ async function obscuredInFront(ctx) {
       .filter((pair) => pair.length === 2)
       .map(([k, v]) => [k, Number(v)]),
   );
+  await cornerOverlay(ctx, g);
+}
+
+/**
+ * The override-redirect overlay over the bottom-right corner of a window of geometry `g` (`X`, `Y`, `WIDTH`, `HEIGHT`),
+ * away from the scene's drag path, registered with the sample's unconditional cleanup (`ctx.dispose`, run.mjs
+ * `withSampleCleanup`) as soon as it exists, so a sample that fails anywhere after it, a request timeout included, still
+ * takes it away.
+ */
+export async function cornerOverlay(ctx, g, start = startOverlay) {
   const corner = { x: g.WIDTH - CORNER - 8, y: g.HEIGHT - CORNER - 8 };
   if ((ctx.scene.dndPath ?? []).some((point) => point.x >= corner.x - 20 && point.y >= corner.y - 20)) throw new Error('the drag path runs under the corner overlay');
-  ctx.overlay = await startOverlay([g.X + corner.x, g.Y + corner.y, CORNER, CORNER].map(String));
+  const overlay = await start([g.X + corner.x, g.Y + corner.y, CORNER, CORNER].map(String));
+  ctx.dispose(() => overlay.stop());
+  return overlay;
 }
 /** The corner overlay's side, px. */
 const CORNER = 40;
@@ -223,7 +242,7 @@ function device({ device: expect, condition = covered, read, request, effect, ro
     },
     read,
     request,
-    effect: ['refusal', 'cancel', 'late'].includes(expect) ? undefined : effect,
+    effect: ['refusal', 'cancel', 'late', 'late-take'].includes(expect) ? undefined : effect,
     check: async (ctx, response) => {
       const out = {};
       if (expect === 'refusal') {
@@ -231,6 +250,17 @@ function device({ device: expect, condition = covered, read, request, effect, ro
         await sleep(QUIET_MS);
         const after = await read(ctx);
         out.unchanged = ctx.before !== null && after !== null && JSON.stringify(after) === JSON.stringify(ctx.before);
+      }
+      if (expect === 'late-take') {
+        // the drag answered as a plain drag; the next request on the same engine carries the late drag and drop
+        out.expected_notice = dndLateNotice(ctx.scene.app);
+        const next = await ctx.engine.request('list_windows', {});
+        out.next_ok = next.response.ok === true;
+        out.next_error = next.response.ok ? null : String(next.response.error);
+        out.late_dnd = next.stats?.late_dnd ?? null;
+        await sleep(QUIET_MS);
+        const after = await read(ctx);
+        out.dropped = !(typeof ctx.before?.drops === 'number' && after?.drops === ctx.before.drops);
       }
       if (expect === 'cancel' || expect === 'late') {
         out.expected_error = dndCancelledSentence(ctx.scene.app);
@@ -247,13 +277,9 @@ function device({ device: expect, condition = covered, read, request, effect, ro
       if (read === dropStatus) out.drop_status = { before: ctx.before, after: await read(ctx) };
       return out;
     },
-    // the foreground route leaves its window active: the front window takes the focus back, outside every span; a
-    // corner overlay goes
-    restore: async (ctx) => {
-      await ctx.overlay?.stop();
-      ctx.overlay = null;
-      ctx.desktop.focusFront();
-    },
+    // the foreground route leaves its window active: the front window takes the focus back, outside every span (a
+    // corner overlay goes with the sample's cleanup, however the sample ends)
+    restore: (ctx) => ctx.desktop.focusFront(),
   };
 }
 
@@ -320,6 +346,9 @@ export const DEVICE_OPS = {
   // the same with the drop's signature already held (Chrome active, focused, on top) and a corner covered, so the drag
   // is watched: cancelled in time and said so; with the cancel forced late, every answer says the drop may have happened
   chrome_dnd_obscured_in_front_shared: device({ device: 'cancel', condition: obscuredInFront, read: dropStatus, request: dndDrag, heldAtStart: true, settleMs: DND_SETTLE_MS }),
+  // a take left unseen until the release (the forced late take): the drag answers at its release, the next request
+  // carries the notice, and the witness shows the change the notice reports
+  chrome_dnd_late_take_shared: device({ device: 'late-take', condition: visible, read: dropStatus, request: dndDrag, args: DEFER, settleMs: DND_SETTLE_MS }),
   chrome_dnd_obscured_in_front_late_shared: device({ device: 'late', condition: obscuredInFront, read: dropStatus, request: dndDrag, args: LATE, heldAtStart: true, settleMs: DND_SETTLE_MS }),
   // Qt (`device-qt`, kate on a long document): its scroll bar's value
   qt_scroll_shared: device({ device: 'refusal', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }] }),
@@ -347,7 +376,7 @@ export const DEVICE_SCENE_OPS = {
   // the scroll last: its series ends with the page put back at its top (`reset`)
   'device-firefox': ['firefox_click_overlap_shared', 'firefox_click_offscreen_shared', 'firefox_right_click_overlap_shared', 'firefox_click_overlap_dedicated', 'firefox_click_visible_shared', 'firefox_element_click_covered', 'firefox_move_overlap_shared', 'firefox_move_covered_dedicated', 'firefox_drag_overlap_shared', 'firefox_drag_covered_dedicated', 'firefox_scroll_overlap_shared', 'firefox_scroll_covered_dedicated'],
   'device-chrome': ['chrome_drag_visible_path_shared', 'chrome_drag_covered_path_shared', 'chrome_drag_covered_dedicated'],
-  'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared', 'chrome_dnd_covered_dedicated', 'chrome_dnd_obscured_in_front_shared', 'chrome_dnd_obscured_in_front_late_shared'],
+  'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared', 'chrome_dnd_covered_dedicated', 'chrome_dnd_obscured_in_front_shared', 'chrome_dnd_obscured_in_front_late_shared', 'chrome_dnd_late_take_shared'],
   'device-qt': ['qt_scroll_shared', 'qt_scroll_dedicated'],
   'device-xterm': ['xterm_key_shared', 'xterm_key_dedicated', 'xterm_click_shared'],
   'gnome-text-editor': ['gte_type_text_shared'],
@@ -395,6 +424,13 @@ export function judgeDevice(op, rows, audit) {
     bad('not cancelled with the drag-and-drop sentence', (r) => !r.ok && r.error === r.expected_error);
     bad('it dropped', (r) => r.dropped === false);
   }
+  if (expect === 'late-take') {
+    bad('the drag did not answer as a plain drag', (r) => r.ok);
+    bad('the next request did not carry the late drag and drop', (r) => r.next_ok === false && r.next_error === r.expected_notice);
+    // the notice says the desktop may have changed: where the drop landed, the witness must show it
+    bad('a drop the witness did not record', (r) => !r.dropped || r.witness === false);
+    if (!rows.some((r) => r.dropped && r.witness === false)) reasons.push('no drop landed: the case showed no change for the notice to report');
+  }
   if (expect === 'late') {
     bad('a request answered success', (r) => !r.ok);
     // "nothing was dropped" only where nothing dropped and the desktop is as it was
@@ -415,7 +451,7 @@ export function judgeDevice(op, rows, audit) {
     bad('the window was not left active', (r) => r.activated === true);
   }
   // a late cancel's drop changes the desktop: its answer is judged instead
-  if (expect !== 'answer' && expect !== 'late') bad('the witness changed', (r) => r.witness === true);
+  if (!['answer', 'late', 'late-take'].includes(expect)) bad('the witness changed', (r) => r.witness === true);
   if (expect !== 'answer') {
     if (!audit) reasons.push('the audit did not run');
     else if (!audit.clean) reasons.push(`the ${audit.kind} audit found ${audit.forbidden?.join(', ') || 'no traced requests'}`);

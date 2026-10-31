@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { auditNothingSent, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
-import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndMayHaveDroppedSentence, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
+import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndMayHaveDroppedSentence, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
 import { OPS, SCENE_OPS } from '../../scripts/linux-engine-diff/ops.mjs';
 import { DEVICE_REFUSAL, DND_REFUSAL, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
 import { planOps, routeOf, runsOp } from '../../scripts/linux-engine-diff/run.mjs';
@@ -23,7 +23,7 @@ test('a refused request is audited for nothing sent: a SendEvent of any kind, or
 
 test("Acceptance 8's cases: each kind and condition, refused in shared mode, foreground in dedicated, the rest background", () => {
   const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'device-chrome', 'device-chrome-dnd', 'gnome-text-editor'], Object.values(DEVICE_SCENE_OPS).flat().filter((op) => op !== 'capabilities'));
-  assert.equal(plan.length, 40);
+  assert.equal(plan.length, 41);
   for (const { op, scene } of plan) {
     const def = OPS[op];
     assert.ok(SCENE_OPS[scene].includes(op));
@@ -184,4 +184,18 @@ test('with the signature already held, the cases pass only where the engine watc
   assert.deepEqual(judgeDevice('chrome_dnd_obscured_in_front_late_shared', [mayHave], lateAudit), { pass: true, reasons: [] });
   // the defect this case exists to catch: "nothing was dropped" though it dropped, the signature unable to show it
   assert.equal(judgeDevice('chrome_dnd_obscured_in_front_late_shared', [{ ...mayHave, error: cancelled }], lateAudit).pass, false);
+});
+
+test('the forced late take passes only where the drag answered plainly, the next request carried the notice, and the witness saw the drop', () => {
+  const notice = dndLateNotice('Google-chrome');
+  assert.equal(notice, 'Google-chrome started a drag and drop after your drag ended; it may have dropped and changed the desktop; this request was not run, so read the window before sending it again');
+  assert.deepEqual(OPS.chrome_dnd_late_take_shared.cuaArgs('device-chrome-dnd'), ['--dnd-defer-take']);
+  const good = row({ ok: true, next_ok: false, next_error: notice, expected_notice: notice, dropped: true, witness: false });
+  const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
+  assert.deepEqual(judgeDevice('chrome_dnd_late_take_shared', [good], audit), { pass: true, reasons: [] });
+  assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, next_ok: true, next_error: null }], audit).pass, false, 'the notice was not given');
+  assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, ok: false, error: 'x' }], audit).pass, false, 'the drag itself refused');
+  assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, witness: true }], audit).pass, false, 'a drop the witness did not record');
+  assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, dropped: false, witness: true }], audit).pass, false, 'no drop: nothing shown');
+  assert.equal(judgeDevice('chrome_dnd_late_take_shared', [good, { ...good, dropped: false, witness: true }], audit).pass, true, 'a missed drop beside landed ones');
 });

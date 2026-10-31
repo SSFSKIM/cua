@@ -399,7 +399,11 @@ variants included; their evidence is written either way. The run's `end` row kee
     `topup-<level>-<pass>-<n>`): fresh engines for a cold series, and for a warm one only the rounds it needs. One still
     undetermined at 40 fails. The rounds are planned from the samples the judge counts (`windowTopUp`: no failed
     preparation, and for a text command none of a vendor build's unsuccessful requests), and planned again, up to
-    three times a level, when failed samples left a series short.
+    three times a level, when failed samples left a series short. Since M3.1's second fix round each series is decided
+    per candidate at the first look that judges it (`speedDecisions`: a pass or failure on 20 a side, or undetermined
+    on 40), and that decision is frozen with the samples it rested on (`speed-decision` rows): the cold samples that a
+    warm top-up's fresh engines prime never reopen it. The verdict judges each series' speed on its decided samples and
+    everything else on every sample (`judgeWithDecisions`); `rejudge.mjs` replays the recorded decisions.
   - A parity-declared series with an open interval is sampled on and rests at parity.
   - `rejudge.mjs <results.jsonl> <run>` judges a recorded run again offline: the verdicts that change, and the
     under-20 series the old rule judged on medians. A run made through the vendor client (`meta.via` `vendor-js`) is

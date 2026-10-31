@@ -277,7 +277,11 @@ items into `$OUT2` (`$S drive 1 --out "$OUT2" --dry-run`, likewise 3 and 5, `$S 
    - The recorder is `screencapture -v -x -R`, from the operator's terminal: it needs the terminal's Screen & System
      Audio Recording permission, the same grant the first sitting's region captures used. If macOS asks anyway, the
      owner allows it, and answers "Later" if it asks to quit and reopen the terminal (quitting would end the operator's
-     session). A recorder that exits at once refuses the item the same way.
+     session). It runs on a pseudo-terminal of its own (`scripts/cursor-sitting/recorder-pty.py`), because it writes
+     its movie only when a character is typed at its terminal. On a pipe it ignores the character, a signal kills it
+     with no movie, and `-V` takes no stop at all (checked on the MacBook, 2026-10-31). The kit types that character at
+     `record-stop`, at a 300 s cap, or when the kit itself goes away. A recorder that exits at once, or does not print
+     its "type any character" prompt within 1.5 s, refuses the item the same way.
    - The owner watches `first-target` and `second-target` as before, and the operator records the two verdicts. The
      clip stops after the session has closed; the record keeps its region, both windows' bounds, the recorder's launch
      time and the clip's SHA-256, and each click's meta (`receivedAt`, `engineMs`, the action interval).
@@ -336,8 +340,9 @@ of the half that holds the change, and confirm the pick against the frame before
 ```sh
 $S clip order --frames "$REC/item-1-2026-10-31-frames" --out "$OUT2" \
   first-target <change> <arrival> second-target <change> <arrival>
-# item-1-order.md: each target's order (before; while, within one frame either way; after) and how long after the
-# engine received the click the control changed and the cursor arrived; exit 1 if a control changed after the arrival
+# item-1-order.md: each target's order, first frame against first frame (before: the change in an earlier frame; while:
+# the same frame; after: a later frame, which fails) and how long after the engine received the click the control
+# changed and the cursor arrived; exit 1 if a control changed after the arrival
 ```
 
 `order` appends the verdicts `order-first-target` and `order-second-target`, and copies the four judged frames and the

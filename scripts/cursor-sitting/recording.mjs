@@ -1,5 +1,5 @@
 // Item 1's screen recording (docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, Acceptance 1; its
-// Decision Log, 2026-10-31): while `drive 1` runs, `screencapture -v -R` records the rectangle the harness's TextEdit and
+// Decision Log, 2026-10-31): while `drive 1` runs, `screencapture -v -R`, on a terminal of its own, records the rectangle the harness's TextEdit and
 // Chrome for Testing windows fill, so the order of each control's change against the cursor's arrival can be read from
 // the frames afterwards (./clip.mjs). The region must hold only those windows: it is refused when part of it holds
 // neither (beyond a sliver) or when a window of the frontmost app lies over it. The clip is kept outside the repository,
@@ -14,12 +14,16 @@ export const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 // The widest strip of the region that may hold neither window: a tiling margin, the gap a hand placement leaves.
 export const UNCOVERED_TOLERANCE_PT = 16;
-// The recorder's own stop, so a kit that died never leaves it recording: well past an item-1 run (about 30 s).
+// The recorder's own stop, typed by its terminal (./recorder-pty.py), so a kit that hangs never leaves it recording:
+// well past an item-1 run (about 30 s).
 export const RECORDING_CAP_S = 300;
-// How long a just-started recorder must keep running to count as recording.
+// How long a just-started recorder has to say it is recording (screencapture's prompt came 0.1–0.24 s after its launch).
 export const START_CHECK_MS = 1500;
-// How long a stop may take: the recorder writes its movie after the interrupt.
+// How long a stop may take: the recorder writes its movie after the stop (about 0.1 s for a 2 s clip).
 export const STOP_MS = 60_000;
+// The pty the recorder runs on, and the interpreter that runs it.
+export const RECORDER_PTY = fileURLToPath(new URL('./recorder-pty.py', import.meta.url));
+const PYTHON = '/usr/bin/python3';
 
 const right = r => r.x + r.width, bottom = r => r.y + r.height;
 const area = r => `${r.width} × ${r.height} pt at (${r.x}, ${r.y})`;
@@ -69,10 +73,10 @@ export function recordingPlan({windows, pids, frontmost = null, frontWindows = [
   return over ? {ok: false, ...base, problem: over} : {ok: true, ...base};
 }
 
-// screencapture's arguments: a video (-v) of the region (-R, points), no sounds (-x), capped (-V). The real pointer is
-// left out (no -C), so only the agent's cursor shows.
-export const screencaptureArgs = ({region, file, capSeconds = RECORDING_CAP_S}) =>
-  ['-v', '-x', '-V', String(capSeconds), '-R', [region.x, region.y, region.width, region.height].join(','), file];
+// The recorder: a video (-v) of the region (-R, points), no sounds (-x). The real pointer is left out (no -C), so only
+// the agent's cursor shows. No -V: a time-limited recording takes no stop, so the cap is its terminal's.
+export const screencaptureCommand = ({region, file}) =>
+  ['/usr/sbin/screencapture', '-v', '-x', '-R', [region.x, region.y, region.width, region.height].join(','), file];
 
 // Whether `path` lies inside the repository `repo` (or is it).
 export function insideRepository(path, repo) {
@@ -89,31 +93,50 @@ export function clipPathProblem(file, repo) {
   return null;
 }
 
-// Starts the recorder and checks it is still running after `startCheckMs` (one that cannot record, for a missing
-// permission or a bad region, exits at once). -> {ok, handle, spawnAt, readyAt (its first output's time, or null)} or
-// {ok: false, problem}.
-export async function startRecording({command = '/usr/sbin/screencapture', args, env = process.env, now = Date.now, startCheckMs = START_CHECK_MS}) {
+// `promise`'s value, or null once `ms` have passed first. The timer is cleared either way, so a recorder that answers
+// in time leaves nothing scheduled to keep the process alive.
+function within(promise, ms) {
+  let timer;
+  const timeout = new Promise(done => { timer = setTimeout(() => done(null), ms); });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+// Starts `recorder` ([command, ...arguments]) on a terminal of its own (./recorder-pty.py, which types the stop at
+// `capSeconds`), and checks within `startCheckMs` that it said it is recording and is still running: one that cannot
+// record (a missing permission, a bad region) exits at once, and one that says nothing would take no stop.
+// -> {ok, handle, spawnAt, readyAt (its first output's time)} or {ok: false, problem}.
+export async function startRecording({recorder, capSeconds = RECORDING_CAP_S, env = process.env, now = Date.now, startCheckMs = START_CHECK_MS}) {
   const spawnAt = now();
-  const child = spawn(command, args, {stdio: ['pipe', 'pipe', 'pipe'], env});
+  const child = spawn(PYTHON, ['-I', RECORDER_PTY, String(capSeconds), ...recorder], {stdio: ['pipe', 'pipe', 'pipe'], env});
   let readyAt = null, said = '';
-  child.stdout.on('data', chunk => { readyAt ??= now(); said += chunk; });
+  let ready;
+  const saidSomething = new Promise(done => { ready = done; });
+  child.stdout.on('data', chunk => { readyAt ??= now(); said += chunk; ready(true); });
   child.stderr.on('data', chunk => { said += chunk; });
   const exited = new Promise(done => {
     child.once('exit', (code, signal) => done({code, signal, at: now()}));
     child.once('error', error => done({code: null, signal: null, at: now(), error: error.message}));
   });
-  const early = await Promise.race([exited, new Promise(done => setTimeout(() => done(null), startCheckMs))]);
-  if (early) return {ok: false, problem: `the recorder exited at once (${early.error ?? `code ${early.code}`}): ${said.trim().split('\n').at(-1) || 'it said nothing'}`};
+  const last = () => said.trim().split('\n').at(-1) || 'it said nothing';
+  const first = await within(Promise.race([exited.then(exit => ({exit})), saidSomething.then(() => ({ready: true}))]), startCheckMs);
+  // A recorder that spoke and then failed at once (a refused region, a missing grant) is caught by a short second look.
+  const early = first?.exit ?? (first?.ready ? await within(exited, 300) : null);
+  if (early) return {ok: false, problem: `the recorder exited at once (${early.error ?? `code ${early.code}`}): ${last()}`};
+  if (!first) {
+    child.kill('SIGKILL');
+    await exited;
+    return {ok: false, problem: `the recorder did not say it is recording within ${startCheckMs} ms, so it would take no stop; it was killed`};
+  }
   return {ok: true, spawnAt, readyAt, handle: {child, exited, spawnAt, said: () => said}};
 }
 
-// Stops the recorder as ctrl-c does (SIGINT), waits for it to write `file`, and hashes it. A recorder that does not
-// exit within `stopMs` is killed, and the stop fails. -> {ok, file, stopAt, exitedAt, code, signal, bytes, sha256} or
-// with {problem}.
+// Stops the recorder by asking its terminal to type the character its prompt asks for (on a terminal, a stop that writes the movie),
+// waits for it to write `file`, and hashes it. A recorder that does not exit within `stopMs` is killed (its terminal
+// hangs it up), and the stop fails. -> {ok, file, stopAt, exitedAt, code, signal, bytes, sha256} or with {problem}.
 export async function stopRecording(handle, {file, now = Date.now, stopMs = STOP_MS}) {
   const stopAt = now();
-  handle.child.kill('SIGINT');
-  let exit = await Promise.race([handle.exited, new Promise(done => setTimeout(() => done(null), stopMs))]);
+  if (handle.child.exitCode === null && handle.child.signalCode === null) handle.child.stdin.end('stop\n');
+  let exit = await within(handle.exited, stopMs);
   if (!exit) {
     handle.child.kill('SIGKILL');
     exit = await handle.exited;

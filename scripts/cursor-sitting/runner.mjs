@@ -18,7 +18,7 @@ import {FIXTURE_ACCESSIBILITY_FILE} from '../native-matrix/fixtures/electron-fix
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {readFocus, runWindowBounds} from './focus.mjs';
-import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureArgs, startRecording, stopRecording} from './recording.mjs';
+import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
 import {openDriven} from './session.mjs';
 import {latinSourceProblem} from './timing.mjs';
 import {liveTargetGuard} from './target-guard.mjs';
@@ -121,7 +121,7 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
         const plan = recordingPlan({windows: Object.fromEntries(records.map(r => [r.id, runWindowBounds(guard.windows(r.pid), r.window.number)])),
           pids: Object.fromEntries(records.map(r => [r.id, r.pid])), frontmost, frontWindows: frontmost ? guard.windows(frontmost.pid) : []});
         if (!plan.ok) return plan;
-        const started = await startRecording({args: screencaptureArgs({region: plan.region, file: clip})});
+        const started = await startRecording({recorder: screencaptureCommand({region: plan.region, file: clip})});
         if (!started.ok) return {...plan, ok: false, problem: started.problem};
         ctx.recording = {handle: started.handle, clip};
         return {...plan, clip, spawnAt: started.spawnAt, readyAt: started.readyAt};

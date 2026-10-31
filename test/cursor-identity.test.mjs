@@ -152,9 +152,14 @@ test('concurrent lookups of one session share one answer; a shared failure settl
   const both = await Promise.all([sminosName({env, locate: () => '/x/sminos', run: failing}), sminosName({env, locate: () => '/x/sminos', run: failing})]);
   assert.deepEqual(both, [null, null]);
   assert.equal(asked, 1, 'one lookup for both');
-  const contexts = await Promise.all([resolveCursorContext({env}), resolveCursorContext({env})].map(p => p.then(c => c.label, e => `rejected: ${e.message}`)));
-  assert.deepEqual(contexts, ['fallback', 'fallback']);
   assert.equal(await sminosName({env, locate: () => '/x/sminos', run: async () => 'Sminos-Session: back#00000000 (cua on macbook)'}), 'back', 'the failure was not kept');
+  // The whole context of two concurrent connections over one failing lookup (its own session id): both the folder's name.
+  const other = {...env, CLAUDE_CODE_SESSION_ID: '00000000-0000-4000-8000-000000000012'};
+  const lookup = options => sminosName({...options, locate: () => '/x/sminos', run: failing});
+  const contexts = await Promise.all([resolveCursorContext({env: other, lookup}), resolveCursorContext({env: other, lookup})]
+    .map(p => p.then(c => c.label, e => `rejected: ${e.message}`)));
+  assert.deepEqual(contexts, ['fallback', 'fallback']);
+  assert.equal(asked, 2, 'one lookup for both connections');
 });
 
 test('concurrent lookups that time out settle every caller to none at the bound, and the timeout is not kept', async () => {

@@ -39,10 +39,13 @@
 //       required. Refused, before any session opens, unless the input source is a
 //       Latin keyboard layout with TextEdit in front. --arm runs the series with
 //       engine.json's `cursorDebug` set to one of the engine's cursor arms (panelOut, noBackdrop, noRock,
-//       legacyLayers), engine.json put back and the engine stopped after; --owner-source runs it under whatever source
+//       legacyLayers, fps60), engine.json put back and the engine stopped after; --owner-source runs it under whatever source
 //       the owner has, the reading kept. Either is recorded in item-<n>-<arm>.jsonl or item-<n>-owner-source.jsonl and
 //       never judged: `judge` lists it in <out>/timing-recorded.md. The engine's timing signposts over the series are
-//       kept in <out>/signposts-<item>.ndjson (`log show --signpost`).
+//       kept in <out>/signposts-<item>.ndjson (`log show --signpost`), and the frames the window server composited
+//       during each of the series' cursor glides in <out>/frames-<item>.json (./cursor-sitting/frames.mjs); the fps60
+//       arm (the cursor's animations capped at 60 Hz) first proves its cap with the cursor probe's glides, with and
+//       without the arm, its verdict kept in the item's rows.
 //   cursor-sitting.mjs source consent yes|no --out <dir>
 //   cursor-sitting.mjs source restore --out <dir>
 //       The input source (./cursor-sitting/input-source.mjs): `consent` records the owner's answer to the kit switching
@@ -88,6 +91,7 @@ import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {ORDER_TARGETS, route3Plan, writeFrames, writeLag, writeOrder} from './cursor-sitting/clip.mjs';
+import {frameSummary, glideFrames, motionSpans, readFrameUpdates} from './cursor-sitting/frames.mjs';
 import {liveSourceSwitch, switchSource, writeConsent} from './cursor-sitting/input-source.mjs';
 import {writeOrderFromMeta} from './cursor-sitting/glide.mjs';
 import {restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
@@ -141,7 +145,10 @@ function judgeAll(out, {recorded = false} = {}) {
     const judged = judgeTiming(timed, {series: SERIES[kind]});
     const routes = kind === 'clicks' ? Object.entries(timed.filter(r => r.series === 'element click').reduce((m, r) => ({...m, [r.route ?? 'none']: (m[r.route ?? 'none'] ?? 0) + 1}), {})) : null;
     const source = all.findLast(r => r.kind === 'task' && r.task === 'input-source')?.result ?? null;
-    return [{item, kind, ...judged, runs: Object.fromEntries(Object.entries(runs).map(([name, r]) => [name, r.startedAt])), ...(routes ? {routes: Object.fromEntries(routes)} : {}), source}];
+    const framesFile = join(out, `frames-${item}.json`);
+    const frames = existsSync(framesFile) ? JSON.parse(readFileSync(framesFile, 'utf8')).summary ?? null : null;
+    const capCheck = all.findLast(r => r.kind === 'task' && r.task === 'glide-frames')?.result ?? null;
+    return [{item, kind, ...judged, runs: Object.fromEntries(Object.entries(runs).map(([name, r]) => [name, r.startedAt])), ...(routes ? {routes: Object.fromEntries(routes)} : {}), source, frames, capCheck}];
   });
 }
 
@@ -158,6 +165,22 @@ function keepSignposts(out, item, since) {
     print(`the engine's signposts since ${start}: ${file}`);
   } catch (error) { print(`the engine's signposts were not read (${error.message.split('\n')[0]})`); }
 }
+
+// The frames the window server composited during each of the series' cursor glides (./cursor-sitting/frames.mjs): the
+// engine's `cursor.motion` spans in the signposts just kept, the cursor probes of the item's glide-frames task left out,
+// against WindowServer's FrameUpdate signposts since `since`, in <out>/frames-<item>.json; a failure is said and changes
+// no verdict.
+function keepGlideFrames(out, item, since) {
+  const signposts = join(out, `signposts-${item}.ndjson`), file = join(out, `frames-${item}.json`);
+  try {
+    const probes = lastAttempt(readJsonl(join(out, `item-${item}.jsonl`))).filter(r => r.kind === 'task' && r.task === 'glide-frames').flatMap(r => r.result?.pids ?? []);
+    const glides = glideFrames(motionSpans(readFileSync(signposts, 'utf8'), {excludePids: probes}), readFrameUpdates(since));
+    const summary = frameSummary(glides);
+    writeFileSync(file, `${JSON.stringify({item, summary, glides}, null, 2)}\n`);
+    print(`the window server's frames per cursor glide: ${framesLine(summary)} (${file})`);
+  } catch (error) { print(`the frames per cursor glide were not counted (${error.message.split('\n')[0]})`); }
+}
+const framesLine = f => (f.glides ? `${f.glides} glides, a median ${f.frames} frames over ${f.ms} ms, ${f.hz} Hz, a frame every ${f.intervalMs} ms` : 'no glide was recorded');
 
 const fmt = v => (v === null || v === undefined ? '–' : Number(v).toFixed(2));
 function timingMarkdown(judged, {recorded = false} = {}) {
@@ -177,6 +200,11 @@ function timingMarkdown(judged, {recorded = false} = {}) {
     if (new Set(started.map(([, at]) => at)).size > 1) lines.push('', `Each series is taken from the last run that covers it: ${started.map(([name, at]) => `${name} from the run started ${new Date(at).toISOString()}`).join('; ')}.`);
     if (j.errors) lines.push('', `${j.errors} timed call(s) failed and are not in the samples (item-${j.item}.jsonl has their errors).`);
     if (j.routes) lines.push('', `The element clicks' routes: ${Object.entries(j.routes).map(([r, n]) => `route ${r} × ${n}`).join(', ')}.`);
+    if (j.frames) lines.push('', `Frames the window server composited per cursor glide (frames-${j.item}.json, the whole display's): ${framesLine(j.frames)}.`);
+    if (j.capCheck) {
+      const {base, capped} = j.capCheck, rock = base?.rock && capped?.rock ? `; rock ${base.rock.hz} against ${capped.rock.hz} Hz` : '';
+      lines.push('', `The fps60 cap, from the cursor probe's glides before the series: default ${base?.hz ?? '–'} Hz (a frame every ${base?.intervalMs ?? '–'} ms), fps60 ${capped?.hz ?? '–'} Hz (every ${capped?.intervalMs ?? '–'} ms)${rock}: **${j.capCheck.verdict}** (${j.capCheck.why}).`);
+    }
     lines.push('');
   }
   return lines.join('\n');
@@ -259,6 +287,7 @@ export async function main(argv) {
     if (values['dry-run']) return code;
     const out = absolute(values, 'out');
     keepSignposts(out, item, started);
+    keepGlideFrames(out, item, started);
     if (item !== String(TIMING_ITEM[kind])) {
       const recorded = judgeAll(out, {recorded: true});
       writeFileSync(join(out, 'timing-recorded.md'), timingMarkdown(recorded, {recorded: true}));

@@ -49,9 +49,22 @@ test('an arm series sets cursorDebug, relaunches the engine, checks the running 
   assert.ok(steps.findIndex(s => s.task === 'engine-status') > steps.findIndex(s => s.open === 'off'), 'read once the sessions launched the engine');
   assert.equal(steps.find(s => s.task === 'engine-status').required, true);
   assert.ok(steps.findIndex(s => s.task === 'engine-json-restore') > steps.findIndex(s => s.close === 'on'));
-  assert.throws(() => timingSteps('typing', 2, {arm: 'noRockFilter'}), /panelOut, noBackdrop, noRock, legacyLayers/);
+  assert.throws(() => timingSteps('typing', 2, {arm: 'noRockFilter'}), /panelOut, noBackdrop, noRock, legacyLayers, fps60/);
   assert.throws(() => timingSteps('typing', 2, {arm: 'noRock', ownerSource: true}), /one at a time/);
-  assert.deepEqual(CURSOR_ARMS, ['panelOut', 'noBackdrop', 'noRock', 'legacyLayers']);
+  assert.deepEqual(CURSOR_ARMS, ['panelOut', 'noBackdrop', 'noRock', 'legacyLayers', 'fps60']);
+});
+
+test('the fps60 arm\'s series first proves its cap: the probe\'s glides with and without the arm, before engine.json changes', () => {
+  for (const kind of ['typing', 'clicks']) {
+    const steps = timingSteps(kind, 2, {arm: 'fps60'});
+    const tasks = steps.filter(s => s.task).map(s => [s.task, ...(s.args ?? [])].join(' '));
+    assert.deepEqual(tasks.slice(4, 8), ['input-source latin', 'glide-frames fps60', 'engine-json-arm fps60', 'engine-stop']);
+    const check = steps.find(s => s.task === 'glide-frames');
+    assert.notEqual(check.required, true, 'recorded: a cap that did not take effect is the finding, not a reason to stop');
+    assert.ok(steps.indexOf(check) < steps.findIndex(s => s.open === 'on'));
+  }
+  assert.equal(timingSteps('typing', 2, {arm: 'noRock'}).some(s => s.task === 'glide-frames'), false, 'only the cap\'s arm has a cap to prove');
+  assert.equal(timingSteps('typing', 2).some(s => s.task === 'glide-frames'), false);
 });
 
 test('only the plain series is judged: an arm or the owner\'s source records under its own item', () => {

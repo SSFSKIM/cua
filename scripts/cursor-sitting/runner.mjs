@@ -18,6 +18,7 @@ import {FIXTURE_ACCESSIBILITY_FILE} from '../native-matrix/fixtures/electron-fix
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {readFocus, runWindowBounds} from './focus.mjs';
+import {capVerdict, frameSummary, glideFrames, probeSpans, readFrameUpdates} from './frames.mjs';
 import {BUILT_IN_SCREEN, farPoint, overlaysAbove, plannedSettle} from './glide.mjs';
 import {liveSourceSwitch, restoreAfterFailure, sourceTargetProblem, switchSource} from './input-source.mjs';
 import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
@@ -28,6 +29,8 @@ import {liveTargetGuard} from './target-guard.mjs';
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 const SCENES_CLI = fileURLToPath(new URL('../repl-parity/scenes-mac.mjs', import.meta.url));
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+// The glides the fps60 arm's cap check counts on each side (about 4 s of probe a side).
+const GLIDE_CHECK_GLIDES = 2;
 
 // The engine's activations among the watcher's lines: the panel never activates the engine (Acceptance 5).
 export const engineActivations = lines => lines.filter(l => l.kind === 'activated' && l.bundleId === BUNDLE_ID);
@@ -94,6 +97,22 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
       'engine-json-off': async () => writeSettings(cursorOffSettings),
       // Likewise, the cursor's diagnostic arm written (the engine reads it at its next launch).
       'engine-json-arm': async ([arm]) => ({...writeSettings(text => cursorDebugSettings(text, arm)), arm}),
+      // The cap of an arm that caps the cursor's frame rate (fps60), proven before its series (./frames.mjs): the approved
+      // bundle's cursor probe glides twice and rocks, on its own transparent window, nothing driven, without the arm and
+      // then with it; the window server's frames inside each glide and the rock counted. Recorded, never stopping the
+      // series: a cap that does not take effect is the finding. The probes' pids are kept, so the series' own count
+      // leaves their glides out.
+      'glide-frames': async ([arm]) => {
+        const since = new Date(Date.now() - 2000);
+        const sides = [[], ['--debug', arm]].map(extra => probeSpans(runProbe(enginePaths().bundle, ['cursor', '--glides', String(GLIDE_CHECK_GLIDES), ...extra])));
+        const times = readFrameUpdates(since);
+        const [base, capped] = sides.map(side => {
+          const rows = glideFrames(side.glides, times);
+          return {pid: side.pid, ...frameSummary(rows), rock: side.rock ? glideFrames([side.rock], times)[0] : null, rows};
+        });
+        const {verdict, why} = capVerdict(base, capped);
+        return {ok: verdict === 'capped', arm, verdict, why, base, capped, pids: sides.map(side => side.pid).filter(Number.isInteger)};
+      },
       // The keyboard's input source as the approved bundle's probe reads it, TextEdit in front: `latin` requires a
       // Latin keyboard layout (./timing.mjs latinSourceProblem), `record` only keeps the reading.
       'input-source': async ([mode]) => {

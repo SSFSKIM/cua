@@ -185,7 +185,8 @@ keys are translated with that same layout; the reading is kept in the series' fi
 **The cursor's arms** (only if 12 or 13 fails with the defaults, or the design session asks): each arm takes one part of
 what a visible cursor costs the window server away, through engine.json's `cursorDebug`, which the engine reads at
 launch and strictly (`panelOut`: the panel never ordered in, every commit still made; `noBackdrop`: the halo's blur
-hidden, its tint left; `noRock`: no rock; `legacyLayers`: the sitting's first build's layers, the arrow's blur filter
+hidden, its tint left; `noRock`: no rock; `fps60`: every animation of the cursor's layers capped at 60 Hz, where the
+default glide runs at the ProMotion display's 120; `legacyLayers`: the sitting's first build's layers, the arrow's blur filter
 always installed and its shadow found from its alpha). `$S timing typing|clicks --arm <arm> --run "$RUN" --out "$OUT"`
 writes the key (engine.json kept in `engine.json.before` meanwhile), stops the engine so the sessions relaunch it,
 checks `cua engine status --json`'s `status.cursorDebug`, runs the series, then puts engine.json back and stops the
@@ -416,6 +417,22 @@ series whose scene is gone from the front (a locked screen, say) rather than tim
      53 × 48 pt one, likely the popover a drag's text selection leaves, made the selection refuse. If one is there, a
      cursor-off session clicks once in the run window's text to dismiss it, and the series goes on only once none is
      left.
+   - `$S timing typing --arm fps60 --run "$RUN" --out "$OUT2"` (and `clicks`, 20 each, under ABC) asks whether the
+     cost follows the frame rate: the arm caps every animation of the cursor's layers at 60 Hz (Core Animation's
+     `preferredFrameRateRange`, 30–60, preferring 60), where the default glide runs at 120 on this display.
+     - Before the sessions open, the `glide-frames` task proves the cap: the approved bundle's cursor probe glides twice
+       and rocks for a second on its own transparent window, nothing driven (about 4 s a side, drawn over the screen),
+       without the arm and then with it, and the window server's frames inside each glide are counted from its
+       `FrameUpdate` signposts. The verdict, in the item's rows and `timing-recorded.md`, reads the median interval
+       between frames: `capped` (the arm's glides a frame at least 14 ms apart, the default's at most 10: 16.7 against
+       8.3 ms on this display), `not capped`, or `undetermined` (the default's did not reach full rate, so no cap
+       could show). It never stops the series.
+     - Every timing series, this one and the default control re-run beside it, also counts the frames during its own
+       glides (the engine's `cursor.motion` signposts against WindowServer's `FrameUpdate`) into
+       `$OUT2/frames-<item>.json`, its median in `timing.md` or `timing-recorded.md`. The count is the whole
+       display's: the display runs at the highest rate anything on it asks for, so a glide during typing reads what
+       TextEdit drew as well. The arm's timing is read beside the rate its glides actually ran at, so a null result
+       cannot mean the cap was ignored.
 9. **The source back, the scenes down, the verdicts.** `$S source restore --out "$OUT2"` (the owner's source, read
    back; exit 1 says it is not), `$SC down all --run "$RUN"`, `$S judge --out "$OUT2"`, `$S summary --out "$OUT2"`,
    then `kill "$(cat "$SIT/caffeinate.pid")"`.

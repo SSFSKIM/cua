@@ -30,6 +30,23 @@ test('judge reads the last attempt of each timing item and writes timing.md', as
   assert.equal(code, 0);
 });
 
+test('the recorded timing lists the frames per cursor glide and, for the fps60 arm, its cap check', async t => {
+  const out = scratch(t);
+  const capCheck = {ok: true, verdict: 'capped', why: '62 Hz capped against 118 Hz default', pids: [5, 6],
+    base: {pid: 5, glides: 2, frames: 170, ms: 1427.1, hz: 118, intervalMs: 8.3, rock: {frames: 119, hz: 119, intervalMs: 8.3}},
+    capped: {pid: 6, glides: 2, frames: 90, ms: 1427.1, hz: 62, intervalMs: 16.7, rock: {frames: 61, hz: 61, intervalMs: 16.7}}};
+  const rows = typingRows();
+  rows.splice(3, 0, {kind: 'task', task: 'glide-frames', args: ['fps60'], result: capCheck});
+  writeFileSync(join(out, 'item-12-fps60.jsonl'), jsonl(rows));
+  writeFileSync(join(out, 'frames-12-fps60.json'), JSON.stringify({item: '12-fps60', summary: {glides: 40, frames: 52, ms: 880, hz: 59.1, intervalMs: 16.7}, glides: []}));
+  writeFileSync(join(out, 'item-12.jsonl'), jsonl(typingRows()));
+  await quietly(() => main(['judge', '--out', out]));
+  const md = readFileSync(join(out, 'timing-recorded.md'), 'utf8');
+  assert.match(md, /Frames the window server composited per cursor glide.*40 glides.*52 frames.*880 ms.*59\.1 Hz.*16\.7 ms/);
+  assert.match(md, /fps60 cap.*default 118 Hz.*fps60 62 Hz.*rock 119 against 61 Hz.*\*\*capped\*\*/);
+  assert.doesNotMatch(readFileSync(join(out, 'timing.md'), 'utf8'), /Frames the window server/, 'a series without its frames file says nothing of them');
+});
+
 test('a timing item that is missing a series fails the judgement', async t => {
   const out = scratch(t);
   writeFileSync(join(out, 'item-13.jsonl'), jsonl([{kind: 'start'}, ...Array.from({length: 20}, (_, i) => ({kind: 'cell', ok: true, route: '3', sample: {side: 'on', i, series: 'element click'}, value: {ms: 40}}))]));

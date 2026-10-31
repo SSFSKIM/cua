@@ -1,6 +1,6 @@
 # The agent cursor's attended sitting (#235, M3): the runbook
 
-Status: **first sitting run 2026-10-30 (items 1–11 done, verdicts in `sitting/`; 12–13 failed); the second sitting is prepared: the owner about 25 minutes (items 3, 1 recorded, 5), then the timing unattended** (below). This is the kit for M3 of
+Status: **done 2026-10-31. Two attended sittings (`sitting/`, `sitting-2026-10-31/`) and three unattended runs (`sitting-2026-10-31b/`, `-31c/`, `-31e/`); Acceptance 1–11 pass (item 1's order on the final build declared from the records, #239), 12–13 amended by the owner (Known limits, #238); the final engine is dd7a09235885 with the 60 Hz cap as its default** (the spec's Decision Log and the execution record have the detail). This is the kit for M3 of
 `docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md`: Acceptance 1–13 on the owner's MacBook, with the
 branch's engine built and approved, `CUA_NATIVE_ENGINE=cua`, #117's harness scenes, the owner watching and a screen
 recording running. When it has run, this file gets its outcome at the top and the sitting's records land in

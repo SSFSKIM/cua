@@ -577,6 +577,27 @@ final class CursorHubTests: XCTestCase {
     XCTAssertEqual(world.activity, [true, false])
   }
 
+  func testAKeyboardRequestWhileThinkingCommitsTheStillCursorAndTheRockReturnsAfterIt() {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    world.clock.t += 1
+    hub.tick()
+    XCTAssertEqual(renderer.last?.phase, .thinking)
+    hub.begin(connection: 1, app: app, keyboardOnly: true)
+    hub.drain()
+    XCTAssertEqual(renderer.last?.phase, .acting, "the renderer halts the rock while the keys go out")
+    world.clock.t += 0.5
+    hub.end(connection: 1)
+    hub.drain()
+    world.clock.t += 0.29
+    hub.tick()
+    XCTAssertEqual(renderer.last?.phase, .acting)
+    world.clock.t += 0.01
+    hub.tick()
+    XCTAssertEqual(renderer.last?.phase, .thinking)
+  }
+
   func testAnExplicitHideStartsItsFadeWhenTheHideComes() throws {
     let world = World(), renderer = RecordingRenderer()
     let hub = hub(world, renderer)

@@ -28,19 +28,24 @@ struct CursorLifecycle {
   /// The idle bound before the fade (O3) and the fade itself (the vendor's fade-in time, VC §2, used both ways).
   static let idleSeconds = 5.0
   static let fadeSeconds = 0.44
+  /// How long no request may have been in flight before the rock starts, so an agent's back-to-back requests never
+  /// start it (the spec's Decision Log, 2026-10-31: still while acting, rocks while the model thinks, VC).
+  static let thinkingIdleSeconds = 0.3
 
   private(set) var phase: CursorPhase = .hidden
   private(set) var inFlight = 0
   /// When the last request ended, while none is in flight.
   private(set) var idleSince: TimeInterval?
-  /// When the motion now playing settles (acting → thinking).
+  /// When the motion now playing settles (acting → thinking, once no request has been in flight for 0.3 s).
   private(set) var motionSettlesAt: TimeInterval?
   private(set) var fadeEndsAt: TimeInterval?
   /// The last point per app key (`ResolvedApp.key`).
   private(set) var lastPoints: [String: CursorPoint] = [:]
 
   /// A request began (Methods.swift's prologue). It cancels a fade, clears taken over, and a keyboard-only request brings
-  /// a hidden or fading cursor back at its last point in the request's app (staying hidden when it has none there).
+  /// a hidden or fading cursor back at its last point in the request's app (staying hidden when it has none there). A
+  /// cursor it shows again rests still while the request runs; a keyboard-only request stills a rocking one, since typing
+  /// is acting (an observation leaves the rock: the model is between actions).
   @discardableResult
   mutating func begin(app: String?, keyboardOnly: Bool, now: TimeInterval) -> CursorBeginEffect {
     inFlight += 1
@@ -56,10 +61,12 @@ struct CursorLifecycle {
         settle(now: now)
         return .reappear(point)
       }
-      phase = .thinking
+      settle(now: now)
     case .takenOver:
       settle(now: now)
-    case .acting, .thinking:
+    case .thinking:
+      if keyboardOnly { settle(now: now) }
+    case .acting:
       break
     }
     return .none
@@ -106,7 +113,7 @@ struct CursorLifecycle {
 
   /// Every transition due at `now`, in order.
   mutating func tick(now: TimeInterval) {
-    if phase == .acting, let settles = motionSettlesAt, settles <= now {
+    if phase == .acting, let thinkingAt, thinkingAt <= now {
       phase = .thinking
       motionSettlesAt = nil
     }
@@ -126,13 +133,21 @@ struct CursorLifecycle {
     switch phase {
     case .hidden: return nil
     case .fading: return fadeEndsAt
-    case .acting: return [motionSettlesAt, fadeAt].compactMap { $0 }.min()
+    case .acting: return [thinkingAt, fadeAt].compactMap { $0 }.min()
     case .thinking, .takenOver: return fadeAt
     }
   }
 
   /// When the fade now playing began.
   var fadeStartedAt: TimeInterval? { phase == .fading ? fadeEndsAt.map { $0 - Self.fadeSeconds } : nil }
+
+  /// When acting turns to thinking: once the motion has settled and no request has been in flight for 0.3 s; nil while
+  /// one is in flight (its end re-arms the hub's timer).
+  private var thinkingAt: TimeInterval? {
+    guard let settles = motionSettlesAt, inFlight == 0 else { return nil }
+    guard let idleSince else { return settles }  // no request yet (the probe's and the tests' bare actions)
+    return max(settles, idleSince + Self.thinkingIdleSeconds)
+  }
 
   /// When the idle fade starts: five seconds after the last request ended, while none is in flight.
   private var fadeAt: TimeInterval? { idleSince.map { $0 + Self.idleSeconds } }

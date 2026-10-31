@@ -72,6 +72,7 @@ function sitOn(dir, home) {
   writeFileSync(join(dir, BUNDLE, 'Contents/NewResource'), 'only in the branch build');
   writeFileSync(join(dir, 'approved.json'), '{"build": "branch-build"}\n');
   rmSync(join(dir, 'previous'), {recursive: true});
+  mkdirSync(join(home, '.config/cua'), {recursive: true});
   writeFileSync(join(home, '.config/cua/engine.json'), '{"engine": "vendor", "cursor": false}\n');
 }
 
@@ -94,6 +95,7 @@ test('the restore stops the engine, puts the saved directory in place of the cur
   assert.ok(existsSync(join(aside, 'engine', 'build/release/huge.o')), 'the build scratch moved aside with the rest');
   assert.equal(readFileSync(join(aside, 'engine.json'), 'utf8'), '{"engine": "vendor", "cursor": false}\n');
   assert.deepEqual(out.status, {build: 'saved-build', approved: true, matches: true});
+  assert.deepEqual(out.settings, {restored: true});
 });
 
 test('the restore changes nothing when the saved copy no longer matches its record, or the engine will not stop', async t => {
@@ -135,4 +137,31 @@ test('an engine.json the save did not find is moved aside at the restore', async
   assert.ok(!existsSync(join(home, '.config/cua/engine.json')));
   assert.equal(readFileSync(join(home, 'aside', 'engine.json'), 'utf8'), '{"cursor": false}\n');
   assert.ok(existsSync(join(dir, BUNDLE)));
+});
+
+test('the save refuses a status that failed or names no build, and writes nothing', async t => {
+  const {home, savedTo} = fakeHome(t);
+  await assert.rejects(saveEngine({home, to: savedTo, status: async () => ({ok: false, detail: 'cua engine status failed'})}), /status was not read.*failed/);
+  await assert.rejects(saveEngine({home, to: savedTo, status: async () => ({running: false})}), /status was not read/);
+  assert.ok(!existsSync(savedTo));
+});
+
+test('the restore checks the saved engine.json before it stops anything: changed, missing, or present when none was saved', async t => {
+  for (const [label, engineJson, spoil] of [
+    ['changed', '{"engine": "vendor"}\n', to => writeFileSync(join(to, 'engine.json'), '{"cursor": false}\n')],
+    ['missing', '{"engine": "vendor"}\n', to => rmSync(join(to, 'engine.json'))],
+    ['unexpected', null, to => writeFileSync(join(to, 'engine.json'), '{}\n')],
+  ]) {
+    const {home, dir, savedTo} = fakeHome(t, {engineJson});
+    await saveEngine({home, to: savedTo, status: async () => STATUS});
+    sitOn(dir, home);
+    const sat = treeManifest(dir);
+    spoil(savedTo);
+    let stopped = 0;
+    await assert.rejects(restoreEngine({home, from: savedTo, aside: join(home, 'aside'), stop: async () => { stopped++; return {ok: true}; }, status: async () => STATUS}),
+      /saved engine.json .* is not what saved.json recorded/, label);
+    assert.equal(stopped, 0, label);
+    assert.deepEqual(treeManifest(dir), sat, label);
+    assert.ok(!existsSync(join(home, 'aside')), label);
+  }
 });

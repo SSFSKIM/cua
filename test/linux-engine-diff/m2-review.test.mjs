@@ -93,6 +93,21 @@ test('both Copy attempts failing give the sample a handle no engine issued, and 
   assert.equal(judgeOperation(rows, { vendors: VENDORS, candidate: 'cua', text: true }).pass, false);
 });
 
+test('a window that refuses the selection twice gives the sample a handle no engine issued, and the run goes on', async () => {
+  // t18-verdict: the newest build's gedit text window refused the oracle's selection in a top-up, which ended the run
+  const requests = [];
+  let selects = 0;
+  const ctx = {
+    scene: { id: 7, field: 'f', label: 'gedit-text_newest' },
+    desktop: { oracle: { select: () => (selects++, false), text: () => 'cua171 differential scene' } },
+    engine: { request: async (command) => (requests.push(command), { response: { ok: true, output: 'h' } }) },
+  };
+  assert.equal(await handleOfFirstWord(ctx), NO_HANDLE);
+  assert.equal(selects, 2, 'tried twice');
+  assert.deepEqual(requests, [], 'no Copy without a selection');
+  assert.match(ctx.prepareError, /^clipboard_read for a handle failed: gedit-text_newest refused the selection/);
+});
+
 // ---------------------------------------------------------------------------------------------------------------
 // the noise rule's bound
 

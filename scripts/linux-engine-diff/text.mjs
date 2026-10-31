@@ -107,7 +107,15 @@ export const NO_HANDLE = 'cua171-no-handle';
 export async function handleOfFirstWord(ctx) {
   let error;
   for (let attempt = 0; attempt < 2; attempt++) {
-    selectFirstWord(ctx);
+    // a window that refuses the selection (the newest build's gedit once, in a top-up of t18-verdict) is a failed
+    // attempt like a failed Copy, never the end of the run
+    try {
+      selectFirstWord(ctx);
+    } catch (e) {
+      error = e.message;
+      await sleep(200);
+      continue;
+    }
     const { response } = await companion(ctx, () => ctx.engine.request('clipboard_read', { window: { id: ctx.scene.id } }));
     if (response.ok) return response.output;
     error = response.error;

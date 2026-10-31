@@ -783,6 +783,36 @@ final class CursorHubTests: XCTestCase {
     XCTAssertEqual(try XCTUnwrap(commit.motion).trajectory.end, CGPoint(x: 400, y: 600), "resting at its last point")
   }
 
+  func testADisplayReconfigurationAfterACrossAppRevivalKeepsTheCursorInTheRevivedApp() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    let other = "/System/Applications/Notes.app#500"
+    hub.begin(connection: 1, app: other, keyboardOnly: false)
+    hub.act(connection: 1, app: other, window: 10, .click(CGPoint(x: 400, y: 300)))
+    hub.end(connection: 1)
+    hub.drain()
+    world.clock.t += 1
+    click(hub, CGPoint(x: 1200, y: 700))
+    world.clock.t += 6
+    hub.tick()
+    world.clock.t += 0.5
+    hub.tick()
+    XCTAssertEqual(hub.phase(connection: 1), .hidden)
+    hub.begin(connection: 1, app: other, keyboardOnly: true)
+    hub.drain()
+    let revived = try XCTUnwrap(renderer.last)
+    XCTAssertEqual(revived.attachment.window, 10)
+    XCTAssertEqual(try XCTUnwrap(revived.motion).trajectory.end, CGPoint(x: 400, y: 600), "back at its last point in the typed-in app")
+    world.screens = [CursorScreen(frame: CGRect(x: 0, y: 0, width: 1728, height: 900), visibleFrame: CGRect(x: 0, y: 0, width: 1728, height: 870))]
+    world.appCenter.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+    hub.drain()
+    let commit = try XCTUnwrap(renderer.last)
+    XCTAssertEqual(commit.screen.frame.width, 1728)
+    XCTAssertEqual(commit.attachment.window, 10)
+    XCTAssertEqual(try XCTUnwrap(commit.motion).trajectory.end, CGPoint(x: 400, y: 600),
+                   "the revived app's last point, not the app pointed in before the fade")
+  }
+
   func testReduceMotionPlansStraightEases() throws {
     let world = World(), renderer = RecordingRenderer()
     world.reduceMotion = true

@@ -167,7 +167,7 @@ final class CursorHub: @unchecked Sendable {
       var changed = false
       switch cursor.lifecycle.begin(app: app, keyboardOnly: keyboardOnly, now: now) {
       case .none: break
-      case .reappear(let point): reappear(cursor, at: point, now: now); changed = true
+      case .reappear(let point): reappear(cursor, in: app, at: point, now: now); changed = true
       }
       if changed || cursor.lifecycle.phase != before { commit(cursor) } else { rearm() }
     }
@@ -392,8 +392,8 @@ final class CursorHub: @unchecked Sendable {
   }
 
   /// A keyboard request brought the cursor back at its last point in the app: a fade-in there, attached to the window it
-  /// pointed in.
-  private func reappear(_ cursor: CursorModel, at point: CursorPoint, now: TimeInterval) {
+  /// pointed in, and the app it now shows in (what a display reconfiguration re-reads the last point of).
+  private func reappear(_ cursor: CursorModel, in app: String?, at point: CursorPoint, now: TimeInterval) {
     let screens = environment.screens()
     guard let screen = screens.screen(containing: point.global) else { return }
     let attachment = cursorAttachment(window: point.window, list: environment.windowList(), frontmostPid: environment.frontmostPid())
@@ -402,6 +402,7 @@ final class CursorHub: @unchecked Sendable {
                                         beginTime: now + Self.spliceLead, dips: [], fadeIn: true)
     cursor.screen = screen
     cursor.attachment = attachment
+    cursor.app = app
     cursor.phaseSince = now
   }
 

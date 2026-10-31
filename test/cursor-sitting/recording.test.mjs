@@ -91,30 +91,33 @@ if (process.stdin.isTTY && !process.env.SILENT) {
 }
 setInterval(() => {}, 1000);`;
 const standIn = file => [process.execPath, '-e', STAND_IN, file];
+// The start bound for a recorder expected to start: generous for a loaded CI host, where python and node start slowly
+// (the hosted runner took over 1.5 s); a refused start is tested with its own bounds below.
+const START = 30_000;
 
 test('a recorder on its own terminal says it is recording, is stopped there, and its movie is kept with its hash', async t => {
   const dir = scratch(t), file = join(dir, 'item-1.mov');
-  const started = await startRecording({recorder: standIn(file)});
+  const started = await startRecording({recorder: standIn(file), startCheckMs: START});
   assert.equal(started.ok, true, started.problem);
   assert.ok(started.readyAt >= started.spawnAt, 'its prompt\'s time is kept');
-  const stopped = await stopRecording(started.handle, {file, stopMs: 5000});
+  const stopped = await stopRecording(started.handle, {file, stopMs: 60_000});
   assert.equal(stopped.ok, true, stopped.problem);
   assert.equal(stopped.bytes, 5);
   assert.match(stopped.sha256, /^[0-9a-f]{64}$/);
   assert.equal(stopped.code, 0);
-  assert.ok(stopped.exitedAt - stopped.stopAt < 2000);
+  assert.ok(stopped.exitedAt - stopped.stopAt < 20_000, 'stopped by the typed stop, not the cap (300 s)');
 });
 
 test('the terminal types the stop itself at the cap, and when the kit goes away (its pipe closes)', async t => {
   const dir = scratch(t);
   const capped = join(dir, 'capped.mov');
-  const started = await startRecording({recorder: standIn(capped), capSeconds: 1});
+  const started = await startRecording({recorder: standIn(capped), capSeconds: 1, startCheckMs: START});
   assert.equal(started.ok, true, started.problem);
   const exit = await started.handle.exited;
-  assert.ok(exit.at - started.spawnAt < 3000 && exit.code === 0, 'stopped by the cap');
+  assert.ok(exit.at - started.spawnAt < 20_000 && exit.code === 0, 'stopped by the 1 s cap (the default is 300 s), cleanly');
   assert.equal((await stopRecording(started.handle, {file: capped})).ok, true, 'a stop after the cap keeps the movie');
   const orphan = join(dir, 'orphan.mov');
-  const again = await startRecording({recorder: standIn(orphan)});
+  const again = await startRecording({recorder: standIn(orphan), startCheckMs: START});
   again.handle.child.stdin.end();
   assert.equal((await again.handle.exited).code, 0);
   assert.equal(readFileSync(orphan, 'utf8'), 'movie');
@@ -122,7 +125,7 @@ test('the terminal types the stop itself at the cap, and when the kit goes away 
 
 test('a recorder that exits at once, or never says it is recording, is refused, with what it said', async t => {
   const dir = scratch(t);
-  const failed = await startRecording({recorder: standIn(join(dir, 'x.mov')), env: {...process.env, EXIT_AT_ONCE: '1'}, startCheckMs: 3000});
+  const failed = await startRecording({recorder: standIn(join(dir, 'x.mov')), env: {...process.env, EXIT_AT_ONCE: '1'}, startCheckMs: START});
   assert.equal(failed.ok, false);
   assert.match(failed.problem, /exited at once \(code 1\): could not start/);
   const silent = await startRecording({recorder: standIn(join(dir, 'y.mov')), env: {...process.env, SILENT: '1'}, startCheckMs: 500});
@@ -132,57 +135,58 @@ test('a recorder that exits at once, or never says it is recording, is refused, 
 
 test('a killed terminal hangs its recorder up: none is left recording behind it', async t => {
   const dir = scratch(t);
-  const started = await startRecording({recorder: standIn(join(dir, 'x.mov'))});
+  const started = await startRecording({recorder: standIn(join(dir, 'x.mov')), startCheckMs: START});
   const recorder = Number(spawnSync('pgrep', ['-P', String(started.handle.child.pid)], {encoding: 'utf8'}).stdout.trim());
   assert.ok(recorder > 0);
   started.handle.child.kill('SIGKILL');
   await started.handle.exited;
   const alive = () => { try { process.kill(recorder, 0); return true; } catch { return false; } };
-  for (let i = 0; i < 40 && alive(); i++) await new Promise(r => setTimeout(r, 50));
+  for (let i = 0; i < 200 && alive(); i++) await new Promise(r => setTimeout(r, 50));
   assert.equal(alive(), false, 'the recorder ended with its terminal');
 });
 
 test('a recorder that left no movie is a failed stop', async t => {
   const dir = scratch(t), file = join(dir, 'never.mov');
-  const started = await startRecording({recorder: standIn(file), env: {...process.env, NO_FILE: '1'}});
-  const stopped = await stopRecording(started.handle, {file, stopMs: 5000});
+  const started = await startRecording({recorder: standIn(file), env: {...process.env, NO_FILE: '1'}, startCheckMs: START});
+  const stopped = await stopRecording(started.handle, {file, stopMs: 60_000});
   assert.equal(stopped.ok, false);
   assert.match(stopped.problem, /no clip at/);
 });
 
 test('neither the start check nor the stop leaves a timer that keeps the process alive once the recorder has answered', t => {
   const dir = scratch(t);
-  // A process that starts a recorder and stops it, then one that exits at once, with long bounds (5 s each), and then
+  // A process that starts a recorder and stops it, then one that exits at once, with long bounds (30 s each), and then
   // has nothing left to do: it must end as soon as both have answered, not when the bounds run out.
   const script = `
 import {startRecording, stopRecording} from ${JSON.stringify(new URL('../../scripts/cursor-sitting/recording.mjs', import.meta.url).href)};
 const file = ${JSON.stringify(join(dir, 'item-1.mov'))};
 const recorder = [process.execPath, '-e', process.env.STAND_IN, file];
-const started = await startRecording({recorder, startCheckMs: 5000});
-const stopped = await stopRecording(started.handle, {file, stopMs: 5000});
-const refused = await startRecording({recorder, env: {...process.env, EXIT_AT_ONCE: '1'}, startCheckMs: 5000});
+const started = await startRecording({recorder, startCheckMs: 30000});
+const stopped = await stopRecording(started.handle, {file, stopMs: 30000});
+const refused = await startRecording({recorder, env: {...process.env, EXIT_AT_ONCE: '1'}, startCheckMs: 30000});
 process.stdout.write(JSON.stringify({stopped: stopped.ok, refused: refused.ok, at: Date.now()}));`;
-  const ran = spawnSync(process.execPath, ['--input-type=module', '-e', script], {encoding: 'utf8', env: {...process.env, STAND_IN}, timeout: 20_000});
+  const ran = spawnSync(process.execPath, ['--input-type=module', '-e', script], {encoding: 'utf8', env: {...process.env, STAND_IN}, timeout: 120_000});
   const ended = Date.now();
   const answer = JSON.parse(ran.stdout);
   assert.deepEqual([answer.stopped, answer.refused], [true, false]);
-  assert.ok(ended - answer.at < 1500, `the process lived ${ended - answer.at} ms after its last answer`);
+  assert.ok(ended - answer.at < 5000, `the process lived ${ended - answer.at} ms after its last answer (a timer left behind would hold it 30 s)`);
 });
 
 const alive = pid => { try { process.kill(pid, 0); return true; } catch { return false; } };
 const childOf = pid => Number(spawnSync('pgrep', ['-P', String(pid)], {encoding: 'utf8'}).stdout.trim().split('\n')[0]) || null;
 const gone = async (pids, ms) => { const until = Date.now() + ms; while (pids.some(alive) && Date.now() < until) await new Promise(r => setTimeout(r, 50)); return !pids.some(alive); };
 // The bound after a stop request: the grace, then SIGTERM's two seconds before SIGKILL, and the polls' slack.
-const GRACE_S = 0.3, BOUND_MS = (GRACE_S + 2) * 1000 + 1500;
+// The slack covers a loaded host; the defect these catch is a recorder never ended at all.
+const GRACE_S = 0.3, BOUND_MS = (GRACE_S + 2) * 1000 + 5000;
 
 test('a recorder that ignores its terminal and every polite signal is ended once the grace after the cap has run out', async t => {
   const dir = scratch(t);
-  const started = await startRecording({recorder: standIn(join(dir, 'x.mov')), env: {...process.env, IGNORE_INPUT: '1'}, capSeconds: 0.5, graceSeconds: GRACE_S});
+  const started = await startRecording({recorder: standIn(join(dir, 'x.mov')), env: {...process.env, IGNORE_INPUT: '1'}, capSeconds: 0.5, graceSeconds: GRACE_S, startCheckMs: START});
   assert.equal(started.ok, true, started.problem);
   const recorder = childOf(started.handle.child.pid);
   assert.ok(recorder > 0);
   const exit = await started.handle.exited;
-  assert.ok(exit.at - started.spawnAt < 500 + BOUND_MS, `the terminal ended ${exit.at - started.spawnAt} ms after its launch`);
+  assert.ok(exit.at - started.readyAt < 500 + BOUND_MS, `the terminal ended ${exit.at - started.readyAt} ms after the recorder started`);
   assert.equal(exit.code, 128 + 9, 'the recorder was killed (SIGKILL), its terminal exits with that');
   assert.equal(await gone([recorder], 500), true, 'the recorder is gone');
 });
@@ -192,7 +196,7 @@ test('a killed kit leaves neither the terminal nor a recorder that ignores its i
   // A kit that starts a recording (cap 30 s, so only the kit's death can stop it), says the pids, and waits.
   const kit = spawn(process.execPath, ['--input-type=module', '-e', `
 import {startRecording} from ${JSON.stringify(new URL('../../scripts/cursor-sitting/recording.mjs', import.meta.url).href)};
-const started = await startRecording({recorder: [process.execPath, '-e', process.env.STAND_IN, ${JSON.stringify(join(dir, 'y.mov'))}], capSeconds: 30, graceSeconds: ${GRACE_S}});
+const started = await startRecording({recorder: [process.execPath, '-e', process.env.STAND_IN, ${JSON.stringify(join(dir, 'y.mov'))}], capSeconds: 120, graceSeconds: ${GRACE_S}, startCheckMs: 30000});
 process.stdout.write(JSON.stringify({ok: started.ok, terminal: started.handle?.child.pid}) + '\\n');
 setInterval(() => {}, 1000);`], {stdio: ['ignore', 'pipe', 'inherit'], env: {...process.env, STAND_IN, IGNORE_INPUT: '1'}});
   t.after(() => kit.kill('SIGKILL'));

@@ -17,8 +17,10 @@ export const UNCOVERED_TOLERANCE_PT = 16;
 // The recorder's own stop, typed by its terminal (./recorder-pty.py), so a kit that hangs never leaves it recording:
 // well past an item-1 run (about 30 s).
 export const RECORDING_CAP_S = 300;
-// How long a just-started recorder has to say it is recording (screencapture's prompt came 0.1–0.24 s after its launch).
-export const START_CHECK_MS = 1500;
+// How long a just-started recorder has to say it is recording: screencapture's prompt came 0.1–0.24 s after its launch
+// on the MacBook, but python and the recorder start slower on a loaded host, and a refusal costs the sitting a retry;
+// a recorder that cannot record still exits, or stays silent, well inside it.
+export const START_CHECK_MS = 5000;
 // How long a stop may take: the recorder writes its movie after the stop (about 0.1 s for a 2 s clip).
 export const STOP_MS = 60_000;
 // How long the recorder has to write its movie and exit once the stop is typed, before its terminal ends it (SIGTERM,

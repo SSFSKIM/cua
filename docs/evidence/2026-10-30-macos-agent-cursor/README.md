@@ -337,7 +337,7 @@ items into `$OUT2` (`$S drive 1-check --out "$OUT2" --dry-run`, likewise 1, 3 an
      with no movie, and `-V` takes no stop at all (checked on the MacBook, 2026-10-31). The kit types that character at
      `record-stop`, at a 300 s cap, or when the kit itself goes away, and it ends a recorder still running 20 s after any
      of those (SIGTERM, then SIGKILL), so no recorder outlives the kit. A recorder that exits at once, or does not print
-     its "type any character" prompt within 1.5 s, refuses the item the same way.
+     its "type any character" prompt within 5 s (it came at 0.2 s on the MacBook), refuses the item the same way.
    - The owner watches `first-target` and `second-target` as before, and the operator records the two verdicts. The
      clip stops after the session has closed; the record keeps its region, both windows' bounds, the recorder's launch
      time and the clip's SHA-256, and each click's meta (`receivedAt`, `engineMs`, the action interval).

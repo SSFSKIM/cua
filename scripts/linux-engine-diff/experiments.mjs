@@ -267,12 +267,28 @@ function gitHead() {
   }
 }
 
-/** Every core busy for the experiment's length (`--load`): stress-ng, one CPU worker per core, ended after. */
-function startLoad(emit) {
+/**
+ * Every core busy for the experiment's length (`--load`): stress-ng, `factor` CPU workers per core (one unless
+ * `--load-factor` names more), ended after.
+ */
+function startLoad(emit, factor = 1) {
   const cores = availableParallelism();
-  const child = spawn('stress-ng', ['--cpu', String(cores), '--cpu-method', 'matrixprod', '--timeout', '3h', '--quiet'], { stdio: 'ignore', detached: true });
+  const child = spawn('stress-ng', ['--cpu', String(cores * factor), '--cpu-method', 'matrixprod', '--timeout', '3h', '--quiet'], { stdio: 'ignore', detached: true });
   const exited = new Promise((resolve) => child.once('exit', resolve));
-  emit({ kind: 'load', started: true, cores, pid: child.pid, loadavg_before: loadavg() });
+  // an interrupted experiment ends its load too: a load left running skews every run after it
+  const end = () => {
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+    } catch {
+      // already ended
+    }
+  };
+  process.once('exit', end);
+  process.once('SIGINT', () => {
+    end();
+    process.exit(130);
+  });
+  emit({ kind: 'load', started: true, cores, workers: cores * factor, pid: child.pid, loadavg_before: loadavg() });
   execFileSync('sleep', ['5']);
   emit({ kind: 'load', loadavg_running: loadavg() });
   return {
@@ -304,7 +320,7 @@ export async function runExperiment(args) {
     return pass;
   }
   const desktop = new Desktop({ cua: args.cua, run });
-  const load = args.load ? startLoad(emit) : null;
+  const load = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
   let md;
   // a matrix run that could not judge a family it was asked for is incomplete, and the run exits nonzero
   let outcome = { complete: true, failed: [] };

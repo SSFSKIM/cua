@@ -92,7 +92,8 @@ export function dndLanes(args) {
     ...(args.newest ? [{ label: 'newest', bin: args.newest, args: [] }] : []),
     { label: 'cua', bin: args.cua, args: [] },
     { label: 'cua:active', bin: args.cua, args: [], activate: true },
-    ...args.variants.map((v) => ({ ...v, bin: args.cua })),
+    // a variant named `active…` activates its window before each drag, as `cua:active` does
+    ...args.variants.map((v) => ({ ...v, bin: args.cua, ...(v.label.startsWith('cua:active') ? { activate: true } : {}) })),
   ];
   return args.lanes ? all.filter((l) => args.lanes.includes(l.label)) : all.filter((l) => l.label !== 'cua:active');
 }

@@ -114,6 +114,10 @@ impl std::error::Error for DropCancelled {}
 /// `XdndSelection` (always on the background route), a drag the target turns into a drag and drop stops there:
 /// Escape is pressed and released, then the button, so the drag and drop is cancelled before anything drops, and the
 /// answer is [`DropCancelled`]; with `late` (measurement only) the drag goes on to its release and Escape follows it.
+/// With `hold` (measurement only, `--drag-dnd-wait-ms`), the release waits up to its bound for the target's client to
+/// take `XdndSelection`, and after a take the last point is nudged by a pixel and back, so a drag and drop that starts
+/// after the last sample still sees the pointer over its target; the wait is answered in `waited`.
+#[allow(clippy::too_many_arguments)]
 fn drag_along(
     x: &X11,
     route: &mut Route,
@@ -122,6 +126,8 @@ fn drag_along(
     pacing: &DragPacing,
     mut watch: Option<&mut DndWatch>,
     late: bool,
+    mut hold: Option<(&mut DndWatch, std::time::Duration)>,
+    waited: &mut Option<(bool, std::time::Duration)>,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
@@ -145,6 +151,19 @@ fn drag_along(
                 pressed = false;
                 route.button(x, 1, false)?;
                 return Err(DropCancelled.into());
+            }
+        }
+        if let Some((hold, bound)) = hold.as_mut() {
+            let since = std::time::Instant::now();
+            while !hold.started(x) && since.elapsed() < *bound {
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            let taken = hold.is_started();
+            *waited = Some((taken, since.elapsed()));
+            if taken {
+                let &(lx, ly) = points.last().expect("a drag has two points");
+                route.place_again(x, lx.saturating_add(1), ly)?;
+                route.place_again(x, lx, ly)?;
             }
         }
         std::thread::sleep(pacing.release);
@@ -333,6 +352,21 @@ impl Engine {
             _ => None,
         };
         let late = self.cfg.dnd_cancel_late;
+        // measurement only: a Chromium drag not otherwise watched holds its release for a late drag and drop
+        let mut hold = match target {
+            Target::Window(window) | Target::Foreground(window)
+                if guard.is_none()
+                    && !self.cfg.dnd_wait.is_zero()
+                    && self
+                        .family_of(window)
+                        .is_some_and(|f| matches!(f.name, "Chrome" | "Chromium")) =>
+            {
+                Some(DndWatch::start(&mut self.x, window)?)
+            }
+            _ => None,
+        };
+        let bound = self.cfg.dnd_wait;
+        let mut waited = None;
         let Engine { x, inputs, .. } = self;
         let dragged = inputs.with_route(x, target, |x, route, _| {
             let points = input
@@ -353,8 +387,19 @@ impl Engine {
                 &pacing,
                 guard.as_mut().map(|(w, _)| w),
                 late,
+                hold.as_mut().map(|w| (w, bound)),
+                &mut waited,
             )
         });
+        if let Some(hold) = hold {
+            hold.stop(&mut self.x);
+            if let Some((taken, wait)) = waited {
+                self.extra.insert(
+                    "dnd_wait".into(),
+                    json!({ "taken": taken, "waited_ms": wait.as_secs_f64() * 1000.0 }),
+                );
+            }
+        }
         let Some((watch, before)) = guard else {
             return dragged.map(|()| Value::Null);
         };

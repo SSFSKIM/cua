@@ -52,6 +52,9 @@ pub struct Config {
     /// Measurement only (`--dnd-cancel-after-release`): a drag and drop the engine would cancel is cancelled only
     /// after the release, too late, so the harness can check the answer then.
     pub dnd_cancel_late: bool,
+    /// Measurement only (`--drag-dnd-wait-ms`): before a Chromium drag's release, wait up to this long for the target's
+    /// client to take `XdndSelection`, then nudge the last point, so a drag and drop that starts late still drops.
+    pub dnd_wait: std::time::Duration,
 }
 
 pub struct Engine {

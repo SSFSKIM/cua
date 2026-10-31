@@ -34,20 +34,23 @@ export function parseCells(text) {
   return answers.find(a => a && !a.ok) ?? answers.at(-1) ?? null;
 }
 
-// The last call's timing meta a reply keeps (src/services/engine/service.mjs, src/services/sky.mjs): the engine's round
-// trip and the wrapper's time, route 3's guard and activation click, the action interval and the engine's receipt.
-const TIMING_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'actionInterval', 'receivedAt'];
+// The last call's meta a reply keeps (src/services/engine/service.mjs, src/services/sky.mjs): its times (the engine's
+// round trip and the wrapper's time, route 3's guard and activation click, the action interval and the engine's receipt)
+// and the intervention guard's reading, on a refusal too: the ms from the app's last attributed event to the receipt
+// (hidIdleMs; with detection off, `intervention: "off"` and the machine-wide idle time), and what a type_text entered
+// before it stopped.
+const KEPT_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'actionInterval', 'receivedAt', 'hidIdleMs', 'intervention', 'entered'];
 
 // What the sitting keeps of a js reply: the cell's answer, the route the engine reported for the last call, the
-// attested engine, that call's timing meta (TIMING_META, the keys it carried), and the images it emitted (base64, SHOT
-// only). -> {ok, value?, error?, inCellMs?, route, engine, meta, images}.
+// attested engine, that call's meta (KEPT_META, the keys it carried), and the images it emitted (base64, SHOT only).
+// -> {ok, value?, error?, inCellMs?, route, engine, meta, images}.
 export function readReply(reply) {
   if (reply.timedOut) return {ok: false, error: 'no answer within the cell\'s bound', route: null, engine: null, meta: {}, images: []};
   const meta = reply.result?._meta ?? {};
   const parsed = parseCells(resultText(reply));
   const images = (reply.result?.content ?? []).filter(c => c.type === 'image').map(c => ({mimeType: c.mimeType, data: c.data}));
-  const timing = Object.fromEntries(TIMING_META.filter(key => meta[`cua/${key}`] != null).map(key => [key, meta[`cua/${key}`]]));
-  const base = {route: meta['cua/inputRoute'] ?? null, engine: meta['cua/nativeEngine']?.engine ?? null, meta: timing, images};
+  const kept = Object.fromEntries(KEPT_META.filter(key => meta[`cua/${key}`] != null).map(key => [key, meta[`cua/${key}`]]));
+  const base = {route: meta['cua/inputRoute'] ?? null, engine: meta['cua/nativeEngine']?.engine ?? null, meta: kept, images};
   if (!parsed) return {ok: false, error: (reply.error?.message ?? resultText(reply).split('\n').filter(Boolean).at(-1) ?? 'no output').slice(0, 300), ...base};
   return {...parsed, ...base};
 }

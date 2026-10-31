@@ -75,17 +75,34 @@ const changedWithinMs = performance.now() - __a0;
 return {ms, before, after: valueOfIndex(ax, ${find}), changedWithinMs};`);
 };
 
-// TextEdit's alignment flipped: align center when it is off, else align left. -> {ms, clicked, after}.
+// Which of TextEdit's alignment buttons flips it, from the observation `ax`: align center when it is off, else align left.
+const ALIGN_PICK = `const center = indexOfPart(ax, "Description", "align center");
+if (center === null) throw new Error("TextEdit's alignment control is not in its text");
+const before = valueOfIndex(ax, center);
+const clicked = before === "1" ? "align left" : "align center";
+const index = indexOfPart(ax, "Description", clicked);`;
+
+// TextEdit's alignment flipped. -> {ms, clicked, after, changedWithinMs}.
 export const ALIGN_TOGGLE = cell(`${head('textedit')}
 let ax = await observe();
-const center = indexOfPart(ax, "Description", "align center");
-if (center === null) throw new Error("TextEdit's alignment control is not in its text");
-const clicked = valueOfIndex(ax, center) === "1" ? "align left" : "align center";
-const index = indexOfPart(ax, "Description", clicked);
+${ALIGN_PICK}
 ${timed('await __app.click(index)')}
 ax = await observe();
 const changedWithinMs = performance.now() - __a0;
 return {ms, clicked, after: valueOfIndex(ax, indexOfPart(ax, "Description", clicked)), changedWithinMs};`);
+
+// TextEdit's alignment flipped by a click that is the cell's last call, so the reply's meta is the click's (Acceptance
+// 1's recording puts it on the clip's clock; ALIGNMENT reads the result back). -> {ms, clicked, before}.
+export const ALIGN_CLICK = cell(`${head('textedit')}
+const ax = await observe();
+${ALIGN_PICK}
+${timed('await __app.click(index)')}
+return {ms, clicked, before};`);
+
+// TextEdit's two alignment buttons' values, by one observation. -> {center, left}.
+export const ALIGNMENT = cell(`${head('textedit')}
+const ax = await observe();
+return {center: valueOfIndex(ax, indexOfPart(ax, "Description", "align center")), left: valueOfIndex(ax, indexOfPart(ax, "Description", "align left"))};`);
 
 // The Electron fixture's press count, read by one observation. -> {pressed}.
 export const PRESSED = cell(`${head('electron')}
@@ -162,16 +179,28 @@ const each = [];
 for (let i = 0; i < 30; i++) { t = performance.now(); await __app.pressKey("x"); each.push(performance.now() - t); }
 return {type_text: typed, press_key: each.reduce((a, b) => a + b, 0), each};`);
 
-// An element click on `control` alone, timed, with nothing after it, so the result's `cua/inputRoute` is the click's
-// (Acceptance 13: route 3 is the engine's route for the fixture's button in the background). -> {ms}.
+// An element click on `control` alone, timed, with nothing after it, so the result's meta is the click's: its route
+// (Acceptance 13: route 3 is the engine's route for the fixture's button in the background), its receipt and round
+// trip (Acceptance 1's recording). -> {ms, before}: the control's value before the click.
 export const CLICK_CONTROL_TIMED = control => {
   const {scene, find} = CONTROLS[control];
   return cell(`${head(scene)}
 const ax = await observe();
 const index = ${find};
 if (index === null) throw new Error("${control} is not in the ${scene} window's text");
+const before = valueOfIndex(ax, index);
 ${timed('await __app.click(index)')}
-return {ms};`);
+return {ms, before};`);
+};
+
+// The value of `control`, by one observation. -> {value}.
+export const CONTROL_VALUE = control => {
+  const {scene, find} = CONTROLS[control];
+  return cell(`${head(scene)}
+const ax = await observe();
+const index = ${find};
+if (index === null) throw new Error("${control} is not in the ${scene} window's text");
+return {value: valueOfIndex(ax, index)};`);
 };
 
 // The timing diagnosis's typing arm (./diagnose.mjs): clicks at the fractions `clicks` in order (untimed; the cursor

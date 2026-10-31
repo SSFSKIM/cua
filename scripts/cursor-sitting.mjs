@@ -14,12 +14,14 @@
 //       After the sitting: `cua engine stop`, the current engine directory and engine.json moved to --aside, the saved
 //       ones put back and checked, `cua engine status` read for the saved build, approved. Exit 1 says what follows.
 //   cursor-sitting.mjs drive <1|2|3|4|5|6|7|9|10|11> --run <scenes run dir> --out <evidence dir> [--engine vendor|cua]
-//                     [--other-session <Claude Code session id>] [--quiet] [--dry-run]
+//                     [--other-session <Claude Code session id>] [--clip <new .mov outside the repository>] [--quiet]
+//                     [--dry-run]
 //       One item's scripted steps (./cursor-sitting/plans.mjs) on the harness scenes the run directory holds
 //       (scripts/repl-parity/scenes-mac.mjs up <scene> --run <dir>), recorded in <out>/item-<n>.jsonl. Owner cues are
 //       spoken (`say`; --quiet prints them only); an instruction the owner confirms waits for <out>/go, which the
 //       operator creates (`touch`) once the owner says done. --engine is item 11's (the side-by-side: vendor, then cua);
-//       --other-session gives item 2's second session another Claude Code session's sminos name.
+//       --other-session gives item 2's second session another Claude Code session's sminos name; --clip is item 1's
+//       screen recording of the TextEdit and Chrome for Testing windows (./cursor-sitting/recording.mjs).
 //   cursor-sitting.mjs timing typing|clicks --run <dir> --out <dir> [--samples 20] [--arm <arm> | --owner-source]
 //                     [--quiet] [--dry-run]
 //       Acceptance 12 (typing) or 13 (clicks): interleaved cursor-on and cursor-off samples (./cursor-sitting/timing.mjs),
@@ -37,6 +39,15 @@
 //       The owner's verdict on what an item asked them to watch, appended to <out>/verdicts.jsonl.
 //   cursor-sitting.mjs summary --out <dir>
 //       Every item's cells, tasks, watches and verdicts, and the timing verdicts, in <out>/summary.md.
+//   cursor-sitting.mjs clip frames --out <evidence dir> --frames <new dir outside the repository>
+//   cursor-sitting.mjs clip order --frames <dir> --out <evidence dir> first-target <change> <arrival>
+//                     second-target <change> <arrival>
+//       Item 1's order from its recording (./cursor-sitting/clip.mjs), after the sitting (ffmpeg and ffprobe): `frames`
+//       writes every frame around each click, cropped to the target scene's window and named by its index in the clip,
+//       with frames.json; `order` takes the judged frames by index (the first where the control changes, the first where
+//       the arrow's tip reaches it; the first target's arrival is the cursor's first frame) and writes
+//       <out>/item-1-order.json and .md, copies those frames and the one before each into <out>/item-1-frames/, and
+//       appends the verdicts order-first-target and order-second-target. Exit 1 when either control changed after.
 //   cursor-sitting.mjs remote prepare|enroll|run --kit <dir> [--port n] [--run <dir> --out <dir>] [--quiet] [--dry-run]
 //       Acceptance 8's loopback device (./cursor-sitting/remote.mjs): prepare the kit (and print what it still needs),
 //       enrol it on a loopback relay, then run: the relay and the agent started, three client sessions driven
@@ -46,10 +57,12 @@ import {appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync} fr
 import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
+import {ORDER_TARGETS, writeFrames, writeOrder} from './cursor-sitting/clip.mjs';
 import {restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
 import {PLANS} from './cursor-sitting/plans.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
 import {liveIo, runSteps} from './cursor-sitting/runner.mjs';
+import {clipPathProblem, REPO_ROOT} from './cursor-sitting/recording.mjs';
 import {judgeTiming} from './cursor-sitting/stats.mjs';
 import {liveTargetGuard} from './cursor-sitting/target-guard.mjs';
 import {CURSOR_ARMS, SERIES, timingItem, timingRows, timingSteps} from './cursor-sitting/timing.mjs';
@@ -58,7 +71,7 @@ const SCRIPT = fileURLToPath(import.meta.url);
 const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'string'}, aside: {type: 'string'}, run: {type: 'string'}, out: {type: 'string'},
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
-  arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false},
+  arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'},
   quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
@@ -188,7 +201,8 @@ export async function main(argv) {
     const item = positionals[0];
     if (!PLANS[item]) throw new Error(`drive takes an item of ${Object.keys(PLANS).join(', ')} (8 is \`remote run\`, 12 and 13 are \`timing\`)`);
     if (item === '11' && !['vendor', 'cua'].includes(values.engine)) throw new Error('drive 11 takes --engine vendor or --engine cua');
-    const steps = PLANS[item]({otherSession: values['other-session'] ?? null, engine: values.engine});
+    if (item === '1' && !values['dry-run']) { const problem = clipPathProblem(values.clip, REPO_ROOT); if (problem) throw new Error(`drive 1 records a clip: ${problem}`); }
+    const steps = PLANS[item]({otherSession: values['other-session'] ?? null, engine: values.engine, clip: values.clip ?? null});
     return drive(steps, {item: item === '11' ? `11-${values.engine}` : item, values});
   }
   if (command === 'timing') {
@@ -233,6 +247,33 @@ export async function main(argv) {
     print(`wrote ${join(out, 'summary.md')}`);
     return 0;
   }
+  if (command === 'clip') {
+    const sub = positionals[0];
+    if (sub === 'frames') {
+      const out = absolute(values, 'out');
+      const record = writeFrames({rows: lastAttempt(readJsonl(join(out, 'item-1.jsonl'))), dir: absolute(values, 'frames')});
+      for (const [target, t] of Object.entries(record.targets)) print(`${target} (${t.scene}): frames ${t.frames[0].index}–${t.frames.at(-1).index} (${t.frames[0].pts.toFixed(3)}–${t.frames.at(-1).pts.toFixed(3)} s), ${t.frames[0].file} … ${t.frames.at(-1).file}`);
+      print(`wrote ${join(values.frames, 'frames.json')}`);
+      return 0;
+    }
+    if (sub === 'order') {
+      const usage = 'clip order takes first-target <change> <arrival> second-target <change> <arrival> (frame indices, as frames.json numbers them)';
+      const pairs = positionals.slice(1);
+      if (pairs.length !== 6) throw new Error(usage);
+      const judged = {};
+      for (let k = 0; k < 6; k += 3) {
+        const [target, change, arrival] = pairs.slice(k, k + 3);
+        if (!ORDER_TARGETS[target] || !/^\d+$/.test(change) || !/^\d+$/.test(arrival)) throw new Error(usage);
+        judged[target] = {change: Number(change), arrival: Number(arrival)};
+      }
+      if (Object.keys(judged).length !== 2) throw new Error(usage);
+      const out = absolute(values, 'out');
+      const judgement = writeOrder({dir: absolute(values, 'frames'), out, judged});
+      print(readFileSync(join(out, 'item-1-order.md'), 'utf8'));
+      return judgement.pass ? 0 : 1;
+    }
+    throw new Error('clip takes frames or order');
+  }
   if (command === 'remote') {
     const kit = absolute(values, 'kit'), sub = positionals[0];
     if (sub === 'prepare') {
@@ -261,7 +302,7 @@ export async function main(argv) {
     }
     throw new Error('remote takes prepare, enroll or run');
   }
-  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | remote prepare|enroll|run (see the header)');
+  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | clip frames|order | remote prepare|enroll|run (see the header)');
 }
 
 if (process.argv[1] && SCRIPT === resolve(process.argv[1])) {

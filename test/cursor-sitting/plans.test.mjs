@@ -203,7 +203,7 @@ test('every timed sample runs with the cursor already visible: an untimed prime 
 });
 
 test('Acceptance 5\'s focus proof: two readings around the agent\'s own steps, the second required equal, before any owner input', async () => {
-  const {focusReading} = await import('../../scripts/cursor-sitting/runner.mjs');
+  const {focusReading} = await import('../../scripts/cursor-sitting/focus.mjs');
   const steps = PLANS[5]();
   const at = steps.findIndex(s => s.task === 'focus'), again = steps.findIndex((s, k) => k > at && s.task === 'focus');
   assert.ok(at >= 0 && again > at);
@@ -226,7 +226,7 @@ test('the demonstrations of items 9 and 11 start with the harness\'s TextEdit wi
 });
 
 test('a focus reading serves the proof only when trusted, of the scene\'s app and its named window, with a value hash', async () => {
-  const {focusProblem} = await import('../../scripts/cursor-sitting/runner.mjs');
+  const {focusProblem} = await import('../../scripts/cursor-sitting/focus.mjs');
   const good = {accessibility: true, focusedApp: {pid: 7, bundleId: 'io.github.ssfskim.cua.fixture.electron'}, focusedWindow: {pid: 7, bounds: {x: 140, y: 100, width: 720, height: 560}}, named: true, valueHash: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'};
   assert.equal(focusProblem(good, 7), null);
   assert.match(focusProblem({...good, accessibility: false}, 7), /not trusted/);
@@ -239,7 +239,7 @@ test('a focus reading serves the proof only when trusted, of the scene\'s app an
 });
 
 test('two failed focus readings never pass as unchanged; two usable equal ones do, a changed one does not', async () => {
-  const {focusStep} = await import('../../scripts/cursor-sitting/runner.mjs');
+  const {focusStep} = await import('../../scripts/cursor-sitting/focus.mjs');
   const good = {accessibility: true, focusedApp: {pid: 7, bundleId: 'f'}, focusedWindow: {pid: 7, bounds: {x: 1, y: 2, width: 3, height: 4}}, named: true, valueHash: 'a'.repeat(64)};
   const twice = (first, second) => { const store = {}; const one = focusStep({label: 'before', answer: first, pid: 7, store}); return [one, focusStep({label: 'after', answer: second, pid: 7, equalTo: 'before', store})]; };
   for (const failed of [{...good, accessibility: false}, {...good, named: false}, {accessibility: true, focusedApp: null, focusedWindow: null, named: false, valueHash: null}]) {
@@ -252,4 +252,36 @@ test('two failed focus readings never pass as unchanged; two usable equal ones d
   assert.equal(twice(good, {...good, valueHash: 'b'.repeat(64)})[1].ok, false, 'another focused element');
   assert.equal(twice(good, {...good, focusedWindow: {pid: 7, bounds: {x: 9, y: 2, width: 3, height: 4}}, named: false})[1].ok, false, 'another window');
   assert.equal(focusStep({label: 'after', answer: good, pid: 7, equalTo: 'missing', store: {}}).ok, false);
+});
+
+test('item 1 is recorded: the clip starts once the owner has placed the windows, before the session opens, and stops after it closes', () => {
+  const steps = PLANS[1]({clip: '/rec/item-1.mov'});
+  const start = steps.findIndex(s => s.task === 'record-start'), stop = steps.findIndex(s => s.task === 'record-stop');
+  assert.deepEqual(steps[start].args, ['/rec/item-1.mov', 'textedit', 'chrome']);
+  assert.equal(steps[start].required, true, 'no session opens unless the region holds only the harness windows and the recorder runs');
+  assert.ok(steps.findIndex(s => s.owner) < start && start < steps.findIndex(s => s.open));
+  assert.ok(stop > steps.findIndex(s => s.close) && stop === steps.length - 1);
+  assert.deepEqual(steps.filter(s => s.orderTarget).map(s => s.orderTarget), ['first-target', 'second-target']);
+  assert.ok(steps.some(s => s.watch && s.id === 'order-first-target') && steps.some(s => s.watch && s.id === 'order-second-target'));
+});
+
+test('each order target\'s click is its cell\'s last call, so the reply\'s meta (receivedAt, engineMs) is the click\'s', () => {
+  const targets = PLANS[1]({}).filter(s => s.orderTarget);
+  assert.equal(targets.length, 2);
+  for (const step of targets) {
+    const code = typeof step.cell === 'function' ? step.cell({}) : step.cell;
+    const last = code.lastIndexOf('await __app.');
+    assert.match(code.slice(last), /^await __app\.click\(index\)/, step.label);
+  }
+});
+
+test('the runner keeps an order target on its cell\'s row', async t => {
+  const out = scratch(t);
+  await runSteps(PLANS[1]({clip: '/rec/item-1.mov'}), {item: 1, out, io: fakeIo([]), log: () => {}});
+  const rows = readFileSync(join(out, 'item-1.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l));
+  assert.deepEqual(rows.filter(r => r.orderTarget).map(r => r.orderTarget), ['first-target', 'second-target']);
+});
+
+test('item 5 asks for the recording clause, which item 1\'s clip answers', () => {
+  assert.ok(PLANS[5]().some(s => s.watch && s.id === 'recording'));
 });

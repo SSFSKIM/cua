@@ -2,9 +2,10 @@
 // answer (its times, the values it read, the route the engine reported, the attested engine), every cue, instruction
 // and watch, and every task's outcome. An image a cell emits is saved beside it. The live io (`liveIo`) drives the
 // Mac: sessions through ./session.mjs, cues spoken with `say`, the go file the operator touches once the owner is done,
-// the harness scenes' activation, the engine's stop and status through this checkout's CLI, engine.json's switch, and
-// the approved bundle's activation watcher. Whatever the item changed outside its sessions is put back in `finally`:
-// engine.json as it was, the watcher stopped, every session closed.
+// the harness scenes' activation, the engine's stop and status through this checkout's CLI, engine.json's switch, the
+// approved bundle's activation watcher and focus probe, and item 1's screen recording (./recording.mjs). Whatever the
+// item changed outside its sessions is put back in `finally`: engine.json as it was, the watcher and the recorder
+// stopped, every session closed.
 import {execFileSync, spawn} from 'node:child_process';
 import {appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
@@ -13,8 +14,11 @@ import {fileURLToPath} from 'node:url';
 import {BUNDLE_ID} from '../../src/runtime/engine-bundle.mjs';
 import {enginePaths} from '../../src/runtime/engine.mjs';
 import {runProbe, startWatch, stopWatch} from '../native-matrix/live-device.mjs';
+import {FIXTURE_ACCESSIBILITY_FILE} from '../native-matrix/fixtures/electron-fixture.mjs';
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
+import {readFocus, runWindowBounds} from './focus.mjs';
+import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureArgs, startRecording, stopRecording} from './recording.mjs';
 import {openDriven} from './session.mjs';
 import {latinSourceProblem} from './timing.mjs';
 import {liveTargetGuard} from './target-guard.mjs';
@@ -25,34 +29,6 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // The engine's activations among the watcher's lines: the panel never activates the engine (Acceptance 5).
 export const engineActivations = lines => lines.filter(l => l.kind === 'activated' && l.bundleId === BUNDLE_ID);
-
-// What a focus probe's answer says of the focus: the focused app, the focused window, whether it is the named window,
-// and the focused element's value hash there (the probe's own time and grant left out).
-export const focusReading = answer => ({focusedApp: answer?.focusedApp ?? null, focusedWindow: answer?.focusedWindow ?? null,
-  named: answer?.named ?? null, valueHash: answer?.valueHash ?? null});
-
-// Why a focus probe's answer cannot serve the proof, or null: it must come from a trusted probe, name the scene's
-// process (`pid`) as the focused app and its window as the focused window, the named run window, and carry the focused
-// element's value hash (the fixture's autofocused text field gives one, empty or not).
-export function focusProblem(answer, pid) {
-  if (answer?.accessibility !== true) return 'the focus probe is not trusted for Accessibility';
-  if (answer.focusedApp?.pid !== pid) return `the focused app is ${answer.focusedApp?.pid ?? 'none'}, not the scene's process ${pid}`;
-  if (answer.focusedWindow?.pid !== pid) return `the focused window belongs to ${answer.focusedWindow?.pid ?? 'none'}, not the scene's process ${pid}`;
-  if (answer.named !== true) return 'the focused window is not the scene\'s run window (its bounds differ)';
-  if (typeof answer.valueHash !== 'string' || !/^[0-9a-f]{64}$/.test(answer.valueHash)) return 'the focused element\'s value hash was not read';
-  return null;
-}
-
-// One focus reading kept in `store` under `label`, and its verdict: usable (focusProblem), and with `equalTo`, equal to
-// that earlier reading, both usable (two failed reads would otherwise compare equal). -> the task's result.
-export function focusStep({label, answer, pid, equalTo, store}) {
-  const reading = focusReading(answer), problem = focusProblem(answer, pid);
-  store[label] = {reading, problem};
-  if (equalTo === undefined) return {ok: problem === null, label, reading, ...(problem ? {problem} : {})};
-  const earlier = store[equalTo];
-  const same = problem === null && earlier?.problem === null && JSON.stringify(reading) === JSON.stringify(earlier.reading);
-  return {ok: same, label, reading, equalTo, same, ...(problem ? {problem} : {}), ...(earlier?.problem ? {earlierProblem: earlier.problem} : {}), ...(earlier ? {} : {earlierProblem: `no reading named ${equalTo}`})};
-}
 
 // engine.json with `patch` written over it, the other keys kept. `text`: the file's bytes, or null when there is none.
 function patchedSettings(text, patch) {
@@ -125,12 +101,36 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
         rmSync(before);
         return {ok: true, restored: true};
       },
-      // The approved bundle's focus probe, its window named by the scene's run window: the focused app and window and
-      // the focused element's value hash (never a value). With a third argument, the reading must equal that earlier one.
+      // The approved bundle's focus probe, its window named by the scene's run window where it is now: the focused app
+      // and window and the focused element's value hash (never a value), once a scene that keeps an accessibility
+      // record (the Electron fixture) has it on (./focus.mjs). With a third argument, the reading must equal that one.
       focus: async ([label, scene, equalTo], ctx) => {
-        const {pid, window} = io.scene(scene), b = window.bounds;
-        const answer = runProbe(enginePaths().bundle, ['focus', '--window', [pid, b.x, b.y, b.width, b.height].join(',')]);
-        return focusStep({label, answer, pid, equalTo, store: ctx.focus ??= {}});
+        const userDataDir = readState(run).scenes[scene]?.userDataDir;
+        const record = join(userDataDir ?? '', FIXTURE_ACCESSIBILITY_FILE);
+        return readFocus({label, record: io.scene(scene), equalTo, store: ctx.focus ??= {}, windows: guard.windows,
+          probe: args => runProbe(enginePaths().bundle, args),
+          accessibilityText: userDataDir ? () => (existsSync(record) ? readFileSync(record, 'utf8') : null) : null});
+      },
+      // Item 1's recording: the rectangle the scenes' run windows fill (where they are now), refused unless it holds
+      // only them and no window of the frontmost app lies over it; then the recorder started into `clip`, outside the
+      // repository. The handle stays in the context, for record-stop or the finally.
+      'record-start': async ([clip, ...scenes], ctx) => {
+        const pathProblem = clipPathProblem(clip, REPO_ROOT);
+        if (pathProblem) return {ok: false, problem: pathProblem};
+        const records = scenes.map(io.scene), frontmost = guard.frontmost();
+        const plan = recordingPlan({windows: Object.fromEntries(records.map(r => [r.id, runWindowBounds(guard.windows(r.pid), r.window.number)])),
+          pids: Object.fromEntries(records.map(r => [r.id, r.pid])), frontmost, frontWindows: frontmost ? guard.windows(frontmost.pid) : []});
+        if (!plan.ok) return plan;
+        const started = await startRecording({args: screencaptureArgs({region: plan.region, file: clip})});
+        if (!started.ok) return {...plan, ok: false, problem: started.problem};
+        ctx.recording = {handle: started.handle, clip};
+        return {...plan, clip, spawnAt: started.spawnAt, readyAt: started.readyAt};
+      },
+      'record-stop': async (_args, ctx) => {
+        if (!ctx.recording) return {ok: false, problem: 'no recording is running'};
+        const {handle, clip} = ctx.recording;
+        ctx.recording = null;
+        return stopRecording(handle, {file: clip});
       },
       'watch-start': async () => ({ok: true, watch: startWatch(enginePaths().bundle, out)}),
       'watch-stop': async (_args, ctx) => {
@@ -147,6 +147,7 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
         await ctx.io.tasks['engine-stop']();
       }
       if (ctx.watch) stopWatch(ctx.watch);
+      if (ctx.recording) { const {handle, clip} = ctx.recording; ctx.recording = null; await stopRecording(handle, {file: clip}); }
     },
   };
   function writeSettings(write) {
@@ -186,7 +187,7 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
   const file = join(out, `item-${item}.jsonl`);
   const rows = [];
   const record = row => { const full = {item, at: Date.now(), ...row}; rows.push(full); if (!dryRun) appendFileSync(file, JSON.stringify(full) + '\n'); };
-  const ctx = {io, sessions: {}, results: {}, watch: null, settingsChanged: false};
+  const ctx = {io, sessions: {}, results: {}, watch: null, recording: null, settingsChanged: false};
   let failed = 0, n = 0;
   const runCell = async step => {
     const code = typeof step.cell === 'function' ? step.cell(ctx.results) : step.cell;
@@ -199,7 +200,8 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
     });
     ctx.results[step.label] = answer;
     if (!answer.ok) failed++;
-    record({step: n, kind: 'cell', session: step.run, label: step.label, ...(step.sample ? {sample: step.sample} : {}), ...kept, ...(saved.length ? {images: saved} : {})});
+    record({step: n, kind: 'cell', session: step.run, label: step.label, ...(step.sample ? {sample: step.sample} : {}),
+      ...(step.orderTarget ? {orderTarget: step.orderTarget} : {}), ...kept, ...(saved.length ? {images: saved} : {})});
     log(`  ${step.run}: ${step.label}: ${answer.ok ? JSON.stringify(answer.value) : `FAILED ${answer.error}`}${answer.route ? ` (route ${answer.route})` : ''}`);
   };
   record({kind: 'start', steps: steps.length, dryRun});

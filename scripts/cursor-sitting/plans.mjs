@@ -12,7 +12,10 @@
 //   {cue, ms}, {owner}, {watch, id}, {wait}, {say}
 //   {task, args?}                   activate <scene> | engine-stop | engine-status | engine-json-off | engine-json-restore
 //                                   | watch-start | watch-stop | focus <label> <scene> [<label to equal>]
-import {ALIGN_TOGGLE, CLICK_AT, CLICK_CONTROL, CLICK_CONTROL_TIMED, DRAG, INTERVENTION_PROBE, KEY_AFTER_INPUT, OBSERVE, OPEN_MENU, PRESSED,
+//                                   | record-start <clip> <scene> <scene> | record-stop
+// A run step's `orderTarget` marks item 1's two clicks, whose order against the cursor's arrival its recording decides
+// (./clip.mjs); the runner keeps it on the cell's row.
+import {ALIGN_CLICK, ALIGN_TOGGLE, ALIGNMENT, CLICK_AT, CLICK_CONTROL, CLICK_CONTROL_TIMED, CONTROL_VALUE, DRAG, INTERVENTION_PROBE, KEY_AFTER_INPUT, OBSERVE, OPEN_MENU, PRESSED,
   PRESS_KEYS, SCROLL_AT, SHOT, TYPE_RUN} from './cells.mjs';
 
 // What the owner sees when a person's input is attributed to the app: the engine refuses the next action for 5 s
@@ -51,17 +54,26 @@ export const sideBySide = engine => [
 ];
 
 export const PLANS = Object.freeze({
-  1: () => [
-    {say: 'Acceptance 1: TextEdit and Chrome for Testing both in the background (another app in front)'},
-    {owner: 'Place the TextEdit and Chrome for Testing windows side by side, both wholly visible, then click the operator\'s terminal so neither is in front, and say done.'},
+  // Recorded (./recording.mjs): the clip of the two windows' rectangle starts once the owner has placed them and runs
+  // until the session has closed. Each click is its cell's last call, so its reply's meta (receipt, round trip) is the
+  // click's; its control is read back by the next cell.
+  1: ({clip = null} = {}) => [
+    {say: 'Acceptance 1: TextEdit and Chrome for Testing both in the background (another app in front), recorded'},
+    {owner: 'Place the TextEdit and Chrome for Testing windows side by side, touching, with their top and bottom edges level, so that together they fill a rectangle with nothing else in it. Then click the operator\'s terminal so neither is in front; its window must not overlap them. Say done.'},
+    {task: 'record-start', args: [clip, 'textedit', 'chrome'], required: true},
     {open: 'a', scenes: ['textedit', 'chrome']},
-    {run: 'a', cell: ALIGN_TOGGLE, label: 'TextEdit: the format bar\'s alignment'},
+    {run: 'a', cell: ALIGN_CLICK, label: 'TextEdit: the format bar\'s alignment', orderTarget: 'first-target'},
+    {run: 'a', cell: ALIGNMENT, label: 'TextEdit: the alignment read back'},
     {watch: 'the cursor fades in at TextEdit\'s alignment button and dips as the click lands; the button changes before or while the cursor arrives', id: 'first-target'},
     {wait: 1500},
-    {run: 'a', cell: CLICK_CONTROL('sceneOption'), label: 'Chrome for Testing: the page\'s "Scene option" checkbox'},
+    {run: 'a', cell: CLICK_CONTROL_TIMED('sceneOption'), label: 'Chrome for Testing: the page\'s "Scene option" checkbox', orderTarget: 'second-target'},
+    {run: 'a', cell: CONTROL_VALUE('sceneOption'), label: 'Chrome for Testing: the checkbox read back'},
     {watch: 'the cursor glides along a curve to the page\'s checkbox and dips; the box checks before or while it arrives', id: 'second-target'},
+    {watch: 'from the recording\'s frames: TextEdit\'s alignment changes before or while the cursor shows at it (cursor-sitting.mjs clip order)', id: 'order-first-target'},
+    {watch: 'from the recording\'s frames: the checkbox changes before or while the arrow\'s tip reaches it (cursor-sitting.mjs clip order)', id: 'order-second-target'},
     {wait: 6000},
     {close: 'a'},
+    {task: 'record-stop'},
   ],
   2: ({otherSession = null} = {}) => [
     {say: 'Acceptance 2: two sessions acting at once'},
@@ -129,7 +141,7 @@ export const PLANS = Object.freeze({
   5: () => [
     {say: 'Acceptance 5: never in the way, over the Electron fixture (frontmost, so your click is the only thing that could move the focus)'},
     {task: 'activate', args: ['electron']},
-    {wait: 1500},  // the focus reading right after the activation found no focused app (2026-10-30)
+    {wait: 1500},  // the activation settles; each focus reading also waits for the fixture's accessibility (./focus.mjs)
     {task: 'watch-start'},
     {open: 'a', scenes: ['electron']},
     // The focus proof, with no input but the agent's: the system's focused app, its focused window and the focused
@@ -155,6 +167,7 @@ export const PLANS = Object.freeze({
     {run: 'a', cell: SCROLL_AT('electron', [0.5, 0.5]), label: 'a scroll, so the cursor shows over the fixture'},
     {run: 'a', cell: SHOT('electron'), label: 'the agent\'s screenshot while the cursor shows'},
     {watch: 'the cursor is on screen over the fixture now, and the saved screenshot (the item\'s image file) has no cursor in it', id: 'screenshot'},
+    {watch: 'the cursor appears in a screen recording: item 1\'s clip (screencapture -v), seen in its frames', id: 'recording'},
     {task: 'watch-stop'},
     {wait: 5000},
     {close: 'a'},

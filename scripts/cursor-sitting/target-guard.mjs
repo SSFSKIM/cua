@@ -38,7 +38,7 @@ export function targetProblem(record, {launchAt, windows}) {
   return null;
 }
 
-// The live readings, with the probe compiled once. -> {problem(record), frontmost()}.
+// The live readings, with the probe compiled once. -> {problem(record), frontmost(), windows(pid)}.
 export function liveTargetGuard({bundle, cache = PROBE_CACHE} = {}) {
   let bin = null;
   const exec = (command, args, options) => {
@@ -54,6 +54,8 @@ export function liveTargetGuard({bundle, cache = PROBE_CACHE} = {}) {
     },
     // The frontmost process with its top window, the engine's windows passed over (key-guard's frontmostFromProbe shape).
     frontmost: () => { const r = frontWindow({skipPids: enginePids(), exec}); return r?.frontmost?.pid ? {...r.frontmost, topWindow: r.topWindow ?? null} : null; },
+    // A process's layer-0 windows, front to back ({number, bounds, onScreen}): where a scene's run window is now.
+    windows: pid => appWindows(pid, {exec}),
     compile: () => { bin ??= compiled(FRONT_WINDOW_SCRIPT, cache); return bin; },
   };
 }

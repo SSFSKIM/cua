@@ -48,8 +48,6 @@ import {desktopModeFor, nativeEngineSetting} from './launch.mjs';
 import {desktopSessionEnv} from './linux-desktop.mjs';
 import {inspectLinuxEngine, loadEnginePin} from './linux-engine.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
-import {createEngineClient} from '../services/engine/linux/client.mjs';
-import {CANNOT} from '../services/engine/linux/methods.mjs';
 
 const result = (name, status, detail) => ({name, status, detail});
 const SETTINGS = '~/.config/cua/engine.json';
@@ -76,6 +74,7 @@ export function defaultInspectLinuxEngine({home, arch}) {
 // check, then `server --desktop <desktop>` with `env`, `capabilities` first) and stopped once it has answered, or after
 // `timeoutMs`. Rejects with the client's sentence, as a session's first computer call would.
 export async function defaultReadLinuxCapabilities({path, desktop, env, timeoutMs = 10000}) {
+  const {createEngineClient} = await import('../services/engine/linux/client.mjs');   // loaded only where it runs
   const client = createEngineClient({path, desktop, env});
   const report = client.capabilities();
   // An engine whose start was still under way at the deadline is stopped when the start ends.
@@ -244,6 +243,7 @@ async function linuxCapabilities({bin, facts, desktop, env, readCapabilities}) {
     if (NO_DISPLAY.test(error.message)) return {report: null, unread: error.message, ...noDisplay(error.message)};
     return {report: null, unread: error.message, verdict: 'fail', words: `; its capability report could not be read, and sessions here fail the same way: ${error.message}`};
   }
+  const {CANNOT} = await import('../services/engine/linux/methods.mjs');   // the service's words, loaded only on Linux
   const lacking = Object.keys(CANNOT).filter(key => [undefined, null, false].includes(key.split('.').reduce((at, part) => at?.[part], report)));
   return {report, unread: null, verdict: lacking.length ? 'warn' : null,
     words: `; capabilities, from cua-engine started for this check and stopped: ${flatten(report).join(', ')}`

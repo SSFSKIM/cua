@@ -30,7 +30,7 @@ import { Oracle } from './oracle.mjs';
 import { writeSummary } from './report.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
-import { auditVerdict, blockOrder, judgeCalls, judgeOperation, runOutcome, verdictLine } from './stats.mjs';
+import { MIN_NOISE_SAMPLES, auditVerdict, blockOrder, judgeCalls, judgeOperation, runOutcome, verdictLine } from './stats.mjs';
 import { resolveField } from './text.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
 import { judgeForegroundSpan, judgeInFrontSpan, startWitness } from './witness.mjs';
@@ -562,8 +562,11 @@ export function engineSpecFor(spec, op, scene) {
 /** Whether an engine runs an operation: a candidate-only operation (`cuaOnly`) is not sent to the vendor builds. */
 export const runsOp = (label, op) => !(OPS[op].cuaOnly && VENDORS.includes(label));
 
-/** The samples a side each desktop-route group is judged on (Acceptance 3), topped up to when the blocks give fewer. */
-export const MIN_DESKTOP_SAMPLES = 20;
+/**
+ * The samples a side a series is topped up to while it is undetermined (Acceptance 3, revised at M3.1): 20, the fewest
+ * it is judged on (stats.mjs `MIN_NOISE_SAMPLES`), then 40; one still undetermined at 40 fails.
+ */
+export const SAMPLE_LEVELS = [MIN_NOISE_SAMPLES, 2 * MIN_NOISE_SAMPLES];
 
 /**
  * The top-up rounds a desktop-route group needs: each round is one fresh engine per engine, its cold sample, and its
@@ -711,16 +714,35 @@ export async function runDiff(args) {
       }
     }
 
-    // The desktop route's top-up (Acceptance 3; Decision Log, the design session's top-up): every desktop-route group
-    // gets fresh-engine rounds until each engine has MIN_DESKTOP_SAMPLES samples in each series, so none is judged on
-    // the medians of fewer. A round is one more series per engine, its cold sample alone unless the warm series is short
-    // too; the engines' order rotates on from the blocks'.
-    for (const { scene: sceneName, op } of blockPlan.filter((p) => p.scene === 'desktop' && !isDevice(p.op))) {
-      const { rounds, warm } = topUpRounds({ cold: args.blocks, warm: args.blocks * samplesFor(op) }, { min: MIN_DESKTOP_SAMPLES, warmPerRound: samplesFor(op) });
-      if (rounds) emit({ kind: 'top-up', scene: sceneName, op, rounds, warm, min: MIN_DESKTOP_SAMPLES });
-      for (let r = 0; r < rounds; r++) {
-        for (const label of blockOrder(labels, args.blocks + r).filter((l) => runsOp(l, op))) {
-          await measureSeries({ sceneName, op, label, block: `topup-${r}`, n: warm ? 1 + samplesFor(op) : 1 });
+    // The top-up (Acceptance 3, revised at M3.1): a series is judged only on 20 samples a side and through its interval,
+    // so every series the blocks leave undetermined (too few samples, or an interval too wide) gets fresh-engine rounds
+    // until each engine has 20 samples in it, then 40 if it is still undetermined; one undetermined at 40 fails. A round
+    // is one more series per engine, its cold sample alone unless the warm series is short too; the engines' order
+    // rotates on from the blocks'.
+    if (via === 'wire') {
+      let round = 0;
+      for (const level of SAMPLE_LEVELS) {
+        const sampled = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'sample');
+        for (const { scene: sceneName, op } of blockPlan.filter((p) => !isDevice(p.op) && !OPS[p.op].cuaOnly)) {
+          const opRows = sampled.filter((r) => r.scene === sceneName && r.op === op);
+          const parity = ['cold', 'warm'].map((series) => declaredParity({ op, scene: sceneName, series })).filter(Boolean);
+          const open = labels
+            .filter((l) => !VENDORS.includes(l))
+            .flatMap((candidate) => judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, text: isText(op), noise: medianDifferenceInterval, parity }).undetermined)
+            .filter((u) => u.samples < level);
+          if (!open.length) continue;
+          const engineLabels = labels.filter((l) => runsOp(l, op));
+          const count = (series) => Math.min(...engineLabels.map((l) => opRows.filter((r) => r.engine === l && r.series === series).length));
+          const series = [...new Set(open.map((u) => u.series))];
+          const need = topUpRounds({ cold: series.includes('cold') ? count('cold') : level, warm: series.includes('warm') ? count('warm') : level }, { min: level, warmPerRound: samplesFor(op) });
+          // the warm samples only in the rounds the warm series needs, the rest a fresh engine's cold sample alone
+          const warmRounds = series.includes('warm') ? Math.max(0, Math.ceil((level - count('warm')) / samplesFor(op))) : 0;
+          emit({ kind: 'top-up', scene: sceneName, op, level, series, rounds: need.rounds, warm_rounds: warmRounds, open });
+          for (let r = 0; r < need.rounds; r++, round++) {
+            for (const label of blockOrder(engineLabels, args.blocks + round)) {
+              await measureSeries({ sceneName, op, label, block: `topup-${level}-${r}`, n: r < warmRounds ? 1 + samplesFor(op) : 1 });
+            }
+          }
         }
       }
     }
@@ -879,9 +901,8 @@ export async function runDiff(args) {
         const foreground = routeOf(op, sceneName) === 'foreground';
         const opAudits = args.audit && targeted(op) && !foreground ? Object.fromEntries(labels.map((l) => [l, audits[`${sceneName}|${op}|${l}`]])) : null;
         const parity = ['cold', 'warm'].map((series) => declaredParity({ op, scene: sceneName, series })).filter(Boolean);
-        // the desktop route's groups, topped up to MIN_DESKTOP_SAMPLES a side, are never judged on fewer
-        const minSamples = sceneName === 'desktop' ? MIN_DESKTOP_SAMPLES : null;
-        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op), noise: medianDifferenceInterval, parity, minSamples });
+        // every series judged on 20 samples a side through its interval (the top-up above), never on fewer
+        const verdict = judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, audits: opAudits, judgeSpeed: via === 'wire', text: isText(op), noise: medianDifferenceInterval, parity });
         const extra = {};
         if (routes.length) extra.routes = routes;
         if (isText(op) && routeOf(op, sceneName)) extra.route_expected = routeOf(op, sceneName);

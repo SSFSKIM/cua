@@ -58,7 +58,8 @@ test('the allowance is granted only where the expected route is the one taken; a
 const sample = (engine, series, ms, extra = {}) => ({ engine, series, ms, ok: true, witness: true, ...extra });
 
 test("a candidate sample whose preparation failed fails the verdict, and no engine's such sample is timed", () => {
-  const opts = { vendors: VENDORS, candidate: 'cua', text: true };
+  // the preparation is judged here; speed needs 20 samples a side (speed-guard.test.mjs)
+  const opts = { vendors: VENDORS, candidate: 'cua', text: true, judgeSpeed: false };
   const rows = [sample('pinned', 'cold', 1), sample('pinned', 'warm', 0.2), sample('newest', 'cold', 1), sample('newest', 'warm', 0.2), sample('cua', 'cold', 0.5), sample('cua', 'warm', 0.1)];
   assert.equal(judgeOperation(rows, opts).pass, true);
   // the candidate released a handle it never issued: it answered fast and succeeded, and still fails
@@ -105,7 +106,8 @@ test('the noise bound is max(5% of the bar, 1 ms)', () => {
 const spread = (centre, width, n = 31) => Array.from({ length: n }, (_, i) => centre - width + (2 * width * ((i * 7) % n)) / (n - 1));
 
 test('a differential verdict whose interval includes 0 but reaches past the bound is undetermined, so it fails', () => {
-  const series = (engine, values) => values.map((ms, i) => ({ engine, series: i === 0 ? 'cold' : 'warm', ms: i === 0 ? 1 : ms, ok: true }));
+  // 21 cold samples a side, the same in every engine: the warm series is the one judged here
+  const series = (engine, values) => [...values.map((ms) => ({ engine, series: 'warm', ms, ok: true })), ...Array.from({ length: 21 }, () => ({ engine, series: 'cold', ms: 1, ok: true }))];
   // a bar of 10 ms: the bound is 1 ms; cua's samples spread over ±8 ms, its median a little above the bar's
   const rows = [...series('pinned', spread(10, 0.1)), ...series('newest', spread(10.5, 0.1)), ...series('cua', spread(10.05, 8))];
   const v = judgeOperation(rows, { vendors: VENDORS, candidate: 'cua', noise: medianDifferenceInterval });
@@ -113,7 +115,7 @@ test('a differential verdict whose interval includes 0 but reaches past the boun
   assert.ok(interval[0] <= 0 && interval[1] > 1, `the interval ${interval} includes 0 and reaches past 1 ms`);
   assert.equal(v.pass, false);
   assert.equal(v.noise.length, 0);
-  assert.match(v.reasons.join('; '), /cua: warm .* ms > bar 10 ms, undetermined: the interval \[.*\] reaches past 1 ms/);
+  assert.match(v.reasons.join('; '), /cua: warm .* ms against the bar 10 ms, undetermined: the interval \[.*\] reaches past 1 ms/);
   // the same spread, narrow: a pass within noise
   const narrow = [...series('pinned', spread(10, 0.1)), ...series('newest', spread(10.5, 0.1)), ...series('cua', spread(10.01, 0.1))];
   assert.equal(judgeOperation(narrow, { vendors: VENDORS, candidate: 'cua', noise: medianDifferenceInterval }).noise.length, 1);
@@ -154,25 +156,27 @@ test('the declared parity list names the cold desktop screenshot and its Decisio
 });
 
 test("a listed operation above the bar is parity when cua's median lies within the bar's own spread of cold samples, else it fails", () => {
-  const shot = (engine, cold, warm = [25, 25, 25]) => [...cold.map((ms) => sample(engine, 'cold', ms)), ...warm.map((ms) => sample(engine, 'warm', ms))];
+  // each sample seven times over: 21 a side, so the series is judged (Acceptance 3)
+  const times7 = (xs) => Array.from({ length: 7 }, () => xs).flat();
+  const shot = (engine, cold, warm = [25, 25, 25]) => [...times7(cold).map((ms) => sample(engine, 'cold', ms)), ...times7(warm).map((ms) => sample(engine, 'warm', ms))];
   // m2-wire's cold samples: the pinned build sets the bar (33.58), spread 32.22-40.05; cua 36.44
   const rows = [...shot('pinned', [40.05, 32.22, 33.58], [29, 29, 29]), ...shot('newest', [39.44, 37.46, 38.97], [29, 29, 29]), ...shot('cua', [31.68, 36.85, 36.44], [24.6, 24.6, 24.6])];
   const parity = declaredParity({ op: 'get_screenshot', scene: 'desktop', series: 'cold' });
-  const v = judgeOperation(rows, { vendors: VENDORS, candidate: 'cua', parity: [parity] });
+  const v = judgeOperation(rows, { vendors: VENDORS, candidate: 'cua', parity: [parity], noise: medianDifferenceInterval });
   assert.equal(v.pass, false, 'parity is not a pass');
   assert.equal(v.verdict, 'parity');
   assert.deepEqual(v.reasons, []);
   assert.deepEqual(v.parity, [{ series: 'cold', candidate: 36.44, bar: 33.58, against: 'pinned', spread: [32.22, 40.05], section: parity.section }]);
   // outside the spread: a loss
   const slow = [...rows.filter((r) => r.engine !== 'cua'), ...shot('cua', [41, 42, 43], [24.6, 24.6, 24.6])];
-  const lost = judgeOperation(slow, { vendors: VENDORS, candidate: 'cua', parity: [parity] });
+  const lost = judgeOperation(slow, { vendors: VENDORS, candidate: 'cua', parity: [parity], noise: medianDifferenceInterval });
   assert.equal(lost.verdict, 'fail');
-  assert.match(lost.reasons.join(), /cold 42 ms > bar 33.58 ms, outside the bar's spread \[32.22, 40.05\]/);
+  assert.match(lost.reasons.join(), /cold 42 ms .*bar 33.58 ms.*, outside the bar's spread \[32.22, 40.05\]/);
   // an unlisted operation is unaffected
-  assert.equal(judgeOperation(rows, { vendors: VENDORS, candidate: 'cua' }).verdict, 'fail');
-  // the warm series is not listed: a warm loss fails even with the cold parity
-  const warmLoss = [...rows.filter((r) => r.engine !== 'cua'), ...shot('cua', [36.44, 36.44, 36.44], [30, 30, 30])];
-  assert.equal(judgeOperation(warmLoss, { vendors: VENDORS, candidate: 'cua', parity: [parity] }).verdict, 'fail');
+  assert.equal(judgeOperation(rows, { vendors: VENDORS, candidate: 'cua', noise: medianDifferenceInterval }).verdict, 'fail');
+  // the warm series is not listed: a warm loss past the bound fails even with the cold parity
+  const warmLoss = [...rows.filter((r) => r.engine !== 'cua'), ...shot('cua', [36.44, 36.44, 36.44], [31, 31, 31])];
+  assert.equal(judgeOperation(warmLoss, { vendors: VENDORS, candidate: 'cua', parity: [parity], noise: medianDifferenceInterval }).verdict, 'fail');
 });
 
 test('a parity verdict neither fails the run nor counts as a pass', () => {

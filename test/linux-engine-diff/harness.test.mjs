@@ -5,6 +5,7 @@ import { attributeCalls, parseMonitor } from '../../scripts/linux-engine-diff/bu
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { compareStates, normalizeState, retainedIds } from '../../scripts/linux-engine-diff/normalize.mjs';
 import { analyzeTrial } from '../../scripts/linux-engine-diff/readiness.mjs';
+import { medianDifferenceInterval } from '../../scripts/linux-engine-diff/events.mjs';
 import { blockOrder, median, judgeOperation } from '../../scripts/linux-engine-diff/stats.mjs';
 import { judgeSpan } from '../../scripts/linux-engine-diff/witness.mjs';
 
@@ -41,13 +42,17 @@ test('the bar is the faster vendor build per series, judged cold against cold an
   const verdict = judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua' });
   assert.equal(verdict.bar.cold, 250);
   assert.equal(verdict.bar.warm, 210);
-  assert.equal(verdict.speed, true);
-  assert.equal(verdict.pass, true);
-
-  const slowCold = [...rows.filter((r) => r.engine !== 'cua'), ...samples('cua', 260, [100, 110, 120])];
-  const v2 = judgeOperation(slowCold, { vendors: ['pinned', 'newest'], candidate: 'cua' });
+  // one cold and three warm samples: undetermined, faster or not (Acceptance 3)
+  assert.equal(verdict.speed, false);
+  assert.deepEqual(verdict.undetermined.map((u) => [u.series, u.against]), [['cold', 'newest'], ['warm', 'pinned']]);
+  // with 21 a side each series is judged against its own bar build
+  const many = (engine, cold, warm) => Array.from({ length: 7 }, () => samples(engine, cold, warm)).flat().flatMap((r, i) => (r.series === 'cold' ? [r, { ...r }, { ...r }] : [r]));
+  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua', noise: medianDifferenceInterval };
+  const judged = judgeOperation([...many('pinned', 300, [200, 210, 220]), ...many('newest', 250, [230, 240, 250]), ...many('cua', 240, [100, 110, 120])], opts);
+  assert.equal(judged.pass, true, judged.reasons.join('; '));
+  const v2 = judgeOperation([...many('pinned', 300, [200, 210, 220]), ...many('newest', 250, [230, 240, 250]), ...many('cua', 280, [100, 110, 120])], opts);
   assert.equal(v2.speed, false);
-  assert.match(v2.reasons.join(), /cold 260.* > bar 250/);
+  assert.match(v2.reasons.join(), /cold 280 ms > bar 250 ms/);
 });
 
 test('the verdict needs equal output, a clean witness where a vendor is clean, and the effect', () => {
@@ -56,28 +61,28 @@ test('the verdict needs equal output, a clean witness where a vendor is clean, a
     ...samples('newest', 250, [230], { witness: true, effect: false, equal: true }),
   ];
   const dirty = [...base, ...samples('cua', 100, [100], { witness: false, effect: true, equal: true })];
-  assert.match(judgeOperation(dirty, { vendors: ['pinned', 'newest'], candidate: 'cua' }).reasons.join(), /witness/);
+  assert.match(judgeOperation(dirty, { vendors: ['pinned', 'newest'], candidate: 'cua', judgeSpeed: false }).reasons.join(), /witness/);
   const noEffect = [...base, ...samples('cua', 100, [100], { witness: true, effect: false, equal: true })];
-  assert.match(judgeOperation(noEffect, { vendors: ['pinned', 'newest'], candidate: 'cua' }).reasons.join(), /effect/);
+  assert.match(judgeOperation(noEffect, { vendors: ['pinned', 'newest'], candidate: 'cua', judgeSpeed: false }).reasons.join(), /effect/);
   const differs = [...base, ...samples('cua', 100, [100], { witness: true, effect: true, equal: false })];
-  assert.match(judgeOperation(differs, { vendors: ['pinned', 'newest'], candidate: 'cua' }).reasons.join(), /output/);
+  assert.match(judgeOperation(differs, { vendors: ['pinned', 'newest'], candidate: 'cua', judgeSpeed: false }).reasons.join(), /output/);
   const good = [...base, ...samples('cua', 100, [100], { witness: true, effect: true, equal: true })];
-  assert.equal(judgeOperation(good, { vendors: ['pinned', 'newest'], candidate: 'cua' }).pass, true);
+  assert.equal(judgeOperation(good, { vendors: ['pinned', 'newest'], candidate: 'cua', judgeSpeed: false }).pass, true);
   // where no vendor build keeps the witness clean, it is not required of cua; the effect always is (M1a.4)
   const vendorsDirty = (effect) => [
     ...samples('pinned', 300, [200], { witness: false, effect: false, equal: true }),
     ...samples('newest', 250, [230], { witness: false, effect: false, equal: true }),
     ...samples('cua', 100, [100], { witness: false, effect, equal: true }),
   ];
-  assert.equal(judgeOperation(vendorsDirty(true), { vendors: ['pinned', 'newest'], candidate: 'cua' }).pass, true);
-  assert.equal(judgeOperation(vendorsDirty(false), { vendors: ['pinned', 'newest'], candidate: 'cua' }).pass, false);
+  assert.equal(judgeOperation(vendorsDirty(true), { vendors: ['pinned', 'newest'], candidate: 'cua', judgeSpeed: false }).pass, true);
+  assert.equal(judgeOperation(vendorsDirty(false), { vendors: ['pinned', 'newest'], candidate: 'cua', judgeSpeed: false }).pass, false);
 });
 
 test("cua's effect is judged on every sample, whatever the vendor builds did on it (Decision Log, M1a.4)", () => {
   const series = (engine, effectOf) => [0, 1].flatMap((block) => [0, 1, 2, 3, 4, 5].map((i) => ({ engine, block, i, series: i === 0 ? 'cold' : 'warm', ms: 10, ok: true, witness: true, equal: true, effect: effectOf(i) })));
   const partial = (i) => i !== 1 && i !== 4;
   const vendors = [...series('pinned', partial), ...series('newest', partial)];
-  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua' };
+  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua', judgeSpeed: false };
   // every sample taken: a pass, whatever the vendor builds missed
   assert.equal(judgeOperation([...vendors, ...series('cua', () => true)], opts).pass, true);
   // a sample both vendor builds missed and cua missed fails the operation: the vendor's miss is not the bar
@@ -95,11 +100,13 @@ test("cua's effect is judged on every sample, whatever the vendor builds did on 
   assert.equal(judgeOperation([...none('pinned'), ...none('newest'), ...none('cua')], opts).pass, true);
 });
 
-test('speed is judged on the unrounded medians: a loss smaller than the shown tenth of a millisecond is still a loss', () => {
-  const rows = [...samples('pinned', 5.3, [0.69]), ...samples('newest', 5.02, [0.65]), ...samples('cua', 5.0, [0.67])];
-  const verdict = judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua' });
+test('speed is judged on the unrounded medians: a loss past the bound by less than the shown tenth is still a loss', () => {
+  // 21 a side: cua 21.04 ms against a bar of 20 ms, whose bound is 1 ms
+  const times = (engine, cold, warm) => Array.from({ length: 21 }, () => samples(engine, cold, [warm])).flat();
+  const rows = [...times('pinned', 5.3, 20.3), ...times('newest', 5.02, 20), ...times('cua', 5.0, 21.04)];
+  const verdict = judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua', noise: medianDifferenceInterval });
   assert.equal(verdict.speed, false);
-  assert.match(verdict.reasons.join(), /warm 0\.67 ms > bar 0\.65 ms/);
+  assert.match(verdict.reasons.join(), /warm 21\.04 ms > bar 20 ms/);
 });
 
 test('a failed request fails the verdict', () => {
@@ -113,7 +120,8 @@ test('a request every engine answers with an error is judged by its answer and t
     { engine, series: 'warm', ms: warm, ok: false, equal: true },
   ];
   const rows = [...refused('pinned', 290, 300), ...refused('newest', 280, 270), ...refused('cua', 135, 128)];
-  const verdict = judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua' });
+  // the answer is judged here; speed needs 20 samples a side (speed-guard.test.mjs)
+  const verdict = judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua', judgeSpeed: false });
   assert.equal(verdict.pass, true);
   assert.deepEqual(verdict.bar, { cold: 280, warm: 270 });
   const slow = judgeOperation([...refused('pinned', 290, 300), ...refused('newest', 280, 270), ...refused('cua', 300, 128)], { vendors: ['pinned', 'newest'], candidate: 'cua' });

@@ -1,0 +1,685 @@
+{
+ "changed": [
+  {
+   "scene": "desktop",
+   "op": "get_screenshot",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "parity",
+   "speed_before": [],
+   "speed_after": []
+  },
+  {
+   "scene": "gedit",
+   "op": "tree",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 85.77 ms against the bar 606.83 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "gedit",
+   "op": "tree_shot",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 130.89 ms against the bar 717.46 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "gedit",
+   "op": "press_key",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 105.82 ms against the bar 239.8 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 101.29 ms against the bar 235.93 ms, undetermined: 15 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "gedit",
+   "op": "click",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 118.36 ms against the bar 221.11 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 113.96 ms against the bar 215 ms, undetermined: 15 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "gedit",
+   "op": "type_text",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 179 ms against the bar 908.58 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 166.31 ms against the bar 923.92 ms, undetermined: 15 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "gedit",
+   "op": "type_text_selection",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 178.05 ms against the bar 900.01 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 163.98 ms against the bar 932.86 ms, undetermined: 15 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "gedit",
+   "op": "type_characters",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 107.66 ms against the bar 575.34 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 102.06 ms against the bar 569.36 ms, undetermined: 15 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "gedit",
+   "op": "clipboard_read",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 39.11 ms against the bar 523.62 ms, undetermined: 1 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 35.66 ms against the bar 541.28 ms, undetermined: 5 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "gedit",
+   "op": "clipboard_release",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 2.25 ms against the bar 3.25 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "chrome",
+   "op": "tree",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 89.15 ms against the bar 551.27 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "chrome",
+   "op": "tree_shot",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 111.28 ms against the bar 641.11 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "chrome",
+   "op": "press_key",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 106.3 ms against the bar 240.21 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 101.28 ms against the bar 236.33 ms, undetermined: 15 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "chrome",
+   "op": "click",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 118.63 ms against the bar 219.29 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 113.85 ms against the bar 215.16 ms, undetermined: 15 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "over-budget",
+   "op": "tree",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 1014.93 ms against the bar 7090.15 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "retention",
+   "op": "after_resize",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 83.69 ms against the bar 609.41 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 95.4 ms against the bar 615.43 ms, undetermined: 15 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "retention",
+   "op": "after_remap",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 85.33 ms against the bar 601.91 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 97.07 ms against the bar 599.6 ms, undetermined: 15 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "retention",
+   "op": "after_covered_change",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 89.76 ms against the bar 594.54 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 94.49 ms against the bar 619.34 ms, undetermined: 15 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "chrome-textarea",
+   "op": "type_text",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 180.7 ms against the bar 989.27 ms, undetermined: 1 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 167.8 ms against the bar 1002.85 ms, undetermined: 15 samples a side, fewer than 20; not judged on medians"
+   ]
+  },
+  {
+   "scene": "chrome-address-bar",
+   "op": "type_text",
+   "candidate": "cua",
+   "before": "pass",
+   "after": "fail",
+   "speed_before": [],
+   "speed_after": [
+    "cua: cold 209.71 ms against the bar 1116.55 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians",
+    "cua: warm 189.09 ms against the bar 1158.89 ms, undetermined: 15 samples a side, fewer than 20; not judged on medians"
+   ]
+  }
+ ],
+ "under": [
+  {
+   "scene": "gedit",
+   "op": "tree",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "newest": 3
+   },
+   "median": 85.77,
+   "bar": 606.83,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "tree_shot",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "newest": 3
+   },
+   "median": 130.89,
+   "bar": 717.46,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "press_key",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "newest": 3
+   },
+   "median": 105.82,
+   "bar": 239.8,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "press_key",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "newest": 15
+   },
+   "median": 101.29,
+   "bar": 235.93,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "click",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "pinned": 3
+   },
+   "median": 118.36,
+   "bar": 221.11,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "click",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "pinned": 15
+   },
+   "median": 113.96,
+   "bar": 215,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "type_text",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "newest": 3
+   },
+   "median": 179,
+   "bar": 908.58,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "type_text",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "newest": 15
+   },
+   "median": 166.31,
+   "bar": 923.92,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "type_text_selection",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "newest": 3
+   },
+   "median": 178.05,
+   "bar": 900.01,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "type_text_selection",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "newest": 15
+   },
+   "median": 163.98,
+   "bar": 932.86,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "type_characters",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "newest": 3
+   },
+   "median": 107.66,
+   "bar": 575.34,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "type_characters",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "newest": 15
+   },
+   "median": 102.06,
+   "bar": 569.36,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "clipboard_read",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "pinned": 1
+   },
+   "median": 39.11,
+   "bar": 523.62,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "clipboard_read",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "pinned": 5
+   },
+   "median": 35.66,
+   "bar": 541.28,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "gedit",
+   "op": "clipboard_release",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "newest": 3
+   },
+   "median": 2.25,
+   "bar": 3.25,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "chrome",
+   "op": "tree",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "newest": 3
+   },
+   "median": 89.15,
+   "bar": 551.27,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "chrome",
+   "op": "tree_shot",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "newest": 3
+   },
+   "median": 111.28,
+   "bar": 641.11,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "chrome",
+   "op": "press_key",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "newest": 3
+   },
+   "median": 106.3,
+   "bar": 240.21,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "chrome",
+   "op": "press_key",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "newest": 15
+   },
+   "median": 101.28,
+   "bar": 236.33,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "chrome",
+   "op": "click",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "pinned": 3
+   },
+   "median": 118.63,
+   "bar": 219.29,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "chrome",
+   "op": "click",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "pinned": 15
+   },
+   "median": 113.85,
+   "bar": 215.16,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "over-budget",
+   "op": "tree",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "pinned": 3
+   },
+   "median": 1014.93,
+   "bar": 7090.15,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "retention",
+   "op": "after_resize",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "newest": 3
+   },
+   "median": 83.69,
+   "bar": 609.41,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "retention",
+   "op": "after_resize",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "newest": 15
+   },
+   "median": 95.4,
+   "bar": 615.43,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "retention",
+   "op": "after_remap",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "pinned": 3
+   },
+   "median": 85.33,
+   "bar": 601.91,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "retention",
+   "op": "after_remap",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "pinned": 15
+   },
+   "median": 97.07,
+   "bar": 599.6,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "retention",
+   "op": "after_covered_change",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "pinned": 3
+   },
+   "median": 89.76,
+   "bar": 594.54,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "retention",
+   "op": "after_covered_change",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "pinned": 15
+   },
+   "median": 94.49,
+   "bar": 619.34,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "chrome-textarea",
+   "op": "type_text",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "newest": 1
+   },
+   "median": 180.7,
+   "bar": 989.27,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "chrome-textarea",
+   "op": "type_text",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "pinned": 15
+   },
+   "median": 167.8,
+   "bar": 1002.85,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "chrome-address-bar",
+   "op": "type_text",
+   "candidate": "cua",
+   "series": "cold",
+   "samples": {
+    "cua": 3,
+    "pinned": 3
+   },
+   "median": 209.71,
+   "bar": 1116.55,
+   "against": "pinned",
+   "old": "pass (at or below the bar)"
+  },
+  {
+   "scene": "chrome-address-bar",
+   "op": "type_text",
+   "candidate": "cua",
+   "series": "warm",
+   "samples": {
+    "cua": 15,
+    "newest": 15
+   },
+   "median": 189.09,
+   "bar": 1158.89,
+   "against": "newest",
+   "old": "pass (at or below the bar)"
+  }
+ ]
+}

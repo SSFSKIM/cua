@@ -364,6 +364,16 @@ variants included; their evidence is written either way. The run's `end` row kee
   background route; a drag and drop cancelled before the drop; an honest answer when the cancel comes too late), with
   the witness and the X request audit of the kind the expectation needs. `capabilities` is checked against the
   engine's version and build.
+- **The witness's allowances** (`witness.mjs`):
+  - **Foreground.** Override-redirect windows of the target's own X client (its resource-id base) may map, restack
+    and unmap; one may stay mapped at the end only where the input opens it, as a right click's menu. Every other
+    client's window still fails, and `foregroundNegativeCheck` maps another client's popup (`xprobe popup`), which
+    must fail.
+  - **In front** (`judgeInFrontSpan`), only for the case that declares it and a request whose `--stats` `dnd`
+    recorded `in_front`. It is judged on the event records: activations name the target, restacks move only the
+    target client's own windows with its frame on top, and focus events stay with the target. `inFrontNegativeCheck`
+    runs beside the stub check in every run: the target's own activation passes, and another window's activation or
+    a coalesced restack fails.
 - **Declared refusals** (`deviations.mjs` `REFUSALS`): an operation the vendor lands and cua refuses in shared mode,
   recorded as a loss (verdict `declared refusal`, listed apart, never a pass) while every cua sample answers the
   declared sentence with the witness unchanged.

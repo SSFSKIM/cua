@@ -392,9 +392,10 @@ export function medianDifferenceInterval(a, b, { rounds = 2000, seed = 171, stra
  * The request times per route, command and series: each engine's median, and cua's against the faster vendor build's.
  * Over the wire the desktop route's judged times come from `blocks` (`desktopBlocks`' interleaved fresh engines over the
  * scenarios' sequences), and the scenarios' own desktop times are recorded beside them as `… in a scenario`.
- * A group is judged only when every engine has `minSamples`; then cua at or below the bar passes, and above it:
- * - a group whose bootstrap interval of the median difference includes 0 and whose upper end is within the bound
- *   (stats.mjs `noiseBound`: max(5% of the bar, 1 ms)) is "same (within noise)";
+ * A group is judged only when every engine has `minSamples`, and only through the interval guard, whichever way the
+ * medians point (Acceptance 3, revised at M3.1): a bootstrap interval of the median difference whose upper end is
+ * within the bound (stats.mjs `noiseBound`: max(5% of the bar, 1 ms)) passes, "same (within noise)" where cua's median
+ * is above the bar; otherwise:
  * - a loss a speed gap declares (deviations.mjs) is "declared gap";
  * - an interval that includes 0 but reaches past the bound is "undetermined" while more samples may come (`final`
  *   false: `runEvents` adds rounds), and a failure (`wide`) once they are final;
@@ -431,12 +432,11 @@ export function eventSpeeds(scenarioRows, { vendors = ['pinned', 'newest'], cand
     const mine = medians[candidate];
     const judged = bar !== null && typeof mine === 'number' && [...vendors, candidate].every((l) => (byEngine[l]?.length ?? 0) >= minSamples);
     const interval = judged ? medianDifferenceInterval(byEngine[candidate], byEngine[fastest], { strataA: strata[candidate], strataB: strata[fastest] }) : null;
-    const gap = judged && mine > bar ? declaredSpeedGap({ op: command, route, series }, gaps) : null;
-    const noise = judged && mine > bar ? noiseVerdict(interval, bar) : null;
+    const noise = judged ? noiseVerdict(interval, bar) : null;
+    const gap = judged && noise !== 'same' ? declaredSpeedGap({ op: command, route, series }, gaps) : null;
     let verdict;
     if (!judged) verdict = 'too few samples, not judged';
-    else if (mine <= bar) verdict = 'pass';
-    else if (noise === 'same') verdict = 'same (within noise)';
+    else if (noise === 'same') verdict = mine <= bar ? 'pass' : 'same (within noise)';
     else if (gap) verdict = 'declared gap';
     else if (noise === 'wide' && !final) verdict = 'undetermined';
     else verdict = 'fail';

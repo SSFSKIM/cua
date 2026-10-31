@@ -95,11 +95,14 @@ const PAD = { x: 520, y: 200 };
 /** A second point on the pad, so consecutive moves each move the pointer. */
 const PAD2 = { x: 300, y: 200 };
 
-/** GTK 4's scale dragged from a quarter to three quarters along on even samples, back on odd ones. */
-function scalePath(i) {
+/**
+ * GTK 4's scale dragged from a quarter to three quarters along, or back when it already stands past half (its value
+ * read before the request, 0 to 100): every drag moves it, whichever sample of whichever block it is.
+ */
+export function scalePath(ctx) {
   const { x0, x1, y } = GTK4.scale;
   const along = (f) => Math.round(x0 + 12 + (x1 - x0 - 24) * f);
-  return i % 2 === 0 ? [{ x: along(0.25), y }, { x: along(0.75), y }] : [{ x: along(0.75), y }, { x: along(0.25), y }];
+  return (ctx.before?.scale ?? 0) < 50 ? [{ x: along(0.25), y }, { x: along(0.75), y }] : [{ x: along(0.75), y }, { x: along(0.25), y }];
 }
 
 const grew = (key) => (before, after) => typeof before?.[key] === 'number' && typeof after?.[key] === 'number' && after[key] > before[key];
@@ -107,6 +110,12 @@ const higher = (before, after) => typeof before === 'number' && typeof after ===
 /** A drag across the input page's pad (pages/input.html counts it), in the top half of the window. */
 const padDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: [{ x: 200, y: 150 }, { x: 380, y: 180 }, { x: 600, y: 240 }] }];
 const moveTo = (ctx, a, b) => ['move', { window: { id: ctx.scene.id }, ...(ctx.i % 2 === 0 ? a : b) }];
+/**
+ * How long a drag-and-drop case's window settles before each drag, as the dnd experiment's drags are spaced (over a
+ * second apart, 10/10 drops): with 300 ms, 3 of 18 Chrome drops did not land in the first m31-verdict run, the cause
+ * not established.
+ */
+const DND_SETTLE_MS = 1200;
 /** The drag page's drag-and-drop path (`scene.dndPath`, drag.mjs's): the source dragged to the drop zone. */
 const dndDrag = (ctx) => ['drag', { window: { id: ctx.scene.id }, path: ctx.scene.dndPath }];
 
@@ -167,7 +176,7 @@ function alreadyInFront(ctx) {
  * A case: `device` its expectation, `scene` where it runs, `condition` the arrangement before each sample, `read` what
  * the window counts, `request`, and `effect` (from the counts before and after) for the cases that must take effect.
  */
-function device({ device: expect, condition = covered, read, request, effect, route, args, inFront = false }) {
+function device({ device: expect, condition = covered, read, request, effect, route, args, inFront = false, settleMs = 300 }) {
   const dedicated = expect === 'foreground';
   return {
     // the witness's in-front allowance (witness.mjs), for the request the engine records as made to a window in front
@@ -182,7 +191,7 @@ function device({ device: expect, condition = covered, read, request, effect, ro
     route: () => route ?? (dedicated ? 'foreground' : null),
     prepare: async (ctx) => {
       condition(ctx);
-      await sleep(300);
+      await sleep(settleMs);
       if (inFront) ctx.desktopBefore = desktopState();
     },
     read,
@@ -228,8 +237,8 @@ export const DEVICE_OPS = {
   gtk4_element_click: device({ device: 'background', read: gtk4, request: (ctx) => ['click', { window: { id: ctx.scene.id }, element_id: ctx.scene.button }], effect: rose('presses') }),
   gtk4_scroll_shared: device({ device: 'refusal', read: gtk4, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...at(GTK4.list) }] }),
   gtk4_scroll_dedicated: device({ device: 'foreground', read: gtk4, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, ...at(GTK4.list) }], effect: (before, after) => typeof before?.scroll === 'number' && after?.scroll > before.scroll }),
-  gtk4_drag_shared: device({ device: 'refusal', read: gtk4, request: (ctx) => ['drag', { window: { id: ctx.scene.id }, path: scalePath(ctx.i) }] }),
-  gtk4_drag_dedicated: device({ device: 'foreground', read: gtk4, request: (ctx) => ['drag', { window: { id: ctx.scene.id }, path: scalePath(ctx.i) }], effect: (before, after) => typeof before?.scale === 'number' && typeof after?.scale === 'number' && after.scale !== before.scale }),
+  gtk4_drag_shared: device({ device: 'refusal', read: gtk4, request: (ctx) => ['drag', { window: { id: ctx.scene.id }, path: scalePath(ctx) }] }),
+  gtk4_drag_dedicated: device({ device: 'foreground', read: gtk4, request: (ctx) => ['drag', { window: { id: ctx.scene.id }, path: scalePath(ctx) }], effect: (before, after) => typeof before?.scale === 'number' && typeof after?.scale === 'number' && after.scale !== before.scale }),
   gtk4_move_shared: device({ device: 'refusal', read: gtk4, request: (ctx) => moveTo(ctx, { x: 200, y: 300 }, { x: 400, y: 300 }) }),
   gtk4_move_dedicated: device({ device: 'foreground', read: gtk4, request: (ctx) => moveTo(ctx, { x: 200, y: 300 }, { x: 400, y: 300 }), effect: grew('moves') }),
   // gnome-text-editor (GTK 4): typeText in shared mode
@@ -270,10 +279,10 @@ export const DEVICE_OPS = {
   // Chrome's HTML5 drag and drop (`device-chrome-dnd`): cancelled before the drop in shared mode; let through when Chrome
   // is already in front, the desktop unchanged; an honest answer when the cancel comes too late; the drop through the
   // foreground route in dedicated mode, Chrome's own drag windows coming and going beside its frame's raise
-  chrome_dnd_shared: device({ device: 'cancel', condition: visible, read: dropStatus, request: dndDrag }),
-  chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, read: dropStatus, request: dndDrag, effect: rose('drops'), inFront: true }),
-  chrome_dnd_late_shared: device({ device: 'late', condition: visible, read: dropStatus, request: dndDrag, args: LATE }),
-  chrome_dnd_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndDrag, effect: rose('drops') }),
+  chrome_dnd_shared: device({ device: 'cancel', condition: visible, read: dropStatus, request: dndDrag, settleMs: DND_SETTLE_MS }),
+  chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, read: dropStatus, request: dndDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS }),
+  chrome_dnd_late_shared: device({ device: 'late', condition: visible, read: dropStatus, request: dndDrag, args: LATE, settleMs: DND_SETTLE_MS }),
+  chrome_dnd_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS }),
   // Qt (`device-qt`, kate on a long document): its scroll bar's value
   qt_scroll_shared: device({ device: 'refusal', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }] }),
   qt_scroll_dedicated: device({ device: 'foreground', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }], effect: higher }),

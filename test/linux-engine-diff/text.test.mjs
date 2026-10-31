@@ -190,7 +190,8 @@ test("M2's scenes plan the text operations and the safety cases, and their kinds
 test("a text command's verdict: the bar from the vendor samples that succeeded, every cua request answered, its clipboard kept", async () => {
   const { judgeOperation } = await import('../../scripts/linux-engine-diff/stats.mjs');
   const row = (engine, series, ms, ok, extra = {}) => ({ engine, series, ms, ok, witness: true, effect: ok, ...extra });
-  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua', text: true };
+  // the bar and the answers are judged here; speed needs 20 samples a side (speed-guard.test.mjs)
+  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua', text: true, judgeSpeed: false };
   const rows = [
     // the pinned build fails fast here and the newest succeeds slowly: the bar is the newest build's success
     row('pinned', 'cold', 12, false),
@@ -219,8 +220,8 @@ test("a text command's verdict: the bar from the vendor samples that succeeded, 
 test('a median above the bar whose bootstrap interval includes 0 is same within noise, with at least 20 samples a side', async () => {
   const { judgeOperation } = await import('../../scripts/linux-engine-diff/stats.mjs');
   const { medianDifferenceInterval } = await import('../../scripts/linux-engine-diff/events.mjs');
-  // one cold sample each, the same: the warm series is the one judged here
-  const series = (engine, values) => values.map((ms, i) => ({ engine, series: i === 0 ? 'cold' : 'warm', ms: i === 0 ? 0.1 : ms, ok: true }));
+  // 21 cold samples each, the same: the warm series is the one judged here
+  const series = (engine, values) => [...values.map((ms) => ({ engine, series: 'warm', ms, ok: true })), ...Array.from({ length: 21 }, () => ({ engine, series: 'cold', ms: 0.1, ok: true }))];
   const noisy = (base) => Array.from({ length: 31 }, (_, i) => base + ((i * 7) % 5) * 0.01);
   const rows = [...series('pinned', noisy(0.11)), ...series('newest', noisy(0.12)), ...series('cua', noisy(0.115))];
   const opts = { vendors: ['pinned', 'newest'], candidate: 'cua', noise: medianDifferenceInterval };
@@ -228,12 +229,14 @@ test('a median above the bar whose bootstrap interval includes 0 is same within 
   assert.equal(v.pass, true, v.reasons.join('; '));
   assert.equal(v.noise.length, 1);
   assert.equal(v.noise[0].series, 'warm');
-  // a real loss, its interval above 0, still fails
-  const slow = [...series('pinned', noisy(0.11)), ...series('newest', noisy(0.12)), ...series('cua', noisy(0.2))];
+  // a real loss past the bound, its interval above 0, still fails
+  const slow = [...series('pinned', noisy(0.11)), ...series('newest', noisy(0.12)), ...series('cua', noisy(1.5))];
   assert.equal(judgeOperation(slow, opts).pass, false);
-  // fewer than 20 samples a side: judged on the medians alone
-  const few = rows.filter((r) => r.series === 'cold' || rows.indexOf(r) % 31 < 10);
-  assert.equal(judgeOperation(few, opts).noise.length, 0);
+  // fewer than 20 samples a side: undetermined, never judged on the medians
+  const few = [...series('pinned', noisy(0.11).slice(0, 10)), ...series('newest', noisy(0.12).slice(0, 10)), ...series('cua', noisy(0.115).slice(0, 10))];
+  const v10 = judgeOperation(few, opts);
+  assert.equal(v10.pass, false);
+  assert.deepEqual(v10.undetermined.map((u) => [u.series, u.samples]), [['warm', 10]]);
 });
 
 test('lock contention: each field holds exactly its own markers, in order, once each', () => {

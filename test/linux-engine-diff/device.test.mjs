@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { auditNothingSent, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
-import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, deviceSentence, dndCancelledSentence, dndMayHaveDroppedSentence, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
+import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndMayHaveDroppedSentence, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
 import { OPS, SCENE_OPS } from '../../scripts/linux-engine-diff/ops.mjs';
 import { DEVICE_REFUSAL, DND_REFUSAL, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
 import { planOps, routeOf, runsOp } from '../../scripts/linux-engine-diff/run.mjs';
@@ -147,4 +147,12 @@ test('the in-front drop passes only where the engine recorded the window in fron
   assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, desktop_same: false }], audit).pass, false);
   assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, witness: false }], audit).pass, false);
   assert.equal(judgeDevice('chrome_dnd_in_front_shared', [good], { clean: false, kind: 'background', forbidden: ['_NET_ACTIVE_WINDOW ClientMessage'] }).pass, false, 'the engine sent an activation');
+});
+
+test("GTK 4's scale is dragged away from where it stands, whichever sample of whichever block", () => {
+  const [from, to] = scalePath({ before: { scale: 0 } });
+  assert.ok(to.x > from.x, 'up from the start');
+  const [back, end] = scalePath({ before: { scale: 74 } });
+  assert.ok(end.x < back.x, 'down from three quarters');
+  assert.deepEqual(scalePath({ before: null }), scalePath({ before: { scale: 0 } }), 'unread: up');
 });

@@ -10,6 +10,8 @@
 //!   stack mode `Above`), the harness's coalesced negative check.
 //! - `xprobe popup <x> <y> <width> <height> <ms>`: an override-redirect window of xprobe's own, mapped for `ms` and
 //!   destroyed: another client's popup, which the foreground route's witness must fail (M3.1).
+//! - `xprobe overlay <x> <y> <width> <height> [below <window>]`: an override-redirect window of xprobe's own that
+//!   stays until stdin closes, crossing a window's frame and back on request (`overlay`).
 
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
@@ -17,6 +19,8 @@ use x11rb::protocol::xproto::{
     ConfigureWindowAux, ConnectionExt as _, CreateWindowAux, MapState, Place, StackMode, Window, WindowClass,
 };
 use x11rb::rust_connection::RustConnection;
+
+use std::io::{BufRead, Write};
 
 use crate::Result;
 
@@ -157,6 +161,66 @@ pub fn popup(args: &[String]) -> Result<()> {
     conn.destroy_window(id)?;
     conn.get_input_focus()?.reply()?;
     println!("{{\"popup\":{id}}}");
+    Ok(())
+}
+
+/// `xprobe overlay <x> <y> <width> <height> [below <window>]`: an override-redirect window of xprobe's own over the
+/// rectangle, on top of every window or just below `<window>`, mapped until stdin closes, then destroyed; `{"overlay":
+/// <id>}` once it is mapped. Each stdin line `cross <window>` moves it, under one server grab, to just above `<window>`
+/// and back to just below it, then answers `{"crossed": <id>}`: a foreign popup crossing a window's frame and coming
+/// back, which `_NET_CLIENT_LIST_STACKING` never shows and the restack events do (the in-front witness's coalesced
+/// negative control). A window over a corner of another (no `below`) keeps that one from counting as fully unobscured.
+pub fn overlay(args: &[String]) -> Result<()> {
+    let (rect, below) = match args {
+        [x, y, w, h] => ([x, y, w, h], None),
+        [x, y, w, h, word, window] if word == "below" => ([x, y, w, h], Some(crate::parse_window(window)?)),
+        _ => return Err("overlay <x> <y> <width> <height> [below <window>]".into()),
+    };
+    let (conn, screen) = x11rb::connect(None)?;
+    let screen = &conn.setup().roots[screen];
+    let id = conn.generate_id()?;
+    let aux = CreateWindowAux::new()
+        .override_redirect(1)
+        .background_pixel(screen.black_pixel);
+    conn.create_window(
+        0,
+        id,
+        screen.root,
+        rect[0].parse()?,
+        rect[1].parse()?,
+        rect[2].parse()?,
+        rect[3].parse()?,
+        0,
+        WindowClass::INPUT_OUTPUT,
+        0,
+        &aux,
+    )?;
+    conn.map_window(id)?;
+    let next_to = |sibling: Window, mode: StackMode| {
+        conn.configure_window(id, &ConfigureWindowAux::new().sibling(sibling).stack_mode(mode))
+    };
+    if let Some(window) = below {
+        next_to(window, StackMode::BELOW)?;
+    }
+    conn.get_input_focus()?.reply()?;
+    println!("{{\"overlay\":{id}}}");
+    std::io::stdout().flush()?;
+    for line in std::io::stdin().lock().lines() {
+        let line = line?;
+        let Some(window) = line.strip_prefix("cross ") else {
+            continue;
+        };
+        let window = crate::parse_window(window.trim())?;
+        conn.grab_server()?;
+        next_to(window, StackMode::ABOVE)?;
+        next_to(window, StackMode::BELOW)?;
+        conn.ungrab_server()?;
+        conn.get_input_focus()?.reply()?;
+        println!("{{\"crossed\":{id}}}");
+        std::io::stdout().flush()?;
+    }
+    conn.destroy_window(id)?;
+    conn.get_input_focus()?.reply()?;
     Ok(())
 }
 

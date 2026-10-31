@@ -198,7 +198,8 @@ variants included; their evidence is written either way. The run's `end` row kee
     audit pass requires its keys and clicks answered).
   - The events experiment's wire request times are part of its outcome (`eventsPass`); through the vendor client they
     are recorded only.
-  - The desktop route's are judged from interleaved fresh engines (`desktopBlocks`, 31 rounds, `--first-rounds`):
+  - The desktop route's are judged from interleaved fresh engines (`desktopBlocks`, 20 rounds since M3.1's fix
+    round, `--first-rounds`):
     - a timed request counts only when it answers as the pinned build's same request (`blockAnswerMismatches`; a
       mismatch fails the run);
     - a group is judged only with 20 samples an engine, and every Acceptance 3 desktop group
@@ -207,7 +208,10 @@ variants included; their evidence is written either way. The run's `end` row kee
       max(5% of the bar, 1 ms) (`stats.mjs` `noiseBound`) is "same (within noise)", in any series;
     - a loss `deviations.mjs` `SPEED_GAPS` declares is a "declared gap", never a pass;
     - an interval that includes 0 but reaches past the bound is undetermined: its commands' sequences get up to two
-      more sets of rounds (`TOP_UPS`, `events-top-up` rows), and a group still that wide fails.
+      more sets of rounds (`TOP_UPS`, `events-top-up` rows), and a group still that wide fails. Since M3.1's fix round
+      the sets follow Acceptance 3's schedule (`eventStage`): a group short of 20 samples an engine is brought to 20,
+      one undetermined at 20 to 40, where its outcome is final, and a group decided at a stage keeps that verdict
+      whatever the later rounds of shared sequences add.
   - `--via vendor-js` refuses `--variant`: the vendor client starts the engine without the variant's flags.
   - The desktop entries the harness writes take their paths as quoted `Exec` arguments (`desktop-entry.mjs`), never as
     shell source.
@@ -366,8 +370,12 @@ variants included; their evidence is written either way. The run's `end` row kee
   `device-chrome`, `device-chrome-dnd`, and `gnome-text-editor`'s and `desktop`'s): cua alone, each judged by its
   expectation (refusal with the Device mode sentence and nothing sent; the foreground route in dedicated mode; the
   background route; a drag and drop cancelled before the drop; an honest answer when the cancel comes too late), with
-  the witness and the X request audit of the kind the expectation needs. `capabilities` is checked against the
-  engine's version and build.
+  the witness and the X request audit of the kind the expectation needs. The audit counts only over audited requests
+  that answered as the case expects (`audit.answered`: a refusal or a cancel its sentence, a late case an honest one,
+  the others success), and at least one. `capabilities` is checked against the engine's version and build. The cancel
+  and the late case run again with the drop's signature already held (`obscuredInFront`: Chrome activated, and an
+  override-redirect window of the harness's own, `xprobe overlay`, over its bottom-right corner, away from the path,
+  so the drag is watched); the engine must record the bits held (`dnd.held_at_start`).
 - **The witness's allowances** (`witness.mjs`):
   - **Foreground.** Override-redirect windows of the target's own X client (its resource-id base) may map, restack
     and unmap; one may stay mapped at the end only where the input opens it, as a right click's menu. Every other
@@ -375,9 +383,11 @@ variants included; their evidence is written either way. The run's `end` row kee
     must fail.
   - **In front** (`judgeInFrontSpan`), only for the case that declares it and a request whose `--stats` `dnd`
     recorded `in_front`. It is judged on the event records: activations name the target, restacks move only the
-    target client's own windows with its frame on top, and focus events stay with the target. `inFrontNegativeCheck`
-    runs beside the stub check in every run: the target's own activation passes, and another window's activation or
-    a coalesced restack fails.
+    target client's own windows with its frame on top, the frame's order among every other client's mapped windows
+    (override-redirect ones included) kept, and focus events stay with the target. `inFrontNegativeCheck` runs beside
+    the stub check in every run: the target's own activation passes, and another window's activation, a coalesced
+    restack, or another client's override-redirect window raised just above the target's frame and put back under one
+    server grab (`xprobe overlay … below <frame>`, `cross`) fails.
 - **The speed rule, revised** (Acceptance 3 as the design session revised it at M3.1, after #235's review found the
   shortcut): `judgeOperation` and `eventSpeeds` judge a series only when cua and the bar build each have 20 samples,
   and only through the interval guard, whichever way the medians point. The interval passes when its upper end is at
@@ -386,14 +396,20 @@ variants included; their evidence is written either way. The run's `end` row kee
   below 0), **same (within noise)** (including 0) or **within the bound** (wholly above 0: a small measured loss, never
   called noise). The summary lists every "within the bound" pass in one table.
   - The differential run tops every undetermined series up to 20 samples a side, then 40 (`top-up` rows, blocks
-    `topup-<level>-<n>`): fresh engines for a cold series, and for a warm one only the rounds it needs. One still
-    undetermined at 40 fails.
+    `topup-<level>-<pass>-<n>`): fresh engines for a cold series, and for a warm one only the rounds it needs. One still
+    undetermined at 40 fails. The rounds are planned from the samples the judge counts (`windowTopUp`: no failed
+    preparation, and for a text command none of a vendor build's unsuccessful requests), and planned again, up to
+    three times a level, when failed samples left a series short.
   - A parity-declared series with an open interval is sampled on and rests at parity.
   - `rejudge.mjs <results.jsonl> <run>` judges a recorded run again offline: the verdicts that change, and the
-    under-20 series the old rule judged on medians.
+    under-20 series the old rule judged on medians. A run made through the vendor client (`meta.via` `vendor-js`) is
+    not judged on speed, as the live run never judges it.
 - **Declared refusals** (`deviations.mjs` `REFUSALS`): an operation the vendor lands and cua refuses in shared mode,
   recorded as a loss (verdict `declared refusal`, listed apart, never a pass) while every cua sample answers the
-  declared sentence with the witness unchanged.
+  declared sentence with the witness unchanged. It excuses only what the refusal itself makes differ (the failed
+  request, the answer, the effect; `declaredRefusalVerdict`); the audit and every other failure the judge finds stand.
+- **The drag-and-drop experiment's probes** (`withDropProbes`): each drag's `XdndSelection` watcher and grab sampler
+  are stopped whatever happens, each stop tried on its own.
 
 ## Files
 

@@ -39,18 +39,67 @@ export function changedFields(a, b) {
 /** A running `xprobe selection-watch XdndSelection`: `stop()` answers its owner changes. */
 async function watchXdnd() {
   const child = spawn(XPROBE, ['selection-watch', 'XdndSelection'], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const exited = new Promise((resolve) => {
+    child.once('exit', resolve);
+    child.once('error', resolve);
+  });
   const lines = [];
   const rl = createInterface({ input: child.stdout });
-  const ready = new Promise((resolve) => rl.once('line', resolve));
+  const ready = new Promise((resolve, reject) => {
+    rl.once('line', resolve);
+    exited.then(() => reject(new Error('xprobe selection-watch exited before it was ready')));
+  });
   rl.on('line', (l) => lines.push(JSON.parse(l)));
   await ready;
   return {
     async stop() {
       child.stdin.end();
-      await new Promise((r) => child.once('exit', r));
+      await exited;
       return lines.filter((l) => !l.ready);
     },
   };
+}
+
+/** A probe whose `stop()` runs once: a second call answers the first's result (or its failure) again. */
+function once(probe) {
+  let stopped = null;
+  return { ...probe, stop: () => (stopped ??= Promise.resolve().then(() => probe.stop())) };
+}
+
+/**
+ * One drag's probes around `body(probes)`: the `XdndSelection` watcher and the grab sampler, each started and each
+ * stopped whatever happens (Decision Log, M2.3: every probe a case starts is disposed of unconditionally). The body
+ * stops them itself where it reads their results; whatever it left running is stopped after it, each stop tried on its
+ * own. A body that threw keeps its error, the cleanup failures attached (`cleanup`); a cleanup that fails after a body
+ * that did not fails the drag.
+ */
+export async function withDropProbes(body, { startXdnd = watchXdnd, startGrabs = sampleGrabs } = {}) {
+  const probes = {};
+  let result;
+  let failure = null;
+  try {
+    probes.xdnd = once(await startXdnd());
+    probes.grabs = once(await startGrabs());
+    result = await body(probes);
+  } catch (error) {
+    failure = error;
+  }
+  const cleanup = [];
+  for (const name of ['grabs', 'xdnd']) {
+    if (!probes[name]) continue;
+    try {
+      await probes[name].stop();
+    } catch (error) {
+      // a failure the body already met through this stop is its own error, not a second one
+      if (error !== failure) cleanup.push(error);
+    }
+  }
+  if (failure) {
+    if (cleanup.length) failure.cleanup = cleanup;
+    throw failure;
+  }
+  if (cleanup.length) throw new AggregateError(cleanup, `the drop probes did not stop: ${cleanup.map((e) => e.message).join('; ')}`);
+  return result;
 }
 
 /** Grabs sampled every 100 ms until `stop()`, which answers the samples that found a grab in force. */
@@ -67,6 +116,8 @@ function sampleGrabs() {
           text += d;
         });
         child.once('exit', () => resolve(text));
+        // a probe that could not start is a failed sample, never a loop that waits for ever
+        child.once('error', () => resolve(''));
       });
       try {
         const g = JSON.parse(out);
@@ -113,13 +164,14 @@ async function series(ctx, spec, scene, family, n) {
       await sleep(400);
       const before = desktopState();
       const drops = (await readEffect(ctx, scene, at, 'dnd')).drops;
-      const xdnd = await watchXdnd();
-      const grabs = sampleGrabs();
-      const { value, witness: w, report } = await witness.span(`${spec.label}:dnd`, () => engine.request('drag', { window: { id: scene.id }, path: runPath(at, 'dnd', i) }));
-      const during = await grabs.stop();
-      const afterAnswer = desktopState();
-      const grabAfter = JSON.parse(execFileSync(XPROBE, ['grabs'], { encoding: 'utf8' }));
-      const owners = await xdnd.stop();
+      const { value, w, report, during, afterAnswer, grabAfter, owners } = await withDropProbes(async ({ xdnd, grabs }) => {
+        const { value, witness: w, report } = await witness.span(`${spec.label}:dnd`, () => engine.request('drag', { window: { id: scene.id }, path: runPath(at, 'dnd', i) }));
+        const during = await grabs.stop();
+        const afterAnswer = desktopState();
+        const grabAfter = JSON.parse(execFileSync(XPROBE, ['grabs'], { encoding: 'utf8' }));
+        const owners = await xdnd.stop();
+        return { value, w, report, during, afterAnswer, grabAfter, owners };
+      });
       await sleep(1000);
       const later = desktopState();
       const dropped = (await readEffect(ctx, scene, at, 'dnd')).drops;

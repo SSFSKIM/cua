@@ -23,7 +23,7 @@ test('a refused request is audited for nothing sent: a SendEvent of any kind, or
 
 test("Acceptance 8's cases: each kind and condition, refused in shared mode, foreground in dedicated, the rest background", () => {
   const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'device-chrome', 'device-chrome-dnd', 'gnome-text-editor'], Object.values(DEVICE_SCENE_OPS).flat().filter((op) => op !== 'capabilities'));
-  assert.equal(plan.length, 38);
+  assert.equal(plan.length, 40);
   for (const { op, scene } of plan) {
     const def = OPS[op];
     assert.ok(SCENE_OPS[scene].includes(op));
@@ -42,6 +42,10 @@ test("Acceptance 8's cases: each kind and condition, refused in shared mode, for
   assert.equal(routeOf('gtk4_element_click', 'device-gtk4'), null, 'an element action records no route');
   assert.equal(routeOf('chrome_dnd_in_front_shared', 'device-chrome-dnd'), 'background', 'Chrome already in front');
   assert.deepEqual(OPS.chrome_dnd_late_shared.cuaArgs('device-chrome-dnd'), ['--dnd-cancel-after-release'], 'the forced-late cancel');
+  // the signature already held, a corner covered: the in-time cancel and the forced-late one (the design session's ruling)
+  assert.equal(OPS.chrome_dnd_obscured_in_front_shared.device, 'cancel');
+  assert.deepEqual(OPS.chrome_dnd_obscured_in_front_late_shared.cuaArgs('device-chrome-dnd'), ['--dnd-cancel-after-release']);
+  assert.equal(routeOf('chrome_dnd_obscured_in_front_shared', 'device-chrome-dnd'), null, 'watched, not in front: judged strictly');
   assert.ok(SCENE_OPS.desktop.includes('capabilities'));
 });
 
@@ -51,8 +55,13 @@ test('a refusal passes only with the exact sentence, nothing changed, the witnes
   const sentence = deviceSentence('org.gnome.TextEditor');
   assert.equal(sentence, 'org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first');
   const good = row({ ok: false, error: sentence, expected_error: sentence, unchanged: true });
-  const clean = { clean: true, kind: 'nothing-sent' };
+  const clean = { clean: true, kind: 'nothing-sent', answered: [{ ok: false, error: sentence, expected_error: sentence }] };
   assert.deepEqual(judgeDevice('gte_type_text_shared', [good], clean), { pass: true, reasons: [] });
+  // the audit counts only over requests refused as the case expects
+  assert.match(judgeDevice('gte_type_text_shared', [good], { ...clean, answered: [] }).reasons[0], /audited no request/);
+  assert.equal(judgeDevice('gte_type_text_shared', [good], { ...clean, answered: [{ ok: true }] }).pass, false, 'the audited request was not refused');
+  assert.equal(judgeDevice('gte_type_text_shared', [good], { ...clean, answered: [{ ok: false, error: 'window 9 is unavailable', expected_error: sentence }] }).pass, false, 'refused for another reason');
+  assert.equal(judgeDevice('gte_type_text_shared', [good], { clean: true, kind: 'nothing-sent' }).pass, false, 'an audit with no answers recorded');
   assert.equal(judgeDevice('gte_type_text_shared', [{ ...good, ok: true, error: undefined }], clean).pass, false, 'answered success');
   assert.equal(judgeDevice('gte_type_text_shared', [{ ...good, error: 'another error' }], clean).pass, false);
   assert.equal(judgeDevice('gte_type_text_shared', [{ ...good, unchanged: false }], clean).pass, false, 'something arrived');
@@ -64,13 +73,14 @@ test('a refusal passes only with the exact sentence, nothing changed, the witnes
 
 test('a foreground case passes only with its effect, the foreground route recorded and its window left active', () => {
   const good = row({ ok: true, effect: true, route: 'foreground', activated: true });
-  const audit = { clean: true, kind: 'foreground' };
+  const audit = { clean: true, kind: 'foreground', answered: [{ ok: true }, { ok: true }] };
   assert.equal(judgeDevice('gtk4_click_dedicated', [good], audit).pass, true);
+  assert.equal(judgeDevice('gtk4_click_dedicated', [good], { ...audit, answered: [{ ok: true }, { ok: false, error: 'nosuchkey' }] }).pass, false, 'an audited request failed');
   for (const [field, value] of [['effect', false], ['route', 'background'], ['activated', false], ['witness', false], ['ok', false]]) {
     assert.equal(judgeDevice('gtk4_click_dedicated', [good, { ...good, [field]: value }], audit).pass, false, field);
   }
   const background = row({ ok: true, effect: true, route: 'background' });
-  assert.equal(judgeDevice('xterm_click_shared', [background], { clean: true, kind: 'background' }).pass, true);
+  assert.equal(judgeDevice('xterm_click_shared', [background], { clean: true, kind: 'background', answered: [{ ok: true }] }).pass, true);
   assert.equal(judgeDevice('xterm_click_shared', [{ ...background, effect: false }], { clean: true }).pass, false);
 });
 
@@ -114,8 +124,9 @@ test("Chrome's drag-and-drop answers mirror the engine's (dnd.rs), and the cance
 test('a cancelled drag and drop passes only with the cancel sentence, nothing dropped, the witness unchanged and no XTEST', () => {
   const sentence = dndCancelledSentence('Google-chrome');
   const good = row({ ok: false, error: sentence, expected_error: sentence, dropped: false });
-  const background = { clean: true, kind: 'background' };
+  const background = { clean: true, kind: 'background', answered: [{ ok: false, error: sentence, expected_error: sentence }] };
   assert.deepEqual(judgeDevice('chrome_dnd_shared', [good], background), { pass: true, reasons: [] });
+  assert.equal(judgeDevice('chrome_dnd_shared', [good], { ...background, answered: [{ ok: true }] }).pass, false, 'the audited drag was not cancelled');
   assert.equal(judgeDevice('chrome_dnd_shared', [{ ...good, dropped: true }], background).pass, false, 'it dropped');
   assert.equal(judgeDevice('chrome_dnd_shared', [{ ...good, error: deviceSentence('Google-chrome') }], background).pass, false);
   assert.equal(judgeDevice('chrome_dnd_shared', [{ ...good, ok: true, error: undefined }], background).pass, false);
@@ -129,7 +140,8 @@ test('a cancel forced too late passes only if every answer is honest and the dro
   const fields = { expected_error: cancelled, late_error: late };
   const mayHave = row({ ok: false, error: late, dropped: true, witness: false, ...fields });
   const nothing = row({ ok: false, error: cancelled, dropped: false, witness: true, ...fields });
-  const background = { clean: true, kind: 'background' };
+  const background = { clean: true, kind: 'background', answered: [{ ok: false, error: late, ...fields }] };
+  assert.equal(judgeDevice('chrome_dnd_late_shared', [mayHave], { ...background, answered: [{ ok: true }] }).pass, false, 'the audited drag answered success');
   assert.deepEqual(judgeDevice('chrome_dnd_late_shared', [mayHave, nothing], background), { pass: true, reasons: [] });
   assert.equal(judgeDevice('chrome_dnd_late_shared', [mayHave, { ...nothing, dropped: true }], background).pass, false, '"nothing was dropped" and it dropped');
   assert.equal(judgeDevice('chrome_dnd_late_shared', [mayHave, { ...nothing, witness: false }], background).pass, false, '"nothing was dropped" and the desktop changed');
@@ -141,7 +153,7 @@ test('the in-front drop passes only where the engine recorded the window in fron
   assert.equal(DEVICE_OPS.chrome_dnd_in_front_shared.inFront, true, 'the witness allowance is declared for this case alone');
   assert.equal(Object.values(DEVICE_OPS).filter((d) => d.inFront).length, 1);
   const good = row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true });
-  const audit = { clean: true, kind: 'background' };
+  const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
   assert.deepEqual(judgeDevice('chrome_dnd_in_front_shared', [good], audit), { pass: true, reasons: [] });
   assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, dnd: { in_front: false } }], audit).pass, false, 'not the in-front path');
   assert.equal(judgeDevice('chrome_dnd_in_front_shared', [{ ...good, desktop_same: false }], audit).pass, false);
@@ -155,4 +167,21 @@ test("GTK 4's scale is dragged away from where it stands, whichever sample of wh
   const [back, end] = scalePath({ before: { scale: 74 } });
   assert.ok(end.x < back.x, 'down from three quarters');
   assert.deepEqual(scalePath({ before: null }), scalePath({ before: { scale: 0 } }), 'unread: up');
+});
+
+test('with the signature already held, the cases pass only where the engine watched the drag and recorded the bits held', () => {
+  const cancelled = dndCancelledSentence('Google-chrome');
+  const late = dndMayHaveDroppedSentence('Google-chrome');
+  const held = { in_front: false, held_at_start: true, outcome: 'in_time' };
+  const good = row({ ok: false, error: cancelled, expected_error: cancelled, dropped: false, dnd: held });
+  const audit = { clean: true, kind: 'background', answered: [{ ok: false, error: cancelled, expected_error: cancelled }] };
+  assert.deepEqual(judgeDevice('chrome_dnd_obscured_in_front_shared', [good], audit), { pass: true, reasons: [] });
+  assert.equal(judgeDevice('chrome_dnd_obscured_in_front_shared', [{ ...good, dnd: { in_front: true } }], audit).pass, false, 'not watched');
+  assert.equal(judgeDevice('chrome_dnd_obscured_in_front_shared', [{ ...good, dnd: { ...held, held_at_start: false } }], audit).pass, false, 'the arrangement did not hold');
+  const fields = { expected_error: cancelled, late_error: late };
+  const mayHave = row({ ok: false, error: late, dropped: true, witness: false, dnd: { ...held, outcome: 'late' }, ...fields });
+  const lateAudit = { clean: true, kind: 'background', answered: [{ ok: false, error: late, ...fields }] };
+  assert.deepEqual(judgeDevice('chrome_dnd_obscured_in_front_late_shared', [mayHave], lateAudit), { pass: true, reasons: [] });
+  // the defect this case exists to catch: "nothing was dropped" though it dropped, the signature unable to show it
+  assert.equal(judgeDevice('chrome_dnd_obscured_in_front_late_shared', [{ ...mayHave, error: cancelled }], lateAudit).pass, false);
 });

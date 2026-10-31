@@ -16,6 +16,9 @@
 // - `late` (the same, the cancel forced after the release, `--dnd-cancel-after-release`): every answer is honest (that
 //   the drop may have happened, or that nothing was dropped only where nothing dropped and the witness is unchanged),
 //   at least one answer says the drop may have happened, and the background audit is clean;
+// - the cancel and the late case again with the drop's signature already held when the drag begins (Chrome active,
+//   focused and on top, a corner covered by an override-redirect window so the drag is watched): the engine records the
+//   bits held, and the answers follow the order of the take and the release, not the signature;
 // - `answer`: `capabilities`, its answer checked.
 //
 // Scenes: `device-gtk4` (the harness's GTK 4 scene, pages/gtk4-input.py: GTK 4 ignores synthetic input always),
@@ -32,8 +35,8 @@ import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 
 import { readGtk4Status } from './families.mjs';
-import { stacking } from './clip.mjs';
-import { activeWindow, configure } from './scenes.mjs';
+import { stacking, startOverlay } from './clip.mjs';
+import { activeWindow, configure, xdotool } from './scenes.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -169,6 +172,28 @@ function alreadyInFront(ctx) {
   execFileSync('xdotool', ['windowactivate', '--sync', String(ctx.scene.id)]);
 }
 
+/**
+ * The scene window in front (`alreadyInFront`: the active window, focused, on top of the managed windows) with an
+ * override-redirect window of the harness's own over its bottom-right corner, away from the drag's path, so it is not
+ * fully unobscured: the drop's signature already holds when the drag begins, and the engine watches the drag (the design
+ * session's arrangement, 2026-10-31). The overlay lasts until the sample's `restore`.
+ */
+async function obscuredInFront(ctx) {
+  alreadyInFront(ctx);
+  const g = Object.fromEntries(
+    xdotool('getwindowgeometry', '--shell', ctx.scene.id)
+      .split('\n')
+      .map((line) => line.split('='))
+      .filter((pair) => pair.length === 2)
+      .map(([k, v]) => [k, Number(v)]),
+  );
+  const corner = { x: g.WIDTH - CORNER - 8, y: g.HEIGHT - CORNER - 8 };
+  if ((ctx.scene.dndPath ?? []).some((point) => point.x >= corner.x - 20 && point.y >= corner.y - 20)) throw new Error('the drag path runs under the corner overlay');
+  ctx.overlay = await startOverlay([g.X + corner.x, g.Y + corner.y, CORNER, CORNER].map(String));
+}
+/** The corner overlay's side, px. */
+const CORNER = 40;
+
 // ---------------------------------------------------------------------------------------------------------------
 // the cases
 
@@ -176,11 +201,13 @@ function alreadyInFront(ctx) {
  * A case: `device` its expectation, `scene` where it runs, `condition` the arrangement before each sample, `read` what
  * the window counts, `request`, and `effect` (from the counts before and after) for the cases that must take effect.
  */
-function device({ device: expect, condition = covered, read, request, effect, route, args, inFront = false, settleMs = 300 }) {
+function device({ device: expect, condition = covered, read, request, effect, route, args, inFront = false, heldAtStart = false, settleMs = 300 }) {
   const dedicated = expect === 'foreground';
   return {
     // the witness's in-front allowance (witness.mjs), for the request the engine records as made to a window in front
     inFront,
+    // the drop's signature already held when the watched drag began (`obscuredInFront`), as the engine records it
+    heldAtStart,
     kind: 'input',
     device: expect,
     cuaOnly: true,
@@ -190,7 +217,7 @@ function device({ device: expect, condition = covered, read, request, effect, ro
     // the witness: the foreground allowance only where the foreground route is expected and reported (run.mjs)
     route: () => route ?? (dedicated ? 'foreground' : null),
     prepare: async (ctx) => {
-      condition(ctx);
+      await condition(ctx);
       await sleep(settleMs);
       if (inFront) ctx.desktopBefore = desktopState();
     },
@@ -220,8 +247,13 @@ function device({ device: expect, condition = covered, read, request, effect, ro
       if (read === dropStatus) out.drop_status = { before: ctx.before, after: await read(ctx) };
       return out;
     },
-    // the foreground route leaves its window active: the front window takes the focus back, outside every span
-    restore: (ctx) => ctx.desktop.focusFront(),
+    // the foreground route leaves its window active: the front window takes the focus back, outside every span; a
+    // corner overlay goes
+    restore: async (ctx) => {
+      await ctx.overlay?.stop();
+      ctx.overlay = null;
+      ctx.desktop.focusFront();
+    },
   };
 }
 
@@ -285,6 +317,10 @@ export const DEVICE_OPS = {
   chrome_dnd_in_front_shared: device({ device: 'background', route: 'background', condition: alreadyInFront, read: dropStatus, request: dndDrag, effect: rose('drops'), inFront: true, settleMs: DND_SETTLE_MS }),
   chrome_dnd_late_shared: device({ device: 'late', condition: visible, read: dropStatus, request: dndDrag, args: LATE, settleMs: DND_SETTLE_MS }),
   chrome_dnd_covered_dedicated: device({ device: 'foreground', condition: covered, read: dropStatus, request: dndDrag, effect: rose('drops'), settleMs: DND_SETTLE_MS }),
+  // the same with the drop's signature already held (Chrome active, focused, on top) and a corner covered, so the drag
+  // is watched: cancelled in time and said so; with the cancel forced late, every answer says the drop may have happened
+  chrome_dnd_obscured_in_front_shared: device({ device: 'cancel', condition: obscuredInFront, read: dropStatus, request: dndDrag, heldAtStart: true, settleMs: DND_SETTLE_MS }),
+  chrome_dnd_obscured_in_front_late_shared: device({ device: 'late', condition: obscuredInFront, read: dropStatus, request: dndDrag, args: LATE, heldAtStart: true, settleMs: DND_SETTLE_MS }),
   // Qt (`device-qt`, kate on a long document): its scroll bar's value
   qt_scroll_shared: device({ device: 'refusal', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }] }),
   qt_scroll_dedicated: device({ device: 'foreground', read: scrollBar, request: (ctx) => ['scroll', { window: { id: ctx.scene.id }, direction: 'down', pixels: 300, x: 450, y: 350 }], effect: higher }),
@@ -311,7 +347,7 @@ export const DEVICE_SCENE_OPS = {
   // the scroll last: its series ends with the page put back at its top (`reset`)
   'device-firefox': ['firefox_click_overlap_shared', 'firefox_click_offscreen_shared', 'firefox_right_click_overlap_shared', 'firefox_click_overlap_dedicated', 'firefox_click_visible_shared', 'firefox_element_click_covered', 'firefox_move_overlap_shared', 'firefox_move_covered_dedicated', 'firefox_drag_overlap_shared', 'firefox_drag_covered_dedicated', 'firefox_scroll_overlap_shared', 'firefox_scroll_covered_dedicated'],
   'device-chrome': ['chrome_drag_visible_path_shared', 'chrome_drag_covered_path_shared', 'chrome_drag_covered_dedicated'],
-  'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared', 'chrome_dnd_covered_dedicated'],
+  'device-chrome-dnd': ['chrome_dnd_shared', 'chrome_dnd_in_front_shared', 'chrome_dnd_late_shared', 'chrome_dnd_covered_dedicated', 'chrome_dnd_obscured_in_front_shared', 'chrome_dnd_obscured_in_front_late_shared'],
   'device-qt': ['qt_scroll_shared', 'qt_scroll_dedicated'],
   'device-xterm': ['xterm_key_shared', 'xterm_key_dedicated', 'xterm_click_shared'],
   'gnome-text-editor': ['gte_type_text_shared'],
@@ -337,8 +373,10 @@ export function capabilitiesAnswer(output, version) {
 }
 
 /**
- * A device case's verdict from its samples and its audit (`{clean, oks}`, the audit kind its expectation needs): every
- * sample as its expectation says (module header). Returns `{pass, reasons}`.
+ * A device case's verdict from its samples and its audit (`{clean, kind, answered}`, the audit kind its expectation
+ * needs): every sample as its expectation says (module header), and the audit clean over at least one audited request
+ * that answered as the case expects (a refusal or a cancel its sentence, a late case an honest one, the others
+ * success), so a trace of requests that never did what the case measures proves nothing. Returns `{pass, reasons}`.
  */
 export function judgeDevice(op, rows, audit) {
   const expect = DEVICE_OPS[op].device;
@@ -367,6 +405,7 @@ export function judgeDevice(op, rows, audit) {
     bad('a request failed', (r) => r.ok);
     bad('the effect was not verified', (r) => r.effect === true);
   }
+  if (DEVICE_OPS[op].heldAtStart) bad('the engine did not watch the drag with the signature already held', (r) => r.dnd?.in_front === false && r.dnd?.held_at_start === true);
   if (DEVICE_OPS[op].inFront) {
     bad('the engine did not record the window as in front', (r) => r.dnd?.in_front === true);
     bad('the desktop at the end was not as at the start', (r) => r.desktop_same === true);
@@ -380,6 +419,17 @@ export function judgeDevice(op, rows, audit) {
   if (expect !== 'answer') {
     if (!audit) reasons.push('the audit did not run');
     else if (!audit.clean) reasons.push(`the ${audit.kind} audit found ${audit.forbidden?.join(', ') || 'no traced requests'}`);
+    if (audit && audit.kind !== 'skipped') {
+      // the audit counts only where its requests did what the case measures: answered as the case expects
+      const answered = audit.answered ?? [];
+      const expected = (a) => {
+        if (expect === 'refusal' || expect === 'cancel') return !a.ok && a.error === a.expected_error;
+        if (expect === 'late') return !a.ok && (a.error === a.late_error || a.error === a.expected_error);
+        return a.ok;
+      };
+      if (!answered.length) reasons.push(`the ${audit.kind} audit audited no request`);
+      else if (!answered.every(expected)) reasons.push(`the ${audit.kind} audit's requests did not answer as the case expects (${answered.map((a) => (a.ok ? 'success' : a.error)).join('; ').slice(0, 200)})`);
+    }
   }
   return { pass: reasons.length === 0, reasons };
 }

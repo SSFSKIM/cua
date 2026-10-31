@@ -91,12 +91,13 @@ export function renderSummary(lines) {
       if (bar) out.push(`| ${scene} | ${op} | **bar** | ${fmt(bar.cold)} | ${fmt(bar.warm)} | | | | | | | | | |`);
     }
     // every pass that is a small measured loss inside the bound, in one table (Acceptance 3)
-    const bound = verdicts.flatMap((v) => (v.labels ?? []).filter((l) => l.label === 'within the bound').map((l) => ({ ...l, scene: v.scene, op: v.op, candidate: v.candidate })));
+    // a label's `candidate` is the candidate's median; the engine is the verdict's own `candidate`
+    const bound = verdicts.flatMap((v) => (v.labels ?? []).filter((l) => l.label === 'within the bound').map((l) => ({ ...l, scene: v.scene, op: v.op, engine: v.candidate })));
     if (bound.length) {
       out.push('', 'Within the bound (passes that are a small measured loss: the interval wholly above 0, its upper end inside max(5% of the bar, 1 ms)):', '');
       out.push('| scene | op | candidate | series | cua ms | bar ms | against | cua − bar, 95% interval | bound |', '|---|---|---|---|---:|---:|---|---|---:|');
       const r2 = (x) => Math.round(x * 100) / 100;
-      for (const l of bound) out.push(`| ${l.scene} | ${l.op} | ${l.candidate} | ${l.series} | ${r2(l.candidate)} | ${r2(l.bar)} | ${l.against} | [${l.interval.join(', ')}] | ${r2(l.bound)} |`);
+      for (const l of bound) out.push(`| ${l.scene} | ${l.op} | ${l.engine} | ${l.series} | ${r2(l.candidate)} | ${r2(l.bar)} | ${l.against} | [${l.interval.join(', ')}] | ${r2(l.bound)} |`);
     }
     const notes = verdicts.filter((v) => v.first_comparison && !v.first_comparison.equal);
     if (notes.length) {

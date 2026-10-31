@@ -163,8 +163,9 @@ const sameClient = (a, b) => (a & ~CLIENT_MASK) === (b & ~CLIENT_MASK);
  * - every `_NET_ACTIVE_WINDOW` request names the target or its frame (that the engine sent none is its X request
  *   audit's to show);
  * - every restack, map, unmap, creation or destruction leaves the order of the mapped managed windows (not
- *   override-redirect) as it was, with the target's frame on top when the span began, and moves no mapped window but
- *   the target client's own (its override-redirect drag windows);
+ *   override-redirect) as it was, with the target's frame on top when the span began, and the order of the frame among
+ *   every other client's mapped windows, override-redirect ones included, as it was: only the target client's own
+ *   windows (its override-redirect drag windows) may move;
  * - every focus event is the target's, its frame's or its client's windows', or the root's under a keyboard grab or its
  *   release (modes Grab and Ungrab, which do not move the focus);
  * - a value read back changed is a violation; a property notify is allowed only beside event records with none.
@@ -184,12 +185,14 @@ export function judgeInFrontSpan(report, { target, frame, root }) {
   else {
     const { order, apply } = stackReplay(report.tree);
     const managed = () => order.filter((w) => w.mapped && !w.or).map((w) => w.id);
-    const foreign = () => order.filter((w) => w.mapped && !ours(w.id)).map((w) => w.id);
+    // the target's frame among every mapped window that is not the target client's own: a foreign window crossing the
+    // frame changes this order even where the foreign windows keep theirs
+    const relevant = () => order.filter((w) => w.mapped && (w.id === frame || !ours(w.id))).map((w) => w.id);
     if (managed().at(-1) !== frame) violate('stacking', 'the target was not on top when the span began');
     for (const e of report.restacks) {
-      const before = [managed(), foreign()];
+      const before = [managed(), relevant()];
       apply(e);
-      if (!sameOrder(before[0], managed()) || !sameOrder(before[1], foreign())) violate('stacking', e);
+      if (!sameOrder(before[0], managed()) || !sameOrder(before[1], relevant())) violate('stacking', e);
     }
   }
   if (!Array.isArray(report.focus)) violate('focus', 'no focus record');

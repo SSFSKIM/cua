@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 
 import { auditForeground, auditNothingSent, auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { startMonitor } from './busmon.mjs';
-import { stacking, toplevel, waitQuarantineOver, within } from './clip.mjs';
+import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
 import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe } from './deviations.mjs';
 import { judgeDevice } from './device.mjs';
@@ -375,16 +375,29 @@ export async function inFrontNegativeCheck(witness, emit) {
     execFileSync(XPROBE, ['restack-grabbed', String(other), String(top)]);
     await sleep(100);
   });
+  // another client's override-redirect window, just below the target's frame, raised just above it and put back under
+  // one server grab: the frame's order against foreign windows moved and came back, which no property shows
+  const overlay = await startOverlay(['40', '40', '120', '80', 'below', String(toplevel(top))]);
+  let crossed;
+  try {
+    crossed = await witness.span('stub:in-front:crossed', async () => {
+      await overlay.cross(toplevel(top));
+      await sleep(100);
+    });
+  } finally {
+    await overlay.stop();
+  }
   const shown = (report) => ({ changes: (report.changes ?? []).slice(0, 10), restacks: (report.restacks ?? []).slice(0, 10), focus: (report.focus ?? []).slice(0, 10) });
   const checks = {
     own: { ...judge(own.report), ...shown(own.report) },
     other: { ...judge(switched.report), ...shown(switched.report) },
     restacked: { ...judge(restacked.report), ...shown(restacked.report) },
+    crossed: { ...judge(crossed.report), ...shown(crossed.report) },
   };
-  const held = checks.own.clean && !checks.other.clean && checks.restacked.fields.includes('stacking');
+  const held = checks.own.clean && !checks.other.clean && checks.restacked.fields.includes('stacking') && checks.crossed.fields.includes('stacking');
   emit({ kind: 'stub-check-in-front', top, other, checks, witness_failed_it: held });
   const line = (name, c) => `${name}: ${c.clean ? 'clean' : c.fields.join(', ')}`;
-  process.stdout.write(`in-front checks: ${held ? 'held' : 'DID NOT HOLD'} (${line('the target activated again', checks.own)}; ${line('another window activated and the target again', checks.other)}; ${line('another raised and the target raised back under one server grab', checks.restacked)})\n`);
+  process.stdout.write(`in-front checks: ${held ? 'held' : 'DID NOT HOLD'} (${line('the target activated again', checks.own)}; ${line('another window activated and the target again', checks.other)}; ${line('another raised and the target raised back under one server grab', checks.restacked)}; ${line("another client's override-redirect window raised across the target's frame and back under one server grab", checks.crossed)})\n`);
   return held;
 }
 
@@ -579,6 +592,29 @@ export function topUpRounds({ cold, warm }, { min, warmPerRound }) {
   return { rounds: Math.max(min - cold, 0), warm: false };
 }
 
+/** How many times a level's top-up of one operation is planned again when its rounds fell short (failed samples). */
+export const TOP_UP_PASSES = 3;
+
+/**
+ * The top-up one operation's series need to reach `level` samples a side (Acceptance 3), or null: the series each
+ * candidate's judge leaves undetermined below `level`, counted as the judge counts them (`judgeOperation`'s
+ * `undetermined[].samples`: the candidate's and the bar build's eligible timings, without failed preparations, and for
+ * a text command without the vendor's unsuccessful requests), never by raw rows. `{series, rounds, warmRounds, open}`:
+ * the fresh-engine rounds, and how many of them take the warm samples too.
+ */
+export function windowTopUp(opRows, { vendors, candidates, text = false, parity = [], level, warmPerRound }) {
+  const open = candidates
+    .flatMap((candidate) => judgeOperation(opRows.filter((r) => [...vendors, candidate].includes(r.engine)), { vendors, candidate, text, noise: medianDifferenceInterval, parity }).undetermined)
+    .filter((u) => u.samples < level);
+  if (!open.length) return null;
+  const series = [...new Set(open.map((u) => u.series))];
+  const count = (name) => (series.includes(name) ? Math.min(...open.filter((u) => u.series === name).map((u) => u.samples)) : level);
+  const need = topUpRounds({ cold: count('cold'), warm: count('warm') }, { min: level, warmPerRound });
+  // the warm samples only in the rounds the warm series needs, the rest a fresh engine's cold sample alone
+  const warmRounds = series.includes('warm') ? Math.max(0, Math.ceil((level - count('warm')) / warmPerRound)) : 0;
+  return { series, rounds: need.rounds, warmRounds, open };
+}
+
 export async function runDiff(args) {
   const run = args.run ?? `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
   mkdirSync(args.out, { recursive: true });
@@ -723,26 +759,22 @@ export async function runDiff(args) {
     // rotates on from the blocks'.
     if (via === 'wire') {
       let round = 0;
+      const candidates = labels.filter((l) => !VENDORS.includes(l));
       for (const level of SAMPLE_LEVELS) {
-        const sampled = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'sample');
         for (const { scene: sceneName, op } of blockPlan.filter((p) => !isDevice(p.op) && !OPS[p.op].cuaOnly)) {
-          const opRows = sampled.filter((r) => r.scene === sceneName && r.op === op);
           const parity = ['cold', 'warm'].map((series) => declaredParity({ op, scene: sceneName, series })).filter(Boolean);
-          const open = labels
-            .filter((l) => !VENDORS.includes(l))
-            .flatMap((candidate) => judgeOperation(opRows.filter((r) => [...VENDORS, candidate].includes(r.engine)), { vendors: VENDORS, candidate, text: isText(op), noise: medianDifferenceInterval, parity }).undetermined)
-            .filter((u) => u.samples < level);
-          if (!open.length) continue;
           const engineLabels = labels.filter((l) => runsOp(l, op));
-          const count = (series) => Math.min(...engineLabels.map((l) => opRows.filter((r) => r.engine === l && r.series === series).length));
-          const series = [...new Set(open.map((u) => u.series))];
-          const need = topUpRounds({ cold: series.includes('cold') ? count('cold') : level, warm: series.includes('warm') ? count('warm') : level }, { min: level, warmPerRound: samplesFor(op) });
-          // the warm samples only in the rounds the warm series needs, the rest a fresh engine's cold sample alone
-          const warmRounds = series.includes('warm') ? Math.max(0, Math.ceil((level - count('warm')) / samplesFor(op))) : 0;
-          emit({ kind: 'top-up', scene: sceneName, op, level, series, rounds: need.rounds, warm_rounds: warmRounds, open });
-          for (let r = 0; r < need.rounds; r++, round++) {
-            for (const label of blockOrder(engineLabels, args.blocks + round)) {
-              await measureSeries({ sceneName, op, label, block: `topup-${level}-${r}`, n: r < warmRounds ? 1 + samplesFor(op) : 1 });
+          // planned again while failed samples left a series short of the level, a bounded number of times
+          for (let pass = 0; pass < TOP_UP_PASSES; pass++) {
+            const sampled = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run && r.kind === 'sample');
+            const opRows = sampled.filter((r) => r.scene === sceneName && r.op === op);
+            const plan = windowTopUp(opRows, { vendors: VENDORS, candidates, text: isText(op), parity, level, warmPerRound: samplesFor(op) });
+            if (!plan) break;
+            emit({ kind: 'top-up', scene: sceneName, op, level, pass, series: plan.series, rounds: plan.rounds, warm_rounds: plan.warmRounds, open: plan.open });
+            for (let r = 0; r < plan.rounds; r++, round++) {
+              for (const label of blockOrder(engineLabels, args.blocks + round)) {
+                await measureSeries({ sceneName, op, label, block: `topup-${level}-${pass}-${r}`, n: r < plan.warmRounds ? 1 + samplesFor(op) : 1 });
+              }
             }
           }
         }
@@ -782,8 +814,14 @@ export async function runDiff(args) {
           const proxy = await startProxy();
           const engine = makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY });
           const oks = [];
+          // each audited request's answer, for the device cases' judge: the expected outcome, not only a clean trace
+          const answered = [];
           try {
-            for (let i = 0; i < 2; i++) oks.push((await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion })).row.ok);
+            for (let i = 0; i < 2; i++) {
+              const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion });
+              oks.push(row.ok);
+              answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null });
+            }
           } finally {
             await engine.close();
             if (ownWindow(op)) target.retainedBy = null;
@@ -798,8 +836,8 @@ export async function runDiff(args) {
           const audited = foregroundAudit ? auditForeground(trace, target.id) : nothingAudit ? auditNothingSent(trace) : auditRequests(trace);
           const auditKind = foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
-          audits[`${sceneName}|${op}|${spec.label}`] = { clean: audited.clean, oks, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set(audited.forbidden.map((f) => f.what))] };
-          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, clean: audited.clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), forbidden: audited.forbidden.slice(0, 10) });
+          audits[`${sceneName}|${op}|${spec.label}`] = { clean: audited.clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set(audited.forbidden.map((f) => f.what))] };
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, clean: audited.clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), forbidden: audited.forbidden.slice(0, 10) });
           desktop.focusFront();
         }
       }
@@ -948,13 +986,12 @@ export async function runDiff(args) {
         if (declared.length) extra.deviations = declared;
         // a reason added beside the judge (the bus trace, the bus-call bound, the foreground audit) is a failure, parity or not
         if (verdict.reasons.length) verdict.verdict = 'fail';
-        // a declared refusal (M3.1): every cua sample the Device mode sentence with the witness unchanged, in place of
-        // the judge's verdict; anything else fails
+        // a declared refusal (M3.1): every cua sample the declared sentence with the witness unchanged excuses the
+        // refusal's own answer and effect difference; the audit and every other failure stand
         const refusal = declaredRefusal({ op, scene: sceneName });
         if (refusal) {
-          const bad = mine.filter((r) => r.ok || !(refusal.answer ?? DEVICE_REFUSAL).test(String(r.error ?? '')) || r.witness !== true);
           extra.refusal = describe(refusal);
-          Object.assign(verdict, bad.length ? { pass: false, verdict: 'fail', reasons: [`${candidate}: ${bad.length} of ${mine.length} samples not the declared refusal with the witness unchanged`] } : { pass: false, verdict: 'declared refusal', reasons: [] });
+          Object.assign(verdict, declaredRefusalVerdict(verdict, mine, refusal, candidate));
         }
         const row = { kind: 'verdict', scene: sceneName, op, candidate, ...verdict, ...extra };
         verdicts.push(row);
@@ -999,6 +1036,21 @@ export async function runDiff(args) {
   writeSummary(args.out);
   process.stdout.write(`run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${verdictLine(outcome)}\nresults: ${results}\n`);
   return outcome.code === 0;
+}
+
+/**
+ * A declared refusal's verdict (deviations.mjs `REFUSALS`): `declared refusal` when every candidate sample answers the
+ * declared sentence (the Device mode sentence unless the declaration names its own) with the witness unchanged, and the
+ * judge found nothing beyond what the refusal itself makes differ: its failed request, its answer unlike the vendor's,
+ * its effect not taking place. Every other reason the judge gave (the audit, the witness, a bus call, speed) still fails
+ * it. Returns `{pass, verdict, reasons}`.
+ */
+export function declaredRefusalVerdict(verdict, mine, refusal, candidate) {
+  const excused = [`${candidate}: a request failed`, `${candidate}: the output differs from the vendor's`, `${candidate}: the effect was not verified`];
+  const kept = verdict.reasons.filter((r) => !excused.some((e) => r.startsWith(e)));
+  const bad = mine.filter((r) => r.ok || !(refusal.answer ?? DEVICE_REFUSAL).test(String(r.error ?? '')) || r.witness !== true);
+  if (bad.length) kept.unshift(`${candidate}: ${bad.length} of ${mine.length} samples not the declared refusal with the witness unchanged`);
+  return kept.length ? { pass: false, verdict: 'fail', reasons: kept } : { pass: false, verdict: 'declared refusal', reasons: [] };
 }
 
 /** The operations the X request audit covers: every window-targeted one of the blocks (reads and screenshots included). */

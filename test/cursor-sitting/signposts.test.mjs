@@ -160,6 +160,50 @@ test('a read that ran long holds the next sample to its end and the margin; one 
   assert.equal((await chunks.stop()).reads, 3, 'two in gaps and the final one');
 });
 
+test('after a slow read, 6 s gaps only: an overdue read runs anyway, the estimate recovers, and reads go on all series', async t => {
+  const dir = scratch(t);
+  let clock = +at(0), reads = 0;
+  const lengths = [8000];  // the first read is slow; every later one takes 1 s
+  const read = async () => { clock += lengths[reads++] ?? 1000; return ''; };
+  const chunks = startSignpostChunks({engineFile: join(dir, 'a.ndjson'), since: new Date(clock), periodMs: 20_000, overlapMs: 0, marginMs: 1000,
+    overdueMs: 60_000, read, now: () => new Date(clock), sleep: async ms => { clock += ms; }});
+  const rows = [], gaps = [];
+  while (clock < +at(600_000)) {
+    clock += 3000;  // a sample
+    const from = clock;
+    await chunks.gap(6000, row => rows.push(row));
+    gaps.push(clock - from);
+  }
+  await chunks.stop();
+  const ends = rows.filter(r => r.ok).map(r => r.end);
+  assert.ok(rows.length >= 20, `${rows.length} reads in 10 minutes: they never stop after the slow one`);
+  const longest = Math.max(...ends.slice(1).map((e, k) => e - ends[k]));
+  assert.ok(longest <= 60_000 + 9000 + 8000, `at most the overdue bound plus a sample, a gap and a read between reads (${longest} ms)`);
+  const overdue = rows.find(r => r.overdue);
+  assert.ok(overdue, 'the read after the slow one ran because it was overdue');
+  assert.ok(gaps.every(g => g >= 6000), 'no gap is shortened');
+  assert.ok(gaps.some(g => g === 9000) && gaps.filter(g => g > 6000).length <= 2, `only the slow read's gap runs long: ${gaps.filter(g => g > 6000)}`);
+});
+
+test('a read is cut at its bound, recorded as failed, and the next gap retries it', async t => {
+  const dir = scratch(t);
+  let clock = +at(0), calls = 0;
+  const pending = [];
+  // The first read never answers; the cap ends it. The clock moves as the fake sleep is asked to.
+  const read = async () => (++calls === 1 ? new Promise(() => {}) : '');
+  const chunks = startSignpostChunks({engineFile: join(dir, 'a.ndjson'), since: new Date(clock), periodMs: 1000, overlapMs: 0, marginMs: 1000,
+    timeoutMs: 50, read, now: () => new Date(clock), sleep: async ms => { clock += ms; }});
+  clock += 2000;
+  const rows = [];
+  await chunks.gap(6000, row => rows.push(row));
+  assert.equal(rows[0].ok, false);
+  assert.match(rows[0].error, /did not answer within/);
+  await chunks.gap(6000, row => rows.push(row));
+  assert.equal(rows[1].ok, true, 'the next gap retried it');
+  assert.equal(pending.length, 0);
+  await chunks.stop();
+});
+
 test('a series\' signposts are kept by chunked reads only: no stream runs under its timed samples', async t => {
   const dir = scratch(t), file = join(dir, 'signposts-12.ndjson');
   let reads = 0;

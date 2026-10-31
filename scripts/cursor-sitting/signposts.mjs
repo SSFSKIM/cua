@@ -19,6 +19,9 @@ export const STREAM_READY_MS = 10_000;
 // over within about 1.2 s of its start, and neither logd nor a latency probe's fixed job showed any effect after its end
 // (measured, 3 runs): READ_SETTLE_MS is the margin left before the next sample all the same.
 export const CHUNK_PERIOD_MS = 20_000, CHUNK_OVERLAP_MS = 10_000, READ_ESTIMATE_MS = 3000, READ_SETTLE_MS = 1000;
+// A read overdue this long since the last that succeeded runs in the next gap whether it fits or not (well inside the
+// store's 2-3 minutes); one read is cut at READ_TIMEOUT_MS; the fit is judged on the median of the last READ_HISTORY.
+export const READ_OVERDUE_MS = 60_000, READ_TIMEOUT_MS = 15_000, READ_HISTORY = 5;
 
 // A `log` timestamp ("2026-10-31 10:10:19.681911-0700") as epoch milliseconds, fractions kept; null if unreadable.
 export function logTimestampMs(text) {
@@ -90,27 +93,42 @@ const logDate = date => {
 // The engine's timing signposts from `start` to `end` (Dates, a second's resolution, widened by one each way).
 export const readEngineWindow = (start, end) => new Promise((resolve, reject) => execFile('/usr/bin/log',
   ['show', '--signpost', '--style', 'ndjson', '--start', logDate(new Date(+start - 1000)), '--end', logDate(new Date(+end + 1000)), '--predicate', ENGINE_PREDICATE],
-  {encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, timeout: 60_000}, (error, stdout) => (error ? reject(error) : resolve(stdout))));
+  {encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, timeout: READ_TIMEOUT_MS}, (error, stdout) => (error ? reject(error) : resolve(stdout))));
 
 // The engine's signposts read in chunks while a series runs, into `engineFile`, each read inside a gap between samples
 // (the runner's waits call `gap`), never under one: a read wakes logd and scans the store, a load of its own, and a timer
 // of its own could keep lining up with one side of the deterministic on/off order. A gap starts a read when one is due
-// (`periodMs` since the last) and the last read's length plus `marginMs` fits in it, at the gap's start, and waits for
-// it (parse and write included) and then the margin before the next sample; a read that ran long holds the next sample
-// until it ends and the margin has passed. Each read spans the last read's end less `overlapMs` to now, each line kept
+// (`periodMs` since the last that succeeded) and a typical read (the median of the recent ones) plus `marginMs` fits in
+// it, at the gap's start, and waits for it (parse and write included) and then the margin before the next sample; a
+// read that ran long holds the next sample until it ends and the margin has passed. A read overdue `overdueMs` since the
+// last success runs in the next gap whether it fits or not, so one slow read can never stop the reads for the rest of
+// the series. One read is cut at `timeoutMs`; a read that fails or is cut is recorded, and the next gap retries. Each read spans the last read's end less `overlapMs` to now, each line kept
 // once (by its time, process, signpost id, type and name); a failed read is said and the next starts where it would
 // have. Each read's start and end go to `record`, so the analysis can show no sample began within the margin.
 // -> {gap(ms, record), stop() -> {ok, reads, failures: [message]}}: `stop` reads once more, up to now, then closes.
 export function startSignpostChunks({engineFile, since = new Date(), periodMs = CHUNK_PERIOD_MS, overlapMs = CHUNK_OVERLAP_MS, marginMs = READ_SETTLE_MS,
-  read = readEngineWindow, now = () => new Date(), sleep = ms => new Promise(resolve => setTimeout(resolve, ms))}) {
+  overdueMs = READ_OVERDUE_MS, timeoutMs = READ_TIMEOUT_MS, read = readEngineWindow, now = () => new Date(),
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms))}) {
   const file = createWriteStream(engineFile);
   const seen = new Map();  // line key -> its time (ms), for the overlap only
-  let from = since, reads = 0, lastAt = +since, lastMs = READ_ESTIMATE_MS;
+  let from = since, reads = 0, lastOkAt = +since;
+  const lengths = [];  // the recent reads' lengths, for the fit
+  const typical = () => {
+    if (!lengths.length) return READ_ESTIMATE_MS;
+    const sorted = [...lengths].sort((a, b) => a - b), m = sorted.length >> 1;
+    return sorted.length % 2 ? sorted[m] : (sorted[m - 1] + sorted[m]) / 2;
+  };
+  // `read`, cut at `timeoutMs` (the real read's own process is killed at the same bound).
+  const bounded = (start, until) => {
+    let timer;
+    return Promise.race([read(start, until), new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`the read did not answer within ${timeoutMs / 1000} s`)), timeoutMs); })])
+      .finally(() => clearTimeout(timer));
+  };
   const failures = [];
   const chunk = async () => {
     const until = now(), start = new Date(+from - overlapMs);
     let text;
-    try { text = await read(start, until); } catch (error) { failures.push(String(error.message).split('\n')[0]); return {ok: false, error: failures.at(-1)}; }
+    try { text = await bounded(start, until); } catch (error) { failures.push(String(error.message).split('\n')[0]); return {ok: false, error: failures.at(-1)}; }
     reads++;
     let lines = 0;
     for (const line of text.split('\n')) {
@@ -130,12 +148,14 @@ export function startSignpostChunks({engineFile, since = new Date(), periodMs = 
   return {
     gap: async (ms, record = () => {}) => {
       const begun = +now();
-      if (begun - lastAt >= periodMs && lastMs + marginMs <= ms) {
+      const overdue = begun - lastOkAt >= overdueMs;
+      if (begun - lastOkAt >= periodMs && (overdue || typical() + marginMs <= ms)) {
         const outcome = await chunk();
         const ended = +now();
-        lastAt = ended;
-        lastMs = ended - begun;
-        record({kind: 'signposts-read', start: begun, end: ended, marginMs, ...outcome});
+        if (outcome.ok) lastOkAt = ended;
+        lengths.push(ended - begun);
+        if (lengths.length > READ_HISTORY) lengths.shift();
+        record({kind: 'signposts-read', start: begun, end: ended, marginMs, ...(overdue ? {overdue: true} : {}), ...outcome});
         await sleep(Math.max(begun + ms, ended + marginMs) - ended);
         return;
       }

@@ -921,6 +921,31 @@ final class MenuSpanTests: XCTestCase {
     XCTAssertEqual(seam.reactivated, [user], "the user's front restored by activation")
   }
 
+  /// A recorded menu-bar click moves the cursor (the M3 sitting's ruling: from the agent's side it clicked the menu
+  /// title), once the record holds, as every pointer hook fires only for a click that was not refused; a refused record
+  /// (a user event, a failed guard) announces nothing.
+  func testTheRecordAnnouncesTheCursorOnlyWhenItHolds() {
+    var announced = 0
+    var meta = meta()
+    let refusedByUser = ConnectionState(id: 1, fd: -1, menuSpan: Clock().span())
+    XCTAssertThrowsError(try recordHeldMenu(el(90), app: "a", pid: target, connection: refusedByUser, activations: activations,
+                                            activation: { self.activation(GuardSeam(frontmost: self.user)) },
+                                            beforeActivating: { throw EngineError(name: "userIntervened", "x") },
+                                            announce: { announced += 1 }, meta: &meta))
+    let failedGuard = ConnectionState(id: 2, fd: -1, menuSpan: Clock().span())
+    XCTAssertThrowsError(try recordHeldMenu(el(90), app: "a", pid: target, connection: failedGuard, activations: activations,
+                                            activation: { self.activation(GuardSeam(frontmost: self.user, frontmostAfterPost: self.target)) },
+                                            beforeActivating: {}, announce: { announced += 1 }, meta: &meta))
+    XCTAssertEqual(announced, 0, "a refused record moves no cursor")
+    let connection = ConnectionState(id: 3, fd: -1, menuSpan: Clock().span())
+    XCTAssertNoThrow(try recordHeldMenu(el(90), app: "a", pid: target, connection: connection, activations: activations,
+                                        activation: { self.activation(GuardSeam(frontmost: self.user)) }, beforeActivating: {},
+                                        announce: { XCTAssertNotNil(connection.menuRecords["a"], "announced once recorded"); announced += 1 },
+                                        meta: &meta))
+    XCTAssertEqual(announced, 1)
+    connection.endMenuInteraction()
+  }
+
   func testAUserEventBeforeTheRecordActivatesNothing() {
     let seam = GuardSeam(frontmost: user)
     let connection = ConnectionState(id: 1, fd: -1, menuSpan: Clock().span())

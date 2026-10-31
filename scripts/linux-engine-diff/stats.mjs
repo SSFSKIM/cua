@@ -162,7 +162,8 @@ export function noiseVerdict(interval, bar) {
  * vendor build's is, and its effect verified on every sample (`missedEffects`).
  *
  * `text` (M2's text and clipboard commands): the bar is built from the vendor samples that succeeded (the union of what
- * either build succeeds at; a build that only failed sets no bar, and with none there is no speed judgement), every
+ * either build succeeds at; a build that only failed sets no bar, and with none there is no speed comparison, though a
+ * series a vendor build ran stays undetermined until the candidate has `MIN_NOISE_SAMPLES` usable samples), every
  * candidate request must answer success, and the clipboard is judged on every candidate sample that records it. A
  * candidate sample whose preparation failed (`prepare_error`) fails the verdict; no engine's such sample is timed.
  *
@@ -225,7 +226,21 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   const timedOf = (engine, series) => timedMs(rows.filter((r) => r.engine === engine && r.series === series));
   const shown = (v) => Math.round(v * 100) / 100;
   for (const series of ['cold', 'warm']) {
-    if (exactBar[series] === null || c.exact[series] === null) continue;
+    if (exactBar[series] === null) {
+      // no vendor build sets a bar (none succeeded, or each failed the operation by the bar rule): nothing to judge the
+      // speed against, but cua still needs its own MIN_NOISE_SAMPLES usable samples, else the series is undetermined
+      // and topped up like any other (the bar rule binds the vendor builds only, task 18 review). A candidate-only
+      // operation, which no vendor build runs, has no speed comparison at all and is never topped up.
+      if (!rows.some((r) => vendors.includes(r.engine) && r.series === series)) continue;
+      const mine = timedOf(candidate, series);
+      if (mine.length >= MIN_NOISE_SAMPLES) continue;
+      undetermined.push({ series, samples: mine.length, against: null, interval: null });
+      speed = false;
+      const at = c.exact[series] === null ? 'no usable sample' : `${shown(c.exact[series])} ms`;
+      if (judgeSpeed) reasons.push(`${candidate}: ${series} ${at} with no vendor bar, undetermined: ${mine.length} samples, fewer than ${MIN_NOISE_SAMPLES}; not judged on medians`);
+      continue;
+    }
+    if (c.exact[series] === null) continue;
     // the build that set the bar, and its samples as the bar counts them (a text command's: its successes)
     const barEngine = vendors.find((v) => setsBar(v, series) && median(barTimes(v, series)) === exactBar[series]);
     const theirs = barEngine ? barTimes(barEngine, series) : [];

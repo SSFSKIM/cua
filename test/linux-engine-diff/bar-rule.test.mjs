@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { medianDifferenceInterval } from '../../scripts/linux-engine-diff/events.mjs';
+import { speedDecisions, windowTopUp } from '../../scripts/linux-engine-diff/run.mjs';
 import { judgeOperation } from '../../scripts/linux-engine-diff/stats.mjs';
 
 const opts = { vendors: ['pinned', 'newest'], candidate: 'cua', noise: medianDifferenceInterval, text: true };
@@ -54,8 +55,30 @@ test('both vendor builds below 20 usable samples at the end: no bar, so no speed
   const v = judgeOperation(rows, opts);
   assert.equal(v.bar.cold, null);
   assert.deepEqual(v.intervals, []);
+  // cua has its 20 usable samples, so nothing is left open
   assert.deepEqual(v.undetermined, []);
   assert.deepEqual(v.failed_bar.map((f) => f.engine), ['pinned', 'newest']);
+});
+
+test('no vendor bar left: cua below 20 usable samples stays undetermined, and the planner tops it up (task 18 review)', () => {
+  // the review's probe: 40 vendor attempts each (1 and 3 successes), 12 successful cua samples
+  const rows = [...samples('pinned', 'cold', 40, 1, 600), ...samples('newest', 'cold', 40, 3, 650), ...samples('cua', 'cold', 12, 12, 50)];
+  const v = judgeOperation(rows, opts);
+  assert.equal(v.bar.cold, null);
+  assert.equal(v.pass, false);
+  assert.deepEqual(v.undetermined, [{ series: 'cold', samples: 12, against: null, interval: null }]);
+  assert.ok(v.reasons.some((r) => /^cua: cold .*no vendor bar.*undetermined: 12 samples, fewer than 20/.test(r)), v.reasons.join('; '));
+  const looked = speedDecisions(rows, { vendors: opts.vendors, candidates: ['cua'], text: true });
+  assert.deepEqual(looked.open.map(({ series, samples: n, target }) => ({ series, samples: n, target })), [{ series: 'cold', samples: 12, target: 20 }]);
+  assert.deepEqual(windowTopUp(looked.open, { warmPerRound: 4 }).rounds, 8);
+});
+
+test('no vendor bar left: cua with 20 usable samples has nothing left to judge on speed', () => {
+  const rows = [...samples('pinned', 'cold', 40, 1, 600), ...samples('newest', 'cold', 40, 3, 650), ...samples('cua', 'cold', 20, 20, 50)];
+  const v = judgeOperation(rows, opts);
+  assert.equal(v.pass, true, v.reasons.join('; '));
+  assert.deepEqual(v.undetermined, []);
+  assert.deepEqual(speedDecisions(rows, { vendors: opts.vendors, candidates: ['cua'], text: true }).open, []);
 });
 
 test('the rule binds the vendor builds only: cua below 20 usable samples stays undetermined and fails', () => {

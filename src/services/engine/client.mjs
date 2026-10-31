@@ -267,14 +267,17 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     async status() {
       return (await call('status', {}, {suspend: false})).result;
     },
-    // end_task: the session's cursor fades at once, on the live connection only (in turn behind a request in flight).
+    // end_task: the session's cursor fades at once, on the live connection only. Its frame is written in turn behind a
+    // request in flight, but its answer is not waited for in turn: the next request is written right after it (O5).
     async hideCursor() {
       const target = connection;
       if (!cursor || !target || target.closed || target.noCursor) return;
-      const run = () => (target.closed || target.noCursor ? undefined : sendCursor(target, {hide: true}));
-      const queued = tail.then(run, run);
-      tail = queued.then(() => {}, () => {});
-      await queued;
+      let answered;
+      const send = () => { if (!target.closed && !target.noCursor) answered = sendCursor(target, {hide: true}); };
+      const written = tail.then(send, send);
+      tail = written.then(() => {}, () => {});
+      await written;
+      await answered;
     },
     close() { connection?.close(); },
   };

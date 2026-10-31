@@ -334,6 +334,22 @@ test('an unanswered cursor request is abandoned at its bound without closing the
   assert.equal(engine.received.filter(r => r.method === 'cursor').length, 2, 'the hide is still tried on the live connection');
 });
 
+test('an unanswered hide holds back no action: the next execute is written at once, not after the cursor request\'s bound', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null}), 'execute:ok': () => 'ok'}});
+  const {client} = clientFor(socket, {cursor: CURSOR, cursorWaitMs: 300, log: () => {}});
+  t.after(() => client.close());
+  await client.execute('ok', {});
+  const hidden = client.hideCursor();
+  const started = performance.now();
+  assert.equal((await client.execute('ok', {})).result, 'ok');
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 150, `the execute behind the hide answered in ${elapsed.toFixed(0)} ms; it waited for the hide's answer`);
+  assert.deepEqual(engine.received.slice(3).map(r => r.method === 'cursor' ? r.params : r.params?.method), [{hide: true}, 'ok'],
+    'the hide is still written in turn, before the execute queued after it');
+  await hidden;
+});
+
 test('methodNotFound, the older engine\'s answer, is expected and not logged', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   await startFakeEngine(t, socket, {handlers: {'execute:ok': () => 'ok'}});

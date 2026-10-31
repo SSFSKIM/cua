@@ -51,6 +51,9 @@ final class CursorHalo {
     view.addSubview(wash)
   }
 
+  /// The backdrop's blur hidden, its tint disc left (engine.json `cursorDebug` `noBackdrop`, the spec's fallback (a)).
+  func hideBackdrop() { backdrop.isHidden = true }
+
   /// The session's colour washed over the frost (look A: 12–20 %).
   func setTint(_ color: NSColor) {
     CATransaction.begin()

@@ -112,9 +112,10 @@ final class CursorSystem: @unchecked Sendable {
 }
 
 extension CursorHub {
-  /// The engine's hub, drawing on this Mac's screens; created on the main thread.
-  @MainActor static func live() -> CursorHub {
+  /// The engine's hub, drawing on this Mac's screens, with `debug`'s arm (engine.json `cursorDebug`); created on the
+  /// main thread.
+  @MainActor static func live(debug: CursorDebug? = nil) -> CursorHub {
     let system = CursorSystem()
-    return CursorHub(environment: system.environment, renderer: CursorPanels(), system: system)
+    return CursorHub(environment: system.environment, renderer: CursorPanels(debug: debug), system: system)
   }
 }

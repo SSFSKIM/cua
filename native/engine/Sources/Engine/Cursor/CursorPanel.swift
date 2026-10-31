@@ -8,6 +8,10 @@ import QuartzCore
 // agent's own single-window screenshots never contain it). Everything here runs on the main thread, once per commit:
 // the trajectory is installed as Core Animation keyframes and the render server plays it, so no main-thread work runs
 // per frame. Layers are layer-backed views where AppKit needs a view (the halo's backdrop) and plain layers elsewhere.
+// What a visible cursor makes the window server do every frame is kept small (#235's Decision Log, 2026-10-31): the
+// arrow's shadow has an explicit path, so it is not found from the layer's rendered alpha, and the arrow's blur filter is
+// installed only for the 0.44 s fades that use it. `CursorDebug` (engine.json `cursorDebug`) takes one part away, or
+// puts the layers back as they were, for an attended sitting's arms.
 
 /// The engine's own on-screen windows, which the screenshot path's shareable-content cache leaves out of its key
 /// (Screenshot.swift), so a cursor appearing never costs a screenshot a re-list.
@@ -23,12 +27,19 @@ final class EngineWindows: @unchecked Sendable {
 /// The live renderer: the panels by connection.
 final class CursorPanels: CursorRenderer, @unchecked Sendable {
   @MainActor private var overlays: [Int: CursorOverlay] = [:]
+  private let debug: CursorDebug?
+
+  init(debug: CursorDebug? = nil) {
+    self.debug = debug
+  }
 
   func apply(_ commit: CursorCommit) {
     MainActor.assumeIsolated {
-      let overlay = overlays[commit.connection] ?? CursorOverlay()
-      overlays[commit.connection] = overlay
-      overlay.apply(commit)
+      signposted("cursor.apply") {
+        let overlay = overlays[commit.connection] ?? CursorOverlay(debug: debug)
+        overlays[commit.connection] = overlay
+        overlay.apply(commit)
+      }
     }
   }
 
@@ -37,6 +48,14 @@ final class CursorPanels: CursorRenderer, @unchecked Sendable {
       overlays.removeValue(forKey: connection)?.close()
     }
   }
+
+  // The probe's stills (`--probe cursor --pose`, CursorProbe.swift): a cursor's whole layer tree held at one host time.
+
+  /// When `connection`'s rock began (host time), nil while it does not rock.
+  @MainActor func rockStartedAt(connection: Int) -> TimeInterval? { overlays[connection]?.rockStartedAt }
+
+  /// Holds every animation of `connection`'s cursor where it is at host time `host`, for good.
+  @MainActor func freeze(connection: Int, at host: TimeInterval) { overlays[connection]?.freeze(at: host) }
 }
 
 /// A panel that never becomes key or main.
@@ -77,6 +96,34 @@ func cursorArrowPath(scale: CGFloat = 0.75) -> CGPath {
   return path
 }
 
+/// The arrow's shadow path: its fill and its stroke's outline, so the shadow falls where the drawn arrow is without the
+/// layer's alpha being rendered to find it. A shadow found from the alpha carries the stroke's outer half at the stroke's
+/// opacity; a path can only be opaque, so the outline's width is the stroke's scaled by that opacity (1.6 pt for the
+/// 2 pt stroke at 80 %, the full 2 pt under Increase Contrast). Measured on screen, 2026-10-31: the scaled outline's
+/// shadow is within 2/255 of the alpha-found one in every channel, the full-width outline's within 6/255.
+@MainActor
+func cursorArrowShadowPath(_ arrow: CGPath, lineWidth: CGFloat, strokeOpacity: CGFloat) -> CGPath {
+  arrow.union(arrow.copy(strokingWithWidth: lineWidth * strokeOpacity, lineCap: .butt, lineJoin: .round, miterLimit: 10))
+}
+
+/// The arrow's blur, which the fades animate: in out (7) or out in (0).
+@MainActor
+private func arrowBlur() -> CIFilter? {
+  guard let blur = CIFilter(name: "CIGaussianBlur", parameters: [kCIInputRadiusKey: 0]) else { return nil }
+  blur.name = "blur"
+  return blur
+}
+
+/// Ends a fade's use of the blur filter once its animation has run to the end.
+private final class FadeEnded: NSObject, CAAnimationDelegate, @unchecked Sendable {
+  private let ended: @MainActor @Sendable () -> Void
+  init(_ ended: @escaping @MainActor @Sendable () -> Void) { self.ended = ended }
+  func animationDidStop(_ animation: CAAnimation, finished: Bool) {
+    guard finished else { return }  // superseded by another fade, or removed with the hidden cursor's animations
+    MainActor.assumeIsolated { ended() }
+  }
+}
+
 @MainActor
 private final class CursorOverlay {
   /// The container's side: room for the halo's 2.5× swell around the tip at its centre.
@@ -99,8 +146,14 @@ private final class CursorOverlay {
   private var screenFrame: CGRect = .zero
   private var label = ""
   private var registered: CGWindowID?
+  private let debug: CursorDebug?
+  /// The fade whose blur is installed now; a later fade replaces it.
+  private var blurringFade = 0
+  /// The stroke opacity the shadow path was made for.
+  private var shadowStrokeOpacity: CGFloat?
 
-  init() {
+  init(debug: CursorDebug?) {
+    self.debug = debug
     panel = CursorWindow(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isOpaque = false
     panel.backgroundColor = .clear
@@ -121,6 +174,7 @@ private final class CursorOverlay {
     content.addSubview(cursor)
 
     halo = CursorHalo()
+    if debug == .noBackdrop { halo.hideBackdrop() }
     haloHost = NSView(frame: NSRect(x: centre - CursorHalo.side / 2, y: centre - CursorHalo.side / 2, width: CursorHalo.side, height: CursorHalo.side))
     haloHost.wantsLayer = true
     haloHost.addSubview(halo.view)
@@ -148,9 +202,9 @@ private final class CursorOverlay {
     shape.shadowOpacity = 0.35
     shape.shadowRadius = 1
     shape.shadowOffset = CGSize(width: 0, height: -0.5)
-    if let blur = CIFilter(name: "CIGaussianBlur", parameters: [kCIInputRadiusKey: 0]) {
-      blur.name = "blur"
-      rock.filters = [blur]
+    if debug == .legacyLayers {
+      // The sitting's build: the blur installed for the panel's whole life, the shadow found from the layer's alpha.
+      rock.filters = arrowBlur().map { [$0] }
     }
 
     pill = NSView(frame: .zero)
@@ -175,6 +229,20 @@ private final class CursorOverlay {
     CATransaction.commit()
   }
 
+  var rockStartedAt: TimeInterval? { rocker.startedAt }
+
+  /// The layer tree's clock stopped at host time `host`: every animation shows its state at that time (the probe's
+  /// stills, so two builds' captures compare at the same phase).
+  func freeze(at host: TimeInterval) {
+    guard let root = content.layer else { return }
+    let local = root.convertTime(host, from: nil)
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    root.speed = 0
+    root.timeOffset = local
+    CATransaction.commit()
+  }
+
   func close() {
     if let registered { EngineWindows.shared.remove(registered) }
     cursor.layer?.removeAllAnimations()
@@ -184,14 +252,14 @@ private final class CursorOverlay {
   func apply(_ commit: CursorCommit) {
     CATransaction.begin()
     CATransaction.setDisableActions(true)
-    defer { CATransaction.commit() }
-    place(commit)
+    signposted("cursor.place") { place(commit) }
     style(commit)
     if let motion = commit.motion, motion.id != installedMotion {
       installedMotion = motion.id
-      install(motion, reduceMotion: commit.reduceMotion)
+      signposted("cursor.install") { install(motion, reduceMotion: commit.reduceMotion) }
     }
-    transition(to: commit)
+    signposted("cursor.transition") { transition(to: commit) }
+    signposted("cursor.caCommit") { CATransaction.commit() }
   }
 
   // MARK: Placement
@@ -205,7 +273,9 @@ private final class CursorOverlay {
     }
     let level = NSWindow.Level(rawValue: commit.attachment.level)
     if panel.level != level { panel.level = level }
-    if commit.attachment.level == raisedCursorLevel {
+    if debug == .panelOut {
+      panel.orderOut(nil)  // the arm: everything else of the commit runs, the window server composites nothing
+    } else if commit.attachment.level == raisedCursorLevel {
       panel.orderFrontRegardless()
     } else {
       panel.order(.above, relativeTo: Int(commit.attachment.window))
@@ -219,7 +289,12 @@ private final class CursorOverlay {
   private func style(_ commit: CursorCommit) {
     let contrast = commit.increaseContrast
     let color = commit.identity.color
-    shape.strokeColor = NSColor.white.withAlphaComponent(contrast ? 1 : 0.8).cgColor
+    let strokeOpacity: CGFloat = contrast ? 1 : 0.8
+    shape.strokeColor = NSColor.white.withAlphaComponent(strokeOpacity).cgColor
+    if debug != .legacyLayers, shadowStrokeOpacity != strokeOpacity, let arrow = shape.path {
+      shadowStrokeOpacity = strokeOpacity
+      shape.shadowPath = cursorArrowShadowPath(arrow, lineWidth: shape.lineWidth, strokeOpacity: strokeOpacity)
+    }
     halo.setTint(color)
     let rgb = color.usingColorSpace(.sRGB).map { RGB(red: Double($0.redComponent), green: Double($0.greenComponent), blue: Double($0.blueComponent)) }
     pill.layer?.backgroundColor = (rgb.map { pillShade(of: $0).color } ?? color).cgColor
@@ -331,12 +406,13 @@ private final class CursorOverlay {
       cursorLayer.add(animation, forKey: "opacity")
     }
     // Thinking is the rock alone (the fill stays solid, look A); the rock follows Reduce Motion live.
-    rocker.update(commit.phase == .thinking && !commit.reduceMotion, on: rock, at: max(commit.phaseSince, CACurrentMediaTime()))
+    rocker.update(commit.phase == .thinking && !commit.reduceMotion && debug != .noRock, on: rock, at: max(commit.phaseSince, CACurrentMediaTime()))
     let color = commit.identity.color.withAlphaComponent(1).cgColor
     if shape.fillColor != color { shape.fillColor = color }
     if commit.phase == .hidden {
       // Nothing animates while hidden (the spec's Design, energy).
       for layer in [rock, press, heading] { layer.removeAllAnimations() }
+      if debug != .legacyLayers { rock.filters = nil }
       haloHost.layer?.removeAllAnimations()
       cursorLayer.removeAnimation(forKey: "glide")
     }
@@ -344,7 +420,8 @@ private final class CursorOverlay {
     shown = nowShown
   }
 
-  /// A fade in or out over 0.44 s, ease-in-out, with the arrow and pill blurring out (7) or in (0).
+  /// A fade in or out over 0.44 s, ease-in-out, with the arrow blurring out (7) or in (0): the blur filter is installed for
+  /// the fade and removed when it has run (the sitting's layers keep it installed).
   private func fade(_ layer: CALayer, from: Float, to: Float, at host: TimeInterval, blurTo: CGFloat) {
     let animation = CABasicAnimation(keyPath: "opacity")
     animation.fromValue = from
@@ -362,6 +439,18 @@ private final class CursorOverlay {
     blur.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
     blur.beginTime = layerTime(host, rock)
     blur.fillMode = .backwards
+    if debug != .legacyLayers {
+      if rock.filters?.isEmpty ?? true { rock.filters = arrowBlur().map { [$0] } }
+      blurringFade += 1
+      let fade = blurringFade
+      blur.delegate = FadeEnded { [weak self] in
+        guard let self, self.blurringFade == fade else { return }
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        self.rock.filters = nil
+        CATransaction.commit()
+      }
+    }
     rock.setValue(0, forKeyPath: "filters.blur.inputRadius")
     rock.add(blur, forKey: "blur")
   }

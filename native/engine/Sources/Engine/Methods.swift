@@ -55,15 +55,19 @@ final class Engine: @unchecked Sendable {
   let cursor: CursorHub
   /// The device's switch, `cursor` in engine.json as read at launch (Config.swift): off, no session draws a cursor.
   let cursorEnabled: Bool
+  /// The cursor's diagnostic arm, `cursorDebug` in engine.json as read at launch (Config.swift); nil for none.
+  let cursorDebug: CursorDebug?
   weak var server: Server?
 
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
        screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general,
-       pasteActivation: ActivationSystem = ActivationSystem(), cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true) {
+       pasteActivation: ActivationSystem = ActivationSystem(), cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true,
+       cursorDebug: CursorDebug? = nil) {
     self.paths = paths
     self.apps = AppDirectory(usagePath: paths.usage)
     self.routes = routes
     self.cursorEnabled = cursorEnabled
+    self.cursorDebug = cursorDebug
     self.intervention = intervention
     self.screenLocked = screenLocked
     self.pasteboardAccess = pasteboard
@@ -123,6 +127,7 @@ final class Engine: @unchecked Sendable {
       "routeAdvice": routeAdvice.advised,
       // The agent cursor's device switch as read at launch (`cursor` in engine.json).
       "cursor": cursorEnabled ? "on" : "off",
+      "cursorDebug": cursorDebug?.rawValue ?? NSNull(),
     ]
   }
 
@@ -163,6 +168,8 @@ final class Engine: @unchecked Sendable {
     let deadline = (params["deadlineUnixMilliseconds"] as? NSNumber)?.int64Value ?? receivedAt + 120_000
     guard deadline > receivedAt else { throw EngineError(rpc: .deadlineExceeded, "Request deadline exceeded") }
     guard let method = params["method"] as? String else { throw EngineError(rpc: .invalidParams, "Invalid params: method is required") }
+    let interval = timingSignposts.beginInterval("request", id: timingSignposts.makeSignpostID(), "\(method, privacy: .public)")
+    defer { timingSignposts.endInterval("request", interval) }
     let args = params["args"] as? [String: Any] ?? [:]
     let context = ExecutionContext(connection: connection, receivedAt: receivedAt, hidIdleMs: hidIdleMilliseconds(),
                                    deadline: deadline, lineage: params["lineage"] as? String)
@@ -189,8 +196,12 @@ final class Engine: @unchecked Sendable {
     }
     // The cursor's activity (the spec's Design, "Hooks"): every request counts, a keyboard-only one may bring a faded
     // cursor back at its last point in the app; the 5 s idle runs from the end of the last request.
+    timingSignposts.emitEvent("cursor.begin")
     cursor.begin(connection: connection.id, app: target?.key, keyboardOnly: keyboardOnlyMethods.contains(method))
-    defer { cursor.end(connection: connection.id) }
+    defer {
+      timingSignposts.emitEvent("cursor.end")
+      cursor.end(connection: connection.id)
+    }
     // The held menu activation: kept for the recorded menu's observations, ended after the item press (unless the
     // request recorded a menu anew), ended before anything aimed elsewhere.
     let step = menuSpanStep(method: method, app: target?.key, heldApp: connection.menuSpan.app,

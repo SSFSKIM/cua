@@ -67,11 +67,14 @@ final class CursorRock {
   static let degrees = 10.0, swing = 0.684931506849315, stop = 0.41
 
   private(set) var rocking = false
+  /// When the rock now playing began (host time); nil while it is not rocking.
+  private(set) var startedAt: TimeInterval?
 
   /// Rocks `layer` from `host` on, or brings it back to rest, when that differs from what it does now.
   func update(_ rock: Bool, on layer: CALayer, at host: TimeInterval) {
     guard rock != rocking else { return }
     rocking = rock
+    startedAt = rock ? host : nil
     if rock { start(layer, at: host) } else { halt(layer) }
   }
 

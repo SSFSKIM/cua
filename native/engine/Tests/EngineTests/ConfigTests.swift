@@ -70,6 +70,28 @@ final class EngineSettingsTests: XCTestCase {
     }
   }
 
+  /// `cursorDebug`: one diagnostic arm of the agent cursor for an attended sitting (#235's Decision Log, 2026-10-31),
+  /// off unless named; strict like the others.
+  func testCursorDebugIsOffUnlessTheFileNamesAnArm() throws {
+    XCTAssertNil(try parse(nil).cursorDebug, "no file: off")
+    XCTAssertNil(try parse("{}").cursorDebug, "absent: off")
+    XCTAssertEqual(try parse(#"{"cursorDebug": "panelOut"}"#).cursorDebug, .panelOut)
+    XCTAssertEqual(try parse(#"{"cursorDebug": "noBackdrop"}"#).cursorDebug, .noBackdrop)
+    XCTAssertEqual(try parse(#"{"cursorDebug": "noRock"}"#).cursorDebug, .noRock)
+    XCTAssertEqual(try parse(#"{"cursorDebug": "legacyLayers", "cursor": true}"#).cursorDebug, .legacyLayers)
+  }
+
+  func testAnyOtherCursorDebugValueStopsTheEngineNamingTheSettingAndItsArms() {
+    for text in [#"{"cursorDebug": "panelout"}"#, #"{"cursorDebug": ""}"#, #"{"cursorDebug": null}"#, #"{"cursorDebug": true}"#,
+                 #"{"cursorDebug": ["noRock"]}"#, #"{"cursorDebug": "noRockFilter"}"#] {
+      XCTAssertThrowsError(try parse(text), text) { error in
+        let message = (error as? EngineSettings.Invalid)?.message ?? ""
+        XCTAssertTrue(message.contains("cursorDebug") && message.contains("/h/.config/cua/engine.json")
+                      && ["panelOut", "noBackdrop", "noRock", "legacyLayers"].allSatisfy(message.contains), message)
+      }
+    }
+  }
+
   func testTheSettingsLiveUnderHome() {
     XCTAssertEqual(EngineSettings.path(environment: ["HOME": "/Users/x"]), "/Users/x/.config/cua/engine.json")
   }

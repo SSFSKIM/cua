@@ -6,7 +6,8 @@ import Foundation
 // accepted on 2026-10-18; a second value (#174's trusted-ancestor policy) is a new case of PeerPolicy. `routes` is the
 // owner's per-app route-4 override (the spec's Design, "Input" route 4): `{<bundle id>: 4}`, absent or empty meaning no
 // app gets route 4. `cursor` is the agent cursor's per-device switch (#235's spec, "Settings"): `false` turns every
-// session's cursor off, absent or `true` leaves it on. Any other value of any of them, or a file that is not a JSON
+// session's cursor off, absent or `true` leaves it on. `cursorDebug` names one diagnostic arm of the cursor for an attended
+// sitting (CursorDebug; #235's Decision Log, 2026-10-31), absent meaning none. Any other value of any of them, or a file that is not a JSON
 // object, stops the engine at start with a sentence naming the setting, so a policy, an override or a switch the owner
 // wrote is never silently replaced or dropped.
 
@@ -23,12 +24,28 @@ enum PeerPolicy: String {
   }
 }
 
+/// One diagnostic arm of the agent cursor, `cursorDebug` in engine.json, read at launch: each takes one part of what a
+/// visible cursor costs the window server away, so a sitting can attribute the cost (#235's Decision Log, 2026-10-31).
+enum CursorDebug: String, CaseIterable, Sendable {
+  /// The panel is never ordered in; every commit, keyframe install and transition still runs.
+  case panelOut
+  /// The halo's backdrop blur is hidden, leaving its tint disc (the spec's fallback (a), as an arm).
+  case noBackdrop
+  /// The cursor never rocks: nothing animates once it settles.
+  case noRock
+  /// The layers as the sitting's build had them: the rock layer's blur filter installed for the panel's whole life, and
+  /// the arrow's shadow with no explicit path.
+  case legacyLayers
+}
+
 struct EngineSettings {
   let peerPolicy: PeerPolicy
   /// Bundle id → route; the only route an override names is 4.
   var routes: [String: Int] = [:]
   /// Whether sessions on this device draw the agent cursor.
   var cursor = true
+  /// The cursor's diagnostic arm, none by default.
+  var cursorDebug: CursorDebug?
 
   /// A setting the engine cannot run under; `message` names the setting and the file.
   struct Invalid: Error {
@@ -53,7 +70,18 @@ struct EngineSettings {
       }
       policy = named
     }
-    return EngineSettings(peerPolicy: policy, routes: try parseRoutes(object["routes"], path: path), cursor: try parseCursor(object["cursor"], path: path))
+    return EngineSettings(peerPolicy: policy, routes: try parseRoutes(object["routes"], path: path), cursor: try parseCursor(object["cursor"], path: path),
+                          cursorDebug: try parseCursorDebug(object["cursorDebug"], path: path))
+  }
+
+  /// `cursorDebug`: absent, or the name of one arm.
+  private static func parseCursorDebug(_ given: Any?, path: String) throws -> CursorDebug? {
+    guard let given else { return nil }
+    guard let name = given as? String, let arm = CursorDebug(rawValue: name) else {
+      let arms = CursorDebug.allCases.map { "\"\($0.rawValue)\"" }.joined(separator: ", ")
+      throw Invalid(message: "cursorDebug in \(path) must be one of \(arms) (or absent); it names one diagnostic arm of the agent cursor")
+    }
+    return arm
   }
 
   /// `cursor`: absent, or a JSON boolean (not a number: NSNumber carries both).

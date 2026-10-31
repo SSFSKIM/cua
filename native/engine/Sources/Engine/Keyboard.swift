@@ -33,9 +33,16 @@ func inputSourceInfo(_ source: TISInputSource) -> InputSourceInfo {
     asciiCapable: property(source, kTISPropertyInputSourceIsASCIICapable, as: Bool.self) ?? false)
 }
 
-/// Runs `body` on the main thread (HIToolbox's input-source calls expect it); directly when already there.
+/// Runs `body` on the main thread (HIToolbox's input-source calls expect it); directly when already there. Signposted:
+/// the wait for the main thread, and the body's run there.
 func onMain<T>(_ body: () -> T) -> T {
-  Thread.isMainThread ? body() : DispatchQueue.main.sync(execute: body)
+  if Thread.isMainThread { return body() }
+  let waiting = timingSignposts.beginInterval("main.sync.wait", id: timingSignposts.makeSignpostID())
+  let run: () -> T = {
+    timingSignposts.endInterval("main.sync.wait", waiting)
+    return signposted("main.sync.run", body)
+  }
+  return DispatchQueue.main.sync(execute: run)
 }
 
 func currentInputSource() -> InputSourceInfo { onMain { inputSourceInfo(TISCopyCurrentKeyboardInputSource().takeRetainedValue()) } }

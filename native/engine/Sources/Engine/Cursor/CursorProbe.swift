@@ -7,13 +7,19 @@ import Foundation
 // and runs a scripted set of moves (scoot, long path, edge, backward, drag), presses, thinking, taken over and the fade,
 // printing one line per step with its planned duration and the time it took, then a final line. With `--window <id>`
 // it holds a cursor still over that window (the window's own level and order) for `--seconds` (default 10), for M3's
-// click-through and intervention proof.
+// click-through and intervention proof. With `--pose settled|rocking` it draws one cursor over the probe's own opaque
+// colour bands (`--backdrop`'s), settled (a request kept in flight) or rocking, its layer tree's clock stopped at a fixed
+// phase (`rocking`: 0.6 s into the rock), prints the region to capture (global top-left points) and holds it for
+// `--seconds` (default 2, at most 5): a still that two builds, or two `--debug` arms (engine.json's `cursorDebug`
+// values, `legacyLayers` the sitting's layers), give at the same phase, for a pixel diff of the cursor's look.
 
 enum CursorProbe {
   static func run(_ arguments: [String]) -> Int32 {
     var window: CGWindowID?
-    var seconds = 10.0
+    var seconds: Double?
     var backdrop = false
+    var pose: CursorPose?
+    var debug: CursorDebug?
     var index = 0
     while index < arguments.count {
       switch arguments[index] {
@@ -22,20 +28,33 @@ enum CursorProbe {
         window = id; index += 2
       case "--backdrop":
         backdrop = true; index += 1
+      case "--pose":
+        guard index + 1 < arguments.count, let named = CursorPose(rawValue: arguments[index + 1]) else { return Probe.emit(["error": "--pose needs settled or rocking"], status: 64) }
+        pose = named; index += 2
+      case "--debug":
+        guard index + 1 < arguments.count, let arm = CursorDebug(rawValue: arguments[index + 1]) else {
+          return Probe.emit(["error": "--debug needs one of \(CursorDebug.allCases.map(\.rawValue).joined(separator: ", "))"], status: 64)
+        }
+        debug = arm; index += 2
       case "--seconds":
         guard index + 1 < arguments.count, let s = Double(arguments[index + 1]), s > 0, s <= 600 else { return Probe.emit(["error": "--seconds needs 0 < n ≤ 600"], status: 64) }
         seconds = s; index += 2
       default:
-        return Probe.emit(["error": "usage: --probe cursor [--backdrop] | --probe cursor --window <window number> [--seconds <n>]"], status: 64)
+        return Probe.emit(["error": "usage: --probe cursor [--backdrop] | --probe cursor --window <window number> [--seconds <n>] | --probe cursor --pose settled|rocking [--debug <arm>] [--seconds <n>]"], status: 64)
       }
     }
-    let (held, duration, painted) = (window, seconds, backdrop)
+    if pose != nil, window != nil || backdrop { return Probe.emit(["error": "--pose draws over its own backdrop: no --window or --backdrop"], status: 64) }
+    if pose != nil, let seconds, seconds > 5 { return Probe.emit(["error": "--pose holds for at most 5 s"], status: 64) }
+    let (held, painted, posed, arm) = (window, backdrop, pose, debug)
+    let duration = seconds ?? (pose == nil ? 10 : 2)
     return MainActor.assumeIsolated {
       let application = NSApplication.shared
       application.setActivationPolicy(isBundled ? .accessory : .prohibited)
-      let hub = CursorHub.live()
+      let system = CursorSystem(), panels = CursorPanels(debug: arm)
+      let hub = CursorHub(environment: system.environment, renderer: panels, system: system)
       Thread {
-        let status = held.map { hold(hub, window: $0, seconds: duration) } ?? scripted(hub, backdrop: painted)
+        let status = posed.map { still(hub, panels: panels, pose: $0, seconds: duration) }
+          ?? held.map { hold(hub, window: $0, seconds: duration) } ?? scripted(hub, backdrop: painted)
         DispatchQueue.main.async { exit(status) }
       }.start()
       application.run()
@@ -45,11 +64,12 @@ enum CursorProbe {
 
   /// The probe's own target: a transparent, mouse-ignoring panel over the main screen's visible frame, at the floating
   /// level, which the cursor attaches to; with `backdrop`, a smaller one painted with colour bands, so a capture of it
-  /// holds only the probe's own windows and shows the halo's blur.
-  @MainActor private static func makeTarget(backdrop: Bool) -> (CGWindowID, CGRect)? {
+  /// holds only the probe's own windows and shows the halo's blur (`side`: a square of that side, `--pose`'s).
+  @MainActor private static func makeTarget(backdrop: Bool, side: CGFloat? = nil) -> (CGWindowID, CGRect)? {
     guard let screen = NSScreen.main else { return nil }
     let visible = screen.visibleFrame
-    let frame = backdrop ? CGRect(x: visible.midX - 450, y: visible.midY - 280, width: 900, height: 560) : visible
+    let size = side.map { CGSize(width: $0, height: $0) } ?? CGSize(width: 900, height: 560)
+    let frame = backdrop ? CGRect(x: (visible.midX - size.width / 2).rounded(), y: (visible.midY - size.height / 2).rounded(), width: size.width, height: size.height) : visible
     let panel = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
     panel.isOpaque = false
     panel.backgroundColor = NSColor.white.withAlphaComponent(0.001)
@@ -126,6 +146,59 @@ enum CursorProbe {
     return Probe.emit(["steps": steps.count + 3, "hidden": faded == .hidden], status: faded == .hidden ? 0 : 1)
   }
 
+  /// One cursor over the probe's colour bands, its layer clock stopped (`--pose`): settled, a request kept in flight, so
+  /// it is acting and still; or rocking, the request ended, stopped 0.6 s after its rock began. Prints the region around
+  /// the tip to capture, then holds for `seconds`.
+  private static func still(_ hub: CursorHub, panels: CursorPanels, pose: CursorPose, seconds: Double) -> Int32 {
+    guard let (window, frame, primaryHeight) = DispatchQueue.main.sync(execute: {
+      MainActor.assumeIsolated { makeTarget(backdrop: true, side: 240).map { ($0.0, $0.1, NSScreen.screens.first?.frame.maxY ?? 0) } }
+    }) else { return Probe.emit(["error": "no screen"], status: 2) }
+    usleep(150_000)  // the target ordered in and listed
+    let tip = CGPoint(x: frame.midX.rounded(), y: (primaryHeight - frame.midY).rounded())
+    let connection = 1, app = "cua-cursor-probe"
+    hub.begin(connection: connection, app: app, keyboardOnly: false)
+    hub.act(connection: connection, app: app, window: window, .click(tip))
+    hub.drain()
+    if pose == .rocking { hub.end(connection: connection) }
+    // Shown (a fade-in at the target), and for `rocking` thinking (0.3 s after the request) and 0.6 s into the rock.
+    let phase = 0.6
+    var frozen: TimeInterval?
+    let deadline = monotonicMilliseconds() + 3_000
+    while frozen == nil && monotonicMilliseconds() < deadline {
+      usleep(50_000)
+      frozen = DispatchQueue.main.sync {
+        MainActor.assumeIsolated { () -> TimeInterval? in
+          let now = CACurrentMediaTime()
+          switch pose {
+          case .settled:
+            guard hub.lastCommit(connection: connection).map({ now > ($0.motion?.beginTime ?? now) + CursorLifecycle.fadeSeconds + 0.3 }) == true else { return nil }
+            panels.freeze(connection: connection, at: now)
+            return now
+          case .rocking:
+            guard let started = panels.rockStartedAt(connection: connection), now > started + phase else { return nil }
+            panels.freeze(connection: connection, at: started + phase)
+            return started + phase
+          }
+        }
+      }
+    }
+    let phaseNow = hub.phase(connection: connection) ?? .hidden
+    guard frozen != nil else {
+      hub.closed(connection: connection)
+      hub.drain()
+      return Probe.emit(["error": "the cursor did not reach the pose", "phase": "\(phaseNow)"], status: 1)
+    }
+    usleep(150_000)  // the frozen frame composited
+    let side = 160.0
+    Probe.stream(["pose": pose.rawValue, "phase": "\(phaseNow)", "capture": ["x": Double(tip.x) - side / 2, "y": Double(tip.y) - side / 2, "width": side, "height": side],
+                  "tip": ["x": Double(tip.x), "y": Double(tip.y)], "ready": true])
+    usleep(useconds_t(seconds * 1_000_000))
+    hub.closed(connection: connection)
+    hub.drain()
+    usleep(100_000)
+    return Probe.emit(["pose": pose.rawValue, "held": seconds], status: 0)
+  }
+
   /// A cursor held still over `window`'s centre: a request kept in flight, so it never fades, until `seconds` pass.
   private static func hold(_ hub: CursorHub, window: CGWindowID, seconds: Double) -> Int32 {
     guard let listed = onScreenWindowList().first(where: { $0.number == window }) else {
@@ -145,6 +218,11 @@ enum CursorProbe {
     usleep(100_000)
     return Probe.emit(["held": seconds, "phase": "\(phase)"], status: shown ? 0 : 1)
   }
+}
+
+/// What `--pose` stills.
+enum CursorPose: String {
+  case settled, rocking
 }
 
 /// The backdrop's colour bands.

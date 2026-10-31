@@ -9,8 +9,9 @@ import Foundation
 // chrome that is no control) and inside the window's frame (cua's declared differences, U13 and the focus hold's review). Around it, when another app is frontmost: screen updates held with the
 // private SLSDisableUpdate/SLSReenableUpdate, released when the guard ends or, by a timer, at `activationHoldCapMs`,
 // whichever is first, so a slow guard (a raise waiting out its AX timeout included) never freezes the display for long;
-// and a 10 ms poll for up to 1 s that answers the target's
-// window ordering above the user's focused window with AXRaise on the user's window. The guard fails, and the action is
+// the release itself runs on a serial queue of its own, off the request path (ScreenUpdateReleases), since it blocks
+// while one of the engine's own windows animates (the agent cursor's panel, #235); and a 10 ms poll for up to 1 s that
+// answers the target's window ordering above the user's focused window with AXRaise on the user's window. The guard fails, and the action is
 // refused as activationFailed with its own events never posted (never retried with ⌘), when the poll times out or the
 // user's app loses frontmost: when the engine's own action brought the target to the front (the target's process, or
 // the bound app's when the target is a panel served by another process) the user's app is made frontmost again first;
@@ -78,7 +79,8 @@ struct ActivationSystem {
   var post: (CGEvent, pid_t) -> Void = { event, pid in event.postToPid(pid) }
   var frontmost: () -> pid_t? = frontmostPid
   var keyFocus: () -> pid_t? = { KeyFocus.pid() }
-  var holdScreenUpdates: () -> () -> Void = { SkyLight.hold() }  // answers the release
+  /// Answers the release, which returns at once: the re-enable runs on ScreenUpdateReleases' queue.
+  var holdScreenUpdates: () -> () -> Void = { ScreenUpdateReleases.shared.hold(SkyLight.hold) }
   var reactivate: (pid_t) -> Bool = { NSRunningApplication(processIdentifier: $0)?.activate(options: []) ?? false }
   /// The user's focused window and its window number, the one the target's window must stay behind.
   var userWindow: (pid_t) -> (element: AXUIElement, id: CGWindowID)? = { user in
@@ -129,6 +131,43 @@ func frontWindowNumber(of pid: pid_t) -> CGWindowID? {
 /// Route 3's refusal (Interfaces, input errors): the action's own events were never posted.
 func activationFailed(_ detail: String) -> EngineError {
   EngineError(name: "activationFailed", "The action was not performed: \(detail), so the app could not be prepared for input in the background. Nothing was clicked or typed; try again.")
+}
+
+/// Route 3's screen-update releases, run off the request path (#235's spec, Decision Log 2026-10-31). SLSReenableUpdate
+/// waits on a semaphore for the window server's next frame while the engine's own connection has an on-screen,
+/// animating window (the agent cursor's panel): about 5 ms a release, measured, against 0.2 ms with none. So the hold is
+/// taken on the request's thread as before, and its release only enqueues the re-enable on one serial queue; the
+/// display unfreezes when it did, the request no longer waits for the frame. A screen capture drains the queue first
+/// (`drain`), so it never captures a display still held by an action that has returned. A later hold is not ordered
+/// after the pending releases: SkyLight counts the holds per connection (SLSDisableUpdate adds an entry to the update
+/// manager's outstanding-disable map and tells the window server only on the first; SLSReenableUpdate removes one and
+/// `CGSUpdateManager::enable_updates_common` re-enables only when none is left; read from the disassembly on macOS
+/// 26.6.2, the task report of 2026-10-31), so a hold taken before an earlier release has run stays held until its own.
+final class ScreenUpdateReleases: @unchecked Sendable {
+  static let shared = ScreenUpdateReleases(label: "cua.engine.screen-update-release")
+
+  private let queue: DispatchQueue
+
+  init(label: String) {
+    queue = DispatchQueue(label: label, qos: .userInteractive)
+  }
+
+  /// Takes the hold now (`raw`, on the caller's thread) and answers its release, which enqueues the raw release and
+  /// returns. Signposted: the hold from its disable to its re-enable, and the re-enable alone.
+  func hold(_ raw: () -> () -> Void) -> () -> Void {
+    let held = timingSignposts.beginInterval("route3.hold", id: timingSignposts.makeSignpostID())
+    let release = raw()
+    let queue = queue
+    return {
+      queue.async {
+        signposted("route3.release") { release() }
+        timingSignposts.endInterval("route3.hold", held)
+      }
+    }
+  }
+
+  /// Waits until every release asked for so far has run (a capture's first step).
+  func drain() { queue.sync {} }
 }
 
 /// A release that runs once, however many times and from whichever thread it is asked for (the guard's own end, or the
@@ -225,7 +264,7 @@ final class FakeActivation {
     while stable < 3 {
       system.sleep(activationGuardSampleMs)
       let elapsed = system.now() - started
-      let front = system.frontmost()
+      let front = signposted("route3.guard.frontmost") { system.frontmost() }
       if front != user {
         if let front, front == pid || front == appPid {
           throw activationFailed(system.reactivate(user)
@@ -234,7 +273,7 @@ final class FakeActivation {
         }
         throw activationFailed("another app came to the front")
       }
-      if let windowID, let userWindow, system.isInFront(windowID, userWindow.id) {
+      if let windowID, let userWindow, signposted("route3.guard.windowOrder", { system.isInFront(windowID, userWindow.id) }) {
         stable = 0
         userWindow.restore()
       } else {

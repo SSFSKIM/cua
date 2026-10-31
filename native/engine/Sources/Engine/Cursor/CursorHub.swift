@@ -415,6 +415,7 @@ final class CursorHub: @unchecked Sendable {
                               phaseSince: cursor.phaseSince, motion: cursor.motion,
                               reduceMotion: environment.reduceMotion(), increaseContrast: environment.increaseContrast())
     cursor.committed = commit
+    timingSignposts.emitEvent("cursor.commit")
     environment.main { [weak self] in
       guard let self, self.current(commit.connection) == commit.generation else { return }
       renderer.apply(commit)
@@ -443,7 +444,7 @@ final class CursorHub: @unchecked Sendable {
     let shown = cursors.values.filter { $0.lifecycle.phase.visible && $0.attachment != nil }
     nextCheck = nil
     guard !shown.isEmpty else { return }
-    let list = environment.windowList()
+    let list = signposted("cursor.windowList") { environment.windowList() }
     let front = environment.frontmostPid()
     for cursor in shown {
       guard let previous = cursor.attachment else { continue }

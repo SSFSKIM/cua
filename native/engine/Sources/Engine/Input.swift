@@ -354,10 +354,12 @@ extension Engine {
       meta.apply(guarding)
       try guarding.checkBeforePosting()
       let application = prepare(AXUIElementCreateApplication(pid))
-      let target = keyboardTarget(application, fallback: pid)
+      let target = signposted("pressKey.keyboardTarget") { keyboardTarget(application, fallback: pid) }
       try refuseForbiddenOwner(target)
       actionTargets(target, app: app, connection: context.connection)
-      try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)  // keys land nowhere (Minimized.swift)
+      try signposted("pressKey.minimizedCheck") {  // keys land nowhere (Minimized.swift)
+        try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
+      }
       meta.inputRoute = pressKeyRoute(forced: forced, presses: presses, believesFocus: ActivationSystem().believesItHasFocus(pid))
       if forced == nil, meta.inputRoute == .activation {
         try holdKeyFocus(app, pid: pid, application: application, guarding: guarding, context: context, meta: &meta)
@@ -366,7 +368,7 @@ extension Engine {
       defer { _ = release?() }  // every path out of the posting, error or success, ends a forced activation's lease
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       defer { context.connection.markActed(app) }  // a sequence stopped midway changed the app too
-      try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta)
+      try signposted("pressKey.post") { try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta) }
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)

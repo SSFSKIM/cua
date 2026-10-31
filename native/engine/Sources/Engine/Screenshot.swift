@@ -244,6 +244,9 @@ extension Engine {
     configuration.height = size.height
     configuration.showsCursor = false
     configuration.ignoreShadowsSingleWindow = true
+    // Route 3 releases its screen-update hold off the request path (Activation.swift): a capture after an action waits
+    // for that release, so it never captures a display the action still holds.
+    timings.time("screenshotReleaseWait") { ScreenUpdateReleases.shared.drain() }
     let image: CGImage
     do {
       image = try timings.time("screenshotCapture") { try captureImage(SCContentFilter(desktopIndependentWindow: target), configuration) }

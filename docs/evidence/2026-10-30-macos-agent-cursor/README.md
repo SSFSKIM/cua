@@ -1,6 +1,6 @@
 # The agent cursor's attended sitting (#235, M3): the runbook
 
-Status: **first sitting run 2026-10-30 (items 1–11 done, verdicts in `sitting/`; 12–13 failed); the second sitting, the timing rerun, is prepared** (below). This is the kit for M3 of
+Status: **first sitting run 2026-10-30 (items 1–11 done, verdicts in `sitting/`; 12–13 failed); the second sitting (items 3, 1 recorded, 5, then 13, 12 and the arms) is prepared** (below). This is the kit for M3 of
 `docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md`: Acceptance 1–13 on the owner's MacBook, with the
 branch's engine built and approved, `CUA_NATIVE_ENGINE=cua`, #117's harness scenes, the owner watching and a screen
 recording running. When it has run, this file gets its outcome at the top and the sitting's records land in
@@ -163,12 +163,12 @@ nothing after it disturbs the Mac).
 
 | item | the operator runs | the owner | recorded |
 |---|---|---|---|
-| 1 Where the agent acts | `$S drive 1 --run "$RUN" --out "$OUT"` | places TextEdit and Chrome for Testing side by side, clicks the terminal; watches the cursor fade in at TextEdit's alignment button, glide on a curve to the page's checkbox, dip at each, each control changing before or while it arrives | each click's time and the control's value right after it (`changedWithinMs`); watches `first-target`, `second-target` |
+| 1 Where the agent acts | `$S drive 1 --run "$RUN" --out "$OUT" --clip <new .mov outside the repository>` | places TextEdit and Chrome for Testing side by side, touching, top and bottom edges level, clicks the terminal; watches the cursor fade in at TextEdit's alignment button, glide on a curve to the page's checkbox, dip at each, each control changing before or while it arrives | a `screencapture -v -R` clip of the two windows' rectangle, kept outside the repository (`--clip`; the second sitting's step 3); each click's meta and its control read back after it; watches `first-target`, `second-target`, and `order-first-target`, `order-second-target` from the clip's frames (`clip order`) |
 | 2 Identity | `$S drive 2 --run "$RUN" --out "$OUT" --other-session 1ea561bc-a60d-4437-a6ac-fa7cd5eda54f` (the design session's id, sminos name `cua_repl`; the spec's Decision Log, the M3 kit) | watches two cursors in two colours, a's pill this session's sminos name, b's `cua_repl`; then c's pill "Research" in blue | `two-cursors`, `maws-label` |
 | 3 States and timing | `$S drive 3 --run "$RUN" --out "$OUT"` | watches the rock, the fade at 5 s (about 0.44 s), the fade back in at the target; on the cue clicks once in TextEdit's text, watches the half-transparent cursor, its return at the agent's next action, and end_task's immediate fade | `thinking`, `fade`, `fade-in`, `taken-over`, `taken-over-cleared`, `end-task` |
 | 4 Covered and front | `$S drive 4 --run "$RUN" --out "$OUT"` | drags Chrome over TextEdit's right half; watches the cursor go under Chrome; with TextEdit in front, the cursor above its open Format menu (Escape on the cue); with TextEdit behind, the cursor above the menu the agent opened, then, on the cue, clicks Chrome's window to close it and watches the cursor drop under Chrome within about 0.25 s | `covered`, `front-menu`, `background-menu`, `menu-closed` |
 | 6 Attached between actions | `$S drive 6 --run "$RUN" --out "$OUT"` | on cues: clicks Chrome (the cursor drops below it at once), switches to the second Space and back, minimises TextEdit (hidden within about 0.25 s) and brings it back from the Dock, locks and unlocks the screen, presses Escape on the Help menu (the operator notes, in that watch's verdict, where the Help item sat relative to the camera housing: TextEdit's menus reach no further, the kit's accepted limit), puts TextEdit into full screen and out | `switch-app`, `space-away`, `space-back`, `minimise`, `lock`, `after-lock`, `menu-bar-row`, `full-screen` |
-| 5 Never in the way | `$S drive 5 --run "$RUN" --out "$OUT"` | says go, then on the cue clicks the arrow's tip where it rests on the fixture's button; watches it turn half-transparent; then sees the cursor on screen while the agent's screenshot is taken | the focus proof: the approved bundle's focus probe (the focused app, the focused window, the focused element's value hash) before and after the cursor appears, glides and rests over the fixture, with no input but the agent's, each reading required usable (trusted, the fixture's process and its run window focused, the autofocused text field's value hash read: so the fixture window must not have been moved or clicked) and the two equal; the fixture's count before and after (+2: the agent's press and the owner's), the next action's refusal sentence (the intervention ledger saw the click on the fixture's pid), the activation watcher's lines (`activations.jsonl`: none for the engine), the agent's screenshot (`item-5-step-*.png`/`.jpg`, which must show no cursor), `taken-over`, `screenshot` |
+| 5 Never in the way | `$S drive 5 --run "$RUN" --out "$OUT"` | says go, then on the cue clicks the arrow's tip where it rests on the fixture's button; watches it turn half-transparent; then sees the cursor on screen while the agent's screenshot is taken | the focus proof: the approved bundle's focus probe (the focused app, the focused window, the focused element's value hash) before and after the cursor appears, glides and rests over the fixture, with no input but the agent's, each reading taken once the fixture's accessibility is on (its own record, waited for up to 10 s), naming the run window where it is then, and required usable (trusted, the fixture's process and its run window focused, the autofocused text field's value hash read: so the fixture window must not be moved or clicked between them) and the two equal; the fixture's count before and after (+2: the agent's press and the owner's), the next action's refusal sentence (the intervention ledger saw the click on the fixture's pid), the activation watcher's lines (`activations.jsonl`: none for the engine), the agent's screenshot (`item-5-step-*.png`/`.jpg`, which must show no cursor), `taken-over`, `screenshot`, `recording` (from item 1's clip) |
 | 7 Typing keeps it alive | `$S drive 7 --run "$RUN" --out "$OUT"` | watches the cursor stay visible through a type_text of about 7 s, return at its last point on a press_key after fading; on the cue clicks in TextEdit and watches the next press_key clear the half-transparent state | the typing rate and the long type_text's time; `long-typing`, `key-after-fade`, `taken-over`, `key-clears` |
 | 9 Reduce Motion | `$S drive 9 --run "$RUN" --out "$OUT"` | turns Reduce motion on (the harness then brings TextEdit in front of System Settings), watches the moves (short straight eases, no squash, tilt, swell or rock; an opacity dip), turns it off | `reduce-motion` |
 | 11 The motion matches the vendor's | `$S drive 11 --engine vendor --run "$RUN" --out "$OUT"`, then `$S drive 11 --engine cua --run "$RUN" --out "$OUT"` | watches the same eight moves in TextEdit, brought to the front first, the vendor's cursor then cua's, and judges the feel (and the halo's look) | `motion-vendor`, `motion-cua`, with the owner's words in the note; the unit part of 11 is M1's (`swift test`, `CursorMotionTests`) |
@@ -214,42 +214,142 @@ The owner stops the recording. The recording stays outside the repository
 (`~/.local/share/cua-235/recordings/<DATE>.mov`, with its SHA-256 in this file's outcome); clips of items 1, 3, 5 and 11
 are exported at 720p (QuickTime, File, Export As) and committed under `sitting/clips/` when each is under 25 MB.
 
-## The second sitting: the timing rerun on the fixed build (about 15 minutes)
+## The second sitting: about 65 minutes (50–80), of which the owner's hands and eyes about 30
 
-The first sitting passed items 1–11. Items 12 and 13 failed, and the design session accepted the diagnosis and its fixes
-(the spec's Decision Log, 2026-10-31). This sitting reruns only what those fixes touch, on the build they produced
-(build id `b23a6e7a18c6`, head 4e875956 or later with no engine change). It records into a directory of its own, so the
-first sitting's records stay as they were. The paths above hold, plus:
+The first sitting passed items 1–11 except two clauses, and failed 12 and 13 (the execution record's sitting section,
+`docs/doperpowers/specs/2026-10-30-macos-agent-cursor-report.md`). The spec's Decision Log (2026-10-31, the second
+sitting's scope) sets what this sitting runs, on the build the timing fixes produced (build id `b23a6e7a18c6`: head
+caf2f462 or later with no engine change; the kit's own changes are not in the build):
+- item 3 again, since thinking now starts 0.3 s after the last request, and a look check;
+- item 1, recorded: its "the control changes before or while the cursor arrives" was the owner's watch only, and the
+  order is now read from a `screencapture -v -R` clip of the two harness windows;
+- item 5, the owner's click: its focus proof was unmet (both first readings ran before the fixture's accessibility was
+  on, and run 2 named a window that had moved), which the kit now waits for and re-reads; item 1's clip answers its
+  "appears in a screen recording";
+- the hands-off timing: 13, 12 and the `legacyLayers` arm, then the owner's Korean series;
+- keep or restore.
+
+It records into a directory of its own, so the first sitting's records stay as they were. The paths above hold, plus:
 
 ```sh
 OUT2="$REPO/docs/evidence/2026-10-30-macos-agent-cursor/sitting-2026-10-31"; mkdir -p "$OUT2"
+REC="$HOME/.local/share/cua-235/recordings"; mkdir -p "$REC"   # item 1's clip and its frames: never in the repository
 ```
 
-Before it, the operator brings the scenes up unattended, as in "The scenes" (re-placing the windows if they moved),
-and dry-runs `timing typing` and `timing clicks` against `$OUT2`.
+| part | minutes | the owner |
+|---|---|---|
+| 1. Install and approve; a Latin source | 8–12 | the key prompt, the three grants, the source |
+| 2. Item 3 and the look | 4 | watches, verdicts, 30 s of looking |
+| 3. Item 1, recorded | 4–7 | places the two windows (again if the kit refuses the placement), watches |
+| 4. Item 5 | 5 | says go, clicks the arrow's tip on the cue, watches |
+| 5. Item 13: 20 samples a side, then 40 if undetermined | 5–15 | the first minute watching route 3's starts, then away from the Mac |
+| 6. Item 12, likewise | 6–17 | away |
+| 7. The `legacyLayers` arm, clicks and typing | 11 | away |
+| 8. The Korean series | 6 | switches the source, then away |
+| 9. Keep or restore | 2–5 | decides; re-grants only if the restore lost the grants |
+
+The 13 and 12 times are the first sitting's (4.9 and 5.3 minutes at 20 samples a side) and double at 40. Coordinate
+click and drag were undetermined at 20 on the first build, so expect 13's rerun. The order analysis of item 1 (below)
+is the operator's after the sitting and needs no owner.
+
+**Before it** (the operator, unattended): bring the scenes up as in "The scenes", re-placing nothing yet; dry-run the
+items into `$OUT2` (`$S drive 1 --out "$OUT2" --dry-run`, likewise 3 and 5, `$S timing clicks --out "$OUT2" --dry-run`,
+`$S timing typing --out "$OUT2" --dry-run`); check that `ffmpeg -version` and `ffprobe -version` answer
+(`brew install ffmpeg` if not), for the analysis afterwards.
 
 1. **Install and approve.** `CUA_SIGNING_IDENTITY=1AAFD20666E9358859B39E8F447572FBE39F52B0 node bin/cua.mjs engine
    build --sign-wait 600000`, then `node bin/cua.mjs engine approve`. The owner answers the key prompt and grants the
-   three permissions. `node bin/cua.mjs engine status` must show build `b23a6e7a18c6`, approved, all three grants and
-   `cursorDebug` null. The saved engine stays at `$SAVED` as before. Re-place the scenes if they moved. **The owner
-   switches the input source to a Latin layout (ABC or U.S.).**
+   three permissions. `node bin/cua.mjs engine status` must show build `b23a6e7a18c6`, approved, all three grants,
+   `cursor: on` and `cursorDebug` null. The saved engine stays at `$SAVED` as before. **The owner switches the input
+   source to a Latin layout (ABC or U.S.).**
 2. **Item 3, states and timing, and a look check.** `$S drive 3 --run "$RUN" --out "$OUT2"`, with the same watches as
-   before. Thinking now starts only after no request has been in flight for 0.3 s, so the rock begins a moment after
-   the cursor settles. Then the owner looks at the cursor for about 30 s, resting and rocking, against what they
-   approved: `$S verdict 3 look pass|fail "<the owner's words>" --out "$OUT2"`.
-3. **Item 13, click speed.** `$S timing clicks --run "$RUN" --out "$OUT2"` (20 samples a side). An undetermined series
-   is run again with `--samples 40`; coordinate click and drag were undetermined at 20 on the first build, so expect
-   it. The 40-sample run's verdict counts for every kind it covers, including one already passed at 20: never keep the
-   better of the two. `judge` reads only an item's last attempt, so it does this by itself.
-4. **Item 12, typing speed.** `$S timing typing --run "$RUN" --out "$OUT2"`, judged and topped up the same way.
-5. **The `legacyLayers` arm, recorded.** `$S timing clicks --arm legacyLayers …` and `$S timing typing --arm
-   legacyLayers …` on the same scenes, into `$OUT2`. The arm restores the first build's layers. If the old cost comes
-   back with it, that confirms the cause rather than a pass by noise. The other arms run only if 3 or 4 fails, and
-   their numbers go to the design session.
-6. **The owner's source, recorded.** The owner switches back to 2-Set Korean; `$S timing typing --owner-source --run
+   before. The rock now begins a moment after the cursor settles (0.3 s with no request in flight). Then the owner
+   looks at the cursor for about 30 s, resting and rocking, against what they approved:
+   `$S verdict 3 look pass|fail "<the owner's words>" --out "$OUT2"`.
+3. **Item 1, recorded.** `$S drive 1 --run "$RUN" --out "$OUT2" --clip "$REC/item-1-2026-10-31.mov"`.
+   - The owner places TextEdit and Chrome for Testing side by side, touching, with their top and bottom edges level,
+     so that together they fill a rectangle with nothing else in it, then clicks the operator's terminal, whose window
+     must stay off them. The kit then reads where both windows are and records exactly their rectangle. It refuses,
+     before any session opens and with nothing recorded, when part of the rectangle wider than 16 pt holds neither
+     window (it names that part), when one of the two is still frontmost, or when a window of the frontmost app lies
+     over it. The owner moves what it names, and the operator runs the item again. A run that fails after the recorder
+     started leaves its clip, so the next run is given a new name (`item-1-2026-10-31-2.mov`).
+   - The recorder is `screencapture -v -x -R`, from the operator's terminal: it needs the terminal's Screen & System
+     Audio Recording permission, the same grant the first sitting's region captures used. If macOS asks anyway, the
+     owner allows it, and answers "Later" if it asks to quit and reopen the terminal (quitting would end the operator's
+     session). A recorder that exits at once refuses the item the same way.
+   - The owner watches `first-target` and `second-target` as before, and the operator records the two verdicts. The
+     clip stops after the session has closed; the record keeps its region, both windows' bounds, the recorder's launch
+     time and the clip's SHA-256, and each click's meta (`receivedAt`, `engineMs`, the action interval).
+   - **What the clip may show, and what is committed.** The owner sees their own screen throughout. The clip holds
+     only the rectangle of the two harness windows, but whatever crosses that rectangle while it records (a notification,
+     a window the owner moves) is in it too, so the clip itself stays in `$REC`, outside the repository (the kit refuses
+     a path inside it). Nothing from the clip is committed except the frames `clip order` copies into
+     `$OUT2/item-1-frames/`, each cropped to one scene window. The operator looks at every one of them before committing
+     and deletes any that shows anything but the scene window and the agent's cursor.
+4. **Item 5, never in the way.** First give the fixture a fresh launch, so its press count starts at 0 (the first
+   sitting's started at 1): `$SC down electron --run "$RUN" && $SC up electron --run "$RUN"`. Then
+   `$S drive 5 --run "$RUN" --out "$OUT2"`, with the same owner steps and watches as before. Each focus reading now
+   names the fixture's window where the window list puts it at that moment, and first waits, up to 10 s, until the
+   fixture's own accessibility record says Chromium's accessibility is on, priming it once with the probe's
+   AXManualAccessibility when it is off. Both `focus` rows must be `ok` (the second with `same: true`), each with its
+   `bounds` and its `accessibility` wait. A reading that still finds no focused app with accessibility on is a finding
+   for the design session, not a kit retry. The fixture must not be moved or clicked between the two readings.
+5. **Item 13, click speed.** `$S timing clicks --run "$RUN" --out "$OUT2"` (20 samples a side). The owner watches the
+   cursor's start on the fixture's button presses for the first minute (`route-3-lag`), then leaves the Mac untouched.
+   An undetermined series is run again with `--samples 40`. The 40-sample run's verdict counts for every kind it
+   covers, including one already passed at 20: never keep the better of the two. `judge` reads only an item's last
+   attempt, so it does this by itself.
+6. **Item 12, typing speed.** `$S timing typing --run "$RUN" --out "$OUT2"`, judged and topped up the same way.
+7. **The `legacyLayers` arm, recorded.** `$S timing clicks --arm legacyLayers --run "$RUN" --out "$OUT2"`, then
+   `$S timing typing --arm legacyLayers --run "$RUN" --out "$OUT2"`. The arm restores the first build's layers. If the
+   old cost comes back with it, that confirms the cause rather than a pass by noise. The other arms run only if 5 or 6
+   fails, and their numbers go to the design session.
+8. **The owner's source, recorded.** The owner switches back to 2-Set Korean; `$S timing typing --owner-source --run
    "$RUN" --out "$OUT2"` (its press_key series is the one compared).
-7. **Keep or restore.** Ask the owner whether to keep this engine or have the saved one put back ("After the sitting"
+9. **Keep or restore.** Ask the owner whether to keep this engine or have the saved one put back ("After the sitting"
    below). Then `$SC down all --run "$RUN"`, `$S judge --out "$OUT2"` and `$S summary --out "$OUT2"`.
+
+**After the sitting: item 1's order** (the operator alone; ffmpeg's load must not overlap a timing series, so never
+during 5–8). The order comes from the clip's own frames: for each click, the first frame where its control changes
+against the first frame where the arrow's tip reaches it. The request meta is put on the same clock as support. The
+procedure:
+
+```sh
+$S clip frames --out "$OUT2" --frames "$REC/item-1-2026-10-31-frames"
+# per target: the frame range kept and its first and last files; frames.json lists every frame's index and time
+```
+
+`frames` keeps every frame from 3.3 s before to 1.5 s after each click, as placed by the recorder's launch time. That
+covers any recorder start up to 3 s after its launch, and the longest glide. The frames are cropped to the target scene's
+window (TextEdit's for the first target, Chrome's for the second) and named `<target>-f<index>.jpg` by their index in
+the clip. Judge four frames by eye, opening them as images. Search by halving: open the middle frame, then the middle
+of the half that holds the change, and confirm the pick against the frame before it.
+- **first-target, arrival:** the first frame in which any part of the cursor shows at TextEdit's alignment button (it
+  fades in there; the frame before has none). This frame also anchors the clock.
+- **first-target, change:** the first frame in which the alignment buttons show the new state (the click's row says
+  which button it pressed, `clicked`; the read-back row says the result).
+- **second-target, change:** the first frame in which the page's checkbox shows its new state (the click's row keeps
+  its value `before`; the read-back row, its value after).
+- **second-target, arrival:** the first frame in which the arrow's tip is on the checkbox at the end of its glide.
+
+```sh
+$S clip order --frames "$REC/item-1-2026-10-31-frames" --out "$OUT2" \
+  first-target <change> <arrival> second-target <change> <arrival>
+# item-1-order.md: each target's order (before; while, within one frame either way; after) and how long after the
+# engine received the click the control changed and the cursor arrived; exit 1 if a control changed after the arrival
+```
+
+`order` appends the verdicts `order-first-target` and `order-second-target`, and copies the four judged frames and the
+frame before each into `$OUT2/item-1-frames/`; check each for privacy as above.
+
+The join to the request's clock assumes the cursor's first frame shows at the first click's action start
+(`actionInterval.startedAt`) plus the motion plan's 20 ms lead. It is flagged when that would start the clip before the
+recorder was launched, or more than 3 s after. The order itself never depends on the join.
+
+The same frames show the agent's cursor in a `screencapture -v` recording, which is item 5's last clause:
+`$S verdict 5 recording pass "the cursor in item 1's clip: item-1-frames/second-target-arrival-f<index>.jpg" --out
+"$OUT2"`. Then run `summary` again.
 
 ## Known limits
 

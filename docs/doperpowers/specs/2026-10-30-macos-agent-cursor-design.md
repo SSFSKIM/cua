@@ -373,6 +373,7 @@ Environment, read by the service: `CUA_CURSOR` (`0` turns the session's cursor o
 
 ## Decision Log
 
+- Decision (2026-10-30, M2 task review, the executing session): the matrix oracle's front-window reading (`scripts/native-matrix/matrix-device.mjs`, compared in `oracle.mjs`) skips the approved engine's windows too, by the probe gate's rule. The Harness section named only the probe gate, the composition guard and the live paste check, but the cursor's panel stays ordered in (alpha 1, its layer transparent) for the whole connection, so any first-window reading could see it during a transient ordering; skipping it serves the section's intent that the desktop checks keep passing with a cursor on screen.
 - Decision (2026-10-30, M2 build, from its executor; commits 88ec92ef..0196629b):
   - The sminos lookup is the documented `sminos who --session <id>` (the call the sminos plugin's own address mod makes), the CLI found through Claude Code's `plugins/installed_plugins.json`, bounded at 500 ms and cached per session (a live run: 246 ms). The session directory is `CLAUDE_PROJECT_DIR`, else the process's cwd. With no label from any source the engine keeps its placeholder ("Agent N").
   - The hash colour is computed on the trusted side (FNV-1a of `CLAUDE_CODE_SESSION_ID`, else of the label) and passed as `CUA_CURSOR_COLOR`; a test keeps the JS palette equal to the Swift one.

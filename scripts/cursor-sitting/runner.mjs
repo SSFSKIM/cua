@@ -18,7 +18,7 @@ import {FIXTURE_ACCESSIBILITY_FILE} from '../native-matrix/fixtures/electron-fix
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {readFocus, runWindowBounds} from './focus.mjs';
-import {capVerdict, frameSummary, glideFrames, probeSpans, readFrameUpdates} from './frames.mjs';
+import {glideFramesCheck, readFrameUpdates} from './frames.mjs';
 import {BUILT_IN_SCREEN, coverOver, farPoint, liveWindowList, overlaysAbove, plannedSettle, windowListProbe} from './glide.mjs';
 import {liveSourceSwitch, restoreAfterFailure, sourceTargetProblem, switchSource} from './input-source.mjs';
 import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
@@ -100,19 +100,9 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
       // The cap of an arm that caps the cursor's frame rate (fps60), proven before its series (./frames.mjs): the approved
       // bundle's cursor probe glides twice and rocks, on its own transparent window, nothing driven, without the arm and
       // then with it; the window server's frames inside each glide and the rock counted. Recorded, never stopping the
-      // series: a cap that does not take effect is the finding. The probes' pids are kept, so the series' own count
-      // leaves their glides out.
-      'glide-frames': async ([arm]) => {
-        const since = new Date(Date.now() - 2000);
-        const sides = [[], ['--debug', arm]].map(extra => probeSpans(runProbe(enginePaths().bundle, ['cursor', '--glides', String(GLIDE_CHECK_GLIDES), ...extra])));
-        const times = readFrameUpdates(since);
-        const [base, capped] = sides.map(side => {
-          const rows = glideFrames(side.glides, times);
-          return {pid: side.pid, ...frameSummary(rows), rock: side.rock ? glideFrames([side.rock], times)[0] : null, rows};
-        });
-        const {verdict, why} = capVerdict(base, capped);
-        return {ok: verdict === 'capped', arm, verdict, why, base, capped, pids: sides.map(side => side.pid).filter(Number.isInteger)};
-      },
+      // series (./frames.mjs glideFramesCheck, which never throws): a cap that does not take effect is the finding, and a
+      // count that fails is undetermined. The probes' pids are kept, so the series' own count leaves their glides out.
+      'glide-frames': async ([arm]) => glideFramesCheck(arm, {probe: args => runProbe(enginePaths().bundle, args), readFrames: readFrameUpdates, glides: GLIDE_CHECK_GLIDES}),
       // The keyboard's input source as the approved bundle's probe reads it, TextEdit in front: `latin` requires a
       // Latin keyboard layout (./timing.mjs latinSourceProblem), `record` only keeps the reading.
       'input-source': async ([mode]) => {

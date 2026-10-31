@@ -2,9 +2,10 @@
 // the cursor's frame rate (`fps60`) is proven to have taken effect, or shown not to, in the same run as its timing.
 // WindowServer marks every frame it composites with a FrameUpdate signpost (subsystem com.apple.SkyLight, category
 // tracing), which `log show --signpost` keeps; the engine marks every motion it installs with a `cursor.motion`
-// signpost carrying the motion's span in mach continuous ticks (native/engine/Sources/Engine/Cursor/CursorPanel.swift),
-// the clock those signposts are stamped with, and the cursor probe's `--glides` prints the same spans for its own glides
-// and its rock. The count is the whole display's: what the cursor's animations make WindowServer composite, plus
+// signpost carrying the motion's span in mach continuous ticks and its cursor (native/engine/Sources/Engine/Cursor/
+// CursorPanel.swift), the clock those signposts are stamped with, and every removal of a cursor's motion with no new
+// one (a snap, a hide, a close) with `cursor.stop`; a motion's span ends where the next of either for its cursor
+// removed it. The cursor probe's `--glides` prints the same spans for its own glides and its rock. The count is the whole display's: what the cursor's animations make WindowServer composite, plus
 // whatever else drew meanwhile (the display runs at the highest rate anything on it asks for).
 import {execFileSync} from 'node:child_process';
 
@@ -30,11 +31,25 @@ export const frameUpdateTimes = text => events(text)
   .map(e => e.machTimestamp).sort((a, b) => a - b);
 
 // The engine's motion spans in `text` (its timing signposts as log show's ndjson), leaving out `excludePids`' (the cursor
-// probes a series ran, whose signposts share the engine's subsystem). -> [{pid, begin, end, ms, mode}].
+// probes a series ran, whose signposts share the engine's subsystem). A motion's install removes its cursor's earlier
+// one at once, and a stop removes it with none to follow, so each span is cut at the first later `cursor.motion` or
+// `cursor.stop` of the same process and cursor (`cut`, its ms the part that played), and one replaced before it began is
+// left out. A build before the cursor field gives null: one cursor a process. -> [{pid, cursor, begin, end, ms, mode,
+// cut}].
 export function motionSpans(text, {excludePids = []} = {}) {
-  return events(text).filter(e => e.signpostName === 'cursor.motion' && !excludePids.includes(e.processID)).flatMap(e => {
-    const m = /begin=(\d+) end=(\d+) ms=([\d.]+) mode=(\w+)/.exec(e.eventMessage ?? '');
-    return m ? [{pid: e.processID, begin: Number(m[1]), end: Number(m[2]), ms: Number(m[3]), mode: m[4]}] : [];
+  const marks = events(text).filter(e => (e.signpostName === 'cursor.motion' || e.signpostName === 'cursor.stop') && !excludePids.includes(e.processID))
+    .map(e => ({e, at: e.machTimestamp, cursor: /cursor=(\d+)/.exec(e.eventMessage ?? '')?.[1] ?? null}))
+    .map(m => ({...m, cursor: m.cursor === null ? null : Number(m.cursor)}));
+  return marks.flatMap(mark => {
+    if (mark.e.signpostName !== 'cursor.motion') return [];
+    const m = /begin=(\d+) end=(\d+) ms=([\d.]+) mode=(\w+)/.exec(mark.e.eventMessage ?? '');
+    if (!m) return [];
+    const begin = Number(m[1]), end = Number(m[2]), ms = Number(m[3]);
+    const removed = Math.min(...marks.filter(o => o !== mark && o.e.processID === mark.e.processID && o.cursor === mark.cursor && o.at > mark.at).map(o => o.at));
+    if (removed <= begin) return [];
+    const cut = removed < end;
+    const until = cut ? removed : end;
+    return [{pid: mark.e.processID, cursor: mark.cursor, begin, end: until, ms: cut ? ms * (until - begin) / (end - begin) : ms, mode: m[4], cut}];
   });
 }
 
@@ -71,6 +86,30 @@ export function capVerdict(base, capped) {
   if (capped.intervalMs < CAPPED_INTERVAL_MS) return {verdict: 'not capped', why: `the capped glides composited ${said(capped)}, under ${CAPPED_INTERVAL_MS} ms apart`};
   if (base.intervalMs > FULL_INTERVAL_MS) return {verdict: 'undetermined', why: `the default glides composited ${said(base)}, over ${FULL_INTERVAL_MS} ms apart: the display did not run at its full rate for them, so a cap cannot show`};
   return {verdict: 'capped', why: `capped ${said(capped)} against the default's ${said(base)}`};
+}
+
+// The fps60 arm's cap check (the runner's glide-frames task): `probe` (the approved bundle's, args -> its answer) glides
+// without the arm and then with it, and `readFrames` (since -> FrameUpdate times) counts each side's frames. It never
+// throws, since it never stops the series: a probe or a read that fails is an undetermined verdict, with the pids of the
+// probes that did run, so the series' own count still leaves their glides out.
+export function glideFramesCheck(arm, {probe, readFrames, glides = 2, now = () => Date.now()}) {
+  const since = new Date(now() - 2000), sides = [], pids = [];
+  try {
+    for (const extra of [[], ['--debug', arm]]) {
+      const side = probeSpans(probe(['cursor', '--glides', String(glides), ...extra]));
+      sides.push(side);
+      if (Number.isInteger(side.pid)) pids.push(side.pid);
+    }
+    const times = readFrames(since);
+    const [base, capped] = sides.map(side => {
+      const rows = glideFrames(side.glides, times);
+      return {pid: side.pid, ...frameSummary(rows), rock: side.rock ? glideFrames([side.rock], times)[0] : null, rows};
+    });
+    const {verdict, why} = capVerdict(base, capped);
+    return {ok: verdict === 'capped', arm, verdict, why, base, capped, pids};
+  } catch (error) {
+    return {ok: false, arm, verdict: 'undetermined', why: `the frames were not counted: ${String(error.message).split('\n')[0]}`, pids};
+  }
 }
 
 const logDate = date => {

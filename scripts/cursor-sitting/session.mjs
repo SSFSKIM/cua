@@ -7,7 +7,7 @@
 // (./target-guard.mjs); a cell that sends keys runs only while the scene's run window is on top of the frontmost
 // application (#162's key guard, scripts/accept/key-guard.mjs).
 import {fileURLToPath} from 'node:url';
-import {FIRST, parseCell} from '../native-baseline/cells.mjs';
+import {FIRST, MARKER, parseCell} from '../native-baseline/cells.mjs';
 import {isSceneApproval} from '../native-matrix/goldens.mjs';
 import {sendIfFrontmost} from '../accept/key-guard.mjs';
 import {openSession, resultText} from '../accept/mcp-session.mjs';
@@ -27,12 +27,19 @@ export function serveEnv({engine, env = {}, base = process.env}) {
   return out;
 }
 
+// A code of several cells (BIND: the goldens' bind, then the size cell) writes one marker each, on one line, since a
+// cell writes no newline. -> the first failed cell's answer, else the last one's; null when none wrote a marker.
+export function parseCells(text) {
+  const answers = String(text).split(MARKER).slice(1).map(part => parseCell(MARKER + part.split('\n')[0]));
+  return answers.find(a => a && !a.ok) ?? answers.at(-1) ?? null;
+}
+
 // What the sitting keeps of a js reply: the cell's answer, the route the engine reported for the last call, the
 // attested engine, and the images it emitted (base64, SHOT only). -> {ok, value?, error?, inCellMs?, route, engine, images}.
 export function readReply(reply) {
   if (reply.timedOut) return {ok: false, error: 'no answer within the cell\'s bound', route: null, engine: null, images: []};
   const meta = reply.result?._meta ?? {};
-  const parsed = parseCell(resultText(reply));
+  const parsed = parseCells(resultText(reply));
   const images = (reply.result?.content ?? []).filter(c => c.type === 'image').map(c => ({mimeType: c.mimeType, data: c.data}));
   const base = {route: meta['cua/inputRoute'] ?? null, engine: meta['cua/nativeEngine']?.engine ?? null, images};
   if (!parsed) return {ok: false, error: (reply.error?.message ?? resultText(reply).split('\n').filter(Boolean).at(-1) ?? 'no output').slice(0, 300), ...base};

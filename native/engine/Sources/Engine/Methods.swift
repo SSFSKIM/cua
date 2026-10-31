@@ -3,8 +3,9 @@ import ApplicationServices
 import Foundation
 import ScreenCaptureKit
 
-// The protocol's methods (Interfaces, EngineProtocol): ping, status, approve, shutdown, and execute with the facade's
-// method vocabulary plus resolve_app. Nothing here asks for a permission before a request needs it: status reads the
+// The protocol's methods (Interfaces, EngineProtocol): ping, status, approve, shutdown, execute with the facade's
+// method vocabulary plus resolve_app, and cursor (the agent cursor's per-session identity, switch and hide, #235; additive
+// to cua-engine-1: an older engine answers it methodNotFound, which the service takes as no cursor). Nothing here asks for a permission before a request needs it: status reads the
 // grants with the non-prompting preflight calls only. Every execute is refused while the Mac is locked (the spec's
 // Design, "Lock screen"), whatever its method; the protocol's own methods answer, so doctor can still read status.
 
@@ -52,14 +53,17 @@ final class Engine: @unchecked Sendable {
   let pasteActivation: ActivationSystem
   /// The agent cursor (Cursor/CursorHub.swift): the live one draws; the default keeps its state and draws nothing.
   let cursor: CursorHub
+  /// The device's switch, `cursor` in engine.json as read at launch (Config.swift): off, no session draws a cursor.
+  let cursorEnabled: Bool
   weak var server: Server?
 
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
        screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general,
-       pasteActivation: ActivationSystem = ActivationSystem(), cursor: CursorHub = CursorHub()) {
+       pasteActivation: ActivationSystem = ActivationSystem(), cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true) {
     self.paths = paths
     self.apps = AppDirectory(usagePath: paths.usage)
     self.routes = routes
+    self.cursorEnabled = cursorEnabled
     self.intervention = intervention
     self.screenLocked = screenLocked
     self.pasteboardAccess = pasteboard
@@ -81,6 +85,7 @@ final class Engine: @unchecked Sendable {
         if others > 0 { throw EngineError(name: "busy", "busy", extra: ["connections": others]) }
         return Outcome(result: .success([String: Any]()), exitAfter: true)
       case "execute": return Outcome(result: .success(try execute(request.params, connection, receivedAt)))
+      case "cursor": return Outcome(result: .success(try cursorRequest(request.params, connection)))
       default: throw EngineError(rpc: .methodNotFound, "Method not found: \(request.method.prefix(64))")
       }
     } catch let error as EngineError {
@@ -116,7 +121,25 @@ final class Engine: @unchecked Sendable {
       // apps route 3's guard has failed three actions in a row for (each named by `routeAdvice` on its refusal).
       "routes": routes,
       "routeAdvice": routeAdvice.advised,
+      // The agent cursor's device switch as read at launch (`cursor` in engine.json).
+      "cursor": cursorEnabled ? "on" : "off",
     ]
+  }
+
+  /// `cursor`: the session's label, colour and switch, or `{"hide": true}` (end_task). The answer says whether this
+  /// session's cursor is on, and if not, whose switch turned it off: the device's (engine.json) wins over the session's.
+  private func cursorRequest(_ params: [String: Any], _ connection: ConnectionState) throws -> [String: Any] {
+    let request = try CursorRequest(params)
+    if cursorEnabled {
+      if request == .hide {
+        cursor.hide(connection: connection.id)
+      } else {
+        connection.cursor.apply(request)
+        cursor.configure(connection: connection.id, connection.cursor.identity(connection: connection.id), enabled: connection.cursor.enabled)
+      }
+    }
+    let reason: String? = !cursorEnabled ? "engine.json" : !connection.cursor.enabled ? "session" : nil
+    return ["cursor": reason == nil ? "on" : "off", "reason": reason ?? NSNull()]
   }
 
   /// Requests both grants with their prompts; once both are granted, captures one display image and discards it,

@@ -1,12 +1,14 @@
 import Foundation
 
 // The engine's own settings in $HOME/.config/cua/engine.json (the spec's Decision Log, M1a pre-flight item 4). The file
-// is shared: `engine` and `signingIdentity` are other readers' and left alone here. The engine reads two keys, once at
+// is shared: `engine` and `signingIdentity` are other readers' and left alone here. The engine reads three keys, once at
 // launch. `peerPolicy` selects the peer check: in #117 its only value is "uid" (absent means "uid"), the policy the owner
 // accepted on 2026-10-18; a second value (#174's trusted-ancestor policy) is a new case of PeerPolicy. `routes` is the
 // owner's per-app route-4 override (the spec's Design, "Input" route 4): `{<bundle id>: 4}`, absent or empty meaning no
-// app gets route 4. Any other value of either, or a file that is not a JSON object, stops the engine at start with a
-// sentence naming the setting, so a policy or an override the owner wrote is never silently replaced or dropped.
+// app gets route 4. `cursor` is the agent cursor's per-device switch (#235's spec, "Settings"): `false` turns every
+// session's cursor off, absent or `true` leaves it on. Any other value of any of them, or a file that is not a JSON
+// object, stops the engine at start with a sentence naming the setting, so a policy, an override or a switch the owner
+// wrote is never silently replaced or dropped.
 
 /// Who may hold a connection to the engine (the spec's Design, "Socket and peer check").
 enum PeerPolicy: String {
@@ -25,6 +27,8 @@ struct EngineSettings {
   let peerPolicy: PeerPolicy
   /// Bundle id → route; the only route an override names is 4.
   var routes: [String: Int] = [:]
+  /// Whether sessions on this device draw the agent cursor.
+  var cursor = true
 
   /// A setting the engine cannot run under; `message` names the setting and the file.
   struct Invalid: Error {
@@ -49,7 +53,16 @@ struct EngineSettings {
       }
       policy = named
     }
-    return EngineSettings(peerPolicy: policy, routes: try parseRoutes(object["routes"], path: path))
+    return EngineSettings(peerPolicy: policy, routes: try parseRoutes(object["routes"], path: path), cursor: try parseCursor(object["cursor"], path: path))
+  }
+
+  /// `cursor`: absent, or a JSON boolean (not a number: NSNumber carries both).
+  private static func parseCursor(_ given: Any?, path: String) throws -> Bool {
+    guard let given else { return true }
+    guard let flag = given as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else {
+      throw Invalid(message: "cursor in \(path) must be true or false (or absent); false turns the agent cursor off on this device")
+    }
+    return flag.boolValue
   }
 
   /// `routes`: absent, or an object of bundle ids each mapped to the number 4.

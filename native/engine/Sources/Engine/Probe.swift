@@ -79,17 +79,39 @@ enum Probe {
     return 0
   }
 
-  /// The frontmost on-screen window of the window list: the first entry at layer 0. The list's head on a real session
-  /// is the Window Server's overlays (Control Center sits at layer 25), so `list.first` is never a document window;
-  /// FrontWindowProbe filters the same way.
-  static func frontLayer0Window(_ list: [[String: Any]]) -> [String: Any]? {
-    list.first { ($0[kCGWindowLayer as String] as? NSNumber)?.intValue == 0 }
+  /// The frontmost on-screen window of the window list: the first entry at layer 0 whose owner is not `skipping`. The
+  /// list's head on a real session is the Window Server's overlays (Control Center sits at layer 25), so `list.first` is
+  /// never a document window; FrontWindowProbe filters the same way.
+  static func frontLayer0Window(_ list: [[String: Any]], skipping: (pid_t) -> Bool = { _ in false }) -> [String: Any]? {
+    list.first { entry in
+      guard (entry[kCGWindowLayer as String] as? NSNumber)?.intValue == 0 else { return false }
+      guard let owner = (entry[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value else { return true }
+      return !skipping(owner)
+    }
   }
 
-  /// Whether the frontmost on-screen window is the named one, by owner pid and bounds (no window name is read).
+  /// Whether a process runs from `bundle`: its executable's path lies inside it (a sibling directory never matches; a pid
+  /// whose path does not resolve is not of it).
+  static func runsFrom(bundle: String, path: @escaping (pid_t) -> String?) -> (pid_t) -> Bool {
+    let prefix = bundle.hasSuffix("/") ? bundle : bundle + "/"
+    return { pid in path(pid)?.hasPrefix(prefix) == true }
+  }
+
+  /// A process's executable path (proc_pidpath), resolved through symbolic links, or nil.
+  static func executablePath(_ pid: pid_t) -> String? {
+    var buffer = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
+    let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+    guard length > 0 else { return nil }
+    return (String(decoding: buffer.prefix(Int(length)), as: UTF8.self) as NSString).resolvingSymlinksInPath
+  }
+
+  /// Whether the frontmost on-screen window is the named one, by owner pid and bounds (no window name is read). The
+  /// engine's own windows (the agent cursor's panels, #235: display-wide, never key, ordered above the window they act
+  /// in) are not the front window: the windows of a process running from this probe's bundle, the approved engine's.
   static func frontWindowIs(pid: pid_t, bounds: CGRect) -> Bool {
+    let engine = runsFrom(bundle: (Bundle.main.bundlePath as NSString).resolvingSymlinksInPath, path: executablePath)
     guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]],
-          let front = frontLayer0Window(list) else { return false }
+          let front = frontLayer0Window(list, skipping: engine) else { return false }
     return matchesFront(front, pid: pid, bounds: bounds)
   }
 

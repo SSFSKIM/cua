@@ -53,6 +53,23 @@ final class EngineSettingsTests: XCTestCase {
     }
   }
 
+  /// `cursor`: the agent cursor's per-device switch (#235), on unless the file says `false`; strict like the others.
+  func testCursorIsOnUnlessTheFileTurnsItOff() throws {
+    XCTAssertTrue(try parse(nil).cursor, "no file: on")
+    XCTAssertTrue(try parse("{}").cursor, "absent: on")
+    XCTAssertTrue(try parse(#"{"cursor": true}"#).cursor)
+    XCTAssertFalse(try parse(#"{"cursor": false}"#).cursor)
+  }
+
+  func testAnyOtherCursorValueStopsTheEngineNamingTheSetting() {
+    for text in [#"{"cursor": 0}"#, #"{"cursor": 1}"#, #"{"cursor": "false"}"#, #"{"cursor": "off"}"#, #"{"cursor": null}"#, #"{"cursor": {}}"#] {
+      XCTAssertThrowsError(try parse(text), text) { error in
+        let message = (error as? EngineSettings.Invalid)?.message ?? ""
+        XCTAssertTrue(message.contains("cursor") && message.contains("/h/.config/cua/engine.json") && message.contains("true or false"), message)
+      }
+    }
+  }
+
   func testTheSettingsLiveUnderHome() {
     XCTAssertEqual(EngineSettings.path(environment: ["HOME": "/Users/x"]), "/Users/x/.config/cua/engine.json")
   }

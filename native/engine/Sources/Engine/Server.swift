@@ -56,8 +56,10 @@ final class Server: @unchecked Sendable {
   init(paths: ServerPaths, settings: EngineSettings) {
     self.paths = paths
     self.peerPolicy = settings.peerPolicy
-    // The server is made on the main thread (main.swift), where the cursor's panels and its screen readings live.
-    self.engine = Engine(paths: paths, routes: settings.routes, cursor: MainActor.assumeIsolated { CursorHub.live() })
+    // The server is made on the main thread (main.swift), where the cursor's panels and its screen readings live. With the
+    // device's cursor off (engine.json), the hub draws nothing and observes nothing.
+    let cursor = settings.cursor ? MainActor.assumeIsolated { CursorHub.live() } : CursorHub()
+    self.engine = Engine(paths: paths, routes: settings.routes, cursor: cursor, cursorEnabled: settings.cursor)
   }
 
   /// Claims the directory, the lock and the socket, then accepts on a thread of its own.

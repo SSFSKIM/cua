@@ -304,15 +304,44 @@ test('an engine without the cursor method answers methodNotFound: the session go
   assert.deepEqual(engine.received.map(r => r.method), ['ping', 'cursor', 'execute', 'execute'], 'no hide after methodNotFound');
 });
 
-test('a cursor request the engine refuses otherwise fails nothing either, and a later hide is still sent', async t => {
+test('a cursor request the engine refuses otherwise fails nothing either, is logged, and a later hide is still sent', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   const engine = await startFakeEngine(t, socket, {handlers: {cursor: ({hide}) => { if (!hide) throw new EngineFailure(-32602, 'Invalid params: color must be #rrggbb', 'invalidParams'); return {cursor: 'on', reason: null}; },
     'execute:ok': () => 'ok'}});
-  const {client} = clientFor(socket, {cursor: CURSOR});
+  const lines = [];
+  const {client} = clientFor(socket, {cursor: CURSOR, log: line => lines.push(line)});
   t.after(() => client.close());
   assert.equal((await client.execute('ok', {})).result, 'ok');
   await client.hideCursor();
   assert.deepEqual(engine.received.filter(r => r.method === 'cursor').map(r => r.params), [CURSOR, {hide: true}]);
+  assert.equal(lines.length, 1, lines.join('\n'));
+  assert.match(lines[0], /cursor request failed.*color must be #rrggbb/);
+});
+
+test('an unanswered cursor request is abandoned at its bound without closing the connection: a longer execute behind it still answers', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket, {handlers: {cursor: () => NO_REPLY,
+    'execute:slow': () => new Promise(resolve => setTimeout(() => resolve('slow'), 300))}});
+  const lines = [];
+  const {client} = clientFor(socket, {cursor: CURSOR, cursorWaitMs: 80, log: line => lines.push(line)});
+  t.after(() => client.close());
+  assert.equal((await client.execute('slow', {}, {deadlineMs: 10_000})).result, 'slow');
+  assert.equal(client.connected, true, 'the connection outlived the abandoned cursor request');
+  assert.equal(engine.received.filter(r => r.method === 'ping').length, 1, 'no reconnect');
+  assert.equal(lines.length, 1, lines.join('\n'));
+  assert.match(lines[0], /cursor request.*no answer within 80 ms/);
+  await client.hideCursor();
+  assert.equal(engine.received.filter(r => r.method === 'cursor').length, 2, 'the hide is still tried on the live connection');
+});
+
+test('methodNotFound, the older engine\'s answer, is expected and not logged', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  await startFakeEngine(t, socket, {handlers: {'execute:ok': () => 'ok'}});
+  const lines = [];
+  const {client} = clientFor(socket, {cursor: CURSOR, log: line => lines.push(line)});
+  t.after(() => client.close());
+  await client.execute('ok', {});
+  assert.deepEqual(lines, []);
 });
 
 // The debug engine (no permission is asked for: ping, status and list_apps read nothing of any app).

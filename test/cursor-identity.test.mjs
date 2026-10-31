@@ -143,3 +143,26 @@ test('the whole context: no lookup when MAWS or the remote client named the sess
   assert.equal((await resolveCursorContext({env: {}, given: {label: 'Remote'}, lookup})).label, 'Remote');
   assert.equal((await resolveCursorContext({env: {CLAUDE_CODE_SESSION_ID: SESSION}, cwd: '/w/x', lookup: async () => 'cursor235'})).label, 'cursor235');
 });
+
+// Review fix 1: one failure-normalized lookup per session, shared by every concurrent caller, dropped once it failed.
+test('concurrent lookups of one session share one answer; a shared failure settles every caller to none and is asked again', async () => {
+  const env = {CLAUDE_CODE_SESSION_ID: '00000000-0000-4000-8000-000000000010', CLAUDE_PROJECT_DIR: '/w/fallback'};
+  let asked = 0;
+  const failing = async () => { asked++; await new Promise(resolve => setTimeout(resolve, 20)); throw new Error('exit 2'); };
+  const both = await Promise.all([sminosName({env, locate: () => '/x/sminos', run: failing}), sminosName({env, locate: () => '/x/sminos', run: failing})]);
+  assert.deepEqual(both, [null, null]);
+  assert.equal(asked, 1, 'one lookup for both');
+  const contexts = await Promise.all([resolveCursorContext({env}), resolveCursorContext({env})].map(p => p.then(c => c.label, e => `rejected: ${e.message}`)));
+  assert.deepEqual(contexts, ['fallback', 'fallback']);
+  assert.equal(await sminosName({env, locate: () => '/x/sminos', run: async () => 'Sminos-Session: back#00000000 (cua on macbook)'}), 'back', 'the failure was not kept');
+});
+
+test('concurrent lookups that time out settle every caller to none at the bound, and the timeout is not kept', async () => {
+  const env = {CLAUDE_CODE_SESSION_ID: '00000000-0000-4000-8000-000000000011', CLAUDE_PROJECT_DIR: '/w/fallback'};
+  const hang = () => new Promise(() => {});
+  const started = Date.now();
+  const both = await Promise.all([sminosName({env, locate: () => '/x/sminos', run: hang, timeoutMs: 80}), sminosName({env, locate: () => '/x/sminos', run: hang, timeoutMs: 80})]);
+  assert.deepEqual(both, [null, null]);
+  assert.ok(Date.now() - started < 1000, `settled at the bound (${Date.now() - started} ms)`);
+  assert.equal(await sminosName({env, locate: () => '/x/sminos', run: async () => 'Sminos-Session: late#00000000 (cua on macbook)'}), 'late');
+});

@@ -143,10 +143,11 @@ function runCli(cli, args, {cwd, env, timeoutMs}) {
   });
 }
 
-const answered = new Map();   // session id -> Promise of its alias (or null): answers kept for the process
+const answered = new Map();   // session id -> the one lookup in flight or answered: a promise of its alias (or null), never rejecting
 
-// The session's sminos alias, or null; never rejects, settles within `timeoutMs` (plus the kill). A lookup that failed is
-// not kept, so the next connection asks again.
+// The session's sminos alias, or null; never rejects, settles within `timeoutMs` (plus the kill). Every caller of a
+// session shares one lookup; one that failed or timed out settles them all to null and is dropped, so the next
+// connection asks again.
 export function sminosName({env = process.env, cwd = process.cwd(), locate = locateSminos, run = runCli, timeoutMs = SMINOS_LOOKUP_MS} = {}) {
   const session = sessionIdOf(env);
   if (!session || env.SMNS_INTERNAL) return Promise.resolve(null);
@@ -160,9 +161,12 @@ export function sminosName({env = process.env, cwd = process.cwd(), locate = loc
     try {
       return aliasOf(await Promise.race([run(cli, ['who', '--session', session], {cwd: sessionDirectory(env, cwd), env, timeoutMs}), late]));
     } finally { clearTimeout(timer); }
-  })();
+  })().catch(() => {
+    if (answered.get(session) === pending) answered.delete(session);
+    return null;
+  });
   answered.set(session, pending);
-  return pending.catch(() => { if (answered.get(session) === pending) answered.delete(session); return null; });
+  return pending;
 }
 
 // The session's whole cursor context, with its sminos name looked up (bounded): what a connection resolves once at open.

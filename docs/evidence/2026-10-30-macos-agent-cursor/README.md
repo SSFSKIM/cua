@@ -172,8 +172,8 @@ nothing after it disturbs the Mac).
 | 12 Typing speed | `$S timing typing --run "$RUN" --out "$OUT"` | leaves the Mac untouched (about 5 minutes) | 20 samples a side of a 200-character type_text and of 30 press_key calls; `timing.md` |
 
 The timing commands judge as they finish, by #171's noise rule (`scripts/cursor-sitting/stats.mjs`, reusing
-`scripts/linux-engine-diff/`'s): a cursor-on median at or below the off median passes; above it, the bootstrap 95 %
-interval of median(on) − median(off) must include 0 with its upper end at most max(5 % of the off median, 1 ms). An
+`scripts/linux-engine-diff/`'s bootstrap and bound): the bootstrap 95 % interval of median(on) − median(off) must
+include 0, or lie wholly below it, with its upper end at most max(5 % of the off median, 1 ms), whatever the medians. An
 "undetermined" series is run again with `--samples 40`, never judged on fewer. A failure goes to the design session
 before any change (the spec's Decision Log, M1 step 1).
 

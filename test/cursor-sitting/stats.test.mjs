@@ -19,12 +19,17 @@ test('the rule needs 20 samples a side before it judges', () => {
   assert.equal(few.pass, false);
 });
 
-test('a cursor-on median at or below the off median passes without the interval (as #171 judges at or below its bar)', () => {
-  const r = judgeSeries({on: around(98, 20), off: around(100, 20)});
-  assert.equal(r.verdict, 'not slower');
-  assert.equal(r.pass, true);
-  assert.equal(r.medians.on, 98);
-  assert.equal(r.medians.off, 100);
+test('no shortcut on the medians: a faster on-median with a wide interval is undetermined, a tight faster one passes', () => {
+  // the task review's counterexample: on 11×99 ms + 9×200 ms against off 20×100 ms; median(on) 99 < 100, interval [-1, 100]
+  const wide = judgeSeries({on: [...Array(11).fill(99), ...Array(9).fill(200)], off: Array(20).fill(100)});
+  assert.ok(wide.medians.on < wide.medians.off);
+  assert.ok(wide.interval[1] > wide.bound, `interval ${wide.interval}`);
+  assert.equal(wide.verdict, 'undetermined (take more samples)');
+  assert.equal(wide.pass, false);
+  const faster = judgeSeries({on: around(90, 20), off: around(100, 20)});
+  assert.ok(faster.interval[1] < 0, `interval ${faster.interval}`);
+  assert.equal(faster.verdict, 'faster');
+  assert.equal(faster.pass, true);
 });
 
 test('above the off median: same within noise when the interval includes 0 and its upper end is within max(5 % of off, 1 ms)', () => {

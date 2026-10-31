@@ -82,7 +82,7 @@ function judgeAll(out) {
 const fmt = v => (v === null || v === undefined ? '–' : Number(v).toFixed(2));
 function timingMarkdown(judged) {
   const lines = ['# Acceptance 12 and 13: timing, cursor on against cursor off', '',
-    'Judged by #171\'s noise rule (scripts/cursor-sitting/stats.mjs): a cursor-on median at or below the off median passes; above it, the bootstrap 95 % interval of median(on) − median(off) must include 0 with its upper end at most max(5 % of the off median, 1 ms).', ''];
+    'Judged by #171\'s noise rule (scripts/cursor-sitting/stats.mjs): the bootstrap 95 % interval of median(on) − median(off) must include 0, or lie wholly below it, with its upper end at most max(5 % of the off median, 1 ms), whatever the medians.', ''];
   for (const j of judged) {
     lines.push(`## Acceptance ${j.item} (${j.kind}): ${j.pass ? 'PASS' : 'FAIL'}`, '', '| series | n on / off | median on (ms) | median off (ms) | 95 % interval of the difference (ms) | bound (ms) | verdict |', '|---|---|---|---|---|---|---|');
     for (const s of j.series) lines.push(`| ${s.series} | ${s.n.on} / ${s.n.off} | ${fmt(s.medians.on)} | ${fmt(s.medians.off)} | ${s.interval ? `[${fmt(s.interval[0])}, ${fmt(s.interval[1])}]` : '–'} | ${fmt(s.bound)} | ${s.verdict} |`);

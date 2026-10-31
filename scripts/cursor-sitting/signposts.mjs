@@ -4,8 +4,7 @@
 // `log stream --signpost` delivers everything (plain `log stream` carries none), but it makes every signpost cost its
 // emitter about 80 µs instead of 2 (measured, 1,200 intervals a second): far too much to run under timed samples, where
 // the cursor-on side emits more of them. So the engine's signposts are read in chunks while the series runs, `log show`
-// over the last CHUNK_PERIOD_MS plus an overlap every CHUNK_PERIOD_MS, well inside what the store keeps, de-duplicated at
-// the chunk edges, the same on both sides. A FrameUpdate stream (`startFrameStream`) runs only for the fps60 cap's
+// in the gaps between samples, well inside what the store keeps, de-duplicated at the chunk edges. A FrameUpdate stream (`startFrameStream`) runs only for the fps60 cap's
 // proof, before any session opens. `signpostCoverage` then checks every sample against the engine's requests, so a
 // series whose signposts do not cover it reads incomplete, never silently short.
 import {execFile, spawn as nodeSpawn} from 'node:child_process';
@@ -14,8 +13,12 @@ import {FRAME_UPDATE_PREDICATE} from './frames.mjs';
 
 export const ENGINE_PREDICATE = 'subsystem == "io.github.ssfskim.cua.engine" AND category == "timing"';
 export const STREAM_READY_MS = 10_000;
-// The chunks: a read every 20 s of the last 20 s and 10 s before it, against a store that keeps about 3 minutes under load.
-export const CHUNK_PERIOD_MS = 20_000, CHUNK_OVERLAP_MS = 10_000;
+// The chunks: a read due every 20 s, of the span since the last and 10 s before it, against a store that kept about 2-3
+// minutes under 1,750 lines a second (measured). Reads run only in the series' 6 s gaps, so one lands every 20 s plus
+// at most a sample and a gap. A read took 1.0-3.8 s (READ_ESTIMATE_MS before the first is known); logd's work for it is
+// over within about 1.2 s of its start, and neither logd nor a latency probe's fixed job showed any effect after its end
+// (measured, 3 runs): READ_SETTLE_MS is the margin left before the next sample all the same.
+export const CHUNK_PERIOD_MS = 20_000, CHUNK_OVERLAP_MS = 10_000, READ_ESTIMATE_MS = 3000, READ_SETTLE_MS = 1000;
 
 // A `log` timestamp ("2026-10-31 10:10:19.681911-0700") as epoch milliseconds, fractions kept; null if unreadable.
 export function logTimestampMs(text) {
@@ -89,20 +92,27 @@ export const readEngineWindow = (start, end) => new Promise((resolve, reject) =>
   ['show', '--signpost', '--style', 'ndjson', '--start', logDate(new Date(+start - 1000)), '--end', logDate(new Date(+end + 1000)), '--predicate', ENGINE_PREDICATE],
   {encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, timeout: 60_000}, (error, stdout) => (error ? reject(error) : resolve(stdout))));
 
-// The engine's signposts read in chunks while a series runs, into `engineFile`: from `since` on, every `periodMs` the
-// span from the last read's end less `overlapMs` to now, each line kept once (by its time, process, signpost id, type
-// and name). A read that fails is said and the next one starts where it would have. -> {stop() -> {ok, reads,
-// failures: [message]}}: `stop` reads once more, up to now, then closes the file.
-export function startSignpostChunks({engineFile, since = new Date(), periodMs = CHUNK_PERIOD_MS, overlapMs = CHUNK_OVERLAP_MS, read = readEngineWindow, now = () => new Date()}) {
+// The engine's signposts read in chunks while a series runs, into `engineFile`, each read inside a gap between samples
+// (the runner's waits call `gap`), never under one: a read wakes logd and scans the store, a load of its own, and a timer
+// of its own could keep lining up with one side of the deterministic on/off order. A gap starts a read when one is due
+// (`periodMs` since the last) and the last read's length plus `marginMs` fits in it, at the gap's start, and waits for
+// it (parse and write included) and then the margin before the next sample; a read that ran long holds the next sample
+// until it ends and the margin has passed. Each read spans the last read's end less `overlapMs` to now, each line kept
+// once (by its time, process, signpost id, type and name); a failed read is said and the next starts where it would
+// have. Each read's start and end go to `record`, so the analysis can show no sample began within the margin.
+// -> {gap(ms, record), stop() -> {ok, reads, failures: [message]}}: `stop` reads once more, up to now, then closes.
+export function startSignpostChunks({engineFile, since = new Date(), periodMs = CHUNK_PERIOD_MS, overlapMs = CHUNK_OVERLAP_MS, marginMs = READ_SETTLE_MS,
+  read = readEngineWindow, now = () => new Date(), sleep = ms => new Promise(resolve => setTimeout(resolve, ms))}) {
   const file = createWriteStream(engineFile);
   const seen = new Map();  // line key -> its time (ms), for the overlap only
-  let from = since, reads = 0, timer = null, stopped = false, running = Promise.resolve();
+  let from = since, reads = 0, lastAt = +since, lastMs = READ_ESTIMATE_MS;
   const failures = [];
   const chunk = async () => {
     const until = now(), start = new Date(+from - overlapMs);
     let text;
-    try { text = await read(start, until); } catch (error) { failures.push(String(error.message).split('\n')[0]); return; }
+    try { text = await read(start, until); } catch (error) { failures.push(String(error.message).split('\n')[0]); return {ok: false, error: failures.at(-1)}; }
     reads++;
+    let lines = 0;
     for (const line of text.split('\n')) {
       if (!line.startsWith('{')) continue;
       let e;
@@ -111,17 +121,27 @@ export function startSignpostChunks({engineFile, since = new Date(), periodMs = 
       if (seen.has(key)) continue;
       seen.set(key, logTimestampMs(e.timestamp) ?? +until);
       file.write(`${line}\n`);
+      lines++;
     }
     for (const [key, ms] of seen) if (ms < +start - overlapMs) seen.delete(key);
     from = until;
+    return {ok: true, lines};
   };
-  const schedule = () => { timer = setTimeout(() => { running = chunk().then(() => { if (!stopped) schedule(); }); }, periodMs); };
-  schedule();
   return {
+    gap: async (ms, record = () => {}) => {
+      const begun = +now();
+      if (begun - lastAt >= periodMs && lastMs + marginMs <= ms) {
+        const outcome = await chunk();
+        const ended = +now();
+        lastAt = ended;
+        lastMs = ended - begun;
+        record({kind: 'signposts-read', start: begun, end: ended, marginMs, ...outcome});
+        await sleep(Math.max(begun + ms, ended + marginMs) - ended);
+        return;
+      }
+      await sleep(ms);
+    },
     stop: async () => {
-      stopped = true;
-      clearTimeout(timer);
-      await running;
       await chunk();
       await new Promise(resolve => file.end(resolve));
       return {ok: failures.length === 0, reads, failures};
@@ -129,12 +149,12 @@ export function startSignpostChunks({engineFile, since = new Date(), periodMs = 
   };
 }
 
-// Runs `run` (the series) with its engine signposts read in chunks into `engineFile` throughout; nothing streams.
-// -> {result: run's, signposts: the chunks' outcome}.
+// Runs `run` (the series) with its engine signposts read in chunks into `engineFile`; `run` gets the chunks' `gap`, for
+// its waits between samples. Nothing streams. -> {result: run's, signposts: the chunks' outcome}.
 export async function keepSeriesSignposts({engineFile, run, read = readEngineWindow, since = new Date(Date.now() - 1000)}) {
   const chunks = startSignpostChunks({engineFile, since, read});
   let result, signposts;
-  try { result = await run(); } finally { signposts = await chunks.stop(); }
+  try { result = await run({gap: chunks.gap}); } finally { signposts = await chunks.stop(); }
   return {result, signposts};
 }
 

@@ -73,10 +73,31 @@ export async function glideFramesCheck(arm, {probe, readFrames, glides = 2, now 
       const rows = glideFrames(side.glides, times);
       return {pid: side.pid, ...frameSummary(rows), rock: side.rock ? glideFrames([side.rock], times)[0] : null, rows};
     });
+    // A glide with no frames is a gap in the collection, not a rate: frameSummary would pass over it.
+    const empty = [['default', base], [arm, capped]].flatMap(([name, side]) => side.rows.filter(r => r.frames === 0).map(() => name));
+    if (empty.length) return {ok: false, arm, verdict: 'undetermined', why: `a glide with no frames (${empty.join(', ')}): the frames were not all collected`, base, capped, pids};
     const {verdict, why} = capVerdict(base, capped);
     return {ok: verdict === 'capped', arm, verdict, why, base, capped, pids};
   } catch (error) {
     if (error?.stuck) throw error;
     return {ok: false, arm, verdict: 'undetermined', why: `the frames were not counted: ${String(error.message).split('\n')[0]}`, pids};
   }
+}
+
+// The cap check with its frames from a FrameUpdate stream (`startStream`: ./signposts.mjs startFrameStream) that runs
+// for the check only: started before the probes, drained (stopped, its last lines in) once they end and `settleMs` has
+// let the last frames arrive, and judged from the drained times. A stream that did not start or failed on the way is
+// an undetermined verdict, never a partial count read as a rate.
+export async function capCheckWithStream(arm, {probe, startStream, glides = 2, settleMs = 1000, sleep = ms => new Promise(resolve => setTimeout(resolve, ms))}) {
+  const frames = await startStream();
+  let kept = null;
+  const finish = async () => (kept ??= await frames.stop());
+  try {
+    return await glideFramesCheck(arm, {probe, glides, readFrames: async () => {
+      if (frames.started) await sleep(settleMs);
+      await finish();
+      if (!frames.started || !kept.ok) throw new Error(`the FrameUpdate stream ${frames.started ? 'failed' : 'did not start'}: ${kept.error ?? 'no reason given'}`);
+      return kept.times;
+    }});
+  } finally { await finish(); }
 }

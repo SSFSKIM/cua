@@ -193,9 +193,11 @@ checks `cua engine status --json`'s `status.cursorDebug`, runs the series, then 
 engine again; a failure on the way does the same. Each arm records in `item-<n>-<arm>.jsonl` and `timing-recorded.md`,
 never judged; on against an arm, and an arm against off, go to the design session. For the finer split, every timing
 series keeps the engine's timing signposts over its run in `$OUT/signposts-<item>.ndjson`, read in chunks while it
-runs (`log show` every 20 s over the last 20 s and 10 s before, de-duplicated; the store keeps only about 3 minutes
-under load, so a read after the run lost the second sitting's starts, and a live `log stream --signpost` would make
-every signpost cost the engine about 80 µs instead of 2). `$OUT/coverage-<item>.json` checks every sample: each needs a
+runs: `log show` over the span since the last read and 10 s before, de-duplicated, at most every 20 s and only at the
+start of a 6 s gap between samples, the next sample held until the read has ended and a 1 s margin has passed (each
+read's start and end are `signposts-read` rows in the item's jsonl). The store keeps only about 2–3 minutes under load,
+so a read after the run lost the second sitting's starts, and a live `log stream --signpost` would make every
+signpost cost the engine about 80 µs instead of 2. `$OUT/coverage-<item>.json` checks every sample: each needs a
 `request` interval of its own timed method inside its own cell. A series not wholly covered reads **incomplete** in
 `timing.md` and `timing-recorded.md`. The signposts are: the request by method, `cursor.begin`/`end`/`commit`,
 `cursor.apply` with `cursor.place`, `cursor.install`, `cursor.transition` and `cursor.caCommit`, `cursor.windowList`,

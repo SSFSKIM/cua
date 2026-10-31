@@ -18,7 +18,7 @@ import {FIXTURE_ACCESSIBILITY_FILE} from '../native-matrix/fixtures/electron-fix
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {readFocus, runWindowBounds} from './focus.mjs';
-import {glideFramesCheck} from './frames.mjs';
+import {capCheckWithStream} from './frames.mjs';
 import {startFrameStream} from './signposts.mjs';
 import {BUILT_IN_SCREEN, coverOver, farPoint, liveWindowList, overlaysAbove, plannedSettle, windowListProbe} from './glide.mjs';
 import {liveSourceSwitch, restoreAfterFailure, sourceTargetProblem, switchSource} from './input-source.mjs';
@@ -50,8 +50,9 @@ export const cursorOffSettings = text => patchedSettings(text, {cursor: false});
 // engine.json with the cursor's diagnostic arm `arm` (`cursorDebug`), the other keys kept.
 export const cursorDebugSettings = (text, arm) => patchedSettings(text, {cursorDebug: arm});
 
-// The Mac's io for `runSteps`. `run`: the harness scenes' run directory; `out`: the item's evidence directory.
-export function liveIo({run, out, quiet = false, home = homedir()}) {
+// The Mac's io for `runSteps`. `run`: the harness scenes' run directory; `out`: the item's evidence directory; `gap`:
+// a series' signpost reads, run in its waits.
+export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) {
   const cli = (args, env = {}) => JSON.parse(execFileSync(process.execPath, [CLI, ...args], {encoding: 'utf8', env: {...process.env, ...env}, timeout: 60_000}));
   const settingsFile = engineJsonOf(home), before = join(out, 'engine.json.before');
   const guard = liveTargetGuard({bundle: enginePaths().bundle});
@@ -70,6 +71,8 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
     },
     open: options => openDriven({...options, guard}),
     wait: sleep,
+    // The series' signpost reads' gap (./signposts.mjs startSignpostChunks), when they run.
+    ...(gap ? {gap} : {}),
     cue: async text => {
       if (quiet || !existsSync('/usr/bin/say')) return;
       await new Promise(resolve => spawn('/usr/bin/say', [text], {stdio: 'ignore'}).once('exit', resolve).once('error', resolve));
@@ -107,17 +110,8 @@ export function liveIo({run, out, quiet = false, home = homedir()}) {
       // own count leaves their glides out.
       // The frames come from a FrameUpdate stream that runs for this task only (./signposts.mjs startFrameStream), before
       // any session opens, so no timed sample runs under it; `log show` drops some even seconds after.
-      'glide-frames': async ([arm]) => {
-        const frames = await startFrameStream();
-        try {
-          return await glideFramesCheck(arm, {probe: args => runProbe(enginePaths().bundle, args), glides: GLIDE_CHECK_GLIDES,
-            readFrames: async () => {
-              if (!frames.started) throw new Error('the FrameUpdate stream did not start');
-              await sleep(FRAME_STREAM_SETTLE_MS);  // the last frames delivered
-              return frames.frameTimes();
-            }});
-        } finally { await frames.stop(); }
-      },
+      'glide-frames': async ([arm]) => capCheckWithStream(arm, {probe: args => runProbe(enginePaths().bundle, args), startStream: startFrameStream,
+        glides: GLIDE_CHECK_GLIDES, settleMs: FRAME_STREAM_SETTLE_MS, sleep}),
       // The keyboard's input source as the approved bundle's probe reads it, TextEdit in front: `latin` requires a
       // Latin keyboard layout (./timing.mjs latinSourceProblem), `record` only keeps the reading.
       'input-source': async ([mode]) => {
@@ -313,7 +307,8 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
         log(`  waiting: once the owner is done, touch ${io.goFile}`);
         await io.waitGo();
       } else if (step.watch) record({step: n, kind: 'watch', id: step.id, text: step.watch});
-      else if (step.wait) await io.wait(step.wait);
+      // A wait is a gap between samples: a series' signpost reads run there and only there (./signposts.mjs).
+      else if (step.wait) await (io.gap ? io.gap(step.wait, row => record({step: n, ...row})) : io.wait(step.wait));
       else if (step.say) record({step: n, kind: 'say', text: step.say});
       else if (step.endTask) record({step: n, kind: 'end_task', session: step.endTask, answer: (await ctx.sessions[step.endTask].endTask())?.result ?? null});
       else if (step.close) { const exit = await ctx.sessions[step.close].close(); delete ctx.sessions[step.close]; record({step: n, kind: 'close', session: step.close, exit}); }

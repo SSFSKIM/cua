@@ -97,36 +97,73 @@ test('a stream that never starts, or ends before it is stopped, is not ok, with 
 // An engine signpost line as `log show` gives it.
 const line = (ms, id, type = 'event') => JSON.stringify({signpostName: 'request', signpostType: type, signpostID: id, processID: 7, machTimestamp: ms * 24_000, timestamp: stamp(ms)});
 
-test('the engine\'s signposts are read in chunks with an overlap, each line kept once, a failed read retried from where it was', async t => {
+test('the engine\'s signposts are read only inside the gaps between samples, with an overlap, each line kept once', async t => {
   const dir = scratch(t), file = join(dir, 'signposts-12.ndjson');
-  let clock = +at(0);
+  let clock = +at(0), inGap = false, sampling = false;
   const now = () => new Date(clock);
+  const sleep = async ms => { clock += ms; };
   const asked = [];
-  // The store: one line every 2 s; the second read fails.
-  const store = Array.from({length: 40}, (_, k) => ({ms: k * 2000, text: line(k * 2000, k)}));
+  // The store: one line every 2 s; the second read fails; each read takes 400 ms of the clock.
+  const store = Array.from({length: 60}, (_, k) => ({ms: k * 2000, text: line(k * 2000, k)}));
   const read = async (start, end) => {
+    assert.equal(inGap && !sampling, true, 'a read runs only inside a gap, never under a sample');
     asked.push([+start - +at(0), +end - +at(0)]);
+    clock += 400;
     if (asked.length === 2) throw new Error('log show timed out');
     return store.filter(e => +at(e.ms) >= +start - 1000 && +at(e.ms) <= +end + 1000).map(e => e.text).join('\n');
   };
-  const chunks = startSignpostChunks({engineFile: file, since: now(), periodMs: 5, overlapMs: 10_000, read, now});
-  for (const step of [20_000, 40_000, 60_000]) { clock = +at(step); await new Promise(r => setTimeout(r, 15)); }
-  clock = +at(78_000);
+  const chunks = startSignpostChunks({engineFile: file, since: now(), periodMs: 20_000, overlapMs: 10_000, marginMs: 1000, read, now, sleep});
+  const gaps = [], rows = [];
+  // Samples of 3 s, gaps of 6 s, for 100 s of the clock.
+  while (clock < +at(100_000)) {
+    sampling = true; clock += 3000; sampling = false;
+    inGap = true;
+    const from = clock;
+    await chunks.gap(6000, row => rows.push(row));
+    gaps.push(clock - from);
+    inGap = false;
+  }
+  inGap = true;  // the series has ended: its final read runs after the last sample
   const kept = await chunks.stop();
-  // Each read starts the overlap before the last good read's end; the one after the failed read starts where it did.
-  assert.deepEqual(asked[0], [-10_000, asked[0][1]]);
+  assert.ok(gaps.every(g => g === 6000), `a gap with a read in it still lasts its 6 s, the read inside it: ${gaps}`);
+  // Each read is in the series' rows, started at its gap's start and ended at least the margin before the next sample.
+  assert.equal(rows.length, asked.length - 1, "every read but the final one, after the last sample, is in the rows");
+  for (const row of rows) {
+    assert.equal(row.kind, 'signposts-read');
+    assert.equal(row.end - row.start, 400);
+    assert.ok((row.start - +at(0)) % 9000 === 3000, `a read starts as its gap does (${row.start - +at(0)})`);
+  }
+  assert.ok(asked.length >= 4 && asked.length <= 6, `${asked.length} reads: about one every 20 s`);
   assert.deepEqual(asked[2][0], asked[1][0], 'a failed read leaves the next to start where it would have');
-  for (let k = 1; k < asked.length; k++) if (k !== 2) assert.equal(asked[k][0], asked[k - 1][1] - 10_000, `read ${k}`);
-  assert.equal(kept.ok, false);
   assert.deepEqual(kept.failures, ['log show timed out']);
   const ids = readFileSync(file, 'utf8').trim().split('\n').map(l => JSON.parse(l).signpostID);
-  assert.deepEqual(ids, Array.from({length: 40}, (_, k) => k), 'every line once, in order, none lost at the edges or the failed read');
+  const last = Math.floor((clock - +at(0) + 1000) / 2000);  // the final read's end, widened by 1 s
+  assert.deepEqual(ids, Array.from({length: last + 1}, (_, k) => k), 'every line up to the final read once, in order');
+});
+
+test('a read that ran long holds the next sample to its end and the margin; one that would not fit waits for another gap', async t => {
+  const dir = scratch(t);
+  let clock = +at(0);
+  const read = async () => { clock += 5500; return ''; };  // 5.5 s a read
+  const chunks = startSignpostChunks({engineFile: join(dir, 'a.ndjson'), since: new Date(clock), periodMs: 1000, overlapMs: 0, marginMs: 1000, read,
+    now: () => new Date(clock), sleep: async ms => { clock += ms; }});
+  clock += 2000;
+  let from = clock;
+  await chunks.gap(6000);  // the first read: its length not yet known, so it runs, and runs long
+  assert.equal(clock - from, 6500, 'the next sample waits for the read and its margin: 5.5 s + 1 s');
+  from = clock;
+  await chunks.gap(6000);  // 5.5 s + 1 s does not fit in 6 s
+  assert.equal(clock - from, 6000, 'no read: the gap is the gap');
+  from = clock;
+  await chunks.gap(8000);
+  assert.equal(clock - from, 8000, 'a longer gap takes it, its margin inside');
+  assert.equal((await chunks.stop()).reads, 3, 'two in gaps and the final one');
 });
 
 test('a series\' signposts are kept by chunked reads only: no stream runs under its timed samples', async t => {
   const dir = scratch(t), file = join(dir, 'signposts-12.ndjson');
   let reads = 0;
-  const {result, signposts} = await keepSeriesSignposts({engineFile: file, run: async () => 'ran',
+  const {result, signposts} = await keepSeriesSignposts({engineFile: file, run: async ({gap}) => { assert.equal(typeof gap, 'function'); return 'ran'; },
     read: async () => { reads++; return line(1000, 1); }, spawn: () => { throw new Error('no stream may start for a series'); }});
   assert.equal(result, 'ran');
   assert.ok(reads >= 1);

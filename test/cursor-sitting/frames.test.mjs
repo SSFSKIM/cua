@@ -3,7 +3,7 @@
 // arm's cap is proven, or shown not taking effect, in the same run as its timing. Checked without a Mac.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {capVerdict, frameSummary, glideFrames, glideFramesCheck, probeSpans} from '../../scripts/cursor-sitting/frames.mjs';
+import {capCheckWithStream, capVerdict, frameSummary, glideFrames, glideFramesCheck, probeSpans} from '../../scripts/cursor-sitting/frames.mjs';
 
 // 24 MHz ticks, as on Apple silicon: 24 000 a millisecond.
 const MS = 24_000;
@@ -90,4 +90,33 @@ test('the cap check waits for its frames: the series\' own stream delivers them 
   const times = Array.from({length: 120}, (_, k) => k * 200);
   const check = await glideFramesCheck('fps60', {probe: () => answer(++calls), readFrames: async () => { await new Promise(r => setTimeout(r, 5)); return times; }});
   assert.equal(check.base.frames, 120);
+});
+
+test('the cap is judged from the drained stream: a stream that failed, or a glide with no frames, is undetermined', async () => {
+  // Two glides a side, each 1 s; the default's frames every 8.3 ms, the capped one's every 16.7 ms.
+  const span = (k, pid) => ({begin: k * 2000 * MS, end: (k * 2000 + 1000) * MS, ms: 1000, mode: 'path', pid});
+  const answer = (pid, first) => ({pid, glides: [span(first, pid), span(first + 1, pid)].map(({pid: _, ...g}) => g), rock: null});
+  let calls = 0;
+  const probe = () => (++calls === 1 ? answer(5, 0) : answer(6, 2));
+  const every = (k, step) => frames(k * 2000 * MS, 1000, step);
+  const good = [...every(0, 1000 / 120), ...every(1, 1000 / 120), ...every(2, 1000 / 60), ...every(3, 1000 / 60)];
+  const stream = (stopped) => async () => ({started: true, frameTimes: () => good.slice(0, 10), stop: async () => stopped});
+  calls = 0;
+  const capped = await capCheckWithStream('fps60', {probe, startStream: stream({ok: true, times: good}), settleMs: 0});
+  assert.equal(capped.verdict, 'capped', 'judged from the drained times, not the snapshot before stop');
+  calls = 0;
+  const died = await capCheckWithStream('fps60', {probe, startStream: stream({ok: false, error: 'log stream ended before it was stopped (exit 1)', times: good.slice(0, 200)}), settleMs: 0});
+  assert.equal(died.verdict, 'undetermined');
+  assert.match(died.why, /ended before it was stopped/);
+  assert.deepEqual(died.pids, [5, 6]);
+  calls = 0;
+  // The stream lost the last capped glide: its intervals are none, which frameSummary would pass over.
+  const partial = [...every(0, 1000 / 120), ...every(1, 1000 / 120), ...every(2, 1000 / 60)];
+  const lost = await capCheckWithStream('fps60', {probe, startStream: stream({ok: true, times: partial}), settleMs: 0});
+  assert.equal(lost.verdict, 'undetermined');
+  assert.match(lost.why, /a glide with no frames/);
+  calls = 0;
+  const never = await capCheckWithStream('fps60', {probe, startStream: async () => ({started: false, frameTimes: () => [], stop: async () => ({ok: false, error: 'log stream did not start within 10 s', times: []})}), settleMs: 0});
+  assert.equal(never.verdict, 'undetermined');
+  assert.match(never.why, /did not start/);
 });

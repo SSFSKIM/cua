@@ -223,10 +223,10 @@ function summaryMarkdown(out) {
   return lines.join('\n');
 }
 
-async function drive(steps, {item, values}) {
+async function drive(steps, {item, values, gap = null}) {
   const out = absolute(values, 'out');
   const run = values['dry-run'] ? values.run ?? '/nonexistent' : absolute(values, 'run');
-  const io = liveIo({run, out, quiet: values.quiet});
+  const io = liveIo({run, out, quiet: values.quiet, gap});
   const {failed} = await runSteps(steps, {item, out, io, dryRun: values['dry-run']});
   print(values['dry-run'] ? `dry run: ${steps.length} steps, nothing sent` : `${failed} cell(s) or task(s) failed; recorded in ${join(out, `item-${item}.jsonl`)}`);
   return failed ? 1 : 0;
@@ -282,7 +282,7 @@ export async function main(argv) {
     // no stream runs under the timed samples.
     mkdirSync(out, {recursive: true, mode: 0o700});
     const {result: code, signposts} = await keepSeriesSignposts({engineFile: join(out, `signposts-${item}.ndjson`), since: new Date(+started - 1000),
-      run: () => drive(timingSteps(kind, counts, series), {item, values})});
+      run: ({gap}) => drive(timingSteps(kind, counts, series), {item, values, gap})});
     keepCoverage(out, item, {reads: signposts});
     if (item !== String(TIMING_ITEM[kind])) {
       const recorded = judgeAll(out, {recorded: true});

@@ -21,3 +21,17 @@
 {"item":"4","id":"front-menu","verdict":"pass","note":"owner, build 9959a76c544a, front-menu probe run 2: the cursor stayed above the open Format menu; run 1 it vanished at the owner's menu click (not reproduced); not half-transparent: a menu-bar click isn't attributed to TextEdit's pid","at":"2026-10-31T05:09:32.203Z"}
 {"item":"4","id":"background-menu","verdict":"fail","note":"not run: no engine opens a menu for an agent (design session: reworded, later candidate)","at":"2026-10-31T05:09:32.310Z"}
 {"item":"4","id":"menu-closed","verdict":"fail","note":"not run: no engine opens a menu for an agent (design session: reworded, later candidate)","at":"2026-10-31T05:09:32.402Z"}
+{"item":"6","id":"lock","verdict":"pass","note":"owner","at":"2026-10-31T05:18:32.799Z"}
+{"item":"6","id":"space-away","verdict":"fail","note":"owner: cursor disappeared at the Space click; not clearly observed; rerun","at":"2026-10-31T05:18:32.877Z"}
+{"item":"6","id":"switch-app","verdict":"pass","note":"owner, slow rerun","at":"2026-10-31T05:21:16.141Z"}
+{"item":"6","id":"space-away","verdict":"pass","note":"owner, slow rerun","at":"2026-10-31T05:21:54.856Z"}
+{"item":"6","id":"minimise","verdict":"pass","note":"owner, slow rerun","at":"2026-10-31T05:23:21.636Z"}
+{"item":"6","id":"lock","verdict":"pass","note":"owner (first run)","at":"2026-10-31T05:25:57.436Z"}
+{"item":"6","id":"space-away","verdict":"pass","note":"owner, build bf2b83cf49ae, repeated-action probe (probe6c)","at":"2026-10-31T05:33:40.843Z"}
+{"item":"6","id":"space-back","verdict":"pass","note":"owner, build bf2b83cf49ae, repeated-action probe; the captures did not catch the away frames","at":"2026-10-31T05:33:40.926Z"}
+{"item":"6","id":"lock","verdict":"pass","note":"build bf2b83cf49ae: captures 6-before-lock (cursor), 6-just-unlocked (none), owner","at":"2026-10-31T05:35:57.888Z"}
+{"item":"6","id":"after-lock","verdict":"pass","note":"build bf2b83cf49ae: capture 6-after-lock shows the cursor at the next click","at":"2026-10-31T05:35:57.970Z"}
+{"item":"6","id":"menu-bar-row","verdict":"pass","note":"build bf2b83cf49ae: owner saw it; capture 6-menu-bar-row shows the cursor at Help in the menu bar's row","at":"2026-10-31T05:35:58.062Z"}
+{"item":"6","id":"full-screen","verdict":"pass","note":"build bf2b83cf49ae: owner saw it; capture 6-full-screen","at":"2026-10-31T05:35:58.142Z"}
+{"item":"6","id":"minimise","verdict":"pass","note":"owner, slow rerun (build 9959a76c544a)","at":"2026-10-31T05:35:58.219Z"}
+{"item":"6","id":"switch-app","verdict":"pass","note":"owner, slow rerun (build 9959a76c544a)","at":"2026-10-31T05:35:58.301Z"}

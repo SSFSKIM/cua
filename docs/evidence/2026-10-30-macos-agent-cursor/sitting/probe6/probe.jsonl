@@ -1,0 +1,7 @@
+{"at":1793424504979,"go":"owner: switch to the second Space"}
+{"at":1793424536893,"act":"scroll","ok":true,"value":{"ms":18.825000000000728},"route":"2'"}
+{"at":1793424536894,"go":"owner: switch back now"}
+{"at":1793424568118,"shot":"6-space-back","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424574699,"act":"click","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424575548,"shot":"6-before-lock","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424575548,"go":"owner: lock and unlock"}

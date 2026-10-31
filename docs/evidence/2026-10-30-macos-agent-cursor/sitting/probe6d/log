@@ -1,0 +1,15 @@
+{"at":1793424830192,"act":"click","ok":true,"value":{"ms":52.860041000000024,"point":[634,946]},"route":3}
+{"at":1793424831088,"shot":"6-before-lock","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424831088,"go":"owner: lock and unlock"}
+{"at":1793424868252,"shot":"6-just-unlocked","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424875323,"act":"click","ok":true,"value":{"ms":3.8753750000032596,"point":[634,1032]},"route":3}
+{"at":1793424876169,"shot":"6-after-lock","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424878442,"activate":true}
+{"at":1793424880066,"act":"menu","ok":true,"value":{"ms":6.121374999995169},"route":1}
+{"at":1793424881083,"shot":"6-menu-bar-row","bounds":{"x":0,"y":0,"w":760,"h":60}}
+{"at":1793424882393,"reopen":true}
+{"at":1793424882394,"go":"owner: full screen"}
+{"at":1793424922584,"act":"click","ok":true,"value":{"ms":3.315582999995968,"point":[634,860]},"route":3}
+{"at":1793424923426,"shot":"6-full-screen","bounds":{"x":0,"y":0,"w":1512,"h":982}}
+{"at":1793424923426,"go":"owner: leave full screen"}
+{"at":1793424955043,"done":true}

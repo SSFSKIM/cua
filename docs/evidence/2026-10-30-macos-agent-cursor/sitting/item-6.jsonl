@@ -1,0 +1,67 @@
+{"item":"6","at":1793423518765,"kind":"start","steps":39,"dryRun":false}
+{"item":"6","at":1793423518766,"step":1,"kind":"say","text":"Acceptance 6: attached between actions"}
+{"item":"6","at":1793423519034,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"6","at":1793423520242,"step":3,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"6","at":1793423520315,"step":4,"kind":"cell","session":"a","label":"TextEdit frontmost, a point Chrome's window covers once it is in front","ok":true,"value":{"ms":5.077291000000059,"point":[1014,860]},"inCellMs":5.096041000000014,"route":3,"engine":"cua"}
+{"item":"6","at":1793423520315,"step":5,"kind":"cue","text":"Click the Chrome for Testing window now."}
+{"item":"6","at":1793423527448,"step":6,"kind":"watch","id":"switch-app","text":"the cursor drops below Chrome's window at once (it does not stay above it until it fades)"}
+{"item":"6","at":1793423531647,"step":8,"kind":"cell","session":"a","label":"before the Space switch","ok":true,"value":{"ms":92.52208400000018,"point":[634,946]},"inCellMs":92.54362500000025,"route":3,"engine":"cua"}
+{"item":"6","at":1793423531647,"step":9,"kind":"cue","text":"Switch to your second Space now."}
+{"item":"6","at":1793423538069,"step":10,"kind":"watch","id":"space-away","text":"on the other Space there is no cursor"}
+{"item":"6","at":1793423538069,"step":11,"kind":"cue","text":"Switch back now."}
+{"item":"6","at":1793423542577,"step":12,"kind":"watch","id":"space-back","text":"back on TextEdit's Space the cursor shows again (if it had not faded yet)"}
+{"item":"6","at":1793423546718,"step":14,"kind":"cell","session":"a","label":"before the minimise","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","inCellMs":13.921416999997746,"route":null,"engine":"cua"}
+{"item":"6","at":1793423546719,"step":15,"kind":"cue","text":"Minimise the TextEdit window now, with its yellow button."}
+{"item":"6","at":1793423555332,"step":16,"kind":"watch","id":"minimise","text":"the cursor hides within about a quarter second of the window minimising"}
+{"item":"6","at":1793423555333,"step":17,"kind":"owner","text":"Bring the TextEdit window back from the Dock, then say done."}
+{"item":"6","at":1793423608124,"step":19,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":514.8398339999985,"route":null,"engine":"cua"}
+{"item":"6","at":1793423608311,"step":20,"kind":"cell","session":"a","label":"before the lock","ok":true,"value":{"ms":118.85662500000035,"point":[634,860]},"inCellMs":118.87062499999593,"route":3,"engine":"cua"}
+{"item":"6","at":1793423608311,"step":21,"kind":"owner","text":"Lock the screen (Control-Command-Q), unlock it, and say done."}
+{"item":"6","at":1793423640893,"step":22,"kind":"watch","id":"lock","text":"locking hid the cursor, and it did not come back on unlocking"}
+{"item":"6","at":1793423646978,"step":24,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":461.2528330000059,"route":null,"engine":"cua"}
+{"item":"6","at":1793423647043,"step":25,"kind":"cell","session":"a","label":"after the unlock","ok":true,"value":{"ms":3.932082999992417,"point":[697,860]},"inCellMs":3.9499999999970896,"route":3,"engine":"cua"}
+{"item":"6","at":1793423647043,"step":26,"kind":"watch","id":"after-lock","text":"the next action shows it again"}
+{"item":"6","at":1793423653530,"step":28,"kind":"cell","session":"a","label":"TextEdit's Help menu, its menu-bar item nearest the camera housing","ok":true,"value":{"ms":2.3642500000132713},"inCellMs":412.3459589999984,"route":1,"engine":"cua"}
+{"item":"6","at":1793423653530,"step":29,"kind":"watch","id":"menu-bar-row","text":"the cursor is drawn in the menu bar's row, at the Help menu (the engine records the click and opens no menu)"}
+{"item":"6","at":1793423653772,"step":30,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"6","at":1793423654851,"step":31,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"6","at":1793423654851,"step":32,"kind":"owner","text":"Put the TextEdit document into full screen with its green button, then say done."}
+{"item":"6","at":1793423822449,"step":34,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":109.42608400000609,"route":null,"engine":"cua"}
+{"item":"6","at":1793423822512,"step":35,"kind":"cell","session":"a","label":"in full screen","ok":false,"error":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry.","inCellMs":2.4229580000101123,"route":null,"engine":"cua"}
+{"item":"6","at":1793423822513,"step":36,"kind":"watch","id":"full-screen","text":"the cursor is drawn over TextEdit's full-screen Space"}
+{"item":"6","at":1793423828514,"step":38,"kind":"owner","text":"Leave full screen, then say done."}
+{"item":"6","at":1793423910041,"step":39,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"6","at":1793423967854,"kind":"start","steps":42,"dryRun":false}
+{"item":"6","at":1793423969583,"step":1,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"6","at":1793423969850,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"6","at":1793423970127,"step":3,"kind":"cell","session":"a","label":"TextEdit frontmost: the cursor shows","ok":true,"value":{"ms":12.104417000000012,"point":[634,946]},"inCellMs":12.127749999999878,"route":3,"engine":"cua"}
+{"item":"6","at":1793423970127,"step":4,"kind":"owner","text":"Click the Chrome for Testing window."}
+{"item":"6","at":1793424043695,"kind":"start","steps":42,"dryRun":false}
+{"item":"6","at":1793424045334,"step":1,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"6","at":1793424045482,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"6","at":1793424045544,"step":3,"kind":"cell","session":"a","label":"TextEdit frontmost: the cursor shows","ok":true,"value":{"ms":4.8840000000000146,"point":[634,946]},"inCellMs":4.89975000000004,"route":3,"engine":"cua"}
+{"item":"6","at":1793424045545,"step":4,"kind":"owner","text":"Click the Chrome for Testing window."}
+{"item":"6","at":1793424076257,"step":5,"kind":"watch","id":"switch-app","text":"the cursor drops below Chrome's window at once"}
+{"item":"6","at":1793424083287,"step":7,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":460.05208299999504,"route":null,"engine":"cua"}
+{"item":"6","at":1793424083436,"step":8,"kind":"cell","session":"a","label":"before the Space switch","ok":true,"value":{"ms":84.12995799999771,"point":[634,946]},"inCellMs":84.14529100000073,"route":3,"engine":"cua"}
+{"item":"6","at":1793424083437,"step":9,"kind":"owner","text":"Switch to the second Space."}
+{"item":"6","at":1793424115105,"step":10,"kind":"watch","id":"space-away","text":"on the other Space there is no cursor"}
+{"item":"6","at":1793424115105,"step":11,"kind":"owner","text":"Switch back."}
+{"item":"6","at":1793424156818,"step":12,"kind":"watch","id":"space-back","text":"back on TextEdit's Space the cursor shows again (if it had not faded)"}
+{"item":"6","at":1793424163828,"step":14,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":430.56191599999147,"route":null,"engine":"cua"}
+{"item":"6","at":1793424163891,"step":15,"kind":"cell","session":"a","label":"before the minimise","ok":true,"value":{"ms":7.385041999994428,"point":[634,946]},"inCellMs":7.3978339999885065,"route":3,"engine":"cua"}
+{"item":"6","at":1793424163892,"step":16,"kind":"owner","text":"Minimise TextEdit with its yellow button."}
+{"item":"6","at":1793424201777,"step":17,"kind":"watch","id":"minimise","text":"the cursor hides within about a quarter second of the window minimising"}
+{"item":"6","at":1793424201778,"step":18,"kind":"owner","text":"Bring TextEdit back from the Dock."}
+{"item":"6","at":1793424234261,"step":20,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":438.3071250000212,"route":null,"engine":"cua"}
+{"item":"6","at":1793424234324,"step":21,"kind":"cell","session":"a","label":"before the lock","ok":true,"value":{"ms":6.199916999990819,"point":[634,946]},"inCellMs":6.219209000002593,"route":3,"engine":"cua"}
+{"item":"6","at":1793424234324,"step":22,"kind":"owner","text":"Lock the screen and unlock it."}
+{"item":"6","at":1793424301338,"step":24,"kind":"cell","session":"a","label":"observe after the owner's input","ok":true,"value":{"inFront":true},"inCellMs":414.3462500000023,"route":null,"engine":"cua"}
+{"item":"6","at":1793424301402,"step":25,"kind":"cell","session":"a","label":"after the unlock","ok":true,"value":{"ms":3.866666999994777,"point":[634,946]},"inCellMs":3.883540999988327,"route":3,"engine":"cua"}
+{"item":"6","at":1793424301403,"step":26,"kind":"watch","id":"after-lock","text":"the next action shows it again"}
+{"item":"6","at":1793424303552,"step":28,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"6","at":1793424304054,"step":29,"kind":"cell","session":"a","label":"TextEdit's Help menu title","ok":true,"value":{"ms":6.172791999997571},"inCellMs":444.31441600000835,"route":1,"engine":"cua"}
+{"item":"6","at":1793424304054,"step":30,"kind":"watch","id":"menu-bar-row","text":"the cursor is drawn in the menu bar's row at Help, with a dip (no menu opens)"}
+{"item":"6","at":1793424307312,"step":32,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"6","at":1793424308491,"step":33,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"6","at":1793424308491,"step":34,"kind":"owner","text":"Put TextEdit into full screen."}

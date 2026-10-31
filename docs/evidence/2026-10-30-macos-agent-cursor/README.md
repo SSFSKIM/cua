@@ -1,6 +1,6 @@
 # The agent cursor's attended sitting (#235, M3): the runbook
 
-Status: **prepared, not yet run.** This is the kit for M3 of
+Status: **first sitting run 2026-10-30 (items 1–11 done, verdicts in `sitting/`; 12–13 failed); the second sitting, the timing rerun, is prepared** (below). This is the kit for M3 of
 `docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md`: Acceptance 1–13 on the owner's MacBook, with the
 branch's engine built and approved, `CUA_NATIVE_ENGINE=cua`, #117's harness scenes, the owner watching and a screen
 recording running. When it has run, this file gets its outcome at the top and the sitting's records land in
@@ -213,6 +213,42 @@ $S judge --out "$OUT"; $S summary --out "$OUT"    # timing.md and summary.md: ev
 The owner stops the recording. The recording stays outside the repository
 (`~/.local/share/cua-235/recordings/<DATE>.mov`, with its SHA-256 in this file's outcome); clips of items 1, 3, 5 and 11
 are exported at 720p (QuickTime, File, Export As) and committed under `sitting/clips/` when each is under 25 MB.
+
+## The second sitting: the timing rerun on the fixed build (about 15 minutes)
+
+The first sitting passed items 1–11. Items 12 and 13 failed, and the design session accepted the diagnosis and its fixes
+(the spec's Decision Log, 2026-10-31). This sitting reruns only what those fixes touch, on the build they produced
+(build id `b23a6e7a18c6`, head 4e875956 or later with no engine change). It records into a directory of its own, so the
+first sitting's records stay as they were. The paths above hold, plus:
+
+```sh
+OUT2="$REPO/docs/evidence/2026-10-30-macos-agent-cursor/sitting-2026-10-31"; mkdir -p "$OUT2"
+```
+
+Before it, the operator brings the scenes up unattended, as in "The scenes" (re-placing the windows if they moved),
+and dry-runs `timing typing` and `timing clicks` against `$OUT2`.
+
+1. **Install and approve.** `CUA_SIGNING_IDENTITY=1AAFD20666E9358859B39E8F447572FBE39F52B0 node bin/cua.mjs engine
+   build --sign-wait 600000`, then `node bin/cua.mjs engine approve`. The owner answers the key prompt and grants the
+   three permissions. `node bin/cua.mjs engine status` must show build `b23a6e7a18c6`, approved, all three grants and
+   `cursorDebug` null. The saved engine stays at `$SAVED` as before. Re-place the scenes if they moved. **The owner
+   switches the input source to a Latin layout (ABC or U.S.).**
+2. **Item 3, states and timing, and a look check.** `$S drive 3 --run "$RUN" --out "$OUT2"`, with the same watches as
+   before. Thinking now starts only after no request has been in flight for 0.3 s, so the rock begins a moment after
+   the cursor settles. Then the owner looks at the cursor for about 30 s, resting and rocking, against what they
+   approved: `$S verdict 3 look pass|fail "<the owner's words>" --out "$OUT2"`.
+3. **Item 13, click speed.** `$S timing clicks --run "$RUN" --out "$OUT2"` (20 samples a side). An undetermined series
+   is run again with `--samples 40`; coordinate click and drag were undetermined at 20 on the first build, so expect
+   it.
+4. **Item 12, typing speed.** `$S timing typing --run "$RUN" --out "$OUT2"`, judged and topped up the same way.
+5. **The `legacyLayers` arm, recorded.** `$S timing clicks --arm legacyLayers …` and `$S timing typing --arm
+   legacyLayers …` on the same scenes, into `$OUT2`. The arm restores the first build's layers. If the old cost comes
+   back with it, that confirms the cause rather than a pass by noise. The other arms run only if 3 or 4 fails, and
+   their numbers go to the design session.
+6. **The owner's source, recorded.** The owner switches back to 2-Set Korean; `$S timing typing --owner-source --run
+   "$RUN" --out "$OUT2"` (its press_key series is the one compared).
+7. **Keep or restore.** Ask the owner whether to keep this engine or have the saved one put back ("After the sitting"
+   below). Then `$SC down all --run "$RUN"`, `$S judge --out "$OUT2"` and `$S summary --out "$OUT2"`.
 
 ## Known limits
 

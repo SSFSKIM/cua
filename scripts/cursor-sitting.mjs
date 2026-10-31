@@ -87,7 +87,7 @@
 //       enrol it on a loopback relay, then run: the relay and the agent started, three client sessions driven
 //       (recorded as item 8), both stopped.
 import {execFileSync} from 'node:child_process';
-import {appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {appendFileSync, existsSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
@@ -147,7 +147,7 @@ function judgeAll(out, {recorded = false} = {}) {
     const routes = kind === 'clicks' ? Object.entries(timed.filter(r => r.series === 'element click').reduce((m, r) => ({...m, [r.route ?? 'none']: (m[r.route ?? 'none'] ?? 0) + 1}), {})) : null;
     const source = all.findLast(r => r.kind === 'task' && r.task === 'input-source')?.result ?? null;
     const framesFile = join(out, `frames-${item}.json`);
-    const frames = existsSync(framesFile) ? JSON.parse(readFileSync(framesFile, 'utf8')).summary ?? null : null;
+    const frames = framesOf(framesFile, all.findLast(r => r.kind === 'start')?.at ?? null);
     const capCheck = all.findLast(r => r.kind === 'task' && r.task === 'glide-frames')?.result ?? null;
     return [{item, kind, ...judged, runs: Object.fromEntries(Object.entries(runs).map(([name, r]) => [name, r.startedAt])), ...(routes ? {routes: Object.fromEntries(routes)} : {}), source, frames, capCheck}];
   });
@@ -169,19 +169,34 @@ function keepSignposts(out, item, since) {
 
 // The frames the window server composited during each of the series' cursor glides (./cursor-sitting/frames.mjs): the
 // engine's `cursor.motion` spans in the signposts just kept, the cursor probes of the item's glide-frames task left out,
-// against WindowServer's FrameUpdate signposts since `since`, in <out>/frames-<item>.json; a failure is said and changes
-// no verdict.
-function keepGlideFrames(out, item, since) {
+// against WindowServer's FrameUpdate signposts since `since`, in <out>/frames-<item>.json, tied to the item's last
+// attempt (its `start` row's time). An earlier attempt's file is removed first, and a count that fails writes the file
+// as unavailable with its reason, so a rerun never shows another attempt's numbers; neither changes a verdict.
+export function keepGlideFrames(out, item, since, {readFrames = readFrameUpdates} = {}) {
   const signposts = join(out, `signposts-${item}.ndjson`), file = join(out, `frames-${item}.json`);
+  rmSync(file, {force: true});
+  const rows = lastAttempt(readJsonl(join(out, `item-${item}.jsonl`))), attempt = rows.find(r => r.kind === 'start')?.at ?? null;
   try {
-    const probes = lastAttempt(readJsonl(join(out, `item-${item}.jsonl`))).filter(r => r.kind === 'task' && r.task === 'glide-frames').flatMap(r => r.result?.pids ?? []);
-    const glides = glideFrames(motionSpans(readFileSync(signposts, 'utf8'), {excludePids: probes}), readFrameUpdates(since));
+    const probes = rows.filter(r => r.kind === 'task' && r.task === 'glide-frames').flatMap(r => r.result?.pids ?? []);
+    const glides = glideFrames(motionSpans(readFileSync(signposts, 'utf8'), {excludePids: probes}), readFrames(since));
     const summary = frameSummary(glides);
-    writeFileSync(file, `${JSON.stringify({item, summary, glides}, null, 2)}\n`);
+    writeFileSync(file, `${JSON.stringify({item, attempt, summary, glides}, null, 2)}\n`);
     print(`the window server's frames per cursor glide: ${framesLine(summary)} (${file})`);
-  } catch (error) { print(`the frames per cursor glide were not counted (${error.message.split('\n')[0]})`); }
+  } catch (error) {
+    const unavailable = `the frames were not counted (${String(error.message).split('\n')[0]})`;
+    writeFileSync(file, `${JSON.stringify({item, attempt, unavailable}, null, 2)}\n`);
+    print(`the frames per cursor glide: unavailable, ${unavailable}`);
+  }
 }
-const framesLine = f => (f.glides ? `${f.glides} glides, a median ${f.frames} frames over ${f.ms} ms, ${f.hz} Hz, a frame every ${f.intervalMs} ms` : 'no glide was recorded');
+// An item's frames summary from `file`, if it is the attempt that started at `attempt`; else why it is unavailable.
+function framesOf(file, attempt) {
+  if (!existsSync(file)) return null;
+  const kept = JSON.parse(readFileSync(file, 'utf8'));
+  if ((kept.attempt ?? null) !== attempt) return {unavailable: `the file is another attempt's (started ${kept.attempt ?? 'unknown'}, the item's last at ${attempt ?? 'unknown'})`};
+  return kept.unavailable ? {unavailable: kept.unavailable} : kept.summary ?? null;
+}
+const framesLine = f => (f.unavailable ? `unavailable (${f.unavailable})`
+  : f.glides ? `${f.glides} glides, a median ${f.frames} frames over ${f.ms} ms, ${f.hz} Hz, a frame every ${f.intervalMs} ms` : 'no glide was recorded');
 
 const fmt = v => (v === null || v === undefined ? '–' : Number(v).toFixed(2));
 function timingMarkdown(judged, {recorded = false} = {}) {
@@ -201,7 +216,7 @@ function timingMarkdown(judged, {recorded = false} = {}) {
     if (new Set(started.map(([, at]) => at)).size > 1) lines.push('', `Each series is taken from the last run that covers it: ${started.map(([name, at]) => `${name} from the run started ${new Date(at).toISOString()}`).join('; ')}.`);
     if (j.errors) lines.push('', `${j.errors} timed call(s) failed and are not in the samples (item-${j.item}.jsonl has their errors).`);
     if (j.routes) lines.push('', `The element clicks' routes: ${Object.entries(j.routes).map(([r, n]) => `route ${r} × ${n}`).join(', ')}.`);
-    if (j.frames) lines.push('', `Frames the window server composited per cursor glide (frames-${j.item}.json, the whole display's): ${framesLine(j.frames)}.`);
+    if (j.frames) lines.push('', `Frames the window server composited per cursor glide${j.frames.unavailable ? '' : ` (frames-${j.item}.json, the whole display's)`}: ${framesLine(j.frames)}.`);
     if (j.capCheck) {
       const {base, capped} = j.capCheck, rock = base?.rock && capped?.rock ? `; rock ${base.rock.hz} against ${capped.rock.hz} Hz` : '';
       lines.push('', `The fps60 cap, from the cursor probe's glides before the series: default ${base?.hz ?? '–'} Hz (a frame every ${base?.intervalMs ?? '–'} ms), fps60 ${capped?.hz ?? '–'} Hz (every ${capped?.intervalMs ?? '–'} ms)${rock}: **${j.capCheck.verdict}** (${j.capCheck.why}).`);

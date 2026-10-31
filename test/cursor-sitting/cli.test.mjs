@@ -1,10 +1,10 @@
 // The sitting's CLI over recorded evidence (scripts/cursor-sitting.mjs judge, verdict, summary), on a scratch directory.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {main} from '../../scripts/cursor-sitting.mjs';
+import {keepGlideFrames, main} from '../../scripts/cursor-sitting.mjs';
 import {timingSteps} from '../../scripts/cursor-sitting/timing.mjs';
 
 const scratch = t => { const dir = mkdtempSync(join(tmpdir(), 'cua-235-cli-')); t.after(() => rmSync(dir, {recursive: true, force: true})); return dir; };
@@ -38,13 +38,44 @@ test('the recorded timing lists the frames per cursor glide and, for the fps60 a
   const rows = typingRows();
   rows.splice(3, 0, {kind: 'task', task: 'glide-frames', args: ['fps60'], result: capCheck});
   writeFileSync(join(out, 'item-12-fps60.jsonl'), jsonl(rows));
-  writeFileSync(join(out, 'frames-12-fps60.json'), JSON.stringify({item: '12-fps60', summary: {glides: 40, frames: 52, ms: 880, hz: 59.1, intervalMs: 16.7}, glides: []}));
+  writeFileSync(join(out, 'frames-12-fps60.json'), JSON.stringify({item: '12-fps60', attempt: rows.findLast(r => r.kind === 'start').at ?? null, summary: {glides: 40, frames: 52, ms: 880, hz: 59.1, intervalMs: 16.7}, glides: []}));
   writeFileSync(join(out, 'item-12.jsonl'), jsonl(typingRows()));
   await quietly(() => main(['judge', '--out', out]));
   const md = readFileSync(join(out, 'timing-recorded.md'), 'utf8');
   assert.match(md, /Frames the window server composited per cursor glide.*40 glides.*52 frames.*880 ms.*59\.1 Hz.*16\.7 ms/);
   assert.match(md, /fps60 cap.*default 118 Hz.*fps60 62 Hz.*rock 119 against 61 Hz.*\*\*capped\*\*/);
   assert.doesNotMatch(readFileSync(join(out, 'timing.md'), 'utf8'), /Frames the window server/, 'a series without its frames file says nothing of them');
+});
+
+test('a frames count that failed, or that is another attempt\'s, is reported unavailable, never the old numbers', async t => {
+  const out = scratch(t);
+  const rows = typingRows().map(r => (r.kind === 'start' ? {...r, at: 2000} : r));
+  rows[0].at = 1000;
+  writeFileSync(join(out, 'item-12-fps60.jsonl'), jsonl(rows));
+  writeFileSync(join(out, 'signposts-12-fps60.ndjson'), '');
+  // A count left by an earlier attempt of the item, then a collection that throws.
+  const stale = {item: '12-fps60', attempt: 1000, summary: {glides: 40, frames: 52, ms: 880, hz: 59.1, intervalMs: 16.7}, glides: []};
+  writeFileSync(join(out, 'frames-12-fps60.json'), JSON.stringify(stale));
+  await quietly(async () => keepGlideFrames(out, '12-fps60', new Date(), {readFrames: () => { throw new Error('log show timed out'); }}));
+  const kept = JSON.parse(readFileSync(join(out, 'frames-12-fps60.json'), 'utf8'));
+  assert.equal(kept.attempt, 2000, 'the file is this attempt\'s');
+  assert.match(kept.unavailable, /log show timed out/);
+  assert.equal(kept.summary, undefined);
+  writeFileSync(join(out, 'item-12.jsonl'), jsonl(typingRows()));
+  await quietly(() => main(['judge', '--out', out]));
+  let md = readFileSync(join(out, 'timing-recorded.md'), 'utf8');
+  assert.match(md, /Frames the window server composited per cursor glide: unavailable \(.*log show timed out/);
+  assert.doesNotMatch(md, /59\.1 Hz/);
+  // A file whose attempt is not the item's last is rejected the same way.
+  writeFileSync(join(out, 'frames-12-fps60.json'), JSON.stringify(stale));
+  await quietly(() => main(['judge', '--out', out]));
+  md = readFileSync(join(out, 'timing-recorded.md'), 'utf8');
+  assert.match(md, /unavailable \(.*another attempt/);
+  assert.doesNotMatch(md, /59\.1 Hz/);
+  // A collection that works writes this attempt's count.
+  await quietly(async () => keepGlideFrames(out, '12-fps60', new Date(), {readFrames: () => []}));
+  assert.equal(JSON.parse(readFileSync(join(out, 'frames-12-fps60.json'), 'utf8')).summary.glides, 0);
+  assert.ok(existsSync(join(out, 'frames-12-fps60.json')));
 });
 
 test('a timing item that is missing a series fails the judgement', async t => {

@@ -1601,7 +1601,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      click and focusField's fallback click, a drag; `postsLeftMouseDown`): its events are exactly what they were before
      the inert click existed, and its own mouse down consumes the arm on branch 1 with no ordering, which #200's work
      keeps. A background coordinate click into Chrome is the most common agent action, and an early click there would
-     turn its own click into an ordering click into a key window (#200's raise).
+     turn its own click into an ordering click into a key window (#200's raise). The two are serialized on the arm's
+     lock (the review of 0d888300..c32bec9c, finding 1): such a holder claims a set arm before its events go out
+     (`FakeActivation.postAction`) and consumes it once they are out; a joiner of item 1 waits out the claim and then
+     finds the arm consumed, and an inert click's own down and up go out under the lock, so no inert click lands
+     between a drag's down and its up, nor ahead of the action's mouse down with branch 1's no-ordering lost. A holder
+     stopped before its events never claims, leaving the arm to item 3.
   3. **At release**, when the hold's last holder deactivates and no left mouse down stamped with a window number reached
      the process (an intervention or the activation's guard refusing the action, an error before its events): the kept
      inert click goes out before subtype 2 (`FakeActivation.deactivate`). AppKit's arm is the application's, so a mouse
@@ -1643,6 +1648,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   exceptions, the meta; Chrome's left click and drag posting exactly their own events with `consumedByAction`; a refused
   pointer action, by an intervention and by its guard, getting the release click before subtype 2; a non-left click and
   a registry holder with no click getting it early, a joiner of an unconsumed hold posting it and a later one nothing;
+  a joiner on another thread while a drag's events go out posting nothing between its down and up (failing before the
+  claim);
   the cursor told once; no subtype 2 to a previously frontmost process; the pointer, refusal and join cases failing
   under the always-early build; `FocusHoldTests`: a focus hold on Chrome clicks before its input;
   `PasteActivationTests`: the paste's early click under its delivery guard, a paste joining an unconsumed hold clicking

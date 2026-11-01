@@ -334,10 +334,12 @@ final class FakeActivation {
   /// is posted as ever.
   var defersArmClick = false
   /// The arm's state, behind its own lock (a holder joining on another connection may consume it): set from subtype 1
-  /// until a mouse down to the process, and the inert click kept for it.
-  private let armLock = NSLock()
+  /// until a mouse down to the process, and the inert click kept for it. `armClaimed`: a pointer holder's events, which
+  /// open with its own left mouse down, are going out (`postAction`); an inert click waits until they are out.
+  private let armLock = NSCondition()
   private var kind: ActivationClickKind?
   private var armSet = false
+  private var armClaimed = false
   private var keptInert: (point: CGPoint, place: InertClickPoint)?
   /// Where the activation point lay against the window's frame, once the activation pair was posted; nil before.
   private(set) var pointPlace: ActivationPointPlace?
@@ -600,29 +602,39 @@ final class FakeActivation {
   }
 
   /// Posts the kept inert click when the arm is still set (`when`: a holder with no left mouse down of its own joined, or
-  /// the last holder releases); true when it did.
+  /// the last holder releases); true when it did. It waits out a pointer holder's events going out (`postAction`), whose
+  /// own mouse down consumes the arm, and its two events go out under the arm's lock, so no pointer holder's events
+  /// interleave with them: never between a drag's down and its up.
   @discardableResult
   func consumeArm(_ when: ActivationClickWhen) -> Bool {
-    let inert = armLock.withLock { () -> (point: CGPoint, place: InertClickPoint)? in
-      guard armSet, let kept = keptInert else { return nil }
-      (armSet, kind, keptInert) = (false, .inertOutside(kept.place, when), nil)
-      return kept
-    }
-    guard let inert else { return false }
-    postClick(at: inert.point)
+    armLock.lock()
+    defer { armLock.unlock() }
+    while armClaimed { armLock.wait() }
+    guard armSet, let kept = keptInert else { return false }
+    (armSet, kind, keptInert) = (false, .inertOutside(kept.place, when), nil)
+    postClick(at: kept.point)
     return true
   }
 
-  /// A holder's own events went out to the process: a left mouse down stamped with a window number consumed the arm
-  /// (AppKit routes by that number alone); true when this one did.
+  /// A holder's own events going out to the process (`post`, which posts them all): a left mouse down stamped with a
+  /// window number consumes the arm (AppKit routes by that number alone), so while the arm is set the holder claims it
+  /// first, under the arm's lock, and an inert click waits until the events are out (`consumeArm`); true when this one
+  /// consumed it. A holder stopped before its events never claims, and the arm stays set for the release's inert click.
   @discardableResult
-  func actionPosted(_ events: [CGEvent]) -> Bool {
-    guard events.contains(where: { $0.type == .leftMouseDown && $0.getIntegerValueField(eventField(91)) != 0 }) else { return false }
-    return armLock.withLock {
+  func postAction(_ events: [CGEvent], _ post: () -> Void) -> Bool {
+    let claimed = events.contains(where: { $0.type == .leftMouseDown && $0.getIntegerValueField(eventField(91)) != 0 }) && armLock.withLock {
+      while armClaimed { armLock.wait() }
       guard armSet else { return false }
-      (armSet, kind, keptInert) = (false, .action, nil)
+      armClaimed = true
       return true
     }
+    post()
+    guard claimed else { return false }
+    armLock.withLock {
+      (armSet, kind, keptInert, armClaimed) = (false, .action, nil, false)
+      armLock.broadcast()
+    }
+    return true
   }
 
   @discardableResult

@@ -231,7 +231,7 @@ final class HeldActivations: @unchecked Sendable {
   /// run, shared or recorded. When no holder has the activation, or it is stale, `make()`'s runs (a failed guard throws
   /// with nothing more held); otherwise the running one is shared, and a holder that posts no left mouse down of its own
   /// (`postsLeftMouseDown` false) consumes its arm first when no mouse down has (the kept inert click, recorded in its
-  /// meta), so its keys reach a key window. Answers the release, which runs once and deactivates when the last holder
+  /// meta; after a pointer holder's events already going out, `FakeActivation.postAction`), so its keys reach a key window. Answers the release, which runs once and deactivates when the last holder
   /// releases; it answers false only when that deactivation could not post.
   func acquire(pid: pid_t, postsLeftMouseDown: Bool = false, beforeActivating: () throws -> Void, make: () -> FakeActivation,
                meta: inout InputMeta) throws -> () -> Bool {

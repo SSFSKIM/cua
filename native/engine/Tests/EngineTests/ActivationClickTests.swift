@@ -277,6 +277,54 @@ final class ActivationClickTests: XCTestCase {
     XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)], "no release click")
   }
 
+  /// A pointer holder claims the arm before its own left mouse down goes out (the review of 0d888300..c32bec9c, finding
+  /// 1): a no-click holder joining on another connection while a drag's events are posting waits for them and posts no
+  /// inert click, so nothing lands between the drag's down and its up, and the drag's own mouse down consumed the arm.
+  func testANoClickJoinerDuringAPointerHoldersEventsPostsNoInertClickBetweenThem() throws {
+    let seam = GuardSeam(frontmost: user)
+    let registry = HeldActivations()
+    let joining = DispatchSemaphore(value: 0)
+    let joinerDone = DispatchSemaphore(value: 0)
+    final class Joiner: @unchecked Sendable {
+      var meta: InputMeta
+      var release: (() -> Bool)?
+      var triggered = false
+      init(_ meta: InputMeta) { self.meta = meta }
+    }
+    let joiner = Joiner(freshMeta())
+    let pid = target
+    let start = ClickTarget(point: CGPoint(x: 200, y: 300), windowFrame: window, windowID: 41, pid: target)
+    seam.onMouseDown = {
+      guard !joiner.triggered, seam.posts.last?.location == start.point else { return }
+      joiner.triggered = true
+      DispatchQueue.global().async {
+        joiner.release = try? registry.acquire(pid: pid, beforeActivating: {}, make: {
+          XCTFail("shared, not made")
+          return FakeActivation(pid: pid, window: AXUIElementCreateApplication(pid), windowFrame: nil, windowID: nil)
+        }, meta: &joiner.meta)
+        joining.signal()
+        joinerDone.signal()
+      }
+      // The joiner gets every chance to post while the drag's down has gone and its up has not.
+      _ = joining.wait(timeout: .now() + .milliseconds(300))
+    }
+    var meta = freshMeta()
+    try deliverPointer(to: target, route: .activation, activation: chromeActivation(seam), activations: registry, postsLeftMouseDown: true,
+                       post: seam.system.post, meta: &meta) {
+      dragEvents(from: start.point, to: CGPoint(x: 400, y: 500), window: start, flags: [])
+    }
+    XCTAssertEqual(joinerDone.wait(timeout: .now() + .seconds(2)), .success, "the joiner went on once the drag's events were out")
+    XCTAssertEqual(seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.map(\.location), [start.point], "no inert click at all")
+    let mouse = seam.posts.filter { if case .mouse = $0.kind { return true } else { return false } }.map(\.kind)
+    XCTAssertEqual(mouse, [.mouse(.leftMouseDown), .mouse(.leftMouseUp)], "the drag's down and up, nothing between")
+    XCTAssertEqual(meta.activationClickKind, .action)
+    XCTAssertNil(joiner.meta.activationClickKind, "the drag's mouse down consumed the arm")
+    XCTAssertEqual(registry.holders(target), 1)
+    _ = joiner.release?()
+    XCTAssertEqual(seam.posts.map(\.kind).last, .appKit(2))
+    XCTAssertEqual(seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.count, 1, "no release click")
+  }
+
   /// No subtype 2 ever goes to a process that was frontmost before the action: its activation posts nothing (it believes
   /// it has focus), so there is nothing to withdraw, and the action's click goes alone. Nor to one that came to the front
   /// during the action.

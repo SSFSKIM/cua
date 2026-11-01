@@ -220,9 +220,9 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     announce()
     // The interval is the events' own posting, inside the delivery guard's hold when one stands: the guard's setup and its
     // samples after the events are its own time (`delivery.guardMs`), not the action's.
+    func postAll() { meta.posting { _ = postToProcess(made, pid: pid, post: post); return true } }
     func postEvents() {
-      meta.posting { _ = postToProcess(made, pid: pid, post: post); return true }
-      if standing?.actionPosted(made) == true { reportsArm = true }
+      if let standing { if standing.postAction(made, postAll) { reportsArm = true } } else { postAll() }
     }
     if let standing { meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, postEvents) } else { postEvents() }
   }

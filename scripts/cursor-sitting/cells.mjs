@@ -249,6 +249,80 @@ if (index === null) throw new Error("${control} is not in the ${scene} window's 
 return {value: valueOfIndex(ax, index)};`);
 };
 
+// #200's samples (./raise.mjs): each action is its cell's last call, after an observation (the look an agent takes
+// before it acts), so the reply's meta is the action's own (its route, activation click and guard time).
+
+// A coordinate click at fractions `f`, `clickCount` presses. -> {ms, point}.
+export const OBSERVED_CLICK = (scene, f, {clickCount = 1} = {}) => cell(`${head(scene)}
+await observe();
+const point = ${at(scene, f)};
+${timed(`await __app.click(point${clickCount > 1 ? `, {clickCount: ${clickCount}}` : ''})`)}
+return {ms, point};`);
+
+// A coordinate click `xPt` points from the window's left edge (the window `widthPt` points wide, as the window list
+// reads it) at the height fraction `fy`, `clickCount` presses. -> {ms, point}.
+export const OBSERVED_CLICK_PT = (scene, xPt, fy, widthPt, {clickCount = 1} = {}) => cell(`${head(scene)}
+const s = globalThis.__size?.[${j(scene)}], widthPt = ${j(widthPt ?? null)};
+if (!s) throw new Error("bind ${scene} first");
+if (!(widthPt > 0)) throw new Error("the ${scene} window's width in points was not read: nothing sent");
+await observe();
+const point = [Math.round(${Number(xPt)} * s.width / widthPt), Math.round(s.height * ${fy})];
+${timed(`await __app.click(point${clickCount > 1 ? `, {clickCount: ${clickCount}}` : ''})`)}
+return {ms, point};`);
+
+// A coordinate click at the global point `global` ({x, y}, top-left points) inside the window at `window` (its bounds
+// as the window list reads them), scaled into the screenshot's pixels. -> {ms, point}.
+export const OBSERVED_CLICK_GLOBAL = (scene, global, window) => cell(`${head(scene)}
+const s = globalThis.__size?.[${j(scene)}], g = ${j(global ?? null)}, w = ${j(window ?? null)};
+if (!s) throw new Error("bind ${scene} first");
+if (!g || !(w?.width > 0)) throw new Error("the point or the ${scene} window's bounds were not read: nothing sent");
+await observe();
+const scale = s.width / w.width, point = [Math.round((g.x - w.x) * scale), Math.round((g.y - w.y) * scale)];
+${timed('await __app.click(point)')}
+return {ms, point};`);
+
+// A drag from fractions `from` to `to`. -> {ms}.
+export const OBSERVED_DRAG = (scene, from, to) => cell(`${head(scene)}
+await observe();
+${timed(`await __app.drag(${at(scene, from)}, ${at(scene, to)})`)}
+return {ms};`);
+
+// The caret put before `line` (a whole line of the run's document, which it holds once) by select_text, an element
+// write: no pointer event. Refused, nothing sent, when the observation is not of the run window. -> {ms, line}.
+export const CARET_BEFORE = line => cell(`${head('textedit')}
+const ax = await observe();
+if (!inFront(ax)) throw new Error("the observation is not of TextEdit's run window: nothing sent");
+const index = indexOfPart(ax, "ID", "First Text View");
+if (index === null) throw new Error("the run document's text area is not in the observation: nothing sent");
+${timed(`await __app.selectText(index, ${j(line)}, {selectionType: "cursor_before"})`)}
+return {ms, line: ${j(line)}};`);
+
+// An element click on a cell of Finder's row `name` other than its name (indexOfRowCell: a click on a selected row's
+// name starts a rename). Refused, nothing sent, when the row is not in the list's visible part. -> {ms, before}: how
+// many rows were selected before.
+export const FINDER_ROW_CLICK = name => cell(`${head('finder')}
+const ax = await observe();
+const index = indexOfRowCell(ax, ${j(name)});
+if (index === null) throw new Error(${j(`${name}'s row is not in the list's visible part: nothing sent`)});
+const before = selectedIndexesOf(ax).length;
+${timed('await __app.click(index)')}
+return {ms, before};`);
+
+// Finder's list brought to its first rows (scrolled up when it shows from a later row, as the matrix's Finder cells
+// do), so the rows #200 clicks are in the observation. -> {showing}: the list's visible range after.
+export const FINDER_TOP = cell(`${head('finder')}
+let ax = await observe(), list = indexOfPart(ax, "ID", "ListView");
+if (list === null) throw new Error("Finder's list is not in the observation");
+if ((showingOf(ax, list)?.from ?? 0) > 0) { await __app.scroll(list, "up", 20); ax = await observe(); list = indexOfPart(ax, "ID", "ListView"); }
+return {showing: list === null ? null : showingOf(ax, list)};`);
+
+// Finder's selection, by one observation: whether the row `name` is shown, how many rows are selected, and whether it
+// alone is. -> {rowFound, selected, only}.
+export const FINDER_ROW_READ = name => cell(`${head('finder')}
+const ax = await observe();
+const row = rowIndexOfName(ax, ${j(name)}), selected = selectedIndexesOf(ax);
+return {rowFound: row !== null, selected: selected.length, only: row !== null && selected.length === 1 && selected[0] === row};`);
+
 // The timing diagnosis's typing arm (./diagnose.mjs): clicks at the fractions `clicks` in order (untimed; the cursor
 // glides to each where it is on), a pause of `waitMs` (0: the keys start while the last glide plays; 2500: after it has
 // settled), then `count` timed press_key calls ("x"). -> {press_key: total, each}.

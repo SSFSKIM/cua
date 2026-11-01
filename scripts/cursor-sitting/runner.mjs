@@ -3,9 +3,9 @@
 // and watch, and every task's outcome. An image a cell emits is saved beside it. The live io (`liveIo`) drives the
 // Mac: sessions through ./session.mjs, cues spoken with `say`, the go file the operator touches once the owner is done,
 // the harness scenes' activation, the engine's stop and status through this checkout's CLI, engine.json's switch, the
-// approved bundle's activation watcher and focus probe, and item 1's screen recording (./recording.mjs). Whatever the
-// item changed outside its sessions is put back in `finally`: engine.json as it was, the watcher and the recorder
-// stopped, every session closed.
+// approved bundle's activation watcher and focus probe, item 1's screen recording (./recording.mjs), and #200's window
+// placement, order watcher and delivery reads (./raise.mjs). Whatever the item changed outside its sessions is put back
+// in `finally`: engine.json as it was, the watchers and the recorder stopped, every session closed.
 import {execFileSync, spawn} from 'node:child_process';
 import {appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
@@ -15,6 +15,7 @@ import {BUNDLE_ID} from '../../src/runtime/engine-bundle.mjs';
 import {enginePaths} from '../../src/runtime/engine.mjs';
 import {runProbe, startWatch, stopWatch} from '../native-matrix/live-device.mjs';
 import {FIXTURE_ACCESSIBILITY_FILE} from '../native-matrix/fixtures/electron-fixture.mjs';
+import {textViewOf} from '../native-matrix/residue-device.mjs';
 import {readState} from '../repl-parity/scenes-mac.mjs';
 import {engineJsonOf} from './engine-copy.mjs';
 import {readFocus, runWindowBounds} from './focus.mjs';
@@ -23,6 +24,7 @@ import {startFrameStream} from './signposts.mjs';
 import {BUILT_IN_SCREEN, coverOver, farPoint, liveWindowList, overlaysAbove, plannedSettle, windowListProbe} from './glide.mjs';
 import {liveSourceSwitch, restoreAfterFailure, sourceTargetProblem, switchSource} from './input-source.mjs';
 import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
+import {liveElementFrame, liveMoveWindow, raiseTasks, stopRaiseWatch} from './raise.mjs';
 import {openDriven} from './session.mjs';
 import {latinSourceProblem, STILL_TAIL_MS, STILL_WAIT_MAX_MS} from './timing.mjs';
 import {liveTargetGuard} from './target-guard.mjs';
@@ -217,6 +219,7 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
     },
     // What the finally puts back: engine.json, and the engine stopped so none keeps running under the changed file.
     cleanup: async ctx => {
+      await stopRaiseWatch(ctx);
       if (ctx.settingsChanged) {
         await ctx.io.tasks['engine-json-restore']();
         await ctx.io.tasks['engine-stop']();
@@ -230,6 +233,9 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
       return restored ? [{task: restored.left ? 'source-left-after-failure' : 'source-restored-after-failure', result: restored}] : [];
     },
   };
+  // #200's tasks (./raise.mjs): the harness windows placed, the arrangement checked, the order watcher, the deliveries.
+  Object.assign(io.tasks, raiseTasks({io, run, guard, out, windowList: () => liveWindowList(), probe: args => runProbe(enginePaths().bundle, args),
+    textView: textViewOf, moveWindow: liveMoveWindow(), elementFrame: liveElementFrame()}));
   function writeSettings(write) {
     const text = existsSync(settingsFile) ? readFileSync(settingsFile, 'utf8') : null;
     if (existsSync(before) || existsSync(`${before}.absent`)) throw new Error(`${before} exists from an earlier run: restore engine.json from it by hand, then remove it`);

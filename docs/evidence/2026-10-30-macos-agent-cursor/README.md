@@ -541,6 +541,62 @@ The same frames show the agent's cursor in a `screencapture -v` recording, which
 `$S verdict 5 recording pass "the cursor in item 1's clip: item-1-frames/second-target-arrival-f<index>.jpg" --out
 "$OUT2"`. Then run `summary` again.
 
+## Item 200: a background action raises nothing the person sees, and is delivered (#200)
+
+**About 15 minutes at the Mac (12–17), unattended once it starts**: the scenes and Finder's setup 3, cua's engine 4–5,
+the vendor's 5–6, the judge and the scenes down 2. Nobody touches the Mac while it runs (an input in a driven app is
+attributed to the person and refuses the next action). The kit is `scripts/cursor-sitting/raise.mjs`; its header says
+what each case does and how it is judged.
+
+It runs on a build with #200's delivery guard (6e944928 or later on `fix/200-background-raise`), built and approved as
+in the sitting's step 1, with the cursor at its default. The kit places the harness windows itself, through
+Accessibility, so the terminal it runs in must be trusted for Accessibility (the MacBook's was on 2026-10-31); an
+untrusted one stops at the placement with that sentence, and the owner grants it. Only harness windows are moved:
+TextEdit's run window to the screen's left, Chrome for Testing's over its right half, the run's Finder window and the
+Electron fixture's where TextEdit's is; then Chrome is activated. TextEdit's document must be fresh (no earlier item has
+typed into it): the word and line checks read the run's own document.
+
+```sh
+REPO=/Users/new/Developer/GitHub/cua/.claude/worktrees/fix-200; cd "$REPO"
+S="node scripts/cursor-sitting.mjs"; SC="node scripts/repl-parity/scenes-mac.mjs"; GD="node scripts/native-matrix/goldens-device.mjs"
+RUN="$HOME/.local/share/cua-200/run"; OUT200="$REPO/docs/evidence/2026-10-30-macos-agent-cursor/item-200"
+# before (unattended, nothing drawn): the Swift tools compiled into the harness cache, every step printed
+$SC place-chrome && $SC build-electron && $S prepare
+$S raise drive --engine cua --out "$OUT200" --dry-run --quiet
+# the scenes: Finder's setup goes through the approved engine (list view, no selection, its chrome hidden)
+$SC preflight --run "$RUN"
+$SC up textedit --run "$RUN" && $SC up chrome --run "$RUN" && $SC up electron --run "$RUN" && $SC up finder --run "$RUN"
+$GD steps finder --run "$RUN" --phase setup
+# the item: cua's engine, then the vendor's (each places the windows again, then runs cases a–f)
+$S raise drive --engine cua --run "$RUN" --out "$OUT200"
+$S raise drive --engine vendor --run "$RUN" --out "$OUT200"
+$S raise judge --out "$OUT200"          # item-200.md: every case on both engines; exit 1 unless every cua case passes
+# down
+$GD steps finder --run "$RUN" --phase teardown && $SC down all --run "$RUN"
+```
+
+| case | the action, Chrome for Testing frontmost over the driven window | delivered when | samples |
+|---|---|---|---|
+| a | a route-3 coordinate click in TextEdit's text, under Chrome and clear of it in turn, another line each time | the selected range (`--probe text-view`) is a caret other than the one before | 40 (20 a side) |
+| b | inside a standing activation: an element click on the format bar's alignment, then at once a coordinate click in the text under Chrome | both halves: the alignment flipped; the caret moved | 20 |
+| c | a drag in TextEdit's text | a new, non-empty selection | 20 |
+| d | a double click on a word | a new selection that is exactly one word of the document | 20 |
+| e | a plain click on a row of the run's Finder window | that row alone selected (a ⌘-click would add to a selection) | 20 |
+| f | a coordinate click on a plain push button that refuses the first mouse: the Electron fixture's button, at its frame's middle | its count up by one; the fixture's activation, focus and blur counters read before and after, recorded only | 20 |
+
+Each case checks the arrangement first (Chrome's process frontmost, its window above the driven one in the window
+list, each planned point under Chrome or clear of it) and runs on its own session, so no activation carries over. A
+watcher samples the two windows' order every 5 ms for the whole case (`item-200-<case>-<engine>-order.jsonl`; the
+window server's real order, which the guard's screen hold keeps off the display). Each sample's row keeps its action's
+route, `activationClick`, `activationGuardMs`, `cua/actionInterval` and `cua/delivery`, and beside its delivery read
+what the watcher saw: post to the first raise, post to the hold's release, a late raise. After every sample the kit
+reads the watcher: the driven window left above Chrome's, a window gone or the watcher gone stops the case and those
+after it (rerun with `--case <the rest>` once the scene is put back). The judge reports per case the raises the
+watcher saw, the restores the guard counted, late and unguarded raises, capped and `raiseLeft` counts, and post→raise
+and post→release (min, median, p95, max). **Pass, for cua's engine: every sample delivered, no late or unguarded raise,
+no `raiseLeft`**, over the full count, with the watcher's record whole. The vendor's rows are recorded, not judged:
+they say whether its "no raise" is "no delivery".
+
 ## Known limits
 
 - With an approved engine built before #235, the first-call document's agent-cursor paragraph (on every macOS computer

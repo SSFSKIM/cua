@@ -109,8 +109,11 @@ had a preparation failure in any lane, so no scene backstop ran.
 `results.jsonl` and `summary.md` are the run's own files, committed as they came out. Stray checks before the run and
 after it found no harness process and only the owner's window on `:0`.
 
-**The head this record ships on, against the gate commit.** Between cd4c9297 and the commit of this record, the only
-files that differ are this evidence: `m3/README.md`, `m3/gate-musl/results.jsonl` and `m3/gate-musl/summary.md`.
+**The head this record ships on, against the gate commit.** Between cd4c9297 and this record's head, these files
+differ:
+- the spec, `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md` (8aa4a63d, committed during the run);
+- this evidence: `m3/README.md`, `m3/gate-musl/results.jsonl` and `m3/gate-musl/summary.md`.
+
 Nothing under `native/linux-engine/`, `scripts/linux-engine-diff/` or `src/services/engine/linux/` differs.
 
 **What the earlier gate runs became.** None of them is a verdict. Each stays as the record of a failure and the fix it

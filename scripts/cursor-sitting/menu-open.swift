@@ -74,7 +74,10 @@ if args[1] == "read" {
   var value: CFTypeRef?
   let focusStatus = AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &value)
   var focused: String? = nil
-  if focusStatus == .success, let f = element(value) { focused = role(f) } else if focusStatus != .noValue { ok = false; failed.append("focused") }
+  if focusStatus == .success, let f = element(value) {
+    let r = read(f, kAXRoleAttribute)
+    if r.ok, let name = r.value as? String { focused = name } else { ok = false; failed.append("focusedRole") }
+  } else if focusStatus != .noValue { ok = false; failed.append("focused") }
   emit(["trusted": true, "ok": ok, "failed": Array(Set(failed)).sorted(), "menuBar": bar != nil, "items": items, "selected": selected, "openMenus": openMenus,
         "focusedRole": focused ?? NSNull()])
   exit(0)

@@ -190,7 +190,9 @@ function blockSteps({item, group, block, arm, rows, switchTo = null, engine = 'c
     ...(switchTo ? [{task: 'engine-json-paste', args: [switchTo], required: true}, {task: 'engine-stop'}] : []),
     {open: S, engine, scenes: sessionScenes(group)},
     ...(engine === 'cua' ? [{task: '187-arm', args: [tag, arm]}] : []),
+    {task: '187-setup', args: [tag, 'start']},
     ...setupSteps({item, block, group}),
+    {task: '187-setup', args: [tag, 'end']},
     ...(chrome ? [{task: '187-menu-start', args: [item]}] : []),
     ...rows.flatMap((row, i) => rowSteps({item, group, block, i, arm, row})),
     ...(chrome ? [{task: '187-menu-stop', args: [item]}] : []),
@@ -299,7 +301,7 @@ export function rowRecord({spec, prepare = null, act = null, check = null, page 
                       : front && front.mid !== front.expected ? `the frontmost process before the act was ${front.mid ?? 'unreadable'}, not ${front.expected}`
                         : null;
   // No menu opened needs a whole snapshot, or a notification watch the helper verified it registered; else unread.
-  const opened = menu ? (menu.observed > 0 ? true : menuOpened(menu.read) ?? (menu.watchVerified === true ? false : null)) : null;
+  const opened = menu ? (menu.observed > 0 ? true : menuOpened(menu.read) ?? (menu.watchVerified === true && menu.observed === 0 ? false : null)) : null;
   const armMeta = metaArm(paste), other = spec.arm === 'A' ? 'B' : 'A';
   const armConfirmed = ARMS.includes(spec.arm) ? (armStatus === spec.arm || armMeta === spec.arm) && armStatus !== other && armMeta !== other : null;
   return {ok: invalid === null && delivered, key: spec.key, item: spec.item, group: spec.group, id: rowId(spec.group, spec.method, spec.string), arm: spec.arm, block: spec.block,
@@ -312,7 +314,7 @@ export function rowRecord({spec, prepare = null, act = null, check = null, page 
     activations: activations.map(a => ({bundleId: a.bundleId ?? null, at: a.at ?? null})), raises: raisedAt.length, raisedAt, stateAtStart, userKept,
     clipboardRestored: clipboard ? clipboard.mid !== null && clipboard.mid === clipboard.after : null,
     menu: menu && {snapshot: menu.read?.ok === true && menu.read?.trusted === true, selected: menu.read?.selected ?? null, openMenus: menu.read?.openMenus ?? null,
-      focusedRole: menu.read?.focusedRole ?? null, observed: menu.observed ?? 0, watchVerified: menu.watchVerified === true, opened},
+      focusedRole: menu.read?.focusedRole ?? null, observed: menu.observed ?? null, watchVerified: menu.watchVerified === true, opened},
     armStatus, armMeta, armConfirmed};
 }
 
@@ -369,7 +371,11 @@ export function controlCoverage(c) {
   if (c.rows.length < ROWS.length) problems.push(`${label} has ${c.rows.length} of ${ROWS.length} rows`);
   const invalid = c.rows.filter(r => r.invalid !== null).length;
   if (invalid) problems.push(`${label} has ${invalid} invalid row(s)`);
-  if (GROUPS[c.group].user) { const w = watcherProblem(c.watcher); if (w) problems.push(`${label}: ${w}`); }
+  if (GROUPS[c.group].user) {
+    const w = watcherProblem(c.watcher) ?? reconciliationProblem(c.watcher);
+    if (w) problems.push(`${label}: ${w}`);
+    if (c.watcher?.unattributed?.length) problems.push(`${label}: ${c.watcher.unattributed.length} raise(s) outside every row and every setup step`);
+  }
   const unconfirmed = c.arm === 'B' ? c.rows.filter(r => r.armConfirmed !== true).length : 0;
   if (unconfirmed) problems.push(`${label}: arm B is not confirmed by the engine on ${unconfirmed} row(s)`);
   return problems;
@@ -414,8 +420,9 @@ function judgeB({ran, bRows, aRows, controls, watcher, stopped, early}) {
   if (invalid.length) short.push(`${invalid.length} B row(s) invalid: ${Object.entries(tally(invalid.map(r => r.invalid))).map(([w, n]) => `${w} × ${n}`).join('; ')}`);
   const unread = bRows.filter(r => r.menu && r.menu.opened === null).length;
   if (unread) short.push(`Chrome's menus could not be read after ${unread} B row(s)`);
-  const w = watcherProblem(watcher);
+  const w = watcherProblem(watcher) ?? reconciliationProblem(watcher);
   if (w) short.push(`Part B: ${w}`);
+  if (watcher?.unattributed?.length) fail.push(`${watcher.unattributed.length} raise(s) of Chrome's window outside every row and every setup step (at ${watcher.unattributed.join(', ')})`);
   if (stopped.length) short.push(...stopped);
   const verdict = fail.length ? 'DOES NOT LAND' : short.length ? 'INCOMPLETE' : 'LANDS';
   return {verdict, why: fail.length ? fail : short, fail, short, regressions, raised: raised.map(r => ({key: r.key, raisedAt: r.raisedAt}))};
@@ -431,7 +438,8 @@ export function judge187(items) {
     const late = new Map();
     const add = (key, times) => { for (const at of times ?? []) late.set(key, new Set([...(late.get(key) ?? []), at])); };
     for (const r of rowsOf(name)) if (r.kind === 'task' && r.task === '187-order-restore') add(r.result?.key, r.result?.lateRaisedAt);
-    for (const [key, times] of Object.entries(taskResult(name, '187-order-stop')?.rowRaises ?? {})) add(key, times);
+    const stop = taskResult(name, '187-order-stop');
+    for (const m of [stop?.rowRaises, stop?.tailRaises]) for (const [key, times] of Object.entries(m ?? {})) add(key, times);
     return rowsOf(name).filter(r => r.kind === 'task' && r.task === '187-row' && r.result).map(r => {
       const extra = [...(late.get(r.result.key) ?? [])].filter(at => !(r.result.raisedAt ?? []).includes(at));
       if (!extra.length) return r.result;
@@ -563,7 +571,7 @@ export const clipboardReaders = names => [...new Set(names.map(n => basename(Str
 
 // The tasks the steps above name, for ./runner.mjs liveIo, over `d` (liveDeps187's shape; the tests' fakes).
 export function item187Tasks(d) {
-  const st = ctx => (ctx.r187 ??= {rows: {}, compose: {}, arms: {}, order: null, activations: null, menu: null, stops: new Map()});
+  const st = ctx => (ctx.r187 ??= {rows: {}, compose: {}, arms: {}, order: null, activations: null, menu: null, stops: new Map(), windows: []});
   const runWindow = id => { const r = d.scene(id); return {id, pid: r.pid, number: r.window.number, bounds: runWindowBounds(d.windows(r.pid), r.window.number)}; };
   const attempt = fn => { try { return fn(); } catch { return null; } };
   // Chrome's run window at the screen's left and TextEdit's over its right half (raise.mjs placementPlan with the roles
@@ -599,6 +607,14 @@ export function item187Tasks(d) {
         engine: {build: status?.build ?? null, approved: status?.approved ?? null, [SWITCH]: status?.status?.[SWITCH] ?? null}, ...(problems.length ? {problem: problems.join('; ')} : {})};
     },
     '187-place': async () => place(),
+    // The kit's own setup of a block (Korean engaged, the composition), marked so a raise inside it is told apart from a
+    // row's: the final record's reconciliation explains it as setup.
+    '187-setup': async ([tag, edge], ctx) => {
+      const s = st(ctx), at = d.now();
+      if (edge === 'start') s.windows.push({kind: 'setup', tag, from: at, to: Infinity});
+      else { const w = s.windows.findLast(x => x.kind === 'setup' && x.tag === tag); if (w) w.to = at; }
+      return {ok: true, tag, edge, at};
+    },
     // After a background row: Chrome's window raised during the row, or still above the user's, is put back before the
     // next row (the paste route has no after-action watch): the kit's placement, the user window's app activated, the
     // order read again; failing that, once more through the release scene (activated, then the user's). Harness windows
@@ -615,6 +631,8 @@ export function item187Tasks(d) {
       const lateRaisedAt = seen.filter(at => !(row.raised?.raisedAt ?? []).includes(at));
       const raised = {raisedAt: seen, stateNow: stateBefore};
       if (seen.length === 0 && stateBefore !== 'back-above') return {ok: true, key, restored: false};
+      const window = {kind: 'restore', tag: key, from: d.now(), to: Infinity};
+      s.windows.push(window);
       const stateNow = async () => { await d.sleep(ORDER_SETTLE_MS); return stateAt(d.order.attempt(s.order), Infinity); };
       const placed = place(), how = ['placement', `activate ${g.user}`];
       await d.activate(g.user);
@@ -626,6 +644,7 @@ export function item187Tasks(d) {
         state = await stateNow();
       }
       const ok = state === 'front-above';
+      window.to = d.now();
       return {ok, key, restored: true, raisedAt: raised.raisedAt, lateRaisedAt, stateBefore: raised.stateNow, state, how, placed: placed.ok,
         ...(ok ? {} : {problem: `the ${g.user} window could not be put back above the ${g.driven} window (${state})`})};
     },
@@ -649,15 +668,9 @@ export function item187Tasks(d) {
       s.order = null;
       s.stops.delete('order');
       const run = await d.order.stop(watch), raises = raisesIn(run);
-      // The final record's raises inside each row's span (from its act to the restore's read), for the judge to reconcile
-      // with the rows' own records.
-      const rowRaises = {};
-      for (const [key, row] of Object.entries(s.rows)) {
-        const from = row.mid?.at ?? row.start, to = row.closedAt ?? row.end ?? Infinity;
-        const times = raises.filter(c => c.at >= from && c.at <= to).map(c => c.at);
-        if (times.length) rowRaises[key] = times;
-      }
-      return {ok: Boolean(run?.end), item, raises: raises.length, rowRaises, reads: run?.end?.samples ?? null, maxGapMs: run?.end?.maxGapMs ?? null, lateSamples: run?.end?.lateSamples ?? null};
+      const {rowRaises, tailRaises, setupRaises, unattributed} = reconcileRaises(raises.map(c => c.at), s.rows, s.windows);
+      return {ok: Boolean(run?.end), item, raises: raises.length, rowRaises, tailRaises, setupRaises, unattributed,
+        reads: run?.end?.samples ?? null, maxGapMs: run?.end?.maxGapMs ?? null, lateSamples: run?.end?.lateSamples ?? null};
     },
     '187-activations-start': async ([item], ctx) => {
       const s = st(ctx), watch = d.activations.start();
@@ -762,14 +775,47 @@ export function item187Tasks(d) {
         stateAtStart = stateAt(run, from);
         row.raised = {raisedAt, stateNow: stateAt(run, Infinity)};
       }
-      const menu = g.driven === 'chrome' && row.mid ? {read: menuRead, watchVerified: s.menu?.registered === true,
-        observed: s.menu ? (attempt(() => d.menu.lines(s.menu)) ?? []).filter(l => l.kind === 'menu-opened' && inSpan(l)).length : 0} : null;
+      // The notification watch counts only while it stayed alive and its log read whole through the row: registered at
+      // its start, no end record, its process running, the log readable now. A log that cannot be read is unread
+      // (`observed` null), never zero events.
+      const log = s.menu ? attempt(() => d.menu.lines(s.menu)) : null;
+      const watchVerified = Boolean(s.menu?.registered === true && log && !log.some(l => l.kind === 'end') && attempt(() => d.menu.alive(s.menu)) === true);
+      const menu = g.driven === 'chrome' && row.mid ? {read: menuRead, watchVerified, observed: log ? log.filter(l => l.kind === 'menu-opened' && inSpan(l)).length : null} : null;
       const record = rowRecord({spec, prepare: ctx.results[LABELS.prepare(key)] ?? null, act, check: ctx.results[LABELS.check(key)] ?? null, page, fixture, front,
         activations, raisedAt, stateAtStart, userKept, clipboard, menu, armStatus: s.arms[tag] ?? null, disturbed: Boolean(ctx.results[disturbedOf(tag)])});
       if (record.userKept === false) ctx.results[disturbedOf(tag)] = true;
       return record;
     },
   };
+}
+
+// Every raise of the item's final watcher record, accounted for: inside a row's span (from its act to the restore's read)
+// it is that row's; inside one of the kit's own setup or restore steps (`windows`) it is explained as setup; otherwise,
+// after a row, it is the most recent row's (the block's tail: a delayed raise while the block closes its watchers,
+// session and engine); before any row, it is unattributed. -> {rowRaises, tailRaises, setupRaises, unattributed}.
+export function reconcileRaises(times, rows, windows) {
+  const spans = Object.entries(rows).map(([key, row]) => ({key, from: row.mid?.at ?? row.start, to: row.closedAt ?? row.end ?? Infinity}))
+    .filter(r => Number.isFinite(r.from)).sort((x, y) => x.from - y.from);
+  const rowRaises = {}, tailRaises = {}, unattributed = [];
+  let setupRaises = 0;
+  const push = (m, key, at) => { (m[key] ??= []).push(at); };
+  for (const at of times) {
+    const row = spans.find(r => at >= r.from && at <= r.to);
+    if (row) { push(rowRaises, row.key, at); continue; }
+    if (windows.some(w => at >= w.from && at <= w.to)) { setupRaises += 1; continue; }
+    const before = spans.filter(r => r.to < at).at(-1);
+    if (before) push(tailRaises, before.key, at); else unattributed.push(at);
+  }
+  return {rowRaises, tailRaises, setupRaises, unattributed};
+}
+
+// Why a watcher's raise total is not attributed plus setup-explained raises, or null (an unattributed raise is its own
+// failure, judged apart).
+export function reconciliationProblem(watcher) {
+  if (!watcher?.ok) return null;
+  if (!Number.isInteger(watcher.setupRaises) || !Array.isArray(watcher.unattributed)) return 'the order watcher\'s raises were not reconciled with the rows';
+  const counted = [watcher.rowRaises, watcher.tailRaises].reduce((n, m) => n + Object.values(m ?? {}).reduce((k, t) => k + t.length, 0), 0) + watcher.setupRaises + watcher.unattributed.length;
+  return counted === watcher.raises ? null : `the order watcher saw ${watcher.raises} raise(s), but ${counted} are accounted for`;
 }
 
 // What the runner's finally calls: every watcher an item started and did not stop.
@@ -829,7 +875,8 @@ export function liveDeps187({io, run, out, guard, cli, settingsFile, probe, bund
     activations: {start: () => startWatch(bundle, run), lines: watch => fileLines(join(watch.dir, 'out.json')), stop: watch => stopWatch(watch)},
     menu: {
       read: pid => JSON.parse(execFileSync(menuTool(), ['read', String(pid)], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000}).trim().split('\n').at(-1)),
-      start: startMenuWatch, stop: stopMenuWatch, lines: handle => runOf(handle.file, handle.pid),
+      start: startMenuWatch, stop: stopMenuWatch, alive: handle => handle.child.exitCode === null && handle.child.signalCode === null,
+      lines: handle => { if (!existsSync(handle.file)) throw new Error('the menu watcher\'s log is gone'); return runOf(handle.file, handle.pid); },
     },
     write: (name, text) => writeFileSync(join(out, name), text, {mode: 0o600}),
     now: Date.now, sleep,

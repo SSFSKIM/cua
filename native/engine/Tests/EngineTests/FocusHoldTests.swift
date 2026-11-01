@@ -248,6 +248,21 @@ final class FocusHoldTests: XCTestCase {
                    "the hold's start is the guard's own, on the release's Unix clock")
   }
 
+  /// #200: inside a held activation the delivery guard takes its own hold before the events; the action interval starts
+  /// as the events go out, after that setup (InputMeta.posting's contract).
+  func testAClickInsideAHeldActivationStartsItsIntervalAtTheEventsAfterTheGuardsSetup() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try hold(connection, seam, meta: &meta)
+    var heldAtUnix: Int64?
+    seam.onHold = { heldAtUnix = unixMilliseconds(); usleep(30_000) }
+    var clickMeta = self.meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
+                     targetActive: { false }, post: seam.system.post, meta: &clickMeta)
+    XCTAssertGreaterThanOrEqual(try XCTUnwrap(clickMeta.startedAt), try XCTUnwrap(heldAtUnix) + 30, "after the guard's hold was taken")
+  }
+
   /// #200: a click on another window of the held process (a dialog) is guarded on that window, not on the one the held
   /// activation was taken for.
   func testAClickOnAnotherWindowOfTheHeldProcessIsGuardedOnThatWindow() throws {

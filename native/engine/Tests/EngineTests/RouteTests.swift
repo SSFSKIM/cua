@@ -850,6 +850,60 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertNil(thirdConnection.afterAction.wire)
   }
 
+  /// A connection that closes ends its watch: nothing is raised or re-activated for a client that has gone.
+  func testAClosedConnectionEndsItsWatch() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let connection = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: connection)
+    XCTAssertTrue(connection.afterAction.watching)
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { true })
+    engine.connectionClosed(connection)
+    XCTAssertFalse(connection.afterAction.watching)
+    seam.targetAbove = true
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.raises, 0)
+  }
+
+  /// A watch that runs to its window's end lets go of itself: the connection no longer holds it, and with the connection
+  /// gone nothing holds the connection's watches.
+  func testAWatchThatEndsIsReleased() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    weak var watches: AfterActionWatches?
+    do {
+      let connection = ConnectionState(id: 7, fd: -1)
+      watches = connection.afterAction
+      _ = try click(seam, on: connection)
+      XCTAssertTrue(connection.afterAction.watching)
+      seam.advance(deliveryRepairWindowMs)
+      XCTAssertFalse(connection.afterAction.watching, "ended at post + 1 s, and no longer held")
+    }
+    XCTAssertNil(watches, "no cycle keeps the connection's watches alive")
+  }
+
+  /// A re-activation the system refuses is no repair: not counted, and the watch ends.
+  func testARefusedReactivationIsNotCountedAsARepair() throws {
+    let seam = GuardSeam(frontmost: user, reactivates: false)
+    let connection = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: connection)
+    seam.frontmost = target
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.reactivated, [user], "tried once, then the watch ended")
+    XCTAssertNil(connection.afterAction.wire, "nothing was repaired")
+  }
+
+  /// The action interval is the events' own posting (InputMeta.posting's contract): it ends before the guard releases its
+  /// hold, never at the guard's end.
+  func testTheActionIntervalEndsWithTheEventsNotTheGuard() throws {
+    let seam = GuardSeam(frontmost: user)
+    var releasedAtUnix: Int64?
+    seam.onRelease = { releasedAtUnix = unixMilliseconds(); usleep(30_000) }
+    let meta = try click(seam, on: ConnectionState(id: 7, fd: -1))
+    XCTAssertLessThanOrEqual(try XCTUnwrap(meta.endedAt), try XCTUnwrap(releasedAtUnix), "stamped as the events went out, before the guard's release")
+  }
+
   func testTheDeliveryGuardIsOnTheWire() {
     var meta = meta()
     meta.delivery = DeliveryGuardOutcome(restores: 1, frontmostRestored: false, otherAppFront: false, restoreLatencyMs: 10, guardMs: 40,
@@ -1049,6 +1103,9 @@ final class GuardSeam {
   var repairsOutsideHold = 0
   var holds = 0
   var releases = 0
+  /// Run as each screen-update hold is taken, and as each is released (on the test's thread).
+  var onHold: (() -> Void)?
+  var onRelease: (() -> Void)?
   var releasedAt: Double?
   /// When the last screen-update hold was taken, on the fake clock.
   var heldAt: Double?
@@ -1126,7 +1183,8 @@ final class GuardSeam {
     system.holdScreenUpdates = {
       self.holds += 1
       self.heldAt = self.clock
-      return { self.releases += 1; self.releasedAt = self.clock }
+      self.onHold?()
+      return { self.releases += 1; self.releasedAt = self.clock; self.onRelease?() }
     }
     system.reactivate = { pid in
       self.reactivated.append(pid)

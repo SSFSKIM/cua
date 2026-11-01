@@ -561,7 +561,8 @@ final class FakeActivation {
 /// with the user's app made frontmost again; it ends at the window's end, at the person's first input since the events,
 /// when a third app is in front (theirs), when a re-activation is refused, or when cancelled. A sample runs under the
 /// watch's lock, which `cancel` takes: once `cancel` returns no repair starts. Each repair is a flash (no hold is open),
-/// recorded on the connection (`AfterActionWatches.record`).
+/// recorded on the connection (`AfterActionWatches.record`), which the watch holds weakly: the connection holds its live
+/// watch, until the watch ends or is cancelled, and never the other way round. A refused re-activation is no repair.
 final class AfterActionWatch: @unchecked Sendable {
   private let lock = NSLock()
   private var cancelled = false
@@ -572,7 +573,7 @@ final class AfterActionWatch: @unchecked Sendable {
   private let window: CGWindowID?
   private let posted: Double
   private let postedAt: Int64
-  private let sink: AfterActionWatches
+  private weak var sink: AfterActionWatches?
 
   fileprivate init(system: ActivationSystem, user: GuardedUser, pid: pid_t, appPid: pid_t, window: CGWindowID?, posted: Double,
                    postedAt: Int64, sink: AfterActionWatches) {
@@ -591,9 +592,10 @@ final class AfterActionWatch: @unchecked Sendable {
   /// Ends the watch, waiting out a sample in progress.
   func cancel() { lock.withLock { cancelled = true } }
 
+  /// The next sample, or, once the watch has ended, its release by the connection.
   private func next() {
     system.schedule(activationGuardSampleMs) { [self] in
-      if lock.withLock({ !cancelled && sample() }) { next() }
+      if lock.withLock({ !cancelled && sample() }) { next() } else { sink?.ended(self) }
     }
   }
 
@@ -613,12 +615,12 @@ final class AfterActionWatch: @unchecked Sendable {
     }
     guard system.secondsSinceInput() * 1000 >= system.now() - posted else { return false }  // the person acted
     if targetFront {
-      let accepted = system.reactivate(user.pid)
-      sink.record(postedAt: postedAt, latencyMs: system.now() - posted, kind: "frontmost")
-      return accepted
+      guard system.reactivate(user.pid) else { return false }  // refused: no repair, and the watch ends
+      sink?.record(postedAt: postedAt, latencyMs: system.now() - posted, kind: "frontmost")
+      return true
     }
     user.window?.restore()
-    sink.record(postedAt: postedAt, latencyMs: system.now() - posted, kind: "window")
+    sink?.record(postedAt: postedAt, latencyMs: system.now() - posted, kind: "window")
     return true
   }
 }
@@ -638,7 +640,8 @@ final class AfterActionWatches: @unchecked Sendable {
   private var actions: [(postedAt: Int64, repairs: Int, latencyMs: Double)] = []
 
   /// Ends the live watch, waiting out its sample in progress: no repair starts once this returns. Every request that
-  /// acts or observes on the connection calls it first (Methods.swift `execute`), as does every pointer action.
+  /// acts or observes on the connection calls it first (Methods.swift `execute`), as does every pointer action, and the
+  /// connection's close (Intervention.swift `connectionClosed`).
   func cancel() {
     let watch = lock.withLock { () -> AfterActionWatch? in
       defer { live = nil }
@@ -651,6 +654,11 @@ final class AfterActionWatches: @unchecked Sendable {
     cancel()
     lock.withLock { live = watch }
     watch.start()
+  }
+
+  /// A watch that ended on its own lets go of it.
+  fileprivate func ended(_ watch: AfterActionWatch) {
+    lock.withLock { if live === watch { live = nil } }
   }
 
   fileprivate func record(postedAt: Int64, latencyMs: Double, kind: StaticString) {
@@ -669,6 +677,9 @@ final class AfterActionWatches: @unchecked Sendable {
       timingSignposts.emitEvent("route3.afterAction.repair", "postedAt=\(postedAt) latencyMs=\(latency, format: .fixed(precision: 1)) kind=\(kind, privacy: .public)")
     }
   }
+
+  /// Whether a watch is live (the unit tests').
+  var watching: Bool { lock.withLock { live != nil } }
 
   /// The report, nil until the connection's first after-action repair.
   var wire: [String: Any]? {

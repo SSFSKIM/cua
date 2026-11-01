@@ -194,13 +194,10 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     let made = events()
     guard !made.isEmpty else { throw EngineError(name: "eventCreationFailed", "The mouse events could not be created.") }
     announce()
-    var delivered: DeliveryGuardOutcome?
-    func postEvents() { _ = postToProcess(made, pid: pid, post: post) }
-    meta.posting {
-      if let standing { delivered = standing.deliver(window: stampedWindow(of: made), watches: watches, postEvents) } else { postEvents() }
-      return true
-    }
-    meta.delivery = delivered
+    // The interval is the events' own posting, inside the delivery guard's hold when one stands: the guard's setup and its
+    // samples after the events are its own time (`delivery.guardMs`), not the action's.
+    func postEvents() { meta.posting { _ = postToProcess(made, pid: pid, post: post); return true } }
+    if let standing { meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, postEvents) } else { postEvents() }
   }
   if route == .foreground, let foreground {
     defer { meta.keyWindowRestored = foreground.keyWindowRestored }  // on a restore failure too

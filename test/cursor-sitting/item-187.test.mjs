@@ -223,6 +223,13 @@ test('the per-line record: every line confirmed by its own change, each later li
   assert.match(perLineProblem(withPerLine([l1, unsettled])), /line 2's opening Return was not settled before its baseline/);
   assert.match(perLineProblem(withPerLine([l1, {...l2, openingReturn: {settle: 'timeout'}}])), /not settled/);
   assert.match(perLineProblem(withPerLine([l1, {...l2, confirming: l2.baseline}])), /confirming reading is its own baseline/);
+  // Review P2: a reading-confirmed line must carry both readings; one absent or null is no own change.
+  for (const missing of [{confirming: undefined}, {confirming: null}, {baseline: undefined}, {baseline: null}]) {
+    assert.match(perLineProblem(withPerLine([l1, {...l2, ...missing}])), /line 2 was confirmed by a reading without both its baseline and its confirming reading/, JSON.stringify(missing));
+    assert.match(perLineProblem(withPerLine([{...l1, ...missing}, l2])), /line 1 was confirmed by a reading without both/);
+  }
+  const bare = evidence({tweakComposing: r => (r.string === 'lines' && r.method === 'paste' ? reRecord(r, {act: {...input().act, meta: {...input().act.meta, paste: {...input().act.meta.paste, perLine: linesOf('a\nb').map((l, k) => (k ? {...l, confirming: null} : l))}}}}) : r)});
+  assert.equal(judge187(bare).overall.verdict, 'DOES NOT LAND');
   assert.equal(perLineProblem(withPerLine([l1, {...l2, effectWait: 'notification', confirming: undefined}])), null, 'a trusted notification confirms');
   assert.match(perLineProblem(withPerLine([l2, l1])), /not lines 1\.\.2 in order/);
   assert.equal(openingReturn.settle, 'reading');
@@ -258,6 +265,12 @@ test('the bar\'s traps: each one alone is DOES NOT LAND, never a partial verdict
     ['a cell repetition not key', {cell: rep => (rep === 1 ? {keyAfter: {reading: KEYLESS, pageFocused: false}} : {})}, /AFTER half: 2 of 3 repetitions key and delivered \(.*2: the key was not held after the activation/],
     ['a cell repetition whose page focus is unread', {cell: rep => (rep === 0 ? {keyAfter: {reading: KEY, pageFocused: null}} : {})}, /key-window state after the activation was not read whole/],
     ['a cell repetition not on the action plan', {cell: rep => (rep === 2 ? {press: {ok: true, pressed: true, plan: 'synthesized'}} : {})}, /the click's plan was synthesized, not the action plan/],
+    // Review P2: a delivering cell paste that touches the person's side fails the bar like any composing or control row.
+    ...[['its clipboard restore did not hold', {clipboard: {mid: 'a', after: 'b'}}, /the cell's AFTER half: 1 row\(s\) touched the person's side \(clipboard\)/],
+      ['it changed the front app', {activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', at: T0}]}, /the cell's AFTER half: 1 row\(s\) touched the person's side \(front app\)/],
+      ['it produced a page click', {page: {mid: {seq: 4, length: 0, counts: ZERO, focused: true}, after: {seq: 6, length: CELL_ROW.string.text.length, counts: {...ZERO, mousedown: 1}, focused: true}}}, /the cell's AFTER half: 1 row\(s\) touched the person's side \(page click\)/],
+      ['it opened a menu', {menu: {read: {trusted: true, ok: true, selected: 0, openMenus: 1}, observed: 0}}, /1 row\(s\) with a menu opened in Chrome/]]
+      .map(([what, over, why]) => [`a delivering cell paste where ${what}`, {cell: rep => (rep === 1 ? {row: reRecord(record({item: ITEMS.cell('after', 1), group: 'chrome-cell', row: CELL_ROW}), {group: 'chrome-cell', item: ITEMS.cell('after', 1), ...over})} : {})}, why]),
     ['a cell repetition that did not deliver', {cell: rep => (rep === 0 ? {row: reRecord(record({item: ITEMS.cell('after', 0), group: 'chrome-cell', row: CELL_ROW}), {group: 'chrome-cell', item: ITEMS.cell('after', 0), check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 44}}}})} : {})}, /the paste did not deliver/],
     ['the put-back not read', {putback: false}, /the engine put-back was not read/],
     ['the source not restored', {end: false}, /owner's input source was not selected again/],

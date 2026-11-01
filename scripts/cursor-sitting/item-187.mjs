@@ -451,7 +451,8 @@ export function perLineProblem(record) {
     if (l?.line !== k + 1) return `the per-line records are not lines 1..${record.lines} in order`;
     if (l.confirmed !== true || !SEEN.includes(l.effectWait)) return `line ${n} was not confirmed by its own change (confirmed ${l.confirmed ?? 'unread'}, effect ${l.effectWait ?? 'unread'})`;
     if (k > 0 && !SEEN.includes(l.openingReturn?.settle)) return `line ${n}'s opening Return was not settled before its baseline (settle ${l.openingReturn?.settle ?? 'unread'})`;
-    if (l.effectWait === 'reading' && l.baseline && l.confirming && sameReading(l.baseline, l.confirming)) return `line ${n}'s confirming reading is its own baseline`;
+    if (l.effectWait === 'reading' && (l.baseline == null || l.confirming == null)) return `line ${n} was confirmed by a reading without both its baseline and its confirming reading`;
+    if (l.effectWait === 'reading' && sameReading(l.baseline, l.confirming)) return `line ${n}'s confirming reading is its own baseline`;
   }
   return null;
 }
@@ -600,6 +601,11 @@ export function judge187(items) {
 // The bar (the header's): every condition, each failing one named. -> {ok, verdict: LANDS | DOES NOT LAND, why}.
 function barOf({groupOf, cells, putback, cellRows}) {
   const why = [];
+  // The person's side per row: the front app, the composition, the clipboard, a page click (raises and menus are
+  // counted over every bar row below).
+  const touched = (rows, label) => {
+    for (const [flag, n] of Object.entries(tally(rows.flatMap(r => interferenceOf(r).filter(f => !['raise', 'menu'].includes(f)))))) why.push(`${label}: ${n} row(s) touched the person's side (${flag})`);
+  };
   const whole = (name, label, {perLine = false} = {}) => {
     const g = groupOf(name);
     if (!g) return void why.push(`${label}: not recorded`);
@@ -610,7 +616,7 @@ function barOf({groupOf, cells, putback, cellRows}) {
       const bad = g.rows.map(r => [r.key, perLineProblem(r)]).filter(([, p]) => p);
       if (bad.length) why.push(`${label}: ${bad.length} row(s) whose lines were not each confirmed by their own change (${bad.slice(0, 3).map(([k, p]) => `${k}: ${p}`).join('; ')}${bad.length > 3 ? '; …' : ''})`);
     }
-    for (const [flag, n] of Object.entries(tally(g.rows.flatMap(r => interferenceOf(r).filter(f => !['raise', 'menu'].includes(f)))))) why.push(`${label}: ${n} row(s) touched the person's side (${flag})`);
+    touched(g.rows, label);
     if (GROUPS[g.group].user) {
       const w = watcherProblem(g.watcher) ?? reconciliationProblem(g.watcher);
       if (w) why.push(`${label}: ${w}`);
@@ -620,6 +626,7 @@ function barOf({groupOf, cells, putback, cellRows}) {
   for (const c of CONTROLS) whole(ITEMS.control(c), `the ${groupName(c)} control`);
   const after = cells.after, good = after.filter(c => c.recorded && !c.stopped && c.setUp && c.key === true && c.delivered);
   if (good.length !== CELL_REPS) why.push(`the cell's AFTER half: ${good.length} of ${CELL_REPS} repetitions key and delivered (${after.map((c, k) => `${k + 1}: ${c.stopped ? `stopped: ${c.stopped}` : c.why ?? 'key and delivered'}`).join('; ')})`);
+  touched(cellRows, 'the cell\'s AFTER half');
   // Raises and menus over every bar item and the cell's rows.
   const barGroups = [ITEMS.composing, ...CONTROLS.map(ITEMS.control)].map(groupOf).filter(Boolean);
   const rows = [...barGroups.flatMap(g => g.rows), ...cellRows];

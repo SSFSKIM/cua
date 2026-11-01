@@ -1317,6 +1317,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   a task, it would retire the task's own indexes); waiting in the client for the fade (end_task's reply would wait
   about half a second). Not covered: a session that never calls end_task still holds the engine until the idle stop;
   the vendor runtime's own connection lifetime across end_task was not read.
+  Amended (the review of d409b72c..790295f3, three races): the client's `release` starts a new generation, so a
+  connect still in flight at end_task closes its socket instead of publishing and the ended task's queued requests fail
+  unsent; the close's first step (`Server.retire`) adopts the watch and leaves the open connections in one move under
+  the server's lock, so nothing that finds the connection gone can miss its watch; and drains of the closed
+  connections' watches are serialized, so none returns while a watch another drain is stopping can still repair.
   Date/Author: 2026-11-01, cursor235's implementer for cua_repl's ruling on #237.
 
 ## Outcomes & Retrospective

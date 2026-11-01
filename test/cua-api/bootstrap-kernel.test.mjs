@@ -26,10 +26,12 @@ const SKY = {
     get_window_state: {window: {id: 3, app: 'gedit'}, ax_tree_source: 'at_spi', ax_tree: {id: 'n1', role: 'frame', name: 'Editor', children: []}, screenshots: []}},
 };
 
-function reply(target, services) {
+// `setupError`: Sky's setup is refused with this message (the trusted service failing at setup).
+function reply(target, services, setupError) {
   return message => {
     if (message.type !== 'trusted_service_request') return undefined;
     services.push(message.service === 'sky' ? message.request.type === 'setup' ? 'sky.setup' : `sky.${message.request.method}` : `browser.${message.request.method === 'setup' ? 'setup' : message.request.params.type}`);
+    if (setupError !== undefined && message.service === 'sky' && message.request.type === 'setup') return {type: 'trusted_service_response', id: message.id, ok: false, error: setupError};
     const answer = message.service === 'sky'
       ? SKY[target][message.request.type === 'setup' ? 'setup' : message.request.method]
       : message.request.method === 'setup' ? {apiManifest: API_MANIFEST, disabledMemberIds: []} : browserAnswer(message.request.params);
@@ -37,11 +39,11 @@ function reply(target, services) {
   };
 }
 
-function facadeKernel(t, {surfaces = 'browser,computer', target = 'mac'} = {}) {
+function facadeKernel(t, {surfaces = 'browser,computer', target = 'mac', setupError} = {}) {
   const kernel = startKernel(t, {node, env: {CUA_REPL_JS_BANNER: CUA_BOOTSTRAP_BANNER, CUA_REPL_TRUSTED_RPC_ENABLED: '1',
     CUA_REPL_UNTRUSTED_ENV_ALLOWLIST: 'CUA_REPL_ENABLED_SURFACES,CUA_REPL_BROWSER_ENV', ...(surfaces === null ? {} : {CUA_REPL_ENABLED_SURFACES: surfaces})}});
   const services = [];
-  const exec = async (code, requestMeta) => (await kernel.exec(code, {requestMeta, reply: reply(target, services)})).result;
+  const exec = async (code, requestMeta) => (await kernel.exec(code, {requestMeta, reply: reply(target, services, setupError)})).result;
   return {exec, services};
 }
 
@@ -96,4 +98,13 @@ test('computer-only on Linux: no agent and no browser members; listWindows and a
 test('the enabled surfaces are required and known; a refused bootstrap fails the cell with the vendor sentence', {skip}, async t => {
   assert.equal((await facadeKernel(t, {surfaces: 'browser,audio'}).exec('1;')).error, 'unknown CUA_REPL_ENABLED_SURFACES surface=audio');
   assert.equal((await facadeKernel(t, {surfaces: null}).exec('1;')).error, 'CUA_REPL_ENABLED_SURFACES is required');
+});
+
+test('a refused computer setup fails each cell with its own sentence, and no unhandled rejection resets the kernel (#236)', {skip}, async t => {
+  for (const surfaces of ['computer', 'browser,computer']) {
+    const {exec, services} = facadeKernel(t, {surfaces, setupError: 'sky helper unavailable'});
+    assert.equal((await exec('1;')).error, 'sky helper unavailable', `${surfaces}: the bootstrap rejects with the setup error`);
+    assert.ok(services.includes('sky.setup'));
+    assert.equal((await exec('1;')).error, 'sky helper unavailable', `${surfaces}: the same kernel answers again, no unhandled rejection reset it`);
+  }
 });

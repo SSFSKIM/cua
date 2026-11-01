@@ -110,6 +110,13 @@ test('a raise after a settled guard that the after-action watch repaired, keyed 
   assert.equal(callWatch({meta: SETTLED, attempt: kept, from: 1000, until: 3000, repaired: new Map([[1000, {repairs: 1}]])}).late, 1, 'undone only past post + 1 s');
 });
 
+test('the repair window and every post-relative time run from the delivery\'s postedAt, not the interval\'s start', () => {
+  // The guard's preparation put the interval's start 40 ms before the events' post; the watch repaired near the window's end.
+  const meta = {actionInterval: {startedAt: 960, endedAt: 961}, delivery: {holdStartedAt: 950, releasedAt: 1060, postedAt: 1000, repairedAfterRelease: false, raiseLeft: false}};
+  const w = callWatch({meta, attempt: run([[1081, 'back-above'], [2005, 'front-above']]), from: 900, until: 3000, repaired: new Map([[1000, {repairs: 1}]])});
+  assert.deepEqual([w.flash, w.late, w.postToRaiseMs, w.postToReleaseMs], [1, 0, 81, 60]);
+});
+
 test('the after-action repairs are read from every cell\'s reply, keyed by post time, the most any reply said', () => {
   const report = (repairs, actions) => ({kind: 'cell', meta: {afterActionRepairs: {repairs, actions}}});
   const read = afterActionRepairsIn([report(1, [{postedAt: 1000, repairs: 1, latencyMs: 81}]), {kind: 'task', meta: {afterActionRepairs: {repairs: 9, actions: []}}},
@@ -231,6 +238,22 @@ test('the judge counts a raise after a settled guard as a flash when a later rep
   delete second.meta.afterActionRepairs;
   const unreported = judgeCase({kase: 'a', engine: 'cua', rows, order: late});
   assert.deepEqual([unreported.verdict, unreported.late, unreported.flashes], ['FAIL', 1, 0]);
+});
+
+test('a raise after an action, during a read cell before the next engine request, is the action\'s: a flash when its watch repaired it', () => {
+  // Sample 0's click posts at 1050 and releases at 1080; a read cell starts at 1300 (its target guard runs first), and the
+  // app raises at 1350, which the click's watch repairs before the read reaches the engine.
+  const late = orderLines(`${WATCH.split('\n').slice(0, 3).join('\n')}\n{"at":1350,"kind":"order","prev":1345,"state":"back-above"}\n{"at":1360,"kind":"order","prev":1355,"state":"front-above"}\n${WATCH.split('\n')[3]}`);
+  const keyed = i => ({restores: i === 0 ? 1 : 0, holdStartedAt: 1040 + i * 1000, releasedAt: 1080 + i * 1000, postedAt: 1050 + i * 1000, capped: false, raiseLeft: false});
+  const rows = caseRows({delivery: keyed});
+  rows.splice(rows.findIndex(r => r.kind === 'cell' && r.sample?.i === 0) + 1, 0, {kind: 'cell', label: 'a#0 a read', sample: {case: 'a', i: 0, part: 'read'}, startedAt: 1300, at: 1400, ok: true, meta: {}});
+  rows.find(r => r.kind === 'cell' && r.sample?.i === 1).meta.afterActionRepairs = {repairs: 1, actions: [{postedAt: 1050, repairs: 1, latencyMs: 300}]};
+  const j = judgeCase({kase: 'a', engine: 'cua', rows, order: late});
+  assert.equal(j.verdict, 'PASS', j.why);
+  assert.deepEqual([j.flashes, j.unguarded, j.late], [1, 0, 0]);
+  delete rows.find(r => r.kind === 'cell' && r.sample?.i === 1).meta.afterActionRepairs;
+  const unrepaired = judgeCase({kase: 'a', engine: 'cua', rows, order: late});
+  assert.deepEqual([unrepaired.verdict, unrepaired.late, unrepaired.unguarded], ['FAIL', 1, 0], 'unrepaired, it is the click\'s late raise');
 });
 
 test('a case cut short, or a watcher record with no end, is incomplete, never a pass', () => {

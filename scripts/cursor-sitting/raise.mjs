@@ -294,6 +294,30 @@ export const stateAt = (attempt, t) => (attempt?.changes ?? []).filter(c => c.at
 // seen at once.
 const prevOf = c => (Number.isFinite(c.prev) ? c.prev : c.at);
 
+// An action's post time: its delivery's `postedAt`, else its interval's start; null for neither.
+const postOf = meta => (meta?.delivery?.postedAt > 0 ? meta.delivery.postedAt : meta?.actionInterval?.startedAt ?? null);
+
+// Which cell each raise is judged with (an index into `cells`, sorted by start; -1 before the first): the cell whose span
+// holds it, unless that cell's own guard had not begun its hold yet (or it has none) and an earlier guarded action's
+// engine watch may still have been running then: the latest action whose hold began before the raise, when the raise
+// lies inside its repair window after its post. The engine's watch runs until the next request reaches it, which a
+// host-side cell's start precedes (its target guard, its reads), so a raise in that gap is the earlier action's.
+export function raiseOwners(cells, raises) {
+  const guarded = c => c.meta?.delivery?.releasedAt > 0;
+  const holdStart = c => (c.meta.delivery.holdStartedAt > 0 ? c.meta.delivery.holdStartedAt : postOf(c.meta) ?? c.meta.delivery.releasedAt);
+  return new Map(raises.map(raise => {
+    let k = -1;
+    for (let i = 0; i < cells.length && cells[i].startedAt <= raise.at; i++) k = i;
+    if (k >= 0 && guarded(cells[k]) && raise.at >= holdStart(cells[k])) return [raise, k];
+    for (let j = k; j >= 0; j--) {
+      if (!guarded(cells[j]) || holdStart(cells[j]) > raise.at) continue;
+      const post = postOf(cells[j].meta);
+      return [raise, Number.isFinite(post) && raise.at <= post + REPAIR_WINDOW_MS + OUTLIVE_MS ? j : k];
+    }
+    return [raise, k];
+  }));
+}
+
 // What the watcher saw of one call, from `from` to `until` (Unix ms), with the call's meta (`meta`: the cell row's or
 // answer's; `actionInterval` and `delivery` when it was a route-3 pointer action). A cell that observes and then acts
 // keeps only the action's meta, so the guard covers only what its screen hold covered, from `holdStartedAt` (the post,
@@ -308,11 +332,14 @@ const prevOf = c => (Number.isFinite(c.prev) ? c.prev : c.at);
 //              the after-action watch: `repaired`, the post times a later reply's afterActionRepairs keyed) and the
 //              watcher saw it undone inside the repair window after the post
 // With the guard, also the first raise after the post and how long after it, and how long after the post the hold was
-// released. -> {guarded, raises, postToRaiseMs, postToReleaseMs, late, outlived, undecided, unguarded, flash}.
-export function callWatch({meta = {}, attempt, from, until = Infinity, repaired = null}) {
+// released. The post is the delivery's `postedAt` (the engine's own clock for its repair window), else the action
+// interval's start. `owned`, when given, picks the raises that are this call's instead of the span from `from` to
+// `until` (judgeCase: a raise during a later host-side cell can still be this action's).
+// -> {guarded, raises, postToRaiseMs, postToReleaseMs, late, outlived, undecided, unguarded, flash}.
+export function callWatch({meta = {}, attempt, from, until = Infinity, repaired = null, owned = null}) {
   const changes = attempt?.changes ?? [];
-  const raises = raisesIn(attempt).filter(c => c.at >= from && c.at < until);
-  const post = meta.actionInterval?.startedAt ?? null, releasedAt = meta.delivery?.releasedAt > 0 ? meta.delivery.releasedAt : null;
+  const raises = raisesIn(attempt).filter(owned ?? (c => c.at >= from && c.at < until));
+  const post = postOf(meta), releasedAt = meta.delivery?.releasedAt > 0 ? meta.delivery.releasedAt : null;
   if (releasedAt === null) return {guarded: false, raises: raises.length, postToRaiseMs: null, postToReleaseMs: null, late: 0, outlived: 0, undecided: 0, unguarded: raises.length, flash: 0};
   const holdStart = meta.delivery.holdStartedAt > 0 ? meta.delivery.holdStartedAt : Number.isFinite(post) ? post : releasedAt;
   const grace = releasedAt + OUTLIVE_MS;
@@ -410,13 +437,15 @@ export function judgeCase({kase, engine, rows, order}) {
   const complete = [...byI.entries()].filter(([, h]) => halves.every(part => h[part])).sort(([a], [b]) => a - b);
   const delivered = complete.filter(([, h]) => halves.every(part => h[part].delivered));
   const undelivered = complete.flatMap(([i, h]) => halves.filter(part => !h[part].delivered).map(part => ({i, part, why: h[part].why})));
-  // Every cell's span runs to the next cell's start (the last's, to the record's end); the raises before the first
-  // cell (the session's opening) are unguarded.
+  // Every cell's span runs to the next cell's start (the last's, to the record's end), and a raise is judged with the
+  // cell whose span holds it, or with the earlier action whose watch may still have run then (raiseOwners); the raises
+  // before the first cell (the session's opening) are unguarded.
   const cells = last.filter(r => r.kind === 'cell' && Number.isFinite(r.startedAt)).sort((x, y) => x.startedAt - y.startedAt);
   const end = attempt?.end?.at ?? Infinity;
   const afterAction = afterActionRepairsIn(last);
-  const watched = cells.map((c, k) => ({row: c, ...callWatch({meta: c.meta, attempt, from: c.startedAt, until: cells[k + 1]?.startedAt ?? end, repaired: afterAction.actions})}));
-  const opening = raisesIn(attempt).filter(c => !cells.length || c.at < cells[0].startedAt).length;
+  const owners = raiseOwners(cells, raisesIn(attempt).filter(c => c.at < end));
+  const watched = cells.map((c, k) => ({row: c, ...callWatch({meta: c.meta, attempt, repaired: afterAction.actions, owned: raise => owners.get(raise) === k})}));
+  const opening = [...owners.values()].filter(k => k < 0).length;
   const actions = watched.filter(w => halves.includes(w.row.sample?.part));
   const deliveries = actions.map(w => w.row.meta?.delivery).filter(Boolean);
   const raises = raisesIn(attempt), losses = lossesIn(attempt);

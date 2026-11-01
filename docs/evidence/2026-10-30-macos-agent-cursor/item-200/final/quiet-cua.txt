@@ -1,0 +1,9 @@
+05:08:05Z
+{ 24.54 27.08 25.58 }
+  0.0 maws-supervisor
+ %CPU COMM
+ 46.6 /System/Library/PrivateFrameworks/AppStoreDaemon.framework/Support/appstoreagent
+ 38.6 /Library/Frameworks/Python.framework/Versions/3.12/Resources/Python.app/Contents/MacOS/Python
+ 33.9 /Users/new/.local/bin/claude
+ 21.4 claude bg-spare
+  9.1 /usr/sbin/mDNSResponder

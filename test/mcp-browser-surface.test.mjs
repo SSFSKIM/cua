@@ -186,6 +186,7 @@ const GENERAL_RULES = {
   'the surface rules are in the tool descriptions': /Each tool's description carries the rules for its surface/,
 };
 const APPROVAL = /Apps ask for approval once per connection; report a declined app, don't retry\./;
+const WINDOWS = /Leave the person's windows as they are: unless asked, don't raise, activate, hide or unhide an app to reach a covered or background window; say what is in the way instead\./;
 const DEVICES_RULE = /devices_use moves every tool to that machine, under the notes and descriptions it returns; end_task first\./;
 const BROWSER_RULES = {
   'getBrowser only with an id from profiles_list, which is asked again on failure': /cua\.getBrowser\(\{extensionInstanceId\}\) only an id profiles_list returned for the profile the user means; if that fails, call profiles_list again/,
@@ -243,6 +244,7 @@ test('the instructions carry the rules for every call on every surface, no surfa
     assert.equal(instructions, `${UPSTREAM_INSTRUCTIONS}\n\n${hostNotesFor(surfaces, {platform, devices})}`, label);
     for (const [rule, pattern] of Object.entries(GENERAL_RULES)) assert.match(instructions, pattern, `${label}: ${rule}`);
     assert.equal(APPROVAL.test(instructions), surfaces.includes('computer'), `${label}: the per-app approval rule`);
+    assert.equal(WINDOWS.test(instructions), surfaces.includes('computer'), `${label}: the person's windows are left as they are`);
     assert.equal(DEVICES_RULE.test(instructions), devices, `${label}: the devices rule with the device tools only`);
     for (const [rule, pattern] of Object.entries({...BROWSER_RULES, ...COMPUTER_RULES, ...LINUX_RULES}))
       assert.doesNotMatch(instructions, pattern, `${label}: ${rule} is in its tool's description`);

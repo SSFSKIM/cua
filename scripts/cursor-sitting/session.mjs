@@ -38,8 +38,11 @@ export function parseCells(text) {
 // round trip and the wrapper's time, route 3's guard and activation click, the action interval and the engine's receipt)
 // and the intervention guard's reading, on a refusal too: the ms from the app's last attributed event to the receipt
 // (hidIdleMs; with detection off, `intervention: "off"` and the machine-wide idle time), and what a type_text entered
-// before it stopped.
-const KEPT_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'actionInterval', 'receivedAt', 'hidIdleMs', 'intervention', 'entered'];
+// before it stopped; route 3's delivery guard after a pointer action's events (#200: its restores, the hold's release
+// time) and the connection's after-action repairs, which a later call carries (#200: the flashes after an action's
+// release, keyed by its delivery's post time).
+const KEPT_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'actionInterval', 'receivedAt', 'hidIdleMs', 'intervention', 'entered', 'delivery',
+  'afterActionRepairs'];
 
 // What the sitting keeps of a js reply: the cell's answer, the route the engine reported for the last call, the
 // attested engine, that call's meta (KEPT_META, the keys it carried), and the images it emitted (base64, SHOT only).

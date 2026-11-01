@@ -26,11 +26,14 @@ export const SCENE_MARKER = scene => `/* cursor-sitting:scene ${scene} */`;
 export const scenesOf = code => [...new Set([...String(code).matchAll(/\/\* cursor-sitting:scene (\w+) \*\//g)].map(m => m[1]))];
 
 // Why `record` ({id, pid, at, window: {number}}) is no longer the run's target, or null. `readings`: {launchAt (the pid's
-// launch time now, or null), windows (the pid's layer-0 windows, front to back)}.
+// launch time now, or null), windows (the pid's layer-0 windows, front to back)}. Finder's process is the system's, never
+// the run's launch (scripts/repl-parity/scenes-mac.mjs), so its record names no launch time: it must still run, and the
+// run's window be its front one.
 export function targetProblem(record, {launchAt, windows}) {
-  if (!Number.isSafeInteger(record?.pid) || !Number.isFinite(record?.at) || !Number.isSafeInteger(record?.window?.number))
+  const system = record?.id === 'finder' && record.at === undefined;
+  if (!Number.isSafeInteger(record?.pid) || (!system && !Number.isFinite(record?.at)) || !Number.isSafeInteger(record?.window?.number))
     return `the ${record?.id} scene's record names no launch and window to check`;
-  if (launchAt !== record.at) return `the ${record.id} scene's process ${record.pid} is no longer the launch the scene recorded`;
+  if (system ? launchAt == null : launchAt !== record.at) return `the ${record.id} scene's process ${record.pid} is no longer ${system ? 'running' : 'the launch the scene recorded'}`;
   // On-screen windows only: a minimised window or one on another Space is not a window the agent may act in now.
   const front = documentWindows(windows ?? []).filter(w => w.onScreen !== false)[0] ?? null;
   if (!front || front.number !== record.window.number)

@@ -172,6 +172,13 @@ final class HeldActivations: @unchecked Sendable {
     return held[pid]?.holders ?? 0
   }
 
+  /// The activation `pid`'s holders share; nil when none holds it.
+  func activation(of pid: pid_t) -> FakeActivation? {
+    lock.lock()
+    defer { lock.unlock() }
+    return held[pid]?.activation
+  }
+
   /// Whether the registry's lock is held now (the unit tests' view: the intervention check runs under it).
   var isLocked: Bool {
     guard lock.try() else { return true }

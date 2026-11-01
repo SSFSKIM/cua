@@ -6,7 +6,8 @@
 //   cursor-sitting.mjs prepare
 //       Compiles the target guard's window probe (scripts/accept/front-window.swift) into the harness cache, once, so the
 //       sitting's first cell does not wait for it (./cursor-sitting/target-guard.mjs), and item 1's window-list probe
-//       (./cursor-sitting/window-list.swift; `drive 1 --no-clip` also compiles it before it positions the cursor).
+//       (./cursor-sitting/window-list.swift; `drive 1 --no-clip` also compiles it before it positions the cursor), and
+//       #200's order watcher, window mover and element-frame reader.
 //   cursor-sitting.mjs save --home <dir> --to <new dir>
 //       Before the sitting: `cua engine status --json`, a copy of <home>'s whole engine directory (its socket, lock,
 //       build scratch and staging left out) and of ~/.config/cua/engine.json, checked against a manifest of the tree
@@ -86,6 +87,16 @@
 //       first visible frame for the first target), bounds the lag by those frames' times, writes
 //       <out>/item-1-route3-lag.json and .md, copies the frames, and appends item 13's route-3-lag verdict when the
 //       bound decides it against 100 ms. Exit 1 unless it passes.
+//   cursor-sitting.mjs raise drive --engine cua|vendor --run <dir> --out <dir> [--case a,b,c,d,e,f] [--samples <n>] [--quiet]
+//                     [--dry-run]
+//   cursor-sitting.mjs raise judge --out <dir>
+//       #200's live check (./cursor-sitting/raise.mjs): the harness windows placed (TextEdit at the left, Chrome for
+//       Testing over its right half and activated; Finder's and the fixture's windows where TextEdit's is, when their
+//       cases run), then each case on its own session of the engine, recorded in <out>/item-200-<case>-<engine>.jsonl,
+//       the 5 ms window-order watcher's changes in item-200-<case>-<engine>-order.jsonl. A case whose scene breaks (the
+//       driven window left above Chrome's, a window gone) stops it and the cases after it. `drive` then judges the
+//       engine's cases; `judge` writes every case on both engines to <out>/item-200.md and prints it. --samples sets
+//       every case's count (a's is twice it, half under Chrome). Exit 1 unless every cua case run passes.
 //   cursor-sitting.mjs remote prepare|enroll|run --kit <dir> [--port n] [--run <dir> --out <dir>] [--quiet] [--dry-run]
 //       Acceptance 8's loopback device (./cursor-sitting/remote.mjs): prepare the kit (and print what it still needs),
 //       enrol it on a loopback relay, then run: the relay and the agent started, three client sessions driven
@@ -101,6 +112,8 @@ import {liveSourceSwitch, switchSource, writeConsent} from './cursor-sitting/inp
 import {windowListProbe, writeOrderFromMeta} from './cursor-sitting/glide.mjs';
 import {restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
 import {PLANS} from './cursor-sitting/plans.mjs';
+import {CASES, elementFrameTool, ENGINES, itemOf, judgeCase, moveWindowTool, orderFileOf, orderLines, orderWatchProbe, placeSteps, raiseMarkdown,
+  raiseSteps} from './cursor-sitting/raise.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
 import {liveIo, runSteps} from './cursor-sitting/runner.mjs';
 import {clipPathProblem, REPO_ROOT} from './cursor-sitting/recording.mjs';
@@ -113,7 +126,7 @@ const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'string'}, aside: {type: 'string'}, run: {type: 'string'}, out: {type: 'string'},
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
   arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'}, source: {type: 'string'}, 'no-clip': {type: 'boolean', default: false}, still: {type: 'boolean', default: false}, control: {type: 'boolean', default: false},
-  quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
+  case: {type: 'string'}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
 const absolute = (values, name) => {
@@ -209,7 +222,8 @@ function timingMarkdown(judged, {recorded = false} = {}) {
 
 function summaryMarkdown(out) {
   const verdicts = readJsonl(join(out, 'verdicts.jsonl'));
-  const files = readdirSync(out).filter(f => /^item-[\w-]+\.jsonl$/.test(f)).sort((a, b) => a.localeCompare(b, 'en', {numeric: true}));
+  // #200's watcher files (item-200-<case>-<engine>-order.jsonl) are its judge's, not items.
+  const files = readdirSync(out).filter(f => /^item-[\w-]+\.jsonl$/.test(f) && !f.endsWith('-order.jsonl')).sort((a, b) => a.localeCompare(b, 'en', {numeric: true}));
   const lines = ['# The agent cursor\'s sitting: what each item recorded', ''];
   for (const f of files) {
     const rows = lastAttempt(readJsonl(join(out, f))), item = f.slice(5, -6);
@@ -228,6 +242,47 @@ function summaryMarkdown(out) {
   return lines.join('\n');
 }
 
+// #200's judgements from the evidence: every case recorded on each engine (or only `engine`), in case order. -> [judged].
+export function judgeRaise(out, {engine = null} = {}) {
+  return Object.keys(CASES).flatMap(kase => ENGINES.filter(e => !engine || e === engine).flatMap(e => {
+    const rows = readJsonl(join(out, `item-${itemOf(kase, e)}.jsonl`));
+    if (!rows.length) return [];
+    const order = existsSync(join(out, orderFileOf(kase, e))) ? orderLines(readFileSync(join(out, orderFileOf(kase, e)), 'utf8')) : [];
+    return [judgeCase({kase, engine: e, rows, order})];
+  }));
+}
+
+// #200's drive: the placement, then each case in order, each its own item; a case that throws (its scene broke, a session
+// failed) is marked in its jsonl and stops the cases after it.
+async function driveRaise(values) {
+  const engine = values.engine;
+  if (!ENGINES.includes(engine)) throw new Error('raise drive takes --engine cua or --engine vendor');
+  const cases = (values.case ?? Object.keys(CASES).join(',')).split(',');
+  if (!cases.length || cases.some(c => !CASES[c])) throw new Error(`--case takes cases of ${Object.keys(CASES).join(', ')}, comma-separated`);
+  const samples = values.samples === undefined ? null : Number(values.samples);
+  if (samples !== null && (!Number.isInteger(samples) || samples < 1)) throw new Error('--samples takes a positive whole number');
+  const out = absolute(values, 'out'), dryRun = values['dry-run'];
+  const run = dryRun ? values.run ?? '/nonexistent' : absolute(values, 'run');
+  const io = liveIo({run, out, quiet: values.quiet});
+  const extras = [...new Set(cases.map(c => CASES[c].back).filter(b => b !== 'textedit'))];
+  const items = [[`200-place-${engine}`, placeSteps({extras})],
+    ...cases.map(c => [itemOf(c, engine), raiseSteps(c, {engine, samples: samples === null ? undefined : c === 'a' ? 2 * samples : samples})])];
+  let steps = 0, stopped = null;
+  for (const [item, plan] of items) {
+    steps += plan.length;
+    try { await runSteps(plan, {item, out, io, engine, dryRun}); } catch (error) {
+      stopped = `${item}: ${error.message}`;
+      appendFileSync(join(out, `item-${item}.jsonl`), `${JSON.stringify({item, at: Date.now(), kind: 'stopped', error: error.message})}\n`);
+      print(`stopped at ${stopped}; the cases after it were not run`);
+      break;
+    }
+  }
+  if (dryRun) { print(`dry run: ${steps} steps, nothing sent`); return 0; }
+  const judged = judgeRaise(out, {engine});
+  print(raiseMarkdown(judged));
+  return !stopped && judged.every(j => j.engine === 'vendor' || j.verdict === 'PASS') ? 0 : 1;
+}
+
 async function drive(steps, {item, values, gap = null}) {
   const out = absolute(values, 'out');
   const run = values['dry-run'] ? values.run ?? '/nonexistent' : absolute(values, 'run');
@@ -243,6 +298,9 @@ export async function main(argv) {
   if (command === 'prepare') {
     print(`the target guard's window probe: ${liveTargetGuard().compile()}`);
     print(`item 1's window-list probe: ${windowListProbe()}`);
+    print(`#200's order watcher: ${orderWatchProbe()}`);
+    print(`#200's window mover: ${moveWindowTool()}`);
+    print(`#200's element-frame reader: ${elementFrameTool()}`);
     return 0;
   }
   if (command === 'save') {
@@ -390,6 +448,17 @@ export async function main(argv) {
     }
     throw new Error('clip takes frames, order, routes or lag');
   }
+  if (command === 'raise') {
+    const sub = positionals[0];
+    if (sub === 'drive') return driveRaise(values);
+    if (sub === 'judge') {
+      const out = absolute(values, 'out'), judged = judgeRaise(out);
+      writeFileSync(join(out, 'item-200.md'), raiseMarkdown(judged));
+      print(raiseMarkdown(judged));
+      return judged.length && judged.every(j => j.engine === 'vendor' || j.verdict === 'PASS') ? 0 : 1;
+    }
+    throw new Error('raise takes drive or judge');
+  }
   if (command === 'remote') {
     const kit = absolute(values, 'kit'), sub = positionals[0];
     if (sub === 'prepare') {
@@ -418,7 +487,7 @@ export async function main(argv) {
     }
     throw new Error('remote takes prepare, enroll or run');
   }
-  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | source consent|restore | clip frames|order | remote prepare|enroll|run (see the header)');
+  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | source consent|restore | clip frames|order | raise drive|judge | remote prepare|enroll|run (see the header)');
 }
 
 if (process.argv[1] && SCRIPT === resolve(process.argv[1])) {

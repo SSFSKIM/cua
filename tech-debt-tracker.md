@@ -2,6 +2,14 @@
 
 ## Open
 
+- **2026-11-01 — A capped route-3 action can answer up to 1 s late (accepted limit, #200).** When the delivery guard
+  reaches the 100 ms screen-hold cap with the click's raise not yet settled, it keeps repairing synchronously inside the
+  action until the raise settles or 1 s after the events (`FakeActivation.deliver`, the past-cap branch), so that action's
+  answer waits with it. #200's live check capped 1 action of 140 (case a). The fold: hand the past-cap repairs to the
+  after-action watch (`AfterActionWatch`), which already runs them asynchronously for raises after the release, so a
+  capped action answers at the cap with its repairs reported in `afterActionRepairs`; it changes `delivery.raiseLeft`'s
+  meaning for a capped action, so it waits for its own change.
+
 - **2026-10-31 — press_key costs about 1 ms a key while the agent cursor moves (accepted limit, #235 M3; tracked in #238 with the coordinate click and drag gap).** The owner accepted it as a stated limit (the spec's Decision Log, 2026-10-31; Acceptance 12 amended): +32 ms per 30 keys at the second sitting's judged run, up to about +53 on a grown TextEdit document, +6 and undetermined on a fresh one. The attribution (`.doperpowers/sde/2026-10-30-macos-agent-cursor-design/sitting-2-attribution.md`, gitignored; summarised in the spec's 2026-10-31 entries) puts the extra time inside the engine's request, in waits on WindowServer under its added load: the AX keyboard-target read and the prologue's `CGSessionCopyCurrentDictionary` and `secondsSinceLastEventType` reads. Fix, if it is wanted: the spec's design note (a lock-state cache and an IORegistry `HIDIdleTime` read in place of the WindowServer round trips, in Methods.swift, which overlaps #211). Check: a press_key x30 series cursor on against off on a fresh document stays undetermined or better after the change.
 
 - **2026-10-31 — The Chrome for Testing scene can record an off-screen window (kit defect, #235 M3; tracked in #239).** Three times on 2026-10-31 `scenes-mac.mjs up chrome` recorded a 500 × 500 window at (0, 482) that the on-screen window list did not hold, while the page's window was another (47423 against 47414; 47753 against 47744). The kit's guards then refused the run's first session ("the chrome app's front window is window …, not the run's window …"). The sittings worked around it by re-pointing the record by hand and then with an operator script (`~/.local/share/cua-235/sitting-2026-10-31c/repoint-chrome.py`). Fix: in `up chrome`, record the window only once it is the app's one on-screen layer-0 window, as `up textedit` now waits (0f0f2da8). Check: `up chrome` three times in a row records a window that `CGWindowListCopyWindowInfo(.optionOnScreenOnly)` lists.

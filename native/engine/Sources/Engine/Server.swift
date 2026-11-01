@@ -182,7 +182,7 @@ final class Server: @unchecked Sendable {
     close(connection.fd)
     connection.endMenuInteraction()  // a held menu activation goes with its connection (MenuSpan.swift)
     connection.endFocusHold()  // and its focus hold (FocusHold.swift)
-    engine.connectionClosed(connection)  // its drives end; the intervention tap goes with the last (Intervention.swift)
+    engine.connectionClosed(connection)  // its after-action watch and drives end; the intervention tap goes with the last (Intervention.swift)
     engine.webAccessibility.release(connection: connection.id)  // enablement no connection observes now (Enablement.swift)
     engine.cursor.closed(connection: connection.id)  // its cursor's panel is ordered out and released (Cursor/CursorHub.swift)
   }

@@ -29,6 +29,9 @@ const byPath = Object.fromEntries(Object.values(APPS).map(app => [app.appPath, a
 const NO_LONGER_VALID = 'The element ID is no longer valid. Try to get the on-screen content again and see if that resolves the issue.';
 const ENGINE_MS = {resolve_app: 999};
 const INPUT_META = {inputRoute: 3, startedAt: 1000, endedAt: 1042, receivedAt: 990, hidIdleMs: 31000, activationGuardMs: 41.5, activationClick: 'posted', pointUnconfirmed: true};
+// Route 3's delivery guard after a pointer action (#200): one restore, under the cap.
+const DELIVERY = {restores: 1, frontmostRestored: false, otherAppFront: false, restoreLatencyMs: 10, guardMs: 40, screenHoldMs: 52.5, capped: false,
+  raiseLeft: false, holdStartedAt: 1793399999947, releasedAt: 1793400000000};
 
 const win = title => node('t0', 0, 'AXWindow', {roleDescription: 'standard window', title, actions: ['AXRaise']});
 const button = (token, title) => node(token, 1, 'AXButton', {roleDescription: 'button', title, actions: ['AXPress']});
@@ -349,6 +352,7 @@ test('intervention, entered and routeAdvice ride as cua/ meta on results and on 
   const {getApp, call, meta} = await session(t, {handlers: {
     'execute:type_text': () => { throw new EngineFailure(-10016, 'The user changed \'/System/Applications/TextEdit.app\'. Re-query the latest state with `get_app_state` before sending more actions.', 'userIntervened', {meta: stopped}); },
     'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, pointUnconfirmed: undefined, intervention: 'off', hidIdleMs: 52000}}),
+    'execute:drag': () => ({meta: {...INPUT_META, delivery: DELIVERY}}),
     'execute:click': () => { throw new EngineFailure(-10005, 'The action was not performed: another app came to the front.', 'activationFailed', {meta: {...INPUT_META, startedAt: null, endedAt: null, routeAdvice: 'add "routes": {"com.apple.TextEdit": 4}'}}); },
   }});
   const {app} = await getApp('TextEdit');
@@ -360,11 +364,14 @@ test('intervention, entered and routeAdvice ride as cua/ meta on results and on 
   assert.equal(meta['cua/intervention'], 'off');
   assert.equal(meta['cua/entered'], null, 'a key press carries no count, and none is left standing');
   assert.equal(meta['cua/hidIdleMs'], 52000);
+  await call(() => app.drag([1, 2], [3, 4]));
+  assert.deepEqual(meta['cua/delivery'], DELIVERY, 'route 3\'s delivery guard (#200), as the engine sent it');
   await assert.rejects(call(() => app.click(1)), /another app came to the front/);
+  assert.equal(meta['cua/delivery'], null, 'a refused click carries none, and none is left standing');
   assert.equal(meta['cua/routeAdvice'], 'add "routes": {"com.apple.TextEdit": 4}');
   assert.equal(meta['cua/intervention'], null);
   await call(() => app.getAXState({emit: false}));
-  for (const key of ['cua/intervention', 'cua/entered', 'cua/routeAdvice']) assert.equal(meta[key], null, key);
+  for (const key of ['cua/intervention', 'cua/entered', 'cua/routeAdvice', 'cua/delivery']) assert.equal(meta[key], null, key);
 });
 
 test('cua/settle rides on the observation whose settle hit its cap, and on no other', async t => {
@@ -374,6 +381,27 @@ test('cua/settle rides on the observation whose settle hit its cap, and on no ot
   trees.get(APPS.TextEdit.appPath).settle = 'capped';
   await call(() => app.getAXState({emit: false}));
   assert.equal(meta['cua/settle'], 'capped');
+});
+
+// Route 3's after-action watch (#200): its repairs, made after the action answered, ride on the connection's later
+// results, an input's meta or an observation's.
+const AFTER_ACTION = {repairs: 2, actions: [{postedAt: 1793400000000, repairs: 2, latencyMs: 81.5}]};
+
+test('cua/afterActionRepairs rides on a later input result and on an observation, as the engine sent it, and stands on no other call', async t => {
+  let report = AFTER_ACTION;
+  const {getApp, call, meta, trees} = await session(t, {handlers: {
+    'execute:drag': () => ({meta: {...INPUT_META, delivery: DELIVERY, ...(report ? {afterActionRepairs: report} : {})}}),
+  }});
+  const {app} = await getApp('TextEdit');
+  assert.equal(meta['cua/afterActionRepairs'], null);
+  await call(() => app.drag([1, 2], [3, 4]));
+  assert.deepEqual(meta['cua/afterActionRepairs'], AFTER_ACTION);
+  report = null;
+  await call(() => app.drag([1, 2], [3, 4]));
+  assert.equal(meta['cua/afterActionRepairs'], null, 'none left standing from the call before');
+  trees.get(APPS.TextEdit.appPath).afterActionRepairs = AFTER_ACTION;
+  await call(() => app.getAXState({emit: false}));
+  assert.deepEqual(meta['cua/afterActionRepairs'], AFTER_ACTION, 'an observation after the last action reports its repairs too');
 });
 
 // The engine's observation diagnostics (Skyshot timings) as Chromium and Electron rows need them: enablement, the web

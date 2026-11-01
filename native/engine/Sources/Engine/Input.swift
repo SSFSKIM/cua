@@ -17,7 +17,9 @@ import Foundation
 // startedAt, endedAt, receivedAt, hidIdleMs}, startedAt/endedAt null while nothing was posted, inputRoute null until a
 // route is chosen; the guard's duration rides as activationGuardMs when route 3 ran one, `intervention: "off"` when
 // detection is off, `entered` on a type_text that keyed (never a concealed one), and `routeAdvice` once route 3's guard
-// has failed three actions in a row for the app. The settle an action arms runs at the next get_app_state (markActed).
+// has failed three actions in a row for the app; route 3's pointer actions add `delivery` (#200), and every result on a
+// connection whose after-action watch has repaired carries `afterActionRepairs` (Activation.swift AfterActionWatches).
+// The settle an action arms runs at the next get_app_state (markActed).
 // Spike-only arguments, which the facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘
 // post, is reachable only this way), `spikeEventSource` ("private", post keys from a private event source instead of
 // the HID-system one) and `spikeKeyed` (type_text: key through the layout regardless of the source routing, probe (e)'s
@@ -78,6 +80,8 @@ struct InputMeta {
   var routeAdvice: String?
   /// Route 4 only: whether the user's key window is the one it was before the foreground assist (ForegroundAssist).
   var keyWindowRestored: Bool?
+  /// Route 3's pointer actions: what the delivery guard after the action's events saw and did (#200); nil when none ran.
+  var delivery: DeliveryGuardOutcome?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -127,6 +131,8 @@ struct InputMeta {
     if let entered { wire["entered"] = entered }
     if let routeAdvice { wire["routeAdvice"] = routeAdvice }
     if let keyWindowRestored { wire["keyWindowRestored"] = keyWindowRestored }
+    if let delivery { wire["delivery"] = delivery.wire }
+    if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }
 }
@@ -161,17 +167,26 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
 /// registry; the default, a registry of the action's own, shares with nothing (the unit tests'). `beforeActivating` (the
 /// in-flight intervention check) runs under the registry's lock, so a user event that lands while the action waits
 /// behind another holder's activation stops it before its activation and activation click; `beforePosting` runs again
-/// just before the events, and `announce` once they are made and about to be posted.
+/// just before the events, and `announce` once they are made and about to be posted. Under route 3 the events go out
+/// through the standing activation's delivery guard (`FakeActivation.deliver`, #200), inside the activation's own
+/// screen-update hold when this action ran it, on the window the events name.
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
                     foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {},
                     announce: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
+  // An earlier action's after-action watch ends before anything of this one happens (its activation included).
+  let watches = meta.context.connection.afterAction
+  watches.cancel()
   var release: (() -> Bool)?
   defer { _ = release?() }  // every path out of the action, error or success, ends its lease
+  var standing: FakeActivation?
+  defer { activation?.releaseOpenHold() }  // a stop before the events ends the activation's hold with the action
   if route == .activation, let activation {
+    activation.holdsThroughDelivery = true
     // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
     // focusing click inside set_value's held activation).
     release = try activations.acquire(pid: activation.pid, beforeActivating: beforeActivating, make: { activation }, meta: &meta)
+    standing = activations.activation(of: activation.pid)
   }
   // The interval is stamped as the events are posted, so an error after them (route 4's restore) still says they were.
   func send() throws {
@@ -179,7 +194,10 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     let made = events()
     guard !made.isEmpty else { throw EngineError(name: "eventCreationFailed", "The mouse events could not be created.") }
     announce()
-    meta.posting { _ = postToProcess(made, pid: pid, post: post); return true }
+    // The interval is the events' own posting, inside the delivery guard's hold when one stands: the guard's setup and its
+    // samples after the events are its own time (`delivery.guardMs`), not the action's.
+    func postEvents() { meta.posting { _ = postToProcess(made, pid: pid, post: post); return true } }
+    if let standing { meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, postEvents) } else { postEvents() }
   }
   if route == .foreground, let foreground {
     defer { meta.keyWindowRestored = foreground.keyWindowRestored }  // on a restore failure too

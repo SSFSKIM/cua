@@ -499,6 +499,425 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(stopped, 0, "an in-flight stop before the events moves no cursor")
   }
 
+  // MARK: The delivery guard (#200)
+
+  private func freshActivation(_ seam: GuardSeam) -> FakeActivation {
+    FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame, windowID: 41, system: seam.system)
+  }
+
+  private func click(_ seam: GuardSeam, activation: FakeActivation? = nil, count: Int = 1, meta: inout InputMeta) throws {
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: count, activation: activation ?? freshActivation(seam),
+                     targetActive: { false }, post: seam.system.post, meta: &meta)
+  }
+
+  /// The click's own mouse down raises the target's window above the user's (AppKit's ordering click): the guard that
+  /// follows the click's events raises the user's window back, inside the activation's one screen-update hold.
+  func testARaiseAtTheClickIsUndoneInsideTheActivationsOneHold() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    var postsAtRaise: Int?
+    seam.onMouseDown = { seam.targetAbove = true; postsAtRaise = seam.posts.count }
+    var meta = meta()
+    try click(seam, meta: &meta)
+    XCTAssertEqual(seam.targetAbove, false, "the user's window is back on top")
+    XCTAssertEqual(seam.raises, 1)
+    XCTAssertEqual(seam.holds, 1, "one hold for the activation and the click")
+    XCTAssertEqual(seam.releases, 1)
+    XCTAssertNotNil(postsAtRaise)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(delivery.restores, 1)
+    XCTAssertFalse(delivery.frontmostRestored)
+    XCTAssertFalse(delivery.raiseLeft)
+    XCTAssertFalse(delivery.capped)
+    XCTAssertEqual(delivery.restoreLatencyMs, 10, "found at the first sample after the click")
+    XCTAssertEqual(delivery.guardMs, deliveryGuardMinimumMs, "the restore's sample, three stable ones, and on to the minimum wait")
+    XCTAssertEqual(seam.releasedAt, seam.clock, "released once the delivery guard settled")
+    XCTAssertEqual(delivery.screenHoldMs, seam.releasedAt, "the hold ran from the activation's start (clock 0)")
+    XCTAssertEqual(Double(delivery.releasedAt - delivery.holdStartedAt), try XCTUnwrap(seam.releasedAt) - 0,
+                   "the hold's start on the release's Unix clock: the activation's, before the click's events")
+    XCTAssertEqual(meta.activationGuardMs, 10, "the activation's own guard settles on one sample when a delivery guard follows")
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)])
+  }
+
+  /// A click that brings the target's process to the front: the user's app is made frontmost again.
+  func testTheFrontmostProcessIsRestoredWhenTheClickBringsTheTargetForward() throws {
+    let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    seam.onMouseDown = { seam.frontmost = self.target }
+    var meta = meta()
+    try click(seam, meta: &meta)
+    XCTAssertEqual(seam.reactivated, [user])
+    XCTAssertEqual(meta.delivery?.frontmostRestored, true)
+    XCTAssertEqual(meta.delivery?.raiseLeft, false)
+  }
+
+  /// A third app coming to the front during the click is most likely the user's own switch: left alone.
+  func testAThirdAppComingToTheFrontDuringTheClickIsLeftAlone() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.onMouseDown = { seam.frontmost = 990_003 }
+    var meta = meta()
+    try click(seam, meta: &meta)
+    XCTAssertEqual(seam.reactivated, [])
+    XCTAssertEqual(meta.delivery?.otherAppFront, true)
+    XCTAssertEqual(seam.releases, 1)
+  }
+
+  /// A target that keeps raising itself: the guard stops at the hold's cap, leaves the raise as it is and says so, and
+  /// never takes a second hold.
+  func testARaiseStillThereAtTheCapIsLeftAndReportedWithNoSecondHold() throws {
+    // The activation's own sample finds the order right; every sample after the click finds the target above again.
+    let seam = GuardSeam(frontmost: user, targetInFront: { sample in sample > 1 })
+    var meta = meta()
+    try click(seam, meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertTrue(delivery.capped)
+    XCTAssertTrue(delivery.raiseLeft)
+    XCTAssertGreaterThan(delivery.restores, 0)
+    XCTAssertEqual(seam.holds, 1, "never a second hold")
+    XCTAssertEqual(seam.releases, 1)
+    XCTAssertEqual(delivery.screenHoldMs, activationHoldCapMs)
+    XCTAssertGreaterThan(seam.repairsOutsideHold, 0, "after the release it keeps repairing inside the repair window")
+    XCTAssertTrue(delivery.repairedAfterRelease)
+    XCTAssertGreaterThanOrEqual(delivery.guardMs, deliveryRepairWindowMs, "until the window ends, the raise never settling")
+  }
+
+  /// #200's first live sample: the app raised only after the cap had released the hold. The guard repairs it after the
+  /// release, inside the repair window, reported apart from the restores made under the hold.
+  func testARaiseFoundAfterTheReleaseIsRepairedAndReportedApart() throws {
+    // 40 ms samples: the activation's sample at 40, the post, a stable sample at 80, the raise found at 120 (past the cap).
+    let seam = GuardSeam(frontmost: user, step: 40, targetInFront: { sample in sample == 3 })
+    var meta = meta()
+    try click(seam, meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertTrue(delivery.capped)
+    XCTAssertTrue(delivery.repairedAfterRelease)
+    XCTAssertEqual(delivery.repairAfterReleaseLatencyMs, 80)
+    XCTAssertEqual(delivery.restores, 0, "none under the hold")
+    XCTAssertFalse(delivery.raiseLeft)
+    XCTAssertEqual(seam.repairsOutsideHold, 1)
+    XCTAssertEqual(seam.holds, 1, "never a second hold")
+  }
+
+  /// The person's input since the click stops the repairs after the release: their own click into the app is never
+  /// undone. The raise is left, reported.
+  func testAPersonsInputSinceTheClickStopsTheRepairsAfterTheRelease() throws {
+    let seam = GuardSeam(frontmost: user, step: 40, targetInFront: { sample in sample >= 3 })
+    seam.secondsSinceInput = 0.01
+    var meta = meta()
+    try click(seam, meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertTrue(delivery.personInput)
+    XCTAssertFalse(delivery.repairedAfterRelease)
+    XCTAssertTrue(delivery.raiseLeft)
+    XCTAssertEqual(seam.repairsOutsideHold, 0)
+  }
+
+  /// A restore that blocks past the cap (an AXRaise waiting out its timeout): the guard ends there, on what the order
+  /// is after the restore, and repairs nothing more.
+  func testARestoreThatBlocksPastTheCapEndsOnTheOrderItLeft() throws {
+    let seam = GuardSeam(frontmost: user, raiseCost: 95)
+    seam.targetAbove = false
+    seam.onMouseDown = { seam.targetAbove = true }
+    var meta = meta()
+    try click(seam, meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertTrue(delivery.capped)
+    XCTAssertEqual(delivery.restores, 1)
+    XCTAssertFalse(delivery.raiseLeft, "the restore took: no raise is left, though the guard ended at the cap")
+    XCTAssertEqual(seam.raises, 1)
+    XCTAssertEqual(seam.repairsOutsideHold, 0)
+  }
+
+  /// A re-activation the system accepts but that leaves the target in front is no restore: at the window's end the target
+  /// is still frontmost, reported as a raise left.
+  func testAReactivationThatLeavesTheTargetInFrontIsReportedAsARaiseLeft() throws {
+    let seam = GuardSeam(frontmost: user)  // re-activations accepted, never effective
+    seam.onMouseDown = { seam.frontmost = self.target }
+    var meta = meta()
+    try click(seam, meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertFalse(seam.reactivated.isEmpty)
+    XCTAssertFalse(delivery.frontmostRestored, "no sample saw the user's app in front again")
+    XCTAssertTrue(delivery.capped)
+    XCTAssertTrue(delivery.raiseLeft)
+    XCTAssertTrue(delivery.repairedAfterRelease, "re-activations go on after the release, inside the window")
+  }
+
+  /// A frontmost restore that a sample saw, then lost again to the target: the restore is reported, and so is the raise
+  /// left at the guard's end.
+  func testAFrontmostRestoreSeenAndThenLostIsReportedWithTheRaiseLeft() throws {
+    let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    seam.onMouseDown = { seam.frontmost = self.target }
+    var seenRestored = false
+    seam.onFrontmostRead = {
+      guard !seam.reactivated.isEmpty else { return }
+      if seenRestored {
+        seam.frontmost = self.target
+        seam.reactivationRefused = [self.user]
+      } else if seam.frontmost == self.user {
+        seenRestored = true
+      }
+    }
+    var meta = meta()
+    try click(seam, meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(seam.reactivated, [user, user])
+    XCTAssertTrue(delivery.frontmostRestored)
+    XCTAssertTrue(delivery.raiseLeft)
+    XCTAssertFalse(delivery.capped)
+  }
+
+  /// A click with nothing raised: three stable samples after the click, no restore.
+  func testAClickThatRaisesNothingSettlesOnThreeSamples() throws {
+    let seam = GuardSeam(frontmost: user)
+    var meta = meta()
+    try click(seam, meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(delivery.restores, 0)
+    XCTAssertNil(delivery.restoreLatencyMs)
+    XCTAssertEqual(delivery.guardMs, deliveryGuardMinimumMs, "three stable samples, and on to the minimum wait")
+    XCTAssertEqual(seam.holds, 1)
+    XCTAssertEqual(seam.releases, 1)
+  }
+
+  /// A drag's down is an ordering click too: the same guard.
+  func testADragIsGuardedLikeAClick() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    seam.onMouseDown = { seam.targetAbove = true }
+    var meta = meta()
+    try deliverPointer(to: target, route: .activation, activation: freshActivation(seam), post: seam.system.post, meta: &meta) {
+      dragEvents(from: CGPoint(x: 300, y: 400), to: CGPoint(x: 400, y: 500), window: clickTarget(), flags: [])
+    }
+    XCTAssertEqual(meta.delivery?.restores, 1)
+    XCTAssertEqual(seam.targetAbove, false)
+  }
+
+  /// A stop just before the click's events (the in-flight intervention check) ends the activation's hold too.
+  func testAStopBeforeTheEventsReleasesTheHold() {
+    let seam = GuardSeam(frontmost: user)
+    var meta = meta()
+    XCTAssertThrowsError(try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: freshActivation(seam),
+                                          targetActive: { false }, beforePosting: { throw userChanged("TextEdit") },
+                                          post: seam.system.post, meta: &meta))
+    XCTAssertEqual(seam.holds, 1)
+    XCTAssertEqual(seam.releases, 1)
+    XCTAssertNil(meta.delivery)
+  }
+
+  /// No delivery guard where no fake activation stands: an app that already believes it has focus.
+  func testNoDeliveryGuardForAnAppThatBelievesItHasFocus() throws {
+    let seam = GuardSeam(frontmost: target)
+    var meta = meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: freshActivation(seam), targetActive: { true },
+                     post: seam.system.post, meta: &meta)
+    XCTAssertNil(meta.delivery)
+    XCTAssertEqual(seam.holds, 0)
+  }
+
+  // MARK: The after-release watch (#200)
+
+  /// A click on `connection`, whose meta's context carries it (the watch's registry is the connection's).
+  private func click(_ seam: GuardSeam, on connection: ConnectionState) throws -> InputMeta {
+    var meta = InputMeta(ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+    try click(seam, meta: &meta)
+    return meta
+  }
+
+  /// The action returns at the hold's release as before; a raise that comes after it (the live check's: 21 ms after a
+  /// 14 ms settle) is repaired by the watch that runs on after the release, and recorded on the connection for the next
+  /// result's meta, keyed by the action's post time.
+  func testTheActionReturnsAtTheReleaseAndTheWatchRepairsARaiseAfterIt() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let connection = ConnectionState(id: 7, fd: -1)
+    let meta = try click(seam, on: connection)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(delivery.guardMs, deliveryGuardMinimumMs, "no added latency: the action returned at its release")
+    XCTAssertEqual(seam.releasedAt, seam.clock)
+    XCTAssertNil(connection.afterAction.wire, "nothing repaired yet")
+    seam.advance(15)
+    XCTAssertEqual(seam.raises, 0)
+    seam.targetAbove = true  // the app raises its window after the release
+    seam.advance(20)
+    XCTAssertEqual(seam.targetAbove, false, "the user's window is back on top")
+    XCTAssertEqual(seam.raises, 1)
+    XCTAssertEqual(seam.repairsOutsideHold, 1, "a flash: made with no hold open")
+    let wire = try XCTUnwrap(connection.afterAction.wire)
+    XCTAssertEqual(wire["repairs"] as? Int, 1)
+    let actions = try XCTUnwrap(wire["actions"] as? [[String: Any]])
+    XCTAssertEqual(actions.count, 1)
+    XCTAssertEqual(actions[0]["postedAt"] as? Int, Int(delivery.postedAt), "keyed by the action's post time, as its delivery meta says it")
+    XCTAssertEqual(actions[0]["repairs"] as? Int, 1)
+    XCTAssertEqual(actions[0]["latencyMs"] as? Double, delivery.guardMs + 20,
+                   "from the post: the guard's 60 ms, a quiet sample 10 ms after the release, then the one that found it")
+    XCTAssertNotNil(InputMeta(meta.context).wire["afterActionRepairs"], "every later input result on the connection carries it")
+    XCTAssertNil(InputMeta(ExecutionContext(connection: ConnectionState(id: 8, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil)).wire["afterActionRepairs"],
+                 "another connection's results do not")
+    seam.advance(deliveryRepairWindowMs)
+    let posts = seam.posts.count
+    seam.targetAbove = true
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.targetAbove, true, "past post + 1 s the watch has ended")
+    XCTAssertEqual(seam.posts.count, posts)
+  }
+
+  /// The target's process taking the front after the release: the user's app made frontmost again, only that app.
+  func testTheWatchRestoresTheFrontmostAppWhenTheTargetTakesItAfterTheRelease() throws {
+    let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    let connection = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: connection)
+    seam.frontmost = target
+    seam.advance(15)
+    XCTAssertEqual(seam.reactivated, [user])
+    XCTAssertEqual(seam.frontmost, user)
+    XCTAssertEqual(connection.afterAction.wire?["repairs"] as? Int, 1)
+  }
+
+  /// The next action on the connection ends the watch before anything of its own happens: a target that comes to the
+  /// front then (the next action's own doing, say a menu's deliberate activation) is never answered by the old watch.
+  func testTheNextActionOnTheConnectionCancelsTheWatchWithNoRepairAfter() throws {
+    let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    let connection = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: connection)
+    seam.frontmost = target  // the next click's app believes it has focus: no activation, no guard of its own
+    _ = try click(seam, on: connection)
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.reactivated, [], "the first click's watch was cancelled as the next action began")
+    XCTAssertNil(connection.afterAction.wire)
+  }
+
+  /// Every execute on the connection cancels the watch at its start (here one refused at once by the lock screen).
+  func testEveryRequestThatActsOrObservesOnTheConnectionCancelsTheWatch() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let connection = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: connection)
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { true })
+    let params: [String: Any] = ["method": "get_app_state", "args": ["app": "TextEdit"], "deadlineUnixMilliseconds": unixMilliseconds() + 60_000]
+    _ = engine.handle(Request(id: 1, method: "execute", params: params), on: connection, receivedAt: unixMilliseconds())
+    seam.targetAbove = true
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.raises, 0)
+    XCTAssertEqual(seam.targetAbove, true)
+  }
+
+  /// A cancel waits out a sample already running, so no repair starts once it has returned; a watch cancelled from
+  /// inside its own sample (the race at its tightest) repairs nothing.
+  func testACancelDuringASampleLeavesNoRepairAfterIt() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let connection = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: connection)
+    let done = DispatchSemaphore(value: 0)
+    seam.onFrontmostRead = {
+      seam.onFrontmostRead = nil
+      seam.targetAbove = true
+      // Another thread's cancel, taken while this sample runs: it returns only once the sample is over.
+      DispatchQueue.global().async { connection.afterAction.cancel(); done.signal() }
+      XCTAssertEqual(done.wait(timeout: .now() + 0.2), .timedOut, "the cancel waits for the running sample")
+    }
+    seam.advance(15)
+    XCTAssertEqual(seam.raises, 1, "the sample the cancel waited for finished its own repair")
+    XCTAssertEqual(done.wait(timeout: .now() + 5), .success, "and the cancel returned once it was over")
+    seam.targetAbove = true
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.raises, 1, "nothing after the cancel")
+    XCTAssertEqual(seam.targetAbove, true)
+  }
+
+  /// The person's input since the click, or a third app in front, ends the watch: their own click into the app is never
+  /// undone, and a third app's front is theirs.
+  func testThePersonsInputOrAThirdAppInFrontEndsTheWatchWithNoRepair() throws {
+    let input = GuardSeam(frontmost: user)
+    input.targetAbove = false
+    let inputConnection = ConnectionState(id: 7, fd: -1)
+    _ = try click(input, on: inputConnection)
+    input.secondsSinceInput = 0.005
+    input.targetAbove = true
+    input.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(input.raises, 0)
+    XCTAssertNil(inputConnection.afterAction.wire)
+
+    let third = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    let thirdConnection = ConnectionState(id: 8, fd: -1)
+    _ = try click(third, on: thirdConnection)
+    third.frontmost = 990_003
+    third.advance(15)
+    third.frontmost = target  // the watch has ended: even the target in front later is left
+    third.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(third.reactivated, [])
+    XCTAssertNil(thirdConnection.afterAction.wire)
+  }
+
+  /// A connection that closes ends its watch: nothing is raised or re-activated for a client that has gone.
+  func testAClosedConnectionEndsItsWatch() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let connection = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: connection)
+    XCTAssertTrue(connection.afterAction.watching)
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { true })
+    engine.connectionClosed(connection)
+    XCTAssertFalse(connection.afterAction.watching)
+    seam.targetAbove = true
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.raises, 0)
+  }
+
+  /// A watch that runs to its window's end lets go of itself: the connection no longer holds it, and with the connection
+  /// gone nothing holds the connection's watches.
+  func testAWatchThatEndsIsReleased() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    weak var watches: AfterActionWatches?
+    do {
+      let connection = ConnectionState(id: 7, fd: -1)
+      watches = connection.afterAction
+      _ = try click(seam, on: connection)
+      XCTAssertTrue(connection.afterAction.watching)
+      seam.advance(deliveryRepairWindowMs)
+      XCTAssertFalse(connection.afterAction.watching, "ended at post + 1 s, and no longer held")
+    }
+    XCTAssertNil(watches, "no cycle keeps the connection's watches alive")
+  }
+
+  /// A re-activation the system refuses is no repair: not counted, and the watch ends.
+  func testARefusedReactivationIsNotCountedAsARepair() throws {
+    let seam = GuardSeam(frontmost: user, reactivates: false)
+    let connection = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: connection)
+    seam.frontmost = target
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.reactivated, [user], "tried once, then the watch ended")
+    XCTAssertNil(connection.afterAction.wire, "nothing was repaired")
+  }
+
+  /// The action interval is the events' own posting (InputMeta.posting's contract): it ends before the guard releases its
+  /// hold, never at the guard's end.
+  func testTheActionIntervalEndsWithTheEventsNotTheGuard() throws {
+    let seam = GuardSeam(frontmost: user)
+    var releasedAtUnix: Int64?
+    seam.onRelease = { releasedAtUnix = unixMilliseconds(); usleep(30_000) }
+    let meta = try click(seam, on: ConnectionState(id: 7, fd: -1))
+    XCTAssertLessThanOrEqual(try XCTUnwrap(meta.endedAt), try XCTUnwrap(releasedAtUnix), "stamped as the events went out, before the guard's release")
+  }
+
+  func testTheDeliveryGuardIsOnTheWire() {
+    var meta = meta()
+    meta.delivery = DeliveryGuardOutcome(restores: 1, frontmostRestored: false, otherAppFront: false, restoreLatencyMs: 10, guardMs: 40,
+                                         screenHoldMs: 52.5, capped: false, raiseLeft: false, holdStartedAt: 1_793_399_999_947, releasedAt: 1_793_400_000_000)
+    let wire = meta.wire["delivery"] as? [String: Any]
+    XCTAssertEqual(wire?["restores"] as? Int, 1)
+    XCTAssertEqual(wire?["restoreLatencyMs"] as? Double, 10)
+    XCTAssertEqual(wire?["screenHoldMs"] as? Double, 52.5)
+    XCTAssertEqual(wire?["releasedAt"] as? Int, 1_793_400_000_000)
+    XCTAssertEqual(wire?["holdStartedAt"] as? Int, 1_793_399_999_947)
+    XCTAssertEqual(wire?["capped"] as? Bool, false)
+    XCTAssertNil(InputMeta(meta.context).wire["delivery"], "absent when no delivery guard ran")
+  }
+
   func testTheForcedSpikeRoutesPostWithoutTheActivation() throws {
     for (route, flags) in [(InputRoute.commandPost, CGEventFlags.maskCommand), (.plainPost, [])] {
       let seam = GuardSeam(frontmost: user)
@@ -667,9 +1086,29 @@ struct GuardPost: Equatable {
 /// order and the activation point answered.
 final class GuardSeam {
   var posts: [GuardPost] = []
+  /// Run after each left mouse down is posted (#200: what the app does at the action's own mouse down).
+  var onMouseDown: (() -> Void)?
+  /// When set, the window order the guards read: whether the target's window is above the user's. A raise of the
+  /// user's window puts it back on top.
+  var targetAbove: Bool?
+  /// Seconds since the last HID input, as the delivery guard reads it after the hold's release (no person's input by
+  /// default).
+  var secondsSinceInput: Double = 1_000
+  /// When set, the window order by window: the target process's windows above the user's (a guard's read names the one
+  /// it checks). A raise of the user's window puts it back above them all. Takes precedence over `targetAbove`.
+  var windowsAbove: Set<CGWindowID>?
+  /// Run before each read of the frontmost app answers (#200: what the apps do between a guard's samples).
+  var onFrontmostRead: (() -> Void)?
+  /// Raises and re-activations made while no screen-update hold was open (#200: none once the cap released it).
+  var repairsOutsideHold = 0
   var holds = 0
   var releases = 0
+  /// Run as each screen-update hold is taken, and as each is released (on the test's thread).
+  var onHold: (() -> Void)?
+  var onRelease: (() -> Void)?
   var releasedAt: Double?
+  /// When the last screen-update hold was taken, on the fake clock.
+  var heldAt: Double?
   var reactivated: [pid_t] = []
   var raises = 0
   var clock: Double = 0
@@ -733,15 +1172,23 @@ final class GuardSeam {
         self.posts.append(GuardPost(kind: kind, pid: pid, flags: nil))
       }
       if let after = self.frontmostAfterPost { self.frontmost = after }
+      if made?.type == .leftMouseDown { self.onMouseDown?() }
     }
-    system.frontmost = { self.frontmost }
+    system.frontmost = {
+      self.onFrontmostRead?()
+      return self.frontmost
+    }
     system.keyFocus = { nil }
+    system.secondsSinceInput = { self.secondsSinceInput }
     system.holdScreenUpdates = {
       self.holds += 1
-      return { self.releases += 1; self.releasedAt = self.clock }
+      self.heldAt = self.clock
+      self.onHold?()
+      return { self.releases += 1; self.releasedAt = self.clock; self.onRelease?() }
     }
     system.reactivate = { pid in
       self.reactivated.append(pid)
+      if self.holds == self.releases { self.repairsOutsideHold += 1 }
       let reactivates = self.reactivates && !self.reactivationRefused.contains(pid)
       if reactivates && self.reactivationTakesFront { self.frontmost = pid }
       return reactivates
@@ -753,8 +1200,18 @@ final class GuardSeam {
     }
     system.userWindowNumber = { _ in 42 }
     var samples = 0
-    system.isInFront = { _, _ in samples += 1; return self.targetInFront(samples) }
-    system.raise = { _ in self.raises += 1; self.advance(self.raiseCost) }
+    system.isInFront = { window, _ in
+      samples += 1
+      if let above = self.windowsAbove { return above.contains(window) }
+      return self.targetAbove ?? self.targetInFront(samples)
+    }
+    system.raise = { _ in
+      self.raises += 1
+      if self.holds == self.releases { self.repairsOutsideHold += 1 }
+      if self.targetAbove != nil { self.targetAbove = false }
+      if self.windowsAbove != nil { self.windowsAbove = [] }
+      self.advance(self.raiseCost)
+    }
     system.activationPoint = { _ in self.activationPoint }
     system.hitAt = { _, _ in self.activationHit }
     system.now = { self.clock }

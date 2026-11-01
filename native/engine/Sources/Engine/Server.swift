@@ -61,7 +61,9 @@ final class Server: @unchecked Sendable {
     // device's cursor off (engine.json), the hub draws nothing and observes nothing.
     let cursor = settings.cursor ? MainActor.assumeIsolated { CursorHub.live(debug: settings.cursorDebug) } : CursorHub()
     if let arm = settings.cursorDebug { FileHandle.standardError.write(Data("cua-engine: cursor: the diagnostic arm \(arm.rawValue) is on (engine.json cursorDebug)\n".utf8)) }
-    self.engine = Engine(paths: paths, routes: settings.routes, cursor: cursor, cursorEnabled: settings.cursor, cursorDebug: settings.cursorDebug)
+    if settings.pasteFocusEnforcement { FileHandle.standardError.write(Data("cua-engine: paste: the slot's B arm is on (engine.json pasteFocusEnforcement)\n".utf8)) }
+    self.engine = Engine(paths: paths, routes: settings.routes, cursor: cursor, cursorEnabled: settings.cursor, cursorDebug: settings.cursorDebug,
+                         pasteFocusEnforcement: settings.pasteFocusEnforcement)
   }
 
   /// Claims the directory, the lock and the socket, then accepts on a thread of its own.

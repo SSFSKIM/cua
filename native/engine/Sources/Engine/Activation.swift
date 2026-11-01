@@ -25,6 +25,10 @@ import Foundation
 // own app as well, are not built. The private calls are resolved with dlsym and skipped when absent. F does not give
 // the poll's exit test; here it is the user's app frontmost and the target window not above the user's on three
 // consecutive samples.
+//
+// The paste slot's B arm of #187's 3b (engine.json `pasteFocusEnforcement`, the paste route only; the Decision Log's #187
+// entry, amended 2026-11-01): the activation click is posted at an AXActivationPoint outside the window's frame too,
+// as the vendor's enforceActiveState posts it (FUN_10071f65c, F §5.5), instead of skipped (`liftsOutsideFrameSkip`).
 
 /// How long the screen-update hold may last: well under the guard's 1 s poll, and above the guards the sittings
 /// measured (37–58 ms, a coordinate click into TextEdit 82), so a guard of the usual length holds as the vendor's does.
@@ -109,6 +113,11 @@ struct ActivationSystem {
   var isInFront: (CGWindowID, CGWindowID) -> Bool = windowIsInFront
   var raise: (AXUIElement) -> Void = { _ = gatedPerform($0, kAXRaiseAction) }
   var activationPoint: (AXUIElement) -> CGPoint? = { point(attribute($0, "AXActivationPoint")) }
+  /// The window's frame and number as an activation reads them (the paste's; the unit tests place a window of their own).
+  var windowPlacement: (AXUIElement, pid_t) -> (frame: CGRect?, id: CGWindowID?) = { window, pid in
+    let windowFrame = frame(of: window)
+    return (windowFrame, windowNumber(of: window, pid: pid, frame: windowFrame))
+  }
   /// What the process answers at a global point (the activation click's hit-test), read from its application element.
   var hitAt: (pid_t, CGPoint) -> ActivationHit? = { pid, point in
     hitTest(application: pid, at: point).map { ActivationHit(role: attribute($0, kAXRoleAttribute) as? String, actions: establishedActionNames(of: $0)) }
@@ -280,6 +289,10 @@ final class FakeActivation {
   /// The guard keeps the user's window on top by re-activating the user's app rather than by AXRaise on its window, and
   /// reads that window from the window list: no Accessibility call on any other app (the menu's held activation).
   let restoresByActivationOnly: Bool
+  /// The paste slot's B arm (#187's 3b): an activation point outside the window's frame takes the click as the vendor
+  /// posts it, rather than the `outsideFrame` skip, when the frame and the window number are known (the vendor's click,
+  /// FUN_10071f65c, is skipped without either). Every other skip stands. Only the paste route sets it.
+  let liftsOutsideFrameSkip: Bool
   private let system: ActivationSystem
   private(set) var activated = false
   /// How long the guard held after the activation pair, for the result's meta; nil when no guard ran.
@@ -291,9 +304,10 @@ final class FakeActivation {
   private var openHold: OpenHold?
 
   init(pid: pid_t, appPid: pid_t? = nil, window: AXUIElement, windowFrame: CGRect?, windowID: CGWindowID?, sparing: CGRect? = nil,
-       restoresByActivationOnly: Bool = false, system: ActivationSystem = ActivationSystem()) {
+       restoresByActivationOnly: Bool = false, liftsOutsideFrameSkip: Bool = false, system: ActivationSystem = ActivationSystem()) {
     self.pid = pid
     self.sparing = sparing
+    self.liftsOutsideFrameSkip = liftsOutsideFrameSkip
     self.restoresByActivationOnly = restoresByActivationOnly
     self.appPid = appPid ?? pid
     self.window = window
@@ -313,6 +327,13 @@ final class FakeActivation {
 
   /// What the activation click did, once the activation pair was posted; nil when none was.
   private(set) var click: ActivationClick?
+  /// Where the activation point lay against the window's frame, once the activation pair was posted; nil before.
+  private(set) var pointPlace: ActivationPointPlace?
+  /// The click went at a point outside the frame (`liftsOutsideFrameSkip`).
+  private(set) var liftedClick = false
+  /// When the activation's subtype 1 and its click were posted, on the system's clock; nil when not.
+  private(set) var activatedAt: Double?
+  private(set) var clickPostedAt: Double?
   /// The process's real-activation epoch (HeldActivations), read once the activation's subtype 1 is posted, or when it
   /// finds the app already believing it has focus; nil when no registry tracks it.
   var realEpoch: (() -> Int)?
@@ -528,20 +549,27 @@ final class FakeActivation {
   }
 
   /// The vendor's enforceActiveState for an app that does not believe it is active: subtype 1, then a left click at the
-  /// window's AXActivationPoint when the point is inert (`activationClickDecision`), else the event alone.
+  /// window's AXActivationPoint when the point is inert (`activationClickDecision`), or outside a known frame under
+  /// `liftsOutsideFrameSkip`, else the event alone.
   private func postActivation() {
     post(subtype: NSEvent.EventSubtype.applicationActivated.rawValue)
     activated = true
     epoch = realEpoch?()  // right after subtype 1: a real event from here on supersedes this activation
+    activatedAt = system.now()
     let activationPoint = system.activationPoint(window)
     let system = system, pid = pid
     let decision = activationClickDecision(activationPoint, windowFrame: windowFrame, sparing: sparing) {
       activationPoint.flatMap { system.hitAt(pid, $0) }
     }
-    click = decision
-    guard decision == .posted, let point = activationPoint else { return }
+    let place = activationPointPlace(activationPoint, windowFrame: windowFrame)
+    pointPlace = place
+    let lifted = liftsOutsideFrameSkip && decision == .outsideFrame && place == .outside && windowID != nil
+    click = lifted ? .posted : decision
+    guard decision == .posted || lifted, let point = activationPoint else { return }
     let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: pid)
     _ = postToProcess(clickEvents(target, button: .left, count: 1, flags: []), pid: pid, post: system.post)
+    clickPostedAt = system.now()
+    liftedClick = lifted
   }
 
   @discardableResult

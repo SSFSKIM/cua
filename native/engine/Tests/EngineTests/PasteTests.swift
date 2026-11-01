@@ -1272,6 +1272,178 @@ extension PasteActivationTests {
   }
 }
 
+// MARK: The paste slot's B arm (#187's 3b)
+
+/// Every event route 3 was asked to post, kept whole (the activation click's window fields are read from them).
+private final class PostedEvents {
+  var events: [CGEvent] = []
+}
+
+extension PasteActivationTests {
+  /// Chrome's window and its AXActivationPoint outside the frame (U13's corner).
+  private static let chromeFrame = CGRect(x: 80, y: 60, width: 610, height: 860)
+  private static let outsidePoint = CGPoint(x: -1, y: 1441)
+
+  /// A paste through the engine with the slot's switch as given, into a window the seam places (frame and number 41) whose
+  /// activation point lies outside its frame, stopped by a user event at the in-flight check just before ⌘V (the third:
+  /// after the paste lock's and the activation's), so nothing reaches the real desktop. The meta it stopped with.
+  private func pasteStoppedBeforeCommandV(switchOn: Bool, seam: GuardSeam, posted: PostedEvents, typed: Bool = false) -> InputMeta {
+    seam.activationPoint = Self.outsidePoint
+    var system = seam.system
+    let post = system.post
+    system.post = { event, pid in
+      posted.events.append(event.copy()!)
+      post(event, pid)
+    }
+    system.windowPlacement = { _, _ in (Self.chromeFrame, 41) }
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false },
+                        pasteboard: { pasteboard.access }, pasteActivation: system, pasteFocusEnforcement: switchOn)
+    let context = ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0,
+                                   deadline: unixMilliseconds() + 60_000, lineage: nil)
+    let app = ResolvedApp(appPath: "/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "Chrome", running: nil)
+    var checks = 0
+    let guarding = InterventionGuard(detection: true, verdict: .proceed, app: "Chrome", start: 0, latest: {
+      checks += 1
+      return checks >= 3 ? AttributedEvent(sequence: 1, at: 2) : nil
+    }, lastAtCheck: nil)
+    let pasteTarget = PasteTarget(app: app, pid: target, application: AXUIElementCreateApplication(target), keyboard: target, guarding: guarding)
+    var meta = InputMeta(context)
+    var entered = 0
+    XCTAssertThrowsError(try typed
+      ? String(describing: engine.typeTextByPaste("x\ny", pasteTarget, context, meta: &meta))
+      : String(describing: engine.pasteOperation([.content(plain("x"), units: 1)], pasteTarget, context, entered: &entered, meta: &meta))) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "userIntervened", "stopped before ⌘V")
+    }
+    XCTAssertEqual(checks, 3, "the stop is the check just before ⌘V")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"], "restored")
+    return meta
+  }
+
+  /// Switch off (arm A): today's activation, byte for byte. The point outside the frame takes no click (`outsideFrame`,
+  /// the inert-point rule), and the paste's diagnostics name the arm and where the point lay.
+  func testWithTheSwitchOffThePastesActivationSkipsTheClickOutsideTheFrame() {
+    let seam = GuardSeam(frontmost: user)
+    let posted = PostedEvents()
+    let meta = pasteStoppedBeforeCommandV(switchOn: false, seam: seam, posted: posted)
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .appKit(2)], "subtype 1 alone, then the deactivation")
+    XCTAssertEqual(meta.activationClick, .outsideFrame)
+    XCTAssertNotNil(meta.activationGuardMs, "the guard ran")
+    let record = meta.paste?.wire["focusEnforcement"] as? [String: Any]
+    XCTAssertEqual(record?["arm"] as? String, "A")
+    XCTAssertEqual(record?["activated"] as? Bool, true)
+    XCTAssertEqual(record?["point"] as? String, "outside")
+    XCTAssertEqual(record?["liftedClick"] as? Bool, false)
+  }
+
+  /// Switch on (arm B), the paste route: the click pair goes at the outside point, right after subtype 1, as the vendor's
+  /// enforceActiveState posts it and with cua's activation click's own recipe (the window's number in the NSEvent and in
+  /// fields 91 and 92, no flags, subtype 3). The activation's guard still runs after it and repairs the raise the click
+  /// causes; the deactivation still follows; the meta records the arm, the lifted click and where the point lay. On
+  /// type_text's paste route too.
+  func testWithTheSwitchOnThePastesActivationPostsTheClickAtTheOutsidePointAndStillGuards() throws {
+    for typed in [false, true] {
+      let seam = GuardSeam(frontmost: user)
+      seam.targetAbove = false
+      seam.onMouseDown = { seam.targetAbove = true }  // the click raises the app's window above the user's
+      let posted = PostedEvents()
+      let meta = pasteStoppedBeforeCommandV(switchOn: true, seam: seam, posted: posted, typed: typed)
+      XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)], typed ? "type_text" : "paste")
+      XCTAssertEqual(seam.posts[1].location, Self.outsidePoint)
+      XCTAssertEqual(seam.posts[2].location, Self.outsidePoint)
+      XCTAssertEqual(seam.posts[1].flags, [], "no ⌘: an activation click, not route 2's")
+      for event in posted.events[1...2] {
+        XCTAssertEqual(event.getIntegerValueField(CGEventField(rawValue: 91)!), 41, "kCGMouseEventWindowUnderMousePointer")
+        XCTAssertEqual(event.getIntegerValueField(CGEventField(rawValue: 92)!), 41, "…ThatCanHandleThisEvent")
+        XCTAssertEqual(NSEvent(cgEvent: event)?.windowNumber, 41, "the NSEvent's window number")
+        XCTAssertEqual(event.getIntegerValueField(.mouseEventSubtype), 3)
+      }
+      XCTAssertEqual(seam.raises, 1, "the activation's guard repaired the click's raise")
+      XCTAssertNotNil(meta.activationGuardMs)
+      XCTAssertEqual(meta.activationClick, .posted)
+      let record = try XCTUnwrap(meta.paste?.wire["focusEnforcement"] as? [String: Any])
+      XCTAssertEqual(record["arm"] as? String, "B")
+      XCTAssertEqual(record["activated"] as? Bool, true)
+      XCTAssertEqual(record["point"] as? String, "outside")
+      XCTAssertEqual(record["liftedClick"] as? Bool, true)
+      XCTAssertNil(record["clickToCommandVMs"], "stopped before ⌘V: no time to it")
+    }
+  }
+
+  /// Switch on, a point inside the frame: the inert-point rule stands (a control there takes no click), and so does
+  /// every skip but the outside-frame one; a window whose frame or number is unknown takes no lifted click, as the
+  /// vendor's own click is skipped without them.
+  func testTheSwitchLiftsOnlyTheOutsideFrameSkip() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.activationPoint = CGPoint(x: 110, y: 76)
+    seam.activationHit = ActivationHit(role: "AXButton", actions: ["AXPress"])
+    let inside = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: Self.chromeFrame, windowID: 41,
+                                liftsOutsideFrameSkip: true, system: seam.system)
+    try inside.activate()
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1)], "no click on a control")
+    XCTAssertEqual(inside.click, .control)
+    XCTAssertEqual(inside.pointPlace, .inside)
+    XCTAssertFalse(inside.liftedClick)
+    for (frame, id, place) in [(CGRect?.none, CGWindowID?.some(41), ActivationPointPlace.unknownFrame), (Self.chromeFrame, nil, .outside)] {
+      let other = GuardSeam(frontmost: user)
+      other.activationPoint = Self.outsidePoint
+      let subject = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame, windowID: id,
+                                   liftsOutsideFrameSkip: true, system: other.system)
+      try subject.activate()
+      XCTAssertEqual(other.posts.map(\.kind), [.appKit(1)], "no click")
+      XCTAssertEqual(subject.click, .outsideFrame)
+      XCTAssertEqual(subject.pointPlace, place)
+    }
+  }
+
+  /// The engine reports the slot's switch in its status (`cua engine status --json` carries the answer whole, so it reads
+  /// as `.status.pasteFocusEnforcement`): a slot checks the arm it set is the arm that runs.
+  func testTheStatusReportsTheSwitch() {
+    for on in [false, true] {
+      let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                          intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false }, pasteFocusEnforcement: on)
+      XCTAssertEqual(engine.status(ConnectionState(id: 1, fd: -1))["pasteFocusEnforcement"] as? Bool, on)
+    }
+  }
+}
+
+extension PasteOperationTests {
+  /// The slot's record rides on every line's diagnostics, with the times from the activation and from its click to that
+  /// line's ⌘V on route 3's clock; without a record from the caller there is none.
+  func testTheFocusEnforcementRecordTimesEachLinesCommandV() throws {
+    var record = PasteFocusEnforcement(switchOn: true, activation: nil)
+    XCTAssertEqual(record.wire as NSDictionary, ["arm": "B", "activated": false, "liftedClick": false], "no activation of the paste's own")
+    record.activated = true
+    record.point = .outside
+    record.liftedClick = true
+    record.activatedAt = 100
+    record.clickPostedAt = 101
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var activationClock = 150.0
+    var characters = 0
+    var entered = 0
+    var bare = meta()
+    var meta = meta()
+    try runPaste([.content(plain("a"), units: 1), .returnKey(units: 1), .content(plain("b"), units: 1)], pasteboard: pasteboard.access,
+                 effect: effect { EffectReading(range: [characters, 0], characters: characters) }, readTimeoutMs: 0,
+                 focusEnforcement: record, activationNow: { activationClock }, mainProbe: { $0() }, checkInFlight: {},
+                 postPaste: { _ = pasteboard.appReads(); characters += 1; activationClock += 20; return true }, postReturn: { true },
+                 entered: &entered, meta: &meta)
+    let wire = try XCTUnwrap(meta.paste?.wire["focusEnforcement"] as? [String: Any])
+    XCTAssertEqual(wire["arm"] as? String, "B")
+    XCTAssertEqual(wire["point"] as? String, "outside")
+    XCTAssertEqual(wire["liftedClick"] as? Bool, true)
+    XCTAssertEqual(wire["activationToCommandVMs"] as? Double, 70, "line 2's ⌘V, 20 ms after line 1's at 150")
+    XCTAssertEqual(wire["clickToCommandVMs"] as? Double, 69)
+    try run([.content(plain("c"), units: 1)], pasteboard, effect: effect { EffectReading(range: [characters, 0], characters: characters) },
+            postPaste: { _ = pasteboard.appReads(); characters += 1; return true }, entered: &entered, meta: &bare)
+    XCTAssertNil(bare.paste?.wire["focusEnforcement"])
+  }
+}
+
 // MARK: Which sources key and which paste
 
 /// The routing predicate (review finding 4): a source keys when its TIS type is a keyboard layout, whatever its script,

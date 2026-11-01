@@ -26,7 +26,9 @@ import Foundation
 // blind success gated on that timing, else `pasteUnconfirmed`; a Chromium or Electron app's notifications are trusted only while #244's enablement holds for the
 // process. Both waits end at the request's deadline too, with that stage's error. Every paste records value-free
 // diagnostics in the meta (`paste`, PasteDiagnostics), among them whether the app held key focus at ⌘V
-// (`keyFocusAtPaste`), recorded only: it never refuses.
+// (`keyFocusAtPaste`), recorded only: it never refuses, and the slot's arm of 3b (`focusEnforcement`): engine.json's
+// `pasteFocusEnforcement` lifts route 3's outside-frame skip of the activation click for the paste's activation only
+// (Activation.swift; the Decision Log's #187 entry, amended 2026-11-01).
 //
 // type_text's paste route is the same operation over its text's lines: each line pasted, each newline a Return press
 // posted by route 2′ as typed text's are, one snapshot and one restore around the whole, `entered` counting what
@@ -233,6 +235,47 @@ struct KeyFocusReading: Equatable {
   }
 }
 
+/// The paste slot's arm of #187's 3b and what the paste's own activation did, on every line's diagnostics
+/// (`PasteDiagnostics.focusEnforcement`): arm A is the switch off (today's activation), arm B `pasteFocusEnforcement` on
+/// (the activation click posted at a point outside the window's frame). Where the activation point lay against the
+/// frame, never the point; the times are from the activation's subtype 1 and from its click to the line's ⌘V, on route
+/// 3's clock. `activated` false: the app believed it had focus, or the paste shared another holder's activation, and
+/// neither the click nor the times are this paste's.
+struct PasteFocusEnforcement {
+  var arm: String
+  var activated = false
+  var point: ActivationPointPlace?
+  var liftedClick = false
+  var activatedAt: Double?
+  var clickPostedAt: Double?
+  var activationToCommandVMs: Double?
+  var clickToCommandVMs: Double?
+
+  init(switchOn: Bool, activation: FakeActivation?) {
+    arm = switchOn ? "B" : "A"
+    guard let activation, let at = activation.activatedAt else { return }
+    activated = true
+    activatedAt = at
+    point = activation.pointPlace
+    liftedClick = activation.liftedClick
+    clickPostedAt = activation.clickPostedAt
+  }
+
+  /// The line's ⌘V is about to be posted, at `at` on route 3's clock.
+  mutating func commandV(at: Double) {
+    activationToCommandVMs = activatedAt.map { at - $0 }
+    clickToCommandVMs = clickPostedAt.map { at - $0 }
+  }
+
+  var wire: [String: Any] {
+    var wire: [String: Any] = ["arm": arm, "activated": activated, "liftedClick": liftedClick]
+    if let point { wire["point"] = point.rawValue }
+    if let activationToCommandVMs { wire["activationToCommandVMs"] = (activationToCommandVMs * 10).rounded() / 10 }
+    if let clickToCommandVMs { wire["clickToCommandVMs"] = (clickToCommandVMs * 10).rounded() / 10 }
+    return wire
+  }
+}
+
 /// How the read wait ended: a hand-over, the provider released (the item replaced or the pasteboard cleared), its 2 s
 /// run out, or the request's deadline first.
 enum ReadOutcome: String {
@@ -257,6 +300,8 @@ struct PasteDiagnostics {
   var notificationSource: NotificationSource
   var baselineEmpty: Bool
   var keyFocusAtPaste: KeyFocusReading? = nil
+  /// The slot's arm and the paste's activation (#187's 3b), nil only when the caller gave none (runPaste's own tests).
+  var focusEnforcement: PasteFocusEnforcement? = nil
   var readWait: ReadOutcome? = nil
   var readWaitMs: Double? = nil
   var readAfterPostMs: Double? = nil
@@ -282,6 +327,7 @@ struct PasteDiagnostics {
     if let confirmed { wire["confirmed"] = confirmed }
     if unconfirmedLines > 0 { wire["unconfirmedLines"] = unconfirmedLines }
     if let keyFocusAtPaste { wire["keyFocusAtPaste"] = keyFocusAtPaste.wire }
+    if let focusEnforcement { wire["focusEnforcement"] = focusEnforcement.wire }
     if let readWait { wire["readWait"] = readWait.rawValue }
     if let readWaitMs { wire["readWaitMs"] = rounded(readWaitMs) }
     if let readAfterPostMs { wire["readAfterPostMs"] = rounded(readAfterPostMs) }
@@ -310,12 +356,14 @@ private final class MainLag: @unchecked Sendable {
 /// path, while the change count is the engine's own. `entered` counts the units of the parts that landed. Both waits end
 /// at `remainingMs` (the request's deadline from now) when it comes before their own time, with that stage's error;
 /// `keyFocusAtPaste` is read just before each ⌘V and `mainProbe` queues the main-thread probe there, both for
-/// `meta.paste` only. A line with no channel to see its effect (`EffectOutcome.noChannel`) counts as pasted, unconfirmed,
+/// `meta.paste` only, as is `focusEnforcement`, whose times to ⌘V are read on `activationNow` (route 3's clock) there
+/// too. A line with no channel to see its effect (`EffectOutcome.noChannel`) counts as pasted, unconfirmed,
 /// when its read came after ⌘V was posted (positive evidence of delivery, none against it), and is `pasteUnconfirmed`
 /// when the only read came before (a foreign reader's: the provider is not asked again for the target).
 @discardableResult
 func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteEffect, readTimeoutMs: Double = pasteReadTimeoutMs,
               remainingMs: () -> Double = { .infinity }, keyFocusAtPaste: () -> KeyFocusReading? = { nil },
+              focusEnforcement: PasteFocusEnforcement? = nil, activationNow: () -> Double = monotonicMilliseconds,
               mainProbe: (@escaping @Sendable () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) },
               checkInFlight: () throws -> Void, postPaste: () -> Bool, postReturn: () -> Bool,
               entered: inout Int, meta: inout InputMeta) throws -> PasteOutcome {
@@ -343,7 +391,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         let provider = LazyPasteProvider(representations) { effect.providerRead() }
         effect.begin()
         meta.paste = PasteDiagnostics(line: line, lines: lines, notificationSource: effect.notificationSource, baselineEmpty: effect.baselineEmpty,
-                                      unconfirmedLines: outcome.unconfirmedLines)
+                                      focusEnforcement: focusEnforcement, unconfirmedLines: outcome.unconfirmedLines)
         probe = nil
         guard let item = provider.item() else { throw clipboardWriteFailed }
         // The write takes the pasteboard only while it still holds what the engine last saw there (the snapshot's count
@@ -357,6 +405,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         let written = write.own
         try checkInFlight()
         meta.paste?.keyFocusAtPaste = keyFocusAtPaste()
+        meta.paste?.focusEnforcement?.commandV(at: activationNow())
         let postAt = effect.now()
         effect.pasteStarted(at: postAt)
         let lag = MainLag()
@@ -533,11 +582,19 @@ extension Engine {
       // Route 3's activation leased for the paste (shared when a hold keeps the process active); every path out, error
       // or success, ends the lease. A guard that failed still says how long it held. The in-flight check runs again once
       // the registry's lock is held: a user event while the paste waited behind another holder's activation stops it
-      // before its activation.
+      // before its activation. Under the slot's B arm (`pasteFocusEnforcement`) the activation's click is not skipped
+      // for a point outside the window's frame (#187's 3b); the paste's own activation is kept for its diagnostics.
+      var made: FakeActivation?
       let release = try heldActivations.acquire(pid: target.pid, beforeActivating: target.guarding.checkInFlight, make: {
-        FakeActivation(pid: target.pid, window: primaryWindow(of: target.application) ?? target.application, system: pasteActivation)
+        let window = primaryWindow(of: target.application) ?? target.application
+        let placed = pasteActivation.windowPlacement(window, target.pid)
+        let activation = FakeActivation(pid: target.pid, window: window, windowFrame: placed.frame, windowID: placed.id,
+                                        liftsOutsideFrameSkip: pasteFocusEnforcement, system: pasteActivation)
+        made = activation
+        return activation
       }, meta: &meta)
       defer { _ = release() }
+      let enforcement = PasteFocusEnforcement(switchOn: pasteFocusEnforcement, activation: made)
 
       let application = target.application
       let effect = PasteEffect(readWithin: { effectReading(of: application, withinMs: $0) })
@@ -556,6 +613,7 @@ extension Engine {
       return try runPaste(parts, pasteboard: pasteboardAccess(), effect: effect,
                    remainingMs: { Double(context.deadline - unixMilliseconds()) },
                    keyFocusAtPaste: { keyFocusReading(pid: target.pid, keyboard: target.keyboard, application: application, window: window, system: system) },
+                   focusEnforcement: enforcement, activationNow: system.now,
                    checkInFlight: target.guarding.checkInFlight,
                    postPaste: { press(commandV) }, postReturn: { press(KeyPress(keyCode: returnKeyCode, modifiers: [])) },
                    entered: &entered, meta: &meta)

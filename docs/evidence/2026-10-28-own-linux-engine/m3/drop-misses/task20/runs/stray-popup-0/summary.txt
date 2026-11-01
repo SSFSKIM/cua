@@ -1,0 +1,17 @@
+
+## cua: 6 drags, modes {"L":0,"A":6,"B":0,"?":0}, unmatched presses 0
+  ms (answer)          n 6 min 135.3 p50 136.6 p90 137.9 p95 137.9 p99 137.9 max 137.9
+  press→cross (X)      n 6 min 3 p50 4 p90 6 p95 6 p99 6 max 6
+  press→take (X)       none
+  press→release (X)    n 6 min 30 p50 32 p90 32 p95 32 p99 32 max 32
+  steps before take    none
+  take→release (X)     none
+  page: past move h    n 6 min 6.5 p50 8.3 p90 17.2 p95 17.2 p99 17.2 max 17.2
+  page: dragstart h    none
+  page: coalesced 1st  n 6 min 1 p50 1 p90 1 p95 1 p99 1 max 1
+  miss A i0 {"ms":137.9,"x":{"via":"send_event","motions":41,"states":[256],"cross":4,"take":null,"release":32,"steps_before_take":null,"steps_after_take":null,"stray":null},"page":{"moves":8,"past_h":17.2,"past_t":4,"first_move_h":3.1,"coalesced_first":1,"start_h":null,"up_h":33.3,"end_h":null,"buttons":[1,0]}}
+  miss A i1 {"ms":136.6,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":32,"steps_before_take":null,"steps_after_take":null,"stray":null},"page":{"moves":8,"past_h":14.7,"past_t":14,"first_move_h":1.8,"coalesced_first":1,"start_h":null,"up_h":31.6,"end_h":null,"buttons":[1,0]}}
+  miss A i2 {"ms":137.2,"x":{"via":"send_event","motions":41,"states":[256],"cross":4,"take":null,"release":32,"steps_before_take":null,"steps_after_take":null,"stray":null},"page":{"moves":8,"past_h":16.7,"past_t":4,"first_move_h":2.8,"coalesced_first":1,"start_h":null,"up_h":31.9,"end_h":null,"buttons":[1,0]}}
+  miss A i3 {"ms":135.7,"x":{"via":"send_event","motions":41,"states":[256],"cross":5,"take":null,"release":31,"steps_before_take":null,"steps_after_take":null,"stray":null},"page":{"moves":7,"past_h":7.5,"past_t":5,"first_move_h":7.3,"coalesced_first":1,"start_h":null,"up_h":30.7,"end_h":null,"buttons":[1,0]}}
+  miss A i4 {"ms":135.3,"x":{"via":"send_event","motions":41,"states":[256],"cross":4,"take":null,"release":30,"steps_before_take":null,"steps_after_take":null,"stray":null},"page":{"moves":7,"past_h":6.5,"past_t":4,"first_move_h":6.4,"coalesced_first":1,"start_h":null,"up_h":29.7,"end_h":null,"buttons":[1,0]}}
+  miss A i5 {"ms":136.8,"x":{"via":"send_event","motions":41,"states":[256],"cross":6,"take":null,"release":32,"steps_before_take":null,"steps_after_take":null,"stray":null},"page":{"moves":7,"past_h":8.3,"past_t":7,"first_move_h":8,"coalesced_first":1,"start_h":null,"up_h":31.9,"end_h":null,"buttons":[1,0]}}

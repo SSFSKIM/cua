@@ -1,0 +1,2 @@
+{"at":1793504030088.0718,"back":49300,"front":49270,"intervalMs":5,"kind":"start","pid":73191,"realtime":true,"state":"front-above"}
+{"at":1793504068945.4441,"kind":"end","lastRead":1793504068945.2371,"lateSamples":39,"maxGapMs":26.300000000000001,"samples":7696,"state":"front-above","why":"SIGTERM"}

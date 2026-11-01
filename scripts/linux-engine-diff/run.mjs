@@ -790,6 +790,8 @@ export async function runDiff(args) {
     const stubScene = needsStub ? await desktop.openChrome('stub', 'scene.html') : null;
     await desktop.openFront(args.occlusion);
     witness = await startWitness(XPROBE);
+    // a stopped run ends its witness before its windows close (scenes.mjs `onStop`)
+    desktop.onStop(() => witness.stop());
     const busAddress = a11yBusAddress();
 
     if (stubScene && !(await negativeCheck(desktop, witness, stubScene, emit, { audit: args.audit }))) valid = false;

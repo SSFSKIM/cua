@@ -12,6 +12,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { Engine } from './engine.mjs';
 import { preorder } from './normalize.mjs';
+import { cleanupOnStop } from './stop.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const PAGES = join(here, 'pages');
@@ -61,6 +62,23 @@ export class Desktop {
     this.reader = new Engine({ label: 'reader', bin: cua }).start();
     this.windows = [];
     this.previousActive = activeWindow();
+    // a run stopped by SIGINT or SIGTERM closes what it opened, as one that ends does (stop.mjs)
+    this.stopHooks = [];
+    this.unhookStop = cleanupOnStop(async () => {
+      for (const hook of this.stopHooks) {
+        try {
+          await hook();
+        } catch {
+          // each tried on its own; the windows close regardless
+        }
+      }
+      await this.closeAll();
+    });
+  }
+
+  /** Something of the run's own to stop before the windows close when the run is stopped (its witness). */
+  onStop(hook) {
+    this.stopHooks.push(hook);
   }
 
   label(...parts) {
@@ -298,7 +316,13 @@ export class Desktop {
     }
   }
 
-  async closeAll() {
+  /** Everything the harness opened closed, once: the end of the run and a stop that interrupts it share one cleanup. */
+  closeAll() {
+    this.closing ??= this.closeEverything();
+    return this.closing;
+  }
+
+  async closeEverything() {
     await this.close(this.windows);
     await this.reader.close();
     rmSync(this.dir, { recursive: true, force: true });
@@ -309,5 +333,7 @@ export class Desktop {
         // the previously active window is gone
       }
     }
+    // only once everything is closed: a signal meanwhile still waits for this cleanup
+    this.unhookStop();
   }
 }

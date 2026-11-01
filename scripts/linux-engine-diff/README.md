@@ -299,9 +299,17 @@ variants included; their evidence is written either way. The run's `end` row kee
   engine on the display refuses text requests for up to 10 s. The harness waits it out before every text sample, every
   safety case and each late-conversion trial (`clip.mjs` `waitQuarantineOver`, `xprobe quarantine`), and never
   removes it, since the unconfirmed paste's target may still convert until it ends.
-- **A failed preparation**: a sample whose engine could not make the handle it needs (`prepare_error`: both Copy
-  attempts failed, so a handle no engine issued is sent) times another request than the operation's, so no engine's
-  such sample is in the medians; a cua sample of that kind fails its verdict, a vendor build's is recorded.
+- **A failed preparation** (`prepare.mjs`; the gate's rule, Decision Log 2026-11-01): every failed attempt records
+  the step it failed at (`prepare_attempts`): the harness oracle's (a selection the window refused) or the engine's
+  request. A sample whose engine could not make the handle it needs (`prepare_error`, `prepare_step` engine: a Copy
+  failed, so a handle no engine issued is sent) times another request than the operation's, so no engine's such sample
+  is in the medians; a cua sample of that kind fails its verdict, a vendor build's is recorded, and it is never
+  resampled. A sample whose preparation failed only at the oracle sends nothing and is resampled once in its own
+  condition (a cold one on a fresh engine); a second oracle failure leaves it invalid (`prepare-failure` rows, outcome
+  `resampled` or `invalid`). More than 2 resampled or invalid samples in a case, or 1% of its samples if larger, or more
+  than 1% of the run's samples, fails the run; the summary lists the counts.
+- **A stopped run** (`stop.mjs`): SIGINT or SIGTERM stops the witness and closes every window the harness opened (its
+  Chrome scenes live in the person's Chrome) before the process exits 130 or 143.
 - **Every cleanup a case owes runs when it ends** (`Cases.guarded`): the engines, clipboard owners and target windows
   a case starts, whether it ends by its verdict or by an exception half-way through its setup; a sample's clipboard
   owner ends with the sample the same way (`runSample`). Each disposal establishes that what it ends is gone (an
@@ -456,7 +464,8 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `deviations.mjs` | the declared deviations |
 | `vendor-js.mjs` | `--via vendor-js`: the engines behind OpenAI's JavaScript client |
 | `readiness-check.mjs` | the engine's capture readiness judged by content, per family |
-| `scenes.mjs` | the harness's windows and the reader that reads effects back |
+| `scenes.mjs`, `stop.mjs` | the harness's windows and the reader that reads effects back; their cleanup on SIGINT or SIGTERM |
+| `prepare.mjs` | the gate's rule for a sample whose harness-side preparation fails: one resample, the counts and caps |
 | `witness.mjs`, `xprobe/` | the witness; `xprobe` is the harness's own X client (witness, retention probe, image comparison, window close) |
 | `busmon.mjs` | accessibility-bus call counts |
 | `normalize.mjs`, `images.mjs`, `stats.mjs`, `report.mjs` | output and screenshot comparison, medians, verdicts and the exit status, summary.md |

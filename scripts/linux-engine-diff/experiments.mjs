@@ -275,7 +275,8 @@ function startLoad(emit, factor = 1) {
   const cores = availableParallelism();
   const child = spawn('stress-ng', ['--cpu', String(cores * factor), '--cpu-method', 'matrixprod', '--timeout', '3h', '--quiet'], { stdio: 'ignore', detached: true });
   const exited = new Promise((resolve) => child.once('exit', resolve));
-  // an interrupted experiment ends its load too: a load left running skews every run after it
+  // an interrupted experiment ends its load too: a load left running skews every run after it. A stopped run exits once
+  // its desktop is closed (scenes.mjs, stop.mjs), and the exit ends the load
   const end = () => {
     try {
       process.kill(-child.pid, 'SIGTERM');
@@ -284,10 +285,6 @@ function startLoad(emit, factor = 1) {
     }
   };
   process.once('exit', end);
-  process.once('SIGINT', () => {
-    end();
-    process.exit(130);
-  });
   emit({ kind: 'load', started: true, cores, workers: cores * factor, pid: child.pid, loadavg_before: loadavg() });
   execFileSync('sleep', ['5']);
   emit({ kind: 'load', loadavg_running: loadavg() });

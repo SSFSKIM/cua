@@ -33,6 +33,8 @@ export async function startWitness(xprobe, { tailMs = 20 } = {}) {
   const ready = await next();
   if (!ready.ready) throw new Error(`the witness did not start: ${JSON.stringify(ready)}`);
   let seq = 0;
+  // stopped once, however many callers ask (the run's end and a stop that interrupts it, scenes.mjs `onStop`)
+  const exited = new Promise((resolve) => child.once('exit', resolve));
   return {
     async span(tag, fn) {
       const name = `${tag}#${++seq}`;
@@ -53,7 +55,7 @@ export async function startWitness(xprobe, { tailMs = 20 } = {}) {
     },
     async stop() {
       child.stdin.end();
-      await new Promise((resolve) => child.once('exit', resolve));
+      await exited;
     },
   };
 }

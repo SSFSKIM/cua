@@ -1016,6 +1016,10 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `m3/drop-misses/task20/`, `m3/drop-misses/task20-build/`; `.doperpowers/sde/…/task-20-report.md` (local); `ci-gate --gates engine-linux,test` GREEN on 3ca5dda1 (run 41288188804).
   Date/Author: 2026-11-01, the plan-executor (session linux171), from task 20's reports; the rulings and tickets by the design session (cua_repl session 1ea561bc).
 
+- Decision (2026-11-01, task 20's review): the watch splits its reading at a round trip just before the release (6dc17da3). A grab ending (`Ungrab` crossing) before that read is a stray, since a foreign client's grab released mid-drag kills the drag as surely as a pointer move (the reviewer's probe: a selection cut to one word, answered success); one after it is Chrome's own capture cleanup. 240 undisturbed drags again gave 0 stray answers (grab p99 1.597 ms). Residual, accepted from Chromium's source: an `Ungrab` arriving after the last path sample but before that read is not counted; Blink's reset then has no path movement left to cut, so it cannot truncate the drag. The split is a read-batch boundary, not an exact classification at the physical release, and no time bound is claimed.
+  Evidence: task-20-report.md (local), "Fix round 1"; `ci-gate --gates engine-linux,test` GREEN on d50d489a (run 41291099858).
+  Date/Author: 2026-11-01, the plan-executor (session linux171), from the fixer's report and the task review.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

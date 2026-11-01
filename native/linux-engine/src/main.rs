@@ -41,7 +41,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
        [--teardown-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
-       [--drag-release-dwell-ms <ms>] [--drag-dnd-wait-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take] [--stats]
+       [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take] [--stats]
        cua-engine --version";
 
 fn version() -> String {
@@ -71,7 +71,7 @@ fn default_config() -> Config {
         desktop: engine::DesktopMode::Shared,
         dnd_cancel_late: false,
         dnd_defer_take: false,
-        dnd_wait: std::time::Duration::ZERO,
+        dnd_hold: crate::dnd::TAKE_HOLD_AFTER_PRESS,
         dnd_after_take: crate::dnd::RELEASE_AFTER_TAKE,
     }
 }
@@ -152,7 +152,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             "--drag-step-us" => fixed_drag(&mut cfg).step = Duration::from_micros(number(value, arg)?),
             "--drag-press-dwell-ms" => fixed_drag(&mut cfg).press = Duration::from_millis(number(value, arg)?),
             "--drag-release-dwell-ms" => fixed_drag(&mut cfg).release = Duration::from_millis(number(value, arg)?),
-            "--drag-dnd-wait-ms" => cfg.dnd_wait = Duration::from_millis(number(value, arg)?),
+            "--drag-dnd-hold-ms" => cfg.dnd_hold = Duration::from_millis(number(value, arg)?),
             "--drag-dnd-after-take-ms" => cfg.dnd_after_take = Duration::from_millis(number(value, arg)?),
             other => return Err(format!("unknown argument {other}")),
         }

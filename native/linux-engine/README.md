@@ -127,9 +127,25 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   its target has accepted by then, and the target accepts only after the renderer has answered an earlier position. A
   browser that stalls just after its drag starts (task 18: 16 and 21 stalls in two full verdict runs) accepted 148 to
   275 ms after the take, so a fast release dropped nothing, and a short drop (40 px) released within about 50 ms of the
-  take dropped nothing even without a stall. A drag whose source takes nothing keeps its pace. Known limits, for M4:
-  - an accept later than 350 ms after the take still misses, unseen (the latest seen was 275 ms), and a take seen only
-    after the path's last step changes nothing;
+  take dropped nothing even without a stall. The steps after the take come at most 12 ms apart, and what they leave
+  of the 350 ms is filled with motions that re-visit the path's second-to-last sample and its last, ending on the last
+  (`dnd.rs` `KEEPALIVE`, `keepalive`; task 22): Chrome's drag loop sends its target a position only on a motion, and a
+  floor waited out without one dropped nothing after a take on the path's last sample or after it. These keepalives
+  come only after a take, only on such a Chromium drag.
+
+  A short path can end before the take (task 22, evidence `m3/drop-misses/task22/`): under a load of Chrome windows
+  the renderer gets the drag's first moves a frame or a stall late and starts the drag and drop after a 40 px path has
+  ended, and a release before the take drops nothing while the drag answers success (`m3-gate-final`'s three cold
+  misses). So when no take came by the path's end the button stays down for it until 250 ms after the press (`dnd.rs`
+  `TAKE_HOLD_AFTER_PRESS`; takes came 4 to 93 ms after the press over 195 drags of the gate's sequence), and a take then,
+  or one seen at the path's last look, gets the same floor; with no take by then the drag is released and answers as
+  before (`--stats` `hold`: the bound, the path's and the wait's time, whether the take came, how long after the
+  press, and the keepalives). Known limits, for M4:
+  - an accept later than 350 ms after the take still misses, unseen (the latest seen was 275 ms), and so does a take
+    later than 250 ms after the press: the drag answers success;
+  - a speed gap: a Chromium drag that never takes (a text selection, a range, a short thumb drag) holds its button
+    until 250 ms after the press, paying 250 ms less its path's time: a 40 px Chrome selection goes from about 134 ms
+    to about 355, a 40 px range from about 130 to about 350; a drag whose path lasts 250 ms or more pays nothing;
   - a speed gap: the short Chrome drop (40 px, in front) takes 469 ms, against the newest vendor build's 258 and the
     pinned build's 280 (which lands 11 of 12). A lead: release when Chrome's accept cursor shows, with the take plus
     350 ms as the ceiling, which helps only if reading the accept cursor has no false positives (task 18's replay of it
@@ -235,7 +251,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
 | `--drag-dnd-after-take-ms` | 350 | how long after a Chromium drag source's take a drag the engine lets drop is released at the soonest, its remaining steps spaced to it (measurement only; 0 turns the spacing off) |
-| `--drag-dnd-wait-ms` | off | before a Chromium drag's release, wait up to this long for the target's client to take `XdndSelection`, then nudge the last point by a pixel and back (measurement only: the event-driven option measured against a press dwell for Chrome's late drag-and-drop starts; `--stats` `dnd_wait`) |
+| `--drag-dnd-hold-ms` | 250 | how long after the press a Chromium drag the engine lets drop keeps its button down for its source's take when none came by the path's end (measurement only; 0 turns the hold off; `--stats` `hold`) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
 | `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, and how a desktop screenshot was read (`shm` or `get_image`) |

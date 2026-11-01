@@ -350,10 +350,10 @@ async function oneDrag(ctx, spec, scene, family, at, engine, i, extra = {}) {
     stats_route: value.stats?.route,
     stats_dnd: value.stats?.dnd,
     stats_after_take: value.stats?.after_take,
-    stats_dnd_wait: value.stats?.dnd_wait,
+    stats_hold: value.stats?.hold,
     stats_event_time: value.stats?.event_time,
     // the rest of the engine's --stats line, whatever a measurement build adds to it
-    stats_extra: value.stats ? Object.fromEntries(Object.entries(value.stats).filter(([k]) => !['bus', 'route', 'dnd', 'after_take', 'dnd_wait', 'event_time'].includes(k))) : undefined,
+    stats_extra: value.stats ? Object.fromEntries(Object.entries(value.stats).filter(([k]) => !['bus', 'route', 'dnd', 'after_take', 'hold', 'event_time'].includes(k))) : undefined,
     dropped: typeof drops === 'number' && dropped === drops + 1,
     witness: w.clean,
     witness_fields: w.fields,

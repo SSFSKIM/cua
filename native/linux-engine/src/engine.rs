@@ -55,9 +55,10 @@ pub struct Config {
     /// Measurement only (`--dnd-defer-take`): a drag and drop that begins during a watched drag is left unseen until
     /// after the release, so the after-release watch finds it and the next request reports it (Acceptance 8).
     pub dnd_defer_take: bool,
-    /// Measurement only (`--drag-dnd-wait-ms`): before a Chromium drag's release, wait up to this long for the target's
-    /// client to take `XdndSelection`, then nudge the last point, so a drag and drop that starts late still drops.
-    pub dnd_wait: std::time::Duration,
+    /// How long after the press a Chromium drag the engine lets drop keeps its button down for its source's take when
+    /// none came by the path's end (`dnd::TAKE_HOLD_AFTER_PRESS`; `--drag-dnd-hold-ms`, measurement only, sets another,
+    /// 0 none).
+    pub dnd_hold: std::time::Duration,
     /// How long after a Chromium drag source's take a drag the engine lets drop is released at the soonest
     /// (`dnd::RELEASE_AFTER_TAKE`; `--drag-dnd-after-take-ms`, measurement only, sets another, 0 none).
     pub dnd_after_take: std::time::Duration,

@@ -225,14 +225,17 @@ fn cancel_in_time(x: &X11, route: &mut Route, guard: &mut DropGuard, pressed: &m
 /// anything drops ([`Outcome::InTime`]). After the release it is watched through `SETTLE`: a take then (or, with `late`,
 /// measurement only, the take the drag went on past) is answered [`Outcome::Late`], Escape sent to end the drag and drop;
 /// none is [`Outcome::NoStart`], an ordinary drag. A stopped drag answers [`DropCancelled`].
-/// With `hold`, a drag the engine lets drop into Chromium: once the target's client is seen taking `XdndSelection`, the
-/// samples still to send are spaced so the release comes no sooner than `after_take` after the take, no step shorter than
-/// `pacing.step` (`dnd::RELEASE_AFTER_TAKE`, task 18), and `scheduled` records it; a take seen only after the last
-/// sample changes nothing. With the hold's bound (measurement only, `--drag-dnd-wait-ms`), the release waits up to it for
-/// the take, and after a take the last point is nudged by a pixel and back, so a drag and drop that starts after the last
-/// sample still sees the pointer over its target; the wait is answered in `waited`. With `press` (a Chromium-family
-/// drag), the press and the samples through Blink's drag threshold go out under one server grab ([`atomic_press`]),
-/// its watch begun just before the grab and ended just after the release, what it saw kept in `press.strays`.
+/// With `hold`, a drag the engine lets drop into Chromium (its watch and the hold's bound after the press,
+/// `dnd::TAKE_HOLD_AFTER_PRESS`): once the target's client is seen taking `XdndSelection`, the release comes no sooner
+/// than `after_take` after the take (`dnd::RELEASE_AFTER_TAKE`, task 18). The samples still to send are spaced over that
+/// delay, no step shorter than `pacing.step` nor longer than `dnd::KEEPALIVE`, and what they leave of it is filled with
+/// keepalive motions on the path's last two samples, ending on the last ([`crate::dnd::keepalive`]): Chrome's target
+/// accepts only on a motion (task 22). With no take by the path's end, the button stays down until the bound after the
+/// press for one (task 22), a take then, or one seen at that last look, getting the same floor; no take by then
+/// releases the drag as before. `scheduled` records a take, `held_for_take` the hold. With `press` (a
+/// Chromium-family drag), the press and the samples through Blink's drag threshold go out under one server grab
+/// ([`atomic_press`]), its watch begun just before the grab and ended just after the release, what it saw kept in
+/// `press.strays`.
 #[allow(clippy::too_many_arguments)]
 fn drag_along(
     x: &mut X11,
@@ -242,7 +245,7 @@ fn drag_along(
     pacing: &DragPacing,
     mut guard: Option<&mut DropGuard>,
     mut hold: Option<(&mut DndWatch, Duration)>,
-    waited: &mut Option<(bool, Duration)>,
+    held_for_take: &mut Option<Value>,
     after_take: Duration,
     scheduled: &mut Option<Value>,
     mut press: Option<&mut ChromiumPress>,
@@ -266,7 +269,11 @@ fn drag_along(
                 0
             }
         };
+        let pressed_at = Instant::now();
         std::thread::sleep(pacing.press);
+        // the path's last two samples, which a floor after a take re-visits
+        let last = *samples.last().expect("a drag has samples");
+        let before_last = samples.len().checked_sub(2).map_or(last, |k| samples[k]);
         // the take, when it was seen, and how many samples were still to send then
         let mut taken: Option<(Instant, usize)> = None;
         let mut since_take = 0;
@@ -278,7 +285,7 @@ fn drag_along(
                     Some((at, left)) if !after_take.is_zero() => {
                         since_take += 1;
                         let due = crate::dnd::step_due(at, after_take, since_take, left);
-                        wait = wait.max(due.saturating_duration_since(Instant::now()));
+                        wait = wait.max(due.saturating_duration_since(Instant::now()).min(crate::dnd::KEEPALIVE));
                     }
                     Some(_) => {}
                     None if watch.started(x) => taken = Some((Instant::now(), count - 1 - i)),
@@ -293,19 +300,36 @@ fn drag_along(
                 return cancel_in_time(x, route, guard, &mut pressed);
             }
         }
-        if let Some((hold, bound)) = hold.as_mut()
-            && !bound.is_zero()
-        {
-            let since = Instant::now();
-            while !hold.started(x) && since.elapsed() < *bound {
-                std::thread::sleep(Duration::from_millis(2));
+        if let Some((watch, bound)) = hold.as_mut() {
+            let path_ms = pressed_at.elapsed().as_secs_f64() * 1000.0;
+            // a drag that never took by its path's end keeps its button down for the take until the bound after the
+            // press; a take seen at this last look counts as late too
+            if taken.is_none() {
+                let since = Instant::now();
+                let seen = crate::dnd::wait_for_take(|| watch.started(x), pressed_at + *bound);
+                if seen {
+                    taken = Some((Instant::now(), 0));
+                }
+                *held_for_take = Some(json!({
+                    "bound_ms": bound.as_secs_f64() * 1000.0,
+                    "path_ms": path_ms,
+                    "waited_ms": since.elapsed().as_secs_f64() * 1000.0,
+                    "taken": seen,
+                }));
             }
-            let taken = hold.is_started();
-            *waited = Some((taken, since.elapsed()));
-            if taken {
-                let &(lx, ly) = points.last().expect("a drag has two points");
-                route.place_again(x, lx.saturating_add(1), ly)?;
-                route.place_again(x, lx, ly)?;
+            // the floor after a take: what the path's steps left of it filled with motions, ending on the last sample
+            if let Some((at, _)) = taken
+                && !after_take.is_zero()
+            {
+                let sent = crate::dnd::keepalive(
+                    |(px, py)| route.place_again(x, px, py),
+                    before_last,
+                    last,
+                    at + after_take,
+                )?;
+                let record = held_for_take.get_or_insert_with(|| json!({}));
+                record["take_after_press_ms"] = json!(at.saturating_duration_since(pressed_at).as_secs_f64() * 1000.0);
+                record["keepalives"] = json!(sent);
             }
         }
         std::thread::sleep(pacing.release);
@@ -574,8 +598,8 @@ impl Engine {
         };
         // a Chromium drag the engine lets drop (no guard: in front, a dedicated desktop, or the desktop route into the
         // window under the start) is watched for its take, so its release comes no sooner than the take's delay after
-        // it (`dnd::RELEASE_AFTER_TAKE`), and so the press watch knows whether the drag started; the measurement hold
-        // (`--drag-dnd-wait-ms`) uses the same watch
+        // it (`dnd::RELEASE_AFTER_TAKE`), so a take late for its path is held for (`dnd::TAKE_HOLD_AFTER_PRESS`), and so
+        // the press watch knows whether the drag started
         let dropping_into = match target {
             Target::Window(window) | Target::Foreground(window) => Some(window),
             Target::Desktop => window,
@@ -612,8 +636,8 @@ impl Engine {
         };
         let after_take = self.cfg.dnd_after_take;
         let mut scheduled = None;
-        let bound = self.cfg.dnd_wait;
-        let mut waited = None;
+        let bound = self.cfg.dnd_hold;
+        let mut held_for_take = None;
         // the time field the drag's events carried at its end, beside the server's time read just after (M3.1: whether
         // a background event's time can run ahead of the server's)
         let mut times = None;
@@ -637,7 +661,7 @@ impl Engine {
                 &pacing,
                 guard.as_mut(),
                 hold.as_mut().map(|w| (w, bound)),
-                &mut waited,
+                &mut held_for_take,
                 after_take,
                 &mut scheduled,
                 press.as_mut(),
@@ -663,11 +687,8 @@ impl Engine {
         if let Some(mut hold) = hold {
             taken = hold.started(&mut self.x);
             hold.stop(&mut self.x);
-            if let Some((taken, wait)) = waited {
-                self.extra.insert(
-                    "dnd_wait".into(),
-                    json!({ "taken": taken, "waited_ms": wait.as_secs_f64() * 1000.0 }),
-                );
+            if let Some(record) = held_for_take {
+                self.extra.insert("hold".into(), record);
             }
         }
         if let Some(guard) = guard.as_mut() {

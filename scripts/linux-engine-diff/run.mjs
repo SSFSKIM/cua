@@ -320,7 +320,7 @@ async function measureSample(s, ctx) {
     if (stats.route) row.route = stats.route;
     if (stats.dnd) row.dnd = stats.dnd;
     if (stats.event_time) row.event_time = stats.event_time;
-    if (stats.dnd_wait) row.dnd_wait = stats.dnd_wait;
+    if (stats.hold) row.hold = stats.hold;
     if (stats.after_take) row.after_take = stats.after_take;
     // a Chromium drag's atomic press and what its watch saw (task 20: stray.rs)
     if (stats.press) row.press = stats.press;

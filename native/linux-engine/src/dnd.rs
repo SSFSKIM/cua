@@ -138,8 +138,59 @@ pub const RELEASE_AFTER_TAKE: Duration = Duration::from_millis(350);
 
 /// When the `done`-th of the `left` steps a drag still had at its source's take ends at the soonest: those steps
 /// spread evenly over `after_take`, so the last of them, and the release after it, comes `after_take` after the take.
+/// No step waits longer than [`KEEPALIVE`] (the drag's own pacing aside): what the steps leave of the delay is filled
+/// by [`keepalive`].
 pub fn step_due(taken: Instant, after_take: Duration, done: usize, left: usize) -> Instant {
     taken + after_take.mul_f64(done as f64 / left.max(1) as f64)
+}
+
+/// How long after the press a Chromium drag the engine lets drop keeps its button down for its source's take when none
+/// came by the path's end (task 22, evidence `m3/drop-misses/task22/`): a renderer that gets the drag's first moves
+/// late (a frame or a stall behind, under the gate's load of Chrome windows) starts the drag and drop after a short
+/// path has ended, and a release before its take drops nothing while the drag answers success (`m3-gate-final`). Takes
+/// came 4-93 ms after the press over 195 drags of the gate's sequence, the gate's own misses' within about 134 ms; 250
+/// leaves about one more stall of the size task 18 saw. A drag whose path already lasts this long waits for nothing;
+/// a shorter one that never takes (a text selection, a range) pays the rest of it. A take after it still misses, unseen.
+pub const TAKE_HOLD_AFTER_PRESS: Duration = Duration::from_millis(250);
+
+/// The longest the pointer rests between a take and the release (task 22): Chrome's drag loop sends its target a
+/// position only on a motion, and its target accepts only a position the renderer has answered, so a floor waited out
+/// without motion still drops nothing (a take on the path's last sample, or after it: 2 misses of 7 such drags).
+pub const KEEPALIVE: Duration = Duration::from_millis(12);
+
+const TAKE_POLL: Duration = Duration::from_millis(2);
+
+/// The hold: whether the source's take was seen (through `started`, looked at once at least) by `deadline`.
+pub fn wait_for_take(mut started: impl FnMut() -> bool, deadline: Instant) -> bool {
+    loop {
+        if started() {
+            return true;
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return false;
+        }
+        std::thread::sleep(TAKE_POLL.min(deadline - now));
+    }
+}
+
+/// The floor's motions after a take (only then, and only on a drag the engine lets drop into a Chromium window): until
+/// `due`, the path's second-to-last sample and then its last, [`KEEPALIVE`] apart, so the drag ends on its last
+/// sample. Answers how many pairs went out; a motion that fails ends it with its error.
+pub fn keepalive(
+    mut place: impl FnMut((i16, i16)) -> anyhow::Result<()>,
+    before: (i16, i16),
+    last: (i16, i16),
+    due: Instant,
+) -> anyhow::Result<u32> {
+    let mut sent = 0;
+    while Instant::now() < due {
+        place(before)?;
+        place(last)?;
+        sent += 1;
+        std::thread::sleep(KEEPALIVE.min(due.saturating_duration_since(Instant::now())));
+    }
+    Ok(sent)
 }
 
 /// The watch on `XdndSelection` for one drag. It owns the selection's reports while it runs: whatever else reads the
@@ -503,6 +554,65 @@ mod tests {
         );
         let dues: Vec<Instant> = (0..=40).map(|done| step_due(taken, after, done, 40)).collect();
         assert!(dues.windows(2).all(|w| w[0] <= w[1]), "never earlier for a later step");
+    }
+
+    #[test]
+    fn the_hold_waits_for_a_take_until_its_deadline_and_no_longer() {
+        assert_eq!(TAKE_HOLD_AFTER_PRESS, Duration::from_millis(250));
+        // no take: the button stays down until the deadline, then the drag is released as before
+        let deadline = Instant::now() + Duration::from_millis(40);
+        let mut looks = 0;
+        assert!(!wait_for_take(
+            || {
+                looks += 1;
+                false
+            },
+            deadline
+        ));
+        assert!(Instant::now() >= deadline, "held to the deadline");
+        assert!(Instant::now() < deadline + Duration::from_millis(20), "and no longer");
+        assert!(looks > 2, "looked again while it waited");
+        // a take inside the hold ends the wait at once
+        let started = Instant::now();
+        let mut looks = 0;
+        assert!(wait_for_take(
+            || {
+                looks += 1;
+                looks == 3
+            },
+            started + Duration::from_secs(5)
+        ));
+        assert!(started.elapsed() < Duration::from_millis(50));
+        // a take seen at the path's last look (the deadline already past) still counts: the floor follows
+        assert!(wait_for_take(|| true, Instant::now() - Duration::from_millis(1)));
+        assert!(!wait_for_take(|| false, Instant::now() - Duration::from_millis(1)));
+    }
+
+    #[test]
+    fn the_floor_after_a_take_is_filled_with_motions_that_end_on_the_last_sample() {
+        let due = Instant::now() + Duration::from_millis(60);
+        let mut placed = Vec::new();
+        let sent = keepalive(|p| (placed.push((p, Instant::now())), Ok(())).1, (9, 5), (10, 5), due).unwrap();
+        assert!(Instant::now() >= due, "the release waits for the floor");
+        assert!(sent >= 4, "a motion every {KEEPALIVE:?} or so: {sent}");
+        assert_eq!(placed.len(), 2 * sent as usize);
+        assert_eq!(placed.last().unwrap().0, (10, 5), "ending on the last sample");
+        assert!(
+            placed.chunks(2).all(|pair| pair[0].0 == (9, 5) && pair[1].0 == (10, 5)),
+            "the path's second-to-last sample, then its last"
+        );
+        let gaps: Vec<Duration> = placed.windows(3).step_by(2).map(|w| w[2].1 - w[0].1).collect();
+        assert!(
+            gaps.iter().all(|g| *g < KEEPALIVE + Duration::from_millis(8)),
+            "{gaps:?}"
+        );
+        // a floor already over: no motion at all
+        let mut none = 0;
+        let sent = keepalive(|_| (none += 1, Ok(())).1, (9, 5), (10, 5), Instant::now()).unwrap();
+        assert_eq!((sent, none), (0, 0));
+        // a motion that fails ends the floor with its error
+        let due = Instant::now() + Duration::from_millis(60);
+        assert!(keepalive(|_| Err(anyhow::anyhow!("BadWindow")), (9, 5), (10, 5), due).is_err());
     }
 
     #[test]

@@ -273,6 +273,33 @@ test('Chrome and Electron rows keep the engine\'s meta of their prepare, act and
   assert.ok(matrixSteps(textedit.steps, 'read').every(a => !a.includes('--electron-mode')));
 });
 
+// #188: a prepare that needs the field focused hands its focus reading to the row, which reads the observation's own
+// focus (cua/observation focusedIndex, which no selection masks) when the engine reports it, else the trailer's.
+test('a prepare\'s field focus is judged by the observation\'s focus when the engine reports one, else by the trailer; the stated steps ride on the row', async () => {
+  const tab = cellsOf('electron', 'pressKey', 'tab');
+  const prepared = ['field emptied to clear a selection'];
+  const rowsWith = async meta => {
+    const cell = code => (code.includes(tab.prepare) ? {ready: true, focus: {index: 5, trailer: 'masked'}, prepared, ...(meta ? {_meta: {'cua/observation': meta}} : {})} : null);
+    const {result, calls} = await runWith({plan: planOf('method', {scene: 'electron'}), cell});
+    return {rows: result.rows.filter(r => r.section === 'method' && r.method === 'pressKey' && r.case === 'tab'), acted: calls.filter(c => c.code.includes(tab.act)).length};
+  };
+  const read = await rowsWith({webShaped: true, focusedIndex: 5, focusedRole: 'AXTextArea'});
+  assert.equal(read.rows.length, 2);
+  for (const row of read.rows) {
+    assert.equal(row.invalid, undefined, row.id);
+    assert.deepEqual([row.prepared, row.focusReadBy], [prepared, 'observation'], row.id);
+  }
+  assert.equal(read.acted, 2, 'both rows\' keys were sent');
+  const vendorLike = await rowsWith(null);
+  for (const row of vendorLike.rows) {
+    assert.equal(row.invalid, 'not prepared: the focus could not be read: a selection masks the trailer', row.id);
+    assert.deepEqual([row.prepared, row.focusReadBy], [prepared, 'trailer']);
+  }
+  assert.equal(vendorLike.acted, 0, 'nothing sent on a masked trailer');
+  const elsewhere = await rowsWith({focusedIndex: 13, focusedRole: 'AXButton'});
+  assert.ok(elsewhere.rows.every(r => r.invalid === 'not prepared: the field could not be given the focus'));
+});
+
 test('the Electron fixture\'s accessibility record is exported whole into the run\'s output before the scene goes down, once', async () => {
   // The launch path brings the scene down: the export comes before that step.
   const launch = await runWith({plan: planOf('launch', {scene: 'electron'})});

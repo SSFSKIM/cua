@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {parseCell} from '../../scripts/native-baseline/cells.mjs';
-import {CASES, METHODS, NOT_APPLICABLE, TARGETS, caseId} from '../../scripts/native-matrix/plan.mjs';
+import {CASES, FOCUS_REASONS, METHODS, NOT_APPLICABLE, TARGETS, caseId, focusVerdict} from '../../scripts/native-matrix/plan.mjs';
 import {NO_SUCH_ACTION, caseCells, findingCell, panelCell, selectCell} from '../../scripts/native-matrix/matrix-cells.mjs';
 import {focusedIndexOf, selectedTextOf} from '../../scripts/native-matrix/matrix-text.mjs';
 import {NOTE} from '../../src/services/engine/render.mjs';
@@ -97,7 +97,9 @@ test('the tree case passes on both engines\' goldens of every scene, and returns
 
 // The Electron fixture's text field as a small model rendered in the vendor's grammar: its value, the focus and the
 // selection, changed by the fake's actions as the app would (or, for an inert engine, not).
-function electronField({value = '', inert = false, insertAtStart = false} = {}) {
+// `press`: the click keeps the field's selection, as cua's AXPress does on Chromium's textarea (#188), where a posted
+// click places a caret; `sticky`: no write clears the selection either.
+function electronField({value = '', inert = false, insertAtStart = false, press = false, sticky = false} = {}) {
   const lines = golden('electron', 'vendor.txt').split('\n\nThe focused UI element')[0].split('\n');
   const state = {value, focused: 5, selected: null};
   const render = () => {
@@ -111,8 +113,8 @@ function electronField({value = '', inert = false, insertAtStart = false} = {}) 
     state.selected = null;
   };
   const app = fakeApp('', {
-    click: (_, index) => { if (Number.isInteger(index)) state.focused = index; state.selected = null; },
-    setValue: (_, index, v) => { if (index === 5) state.value = v; },
+    click: (_, index) => { if (Number.isInteger(index)) state.focused = index; if (!press) state.selected = null; },
+    setValue: (_, index, v) => { if (index !== 5) return; if (v !== state.value && !sticky) state.selected = null; state.value = v; },
     selectText: (_, index, word) => { if (index === 5 && state.value.includes(word)) state.selected = word; },
     typeText: (_, text) => write(text), paste: (_, text) => write(text),
   });
@@ -287,6 +289,71 @@ test('a case whose precondition does not hold sends nothing and its row is inval
   const notFront = await runCase('textedit', 'textedit', other, 'click', 'control');
   assert.equal(notFront.prepare.value.ready, false);
   assert.deepEqual(other.calls, []);
+});
+
+// #188: a row's prepare that reads the field's focus does not depend on what an earlier row left selected in it. The
+// renderer's trailer shows selected text instead of the focused element, and cua's click on the Electron field (an
+// AXPress) keeps an existing selection, so the prepare clears it as a stated step; a selection it cannot clear is
+// reported as masking the trailer, never as a field that could not be given the focus.
+const CLEARED = 'field emptied to clear a selection';
+test('a selection an earlier row left in the field is cleared as a stated step, so the focused field passes', async () => {
+  for (const [method, kase] of [['typeText', 'replace'], ['pressKey', 'tab'], ['paste', 'replace']]) {
+    // drag.select's multi-line selection, or selectText's "matrix", left in the focused field; the click keeps it.
+    const {app, state} = electronField({value: 'alpha one\nbravo two\ncharlie three\ndelta four\necho five\nfoxtrot six\ngolf seven\nhotel eight', press: true});
+    state.selected = 'bravo two\ncharlie';
+    const cells = caseCells('electron', casesOf('electron', method, kase));
+    const prepared = await run(cells.prepare, {apps: {electron: app}});
+    delete globalThis.__m;
+    assert.equal(prepared.value.ready, true, `${method}.${kase}: ${JSON.stringify(prepared.value)}`);
+    assert.deepEqual(prepared.value.prepared, [CLEARED], 'the clear is named in the prepare\'s result');
+    assert.deepEqual(prepared.value.focus, {index: 5, trailer: 'focused'});
+    assert.deepEqual(app.calls.slice(0, 2), [['click', 5], ['setValue', 5, '']], 'the click first; the clear only because the selection survived it');
+  }
+  // A click that collapses the selection (a posted click, the vendor's) needs no clear, and none is stated.
+  const {app, state} = electronField({value: 'alpha one\nbravo two'});
+  state.selected = 'bravo';
+  const prepared = await run(caseCells('electron', casesOf('electron', 'pressKey', 'tab')).prepare, {apps: {electron: app}});
+  delete globalThis.__m;
+  assert.deepEqual(prepared.value, {ready: true, focus: {index: 5, trailer: 'focused'}});
+  assert.deepEqual(app.calls, [['click', 5]]);
+});
+
+test('rows no longer depend on the selection an earlier row left: Electron\'s selectText then paste, in one field', async () => {
+  const {app} = electronField({value: 'alpha one', press: true});
+  const select = await runCase('electron', 'electron', app, 'selectText', 'text');
+  assert.equal(select.check.value.ok, true, 'selectText leaves "matrix" selected in the field');
+  const paste = await runCase('electron', 'electron', app, 'paste', 'replace');
+  assert.equal(paste.prepare.value.ready, true, JSON.stringify(paste.prepare.value));
+  assert.deepEqual(paste.prepare.value.prepared, [CLEARED]);
+  assert.equal(paste.check.value.ok, true, 'the paste replaces the word its own prepare selected');
+});
+
+test('a selection that masks the trailer is reported as its own reason, and the observation\'s own focus is read in its place', async () => {
+  // The clear does not take: the trailer still shows only the selection, so the cell cannot tell the focus.
+  const {app, state} = electronField({value: 'alpha one\nbravo two', press: true, sticky: true});
+  state.selected = 'bravo';
+  const prepared = await run(caseCells('electron', casesOf('electron', 'pressKey', 'tab')).prepare, {apps: {electron: app}});
+  delete globalThis.__m;
+  assert.deepEqual(prepared.value, {ready: true, focus: {index: 5, trailer: 'masked'}, prepared: [CLEARED]}, 'left to the harness\'s verdict');
+  assert.equal(FOCUS_REASONS.masked, 'the focus could not be read: a selection masks the trailer');
+  assert.notEqual(FOCUS_REASONS.masked, FOCUS_REASONS.unfocused);
+  // The vendor reports no observation meta: the trailer decides, and a masked one is its own reason.
+  assert.deepEqual(focusVerdict(prepared.value.focus, null), {by: 'trailer', problem: FOCUS_REASONS.masked});
+  assert.deepEqual(focusVerdict({index: 5, trailer: 'focused'}, null), {by: 'trailer', problem: null});
+  // cua's observation names the focused element, which no selection masks: it is read instead of the trailer.
+  assert.deepEqual(focusVerdict(prepared.value.focus, {webShaped: true, focusedIndex: 5, focusedRole: 'AXTextArea'}), {by: 'observation', problem: null});
+  assert.deepEqual(focusVerdict({index: 5, trailer: 'focused'}, {focusedIndex: 13, focusedRole: 'AXButton'}), {by: 'observation', problem: FOCUS_REASONS.unfocused},
+    'preferred over the trailer when present');
+  assert.deepEqual(focusVerdict(prepared.value.focus, {focusedIndex: null, focusRead: 'AXError -25212'}),
+    {by: 'observation', problem: `${FOCUS_REASONS.unfocused} (the focus read answered AXError -25212)`});
+  assert.deepEqual(focusVerdict(prepared.value.focus, {webShaped: true}), {by: 'trailer', problem: FOCUS_REASONS.masked}, 'an observation meta without the focus read');
+  // TextEdit's prepare (no value of its own to write back) has no clear: a masked trailer is left to the verdict too.
+  const doc = golden('textedit', 'vendor.txt');
+  const keeps = fakeApp(withTrailer(doc, {selectedText: 'Line 10'}), {selectText: (a, _, word) => { a.ax = withTrailer(doc, {selectedText: word}); }});
+  const textedit = await run(caseCells('textedit', casesOf('textedit', 'typeText', 'replace')).prepare, {apps: {textedit: keeps}});
+  delete globalThis.__m;
+  assert.deepEqual([textedit.value.ready, textedit.value.focus?.trailer, textedit.value.prepared], [true, 'masked', undefined]);
+  assert.ok(!keeps.calls.some(c => c[0] === 'setValue'), 'nothing written into the document');
 });
 
 test('the finding scorer resolves each found target by an action that does nothing, and returns counts only', async () => {

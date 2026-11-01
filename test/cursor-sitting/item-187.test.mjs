@@ -582,7 +582,8 @@ test('the CLI: the dry run prints every step and touches nothing; judge writes i
   assert.deepEqual(leaks(text), []);
   const vendor = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--vendor']));
   assert.match(vendor.text, /dry run: \d+ steps/);
-  await assert.rejects(main(['paste-187', 'drive', '--out', out, '--dry-run', '--part', 'c']), /--part takes all, a, b, 188 or 188-vendor-click/);
+  await assert.rejects(main(['paste-187', 'drive', '--out', out, '--dry-run', '--part', 'c']), /--part takes all, a, b, b-controls, 188 or 188-vendor-click/);
+  assert.deepEqual(plan187({part: 'b-controls'}).map(p => p.item), [ITEMS.place, ...['electron-composing', 'textedit-composing', 'chrome-korean'].map(g => ITEMS.control(g, 'B')), ITEMS.end]);
   const only188 = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--part', '188']));
   assert.match(only188.text, new RegExp(`dry run: ${plan187({part: '188'}).reduce((n, p) => n + p.steps.length, 0)} steps, nothing sent`));
   assert.equal(existsSync(out), false);

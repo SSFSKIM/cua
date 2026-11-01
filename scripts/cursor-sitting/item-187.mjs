@@ -259,6 +259,8 @@ export function plan187({part = 'all', vendor = false} = {}) {
     const only = part === '188' ? items188 : [{item: ITEMS_188.click('vendor'), stage: '188', steps: clickItem188('vendor')}];
     return [{item: ITEMS_188.place, stage: 'place', steps: placeSteps()}, ...only, {item: ITEMS_188.end, stage: 'end', steps: endSteps()}];
   }
+  // `b-controls`: Part B's three controls alone (after a B whose ABAB stopped before them).
+  if (part === 'b-controls') return [place, ...b.slice(1), end];
   return [place, ...(part === 'all' ? items188 : []), ...(part === 'b' ? [] : a), ...(part === 'a' ? [] : b), end];
 }
 

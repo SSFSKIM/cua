@@ -152,7 +152,7 @@ const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'string'}, aside: {type: 'string'}, run: {type: 'string'}, out: {type: 'string'},
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
   arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'}, source: {type: 'string'}, 'no-clip': {type: 'boolean', default: false}, still: {type: 'boolean', default: false}, control: {type: 'boolean', default: false},
-  case: {type: 'string'}, variant: {type: 'string'}, part: {type: 'string'}, vendor: {type: 'boolean', default: false}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
+  case: {type: 'string'}, variant: {type: 'string'}, part: {type: 'string'}, vendor: {type: 'boolean', default: false}, 'vendor-ungated': {type: 'boolean', default: false}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
 const absolute = (values, name) => {
@@ -360,11 +360,12 @@ const rows187 = rows => lastAttempt(rows ?? []).filter(r => r.kind === 'task' &&
 // every Part A row delivered (the end-early rule, read from Part A's evidence).
 async function drive187(values) {
   const part = values.part ?? 'all';
-  if (!['all', 'a', 'b', '188', '188-vendor-click'].includes(part)) throw new Error('--part takes all, a, b, 188 or 188-vendor-click');
+  if (!['all', 'a', 'b', 'b-controls', '188', '188-vendor-click'].includes(part)) throw new Error('--part takes all, a, b, b-controls, 188 or 188-vendor-click');
   if (values.vendor && values.part) throw new Error('--vendor runs the vendor lane alone; it takes no --part');
   const out = absolute(values, 'out'), dryRun = values['dry-run'];
   const run = dryRun ? values.run ?? '/nonexistent' : absolute(values, 'run');
-  if (values.vendor && !dryRun) {
+  // --vendor-ungated: the design session's ruling at the slot (1ea561bc:256) runs the lane whatever B showed.
+  if (values.vendor && !dryRun && !values['vendor-ungated']) {
     const allowed = vendorAllowed(judge187(read187(out)));
     if (!allowed.allowed) throw new Error(`the vendor lane runs only once arm B has failed to deliver: ${allowed.why}`);
   }

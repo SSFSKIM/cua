@@ -300,8 +300,11 @@ const postOf = meta => (meta?.delivery?.postedAt > 0 ? meta.delivery.postedAt : 
 // Which cell each raise is judged with (an index into `cells`, sorted by start; -1 before the first): the cell whose span
 // holds it, unless that cell's own guard had not begun its hold yet (or it has none) and an earlier guarded action's
 // engine watch may still have been running then: the latest action whose hold began before the raise, when the raise
-// lies inside its repair window after its post. The engine's watch runs until the next request reaches it, which a
-// host-side cell's start precedes (its target guard, its reads), so a raise in that gap is the earlier action's.
+// lies inside its repair window after its post. The engine's watch runs until the next request reaches it on its
+// connection, which a host-side cell's start precedes (its target guard, its reads), so a raise in that gap is the
+// earlier action's. Once a later cell of the same session (one session, one connection) has completed, a request has
+// reached the engine, the watch is cancelled, and a raise after it is not the earlier action's: it stays with the cell
+// whose span holds it. A cell of another session does not cancel it.
 export function raiseOwners(cells, raises) {
   const guarded = c => c.meta?.delivery?.releasedAt > 0;
   const holdStart = c => (c.meta.delivery.holdStartedAt > 0 ? c.meta.delivery.holdStartedAt : postOf(c.meta) ?? c.meta.delivery.releasedAt);
@@ -312,7 +315,8 @@ export function raiseOwners(cells, raises) {
     for (let j = k; j >= 0; j--) {
       if (!guarded(cells[j]) || holdStart(cells[j]) > raise.at) continue;
       const post = postOf(cells[j].meta);
-      return [raise, Number.isFinite(post) && raise.at <= post + REPAIR_WINDOW_MS + OUTLIVE_MS ? j : k];
+      const cancelled = cells.slice(j + 1).some(c => c.session === cells[j].session && c.at < raise.at);
+      return [raise, !cancelled && Number.isFinite(post) && raise.at <= post + REPAIR_WINDOW_MS + OUTLIVE_MS ? j : k];
     }
     return [raise, k];
   }));
@@ -334,7 +338,7 @@ export function raiseOwners(cells, raises) {
 // With the guard, also the first raise after the post and how long after it, and how long after the post the hold was
 // released. The post is the delivery's `postedAt` (the engine's own clock for its repair window), else the action
 // interval's start. `owned`, when given, picks the raises that are this call's instead of the span from `from` to
-// `until` (judgeCase: a raise during a later host-side cell can still be this action's).
+// `until` (judgeCase: a raise during a later host-side cell can still be this action's, until a later cell of its session completes).
 // -> {guarded, raises, postToRaiseMs, postToReleaseMs, late, outlived, undecided, unguarded, flash}.
 export function callWatch({meta = {}, attempt, from, until = Infinity, repaired = null, owned = null}) {
   const changes = attempt?.changes ?? [];

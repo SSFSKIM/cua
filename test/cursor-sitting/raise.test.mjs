@@ -7,7 +7,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {main} from '../../scripts/cursor-sitting.mjs';
 import {afterActionRepairsIn, alignmentFlipped, aPoint, arrangementProblem, buttonProblem, callWatch, caretMoved, CASES, cDrag, counterDeltas, DOCUMENT_TEXT, eRow,
-  freshFixtureProblem, judgeCase, LABELS, lineAt, lossesIn, orderAttempt, orderLines, placementPlan, placeSteps, plannedPoints, pressedOnce, raiseMarkdown, raisesIn, raiseSteps, selectionMade, spread,
+  freshFixtureProblem, judgeCase, LABELS, lineAt, lossesIn, orderAttempt, orderLines, placementPlan, placeSteps, plannedPoints, pressedOnce, raiseMarkdown, raiseOwners, raisesIn, raiseSteps, selectionMade, spread,
   stateAt, finderRowAlone, wordSelected} from '../../scripts/cursor-sitting/raise.mjs';
 import {scenesOf, targetProblem} from '../../scripts/cursor-sitting/target-guard.mjs';
 
@@ -254,6 +254,31 @@ test('a raise after an action, during a read cell before the next engine request
   delete rows.find(r => r.kind === 'cell' && r.sample?.i === 1).meta.afterActionRepairs;
   const unrepaired = judgeCase({kase: 'a', engine: 'cua', rows, order: late});
   assert.deepEqual([unrepaired.verdict, unrepaired.late, unrepaired.unguarded], ['FAIL', 1, 0], 'unrepaired, it is the click\'s late raise');
+});
+
+test('a raise after a later same-session cell completed is not the earlier action\'s: the engine has had a request since, and its watch is cancelled', () => {
+  // The click posts at 1050 (reported repair at 1110), a read cell runs 1150 to 1200, and the app raises again at 1350: the
+  // read reached the engine, so the click's watch cannot repair this one, and its cumulative report must not excuse it.
+  const keyed = i => ({restores: i === 0 ? 1 : 0, holdStartedAt: 1040 + i * 1000, releasedAt: 1080 + i * 1000, postedAt: 1050 + i * 1000, capped: false, raiseLeft: false});
+  const rows = caseRows({delivery: keyed});
+  rows.splice(rows.findIndex(r => r.kind === 'cell' && r.sample?.i === 0) + 1, 0, {kind: 'cell', label: 'a#0 count read', sample: {case: 'a', i: 0, part: 'read'}, startedAt: 1150, at: 1200, ok: true, meta: {}});
+  rows.find(r => r.kind === 'cell' && r.sample?.i === 1).meta.afterActionRepairs = {repairs: 1, actions: [{postedAt: 1050, repairs: 1, latencyMs: 40}]};
+  const order = changes => orderLines(`${WATCH.split('\n').slice(0, 3).join('\n')}\n${changes.map(([at, state]) => `{"at":${at},"kind":"order","prev":${at - 5},"state":"${state}"}`).join('\n')}\n${WATCH.split('\n')[3]}`);
+  const j = judgeCase({kase: 'a', engine: 'cua', rows, order: order([[1110, 'back-above'], [1115, 'front-above'], [1350, 'back-above'], [1360, 'front-above']])});
+  assert.notEqual(j.verdict, 'PASS');
+  assert.deepEqual([j.flashes, j.unguarded], [1, 1], 'the first raise is the click\'s flash, the second is unguarded');
+  // A raise before the read completes is still the click's.
+  const early = judgeCase({kase: 'a', engine: 'cua', rows, order: order([[1110, 'back-above'], [1115, 'front-above'], [1170, 'back-above'], [1175, 'front-above']])});
+  assert.deepEqual([early.flashes, early.unguarded], [2, 0]);
+});
+
+test('raiseOwners: a raise transfers to the earlier action only while no later cell of its session has completed', () => {
+  const click = {startedAt: 1000, at: 1100, session: 's', meta: {actionInterval: {startedAt: 1050, endedAt: 1052}, delivery: {holdStartedAt: 1040, releasedAt: 1080, postedAt: 1050}}};
+  const read = session => ({startedAt: 1150, at: 1200, session, meta: {}});
+  const owner = (cells, at) => { const raise = {at}; return raiseOwners(cells, [raise]).get(raise); };
+  assert.equal(owner([click, read('s')], 1170), 0, 'before the read completes, in the gap before its request');
+  assert.equal(owner([click, read('s')], 1350), 1, 'after the read completed, the raise stays with the read');
+  assert.equal(owner([click, read('other')], 1350), 0, 'a completed cell of another connection does not cancel the click\'s watch');
 });
 
 test('a case cut short, or a watcher record with no end, is incomplete, never a pass', () => {

@@ -50,6 +50,25 @@ function home(t) {
   return s.dir;
 }
 
+// A bare Unix-socket server standing in for a MAWS that misbehaves (silent, or dropping connections), closed with its
+// connections after the test whatever happens. -> {accepted (the first connection), close()}.
+async function rawServer(t, path, onConnection) {
+  const sockets = new Set();
+  let first;
+  const accepted = new Promise(resolve => { first = resolve; });
+  const server = createServer(socket => {
+    sockets.add(socket);
+    socket.on('error', () => {});
+    socket.once('close', () => sockets.delete(socket));
+    first(socket);
+    onConnection(socket);
+  });
+  await new Promise(resolve => server.listen(path, resolve));
+  const close = () => new Promise(resolve => { for (const s of sockets) s.destroy(); server.close(() => resolve()); });
+  t.after(close);
+  return {accepted, close};
+}
+
 // A peer identity addon that admits this process (and so the vendor clients these tests run in it).
 const admitSelf = {
   version: 1,
@@ -116,16 +135,14 @@ contract(1, 'no backend request at the host\'s start: nothing before MAWS\'s hel
   const h = home(t);
   const silentPath = join(h, 'silent.sock');
   const heard = [];
-  const silent = createServer(socket => { socket.on('data', chunk => heard.push(chunk)); socket.on('error', () => {}); });
-  await new Promise(resolve => silent.listen(silentPath, resolve));
-  const accepted = new Promise(resolve => silent.once('connection', resolve));
+  const silent = await rawServer(t, silentPath, socket => socket.on('data', chunk => heard.push(chunk)));
   const waiting = startClientBackends({home: h, paths: [silentPath], peerAddon: admitSelf});
   t.after(() => waiting.close());
-  await accepted;
+  await silent.accepted;
   await sleep(QUIET_MS);
   assert.deepEqual(heard, [], 'cua writes nothing to MAWS before MAWS\'s hello');
   await waiting.close();
-  await new Promise(resolve => silent.close(resolve));
+  await silent.close();
 
   // After the hello: the host listens and sends nothing, and the consumer's start (the browser service's setup and
   // list_browsers, getInfo and ping on the host socket) is answered from the host's own state.
@@ -260,12 +277,10 @@ contract(5, 'a launch waits HELLO_WAIT_MS (5 s) for MAWS\'s hello; a connection 
 
   // The launch's wait: a MAWS that accepts and has not said hello yet holds it for exactly HELLO_WAIT_MS, never longer.
   const silentPath = join(h, 'silent.sock');
-  const silent = createServer(socket => socket.on('error', () => {}));
-  await new Promise(resolve => silent.listen(silentPath, resolve));
-  const accepted = new Promise(resolve => silent.once('connection', resolve));
+  const silent = await rawServer(t, silentPath, () => {});
   const launch = startClientBackends({home: h, paths: [silentPath], peerAddon: admitSelf});
   t.after(() => launch.close());
-  const socket = await accepted;
+  const socket = await silent.accepted;
   let waited = false;
   const waiting = launch.waitForHellos().then(() => { waited = true; });
   assert.deepEqual(scheduled, [HELLO_WAIT_MS]);
@@ -280,15 +295,14 @@ contract(5, 'a launch waits HELLO_WAIT_MS (5 s) for MAWS\'s hello; a connection 
   socket.write(encodeFrame({jsonrpc: '2.0', method: 'hello', params: {extensionId: 'maws', extensionInstanceId: 'maws:late', version: '0.1.0', protocolVersion: 1, profileName: 'MAWS'}}));
   await waitFor(() => launch.entries()[0].ready, 'the late hello connecting');
   await launch.close();
-  await new Promise(resolve => silent.close(resolve));
+  await silent.close();
   scheduled.length = 0;
   taken = 0;
 
   // The retry cycle. A MAWS that drops every connection before its hello: one attempt at once, then one every 5 s.
   const path = join(h, 'p.sock');
   let attempts = 0;
-  const dropping = createServer(s => { attempts += 1; s.destroy(); });
-  await new Promise(resolve => dropping.listen(path, resolve));
+  const dropping = await rawServer(t, path, s => { attempts += 1; s.destroy(); });
   const client = startClientBackends({home: h, paths: [path], peerAddon: admitSelf});
   t.after(() => client.close());
   await waitFor(() => attempts === 1, 'the first attempt, made at once');
@@ -302,7 +316,7 @@ contract(5, 'a launch waits HELLO_WAIT_MS (5 s) for MAWS\'s hello; a connection 
     assert.equal(await nextScheduled(), CLIENT_RETRY_MS);
   }
   // Nothing listening (ENOENT): the same 5 s.
-  await new Promise(resolve => dropping.close(resolve));
+  await dropping.close();
   tick(CLIENT_RETRY_MS);
   assert.equal(await nextScheduled(), CLIENT_RETRY_MS);
   // MAWS comes up: connected at the next 5 s, not before.

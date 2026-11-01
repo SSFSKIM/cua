@@ -58,6 +58,8 @@
 //   node scripts/repl-parity/scenes-mac.mjs build-electron [--cache <root>] build the Electron fixture app
 //   node scripts/repl-parity/scenes-mac.mjs up <scene> --run <dir> [--chrome-app <app>] [--electron-app <app>]
 //                                                [--electron-arg <switch>]…   the fixture launched with these switches too
+//                                                [--page counters]   Chrome on the counters page (#187's slot), whose
+//                                                beacons the page server keeps, numbers only, in <dir>/chrome-page-counters.json
 //   node scripts/repl-parity/scenes-mac.mjs activate <scene> --run <dir>    the run's process to the front (exit 1 if not)
 //   node scripts/repl-parity/scenes-mac.mjs teardown-steps <scene> --run <dir>
 //   node scripts/repl-parity/scenes-mac.mjs down <scene|all> --run <dir>   (exit 1 when something stays up or changed)
@@ -70,7 +72,7 @@ import * as fs from 'node:fs';
 import {basename, join, isAbsolute} from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {PAGE_CONTROLS, PAGE_INITIAL, PAGE_TITLE, startScenePage} from '../native-matrix/fixtures/scene-page.mjs';
+import {PAGE_CONTROLS, PAGE_INITIAL, PAGE_TITLE, PAGE_VARIANTS, startScenePage} from '../native-matrix/fixtures/scene-page.mjs';
 import {FIXTURE_BUNDLE_ID, FIXTURE_CONTROLS, FIXTURE_INITIAL, buildElectronFixture} from '../native-matrix/fixtures/electron-fixture.mjs';
 import {CHROME_FOR_TESTING_BUNDLE_ID, placeChromeForTesting} from '../native-matrix/fixtures/chrome-for-testing.mjs';
 import {
@@ -502,10 +504,12 @@ export const electronArgs = ({userDataDir, placement = SCENES.electron.placement
 // window opened, and `savedPreferences` says when the owner's values were saved and whether that record was `kept`
 // from earlier (this run's earlier up, or a run that died before restoring them). `electronExtra`: the fixture's extra
 // switches (electronArgs), kept in its record as `extraArgs`.
-export async function upScene(id, {run, chromeApp, electronApp, electronExtra = [], layout, io = defaultIo()}) {
+export async function upScene(id, {run, chromeApp, electronApp, electronExtra = [], layout, page, io = defaultIo()}) {
   const scene = sceneOf(id), state = readState(run);
   if (state.scenes[id]) throw new Error(`scene ${id} is already up in this run; bring it down first`);
   if (layout !== undefined && id !== 'textedit') throw new Error('--layout applies to the textedit scene only');
+  const pageProblem = pageVariantProblem(id, page);
+  if (pageProblem) throw new Error(pageProblem);
   if (electronExtra.length && id !== 'electron') throw new Error('--electron-arg applies to the electron scene only');
   const notSwitch = electronExtra.find(a => typeof a !== 'string' || !/^--[\w-]/.test(a));
   if (notSwitch !== undefined) throw new Error(`--electron-arg takes a switch (--name or --name=value), not ${JSON.stringify(notSwitch)}`);
@@ -544,7 +548,7 @@ export async function upScene(id, {run, chromeApp, electronApp, electronExtra = 
     const app = chromeApp ?? (await io.placeChrome()).appPath, userDataDir = freshChromeProfile(run);
     record = {scene: id, bundleId: scene.bundleId, app, userDataDir};
     try {
-      record.page = await io.spawnPage(run);
+      record.page = await io.spawnPage(run, page === undefined ? {} : {page});
       // An open can start Chrome without yielding an unambiguous launch identity.
       record.launchAttempted = true;
       Object.assign(record, await startOwn({app, bundleId: scene.bundleId, args: chromeArgs({userDataDir, url: record.page.url}), io}));
@@ -711,19 +715,32 @@ const unrestored = ({remaining}) => `Finder's ${remaining.join(', ')} did not ta
 
 // The page server, detached from the command that starts it so it outlives the ssh session; it writes {url, port} into
 // the run directory once it listens, {port, at} once the page's load beacon arrives (PAGE_LOADED, read by
-// readPageLoaded), and stops on SIGTERM.
+// readPageLoaded), and stops on SIGTERM. On the counters page (`page: 'counters'`) it also keeps the latest counters
+// beacon, numbers only, with the time it came (PAGE_COUNTERS, read by readPageCounters); a beacon older than the one kept
+// (by its sequence) is dropped.
 const PAGE_LOADED = 'chrome-page-loaded.json';
-export const readPageLoaded = run => { try { return JSON.parse(fs.readFileSync(join(run, PAGE_LOADED), 'utf8')); } catch (error) { if (error.code === 'ENOENT') return null; throw error; } };
-export async function spawnPage(run, {boundMs = 10_000} = {}) {
+export const PAGE_COUNTERS = 'chrome-page-counters.json';
+const readRunJson = (run, name) => { try { return JSON.parse(fs.readFileSync(join(run, name), 'utf8')); } catch (error) { if (error.code === 'ENOENT') return null; throw error; } };
+export const readPageLoaded = run => readRunJson(run, PAGE_LOADED);
+// The latest counters beacon: {seq, length, counts, receivedAt}, or null before the first.
+export const readPageCounters = run => readRunJson(run, PAGE_COUNTERS);
+// Why `up <id> --page <page>` is refused, or null.
+export function pageVariantProblem(id, page) {
+  if (page === undefined) return null;
+  if (id !== 'chrome') return '--page applies to the chrome scene only';
+  return PAGE_VARIANTS.includes(page) ? null : `--page is ${PAGE_VARIANTS.join(' or ')}, not ${page}`;
+}
+export async function spawnPage(run, {boundMs = 10_000, page = 'shared'} = {}) {
   const ready = join(run, 'chrome-page.json');
   fs.rmSync(ready, {force: true});
   fs.rmSync(join(run, PAGE_LOADED), {force: true});
-  const child = spawn(process.execPath, [SCRIPT, 'serve-page', '--run', run], {detached: true, stdio: 'ignore'});
+  fs.rmSync(join(run, PAGE_COUNTERS), {force: true});
+  const child = spawn(process.execPath, [SCRIPT, 'serve-page', '--run', run, ...(page === 'shared' ? [] : ['--page', page])], {detached: true, stdio: 'ignore'});
   child.unref();
   for (const t0 = Date.now(); Date.now() - t0 < boundMs; await sleep(100)) {
-    let page;
-    try { page = JSON.parse(fs.readFileSync(ready, 'utf8')); } catch { continue; }
-    return {pid: child.pid, at: launchOf(child.pid), url: page.url, port: page.port};
+    let served;
+    try { served = JSON.parse(fs.readFileSync(ready, 'utf8')); } catch { continue; }
+    return {pid: child.pid, at: launchOf(child.pid), url: served.url, port: served.port, ...(page === 'shared' ? {} : {variant: page})};
   }
   try { process.kill(child.pid, 'SIGTERM'); } catch {}
   throw new Error(`the scene page did not start within ${boundMs} ms`);
@@ -733,9 +750,10 @@ const writeAtomically = (file, value) => {
   fs.writeFileSync(temporary, JSON.stringify(value) + '\n', {mode: 0o600});
   fs.renameSync(temporary, file);
 };
-async function servePage(run) {
-  let port = null;
-  const page = await startScenePage({onReady: () => writeAtomically(join(run, PAGE_LOADED), {port, at: Date.now()})});
+async function servePage(run, variant = 'shared') {
+  let port = null, kept = -1;
+  const onCounters = record => { if (record.seq > kept) { kept = record.seq; writeAtomically(join(run, PAGE_COUNTERS), {...record, receivedAt: Date.now()}); } };
+  const page = await startScenePage({page: variant, onReady: () => writeAtomically(join(run, PAGE_LOADED), {port, at: Date.now()}), ...(variant === 'counters' ? {onCounters} : {})});
   port = page.port;
   writeAtomically(join(run, 'chrome-page.json'), {url: page.url, port: page.port});
   process.once('SIGTERM', () => page.close().then(() => process.exit(0)));
@@ -775,7 +793,7 @@ export async function main(argv) {
     case 'front': return frontWindow();
     case 'frontmost': return frontmostProcess();
     case 'reactivate': return reactivateApp({bundleId: flags['bundle-id'], pid: Number(flags.pid)});
-    case 'up': return upScene(target, {run: runDir(flags), chromeApp: flags['chrome-app'], electronApp: flags['electron-app'], electronExtra: flags['electron-arg'], layout: flags.layout});
+    case 'up': return upScene(target, {run: runDir(flags), chromeApp: flags['chrome-app'], electronApp: flags['electron-app'], electronExtra: flags['electron-arg'], layout: flags.layout, page: flags.page});
     case 'activate': return activateScene(target, {run: runDir(flags)});
     case 'teardown-steps': return {scene: target, steps: teardownFor(target, {run: runDir(flags)})};
     case 'restore-finder': return restoreFinder();
@@ -786,7 +804,7 @@ export async function main(argv) {
       for (const id of [...SCENE_IDS].reverse()) results.push(await downScene(id, {run}));
       return {down: results.every(r => r.down), scenes: results};
     }
-    case 'serve-page': await servePage(runDir(flags)); return undefined;
+    case 'serve-page': await servePage(runDir(flags), flags.page ?? 'shared'); return undefined;
     default: throw new Error('usage: scenes-mac.mjs describe | preflight | place-chrome | build-electron | front | up <scene> | activate <scene> | teardown-steps <scene> | down <scene|all> (--run <dir>) | restore-finder');
   }
 }

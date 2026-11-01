@@ -300,13 +300,13 @@ contract(5, 'a launch waits HELLO_WAIT_MS (5 s) for MAWS\'s hello; a connection 
   t.after(() => launch.close());
   const socket = await silent.accepted;
   let waited = false;
-  const waiting = launch.waitForHellos().then(() => { waited = true; });
+  launch.waitForHellos().then(() => { waited = true; });
   await armed();
   tick(HELLO_WAIT_MS - 1);
   await sleep(20);
   assert.equal(waited, false, 'still waiting just before 5 s');
   tick(1);
-  await waiting;
+  await waitFor(() => waited, 'the hello wait ending at 5 s', 1000);   // bounded: a longer wait fails here, never hangs
   // The wait bounds the launch only: the connection keeps waiting for the hello, with no retry, however long, and a
   // late hello still connects.
   tick(3 * CLIENT_RETRY_MS);

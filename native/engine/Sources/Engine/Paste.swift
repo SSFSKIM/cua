@@ -300,7 +300,7 @@ struct KeyFocusReading: Equatable {
 /// the activation point lay against the frame, never the point, and the click it posted (`ActivationClickKind`: at the
 /// activation point, the inert one outside the frame, or none and why); the times are from the activation's subtype 1
 /// and from its click to the line's ⌘V, on route 3's clock. `activated` false: the app believed it had focus, or the
-/// paste shared another holder's activation (whose click, if any, already consumed the arm), and neither the click nor
+/// paste shared another holder's activation (an arm still unconsumed there it consumes on joining, recorded in the input meta's activationClickKind), and neither the click nor
 /// the times are this paste's.
 struct PasteFocusEnforcement {
   var activated = false

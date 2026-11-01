@@ -1595,11 +1595,11 @@ extension PasteActivationTests {
       XCTAssertEqual(seam.raises, 1, "the activation's guard repaired the raise")
       XCTAssertNotNil(meta.activationGuardMs)
       XCTAssertEqual(meta.activationClick, .outsideFrame, "the activation point's own decision")
-      XCTAssertEqual(meta.wire["activationClickKind"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint"])
+      XCTAssertEqual(meta.wire["activationClickKind"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint", "when": "early"])
       let record = try XCTUnwrap(meta.paste?.wire["focusEnforcement"] as? [String: Any])
       XCTAssertEqual(record["activated"] as? Bool, true)
       XCTAssertEqual(record["point"] as? String, "outside")
-      XCTAssertEqual(record["click"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint"])
+      XCTAssertEqual(record["click"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint", "when": "early"])
       XCTAssertNil(record["arm"], "no switch, no arm")
       XCTAssertNil(record["liftedClick"], "retired: `click` says what was posted")
       XCTAssertNil(record["clickToCommandVMs"], "stopped before ⌘V: no time to it")
@@ -1613,9 +1613,11 @@ extension PasteActivationTests {
 
   /// A paste through the engine to its end on the seam, into a window it places (frame and number 41): the paste's keys
   /// go out through route 3's post (the seam's), the fake app reads the pasteboard at each ⌘V's key down, and `onKeyDown`
-  /// runs at each key down with its key code (⌘V's 0x09, Return's 0x24). The meta it answered with.
+  /// runs at each key down with its key code (⌘V's 0x09, Return's 0x24). `before` runs on the engine first (another
+  /// holder's activation). The meta it answered with.
   private func pasteToItsEnd(_ text: String, typed: Bool, seam: GuardSeam, connection: ConnectionState, pasteboard: TestPasteboard,
-                             onKeyDown: @escaping (CGKeyCode) -> Void = { _ in }) throws -> InputMeta {
+                             onKeyDown: @escaping (CGKeyCode) -> Void = { _ in },
+                             before: (Engine, ActivationSystem) throws -> Void = { _, _ in }) throws -> InputMeta {
     var system = seam.system
     let post = system.post
     system.post = { event, pid in
@@ -1634,6 +1636,7 @@ extension PasteActivationTests {
     let app = ResolvedApp(appPath: "/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "TextEdit", running: nil)
     let pasteTarget = PasteTarget(app: app, pid: target, application: AXUIElementCreateApplication(target), keyboard: target,
                                   guarding: .off(app: "TextEdit"))
+    try before(engine, system)
     var meta = InputMeta(context)
     var entered = 0
     if typed {
@@ -1724,6 +1727,36 @@ extension PasteActivationTests {
     XCTAssertEqual(actions[0]["postedAt"] as? Int, Int(try XCTUnwrap(meta.delivery).postedAt), "keyed by the paste's delivery")
   }
 
+  /// A paste that joins a hold whose arm no mouse down has consumed (a pointer action's activation on Chrome, awaiting its
+  /// own click) posts the kept inert click itself, before its first ⌘V, so ⌘V reaches a key window; its meta records it.
+  func testAPasteJoiningAnUnconsumedHoldClicksBeforeItsCommandV() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.activationPoint = Self.outsidePoint
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var postsAtCommandV: [GuardPost.Kind]?
+    var pointerRelease: (() -> Bool)?
+    let meta = try pasteToItsEnd("x", typed: false, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: pasteboard,
+                                 onKeyDown: { code in
+      if code == 0x09 && postsAtCommandV == nil { postsAtCommandV = seam.posts.map(\.kind) }
+    }, before: { engine, system in
+      var pointerMeta = InputMeta(ExecutionContext(connection: ConnectionState(id: 2, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+      pointerRelease = try engine.heldActivations.acquire(pid: self.target, postsLeftMouseDown: true, beforeActivating: {}, make: {
+        FakeActivation(pid: self.target, window: AXUIElementCreateApplication(self.target), windowFrame: Self.chromeFrame, windowID: 41, system: system)
+      }, meta: &pointerMeta)
+      XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1)], "the pointer holder's activation, its arm unconsumed")
+    })
+    XCTAssertEqual(Array(try XCTUnwrap(postsAtCommandV).prefix(3)), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)],
+                   "the inert click before ⌘V")
+    XCTAssertEqual(seam.posts[1].location, Self.outsidePoint)
+    XCTAssertEqual(meta.wire["activationClickKind"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint", "when": "early"])
+    XCTAssertEqual((meta.paste?.wire["focusEnforcement"] as? [String: Any])?["activated"] as? Bool, false, "the activation is the other holder's")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+    _ = pointerRelease?()
+    XCTAssertEqual(seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.count, 1, "no second click at the release")
+    XCTAssertEqual(seam.posts.last?.kind, .appKit(2))
+  }
+
   /// The retired switch is not in the engine's status: an engine.json still carrying it changes nothing.
   func testTheStatusNoLongerReportsTheRetiredSwitch() {
     let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
@@ -1740,7 +1773,7 @@ extension PasteOperationTests {
     XCTAssertEqual(record.wire as NSDictionary, ["activated": false], "no activation of the paste's own")
     record.activated = true
     record.point = .outside
-    record.click = .inertOutside(.activationPoint)
+    record.click = .inertOutside(.activationPoint, .early)
     record.activatedAt = 100
     record.clickPostedAt = 101
     let pasteboard = TestPasteboard()
@@ -1758,7 +1791,7 @@ extension PasteOperationTests {
                  entered: &entered, meta: &meta)
     let wire = try XCTUnwrap(meta.paste?.wire["focusEnforcement"] as? [String: Any])
     XCTAssertEqual(wire["point"] as? String, "outside")
-    XCTAssertEqual(wire["click"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint"])
+    XCTAssertEqual(wire["click"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint", "when": "early"])
     XCTAssertEqual(wire["activationToCommandVMs"] as? Double, 70, "line 2's ⌘V, 20 ms after line 1's at 150")
     XCTAssertEqual(wire["clickToCommandVMs"] as? Double, 69)
     try run([.content(plain("c"), units: 1)], pasteboard, effect: effect { EffectReading(range: [characters, 0], characters: characters) },

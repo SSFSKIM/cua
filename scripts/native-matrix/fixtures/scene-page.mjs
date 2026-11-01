@@ -62,7 +62,9 @@ const headersFor = csp => ({'content-type': 'text/html; charset=utf-8', 'cache-c
 // plus a second script that counts the window's focus and blur (its own, not an element's reaching it), the textarea's
 // focus and blur, and document-level mousedown and click in the capture phase (a click the page takes from an
 // activation click outside the window's frame shows here, whatever stops it later), and beacons those counts with the
-// textarea's LENGTH, never its value, to its own server's COUNTERS_PATH, at every counted event and every input. Its CSP
+// textarea's LENGTH, never its value, and the document's hasFocus() (the re-slot's key-window reading: every change of
+// it comes with a window focus or blur, which beacons, so the latest beacon's is the page's now), to its own server's
+// COUNTERS_PATH, at every counted event and every input. Its CSP
 // is the shared one with only this script's hash added. The shared page stays byte-identical: every record so far was
 // taken on it.
 export const PAGE_VARIANTS = Object.freeze(['shared', 'counters']);
@@ -70,7 +72,7 @@ export const COUNTERS_PATH = '/counters';
 export const COUNTER_NAMES = Object.freeze(['windowFocus', 'windowBlur', 'textFocus', 'textBlur', 'mousedown', 'click']);
 export const COUNTERS_SCRIPT = "(() => { const c = {windowFocus: 0, windowBlur: 0, textFocus: 0, textBlur: 0, mousedown: 0, click: 0}; let seq = 0;"
   + " const notes = document.getElementById('notes');"
-  + ` const send = () => { seq += 1; navigator.sendBeacon('${COUNTERS_PATH}', JSON.stringify({seq, counts: c, length: notes.value.length})); };`
+  + ` const send = () => { seq += 1; navigator.sendBeacon('${COUNTERS_PATH}', JSON.stringify({seq, counts: c, length: notes.value.length, focused: document.hasFocus()})); };`
   + " const count = name => () => { c[name] += 1; send(); };"
   + " window.addEventListener('focus', e => { if (e.target === window) count('windowFocus')(); });"
   + " window.addEventListener('blur', e => { if (e.target === window) count('windowBlur')(); });"
@@ -84,15 +86,16 @@ export const COUNTERS_PAGE_HTML = PAGE_HTML.replace(`<script>${SCRIPT}</script>`
 const COUNTERS_BODY_MAX = 4096;
 
 // What the server keeps of a counters beacon: its sequence, the textarea's length and each count, every one a
-// non-negative whole number; anything else in the body is dropped. -> {seq, length, counts} or null.
+// non-negative whole number, and whether the document had the focus (a boolean); anything else in the body is dropped.
+// -> {seq, length, counts, focused} or null.
 export function countersRecord(text) {
   let body;
   try { body = JSON.parse(text); } catch { return null; }
   const whole = v => (Number.isSafeInteger(v) && v >= 0 ? v : null);
-  const seq = whole(body?.seq), length = whole(body?.length);
+  const seq = whole(body?.seq), length = whole(body?.length), focused = typeof body?.focused === 'boolean' ? body.focused : null;
   const counts = Object.fromEntries(COUNTER_NAMES.map(name => [name, whole(body?.counts?.[name])]));
-  if (seq === null || length === null || Object.values(counts).includes(null)) return null;
-  return {seq, length, counts};
+  if (seq === null || length === null || focused === null || Object.values(counts).includes(null)) return null;
+  return {seq, length, counts, focused};
 }
 
 // Serves the page (`page`: one of PAGE_VARIANTS); `onReady` is called once, on the page's first load beacon, and

@@ -306,28 +306,38 @@ enum ActivationClick: String, Equatable {
   case hitTestFailed  // the hit-test there answered nothing
 }
 
-/// The click route 3's activation posted after subtype 1 (the result's meta `activationClickKind`, and the paste's
-/// `focusEnforcement.click`; #187, 2026-11-01: an activation never leaves an arm). Subtype 1 arms an inactive app's
+/// The click that consumed route 3's activation's arm, and when (the result's meta `activationClickKind`, and the paste's
+/// `focusEnforcement.click`; #187, 2026-11-01: a hold never ends with its arm set). Subtype 1 arms an inactive app's
 /// `_mouseActivationInProgress`, and only a mouse down consumes the arm, making the window key; left armed, the window
-/// stays without key status until the person's next real click, and a key equivalent or ⌘V reaches no window. So where
-/// the click at the activation point is skipped, an inert click stamped with the window's number goes outside the frame:
+/// stays without key status until the person's next real click, and a key equivalent or ⌘V reaches no window. Where the
+/// click at the activation point is skipped, an inert click stamped with the window's number goes outside the frame:
 /// AppKit routes a pid-posted mouse down by its window number, never by its point, so it reaches that window, takes the
-/// armed branch (key and main, no ordering) and, its hit view nil, reaches no view.
+/// armed branch (key and main, no ordering) and, its hit view nil, reaches no view. A holder that posts its own left
+/// mouse down lets that consume the arm instead (the same branch, #200's reading), and the inert click goes at the
+/// release only when none did.
 enum ActivationClickKind: Equatable {
-  /// At the window's AXActivationPoint, inert and inside the frame (`ActivationClick.posted`).
+  /// At the window's AXActivationPoint, inert and inside the frame (`ActivationClick.posted`), right after subtype 1.
   case activationPoint
-  /// The inert click, at the point named.
-  case inertOutside(InertClickPoint)
-  /// None posted, and why.
+  /// The inert click at the point named: right after subtype 1 or a holder's joining (`early`), or before subtype 2.
+  case inertOutside(InertClickPoint, ActivationClickWhen)
+  /// The holder's own left mouse down consumed the arm.
+  case action
+  /// None could be posted, and why.
   case skipped(ActivationClickSkip)
 
   var wire: [String: Any] {
     switch self {
-    case .activationPoint: return ["kind": "activationPoint"]
-    case .inertOutside(let point): return ["kind": "inertOutside", "point": point.rawValue]
+    case .activationPoint: return ["kind": "activationPoint", "when": "early"]
+    case .inertOutside(let point, let when): return ["kind": "inertOutside", "point": point.rawValue, "when": when.rawValue]
+    case .action: return ["kind": "action", "when": "consumedByAction"]
     case .skipped(let reason): return ["kind": "skipped", "skippedReason": reason.rawValue]
     }
   }
+}
+
+/// When an activation's own click went: before the holder's input (`early`), or before subtype 2 (`release`).
+enum ActivationClickWhen: String, Equatable {
+  case early, release
 }
 
 /// Where the inert click went: the AXActivationPoint itself, far enough outside the frame, or the offset point.
@@ -350,8 +360,9 @@ enum ActivationClickSkip: String, Equatable {
 let inertClickActivationPointClearance: CGFloat = 8
 let inertClickFrameOffset: CGFloat = 24
 
-/// The click an activation posts after subtype 1 and where (nil: none): at the activation point when the inert-point
-/// rule posted it there, else the inert click outside the frame, unless the point was spared, the window has no number
+/// The click an activation makes after subtype 1 and where (nil: none): at the activation point when the inert-point
+/// rule posted it there, else the inert click outside the frame (which FakeActivation keeps for the release when its
+/// holder posts its own left mouse down), unless the point was spared, the window has no number
 /// or its frame is unknown. An inert click that would land in `sparing` is spared too.
 func activationClickPlan(_ decision: ActivationClick, activationPoint: CGPoint?, windowFrame: CGRect?, windowID: CGWindowID?,
                          sparing: CGRect?) -> (kind: ActivationClickKind, point: CGPoint?) {
@@ -367,7 +378,7 @@ func activationClickPlan(_ decision: ActivationClick, activationPoint: CGPoint?,
     inert = (CGPoint(x: frame.minX - inertClickFrameOffset, y: frame.midY), .offset)
   }
   if let sparing, sparing.contains(inert.point) { return (.skipped(.spared), nil) }
-  return (.inertOutside(inert.place), inert.point)
+  return (.inertOutside(inert.place, .early), inert.point)
 }
 
 /// Where the window's AXActivationPoint lies against its frame (the paste's `focusEnforcement`, #187's 3b): value-free,

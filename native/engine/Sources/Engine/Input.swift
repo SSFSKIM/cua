@@ -169,8 +169,9 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
                   activations: HeldActivations = HeldActivations(), foreground: ForegroundAssist? = nil, targetActive: () -> Bool,
                   beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, announce: () -> Void = {},
                   post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
-  try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, foreground: foreground,
-                     beforeActivating: beforeActivating, beforePosting: beforePosting, announce: announce, post: post, meta: &meta) {
+  try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, postsLeftMouseDown: button == .left,
+                     foreground: foreground, beforeActivating: beforeActivating, beforePosting: beforePosting, announce: announce, post: post,
+                     meta: &meta) {
     clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
   }
 }
@@ -182,24 +183,34 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
 /// behind another holder's activation stops it before its activation and activation click; `beforePosting` runs again
 /// just before the events, and `announce` once they are made and about to be posted. Under route 3 the events go out
 /// through the standing activation's delivery guard (`FakeActivation.deliver`, #200), inside the activation's own
-/// screen-update hold when this action ran it, on the window the events name.
+/// screen-update hold when this action ran it, on the window the events name. An action whose events open with a left
+/// mouse down (`postsLeftMouseDown`: a left click, a drag) lets that consume the activation's arm, as before #187's
+/// inert click: no inert click goes before it, and one goes at the release only when none went (a stop before the
+/// events); the click that consumed it rides in the meta when this action ran the activation or consumed its arm.
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
-                    foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {},
-                    announce: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
+                    postsLeftMouseDown: Bool = true, foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {},
+                    beforePosting: () throws -> Void = {}, announce: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta,
+                    events: () -> [CGEvent]) throws {
   meta.inputRoute = route
   // An earlier action's after-action watch ends before anything of this one happens (its activation included).
   let watches = meta.context.connection.afterAction
   watches.cancel()
   var release: (() -> Bool)?
-  defer { _ = release?() }  // every path out of the action, error or success, ends its lease
   var standing: FakeActivation?
+  var reportsArm = false
+  defer {
+    _ = release?()  // every path out of the action, error or success, ends its lease
+    if reportsArm, let kind = standing?.clickKind { meta.activationClickKind = kind }  // a release's inert click included
+  }
   defer { activation?.releaseOpenHold() }  // a stop before the events ends the activation's hold with the action
   if route == .activation, let activation {
     activation.holdsThroughDelivery = true
     // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
     // focusing click inside set_value's held activation).
-    release = try activations.acquire(pid: activation.pid, beforeActivating: beforeActivating, make: { activation }, meta: &meta)
+    release = try activations.acquire(pid: activation.pid, postsLeftMouseDown: postsLeftMouseDown, beforeActivating: beforeActivating,
+                                      make: { activation }, meta: &meta)
     standing = activations.activation(of: activation.pid)
+    reportsArm = standing === activation
   }
   // The interval is stamped as the events are posted, so an error after them (route 4's restore) still says they were.
   func send() throws {
@@ -209,7 +220,10 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     announce()
     // The interval is the events' own posting, inside the delivery guard's hold when one stands: the guard's setup and its
     // samples after the events are its own time (`delivery.guardMs`), not the action's.
-    func postEvents() { meta.posting { _ = postToProcess(made, pid: pid, post: post); return true } }
+    func postEvents() {
+      meta.posting { _ = postToProcess(made, pid: pid, post: post); return true }
+      if standing?.actionPosted(made) == true { reportsArm = true }
+    }
     if let standing { meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, postEvents) } else { postEvents() }
   }
   if route == .foreground, let foreground {

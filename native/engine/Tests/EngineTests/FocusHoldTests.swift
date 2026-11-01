@@ -42,6 +42,25 @@ final class FocusHoldTests: XCTestCase {
                   activation: { self.activation(seam, pid: pid) }, beforeActivating: beforeActivating, meta: &meta)
   }
 
+  /// A focus hold (a ⌘ key equivalent's, an element action's or write's) posts no left mouse down of its own: on Chrome,
+  /// whose activation point lies outside its frame, the inert click goes right after subtype 1, before the holder's
+  /// input, so its keys and actions reach a key window (#187); the release adds no second click.
+  func testAFocusHoldOnChromeTakesTheInertClickBeforeItsInput() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try holdFocus(app: "chrome", pid: target, connection: connection, activations: activations, activation: {
+      seam.activationPoint = CGPoint(x: -1, y: 1441)
+      return FakeActivation(pid: self.target, window: AXUIElementCreateApplication(self.target), windowFrame: self.window, windowID: 41,
+                            system: seam.system)
+    }, beforeActivating: {}, meta: &meta)
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)])
+    XCTAssertEqual(seam.posts[1].location, CGPoint(x: -1, y: 1441))
+    XCTAssertEqual(meta.activationClickKind, .inertOutside(.activationPoint, .early))
+    connection.endFocusHold()
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)])
+  }
+
   /// The vendor's lifecycle: the first action activates, the ones after it find the app already believing itself active
   /// (no second activation, no deactivation between), and the release withdraws it once.
   func testTheFirstActionActivatesAndTheNextOnesRunInsideTheHold() throws {

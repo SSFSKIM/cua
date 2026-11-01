@@ -27,9 +27,11 @@ import Foundation
 // the poll's exit test; here it is the user's app frontmost and the target window not above the user's on three
 // consecutive samples.
 //
-// An activation never leaves an arm (the Decision Log's #187 inert-click entry, 2026-11-01): where the click at the
-// activation point is skipped, an inert click stamped with the window's number goes outside its frame instead
-// (`activationClickPlan`), on every route; it replaced the paste slot's outside-frame lift and its engine.json switch.
+// A hold never ends with its arm set (the Decision Log's #187 inert-click entry, 2026-11-01, amended): where the click at
+// the activation point is skipped, an inert click stamped with the window's number goes outside its frame
+// (`activationClickPlan`), right after subtype 1 for a route with no left mouse down of its own (and for such a holder
+// joining an unconsumed hold), else before subtype 2 when the route's own left mouse down never went; it replaced the
+// paste slot's outside-frame lift and its engine.json switch.
 
 /// How long the screen-update hold may last: well under the guard's 1 s poll, and above the guards the sittings
 /// measured (37–58 ms, a coordinate click into TextEdit 82), so a guard of the usual length holds as the vendor's does.
@@ -323,8 +325,20 @@ final class FakeActivation {
 
   /// What the inert-point rule decided at the activation point, once subtype 1 was posted; nil when it was not.
   private(set) var click: ActivationClick?
-  /// The click the activation posted (at the activation point, the inert one, or none and why); nil before subtype 1.
-  private(set) var clickKind: ActivationClickKind?
+  /// The click that consumed the arm (at the activation point, the inert one, the holder's own) or why none could; nil
+  /// before subtype 1, and while a holder's own left mouse down is still awaited (`defersArmClick`).
+  var clickKind: ActivationClickKind? { armLock.withLock { kind } }
+  /// Set by the registry before the activation runs (#187): its holder posts its own left mouse down within the hold (a
+  /// left click, a drag), which consumes the arm on AppKit's armed branch with no ordering (#200's reading), so the
+  /// inert click is kept for the release (`consumeArm`) rather than posted early; a click at an inert activation point
+  /// is posted as ever.
+  var defersArmClick = false
+  /// The arm's state, behind its own lock (a holder joining on another connection may consume it): set from subtype 1
+  /// until a mouse down to the process, and the inert click kept for it.
+  private let armLock = NSLock()
+  private var kind: ActivationClickKind?
+  private var armSet = false
+  private var keptInert: (point: CGPoint, place: InertClickPoint)?
   /// Where the activation point lay against the window's frame, once the activation pair was posted; nil before.
   private(set) var pointPlace: ActivationPointPlace?
   /// When the activation's subtype 1 and its click were posted, on the system's clock; nil when not.
@@ -538,11 +552,13 @@ final class FakeActivation {
     return outcome
   }
 
-  /// After the action's events: the deactivation subtype, unless the app really is active now. False only when the
-  /// deactivation was due and its event could not be made (the app may still believe itself active).
+  /// After the action's events: the deactivation subtype, unless the app really is active now, after the kept inert click
+  /// when no mouse down consumed the arm (a hold never ends with its arm set). False only when the deactivation was due
+  /// and its event could not be made (the app may still believe itself active).
   @discardableResult
   func deactivate() -> Bool {
     guard activated, system.frontmost() != pid else { return true }
+    consumeArm(.release)
     guard post(subtype: NSEvent.EventSubtype.applicationDeactivated.rawValue) else { return false }
     activated = false
     return true
@@ -550,9 +566,11 @@ final class FakeActivation {
 
   /// The vendor's enforceActiveState for an app that does not believe it is active: subtype 1, then a left click at the
   /// window's AXActivationPoint when the point is inert (`activationClickDecision`), else the inert click outside the
-  /// window's frame (`activationClickPlan`), so the arm subtype 1 sets is consumed; no click only where none can be
-  /// stamped and placed safely. The click goes to the process alone: the agent cursor is told of an action's own events
-  /// by its route (`announce`), never of this one.
+  /// window's frame (`activationClickPlan`), so the arm subtype 1 sets is consumed before the holder's input; for a
+  /// holder that posts its own left mouse down (`defersArmClick`) the inert click is kept for the release instead, which
+  /// posts it only when no mouse down consumed the arm. No click only where none can be stamped and placed safely. The
+  /// click goes to the process alone: the agent cursor is told of an action's own events by its route (`announce`),
+  /// never of this one.
   private func postActivation() {
     post(subtype: NSEvent.EventSubtype.applicationActivated.rawValue)
     activated = true
@@ -566,11 +584,45 @@ final class FakeActivation {
     pointPlace = activationPointPlace(activationPoint, windowFrame: windowFrame)
     click = decision
     let plan = activationClickPlan(decision, activationPoint: activationPoint, windowFrame: windowFrame, windowID: windowID, sparing: sparing)
-    clickKind = plan.kind
+    if case .inertOutside(let place, _) = plan.kind, defersArmClick, let point = plan.point {
+      armLock.withLock { (armSet, kind, keptInert) = (true, nil, (point, place)) }
+      return
+    }
+    armLock.withLock { (armSet, kind, keptInert) = (plan.point == nil, plan.kind, nil) }  // a skip leaves the arm set
     guard let point = plan.point else { return }
+    postClick(at: point)
+  }
+
+  private func postClick(at point: CGPoint) {
     let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: pid)
     _ = postToProcess(clickEvents(target, button: .left, count: 1, flags: []), pid: pid, post: system.post)
     clickPostedAt = system.now()
+  }
+
+  /// Posts the kept inert click when the arm is still set (`when`: a holder with no left mouse down of its own joined, or
+  /// the last holder releases); true when it did.
+  @discardableResult
+  func consumeArm(_ when: ActivationClickWhen) -> Bool {
+    let inert = armLock.withLock { () -> (point: CGPoint, place: InertClickPoint)? in
+      guard armSet, let kept = keptInert else { return nil }
+      (armSet, kind, keptInert) = (false, .inertOutside(kept.place, when), nil)
+      return kept
+    }
+    guard let inert else { return false }
+    postClick(at: inert.point)
+    return true
+  }
+
+  /// A holder's own events went out to the process: a left mouse down stamped with a window number consumed the arm
+  /// (AppKit routes by that number alone); true when this one did.
+  @discardableResult
+  func actionPosted(_ events: [CGEvent]) -> Bool {
+    guard events.contains(where: { $0.type == .leftMouseDown && $0.getIntegerValueField(eventField(91)) != 0 }) else { return false }
+    return armLock.withLock {
+      guard armSet else { return false }
+      (armSet, kind, keptInert) = (false, .action, nil)
+      return true
+    }
   }
 
   @discardableResult

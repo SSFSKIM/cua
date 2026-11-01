@@ -205,17 +205,19 @@ final class HeldActivations: @unchecked Sendable {
   }
 
   /// Runs a new activation, its guard time and click into `meta` (a failed guard's too); a failed guard throws with it
-  /// undone, unless a real event already withdrew it.
-  private func run(_ make: () -> FakeActivation, meta: inout InputMeta) throws -> FakeActivation {
+  /// undone, unless a real event already withdrew it (the undoing posts the kept inert click first, so its click kind is
+  /// read after it). `postsLeftMouseDown`: the holder posts its own left mouse down (`FakeActivation.defersArmClick`).
+  private func run(_ make: () -> FakeActivation, postsLeftMouseDown: Bool = false, meta: inout InputMeta) throws -> FakeActivation {
     let activation = make()
     let pid = activation.pid
     activation.realEpoch = { [self] in epoch(pid) }
+    activation.defersArmClick = postsLeftMouseDown
+    defer {
+      meta.activationGuardMs = activation.guardMs ?? meta.activationGuardMs
+      meta.activationClick = activation.click ?? meta.activationClick
+      meta.activationClickKind = activation.clickKind ?? meta.activationClickKind
+    }
     do {
-      defer {
-        meta.activationGuardMs = activation.guardMs ?? meta.activationGuardMs
-        meta.activationClick = activation.click ?? meta.activationClick
-        meta.activationClickKind = activation.clickKind ?? meta.activationClickKind
-      }
       try activation.activate()
     } catch {
       if !isStale(activation) { activation.deactivate() }
@@ -227,17 +229,26 @@ final class HeldActivations: @unchecked Sendable {
   /// Acquires `pid`'s activation. `beforeActivating` (the in-flight intervention check) runs once the lock is held, so a
   /// user event that lands while the request waits behind another holder's activation still stops it before anything is
   /// run, shared or recorded. When no holder has the activation, or it is stale, `make()`'s runs (a failed guard throws
-  /// with nothing more held); otherwise the running one is shared. Answers the release, which runs once and deactivates
-  /// when the last holder releases; it answers false only when that deactivation could not post.
-  func acquire(pid: pid_t, beforeActivating: () throws -> Void, make: () -> FakeActivation, meta: inout InputMeta) throws -> () -> Bool {
+  /// with nothing more held); otherwise the running one is shared, and a holder that posts no left mouse down of its own
+  /// (`postsLeftMouseDown` false) consumes its arm first when no mouse down has (the kept inert click, recorded in its
+  /// meta), so its keys reach a key window. Answers the release, which runs once and deactivates when the last holder
+  /// releases; it answers false only when that deactivation could not post.
+  func acquire(pid: pid_t, postsLeftMouseDown: Bool = false, beforeActivating: () throws -> Void, make: () -> FakeActivation,
+               meta: inout InputMeta) throws -> () -> Bool {
     lock.lock()
     defer { lock.unlock() }
     try beforeActivating()
     if let shared = held[pid] {
-      let activation = isStale(shared.activation) ? try run(make, meta: &meta) : shared.activation
+      let activation: FakeActivation
+      if isStale(shared.activation) {
+        activation = try run(make, postsLeftMouseDown: postsLeftMouseDown, meta: &meta)
+      } else {
+        activation = shared.activation
+        if !postsLeftMouseDown, activation.consumeArm(.early) { meta.activationClickKind = activation.clickKind }
+      }
       held[pid] = (activation, shared.holders + 1)
     } else {
-      held[pid] = (try run(make, meta: &meta), 1)
+      held[pid] = (try run(make, postsLeftMouseDown: postsLeftMouseDown, meta: &meta), 1)
     }
     let once = NSLock()
     var released = false

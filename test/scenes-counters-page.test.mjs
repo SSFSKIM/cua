@@ -39,17 +39,18 @@ function runScript({value = ''} = {}) {
   const on = where => (type, fn, capture) => { (listeners[where][type] ??= []).push({fn, capture: capture === true}); };
   const notes = {value, addEventListener: on('notes')};
   const window = {addEventListener: on('window')};
-  const document = {getElementById: id => (id === 'notes' ? notes : null), addEventListener: on('document')};
+  const document = {focused: false, getElementById: id => (id === 'notes' ? notes : null), addEventListener: on('document'), hasFocus: () => document.focused};
   const navigator = {sendBeacon: (path, body) => { beacons.push({path, body: JSON.parse(body)}); return true; }};
   new Function('window', 'document', 'navigator', COUNTERS_SCRIPT)(window, document, navigator);
   const fire = (where, type, event = {}) => { for (const l of listeners[where][type] ?? []) l.fn({target: where === 'window' ? window : {}, ...event}); };
-  return {listeners, beacons, notes, window, fire};
+  return {listeners, beacons, notes, window, document, fire};
 }
 
 test('the script counts window and textarea focus and blur and document-level mousedown and click, and beacons numbers only', () => {
   const page = runScript({value: 'not to be sent'});
   assert.ok(page.listeners.document.mousedown[0].capture && page.listeners.document.click[0].capture, 'mousedown and click are counted in the capture phase, before the page can stop them');
   page.fire('window', 'load');
+  page.document.focused = true;
   page.fire('window', 'focus');
   page.fire('window', 'focus', {target: {}});  // an element's focus reaching the window is not the window's
   page.fire('notes', 'focus');
@@ -58,10 +59,13 @@ test('the script counts window and textarea focus and blur and document-level mo
   page.notes.value = '한글 테스트';
   page.fire('notes', 'input');
   page.fire('notes', 'blur');
+  page.document.focused = false;
   page.fire('window', 'blur');
   assert.ok(page.beacons.every(b => b.path === COUNTERS_PATH), 'every beacon goes to /counters');
   const last = page.beacons.at(-1).body;
-  assert.deepEqual(Object.keys(last).sort(), ['counts', 'length', 'seq']);
+  assert.deepEqual(Object.keys(last).sort(), ['counts', 'focused', 'length', 'seq']);
+  // The document's focus as hasFocus() read it at each beacon: none at load, held from the window's focus to its blur.
+  assert.deepEqual(page.beacons.map(b => b.body.focused), [false, true, true, true, true, true, true, false]);
   assert.deepEqual(Object.keys(last.counts).sort(), [...COUNTER_NAMES].sort());
   assert.deepEqual(last.counts, {windowFocus: 1, windowBlur: 1, textFocus: 1, textBlur: 1, mousedown: 1, click: 1});
   assert.equal(last.length, '한글 테스트'.length);
@@ -71,7 +75,9 @@ test('the script counts window and textarea focus and blur and document-level mo
 
 test('the server keeps only numeric fields of a beacon, and refuses anything else', () => {
   const counts = Object.fromEntries(COUNTER_NAMES.map((n, k) => [n, k]));
-  assert.deepEqual(countersRecord(JSON.stringify({seq: 3, length: 5, counts: {...counts, extra: 9}, value: 'secret', title: 'x'})), {seq: 3, length: 5, counts});
+  assert.deepEqual(countersRecord(JSON.stringify({seq: 3, length: 5, counts: {...counts, extra: 9}, focused: true, value: 'secret', title: 'x'})), {seq: 3, length: 5, counts, focused: true});
+  assert.equal(countersRecord(JSON.stringify({seq: 3, length: 5, counts})), null, 'a beacon without the focus reading');
+  assert.equal(countersRecord(JSON.stringify({seq: 3, length: 5, counts, focused: 'yes'})), null);
   assert.equal(countersRecord('not json'), null);
   assert.equal(countersRecord(JSON.stringify({seq: 1, length: 'abc', counts})), null);
   assert.equal(countersRecord(JSON.stringify({seq: 1, length: 2, counts: {...counts, click: -1}})), null);

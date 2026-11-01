@@ -37,8 +37,9 @@
 //   and the facade's getScreenshot then fails "Screenshot unavailable"); on input results and input errors the engine's meta as
 //   cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt, cua/hidIdleMs, and when the engine sends
 //   them cua/activationGuardMs, cua/activationClick (what the inert-point rule decided at the window's activation
-//   point: "posted" there, or why not), cua/activationClickKind (the click the activation posted, #187: {kind:
-//   "activationPoint" | "inertOutside" with point "activationPoint" | "offset" | "skipped" with skippedReason}), cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
+//   point: "posted" there, or why not), cua/activationClickKind (the click that consumed the activation's arm and
+//   when, #187: {kind "activationPoint" | "inertOutside" with point | "action" | "skipped" with skippedReason, when
+//   "early" | "release" | "consumedByAction"}), cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
 //   no Input Monitoring grant), cua/entered (the UTF-16 units a type_text entered, on its result and on the error that
 //   stopped it), cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
 //   row for the app) and cua/delivery (route 3's delivery guard after a pointer action's events, #200: the restores it

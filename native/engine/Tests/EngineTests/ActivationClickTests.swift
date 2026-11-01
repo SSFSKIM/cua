@@ -59,22 +59,23 @@ final class ActivationClickTests: XCTestCase {
                    "the inert click, the activation still withdrawn")
     XCTAssertFalse(seam.posts.contains { $0.location == point }, "nothing at the control")
     XCTAssertEqual(subject.click, .control)
-    XCTAssertEqual(subject.clickKind, .inertOutside(.offset))
+    XCTAssertEqual(subject.clickKind, .inertOutside(.offset, .early))
   }
 
   /// Route 3's synthesized click keeps working with the click posted on the window, and its meta says so; with a control
-  /// at the point the inert click goes instead, the click itself still lands, and the meta names the reason and the kind.
+  /// at the point no click goes before the click itself, whose own mouse down consumes the arm, and the meta names the
+  /// reason and the kind.
   func testRouteThreesSynthesizedClickKeepsWorkingAndItsMetaSaysWhatTheActivationClickDid() throws {
-    for (hit, expected, kind) in [(ActivationHit(role: "AXWindow", actions: []), ActivationClick.posted, "activationPoint"),
-                                  (ActivationHit(role: "AXButton", actions: ["AXPress"]), .control, "inertOutside")] {
+    for (hit, expected, clicks, kind) in [(ActivationHit(role: "AXWindow", actions: []), ActivationClick.posted, 2, "activationPoint"),
+                                          (ActivationHit(role: "AXButton", actions: ["AXPress"]), .control, 1, "action")] {
       let seam = GuardSeam(frontmost: user)
       seam.activationHit = hit
       var meta = InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
       try deliverClick(ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: window, windowID: 41, pid: target), route: .activation,
                        button: .left, count: 1, activation: activation(seam), targetActive: { false }, post: seam.system.post, meta: &meta)
-      let clicks = seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }
-      XCTAssertEqual(clicks.count, 2, "the activation's click, then the click itself")
-      XCTAssertEqual(clicks.last?.location, CGPoint(x: 300, y: 400))
+      let downs = seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }
+      XCTAssertEqual(downs.count, clicks, "the click itself always lands, after the activation's click at an inert point")
+      XCTAssertEqual(downs.last?.location, CGPoint(x: 300, y: 400))
       XCTAssertEqual(seam.posts.map(\.kind).last, .appKit(2))
       XCTAssertEqual(meta.activationClick, expected)
       XCTAssertEqual(meta.wire["activationClick"] as? String, expected.rawValue)
@@ -135,8 +136,8 @@ final class ActivationClickTests: XCTestCase {
       }
       XCTAssertFalse(window.insetBy(dx: -4, dy: -4).contains(expected), "clear of the resize band: \(name)")
       XCTAssertEqual(subject.click, reason, "the activation point's own decision is kept: \(name)")
-      XCTAssertEqual(subject.clickKind, .inertOutside(place), name)
-      XCTAssertEqual(subject.clickKind?.wire as NSDictionary?, ["kind": "inertOutside", "point": place.rawValue], name)
+      XCTAssertEqual(subject.clickKind, .inertOutside(place, .early), name)
+      XCTAssertEqual(subject.clickKind?.wire as NSDictionary?, ["kind": "inertOutside", "point": place.rawValue, "when": "early"], name)
       XCTAssertNotNil(subject.clickPostedAt, name)
     }
   }
@@ -148,7 +149,7 @@ final class ActivationClickTests: XCTestCase {
     XCTAssertEqual(seam.posts.dropFirst().map(\.location), [point, point])
     XCTAssertEqual(subject.click, .posted)
     XCTAssertEqual(subject.clickKind, .activationPoint)
-    XCTAssertEqual(subject.clickKind?.wire as NSDictionary?, ["kind": "activationPoint"])
+    XCTAssertEqual(subject.clickKind?.wire as NSDictionary?, ["kind": "activationPoint", "when": "early"])
   }
 
   /// The exceptions stay click-less, and say so: the activation point in a non-left click's target (spared), a window
@@ -166,25 +167,114 @@ final class ActivationClickTests: XCTestCase {
     XCTAssertEqual(spared.0.click, .spared)
   }
 
-  /// A route-3 click's activation into Chrome (its point outside the frame) posts the inert click before the action's
-  /// own, and the meta carries both the activation point's decision and the click's kind; the agent cursor is told of the
-  /// action's click alone (`announce`, its only hook: the activation posts to the process and tells no cursor).
-  func testARouteThreeClickIntoChromeTakesTheInertClickFirstAndTheCursorShowsOnlyTheAction() throws {
-    let seam = GuardSeam(frontmost: user)
+  private func chromeActivation(_ seam: GuardSeam) -> FakeActivation {
     seam.activationPoint = CGPoint(x: -1, y: 1441)
-    let made = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: window, windowID: 41, system: seam.system)
-    var meta = InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+    return FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: window, windowID: 41, system: seam.system)
+  }
+
+  private func freshMeta() -> InputMeta {
+    InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+  }
+
+  /// Chrome's pointer routes post their own left mouse down, which consumes the arm on AppKit's armed branch with no
+  /// ordering (#200's reading): exactly the events before the inert click existed, no early click. A left click (the
+  /// coordinate click and the synthesized element click share `deliverClick`) and a drag; the meta says the action's own
+  /// mouse down consumed it. The agent cursor is told of the action's events alone (`announce`, its only hook).
+  func testChromesPointerRoutesPostExactlyTheirOwnEventsAndTheirMouseDownConsumesTheArm() throws {
+    let seam = GuardSeam(frontmost: user)
+    var meta = freshMeta()
     var announced: [Int] = []
     try deliverClick(ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: window, windowID: 41, pid: target), route: .activation,
-                     button: .left, count: 1, activation: made, targetActive: { false },
+                     button: .left, count: 1, activation: chromeActivation(seam), targetActive: { false },
                      announce: { announced.append(seam.posts.count) }, post: seam.system.post, meta: &meta)
-    let clicks = seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }
-    XCTAssertEqual(clicks.map(\.location), [CGPoint(x: -1, y: 1441), CGPoint(x: 300, y: 400)], "the inert click, then the action's")
-    XCTAssertEqual(announced, [3], "announced once, after subtype 1 and the inert click, before the action's events")
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)], "no inert click")
+    XCTAssertEqual(seam.posts[1].location, CGPoint(x: 300, y: 400))
+    XCTAssertEqual(announced, [1], "announced once, after subtype 1, before the action's events")
     XCTAssertEqual(meta.activationClick, .outsideFrame)
-    XCTAssertEqual(meta.wire["activationClick"] as? String, "outsideFrame")
-    XCTAssertEqual(meta.wire["activationClickKind"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint"])
+    XCTAssertEqual(meta.wire["activationClickKind"] as? NSDictionary, ["kind": "action", "when": "consumedByAction"])
     XCTAssertNil(meta.paste, "no paste record off the paste route")
+
+    let dragSeam = GuardSeam(frontmost: user)
+    var dragMeta = freshMeta()
+    let start = ClickTarget(point: CGPoint(x: 200, y: 300), windowFrame: window, windowID: 41, pid: target)
+    try deliverPointer(to: target, route: .activation, activation: chromeActivation(dragSeam), postsLeftMouseDown: true,
+                       post: dragSeam.system.post, meta: &dragMeta) {
+      dragEvents(from: start.point, to: CGPoint(x: 400, y: 500), window: start, flags: [])
+    }
+    XCTAssertEqual(dragSeam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.map(\.location), [start.point], "the drag's own down only")
+    XCTAssertEqual(dragSeam.posts.last?.kind, .appKit(2))
+    XCTAssertEqual(dragMeta.activationClickKind, .action)
+  }
+
+  /// A pointer action refused before its events (an intervention, or its activation's guard failing) leaves the arm set:
+  /// the kept inert click goes out before subtype 2, recorded as the release's.
+  func testARefusedPointerActionGetsTheInertClickBeforeSubtypeTwo() throws {
+    let stopped = GuardSeam(frontmost: user)
+    var meta = freshMeta()
+    XCTAssertThrowsError(try deliverClick(ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: window, windowID: 41, pid: target),
+                                          route: .activation, button: .left, count: 1, activation: chromeActivation(stopped), targetActive: { false },
+                                          beforePosting: { throw userChanged("TextEdit") }, post: stopped.system.post, meta: &meta))
+    XCTAssertEqual(stopped.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)])
+    XCTAssertEqual(stopped.posts[1].location, CGPoint(x: -1, y: 1441), "the inert click, never the action's")
+    XCTAssertEqual(meta.wire["activationClickKind"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint", "when": "release"])
+
+    let failed = GuardSeam(frontmost: user, targetInFront: { _ in true })  // the target's window never stays behind
+    var failedMeta = freshMeta()
+    XCTAssertThrowsError(try deliverClick(ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: window, windowID: 41, pid: target),
+                                          route: .activation, button: .left, count: 1, activation: chromeActivation(failed), targetActive: { false },
+                                          post: failed.system.post, meta: &failedMeta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "activationFailed")
+    }
+    XCTAssertEqual(failed.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)])
+    XCTAssertEqual(failed.posts[1].location, CGPoint(x: -1, y: 1441))
+    XCTAssertEqual(failedMeta.activationClickKind, .inertOutside(.activationPoint, .release))
+  }
+
+  /// A right click posts no left mouse down of its own: its activation takes the inert click early, as every route with
+  /// none does (outside the frame, never on the clicked element).
+  func testANonLeftClickTakesTheInertClickEarly() throws {
+    let seam = GuardSeam(frontmost: user)
+    var meta = freshMeta()
+    try deliverClick(ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: window, windowID: 41, pid: target), route: .activation,
+                     button: .right, count: 1, activation: chromeActivation(seam), targetActive: { false }, post: seam.system.post, meta: &meta)
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .mouse(.rightMouseDown),
+                                           .mouse(.rightMouseUp), .appKit(2)])
+    XCTAssertEqual(seam.posts[1].location, CGPoint(x: -1, y: 1441))
+    XCTAssertEqual(meta.activationClickKind, .inertOutside(.activationPoint, .early))
+  }
+
+  /// The registry's two kinds of holder: one with no left mouse down of its own (keys, element actions, the menu record,
+  /// paste) gets the inert click right after subtype 1; one with its own (`postsLeftMouseDown`) gets none, and a holder
+  /// of the first kind joining its unconsumed hold posts the kept click itself, recorded in its meta; once consumed, a
+  /// later joiner posts nothing.
+  func testANoClickHolderGetsTheInertClickEarlyAndPostsItWhenJoiningAnUnconsumedHold() throws {
+    let early = GuardSeam(frontmost: user)
+    var meta = freshMeta()
+    let released = try HeldActivations().acquire(pid: target, beforeActivating: {}, make: { self.chromeActivation(early) }, meta: &meta)
+    XCTAssertEqual(early.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)], "before the holder's input")
+    XCTAssertEqual(meta.activationClickKind, .inertOutside(.activationPoint, .early))
+    _ = released()
+    XCTAssertEqual(early.posts.map(\.kind).last, .appKit(2))
+    XCTAssertEqual(early.posts.filter { $0.kind == .mouse(.leftMouseDown) }.count, 1, "no second click at the release")
+
+    let seam = GuardSeam(frontmost: user)
+    let registry = HeldActivations()
+    var pointerMeta = freshMeta()
+    let pointer = try registry.acquire(pid: target, postsLeftMouseDown: true, beforeActivating: {}, make: { self.chromeActivation(seam) },
+                                       meta: &pointerMeta)
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1)], "a pointer holder's activation: no early click")
+    XCTAssertNil(pointerMeta.activationClickKind, "awaiting the action's own mouse down")
+    var joinMeta = freshMeta()
+    let joined = try registry.acquire(pid: target, beforeActivating: {}, make: { XCTFail("shared, not made"); return self.chromeActivation(seam) },
+                                      meta: &joinMeta)
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)], "the joiner consumed the arm")
+    XCTAssertEqual(joinMeta.activationClickKind, .inertOutside(.activationPoint, .early))
+    var laterMeta = freshMeta()
+    let later = try registry.acquire(pid: target, beforeActivating: {}, make: { self.chromeActivation(seam) }, meta: &laterMeta)
+    XCTAssertEqual(seam.posts.count, 3, "consumed already: nothing more")
+    XCTAssertNil(laterMeta.activationClickKind)
+    _ = later(); _ = joined(); _ = pointer()
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)], "no release click")
   }
 
   /// No subtype 2 ever goes to a process that was frontmost before the action: its activation posts nothing (it believes

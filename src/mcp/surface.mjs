@@ -183,11 +183,15 @@ const GENERAL_NOTES = [
 // Both platforms ask per app (on Linux since #117 M3: a window's app, src/services/engine/policy.mjs; the Linux js rules
 // say what is keyed how).
 const APPROVAL_NOTE = '- Apps ask for approval once per connection; report a declined app, don\'t retry.';
+// The person's windows stay where they are (#200): the 10-23 raises were agents raising or activating apps to reach a
+// covered window. On the computer surfaces, beside the approval rule; not in the first-call document, which keeps the
+// facade's parity with the vendor's.
+const WINDOWS_NOTE = '- Leave the person\'s windows as they are: unless asked, don\'t raise, activate, hide or unhide an app to reach a covered or background window; say what is in the way instead.';
 // With the device tools (a stdio connection), last.
 const DEVICES_NOTE = '- devices_use moves every tool to that machine, under the notes and descriptions it returns; end_task first.';
 
-export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, APPROVAL_NOTE].join('\n');
-export const LINUX_HOST_NOTES = [TITLE, LINUX_COMPUTER_HEAD, ...GENERAL_NOTES, APPROVAL_NOTE].join('\n');
+export const DEFAULT_HOST_NOTES = [TITLE, COMPUTER_HEAD, ...GENERAL_NOTES, APPROVAL_NOTE, WINDOWS_NOTE].join('\n');
+export const LINUX_HOST_NOTES = [TITLE, LINUX_COMPUTER_HEAD, ...GENERAL_NOTES, APPROVAL_NOTE, WINDOWS_NOTE].join('\n');
 
 // The notes for the enabled surfaces on `platform` (the host's by default), with the devices rule where the device
 // tools exist.

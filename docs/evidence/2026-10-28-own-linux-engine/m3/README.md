@@ -9,14 +9,122 @@ The vendor builds are the pinned 26.928.40906 and the newest 26.1023.51421. M3 r
 | M3.1, the engine's device mode and capability report | `kinds/`, `diff/`, `rejudge/`, `device-fix1/`, `device-fix2/`, `device-fix3/`, `late-take/` | the measurements behind `families.rs`, the Chrome drag-and-drop guard, M3.1's verdict run and its fix rounds ([M3.1](#m31-the-device-modes-measurements-and-the-verdict-run), below) |
 | M3.2, cua's own Linux service | `services/` | the two services render the same states and numbers on one engine; no vendor module with cua's engine ([its README](services/README.md)) |
 | the drop-miss follow-up | `drop-misses/`, `drop-misses/task18/` | the mechanism of M3.1's Chrome drop misses and the 350 ms release floor ([its README](drop-misses/task18/README.md)) |
-| M3's gate | `gate/`, `gate-final/`, `gate-verdict/`, `gate-t25/` | the fresh full verdict runs: `m3-gate` on the M3.3 engine and `m3-gate-final` on the merged head after task 20. **Both exit 1**. `m3-gate-verdict`, after tasks 22 and 23, was **stopped by ruling** once the harness-fault caps were exceeded. `m3-gate-t25`, after task 24, was **stopped by ruling** 9 minutes in: its cua engine was a VM build, not the bytes that ship (below) |
+| M3's gate | `gate-musl/` (the verdict); `gate/`, `gate-final/`, `gate-verdict/`, `gate-t25/` (earlier runs) | **M3's verdict is `m3-gate-musl`: it exits 0**, on the release workflow's attested x64 musl build of cd4c9297 ([below](#m3s-gate-the-verdict-gate-musl-run-m3-gate-musl-it-passes)). The earlier fresh full verdict runs did not pass: `m3-gate` on the M3.3 engine and `m3-gate-final` on the merged head after task 20 **both exit 1**. `m3-gate-verdict`, after tasks 22 and 23, was **stopped by ruling** once the harness-fault caps were exceeded. `m3-gate-t25`, after task 24, was **stopped by ruling** 9 minutes in, because its cua engine was a VM build, not the bytes that ship |
 | M3.3, doctor, provisioning and the facade proof | `doctor/`, `provision/`, `facade/`, `accept/`, `parity/`, `baseline/` | below |
 
-The engine of every M3.3 run and of the gate is one frozen release build of the head's engine sources: the engine
+The engine of every M3.3 run and of `m3-gate` is one frozen release build of the head's engine sources: the engine
 sources last changed at 1b7debef, built at bcf64d68, `cua-engine 0.3.0 (bcf64d68401c)`, SHA-256
 `01955bef9ff69fa9af948c50c324edb07dfbd303474e179f7f0c7f42e163032d`. No M3.3 commit touches `native/linux-engine/`.
 Until 0.3.0 is released and pinned, the installed engine is 0.2.0, which cua's service refuses (`MIN_ENGINE_VERSION`
 0.3.0), so the facade runs name the build: `--engine-bin` for the suites, `CUA_LINUX_ENGINE_BIN` for the fixtures.
+
+## M3's gate, the verdict (`gate-musl/`, run `m3-gate-musl`): it passes
+
+**The gate is met.** `m3-gate-musl` is M3's verdict: a fresh full differential verdict run on the engine bytes the
+release ships. It **exits 0**. It ran on 2026-11-01 from 21:21:25Z to 23:52:33Z.
+
+- **Gate commit:** cd4c9297, checked out clean when the run started; the meta record's `commit` is
+  `cd4c929758caf90329fd5cfb0d5028f1ec1c92c2`. It is task 26's fix, which touches only tests and the workflow. The
+  engine sources (`native/linux-engine/src`, `build.rs`, `Cargo.lock`) are unchanged since 380b132b, and so is the
+  harness (`scripts/linux-engine-diff/`) since b01ac8fd. `Cargo.toml` gained only `[dev-dependencies]`, which the
+  binary does not link.
+- **The candidate, as shipped:** the `linux-engine` workflow's x64 asset `cua-engine-0.3.0-linux-x64`, from the
+  build-only run [41350086196](https://github.com/SSFSKIM/cua/actions/runs/41350086196) on cd4c9297.
+  - It is an `x86_64-unknown-linux-musl` static-pie (`file`: `static-pie linked`, stripped), built with rustc 1.94.1
+    (`native/linux-engine/rust-toolchain.toml`).
+  - `--version` prints `cua-engine 0.3.0 (cd4c929758ca)`.
+  - It was copied to a fresh directory as `cua-engine` (mode 0700), and the copy's SHA-256 matched the artifact's.
+  - `gh attestation verify <copy> --repo SSFSKIM/cua --signer-workflow SSFSKIM/cua/.github/workflows/linux-engine.yml`
+    exits 0 on the copy. It gives an SLSA provenance v1 predicate, the subject `cua-engine-0.3.0-linux-x64` with that
+    digest, the signer `linux-engine.yml@refs/heads/feat/171-m3`, the source commit cd4c9297, and run 41350086196,
+    attempt 1.
+  - Nothing built on the VM was a candidate. Only the harness's own `xprobe` was built there.
+- **The three engines** (the run's meta record, SHA-256):
+
+  | engine | build | SHA-256 |
+  |---|---|---|
+  | pinned | 26.928.40906 | `7ac3c2ae45a3dacc9209063e91d2df4ea9f206b814a9ffd976f5bcf90d73f1cd` |
+  | newest | 26.1023.51421 | `88ce5e0ae64290dd36dbb2942a33ece6a7222f7294fc66410f4e26c29e4b2991` |
+  | cua | `cua-engine 0.3.0 (cd4c929758ca)`, the shipped musl asset | `5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60` |
+
+  The pinned and newest builds are byte-identical to the earlier gate runs'. Their hashes are the same in
+  `m3-gate-verdict`'s and `m3-gate-t25`'s meta records.
+
+```
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua <the shipped musl asset, as cua-engine> \
+  --scene desktop,gedit,chrome,chrome-input,over-budget,retention,chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target,device-gtk4,device-firefox,device-xterm,device-qt,device-chrome,device-chrome-dnd \
+  --ops all --blocks 3 --run m3-gate-musl --out docs/evidence/2026-10-28-own-linux-engine/m3/gate-musl
+```
+
+These are the scenes, device cases and flags of `m3-gate-final`, `m3-gate-verdict` and `m3-gate-t25`. The verdict
+line:
+
+> run valid; no verdict FAIL; **declared refusal** (a loss, not a pass): chrome-input drag cua; text restores (the
+> first word put back before a sample): pinned 43, newest 0, cua 0
+
+**The run is valid.** The stub engine failed both the witness and the audit. The foreground and in-front standing
+controls held.
+
+**The speed verdicts.** 66 speed series are judged on 20 or more samples a side:
+- 63 are **faster**;
+- 3 are **same (within noise)**, each interval's upper end inside the bound;
+- none is **within the bound**, so there is no "within the bound" table;
+- none is undetermined, at parity or a speed gap.
+
+The same-within-noise series:
+
+| scene | op | series | cua − bar, 95% interval (ms) |
+|---|---|---|---|
+| desktop | get_screenshot | cold | [−3.525, 0.905] |
+| desktop | launch_app | warm | [−0.1, 0.05] |
+| gedit | clipboard_release | warm | [0, 0.04] |
+
+Desktop `get_screenshot` cold, at its declared parity in `m3-gate-final`, is same within noise here.
+
+On the repaired gedit scene the pinned build sets the bar for `clipboard_read` (649.1 / 656.9 ms cold / warm, its
+effect 40 of 40) and for `clipboard_release`. That is the stricter direction the 2026-11-01 Decision Log entry
+expected once the emptied buffer was fixed. cua's `clipboard_read` is 48.7 / 45.1 ms.
+
+**Every other verdict passes.**
+- Every device case of Acceptance 8 passes, on every sample. That includes every Chrome drag-and-drop case:
+  `chrome_dnd_short_in_front_shared` landed 9 of 9, the cold samples included, and so did
+  `chrome_dnd_covered_dedicated`.
+- Task 20's per-branch cases pass, and so does every paste safety case.
+- `clipboard_write` in gedit and `type_text` in gnome-text-editor pass under their declarations.
+- `chrome-input`'s covered drag is the declared refusal it has been since M3.1 (the path rule), listed as a loss.
+
+**The harness-fault rule.** 0 resampled and 0 invalid of 4,956 samples, against the run's cap of 1% (49.56). No case
+had a preparation failure in any lane, so no scene backstop ran.
+
+**The scene-text restores per lane:** pinned 43, newest 0, **cua 0**.
+- A restore before a cua-lane sample would have failed the run; there was none.
+- The newest lane needed none.
+- The pinned lane's 43 each found `' diffe'` and put back `cua171`, the word its own failed `type_text_selection` had
+  deleted (task 24's mechanism A):
+  - 40 before measured samples: 36 `type_text_selection` samples and 4 cold `clipboard_read` samples, across the
+    blocks and the top-ups;
+  - 2 in the audit pass;
+  - 1 in the bus pass.
+
+`results.jsonl` and `summary.md` are the run's own files, committed as they came out. Stray checks before the run and
+after it found no harness process and only the owner's window on `:0`.
+
+**The head this record ships on, against the gate commit.** Between cd4c9297 and the commit of this record, the only
+files that differ are this evidence: `m3/README.md`, `m3/gate-musl/results.jsonl` and `m3/gate-musl/summary.md`.
+Nothing under `native/linux-engine/`, `scripts/linux-engine-diff/` or `src/services/engine/linux/` differs.
+
+**What the earlier gate runs became.** None of them is a verdict. Each stays as the record of a failure and the fix it
+led to:
+- `m3-gate` (`gate/`): exits 1. A cold `chrome_dnd_short_in_front_shared` sample's drag never started (Blink's reset
+  on a buttonless move), which led to task 20's atomic press and watch.
+- `m3-gate-final` (`gate-final/`): exits 1, for two reasons.
+  - Its cold short in-front drops released before Chrome's late take, which led to task 22's hold.
+  - One cua `clipboard_write` sample was refused by the harness oracle, which led to the harness-fault rule and later
+    to task 24's diagnosis.
+- `m3-gate-verdict` (`gate-verdict/`): stopped by ruling once the harness-fault caps were exceeded. The pinned build
+  emptied its own gedit buffer, which led to task 24's scene-text restore, caret and backstop.
+- `m3-gate-t25` (`gate-t25/`): stopped by ruling. Its cua engine was a VM-built gnu binary, not the shipped musl
+  bytes, which led to this run on the workflow's attested asset (and task 26's fix, which the asset's build needed).
 
 ## M3's gate, fourth run (`gate-t25/`, run `m3-gate-t25`): stopped by ruling, the wrong build target
 

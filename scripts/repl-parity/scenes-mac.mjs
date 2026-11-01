@@ -57,6 +57,7 @@
 //   node scripts/repl-parity/scenes-mac.mjs place-chrome [--cache <root>]   place the pinned Chrome for Testing
 //   node scripts/repl-parity/scenes-mac.mjs build-electron [--cache <root>] build the Electron fixture app
 //   node scripts/repl-parity/scenes-mac.mjs up <scene> --run <dir> [--chrome-app <app>] [--electron-app <app>]
+//                                                [--electron-arg <switch>]…   the fixture launched with these switches too
 //   node scripts/repl-parity/scenes-mac.mjs activate <scene> --run <dir>    the run's process to the front (exit 1 if not)
 //   node scripts/repl-parity/scenes-mac.mjs teardown-steps <scene> --run <dir>
 //   node scripts/repl-parity/scenes-mac.mjs down <scene|all> --run <dir>   (exit 1 when something stays up or changed)
@@ -491,17 +492,23 @@ function freshChromeProfile(run) {
   fs.writeFileSync(join(userDataDir, 'Default', 'Preferences'), JSON.stringify(chromePreferences()), {mode: 0o600});
   return userDataDir;
 }
-export const electronArgs = ({userDataDir, placement = SCENES.electron.placement}) => [
-  `--cua-fixture-user-data=${userDataDir}`, `--cua-fixture-bounds=${[placement.x, placement.y, placement.width, placement.height].join(',')}`];
+// `extra`: Chromium switches the fixture is launched with besides its own (#244's variant: a feature turned on), each a
+// `--` switch, since Electron would take any other argument for a path to open.
+export const electronArgs = ({userDataDir, placement = SCENES.electron.placement, extra = []}) => [
+  `--cua-fixture-user-data=${userDataDir}`, `--cua-fixture-bounds=${[placement.x, placement.y, placement.width, placement.height].join(',')}`, ...extra];
 
 // Brings one scene up. -> the scene's record: {scene, app, bundleId, pid, at?, window, setup, ...}, where `setup` lists
 // the driver's steps to the fixed state (setupSteps). Finder's also carries the chrome `preferences` read before its
 // window opened, and `savedPreferences` says when the owner's values were saved and whether that record was `kept`
-// from earlier (this run's earlier up, or a run that died before restoring them).
-export async function upScene(id, {run, chromeApp, electronApp, layout, io = defaultIo()}) {
+// from earlier (this run's earlier up, or a run that died before restoring them). `electronExtra`: the fixture's extra
+// switches (electronArgs), kept in its record as `extraArgs`.
+export async function upScene(id, {run, chromeApp, electronApp, electronExtra = [], layout, io = defaultIo()}) {
   const scene = sceneOf(id), state = readState(run);
   if (state.scenes[id]) throw new Error(`scene ${id} is already up in this run; bring it down first`);
   if (layout !== undefined && id !== 'textedit') throw new Error('--layout applies to the textedit scene only');
+  if (electronExtra.length && id !== 'electron') throw new Error('--electron-arg applies to the electron scene only');
+  const notSwitch = electronExtra.find(a => typeof a !== 'string' || !/^--[\w-]/.test(a));
+  if (notSwitch !== undefined) throw new Error(`--electron-arg takes a switch (--name or --name=value), not ${JSON.stringify(notSwitch)}`);
   const checked = preflight({run, io});
   if (checked.refusals.length) throw new Refused(checked.refusals);
   let record;
@@ -554,7 +561,8 @@ export async function upScene(id, {run, chromeApp, electronApp, layout, io = def
   } else {
     const app = electronApp ?? io.buildElectron().appPath, userDataDir = join(run, 'electron-user-data');
     fs.mkdirSync(userDataDir, {recursive: true, mode: 0o700});
-    record = {app, userDataDir, ...await launchOwn({app, bundleId: scene.bundleId, args: electronArgs({userDataDir}), io})};
+    record = {app, userDataDir, ...(electronExtra.length ? {extraArgs: [...electronExtra]} : {}),
+      ...await launchOwn({app, bundleId: scene.bundleId, args: electronArgs({userDataDir, extra: electronExtra}), io})};
   }
   record = {scene: id, bundleId: scene.bundleId, ...record};
   record.setup = setupSteps(id, record);
@@ -742,10 +750,11 @@ export const exitCodeFor = out => (out?.refusals?.length || out?.down === false 
 
 // ---- CLI --------------------------------------------------------------------------------------------------------------
 
-function parse(argv) {
-  const [command, ...rest] = argv, flags = {}, positional = [];
+// --electron-arg may repeat (its values are kept in order); every other flag takes its last value.
+export function parse(argv) {
+  const [command, ...rest] = argv, flags = {'electron-arg': []}, positional = [];
   for (let i = 0; i < rest.length; i++) {
-    if (rest[i].startsWith('--')) { flags[rest[i].slice(2)] = rest[i + 1]; i++; } else positional.push(rest[i]);
+    if (rest[i] === '--electron-arg') { flags['electron-arg'].push(rest[i + 1]); i++; } else if (rest[i].startsWith('--')) { flags[rest[i].slice(2)] = rest[i + 1]; i++; } else positional.push(rest[i]);
   }
   return {command, positional, flags};
 }
@@ -766,7 +775,7 @@ export async function main(argv) {
     case 'front': return frontWindow();
     case 'frontmost': return frontmostProcess();
     case 'reactivate': return reactivateApp({bundleId: flags['bundle-id'], pid: Number(flags.pid)});
-    case 'up': return upScene(target, {run: runDir(flags), chromeApp: flags['chrome-app'], electronApp: flags['electron-app'], layout: flags.layout});
+    case 'up': return upScene(target, {run: runDir(flags), chromeApp: flags['chrome-app'], electronApp: flags['electron-app'], electronExtra: flags['electron-arg'], layout: flags.layout});
     case 'activate': return activateScene(target, {run: runDir(flags)});
     case 'teardown-steps': return {scene: target, steps: teardownFor(target, {run: runDir(flags)})};
     case 'restore-finder': return restoreFinder();

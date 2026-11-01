@@ -12,7 +12,7 @@ import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
   ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME, TEXTEDIT_STYLED_LINE, TEXTEDIT_MARKDOWN_CAP,
   upScene, downScene, preflight, readState, TEXTEDIT_HOLD_MS, reactivateApp, chromeArgs, chromeArgsProblems, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
-  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded,
+  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded, parse,
 } from '../../scripts/repl-parity/scenes-mac.mjs';
 import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
 import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp, activateProcess, ACTIVATE_PROCESS_SCRIPT} from '../../scripts/repl-parity/scenes-mac-device.mjs';
@@ -298,6 +298,25 @@ test('up records the run\'s own launch with its window; a second up of the same 
   await assert.rejects(upScene('electron', {run, io}), /already up/);
   // The run's own process is not a refusal for the next scene.
   assert.deepEqual(preflight({run, io}).refusals, []);
+}));
+
+test('up electron takes extra switches after the fixture\'s own, kept in its record; anything else is refused before a launch', async () => withRun(async run => {
+  const io = fakeDevice(), extra = ['--enable-features=SonomaAccessibilityActivationRefinements'];
+  const record = await upScene('electron', {run, io, electronExtra: extra});
+  const [, request] = io.calls[0];
+  assert.deepEqual(request.args, [...electronArgs({userDataDir: join(run, 'electron-user-data')}), ...extra]);
+  assert.deepEqual(record.extraArgs, extra);
+  assert.deepEqual(readState(run).scenes.electron.extraArgs, extra);
+  await withRun(async other => assert.equal((await upScene('electron', {run: other, io: fakeDevice()})).extraArgs, undefined, 'a plain up records none'));
+  for (const [id, bad, why] of [['electron', ['a-path'], /takes a switch/], ['electron', ['--'], /takes a switch/], ['textedit', extra, /electron scene only/]]) {
+    const idle = fakeDevice();
+    await withRun(async other => assert.rejects(upScene(id, {run: other, io: idle, electronExtra: bad}), why));
+    assert.deepEqual(idle.calls, [], `${id} ${bad}: nothing launched`);
+  }
+  // The CLI: --electron-arg repeats and keeps its order; a value that is itself a switch is taken as the value.
+  const {positional, flags} = parse(['up', 'electron', '--run', '/r', '--electron-arg', '--a=1', '--electron-arg', '--b']);
+  assert.deepEqual([positional, flags.run, flags['electron-arg']], [['electron'], '/r', ['--a=1', '--b']]);
+  assert.deepEqual(parse(['up', 'electron', '--run', '/r']).flags['electron-arg'], []);
 }));
 
 test('up textedit records the document window only once it has been TextEdit\'s one on-screen window for TEXTEDIT_HOLD_MS', async () => withRun(async run => {

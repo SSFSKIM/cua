@@ -91,12 +91,12 @@ func frontmostPid() -> pid_t? { NSWorkspace.shared.frontmostApplication?.process
 /// calls, the real ones by default: a unit test runs the activation's sequencing through stubs, so nothing is posted,
 /// activated, raised or held.
 struct ActivationSystem {
-  var post: (CGEvent, pid_t) -> Void = { event, pid in event.postToPid(pid) }
+  var post: (CGEvent, pid_t) -> Void = gatedPost
   var frontmost: () -> pid_t? = frontmostPid
   var keyFocus: () -> pid_t? = { KeyFocus.pid() }
   /// Answers the release, which returns at once: the re-enable runs on ScreenUpdateReleases' queue.
-  var holdScreenUpdates: () -> () -> Void = { ScreenUpdateReleases.shared.hold(SkyLight.hold) }
-  var reactivate: (pid_t) -> Bool = { NSRunningApplication(processIdentifier: $0)?.activate(options: []) ?? false }
+  var holdScreenUpdates: () -> () -> Void = { DesktopGate.allows("SLSDisableUpdate") ? ScreenUpdateReleases.shared.hold(SkyLight.hold) : {} }
+  var reactivate: (pid_t) -> Bool = { DesktopGate.allows("NSRunningApplication.activate") && (NSRunningApplication(processIdentifier: $0)?.activate(options: []) ?? false) }
   /// The user's focused window and its window number, the one the target's window must stay behind.
   var userWindow: (pid_t) -> (element: AXUIElement, id: CGWindowID)? = { user in
     guard let window = elementAttribute(prepare(AXUIElementCreateApplication(user)), kAXFocusedWindowAttribute),
@@ -107,7 +107,7 @@ struct ActivationSystem {
   /// menu's held activation, whose restore is by activation only.
   var userWindowNumber: (pid_t) -> CGWindowID? = frontWindowNumber
   var isInFront: (CGWindowID, CGWindowID) -> Bool = windowIsInFront
-  var raise: (AXUIElement) -> Void = { AXUIElementPerformAction($0, kAXRaiseAction as CFString) }
+  var raise: (AXUIElement) -> Void = { _ = gatedPerform($0, kAXRaiseAction) }
   var activationPoint: (AXUIElement) -> CGPoint? = { point(attribute($0, "AXActivationPoint")) }
   /// What the process answers at a global point (the activation click's hit-test), read from its application element.
   var hitAt: (pid_t, CGPoint) -> ActivationHit? = { pid, point in
@@ -636,18 +636,30 @@ final class AfterActionWatches: @unchecked Sendable {
 
   private let lock = NSLock()
   private var live: AfterActionWatch?
+  /// Run once the live watch ends, on its own or cancelled (`whenLiveEnds`).
+  private var whenEnded: (() -> Void)?
   private var repairs = 0
   private var actions: [(postedAt: Int64, repairs: Int, latencyMs: Double)] = []
 
   /// Ends the live watch, waiting out its sample in progress: no repair starts once this returns. Every request that
-  /// acts or observes on the connection calls it first (Methods.swift `execute`), as does every pointer action, and the
-  /// connection's close (Intervention.swift `connectionClosed`).
+  /// acts or observes on the connection calls it first (Methods.swift `execute`), as does every pointer action; a closed
+  /// connection's watch is ended by the next such request on any connection (`ClosedConnectionWatches`, #237).
   func cancel() {
-    let watch = lock.withLock { () -> AfterActionWatch? in
-      defer { live = nil }
-      return live
+    let (watch, done) = lock.withLock { () -> (AfterActionWatch?, (() -> Void)?) in
+      defer { live = nil; whenEnded = nil }
+      return (live, whenEnded)
     }
     watch?.cancel()
+    done?()
+  }
+
+  /// Runs `done` once the live watch ends, on its own or cancelled; false, and `done` never run, when none is live.
+  func whenLiveEnds(_ done: @escaping () -> Void) -> Bool {
+    lock.withLock {
+      guard live != nil else { return false }
+      whenEnded = done
+      return true
+    }
   }
 
   fileprivate func begin(_ watch: AfterActionWatch) {
@@ -658,7 +670,12 @@ final class AfterActionWatches: @unchecked Sendable {
 
   /// A watch that ended on its own lets go of it.
   fileprivate func ended(_ watch: AfterActionWatch) {
-    lock.withLock { if live === watch { live = nil } }
+    let done = lock.withLock { () -> (() -> Void)? in
+      guard live === watch else { return nil }
+      defer { live = nil; whenEnded = nil }
+      return whenEnded
+    }
+    done?()
   }
 
   fileprivate func record(postedAt: Int64, latencyMs: Double, kind: StaticString) {
@@ -688,4 +705,45 @@ final class AfterActionWatches: @unchecked Sendable {
                             "actions": actions.map { ["postedAt": Int($0.postedAt), "repairs": $0.repairs, "latencyMs": $0.latencyMs] as [String: Any] }]
     }
   }
+}
+
+/// The after-action watches of connections that have closed (#237). A client's close (end_task closes the session's
+/// connection) does not end its connection's live watch: the watch runs to its natural end under its own rules (the
+/// repair window, the person's input, a third app in front, a refused re-activation), so a raise that comes after the
+/// client has gone is still repaired, and the next request that acts or observes, on any connection, ends it first
+/// (Methods.swift `execute`): a later client's work is never answered by an earlier client's watch. The registry holds
+/// the watches until then, and lets go of them when the watch ends; the closed connection's other state is gone already.
+/// An engine shutting down ends them all (Server.swift `stopAndExit`).
+final class ClosedConnectionWatches: @unchecked Sendable {
+  private let lock = NSLock()
+  /// Held for a whole drain: a drain that finds the registry emptied by another still running waits for that one's
+  /// cancellations (each waits out its watch's sample), so no caller goes ahead while a watch it raced can still repair
+  /// (#237's review). Never taken under `lock`.
+  private let draining = NSLock()
+  private var held: [ObjectIdentifier: AfterActionWatches] = [:]
+
+  /// A closed connection's watches: held while their watch runs, released at once when none does.
+  func adopt(_ watches: AfterActionWatches) {
+    let key = ObjectIdentifier(watches)
+    lock.withLock { held[key] = watches }
+    let live = watches.whenLiveEnds { [weak self] in self?.drop(key) }
+    if !live { drop(key) }
+  }
+
+  /// Ends every closed connection's watch, each waiting out its sample in progress: no repair of theirs starts once this
+  /// returns, whichever drain took them.
+  func cancelAll() {
+    draining.withLock {
+      let all = lock.withLock { () -> [AfterActionWatches] in
+        defer { held = [:] }
+        return Array(held.values)
+      }
+      for watches in all { watches.cancel() }
+    }
+  }
+
+  /// How many closed connections' watches still run (the unit tests').
+  var count: Int { lock.withLock { held.count } }
+
+  private func drop(_ key: ObjectIdentifier) { _ = lock.withLock { held.removeValue(forKey: key) } }
 }

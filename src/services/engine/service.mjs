@@ -121,7 +121,7 @@ export function cursorParams(env) {
   const color = typeof env?.CUA_CURSOR_COLOR === 'string' && /^#[0-9a-fA-F]{6}$/.test(env.CUA_CURSOR_COLOR) ? env.CUA_CURSOR_COLOR : null;
   return {...(label ? {label} : {}), ...(color ? {color} : {}), enabled: env?.CUA_CURSOR !== '0'};
 }
-// How long end_task's hook may take: one request on the live connection.
+// How long end_task's hook may take (it writes two frames and waits on nothing).
 const TURN_ENDED_MS = 2_000;
 
 // An observation of another bundle than the approved one (internal: the call is redone once).
@@ -154,8 +154,9 @@ export function createService({nodeRepl, client = null}) {
     }
     return (client = createEngineClient({nodeRepl, appPath, cursor: cursorParams(nodeRepl?.env)}));
   };
-  // end_task: the cursor fades at once, if this session's client ever reached the engine.
-  nodeRepl?.addTurnEndedHandler?.({timeoutMs: TURN_ENDED_MS, run: () => client?.hideCursor?.()});
+  // end_task: the cursor fades and the engine connection closes, if this session's client ever reached the engine; the
+  // next engine-bound request reconnects (client.mjs `release`, #237). Nothing here waits on the engine.
+  nodeRepl?.addTurnEndedHandler?.({timeoutMs: TURN_ENDED_MS, run: () => client?.release?.()});
   const nativeEngine = identity => ({engine: 'cua', version: identity.engineVersion, build: identity.build});
 
   // One engine request; the engine's identity goes into the result meta, an input error's meta too, and the round trip

@@ -27,10 +27,16 @@
 // The agent cursor (docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, "Lifecycle and identity"): with a
 // `cursor` context ({label?, color?, enabled}, the service's), every new connection sends the `cursor` request right
 // after its ping, so it reaches the engine before anything else the connection sends (the engine answers one request at
-// a time, in order); `hideCursor` (end_task) sends `{hide: true}` on the live connection, in turn behind any request in
-// flight, and never connects or launches an engine for it. Neither is awaited by a request, and nothing that comes of
-// them fails one: an unanswered cursor request is abandoned at its bound (5 s) without closing the connection, another
-// failure is logged, and an engine without the method answers methodNotFound, that connection sent no more of them.
+// a time, in order). The connect's request is awaited by no request, and nothing that comes of it fails one: an
+// unanswered cursor request is abandoned at its bound (5 s) without closing the connection, another failure is logged,
+// and an engine without the method answers methodNotFound, that connection sent no more of them.
+//
+// end_task (#237, `release`): the live connection is sent `{hide: true}` (when the session has a cursor) and closed at
+// once, neither waited for, so end_task frees the engine for other clients (its `status` stops counting the connection,
+// and `cua engine build` and `approve` proceed) without waiting on it. The engine reads the hide before the close, so
+// the cursor fades and its panel goes once the fade is over, and an after-action watch still running finishes on the
+// engine's side. Nothing is connected or launched for it, and a connect or request of the ended task still pending
+// never reaches the engine (the client's generation); the next request reconnects as after any close.
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {
@@ -77,6 +83,10 @@ class NotYet extends Error {
 }
 // A ping answer that must not be retried: another API, version or build.
 class Mismatch extends SkyComputerUseTransportError {}
+// The task this connect or request belonged to was ended by `release` (end_task) before it published or was written.
+class Released extends SkyComputerUseTransportError {
+  constructor() { super('cua engine: the task ended (end_task) before this request reached the engine'); }
+}
 
 // One socket connection: frames in and out, the requests waiting for their answers.
 class Connection {
@@ -156,6 +166,11 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
   let identity = null;
   let connecting = null;
   let tail = Promise.resolve();
+  // The task's generation: `release` (end_task) starts a new one, and a connect or a queued request of an older one
+  // neither publishes a connection nor writes a frame (#237's review: a connect in flight at end_task would otherwise
+  // publish a live connection and send the ended task's request after end_task returned).
+  let epoch = 0;
+  const releasedSince = born => { if (born !== epoch) throw new Released(); };
 
   function suspended(fn) {
     if (typeof nodeRepl?.withSuspendedTimeout !== 'function') throw new Error('Computer Use requires nodeRepl.withSuspendedTimeout');
@@ -172,10 +187,11 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     return {serverApiVersion: answer.serverApiVersion, engineVersion: answer.engineVersion, build: answer.build};
   }
 
-  async function attempt(budgetMs, want) {
+  async function attempt(budgetMs, want, born) {
     const deadline = Date.now() + budgetMs;
     let last;
     for (;;) {
+      releasedSince(born);
       const remaining = deadline - Date.now();
       if (remaining <= 0) throw new NotYet(last);
       const opening = nodeRepl.nativePipe.createConnection(socketPath);
@@ -184,18 +200,20 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
         opening.then(late => late.end(), () => {});
         last = error;
       }
-      if (pipe) {
+      if (pipe && born !== epoch) pipe.end();  // released while it opened
+      else if (pipe) {
         const candidate = new Connection(pipe);
         try {
           const answer = await candidate.call('ping', {clientApiVersion: CLIENT_API_VERSION}, PING_MS);
           const checked = check(answer, want);
+          releasedSince(born);  // a ping answered after release: the socket closes, nothing is published
           connection = candidate;
           identity = checked;
           if (cursor) sendCursor(candidate, cursor);
           return checked;
         } catch (error) {
           candidate.close();
-          if (error instanceof Mismatch || (error instanceof SkyComputerUseError && error.errorName === 'incompatibleClientVersion')) throw error;
+          if (error instanceof Mismatch || error instanceof Released || (error instanceof SkyComputerUseError && error.errorName === 'incompatibleClientVersion')) throw error;
           last = error;
         }
       }
@@ -204,17 +222,18 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     }
   }
 
-  async function establish() {
+  async function establish(born) {
     if (typeof nodeRepl?.nativePipe?.createConnection !== 'function') {
       throw new SkyComputerUseTransportError('cua engine native pipe is unavailable: the trusted nodeRepl has no nativePipe');
     }
     let want;
     try { want = typeof expected === 'function' ? expected() : expected; } catch (error) { throw new SkyComputerUseTransportError(error.message, {cause: error}); }
-    try { return await attempt(firstConnectMs, want); } catch (error) { if (!(error instanceof NotYet)) throw error; }
+    try { return await attempt(firstConnectMs, want, born); } catch (error) { if (!(error instanceof NotYet)) throw error; }
+    releasedSince(born);
     try { await nodeRepl.launchServices.openApplication({applicationPath: appPath}); } catch (cause) {
       throw new SkyComputerUseTransportError(`cua engine launch request failed for ${appPath}: ${String(cause?.message ?? cause).slice(0, 300)}`, {cause});
     }
-    try { return await attempt(launchWaitMs, want); } catch (error) {
+    try { return await attempt(launchWaitMs, want, born); } catch (error) {
       if (!(error instanceof NotYet)) throw error;
       throw new SkyComputerUseTransportError(`cua engine did not start: nothing answered at ${socketPath} within ${launchWaitMs} ms of launching ${appPath}. The engine logs why it stopped (a peerPolicy in ~/.config/cua/engine.json it does not have, a lock or socket another engine holds) to the unified log: ${UNIFIED_LOG}`, {cause: error.cause});
     }
@@ -231,18 +250,25 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
   }
 
   // Resolves the engine's identity ({serverApiVersion, engineVersion, build}) once a checked connection is live; the
-  // connect, and any launch wait, runs under the suspended budget.
+  // connect, and any launch wait, runs under the suspended budget. A connect is shared only within its generation.
   function connect() {
     if (connection && !connection.closed) return Promise.resolve(identity);
-    connecting ??= suspended(establish).finally(() => { connecting = null; });
-    return connecting;
+    if (connecting?.born !== epoch) {
+      const born = epoch;
+      const pending = {born, promise: suspended(() => establish(born)).finally(() => { if (connecting === pending) connecting = null; })};
+      connecting = pending;
+    }
+    return connecting.promise;
   }
 
   // One request at a time, in call order: -> {result, engineMs}, engineMs the round trip on the socket. `params` may be
   // a function, called just before the frame is written (execute's deadline is computed then).
   function call(method, params, {waitMs = DEFAULT_DEADLINE_MS + deadlineGraceMs, suspend = true} = {}) {
+    const born = epoch;
     const run = async () => {
+      releasedSince(born);  // queued behind a request when end_task came: never sent, never reconnected for
       await connect();
+      releasedSince(born);
       const body = typeof params === 'function' ? params() : params;
       const started = performance.now();
       const result = await connection.call(method, body, waitMs);
@@ -267,17 +293,16 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     async status() {
       return (await call('status', {}, {suspend: false})).result;
     },
-    // end_task: the session's cursor fades at once, on the live connection only. Its frame is written in turn behind a
-    // request in flight, but its answer is not waited for in turn: the next request is written right after it (O5).
-    async hideCursor() {
+    // end_task: the hide (when the session has a cursor and the engine the method), then the close, both written now
+    // on the live connection and neither answer waited for (see the header). A request still in flight fails as on any
+    // close; a connect still in flight and the requests queued behind it belong to the ended task, and neither publishes
+    // a connection nor writes a frame. A request made after this reconnects.
+    release() {
+      epoch += 1;
       const target = connection;
-      if (!cursor || !target || target.closed || target.noCursor) return;
-      let answered;
-      const send = () => { if (!target.closed && !target.noCursor) answered = sendCursor(target, {hide: true}); };
-      const written = tail.then(send, send);
-      tail = written.then(() => {}, () => {});
-      await written;
-      await answered;
+      if (!target || target.closed) return;
+      if (cursor && !target.noCursor) sendCursor(target, {hide: true});
+      target.close();
     },
     close() { connection?.close(); },
   };

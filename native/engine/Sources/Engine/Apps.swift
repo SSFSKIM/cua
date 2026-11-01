@@ -231,6 +231,7 @@ final class AppDirectory: @unchecked Sendable {
   /// it is (the vendor's open helper 0x1001648c4: `activates = false`, `allowsRunningApplicationSubstitution = false`).
   /// An open that does not finish by `deadline` (Unix ms) is `timeoutReached`, as the vendor's.
   func launch(_ app: ResolvedApp, deadline: Int64) throws -> NSRunningApplication {
+    try DesktopGate.check("NSWorkspace.openApplication")
     let configuration = NSWorkspace.OpenConfiguration()
     configuration.activates = false
     configuration.allowsRunningApplicationSubstitution = false

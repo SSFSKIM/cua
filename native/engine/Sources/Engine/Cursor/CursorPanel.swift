@@ -286,6 +286,8 @@ private final class CursorOverlay {
     if panel.level != level { panel.level = level }
     if debug == .panelOut {
       panel.orderOut(nil)  // the arm: everything else of the commit runs, the window server composites nothing
+    } else if !DesktopGate.allows("cursor panel onto the screen") {
+      panel.orderOut(nil)
     } else if commit.attachment.level == raisedCursorLevel {
       panel.orderFrontRegardless()
     } else {

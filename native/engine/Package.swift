@@ -21,7 +21,10 @@ let package = Package(
       ]
     ),
     // Fixtures (the cursor motion's reference vectors and the script that made them) are read by path, not built.
-    .testTarget(name: "EngineTests", dependencies: ["Engine"], path: "Tests/EngineTests", exclude: ["Fixtures"]),
+    // The desktop gate's bundle-load hook (Tests/EngineTestGate): registers the observer that fails a test the closed gate
+    // refused a real call for (Sources/Engine/DesktopGate.swift, #237).
+    .target(name: "EngineTestGate", path: "Tests/EngineTestGate"),
+    .testTarget(name: "EngineTests", dependencies: ["Engine", "EngineTestGate"], path: "Tests/EngineTests", exclude: ["Fixtures"]),
   ],
   swiftLanguageModes: [.v6]
 )

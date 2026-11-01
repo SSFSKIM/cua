@@ -12,7 +12,7 @@ import {installLinuxEngine, installRuntime, installSandboxHelper, useRuntime} fr
 import {buildLinuxEngine, inspectLinuxEngine, loadEnginePin, refuseUnpinned} from './runtime/linux-engine.mjs';
 import {describeLeftovers, describeRemoval, findCodexLeftovers, removeCodexLeftovers} from './runtime/codex-leftovers.mjs';
 import {installNode} from './runtime/node-install.mjs';
-import {approveEngine, buildEngine, engineStatus, lineReader, shortBuild, stopEngine} from './runtime/engine.mjs';
+import {approveEngine, buildEngine, engineStatus, holdersText, lineReader, shortBuild, stopEngine} from './runtime/engine.mjs';
 import {signWaitMs} from './runtime/engine-sign.mjs';
 import {loadNodePins, nodeDistName, selectNodePin} from './runtime/managed-node.mjs';
 import {inspectRuntime, summarize} from './runtime/doctor.mjs';
@@ -828,7 +828,8 @@ export function engineStatusLines(status) {
     : status.approved === null ? `approved: unknown (the signature could not be read; approved.json names build ${shortBuild(status.approvedBuild)})`
       : `approved: no${status.approvedBuild ? ` (approved.json names build ${shortBuild(status.approvedBuild)})` : ''}; run cua engine approve with the owner at the console`);
   const s = status.status;
-  lines.push(s ? `running: pid ${s.pid}, accessibility ${s.accessibility}, screen recording ${s.screenRecording}, input monitoring ${s.inputMonitoring}, ${s.connections} other connection(s)`
+  const holders = s ? holdersText(s.holders) : '';
+  lines.push(s ? `running: pid ${s.pid}, accessibility ${s.accessibility}, screen recording ${s.screenRecording}, input monitoring ${s.inputMonitoring}, ${s.connections} other connection(s)${holders ? `: ${holders}` : ''}`
     : 'running: no');
   // The agent cursor's device switch (#235): the running engine's, else engine.json's.
   lines.push(status.cursor === 'on' ? 'cursor: on' : status.cursor === 'off' ? 'cursor: off (engine.json)'

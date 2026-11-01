@@ -850,17 +850,132 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertNil(thirdConnection.afterAction.wire)
   }
 
-  /// A connection that closes ends its watch: nothing is raised or re-activated for a client that has gone.
-  func testAClosedConnectionEndsItsWatch() throws {
+  private func lockedEngine() -> Engine {
+    Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+           intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { true })
+  }
+
+  /// An execute on `connection`, refused at once by the lock screen: it begins as every execute does.
+  private func execute(_ engine: Engine, on connection: ConnectionState) {
+    let params: [String: Any] = ["method": "get_app_state", "args": ["app": "TextEdit"], "deadlineUnixMilliseconds": unixMilliseconds() + 60_000]
+    _ = engine.handle(Request(id: 1, method: "execute", params: params), on: connection, receivedAt: unixMilliseconds())
+  }
+
+  /// #237: a connection that closes right after an action (end_task closes the session's connection) leaves its watch
+  /// running to its natural end: a raise 200 ms after the events is still repaired for the client that has gone, and the
+  /// watch, its rules unchanged, ends at the window's end and lets go of the closed connection's watches.
+  func testAClosedConnectionsWatchRunsToItsEndAndRepairsALateRaise() throws {
     let seam = GuardSeam(frontmost: user)
     seam.targetAbove = false
-    let connection = ConnectionState(id: 7, fd: -1)
-    _ = try click(seam, on: connection)
-    XCTAssertTrue(connection.afterAction.watching)
-    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
-                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { true })
-    engine.connectionClosed(connection)
-    XCTAssertFalse(connection.afterAction.watching)
+    let engine = lockedEngine()
+    weak var watches: AfterActionWatches?
+    do {
+      let connection = ConnectionState(id: 7, fd: -1)
+      watches = connection.afterAction
+      _ = try click(seam, on: connection)
+      engine.closedWatches.adopt(connection.afterAction)  // the close (Server.swift `retire`)
+      XCTAssertTrue(connection.afterAction.watching, "the close does not end the watch")
+    }
+    XCTAssertEqual(engine.closedWatches.count, 1)
+    XCTAssertNotNil(watches, "held while the watch runs, the connection gone")
+    seam.advance(200 - deliveryGuardMinimumMs)
+    seam.targetAbove = true  // the app raises its window 200 ms after the events
+    seam.advance(activationGuardSampleMs)
+    XCTAssertEqual(seam.raises, 1, "repaired after the client closed")
+    XCTAssertEqual(seam.targetAbove, false)
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(engine.closedWatches.count, 0, "ended at post + 1 s")
+    XCTAssertNil(watches, "and released: no cycle keeps the closed connection's watches alive")
+    seam.targetAbove = true
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.raises, 1, "no repair after the watch ended")
+  }
+
+  /// #237: the next request that acts or observes on any other connection ends a closed connection's watch before
+  /// anything of its own happens; with no watch running a close holds nothing.
+  func testARequestOnAnotherConnectionEndsAClosedConnectionsWatch() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let engine = lockedEngine()
+    let closing = ConnectionState(id: 7, fd: -1), next = ConnectionState(id: 8, fd: -1)
+    _ = try click(seam, on: closing)
+    engine.closedWatches.adopt(closing.afterAction)
+    XCTAssertEqual(engine.closedWatches.count, 1)
+    execute(engine, on: next)
+    XCTAssertEqual(engine.closedWatches.count, 0)
+    XCTAssertFalse(closing.afterAction.watching)
+    seam.targetAbove = true
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.raises, 0, "nothing repaired once another client's request began")
+    engine.closedWatches.adopt(next.afterAction)
+    XCTAssertEqual(engine.closedWatches.count, 0, "a connection with no watch running holds nothing at its close")
+  }
+
+  /// #237: a closed connection stops counting at once (status's `connections`, shutdown's busy count), while its watch
+  /// still runs; the watch's end changes no count.
+  func testAClosedConnectionStopsCountingAtOnceWhileItsWatchRuns() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let server = Server(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        settings: EngineSettings(peerPolicy: .uid, cursor: false))
+    let asker = try XCTUnwrap(server.register(-1)), closing = try XCTUnwrap(server.register(-1))
+    XCTAssertEqual(server.others(than: asker), 1)
+    _ = try click(seam, on: closing)
+    server.unregister(closing)
+    XCTAssertEqual(server.others(than: asker), 0, "not counted from the close on")
+    XCTAssertEqual(server.engine.closedWatches.count, 1, "its watch runs on")
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(server.engine.closedWatches.count, 0)
+    XCTAssertEqual(server.others(than: asker), 0)
+  }
+
+  /// #237's review: the close's first step moves the connection out of the open ones and its watch into the closed
+  /// connections' in one step, before any other teardown, so a request that finds the connection gone (here right after
+  /// that step, the holds and drives not yet ended) ends the watch, and a shutdown's count finds it neither open nor
+  /// missing from the drain.
+  func testAnExecuteRightAfterTheConnectionLeavesTheOpenOnesEndsItsWatch() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let server = Server(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        settings: EngineSettings(peerPolicy: .uid, cursor: false))
+    let next = try XCTUnwrap(server.register(-1)), closing = try XCTUnwrap(server.register(-1))
+    _ = try click(seam, on: closing)
+    server.retire(closing)
+    XCTAssertEqual(server.others(than: next), 0, "gone from the open connections")
+    XCTAssertEqual(server.engine.closedWatches.count, 1, "and its watch already where an execute ends it")
+    // What every execute on `next` does first (Methods.swift; testARequestOnAnotherConnectionEndsAClosedConnectionsWatch
+    // runs a whole execute on a locked engine): this server's engine is unlocked, so no real request is sent to it.
+    server.engine.closedWatches.cancelAll()
+    XCTAssertEqual(server.engine.closedWatches.count, 0)
+    seam.targetAbove = true
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.raises, 0, "nothing repaired over the next request")
+  }
+
+  /// #237's review: two requests draining the closed connections' watches at once. The first takes the watch and waits
+  /// out its sample in progress; the second must not go ahead until that sample is over, or the sample could repair
+  /// during the second request.
+  func testASecondDrainWaitsForTheWatchTheFirstIsStopping() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let engine = lockedEngine()
+    let closing = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: closing)
+    engine.closedWatches.adopt(closing.afterAction)
+    let first = DispatchSemaphore(value: 0), second = DispatchSemaphore(value: 0)
+    seam.onFrontmostRead = {
+      seam.onFrontmostRead = nil
+      DispatchQueue.global().async { engine.closedWatches.cancelAll(); first.signal() }
+      // Until the first drain has emptied the registry and is waiting on this sample.
+      let deadline = Date().addingTimeInterval(5)
+      while engine.closedWatches.count > 0 && Date() < deadline { usleep(1_000) }
+      DispatchQueue.global().async { engine.closedWatches.cancelAll(); second.signal() }
+      XCTAssertEqual(second.wait(timeout: .now() + 0.2), .timedOut, "the second drain waits while the watch it raced can still repair")
+      XCTAssertEqual(first.wait(timeout: .now()), .timedOut, "as does the first")
+    }
+    seam.advance(15)
+    XCTAssertEqual(first.wait(timeout: .now() + 5), .success)
+    XCTAssertEqual(second.wait(timeout: .now() + 5), .success, "both return once the sample is over")
     seam.targetAbove = true
     seam.advance(deliveryRepairWindowMs)
     XCTAssertEqual(seam.raises, 0)

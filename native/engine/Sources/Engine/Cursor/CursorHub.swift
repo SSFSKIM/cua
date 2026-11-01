@@ -249,15 +249,33 @@ final class CursorHub: @unchecked Sendable {
     }
   }
 
-  /// The connection closed: the panel is ordered out and released.
+  /// The connection closed: the panel is ordered out and released, once a fade under way has played out (#237: end_task
+  /// sends the hide just before it closes the connection, which would otherwise take the panel mid-fade). A cursor shown
+  /// and not fading (a client that went without end_task) goes at once, as before.
   func closed(connection: Int) {
     _ = bump(connection)
     queue.async { [self] in
-      cursors[connection] = nil
-      lock.withLock { generations[connection] = nil }
-      if let renderer { environment.main { renderer.close(connection: connection) } }
-      rearm()
+      if let cursor = cursors[connection] {
+        cursor.lifecycle.tick(now: environment.now())
+        if cursor.lifecycle.phase == .fading {
+          cursor.closing = true
+          cursor.stateEpoch += 1
+          // The fade again, under the close's generation: a hide's commit the bump superseded on its way to the main
+          // thread still plays (the renderer leaves a fade already playing as it is).
+          commit(cursor)
+          return
+        }
+      }
+      remove(connection)
     }
+  }
+
+  /// A closed connection's cursor goes: its state, and its panel on the main thread.
+  private func remove(_ connection: Int) {
+    cursors[connection] = nil
+    lock.withLock { generations[connection] = nil }
+    if let renderer { environment.main { renderer.close(connection: connection) } }
+    rearm()
   }
 
   /// The engine's intervention ledger attributed the person's event to `pid` (Intervention.swift).
@@ -435,6 +453,8 @@ final class CursorHub: @unchecked Sendable {
         commit(cursor)
       }
     }
+    // A closed connection's cursor whose fade has played out goes now.
+    for cursor in cursors.values where cursor.closing && cursor.lifecycle.phase == .hidden { remove(cursor.connection) }
     if let check = nextCheck, check <= now { checkAttachments() }
     rearm()
   }
@@ -619,6 +639,8 @@ private final class CursorModel {
   var committed: CursorCommit?
   /// Bumped by every event that sets the state other than an action: an action's geometry read across one is dropped.
   var stateEpoch = 0
+  /// Its connection closed during a fade: the panel goes when the fade ends (`closed`).
+  var closing = false
 
   init(connection: Int, identity: CursorIdentity) {
     self.connection = connection

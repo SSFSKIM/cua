@@ -53,6 +53,8 @@ final class Engine: @unchecked Sendable {
   let pasteActivation: ActivationSystem
   /// The agent cursor (Cursor/CursorHub.swift): the live one draws; the default keeps its state and draws nothing.
   let cursor: CursorHub
+  /// The after-action watches of closed connections, still running (#237, Activation.swift).
+  let closedWatches = ClosedConnectionWatches()
   /// The device's switch, `cursor` in engine.json as read at launch (Config.swift): off, no session draws a cursor.
   let cursorEnabled: Bool
   /// The cursor's diagnostic arm, `cursorDebug` in engine.json as read at launch (Config.swift); nil for none.
@@ -85,8 +87,8 @@ final class Engine: @unchecked Sendable {
       case "status": return Outcome(result: .success(status(connection)))
       case "approve": return Outcome(result: .success(approve()))
       case "shutdown":
-        let others = server?.beginShutdown(connection) ?? 0
-        if others > 0 { throw EngineError(name: "busy", "busy", extra: ["connections": others]) }
+        let holders = server?.beginShutdown(connection) ?? []
+        if !holders.isEmpty { throw EngineError(name: "busy", "busy", extra: ["connections": holders.count, "holders": holders]) }
         return Outcome(result: .success([String: Any]()), exitAfter: true)
       case "execute": return Outcome(result: .success(try execute(request.params, connection, receivedAt)))
       case "cursor": return Outcome(result: .success(try cursorRequest(request.params, connection)))
@@ -121,6 +123,8 @@ final class Engine: @unchecked Sendable {
       "pid": Int(getpid()),
       "bundlePath": Bundle.main.bundlePath,
       "connections": server?.others(than: connection) ?? 0,
+      // Who those connections are (#237): {pid, label} each, so whoever is refused as busy knows whom to ask.
+      "holders": server?.holders(than: connection) ?? [],
       // What doctor reports beside the grants: the per-app route-4 override as this engine read it at launch, and the
       // apps route 3's guard has failed three actions in a row for (each named by `routeAdvice` on its refusal).
       "routes": routes,
@@ -135,6 +139,8 @@ final class Engine: @unchecked Sendable {
   /// session's cursor is on, and if not, whose switch turned it off: the device's (engine.json) wins over the session's.
   private func cursorRequest(_ params: [String: Any], _ connection: ConnectionState) throws -> [String: Any] {
     let request = try CursorRequest(params)
+    // The session's label names this connection in the others' status (#237), whether or not a cursor is drawn.
+    if case .configure(let label?, _, _) = request, let kept = sessionLabel(label) { connection.holderLabel = kept }
     if cursorEnabled {
       if request == .hide {
         cursor.hide(connection: connection.id)
@@ -150,8 +156,8 @@ final class Engine: @unchecked Sendable {
   /// Requests both grants with their prompts; once both are granted, captures one display image and discards it,
   /// which raises the capture confirmation of a new on-disk copy. Only the owner, at the console, answers these.
   private func approve() -> [String: Any] {
-    let accessibility = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
-    let screenRecording = CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess()
+    let accessibility = gatedAccessibilityPrompt()
+    let screenRecording = CGPreflightScreenCaptureAccess() || gatedScreenCaptureRequest()
     var captured = false
     if accessibility && screenRecording, let content = try? shareableContent(), let display = content.displays.first {
       let configuration = SCStreamConfiguration()
@@ -164,8 +170,10 @@ final class Engine: @unchecked Sendable {
 
   private func execute(_ params: [String: Any], _ connection: ConnectionState, _ receivedAt: Int64) throws -> Any {
     // Before anything else, the connection's after-action watch ends (#200, Activation.swift): no repair of an earlier
-    // action is made once this request, which may act or observe, has begun; its own guard takes over.
+    // action is made once this request, which may act or observe, has begun; its own guard takes over. So does every
+    // closed connection's watch still running (#237): another client's request is never answered by it either.
     connection.afterAction.cancel()
+    closedWatches.cancelAll()
     // The deadline first, before anything is dispatched (the vendor's order, F §8.9); a settle or a launch wait still
     // running when it passes is cancelled as timeoutReached (cua's addition, Skyshot.swift).
     let deadline = (params["deadlineUnixMilliseconds"] as? NSNumber)?.int64Value ?? receivedAt + 120_000
@@ -253,7 +261,7 @@ final class Engine: @unchecked Sendable {
   /// Fails `permissionsPending` without the Accessibility grant, asking for it once with the system prompt.
   func requireAccessibility() throws {
     guard !AXIsProcessTrusted() else { return }
-    _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+    _ = gatedAccessibilityPrompt()
     throw EngineError(.permissionsPending, "cua Engine needs the Accessibility permission: allow \"cua Engine\" in System Settings > Privacy & Security > Accessibility, then retry.")
   }
 
@@ -261,7 +269,7 @@ final class Engine: @unchecked Sendable {
   /// a new grant only to a relaunched engine.
   func requireScreenRecording() throws {
     guard !CGPreflightScreenCaptureAccess() else { return }
-    _ = CGRequestScreenCaptureAccess()
+    _ = gatedScreenCaptureRequest()
     throw EngineError(.permissionsPending, "cua Engine needs the Screen Recording permission: allow \"cua Engine\" in System Settings > Privacy & Security > Screen & System Audio Recording; a relaunch of the engine is pending before screenshots can use it.")
   }
 

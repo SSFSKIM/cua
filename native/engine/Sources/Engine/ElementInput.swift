@@ -220,7 +220,7 @@ extension Engine {
                        targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
                        beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
                        announce: { cursor.act(connection: connection, app: app.key, window: pointing.windowID, .click(point)) },
-                       post: { $0.postToPid($1) }, meta: &meta)
+                       post: gatedPost, meta: &meta)
     }
   }
 

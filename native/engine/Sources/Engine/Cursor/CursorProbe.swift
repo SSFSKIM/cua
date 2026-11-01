@@ -89,7 +89,7 @@ enum CursorProbe {
     panel.level = .floating
     panel.hidesOnDeactivate = false
     panel.title = "cua cursor probe target"
-    panel.orderFrontRegardless()
+    if DesktopGate.allows("cursor probe panel onto the screen") { panel.orderFrontRegardless() }
     targetPanel = panel
     return (CGWindowID(panel.windowNumber), frame)
   }

@@ -184,6 +184,57 @@ final class CursorHubTests: XCTestCase {
     XCTAssertEqual(renderer.closed, [1])
   }
 
+  /// #237: end_task's hide reaches the engine just before the connection closes; the fade plays out, and only then is
+  /// the panel ordered out.
+  func testAFadingCursorsPanelClosesOnlyAfterTheFade() throws {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    hub.hide(connection: 1)
+    hub.closed(connection: 1)
+    hub.drain()
+    XCTAssertEqual(renderer.closed, [], "not mid-fade")
+    XCTAssertEqual(renderer.last?.phase, .fading, "the fade plays")
+    world.clock.t += CursorLifecycle.fadeSeconds / 2
+    hub.tick()
+    XCTAssertEqual(renderer.closed, [])
+    world.clock.t += CursorLifecycle.fadeSeconds / 2
+    hub.tick()
+    XCTAssertEqual(renderer.closed, [1], "ordered out once the fade is over")
+    XCTAssertNil(hub.phase(connection: 1), "and its state released")
+  }
+
+  /// #237: the close's generation does not drop a fade whose commit was still on its way to the main thread.
+  func testAHideCommitTheCloseSupersededStillFades() throws {
+    let world = World(), renderer = RecordingRenderer(), main = HeldMain()
+    let hub = hub(world, renderer, main: { main.enqueue($0) })
+    click(hub, CGPoint(x: 400, y: 300))
+    main.run()
+    hub.hide(connection: 1)
+    hub.closed(connection: 1)
+    hub.drain()
+    main.run()
+    XCTAssertEqual(renderer.last?.phase, .fading, "the fade reached the renderer")
+    XCTAssertEqual(renderer.closed, [])
+  }
+
+  /// A cursor that is not fading (a client gone without end_task, or one already faded) goes at its close, as before.
+  func testACursorNotFadingClosesAtOnce() {
+    let world = World(), renderer = RecordingRenderer()
+    let hub = hub(world, renderer)
+    click(hub, CGPoint(x: 400, y: 300))
+    hub.closed(connection: 1)
+    hub.drain()
+    XCTAssertEqual(renderer.closed, [1])
+    click(hub, CGPoint(x: 400, y: 300))
+    hub.hide(connection: 1)
+    hub.drain()
+    world.clock.t += CursorLifecycle.fadeSeconds
+    hub.closed(connection: 1)
+    hub.drain()
+    XCTAssertEqual(renderer.closed, [1, 1], "its fade was over already")
+  }
+
   func testAStaleCommitIsDroppedAtTheMainThread() throws {
     let world = World(), renderer = RecordingRenderer(), main = HeldMain()
     let hub = hub(world, renderer, main: { main.enqueue($0) })

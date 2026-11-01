@@ -11,7 +11,7 @@ import {existsSync, mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
-import {EngineFailure, nativePipe, startFakeEngine} from './helpers/fake-engine.mjs';
+import {EngineFailure, NO_REPLY, nativePipe, startFakeEngine} from './helpers/fake-engine.mjs';
 import {node} from './native-goldens/builder.mjs';
 import {approvalMemory} from '../src/mcp/approval-memory.mjs';
 import {createSkyService} from '../src/services/sky.mjs';
@@ -545,7 +545,7 @@ test('Chrome: the tool surface carries the vendor\'s Chrome flag, and the approv
 
 // The agent cursor (#235's spec, "Lifecycle and identity", Interfaces): the session's cursor request is made from the
 // three variables the launcher put in the worker's environment, sent on the service's own connection at connect, and
-// end_task's turn-ended hook hides it.
+// end_task's turn-ended hook hides it and closes the connection (#237).
 test('the cursor request the service sends for each environment: the label, a #rrggbb colour, and CUA_CURSOR=0\'s off switch', () => {
   assert.deepEqual(cursorParams({}), {enabled: true});
   assert.deepEqual(cursorParams({CUA_CURSOR_LABEL: 'Research', CUA_CURSOR_COLOR: '#2f6feb'}), {label: 'Research', color: '#2f6feb', enabled: true});
@@ -572,22 +572,48 @@ async function ownService(t, env, {handlers = {}} = {}) {
   return {service, engine, hooks, turnEnded};
 }
 
-test('the service tells the engine its session\'s cursor at connect, and end_task\'s turn-ended hook hides it', async t => {
+// Resolves once `check()` holds, polling; fails the test past `ms`.
+async function until(check, ms = 2_000) {
+  for (const end = Date.now() + ms; !check();) {
+    if (Date.now() > end) assert.fail('the condition never held');
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
+
+test('the service tells the engine its session\'s cursor at connect, and end_task\'s turn-ended hook hides it and closes the connection (#237)', async t => {
   const {service, engine, hooks, turnEnded} = await ownService(t, {CUA_CURSOR_LABEL: 'linux171', CUA_CURSOR_COLOR: '#8250df'});
   assert.equal(hooks.length, 1);
   assert.ok(Number.isSafeInteger(hooks[0].timeoutMs) && hooks[0].timeoutMs > 0);
   await turnEnded();
-  assert.equal(engine.received.length, 0, 'a session that never reached the engine has no cursor to hide');
+  assert.equal(engine.received.length, 0, 'a session that never reached the engine has nothing to hide or close, and connects for neither');
   await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]});
+  assert.equal(engine.sockets.size, 1);
   await turnEnded();
+  await until(() => engine.sockets.size === 0);
   assert.deepEqual(engine.received.map(r => [r.method, r.method === 'cursor' ? r.params : r.params?.method ?? null]),
     [['ping', null], ['cursor', {label: 'linux171', color: '#8250df', enabled: true}], ['execute', 'list_apps'], ['cursor', {hide: true}]]);
+  // The next task's first engine-bound call reconnects, and its end_task closes that connection too.
+  assert.deepEqual(await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]}), []);
+  assert.equal(engine.sockets.size, 1);
+  assert.deepEqual(engine.received.slice(4).map(r => r.method), ['ping', 'cursor', 'execute']);
+  await turnEnded();
+  await until(() => engine.sockets.size === 0);
 });
 
-test('against an engine without the cursor method the session goes on, and end_task sends it nothing', async t => {
+test('against an engine without the cursor method the session goes on, and end_task still closes the connection, sending nothing', async t => {
   const {service, engine, turnEnded} = await ownService(t, {CUA_CURSOR: '0'}, {handlers: {cursor: undefined}});
   assert.deepEqual(await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]}), []);
   await turnEnded();
+  await until(() => engine.sockets.size === 0);
   assert.deepEqual(engine.received.map(r => r.method), ['ping', 'cursor', 'execute']);
   assert.deepEqual(engine.received[1].params, {enabled: false});
+});
+
+test('end_task\'s hook answers without waiting on the engine: a hide the engine never answers holds nothing up', async t => {
+  const {service, engine, turnEnded} = await ownService(t, {CUA_CURSOR_LABEL: 'linux171'}, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null})}});
+  await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]});
+  const started = performance.now();
+  await turnEnded();
+  assert.ok(performance.now() - started < 100, 'the hook returned at once');
+  await until(() => engine.sockets.size === 0);
 });

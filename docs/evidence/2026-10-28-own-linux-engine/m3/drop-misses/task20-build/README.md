@@ -42,6 +42,18 @@ shared (`cua`) and `--desktop dedicated` (`ded`), each with both park conditions
 - **The atomic press's grab**, over all 480 drags (both routes): p50 0.742 ms, p99 1.688 ms, max 4.078 ms (bar: p99
   under 5 ms).
 
+## Fix round 1: a grab that ends before the release counts
+
+Task 20's review found the gap. The watch left out every crossing in mode `Ungrab`, so another client's grab, held
+when the drag began and released during it, crossed into Chrome with no button: a 400 px selection was cut to one
+word, and the drag still answered `ok`. The watch now reads, by a round trip just before the release, what arrived up
+to then. An `Ungrab` crossing in that read counts as a stray; only one read after the release (the target's release of
+its own capture) is left out. A live test covers it (a foreign root grab released as the press reaches the window).
+
+`runs/fix1-inside24.*`: the fixed engine (6dc17da3), 240 undisturbed drags (pointer inside, shared and dedicated, 24 of
+each of the five kinds). **Still 0 stray answers**, every drag landed, grab p50 0.694 ms, p99 1.597 ms, max 2.069 ms.
+`tools/press-table.py` now reads the trimmed records as committed, which regenerate `runs/park24-build.txt` exactly.
+
 ## Ruling 5: the differential harness's new device cases
 
 `runs/dev2/`: the harness's Chrome device scenes (`device-chrome`, `device-chrome-dnd`, every case), 2 blocks, on the

@@ -12,8 +12,10 @@ export function median(values) {
  * passes, exploratory variants included; their rows stay in the evidence either way). `valid` is the negative
  * check's alone, kept apart from `pass`. A declared parity verdict (deviations.mjs `PARITY`) is listed in `parity`:
  * neither a failure nor a pass. `faults` (prepare.mjs `judgePrepareFaults`): a cap it fails is one more failure.
+ * `restores` (prepare.mjs `judgeTextRestores`' `lanes`): the scene text put back per lane, carried to the verdict line;
+ * `stop`: why the run stopped before its verdicts (a candidate's own text lost, task 24), one more failure.
  */
-export function runOutcome(verdicts, { valid, faults = null }) {
+export function runOutcome(verdicts, { valid, faults = null, restores = null, stop = null }) {
   const name = (v) => `${v.scene} ${v.op} ${v.candidate}`;
   const judged = verdicts.filter((v) => v.kind === 'verdict');
   const parity = judged.filter((v) => !v.pass && v.verdict === 'parity').map(name);
@@ -22,13 +24,18 @@ export function runOutcome(verdicts, { valid, faults = null }) {
   const failed = judged.filter((v) => !v.pass && !['parity', 'declared refusal'].includes(v.verdict)).map(name);
   // the gate's rule for harness-side preparation failures (prepare.mjs): a cap exceeded fails the run
   if (faults && !faults.pass) failed.push(`harness preparation failures over the cap (${faults.reasons.join('; ')})`);
+  if (stop) failed.push(stop);
   const pass = failed.length === 0;
-  return { valid, pass, failed, parity, refused, code: valid && pass ? 0 : 1 };
+  return { valid, pass, failed, parity, refused, ...(restores ? { restores } : {}), code: valid && pass ? 0 : 1 };
 }
 
-/** A run's verdicts in one line: its failures, else every verdict PASS; a parity verdict listed apart either way. */
-export function verdictLine({ pass, failed, parity = [], refused = [] }, strong = (s) => s) {
-  const listed = `${parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : ''}${refused.length ? `; ${strong('declared refusal')} (a loss, not a pass): ${refused.join(', ')}` : ''}`;
+/**
+ * A run's verdicts in one line: its failures, else every verdict PASS; a parity verdict listed apart either way, and
+ * the scene text put back per lane (task 24), every lane named, when the run counted it.
+ */
+export function verdictLine({ pass, failed, parity = [], refused = [], restores = null }, strong = (s) => s) {
+  const restored = restores ? `; text restores (the first word put back before a sample): ${Object.entries(restores).map(([lane, n]) => `${lane} ${n}`).join(', ')}` : '';
+  const listed = `${parity.length ? `; ${strong('parity')} (declared, not a pass): ${parity.join(', ')}` : ''}${refused.length ? `; ${strong('declared refusal')} (a loss, not a pass): ${refused.join(', ')}` : ''}${restored}`;
   if (!pass) return `${strong('FAIL')}: ${failed.join(', ')}${listed}`;
   return `${parity.length || refused.length ? 'no verdict FAIL' : 'every verdict PASS'}${listed}`;
 }
@@ -192,8 +199,9 @@ export function judgeOperation(rows, { vendors, candidate, audits = null, judgeS
   const barRowsOf = (v) => rows.filter((r) => r.engine === v && (!text || r.ok));
   const barTimes = (v, series) => timedMs(barRowsOf(v).filter((r) => r.series === series));
   // a vendor build sampled to the top-ups' end (twice MIN_NOISE_SAMPLES) with fewer than MIN_NOISE_SAMPLES usable samples
-  // has failed the operation in that series and sets no bar there (task 18: the pinned build's Copy succeeding 1 time in
-  // 117 made it the bar a series could never be judged against); before the end it still holds the series open
+  // has failed the operation in that series and sets no bar there: the rule guards against a build that genuinely fails
+  // an operation setting a bar a series could never be judged against. The gedit Copy failures that prompted it (task
+  // 18) were the harness's emptied buffer, not the pinned build's (task 24). Before the end it still holds the series open
   const failedBar = [];
   for (const series of ['cold', 'warm']) {
     for (const v of vendors) {

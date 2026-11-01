@@ -308,6 +308,24 @@ variants included; their evidence is written either way. The run's `end` row kee
   condition (a cold one on a fresh engine); a second oracle failure leaves it invalid (`prepare-failure` rows, outcome
   `resampled` or `invalid`). More than 2 resampled or invalid samples in a case, or 1% of its samples if larger, or more
   than 1% of the run's samples, fails the run; the summary lists the counts.
+- **The text scene kept as each sample needs it** (task 24, after m3-gate-verdict).
+  - **The first word.** Each lane's gedit text window lives for the whole run. The pinned build's failed paste over a
+    selection deletes the range and inserts nothing, which emptied its window after 9 samples. So before each sample
+    whose preparation selects the first word, the oracle checks that word and puts it back through `EditableText`
+    when it is missing (`text.mjs` `sceneTextBefore`).
+    - The check is the same for every lane.
+    - The restore is recorded on the sample (`text_restored`).
+    - The verdict line and the summary count the restores per lane, every lane named.
+    - A candidate's window is never put back. A restore it would need means its own sample left the text wrong, so
+      the run stops as a failure (`text-lost`).
+  - **The caret.** `selectFirstWord` puts the caret at the end before it selects, since GTK 3 refuses `AddSelection`
+    while a selection exists.
+  - **The backstop.** A refusal the restore cannot prevent restores the lane's scene before the one resample:
+    - a fresh window, opened only once the old one is gone;
+    - the cover given back;
+    - a warm sample's engine warmed again with an untimed read (`run.mjs` `restoreLaneScene`);
+    - the restore recorded on the failure's row (`scene_restore`).
+    The caps count the resample as before.
 - **A stopped run** (`stop.mjs`): SIGINT or SIGTERM stops the witness and closes every window the harness opened (its
   Chrome scenes live in the person's Chrome) before the process exits 130 or 143.
 - **Every cleanup a case owes runs when it ends** (`Cases.guarded`): the engines, clipboard owners and target windows

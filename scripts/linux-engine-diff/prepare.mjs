@@ -43,13 +43,24 @@ export function prepareFailureRow(s, error) {
 /**
  * One sample under the rule. `take()` runs it and answers `{row, response, fault}`, `fault` ORACLE when its
  * preparation failed at the harness oracle (`row` then the failure's record) and null otherwise (an engine's failure
- * included); `renew()` gives a cold sample's resample a fresh engine and answers whether it could. `emit` records the
- * failed sample once its outcome is known. Answers `{counted, stop}`: the sample to count (null when invalid) and
- * whether its series ends, which a cold sample left invalid does, since no later request on its engine is warm.
+ * included); `renew()` gives a cold sample's resample a fresh engine and answers whether it could. `restoreScene({cold})`
+ * is the backstop (task 24): the lane's scene restored before the one resample (a fresh window, warmed again for a warm
+ * sample), answering its record, which the failure's row carries (`scene_restore`), or false when it could not be.
+ * `emit` records the failed sample once its outcome is known. Answers `{counted, stop}`: the sample to count (null when
+ * invalid) and whether its series ends, which a cold sample left invalid does, since no later request on its engine is
+ * warm.
  */
-export async function sampleUnderRule({ cold, take, renew, emit }) {
+export async function sampleUnderRule({ cold, take, renew, restoreScene = null, emit }) {
   const first = await take();
   if (first.fault !== ORACLE) return { counted: first, stop: false };
+  if (restoreScene) {
+    const restored = await restoreScene({ cold });
+    if (!restored) {
+      emit({ ...first.row, outcome: 'invalid', why: 'the resample could not reproduce the condition: the scene could not be restored' });
+      return { counted: null, stop: cold };
+    }
+    first.row = { ...first.row, scene_restore: restored };
+  }
   if (cold && !(await renew())) {
     emit({ ...first.row, outcome: 'invalid', why: 'the resample could not reproduce the cold condition: no fresh engine' });
     return { counted: null, stop: true };
@@ -62,6 +73,21 @@ export async function sampleUnderRule({ cold, take, renew, emit }) {
   emit({ ...first.row, outcome: 'resampled' });
   second.row.resampled = true;
   return { counted: second, stop: false };
+}
+
+/**
+ * The scene text put back before samples' preparations (text.mjs `sceneTextBefore`), counted per lane over a run's rows
+ * (`sample`, `prepare-failure` and the bus pass's `text-bus` rows carrying `text_restored`, and a candidate's
+ * `text-lost`, the restore it needed and never got), every lane listed, a lane with none at 0: `{lanes, samples}`. A
+ * restore never touches the caps: the sample it preceded is prepared and measured as any other.
+ */
+export function judgeTextRestores(rows, lanes) {
+  const samples = rows
+    .filter((r) => (['sample', 'prepare-failure', 'text-bus'].includes(r.kind) && r.text_restored) || r.kind === 'text-lost')
+    .map((r) => ({ engine: r.engine, scene: r.scene, op: r.op, block: r.block, series: r.series, i: r.i, ...(r.kind === 'text-lost' ? { found: r.found, lost: true } : r.text_restored) }));
+  const counts = Object.fromEntries(lanes.map((l) => [l, 0]));
+  for (const s of samples) counts[s.engine] = (counts[s.engine] ?? 0) + 1;
+  return { lanes: counts, samples };
 }
 
 /** A case's cap: more than 2 resampled or invalid samples, or 1% of its samples if that is larger, fails the run. */

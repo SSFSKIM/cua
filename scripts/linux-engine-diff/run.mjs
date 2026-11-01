@@ -27,12 +27,12 @@ import { compareShots, xprobeDiff } from './images.mjs';
 import { compareStates, normalizeState, retainedIds } from './normalize.mjs';
 import { OPS, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs';
 import { Oracle } from './oracle.mjs';
-import { ORACLE, PrepareStepError, judgePrepareFaults, prepareFailureRow, sampleUnderRule } from './prepare.mjs';
+import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, prepareFailureRow, sampleUnderRule } from './prepare.mjs';
 import { writeSummary } from './report.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
 import { MIN_NOISE_SAMPLES, auditVerdict, blockOrder, judgeCalls, judgeOperation, runOutcome, verdictLine } from './stats.mjs';
-import { resolveField } from './text.mjs';
+import { CandidateTextLost, resolveField, sceneTextBefore } from './text.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
 import { judgeForegroundSpan, judgeInFrontSpan, startWitness } from './witness.mjs';
 
@@ -272,13 +272,20 @@ async function measureSample(s, ctx) {
     }
     if (def.prepare) {
       try {
+        // the scene's first word checked before the preparation and put back where a lane's request removed it, the
+        // same for every lane (text.mjs `sceneTextBefore`, task 24); a candidate's lost word stops the run
+        if (def.needsFirstWord?.(ctx)) ctx.textRestored = sceneTextBefore(ctx, { candidate: !VENDORS.includes(s.label) });
         await def.prepare(ctx);
       } catch (error) {
+        if (error instanceof CandidateTextLost) {
+          error.sample = { engine: s.label, scene: s.sceneName, op, block: s.block, series: i === 0 ? 'cold' : 'warm', i };
+          throw error;
+        }
         // a preparation failed at the harness oracle's step (prepare.mjs): no request is sent, the sample is not judged,
         // and the gate's rule resamples it; any other failure ends the run as before
         if (!(error instanceof PrepareStepError) || error.step !== ORACLE) throw error;
         if (def.restore) await def.restore(ctx);
-        return { row: prepareFailureRow(s, error), response: null, fault: ORACLE };
+        return { row: { ...prepareFailureRow(s, error), ...(ctx.textRestored ? { text_restored: ctx.textRestored } : {}) }, response: null, fault: ORACLE };
       }
     }
   }
@@ -349,6 +356,7 @@ async function measureSample(s, ctx) {
   }
   if (row.effect === null) delete row.effect;
   if (def.check) Object.assign(row, await def.check(ctx, response));
+  if (ctx.textRestored) row.text_restored = ctx.textRestored;
   if (ctx.prepareError) row.prepare_error = ctx.prepareError;
   if (ctx.prepareStep) row.prepare_step = ctx.prepareStep;
   // every failed preparation attempt, with the step it failed at, a later attempt's success notwithstanding
@@ -613,6 +621,36 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
   return opened;
 }
 
+/**
+ * The backstop's scene restore (task 24; prepare.mjs `sampleUnderRule`): the lane's text window closed and a fresh one
+ * opened in its place on the scene's own text, the front window given back its cover (or the target raised, with
+ * visible occlusion, as each series starts), and for a warm sample the engine warmed again on the new window with one
+ * untimed read inside a witness span, so the resample is warm as the sample was. A cold sample's engine is renewed
+ * after it, so its first request stays the sample's. Answers the restore's record, or false when the warming read
+ * failed (the warm condition is not reproduced).
+ */
+export async function restoreLaneScene({ desktop, windows, sceneName, label, engine, warm, occlusion, witnessed }) {
+  const started = performance.now();
+  const old = windows[sceneName].text[label];
+  await desktop.close([old]);
+  // the old window gone before its successor is looked for: the fresh one is found by its file's name, as the old was
+  for (const deadline = Date.now() + 10000; (await desktop.listWindows()).some((w) => w.id === old.id); await sleep(250)) {
+    if (Date.now() > deadline) throw new Error(`${old.label} did not close for its scene's restore`);
+  }
+  const fresh = await openScene(desktop, sceneName, old.role, { text: true });
+  windows[sceneName].text[label] = fresh;
+  if (occlusion === 'visible') desktop.raise(fresh);
+  else desktop.focusFront();
+  let warmed = null;
+  if (warm) {
+    const { response } = await witnessed(() => engine.request('get_window_state', { window: { id: fresh.id }, include_screenshot: false }));
+    if (!response.ok) return false;
+    warmed = 'get_window_state';
+  }
+  // the X server may give the fresh window the old one's id (a freed client's id range is reused): the processes tell them apart
+  return { old_id: old.id, new_id: fresh.id, old_pid: old.pid, new_pid: fresh.pid, warmed, ms: Math.round(performance.now() - started) };
+}
+
 /** A scene window with its application's name as `list_windows` gives it and its size. */
 async function withApp(desktop, scene) {
   const listed = (await desktop.listWindows()).find((w) => w.id === scene.id);
@@ -804,53 +842,64 @@ export async function runDiff(args) {
     // One engine's series of an operation in a block: a fresh process, its cold sample and `n - 1` warm ones.
     const measureSeries = async ({ sceneName, op, label, block, n }) => {
       const spec = engineSpecFor(engines.find((e) => e.label === label), op, sceneName);
-      const target = measuredTarget(windows, sceneName, op, label);
+      let target = measuredTarget(windows, sceneName, op, label);
       if (target && args.occlusion === 'visible') desktop.raise(target);
       const env = OPS[op].apps ? launch.env : undefined;
       let engine = makeEngine(spec, env);
-      for (let i = 0; i < n; i++) {
-        // the gate's rule for a harness-side preparation failure (prepare.mjs): one resample in the sample's condition,
-        // a cold sample's on a fresh engine
-        const taken = await sampleUnderRule({
-          cold: i === 0,
-          take: () => runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName, cuaVersion }),
-          renew: async () => {
-            await engine.close();
-            engine = makeEngine(spec, env);
-            return true;
-          },
-          emit,
-        });
-        if (taken.stop) break;
-        if (!taken.counted) continue;
-        const { row, response } = taken.counted;
-        if (row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot' || OPS[op].kind === 'retention')) {
-          row.nodes = retainedIds(response.output).length;
-          row.source = response.output.ax_tree_source;
-          if (response.output.rendered !== undefined) row.rendered_lines = response.output.rendered?.split('\n').length ?? null;
-          const exactIds = exactIdsFor(op, sceneName);
-          keep[`${label}|${sceneName}|${op}`] ??= { output: response.output, label: exactIds ? null : labelPattern };
-        } else if (row.ok && (op === 'list_windows' || op === 'list_apps')) {
-          row.items = response.output.length;
-        }
-        row.digest = answerDigest(op, sceneName, response, labelPattern);
-        if (!['read', 'shot', 'retention'].includes(OPS[op].kind)) answers.set(`${label}|${sceneName}|${op}|${block}|${i}`, answerOf(op, response));
-        if (row.ok && shotOf(op)) {
-          // every sample's screenshot is kept for the comparison after the blocks
-          const shot = op === 'get_screenshot' ? response.output[0] : response.output.screenshots[0];
-          const copy = join(desktop.dir, `${label.replace(/[^a-z0-9]+/gi, '_')}-${sceneName}-${op}-${block}-${i}.jpg`);
-          if (shot) copyFileSync(shot.filepath, copy);
-          shots.push({ engine: label, scene: sceneName, op, block, i, image: shot ? copy : null, pair: OPS[op].kind === 'retention' ? 'i' : 'last' });
-        }
-        if (row.ok) {
-          const files = op === 'get_screenshot' ? response.output : (response.output?.screenshots ?? []);
-          for (const shot of files) {
-            if (shot.filepath.startsWith('/tmp/') && !shot.filepath.startsWith('/tmp/cua-engine-')) rmSync(shot.filepath, { force: true });
+      try {
+        for (let i = 0; i < n; i++) {
+          // the gate's rule for a harness-side preparation failure (prepare.mjs): one resample in the sample's condition,
+          // a cold sample's on a fresh engine, a text window's after the backstop restored the lane's scene (task 24)
+          const taken = await sampleUnderRule({
+            cold: i === 0,
+            take: () => runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName, cuaVersion }),
+            renew: async () => {
+              await engine.close();
+              engine = makeEngine(spec, env);
+              return true;
+            },
+            restoreScene: isText(op)
+              ? async ({ cold }) => {
+                  const witnessed = (fn) => (witness ? witness.span(`${label}:${sceneName}:${op}:restore`, fn).then((r) => r.value) : fn());
+                  const record = await restoreLaneScene({ desktop, windows, sceneName, label, engine, warm: !cold, occlusion: args.occlusion, witnessed });
+                  target = windows[sceneName].text[label];
+                  return record;
+                }
+              : null,
+            emit,
+          });
+          if (taken.stop) break;
+          if (!taken.counted) continue;
+          const { row, response } = taken.counted;
+          if (row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot' || OPS[op].kind === 'retention')) {
+            row.nodes = retainedIds(response.output).length;
+            row.source = response.output.ax_tree_source;
+            if (response.output.rendered !== undefined) row.rendered_lines = response.output.rendered?.split('\n').length ?? null;
+            const exactIds = exactIdsFor(op, sceneName);
+            keep[`${label}|${sceneName}|${op}`] ??= { output: response.output, label: exactIds ? null : labelPattern };
+          } else if (row.ok && (op === 'list_windows' || op === 'list_apps')) {
+            row.items = response.output.length;
           }
+          row.digest = answerDigest(op, sceneName, response, labelPattern);
+          if (!['read', 'shot', 'retention'].includes(OPS[op].kind)) answers.set(`${label}|${sceneName}|${op}|${block}|${i}`, answerOf(op, response));
+          if (row.ok && shotOf(op)) {
+            // every sample's screenshot is kept for the comparison after the blocks
+            const shot = op === 'get_screenshot' ? response.output[0] : response.output.screenshots[0];
+            const copy = join(desktop.dir, `${label.replace(/[^a-z0-9]+/gi, '_')}-${sceneName}-${op}-${block}-${i}.jpg`);
+            if (shot) copyFileSync(shot.filepath, copy);
+            shots.push({ engine: label, scene: sceneName, op, block, i, image: shot ? copy : null, pair: OPS[op].kind === 'retention' ? 'i' : 'last' });
+          }
+          if (row.ok) {
+            const files = op === 'get_screenshot' ? response.output : (response.output?.screenshots ?? []);
+            for (const shot of files) {
+              if (shot.filepath.startsWith('/tmp/') && !shot.filepath.startsWith('/tmp/cua-engine-')) rmSync(shot.filepath, { force: true });
+            }
+          }
+          emit(row);
         }
-        emit(row);
+      } finally {
+        await engine.close();
       }
-      await engine.close();
       if (target) target.retainedBy = null;
       if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
       // gedit's press_key series ends with the document back at its original length
@@ -985,13 +1034,20 @@ export async function runDiff(args) {
           const engine = makeEngine({ ...spec, stats: false });
           const monitor = await startMonitor(busAddress);
           let ok = false;
+          let restored = null;
+          let calls;
           try {
-            ok = (await runSample({ desktop, witness: null, engine, target, op, i: 0, block: 'bus', label: spec.label, sceneName })).row.ok;
+            const { row } = await runSample({ desktop, witness: null, engine, target, op, i: 0, block: 'bus', label: spec.label, sceneName });
+            ok = row.ok === true;
+            restored = row.text_restored ?? null;
           } finally {
             await engine.close();
+            // the monitor ends with its pass, a pass a candidate's lost text stopped included
+            calls = await monitor.stop();
           }
-          const calls = await monitor.stop();
-          emit({ kind: 'text-bus', engine: spec.label, scene: sceneName, op, ok, calls: calls.calls, forbidden: Object.fromEntries(FORBIDDEN_TEXT_CALLS.map((m) => [m, calls.by_member[m] ?? 0])) });
+          // the harness's own InsertText of a restore (text.mjs `sceneTextBefore`) is a vendor lane's alone: a candidate's
+          // lost word stops the run before any is sent
+          emit({ kind: 'text-bus', engine: spec.label, scene: sceneName, op, block: 'bus', i: 0, ok, ...(restored ? { text_restored: restored } : {}), calls: calls.calls, forbidden: Object.fromEntries(FORBIDDEN_TEXT_CALLS.map((m) => [m, calls.by_member[m] ?? 0])) });
           desktop.focusFront();
         }
       }
@@ -1163,8 +1219,22 @@ export async function runDiff(args) {
     // the gate's rule for harness-side preparation failures: its counts per case and for the run, and its caps
     const faults = judgePrepareFaults(after);
     emit({ kind: 'prepare-faults', ...faults });
-    outcome = runOutcome(verdicts, { valid, faults });
-    emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, finished: new Date().toISOString() });
+    // the scene text put back per lane (task 24), every lane's count in the verdict line
+    const restores = judgeTextRestores(after, labels);
+    emit({ kind: 'text-restores', ...restores });
+    outcome = runOutcome(verdicts, { valid, faults, restores: restores.lanes });
+    emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, finished: new Date().toISOString() });
+  } catch (error) {
+    if (!(error instanceof CandidateTextLost)) throw error;
+    // a candidate's own text window lost its first word: a sample of its lane left the person's text wrong, so the run
+    // stops as a failure there, never put back and never absorbed (task 24)
+    const at = error.sample;
+    emit({ kind: 'text-lost', ...at, ...error.record });
+    const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
+    const restores = judgeTextRestores(rows, labels);
+    emit({ kind: 'text-restores', ...restores });
+    outcome = runOutcome([], { valid, restores: restores.lanes, stop: `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}: ${error.message}; the run stopped there` });
+    emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, finished: new Date().toISOString() });
   } finally {
     if (witness) await witness.stop();
     await desktop.closeAll();

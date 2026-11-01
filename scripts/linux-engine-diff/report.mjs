@@ -162,11 +162,30 @@ export function renderSummary(lines) {
       for (const v of bounded) out.push(`- ${v.scene} ${v.candidate}: ${v.calls_bound.pass ? 'within' : `**${v.calls_bound.reasons.join('; ')}**`}`);
     }
     out.push(...prepareFaultsMarkdown(rows));
+    out.push(...textRestoresMarkdown(rows));
     const end = rows.find((r) => r.kind === 'end');
     const ending = !end || end.pass === undefined ? '' : `; ${verdictLine(end, (s) => `**${s}**`)}`;
     out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
   }
   return out.join('\n');
+}
+
+/**
+ * The scene text the oracle put back before samples' preparations (prepare.mjs `judgeTextRestores`, task 24): the count
+ * per lane, every lane named, and each restored sample with what its window held; a candidate's lost word, which stopped
+ * the run, is listed as never put back. A run from before the restore has no record and shows nothing.
+ */
+export function textRestoresMarkdown(rows) {
+  const restores = rows.find((r) => r.kind === 'text-restores');
+  if (!restores) return [];
+  const head = `Text restores (the oracle put the scene's first word back before a sample's preparation): ${Object.entries(restores.lanes).map(([lane, n]) => `${lane} ${n}`).join(', ')}`;
+  if (!restores.samples.length) return ['', `${head}.`];
+  const out = ['', `${head}:`, ''];
+  for (const r of restores.samples) {
+    const what = r.lost ? `found '${r.found}', **never put back: a sample of its lane left the text wrong, and the run stopped**` : `found '${r.found}', put back '${r.inserted}'`;
+    out.push(`- ${r.scene} ${r.op} ${r.engine} ${r.block}/${r.i}${r.series ? ` (${r.series})` : ''}: ${what}`);
+  }
+  return out;
 }
 
 /**
@@ -184,7 +203,8 @@ export function prepareFaultsMarkdown(rows) {
   for (const c of faults.cases) out.push(`| ${c.scene} | ${c.op} | ${c.samples} | ${c.resampled} | ${c.invalid} | ${c.limit} | ${c.over ? '**over the cap**' : 'within'} |`);
   out.push('');
   for (const f of rows.filter((r) => r.kind === 'prepare-failure')) {
-    out.push(`- ${f.scene} ${f.op} ${f.engine} ${f.block}/${f.i} (${f.series}): ${f.outcome}; failed at the ${f.step} step: ${f.error}${f.resample ? `; the resample failed at the ${f.resample.step} step too: ${f.resample.error}` : ''}${f.why ? `; ${f.why}` : ''}`);
+    const restored = f.scene_restore ? `; its scene restored before the resample (gedit ${f.scene_restore.old_pid} replaced by ${f.scene_restore.new_pid}, window ${f.scene_restore.old_id} by ${f.scene_restore.new_id}${f.scene_restore.warmed ? `, warmed with ${f.scene_restore.warmed}` : ''})` : '';
+    out.push(`- ${f.scene} ${f.op} ${f.engine} ${f.block}/${f.i} (${f.series}): ${f.outcome}; failed at the ${f.step} step: ${f.error}${restored}${f.resample ? `; the resample failed at the ${f.resample.step} step too: ${f.resample.error}` : ''}${f.why ? `; ${f.why}` : ''}`);
   }
   return out;
 }

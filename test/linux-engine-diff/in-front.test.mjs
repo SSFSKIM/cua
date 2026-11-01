@@ -87,3 +87,33 @@ test('only a background request the engine recorded as already in front is judge
   assert.deepEqual(judgeRouteSpan(drop(), { ...base, inFront: false }).fields, ['stacking'], 'judged strictly otherwise');
   assert.equal(judgeRouteSpan(drop(), { ...base, inFront: true, reported: 'foreground' }).clean, false);
 });
+
+// task 23 (the whole-branch review of M3): the allowance excuses Chrome's temporary keyboard grab and drag windows only
+// when they are gone by the span's end; the reviewer's display-free reproductions passed before
+test('the in-front allowance fails a keyboard grab whose focus events never see its release by the span\'s end', () => {
+  const r = drop();
+  // Chrome's drop, then the root's FocusIn in mode Grab with no Ungrab after it
+  const unmatched = { ...r, focus: [...r.focus, { kind: 'focus_in', window: ROOT, detail: 2, mode: 1 }] };
+  const judged = judgeInFrontSpan(unmatched, facts);
+  assert.equal(judged.clean, false, JSON.stringify(judged));
+  // the drop's stacking notify is no longer excused beside a violation
+  assert.deepEqual(judged.fields, ['focus', 'stacking']);
+  // the grab's own events alone, its release cut off
+  const cut = { ...r, focus: r.focus.slice(0, 4) };
+  assert.deepEqual(judgeInFrontSpan(cut, facts).fields, ['focus', 'stacking']);
+  // matched, the same events pass (the measured drop)
+  assert.equal(judgeInFrontSpan(r, facts).clean, true);
+});
+
+test('the in-front allowance fails a drag window of the target\'s client still mapped at the span\'s end', () => {
+  const r = drop();
+  const left = { ...r, restacks: r.restacks.filter((e) => !(e.window === DRAG && (e.kind === 'unmap' || e.kind === 'destroy'))) };
+  const judged = judgeInFrontSpan(left, facts);
+  assert.equal(judged.clean, false, JSON.stringify(judged));
+  assert.deepEqual(judged.fields, ['stacking']);
+  assert.ok(judged.violations.some((v) => v.kind === 'left open' && v.window === DRAG), JSON.stringify(judged.violations));
+  // one of the client's windows already mapped when the span began is not the drag's, and may stay
+  const tooltip = DRAG + 9;
+  const before = { ...r, tree: [...r.tree, [tooltip, 1, 1]] };
+  assert.equal(judgeInFrontSpan(before, facts).clean, true);
+});

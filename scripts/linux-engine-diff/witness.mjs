@@ -156,6 +156,10 @@ function stackReplay(tree) {
 const CLIENT_MASK = 0x1fffff;
 const sameClient = (a, b) => (a & ~CLIENT_MASK) === (b & ~CLIENT_MASK);
 
+/** A focus event's modes (the X protocol's NotifyGrab and NotifyUngrab): a keyboard grab beginning and ending. */
+const MODE_GRAB = 1;
+const MODE_UNGRAB = 2;
+
 /**
  * The witness of a background request the engine recorded as made to a window already in front (`--stats` `dnd`
  * `in_front`: the active window, holding the focus, fully unobscured; Decision Log, M3.1, Chrome drag and drop): Chrome's
@@ -167,9 +171,10 @@ const sameClient = (a, b) => (a & ~CLIENT_MASK) === (b & ~CLIENT_MASK);
  * - every restack, map, unmap, creation or destruction leaves the order of the mapped managed windows (not
  *   override-redirect) as it was, with the target's frame on top when the span began, and the order of the frame among
  *   every other client's mapped windows, override-redirect ones included, as it was: only the target client's own
- *   windows (its override-redirect drag windows) may move;
+ *   windows (its override-redirect drag windows) may move, and those the span mapped are unmapped by its end;
  * - every focus event is the target's, its frame's or its client's windows', or the root's under a keyboard grab or its
- *   release (modes Grab and Ungrab, which do not move the focus);
+ *   release (modes Grab and Ungrab, which do not move the focus), and a grab the span saw begin is released by its end
+ *   (the last event of either mode an Ungrab);
  * - a value read back changed is a violation; a property notify is allowed only beside event records with none.
  * Returns `{clean, fields, allowed, violations}`.
  */
@@ -191,19 +196,26 @@ export function judgeInFrontSpan(report, { target, frame, root }) {
     // frame changes this order even where the foreign windows keep theirs
     const relevant = () => order.filter((w) => w.mapped && (w.id === frame || !ours(w.id))).map((w) => w.id);
     if (managed().at(-1) !== frame) violate('stacking', 'the target was not on top when the span began');
+    const openAtStart = new Set(order.filter((w) => w.mapped).map((w) => w.id));
     for (const e of report.restacks) {
       const before = [managed(), relevant()];
       apply(e);
       if (!sameOrder(before[0], managed()) || !sameOrder(before[1], relevant())) violate('stacking', e);
     }
+    // the client's own windows that the span mapped (its drag windows) are unmapped by its end
+    for (const w of order.filter((x) => x.mapped && x.id !== frame && ours(x.id) && !openAtStart.has(x.id))) violate('stacking', { kind: 'left open', window: w.id });
   }
   if (!Array.isArray(report.focus)) violate('focus', 'no focus record');
   else {
     for (const e of report.focus) {
       if (e.kind === 'activate') {
         if (e.window !== target && e.window !== frame) violate('active', e);
-      } else if (!ours(e.window) && !(e.window === top && (e.mode === 1 || e.mode === 2))) violate('focus', e);
+      } else if (!ours(e.window) && !(e.window === top && (e.mode === MODE_GRAB || e.mode === MODE_UNGRAB))) violate('focus', e);
     }
+    // a keyboard grab the span began is released by its end: one grab is active at a time, so its focus events
+    // alternate between the modes, and the last of them is an Ungrab
+    const grab = report.focus.filter((e) => e.kind !== 'activate' && (e.mode === MODE_GRAB || e.mode === MODE_UNGRAB)).at(-1);
+    if (grab?.mode === MODE_GRAB) violate('focus', { ...grab, why: 'a keyboard grab not released by the span\'s end' });
   }
   const notified = new Set();
   for (const c of report.changes ?? []) {
@@ -306,7 +318,8 @@ export function judgeForegroundSpan(report, { target, frame, focusWithin, opensW
  * the engine reports it took (`reported`): the foreground route's allowance (`judgeForegroundSpan`) only where both are
  * the foreground route; anything else is judged strictly (`judgeSpan`), and a reported route other than the expected
  * one, a missing record included, is a violation of its own. With no expected route (a vendor build, an operation that
- * pastes nothing) the span is judged strictly whatever is reported. Returns `{clean, fields, allowed, foreground}`.
+ * pastes nothing) the span is judged strictly whatever is reported. Returns `{clean, fields, allowed, foreground,
+ * inFront}`: `inFront` where the in-front allowance judged it.
  */
 export function judgeRouteSpan(report, { expected, reported, target, frame, focusWithin, inFront = false, root, opensWindows = false }) {
   const fields = [];
@@ -320,5 +333,5 @@ export function judgeRouteSpan(report, { expected, reported, target, frame, focu
       ? judgeInFrontSpan(report, { target, frame, root })
       : { ...judgeSpan(report), allowed: [] };
   fields.push(...judged.fields);
-  return { clean: fields.length === 0, fields, allowed: judged.allowed, foreground };
+  return { clean: fields.length === 0, fields, allowed: judged.allowed, foreground, inFront: front };
 }

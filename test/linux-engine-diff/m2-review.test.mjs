@@ -37,7 +37,7 @@ test('the allowance is granted only where the expected route is the one taken; a
   const facts = { target, frame: 0x47a900, focusWithin: (w) => w === target };
   const activated = { focus: [], tree: [[0x400001, 1, 0], [0x47a900, 1, 0]], restacks: [{ kind: 'configure', window: 0x47a900, above: 0x400001, or: 0 }], changes: [{ field: 'active', from: [0x400001], to: [target] }, { field: 'stacking', from: [target, 0x400001], to: [0x400001, target] }] };
   // expected and taken: the foreground allowance
-  assert.deepEqual(judgeRouteSpan(activated, { ...facts, expected: 'foreground', reported: 'foreground' }), { clean: true, fields: [], allowed: ['active', 'stacking'], foreground: true });
+  assert.deepEqual(judgeRouteSpan(activated, { ...facts, expected: 'foreground', reported: 'foreground' }), { clean: true, fields: [], allowed: ['active', 'stacking'], foreground: true, inFront: false });
   // a background scene whose request reported the foreground route: no allowance, and the route itself fails
   const wrong = judgeRouteSpan(activated, { ...facts, expected: 'background', reported: 'foreground' });
   assert.equal(wrong.clean, false);
@@ -47,7 +47,7 @@ test('the allowance is granted only where the expected route is the one taken; a
   assert.deepEqual(judgeRouteSpan({ changes: [] }, { ...facts, expected: 'foreground', reported: null }).fields, ['route not recorded, expected foreground']);
   assert.deepEqual(judgeRouteSpan(activated, { ...facts, expected: 'foreground', reported: 'background' }).fields, ['route background, expected foreground', 'active', 'stacking']);
   // a background request with nothing changed is clean
-  assert.deepEqual(judgeRouteSpan({ changes: [] }, { ...facts, expected: 'background', reported: 'background' }), { clean: true, fields: [], allowed: [], foreground: false });
+  assert.deepEqual(judgeRouteSpan({ changes: [] }, { ...facts, expected: 'background', reported: 'background' }), { clean: true, fields: [], allowed: [], foreground: false, inFront: false });
   // an operation with no expected route (a vendor build, a clipboard read) is judged strictly, whatever it reports
   assert.deepEqual(judgeRouteSpan(activated, { ...facts, expected: null, reported: 'foreground' }).fields, ['active', 'stacking']);
 });

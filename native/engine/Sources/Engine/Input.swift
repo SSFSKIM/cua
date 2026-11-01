@@ -89,6 +89,8 @@ struct InputMeta {
   var paste: PasteDiagnostics?
   /// An element click's plan, the ladder's reason and the hit-test's answer (#188, Routes.swift ElementClickRecord).
   var elementClick: ElementClickRecord?
+  /// A coordinate click's placement, from the screenshot point to the posted events (#259, Routes.swift).
+  var coordinateClick: CoordinateClickRecord?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -142,6 +144,7 @@ struct InputMeta {
     if let delivery { wire["delivery"] = delivery.wire }
     if let paste { wire["paste"] = paste.wire }
     if let elementClick { wire["elementClick"] = elementClick.wire }
+    if let coordinateClick { wire["coordinateClick"] = coordinateClick.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }
@@ -337,8 +340,9 @@ extension Engine {
         context.connection.clearMenuRecord(app: app.key)
       } else {
         // Each step a timing interval of its own (Signposts.swift), so a sitting can place what moves in a click.
+        let given = CGPoint(x: numberArg(args["x"])!, y: numberArg(args["y"])!)
         let placed = try signposted("click.coordinatePoint") {
-          try coordinatePoint(numberArg(args["x"])!, numberArg(args["y"])!, app: app, appPid: appPid, context: context)
+          try coordinatePlacement(given.x, given.y, app: app, appPid: appPid, context: context)
         }
         let (hit, owner) = signposted("click.hitTest") { () -> (AXUIElement?, pid_t) in
           let hit = hitTest(window: placed.window, at: placed.point)
@@ -350,6 +354,10 @@ extension Engine {
         }
         let windowID = signposted("click.windowNumber") { windowNumber(of: placed.window, pid: appPid, frame: placed.windowFrame) }
         let target = ClickTarget(point: placed.point, windowFrame: placed.windowFrame, windowID: windowID, pid: owner)
+        // #259's record; the window's frame is read again just before the events, on every path that reaches them.
+        meta.coordinateClick = CoordinateClickRecord(screenshotPoint: given, windowPoint: placed.local, target: target)
+        var frameBeforePost: CGRect?
+        defer { meta.coordinateClick?.frameBeforePost = frameBeforePost }
         let (route, activation) = signposted("click.route") { () -> (InputRoute, FakeActivation?) in
           let route = coordinateClickRoute(forced: forced, foreground: foreground)
           let sparing = button == .left ? nil : activationSparing(button: button, target: pointArea(placed.point, hitFrame: hit.flatMap { frame(of: $0) }))
@@ -361,7 +369,8 @@ extension Engine {
             try signposted("click.deliver") { try deliverClick(target, route: route, button: button, count: count, activation: activation, activations: heldActivations,
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                              targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
-                             beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
+                             beforeActivating: guarding.checkInFlight,
+                             beforePosting: { try guarding.checkInFlight(); frameBeforePost = frame(of: placed.window) },
                              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
                              post: gatedPost, meta: &meta) }
           }

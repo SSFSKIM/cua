@@ -519,6 +519,12 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
   elementClick: an element click's plan (#188), on its result and its errors: {plan ("action" | "synthesized"), action?
     (AXPick | AXPress), reason ("advertised" | "descendant" | "noAction" | "notPlainLeft" | "forced"), hit? ("element" |
     "descendant" | "ancestor" | "other" | "noAnswer"), hitTest? ("application")}, hit present when a hit-test was taken
+  coordinateClick: a coordinate click's placement (#259), on its result and its errors once its target is made:
+    {screenshotPoint {x, y} (the model's, in the screenshot's pixels), windowPoint {x, y} (the window-local point the
+    conversion computed, in points), postedLocation {x, y} (the events' global location), postedWindowLocation {x, y} |
+    null (the window location `stampWindow` stamps, the point less the frame's origin; null with no window number),
+    windowFrame {x, y, width, height} (the AX frame the conversion used), frameBeforePost {x, y, width, height} | null
+    (the window's frame read again just before the events; null when the click stopped before them or it was unread)}
   note: on a paste or type_text result that pasted a line with no channel to see it, read after ⌘V (#187): the sentence
     the service adds to the tool result's content
   pasteUnconfirmed (engine-only, not admitted by the wrapper: a concealed request never pastes): ⌘V was sent and the text
@@ -1657,6 +1663,21 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   repaired, the paste answered restored with the watch still running, a repair inside the second after the last ⌘V and
   none past it, both failing before the change; a stop before ⌘V releasing the hold). Nothing live ran.
   Date/Author: 2026-11-01, cursor235's implementer for the design session's ruling on the paste route's guard.
+- Decision (#259's diagnostic, 2026-11-01, `fix/187-3b-slot`; amends the input results' meta in Interfaces): **a
+  coordinate click records its placement, value-free, from the screenshot point to the posted events**
+  (`meta.coordinateClick`, carried as `cua/coordinateClick`). #187's slot (cell 3 (ii)) saw cua's `click([120, 168])`
+  into the frontmost Electron fixture land one text line (~16 px) low where the vendor's, given the same point, landed on
+  target; the offset's source (a title-bar or content inset, the screenshot's origin, the scale, rounding, or the window
+  location the events carry) cannot be read from the results as they stand. The record names each step: the screenshot
+  point as given, the window-local point the conversion computed (`ObservedScreenshot.windowPoint`), the global
+  location the events are posted at, the window location they are stamped with (through the one helper `stampWindow`
+  stamps by, `stampedWindowLocation`; null with no window number), the AX frame the conversion used, and the frame read
+  again in the click's `beforePosting`, after its activation and just before its events (one AX frame read per
+  coordinate click; null when the click stopped before). Numbers only. The conversion is unchanged: the record is #259's
+  evidence for the live cell, which decides the fix. Proven offline (`CoordinateClickRecordTests`: the wire for #259's
+  cell, the posted fields against the click events' own, the meta; the service's pass-through and reset). Nothing live
+  ran.
+  Date/Author: 2026-11-01, cursor235's implementer for #259's diagnostic.
 
 ## Outcomes & Retrospective
 

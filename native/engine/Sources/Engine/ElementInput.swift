@@ -171,6 +171,13 @@ extension Engine {
   /// global point in that window (Screenshot.swift; refused as windowMinimized when that window is minimized, then as
   /// noScreenshotForCoordinates when it cannot be placed).
   func coordinatePoint(_ x: Double, _ y: Double, app: ResolvedApp, appPid: pid_t, context: ExecutionContext) throws -> (point: CGPoint, window: AXUIElement, windowFrame: CGRect) {
+    let placed = try coordinatePlacement(x, y, app: app, appPid: appPid, context: context)
+    return (placed.point, placed.window, placed.windowFrame)
+  }
+
+  /// `coordinatePoint` with the window-local point the conversion computed (`local`), for the click's record (#259).
+  func coordinatePlacement(_ x: Double, _ y: Double, app: ResolvedApp, appPid: pid_t, context: ExecutionContext) throws
+    -> (point: CGPoint, window: AXUIElement, windowFrame: CGRect, local: CGPoint) {
     guard x.isFinite, y.isFinite else { throw EngineError.invalidArguments("x and y must be finite coordinates") }
     let application = prepare(AXUIElementCreateApplication(appPid))
     guard let window = primaryWindow(of: application), let windowFrame = frame(of: window) else {
@@ -179,7 +186,7 @@ extension Engine {
     let local = try placeCoordinate(in: window, app: app.displayName) {
       try context.connection.screenshotPoint(x, y, app: app, window: window, lineage: context.lineage)
     }
-    return (CGPoint(x: windowFrame.minX + local.x, y: windowFrame.minY + local.y), window, windowFrame)
+    return (CGPoint(x: windowFrame.minX + local.x, y: windowFrame.minY + local.y), window, windowFrame, local)
   }
 
   /// Route 3's guard outcome per app for `routeAdvice`: a refusal by the guard counts, a delivery past it resets the run.

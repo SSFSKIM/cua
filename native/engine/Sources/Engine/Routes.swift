@@ -69,6 +69,35 @@ struct ElementClickRecord: Equatable {
   }
 }
 
+/// A coordinate click's placement (#259: cua's click landed one text line low in the Electron fixture where the vendor's,
+/// given the same point, landed on target), meta `coordinateClick`: the screenshot point as the model gave it (its
+/// pixels), the window-local point the conversion computed (points), the global location the events are posted at and
+/// the window location they are stamped with (`stampWindow`; nil when no window number names the window and none is
+/// stamped), the AX frame the conversion used, and the frame read again just before the events (nil when not read).
+/// Value-free: numbers only.
+struct CoordinateClickRecord {
+  let screenshotPoint: CGPoint
+  let windowPoint: CGPoint
+  let postedLocation: CGPoint
+  let postedWindowLocation: CGPoint?
+  let windowFrame: CGRect?
+  var frameBeforePost: CGRect?
+
+  init(screenshotPoint: CGPoint, windowPoint: CGPoint, target: ClickTarget) {
+    self.screenshotPoint = screenshotPoint
+    self.windowPoint = windowPoint
+    postedLocation = target.point
+    postedWindowLocation = stampedWindowLocation(target.point, id: target.windowID, frame: target.windowFrame)
+    windowFrame = target.windowFrame
+  }
+
+  var wire: [String: Any] {
+    func point(_ point: CGPoint?) -> Any { point.map { ["x": Double($0.x), "y": Double($0.y)] } ?? NSNull() }
+    return ["screenshotPoint": point(screenshotPoint), "windowPoint": point(windowPoint), "postedLocation": point(postedLocation),
+            "postedWindowLocation": point(postedWindowLocation), "windowFrame": rectWire(windowFrame), "frameBeforePost": rectWire(frameBeforePost)]
+  }
+}
+
 /// The record of `plan`, chosen by elementClickPlan from the same arguments; `hit` is the hit-test's answer if one was
 /// taken.
 func elementClickRecord(_ plan: ElementClickPlan, forced: InputRoute?, button: MouseButton, count: Int, actions: [String],

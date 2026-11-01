@@ -530,6 +530,19 @@ test('an element click\'s plan rides as cua/elementClick on its result, and stan
   assert.equal(meta['cua/elementClick'], null, 'reset by the next call');
 });
 
+test('a coordinate click\'s placement rides as cua/coordinateClick on its result, and stands on no other call', async t => {
+  const point = (x, y) => ({x, y});
+  const record = {screenshotPoint: point(120, 168), windowPoint: point(60, 84), postedLocation: point(200, 184), postedWindowLocation: point(60, 84),
+    windowFrame: {x: 140, y: 100, width: 720, height: 560}, frameBeforePost: {x: 140, y: 100, width: 720, height: 560}};
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => ({meta: {...INPUT_META, coordinateClick: record}})}});
+  const {app} = await getApp('TextEdit');
+  assert.equal(meta['cua/coordinateClick'], null);
+  await call(() => app.click([120, 168]));
+  assert.deepEqual(meta['cua/coordinateClick'], record);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/coordinateClick'], null, 'reset by the next call');
+});
+
 test('an observation of a minimized window carries no screenshot and its meta says why; the next observation clears it', async t => {
   const {getApp, call, meta, trees} = await session(t);
   const {app} = await getApp('TextEdit');

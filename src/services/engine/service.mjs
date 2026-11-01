@@ -43,8 +43,10 @@
 //   stopped it), cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
 //   row for the app) and cua/delivery (route 3's delivery guard after a pointer action's events, #200: the restores it
 //   made, whether it brought the user's app back to the front, the latency of the first, its own time, the screen hold's,
-//   whether it reached the hold's cap and left a raise, when the events were posted) and cua/elementClick (an element
-//   click's plan, the ladder's reason and the hit-test's answer, #188). cua/afterActionRepairs rides on
+//   whether it reached the hold's cap and left a raise, when the events were posted; a paste's too), cua/elementClick (an
+//   element click's plan, the ladder's reason and the hit-test's answer, #188) and cua/coordinateClick (a coordinate
+//   click's placement, #259: the screenshot point, the window-local point, the posted global and window locations, the
+//   window frame used and the one read just before the events, numbers only). cua/afterActionRepairs rides on
 //   input results and on observations alike once the connection's after-action watch has repaired (#200: the repairs
 //   route 3's watch made after an action had answered, the connection's total and the last actions', each keyed by its
 //   delivery's postedAt). cua/serviceMs is the wrapper's (src/services/sky.mjs).
@@ -91,16 +93,16 @@ const SPIKE_ROUTES = new Set(['1', "2'", '2', '3']);
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
-  'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null,
+  'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
 };
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187), and its bound.
 const NOTED_METHODS = new Set(['paste', 'type_text']);
 const NOTE_CHARS = 500;
 // The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's
 // value-free diagnostics, #187; `elementClick`: an element click's plan, the ladder's reason and the hit-test's answer,
-// #188).
+// #188; `coordinateClick`: a coordinate click's placement from the screenshot point to the posted events, #259).
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
-  'elementClick'];
+  'elementClick', 'coordinateClick'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application

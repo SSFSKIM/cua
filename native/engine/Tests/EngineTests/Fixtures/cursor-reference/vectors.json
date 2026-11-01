@@ -1,0 +1,1818 @@
+{
+  "source": "native/engine/Tests/EngineTests/Fixtures/cursor-reference/reference.mjs",
+  "coordinates": "cursor panel, AppKit y-up, points are the arrow tip",
+  "step": 0.004166666666666667,
+  "settleRule": "FUN_1007d622c: max(|v|^2, |F|^2) <= idle^2 and (|0.01 target|^2 > 0 ? |target - x|^2 <= |0.01 target|^2 : true), checked after every 1/240 s sub-step",
+  "cases": [
+    {
+      "name": "scoot, short",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 400,
+        "y": 300
+      },
+      "to": {
+        "x": 500,
+        "y": 360
+      },
+      "distance": 116.619037896906,
+      "mode": "scoot",
+      "settleSteps": 67,
+      "settleTime": 0.2791666666666667
+    },
+    {
+      "name": "scoot, tiny",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 700,
+        "y": 400
+      },
+      "to": {
+        "x": 703,
+        "y": 404
+      },
+      "distance": 5,
+      "mode": "scoot",
+      "settleSteps": 59,
+      "settleTime": 0.24583333333333332
+    },
+    {
+      "name": "scoot, at the threshold (196 pt)",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 300,
+        "y": 300
+      },
+      "to": {
+        "x": 496,
+        "y": 300
+      },
+      "distance": 196,
+      "mode": "scoot",
+      "settleSteps": 68,
+      "settleTime": 0.2833333333333333
+    },
+    {
+      "name": "path, just over the threshold (197 pt)",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 300,
+        "y": 300
+      },
+      "to": {
+        "x": 497,
+        "y": 300
+      },
+      "distance": 197,
+      "mode": "path",
+      "chosen": 0,
+      "arc": false,
+      "cost": 1025.3375621063524,
+      "response": 0.6388750726883413,
+      "settleSteps": 208,
+      "settleTime": 0.8666666666666667,
+      "anyInBounds": true,
+      "chosenWithWindowOriginOffset": 0,
+      "measurement": {
+        "length": 234.46218958304894,
+        "angleChangeEnergy": 2.9141798696055994,
+        "maxAngleChange": 0.9724707530091162,
+        "totalTurn": 4.825752466233925
+      },
+      "segments": [
+        {
+          "control1": [
+            242.57830176389086,
+            359.4619091928255
+          ],
+          "control2": [
+            530.3436017820319,
+            265.4716895837447
+          ],
+          "end": [
+            497,
+            300
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 1025.3375621063524,
+          "inBounds": true
+        },
+        {
+          "cost": 1050.0902679365865,
+          "inBounds": true
+        },
+        {
+          "cost": 1806.9077082146016,
+          "inBounds": true
+        },
+        {
+          "cost": 1785.899404284919,
+          "inBounds": true
+        },
+        {
+          "cost": 1267.3213381413905,
+          "inBounds": true
+        },
+        {
+          "cost": 1391.0249688761667,
+          "inBounds": true
+        },
+        {
+          "cost": 1250.9295619325785,
+          "inBounds": true
+        },
+        {
+          "cost": 1307.7391178857679,
+          "inBounds": true
+        },
+        {
+          "cost": 1973.7677377602217,
+          "inBounds": true
+        },
+        {
+          "cost": 2203.0692713188087,
+          "inBounds": true
+        },
+        {
+          "cost": 1192.5888683346213,
+          "inBounds": true
+        },
+        {
+          "cost": 1202.5317450314017,
+          "inBounds": true
+        },
+        {
+          "cost": 1168.666826598628,
+          "inBounds": true
+        },
+        {
+          "cost": 1159.334394134966,
+          "inBounds": true
+        },
+        {
+          "cost": 1569.4388242021819,
+          "inBounds": true
+        },
+        {
+          "cost": 1433.5299001169901,
+          "inBounds": true
+        },
+        {
+          "cost": 1171.0734439199323,
+          "inBounds": true
+        },
+        {
+          "cost": 1142.0747300832463,
+          "inBounds": true
+        },
+        {
+          "cost": 1160.2009816551447,
+          "inBounds": true
+        },
+        {
+          "cost": 1136.522842943386,
+          "inBounds": true
+        }
+      ]
+    },
+    {
+      "name": "path, long, up-right",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 200,
+        "y": 150
+      },
+      "to": {
+        "x": 1200,
+        "y": 700
+      },
+      "distance": 1141.2712210513328,
+      "mode": "path",
+      "chosen": 1,
+      "arc": false,
+      "cost": 1724.8061124703902,
+      "response": 0.6853254748168278,
+      "settleSteps": 221,
+      "settleTime": 0.9208333333333333,
+      "anyInBounds": true,
+      "chosenWithWindowOriginOffset": 1,
+      "measurement": {
+        "length": 1231.542118630735,
+        "angleChangeEnergy": 1.5807492065122388,
+        "maxAngleChange": 0.9353964091655355,
+        "totalTurn": 3.3595392661293575
+      },
+      "segments": [
+        {
+          "control1": [
+            -16.22804862689111,
+            373.9106990449271
+          ],
+          "control2": [
+            1277.2973766500586,
+            619.9562233023769
+          ],
+          "end": [
+            1200,
+            700
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 1844.5155450420027,
+          "inBounds": true
+        },
+        {
+          "cost": 1724.8061124703902,
+          "inBounds": true
+        },
+        {
+          "cost": 2137.373569568293,
+          "inBounds": true
+        },
+        {
+          "cost": 2003.0974694057181,
+          "inBounds": true
+        },
+        {
+          "cost": 2333.296640340781,
+          "inBounds": true
+        },
+        {
+          "cost": 2152.25571755987,
+          "inBounds": true
+        },
+        {
+          "cost": 3710.815948164441,
+          "inBounds": true
+        },
+        {
+          "cost": 2738.87151945277,
+          "inBounds": true
+        },
+        {
+          "cost": 2289.7062880415187,
+          "inBounds": true
+        },
+        {
+          "cost": 2091.175217506769,
+          "inBounds": true
+        },
+        {
+          "cost": 2649.7491064892183,
+          "inBounds": true
+        },
+        {
+          "cost": 2334.6089653563445,
+          "inBounds": true
+        },
+        {
+          "cost": 2908.257959778761,
+          "inBounds": false
+        },
+        {
+          "cost": 3330.1797172379634,
+          "inBounds": true
+        },
+        {
+          "cost": 2454.453850766955,
+          "inBounds": true
+        },
+        {
+          "cost": 2236.9304818557107,
+          "inBounds": true
+        },
+        {
+          "cost": 3086.3890591013405,
+          "inBounds": true
+        },
+        {
+          "cost": 2495.226091448216,
+          "inBounds": true
+        },
+        {
+          "cost": 3192.1460678920653,
+          "inBounds": false
+        },
+        {
+          "cost": 3657.1877164327548,
+          "inBounds": true
+        }
+      ]
+    },
+    {
+      "name": "path, long, up-left (along the rest direction)",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 1100,
+        "y": 200
+      },
+      "to": {
+        "x": 400,
+        "y": 750
+      },
+      "distance": 890.2246907382427,
+      "mode": "path",
+      "chosen": 1,
+      "arc": false,
+      "cost": 906.8170291762867,
+      "response": 0.566016815135445,
+      "settleSteps": 187,
+      "settleTime": 0.7791666666666667,
+      "anyInBounds": true,
+      "chosenWithWindowOriginOffset": 1,
+      "measurement": {
+        "length": 890.972635994016,
+        "angleChangeEnergy": 0.006917875092671208,
+        "maxAngleChange": 0.05327650485834656,
+        "totalTurn": 0.2787368629857263
+      },
+      "segments": [
+        {
+          "control1": [
+            931.3358436038668,
+            374.6568467981094
+          ],
+          "control2": [
+            460.29419821853276,
+            687.563529999012
+          ],
+          "end": [
+            400,
+            750
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 909.338116512615,
+          "inBounds": true
+        },
+        {
+          "cost": 906.8170291762867,
+          "inBounds": true
+        },
+        {
+          "cost": 1122.7113242327518,
+          "inBounds": true
+        },
+        {
+          "cost": 1116.689166376595,
+          "inBounds": true
+        },
+        {
+          "cost": 1254.3591684069345,
+          "inBounds": true
+        },
+        {
+          "cost": 1234.8652222592327,
+          "inBounds": true
+        },
+        {
+          "cost": 1629.8710800579872,
+          "inBounds": true
+        },
+        {
+          "cost": 1578.655387899918,
+          "inBounds": true
+        },
+        {
+          "cost": 1243.4233424487004,
+          "inBounds": true
+        },
+        {
+          "cost": 1230.9286799275812,
+          "inBounds": true
+        },
+        {
+          "cost": 1386.9645761650995,
+          "inBounds": true
+        },
+        {
+          "cost": 1364.7533054123503,
+          "inBounds": true
+        },
+        {
+          "cost": 1693.1163596980969,
+          "inBounds": true
+        },
+        {
+          "cost": 1645.4366270053288,
+          "inBounds": true
+        },
+        {
+          "cost": 1376.0923706841797,
+          "inBounds": true
+        },
+        {
+          "cost": 1360.4069199912308,
+          "inBounds": true
+        },
+        {
+          "cost": 1523.6290172478587,
+          "inBounds": true
+        },
+        {
+          "cost": 1497.904659098189,
+          "inBounds": true
+        },
+        {
+          "cost": 1791.823629372588,
+          "inBounds": false
+        },
+        {
+          "cost": 1744.6010273748227,
+          "inBounds": true
+        }
+      ]
+    },
+    {
+      "name": "path, backward (down-right, against the rest direction)",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 300,
+        "y": 750
+      },
+      "to": {
+        "x": 1100,
+        "y": 150
+      },
+      "distance": 1000,
+      "mode": "path",
+      "chosen": 15,
+      "arc": true,
+      "cost": 2327.981884534594,
+      "response": 0.8699121998348417,
+      "settleSteps": 274,
+      "settleTime": 1.1416666666666666,
+      "anyInBounds": true,
+      "chosenWithWindowOriginOffset": 15,
+      "measurement": {
+        "length": 1526.2276717829955,
+        "angleChangeEnergy": 1.9974683945297453,
+        "maxAngleChange": 0.6064786185822442,
+        "totalTurn": 6.154946184454756
+      },
+      "segments": [
+        {
+          "control1": [
+            8.519298293862164,
+            1051.8371025016522
+          ],
+          "control2": [
+            250.33512687896854,
+            437.5899886028651
+          ],
+          "end": [
+            479.13512687896855,
+            265.9899886028651
+          ]
+        },
+        {
+          "control1": [
+            707.9351268789685,
+            94.38998860286506
+          ],
+          "control2": [
+            1204.1987555688495,
+            42.099029949202304
+          ],
+          "end": [
+            1100,
+            150
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 3589.5894862368523,
+          "inBounds": true
+        },
+        {
+          "cost": 3536.461075754138,
+          "inBounds": true
+        },
+        {
+          "cost": 2535.0849526704505,
+          "inBounds": false
+        },
+        {
+          "cost": 2495.2036202175573,
+          "inBounds": true
+        },
+        {
+          "cost": 2402.6231384883204,
+          "inBounds": false
+        },
+        {
+          "cost": 2410.087900323229,
+          "inBounds": false
+        },
+        {
+          "cost": 2428.2046684944235,
+          "inBounds": false
+        },
+        {
+          "cost": 2445.874224826486,
+          "inBounds": false
+        },
+        {
+          "cost": 2411.253757190358,
+          "inBounds": false
+        },
+        {
+          "cost": 2345.8542530931536,
+          "inBounds": true
+        },
+        {
+          "cost": 2352.192301679667,
+          "inBounds": false
+        },
+        {
+          "cost": 2336.2851676039822,
+          "inBounds": true
+        },
+        {
+          "cost": 2416.32679328832,
+          "inBounds": false
+        },
+        {
+          "cost": 2413.3464287216602,
+          "inBounds": false
+        },
+        {
+          "cost": 2393.4284836508764,
+          "inBounds": false
+        },
+        {
+          "cost": 2327.981884534594,
+          "inBounds": true
+        },
+        {
+          "cost": 2393.413064737582,
+          "inBounds": false
+        },
+        {
+          "cost": 2363.7305035461113,
+          "inBounds": true
+        },
+        {
+          "cost": 2466.40293789884,
+          "inBounds": false
+        },
+        {
+          "cost": 2458.0603955811944,
+          "inBounds": false
+        }
+      ]
+    },
+    {
+      "name": "path, leftward",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 900,
+        "y": 450
+      },
+      "to": {
+        "x": 500,
+        "y": 450
+      },
+      "distance": 400,
+      "mode": "path",
+      "chosen": 1,
+      "arc": false,
+      "cost": 539.4575011141176,
+      "response": 0.4589569650419132,
+      "settleSteps": 155,
+      "settleTime": 0.6458333333333334,
+      "anyInBounds": true,
+      "chosenWithWindowOriginOffset": 1,
+      "measurement": {
+        "length": 410.13544548571963,
+        "angleChangeEnergy": 0.24293697089520272,
+        "maxAngleChange": 0.3267809645343065,
+        "totalTurn": 1.5767749832399294
+      },
+      "segments": [
+        {
+          "control1": [
+            824.2150175564042,
+            528.4776466504296
+          ],
+          "control2": [
+            527.0916764479009,
+            421.9457477867926
+          ],
+          "end": [
+            500,
+            450
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 568.5658327011381,
+          "inBounds": true
+        },
+        {
+          "cost": 539.4575011141176,
+          "inBounds": true
+        },
+        {
+          "cost": 765.2482570093196,
+          "inBounds": true
+        },
+        {
+          "cost": 717.6429390265542,
+          "inBounds": true
+        },
+        {
+          "cost": 1110.3351234846637,
+          "inBounds": true
+        },
+        {
+          "cost": 928.826536760399,
+          "inBounds": true
+        },
+        {
+          "cost": 1985.055832978254,
+          "inBounds": true
+        },
+        {
+          "cost": 2165.827596274596,
+          "inBounds": true
+        },
+        {
+          "cost": 840.3998128674482,
+          "inBounds": true
+        },
+        {
+          "cost": 779.3710301192195,
+          "inBounds": true
+        },
+        {
+          "cost": 1131.8491963327397,
+          "inBounds": true
+        },
+        {
+          "cost": 978.8440378969445,
+          "inBounds": true
+        },
+        {
+          "cost": 2862.566923820369,
+          "inBounds": true
+        },
+        {
+          "cost": 1843.8836171845255,
+          "inBounds": true
+        },
+        {
+          "cost": 927.4440055228282,
+          "inBounds": true
+        },
+        {
+          "cost": 853.7748876147091,
+          "inBounds": true
+        },
+        {
+          "cost": 1218.7755048831375,
+          "inBounds": true
+        },
+        {
+          "cost": 1048.0509721046633,
+          "inBounds": true
+        },
+        {
+          "cost": 2250.2787084521433,
+          "inBounds": true
+        },
+        {
+          "cost": 1543.1653704668029,
+          "inBounds": true
+        }
+      ]
+    },
+    {
+      "name": "path, straight down",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 720,
+        "y": 800
+      },
+      "to": {
+        "x": 720,
+        "y": 100
+      },
+      "distance": 700,
+      "mode": "path",
+      "chosen": 1,
+      "arc": false,
+      "cost": 1714.765388212959,
+      "response": 0.7742299660198031,
+      "settleSteps": 247,
+      "settleTime": 1.0291666666666666,
+      "anyInBounds": true,
+      "chosenWithWindowOriginOffset": 1,
+      "measurement": {
+        "length": 761.9582605934236,
+        "angleChangeEnergy": 3.6467215038028113,
+        "maxAngleChange": 1.5171991307496686,
+        "totalTurn": 4.350132576568212
+      },
+      "segments": [
+        {
+          "control1": [
+            587.3762807237073,
+            937.3358816382517
+          ],
+          "control2": [
+            767.4104337838265,
+            50.90505862688701
+          ],
+          "end": [
+            720,
+            100
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 1794.7008041094475,
+          "inBounds": true
+        },
+        {
+          "cost": 1714.765388212959,
+          "inBounds": true
+        },
+        {
+          "cost": 3291.297527646733,
+          "inBounds": false
+        },
+        {
+          "cost": 2622.956683382631,
+          "inBounds": false
+        },
+        {
+          "cost": 1928.4938502673976,
+          "inBounds": false
+        },
+        {
+          "cost": 2071.0744425745693,
+          "inBounds": false
+        },
+        {
+          "cost": 2068.936560663666,
+          "inBounds": false
+        },
+        {
+          "cost": 2045.2298897350026,
+          "inBounds": false
+        },
+        {
+          "cost": 2443.587817348079,
+          "inBounds": false
+        },
+        {
+          "cost": 2700.0899776661763,
+          "inBounds": false
+        },
+        {
+          "cost": 1929.510403039027,
+          "inBounds": false
+        },
+        {
+          "cost": 1937.1554628526649,
+          "inBounds": false
+        },
+        {
+          "cost": 2029.5779114256488,
+          "inBounds": false
+        },
+        {
+          "cost": 1990.3053740857424,
+          "inBounds": false
+        },
+        {
+          "cost": 2267.9503114968356,
+          "inBounds": false
+        },
+        {
+          "cost": 2111.819795087327,
+          "inBounds": false
+        },
+        {
+          "cost": 1974.4751883757356,
+          "inBounds": false
+        },
+        {
+          "cost": 1919.6550762351746,
+          "inBounds": false
+        },
+        {
+          "cost": 2062.8088990944743,
+          "inBounds": false
+        },
+        {
+          "cost": 2012.871117175015,
+          "inBounds": false
+        }
+      ]
+    },
+    {
+      "name": "path, along the right edge",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 1420,
+        "y": 100
+      },
+      "to": {
+        "x": 1425,
+        "y": 800
+      },
+      "distance": 700.0178569150931,
+      "mode": "path",
+      "chosen": 1,
+      "arc": false,
+      "cost": 840.0276707848967,
+      "response": 0.5379295585350085,
+      "settleSteps": 178,
+      "settleTime": 0.7416666666666667,
+      "anyInBounds": false,
+      "chosenWithWindowOriginOffset": 1,
+      "measurement": {
+        "length": 716.6984824810021,
+        "angleChangeEnergy": 0.2259947163116932,
+        "maxAngleChange": 0.3144698704934672,
+        "totalTurn": 1.525562056672559
+      },
+      "segments": [
+        {
+          "control1": [
+            1287.3728975087151,
+            237.33938505993422
+          ],
+          "control2": [
+            1472.4116432182418,
+            750.9038062208876
+          ],
+          "end": [
+            1425,
+            800
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 874.6226820277371,
+          "inBounds": false
+        },
+        {
+          "cost": 840.0276707848967,
+          "inBounds": false
+        },
+        {
+          "cost": 1105.1712124744433,
+          "inBounds": false
+        },
+        {
+          "cost": 1053.6334793444735,
+          "inBounds": false
+        },
+        {
+          "cost": 1454.7705415880314,
+          "inBounds": false
+        },
+        {
+          "cost": 1275.7323564216233,
+          "inBounds": false
+        },
+        {
+          "cost": 2468.538051389649,
+          "inBounds": false
+        },
+        {
+          "cost": 2387.3877527970426,
+          "inBounds": false
+        },
+        {
+          "cost": 1200.4518977607718,
+          "inBounds": false
+        },
+        {
+          "cost": 1134.1100652775676,
+          "inBounds": false
+        },
+        {
+          "cost": 1505.6037486639073,
+          "inBounds": false
+        },
+        {
+          "cost": 1348.7581035491748,
+          "inBounds": false
+        },
+        {
+          "cost": 3389.0910711088645,
+          "inBounds": false
+        },
+        {
+          "cost": 2173.2235947435056,
+          "inBounds": false
+        },
+        {
+          "cost": 1311.9074016925622,
+          "inBounds": false
+        },
+        {
+          "cost": 1231.4171717693498,
+          "inBounds": false
+        },
+        {
+          "cost": 1619.0159053470004,
+          "inBounds": false
+        },
+        {
+          "cost": 1443.9692956198378,
+          "inBounds": false
+        },
+        {
+          "cost": 2577.450038644291,
+          "inBounds": false
+        },
+        {
+          "cost": 1952.5668697380775,
+          "inBounds": false
+        }
+      ]
+    },
+    {
+      "name": "path, along the bottom edge from the corner",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 25,
+        "y": 25
+      },
+      "to": {
+        "x": 600,
+        "y": 40
+      },
+      "distance": 575.1956188984752,
+      "mode": "path",
+      "chosen": 1,
+      "arc": false,
+      "cost": 1508.3804404064467,
+      "response": 0.7256910832833473,
+      "settleSteps": 233,
+      "settleTime": 0.9708333333333333,
+      "anyInBounds": false,
+      "chosenWithWindowOriginOffset": 1,
+      "measurement": {
+        "length": 626.0002374372496,
+        "angleChangeEnergy": 3.297614099395849,
+        "maxAngleChange": 1.433744071786155,
+        "totalTurn": 4.228035836953412
+      },
+      "segments": [
+        {
+          "control1": [
+            -83.97797469963547,
+            137.8499963369743
+          ],
+          "control2": [
+            638.957534003619,
+            -0.3417074112743421
+          ],
+          "end": [
+            600,
+            40
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 1581.9784861386665,
+          "inBounds": false
+        },
+        {
+          "cost": 1508.3804404064467,
+          "inBounds": false
+        },
+        {
+          "cost": 2203.282401433717,
+          "inBounds": false
+        },
+        {
+          "cost": 2164.3086543154886,
+          "inBounds": false
+        },
+        {
+          "cost": 1741.8981829776549,
+          "inBounds": false
+        },
+        {
+          "cost": 1921.599995921375,
+          "inBounds": false
+        },
+        {
+          "cost": 1847.269839167656,
+          "inBounds": false
+        },
+        {
+          "cost": 1833.391134478158,
+          "inBounds": false
+        },
+        {
+          "cost": 2454.642061810553,
+          "inBounds": false
+        },
+        {
+          "cost": 2877.281532506685,
+          "inBounds": false
+        },
+        {
+          "cost": 1733.1270628192542,
+          "inBounds": false
+        },
+        {
+          "cost": 1751.991856418189,
+          "inBounds": false
+        },
+        {
+          "cost": 1797.3878909964194,
+          "inBounds": false
+        },
+        {
+          "cost": 1763.7483713188785,
+          "inBounds": false
+        },
+        {
+          "cost": 2182.0693893477,
+          "inBounds": false
+        },
+        {
+          "cost": 2004.6051800935415,
+          "inBounds": false
+        },
+        {
+          "cost": 1770.2491501287454,
+          "inBounds": false
+        },
+        {
+          "cost": 1723.1377667448785,
+          "inBounds": false
+        },
+        {
+          "cost": 1825.6206856768324,
+          "inBounds": false
+        },
+        {
+          "cost": 1778.0185529158698,
+          "inBounds": false
+        }
+      ]
+    },
+    {
+      "name": "path, near the corner, the bounds test picks an arc",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 40,
+        "y": 180
+      },
+      "to": {
+        "x": 220,
+        "y": 40
+      },
+      "distance": 228.0350850198276,
+      "mode": "path",
+      "chosen": 14,
+      "arc": true,
+      "cost": 1168.738366042998,
+      "response": 0.7390655849409953,
+      "settleSteps": 237,
+      "settleTime": 0.9874999999999999,
+      "anyInBounds": true,
+      "chosenWithWindowOriginOffset": 15,
+      "measurement": {
+        "length": 371.66397975106594,
+        "angleChangeEnergy": 1.725778610922683,
+        "maxAngleChange": 0.6024616366700282,
+        "totalTurn": 6.191714549639686
+      },
+      "segments": [
+        {
+          "control1": [
+            -26.467826595198147,
+            248.82944933110275
+          ],
+          "control2": [
+            92.35074127324846,
+            225.91145363099713
+          ],
+          "end": [
+            160.0183386093132,
+            173.28110014739127
+          ]
+        },
+        {
+          "control1": [
+            227.68593594537793,
+            120.65074666378541
+          ],
+          "control2": [
+            253.34360178203187,
+            5.4716895837447055
+          ],
+          "end": [
+            220,
+            40
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 2211.9264298346266,
+          "inBounds": true
+        },
+        {
+          "cost": 2773.6825493821248,
+          "inBounds": true
+        },
+        {
+          "cost": 1325.7050863036288,
+          "inBounds": false
+        },
+        {
+          "cost": 1308.5585756837918,
+          "inBounds": false
+        },
+        {
+          "cost": 1231.9835066478709,
+          "inBounds": false
+        },
+        {
+          "cost": 1251.271644701373,
+          "inBounds": false
+        },
+        {
+          "cost": 1301.0391847108283,
+          "inBounds": false
+        },
+        {
+          "cost": 1307.0683479040867,
+          "inBounds": false
+        },
+        {
+          "cost": 1212.0261188525662,
+          "inBounds": false
+        },
+        {
+          "cost": 1192.5379968880104,
+          "inBounds": false
+        },
+        {
+          "cost": 1160.7224702545757,
+          "inBounds": false
+        },
+        {
+          "cost": 1165.290267820256,
+          "inBounds": false
+        },
+        {
+          "cost": 1237.9832363794453,
+          "inBounds": false
+        },
+        {
+          "cost": 1236.6965304926382,
+          "inBounds": false
+        },
+        {
+          "cost": 1168.738366042998,
+          "inBounds": true
+        },
+        {
+          "cost": 1148.1135979347207,
+          "inBounds": false
+        },
+        {
+          "cost": 1150.926319536746,
+          "inBounds": false
+        },
+        {
+          "cost": 1149.3577552165737,
+          "inBounds": false
+        },
+        {
+          "cost": 1227.3594725345267,
+          "inBounds": false
+        },
+        {
+          "cost": 1222.4604147827918,
+          "inBounds": false
+        }
+      ]
+    },
+    {
+      "name": "path, near the bottom edge, the bounds test picks a base curve",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 40,
+        "y": 110
+      },
+      "to": {
+        "x": 310,
+        "y": 40
+      },
+      "distance": 278.92651361962703,
+      "mode": "path",
+      "chosen": 0,
+      "arc": false,
+      "cost": 1514.224521315796,
+      "response": 0.7051308189578694,
+      "settleSteps": 227,
+      "settleTime": 0.9458333333333333,
+      "anyInBounds": true,
+      "chosenWithWindowOriginOffset": 17,
+      "measurement": {
+        "length": 327.4618537982012,
+        "angleChangeEnergy": 4.775769794085843,
+        "maxAngleChange": 1.6301649561644216,
+        "totalTurn": 5.1904265438420225
+      },
+      "segments": [
+        {
+          "control1": [
+            -41.30169591429551,
+            194.19037068183593
+          ],
+          "control2": [
+            343.3436017820319,
+            5.4716895837447055
+          ],
+          "end": [
+            310,
+            40
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 1514.224521315796,
+          "inBounds": true
+        },
+        {
+          "cost": 1585.2162800257559,
+          "inBounds": true
+        },
+        {
+          "cost": 1838.8651642765396,
+          "inBounds": false
+        },
+        {
+          "cost": 1951.3452100387217,
+          "inBounds": false
+        },
+        {
+          "cost": 1293.4067563188862,
+          "inBounds": false
+        },
+        {
+          "cost": 1356.905932295657,
+          "inBounds": false
+        },
+        {
+          "cost": 1363.4977646461973,
+          "inBounds": false
+        },
+        {
+          "cost": 1354.7501440158917,
+          "inBounds": false
+        },
+        {
+          "cost": 1416.4442395768656,
+          "inBounds": false
+        },
+        {
+          "cost": 1492.2740866605616,
+          "inBounds": false
+        },
+        {
+          "cost": 1240.2180618142863,
+          "inBounds": false
+        },
+        {
+          "cost": 1255.8024870179086,
+          "inBounds": false
+        },
+        {
+          "cost": 1300.989185366327,
+          "inBounds": false
+        },
+        {
+          "cost": 1282.0707078262724,
+          "inBounds": false
+        },
+        {
+          "cost": 1380.9041686896987,
+          "inBounds": false
+        },
+        {
+          "cost": 1314.4304880745644,
+          "inBounds": false
+        },
+        {
+          "cost": 1246.209480298276,
+          "inBounds": false
+        },
+        {
+          "cost": 1220.890878351566,
+          "inBounds": false
+        },
+        {
+          "cost": 1296.3396046923135,
+          "inBounds": false
+        },
+        {
+          "cost": 1274.3567099409076,
+          "inBounds": false
+        }
+      ]
+    },
+    {
+      "name": "path, into the menu bar",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 700,
+        "y": 400
+      },
+      "to": {
+        "x": 900,
+        "y": 890
+      },
+      "distance": 529.2447448959697,
+      "mode": "path",
+      "chosen": 1,
+      "arc": false,
+      "cost": 770.1297155759856,
+      "response": 0.5086741498905532,
+      "settleSteps": 170,
+      "settleTime": 0.7083333333333334,
+      "anyInBounds": false,
+      "chosenWithWindowOriginOffset": 1,
+      "measurement": {
+        "length": 553.4592475428694,
+        "angleChangeEnergy": 0.5225088282127655,
+        "maxAngleChange": 0.49548031266099657,
+        "totalTurn": 2.2051019585134624
+      },
+      "segments": [
+        {
+          "control1": [
+            599.727990749234,
+            503.83470520385663
+          ],
+          "control2": [
+            935.8453184761836,
+            852.8810861104347
+          ],
+          "end": [
+            900,
+            890
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 821.7974459627385,
+          "inBounds": false
+        },
+        {
+          "cost": 770.1297155759856,
+          "inBounds": false
+        },
+        {
+          "cost": 1060.26967333901,
+          "inBounds": false
+        },
+        {
+          "cost": 980.2817870680251,
+          "inBounds": false
+        },
+        {
+          "cost": 1766.6688736037258,
+          "inBounds": false
+        },
+        {
+          "cost": 1270.9166555833913,
+          "inBounds": false
+        },
+        {
+          "cost": 1766.2469243811827,
+          "inBounds": false
+        },
+        {
+          "cost": 2099.99017361734,
+          "inBounds": false
+        },
+        {
+          "cost": 1150.253201701231,
+          "inBounds": false
+        },
+        {
+          "cost": 1042.31195587403,
+          "inBounds": false
+        },
+        {
+          "cost": 1626.863273428083,
+          "inBounds": false
+        },
+        {
+          "cost": 1324.9292692380848,
+          "inBounds": false
+        },
+        {
+          "cost": 1901.4232044598748,
+          "inBounds": false
+        },
+        {
+          "cost": 2165.96462360572,
+          "inBounds": false
+        },
+        {
+          "cost": 1250.5949676023247,
+          "inBounds": false
+        },
+        {
+          "cost": 1117.4029923208068,
+          "inBounds": false
+        },
+        {
+          "cost": 1831.2191993159388,
+          "inBounds": false
+        },
+        {
+          "cost": 1417.1919399673955,
+          "inBounds": false
+        },
+        {
+          "cost": 2104.0897388454664,
+          "inBounds": false
+        },
+        {
+          "cost": 2359.264364642868,
+          "inBounds": false
+        }
+      ]
+    },
+    {
+      "name": "path, along the menu bar",
+      "panelHeight": 900,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 870
+      },
+      "from": {
+        "x": 100,
+        "y": 885
+      },
+      "to": {
+        "x": 1300,
+        "y": 885
+      },
+      "distance": 1200,
+      "mode": "path",
+      "chosen": 1,
+      "arc": false,
+      "cost": 2217.783767851325,
+      "response": 0.8131913358069172,
+      "settleSteps": 258,
+      "settleTime": 1.075,
+      "anyInBounds": false,
+      "chosenWithWindowOriginOffset": 1,
+      "measurement": {
+        "length": 1306.1179060010127,
+        "angleChangeEnergy": 3.4416179467506014,
+        "maxAngleChange": 1.4687483439782723,
+        "totalTurn": 4.279828662507046
+      },
+      "segments": [
+        {
+          "control1": [
+            -127.35494733078752,
+            1120.4329399512887
+          ],
+          "control2": [
+            1381.2750293437027,
+            800.8372433603778
+          ],
+          "end": [
+            1300,
+            885
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 2340.301150686481,
+          "inBounds": false
+        },
+        {
+          "cost": 2217.783767851325,
+          "inBounds": false
+        },
+        {
+          "cost": 2806.1518209504025,
+          "inBounds": false
+        },
+        {
+          "cost": 2517.879193168713,
+          "inBounds": false
+        },
+        {
+          "cost": 3058.2021364551038,
+          "inBounds": false
+        },
+        {
+          "cost": 3096.1160384580676,
+          "inBounds": false
+        },
+        {
+          "cost": 2920.617495195553,
+          "inBounds": false
+        },
+        {
+          "cost": 3239.182889487588,
+          "inBounds": false
+        },
+        {
+          "cost": 3297.772435731857,
+          "inBounds": false
+        },
+        {
+          "cost": 2796.4205157762876,
+          "inBounds": false
+        },
+        {
+          "cost": 3400.6678561146578,
+          "inBounds": false
+        },
+        {
+          "cost": 3717.3602878663637,
+          "inBounds": false
+        },
+        {
+          "cost": 2780.086679117206,
+          "inBounds": false
+        },
+        {
+          "cost": 2777.1704995083714,
+          "inBounds": false
+        },
+        {
+          "cost": 4066.403668752676,
+          "inBounds": false
+        },
+        {
+          "cost": 3852.4349201592618,
+          "inBounds": false
+        },
+        {
+          "cost": 3143.4352391468647,
+          "inBounds": false
+        },
+        {
+          "cost": 2910.6411321640812,
+          "inBounds": false
+        },
+        {
+          "cost": 2845.164166833193,
+          "inBounds": false
+        },
+        {
+          "cost": 2764.2996235607084,
+          "inBounds": false
+        }
+      ]
+    },
+    {
+      "name": "path, tip versus window origin (the normalisation case)",
+      "panelHeight": 800,
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "w": 1200,
+        "h": 800
+      },
+      "from": {
+        "x": 30,
+        "y": 770
+      },
+      "to": {
+        "x": 100,
+        "y": 560
+      },
+      "distance": 221.35943621178657,
+      "mode": "path",
+      "chosen": 1,
+      "arc": false,
+      "cost": 1645.1926557075135,
+      "response": 0.6898448765410058,
+      "settleSteps": 223,
+      "settleTime": 0.9291666666666667,
+      "anyInBounds": true,
+      "chosenWithWindowOriginOffset": 17,
+      "measurement": {
+        "length": 242.28323549784002,
+        "angleChangeEnergy": 6.138153049984757,
+        "maxAngleChange": 1.8796642139248423,
+        "totalTurn": 5.253238835574748
+      },
+      "segments": [
+        {
+          "control1": [
+            -11.939302467586295,
+            813.4294190444173
+          ],
+          "control2": [
+            121.67334115832071,
+            537.556598229434
+          ],
+          "end": [
+            100,
+            560
+          ]
+        }
+      ],
+      "candidates": [
+        {
+          "cost": 1412.6475885316959,
+          "inBounds": false
+        },
+        {
+          "cost": 1645.1926557075135,
+          "inBounds": true
+        },
+        {
+          "cost": 1564.1895965673798,
+          "inBounds": false
+        },
+        {
+          "cost": 1591.215566478576,
+          "inBounds": false
+        },
+        {
+          "cost": 1230.3605198935466,
+          "inBounds": false
+        },
+        {
+          "cost": 1270.5861227154633,
+          "inBounds": false
+        },
+        {
+          "cost": 1292.0847572666348,
+          "inBounds": false
+        },
+        {
+          "cost": 1292.2316623970532,
+          "inBounds": false
+        },
+        {
+          "cost": 1343.0966791953283,
+          "inBounds": false
+        },
+        {
+          "cost": 1317.073116599248,
+          "inBounds": false
+        },
+        {
+          "cost": 1172.545848641189,
+          "inBounds": false
+        },
+        {
+          "cost": 1177.0432276860702,
+          "inBounds": false
+        },
+        {
+          "cost": 1224.3671616243437,
+          "inBounds": false
+        },
+        {
+          "cost": 1210.0502905167095,
+          "inBounds": false
+        },
+        {
+          "cost": 1243.9806762986068,
+          "inBounds": false
+        },
+        {
+          "cost": 1200.014553640502,
+          "inBounds": false
+        },
+        {
+          "cost": 1161.9398854602691,
+          "inBounds": false
+        },
+        {
+          "cost": 1143.6128834279052,
+          "inBounds": false
+        },
+        {
+          "cost": 1212.495967065443,
+          "inBounds": false
+        },
+        {
+          "cost": 1196.0642627988886,
+          "inBounds": false
+        }
+      ]
+    }
+  ]
+}

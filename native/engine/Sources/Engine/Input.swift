@@ -144,13 +144,14 @@ func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
 /// route 4 the events are posted while the foreground assist holds the app in front. A failed guard throws before any of
 /// the click's events is posted, and nothing is retried (never with ⌘). `beforePosting` runs once the app is prepared,
 /// just before the events (the intervention guard's in-flight check: a user event during the activation stops the
-/// click). The meta carries the route from the start, so a refusal names the route that failed.
+/// click); `announce` (the agent cursor's hook, which only enqueues) runs after it, as the events are about to go out.
+/// The meta carries the route from the start, so a refusal names the route that failed.
 func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton, count: Int, activation: FakeActivation?,
                   activations: HeldActivations = HeldActivations(), foreground: ForegroundAssist? = nil, targetActive: () -> Bool,
-                  beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, post: (CGEvent, pid_t) -> Void,
-                  meta: inout InputMeta) throws {
+                  beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, announce: () -> Void = {},
+                  post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
   try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, foreground: foreground,
-                     beforeActivating: beforeActivating, beforePosting: beforePosting, post: post, meta: &meta) {
+                     beforeActivating: beforeActivating, beforePosting: beforePosting, announce: announce, post: post, meta: &meta) {
     clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
   }
 }
@@ -160,10 +161,10 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
 /// registry; the default, a registry of the action's own, shares with nothing (the unit tests'). `beforeActivating` (the
 /// in-flight intervention check) runs under the registry's lock, so a user event that lands while the action waits
 /// behind another holder's activation stops it before its activation and activation click; `beforePosting` runs again
-/// just before the events.
+/// just before the events, and `announce` once they are made and about to be posted.
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
                     foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {},
-                    post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
+                    announce: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
   var release: (() -> Bool)?
   defer { _ = release?() }  // every path out of the action, error or success, ends its lease
@@ -177,6 +178,7 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     try beforePosting()
     let made = events()
     guard !made.isEmpty else { throw EngineError(name: "eventCreationFailed", "The mouse events could not be created.") }
+    announce()
     meta.posting { _ = postToProcess(made, pid: pid, post: post); return true }
   }
   if route == .foreground, let foreground {
@@ -264,7 +266,7 @@ extension Engine {
 
     var meta = InputMeta(context)
     do {
-      let (app, appPid, guarding) = try inputPrologue(args, context, meta: &meta)
+      let (app, appPid, guarding) = try signposted("click.inputPrologue") { try inputPrologue(args, context, meta: &meta) }
       let foreground = routeFourOverride(app.bundleIdentifier, routes: routes)
 
       if let token {
@@ -273,7 +275,7 @@ extension Engine {
         if forced == nil, button == .left, count == 1, resolved.entry.identity.role == kAXMenuBarItemRole,
            menuOfMenuBarItem(resolved.element, ax: ax) != nil {
           meta.inputRoute = .action  // nothing is pressed or posted to the item; the app's activation is held (MenuSpan.swift)
-          try holdMenuRecord(resolved.element, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+          try holdMenuRecord(resolved.element, storedFrame: resolved.entry.frame, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
           return ["meta": meta.wire]
         }
         let target = try positionedTarget(resolved, token: token, app: app, appPid: appPid, context: context, guarding: guarding)
@@ -291,31 +293,45 @@ extension Engine {
               try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
             }
             try guarding.checkInFlight()
+            if let point = pointing.point {  // route 1: the element's clickable point, as the action goes out
+              cursor.act(connection: context.connection.id, app: app.key, window: pointing.windowID, .click(point))
+            }
             try deliverAction(action, route: route, perform: { AXUIElementPerformAction(target.element, $0 as CFString) }, meta: &meta)
           case .synthesized(let route):
-            try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding, meta: &meta)
+            try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding,
+                                 connection: context.connection.id, meta: &meta)
           }
         }
         context.connection.clearMenuRecord(app: app.key)
       } else {
-        let placed = try coordinatePoint(numberArg(args["x"])!, numberArg(args["y"])!, app: app, appPid: appPid, context: context)
-        let hit = hitTest(window: placed.window, at: placed.point)
-        let owner = hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
-        try refuseForbiddenOwner(owner)
-        actionTargets(owner, app: app, connection: context.connection)
-        let windowID = windowNumber(of: placed.window, pid: appPid, frame: placed.windowFrame)
+        // Each step a timing interval of its own (Signposts.swift), so a sitting can place what moves in a click.
+        let placed = try signposted("click.coordinatePoint") {
+          try coordinatePoint(numberArg(args["x"])!, numberArg(args["y"])!, app: app, appPid: appPid, context: context)
+        }
+        let (hit, owner) = signposted("click.hitTest") { () -> (AXUIElement?, pid_t) in
+          let hit = hitTest(window: placed.window, at: placed.point)
+          return (hit, hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid)
+        }
+        try signposted("click.owner") {
+          try refuseForbiddenOwner(owner)
+          actionTargets(owner, app: app, connection: context.connection)
+        }
+        let windowID = signposted("click.windowNumber") { windowNumber(of: placed.window, pid: appPid, frame: placed.windowFrame) }
         let target = ClickTarget(point: placed.point, windowFrame: placed.windowFrame, windowID: windowID, pid: owner)
-        let route = coordinateClickRoute(forced: forced, foreground: foreground)
-        let sparing = button == .left ? nil : activationSparing(button: button, target: pointArea(placed.point, hitFrame: hit.flatMap { frame(of: $0) }))
-        let activation = route == .activation
-          ? FakeActivation(pid: owner, appPid: appPid, window: placed.window, windowFrame: placed.windowFrame, windowID: windowID, sparing: sparing) : nil
+        let (route, activation) = signposted("click.route") { () -> (InputRoute, FakeActivation?) in
+          let route = coordinateClickRoute(forced: forced, foreground: foreground)
+          let sparing = button == .left ? nil : activationSparing(button: button, target: pointArea(placed.point, hitFrame: hit.flatMap { frame(of: $0) }))
+          return (route, route == .activation
+            ? FakeActivation(pid: owner, appPid: appPid, window: placed.window, windowFrame: placed.windowFrame, windowID: windowID, sparing: sparing) : nil)
+        }
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
           try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
-            try deliverClick(target, route: route, button: button, count: count, activation: activation, activations: heldActivations,
+            try signposted("click.deliver") { try deliverClick(target, route: route, button: button, count: count, activation: activation, activations: heldActivations,
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                              targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
                              beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
-                             post: { $0.postToPid($1) }, meta: &meta)
+                             announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
+                             post: { $0.postToPid($1) }, meta: &meta) }
           }
         }
       }
@@ -347,10 +363,12 @@ extension Engine {
       meta.apply(guarding)
       try guarding.checkBeforePosting()
       let application = prepare(AXUIElementCreateApplication(pid))
-      let target = keyboardTarget(application, fallback: pid)
+      let target = signposted("pressKey.keyboardTarget") { keyboardTarget(application, fallback: pid) }
       try refuseForbiddenOwner(target)
       actionTargets(target, app: app, connection: context.connection)
-      try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)  // keys land nowhere (Minimized.swift)
+      try signposted("pressKey.minimizedCheck") {  // keys land nowhere (Minimized.swift)
+        try refuseMinimizedKeyboardInput(application: application, app: app.displayName, ax: .live)
+      }
       meta.inputRoute = pressKeyRoute(forced: forced, presses: presses, believesFocus: ActivationSystem().believesItHasFocus(pid))
       if forced == nil, meta.inputRoute == .activation {
         try holdKeyFocus(app, pid: pid, application: application, guarding: guarding, context: context, meta: &meta)
@@ -359,7 +377,7 @@ extension Engine {
       defer { _ = release?() }  // every path out of the posting, error or success, ends a forced activation's lease
       let poster = EventPoster.toProcess(target, sourceState: privateSourceArg(args) ? .privateState : .hidSystemState)
       defer { context.connection.markActed(app) }  // a sequence stopped midway changed the app too
-      try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta)
+      try signposted("pressKey.post") { try keyPresses(presses, checkIntervention: guarding.checkInFlight, post: { poster.post($0) }, meta: &meta) }
       return ["meta": meta.wire]
     } catch let error as EngineError {
       throw withMeta(error, meta)

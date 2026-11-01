@@ -169,7 +169,8 @@ until the next plugin update). Without the plugin, register the same script your
 
 Ask for the task in plain words: "open Notes and read my latest note", "in Preview, rotate this image and save".
 The first call returns the `cua` API document to the model, which then writes small JavaScript cells against that API.
-On cua's own host the document is a port of OpenAI's, with the recorded exclusions (Licences and sources). That first
+On cua's own host the document is a port of OpenAI's, with the recorded exclusions and, for a macOS computer session
+(cua's own engine), one paragraph of cua's on the agent cursor (Licences and sources; The agent cursor, below). That first
 call is also when `cua serve` launches the runtime (a few seconds; see Process footprint below), so it takes longer than
 the ones after it. The server adds rules covering what that document leaves out: how to run a task, in the host notes
 it appends to the server instructions (see Operating guidance for agents), and the native quirks (index-first
@@ -244,6 +245,44 @@ remote machine and back (Remote control, 4). The agent's HTTP sessions never lis
 
 Be aware that binding an app hands the model that app's whole front window as text, chat lists and inboxes included.
 For a messaging app, open the room you mean before asking.
+
+### The agent cursor (macOS, cua's own engine)
+
+With cua's own macOS engine (`CUA_NATIVE_ENGINE=cua`, #117), every session that acts on the Mac shows its own cursor
+where it acts: a small rounded arrow with a frosted halo, in the session's colour, with a pill naming the session. The
+engine posts the agent's clicks, drags and scrolls straight to the app, so your pointer never moves; the cursor is how
+you see where they land. It glides to each target along a curve and dips at a click, but the action goes out at once
+and never waits for the glide, so the cursor can arrive up to about a second after its click (on the actions that need
+route 3's fake activation its start can lag the click by up to 100 ms more). Keyboard-only actions do not move it but
+keep it alive.
+
+| state | what you see | when |
+|---|---|---|
+| acting | the arrow moving to its target or resting there; a dip at a click | an action |
+| thinking | the arrow rocking gently | once the motion settles and no request has been in flight for 0.3 s, until the next action |
+| taken over | the whole cursor half-transparent and still | you click or type in the app the agent is driving (the engine's Input Monitoring grant detects it), until the session's next request |
+| fading | it fades out over about 0.44 s | 5 s after the session's last request ends (never while one runs); at once on `end_task` |
+
+The next action brings a faded cursor back at its target, and a key press brings it back at its last point in that
+app. It sits on the window it acts in: whatever covers that window covers the cursor too, and while that app is
+frontmost or has a menu open the cursor rises above menus. It hides while that window is on another Space, minimised or
+closed, and while the screen is locked. It never takes a click, the focus or the front position (a click on it reaches
+the window underneath). Screen recordings and screen sharing show it; the agent's own screenshots do not. Several
+sessions show several cursors, each in its own colour. With Reduce Motion on, every move is a short straight ease and a
+click's dip an opacity dip; with Increase Contrast, its outline is drawn at full strength.
+
+The pill reads `CUA_CURSOR_LABEL` when set (MAWS sets it, and `CUA_CURSOR_COLOR`, for the sessions it supervises),
+else the Claude Code session's sminos name (with the sminos plugin installed), else the project folder's name; the
+colour, unless given, is one of eight picked by the session's id. A session driving a remote cua device sends its own
+label, colour and switch with the session, so the device draws them as the client resolved them.
+
+It is on by default. `"cursor": false` in `~/.config/cua/engine.json` turns it off for every session on the Mac,
+read when the engine starts (stop it with `cua engine stop`; the next session relaunches it); `CUA_CURSOR=0` in a
+session's server environment turns that session's off (Configuration). `cua engine status` and `cua doctor`'s engine
+row report `cursor: on` or `cursor: off (engine.json)`. The vendor engine, still the default, shows OpenAI's own cursor
+instead, and these switches do not reach it. The design and its acceptance are
+`docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md`; the attended proof is
+`docs/evidence/2026-10-30-macos-agent-cursor/`.
 
 ### What cua changes in results
 
@@ -1361,6 +1400,9 @@ The ChatGPT extension route's whole-phase runner (`--all`: C1–C7 with the host
 | `CUA_BROWSER_BACKENDS` | unset | with the browser surface: MAWS's in-app browser sockets, absolute paths separated by `:` (MAWS sets it for its sessions' engines; see For MAWS) |
 | `CUA_REPL_HOST` | per session and Node availability (Use) | `cua` or `vendor`: selects the JavaScript host and facade, not the browser service (either host runs cua's). Unset or empty, Linux and browser-only macOS use cua's host when Node 24+ resolves; macOS computer sessions stay on the vendor host. If only Node is missing, macOS keeps the vendor host (`own_host_node_unavailable`) and Linux refuses (`repl_host_node`). `vendor` forces the vendor host as the rollback on macOS and is refused on Linux, where that host is retired (`repl_host_refused`, #115); explicit `cua` refuses the computer surface on macOS (`repl_host_refused`) or missing Node 24 (`repl_host_node`), never downgrades. Other nonempty values refuse (`invalid_setting` at start). `cua serve` and the independent profile listing use the same rule; `cua doctor` reports it in `repl.host`. `cua agent install` stores only an explicit nonempty value, never the resolved default |
 | `CUA_NODE` | unset | absolute path to a Node executable to try first for cua's own host (24+), before the Node `cua install` placed under `$CUA_HOME/node`, the node running cua and the first `node` on `PATH`. A missing, unreadable or older candidate falls through to the next; a relative path refuses (`invalid_setting` at start). Never selects the vendor's pinned Node. `cua agent install` stores an explicit nonempty path as given, validated as absolute but not resolved or probed; unset or empty is omitted, so each later connection resolves afresh |
+| `CUA_CURSOR` | on | `0` turns this session's agent cursor off (macOS, cua's own engine: the cursor that shows where the agent acts, labelled and coloured per session). `"cursor": false` in `~/.config/cua/engine.json` turns it off for every session on the device, read when the engine starts (any other value of the key stops the engine at start); `cua engine status` and `cua doctor` report `cursor: on` or `cursor: off (engine.json)`. A remote device session takes the client's setting, not the device's environment |
+| `CUA_CURSOR_LABEL` | the session's sminos name, else the project folder's name | the label on this session's cursor (MAWS sets it for the sessions it supervises); trimmed, control characters removed, cut at 24 characters |
+| `CUA_CURSOR_COLOR` | one of eight colours, picked by the session's id | this session's cursor colour as `#rrggbb` (MAWS sets it); any other value is logged and ignored |
 | `CUA_SHIM_PERSIST` | `session` | `session` or `none`: whether an accepted approval is remembered for the connection (App approvals); `always` is refused (`invalid_setting` at start), its sentence naming the plugin's `Elicitation` hook (`hooks/cua-approve.sh`) |
 | `CUA_SHIM_HOST_NOTES` | built in | replacement host notes; `none` disables them (the separate feedback opt-in below still applies) |
 | `CUA_FEEDBACK_DIR` | unset | opt-in directory for agent-written cua_repl feedback: problems, friction, overall experience and feature requests; one Markdown file per task, problems first, before the final reply. Set it in the client's server environment (for example `~/cua-feedback`); the path is JSON-quoted as data, preserving spaces and `~`, and remains on the client when `devices_use` selects a remote device. Adds one host-note line, including alongside replaced/disabled built-in notes; unset, empty, or a value containing an ASCII control character (U+0000–U+001F or U+007F) adds nothing. This is an instruction to the agent, not an automatic file writer |

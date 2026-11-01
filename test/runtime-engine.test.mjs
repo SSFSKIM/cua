@@ -308,6 +308,20 @@ test('engineStatus reports the bundle, the signature as a match, the engine\'s s
   noIdentity((await engineStatus(w.deps)).pending, 'pending');
 });
 
+// The agent cursor's device switch (#235's spec, "Settings"): the running engine's, else engine.json's.
+test('engineStatus reports the cursor switch: the running engine\'s, else engine.json\'s', async t => {
+  const w = world(t, {engineAnswers: {}});
+  w.placeBundle({approved: true});
+  assert.equal((await engineStatus(w.deps)).cursor, 'on', 'no engine.json: on');
+  mkdirSync(join(w.deps.env.HOME, '.config', 'cua'), {recursive: true});
+  writeFileSync(join(w.deps.env.HOME, '.config', 'cua', 'engine.json'), JSON.stringify({cursor: false}));
+  assert.equal((await engineStatus(w.deps)).cursor, 'off', 'not running: the file\'s');
+  writeFileSync(join(w.deps.env.HOME, '.config', 'cua', 'engine.json'), '[]');
+  assert.equal((await engineStatus(w.deps)).cursor, null, 'a file the engine cannot start with says nothing of the cursor');
+  await w.startEngine();
+  assert.equal((await engineStatus(w.deps)).cursor, null, 'an engine whose status names no cursor has none');
+});
+
 test('a signature codesign cannot read reports approval as unknown, never as no; installedEngine and approve still refuse it', async t => {
   const w = world(t);
   w.placeBundle({approved: true});

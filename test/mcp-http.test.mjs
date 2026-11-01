@@ -1032,3 +1032,29 @@ test('over real connections, a home with nothing installed fails the open as cua
   assert.equal(res.json().error.message, 'cua: runtime_not_installed');
   assert.equal(existsSync(join(s.dir, 'run')), false);
 });
+
+// The agent cursor of a remote session (#235's spec, "Remote devices"): the client's `cua/cursor` in the initialize
+// parameters, checked field by field, reaches that session's own launch only; the runtime never sees the key.
+test('a session\'s cua/cursor reaches its own open checked field by field, a refused field logged; the runtime\'s initialize carries no such key', async t => {
+  const base = inProcess();
+  const given = [];
+  const open = async options => { given.push(options.cursor); return base(options); };
+  open.opened = base.opened;
+  const {send, diagnostics, upstreamOf} = setup(t, {open, maxSessions: 3});
+  const initializeWith = async cursor => {
+    const {res, done} = send({body: {...INITIALIZE, params: {...INITIALIZE.params, ...(cursor === undefined ? {} : {'cua/cursor': cursor})}}});
+    await done;
+    assert.equal(res.status, 200, res.body);
+    return res.headers['mcp-session-id'];
+  };
+  await initializeWith({label: 'Research', color: '#2f6feb', enabled: true});
+  const second = await initializeWith({label: `R\u0007${'x'.repeat(40)}`, color: 'blue', enabled: 'no'});
+  await initializeWith(undefined);
+  assert.deepEqual(given, [{label: 'Research', color: '#2f6feb', enabled: true}, {label: `R${'x'.repeat(22)}…`}, null]);
+  assert.ok(diagnostics.some(line => line.includes(second) && /cua\/cursor: color, enabled refused/.test(line)), diagnostics.join('\n'));
+  for (const n of [0, 1, 2]) {
+    const init = upstreamOf(n).sent.find(m => m.method === 'initialize');
+    assert.equal(Object.hasOwn(init.params, 'cua/cursor'), false, 'the runtime never sees the key');
+    assert.deepEqual(init.params.clientInfo, INITIALIZE.params.clientInfo);
+  }
+});

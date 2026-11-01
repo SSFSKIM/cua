@@ -10,6 +10,7 @@ source comment cannot go inside them; this file carries it instead.
 | `core.md` | `docs/tinysky-alt-core-cua-repl.md:1-214` | the first-call document (`cua.core`), followed by one confirmations policy |
 | `confirmations.md` | `docs/tinysky-alt-confirmations.md:1-78` | the bundled "Computer Use Confirmations Policy", appended to `core.md` unless the request's metadata supplies a valid override |
 | `other-browser-apis.md` | `docs/tinysky-alt-other-browser-apis.md:1-18` | the auxiliary "Other Browser APIs" document, emitted once before the first selected browser's documentation |
+| `agent-cursor.md` | none: cua's own text (the surface inventory's "Table 3 addition (2026-10-30, #235)") | what the person sees while the agent acts, read after `core.md` and before the policy only where the facade's computer surface is macOS's (`src/cua-api/documentation.mjs`): there cua's host serves only cua's own engine, whose agent cursor it describes (`docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md`) |
 
 `confirmations.md` and `other-browser-apis.md` are byte-for-byte copies. `core.md` is the vendor document with exactly
 the edits of the surface inventory's Tables 2 and 3

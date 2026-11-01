@@ -1,0 +1,34 @@
+{"item":"9","at":1793425894586,"kind":"start","steps":42,"dryRun":false}
+{"item":"9","at":1793425894587,"step":1,"kind":"say","text":"Acceptance 9: Reduce Motion"}
+{"item":"9","at":1793425894587,"step":2,"kind":"owner","text":"Turn Reduce motion on (System Settings, Accessibility, Display), then say done."}
+{"item":"9","at":1793425903563,"step":3,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"9","at":1793425904878,"step":4,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"9","at":1793425904879,"step":5,"kind":"say","text":"move 1: first click: fades in at the target"}
+{"item":"9","at":1793425904991,"step":6,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":56.049584000000095,"route":null,"engine":"cua"}
+{"item":"9","at":1793425905066,"step":7,"kind":"cell","session":"a","label":"first click: fades in at the target","ok":true,"value":{"ms":7.055541999999946,"point":[317,774]},"inCellMs":7.073959000000059,"route":3,"engine":"cua"}
+{"item":"9","at":1793425906567,"step":9,"kind":"say","text":"move 2: a short move (the scoot)"}
+{"item":"9","at":1793425907051,"step":10,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":428.2673340000001,"route":null,"engine":"cua"}
+{"item":"9","at":1793425907117,"step":11,"kind":"cell","session":"a","label":"a short move (the scoot)","ok":true,"value":{"ms":3.6874159999997573,"point":[406,860]},"inCellMs":3.702874999999949,"route":3,"engine":"cua"}
+{"item":"9","at":1793425908618,"step":13,"kind":"say","text":"move 3: a long move (a curved path)"}
+{"item":"9","at":1793425909135,"step":14,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":453.8747920000005,"route":null,"engine":"cua"}
+{"item":"9","at":1793425909209,"step":15,"kind":"cell","session":"a","label":"a long move (a curved path)","ok":true,"value":{"ms":3.787000000000262,"point":[1078,1462]},"inCellMs":3.8029999999998836,"route":3,"engine":"cua"}
+{"item":"9","at":1793425910709,"step":17,"kind":"say","text":"move 4: backward"}
+{"item":"9","at":1793425911249,"step":18,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":475.5131250000004,"route":null,"engine":"cua"}
+{"item":"9","at":1793425911326,"step":19,"kind":"cell","session":"a","label":"backward","ok":true,"value":{"ms":8.423832999999831,"point":[190,688]},"inCellMs":8.442040999999335,"route":3,"engine":"cua"}
+{"item":"9","at":1793425912828,"step":21,"kind":"say","text":"move 5: to the window's right edge"}
+{"item":"9","at":1793425913349,"step":22,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":465.10979099999895,"route":null,"engine":"cua"}
+{"item":"9","at":1793425913408,"step":23,"kind":"cell","session":"a","label":"to the window's right edge","ok":true,"value":{"ms":4.615208000001076,"point":[1230,860]},"inCellMs":4.632916000000478,"route":3,"engine":"cua"}
+{"item":"9","at":1793425914910,"step":25,"kind":"say","text":"move 6: a drag (selects text)"}
+{"item":"9","at":1793425915426,"step":26,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":444.4286660000016,"route":null,"engine":"cua"}
+{"item":"9","at":1793425915486,"step":27,"kind":"cell","session":"a","label":"a drag (selects text)","ok":true,"value":{"ms":3.7444999999988795},"inCellMs":3.762333000000581,"route":3,"engine":"cua"}
+{"item":"9","at":1793425916988,"step":29,"kind":"say","text":"move 7: a scroll (a glide, no dip)"}
+{"item":"9","at":1793425917492,"step":30,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":434.5928750000003,"route":null,"engine":"cua"}
+{"item":"9","at":1793425917569,"step":31,"kind":"cell","session":"a","label":"a scroll (a glide, no dip)","ok":true,"value":{"ms":6.201833999999508},"inCellMs":6.216667000000598,"route":"2'","engine":"cua"}
+{"item":"9","at":1793425919071,"step":33,"kind":"say","text":"move 8: three targets in quick succession (retargeting)"}
+{"item":"9","at":1793425919237,"step":34,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":102.71845799999937,"route":null,"engine":"cua"}
+{"item":"9","at":1793425919317,"step":35,"kind":"cell","session":"a","label":"three targets in quick succession (retargeting)","ok":true,"value":{"ms":11.162624999999025,"point":[254,602]},"inCellMs":11.181375000000116,"route":3,"engine":"cua"}
+{"item":"9","at":1793425919402,"step":36,"kind":"cell","session":"a","label":"three targets in quick succession (retargeting)","ok":true,"value":{"ms":15.915459000001647,"point":[1014,602]},"inCellMs":15.933790999999474,"route":3,"engine":"cua"}
+{"item":"9","at":1793425919466,"step":37,"kind":"cell","session":"a","label":"three targets in quick succession (retargeting)","ok":true,"value":{"ms":7.301832999999533,"point":[634,1376]},"inCellMs":7.319208000000799,"route":3,"engine":"cua"}
+{"item":"9","at":1793425920967,"step":39,"kind":"watch","id":"reduce-motion","text":"every move is a short straight ease (about 0.15 s) with no squash, tilt, swell or rocking; a click's dip is an opacity dip"}
+{"item":"9","at":1793425927210,"step":41,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"9","at":1793425927211,"step":42,"kind":"owner","text":"Turn Reduce motion off again, then say done."}

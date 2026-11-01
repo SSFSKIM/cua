@@ -305,22 +305,32 @@ func menuSpanStep(method: String, app: String?, heldApp: String?, inRecordedMenu
 
 /// The menu-bar record with its held activation: the app's held activation acquired, the in-flight intervention check
 /// run under the registry's lock first (run by the first span to hold it, its guard time into the meta, a failed guard's
-/// too), then the record holding the span. A user event refuses the record with nothing activated or recorded; a failed
-/// guard refuses it as activationFailed with the activation undone and nothing recorded.
+/// too), then the record holding the span, then `announce` (the agent cursor's hook). A user event refuses the record
+/// with nothing activated or recorded; a failed guard refuses it as activationFailed with the activation undone and
+/// nothing recorded; neither announces.
 func recordHeldMenu(_ item: AXUIElement, app key: String, pid: pid_t, connection: ConnectionState, activations: HeldActivations,
-                    activation: () -> FakeActivation, beforeActivating: () throws -> Void, meta: inout InputMeta) throws {
+                    activation: () -> FakeActivation, beforeActivating: () throws -> Void, announce: () -> Void = {},
+                    meta: inout InputMeta) throws {
   let release = try activations.acquire(pid: pid, beforeActivating: beforeActivating, make: activation, meta: &meta)
   connection.recordMenu(item, app: key, release: release)
+  announce()
 }
 
 extension Engine {
   /// The record with its activation for the app's primary window (the observed window), restored by activation only.
-  func holdMenuRecord(_ item: AXUIElement, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
-                      meta: inout InputMeta) throws {
+  /// Once it holds, the agent cursor acts a click at the item's midpoint: from the agent's side it clicked the menu
+  /// title, though nothing is pressed (MenuRecord.swift). The hook only enqueues; the cursor's geometry queue reads the item's frame
+  /// (else the observed one) and, as a menu-bar item has no window of its own, the app's primary window, so no
+  /// accessibility read for the cursor holds the request. Attached there, the cursor is raised above the menu bar while
+  /// the app is frontmost or has a menu open (Cursor/CursorAttachment.swift), else at that window's level.
+  func holdMenuRecord(_ item: AXUIElement, storedFrame: CGRect?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
+                      context: ExecutionContext, meta: inout InputMeta) throws {
     try recordHeldMenu(item, app: app.key, pid: appPid, connection: context.connection, activations: heldActivations, activation: {
       let application = prepare(AXUIElementCreateApplication(appPid))
       return FakeActivation(pid: appPid, window: primaryWindow(of: application) ?? application, restoresByActivationOnly: true)
-    }, beforeActivating: guarding.checkInFlight, meta: &meta)
+    }, beforeActivating: guarding.checkInFlight, announce: {
+      cursor.act(connection: context.connection.id, app: app.key, window: nil, .menuBarItem(item, pid: appPid, storedFrame: storedFrame))
+    }, meta: &meta)
   }
 }
 

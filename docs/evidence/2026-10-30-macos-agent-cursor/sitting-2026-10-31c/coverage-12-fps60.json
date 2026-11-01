@@ -1,0 +1,15 @@
+{
+  "item": "12-fps60",
+  "attempt": 1793480451461,
+  "complete": true,
+  "samples": 40,
+  "covered": 40,
+  "missing": [],
+  "first": 1793480454050.164,
+  "last": 1793480784580.435,
+  "reads": {
+    "ok": true,
+    "reads": 15,
+    "failures": []
+  }
+}

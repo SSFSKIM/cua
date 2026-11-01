@@ -49,6 +49,12 @@
 //   it to its launch, through the harness serve's launch hook (scripts/native-baseline/spike-route.mjs). Without it no
 //   spike switch reaches the engine from model code (bd1136f1), and with it only the click's route can be chosen: the
 //   policy, the forbidden list and the approval run as for any click.
+// - The agent cursor (docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, "Lifecycle and identity"): the
+//   session's `cursor` request (cursorParams), made from the three variables the launcher resolved on the trusted side
+//   and put in the worker's environment (src/runtime/cursor-identity.mjs: CUA_CURSOR_LABEL, CUA_CURSOR_COLOR, and
+//   CUA_CURSOR=0 for off), goes to the engine on every connection the client opens (./client.mjs); a turn-ended hook
+//   (end_task) hides the cursor on the live connection. An engine without the method answers methodNotFound and the
+//   session goes on without a cursor.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
@@ -102,6 +108,16 @@ function observationDiagnostics(timings) {
   return kept.length ? Object.fromEntries(kept) : null;
 }
 
+// The session's cursor request from the worker's environment: what the launcher wrote there, a label and a #rrggbb colour
+// only when it is one, and the switch.
+export function cursorParams(env) {
+  const label = typeof env?.CUA_CURSOR_LABEL === 'string' && env.CUA_CURSOR_LABEL ? env.CUA_CURSOR_LABEL : null;
+  const color = typeof env?.CUA_CURSOR_COLOR === 'string' && /^#[0-9a-fA-F]{6}$/.test(env.CUA_CURSOR_COLOR) ? env.CUA_CURSOR_COLOR : null;
+  return {...(label ? {label} : {}), ...(color ? {color} : {}), enabled: env?.CUA_CURSOR !== '0'};
+}
+// How long end_task's hook may take: one request on the live connection.
+const TURN_ENDED_MS = 2_000;
+
 // An observation of another bundle than the approved one (internal: the call is redone once).
 class IdentityChanged extends Error {}
 
@@ -130,8 +146,10 @@ export function createService({nodeRepl, client = null}) {
     if (typeof appPath !== 'string' || !appPath.startsWith('/')) {
       throw new Error('cua: the native engine is not configured for this runtime: CUA_ENGINE_APP must name the engine bundle by absolute path [engine_not_configured]');
     }
-    return (client = createEngineClient({nodeRepl, appPath}));
+    return (client = createEngineClient({nodeRepl, appPath, cursor: cursorParams(nodeRepl?.env)}));
   };
+  // end_task: the cursor fades at once, if this session's client ever reached the engine.
+  nodeRepl?.addTurnEndedHandler?.({timeoutMs: TURN_ENDED_MS, run: () => client?.hideCursor?.()});
   const nativeEngine = identity => ({engine: 'cua', version: identity.engineVersion, build: identity.build});
 
   // One engine request; the engine's identity goes into the result meta, an input error's meta too, and the round trip

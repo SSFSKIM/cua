@@ -253,6 +253,113 @@ test('an oversized frame from the engine, a malformed response or a closed socke
   assert.equal(engine.received.filter(r => r.method === 'ping').length, 4, 'each transport failure drops the connection');
 });
 
+// The agent cursor (#235's spec, "Lifecycle and identity", Interfaces): the session's `cursor` request on every new
+// connection, right after the ping and before anything else; end_task's hide on the live connection only; an engine
+// without the method (methodNotFound) is sent no more cursor requests on that connection, and nothing fails.
+const CURSOR = {label: 'linux171', color: '#8250df', enabled: true};
+
+test('every new connection sends the session\'s cursor request right after its ping, before the first execute', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket, {handlers: {cursor: () => ({cursor: 'on', reason: null}), 'execute:ok': () => 'ok', 'execute:drop': (_p, {socket: peer}) => { peer.destroy(); return NO_REPLY; }}});
+  const {client} = clientFor(socket, {cursor: CURSOR});
+  t.after(() => client.close());
+  assert.equal((await client.execute('ok', {})).result, 'ok');
+  assert.deepEqual(engine.received.map(r => [r.method, r.method === 'cursor' ? r.params : r.params?.method ?? null]),
+    [['ping', null], ['cursor', CURSOR], ['execute', 'ok']]);
+  await assert.rejects(client.execute('drop', {}));
+  await client.execute('ok', {});
+  assert.deepEqual(engine.received.slice(4).map(r => r.method), ['ping', 'cursor', 'execute'], 'a reconnect is a new connection: the engine is told again');
+});
+
+test('no cursor context, no cursor request', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket, {handlers: {'execute:ok': () => 'ok'}});
+  const {client} = clientFor(socket);
+  t.after(() => client.close());
+  await client.execute('ok', {});
+  await client.hideCursor();
+  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'execute']);
+});
+
+test('hideCursor sends {hide: true} on the live connection; with none live it sends nothing and launches nothing', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const {client, launches} = clientFor(socket, {cursor: CURSOR});
+  t.after(() => client.close());
+  await client.hideCursor();
+  assert.equal(launches.length, 0, 'an end_task never starts an engine to hide a cursor it never showed');
+  const engine = await startFakeEngine(t, socket, {handlers: {cursor: () => ({cursor: 'on', reason: null}), 'execute:ok': () => 'ok'}});
+  await client.execute('ok', {});
+  await client.hideCursor();
+  assert.deepEqual(engine.received.filter(r => r.method === 'cursor').map(r => r.params), [CURSOR, {hide: true}]);
+});
+
+test('an engine without the cursor method answers methodNotFound: the session goes on, and that connection is sent no more cursor requests', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket, {handlers: {'execute:ok': () => 'ok'}});
+  const {client} = clientFor(socket, {cursor: CURSOR});
+  t.after(() => client.close());
+  assert.equal((await client.execute('ok', {})).result, 'ok');
+  await client.hideCursor();
+  await client.execute('ok', {});
+  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'cursor', 'execute', 'execute'], 'no hide after methodNotFound');
+});
+
+test('a cursor request the engine refuses otherwise fails nothing either, is logged, and a later hide is still sent', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket, {handlers: {cursor: ({hide}) => { if (!hide) throw new EngineFailure(-32602, 'Invalid params: color must be #rrggbb', 'invalidParams'); return {cursor: 'on', reason: null}; },
+    'execute:ok': () => 'ok'}});
+  const lines = [];
+  const {client} = clientFor(socket, {cursor: CURSOR, log: line => lines.push(line)});
+  t.after(() => client.close());
+  assert.equal((await client.execute('ok', {})).result, 'ok');
+  await client.hideCursor();
+  assert.deepEqual(engine.received.filter(r => r.method === 'cursor').map(r => r.params), [CURSOR, {hide: true}]);
+  assert.equal(lines.length, 1, lines.join('\n'));
+  assert.match(lines[0], /cursor request failed.*color must be #rrggbb/);
+});
+
+test('an unanswered cursor request is abandoned at its bound without closing the connection: a longer execute behind it still answers', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket, {handlers: {cursor: () => NO_REPLY,
+    'execute:slow': () => new Promise(resolve => setTimeout(() => resolve('slow'), 300))}});
+  const lines = [];
+  const {client} = clientFor(socket, {cursor: CURSOR, cursorWaitMs: 80, log: line => lines.push(line)});
+  t.after(() => client.close());
+  assert.equal((await client.execute('slow', {}, {deadlineMs: 10_000})).result, 'slow');
+  assert.equal(client.connected, true, 'the connection outlived the abandoned cursor request');
+  assert.equal(engine.received.filter(r => r.method === 'ping').length, 1, 'no reconnect');
+  assert.equal(lines.length, 1, lines.join('\n'));
+  assert.match(lines[0], /cursor request.*no answer within 80 ms/);
+  await client.hideCursor();
+  assert.equal(engine.received.filter(r => r.method === 'cursor').length, 2, 'the hide is still tried on the live connection');
+});
+
+test('an unanswered hide holds back no action: the next execute is written at once, not after the cursor request\'s bound', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null}), 'execute:ok': () => 'ok'}});
+  const {client} = clientFor(socket, {cursor: CURSOR, cursorWaitMs: 300, log: () => {}});
+  t.after(() => client.close());
+  await client.execute('ok', {});
+  const hidden = client.hideCursor();
+  const started = performance.now();
+  assert.equal((await client.execute('ok', {})).result, 'ok');
+  const elapsed = performance.now() - started;
+  assert.ok(elapsed < 150, `the execute behind the hide answered in ${elapsed.toFixed(0)} ms; it waited for the hide's answer`);
+  assert.deepEqual(engine.received.slice(3).map(r => r.method === 'cursor' ? r.params : r.params?.method), [{hide: true}, 'ok'],
+    'the hide is still written in turn, before the execute queued after it');
+  await hidden;
+});
+
+test('methodNotFound, the older engine\'s answer, is expected and not logged', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  await startFakeEngine(t, socket, {handlers: {'execute:ok': () => 'ok'}});
+  const lines = [];
+  const {client} = clientFor(socket, {cursor: CURSOR, log: line => lines.push(line)});
+  t.after(() => client.close());
+  await client.execute('ok', {});
+  assert.deepEqual(lines, []);
+});
+
 // The debug engine (no permission is asked for: ping, status and list_apps read nothing of any app).
 function realEngine(t) {
   try { return debugEngine(); } catch (error) {

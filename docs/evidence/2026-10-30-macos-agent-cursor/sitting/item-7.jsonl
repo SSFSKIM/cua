@@ -1,0 +1,35 @@
+{"item":"7","at":1793425440876,"kind":"start","steps":18,"dryRun":false}
+{"item":"7","at":1793425440876,"step":1,"kind":"say","text":"Acceptance 7: typing keeps it alive (TextEdit frontmost)"}
+{"item":"7","at":1793425441034,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"7","at":1793425442099,"step":3,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"7","at":1793425442157,"step":4,"kind":"cell","session":"a","label":"the insertion point","ok":true,"value":{"ms":3.3657499999999914,"point":[634,1462]},"inCellMs":3.3836670000000026,"route":3,"engine":"cua"}
+{"item":"7","at":1793425443251,"step":5,"kind":"cell","session":"a","label":"the typing rate","ok":true,"value":{"ms":742.759542,"chars":300},"inCellMs":742.7766249999999,"route":"2'","engine":"cua"}
+{"item":"7","at":1793425445638,"step":6,"kind":"cell","session":"a","label":"one type_text of about 7 s","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","inCellMs":2022.437667,"route":"2'","engine":"cua"}
+{"item":"7","at":1793425445639,"step":7,"kind":"watch","id":"long-typing","text":"the cursor stayed visible for the whole typing, past 5 s, and faded only after it ended"}
+{"item":"7","at":1793425452985,"step":9,"kind":"cell","session":"a","label":"press_key after the fade","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","inCellMs":3.566208000000188,"route":null,"engine":"cua"}
+{"item":"7","at":1793425452986,"step":10,"kind":"watch","id":"key-after-fade","text":"the press_key brought the cursor back at its last point in TextEdit"}
+{"item":"7","at":1793425454570,"step":12,"kind":"cell","session":"a","label":"a click before the owner takes over","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","inCellMs":3.6113750000004075,"route":null,"engine":"cua"}
+{"item":"7","at":1793425454570,"step":13,"kind":"cue","text":"Now click once in the TextEdit document, away from the cursor."}
+{"item":"7","at":1793425463072,"step":14,"kind":"watch","id":"taken-over","text":"the cursor is half-transparent"}
+{"item":"7","at":1793425463412,"step":15,"kind":"cell","session":"a","label":"press_key after the owner took over (the engine may refuse it as still interacting; it still counts)","ok":true,"value":{"refused":true,"sentence":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry."},"inCellMs":7.168499999999767,"route":null,"engine":"cua"}
+{"item":"7","at":1793425463412,"step":16,"kind":"watch","id":"key-clears","text":"the press_key cleared the half-transparent state"}
+{"item":"7","at":1793425469645,"step":18,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"7","at":1793425537911,"kind":"start","steps":21,"dryRun":false}
+{"item":"7","at":1793425537911,"step":1,"kind":"say","text":"Acceptance 7: typing keeps it alive (TextEdit frontmost)"}
+{"item":"7","at":1793425538042,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"7","at":1793425539065,"step":3,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"7","at":1793425539136,"step":4,"kind":"cell","session":"a","label":"the insertion point","ok":true,"value":{"ms":3.126874999999984,"point":[634,1462]},"inCellMs":3.145458000000019,"route":3,"engine":"cua"}
+{"item":"7","at":1793425540298,"step":5,"kind":"cell","session":"a","label":"the typing rate","ok":true,"value":{"ms":798.980625,"chars":300},"inCellMs":799.000042,"route":"2'","engine":"cua"}
+{"item":"7","at":1793425541296,"step":6,"kind":"cell","session":"a","label":"observe (the engine asks for a fresh state after the document changed)","ok":true,"value":{"inFront":true},"inCellMs":938.5428339999999,"route":null,"engine":"cua"}
+{"item":"7","at":1793425549366,"step":7,"kind":"cell","session":"a","label":"one type_text of about 7 s","ok":true,"value":{"ms":7706.745999999999,"chars":2629},"inCellMs":7706.760542,"route":"2'","engine":"cua"}
+{"item":"7","at":1793425549367,"step":8,"kind":"watch","id":"long-typing","text":"the cursor stayed visible for the whole typing, past 5 s, and faded only after it ended"}
+{"item":"7","at":1793425556872,"step":10,"kind":"cell","session":"a","label":"observe (the engine asks for a fresh state after the document changed)","ok":true,"value":{"inFront":true},"inCellMs":427.0908329999984,"route":null,"engine":"cua"}
+{"item":"7","at":1793425557231,"step":11,"kind":"cell","session":"a","label":"press_key after the fade","ok":false,"error":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry.","inCellMs":3.441500000000815,"route":null,"engine":"cua"}
+{"item":"7","at":1793425557232,"step":12,"kind":"watch","id":"key-after-fade","text":"the press_key brought the cursor back at its last point in TextEdit"}
+{"item":"7","at":1793425558872,"step":14,"kind":"cell","session":"a","label":"observe (the engine asks for a fresh state after the document changed)","ok":true,"value":{"inFront":true},"inCellMs":75.25400000000081,"route":null,"engine":"cua"}
+{"item":"7","at":1793425558934,"step":15,"kind":"cell","session":"a","label":"a click before the owner takes over","ok":false,"error":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry.","inCellMs":1.7316249999967113,"route":null,"engine":"cua"}
+{"item":"7","at":1793425558934,"step":16,"kind":"cue","text":"Now click once in the TextEdit document, away from the cursor."}
+{"item":"7","at":1793425567385,"step":17,"kind":"watch","id":"taken-over","text":"the cursor is half-transparent"}
+{"item":"7","at":1793425567723,"step":18,"kind":"cell","session":"a","label":"press_key after the owner took over (the engine may refuse it as still interacting; it still counts)","ok":true,"value":{"refused":true,"sentence":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry."},"inCellMs":5.621624999999767,"route":null,"engine":"cua"}
+{"item":"7","at":1793425567724,"step":19,"kind":"watch","id":"key-clears","text":"the press_key cleared the half-transparent state"}
+{"item":"7","at":1793425573981,"step":21,"kind":"close","session":"a","exit":{"code":0,"signal":null}}

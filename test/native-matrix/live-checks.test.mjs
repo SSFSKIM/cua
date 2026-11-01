@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import {
   ABC, FIRST_LINE, KOREAN_2SET, LAST_LINE, NEVER_OBSERVED, allSelected, alertWatch, enablementOf, failureOf, finderCheck, firstLineBold,
-  compositionGuard, compositionReading, frontAppAction, inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuItemLabel, minimizeButton, minimizedVerdict,
+  bundlePids, compositionGuard, compositionReading, frontAppAction, inputSourceVerdict, liveRefusals, menuBarItem, menuComparison, menuItemAt, menuItemLabel, minimizeButton, minimizedVerdict,
   RECOVERY_BOUNDS, parseJournal, parseProcessTable, parsePerContext, putBackBoundMs, recoverBoundMs, recoveryPlan, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea, vendorMenuBarIndex, vendorMenuItem, vendorSelectedText, vendorTextAreaIndex,
 } from '../../scripts/native-matrix/live-checks.mjs';
 import {SkyComputerUseError} from '../../src/services/engine/protocol.mjs';
@@ -437,4 +437,19 @@ test('the recovery\'s bound covers its waits and every put-back step with the st
   const b = RECOVERY_BOUNDS;
   assert.equal(putBackBoundMs(b), 8 * (b.stepMs + 2 * b.stepKillMs + 2 * b.killMs));
   assert.equal(recoverBoundMs(b), 4 * b.killMs + b.sceneUpWaitMs + b.probeWaitMs + putBackBoundMs(b));
+});
+
+// The approved engine's processes (#235: its agent cursor's panels are windows of the resident engine), by their command
+// line in the process table: the bundle's executable, run as the engine or as a probe; a sibling directory is not it.
+test('bundlePids: the processes running from the bundle, by its path as given or as resolved', () => {
+  const processes = [
+    {pid: 31, command: '/Users/x/Library/Application Support/cua/engine/cua Engine.app/Contents/MacOS/cua-engine'},
+    {pid: 32, command: '/Users/x/Library/Application Support/cua/engine/cua Engine.app/Contents/MacOS/cua-engine --probe focus'},
+    {pid: 33, command: '/Users/x/Library/Application Support/cua/engine/cua Engine.app.previous/Contents/MacOS/cua-engine'},
+    {pid: 34, command: '/System/Applications/TextEdit.app/Contents/MacOS/TextEdit'},
+    {pid: 35, command: '/private/var/engine/cua Engine.app/Contents/MacOS/cua-engine'},
+  ];
+  assert.deepEqual(bundlePids(processes, ['/Users/x/Library/Application Support/cua/engine/cua Engine.app']), [31, 32]);
+  assert.deepEqual(bundlePids(processes, ['/var/engine/cua Engine.app', '/private/var/engine/cua Engine.app/']), [35]);
+  assert.deepEqual(bundlePids(processes, [null, '']), []);
 });

@@ -1,0 +1,42 @@
+{"at":1793424600102,"go":"owner: switch to the second Space, then ask to start"}
+{"at":1793424644931,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry.","route":null}
+{"at":1793424646137,"shot":"6-space-00","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424647014,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424648183,"shot":"6-space-01","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424649069,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424650224,"shot":"6-space-02","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424651097,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424652254,"shot":"6-space-03","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424653129,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424654289,"shot":"6-space-04","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424655158,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424656328,"shot":"6-space-05","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424657202,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424658343,"shot":"6-space-06","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424659205,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424660352,"shot":"6-space-07","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424661219,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424662394,"shot":"6-space-08","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424663342,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424664549,"shot":"6-space-09","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424665419,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424666573,"shot":"6-space-10","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424667445,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424668602,"shot":"6-space-11","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424669471,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424670619,"shot":"6-space-12","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424671485,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424672636,"shot":"6-space-13","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424673541,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424674809,"shot":"6-space-14","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424675699,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424676914,"shot":"6-space-15","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424677780,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424678970,"shot":"6-space-16","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424679827,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424681020,"shot":"6-space-17","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424681894,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424683064,"shot":"6-space-18","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424683931,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user changed '/System/Applications/TextEdit.app'. Re-query the latest state with `get_app_state` before sending more actions.","route":null}
+{"at":1793424685105,"shot":"6-space-19","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424686317,"done":true}

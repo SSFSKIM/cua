@@ -67,7 +67,7 @@ test('read: an unowned top window records only whether the engine under test own
   const home = '/Users/o/Library/Application Support/cua-spike-vendor', roots = {approvedRuntime: home, approvedEngine: '/A/cua Engine.app'};
   const paths = {500: `${home}/runtimes/1.2/Codex Computer Use.app/Contents/MacOS/ChatGPT Computer Use`, 600: '/Applications/Mail.app/Contents/MacOS/Mail', 700: `${home}-old/x`};
   const asked = [];
-  const ioOf = ownerPid => ({state: () => state, launched: () => [], watcherRuns: () => false,
+  const ioOf = ownerPid => ({state: () => state, launched: () => [], watcherRuns: () => false, enginePids: () => [],
     executablePaths: pids => { asked.push(pids); return new Map(pids.filter(p => paths[p]).map(p => [p, paths[p]])); },
     frontWindow: () => ({at: 5, frontmost: {pid: ownerPid, bundleId: 'x'}, topWindow: {ownerPid, number: 9, bounds: {x: 1510, y: 611, width: 126, height: 126}, onScreen: true}})});
   const top = (pid, given = roots) => read({...given}, ioOf(pid)).reading.topWindow;
@@ -88,19 +88,41 @@ test('read: the reading\'s `at` covers what it covered at 38ecfa07, and the engi
   Date.now = () => ++t;
   const calls = [];
   const log = (name, value) => { calls.push({name, t}); return value; };
-  const io = {state: () => log('state', state), launched: () => log('launched', []), watcherRuns: () => log('watcherRuns', true),
+  const io = {state: () => log('state', state), launched: () => log('launched', []), watcherRuns: () => log('watcherRuns', true), enginePids: () => log('enginePids', []),
     frontWindow: () => log('frontWindow', {at: 5, frontmost: {pid: 500, bundleId: 'x'}, topWindow: {ownerPid: 500, number: 9, bounds, onScreen: true}}),
     probe: () => log('probe', {focusedApp: {pid: 7}, named: false}),
     executablePaths: pids => log('executablePaths', new Map(pids.map(p => [p, '/A/cua Engine.app/Contents/MacOS/x'])))};
   let r;
   try { r = read({focus: '7,0,25,900,700', watcher: 900, approvedEngine: '/A/cua Engine.app'}, io); } finally { Date.now = realNow; }
-  assert.deepEqual(calls.map(c => c.name), ['state', 'launched', 'frontWindow', 'watcherRuns', 'probe', 'executablePaths'],
-    'the focus probe follows the window read as at 38ecfa07; the ownership lookup comes last');
-  const inside = calls.filter(c => c.name !== 'executablePaths');
+  assert.deepEqual(calls.map(c => c.name), ['enginePids', 'state', 'launched', 'frontWindow', 'watcherRuns', 'probe', 'executablePaths'],
+    'the engine\'s pids are read before the reading opens; the focus probe follows the window read as at 38ecfa07; the ownership lookup comes last');
+  assert.ok(calls[0].t < r.at[0], 'the engine\'s pids are read before `at` opens');
+  const inside = calls.filter(c => c.name !== 'executablePaths' && c.name !== 'enginePids');
   assert.ok(inside.every(c => c.t >= r.at[0] && c.t < r.at[1]), 'the reading\'s own calls are inside `at`');
   assert.ok(calls.at(-1).t >= r.at[1], 'the lookup runs after `at` closes');
   assert.equal(r.reading.topWindow.engine, true, 'its answer is still recorded');
   assert.equal(r.reading.topWindow.ownerPid, null, 'never the pid');
+});
+
+// The agent cursor (#235): the approved engine's panel is a display-wide layer-0 window of its own, ordered above the
+// window it acts in; the oracle's front reading passes over the windows of the processes running from the approved
+// engine's bundle, as the keystroke probe's gate and the composition guard do, so it is never the oracle's front window.
+test('read: the approved engine\'s cursor window is passed over; without the engine\'s pids it would be the front window', () => {
+  const cursor = {ownerPid: 31, number: 990, bounds: {x: 0, y: 0, width: 1512, height: 982}, onScreen: true};
+  const user = {ownerPid: 7, number: 3, bounds, onScreen: true};
+  const asked = [];
+  const ioWith = pids => ({state: () => state, launched: () => [], watcherRuns: () => true,
+    enginePids: roots => { asked.push(roots); return pids; },
+    executablePaths: list => new Map(list.map(p => [p, '/A/cua Engine.app/Contents/MacOS/cua-engine'])),
+    frontWindow: ({skipPids = []} = {}) => ({at: 5, frontmost: {pid: 7, bundleId: 'com.apple.finder'}, topWindow: skipPids.includes(31) ? user : cursor})});
+  const skipped = read({approvedEngine: '/A/cua Engine.app'}, ioWith([31]));
+  assert.deepEqual(skipped.reading.topWindow, {ownerPid: 7, number: 3, bounds, owned: true}, 'the user\'s window, as if no cursor were there');
+  assert.deepEqual(asked, [['/A/cua Engine.app']]);
+  const unskipped = read({approvedEngine: '/A/cua Engine.app'}, ioWith([]));
+  assert.deepEqual(unskipped.reading.topWindow, {ownerPid: null, number: null, bounds: null, owned: false, engine: true}, 'not running from the bundle: not skipped');
+  asked.length = 0;
+  assert.deepEqual(read({}, ioWith([31])).reading.topWindow.owned, false, 'no approved engine named: nothing skipped');
+  assert.deepEqual(asked, [], 'and no lookup');
 });
 
 test('the alert watch: a baseline of window numbers, then an alert process or a new low window aborts, the run\'s own never', () => {

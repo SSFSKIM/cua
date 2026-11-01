@@ -196,7 +196,7 @@ extension Engine {
   /// own window (the app's primary window for a menu-bar item's), whose click spares the element for any button but the
   /// left; the in-flight intervention check just before the click's events.
   func synthesizedClick(_ pointing: ElementPointing, route: InputRoute, button: MouseButton, count: Int, app: ResolvedApp, appPid: pid_t,
-                        guarding: InterventionGuard, meta: inout InputMeta) throws {
+                        guarding: InterventionGuard, connection: Int, meta: inout InputMeta) throws {
     // A point in a minimized window reaches nothing on screen (Minimized.swift); a route-1 action never comes here.
     try refuseMinimizedWindow(minimized: pointing.window.map(isMinimized) ?? false, app: app.displayName)
     guard let point = pointing.point, !pointing.relation.covered else {
@@ -218,7 +218,9 @@ extension Engine {
                        activations: heldActivations,
                        foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                        targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
-                       beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta)
+                       beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
+                       announce: { cursor.act(connection: connection, app: app.key, window: pointing.windowID, .click(point)) },
+                       post: { $0.postToPid($1) }, meta: &meta)
     }
   }
 
@@ -232,7 +234,7 @@ extension Engine {
         let route = synthesizedClickRoute(forced: nil, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
         try focusingClick(&meta, acted: { connection.markActed(app) }) { clickMeta in
           try synthesizedClick(ElementPointing(target.element, owner: target.owner), route: route, button: .left, count: 1,
-                               app: app, appPid: appPid, guarding: guarding, meta: &clickMeta)
+                               app: app, appPid: appPid, guarding: guarding, connection: connection.id, meta: &clickMeta)
         }
       }
     }

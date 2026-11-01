@@ -129,13 +129,23 @@ final class InterventionLedger: @unchecked Sendable {
     return drivers[pid] != nil
   }
 
+  /// Told of every recorded event's process, outside the lock (the agent cursor's taken-over state; set once, before
+  /// the tap starts).
+  var onRecord: (@Sendable (pid_t) -> Void)? {
+    get { lock.withLock { observer } }
+    set { lock.withLock { observer = newValue } }
+  }
+  private var observer: (@Sendable (pid_t) -> Void)?
+
   /// An event the tap attributed to `pid`, recorded only while some connection drives it.
   func record(_ pid: pid_t, at: Int64) {
-    lock.lock()
-    defer { lock.unlock() }
-    guard drivers[pid] != nil else { return }
-    sequence += 1
-    last[pid] = AttributedEvent(sequence: sequence, at: at)
+    let notify: (@Sendable (pid_t) -> Void)? = lock.withLock {
+      guard drivers[pid] != nil else { return nil }
+      sequence += 1
+      last[pid] = AttributedEvent(sequence: sequence, at: at)
+      return observer
+    }
+    notify?(pid)
   }
 
   func lastEvent(_ pid: pid_t) -> AttributedEvent? { lastEvent(among: [pid]) }

@@ -472,6 +472,33 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertNil(meta.activationGuardMs, "no guard ran")
   }
 
+  func testTheCursorIsToldAfterTheGuardAndBeforeTheClicksEventsAndNeverForARefusedClick() throws {
+    // The agent cursor's pointer hook (the spec's Design, "Hooks"): it only enqueues, so it is told once the click is
+    // sure to go out, just before its events; a click the guard refuses moves no cursor.
+    let refused = GuardSeam(frontmost: user, frontmostAfterPost: target)
+    var announced = 0
+    var meta = meta()
+    XCTAssertThrowsError(try deliverClick(clickTarget(), route: .activation, button: .left, count: 1,
+                                          activation: FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame,
+                                                                     windowID: 41, system: refused.system),
+                                          targetActive: { false }, announce: { announced += 1 }, post: refused.system.post, meta: &meta))
+    XCTAssertEqual(announced, 0)
+    let seam = GuardSeam(frontmost: target)
+    var postsWhenAnnounced: Int?
+    meta = self.meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1,
+                     activation: FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame, windowID: 41, system: seam.system),
+                     targetActive: { true }, announce: { postsWhenAnnounced = seam.posts.count }, post: seam.system.post, meta: &meta)
+    XCTAssertEqual(postsWhenAnnounced, 0, "told before the click's events")
+    XCTAssertEqual(seam.posts.count, 2)
+    var stopped = 0
+    meta = self.meta()
+    XCTAssertThrowsError(try deliverClick(clickTarget(), route: .plainPost, button: .left, count: 1, activation: nil, targetActive: { true },
+                                          beforePosting: { throw userChanged("TextEdit") }, announce: { stopped += 1 },
+                                          post: { _, _ in }, meta: &meta))
+    XCTAssertEqual(stopped, 0, "an in-flight stop before the events moves no cursor")
+  }
+
   func testTheForcedSpikeRoutesPostWithoutTheActivation() throws {
     for (route, flags) in [(InputRoute.commandPost, CGEventFlags.maskCommand), (.plainPost, [])] {
       let seam = GuardSeam(frontmost: user)

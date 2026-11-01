@@ -45,6 +45,8 @@ final class ConnectionState: @unchecked Sendable {
   /// Route 3's activation held for element actions and key equivalents (FocusHold.swift), and the processes it holds.
   let focusHold: ActivationSpan
   var focusHeld = HeldProcesses()
+  /// The session's agent cursor: its label, colour and switch, as its `cursor` requests set them (Cursor/CursorSession.swift).
+  var cursor = CursorSession()
 
   init(id: Int, fd: Int32, menuSpan: ActivationSpan = ActivationSpan(),
        focusHold: ActivationSpan = ActivationSpan(label: "focus", idleMs: focusHoldIdleMs)) {

@@ -1,0 +1,24 @@
+{"item":"1","at":1793414368642,"kind":"start","steps":10,"dryRun":false}
+{"item":"1","at":1793414368643,"step":1,"kind":"say","text":"Acceptance 1: TextEdit and Chrome for Testing both in the background (another app in front)"}
+{"item":"1","at":1793414368643,"step":2,"kind":"owner","text":"Place the TextEdit and Chrome for Testing windows side by side, both wholly visible, then click the operator's terminal so neither is in front, and say done."}
+{"item":"1","at":1793416656943,"kind":"start","steps":10,"dryRun":false}
+{"item":"1","at":1793416656943,"step":1,"kind":"say","text":"Acceptance 1: TextEdit and Chrome for Testing both in the background (another app in front)"}
+{"item":"1","at":1793416656943,"step":2,"kind":"owner","text":"Place the TextEdit and Chrome for Testing windows side by side, both wholly visible, then click the operator's terminal so neither is in front, and say done."}
+{"item":"1","at":1793416771586,"kind":"start","steps":10,"dryRun":false}
+{"item":"1","at":1793416771587,"step":1,"kind":"say","text":"Acceptance 1: TextEdit and Chrome for Testing both in the background (another app in front)"}
+{"item":"1","at":1793416771587,"step":2,"kind":"owner","text":"Place the TextEdit and Chrome for Testing windows side by side, both wholly visible, then click the operator's terminal so neither is in front, and say done."}
+{"item":"1","at":1793416788260,"step":3,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"1","at":1793416789004,"step":4,"kind":"cell","session":"a","label":"TextEdit: the format bar's alignment","ok":true,"value":{"ms":179.37262499999997,"clicked":"align center","after":"1","changedWithinMs":634.8699999999999},"inCellMs":686.8797089999998,"route":null,"engine":"cua"}
+{"item":"1","at":1793416789004,"step":5,"kind":"watch","id":"first-target","text":"the cursor fades in at TextEdit's alignment button and dips as the click lands; the button changes before or while the cursor arrives"}
+{"item":"1","at":1793416791101,"step":7,"kind":"cell","session":"a","label":"Chrome for Testing: the page's \"Scene option\" checkbox","ok":true,"value":{"ms":55.17708300000049,"before":"0","after":"1","changedWithinMs":434.7475000000004},"inCellMs":524.0567080000001,"route":null,"engine":"cua"}
+{"item":"1","at":1793416791101,"step":8,"kind":"watch","id":"second-target","text":"the cursor glides along a curve to the page's checkbox and dips; the box checks before or while it arrives"}
+{"item":"1","at":1793416797329,"step":10,"kind":"close","session":"a","exit":{"code":0,"signal":null}}
+{"item":"1","at":1793417895519,"kind":"start","steps":10,"dryRun":false}
+{"item":"1","at":1793417895520,"step":1,"kind":"say","text":"Acceptance 1: TextEdit and Chrome for Testing both in the background (another app in front)"}
+{"item":"1","at":1793417895520,"step":2,"kind":"owner","text":"Place the TextEdit and Chrome for Testing windows side by side, both wholly visible, then click the operator's terminal so neither is in front, and say done."}
+{"item":"1","at":1793417910494,"step":3,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"1","at":1793417911186,"step":4,"kind":"cell","session":"a","label":"TextEdit: the format bar's alignment","ok":true,"value":{"ms":147.67454099999998,"clicked":"align left","after":"1","changedWithinMs":581.5959999999999},"inCellMs":635.732042,"route":null,"engine":"cua"}
+{"item":"1","at":1793417911186,"step":5,"kind":"watch","id":"first-target","text":"the cursor fades in at TextEdit's alignment button and dips as the click lands; the button changes before or while the cursor arrives"}
+{"item":"1","at":1793417913309,"step":7,"kind":"cell","session":"a","label":"Chrome for Testing: the page's \"Scene option\" checkbox","ok":true,"value":{"ms":60.60391600000003,"before":"1","after":"0","changedWithinMs":439.92133300000023},"inCellMs":561.2604590000001,"route":null,"engine":"cua"}
+{"item":"1","at":1793417913309,"step":8,"kind":"watch","id":"second-target","text":"the cursor glides along a curve to the page's checkbox and dips; the box checks before or while it arrives"}
+{"item":"1","at":1793417919551,"step":10,"kind":"close","session":"a","exit":{"code":0,"signal":null}}

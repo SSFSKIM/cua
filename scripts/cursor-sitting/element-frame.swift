@@ -2,11 +2,13 @@
 // the Electron fixture's button): an observation carries no element frames, so the kit reads the frame here, through
 // Accessibility, and clicks its middle by coordinates. Run as a binary compiled into the harness cache:
 //   element-frame <pid> <role> <name>
-// The first element of <role> whose title or description is <name> in the process's windows (breadth first, 4,000
-// elements at most), its frame in global top-left points. It sets AXManualAccessibility on the app first, as the engine's
-// observations do, so a Chromium app has its tree. Only roles and those two names are read. One JSON line out:
-// {"trusted", "found", "frame"} or {"trusted", "found": false, "error"}. It never asks for a grant: an untrusted
-// terminal answers "not trusted" and reads nothing.
+// The first element of <role> whose title, description or value is <name> in the process's windows (breadth first,
+// 4,000 elements at most), its frame in global top-left points. It sets AXManualAccessibility on the app first, as the
+// engine's observations do, so a Chromium app has its tree; Chromium builds that tree asynchronously (#200's first live
+// check read 13 elements and no button right after setting it), so the walk is retried every 100 ms for up to 3 s. Only
+// roles and those three attributes are read. One JSON line out: {"trusted", "found", "frame", "walks"} or {"trusted",
+// "found": false, "error", "walks"}. It never asks for a grant: an untrusted terminal answers "not trusted" and reads
+// nothing.
 import ApplicationServices
 import Foundation
 
@@ -32,17 +34,36 @@ func frame(_ element: AXUIElement) -> CGRect? {
 }
 let app = AXUIElementCreateApplication(pid)
 AXUIElementSetAttributeValue(app, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-var queue = (copy(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
-var visited = 0
-while !queue.isEmpty, visited < 4_000 {
-  let element = queue.removeFirst()
-  visited += 1
-  if copy(element, kAXRoleAttribute) as? String == role,
-     [kAXTitleAttribute, kAXDescriptionAttribute].contains(where: { copy(element, $0) as? String == name }),
-     let r = frame(element) {
-    emit(["trusted": true, "found": true, "frame": ["x": Double(r.minX), "y": Double(r.minY), "width": Double(r.width), "height": Double(r.height)]])
+let names = [kAXTitleAttribute, kAXDescriptionAttribute, kAXValueAttribute]
+/// One breadth-first walk of the process's windows: the first match's frame, and how many elements were read.
+func walk() -> (frame: CGRect?, visited: Int) {
+  var queue = (copy(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
+  var visited = 0
+  while !queue.isEmpty, visited < 4_000 {
+    let element = queue.removeFirst()
+    visited += 1
+    if copy(element, kAXRoleAttribute) as? String == role, names.contains(where: { copy(element, $0) as? String == name }),
+       let r = frame(element) {
+      return (r, visited)
+    }
+    queue.append(contentsOf: (copy(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [])
+  }
+  return (nil, visited)
+}
+let retryMs = 100.0, boundMs = 3_000.0
+let started = Date()
+var walks = 0
+while true {
+  let (found, visited) = walk()
+  walks += 1
+  if let r = found {
+    emit(["trusted": true, "found": true, "walks": walks, "frame": ["x": Double(r.minX), "y": Double(r.minY), "width": Double(r.width), "height": Double(r.height)]])
     exit(0)
   }
-  queue.append(contentsOf: (copy(element, kAXChildrenAttribute) as? [AXUIElement]) ?? [])
+  if Date().timeIntervalSince(started) * 1000 + retryMs > boundMs {
+    emit(["trusted": true, "found": false, "walks": walks,
+          "error": "no \(role) named \(name) in the process's windows after \(walks) walks over \(Int(boundMs)) ms (\(visited) elements read in the last)"])
+    exit(0)
+  }
+  usleep(useconds_t(retryMs * 1000))
 }
-emit(["trusted": true, "found": false, "error": "no \(role) named \(name) in the process's windows (\(visited) elements read)"])

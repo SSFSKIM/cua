@@ -39,7 +39,7 @@ function input({group = 'chrome-composing', arm = 'B', block = 1, i = 0, row = R
     fixture: null,
     front: {mid: PIDS[g.user ?? g.driven], after: PIDS[g.user ?? g.driven], expected: PIDS[g.user ?? g.driven]},
     activations: [], raisedAt: [], stateAtStart: g.user ? 'front-above' : null, userKept: g.user ? true : null,
-    clipboard: {mid: 'digest', after: 'digest'}, menu: chrome ? {read: {trusted: true, selected: 0, openMenus: 0, focusedRole: 'AXTextArea'}, observed: 0} : null,
+    clipboard: {mid: 'digest', after: 'digest'}, menu: chrome ? {read: {trusted: true, ok: true, selected: 0, openMenus: 0, focusedRole: 'AXTextArea'}, observed: 0} : null,
     armStatus: ARMS.includes(arm) ? arm : null, disturbed: false, ...over};
 }
 const record = options => rowRecord(input(options));
@@ -47,14 +47,22 @@ const taskRow = result => ({kind: 'task', task: '187-row', result});
 const start = {kind: 'start'};
 
 // The whole slot's evidence with every row delivering and nothing disturbed; `tweak(record)` may change any B row.
-function evidence({tweakB = r => r, tweakControlB = r => r, a1 = true, b = true} = {}) {
+// The order watcher's end record of a background item: whole, no raise.
+const orderStop = (over = {}) => ({kind: 'task', task: '187-order-stop', result: {ok: true, maxGapMs: 12, raises: 0, rowRaises: {}, ...over}});
+// The last item: the owner's source selected again and read back.
+const endItem = (result = {ok: true, which: 'owner', switched: true, requested: 'com.apple.keylayout.ABC', current: {id: 'com.apple.keylayout.ABC'}}) =>
+  [start, {kind: 'task', task: 'activate', result: {ok: true}}, {kind: 'task', task: 'select-source', args: ['owner', 'textedit'], result}];
+const controlItem = (group, arm, tweak = r => r) => [start, ...ROWS.map((row, i) => taskRow(tweak(record({item: ITEMS.control(group, arm), group, arm, block: 0, i, row})))),
+  ...(GROUPS[group].user ? [orderStop()] : [])];
+function evidence({tweakB = r => r, tweakControlB = r => r, tweakControlA = r => r, a1 = true, b = true, end = true} = {}) {
   const items = {};
-  if (a1) items[ITEMS.a1] = [start, ...[0, 1].flatMap(block => ROWS.map((row, i) => taskRow(record({item: ITEMS.a1, arm: 'A', block, i, row}))))];
-  for (const group of CONTROLS) items[ITEMS.control(group, 'A')] = [start, ...ROWS.map((row, i) => taskRow(record({item: ITEMS.control(group, 'A'), group, arm: 'A', block: 0, i, row})))];
+  if (a1) items[ITEMS.a1] = [start, ...[0, 1].flatMap(block => ROWS.map((row, i) => taskRow(record({item: ITEMS.a1, arm: 'A', block, i, row})))), orderStop()];
+  for (const group of CONTROLS) items[ITEMS.control(group, 'A')] = controlItem(group, 'A', tweakControlA);
+  if (end) items[ITEMS.end] = endItem();
   if (!b) return items;
   items[ITEMS.b] = [start, ...bSchedule().flatMap(s => s.rows.map((row, i) => { const r = record({item: ITEMS.b, arm: s.arm, block: s.block, i, row}); return taskRow(s.arm === 'B' ? tweakB(r) : r); })),
-    {kind: 'task', task: '187-order-stop', result: {ok: true, maxGapMs: 12, raises: 0}}];
-  for (const group of CONTROLS) items[ITEMS.control(group, 'B')] = [start, ...ROWS.map((row, i) => taskRow(tweakControlB(record({item: ITEMS.control(group, 'B'), group, arm: 'B', block: 0, i, row}))))];
+    orderStop()];
+  for (const group of CONTROLS) items[ITEMS.control(group, 'B')] = controlItem(group, 'B', tweakControlB);
   return items;
 }
 // The record with readings replaced (a row of the evidence, recomputed).
@@ -149,8 +157,8 @@ test('the judge\'s false-pass traps: each one alone keeps arm B from landing', (
     ['a stale activation', {tweakB: first(reRecord, {act: {...input().act, meta: {...input().act.meta, activationGuardMs: null}}})}, 'INCOMPLETE', /held activation/],
     ['a raise', {tweakB: first(reRecord, {raisedAt: [T0 + 5]})}, 'DOES NOT LAND', /raised Chrome's window above TextEdit's/],
     ['a page click', {tweakB: first(reRecord, {page: {mid: {seq: 4, length: 0, counts: ZERO}, after: {seq: 6, length: ROWS[1].string.text.length, counts: {...ZERO, mousedown: 1, click: 1}}}})}, 'DOES NOT LAND', /2 page mousedown\/click/],
-    ['an open menu', {tweakB: first(reRecord, {menu: {read: {trusted: true, selected: 1, openMenus: 0, focusedRole: null}, observed: 0}})}, 'DOES NOT LAND', /menu opened/],
-    ['an observed AXMenuOpened', {tweakB: first(reRecord, {menu: {read: {trusted: true, selected: 0, openMenus: 0}, observed: 1}})}, 'DOES NOT LAND', /menu opened/],
+    ['an open menu', {tweakB: first(reRecord, {menu: {read: {trusted: true, ok: true, selected: 1, openMenus: 0, focusedRole: null}, observed: 0}})}, 'DOES NOT LAND', /menu opened/],
+    ['an observed AXMenuOpened', {tweakB: first(reRecord, {menu: {read: {trusted: true, ok: true, selected: 0, openMenus: 0}, observed: 1}})}, 'DOES NOT LAND', /menu opened/],
     ['an unread menu', {tweakB: first(reRecord, {menu: {read: {trusted: false}, observed: 0}})}, 'INCOMPLETE', /menus could not be read/],
     ['an unconfirmed arm', {tweakB: r => reRecord(r, {armStatus: null, act: {...input().act, meta: {...input().act.meta, paste: {stage: 'effect'}}}})}, 'DOES NOT LAND', /arm the engine did not confirm/],
     ['a front-app change', {tweakB: first(reRecord, {activations: [{kind: 'activated', bundleId: 'com.google.chrome.for.testing', at: T0}]})}, 'DOES NOT LAND', /changed the front app/],
@@ -234,11 +242,14 @@ test('the plan: the preconditions and placement first, the switch and a stopped 
 
 // The Mac, faked: three scenes, a page that counts what the act enters, an order watcher whose record the fake's raises
 // and activations write, a composition the probe's key starts. `raiseAt`: the row keys whose act raises Chrome.
-function fakeMac(out, {raiseAt = []} = {}) {
+// `lateRaiseAt`: rows whose act raises Chrome, the watcher writing it only after the row's own read (a write lag);
+// `activationsInWaitAt`: rows whose page beacon lags, Chrome and then TextEdit activated while the row waits for it.
+function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = []} = {}) {
   let clock = T0, front = 'textedit', composed = false;
   const bounds = {chrome: {x: 300, y: 80, width: 800, height: 600}, textedit: {x: 500, y: 100, width: 700, height: 500}, electron: {x: 900, y: 120, width: 500, height: 400}};
   const numbers = {chrome: 11, textedit: 12, electron: 13};
-  const changes = [], calls = [];
+  const changes = [], calls = [], activationsLog = [];
+  let attempts = 0, lagReads = 0, stalePage = null, pairDue = false;
   let page = {seq: 0, length: 0, counts: {...ZERO}};
   const tick = () => (clock += 5);
   const order = state => changes.push({kind: 'order', at: tick(), prev: clock - 5, state});
@@ -252,8 +263,10 @@ function fakeMac(out, {raiseAt = []} = {}) {
         const text = JSON.parse(code.match(/__app\.(?:typeText|paste)\(("(?:[^"\\]|\\.)*")\)/)[1]);
         const key = calls.filter(c => c[0] === 'act').length;
         calls.push(['act', keys]);
+        if (activationsInWaitAt.includes(key)) { stalePage = {...page}; lagReads = 2; pairDue = true; }
         page = {...page, seq: page.seq + 1, length: text.length};
         if (raiseAt.includes(key)) order('back-above');
+        if (lateRaiseAt.includes(key)) { order('back-above'); changes.at(-1).visibleAfter = attempts + 2; }
         return {ok: true, value: {actMs: 180, threw: false, message: null}, route: 'paste', images: [],
           meta: {activationGuardMs: 40, activationClick: 'outsideFrame', entered: text.length, paste: {stage: 'effect', confirmed: true, focusEnforcement: {arm: 'B', activated: true, point: 'outside', liftedClick: true}}}};
       }
@@ -282,13 +295,17 @@ function fakeMac(out, {raiseAt = []} = {}) {
     },
     engineStatus: () => ({build: 'b1', approved: true, status: {pasteFocusEnforcement: true}}), engineJson: () => ({}),
     consent: () => ({consent: true, owner: {id: 'com.apple.keylayout.ABC'}}), clipboard: () => 'digest', processNames: () => ['/usr/sbin/pboard', '/bin/zsh'],
-    pageCounters: () => ({...page}), fixtureCounters: () => null,
+    pageCounters: () => (lagReads > 0 ? (lagReads--, {...stalePage}) : {...page}), fixtureCounters: () => null,
     moveWindow: ([pid, , dx, dy]) => { const id = Object.keys(PIDS).find(k => PIDS[k] === Number(pid)); bounds[id] = {...bounds[id], x: bounds[id].x + Number(dx), y: bounds[id].y + Number(dy)}; calls.push(['move', id]); return {moved: true}; },
     order: {start: async ({file}) => ({pid: 77, file, start: {state: 'front-above'}}), stop: async () => ({start: {state: 'front-above'}, changes, end: {samples: 400, maxGapMs: 9}}),
-      attempt: () => ({start: {state: 'front-above', at: T0}, changes, end: null})},
-    activations: {start: () => ({}), lines: () => [], stop: () => []},
-    menu: {read: () => ({trusted: true, selected: 0, openMenus: 0, focusedRole: 'AXTextArea'}), start: async () => ({}), stop: async () => ({opened: 0, end: {at: clock}}), lines: () => []},
-    write: () => {}, now: () => tick(), sleep: async ms => { clock += ms; },
+      attempt: () => { attempts += 1; return {start: {state: 'front-above', at: T0}, changes: changes.filter(c => !(c.visibleAfter > attempts)), end: null}; }},
+    activations: {start: () => ({}), lines: () => [...activationsLog], stop: () => []},
+    menu: {read: () => ({trusted: true, ok: true, selected: 0, openMenus: 0, focusedRole: 'AXTextArea'}), start: async () => ({registered: true}), stop: async () => ({opened: 0, end: {at: clock}}), lines: () => []},
+    write: () => {}, now: () => tick(),
+    sleep: async ms => {
+      clock += ms;
+      if (pairDue) { pairDue = false; activationsLog.push({kind: 'activated', bundleId: 'com.google.chrome.for.testing', at: tick()}, {kind: 'activated', bundleId: 'com.apple.TextEdit', at: tick()}); }
+    },
   };
   Object.assign(io.tasks, item187Tasks(deps));
   return {io, calls};
@@ -345,13 +362,127 @@ test('the composition: a row that disturbs it makes the rest of its block invali
 
 test('value-free helpers: the clipboard readers by name only; an open menu by roles and counts', () => {
   assert.deepEqual(clipboardReaders(['/Applications/Maccy.app/Contents/MacOS/Maccy', '/usr/sbin/pboard', '/bin/zsh', 'cmux-paste-worker', '  ']), ['Maccy', 'cmux-paste-worker', 'pboard']);
-  assert.equal(menuOpened({trusted: true, selected: 0, openMenus: 0, focusedRole: 'AXTextArea'}), false);
-  assert.equal(menuOpened({trusted: true, selected: 0, openMenus: 1}), true);
-  assert.equal(menuOpened({trusted: true, selected: 0, openMenus: 0, focusedRole: 'AXMenuItem'}), true);
+  assert.equal(menuOpened({trusted: true, ok: true, selected: 0, openMenus: 0, focusedRole: 'AXTextArea'}), false);
+  assert.equal(menuOpened({trusted: true, ok: true, selected: 0, openMenus: 1}), true);
+  assert.equal(menuOpened({trusted: true, ok: true, selected: 0, openMenus: 0, focusedRole: 'AXMenuItem'}), true);
   assert.equal(menuOpened({trusted: false}), null);
   const r = record({act: {...input().act, value: {actMs: 1, threw: true, message: 'Timed out waiting for the application to read the clipboard'}}});
   assert.deepEqual(leaks(JSON.stringify(r)), []);
   assert.equal(LABELS.act('187-B#1.0', 'paste', 'hangul'), '187-B#1.0 act: paste.hangul');
+});
+
+test('review P1.1: arm B\'s control comparison needs complete, valid A baselines; without one the result is incomplete, never LANDS', () => {
+  const failing = r => reRecord(r, {check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 3}}}});
+  const noA = evidence({tweakControlB: failing});
+  for (const g of CONTROLS) delete noA[ITEMS.control(g, 'A')];
+  const judged = judge187(noA);
+  assert.equal(judged.b.verdict, 'INCOMPLETE');
+  assert.match(judged.b.why.join('; '), /no complete A baseline/);
+  const invalidA = evidence();
+  invalidA[ITEMS.control('electron-composing', 'A')][1] = taskRow(reRecord(invalidA[ITEMS.control('electron-composing', 'A')][1].result, {disturbed: true}));
+  assert.equal(judge187(invalidA).b.verdict, 'INCOMPLETE');
+  const shortA = evidence();
+  shortA[ITEMS.control('chrome-korean', 'A')].splice(3, 1);
+  assert.match(judge187(shortA).b.why.join('; '), /chrome\/korean control under arm A has 17 of 18 rows/);
+});
+
+test('review P1.2: end-early success needs the three A controls finished with valid coverage; their delivery failures stay diagnostic', () => {
+  const stopped = evidence({b: false});
+  stopped[ITEMS.control('textedit-composing', 'A')] = [start, {kind: 'stopped', error: '187-korean refused: the Korean source did not engage'}];
+  const judged = judge187(stopped);
+  assert.equal(judgedOk(judged), false);
+  assert.equal(judged.overall.verdict, 'INCOMPLETE');
+  assert.match(judged.overall.why.join('; '), /textedit\/composing@electron control under arm A/);
+  const missing = evidence({b: false});
+  delete missing[ITEMS.control('chrome-korean', 'A')];
+  assert.equal(judgedOk(judge187(missing)), false);
+  const undelivered = evidence({b: false, tweakControlA: r => reRecord(r, {check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 3}}}})});
+  assert.equal(judgedOk(judge187(undelivered)), true, 'a control\'s known delivery failures do not stop the end-early success');
+});
+
+test('review P1.3: the owner\'s source restore (187-end) is part of overall success and of the report', () => {
+  assert.equal(judgedOk(judge187(evidence())), true);
+  const none = evidence({end: false});
+  assert.equal(judgedOk(judge187(none)), false);
+  assert.match(judge187(none).overall.why.join('; '), /owner's input source/);
+  const failed = evidence();
+  failed[ITEMS.end] = endItem({ok: false, which: 'owner', switched: true, requested: 'com.apple.keylayout.ABC', current: {id: 'com.apple.inputmethod.Korean.2SetKorean'}, problem: 'read back 2-Set'});
+  const judged = judge187(failed);
+  assert.equal(judged.b.verdict, 'LANDS');
+  assert.equal(judgedOk(judged), false);
+  assert.match(item187Markdown(judged), /owner's input source: NOT restored/);
+  const unread = evidence();
+  unread[ITEMS.end] = endItem({ok: true, which: 'owner', switched: true, requested: 'com.apple.keylayout.ABC', current: null});
+  assert.equal(judgedOk(judge187(unread)), false, 'a restore without its read-back is not a restore');
+  assert.match(item187Markdown(judge187(evidence())), /owner's input source: restored \(com\.apple\.keylayout\.ABC, read back\)/);
+});
+
+test('review P1.4: a raise the watcher writes after the row\'s own read is still seen before the next row, put back, and attributed to the row', async t => {
+  const out = scratch(t);
+  const {io} = fakeMac(out, {lateRaiseAt: [1]});
+  await runSteps(groupItem({item: ITEMS.b, group: 'chrome-composing', blocks: [{block: 1, arm: 'B', rows: ROWS.slice(0, 3), switchTo: 'on'}]}), {item: ITEMS.b, out, io, log: () => {}});
+  const rows = read187(out)[ITEMS.b];
+  const restores = rows.filter(r => r.task === '187-order-restore').map(r => r.result);
+  assert.deepEqual(restores.map(r => r.restored), [false, true, false]);
+  assert.equal(restores[1].lateRaisedAt.length, 1);
+  const records = rows.filter(r => r.task === '187-row').map(r => r.result);
+  assert.equal(records[2].invalid, null, 'the next row starts with the order put back');
+  const items = evidence();
+  items[ITEMS.b] = [start, ...rows.filter(r => ['187-row', '187-order-restore', '187-order-stop'].includes(r.task))];
+  const judged = judge187(items);
+  assert.match(judged.b.why.join('; '), new RegExp(`raised Chrome's window above TextEdit's \\(${records[1].key} at`));
+});
+
+test('review P1.4: the final watcher\'s raises in a row\'s span are reconciled with the row records', () => {
+  const items = evidence();
+  const b = items[ITEMS.b], key = b.find(r => r.task === '187-row' && r.result.arm === 'B').result.key;
+  b[b.length - 1] = orderStop({raises: 1, rowRaises: {[key]: [T0 + 7]}});
+  const judged = judge187(items);
+  assert.equal(judged.b.verdict, 'DOES NOT LAND');
+  assert.match(judged.b.why.join('; '), new RegExp(`${key.replace(/[#.]/g, m => `\\${m}`)} at ${T0 + 7}`));
+});
+
+test('review P1.5: an activation pair during the row\'s wait for the page\'s beacon counts as a front-app change', async t => {
+  const out = scratch(t);
+  const {io} = fakeMac(out, {activationsInWaitAt: [0]});
+  await runSteps(groupItem({item: ITEMS.b, group: 'chrome-composing', blocks: [{block: 1, arm: 'B', rows: ROWS.slice(0, 2), switchTo: 'on'}]}), {item: ITEMS.b, out, io, log: () => {}});
+  const records = read187(out)[ITEMS.b].filter(r => r.task === '187-row').map(r => r.result);
+  assert.equal(records[0].activations.length, 2);
+  assert.equal(records[0].front.changed, true);
+  assert.equal(records[1].front.changed, false);
+});
+
+test('review P2.6: a chrome row with no counter read before the act has incomplete counter evidence, never delivered-and-valid', () => {
+  const expected = ROWS[1].string.text.length;
+  const r = record({page: {mid: null, after: {seq: 5, length: expected, counts: {...ZERO, click: 1}}}});
+  assert.match(r.invalid, /page counters before the act/);
+  assert.equal(r.ok, false);
+});
+
+test('review P2.7: an unreadable menu snapshot is no evidence; only a good snapshot or a verified watch says no menu opened', () => {
+  assert.equal(menuOpened({trusted: true, ok: false, menuBar: false, items: 0, selected: 0, openMenus: 0}), null);
+  assert.equal(menuOpened({trusted: true, selected: 0, openMenus: 0}), null, 'a snapshot that does not say it read everything');
+  const unread = {read: {trusted: true, ok: false, selected: 0, openMenus: 0}, observed: 0};
+  assert.equal(record({menu: {...unread, watchVerified: false}}).menu.opened, null);
+  assert.equal(record({menu: {...unread, watchVerified: true}}).menu.opened, false);
+  assert.equal(judge187(evidence({tweakB: r => reRecord(r, {menu: unread})})).b.verdict, 'INCOMPLETE');
+  assert.match(readFileSync(new URL('../../scripts/cursor-sitting/menu-open.swift', import.meta.url), 'utf8'), /"ok": ok/, 'the helper says whether every read succeeded');
+});
+
+test('review P2.8: B control rows count in the comparison only with the engine confirming arm B', () => {
+  const unconfirmed = r => reRecord(r, {armStatus: null, act: {...input().act, meta: {...input().act.meta, paste: {stage: 'effect'}}}});
+  const judged = judge187(evidence({tweakControlB: unconfirmed}));
+  assert.equal(judged.b.verdict, 'INCOMPLETE');
+  assert.match(judged.b.why.join('; '), /arm B is not confirmed/);
+});
+
+test('review P2.9: each composing control\'s own order-watcher coverage must be whole', () => {
+  const gap = evidence();
+  gap[ITEMS.control('electron-composing', 'B')].splice(-1, 1, orderStop({maxGapMs: 80}));
+  assert.match(judge187(gap).b.why.join('; '), /electron\/composing@textedit control under arm B: the order watcher's longest gap was 80 ms/);
+  const none = evidence();
+  none[ITEMS.control('textedit-composing', 'A')].pop();
+  assert.equal(judge187(none).b.verdict, 'INCOMPLETE');
 });
 
 test('the CLI: the dry run prints every step and touches nothing; judge writes item-187.md', async t => {

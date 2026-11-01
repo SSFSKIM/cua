@@ -1,9 +1,11 @@
 // Chrome for Testing's open menus, for #187's slot (./item-187.mjs): whether an activation click the paste posts outside
 // the window's frame opened a menu. Run as a binary compiled into the harness cache:
 //   menu-open read <pid>
-//       One JSON line: {"trusted", "menuBar", "items", "selected", "openMenus", "focusedRole"}: the menu bar's items and
-//       how many are selected (an open menu bar menu), the menus among the application's own children (an open context
-//       or pop-up menu), and the role of the focused element. Roles, booleans and counts only: no title is read.
+//       One JSON line: {"trusted", "ok", "failed", "menuBar", "items", "selected", "openMenus", "focusedRole"}: the menu
+//       bar's items and how many are selected (an open menu bar menu), the menus among the application's own children (an
+//       open context or pop-up menu), and the role of the focused element. `ok` is false, and `failed` names the reads,
+//       when any read the snapshot rests on did not succeed: zero counts then say nothing. Roles, booleans and counts
+//       only: no title is read.
 //   menu-open watch <pid> [<max seconds>]
 //       An AXObserver on the application for AXMenuOpened, one JSON line at the start ({"kind": "start", "at", "pid",
 //       "target"}; `pid` is this watcher's own), one per notification ({"kind": "menu-opened", "at"}) and one at the end
@@ -37,16 +39,44 @@ func element(_ value: CFTypeRef?) -> AXUIElement? {
 }
 func role(_ e: AXUIElement) -> String? { copy(e, kAXRoleAttribute) as? String }
 
+/// One attribute read with its status: a value only on success.
+func read(_ e: AXUIElement, _ attribute: String) -> (ok: Bool, value: CFTypeRef?) {
+  var value: CFTypeRef?
+  let status = AXUIElementCopyAttributeValue(e, attribute as CFString, &value)
+  return (status == .success, status == .success ? value : nil)
+}
+
 if args[1] == "read" {
-  var items = 0, selected = 0
-  let bar = element(copy(app, kAXMenuBarAttribute))
-  for item in bar.flatMap({ copy($0, kAXChildrenAttribute) as? [AXUIElement] }) ?? [] {
-    items += 1
-    if (copy(item, kAXSelectedAttribute) as? Bool) == true { selected += 1 }
+  // `ok` only when every read the snapshot rests on succeeded: the menu bar, its items, each item's selection, the
+  // application's children with their roles, and the focused element (none focused, AXError noValue, is a reading).
+  var ok = true, items = 0, selected = 0, openMenus = 0
+  var failed: [String] = []
+  let barRead = read(app, kAXMenuBarAttribute), bar = element(barRead.value)
+  if bar == nil { ok = false; failed.append("menuBar") }
+  if let bar {
+    let children = read(bar, kAXChildrenAttribute)
+    if let list = children.value as? [AXUIElement] {
+      for item in list {
+        items += 1
+        let sel = read(item, kAXSelectedAttribute)
+        if !sel.ok { ok = false; failed.append("selected") }
+        if (sel.value as? Bool) == true { selected += 1 }
+      }
+    } else { ok = false; failed.append("menuBarItems") }
   }
-  let openMenus = ((copy(app, kAXChildrenAttribute) as? [AXUIElement]) ?? []).filter { role($0) == kAXMenuRole }.count
-  let focused = element(copy(app, kAXFocusedUIElementAttribute)).flatMap(role)
-  emit(["trusted": true, "menuBar": bar != nil, "items": items, "selected": selected, "openMenus": openMenus, "focusedRole": focused ?? NSNull()])
+  if let list = read(app, kAXChildrenAttribute).value as? [AXUIElement] {
+    for child in list {
+      let r = read(child, kAXRoleAttribute)
+      if !r.ok { ok = false; failed.append("childRole") }
+      if (r.value as? String) == kAXMenuRole { openMenus += 1 }
+    }
+  } else { ok = false; failed.append("children") }
+  var value: CFTypeRef?
+  let focusStatus = AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &value)
+  var focused: String? = nil
+  if focusStatus == .success, let f = element(value) { focused = role(f) } else if focusStatus != .noValue { ok = false; failed.append("focused") }
+  emit(["trusted": true, "ok": ok, "failed": Array(Set(failed)).sorted(), "menuBar": bar != nil, "items": items, "selected": selected, "openMenus": openMenus,
+        "focusedRole": focused ?? NSNull()])
   exit(0)
 }
 

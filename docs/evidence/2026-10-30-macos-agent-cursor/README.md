@@ -741,7 +741,14 @@ the expected length. A background row whose act carried no fresh activation (`ac
 `focusEnforcement.activated` not false) is invalid, never counted; a row after one that disturbed the composition is
 invalid and unsent. **Arm B lands only if every B row delivers exactly, with no page mousedown or click, no menu opened in
 Chrome, no raise, no front app change, the composition kept, every clipboard restore intact, the arm confirmed by the
-engine, and no control regressing under B**; invalid rows, a missing row or a watcher gap past 50 ms make it incomplete.
+engine, and no control regressing under B**. The comparison needs each control whole under both arms (every row
+recorded and valid, a composing control's order watcher whole, every B row's arm confirmed): `--part b` without Part A's
+controls is incomplete, never a landing. Invalid rows, a missing row, a watcher gap past 50 ms, a row with no counter
+read before its act, or Chrome's menus unreadable (no whole snapshot and no verified notification watch) make it
+incomplete. A raise the watcher shows only after the row's own read is still the row's (the restore reads it again, and
+the final record is reconciled with the rows). **The slot succeeds only when B lands, or the end-early rule ends it with
+Part A's three controls complete, and `187-end` has selected the owner's source again and read it back**; `judge` exits 1
+otherwise and its report says which.
 Arm A is diagnostic: the report gives the undelivered rows by paste stage (`cua/paste`'s stage, read and effect waits),
 the read time against ⌘V, the act's time per arm (B's added ms), and B's activation-to-⌘V and click-to-⌘V times. **If
 every Part A row delivers, Part B is skipped and the slot ends after the controls** (ruling 6). An item that stops is

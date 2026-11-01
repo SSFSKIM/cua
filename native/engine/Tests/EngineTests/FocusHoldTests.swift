@@ -242,6 +242,10 @@ final class FocusHoldTests: XCTestCase {
     XCTAssertEqual(clickMeta.delivery?.restores, 1)
     XCTAssertEqual(seam.targetAbove, false)
     XCTAssertNil(clickMeta.activationGuardMs, "the click shared the held activation")
+    let delivery = try XCTUnwrap(clickMeta.delivery), heldAt = try XCTUnwrap(seam.heldAt)
+    XCTAssertGreaterThan(heldAt, 0, "the click's own hold, taken after the held activation's")
+    XCTAssertEqual(Double(delivery.releasedAt - delivery.holdStartedAt), try XCTUnwrap(seam.releasedAt) - heldAt,
+                   "the hold's start is the guard's own, on the release's Unix clock")
   }
 
   /// #200: a click on another window of the held process (a dialog) is guarded on that window, not on the one the held

@@ -1,11 +1,11 @@
 // #200's window-order watcher (./raise.mjs): the stacking of two harness windows, `front` (the one the person keeps in
 // front: Chrome for Testing's run window) and `back` (the driven one behind it), sampled from the on-screen window list
-// (CGWindowListCopyWindowInfo, front to back) every `interval` ms, by window number only: no names, so no Screen
+// (the on-screen window list, front to back) every `interval` ms, by window number only: no names, so no Screen
 // Recording grant. One JSON line out at the start, one at every change of the pair's order, and one at the end:
-//   {"kind": "start", "at", "pid", "front", "back", "intervalMs", "state"}
-//   {"kind": "order", "at", "sample", "state"}            state: front-above | back-above (a raise) | front-missing |
-//                                                         back-missing | both-missing
-//   {"kind": "end", "at", "samples", "maxGapMs", "lateSamples", "state", "why"}
+//   {"kind": "start", "at", "pid", "front", "back", "intervalMs", "realtime", "state"}
+//   {"kind": "order", "at", "prev", "sample", "state"}    state: front-above | back-above (a raise) | front-missing |
+//                                                         back-missing | both-missing; `prev`: the read before
+//   {"kind": "end", "at", "lastRead", "samples", "maxGapMs", "lateSamples", "state", "why"}
 // `at` is wall-clock milliseconds (Node's Date.now()), so the kit attributes each change to the cell whose span holds it.
 // A read more than twice the interval after the one before is counted (`lateSamples`) and the longest gap between two
 // reads kept (`maxGapMs`): a gap is a span in which a raise undone within it would not show.
@@ -95,7 +95,9 @@ let started = clock()
 emit(["kind": "start", "at": wall(), "pid": Int(getpid()), "front": front, "back": back, "intervalMs": intervalMs, "realtime": realtime, "state": current])
 // The reads on a grid of one interval from the first; a read more than one interval past its slot starts the grid again
 // from itself rather than catching up in a burst.
-var samples = 1, late = 0, maxGap = 0.0, last = started, slot = started
+// Each read's wall time is taken as it is made, and a change carries the read that saw it (`at`) and the one before
+// (`prev`, the last to see the old order): the change happened between them, so the kit can tell a gap's uncertainty.
+var samples = 1, late = 0, maxGap = 0.0, last = started, slot = started, prevRead = wall()
 while stop.why == nil {
   slot += intervalMs
   if slot > clock() { mach_wait_until(UInt64(slot * ticksPerMs)) }
@@ -104,12 +106,14 @@ while stop.why == nil {
   if at - last > 2 * intervalMs { late += 1 }
   maxGap = max(maxGap, at - last)
   last = at
+  let readAt = wall()
   let next = state()
   samples += 1
   if next != current {
     current = next
-    emit(["kind": "order", "at": wall(), "sample": samples, "state": current])
+    emit(["kind": "order", "at": readAt, "prev": prevRead, "sample": samples, "state": current])
   }
+  prevRead = readAt
   if getppid() != parent { stop.set("parent exited") } else if at - started > maxSeconds * 1000 { stop.set("max seconds") }
 }
-emit(["kind": "end", "at": wall(), "samples": samples, "maxGapMs": (maxGap * 10).rounded() / 10, "lateSamples": late, "state": current, "why": stop.why ?? "stopped"])
+emit(["kind": "end", "at": wall(), "lastRead": prevRead, "samples": samples, "maxGapMs": (maxGap * 10).rounded() / 10, "lateSamples": late, "state": current, "why": stop.why ?? "stopped"])

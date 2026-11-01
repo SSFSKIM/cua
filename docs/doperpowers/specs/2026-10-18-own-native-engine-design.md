@@ -484,8 +484,10 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     "actionsUnknown", "hitTestFailed"); pointUnconfirmed: true when the hit-test at a synthesized element
     point answered nothing or only a container (M1a.2); delivery: route 3's delivery guard after a pointer action's events
     (#200), present when one ran: {restores, frontmostRestored, otherAppFront, restoreLatencyMs?, guardMs, screenHoldMs,
-    capped, raiseLeft, releasedAt}; frontmostRestored and raiseLeft are what the guard's samples saw, not what its
-    requests answered, and nothing is repaired once the hold's cap has passed
+    capped, raiseLeft, holdStartedAt, releasedAt}; frontmostRestored and raiseLeft are what the guard's samples saw, not
+    what its requests answered, and nothing is repaired once the hold's cap has passed; holdStartedAt and releasedAt are
+    Unix ms, the hold's start (the activation's when the action ran it, else the guard's own) read as releasedAt less the
+    hold's monotonic span, so a sitting can tell a raise before the hold (on the display) from one inside it
   noScreenshotForCoordinates: a coordinate click, drag or scroll with no usable screenshot on the connection ("Screenshot"); nothing
     posted, the input meta carried with startedAt/endedAt null; the sentence names getScreenshot as the way to get an image to click
     in (c13759a4's "There is no screenshot of the app's window to place the coordinates in. Try to get the on-screen content again

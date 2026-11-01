@@ -31,7 +31,7 @@ const ENGINE_MS = {resolve_app: 999};
 const INPUT_META = {inputRoute: 3, startedAt: 1000, endedAt: 1042, receivedAt: 990, hidIdleMs: 31000, activationGuardMs: 41.5, activationClick: 'posted', pointUnconfirmed: true};
 // Route 3's delivery guard after a pointer action (#200): one restore, under the cap.
 const DELIVERY = {restores: 1, frontmostRestored: false, otherAppFront: false, restoreLatencyMs: 10, guardMs: 40, screenHoldMs: 52.5, capped: false,
-  raiseLeft: false, releasedAt: 1793400000000};
+  raiseLeft: false, holdStartedAt: 1793399999947, releasedAt: 1793400000000};
 
 const win = title => node('t0', 0, 'AXWindow', {roleDescription: 'standard window', title, actions: ['AXRaise']});
 const button = (token, title) => node(token, 1, 'AXButton', {roleDescription: 'button', title, actions: ['AXPress']});

@@ -214,13 +214,16 @@ struct DeliveryGuardOutcome: Equatable {
   /// The guard's last sample saw the target's window above the user's, or the target's process (or the bound app's) in
   /// front: left as it was, at the cap or after a refused re-activation.
   var raiseLeft = false
+  /// When the screen-update hold began (Unix ms; the activation's when this action ran it, else the guard's own): a
+  /// raise before it was on the display. Read as `releasedAt` less the hold's own monotonic span, one clock for both.
+  var holdStartedAt: Int64 = 0
   /// When the hold's release was asked for (Unix ms), for a sitting's own clock.
   var releasedAt: Int64 = 0
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["restores": restores, "frontmostRestored": frontmostRestored, "otherAppFront": otherAppFront,
                                "guardMs": guardMs, "screenHoldMs": screenHoldMs, "capped": capped, "raiseLeft": raiseLeft,
-                               "releasedAt": Int(releasedAt)]
+                               "holdStartedAt": Int(holdStartedAt), "releasedAt": Int(releasedAt)]
     if let restoreLatencyMs { wire["restoreLatencyMs"] = restoreLatencyMs }
     return wire
   }
@@ -457,8 +460,10 @@ final class FakeActivation {
     outcome.guardMs = round(system.now() - posted)
     outcome.screenHoldMs = round(min(system.now() - hold.startedAt, activationHoldCapMs))
     outcome.raiseLeft = targetFront || targetAbove
+    let held = system.now() - hold.startedAt
     hold.release()
     outcome.releasedAt = unixMilliseconds()
+    outcome.holdStartedAt = outcome.releasedAt - Int64(held.rounded())
     return outcome
   }
 

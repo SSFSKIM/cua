@@ -533,6 +533,8 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(delivery.guardMs, 40, "the restore's sample, then three stable ones")
     XCTAssertEqual(seam.releasedAt, seam.clock, "released once the delivery guard settled")
     XCTAssertEqual(delivery.screenHoldMs, seam.releasedAt, "the hold ran from the activation's start (clock 0)")
+    XCTAssertEqual(Double(delivery.releasedAt - delivery.holdStartedAt), try XCTUnwrap(seam.releasedAt) - 0,
+                   "the hold's start on the release's Unix clock: the activation's, before the click's events")
     XCTAssertEqual(meta.activationGuardMs, 10, "the activation's own guard settles on one sample when a delivery guard follows")
     XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)])
   }
@@ -682,12 +684,13 @@ final class ClickDeliveryTests: XCTestCase {
   func testTheDeliveryGuardIsOnTheWire() {
     var meta = meta()
     meta.delivery = DeliveryGuardOutcome(restores: 1, frontmostRestored: false, otherAppFront: false, restoreLatencyMs: 10, guardMs: 40,
-                                         screenHoldMs: 52.5, capped: false, raiseLeft: false, releasedAt: 1_793_400_000_000)
+                                         screenHoldMs: 52.5, capped: false, raiseLeft: false, holdStartedAt: 1_793_399_999_947, releasedAt: 1_793_400_000_000)
     let wire = meta.wire["delivery"] as? [String: Any]
     XCTAssertEqual(wire?["restores"] as? Int, 1)
     XCTAssertEqual(wire?["restoreLatencyMs"] as? Double, 10)
     XCTAssertEqual(wire?["screenHoldMs"] as? Double, 52.5)
     XCTAssertEqual(wire?["releasedAt"] as? Int, 1_793_400_000_000)
+    XCTAssertEqual(wire?["holdStartedAt"] as? Int, 1_793_399_999_947)
     XCTAssertEqual(wire?["capped"] as? Bool, false)
     XCTAssertNil(InputMeta(meta.context).wire["delivery"], "absent when no delivery guard ran")
   }
@@ -875,6 +878,8 @@ final class GuardSeam {
   var holds = 0
   var releases = 0
   var releasedAt: Double?
+  /// When the last screen-update hold was taken, on the fake clock.
+  var heldAt: Double?
   var reactivated: [pid_t] = []
   var raises = 0
   var clock: Double = 0
@@ -947,6 +952,7 @@ final class GuardSeam {
     system.keyFocus = { nil }
     system.holdScreenUpdates = {
       self.holds += 1
+      self.heldAt = self.clock
       return { self.releases += 1; self.releasedAt = self.clock }
     }
     system.reactivate = { pid in

@@ -66,8 +66,8 @@ test('the alignment half reads the button its click chose; Finder\'s row alone; 
 // The watcher's lines as order-watch.swift writes them (a run of 2026-10-31 on the MacBook, then a raise and its restore).
 const WATCH = [
   '{"at":900,"back":2,"front":1,"intervalMs":5,"kind":"start","pid":77,"realtime":true,"state":"front-above"}',
-  '{"at":1055,"kind":"order","sample":32,"state":"back-above"}',
-  '{"at":1065,"kind":"order","sample":34,"state":"front-above"}',
+  '{"at":1055,"kind":"order","prev":1050,"sample":32,"state":"back-above"}',
+  '{"at":1065,"kind":"order","prev":1060,"sample":34,"state":"front-above"}',
   '{"at":3000,"kind":"end","lateSamples":0,"maxGapMs":9.5,"samples":420,"state":"front-above","why":"SIGTERM"}',
 ].join('\n');
 
@@ -85,17 +85,60 @@ test('the watcher\'s file holds every attempt; a run is found by its pid, and a 
   assert.equal(orderAttempt(lines, 999), null);
 });
 
+// A watcher run with these changes, each seen by a read 5 ms after the one before unless `prev` says otherwise.
+const run = (changes, {end = true} = {}) => orderAttempt(orderLines([WATCH.split('\n')[0],
+  ...changes.map(([at, state, prev = at - 5]) => JSON.stringify({at, kind: 'order', prev, state})), ...(end ? [WATCH.split('\n')[3]] : [])].join('\n')));
+
 test('a raise the guard undoes before its release is neither late nor unguarded; after it, or outliving it, is late', () => {
-  const meta = {actionInterval: {startedAt: 1050, endedAt: 1052}, delivery: {restores: 1, releasedAt: 1080}};
-  const run = changes => orderAttempt(orderLines([WATCH.split('\n')[0], ...changes.map(([at, state]) => JSON.stringify({at, kind: 'order', state}))].join('\n')));
+  const meta = {actionInterval: {startedAt: 1050, endedAt: 1052}, delivery: {restores: 1, holdStartedAt: 1040, releasedAt: 1080}};
   const undone = callWatch({meta, attempt: run([[1055, 'back-above'], [1065, 'front-above']]), from: 1000, until: 2000});
-  assert.deepEqual(undone, {guarded: true, raises: 1, postToRaiseMs: 5, postToReleaseMs: 30, late: 0, outlived: false, unguarded: 0});
+  assert.deepEqual(undone, {guarded: true, raises: 1, postToRaiseMs: 5, postToReleaseMs: 30, late: 0, outlived: 0, undecided: 0, unguarded: 0});
   assert.equal(callWatch({meta, attempt: run([[1055, 'back-above'], [1065, 'front-above'], [1300, 'back-above']]), from: 1000, until: 2000}).late, 1);
-  assert.equal(callWatch({meta, attempt: run([[1055, 'back-above'], [1086, 'front-above']]), from: 1000, until: 2000}).outlived, false, 'gone within the watcher\'s resolution');
-  assert.equal(callWatch({meta, attempt: run([[1055, 'back-above'], [1095, 'front-above']]), from: 1000, until: 2000}).outlived, true);
+  assert.equal(callWatch({meta, attempt: run([[1055, 'back-above'], [1093, 'front-above']]), from: 1000, until: 2000}).outlived, 0,
+    'the last read that saw it (1088) is inside the 10 ms grace, the next shows it gone');
+  assert.equal(callWatch({meta, attempt: run([[1055, 'back-above'], [1100, 'front-above']]), from: 1000, until: 2000}).outlived, 1, 'a read at 1095 still saw it');
   const bare = callWatch({meta: {}, attempt: run([[1055, 'back-above'], [1065, 'front-above']]), from: 1000, until: 2000});
   assert.deepEqual([bare.guarded, bare.unguarded], [false, 1], 'a call with no guard (an element action, the vendor\'s click): every raise is seen');
   assert.equal(callWatch({meta, attempt: run([[2500, 'back-above']]), from: 1000, until: 2000}).raises, 0, 'another call\'s span');
+});
+
+test('a raise before the hold began was on the display, whatever the cell\'s final action reports: unguarded', () => {
+  // An observation, then the click: the cell keeps the click's meta, its hold 1400–1450; the raise at 1100–1200 came first.
+  const meta = {actionInterval: {startedAt: 1410, endedAt: 1412}, delivery: {restores: 0, holdStartedAt: 1400, releasedAt: 1450}};
+  const w = callWatch({meta, attempt: run([[1100, 'back-above'], [1200, 'front-above']]), from: 1000, until: 2000});
+  assert.deepEqual([w.unguarded, w.late, w.outlived], [1, 0, 0]);
+  const straddling = callWatch({meta, attempt: run([[1420, 'back-above', 1360], [1430, 'front-above']]), from: 1000, until: 2000});
+  assert.equal(straddling.undecided, 1, 'a gap reaching back before the hold leaves its start unknown');
+});
+
+test('a raise outlives the hold only when a read past the grace shows it; a gap across the grace leaves it undecided', () => {
+  const meta = {actionInterval: {startedAt: 1050, endedAt: 1052}, delivery: {restores: 1, holdStartedAt: 1040, releasedAt: 1080}};
+  const gap = callWatch({meta, attempt: run([[1055, 'back-above'], [1100, 'front-above', 1078]]), from: 1000, until: 2000});
+  assert.deepEqual([gap.outlived, gap.late, gap.undecided], [0, 0, 1], 'reads at 1078 and 1100: nothing shows the order at 1090');
+  const left = callWatch({meta, attempt: run([[1055, 'back-above']]), from: 1000, until: 2000});
+  assert.equal(left.outlived, 1, 'never undone, and the watcher read on to its end');
+  assert.equal(callWatch({meta, attempt: run([[1055, 'back-above']], {end: false}), from: 1000, until: 2000}).undecided, 1, 'the record stops: undecided');
+});
+
+test('a sample a watcher gap leaves undecided makes the case incomplete, reported apart from raises', () => {
+  const order = orderLines([WATCH.split('\n')[0], '{"at":1055,"kind":"order","prev":1050,"state":"back-above"}',
+    '{"at":1100,"kind":"order","prev":1078,"state":"front-above"}', WATCH.split('\n')[3]].join('\n'));
+  const j = judgeCase({kase: 'a', engine: 'cua', rows: caseRows(), order});
+  assert.deepEqual([j.verdict, j.late, j.undecided], ['INCOMPLETE', 0, 1]);
+  assert.deepEqual(j.undecidedSamples, [0]);
+  assert.match(j.why, /1 raise\(s\) undecided by a gap in the watcher's reads \(sample 0\)/);
+  assert.match(raiseMarkdown([j]), /undecided/);
+});
+
+test('a case that did not end cleanly, or whose watcher stopped before its tail, never passes', () => {
+  const tailDeath = caseRows();
+  tailDeath.splice(tailDeath.findIndex(r => r.kind === 'close'), 2, {kind: 'stopped', at: 2600, error: 'raise-check refused: the watcher is no longer running'});
+  const died = judgeCase({kase: 'a', engine: 'cua', rows: tailDeath, order: ORDER});
+  assert.equal(died.verdict, 'INCOMPLETE', 'every delivery row is there, but the case stopped in its tail');
+  assert.match(died.why, /stopped: raise-check refused/);
+  const early = orderLines(WATCH.replace('{"at":3000,', '{"at":2500,'));
+  const short = judgeCase({kase: 'a', engine: 'cua', rows: caseRows(), order: early});
+  assert.deepEqual([short.verdict, short.why], ['INCOMPLETE', 'the watcher ended before the case\'s tail (2500 against 2650)']);
 });
 
 test('spread gives min, median, p95 and max', () => {
@@ -104,16 +147,16 @@ test('spread gives min, median, p95 and max', () => {
 });
 
 // Case a on cua, two samples, as the runner records it: each click guarded, the first raising and undone at once.
-function caseRows({delivery = i => ({restores: i === 0 ? 1 : 0, releasedAt: 1080 + i * 1000, capped: false, raiseLeft: false, guardMs: 20, screenHoldMs: 30}), delivered = [true, true], route = '3', stop = false} = {}) {
-  const rows = [{kind: 'start'}, {kind: 'series', series: ['200-a-cua'], counts: {samples: 2}}, {kind: 'task', task: 'arrangement', result: {ok: true}},
-    {kind: 'task', task: 'order-watch-start', result: {ok: true, pid: 77}}, {kind: 'open'}, {kind: 'task', task: 'text-view', result: {ok: true, range: caret(1)}}];
+function caseRows({delivery = i => ({restores: i === 0 ? 1 : 0, holdStartedAt: 1040 + i * 1000, releasedAt: 1080 + i * 1000, capped: false, raiseLeft: false, guardMs: 20, screenHoldMs: 30}), delivered = [true, true], route = '3', stop = false} = {}) {
+  const rows = [{kind: 'start', at: 910}, {kind: 'series', series: ['200-a-cua'], counts: {samples: 2}, at: 911}, {kind: 'task', task: 'arrangement', result: {ok: true}, at: 912},
+    {kind: 'task', task: 'order-watch-start', result: {ok: true, pid: 77}, at: 920}, {kind: 'open', at: 990}, {kind: 'task', task: 'text-view', result: {ok: true, range: caret(1)}, at: 995}];
   for (const i of [0, 1]) {
     rows.push({kind: 'cell', label: LABELS.action('a', i, 'click'), sample: {case: 'a', i, part: 'click'}, startedAt: 1000 + i * 1000, at: 1100 + i * 1000, ok: true, route,
       meta: {activationClick: 'posted', activationGuardMs: 40, actionInterval: {startedAt: 1050 + i * 1000, endedAt: 1052 + i * 1000}, ...(delivery(i) ? {delivery: delivery(i)} : {})}});
-    rows.push({kind: 'task', task: 'deliver', result: {ok: delivered[i], i, part: 'click', delivered: delivered[i], why: delivered[i] ? null : 'the caret stayed at 1'}});
+    rows.push({kind: 'task', task: 'deliver', result: {ok: delivered[i], i, part: 'click', delivered: delivered[i], why: delivered[i] ? null : 'the caret stayed at 1'}, at: 1500 + i * 1000});
     if (stop && i === 0) { rows.push({kind: 'stopped', error: 'raise-check refused: the textedit window stays above Chrome\'s'}); return rows; }
   }
-  rows.push({kind: 'close'}, {kind: 'task', task: 'order-watch-stop', result: {ok: true}});
+  rows.push({kind: 'task', task: 'raise-check', args: ['a', 'end'], result: {ok: true}, at: 2600}, {kind: 'close', at: 2650}, {kind: 'task', task: 'order-watch-stop', result: {ok: true}, at: 3001});
   return rows;
 }
 const ORDER = orderLines(WATCH);
@@ -129,10 +172,10 @@ test('the judge passes a case delivered on every sample whose raises the guard u
 });
 
 test('the judge fails a late raise, a raise left, an unguarded raise or an undelivered sample, and records the vendor\'s', () => {
-  const late = orderLines(`${WATCH.split('\n').slice(0, 3).join('\n')}\n{"at":1200,"kind":"order","state":"back-above"}\n{"at":1210,"kind":"order","state":"front-above"}\n${WATCH.split('\n')[3]}`);
+  const late = orderLines(`${WATCH.split('\n').slice(0, 3).join('\n')}\n{"at":1200,"kind":"order","prev":1195,"state":"back-above"}\n{"at":1210,"kind":"order","prev":1205,"state":"front-above"}\n${WATCH.split('\n')[3]}`);
   assert.equal(judgeCase({kase: 'a', engine: 'cua', rows: caseRows(), order: late}).late, 1);
   assert.equal(judgeCase({kase: 'a', engine: 'cua', rows: caseRows(), order: late}).verdict, 'FAIL');
-  const left = judgeCase({kase: 'a', engine: 'cua', rows: caseRows({delivery: i => ({restores: 0, releasedAt: 1080 + i * 1000, capped: true, raiseLeft: i === 1})}), order: ORDER});
+  const left = judgeCase({kase: 'a', engine: 'cua', rows: caseRows({delivery: i => ({restores: 0, holdStartedAt: 1040 + i * 1000, releasedAt: 1080 + i * 1000, capped: true, raiseLeft: i === 1})}), order: ORDER});
   assert.deepEqual([left.verdict, left.raiseLeft, left.capped], ['FAIL', 1, 2]);
   const bare = judgeCase({kase: 'a', engine: 'cua', rows: caseRows({delivery: () => null}), order: ORDER});
   assert.deepEqual([bare.verdict, bare.unguarded], ['FAIL', 1]);
@@ -157,7 +200,7 @@ test('the fixture\'s counters are summed over each click\'s before and after; th
     read(1, 'before', {windowFocus: 2, appDidBecomeActive: 4}), read(1, 'after', {windowFocus: 2, appDidBecomeActive: 5})]);
   assert.deepEqual(deltas, {sum: {windowFocus: 1, appDidBecomeActive: 3}, samples: {windowFocus: 1, appDidBecomeActive: 2}});
   const md = raiseMarkdown([judgeCase({kase: 'a', engine: 'cua', rows: caseRows(), order: ORDER})]);
-  assert.match(md, /\| a: a coordinate click in TextEdit's text.* \| cua \| 2 \/ 2 \| 2 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \| \*\*PASS\*\* \|/);
+  assert.match(md, /\| a: a coordinate click in TextEdit's text.* \| cua \| 2 \/ 2 \| 2 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \| 0 \| \*\*PASS\*\* \|/);
   assert.match(md, /\| a \| cua \| 5\.0 \/ 5\.0 \/ 5\.0 \/ 5\.0 \(1\) \| 30\.0 \/ 30\.0 \/ 30\.0 \/ 30\.0 \(2\) \| 2 of 2 \|/);
 });
 

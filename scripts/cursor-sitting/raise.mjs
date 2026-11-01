@@ -10,12 +10,14 @@
 //   then activated. Before each case the arrangement must hold (Chrome's process frontmost, its run window above the
 //   driven one in the window list, each planned point under Chrome or clear of it as planned), or the case stops.
 // - A watcher (./order-watch.swift) samples the pair's order every 5 ms for the whole case and appends every change to
-//   <out>/item-200-<case>-<engine>-order.jsonl. It reads the window server's real order, which the guard's hold keeps
-//   off the display, so it sees a raise the guard undoes too. Per pointer action, on the same Unix-ms clock as the
-//   reply's `cua/actionInterval` (the events' post) and `cua/delivery.releasedAt` (the hold's release): post to the first
-//   raise seen, post to the release, and a late raise (one that begins after the release, or one that outlives it by more
-//   than the watcher's resolution: a raise the person saw). A raise during any other call (an element action, a read) is
-//   unguarded: also seen. After every sample the kit reads the record: the driven window still above Chrome's, a run
+//   <out>/item-200-<case>-<engine>-order.jsonl, each with the read that saw it and the one before. It reads the window
+//   server's real order, which the guard's hold keeps off the display, so it sees a raise the guard undoes too. Per
+//   pointer action, on the same Unix-ms clock as the reply's `cua/actionInterval` (the events' post) and `cua/delivery`'s
+//   `holdStartedAt` and `releasedAt` (the hold's span): post to the first raise seen, post to the release, a late raise
+//   (seen by a read past the release and the watcher's resolution: one the person saw), and a raise before the hold
+//   began, which is unguarded, as is a raise during any other call (an element action, a read). A gap in the reads
+//   that leaves a raise's side of the hold unknown makes it undecided: the case is then incomplete, not failed
+//   (callWatch). After every sample the kit reads the record: the driven window still above Chrome's, a run
 //   window gone or the watcher gone stops the case and every case after it (the scene no longer holds).
 // - Each sample's action is its cell's last call, so the row keeps that call's route and meta (activationClick,
 //   activationGuardMs, actionInterval, delivery); its delivery is read back right after it: TextEdit's selected range
@@ -36,8 +38,10 @@
 //        Electron fixture's button, at the middle of its frame (./element-frame.swift): its count up by one. The
 //        fixture's activation, focus and blur counters are read before and after each click, recorded only.
 // - The vendor's half runs the same cases (`--engine vendor`); its rows are recorded, never judged.
-// Pass, for cua's engine: every sample delivered, no late or unguarded raise, no `raiseLeft`, over the case's full count,
-// with the watcher's record whole (started before the first sample, ended after the last, no gap past WATCH_GAP_MS).
+// Pass, for cua's engine: every sample delivered, no late or unguarded raise, no `raiseLeft`, nothing undecided, over
+// the case's full count; the case ended cleanly (its last raise check passed, its session closed, its watcher stopped by
+// the kit) and the watcher's record whole (started before the first sample, reaching the close after the tail, no gap
+// past WATCH_GAP_MS).
 import {execFileSync, spawn} from 'node:child_process';
 import {closeSync, existsSync, openSync, readFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
@@ -261,22 +265,43 @@ export const lossesIn = attempt => (attempt?.changes ?? []).filter(c => /missing
 // The pair's order at the Unix-ms time `t`: the last change at or before it, else the run's first reading.
 export const stateAt = (attempt, t) => (attempt?.changes ?? []).filter(c => c.at <= t).at(-1)?.state ?? attempt?.start?.state ?? null;
 
+// Each change is bracketed by two reads: the one that saw it (`at`) and the one before (`prev`, the last to see the old
+// order), so it happened between them; a gap in the reads widens the bracket. A record without `prev` reads as a change
+// seen at once.
+const prevOf = c => (Number.isFinite(c.prev) ? c.prev : c.at);
+
 // What the watcher saw of one call, from `from` to `until` (Unix ms), with the call's meta (`meta`: the cell row's or
-// answer's; `actionInterval` and `delivery` when it was a route-3 pointer action). With the delivery guard: the first
-// raise after the post and how long after it, how long after the post the hold was released, the raises that began after
-// the release (`late`), and whether a raise that began before the release was still there OUTLIVE_MS after it
-// (`outlived`). Without the guard every raise in the span is `unguarded`. -> {guarded, raises, postToRaiseMs,
-// postToReleaseMs, late, outlived, unguarded}.
+// answer's; `actionInterval` and `delivery` when it was a route-3 pointer action). A cell that observes and then acts
+// keeps only the action's meta, so the guard covers only what its screen hold covered, from `holdStartedAt` (the post,
+// for a guard that reports none) to `releasedAt`. Each raise in the span is one of:
+//   unguarded  seen before the hold began, or during a call with no guard: on the display
+//   late       first seen by a read past the release and its grace (OUTLIVE_MS, the watcher's resolution)
+//   outlived   begun inside the hold, and a read past the grace still saw it (or it was never undone and the watcher
+//              read on past the grace)
+//   undecided  a gap in the reads leaves it unknown whether it began before the hold or lasted past the grace: incomplete
+//              evidence, not a raise
+// With the guard, also the first raise after the post and how long after it, and how long after the post the hold was
+// released. -> {guarded, raises, postToRaiseMs, postToReleaseMs, late, outlived, undecided, unguarded}.
 export function callWatch({meta = {}, attempt, from, until = Infinity}) {
+  const changes = attempt?.changes ?? [];
   const raises = raisesIn(attempt).filter(c => c.at >= from && c.at < until);
   const post = meta.actionInterval?.startedAt ?? null, releasedAt = meta.delivery?.releasedAt > 0 ? meta.delivery.releasedAt : null;
-  if (releasedAt === null) return {guarded: false, raises: raises.length, postToRaiseMs: null, postToReleaseMs: null, late: 0, outlived: false, unguarded: raises.length};
+  if (releasedAt === null) return {guarded: false, raises: raises.length, postToRaiseMs: null, postToReleaseMs: null, late: 0, outlived: 0, undecided: 0, unguarded: raises.length};
+  const holdStart = meta.delivery.holdStartedAt > 0 ? meta.delivery.holdStartedAt : Number.isFinite(post) ? post : releasedAt;
+  const grace = releasedAt + OUTLIVE_MS;
+  const counts = {late: 0, outlived: 0, undecided: 0, unguarded: 0};
+  const kindOf = raise => {
+    if (raise.at > grace) return 'late';
+    if (raise.at < holdStart) return 'unguarded';
+    if (prevOf(raise) < holdStart && raise.at - prevOf(raise) > OUTLIVE_MS) return 'undecided';
+    const undone = changes.find(c => c.at > raise.at && c.state !== 'back-above');
+    if (!undone) return attempt?.end?.at > grace ? 'outlived' : 'undecided';
+    if (prevOf(undone) > grace) return 'outlived';
+    return undone.at > grace && undone.at - prevOf(undone) > OUTLIVE_MS ? 'undecided' : null;
+  };
+  for (const raise of raises) { const kind = kindOf(raise); if (kind) counts[kind] += 1; }
   const first = Number.isFinite(post) ? raises.find(c => c.at >= post) : undefined;
-  const late = raises.filter(c => c.at > releasedAt).length;
-  const setter = (attempt?.changes ?? []).filter(c => c.at <= releasedAt + OUTLIVE_MS).at(-1);
-  const outlived = setter?.state === 'back-above' && setter.at <= releasedAt && setter.at >= from;
-  return {guarded: true, raises: raises.length, postToRaiseMs: first ? first.at - post : null, postToReleaseMs: Number.isFinite(post) ? releasedAt - post : null,
-    late, outlived, unguarded: 0};
+  return {guarded: true, raises: raises.length, postToRaiseMs: first ? first.at - post : null, postToReleaseMs: Number.isFinite(post) ? releasedAt - post : null, ...counts};
 }
 
 // ---- the judge ----------------------------------------------------------------------------------------------------
@@ -333,23 +358,32 @@ export function judgeCase({kase, engine, rows, order}) {
   const actions = watched.filter(w => halves.includes(w.row.sample?.part));
   const deliveries = actions.map(w => w.row.meta?.delivery).filter(Boolean);
   const raises = raisesIn(attempt), losses = lossesIn(attempt);
-  const late = watched.reduce((n, w) => n + w.late + (w.outlived ? 1 : 0), 0);
+  const late = watched.reduce((n, w) => n + w.late + w.outlived, 0);
   const unguarded = opening + watched.reduce((n, w) => n + w.unguarded, 0);
+  const undecided = watched.reduce((n, w) => n + w.undecided, 0);
+  const undecidedSamples = [...new Set(watched.filter(w => w.undecided).map(w => w.row.sample?.i ?? null))];
   const raiseLeft = deliveries.filter(d => d.raiseLeft).length;
-  const seen = watched.filter(w => w.raises && (w.late || w.outlived || w.unguarded)).map(w => ({label: w.row.label, sample: w.row.sample?.i ?? null, late: w.late, outlived: w.outlived, unguarded: w.unguarded}));
+  const seen = watched.filter(w => w.late || w.outlived || w.unguarded).map(w => ({label: w.row.label, sample: w.row.sample?.i ?? null, late: w.late, outlived: w.outlived, unguarded: w.unguarded}));
   const watcher = attempt ? {started: attempt.start.at, ended: attempt.end?.at ?? null, reads: attempt.end?.samples ?? null, maxGapMs: attempt.end?.maxGapMs ?? null,
     lateSamples: attempt.end?.lateSamples ?? null, realtime: attempt.start.realtime ?? null} : null;
   const sampleCells = cells.filter(c => Number.isInteger(c.sample?.i) && c.sample.i >= 0);
+  // The case's end: its last raise check passed, its session closed after the tail, its watcher stopped by the kit. The
+  // watcher's record must reach the close, so the tail was watched.
+  const closeRow = last.findLast(r => r.kind === 'close');
   const watcherProblem = !attempt ? 'no record of the watcher for this attempt'
     : !attempt.end ? 'the watcher\'s record has no end'
       : sampleCells.length && attempt.start.at > sampleCells[0].startedAt ? 'the watcher started after the first sample'
         : sampleCells.length && attempt.end.at < Math.max(...sampleCells.map(c => c.at ?? 0)) ? 'the watcher ended before the last sample'
-          : attempt.end.maxGapMs > WATCH_GAP_MS ? `the watcher's longest gap was ${attempt.end.maxGapMs} ms, past ${WATCH_GAP_MS}` : null;
+          : closeRow && !(attempt.end.at >= closeRow.at) ? `the watcher ended before the case's tail (${attempt.end.at} against ${closeRow.at})`
+            : attempt.end.maxGapMs > WATCH_GAP_MS ? `the watcher's longest gap was ${attempt.end.maxGapMs} ms, past ${WATCH_GAP_MS}` : null;
   const stopRow = last.findLast(r => r.kind === 'stopped');
-  const stopped = stopRow ? stopRow.error : last.some(r => r.kind === 'task' && r.task === 'order-watch-stop') ? null : 'the case did not reach its end';
+  const endCheck = last.findLast(r => r.kind === 'task' && r.task === 'raise-check' && r.args?.[1] === 'end');
+  const watchStop = last.findLast(r => r.kind === 'task' && r.task === 'order-watch-stop');
+  const stopped = stopRow ? stopRow.error : !endCheck?.result?.ok ? 'the case\'s last raise check did not pass' : !closeRow ? 'the case\'s session did not close'
+    : !watchStop?.result?.ok ? 'the watcher was not stopped by the kit at the case\'s end' : null;
   const base = {case: kase, engine, target, samples: complete.length, delivered: delivered.length,
     halves: Object.fromEntries(halves.map(part => [part, complete.filter(([, h]) => h[part].delivered).length])),
-    raises: raises.length, restores: deliveries.reduce((n, d) => n + (d.restores ?? 0), 0), late, unguarded, opening, raiseLeft,
+    raises: raises.length, restores: deliveries.reduce((n, d) => n + (d.restores ?? 0), 0), late, unguarded, opening, undecided, undecidedSamples, raiseLeft,
     capped: deliveries.filter(d => d.capped).length, guarded: `${deliveries.length} of ${actions.length}`,
     postToRaiseMs: spread(actions.map(w => w.postToRaiseMs)), postToReleaseMs: spread(actions.map(w => w.postToReleaseMs)),
     seen, losses: losses.length, undelivered, stopped, watcher,
@@ -359,7 +393,9 @@ export function judgeCase({kase, engine, rows, order}) {
   const failed = [undelivered.length && `${undelivered.length} half or sample(s) not delivered`, late && `${late} late raise(s)`,
     unguarded && `${unguarded} unguarded raise(s)`, raiseLeft && `${raiseLeft} raise(s) left by the guard`].filter(Boolean);
   const short = complete.length < target ? `${complete.length} of ${target} samples${stopped ? ` (${stopped})` : ''}`
-    : losses.length ? `a run window left the screen ${losses.length} time(s)` : watcherProblem;
+    : stopped ? `stopped: ${stopped}`
+      : undecided ? `${undecided} raise(s) undecided by a gap in the watcher's reads (sample${undecidedSamples.length > 1 ? 's' : ''} ${undecidedSamples.join(', ')})`
+        : losses.length ? `a run window left the screen ${losses.length} time(s)` : watcherProblem;
   const judged = failed.length ? 'FAIL' : short ? 'INCOMPLETE' : 'PASS';
   const why = failed.length ? failed.join('; ') : short ?? null;
   return {...base, verdict: engine === 'vendor' ? 'recorded' : judged, why, ...(engine === 'vendor' ? {wouldBe: judged} : {})};
@@ -371,19 +407,20 @@ const spreadText = s => (s.n ? `${ms(s.min)} / ${ms(s.median)} / ${ms(s.p95)} / 
 // The judgements as Markdown: two tables (raises and delivery; timing), then each case's notes.
 export function raiseMarkdown(judged) {
   const lines = ['# #200: background actions, raises and delivery (scripts/cursor-sitting/raise.mjs)', '',
-    'Raises are what the 5 ms watcher saw of the window server\'s order (the guard\'s screen hold keeps them off the display); restores, capped and raise left are what route 3\'s delivery guard reported (`cua/delivery`). A late raise began after the hold\'s release or outlived it by more than 10 ms; an unguarded one came during a call with no guard. Pass, for cua\'s engine: every sample delivered, no late or unguarded raise, no raise left, the full count, the watcher\'s record whole. The vendor\'s rows are recorded, not judged.', '',
-    '| case | engine | samples | delivered | raises seen | restores | late | unguarded | capped | raise left | verdict |', '|---|---|---|---|---|---|---|---|---|---|---|'];
+    'Raises are what the 5 ms watcher saw of the window server\'s order (the guard\'s screen hold keeps them off the display); restores, capped and raise left are what route 3\'s delivery guard reported (`cua/delivery`). A late raise was seen by a read more than 10 ms past the hold\'s release (begun after it, or outliving it); an unguarded one came before the hold began or during a call with no guard; an undecided one sits in a gap of the watcher\'s reads that leaves either unknown, and makes the case incomplete, not failed. Pass, for cua\'s engine: every sample delivered, no late or unguarded raise, no raise left, nothing undecided, the full count, the case ended cleanly and the watcher\'s record whole through its tail. The vendor\'s rows are recorded, not judged.', '',
+    '| case | engine | samples | delivered | raises seen | restores | late | unguarded | undecided | capped | raise left | verdict |', '|---|---|---|---|---|---|---|---|---|---|---|---|'];
   for (const j of judged) {
     const halves = Object.keys(j.halves).length > 1 ? ` (${Object.entries(j.halves).map(([p, n]) => `${p} ${n}`).join(', ')})` : '';
     const verdictText = j.engine === 'vendor' ? `recorded (would be ${j.wouldBe})` : `**${j.verdict}**`;
-    lines.push(`| ${j.case}: ${CASES[j.case].what} | ${j.engine} | ${j.samples} / ${j.target} | ${j.delivered}${halves} | ${j.raises} | ${j.restores} | ${j.late} | ${j.unguarded} | ${j.capped} | ${j.raiseLeft} | ${verdictText} |`);
+    lines.push(`| ${j.case}: ${CASES[j.case].what} | ${j.engine} | ${j.samples} / ${j.target} | ${j.delivered}${halves} | ${j.raises} | ${j.restores} | ${j.late} | ${j.unguarded} | ${j.undecided} | ${j.capped} | ${j.raiseLeft} | ${verdictText} |`);
   }
   lines.push('', '| case | engine | post → first raise, ms (min / median / p95 / max, n) | post → hold released, ms | guarded actions | routes | activation clicks |', '|---|---|---|---|---|---|---|');
   for (const j of judged) lines.push(`| ${j.case} | ${j.engine} | ${spreadText(j.postToRaiseMs)} | ${spreadText(j.postToReleaseMs)} | ${j.guarded} | ${listed(j.routes)} | ${listed(j.activationClicks)} |`);
   for (const j of judged) {
     const notes = [
       ...(j.opening ? [`${j.opening} unguarded raise(s) while the session opened, before the first cell`] : []),
-      ...j.seen.map(s => `${s.late ? `${s.late} late raise(s)` : ''}${s.outlived ? `${s.late ? ', ' : ''}a raise outlived the hold` : ''}${s.unguarded ? `${s.unguarded} unguarded raise(s)` : ''} during "${s.label}"`),
+      ...j.seen.map(s => `${s.late ? `${s.late} late raise(s)` : ''}${s.outlived ? `${s.late ? ', ' : ''}${s.outlived} raise(s) outlived the hold` : ''}${s.unguarded ? `${s.unguarded} unguarded raise(s)` : ''} during "${s.label}"`),
+      ...(j.undecided ? [`${j.undecided} raise(s) undecided by a gap in the watcher's reads, in sample(s) ${j.undecidedSamples.join(', ')}: incomplete evidence, not a raise`] : []),
       ...j.undelivered.map(u => `sample ${u.i}${Object.keys(j.halves).length > 1 ? ` (${u.part})` : ''} not delivered: ${u.why}`),
       ...(j.counters ? [`the fixture's counters, summed over the samples' clicks (recorded only): ${listed(j.counters.sum)}; samples that changed each: ${listed(j.counters.samples)}`] : []),
       ...(j.stopped ? [`stopped: ${j.stopped}`] : []),

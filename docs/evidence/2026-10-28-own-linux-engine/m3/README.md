@@ -146,7 +146,7 @@ holds the focus, so the editor starts behind it. Each call runs inside the diffe
 (`scripts/linux-engine-diff/witness.mjs`: the root's property, restack and focus events in order, the focus and the
 pointer sampled every 5 ms), open until 300 ms after the answer. The field is read through the fixture's own AT-SPI
 reads, never through the engine. Run on `:0` with the frozen build (`--engine-bin`'s file, `task19/engine/cua-engine`),
-**PASS, 19/19**:
+**18 steps, all PASS** (`device-mode.json`'s `steps`):
 
 | mode | input | answer | the field | the witness and the desktop |
 |---|---|---|---|---|

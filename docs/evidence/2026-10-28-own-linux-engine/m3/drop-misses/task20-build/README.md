@@ -50,6 +50,15 @@ word, and the drag still answered `ok`. The watch now reads, by a round trip jus
 to then. An `Ungrab` crossing in that read counts as a stray; only one read after the release (the target's release of
 its own capture) is left out. A live test covers it (a foreign root grab released as the press reaches the window).
 
+The residual, accepted from Chromium's source: the split is a read-batch boundary, not an exact classification at the
+physical release. The boundary is the round trip the watch makes on its own connection after the last path sample and
+the release dwell, just before the engine sends the release (`before_release` in `src/stray.rs`). An `Ungrab` crossing
+the server sent before that round trip's reply is read in the press batch and counts as a stray. One the server sends
+between that reply and the release is read in the release's batch, with the target's own capture cleanup, and is not
+counted. That is accepted because the last path sample has already gone out by then, so Blink's press reset has no path
+movement left to cut and cannot truncate the drag. No time bound is claimed for the gap between the read and the
+release.
+
 `runs/fix1-inside24.*`: the fixed engine (6dc17da3), 240 undisturbed drags (pointer inside, shared and dedicated, 24 of
 each of the five kinds). **Still 0 stray answers**, every drag landed, grab p50 0.694 ms, p99 1.597 ms, max 2.069 ms.
 `tools/press-table.py` now reads the trimmed records as committed, which regenerate `runs/park24-build.txt` exactly.

@@ -998,6 +998,15 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: task-18-report.md (local), "Fix round 1"; `ci-gate --gates engine-linux,test` GREEN on 48443307 (run 41232808191).
   Date/Author: 2026-10-31, the plan-executor (session linux171), from the fixer's report and the task review.
 
+- Decision (2026-11-01, M3.3): doctor, provisioning and the facade proof as built (27f9cbd6..d3761615).
+  - Doctor: the Linux engine row names the service `cua` when cua's engine is selected, and prints the engine's `capabilities`, starting only the engine sessions here would run (the pinned one, a recorded local build, or the one `CUA_LINUX_ENGINE_BIN` names) through the service's own client with the session's desktop environment; with no display it starts none and warns, pointing at the display row; a missing capability warns, and a capability read that fails the way a session start would fails the row (so with the installed 0.2.0 it fails until 0.3.0 is pinned). The `org.a11y.Status` `IsEnabled` check is its own row, `accessibility.enabled`, beside the other desktop rows, since every engine needs it. Doctor loads the Linux client lazily.
+  - Provisioning writes `"desktop": "dedicated"` unless the owner already set a value, and sets `IsEnabled` at session start.
+  - The facade harnesses read which service a lane ran from the trusted worker's `CUA_SKY_SERVICE` and enforce it per lane. `scripts/accept/linux-device-mode.mjs` proves the device mode through the facade and is reusable for M5.
+  - The facade proof on the final engine sources (`--engine-bin`, before the release): repl-parity's diff shows only declared differences; `native-baseline compare --engines` VERDICT: PASS; Acceptance 1 (`pgrep -fc sky_linux` at 0 over 3,539 samples, no `@oai/sky` module opened, doctor showing service `cua`); Acceptance 6's gnome-text-editor case and Acceptance 8 through the facade, 15 of 15; `scripts/accept/linux-native.mjs` 11 of 11.
+  - M3's gate run `m3-gate` (fresh, the final engine sources, every M3 scene and device case) exits 1 on one verdict: `chrome_dnd_short_in_front_shared`, block 2's cold sample, a new mode: the page counted the press and the mouseup but no `dragstart`, no take, 133 ms. Every other verdict passes (60 series faster, 6 same within noise, none within the bound). A retro-scan of 4,752 recorded drags found this mode once (1 of 47 short in-front cold drags); the gate's other cold short samples had the latest takes on record. The design session ruled it needs a fix, sized by a reproduction (the next task); the gate stays a fresh full run that exits 0.
+  Evidence: `m3/` (`gate/`, the facade proof); `.doperpowers/sde/…/task-19-report.md` (local); `ci-gate`, every gate, GREEN on d3761615 (run 41254429731).
+  Date/Author: 2026-11-01, the plan-executor (session linux171), from the M3.3 executor's report.
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

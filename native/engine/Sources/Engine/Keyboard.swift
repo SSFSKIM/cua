@@ -341,11 +341,11 @@ struct EventPoster {
   let deliver: (CGEvent) -> Void
 
   static func toProcess(_ pid: pid_t, sourceState: CGEventSourceStateID = .hidSystemState) -> EventPoster {
-    EventPoster(source: CGEventSource(stateID: sourceState)) { $0.postToPid(pid) }
+    EventPoster(source: CGEventSource(stateID: sourceState)) { gatedPost($0, pid) }
   }
 
   static func toHIDTap() -> EventPoster {
-    EventPoster(source: CGEventSource(stateID: .hidSystemState)) { $0.post(tap: .cghidEventTap) }
+    EventPoster(source: CGEventSource(stateID: .hidSystemState)) { gatedPostToHIDTap($0) }
   }
 
   /// Makes one key event, unposted; nil when it could not be made. A flags-changed event carries its spec's key code:

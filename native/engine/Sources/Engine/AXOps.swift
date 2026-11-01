@@ -21,8 +21,8 @@ struct AXOps {
     var flag = DarwinBoolean(false)
     return AXUIElementIsAttributeSettable(element, name as CFString, &flag) == .success && flag.boolValue
   }
-  var write: (AXUIElement, String, CFTypeRef) -> AXError = { AXUIElementSetAttributeValue($0, $1 as CFString, $2) }
-  var perform: (AXUIElement, String) -> AXError = { AXUIElementPerformAction($0, $1 as CFString) }
+  var write: (AXUIElement, String, CFTypeRef) -> AXError = gatedWrite
+  var perform: (AXUIElement, String) -> AXError = gatedPerform
   /// The system's description of an action (AXUIElementCopyActionDescription); nil when it gives none.
   var describe: (AXUIElement, String) -> String? = { element, action in
     var description: CFString?

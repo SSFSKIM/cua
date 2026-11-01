@@ -91,12 +91,12 @@ func frontmostPid() -> pid_t? { NSWorkspace.shared.frontmostApplication?.process
 /// calls, the real ones by default: a unit test runs the activation's sequencing through stubs, so nothing is posted,
 /// activated, raised or held.
 struct ActivationSystem {
-  var post: (CGEvent, pid_t) -> Void = { event, pid in event.postToPid(pid) }
+  var post: (CGEvent, pid_t) -> Void = gatedPost
   var frontmost: () -> pid_t? = frontmostPid
   var keyFocus: () -> pid_t? = { KeyFocus.pid() }
   /// Answers the release, which returns at once: the re-enable runs on ScreenUpdateReleases' queue.
-  var holdScreenUpdates: () -> () -> Void = { ScreenUpdateReleases.shared.hold(SkyLight.hold) }
-  var reactivate: (pid_t) -> Bool = { NSRunningApplication(processIdentifier: $0)?.activate(options: []) ?? false }
+  var holdScreenUpdates: () -> () -> Void = { DesktopGate.allows("SLSDisableUpdate") ? ScreenUpdateReleases.shared.hold(SkyLight.hold) : {} }
+  var reactivate: (pid_t) -> Bool = { DesktopGate.allows("NSRunningApplication.activate") && (NSRunningApplication(processIdentifier: $0)?.activate(options: []) ?? false) }
   /// The user's focused window and its window number, the one the target's window must stay behind.
   var userWindow: (pid_t) -> (element: AXUIElement, id: CGWindowID)? = { user in
     guard let window = elementAttribute(prepare(AXUIElementCreateApplication(user)), kAXFocusedWindowAttribute),
@@ -107,7 +107,7 @@ struct ActivationSystem {
   /// menu's held activation, whose restore is by activation only.
   var userWindowNumber: (pid_t) -> CGWindowID? = frontWindowNumber
   var isInFront: (CGWindowID, CGWindowID) -> Bool = windowIsInFront
-  var raise: (AXUIElement) -> Void = { AXUIElementPerformAction($0, kAXRaiseAction as CFString) }
+  var raise: (AXUIElement) -> Void = { _ = gatedPerform($0, kAXRaiseAction) }
   var activationPoint: (AXUIElement) -> CGPoint? = { point(attribute($0, "AXActivationPoint")) }
   /// What the process answers at a global point (the activation click's hit-test), read from its application element.
   var hitAt: (pid_t, CGPoint) -> ActivationHit? = { pid, point in

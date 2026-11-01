@@ -126,7 +126,7 @@ extension Probe {
     }
     if let named {
       // As the engine enables a web-shaped app: the named window's process exposes its tree and values from here on.
-      AXUIElementSetAttributeValue(prepare(AXUIElementCreateApplication(named.pid)), "AXManualAccessibility" as CFString, kCFBooleanTrue)
+      _ = gatedWrite(prepare(AXUIElementCreateApplication(named.pid)), "AXManualAccessibility", kCFBooleanTrue)
     }
     var report = focusReport(named: named, source: liveFocusSource(), now: monotonicMilliseconds, sleep: { usleep(UInt32($0 * 1000)) })
     report["accessibility"] = AXIsProcessTrusted()

@@ -132,7 +132,7 @@ extension Probe {
                 wire[name] = ["requested": target, "written": false, "error": "no \(name) scroll bar"]
                 continue
               }
-              let write = { (value: Double) in AXUIElementSetAttributeValue(bar, kAXValueAttribute as CFString, NSNumber(value: value)) }
+              let write = { (value: Double) in gatedWrite(bar, kAXValueAttribute, NSNumber(value: value)) }
               if name == "horizontal" {
                 let start = writeHorizontalStart(target, write: write, settle: settle, contentX: { AXOps.live.frame(area)?.minX })
                 wire[name] = ["requested": target, "written": start.error == .success, "error": Int(start.error.rawValue), "contentMoved": start.contentMoved ?? NSNull()]

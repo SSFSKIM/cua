@@ -111,7 +111,7 @@ struct EnablementAccess: @unchecked Sendable {
         _ = AXUIElementCopyMultipleAttributeValues(application, names, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
       },
       read: { bool(attribute(application, $0)) },
-      write: { AXUIElementSetAttributeValue(application, $0 as CFString, ($1 ? kCFBooleanTrue : kCFBooleanFalse)!) == .success },
+      write: { gatedWrite(application, $0, ($1 ? kCFBooleanTrue : kCFBooleanFalse)!) == .success },
       current: {
         NSRunningApplication(processIdentifier: pid).map { !$0.isTerminated && processGeneration(launchDate: $0.launchDate, pid: pid) == launched } ?? false
       })

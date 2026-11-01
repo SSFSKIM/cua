@@ -1322,6 +1322,23 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   unsent; the close's first step (`Server.retire`) adopts the watch and leaves the open connections in one move under
   the server's lock, so nothing that finds the connection gone can miss its watch; and drains of the closed
   connections' watches are serialized, so none returns while a watch another drain is stopping can still repair.
+  Amended (2026-11-01, the design session's ruling after an incident): **the engine's unit tests cannot act on the real
+  desktop.** While fixing the races, a unit test ran an execute on a Server's own engine, which no test had stubbed or
+  lock-screened, and the engine launched TextEdit on the MacBook. Every call by which the engine acts on the desktop or
+  another process's GUI now passes one gate (`DesktopGate`, Sources/Engine/DesktopGate.swift): the app launch
+  (`NSWorkspace.openApplication`), the re-activation (`NSRunningApplication.activate`), every CGEvent post (to a process
+  and to the HID tap), Accessibility actions and attribute writes (`AXOps`' defaults, route 1's action, the enablement
+  write, the probes' writes), the screen-update hold (`SLSDisableUpdate`), writes to the general pasteboard, and the
+  agent cursor's panel ordered onto the screen (the engine's own window, but it is drawn over the person's windows and
+  ordered against them, so it counts). Reads (observations, the window list, captures) are not acts and stay outside.
+  In the engine the gate is open and passing costs a flag read. It is closed in any process that has XCTest loaded, so
+  the test bundle closes it by being loaded and no test can forget to; there a call that reaches the real system is
+  refused (it does nothing, or throws `desktopGateClosed` naming the call where the call can throw), recorded by the
+  gate, and made a failure of the running test by an observer the test bundle registers as it loads
+  (Tests/EngineTestGate's constructor, Tests/EngineTests/DesktopGateObserver.swift). The proving test launches an app
+  bundle that does not exist and checks the gate's record and the expected failure; the whole suite runs with no other
+  refusal. CI's `engine-swift` job runs `swift test`, so the gate is closed there too; `--probe` and the debug
+  executable the integration tests run directly never load XCTest and stay open.
   Date/Author: 2026-11-01, cursor235's implementer for cua_repl's ruling on #237.
 
 ## Outcomes & Retrospective

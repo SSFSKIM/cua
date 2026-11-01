@@ -86,6 +86,16 @@ test('the status lines say whether the signature is the configured identity with
   ]);
 });
 
+test('the running line names the other connections\' holders when the engine gives them (#237)', () => {
+  const base = {bundlePath: '/e/cua Engine.app', exists: true, engineVersion: '0.1.0', build: 'f'.repeat(64), signature: {kind: 'identity', identityMatches: true},
+    approved: true, approvedAt: 'when', pending: null, running: true, cursor: 'on'};
+  const status = {pid: 7, accessibility: true, screenRecording: true, inputMonitoring: true, connections: 1};
+  assert.equal(engineStatusLines({...base, status: {...status, holders: [{pid: 42091, label: 'MAWS'}]}})[2],
+    'running: pid 7, accessibility true, screen recording true, input monitoring true, 1 other connection(s): pid 42091 (MAWS)');
+  assert.equal(engineStatusLines({...base, status: {...status, connections: 0, holders: []}})[2],
+    'running: pid 7, accessibility true, screen recording true, input monitoring true, 0 other connection(s)');
+});
+
 test('the cursor line: on, off (engine.json), none for an engine without one, unknown when engine.json cannot be read', () => {
   const base = {bundlePath: '/e/cua Engine.app', exists: true, engineVersion: '0.1.0', build: 'f'.repeat(64), signature: {kind: 'identity', identityMatches: true},
     approved: true, approvedAt: 'when', pending: null};

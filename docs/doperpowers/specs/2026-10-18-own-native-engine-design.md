@@ -387,13 +387,16 @@ execute  {method: string, args: object, deadlineUnixMilliseconds: number, lineag
          (lineage: the lineage an element token in args belongs to; a token from another lineage or a retired one answers the
           "no longer valid" sentence; the deadline is checked on receipt and cancels a settle or launch wait still running when it
           passes. An element-targeted method carries args.element: token, the service's translation of the facade's element_index)
-status   {} → {engineVersion, build, accessibility: boolean, screenRecording: boolean, inputMonitoring: boolean, canPostHid: boolean, socket: string, pid: number, bundlePath: string, connections: number}
+status   {} → {engineVersion, build, accessibility: boolean, screenRecording: boolean, inputMonitoring: boolean, canPostHid: boolean, socket: string, pid: number, bundlePath: string, connections: number,
+          holders: [{pid: number | null, label: string | null}]}
          (connections = open connections other than the requesting one, so `connections > 0` means "someone else"; shutdown's "busy" uses the same count;
+          holders (#237) names them in accept order: the peer's pid read at accept (LOCAL_PEERPID) and the session's label from its cursor
+          requests (at most 64 characters, client-asserted), each null when unknown; an engine before #237 sends no holders;
           inputMonitoring is the non-prompting listen preflight, CGPreflightListenEventAccess, the intervention tap's grant, read for doctor and
           the approve step and never requested by the engine; false means the engine runs with intervention detection off)
 approve  {} → {accessibility: boolean, screenRecording: boolean, captured: boolean}   (calls the two prompting requests, whose prompts may not appear, and reads the grants;
           captures one display image and discards it once both read true; the by-hand path is the command's, "Install, signing and permissions")
-shutdown {} → {} then exit, or error "busy" {connections: n} while another connection is open
+shutdown {} → {} then exit, or error "busy" {connections: n, holders} while another connection is open
 
 methods: list_apps, get_app_state, click, drag, paste, perform_secondary_action, press_key, scroll, select_text,
          set_value, type_text (the facade's shapes, R/A-contract.md §1.4), resolve_app {app} | {pid}

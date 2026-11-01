@@ -50,7 +50,19 @@ export function enginePaths(dir = engineDirectory()) {
   };
 }
 
-const others = n => `${n} other connection${n === 1 ? '' : 's'}`;
+// The other connections a status or a busy refusal counts, named by the holders the engine gives (#237): `pid 42091
+// (MAWS)` each, the session's cursor label in brackets; an engine from before #237 gives none, and the count stands alone.
+export function holdersText(holders) {
+  if (!Array.isArray(holders) || !holders.length) return '';
+  return holders.map(holder => {
+    const pid = Number.isSafeInteger(holder?.pid) ? `pid ${holder.pid}` : 'a client of unknown pid';
+    return typeof holder?.label === 'string' && holder.label ? `${pid} (${holder.label})` : pid;
+  }).join(', ');
+}
+const others = (n, holders) => {
+  const named = holdersText(holders);
+  return `${n} other connection${n === 1 ? '' : 's'} open${named ? `: ${named}` : ''}`;
+};
 export const shortBuild = build => String(build ?? 'none').slice(0, 12);
 // An operator's answer that aborts ("n" or "no"); any other line, Enter included, confirms.
 const isAbort = line => /^\s*no?\s*$/i.test(line);
@@ -101,7 +113,7 @@ async function poll(ctx, probe, timeoutMs) {
   }
 }
 
-const busy = (pid, n) => fail('engine_busy', `the engine (pid ${pid}) has ${others(n)} open`, {hint: 'it is serving a session; run this again once nothing uses it (the approved bundle and the running engine are untouched)'});
+const busy = (pid, n, holders) => fail('engine_busy', `the engine (pid ${pid}) has ${others(n, holders)}`, {hint: 'it is serving a session; run this again once nothing uses it (the approved bundle and the running engine are untouched)'});
 
 // `pid`, when given, is the engine the caller means: another one answering at the socket is left alone (engine_mismatch).
 async function stop(ctx, {pid} = {}) {
@@ -109,10 +121,10 @@ async function stop(ctx, {pid} = {}) {
   if (!status) return {wasRunning: false};
   if (pid !== undefined && status.pid !== pid)
     fail('engine_mismatch', `another engine (pid ${status.pid}) answers at ${ctx.paths.socket} now, not pid ${pid}; it was left alone`);
-  if (status.connections > 0) busy(status.pid, status.connections);
+  if (status.connections > 0) busy(status.pid, status.connections, status.holders);
   const answer = await ctx.rpc('shutdown');
   if (!answer.ok && !answer.unreachable) {
-    if (answer.error?.errorName === 'busy') busy(status.pid, answer.error.connections ?? 1);
+    if (answer.error?.errorName === 'busy') busy(status.pid, answer.error.connections ?? 1, answer.error.holders);
     fail('engine_stop_failed', `the engine (pid ${status.pid}) refused shutdown: ${answer.error?.message ?? 'no answer'}`);
   }
   if (!await poll(ctx, async () => !(await statusOf(ctx)), STOP_WAIT_MS))
@@ -459,7 +471,7 @@ export async function approveEngine(deps) {
     status = await launch(ctx);
   }
   sameEngine(status, paths.bundle, onDisk);
-  if (status.connections > 0) fail('engine_busy', `the engine (pid ${status.pid}) has ${others(status.connections)} open; approve runs with no other client`, {hint: 'run it again once no session uses the engine'});
+  if (status.connections > 0) fail('engine_busy', `the engine (pid ${status.pid}) has ${others(status.connections, status.holders)}; approve runs with no other client`, {hint: 'run it again once no session uses the engine'});
 
   const watched = [await watchedApprove(ctx)];
   const first = watched[0].answer;

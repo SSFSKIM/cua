@@ -52,10 +52,10 @@ function world(t, {identity = CERT_SHA1, engineAnswers = {}} = {}) {
     const fake = await startFakeEngine(t, socket, {identity: {engineVersion: '9.9.9', build}, handlers: {
       status: () => { state.onStatus?.(state); return {engineVersion: '9.9.9', build, accessibility: state.accessibility, screenRecording: state.screenRecording,
         inputMonitoring: state.inputMonitoring, canPostHid: true, socket, pid: state.statusPid ?? pid, bundlePath: state.bundlePath ?? bundle, connections: state.connections,
-        ...(state.statusBuild ? {build: state.statusBuild} : {})}; },
+        ...(state.holders ? {holders: state.holders} : {}), ...(state.statusBuild ? {build: state.statusBuild} : {})}; },
       approve: () => { order.push('approve'); state.onApprove?.(state, engine); return {accessibility: state.accessibility, screenRecording: state.screenRecording, captured: state.accessibility && state.screenRecording && state.captured}; },
       shutdown: () => {
-        if (state.connections > 0 || state.busyOnShutdown) throw new EngineFailure(-10005, 'busy', 'busy', {connections: state.connections || 1});
+        if (state.connections > 0 || state.busyOnShutdown) throw new EngineFailure(-10005, 'busy', 'busy', {connections: state.connections || 1, ...(state.holders ? {holders: state.holders} : {})});
         setImmediate(() => { engine.stopped = true; fake.stop(); });
         return {};
       },
@@ -279,8 +279,26 @@ test('stopEngine sends shutdown and waits for the engine to go; with nothing run
   assert.equal(engine.stopped, true);
   const busy = await w.startEngine();
   w.state.connections = 2;
-  await assert.rejects(stopEngine(w.deps), error => (assert.equal(error.code, 'engine_busy'), assert.match(error.message, /2 other connections/), true));
+  await assert.rejects(stopEngine(w.deps), error => (assert.equal(error.code, 'engine_busy'), assert.match(error.message, /has 2 other connections open$/), true));
   assert.ok(!busy.received.some(r => r.method === 'shutdown'));
+});
+
+// #237: an engine that names its holders has them named in the refusal, so whoever is blocked knows whom to ask.
+test('engine_busy names the holders the engine gives: pid and session label each, from status or from shutdown\'s own refusal', async t => {
+  const w = world(t);
+  w.placeBundle();
+  const engine = await w.startEngine();
+  w.state.connections = 2;
+  w.state.holders = [{pid: 42091, label: 'MAWS'}, {pid: null, label: null}];
+  await assert.rejects(stopEngine(w.deps), error => {
+    assert.equal(error.code, 'engine_busy');
+    assert.equal(error.message, `the engine (pid ${engine.pid}) has 2 other connections open: pid 42091 (MAWS), a client of unknown pid`);
+    return true;
+  });
+  w.state.connections = 0;
+  w.state.busyOnShutdown = true;
+  w.state.holders = [{pid: 42091, label: 'cua_repl'}];
+  await assert.rejects(stopEngine(w.deps), error => (assert.match(error.message, /has 1 other connection open: pid 42091 \(cua_repl\)$/), true));
 });
 
 // ---- engineStatus and installedEngine ----
@@ -561,7 +579,10 @@ test('approve refuses with no bundle, with another connection open, and against 
   w.placeBundle();
   w.state.connections = 1;
   await w.startEngine();
-  await assert.rejects(approveEngine(w.deps), error => (assert.equal(error.code, 'engine_busy'), assert.match(error.message, /1 other connection/), true));
+  await assert.rejects(approveEngine(w.deps), error => (assert.equal(error.code, 'engine_busy'), assert.match(error.message, /1 other connection open; approve/), true));
+  w.state.holders = [{pid: 42091, label: 'MAWS'}];
+  await assert.rejects(approveEngine(w.deps), error => (assert.match(error.message, /1 other connection open: pid 42091 \(MAWS\); approve runs with no other client/), true));
+  delete w.state.holders;
   assert.equal(approves(w.engines[0]), 0);
   w.state.connections = 0;
   w.state.bundlePath = '/elsewhere/cua Engine.app';

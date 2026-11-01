@@ -87,8 +87,8 @@ final class Engine: @unchecked Sendable {
       case "status": return Outcome(result: .success(status(connection)))
       case "approve": return Outcome(result: .success(approve()))
       case "shutdown":
-        let others = server?.beginShutdown(connection) ?? 0
-        if others > 0 { throw EngineError(name: "busy", "busy", extra: ["connections": others]) }
+        let holders = server?.beginShutdown(connection) ?? []
+        if !holders.isEmpty { throw EngineError(name: "busy", "busy", extra: ["connections": holders.count, "holders": holders]) }
         return Outcome(result: .success([String: Any]()), exitAfter: true)
       case "execute": return Outcome(result: .success(try execute(request.params, connection, receivedAt)))
       case "cursor": return Outcome(result: .success(try cursorRequest(request.params, connection)))
@@ -123,6 +123,8 @@ final class Engine: @unchecked Sendable {
       "pid": Int(getpid()),
       "bundlePath": Bundle.main.bundlePath,
       "connections": server?.others(than: connection) ?? 0,
+      // Who those connections are (#237): {pid, label} each, so whoever is refused as busy knows whom to ask.
+      "holders": server?.holders(than: connection) ?? [],
       // What doctor reports beside the grants: the per-app route-4 override as this engine read it at launch, and the
       // apps route 3's guard has failed three actions in a row for (each named by `routeAdvice` on its refusal).
       "routes": routes,
@@ -137,6 +139,8 @@ final class Engine: @unchecked Sendable {
   /// session's cursor is on, and if not, whose switch turned it off: the device's (engine.json) wins over the session's.
   private func cursorRequest(_ params: [String: Any], _ connection: ConnectionState) throws -> [String: Any] {
     let request = try CursorRequest(params)
+    // The session's label names this connection in the others' status (#237), whether or not a cursor is drawn.
+    if case .configure(let label?, _, _) = request, let kept = sessionLabel(label) { connection.holderLabel = kept }
     if cursorEnabled {
       if request == .hide {
         cursor.hide(connection: connection.id)

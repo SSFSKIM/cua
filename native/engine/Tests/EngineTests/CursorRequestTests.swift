@@ -147,3 +147,81 @@ final class CursorRequestTests: XCTestCase {
     XCTAssertNil(connection.cursor.label)
   }
 }
+
+// Who holds the engine (#237): each connection's peer pid at accept and its session's label, which `status` and
+// shutdown's busy refusal name to the others, so whoever is refused knows whom to ask.
+final class HolderTests: XCTestCase {
+  /// A server that is not started (no socket, no lock), its engine answering for it as a started one's does.
+  private func server() -> Server {
+    let server = Server(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        settings: EngineSettings(peerPolicy: .uid, cursor: false))
+    server.engine.server = server
+    return server
+  }
+
+  private func handle(_ server: Server, _ method: String, _ params: [String: Any] = [:], on connection: ConnectionState) -> Result<Any, EngineError> {
+    server.engine.handle(Request(id: 1, method: method, params: params), on: connection, receivedAt: unixMilliseconds()).result
+  }
+
+  /// A Unix socket pair's ends, closed at the test's end.
+  private func socketPair() -> (Int32, Int32) {
+    var fds: [Int32] = [-1, -1]
+    XCTAssertEqual(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds), 0)
+    let (a, b) = (fds[0], fds[1])
+    addTeardownBlock { close(a); close(b) }
+    return (a, b)
+  }
+
+  func testThePeerPidIsTheConnectingProcesssAndAnythingElseReadsNone() {
+    let (a, _) = socketPair()
+    XCTAssertEqual(peerPid(a), getpid(), "a socket pair's peer is this process")
+    XCTAssertNil(peerPid(-1))
+    let pipeEnds = UnsafeMutablePointer<Int32>.allocate(capacity: 2)
+    defer { pipeEnds.deallocate() }
+    XCTAssertEqual(pipe(pipeEnds), 0)
+    XCTAssertNil(peerPid(pipeEnds[0]), "not a socket")
+    close(pipeEnds[0]); close(pipeEnds[1])
+  }
+
+  func testStatusNamesTheOtherConnectionsByPidAndLabelKeepingTheCount() throws {
+    let server = server()
+    let asker = try XCTUnwrap(server.register(-1, peerPid: 100))
+    let session = try XCTUnwrap(server.register(-1, peerPid: 42091))
+    let unnamed = try XCTUnwrap(server.register(-1))
+    // The device's cursor is off (cursor: false): the label is still the connection's name.
+    _ = try handle(server, "cursor", ["label": "  MAWS\n", "enabled": true], on: session).get()
+    let status = try XCTUnwrap(try handle(server, "status", on: asker).get() as? [String: Any])
+    XCTAssertEqual(status["connections"] as? Int, 2)
+    let holders = try XCTUnwrap(status["holders"] as? [[String: Any]])
+    XCTAssertEqual(holders.count, 2)
+    XCTAssertEqual(holders[0]["pid"] as? Int, 42091)
+    XCTAssertEqual(holders[0]["label"] as? String, "MAWS", "the label as the cursor keeps it")
+    XCTAssertTrue(holders[1]["pid"] is NSNull, "a pid that could not be read is null")
+    XCTAssertTrue(holders[1]["label"] is NSNull, "a session that sent no label is null")
+    server.unregister(unnamed)
+    let after = try XCTUnwrap(try handle(server, "status", on: session).get() as? [String: Any])
+    XCTAssertEqual((after["holders"] as? [[String: Any]])?.map { $0["pid"] as? Int }, [100], "never the asker itself")
+  }
+
+  func testALabelIsCutForStatusAndAHideKeepsIt() throws {
+    let server = server()
+    let asker = try XCTUnwrap(server.register(-1)), session = try XCTUnwrap(server.register(-1, peerPid: 7))
+    _ = try handle(server, "cursor", ["label": String(repeating: "x", count: 200)], on: session).get()
+    _ = try handle(server, "cursor", ["hide": true], on: session).get()
+    _ = try handle(server, "cursor", ["enabled": false], on: session).get()
+    let holders = try XCTUnwrap((try handle(server, "status", on: asker).get() as? [String: Any])?["holders"] as? [[String: Any]])
+    XCTAssertEqual((holders[0]["label"] as? String)?.count, holderLabelLimit)
+  }
+
+  func testShutdownsBusyRefusalNamesTheHolders() throws {
+    let server = server()
+    let asker = try XCTUnwrap(server.register(-1)), session = try XCTUnwrap(server.register(-1, peerPid: 42091))
+    _ = try handle(server, "cursor", ["label": "MAWS"], on: session).get()
+    guard case .failure(let error) = handle(server, "shutdown", on: asker) else { return XCTFail("a busy engine accepted shutdown") }
+    XCTAssertEqual(error.errorName, "busy")
+    XCTAssertEqual(error.extra["connections"] as? Int, 1)
+    let holders = try XCTUnwrap(error.extra["holders"] as? [[String: Any]])
+    XCTAssertEqual(holders.first?["pid"] as? Int, 42091)
+    XCTAssertEqual(holders.first?["label"] as? String, "MAWS")
+  }
+}

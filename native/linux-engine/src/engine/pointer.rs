@@ -108,13 +108,15 @@ pub(super) struct ChromiumPress<'a> {
 }
 
 /// The press and the samples through Blink's drag threshold under one server grab, the real pointer's place read
-/// first inside it; answers how many samples went out. The grab is released whatever happened.
+/// first inside it; answers how many samples went out. The grab is released whatever happened. `pressed_at`: when the
+/// button's press went out, before the threshold's samples.
 fn atomic_press(
     x: &X11,
     route: &mut Route,
     press: &mut ChromiumPress,
     samples: &[(i16, i16)],
     pressed: &mut bool,
+    pressed_at: &mut Option<Instant>,
 ) -> Result<usize> {
     let count = press_samples(samples);
     let started = Instant::now();
@@ -123,6 +125,7 @@ fn atomic_press(
         let inside = x.pointer_in(press.window, press.parent)?;
         route.button(x, 1, true)?;
         *pressed = true;
+        *pressed_at = Some(Instant::now());
         for &(sx, sy) in &samples[..count] {
             route.place_again(x, sx, sy)?;
         }
@@ -258,18 +261,21 @@ fn drag_along(
         let count = samples.len();
         // a Chromium-family press: the watch begun, then the press and the samples through the drag threshold under
         // one server grab (no take can come during it: the target's requests wait for the grab's end)
+        // when the button's press went out: the hold's bound counts from it
+        let mut pressed_at = None;
         let first = match press.as_deref_mut() {
             Some(press) => {
                 press.watching = Some(press.watch.begin(press.window, press.xtest)?);
-                atomic_press(x, route, press, &samples, &mut pressed)?
+                atomic_press(x, route, press, &samples, &mut pressed, &mut pressed_at)?
             }
             None => {
                 route.button(x, 1, true)?;
                 pressed = true;
+                pressed_at = Some(Instant::now());
                 0
             }
         };
-        let pressed_at = Instant::now();
+        let pressed_at = pressed_at.expect("the button was pressed");
         std::thread::sleep(pacing.press);
         // the path's last two samples, which a floor after a take re-visits
         let last = *samples.last().expect("a drag has samples");
@@ -301,36 +307,42 @@ fn drag_along(
             }
         }
         if let Some((watch, bound)) = hold.as_mut() {
-            let path_ms = pressed_at.elapsed().as_secs_f64() * 1000.0;
+            let ms = |d: Duration| d.as_secs_f64() * 1000.0;
+            let path = pressed_at.elapsed();
             // a drag that never took by its path's end keeps its button down for the take until the bound after the
             // press; a take seen at this last look counts as late too
-            if taken.is_none() {
+            // whether the hold ran: no take by the path's end
+            let held = taken.is_none();
+            let mut waited = Duration::ZERO;
+            if held {
                 let since = Instant::now();
-                let seen = crate::dnd::wait_for_take(|| watch.started(x), pressed_at + *bound);
-                if seen {
+                if crate::dnd::wait_for_take(|| watch.started(x), pressed_at + *bound) {
                     taken = Some((Instant::now(), 0));
                 }
-                *held_for_take = Some(json!({
-                    "bound_ms": bound.as_secs_f64() * 1000.0,
-                    "path_ms": path_ms,
-                    "waited_ms": since.elapsed().as_secs_f64() * 1000.0,
-                    "taken": seen,
-                }));
+                waited = since.elapsed();
             }
             // the floor after a take: what the path's steps left of it filled with motions, ending on the last sample
+            let mut keepalives = 0;
             if let Some((at, _)) = taken
                 && !after_take.is_zero()
             {
-                let sent = crate::dnd::keepalive(
+                keepalives = crate::dnd::keepalive(
                     |(px, py)| route.place_again(x, px, py),
                     before_last,
                     last,
                     at + after_take,
                 )?;
-                let record = held_for_take.get_or_insert_with(|| json!({}));
-                record["take_after_press_ms"] = json!(at.saturating_duration_since(pressed_at).as_secs_f64() * 1000.0);
-                record["keepalives"] = json!(sent);
             }
+            // one shape for every drag the hold watched (`--stats` `hold`)
+            *held_for_take = Some(json!({
+                "bound_ms": ms(*bound),
+                "path_ms": ms(path),
+                "held": held,
+                "waited_ms": ms(waited),
+                "taken": taken.is_some(),
+                "take_after_press_ms": taken.map(|(at, _)| ms(at.saturating_duration_since(pressed_at))),
+                "keepalives": keepalives,
+            }));
         }
         std::thread::sleep(pacing.release);
         // the last look before the release

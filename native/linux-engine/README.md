@@ -139,8 +139,10 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   misses). So when no take came by the path's end the button stays down for it until 250 ms after the press (`dnd.rs`
   `TAKE_HOLD_AFTER_PRESS`; takes came 4 to 93 ms after the press over 195 drags of the gate's sequence), and a take then,
   or one seen at the path's last look, gets the same floor; with no take by then the drag is released and answers as
-  before (`--stats` `hold`: the bound, the path's and the wait's time, whether the take came, how long after the
-  press, and the keepalives). Known limits, for M4:
+  before. `--stats` `hold` has one shape on every drag the hold watches: `bound_ms`, `path_ms` (the press to the path's
+  end), `held` (no take by the path's end, so the hold ran), `waited_ms` (0 when it did not), `taken` (a take by the
+  release), `take_after_press_ms` (null without one) and `keepalives`; the bound and the take's time count from the
+  button's press itself. Known limits, for M4:
   - an accept later than 350 ms after the take still misses, unseen (the latest seen was 275 ms), and so does a take
     later than 250 ms after the press: the drag answers success;
   - a speed gap: a Chromium drag that never takes (a text selection, a range, a short thumb drag) holds its button

@@ -8,7 +8,7 @@ import {guardOf, SCENES} from '../repl-parity/scenes-mac.mjs';
 import {COMPOSITION_QUIET_MS} from './live-device.mjs';
 import {caseCells, requeryCell} from './matrix-cells.mjs';
 import {userWindowOf} from './oracle.mjs';
-import {caseId, SCENE_OF} from './plan.mjs';
+import {caseId, focusVerdict, SCENE_OF} from './plan.mjs';
 
 // The acts that may paste (type_text's paste route included): each sent only between two alert checks.
 export const PASTING = Object.freeze(['paste', 'typeText']);
@@ -117,7 +117,8 @@ const presentMeta = meta => {
   return kept.length ? Object.fromEntries(kept) : null;
 };
 
-// One case: prepare, act (one facade call), check; in the background regime the oracle's readings around the act, each
+// One case: prepare, act (one facade call), check; the steps its prepare states (`prepared`) and, for a field it needs
+// focused, how the focus was read (`focusReadBy`: the observation's meta or the trailer, ./plan.mjs focusVerdict); in the background regime the oracle's readings around the act, each
 // with the watcher alive. A method row by default; the Unicode matrix's rows name their own section and id (`extra`
 // kept on the row). The row's window runs from its prepare's start to its check's end; the activations in it are
 // the row's (the frontmost regime records their count, the background regime's oracle judges them). A Chrome or
@@ -142,7 +143,14 @@ export async function caseRow(ctx, target, regime, c, {user = null, userWindow =
   const prepared = span(await ctx.lane.js(cells.prepare));
   keep('prepare', prepared);
   if (!prepared.ok) return done({invalid: 'the prepare cell failed', error: prepared.error});
+  if (Array.isArray(prepared.value?.prepared)) row.prepared = prepared.value.prepared;
   if (!prepared.value?.ready) return done({invalid: `not prepared: ${prepared.value?.reason ?? 'no reason'}`});
+  // A prepare that needs its field focused: judged by the observation's own focus where the engine reports it (#188).
+  if (prepared.value.focus) {
+    const verdict = focusVerdict(prepared.value.focus, prepared.engine?.observation ?? null);
+    row.focusReadBy = verdict.by;
+    if (verdict.problem) return done({invalid: `not prepared: ${verdict.problem}`});
+  }
   let before = null;
   if (regime === 'background') {
     before = await userFront(ctx, user, userWindow);

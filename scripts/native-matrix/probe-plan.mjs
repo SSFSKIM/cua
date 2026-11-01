@@ -16,7 +16,7 @@ import {FINDER_TYPING_NAME} from '../repl-parity/scenes-mac.mjs';
 import {INTERVENTION_DEBOUNCE_MS} from './live-device.mjs';
 import {prelude} from './matrix-cells.mjs';
 import {sha256Hex} from './matrix-text.mjs';
-import {TEXT_FIELDS, TYPED} from './plan.mjs';
+import {FOCUS_REASONS, TEXT_FIELDS, TYPED} from './plan.mjs';
 
 const j = JSON.stringify;
 
@@ -115,7 +115,9 @@ try {${act}\n} catch (e) { __m.threw = String(e?.message ?? e).slice(0, 300); __
 const actMs = performance.now() - __t, endAt = Date.now();
 return {actMs, callAt, endAt, late: Math.max(0, callAt - __at), threw: __m.threw !== null, errorName: __m.errorName, message: __m.threw};`);
 
-// A text scene's typing field (./plan.mjs TEXT_FIELDS) emptied and given the focus. -> {ready} or {ready: false, reason}.
+// A text scene's typing field (./plan.mjs TEXT_FIELDS) emptied and given the focus, the emptying named in `prepared`
+// when it was needed; a trailer a selection still masks is its own reason (./plan.mjs FOCUS_REASONS). -> {ready,
+// prepared?} or {ready: false, reason, prepared?}.
 export const emptyFieldCell = scene => cell(`${prelude(scene)}
 // cua-matrix-cell: field.empty
 ${emptyField(scene)}`);
@@ -125,11 +127,13 @@ if (!inFront(ax)) return {ready: false, reason: "the scene window is not the app
 const __find = ax => ${TEXT_FIELDS[scene]};
 let __index = __find(ax);
 if (__index === null) return {ready: false, reason: "the field is not in the text"};
-if (plain(valueOfIndex(ax, __index) ?? "") !== "") { await __app.setValue(__index, ""); ax = await observe(); __index = __find(ax); }
+const __prepared = [];
+if (plain(valueOfIndex(ax, __index) ?? "") !== "") { await __app.setValue(__index, ""); ax = await observe(); __index = __find(ax); __prepared.push("field emptied"); }
 if (__index !== null && focusedIndexOf(ax) !== __index) { await __app.click(__index); ax = await observe(); __index = __find(ax); }
-const __empty = __index !== null && plain(valueOfIndex(ax, __index) ?? "") === "", __focused = __index !== null && focusedIndexOf(ax) === __index;
-if (!__empty || !__focused) return {ready: false, reason: !__empty ? "the field could not be emptied" : "the field could not be given the focus"};
-return {ready: true};`;
+const __empty = __index !== null && plain(valueOfIndex(ax, __index) ?? "") === "", __focus = __index === null ? "unfocused" : focusReading(ax, __index);
+const __stated = __prepared.length ? {prepared: __prepared} : {};
+if (!__empty || __focus !== "focused") return {ready: false, reason: !__empty ? "the field could not be emptied" : __focus === "masked" ? ${j(FOCUS_REASONS.masked)} : ${j(FOCUS_REASONS.unfocused)}, ...__stated};
+return {ready: true, ...__stated};`;
 
 // A text field read back by hash against `expected` (or, with `expected` null, its hash and length returned). The value
 // stays in the cell. -> {ok, outcome: {exact, nfcEqual, length, expectedLength}} | {hash, length} | {invalid}.

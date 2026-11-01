@@ -28,10 +28,11 @@
 //   one that does not set a key leaves no earlier call's value standing as its own): codex/toolSurface (the policy's);
 //   cua/nativeEngine {engine, version, build} on every result; cua/engineMs, the client's time around the socket round
 //   trip of the method's own request, null when it never reached the engine (a decline, an index the service refused);
-//   cua/settle on an observation whose settle hit its cap; cua/observation on an observation whose timings carry any of
-//   the engine's own diagnostics the harness reads (OBSERVATION_DIAGNOSTICS: web enablement, the web area's wait, the
-//   settle's status, duration and counts; the whitelist's scalars only), which, like every key here, rides in the tool
-//   result's _meta and never in its content, the model's text; cua/screenshotOmitted on an observation whose screenshot the
+//   cua/settle on an observation whose settle hit its cap; cua/observation on every observation: the focus it read (the
+//   focused element's index and role, or focusedIndex null, #188) and whichever of the engine's own diagnostics the
+//   harness reads its timings carry (OBSERVATION_DIAGNOSTICS: web enablement, the web area's wait, the settle's status,
+//   duration and counts, the focus read's failure; the whitelist's scalars only), which, like every key here, rides in
+//   the tool result's _meta and never in its content, the model's text; cua/screenshotOmitted on an observation whose screenshot the
 //   engine did not take, with the reason ("windowMinimized": a minimized window is observed in place with no screenshot,
 //   and the facade's getScreenshot then fails "Screenshot unavailable"); on input results and input errors the engine's meta as
 //   cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt, cua/hidIdleMs, and when the engine sends
@@ -41,7 +42,8 @@
 //   stopped it), cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
 //   row for the app) and cua/delivery (route 3's delivery guard after a pointer action's events, #200: the restores it
 //   made, whether it brought the user's app back to the front, the latency of the first, its own time, the screen hold's,
-//   whether it reached the hold's cap and left a raise, when the events were posted). cua/afterActionRepairs rides on
+//   whether it reached the hold's cap and left a raise, when the events were posted) and cua/elementClick (an element
+//   click's plan, the ladder's reason and the hit-test's answer, #188). cua/afterActionRepairs rides on
 //   input results and on observations alike once the connection's after-action watch has repaired (#200: the repairs
 //   route 3's watch made after an action had answered, the connection's total and the last actions', each keyed by its
 //   delivery's postedAt). cua/serviceMs is the wrapper's (src/services/sky.mjs).
@@ -88,24 +90,29 @@ const SPIKE_ROUTES = new Set(['1', "2'", '2', '3']);
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
-  'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null,
+  'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null,
 };
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187), and its bound.
 const NOTED_METHODS = new Set(['paste', 'type_text']);
 const NOTE_CHARS = 500;
 // The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's
-// value-free diagnostics, #187).
-const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste'];
+// value-free diagnostics, #187; `elementClick`: an element click's plan, the ladder's reason and the hit-test's answer,
+// #188).
+const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
+  'elementClick'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application
 // element's role read before enablement (its cost, #244), what web enablement read before it touched the attribute and
 // which attribute it set, whether the web area was seen or waited for (and how long), and each settle's status,
-// duration and counts. A bounded whitelist of scalars (a string of at most 64 characters), and the notification counts
-// as at most 16 names to integers; never the text, the tree or the timings of every phase.
+// duration and counts, and why the focus read named no element (`focusRead`: an AXError, notAnElement or outsideTheWalk).
+// A bounded whitelist of scalars (a string of at most 64 characters), and the notification counts as at most 16 names
+// to integers; never the text, the tree or the timings of every phase. Beside them the service adds the focus every
+// observation read (./observations.mjs focus: the focused element's index and role, #188), which the trailer's selected
+// text masks for the model and the harness.
 const OBSERVATION_DIAGNOSTICS = ['launched', 'reopened', 'webShaped', 'appRoleReadMs', 'enablementPrior', 'enabled', 'chromium', 'webAreaSeen', 'webAreaFound', 'webAreaWaitMs',
   ...['openSettle', 'settle'].flatMap(prefix => ['', 'Ms', 'Notifications', 'NotificationCounts', 'BusyWalks', 'BusyVetoes', 'Observed', 'QuietAtMs'].map(part => prefix + part)),
-  'settleTreeReused'];
+  'settleTreeReused', 'focusRead'];
 const DIAGNOSTIC_STRING_CHARS = 64, DIAGNOSTIC_COUNTS = 16;
 const isScalar = value => typeof value === 'boolean' || Number.isFinite(value) || (typeof value === 'string' && value.length <= DIAGNOSTIC_STRING_CHARS);
 const isCounts = value => value !== null && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length <= DIAGNOSTIC_COUNTS
@@ -213,8 +220,7 @@ export function createService({nodeRepl, client = null}) {
     if (skyshot.settle) setMeta({'cua/settle': skyshot.settle});
     if (skyshot.screenshotOmitted) setMeta({'cua/screenshotOmitted': skyshot.screenshotOmitted});
     if (skyshot.afterActionRepairs) setMeta({'cua/afterActionRepairs': skyshot.afterActionRepairs});
-    const diagnostics = observationDiagnostics(skyshot.timings);
-    if (diagnostics) setMeta({'cua/observation': diagnostics});
+    setMeta({'cua/observation': {...observationDiagnostics(skyshot.timings), ...observations.focus(target.appPath)}});
     return {app: target.appPath, screenshot: skyshot.screenshot?.url ? {url: skyshot.screenshot.url} : null, text};
   }
 

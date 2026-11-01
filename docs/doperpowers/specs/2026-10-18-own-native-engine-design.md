@@ -425,7 +425,8 @@ Skyshot  {app: {bundleIdentifier, displayName, appPath, pid, catalyst: boolean},
           trailer names. settle: "capped" when the settle that preceded this observation hit the 5 s cap — on the
           observation result, since the settle runs at the next get_app_state, not inside the action, R/sky-behaviour.md §23.
           timings, the engine's diagnostics, carries focusRead when the focus read named no node: the AXError, "notAnElement"
-          or "outsideTheWalk"; M1a.2b)
+          or "outsideTheWalk"; M1a.2b), which the service passes on in `cua/observation` beside the focused element's
+          index and role (#188)
 Node     {token: string, depth: number, pid: number, role: string, subrole: string | null, roleDescription: string | null,
           title: string | null, description: string | null, value: string | number | boolean | null,
           valueType: "float" | "integer" | "boolean" | "string" | "date" | "unknown" | null, valueMarkdown: string | null,
@@ -506,6 +507,9 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     ("notification" | "reading" | "timeout" | "deadline" | "noChannel"), effectWaitMs?, mainLagMs?, mainLagOpen?,
     stage? ("read" | "effect"), confirmed?, unconfirmedLines? (the operation's, when any), restore ("restored" |
     "skippedChanged" | "notTaken")}; never the clipboard's contents or the field's text
+  elementClick: an element click's plan (#188), on its result and its errors: {plan ("action" | "synthesized"), action?
+    (AXPick | AXPress), reason ("advertised" | "descendant" | "noAction" | "notPlainLeft" | "forced"), hit? ("element" |
+    "descendant" | "ancestor" | "other" | "noAnswer"), hitTest? ("application")}, hit present when a hit-test was taken
   note: on a paste or type_text result that pasted a line with no channel to see it, read after ⌘V (#187): the sentence
     the service adds to the tool result's content
   pasteUnconfirmed (engine-only, not admitted by the wrapper: a concealed request never pastes): ⌘V was sent and the text
@@ -1436,6 +1440,52 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   this change: making background Chrome take ⌘V (3b, an attended A/B under these diagnostics) and the late ⌘V after a
   restore pasting the person's clipboard, which no engine step can stop once ⌘V is posted (the vendor shares it).
   Date/Author: 2026-11-01, cursor235's implementer for the design session's ruling on #187.
+- Decision (#188, 2026-11-01, `fix/188-electron-field-focus`; amends the input results' meta in Interfaces, "Observation
+  (skyshot)"'s focus read and the method matrix's prepares): **an element click records how it was carried, every
+  observation's meta names the focus a selection cannot mask, and the matrix's prepares stop inheriting an earlier
+  row's selection.** "The field could not be given the focus" was never the engine's: it is the matrix prepare's check
+  after its `__app.click(index)`, which read the focus off the trailer's "The focused UI element is N" line, and the
+  renderer prints that line only when nothing is selected (render.mjs trailer). A focused field still holding an earlier
+  row's selection (drag.select's, selectText's "matrix") read as unfocused, which made four cua rows invalid in every run
+  since hold 2a: electron background typeText.replace, pressKey.tab and paste.replace@finder, and
+  electron/frontmost/paste.replace. The vendor passes them because its click leaves no selection; cua's click on the
+  Electron field is an AXPress (the field advertises it), which keeps the selection.
+  1. **The click's record** (`meta.elementClick`, carried as `cua/elementClick` and kept in the matrix's engine meta):
+     `plan` ("action" with its `action`, or "synthesized"), the ladder's `reason` ("advertised", "descendant": the gate,
+     "noAction", "notPlainLeft", "forced": the spike's), and when a hit-test was taken (the gate's, or a synthesized
+     click's reach check, recorded on a refusal too) its `hit` against the element ("element", "descendant", "ancestor",
+     "other", "noAnswer") and `hitTest: "application"`, since cua hit-tests the owner's application element where the
+     vendor hit-tests under the element's window (F-helper-logic.md:79). This turns hold 3's inferred AXPress into a
+     recording. Response meta is the cell's last call's, so a prepare's click is overwritten by its later calls: the
+     record is read where the click is its cell's last call (a click row's act, a cell of its own).
+  2. **The focus in the observation's meta.** `cua/observation` now rides on every observation: `focusedIndex`, the
+     index the observation gave the app's AXFocusedUIElement (the read the trailer prints; null when it named none), and
+     `focusedRole`, both added by the service from the Skyshot's `focused` token and its numbering; and the engine's
+     `focusRead` (an AXError, "notAnElement" or "outsideTheWalk"), now on the whitelist, when the read named no element.
+     The app's focused element, not the per-node AXFocused flag, because it is what keys reach and what the trailer
+     shows: hold 10's forced arms had AXFocused true while the application's read failed. Value-free: indexes and roles,
+     never text, and never the model's text.
+  3. **The matrix's prepares stand alone.** A prepare that needs its field focused (focusOn in `plan.mjs`: selectedIn,
+     the Tab cases) clicks when the trailer does not show the field focused; if a selection still masks the trailer, it
+     empties the field as a stated step (`prepared: ["field emptied to clear a selection"]` on the row; writing the same
+     value back does not collapse a Chromium selection), where it has a value to write back (TextEdit's selectedIn has
+     none and does not clear). A trailer still masked after that is its own reason, "the focus could not be read: a
+     selection masks the trailer", never "could not be given the focus". The row then judges the focus by cua's
+     `focusedIndex` of the prepare's last observation, the state the act starts from, in the trailer's place whenever
+     it is there (`focusReadBy: "observation"`, else "trailer"; the vendor reports no meta). `emptyField` (the probe
+     cells and the Unicode matrix) names its emptying (`prepared: ["field emptied"]`) and the masked reason alike.
+  4. **The product question is kept out of the matrix.** Whether cua's click on a text field should keep an earlier
+     selection (an AXPress keeps it, a posted click collapses it to a caret, and an AXPress cannot place a caret at the
+     click's point) is answered by its own recorded-only live cell in the #187 slot (frontmost Electron field, cua and
+     one vendor cell), not by these rows, which clear the selection and say so.
+  5. **Limit, deferred:** the application's focus read answers AXError -25212 once no activation is held (hold 10's
+     forced arms): `focusedIndex` is then null and `focusRead` names the error, and a prepare judged by it reads the
+     field unfocused. No row depends on it: the matrix's rows run inside the held activation.
+  Proven offline: the record's reasons and wire in `ElementClickRecordTests`; the service's focus meta and click record
+  in `services-engine-service.test.mjs`; the prepares, the stated clear, the masked reason and the verdict's preference
+  in the native matrix's plan, run and probe-plan tests. Nothing live ran; the four rows are judged at the next matrix
+  sitting.
+  Date/Author: 2026-11-01, cursor235's implementer for the design session's ruling on #188.
 
 ## Outcomes & Retrospective
 

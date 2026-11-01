@@ -44,6 +44,44 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
   return .synthesized(synthesized)
 }
 
+/// What an element click's result meta records of how it was carried (#188, meta `elementClick`): the plan, why the
+/// ladder chose it (`advertised`: a plain left click on an element advertising AXPick or AXPress whose point does not
+/// land on a strict descendant; `descendant`: the gate sent it to synthesis; `noAction`: the element advertises neither;
+/// `notPlainLeft`: another button or count; `forced`: the spike's route), and what the hit-test at the element's point
+/// answered relative to it when one was taken (the gate's, or a synthesized click's reach check), against the owner's
+/// application element, where the vendor hit-tests under the element's window (F-helper-logic.md:79). So a click on a
+/// text field says whether an AXPress (which keeps the field's selection) or a posted click (which places a caret)
+/// carried it. Value-free: action names and enumeration words only.
+struct ElementClickRecord: Equatable {
+  enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced }
+  let plan: ElementClickPlan
+  let reason: Reason
+  var hit: HitRelation?
+
+  var wire: [String: Any] {
+    var wire: [String: Any] = ["reason": reason.rawValue]
+    switch plan {
+    case .action(let action): wire["plan"] = "action"; wire["action"] = action
+    case .synthesized: wire["plan"] = "synthesized"
+    }
+    if let hit { wire["hit"] = "\(hit)"; wire["hitTest"] = "application" }
+    return wire
+  }
+}
+
+/// The record of `plan`, chosen by elementClickPlan from the same arguments; `hit` is the hit-test's answer if one was
+/// taken.
+func elementClickRecord(_ plan: ElementClickPlan, forced: InputRoute?, button: MouseButton, count: Int, actions: [String],
+                        hit: HitRelation?) -> ElementClickRecord {
+  let reason: ElementClickRecord.Reason
+  if forced != nil { reason = .forced }
+  else if case .action = plan { reason = .advertised }
+  else if !actions.contains("AXPick") && !actions.contains("AXPress") { reason = .noAction }
+  else if button != .left || count != 1 { reason = .notPlainLeft }
+  else { reason = .descendant }
+  return ElementClickRecord(plan: plan, reason: reason, hit: hit)
+}
+
 /// The refusal of a click on a menu-bar item that the record path does not take (another button, several clicks, a
 /// forced route, an item without a menu) and of any click on the menu bar itself: the vendor neither presses nor
 /// synthesizes a menu-bar click, and pressing or synthesizing one would open the menu a way the vendor never does (an

@@ -57,6 +57,20 @@ test('the trailer: the focused element, selected text and selected elements', ()
   assert.deepEqual(text.selectedIndexesOf(vendor.finder), []);
 });
 
+// #188: the renderer prints the focused element only when nothing is selected, so a trailer without the field's focus
+// line says "unfocused" only when no selection masks it.
+test('the focus reading tells a field shown focused, a trailer a selection masks, and a field shown unfocused', () => {
+  assert.equal(text.focusReading(vendor.electron, 5), 'focused');
+  assert.equal(text.focusReading(vendor.electron, 13), 'unfocused', 'the trailer names another element');
+  const masked = 'Window: "x", App: y.\n0 standard window x\n\t1 text entry area (settable) Value: Line 10\n\nSelected text: ```\nLine 10\n```\n\nnote';
+  assert.equal(text.focusReading(masked, 1), 'masked');
+  const rows = 'Window: "x", App: y.\n0 row (selected)\n\nSelected:\n\t0 row (selected)\n\nnote';
+  assert.equal(text.focusReading(rows, 0), 'masked', 'selected elements mask it too');
+  assert.equal(text.focusReading('Window: "x", App: y.\n0 standard window x', 0), 'unfocused', 'no trailer at all');
+  const run = new Function(`${text.EMBEDDED}\nreturn focusReading;`)();
+  assert.equal(run(masked, 1), 'masked', 'embedded in a cell');
+});
+
 test('Finder: a file\'s row by its name, the list\'s visible range, the scroll area above it', () => {
   for (const ax of [vendor.finder, cuaText.finder]) {
     assert.equal(text.rowIndexOfName(ax, 'scene-file-001'), 5);

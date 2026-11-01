@@ -1,0 +1,7 @@
+{"pid":97189,"watch":"activations"}
+{"pid":42698,"bundleId":"com.google.chrome.for.testing","kind":"activated","at":1793557853467}
+{"bundleId":"com.apple.TextEdit","at":1793557853470,"kind":"deactivated","pid":41418}
+{"kind":"activated","pid":41418,"bundleId":"com.apple.TextEdit","at":1793557854440}
+{"pid":42698,"bundleId":"com.google.chrome.for.testing","at":1793557854441,"kind":"deactivated"}
+{"kind":"activated","pid":42698,"bundleId":"com.google.chrome.for.testing","at":1793557854651}
+{"bundleId":"com.apple.TextEdit","at":1793557854652,"kind":"deactivated","pid":41418}

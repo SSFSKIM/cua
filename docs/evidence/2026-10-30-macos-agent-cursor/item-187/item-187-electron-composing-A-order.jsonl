@@ -1,0 +1,4 @@
+{"at":1793556327950.8208,"back":53120,"front":53106,"intervalMs":5,"kind":"start","pid":40274,"realtime":true,"state":"front-above"}
+{"at":1793556355425.095,"kind":"end","lastRead":1793556355424.5911,"lateSamples":51,"maxGapMs":107.2,"samples":5356,"state":"front-above","why":"SIGTERM"}
+{"at":1793556895017.7988,"back":53120,"front":53106,"intervalMs":5,"kind":"start","pid":70977,"realtime":true,"state":"front-above"}
+{"at":1793557032149.1641,"kind":"end","lastRead":1793557032144.3181,"lateSamples":435,"maxGapMs":213.30000000000001,"samples":26020,"state":"front-above","why":"SIGTERM"}

@@ -30,6 +30,12 @@
 //   5. HELLO_WAIT_MS 5 s for a launch's hello wait, CLIENT_RETRY_MS 5 s between attempts, for the process's life;
 //   6. a hello with a non-empty profileName makes the backend a cursor peer (host.mjs cursorPeer): a last tab closes
 //      with no keep-window tabs.create.
+// Three facts beside them, checked with the MAWS architect (MAWS's O17 states them; no cua change):
+//   - Page.enable arrives with a tab's lazy attach on its first CDP use, so it can come just before a screenshot that
+//     is the tab's first use. The screenshot's own commands never send it.
+//   - The 5 s hello wait bounds only the launch. A connection waits for its hello indefinitely, with no retry, so the
+//     broker must greet or close every connection.
+//   - For a non-cursor peer, Target.closeTarget also sends debugger.getTargets. MAWS's hello makes it a cursor peer.
 import {connect} from 'node:net';
 import {isAbsolute, join} from 'node:path';
 import {fail} from '../runtime/errors.mjs';

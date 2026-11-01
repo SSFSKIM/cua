@@ -24,7 +24,7 @@ import {nativePipeConnect} from './fixtures/native-pipe.mjs';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
 
 // Captured before any test mocks the timers: the real clock, for waits on real socket I/O.
-const realSetTimeout = globalThis.setTimeout;
+const realSetTimeout = globalThis.setTimeout, realClearTimeout = globalThis.clearTimeout;
 const sleep = ms => new Promise(resolve => realSetTimeout(resolve, ms));
 // How long "nothing more is sent" is watched for. The host is purely reactive (no timer of its own writes to MAWS).
 const QUIET_MS = 150;
@@ -244,14 +244,20 @@ contract(4, 'a screenshot sends no Page.enable: its image is its own screencast\
   // own preamble is not the screenshot's and is not pinned here.
   assert.deepEqual(await shoot(), {data: FRAME});
 
+  // The contract is what a screenshot sends and where its image comes from; its other reads (the page's scale and
+  // viewport) and their order are its own.
   let before = commands().length;
-  assert.deepEqual(await shoot(), {data: FRAME}, 'the frame MAWS sent after Page.startScreencast');
-  assert.deepEqual(commands().slice(before), ['Runtime.evaluate', 'Page.getLayoutMetrics', 'Page.startScreencast', 'Page.stopScreencast', 'Page.screencastFrameAck']);
+  assert.deepEqual(await shoot(), {data: FRAME}, 'the image is the frame MAWS sent after the screenshot\'s Page.startScreencast');
+  let own = commands().slice(before);
+  assert.ok(own.includes('Page.startScreencast'), `the screenshot started its own screencast: ${own}`);
+  assert.ok(!own.includes('Page.enable'), `no Page.enable among the screenshot's commands: ${own}`);
 
   dpr = 0.5;   // a page zoomed out is captured without a screencast
   before = commands().length;
-  assert.deepEqual(await shoot(), {data: CAPTURE});
-  assert.deepEqual(commands().slice(before), ['Runtime.evaluate', 'Page.getLayoutMetrics', 'Page.captureScreenshot']);
+  assert.deepEqual(await shoot(), {data: CAPTURE}, 'the image is the Page.captureScreenshot answer');
+  own = commands().slice(before);
+  assert.ok(own.includes('Page.captureScreenshot'), `the screenshot asked for a capture: ${own}`);
+  assert.ok(!own.includes('Page.enable'), `no Page.enable among the screenshot's commands: ${own}`);
 });
 
 // ---- 5 -------------------------------------------------------------------------------------------------------------
@@ -260,44 +266,57 @@ contract(5, 'a launch waits HELLO_WAIT_MS (5 s) for MAWS\'s hello; a connection 
   assert.equal(HELLO_WAIT_MS, 5000);
   assert.equal(CLIENT_RETRY_MS, 5000);
   const h = home(t);
-  // The clock: setTimeout mocked; the delays client mode schedules recorded (the host's own timers are not the cycle).
+  // The clock is mocked; the oracle is what MAWS sees under it: when the launch's wait ends and when connections arrive.
+  // A timer only fires if it was set before the clock moves, so each step first waits until the client is idle with a
+  // wait armed (some timer pending, nothing set or cleared for a moment). That gate reads neither a delay nor who set
+  // the timer.
   t.mock.timers.enable({apis: ['setTimeout']});
-  const mocked = globalThis.setTimeout;
-  const scheduled = [];
+  const mockedSet = globalThis.setTimeout, mockedClear = globalThis.clearTimeout;
+  const pending = new Set();
+  let changes = 0;
   globalThis.setTimeout = (fn, ms, ...args) => {
-    // Only a call made in client-mode.mjs itself (its caller's frame), not one of the host it runs.
-    if (new Error().stack.split('\n')[2]?.includes('/src/chrome/client-mode.mjs:')) scheduled.push(ms);
-    return mocked(fn, ms, ...args);
+    const id = mockedSet((...a) => { pending.delete(id); changes += 1; fn(...a); }, ms, ...args);
+    pending.add(id);
+    changes += 1;
+    return id;
   };
-  t.after(() => { globalThis.setTimeout = realSetTimeout; t.mock.timers.reset(); });
+  globalThis.clearTimeout = id => { if (pending.delete(id)) changes += 1; return mockedClear(id); };
+  t.after(() => { globalThis.setTimeout = realSetTimeout; globalThis.clearTimeout = realClearTimeout; t.mock.timers.reset(); });
   const tick = ms => t.mock.timers.tick(ms);
-  // The next wait client mode schedules after the last one this returned (it may already be scheduled).
-  let taken = 0;
-  const nextScheduled = async () => { await waitFor(() => scheduled.length > taken, 'client mode scheduling its next wait'); return scheduled[taken++]; };
+  const armed = async () => {
+    for (;;) {
+      await waitFor(() => pending.size > 0, 'the client arming its next wait');
+      const seen = changes;
+      await sleep(20);
+      if (changes === seen && pending.size > 0) return;
+    }
+  };
 
   // The launch's wait: a MAWS that accepts and has not said hello yet holds it for exactly HELLO_WAIT_MS, never longer.
   const silentPath = join(h, 'silent.sock');
-  const silent = await rawServer(t, silentPath, () => {});
+  let silentConnections = 0;
+  const silent = await rawServer(t, silentPath, () => { silentConnections += 1; });
   const launch = startClientBackends({home: h, paths: [silentPath], peerAddon: admitSelf});
   t.after(() => launch.close());
   const socket = await silent.accepted;
   let waited = false;
   const waiting = launch.waitForHellos().then(() => { waited = true; });
-  assert.deepEqual(scheduled, [HELLO_WAIT_MS]);
+  await armed();
   tick(HELLO_WAIT_MS - 1);
   await sleep(20);
   assert.equal(waited, false, 'still waiting just before 5 s');
   tick(1);
   await waiting;
-  // The wait bounds the launch only: the connection keeps waiting for the hello (no retry is scheduled), and a late
-  // hello still connects.
-  assert.deepEqual(scheduled, [HELLO_WAIT_MS]);
+  // The wait bounds the launch only: the connection keeps waiting for the hello, with no retry, however long, and a
+  // late hello still connects.
+  tick(3 * CLIENT_RETRY_MS);
+  await sleep(30);
+  assert.equal(silentConnections, 1, 'no second connection while the first waits for its hello');
+  assert.equal(launch.entries()[0].ready, false);
   socket.write(encodeFrame({jsonrpc: '2.0', method: 'hello', params: {extensionId: 'maws', extensionInstanceId: 'maws:late', version: '0.1.0', protocolVersion: 1, profileName: 'MAWS'}}));
   await waitFor(() => launch.entries()[0].ready, 'the late hello connecting');
   await launch.close();
   await silent.close();
-  scheduled.length = 0;
-  taken = 0;
 
   // The retry cycle. A MAWS that drops every connection before its hello: one attempt at once, then one every 5 s.
   const path = join(h, 'p.sock');
@@ -306,19 +325,19 @@ contract(5, 'a launch waits HELLO_WAIT_MS (5 s) for MAWS\'s hello; a connection 
   const client = startClientBackends({home: h, paths: [path], peerAddon: admitSelf});
   t.after(() => client.close());
   await waitFor(() => attempts === 1, 'the first attempt, made at once');
-  assert.equal(await nextScheduled(), CLIENT_RETRY_MS);
   for (let n = 2; n <= 4; n += 1) {
+    await armed();
     tick(CLIENT_RETRY_MS - 1);
     await sleep(30);
     assert.equal(attempts, n - 1, `no attempt ${n} before 5 s`);
     tick(1);
     await waitFor(() => attempts === n, `attempt ${n} at 5 s`);
-    assert.equal(await nextScheduled(), CLIENT_RETRY_MS);
   }
-  // Nothing listening (ENOENT): the same 5 s.
+  // Nothing listening (ENOENT) for one cycle: the attempt after it is again 5 s on.
+  await armed();
   await dropping.close();
   tick(CLIENT_RETRY_MS);
-  assert.equal(await nextScheduled(), CLIENT_RETRY_MS);
+  await armed();
   // MAWS comes up: connected at the next 5 s, not before.
   let peer = await startFakeMawsPeer({path});
   tick(CLIENT_RETRY_MS - 1);
@@ -328,7 +347,8 @@ contract(5, 'a launch waits HELLO_WAIT_MS (5 s) for MAWS\'s hello; a connection 
   await waitFor(() => client.entries()[0].ready, 'connecting at 5 s');
   // MAWS quits and comes back (its relaunch while the engine lives): the lost connection is retried on the same cycle.
   await peer.stop();
-  assert.equal(await nextScheduled(), CLIENT_RETRY_MS);
+  await waitFor(() => !client.entries()[0].ready, 'the connection lost');
+  await armed();
   peer = await startFakeMawsPeer({path});
   t.after(() => peer.stop());
   tick(CLIENT_RETRY_MS - 1);
@@ -336,7 +356,6 @@ contract(5, 'a launch waits HELLO_WAIT_MS (5 s) for MAWS\'s hello; a connection 
   assert.equal(peer.connections.length, 0);
   tick(1);
   await waitFor(() => client.entries()[0].ready && peer.live().length === 1, 'reconnecting at 5 s');
-  assert.deepEqual(scheduled, Array(6).fill(CLIENT_RETRY_MS), 'every wait of the cycle is 5 s');
 });
 
 // ---- 6 -------------------------------------------------------------------------------------------------------------

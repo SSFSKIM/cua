@@ -1,0 +1,35 @@
+## base1
+cold: n 10, landed 9, ok 10, take seen by answer 9; take after press (server ms) n 9 min 8 p50 14 p90 18 max 18; held 0 (taken in the wait 0, waited max 0 ms); answer ms p50 469.2 max 473.3; no take 1
+  takes after the path's end: 0: 
+  missed: 8 take - path 26.5 ms 130.8 dragstart_h 26.3 
+warm: n 20, landed 19, ok 20, take seen by answer 19; take after press (server ms) n 19 min 6 p50 18 p90 29 max 30; held 0 (taken in the wait 0, waited max 0 ms); answer ms p50 471.5 max 486.8; no take 1
+  takes after the path's end: 0: 
+  missed: 2 take - path 26.4 ms 129.2 dragstart_h 26.3 
+## hold1
+cold: n 30, landed 30, ok 30, take seen by answer 30; take after press (server ms) n 30 min 6 p50 18 p90 22 max 35; held 0 (taken in the wait 0, waited max 0 ms); answer ms p50 473.1 max 491.3; no take 0
+  takes after the path's end: 0: 
+  missed: 
+warm: n 60, landed 58, ok 60, take seen by answer 60; take after press (server ms) n 60 min 4 p50 17 p90 28 max 32; held 1 (taken in the wait 1, waited max 4.2 ms); answer ms p50 470 max 484.9; no take 0
+  takes after the path's end: 1: 19:32M
+  missed: 12 take 30 path 378.6 ms 481.2 dragstart_h 21.9  | 19 take 32 path 27.1 ms 484.9 dragstart_h 25.4 
+## hold2
+cold: n 30, landed 30, ok 30, take seen by answer 30; take after press (server ms) n 30 min 6 p50 17 p90 66 max 72; held 7 (taken in the wait 7, waited max 46 ms); answer ms p50 472.1 max 530.7; no take 0
+  takes after the path's end: 7: 0:71L 11:72L 12:63L 26:60L 27:59L 28:59L 29:66L
+  missed: 
+warm: n 60, landed 60, ok 60, take seen by answer 60; take after press (server ms) n 60 min 5 p50 18 p90 67 max 78; held 20 (taken in the wait 20, waited max 52.4 ms); answer ms p50 472.3 max 532.4; no take 0
+  takes after the path's end: 20: 2:58L 4:74L 5:61L 6:57L 7:65L 8:54L 10:60L 13:53L 14:56L 15:53L 16:56L 17:74L 18:53L 19:78L 20:67L 22:70L 23:76L 24:54L 25:57L 29:56L
+  missed: 
+## fast1
+cold: n 20, landed 20, ok 20, take seen by answer 20; take after press (server ms) n 20 min 8 p50 16 p90 57 max 60; held 18 (taken in the wait 18, waited max 56.4 ms); answer ms p50 472.7 max 515.8; no take 0
+  takes after the path's end: 18: 0:11L 1:15L 2:13L 3:18L 5:54L 6:9L 7:14L 8:56L 9:57L 11:9L 12:22L 13:16L 14:19L 15:14L 16:49L 17:12L 18:57L 19:60L
+  missed: 
+warm: n 40, landed 40, ok 40, take seen by answer 40; take after press (server ms) n 40 min 4 p50 15 p90 64 max 73; held 36 (taken in the wait 36, waited max 67.4 ms); answer ms p50 470.3 max 527.8; no take 0
+  takes after the path's end: 37: 0:64L 0:11L 1:73L 1:14L 2:19L 2:63L 3:10L 3:13L 4:62L 4:18L 6:64L 6:7L 7:58L 7:9L 8:11L 8:21L 9:16L 9:54L 10:56L 11:14L 11:49L 12:60L 12:15L 13:55L 13:20L 14:56L 14:11L 15:53L 15:15L 16:11L 16:8L 17:10L 17:7L 18:13L 18:15L 19:14L 19:69L
+  missed: 
+## warm1
+cold: n 15, landed 15, ok 15, take seen by answer 15; take after press (server ms) n 15 min 7 p50 20 p90 74 max 93; held 7 (taken in the wait 7, waited max 68.8 ms); answer ms p50 473.1 max 550.5; no take 0
+  takes after the path's end: 7: 0:65L 1:64L 2:93L 4:74L 12:61L 13:73L 14:71L
+  missed: 
+warm: n 30, landed 30, ok 30, take seen by answer 30; take after press (server ms) n 30 min 5 p50 13 p90 60 max 63; held 5 (taken in the wait 5, waited max 35.6 ms); answer ms p50 467.7 max 517.3; no take 0
+  takes after the path's end: 5: 2:60L 3:63L 5:57L 10:54L 14:63L
+  missed: 

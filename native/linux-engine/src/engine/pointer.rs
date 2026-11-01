@@ -74,25 +74,37 @@ pub fn drag_samples(points: &[(i16, i16)]) -> Vec<(i16, i16)> {
 /// this far out in x or y.
 const DRAG_THRESHOLD_PX: i32 = 4;
 
-/// How many of a drag's samples its atomic press sends with the press: through the first sample at Blink's drag
-/// threshold from the first (every sample when none reaches it).
-pub fn press_samples(samples: &[(i16, i16)]) -> usize {
-    let Some(&(x0, y0)) = samples.first() else {
-        return 0;
-    };
-    let past = |&(sx, sy): &(i16, i16)| {
+/// The most samples the atomic press sends under its server grab, which holds every other client, the window manager
+/// included, until it ends. A straight path from the press crosses Blink's threshold by its seventh sample (the
+/// diagonal), and a path given in 1 px steps, each joint visited twice, by its eighth. Task 20 measured the grab over
+/// 480 Chromium drags whose press sent 5 to 7 samples: p50 0.742 ms, p99 1.688 ms, max 4.078 ms (both routes; the
+/// background route's samples each take a few round trips), so eight bound it near what was measured. A path that
+/// has not crossed by then goes on with the grab released, and the press watch (`stray.rs`) covers the rest.
+pub const PRESS_SAMPLES_MAX: usize = 8;
+
+/// Where a drag's samples first reach Blink's drag threshold from the first: that sample's index, None when none does.
+fn threshold_at(samples: &[(i16, i16)]) -> Option<usize> {
+    let &(x0, y0) = samples.first()?;
+    samples.iter().position(|&(sx, sy)| {
         (sx as i32 - x0 as i32).abs() >= DRAG_THRESHOLD_PX || (sy as i32 - y0 as i32).abs() >= DRAG_THRESHOLD_PX
-    };
-    samples.iter().position(past).map_or(samples.len(), |k| k + 1)
+    })
+}
+
+/// How many of a drag's samples its atomic press sends with the press: through the first sample at Blink's drag
+/// threshold from the first (every sample when none reaches it), at most [`PRESS_SAMPLES_MAX`].
+pub fn press_samples(samples: &[(i16, i16)]) -> usize {
+    threshold_at(samples)
+        .map_or(samples.len(), |k| k + 1)
+        .min(PRESS_SAMPLES_MAX)
 }
 
 /// A Chromium-family drag's press (task 20, evidence `m3/drop-misses/task20/`; the design session's rulings of
 /// 2026-11-01). Blink resets a press on any mouse move with no button (`stray.rs`), so another client's request that
 /// crosses the window, or moves the real pointer, between the press and the first motion past the drag threshold
-/// kills the drag. The press and the samples through that motion go out under one server grab, no other client's
-/// request between them, and the real pointer's place is read inside the same grab; the watch (`stray.rs`) runs from
-/// just before the grab to just after the release, for what the grab cannot hold back (a device's own motion, the
-/// target's capture grab crossing in from a pointer outside it).
+/// kills the drag. The press and the samples through that motion (at most [`PRESS_SAMPLES_MAX`]) go out under one
+/// server grab, no other client's request between them, and the real pointer's place is read inside the same grab; the
+/// watch (`stray.rs`) runs from just before the grab to just after the release, for what the grab cannot hold back (a
+/// device's own motion, the target's capture grab crossing in from a pointer outside it, a path past the cap).
 pub(super) struct ChromiumPress<'a> {
     pub watch: &'a mut StrayWatch,
     pub window: Window,
@@ -101,15 +113,29 @@ pub(super) struct ChromiumPress<'a> {
     pub xtest: bool,
     /// The watch while the drag runs; still set after the drag only when it ended before its release.
     pub watching: Option<Watching>,
-    /// What the press did: the grab's duration, the samples sent under it, the real pointer in the window.
-    pub grab: Option<(Duration, usize, bool)>,
+    /// What the press did under its grab (None: the drag ended before the grab).
+    pub grab: Option<PressGrab>,
     /// What the watch saw, ended at the release (None: the drag ended before it).
     pub strays: Option<Result<Strays>>,
 }
 
-/// The press and the samples through Blink's drag threshold under one server grab, the real pointer's place read
-/// first inside it; answers how many samples went out. The grab is released whatever happened. `pressed_at`: when the
-/// button's press went out, before the threshold's samples.
+/// What an atomic press did under its grab (`--stats` `press`).
+#[derive(Debug, Clone, Copy)]
+pub(super) struct PressGrab {
+    /// How long the server was held.
+    pub held: Duration,
+    /// How many samples went out under it.
+    pub samples: usize,
+    /// Whether the real pointer was in the window.
+    pub inside: bool,
+    /// Whether the last of them reached Blink's drag threshold; when not ([`PRESS_SAMPLES_MAX`]), the rest of the path
+    /// up to it went out unprotected, left to the press watch.
+    pub crossed: bool,
+}
+
+/// The press and the samples through Blink's drag threshold, at most [`PRESS_SAMPLES_MAX`], under one server grab, the
+/// real pointer's place read first inside it; answers how many samples went out. The grab is released whatever
+/// happened. `pressed_at`: when the button's press went out, before the threshold's samples.
 fn atomic_press(
     x: &X11,
     route: &mut Route,
@@ -138,7 +164,12 @@ fn atomic_press(
         .and_then(|_| Ok(x.conn.flush()?));
     let inside = sent?;
     ungrabbed?;
-    press.grab = Some((started.elapsed(), count, inside));
+    press.grab = Some(PressGrab {
+        held: started.elapsed(),
+        samples: count,
+        inside,
+        crossed: threshold_at(samples).is_some_and(|k| k < count),
+    });
     Ok(count)
 }
 
@@ -236,9 +267,9 @@ fn cancel_in_time(x: &X11, route: &mut Route, guard: &mut DropGuard, pressed: &m
 /// accepts only on a motion (task 22). With no take by the path's end, the button stays down until the bound after the
 /// press for one (task 22), a take then, or one seen at that last look, getting the same floor; no take by then
 /// releases the drag as before. `scheduled` records a take, `held_for_take` the hold. With `press` (a
-/// Chromium-family drag), the press and the samples through Blink's drag threshold go out under one server grab
-/// ([`atomic_press`]), its watch begun just before the grab and ended just after the release, what it saw kept in
-/// `press.strays`.
+/// Chromium-family drag), the press and the samples through Blink's drag threshold, at most [`PRESS_SAMPLES_MAX`], go
+/// out under one server grab ([`atomic_press`]), its watch begun just before the grab and ended just after the
+/// release, what it saw kept in `press.strays`.
 #[allow(clippy::too_many_arguments)]
 fn drag_along(
     x: &mut X11,
@@ -785,16 +816,17 @@ impl Engine {
     fn press_answer(
         &mut self,
         window: Option<x11rb::protocol::xproto::Window>,
-        grab: Option<(Duration, usize, bool)>,
+        grab: Option<PressGrab>,
         strays: Option<Result<Strays>>,
         taken: bool,
         watch: Option<StrayWatch>,
     ) -> Option<anyhow::Error> {
         let mut record = json!({ "taken": taken });
-        if let Some((held, samples, inside)) = grab {
-            record["grab_ms"] = json!(held.as_secs_f64() * 1000.0);
-            record["samples"] = json!(samples);
-            record["pointer_inside"] = json!(inside);
+        if let Some(grab) = grab {
+            record["grab_ms"] = json!(grab.held.as_secs_f64() * 1000.0);
+            record["samples"] = json!(grab.samples);
+            record["pointer_inside"] = json!(grab.inside);
+            record["crossed"] = json!(grab.crossed);
         }
         // the application the refusal names, read only when there is one
         let app = |x: &mut X11| {
@@ -959,9 +991,37 @@ mod tests {
         assert_eq!(press_samples(&drag_samples(&[(200, 300), (200, 260)])), 5);
         // the joint repeated: (0,0) twice, then 1, 2, 3, 4
         assert_eq!(press_samples(&drag_samples(&[(0, 0), (0, 0), (10, 0)])), 7);
-        // a path that never reaches the threshold: every sample, the drag never starts anyway
+        // a short path that never reaches the threshold: every sample, under the cap
         assert_eq!(press_samples(&drag_samples(&[(0, 0), (3, 3)])), 5);
         assert_eq!(press_samples(&[(5, 5)]), 1);
+        // a path given in 1 px steps visits each joint twice and reaches 4 px at its eighth sample: still covered
+        let steps: Vec<(i16, i16)> = (0..=10).map(|x| (x, 0)).collect();
+        assert_eq!(press_samples(&drag_samples(&steps)), 8);
+    }
+
+    #[test]
+    fn the_atomic_press_sends_at_most_its_cap_under_the_grab_whatever_the_path() {
+        // a long path that never reaches the threshold: 3 px out and back, hundreds of times
+        let mut wander = vec![(0, 0)];
+        for _ in 0..500 {
+            wander.extend([(3, 3), (0, 0)]);
+        }
+        let samples = drag_samples(&wander);
+        assert!(samples.len() > 2000);
+        assert_eq!(press_samples(&samples), PRESS_SAMPLES_MAX, "a path that never crosses");
+        // a jitter around the press point (±1 px) for a while, then out past the threshold: the crossing comes late,
+        // so only the cap goes under the grab
+        let mut jitter = vec![(100, 100)];
+        for i in 0..200 {
+            jitter.push(if i % 2 == 0 { (101, 99) } else { (99, 101) });
+        }
+        jitter.push((160, 100));
+        let samples = drag_samples(&jitter);
+        assert!(samples.len() > 400);
+        assert_eq!(press_samples(&samples), PRESS_SAMPLES_MAX, "a jittering path");
+        // a long straight path crosses early: the threshold, not the length, decides
+        assert_eq!(press_samples(&drag_samples(&[(0, 0), (3000, 0)])), 5);
+        assert_eq!(press_samples(&drag_samples(&[(0, 0), (2000, 2000)])), 7);
     }
 
     #[test]

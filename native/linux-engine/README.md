@@ -163,8 +163,14 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   grab's included when the real pointer is outside the window, and the real pointer's motion. One that lands after the
   press and before the first motion past Blink's 4 px drag threshold kills the drag, and the release becomes a click.
   - The press and every sample through that motion go out under one server grab (`GrabServer`), with the real pointer's
-    place read (`QueryPointer`) inside it, so no other client's request falls between them. `--stats` `press` records
-    the grab's duration (`grab_ms`), the samples sent under it and whether the pointer was in the window.
+    place read (`QueryPointer`) inside it, so no other client's request falls between them. The grab holds every other
+    client, the window manager included, so it sends at most 8 samples (`PRESS_SAMPLES_MAX`): a straight path crosses
+    the threshold by its seventh sample, and a path given in 1 px steps by its eighth. Task 20 measured the grab at
+    p50 0.742 ms, p99 1.688 ms and max 4.078 ms over 480 drags whose press sent 5 to 7 samples; the cap keeps a long or
+    jittering path that has not crossed from holding the server for a time its length decides. Such a path goes on
+    with the grab released, and the watch below covers the rest. `--stats` `press` records the grab's duration
+    (`grab_ms`), the samples sent under it, whether the last of them crossed the threshold (`crossed`) and whether the
+    pointer was in the window.
   - A watch on a connection of the engine's own (opened by the first such drag, kept for its life) selects XInput 2 raw
     motion on the root, which reaches every client whoever holds a grab, and the target window's crossings, from just
     before the grab to just after the release. The drag's own events are never among them (the background route's are

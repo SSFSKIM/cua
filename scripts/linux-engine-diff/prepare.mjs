@@ -44,8 +44,10 @@ export function prepareFailureRow(s, error) {
  * One sample under the rule. `take()` runs it and answers `{row, response, fault}`, `fault` ORACLE when its
  * preparation failed at the harness oracle (`row` then the failure's record) and null otherwise (an engine's failure
  * included); `renew()` gives a cold sample's resample a fresh engine and answers whether it could. `restoreScene({cold})`
- * is the backstop (task 24): the lane's scene restored before the one resample (a fresh window, warmed again for a warm
- * sample), answering its record, which the failure's row carries (`scene_restore`), or false when it could not be.
+ * is the backstop (task 24): the lane's scene restored before the one resample (a fresh window, and for a warm sample
+ * the operation run once on it, as the series' samples ran it), answering its record, which the failure's row and the
+ * counted resample carry (`scene_restore`); false, or a record with `invalid`, when the condition could not be
+ * reproduced, which leaves the sample invalid.
  * `emit` records the failed sample once its outcome is known. Answers `{counted, stop}`: the sample to count (null when
  * invalid) and whether its series ends, which a cold sample left invalid does, since no later request on its engine is
  * warm.
@@ -55,8 +57,8 @@ export async function sampleUnderRule({ cold, take, renew, restoreScene = null, 
   if (first.fault !== ORACLE) return { counted: first, stop: false };
   if (restoreScene) {
     const restored = await restoreScene({ cold });
-    if (!restored) {
-      emit({ ...first.row, outcome: 'invalid', why: 'the resample could not reproduce the condition: the scene could not be restored' });
+    if (!restored || restored.invalid) {
+      emit({ ...first.row, outcome: 'invalid', ...(restored ? { scene_restore: restored } : {}), why: `the resample could not reproduce the condition: ${restored?.invalid ?? 'the scene could not be restored'}` });
       return { counted: null, stop: cold };
     }
     first.row = { ...first.row, scene_restore: restored };
@@ -72,22 +74,48 @@ export async function sampleUnderRule({ cold, take, renew, restoreScene = null, 
   }
   emit({ ...first.row, outcome: 'resampled' });
   second.row.resampled = true;
+  if (first.row.scene_restore) second.row.scene_restore = first.row.scene_restore;
   return { counted: second, stop: false };
 }
 
 /**
- * The scene text put back before samples' preparations (text.mjs `sceneTextBefore`), counted per lane over a run's rows
- * (`sample`, `prepare-failure` and the bus pass's `text-bus` rows carrying `text_restored`, and a candidate's
- * `text-lost`, the restore it needed and never got), every lane listed, a lane with none at 0: `{lanes, samples}`. A
- * restore never touches the caps: the sample it preceded is prepared and measured as any other.
+ * The scene text put back before preparations (text.mjs `sceneTextBefore`), counted per lane over a run's rows, every
+ * lane listed, a lane with none at 0: `{lanes, samples}`. Every restore counts wherever it was made: a sample's, a failed
+ * preparation's and the bus pass's (`text_restored`), the backstop's warm-up's (`scene_restore.warm_up.text_restored`,
+ * marked `warm_up`), the audit's (its row's `text_restores`, block `audit`), and a candidate's `text-lost`, the restore
+ * it needed and never got. Counting adds no sample: a restore never touches the caps or the medians.
  */
 export function judgeTextRestores(rows, lanes) {
-  const samples = rows
-    .filter((r) => (['sample', 'prepare-failure', 'text-bus'].includes(r.kind) && r.text_restored) || r.kind === 'text-lost')
-    .map((r) => ({ engine: r.engine, scene: r.scene, op: r.op, block: r.block, series: r.series, i: r.i, ...(r.kind === 'text-lost' ? { found: r.found, lost: true } : r.text_restored) }));
+  const at = (r, extra = {}) => ({ engine: r.engine, scene: r.scene, op: r.op, block: r.block, series: r.series, i: r.i, ...extra });
+  const samples = rows.flatMap((r) => {
+    if (r.kind === 'text-lost') return [at(r, { found: r.found, lost: true })];
+    if (r.kind === 'audit') return (r.text_restores ?? []).map(({ i, ...record }) => at({ ...r, block: 'audit', i }, record));
+    if (!['sample', 'prepare-failure', 'text-bus'].includes(r.kind)) return [];
+    const own = r.text_restored ? [at(r, r.text_restored)] : [];
+    const warm = r.kind === 'prepare-failure' && r.scene_restore?.warm_up?.text_restored ? [at(r, { ...r.scene_restore.warm_up.text_restored, warm_up: true })] : [];
+    return [...own, ...warm];
+  });
   const counts = Object.fromEntries(lanes.map((l) => [l, 0]));
   for (const s of samples) counts[s.engine] = (counts[s.engine] ?? 0) + 1;
   return { lanes: counts, samples };
+}
+
+/**
+ * The backstop's warm-ups judged (task 24, fix round 1): a candidate's warm-up is its own request on the fresh window, so
+ * an answer that failed fails the run with the engine's own error text, and a witness that saw a change fails it as any
+ * candidate's would; the harness-fault allowance covers only the oracle's own steps. A vendor build's warm-up is
+ * recorded and judged nothing: its warm samples follow its own answers too. `{pass, reasons}`.
+ */
+export function judgeWarmUps(rows, vendors) {
+  const reasons = [];
+  for (const r of rows) {
+    const w = r.kind === 'prepare-failure' ? r.scene_restore?.warm_up : null;
+    if (!w || w.refused || vendors.includes(r.engine)) continue;
+    const at = `${r.scene} ${r.op} ${r.engine} ${r.block}/${r.i}`;
+    if (w.ok !== true) reasons.push(`${at}: the backstop's warm-up failed: ${w.error ?? 'no answer'}`);
+    if (w.witness === false) reasons.push(`${at}: the backstop's warm-up changed the desktop (${(w.witness_fields ?? []).join(', ')})`);
+  }
+  return { pass: reasons.length === 0, reasons };
 }
 
 /** A case's cap: more than 2 resampled or invalid samples, or 1% of its samples if that is larger, fails the run. */

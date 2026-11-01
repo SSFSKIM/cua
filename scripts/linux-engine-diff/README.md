@@ -323,9 +323,15 @@ variants included; their evidence is written either way. The run's `end` row kee
   - **The backstop.** A refusal the restore cannot prevent restores the lane's scene before the one resample:
     - a fresh window, opened only once the old one is gone;
     - the cover given back;
-    - a warm sample's engine warmed again with an untimed read (`run.mjs` `restoreLaneScene`);
-    - the restore recorded on the failure's row (`scene_restore`).
-    The caps count the resample as before.
+    - for a warm sample, the operation itself run once on the fresh window, untimed, with its own preparation and
+      witness, as the series' samples ran it (`run.mjs` `restoreLaneScene`, `warmUpRecord`); a cold sample gets a fresh
+      engine and a fresh window only;
+    - the restore and its warm-up recorded on the failure's row and on the counted resample (`scene_restore`).
+    A candidate's warm-up that fails, or whose witness saw a change, fails the run with its error text
+    (`prepare.mjs` `judgeWarmUps`); a vendor's is recorded. A warm-up whose own preparation is refused leaves the
+    sample invalid. The caps count the resample as before.
+  - Every restore counts in its lane's total: the samples', the failed preparations', the warm-ups', the audit's
+    (`text_restores` on its row) and the bus pass's. None of them adds a timed sample.
 - **A stopped run** (`stop.mjs`): SIGINT or SIGTERM stops the witness and closes every window the harness opened (its
   Chrome scenes live in the person's Chrome) before the process exits 130 or 143.
 - **Every cleanup a case owes runs when it ends** (`Cases.guarded`): the engines, clipboard owners and target windows

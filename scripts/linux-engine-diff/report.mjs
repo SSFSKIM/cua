@@ -170,6 +170,15 @@ export function renderSummary(lines) {
   return out.join('\n');
 }
 
+/** The backstop's warm-up as the summary names it: the operation run once on the fresh window, and how it went. */
+function warmUpText(w) {
+  if (!w) return '';
+  if (w.refused) return `; the operation's warm-up refused at its preparation: ${w.refused}`;
+  const answer = w.ok ? 'ok' : `failed: ${w.error ?? 'no answer'}`;
+  const witness = w.witness === false ? `witness **changed** (${(w.witness_fields ?? []).join(', ')})` : w.witness === true ? 'witness clean' : 'no witness';
+  return `; the operation run once on it: ${answer}, ${witness}`;
+}
+
 /**
  * The scene text the oracle put back before samples' preparations (prepare.mjs `judgeTextRestores`, task 24): the count
  * per lane, every lane named, and each restored sample with what its window held; a candidate's lost word, which stopped
@@ -183,7 +192,7 @@ export function textRestoresMarkdown(rows) {
   const out = ['', `${head}:`, ''];
   for (const r of restores.samples) {
     const what = r.lost ? `found '${r.found}', **never put back: a sample of its lane left the text wrong, and the run stopped**` : `found '${r.found}', put back '${r.inserted}'`;
-    out.push(`- ${r.scene} ${r.op} ${r.engine} ${r.block}/${r.i}${r.series ? ` (${r.series})` : ''}: ${what}`);
+    out.push(`- ${r.scene} ${r.op} ${r.engine} ${r.block}/${r.i}${r.series ? ` (${r.series})` : ''}${r.warm_up ? ", the backstop's warm-up" : ''}: ${what}`);
   }
   return out;
 }
@@ -203,7 +212,7 @@ export function prepareFaultsMarkdown(rows) {
   for (const c of faults.cases) out.push(`| ${c.scene} | ${c.op} | ${c.samples} | ${c.resampled} | ${c.invalid} | ${c.limit} | ${c.over ? '**over the cap**' : 'within'} |`);
   out.push('');
   for (const f of rows.filter((r) => r.kind === 'prepare-failure')) {
-    const restored = f.scene_restore ? `; its scene restored before the resample (gedit ${f.scene_restore.old_pid} replaced by ${f.scene_restore.new_pid}, window ${f.scene_restore.old_id} by ${f.scene_restore.new_id}${f.scene_restore.warmed ? `, warmed with ${f.scene_restore.warmed}` : ''})` : '';
+    const restored = f.scene_restore ? `; its scene restored before the resample (gedit ${f.scene_restore.old_pid} replaced by ${f.scene_restore.new_pid}, window ${f.scene_restore.old_id} by ${f.scene_restore.new_id}${warmUpText(f.scene_restore.warm_up)})` : '';
     out.push(`- ${f.scene} ${f.op} ${f.engine} ${f.block}/${f.i} (${f.series}): ${f.outcome}; failed at the ${f.step} step: ${f.error}${restored}${f.resample ? `; the resample failed at the ${f.resample.step} step too: ${f.resample.error}` : ''}${f.why ? `; ${f.why}` : ''}`);
   }
   return out;

@@ -27,7 +27,7 @@ import { compareShots, xprobeDiff } from './images.mjs';
 import { compareStates, normalizeState, retainedIds } from './normalize.mjs';
 import { OPS, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs';
 import { Oracle } from './oracle.mjs';
-import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, prepareFailureRow, sampleUnderRule } from './prepare.mjs';
+import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, judgeWarmUps, prepareFailureRow, sampleUnderRule } from './prepare.mjs';
 import { writeSummary } from './report.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
@@ -622,14 +622,15 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
 }
 
 /**
- * The backstop's scene restore (task 24; prepare.mjs `sampleUnderRule`): the lane's text window closed and a fresh one
- * opened in its place on the scene's own text, the front window given back its cover (or the target raised, with
- * visible occlusion, as each series starts), and for a warm sample the engine warmed again on the new window with one
- * untimed read inside a witness span, so the resample is warm as the sample was. A cold sample's engine is renewed
- * after it, so its first request stays the sample's. Answers the restore's record, or false when the warming read
- * failed (the warm condition is not reproduced).
+ * The backstop's scene restore (task 24; prepare.mjs `sampleUnderRule`): the lane's text window closed and, once it is
+ * gone, a fresh one opened in its place on the scene's own text, the front window given back its cover (or the target
+ * raised, with visible occlusion, as each series starts). For a warm sample `warmUp(fresh)` then brings the fresh
+ * window into the state the series' samples reach, the way the series reached it: the operation itself run once,
+ * untimed, with its own preparation and witness (`warmUpRecord`; fix round 1: a read alone leaves the window's
+ * retention unset). A cold sample gets none: a fresh engine and a fresh window. Answers the restore's record
+ * (`warm_up` the warm-up's), with `invalid` when the warm-up's own preparation was refused.
  */
-export async function restoreLaneScene({ desktop, windows, sceneName, label, engine, warm, occlusion, witnessed }) {
+export async function restoreLaneScene({ desktop, windows, sceneName, label, occlusion, warmUp }) {
   const started = performance.now();
   const old = windows[sceneName].text[label];
   await desktop.close([old]);
@@ -641,14 +642,28 @@ export async function restoreLaneScene({ desktop, windows, sceneName, label, eng
   windows[sceneName].text[label] = fresh;
   if (occlusion === 'visible') desktop.raise(fresh);
   else desktop.focusFront();
-  let warmed = null;
-  if (warm) {
-    const { response } = await witnessed(() => engine.request('get_window_state', { window: { id: fresh.id }, include_screenshot: false }));
-    if (!response.ok) return false;
-    warmed = 'get_window_state';
-  }
+  const warm_up = warmUp ? await warmUp(fresh) : null;
   // the X server may give the fresh window the old one's id (a freed client's id range is reused): the processes tell them apart
-  return { old_id: old.id, new_id: fresh.id, old_pid: old.pid, new_pid: fresh.pid, warmed, ms: Math.round(performance.now() - started) };
+  const record = { old_id: old.id, new_id: fresh.id, old_pid: old.pid, new_pid: fresh.pid, warm_up, ms: Math.round(performance.now() - started) };
+  if (warm_up?.refused) record.invalid = `the warm-up's preparation was refused: ${warm_up.refused}`;
+  return record;
+}
+
+/**
+ * The backstop's warm-up as recorded (`runSample`'s result): refused when its own preparation failed at the oracle,
+ * else its answer (and the engine's error text), its witness, its time, and what its preparation restored or failed
+ * to make. Judged by prepare.mjs `judgeWarmUps`.
+ */
+export function warmUpRecord({ row, fault }) {
+  if (fault === ORACLE) return { refused: row.error };
+  const out = { ok: row.ok === true };
+  if (row.error !== undefined) out.error = row.error;
+  out.witness = row.witness ?? null;
+  if (row.witness_fields) out.witness_fields = row.witness_fields;
+  out.ms = row.ms;
+  if (row.text_restored) out.text_restored = row.text_restored;
+  if (row.prepare_error) out.prepare_error = row.prepare_error;
+  return out;
 }
 
 /** A scene window with its application's name as `list_windows` gives it and its size. */
@@ -860,8 +875,10 @@ export async function runDiff(args) {
             },
             restoreScene: isText(op)
               ? async ({ cold }) => {
-                  const witnessed = (fn) => (witness ? witness.span(`${label}:${sceneName}:${op}:restore`, fn).then((r) => r.value) : fn());
-                  const record = await restoreLaneScene({ desktop, windows, sceneName, label, engine, warm: !cold, occlusion: args.occlusion, witnessed });
+                  // a warm sample's fresh window is brought to the series' state by the operation itself, run once
+                  // untimed with its own preparation and witness, as the series' samples ran it (fix round 1)
+                  const warmUp = cold ? null : async (fresh) => warmUpRecord(await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target: fresh, op, i, block, label, sceneName, cuaVersion }));
+                  const record = await restoreLaneScene({ desktop, windows, sceneName, label, occlusion: args.occlusion, warmUp });
                   target = windows[sceneName].text[label];
                   return record;
                 }
@@ -997,9 +1014,13 @@ export async function runDiff(args) {
           const oks = [];
           // each audited request's answer, for the device cases' judge: the expected outcome, not only a clean trace
           const answered = [];
+          // each audited sample's scene-text restore, counted in the lane's total (prepare.mjs judgeTextRestores) and
+          // never a timed sample
+          const restoredText = [];
           try {
             for (let i = 0; i < 2; i++) {
               const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion });
+              if (row.text_restored) restoredText.push({ i, ...row.text_restored });
               oks.push(row.ok);
               answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null });
             }
@@ -1018,7 +1039,7 @@ export async function runDiff(args) {
           const auditKind = foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
           audits[`${sceneName}|${op}|${spec.label}`] = { clean: audited.clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set(audited.forbidden.map((f) => f.what))] };
-          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, clean: audited.clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), forbidden: audited.forbidden.slice(0, 10) });
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean: audited.clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), forbidden: audited.forbidden.slice(0, 10) });
           desktop.focusFront();
         }
       }
@@ -1222,7 +1243,9 @@ export async function runDiff(args) {
     // the scene text put back per lane (task 24), every lane's count in the verdict line
     const restores = judgeTextRestores(after, labels);
     emit({ kind: 'text-restores', ...restores });
-    outcome = runOutcome(verdicts, { valid, faults, restores: restores.lanes });
+    // the backstop's warm-ups: a candidate's that failed fails the run (fix round 1)
+    const warmUps = judgeWarmUps(after, VENDORS);
+    outcome = runOutcome(verdicts, { valid, faults, restores: restores.lanes, warmUps });
     emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, finished: new Date().toISOString() });
   } catch (error) {
     if (!(error instanceof CandidateTextLost)) throw error;
@@ -1233,7 +1256,7 @@ export async function runDiff(args) {
     const rows = readFileSync(results, 'utf8').trim().split('\n').map((l) => JSON.parse(l)).filter((r) => r.run === run);
     const restores = judgeTextRestores(rows, labels);
     emit({ kind: 'text-restores', ...restores });
-    outcome = runOutcome([], { valid, restores: restores.lanes, stop: `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}: ${error.message}; the run stopped there` });
+    outcome = runOutcome([], { valid, restores: restores.lanes, warmUps: judgeWarmUps(rows, VENDORS), stop: `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}: ${error.message}; the run stopped there` });
     emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, finished: new Date().toISOString() });
   } finally {
     if (witness) await witness.stop();

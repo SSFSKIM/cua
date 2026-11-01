@@ -12,9 +12,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, sampleUnderRule } from '../../scripts/linux-engine-diff/prepare.mjs';
+import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, judgeWarmUps, sampleUnderRule } from '../../scripts/linux-engine-diff/prepare.mjs';
 import { prepareFaultsMarkdown, renderSummary } from '../../scripts/linux-engine-diff/report.mjs';
-import { restoreLaneScene } from '../../scripts/linux-engine-diff/run.mjs';
+import { restoreLaneScene, warmUpRecord } from '../../scripts/linux-engine-diff/run.mjs';
 import { runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
 import { CandidateTextLost, TEXT_OPS, handleOfFirstWord, sceneTextBefore, selectFirstWord } from '../../scripts/linux-engine-diff/text.mjs';
 
@@ -394,44 +394,139 @@ function fakeDesktop({ lingers = 0 } = {}) {
   return desktop;
 }
 
-test("the backstop's restore replaces the lane's window, gives the cover back and warms a warm engine on it", async () => {
+test("the backstop's restore replaces the lane's window, gives the cover back, then runs the warm-up on the fresh window", async () => {
   const desktop = fakeDesktop();
-  const old = { kind: 'gedit', role: 'text_pinned', id: 42, field: 'field-42' };
+  const old = { kind: 'gedit', role: 'text_pinned', id: 42, pid: 10, field: 'field-42' };
   const windows = { gedit: { text: { pinned: old } } };
-  const requests = [];
-  const engine = { request: async (command, input) => (requests.push([command, input]), { response: { ok: true } }) };
-  const record = await restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'pinned', engine, warm: true, occlusion: 'covered', witnessed: (fn) => fn() });
-  assert.deepEqual(desktop.log, ['close 42', 'open text_pinned', 'focus front']);
+  const warmUp = async (fresh) => {
+    desktop.log.push(`warm-up on ${fresh.id} (${fresh.field})`);
+    return warmUpRecord({ row: { kind: 'sample', ok: false, error: 'editable Paste did not insert text', ms: 10204.4, witness: true }, fault: null });
+  };
+  const record = await restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp });
+  assert.deepEqual(desktop.log, ['close 42', 'open text_pinned', 'focus front', 'warm-up on 100 (field-100)']);
   assert.equal(windows.gedit.text.pinned.id, 100);
-  assert.equal(windows.gedit.text.pinned.field, 'field-100');
-  assert.deepEqual(requests, [['get_window_state', { window: { id: 100 }, include_screenshot: false }]]);
   assert.equal(record.old_id, 42);
   assert.equal(record.new_id, 100);
-  assert.equal(record.warmed, 'get_window_state');
+  assert.equal(record.old_pid, 10);
+  assert.deepEqual(record.warm_up, { ok: false, error: 'editable Paste did not insert text', witness: true, ms: 10204.4 }, "a vendor's failed warm-up is recorded, the sample not invalidated");
+  assert.equal(record.invalid, undefined);
   assert.equal(typeof record.ms, 'number');
 });
 
-test("a cold sample's restored window is not warmed: its fresh engine's first request stays the sample's", async () => {
+test("a cold sample's restored window gets no warm-up: a fresh engine and a fresh window, its first request the sample's", async () => {
   const desktop = fakeDesktop();
   const windows = { gedit: { text: { cua: { kind: 'gedit', role: 'text_cua', id: 9 } } } };
-  const engine = { request: async () => assert.fail('no warming request') };
-  const record = await restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'cua', engine, warm: false, occlusion: 'visible', witnessed: (fn) => fn() });
+  const record = await restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'cua', occlusion: 'visible', warmUp: null });
   assert.deepEqual(desktop.log, ['close 9', 'open text_cua', 'raise 100']);
-  assert.equal(record.warmed, null);
+  assert.equal(record.warm_up, null);
 });
 
 test('the old window is gone before its successor is looked for, which is found by the same file name', async () => {
   const desktop = fakeDesktop({ lingers: 2 });
   const windows = { gedit: { text: { pinned: { kind: 'gedit', role: 'text_pinned', id: 42 } } } };
-  await restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'pinned', engine: null, warm: false, occlusion: 'covered', witnessed: (fn) => fn() });
+  await restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp: null });
   assert.deepEqual(desktop.log, ['close 42', 'listed old', 'listed old', 'open text_pinned', 'focus front']);
 });
 
-test("the summary names the backstop's restore on the failure it preceded, and the caps count it as before", () => {
-  const failure = { kind: 'prepare-failure', engine: 'pinned', scene: 'gedit', op: 'clipboard_read', block: 1, series: 'warm', i: 3, step: ORACLE, error: 'cua171-diff-run-gedit-text_pinned refused the selection', attempts: [], outcome: 'resampled', scene_restore: { old_id: 42, new_id: 42, old_pid: 10, new_pid: 11, warmed: 'get_window_state', ms: 2800 } };
+// ---------------------------------------------------------------------------------------------------------------
+// fix round 1 (the task review): the warm-up is the operation itself, judged; the audit's restores are counted
+
+test('a warm sample is resampled after its scene is replaced and the operation run once on it, in that order', async () => {
+  const order = [];
+  const results = [ORACLE, 'ok'];
+  const take = async () => {
+    order.push('take');
+    return results.shift() === ORACLE ? { row: { kind: 'prepare-failure', engine: 'cua', i: 2, step: ORACLE }, fault: ORACLE } : { row: { kind: 'sample', engine: 'cua', i: 2 }, fault: null };
+  };
+  const desktop = fakeDesktop();
+  const windows = { gedit: { text: { cua: { kind: 'gedit', role: 'text_cua', id: 9 } } } };
+  const restoreScene = ({ cold }) =>
+    restoreLaneScene({
+      desktop,
+      windows,
+      sceneName: 'gedit',
+      label: 'cua',
+      occlusion: 'covered',
+      warmUp: cold ? null : async (fresh) => (order.push(`warm-up on ${fresh.id}`), warmUpRecord({ row: { ok: true, ms: 40, witness: true }, fault: null })),
+    });
+  const emitted = [];
+  const out = await sampleUnderRule({ cold: false, take, renew: async () => assert.fail('a warm sample keeps its engine'), restoreScene, emit: (r) => emitted.push(r) });
+  assert.deepEqual(order, ['take', 'warm-up on 100', 'take']);
+  assert.equal(out.counted.row.resampled, true);
+  assert.deepEqual(emitted[0].scene_restore.warm_up, { ok: true, witness: true, ms: 40 });
+  assert.deepEqual(out.counted.row.scene_restore, emitted[0].scene_restore, 'the counted resample carries its restore too');
+});
+
+test("a warm-up whose own preparation is refused leaves the sample invalid, with no further attempt", async () => {
+  let takes = 0;
+  const take = async () => (takes++, { row: { kind: 'prepare-failure', engine: 'pinned', i: 2, step: ORACLE }, fault: ORACLE });
+  const desktop = fakeDesktop();
+  const windows = { gedit: { text: { pinned: { kind: 'gedit', role: 'text_pinned', id: 9 } } } };
+  const warmUp = async () => warmUpRecord({ row: { kind: 'prepare-failure', step: ORACLE, error: 'cua171-diff-run-gedit-text_pinned refused the selection' }, fault: ORACLE });
+  const emitted = [];
+  const out = await sampleUnderRule({ cold: false, take, renew: async () => true, restoreScene: () => restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp }), emit: (r) => emitted.push(r) });
+  assert.equal(takes, 1);
+  assert.equal(out.counted, null);
+  assert.equal(emitted[0].outcome, 'invalid');
+  assert.match(emitted[0].why, /the warm-up's preparation was refused: cua171-diff-run-gedit-text_pinned refused the selection/);
+  assert.deepEqual(emitted[0].scene_restore.warm_up, { refused: 'cua171-diff-run-gedit-text_pinned refused the selection' });
+});
+
+test("a warm-up keeps its answer's error text, its witness and the restore its preparation made", () => {
+  const record = warmUpRecord({ row: { kind: 'sample', ok: false, error: 'reading x11:7 failed: BadWindow', ms: 3.2, witness: false, witness_fields: ['active', 'focus'], text_restored: RESTORED, prepare_error: 'clipboard_read for a handle failed: x' }, fault: null });
+  assert.deepEqual(record, { ok: false, error: 'reading x11:7 failed: BadWindow', witness: false, witness_fields: ['active', 'focus'], ms: 3.2, text_restored: RESTORED, prepare_error: 'clipboard_read for a handle failed: x' });
+});
+
+const warmFailure = (engine, warmUp, extra = {}) => ({ kind: 'prepare-failure', engine, scene: 'gedit', op: 'clipboard_write', block: 1, series: 'warm', i: 2, step: ORACLE, error: 'refused', attempts: [], outcome: 'resampled', scene_restore: { old_id: 9, new_id: 9, warm_up: warmUp, ms: 3000 }, ...extra });
+
+test("a candidate's warm-up whose witness saw a change fails the run; a vendor's is recorded only (the reviewer's dirty-witness probe)", () => {
+  const dirty = { ok: true, witness: false, witness_fields: ['active', 'focus'], ms: 41 };
+  const candidate = judgeWarmUps([warmFailure('cua', dirty)], ['pinned', 'newest']);
+  assert.equal(candidate.pass, false);
+  assert.deepEqual(candidate.reasons, ["gedit clipboard_write cua 1/2: the backstop's warm-up changed the desktop (active, focus)"]);
+  const outcome = runOutcome([{ kind: 'verdict', scene: 'gedit', op: 'clipboard_write', candidate: 'cua', pass: true }], { valid: true, warmUps: candidate });
+  assert.equal(outcome.code, 1);
+  assert.match(verdictLine(outcome), /^FAIL: gedit clipboard_write cua 1\/2: the backstop's warm-up changed the desktop \(active, focus\)/);
+  const vendor = judgeWarmUps([warmFailure('pinned', dirty)], ['pinned', 'newest']);
+  assert.deepEqual(vendor, { pass: true, reasons: [] });
+});
+
+test("a candidate's failed warm-up fails the run with the engine's own error text, however many samples passed (the reviewer's probe)", () => {
+  const good = Array.from({ length: 200 }, (_, i) => ({ kind: 'sample', engine: 'cua', scene: 'gedit', op: 'clipboard_write', block: 0, series: 'warm', i, ok: true }));
+  const rows = [...good, warmFailure('cua', { ok: false, error: 'reading x11:7 failed: BadWindow', witness: true, ms: 3 })];
+  const faults = judgePrepareFaults(rows);
+  assert.equal(faults.pass, true, 'within the harness-fault caps');
+  const warmUps = judgeWarmUps(rows, ['pinned', 'newest']);
+  const outcome = runOutcome([{ kind: 'verdict', scene: 'gedit', op: 'clipboard_write', candidate: 'cua', pass: true }], { valid: true, faults, warmUps });
+  assert.equal(outcome.code, 1, 'the allowance covers the oracle’s own steps only');
+  assert.equal(verdictLine(outcome), "FAIL: gedit clipboard_write cua 1/2: the backstop's warm-up failed: reading x11:7 failed: BadWindow");
+  // a vendor's failed warm-up (the pinned type_text after 10.2 s) is its normal series: recorded, nothing failed
+  assert.equal(judgeWarmUps([warmFailure('pinned', { ok: false, error: 'editable Paste did not insert text', witness: true, ms: 10204 })], ['pinned', 'newest']).pass, true);
+});
+
+test("a run with no backstop has no warm-up to judge", () => {
+  assert.deepEqual(judgeWarmUps([sample('cua'), warmFailure('cua', null, { scene_restore: undefined })], ['pinned', 'newest']), { pass: true, reasons: [] });
+});
+
+test("the audit's restores and a warm-up's are counted per lane, without adding a sample (the reviewer's audit-only probe)", () => {
+  const rows = [
+    { kind: 'audit', engine: 'newest', scene: 'gedit', op: 'clipboard_read', ok: true, oks: [true, true], text_restores: [{ i: 0, ...RESTORED }] },
+    warmFailure('pinned', { ok: false, error: 'editable Paste did not insert text', witness: true, ms: 10204, text_restored: RESTORED }),
+  ];
+  const restores = judgeTextRestores(rows, ['pinned', 'newest', 'cua']);
+  assert.deepEqual(restores.lanes, { pinned: 1, newest: 1, cua: 0 });
+  assert.deepEqual(
+    restores.samples.map((s) => `${s.engine} ${s.op} ${s.block}/${s.i}${s.warm_up ? ' warm-up' : ''}`),
+    ['newest clipboard_read audit/0', 'pinned clipboard_write 1/2 warm-up'],
+  );
+  assert.equal(judgePrepareFaults(rows).total.samples, 0, 'neither the audit nor the warm-up adds a sample');
+});
+
+test("the summary names the backstop's restore and its warm-up on the failure it preceded, and the caps count it as before", () => {
+  const failure = { kind: 'prepare-failure', engine: 'pinned', scene: 'gedit', op: 'clipboard_read', block: 1, series: 'warm', i: 3, step: ORACLE, error: 'cua171-diff-run-gedit-text_pinned refused the selection', attempts: [], outcome: 'resampled', scene_restore: { old_id: 42, new_id: 42, old_pid: 10, new_pid: 11, warm_up: { ok: true, witness: true, ms: 610 }, ms: 3400 } };
   const rows = [...Array.from({ length: 99 }, () => sample('pinned', { op: 'clipboard_read' })), failure];
   const faults = judgePrepareFaults(rows);
   assert.deepEqual(faults.cases.map((c) => [c.resampled, c.invalid, c.over]), [[1, 0, false]], 'a restored resample is still a resample');
   const md = prepareFaultsMarkdown([...rows, { kind: 'prepare-faults', ...faults }]).join('\n');
-  assert.match(md, /- gedit clipboard_read pinned 1\/3 \(warm\): resampled; failed at the oracle step: cua171-diff-run-gedit-text_pinned refused the selection; its scene restored before the resample \(gedit 10 replaced by 11, window 42 by 42, warmed with get_window_state\)/);
+  assert.match(md, /- gedit clipboard_read pinned 1\/3 \(warm\): resampled; failed at the oracle step: cua171-diff-run-gedit-text_pinned refused the selection; its scene restored before the resample \(gedit 10 replaced by 11, window 42 by 42; the operation run once on it: ok, witness clean\)/);
 });

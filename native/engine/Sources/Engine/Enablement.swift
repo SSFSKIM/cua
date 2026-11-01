@@ -166,6 +166,9 @@ final class WebAccessibility: @unchecked Sendable {
   private var writtenBack: Set<String> = []
   private var processes: [String: EnabledProcess] = [:]
   private var observers: [String: Set<Int>] = [:]
+  /// Per process, the writes the engine made to its attribute, true or false, by any connection; kept past the
+  /// entry's retirement (`enablements`).
+  private var writes: [String: UInt64] = [:]
   /// Told (a bounded, value-free line) when a reset of the attribute the engine set fails; it stays owned.
   private let releaseFailed: (String) -> Void
 
@@ -181,6 +184,16 @@ final class WebAccessibility: @unchecked Sendable {
   }
 
   private static func process(_ pid: pid_t, _ launched: Date?) -> String { "\(pid)@\(launched?.timeIntervalSince1970 ?? 0)" }
+
+  /// How many times the engine has written a process's enablement attribute, from any connection. An observation reads
+  /// it before its settles and after its enablement step: a change means a settled tree was read before the process's
+  /// accessibility changed (`adoptsSettledTree`), which the observation's own `enabledNow` does not show once another
+  /// connection owns the attribute.
+  func enablements(pid: pid_t, launched: Date?) -> UInt64 {
+    lock.lock()
+    defer { lock.unlock() }
+    return writes[Self.process(pid, launched)] ?? 0
+  }
 
   func hasSeenWebArea(pid: pid_t, launched: Date?) -> Bool {
     lock.lock()
@@ -249,14 +262,15 @@ final class WebAccessibility: @unchecked Sendable {
     let reEnabling = writtenBack.contains(key)
     lock.unlock()
     guard read != true || reEnabling, entry.access.write(name, true) else { return (nil, prior) }
+    lock.lock()
+    writes[key, default: 0] += 1
     // Owned, and so released later, only when it read false (A3): an unreadable value may be another client's. A value
     // the engine itself wrote back is its own whatever it reads now.
     if read == false || reEnabling {
       entry.owned = name
-      lock.lock()
       writtenBack.remove(key)
-      lock.unlock()
     }
+    lock.unlock()
     return (name, prior)
   }
 
@@ -305,6 +319,7 @@ final class WebAccessibility: @unchecked Sendable {
     }
     lock.lock()
     if reset {
+      writes[key, default: 0] += 1
       webAreaSeen.remove(key)
       if entry.generationKnown { writtenBack.insert(key) }
     }

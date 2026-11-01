@@ -198,6 +198,10 @@ extension Engine {
     }
     var settleMarker: Any?
     var settled: Settled?
+    // The process's enablement count before any settle reads the tree: a settled tree is adopted only when no
+    // connection has enabled the process since (adoptsSettledTree).
+    let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
+    let enablementsBefore = webAccessibility.enablements(pid: appPid, launched: generation)
     for kind in observationSettles(opened: opened, armed: connection.needsSettle.contains(app.key), forced: args["settle"] as? Bool) {
       let prefix = kind == .afterOpen ? "openSettle" : "settle"
       let settleCosts = FetchCosts()
@@ -224,7 +228,6 @@ extension Engine {
     connection.needsSettle.remove(app.key)
 
     var enabledNow = false
-    let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
     let eligible = enablementEligible(bundleIdentifier: app.bundleIdentifier, webShaped: webShaped)
     // The application element's role read, then the enablement (Enablement.swift `observeEnablement`), on eligible apps.
     if let enabling = webAccessibility.observeEnablement(eligible: eligible, pid: appPid, launched: generation, connection: connection.id,
@@ -237,6 +240,7 @@ extension Engine {
         enabledNow = true
       }
     }
+    let enablementsAfter = webAccessibility.enablements(pid: appPid, launched: generation)
 
     // The window is there by now when the engine opened the app (waited above); otherwise it is read once.
     guard let window = try timings.time("window", { try awaitPrimaryWindow(of: application, until: unixMilliseconds(), opened: false) }) else {
@@ -298,7 +302,8 @@ extension Engine {
     // The settle's reads stand for the tree only when nothing changed it since (adoptsSettledTree).
     let source: ElementSource
     if let settled, let reused = settled.source, let busyWindow = settled.window,
-       adoptsSettledTree(sameWindow: CFEqual(busyWindow, window), enabledNow: enabledNow, waited: waited, loadedWebArea: settled.loadedWebArea) {
+       adoptsSettledTree(sameWindow: CFEqual(busyWindow, window), enablementsBefore: enablementsBefore, enablementsAfter: enablementsAfter,
+                         waited: waited, loadedWebArea: settled.loadedWebArea) {
       source = reused
       timings.set("settleTreeReused", true)
     } else {

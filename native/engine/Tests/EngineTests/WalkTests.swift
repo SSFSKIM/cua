@@ -358,11 +358,12 @@ final class WalkTests: XCTestCase {
   }
 
   func testTheObservationAdoptsTheSettlesTreeOnlyWhenNothingChangedIt() {
-    XCTAssertTrue(adoptsSettledTree(sameWindow: true, enabledNow: false, waited: false, loadedWebArea: false))
-    XCTAssertTrue(adoptsSettledTree(sameWindow: true, enabledNow: false, waited: true, loadedWebArea: true), "the wait found the web area at once")
-    XCTAssertFalse(adoptsSettledTree(sameWindow: true, enabledNow: false, waited: true, loadedWebArea: false))
-    XCTAssertFalse(adoptsSettledTree(sameWindow: true, enabledNow: true, waited: false, loadedWebArea: true))
-    XCTAssertFalse(adoptsSettledTree(sameWindow: false, enabledNow: false, waited: false, loadedWebArea: false))
+    XCTAssertTrue(adoptsSettledTree(sameWindow: true, enablementsBefore: 3, enablementsAfter: 3, waited: false, loadedWebArea: false))
+    XCTAssertTrue(adoptsSettledTree(sameWindow: true, enablementsBefore: 3, enablementsAfter: 3, waited: true, loadedWebArea: true), "the wait found the web area at once")
+    XCTAssertFalse(adoptsSettledTree(sameWindow: true, enablementsBefore: 3, enablementsAfter: 3, waited: true, loadedWebArea: false))
+    XCTAssertFalse(adoptsSettledTree(sameWindow: true, enablementsBefore: 3, enablementsAfter: 4, waited: false, loadedWebArea: true),
+                   "an enablement of the process since the settle, whichever connection made it")
+    XCTAssertFalse(adoptsSettledTree(sameWindow: false, enablementsBefore: 3, enablementsAfter: 3, waited: false, loadedWebArea: false))
   }
 
   func testShownRangesArePositionsAmongTheChildrenTheAttributeReadReturned() {

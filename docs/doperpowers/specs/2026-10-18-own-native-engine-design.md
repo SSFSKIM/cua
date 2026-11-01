@@ -1243,7 +1243,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   The trade: a process that resets the attribute itself keeps a missing tree until the next release, as with the
   vendor. Unchanged: the web-area wait and its once-per-process tuning. A consequence: an owned observation is not
   `enabledNow`, so a later observation of an Electron app may now adopt the settle's tree (`adoptsSettledTree`), as
-  other apps' observations already could. Alternative: keep the re-read and only stop writing what the engine owns. Not
+  other apps' observations already could. That rule no longer asks whether this observation enabled, but whether the
+  process was enabled since its settles, by any connection: `WebAccessibility` counts the engine's writes per process,
+  and the observation adopts only when the count read before its settles equals the count after its enablement step.
+  Otherwise (the review of 59862867) a connection that settled while another connection enabled the process and saw
+  its web area found the attribute owned, wrote nothing, skipped the wait and adopted a tree read before the page
+  existed; the per-observation write had hidden this. Alternative: keep the re-read and only stop writing what the engine owns. Not
   chosen: on Electron the read always answers false, so it would decide nothing, and the vendor does not read either.
 - Decision (#244, 2026-11-01, the same branch; amends "Observation (skyshot)"): **every observation of an eligible app
   reads the application element's role before its enablement**: one `AXUIElementCopyMultipleAttributeValues` for

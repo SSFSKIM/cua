@@ -210,7 +210,9 @@ func busyWalk(_ window: AXUIElement, source: ElementSource, visibleFrame: CGRect
 }
 
 /// Whether the observation reads the tree the settle's last busy walk fetched (F §8.5): only for the same window, with
-/// no enablement since, and no web-area wait unless that walk already passed a loaded web area.
-func adoptsSettledTree(sameWindow: Bool, enabledNow: Bool, waited: Bool, loadedWebArea: Bool) -> Bool {
-  sameWindow && !enabledNow && (!waited || loadedWebArea)
+/// no enablement of the process since, by this observation or any other connection's (the process's enablement count,
+/// `WebAccessibility.enablements`, read before the settles and after the enablement step, unchanged), and no web-area
+/// wait unless that walk already passed a loaded web area.
+func adoptsSettledTree(sameWindow: Bool, enablementsBefore: UInt64, enablementsAfter: UInt64, waited: Bool, loadedWebArea: Bool) -> Bool {
+  sameWindow && enablementsBefore == enablementsAfter && (!waited || loadedWebArea)
 }

@@ -220,6 +220,49 @@ final class EnablementReleaseTests: XCTestCase {
     XCTAssertTrue(web.observers(pid: 7, launched: launched).isEmpty, "not recorded as observing it")
   }
 
+  /// One observation by `connection` as getAppState composes it, around a settle whose tree `settled` stands for: the
+  /// process's enablement count before the settles, `between` (what other connections do meanwhile), the enablement
+  /// step, the wait decision on a Chromium window, and whether the settled tree (no web area in it) is adopted.
+  private func adoptsSettled(_ web: WebAccessibility, _ app: FakeApplication, connection: Int, between: () -> Void = {}) -> Bool {
+    let before = web.enablements(pid: 7, launched: launched)
+    between()
+    var timings = Timings()
+    let step = web.observeEnablement(eligible: true, pid: 7, launched: launched, connection: connection, access: app.access, timings: &timings)
+    let waited = webAreaWaitNeeded(switchOn: true, enabledNow: step?.set != nil, chromium: true, seen: web.hasSeenWebArea(pid: 7, launched: launched))
+    return adoptsSettledTree(sameWindow: true, enablementsBefore: before, enablementsAfter: web.enablements(pid: 7, launched: launched),
+                             waited: waited, loadedWebArea: false)
+  }
+
+  func testASettledTreeReadBeforeAnotherConnectionEnabledTheProcessIsNotAdopted() {
+    // The review of 59862867: connection A settles; connection B then enables the process (owning it) and sees its web
+    // area; A's enablement step finds it owned and writes nothing, and B's web area skips A's wait, so only the
+    // process's enablement count shows that A's settled tree was read before the page's tree existed.
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    let adopted = adoptsSettled(web, app, connection: 1) {
+      var timings = Timings()
+      XCTAssertEqual(web.observeEnablement(eligible: true, pid: 7, launched: self.launched, connection: 2, access: app.access, timings: &timings)?.set,
+                     "AXManualAccessibility")
+      web.noteWebArea(pid: 7, launched: self.launched)
+    }
+    XCTAssertFalse(adopted, "read before an enablement of the process")
+    XCTAssertEqual(app.written, ["AXManualAccessibility=true"], "still written once")
+    XCTAssertTrue(adoptsSettled(web, app, connection: 1), "nothing enabled since this settle: adopted")
+  }
+
+  func testTheEnablementCountMovesWithEveryWriteTheEngineMakes() {
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    XCTAssertEqual(web.enablements(pid: 7, launched: launched), 0)
+    XCTAssertFalse(adoptsSettled(web, app, connection: 1), "this observation's own enablement")
+    let enabled = web.enablements(pid: 7, launched: launched)
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    XCTAssertEqual(web.enablements(pid: 7, launched: launched), enabled, "owned: nothing written")
+    web.release(connection: 1)
+    XCTAssertGreaterThan(web.enablements(pid: 7, launched: launched), enabled, "the write-back too, though the entry is retired")
+    XCTAssertEqual(web.enablements(pid: 7, launched: Date(timeIntervalSince1970: 2_000)), 0, "per process generation")
+  }
+
   func testEnhancedUserInterfaceOnlyWhenManualIsNotListed() {
     let web = WebAccessibility()
     let app = FakeApplication(names: ["AXEnhancedUserInterface"])

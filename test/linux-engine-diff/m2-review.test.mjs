@@ -93,8 +93,10 @@ test('both Copy attempts failing give the sample a handle no engine issued, and 
   assert.equal(judgeOperation(rows, { vendors: VENDORS, candidate: 'cua', text: true }).pass, false);
 });
 
-test('a window that refuses the selection twice gives the sample a handle no engine issued, and the run goes on', async () => {
-  // t18-verdict: the newest build's gedit text window refused the oracle's selection in a top-up, which ended the run
+test("a window that refuses the selection twice fails the preparation at the harness oracle's step, and the run goes on", async () => {
+  // t18-verdict: the newest build's gedit text window refused the oracle's selection in a top-up, which ended the run;
+  // m3-gate-final: cua's did once, which failed cua's verdict for a harness fault. The gate's rule (prepare.mjs,
+  // prepare.test.mjs) resamples such a sample instead of judging it
   const requests = [];
   let selects = 0;
   const ctx = {
@@ -102,10 +104,10 @@ test('a window that refuses the selection twice gives the sample a handle no eng
     desktop: { oracle: { select: () => (selects++, false), text: () => 'cua171 differential scene' } },
     engine: { request: async (command) => (requests.push(command), { response: { ok: true, output: 'h' } }) },
   };
-  assert.equal(await handleOfFirstWord(ctx), NO_HANDLE);
+  await assert.rejects(handleOfFirstWord(ctx), (error) => error.step === 'oracle' && /^gedit-text_newest refused the selection$/.test(error.message));
   assert.equal(selects, 2, 'tried twice');
   assert.deepEqual(requests, [], 'no Copy without a selection');
-  assert.match(ctx.prepareError, /^clipboard_read for a handle failed: gedit-text_newest refused the selection/);
+  assert.equal(ctx.prepareError, undefined, 'no handle sent in place of one');
 });
 
 // ---------------------------------------------------------------------------------------------------------------

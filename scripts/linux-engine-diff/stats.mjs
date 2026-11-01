@@ -11,15 +11,17 @@ export function median(values) {
  * A run's outcome from its verdict rows (Interfaces: exit 0 only when the negative check held and every verdict
  * passes, exploratory variants included; their rows stay in the evidence either way). `valid` is the negative
  * check's alone, kept apart from `pass`. A declared parity verdict (deviations.mjs `PARITY`) is listed in `parity`:
- * neither a failure nor a pass.
+ * neither a failure nor a pass. `faults` (prepare.mjs `judgePrepareFaults`): a cap it fails is one more failure.
  */
-export function runOutcome(verdicts, { valid }) {
+export function runOutcome(verdicts, { valid, faults = null }) {
   const name = (v) => `${v.scene} ${v.op} ${v.candidate}`;
   const judged = verdicts.filter((v) => v.kind === 'verdict');
   const parity = judged.filter((v) => !v.pass && v.verdict === 'parity').map(name);
   // a declared refusal (deviations.mjs REFUSALS) is a recorded loss: listed apart, never a pass, not a failure
   const refused = judged.filter((v) => !v.pass && v.verdict === 'declared refusal').map(name);
   const failed = judged.filter((v) => !v.pass && !['parity', 'declared refusal'].includes(v.verdict)).map(name);
+  // the gate's rule for harness-side preparation failures (prepare.mjs): a cap exceeded fails the run
+  if (faults && !faults.pass) failed.push(`harness preparation failures over the cap (${faults.reasons.join('; ')})`);
   const pass = failed.length === 0;
   return { valid, pass, failed, parity, refused, code: valid && pass ? 0 : 1 };
 }

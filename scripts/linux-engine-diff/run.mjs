@@ -27,6 +27,7 @@ import { compareShots, xprobeDiff } from './images.mjs';
 import { compareStates, normalizeState, retainedIds } from './normalize.mjs';
 import { OPS, SCENE_OPS, inputOp, ownWindow, shotOf, targeted } from './ops.mjs';
 import { Oracle } from './oracle.mjs';
+import { ORACLE, PrepareStepError, judgePrepareFaults, prepareFailureRow, sampleUnderRule } from './prepare.mjs';
 import { writeSummary } from './report.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
@@ -196,7 +197,8 @@ export function differingField(reference, candidate) {
 /**
  * One sample: the operation's untimed preparation, its before-state, the request inside a witness span (the engine
  * started inside it when nothing had to come first), the untimed companion, the effect read back and the follow-up
- * input of a retention case. Returns the row and the raw response.
+ * input of a retention case. Returns the row and the raw response; a preparation that failed at the harness oracle's
+ * step returns its record instead, no request sent, with `fault` set (prepare.mjs).
  */
 export async function runSample(s) {
   const ctx = { desktop: s.desktop, scene: s.target, sceneName: s.sceneName, engine: s.engine, i: s.i, witness: s.witness, cuaVersion: s.cuaVersion };
@@ -268,7 +270,17 @@ async function measureSample(s, ctx) {
       if (!engine.ids.has(target.id)) engine.ids.set(target.id, await ctx.witnessed(() => engine.resolveElements(target, target.elements)));
       ctx.ids = engine.ids.get(target.id);
     }
-    if (def.prepare) await def.prepare(ctx);
+    if (def.prepare) {
+      try {
+        await def.prepare(ctx);
+      } catch (error) {
+        // a preparation failed at the harness oracle's step (prepare.mjs): no request is sent, the sample is not judged,
+        // and the gate's rule resamples it; any other failure ends the run as before
+        if (!(error instanceof PrepareStepError) || error.step !== ORACLE) throw error;
+        if (def.restore) await def.restore(ctx);
+        return { row: prepareFailureRow(s, error), response: null, fault: ORACLE };
+      }
+    }
   }
   const before = def.read && !def.follow ? await settledRead(() => def.read(ctx)) : null;
   ctx.before = before;
@@ -338,6 +350,9 @@ async function measureSample(s, ctx) {
   if (row.effect === null) delete row.effect;
   if (def.check) Object.assign(row, await def.check(ctx, response));
   if (ctx.prepareError) row.prepare_error = ctx.prepareError;
+  if (ctx.prepareStep) row.prepare_step = ctx.prepareStep;
+  // every failed preparation attempt, with the step it failed at, a later attempt's success notwithstanding
+  if (ctx.prepareAttempts?.length) row.prepare_attempts = ctx.prepareAttempts;
   if (quarantined?.waited_ms) row.quarantine_waited_ms = quarantined.waited_ms;
   if (def.cleanup) await def.cleanup(ctx, response);
   if (def.restore) await def.restore(ctx);
@@ -789,9 +804,24 @@ export async function runDiff(args) {
       const spec = engineSpecFor(engines.find((e) => e.label === label), op, sceneName);
       const target = measuredTarget(windows, sceneName, op, label);
       if (target && args.occlusion === 'visible') desktop.raise(target);
-      const engine = makeEngine(spec, OPS[op].apps ? launch.env : undefined);
+      const env = OPS[op].apps ? launch.env : undefined;
+      let engine = makeEngine(spec, env);
       for (let i = 0; i < n; i++) {
-        const { row, response } = await runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName, cuaVersion });
+        // the gate's rule for a harness-side preparation failure (prepare.mjs): one resample in the sample's condition,
+        // a cold sample's on a fresh engine
+        const taken = await sampleUnderRule({
+          cold: i === 0,
+          take: () => runSample({ desktop, witness: targeted(op) ? witness : null, engine, target, op, i, block, label, sceneName, cuaVersion }),
+          renew: async () => {
+            await engine.close();
+            engine = makeEngine(spec, env);
+            return true;
+          },
+          emit,
+        });
+        if (taken.stop) break;
+        if (!taken.counted) continue;
+        const { row, response } = taken.counted;
         if (row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot' || OPS[op].kind === 'retention')) {
           row.nodes = retainedIds(response.output).length;
           row.source = response.output.ax_tree_source;
@@ -1128,7 +1158,10 @@ export async function runDiff(args) {
       verdicts.push(row);
       emit(row);
     }
-    outcome = runOutcome(verdicts, { valid });
+    // the gate's rule for harness-side preparation failures: its counts per case and for the run, and its caps
+    const faults = judgePrepareFaults(after);
+    emit({ kind: 'prepare-faults', ...faults });
+    outcome = runOutcome(verdicts, { valid, faults });
     emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, finished: new Date().toISOString() });
   } finally {
     if (witness) await witness.stop();

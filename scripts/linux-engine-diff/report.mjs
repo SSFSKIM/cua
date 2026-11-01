@@ -161,11 +161,32 @@ export function renderSummary(lines) {
       out.push('', "Bus-call bound (the cold and the warm count, each at most the vendor's plus 256):");
       for (const v of bounded) out.push(`- ${v.scene} ${v.candidate}: ${v.calls_bound.pass ? 'within' : `**${v.calls_bound.reasons.join('; ')}**`}`);
     }
+    out.push(...prepareFaultsMarkdown(rows));
     const end = rows.find((r) => r.kind === 'end');
     const ending = !end || end.pass === undefined ? '' : `; ${verdictLine(end, (s) => `**${s}**`)}`;
     out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
   }
   return out.join('\n');
+}
+
+/**
+ * The gate's rule for harness-side preparation failures (prepare.mjs; Decision Log 2026-11-01): the resampled and
+ * invalid samples per case and for the run against their caps, and each failed sample with the step it failed at. A run
+ * from before the rule has no record and shows nothing.
+ */
+export function prepareFaultsMarkdown(rows) {
+  const faults = rows.find((r) => r.kind === 'prepare-faults');
+  if (!faults) return [];
+  const { run } = faults;
+  const head = `Harness preparation failures (the gate's rule, Decision Log 2026-11-01): ${run.resampled} resampled and ${run.invalid} invalid of ${run.samples} samples, against the run's cap of 1% (${run.limit})${run.over ? ', **over the cap**' : ''}`;
+  if (!faults.cases.length) return ['', `${head}.`];
+  const out = ['', `${head}:`, '', '| scene | op | samples | resampled | invalid | cap | |', '|---|---|---:|---:|---:|---:|---|'];
+  for (const c of faults.cases) out.push(`| ${c.scene} | ${c.op} | ${c.samples} | ${c.resampled} | ${c.invalid} | ${c.limit} | ${c.over ? '**over the cap**' : 'within'} |`);
+  out.push('');
+  for (const f of rows.filter((r) => r.kind === 'prepare-failure')) {
+    out.push(`- ${f.scene} ${f.op} ${f.engine} ${f.block}/${f.i} (${f.series}): ${f.outcome}; failed at the ${f.step} step: ${f.error}${f.resample ? `; the resample failed at the ${f.resample.step} step too: ${f.resample.error}` : ''}${f.why ? `; ${f.why}` : ''}`);
+  }
+  return out;
 }
 
 export function writeSummary(dir) {

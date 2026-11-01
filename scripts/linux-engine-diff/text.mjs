@@ -15,6 +15,7 @@
 // bar. cua's effect and clipboard are judged on every sample, whatever the vendor builds did.
 
 import { clipRead, startOwner } from './clip.mjs';
+import { ENGINE, ORACLE, PrepareStepError } from './prepare.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const chars = (s) => [...s];
@@ -88,11 +89,20 @@ async function clipboardAfter(ctx, expected) {
 /** A companion request of the engine under measurement (a hold of the address bar's focus, a read for a handle). */
 const companion = (ctx, fn) => (ctx.witnessed ? ctx.witnessed(fn) : fn());
 
-/** The document's first word selected; `ctx.selected` its text. */
+/**
+ * The document's first word selected through the harness oracle; `ctx.selected` its text. A window that refuses the
+ * selection fails the preparation at the oracle's step (prepare.mjs: the sample is resampled, never judged).
+ */
 function selectFirstWord(ctx) {
   const { oracle } = ctx.desktop;
-  if (!oracle.select(ctx.scene.field, ...FIRST_WORD)) throw new Error(`${ctx.scene.label} refused the selection`);
-  ctx.selected = chars(oracle.text(ctx.scene.field)).slice(...FIRST_WORD).join('');
+  let selected;
+  try {
+    selected = oracle.select(ctx.scene.field, ...FIRST_WORD) && chars(oracle.text(ctx.scene.field)).slice(...FIRST_WORD).join('');
+  } catch (error) {
+    throw new PrepareStepError(ORACLE, `${ctx.scene.label}'s selection could not be made: ${String(error.message).slice(0, 160)}`);
+  }
+  if (!selected) throw new PrepareStepError(ORACLE, `${ctx.scene.label} refused the selection`);
+  ctx.selected = selected;
 }
 
 /** The handle an operation sends when its engine could not read one: no engine issued it. */
@@ -100,28 +110,34 @@ export const NO_HANDLE = 'cua171-no-handle';
 
 /**
  * A `clipboard_read` of the document's first word, for the operations that need a handle (untimed, witnessed), tried
- * twice. An engine whose Copy fails both times (the pinned build, once its window is in some states, M2.3) is sent a
- * handle it never issued, and its sample records why (`prepare_error`): the request still runs, its answer and effect
- * are judged as any other, so a candidate's failure here fails its verdict and a vendor build's is recorded.
+ * twice, each failed attempt recorded with its step (`ctx.prepareAttempts`, prepare.mjs). An engine whose Copy failed
+ * (the pinned build, once its window is in some states, M2.3) is sent a handle it never issued, and its sample records
+ * why (`prepare_error`, `prepare_step` engine): the request still runs, its answer and effect are judged as any other,
+ * so a candidate's failure here fails its verdict and a vendor build's is recorded; the engine's request is never
+ * excused, so an attempt failed at the engine decides this even beside an oracle's failure. Only when every attempt
+ * failed at the oracle's selection (a window that refused it, gedit once in m3-gate-final) does the preparation fail at
+ * the oracle's step, and the gate's rule resamples the sample (prepare.mjs).
  */
 export async function handleOfFirstWord(ctx) {
-  let error;
+  ctx.prepareAttempts ??= [];
   for (let attempt = 0; attempt < 2; attempt++) {
-    // a window that refuses the selection (the newest build's gedit once, in a top-up of t18-verdict) is a failed
-    // attempt like a failed Copy, never the end of the run
     try {
       selectFirstWord(ctx);
     } catch (e) {
-      error = e.message;
+      if (!(e instanceof PrepareStepError)) throw e;
+      ctx.prepareAttempts.push({ step: ORACLE, error: e.message });
       await sleep(200);
       continue;
     }
     const { response } = await companion(ctx, () => ctx.engine.request('clipboard_read', { window: { id: ctx.scene.id } }));
     if (response.ok) return response.output;
-    error = response.error;
+    ctx.prepareAttempts.push({ step: ENGINE, error: String(response.error).slice(0, 200) });
     await sleep(200);
   }
-  ctx.prepareError = `clipboard_read for a handle failed: ${String(error).slice(0, 200)}`;
+  const engineFailed = ctx.prepareAttempts.filter((a) => a.step === ENGINE);
+  if (!engineFailed.length) throw new PrepareStepError(ORACLE, ctx.prepareAttempts.at(-1).error, ctx.prepareAttempts);
+  ctx.prepareStep = ENGINE;
+  ctx.prepareError = `clipboard_read for a handle failed: ${engineFailed.at(-1).error}`;
   return NO_HANDLE;
 }
 

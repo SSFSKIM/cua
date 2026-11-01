@@ -1,0 +1,107 @@
+// The gate's rule for a sample whose harness-side preparation fails (#171, Decision Log 2026-11-01, the design
+// session, declared before M3's gate rerun), in every case alike:
+// - every preparation attempt records the step that failed: the harness oracle's (its own reads and writes of the
+//   accessibility bus, `oracle.mjs`) or the engine's request (a Copy, a paste, any engine command);
+// - a sample whose preparation failed at a harness oracle's step is resampled once in its own condition: a cold sample
+//   on a fresh engine (the gate's own definition of cold: the first request of a fresh engine process), a warm one on
+//   its engine; a resample that fails at the oracle again, or that cannot reproduce the condition, leaves the sample
+//   invalid, never replaced;
+// - a failure at the engine's request is never resampled: it fails the verdict as before (stats.mjs `judgeOperation`);
+// - invalid and resampled samples are counted per case and for the run: more than 2, or 1% of a case's samples if that
+//   is larger, fails the run, and so does more than 1% of all the run's samples.
+
+/** The harness oracle's step: its own accessibility-bus reads and writes (a selection the window refuses). */
+export const ORACLE = 'oracle';
+/** The engine's request: a request of the engine under measurement, cua's or a vendor build's. */
+export const ENGINE = 'engine';
+
+/** A preparation that failed at `step`, with every attempt's record (`{step, error}`). */
+export class PrepareStepError extends Error {
+  constructor(step, message, attempts = []) {
+    super(message);
+    this.step = step;
+    this.attempts = attempts;
+  }
+}
+
+/** The record of a sample whose preparation failed at the harness oracle: no request was sent, so it is no sample. */
+export function prepareFailureRow(s, error) {
+  return {
+    kind: 'prepare-failure',
+    engine: s.label,
+    scene: s.sceneName,
+    op: s.op,
+    block: s.block,
+    series: s.i === 0 ? 'cold' : 'warm',
+    i: s.i,
+    step: error.step,
+    error: error.message,
+    attempts: error.attempts,
+  };
+}
+
+/**
+ * One sample under the rule. `take()` runs it and answers `{row, response, fault}`, `fault` ORACLE when its
+ * preparation failed at the harness oracle (`row` then the failure's record) and null otherwise (an engine's failure
+ * included); `renew()` gives a cold sample's resample a fresh engine and answers whether it could. `emit` records the
+ * failed sample once its outcome is known. Answers `{counted, stop}`: the sample to count (null when invalid) and
+ * whether its series ends, which a cold sample left invalid does, since no later request on its engine is warm.
+ */
+export async function sampleUnderRule({ cold, take, renew, emit }) {
+  const first = await take();
+  if (first.fault !== ORACLE) return { counted: first, stop: false };
+  if (cold && !(await renew())) {
+    emit({ ...first.row, outcome: 'invalid', why: 'the resample could not reproduce the cold condition: no fresh engine' });
+    return { counted: null, stop: true };
+  }
+  const second = await take();
+  if (second.fault === ORACLE) {
+    emit({ ...first.row, outcome: 'invalid', resample: { step: second.row.step, error: second.row.error, attempts: second.row.attempts } });
+    return { counted: null, stop: cold };
+  }
+  emit({ ...first.row, outcome: 'resampled' });
+  second.row.resampled = true;
+  return { counted: second, stop: false };
+}
+
+/** A case's cap: more than 2 resampled or invalid samples, or 1% of its samples if that is larger, fails the run. */
+const caseLimit = (samples) => Math.max(2, samples / 100);
+
+/**
+ * The rule's counts over a run's rows (`sample` and `prepare-failure`): per case (scene and operation, every engine's
+ * samples), the samples taken (counted ones plus invalid ones), how many were resampled and how many left invalid, and
+ * the same for the run, each against its cap. `cases` lists only the cases with a failure. Answers `{cases, run, pass,
+ * reasons}`.
+ */
+export function judgePrepareFaults(rows) {
+  const byCase = new Map();
+  const at = (r) => {
+    const key = `${r.scene}|${r.op}`;
+    if (!byCase.has(key)) byCase.set(key, { scene: r.scene, op: r.op, samples: 0, resampled: 0, invalid: 0 });
+    return byCase.get(key);
+  };
+  for (const r of rows) {
+    if (r.kind === 'sample') at(r).samples += 1;
+    if (r.kind === 'prepare-failure' && r.outcome === 'resampled') at(r).resampled += 1;
+    if (r.kind === 'prepare-failure' && r.outcome === 'invalid') {
+      at(r).samples += 1;
+      at(r).invalid += 1;
+    }
+  }
+  const all = [...byCase.values()];
+  const reasons = [];
+  const cases = all
+    .filter((c) => c.resampled + c.invalid > 0)
+    .map((c) => {
+      const limit = caseLimit(c.samples);
+      const over = c.resampled + c.invalid > limit;
+      if (over) reasons.push(`${c.scene} ${c.op}: ${c.resampled + c.invalid} of ${c.samples} samples resampled or invalid (${c.resampled} resampled, ${c.invalid} invalid), more than the case's cap of ${limit}`);
+      return { ...c, limit, over };
+    });
+  const sum = (key) => all.reduce((n, c) => n + c[key], 0);
+  const run = { samples: sum('samples'), resampled: sum('resampled'), invalid: sum('invalid') };
+  run.limit = run.samples / 100;
+  run.over = run.resampled + run.invalid > run.limit;
+  if (run.over) reasons.push(`the run: ${run.resampled + run.invalid} of ${run.samples} samples resampled or invalid (${run.resampled} resampled, ${run.invalid} invalid), more than 1% of the run's samples (${run.limit})`);
+  return { cases, run, pass: reasons.length === 0, reasons };
+}

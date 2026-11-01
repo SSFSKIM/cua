@@ -27,8 +27,9 @@ export const MAWS_PROFILE_NAME = 'MAWS';
 // MAWS names an app session's socket <appSessionId>.sock and its instance maws:<appSessionId>; the fake does the same.
 export const instanceIdFor = path => `maws:${basename(path, '.sock')}`;
 
-// One connection's side of the peer.
-export function createFakeMawsExtension({instanceId = `maws:${randomUUID()}`, chrome = false, cdp, ...options} = {}) {
+// One connection's side of the peer. `helloFields` replaces the MAWS hello's own fields (a test varying its profileName).
+export function createFakeMawsExtension({instanceId = `maws:${randomUUID()}`, chrome = false, cdp,
+  helloFields = chrome ? {} : {extensionId: 'maws', profileName: MAWS_PROFILE_NAME}, ...options} = {}) {
   const cursor = [];
   const refusals = [];
   let blank = null;
@@ -44,7 +45,7 @@ export function createFakeMawsExtension({instanceId = `maws:${randomUUID()}`, ch
       hostRefused: params => { refusals.push(params); },
       ...(chrome ? {} : {'cursor.move': ({tabId, x, y}) => { cursor.push({tabId, x, y}); return {}; }}),
     },
-    helloFields: chrome ? {} : {extensionId: 'maws', profileName: MAWS_PROFILE_NAME},
+    helloFields,
   });
   blank = blankPageCdp(ext);
   return Object.assign(ext, {

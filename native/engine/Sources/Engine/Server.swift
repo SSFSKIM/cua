@@ -162,7 +162,7 @@ final class Server: @unchecked Sendable {
   }
 
   /// Registers an accepted connection; nil (the connection closed) once a shutdown was accepted.
-  private func register(_ fd: Int32) -> ConnectionState? {
+  func register(_ fd: Int32) -> ConnectionState? {
     lock.lock()
     defer { lock.unlock() }
     if shuttingDown {
@@ -175,16 +175,19 @@ final class Server: @unchecked Sendable {
     return connection
   }
 
-  private func unregister(_ connection: ConnectionState) {
+  /// A connection closed: it stops counting at once (`others`, so status and shutdown's busy count), and its state goes,
+  /// but for two things that finish first (#237): its after-action watch runs on to its natural end, unless a request on
+  /// any connection ends it sooner, and a fade under way plays out before its cursor's panel goes.
+  func unregister(_ connection: ConnectionState) {
     lock.lock()
     open[connection.id] = nil
     lock.unlock()
     close(connection.fd)
     connection.endMenuInteraction()  // a held menu activation goes with its connection (MenuSpan.swift)
     connection.endFocusHold()  // and its focus hold (FocusHold.swift)
-    engine.connectionClosed(connection)  // its after-action watch and drives end; the intervention tap goes with the last (Intervention.swift)
+    engine.connectionClosed(connection)  // its drives end, the intervention tap with the last; its after-action watch runs on (Intervention.swift)
     engine.webAccessibility.release(connection: connection.id)  // enablement no connection observes now (Enablement.swift)
-    engine.cursor.closed(connection: connection.id)  // its cursor's panel is ordered out and released (Cursor/CursorHub.swift)
+    engine.cursor.closed(connection: connection.id)  // its cursor's panel goes, after a fade under way (Cursor/CursorHub.swift)
   }
 
   /// Accepts a shutdown atomically with accept: with no connection open but `connection`, closes the listener under the
@@ -242,6 +245,7 @@ final class Server: @unchecked Sendable {
       connection.endFocusHold()
       engine.cursor.closed(connection: connection.id)
     }
+    engine.closedWatches.cancelAll()  // a closed connection's after-action watch ends with the engine (#237)
     engine.cursor.drain()
     ScreenUpdateReleases.shared.drain()  // a route-3 release still pending runs before the exit
     engine.webAccessibility.releaseAll()  // the engine's enablement goes with it

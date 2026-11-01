@@ -53,6 +53,8 @@ final class Engine: @unchecked Sendable {
   let pasteActivation: ActivationSystem
   /// The agent cursor (Cursor/CursorHub.swift): the live one draws; the default keeps its state and draws nothing.
   let cursor: CursorHub
+  /// The after-action watches of closed connections, still running (#237, Activation.swift).
+  let closedWatches = ClosedConnectionWatches()
   /// The device's switch, `cursor` in engine.json as read at launch (Config.swift): off, no session draws a cursor.
   let cursorEnabled: Bool
   /// The cursor's diagnostic arm, `cursorDebug` in engine.json as read at launch (Config.swift); nil for none.
@@ -164,8 +166,10 @@ final class Engine: @unchecked Sendable {
 
   private func execute(_ params: [String: Any], _ connection: ConnectionState, _ receivedAt: Int64) throws -> Any {
     // Before anything else, the connection's after-action watch ends (#200, Activation.swift): no repair of an earlier
-    // action is made once this request, which may act or observe, has begun; its own guard takes over.
+    // action is made once this request, which may act or observe, has begun; its own guard takes over. So does every
+    // closed connection's watch still running (#237): another client's request is never answered by it either.
     connection.afterAction.cancel()
+    closedWatches.cancelAll()
     // The deadline first, before anything is dispatched (the vendor's order, F §8.9); a settle or a launch wait still
     // running when it passes is cancelled as timeoutReached (cua's addition, Skyshot.swift).
     let deadline = (params["deadlineUnixMilliseconds"] as? NSNumber)?.int64Value ?? receivedAt + 120_000

@@ -324,6 +324,53 @@ test('after release the next request reconnects: a new connection, told the sess
   assert.equal(launches.length, 0, 'the engine answered: nothing launched');
 });
 
+test('a connect in flight at release publishes nothing: its late ping answer closes the socket, the old request fails unsent, and a request after release reconnects', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  let answerPing = null, held = true;
+  const engine = await startFakeEngine(t, socket, {handlers: {
+    ping: () => {
+      const answer = {serverApiVersion: 'cua-engine-1', ...IDENTITY};
+      if (!held) return answer;
+      held = false;
+      return new Promise(resolve => { answerPing = () => resolve(answer); });
+    },
+    cursor: () => ({cursor: 'on', reason: null}), 'execute:ok': () => 'ok'}});
+  const {client, launches} = clientFor(socket, {cursor: CURSOR});
+  t.after(() => client.close());
+  const old = client.execute('ok', {});
+  await until(() => answerPing !== null);
+  client.release();  // end_task while the old task's connect waits for its ping
+  answerPing();
+  await assert.rejects(old, SkyComputerUseTransportError);
+  assert.equal(client.connected, false, 'nothing published after release');
+  await until(() => engine.sockets.size === 0);
+  assert.deepEqual(engine.received.map(r => r.method), ['ping'], 'neither the cursor request nor the old execute was sent');
+  assert.equal(launches.length, 0, 'no launch either');
+  assert.equal((await client.execute('ok', {})).result, 'ok', 'a request after release reconnects');
+  assert.deepEqual(engine.received.slice(1).map(r => r.method), ['ping', 'cursor', 'execute']);
+});
+
+test('requests queued at release fail unsent and never reconnect; the one in flight fails as on any close', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  let finish = null;
+  const engine = await startFakeEngine(t, socket, {handlers: {
+    'execute:slow': () => new Promise(resolve => { finish = () => resolve('slow'); }), 'execute:ok': () => 'ok'}});
+  const {client} = clientFor(socket);
+  t.after(() => client.close());
+  const inFlight = client.execute('slow', {});
+  const queued = client.execute('ok', {});
+  await until(() => finish !== null);
+  client.release();
+  finish();
+  await assert.rejects(inFlight, SkyComputerUseTransportError);
+  await assert.rejects(queued, SkyComputerUseTransportError);
+  await until(() => engine.sockets.size === 0);
+  assert.equal(client.connected, false);
+  assert.deepEqual(engine.received.map(r => r.method === 'execute' ? r.params.method : r.method), ['ping', 'slow'], 'the queued request was neither sent nor reconnected for');
+  assert.equal((await client.execute('ok', {})).result, 'ok');
+  assert.equal(engine.received.filter(r => r.method === 'ping').length, 2);
+});
+
 test('an engine without the cursor method answers methodNotFound: the session goes on, and that connection is sent no more cursor requests', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   const engine = await startFakeEngine(t, socket, {handlers: {'execute:ok': () => 'ok'}});

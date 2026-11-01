@@ -88,10 +88,11 @@ const SPIKE_ROUTES = new Set(['1', "2'", '2', '3']);
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
-  'cua/delivery': null, 'cua/afterActionRepairs': null,
+  'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null,
 };
-// The engine's optional input meta keys, carried under cua/<key> when it sends them.
-const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs'];
+// The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's
+// value-free diagnostics, #187).
+const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application

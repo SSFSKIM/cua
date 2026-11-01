@@ -347,6 +347,31 @@ test('a paste reports its route as "paste", and its clipboard sentences reach th
   assert.deepEqual(meta['cua/actionInterval'], {startedAt: 1000, endedAt: 1042}, '⌘V was posted before the wait ran out');
 });
 
+test('#187: pasteUnconfirmed and its type_text count reach the model in the message, and the paste diagnostics ride as cua/paste on results and errors alone', async t => {
+  const diagnostics = {line: 2, lines: 3, notificationSource: 'untrusted', baselineEmpty: true, readWait: 'handedOver', readWaitMs: 1.2,
+    readAfterPostMs: -4.5, effectWait: 'noChannel', effectWaitMs: 0, mainLagMs: 0.3, restore: 'restored',
+    keyFocusAtPaste: {holds: false, frontmost: false, keyFocusProcess: false, focusedInWindow: true}};
+  const unconfirmed = 'The paste could not be confirmed: ⌘V was sent and the pasted text was read from the clipboard, but no change was seen in the field. The text may have arrived: observe the field with get_app_state before any retry, and never retry blindly. Confirmed entered: 3 of 8 characters (1 of 3 lines complete); line 2 is in an unknown state.';
+  const typed = {...INPUT_META, inputRoute: 'paste', pointUnconfirmed: undefined, entered: 3, paste: diagnostics};
+  const {getApp, call, meta} = await session(t, {handlers: {
+    'execute:type_text': () => { throw new EngineFailure(-10005, unconfirmed, 'pasteUnconfirmed', {meta: typed}); },
+    'execute:paste': () => ({meta: {...typed, entered: undefined, paste: {...diagnostics, effectWait: 'reading'}}}),
+    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", pointUnconfirmed: undefined}}),
+  }});
+  const {app} = await getApp('TextEdit');
+  await assert.rejects(call(() => app.typeText('ab\ncd\nef')), error => {
+    assert.equal(error.message, `Computer Use server error -10005: ${unconfirmed}`, 'the whole sentence, the count included');
+    assert.equal(error.errorName, 'pasteUnconfirmed');
+    return true;
+  });
+  assert.deepEqual(meta['cua/paste'], diagnostics);
+  assert.equal(meta['cua/entered'], 3);
+  await call(() => app.paste('x'));
+  assert.equal(meta['cua/paste'].effectWait, 'reading', 'a landed paste carries them too');
+  await call(() => app.pressKey('a'));
+  assert.equal(meta['cua/paste'], null, 'none left standing after a call off the paste route');
+});
+
 test('intervention, entered and routeAdvice ride as cua/ meta on results and on the userIntervened error that stopped a type_text; the next call starts over', async t => {
   const stopped = {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, pointUnconfirmed: undefined, entered: 3};
   const {getApp, call, meta} = await session(t, {handlers: {

@@ -9,7 +9,7 @@ The vendor builds are the pinned 26.928.40906 and the newest 26.1023.51421. M3 r
 | M3.1, the engine's device mode and capability report | `kinds/`, `diff/`, `rejudge/`, `device-fix1/`, `device-fix2/`, `device-fix3/`, `late-take/` | the measurements behind `families.rs`, the Chrome drag-and-drop guard, M3.1's verdict run and its fix rounds ([M3.1](#m31-the-device-modes-measurements-and-the-verdict-run), below) |
 | M3.2, cua's own Linux service | `services/` | the two services render the same states and numbers on one engine; no vendor module with cua's engine ([its README](services/README.md)) |
 | the drop-miss follow-up | `drop-misses/`, `drop-misses/task18/` | the mechanism of M3.1's Chrome drop misses and the 350 ms release floor ([its README](drop-misses/task18/README.md)) |
-| M3's gate | `gate/`, `gate-final/` | the fresh full verdict runs: `m3-gate` on the M3.3 engine and `m3-gate-final` on the merged head after task 20. **Both exit 1** (below) |
+| M3's gate | `gate/`, `gate-final/`, `gate-verdict/` | the fresh full verdict runs: `m3-gate` on the M3.3 engine and `m3-gate-final` on the merged head after task 20. **Both exit 1**. `m3-gate-verdict`, after tasks 22 and 23, was **stopped by ruling** once the harness-fault caps were exceeded (below) |
 | M3.3, doctor, provisioning and the facade proof | `doctor/`, `provision/`, `facade/`, `accept/`, `parity/`, `baseline/` | below |
 
 The engine of every M3.3 run and of the gate is one frozen release build of the head's engine sources: the engine
@@ -17,6 +17,66 @@ sources last changed at 1b7debef, built at bcf64d68, `cua-engine 0.3.0 (bcf64d68
 `01955bef9ff69fa9af948c50c324edb07dfbd303474e179f7f0c7f42e163032d`. No M3.3 commit touches `native/linux-engine/`.
 Until 0.3.0 is released and pinned, the installed engine is 0.2.0, which cua's service refuses (`MIN_ENGINE_VERSION`
 0.3.0), so the facade runs name the build: `--engine-bin` for the suites, `CUA_LINUX_ENGINE_BIN` for the fixtures.
+
+## M3's gate, third run (`gate-verdict/`, run `m3-gate-verdict`): stopped by ruling, a failed run
+
+**The gate is not met.** `m3-gate-verdict` was a fresh full differential verdict run, on the branch merged with
+`origin/main`, after task 22's hold and harness-fault rule and task 23's fixes.
+
+- **Gate commit:** f3ad9dbb, the merge of main at 7aa1cbbb (#255), with plugin 0.21.0. `ci-gate`, every gate, was
+  GREEN on it (run 41332540589).
+- **Engine:** one release build of that head's engine sources (code last changed at 596ec1c5), frozen as a copy
+  outside the worktree: `cua-engine 0.3.0 (f3ad9dbba2c1)`, SHA-256
+  `88a647bc05530fd794a9efcd09e9a0dec3abc26539616d471bde815bf1e20bef`.
+- **Command:** `m3-gate-final`'s, with `--run m3-gate-verdict --out docs/evidence/2026-10-28-own-linux-engine/m3/gate-verdict`.
+- **Run:** 2026-11-01 18:10:29Z to 19:25:12Z.
+
+The run was valid at its start: the stub engine failed both the witness and the audit, and the foreground and in-front
+standing controls held.
+
+In block 1, the harness oracle's selection in **the pinned lane's own gedit text window** began to fail. That was the
+step the 2026-11-01 harness-fault rule counts. Every resample failed the same way. The caps (more than 2 resampled or
+invalid samples in a case, of about 100 to 120) were exceeded in `type_text_selection` and `clipboard_release` well
+before the run's end, and the counts could only grow. The design session ruled to stop the run, and it was stopped with
+SIGINT. Task 22's hook closed its scene windows, and no harness process or window was left behind. `results.jsonl` holds
+its 2,571 rows as they stood: the three blocks were complete up to block 2's last `device-chrome-dnd` cases, and no
+top-up had run. The run wrote no summary.
+
+**Its harness faults:** 28 prepare-failures, all in the pinned lane's gedit text window, all at the oracle's step, all
+left invalid after the resample:
+
+| case | invalid |
+|---|---:|
+| gedit `type_text_selection` | 4 |
+| gedit `clipboard_read` | 2 |
+| gedit `clipboard_write` | 2 |
+| gedit `clipboard_release` | 20 |
+
+No cua or newest sample failed a preparation.
+
+**The mechanism** (task 24's diagnosis, from the recorded results of this run and the two before it):
+- Each lane's gedit text window is opened once per run, with 54 characters in the buffer.
+- The pinned build's `type_text_selection` deletes the selected first word, then its paste fails (M2's declared x64
+  defect, about 10.2 s). Every such sample removes 6 characters, so after 9 samples the window is empty.
+- The 10th sample (block 1, warm, i 3) is where the refusals start. On an empty buffer, GTK accepts the selection of an
+  empty range, and since task 22 the harness reports the empty selected text as a refusal.
+- The same emptying happened from block 1 on in `m3-gate` and `m3-gate-final`. There it showed only as the pinned
+  build's `editable element has no selected text to Copy`, in 342 `clipboard_read` samples across five runs. Every
+  pinned Copy on a buffer that still held its first word succeeded (30 of 30).
+- `m3-gate-final`'s one failed cua `clipboard_write` sample came from a second mechanism, which the first exposed. A
+  selection the lane's own `clipboard_read` left behind makes GTK refuse a new one, and only the emptied pinned window's
+  samples ran in between, so nothing took the X PRIMARY selection that would have cleared it.
+
+None of this is scored against the vendor: the refused samples never measured an act. The harness fix follows before
+the next run.
+
+**What the run did show.** The Chrome drop fixes held in the gate's own sequence:
+- `chrome_dnd_short_in_front_shared` landed on 9 of 9 samples, the three cold samples included (558–599 ms). It had
+  failed `m3-gate` and `m3-gate-final` on its cold samples.
+- The in-front, covered, short-covered and pointer-outside dedicated drops landed on every sample.
+- The other Chrome drag-and-drop cases answered the errors they expect.
+
+These are observations from an incomplete run, not verdicts.
 
 ## M3's gate, second run (`gate-final/`, run `m3-gate-final`): it fails
 

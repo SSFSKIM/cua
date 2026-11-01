@@ -67,8 +67,10 @@ struct InputMeta {
   var startedAt: Int64? = nil
   var endedAt: Int64? = nil
   var activationGuardMs: Double? = nil
-  /// What route 3's activation click did when an activation ran: posted, or why it was skipped.
+  /// What the inert-point rule decided at the activation point when an activation ran: posted there, or why not.
   var activationClick: ActivationClick? = nil
+  /// The click that activation posted (at the activation point, the inert one outside the frame, or none and why).
+  var activationClickKind: ActivationClickKind? = nil
   /// A synthesized element click whose hit-test answered nothing or only a container of the element, so the point
   /// could not be confirmed to reach it; reported as `pointUnconfirmed: true`.
   var pointUnconfirmed = false
@@ -131,6 +133,7 @@ struct InputMeta {
     ]
     if let activationGuardMs { wire["activationGuardMs"] = activationGuardMs }
     if let activationClick { wire["activationClick"] = activationClick.rawValue }
+    if let activationClickKind { wire["activationClickKind"] = activationClickKind.wire }
     if pointUnconfirmed { wire["pointUnconfirmed"] = true }
     if interventionOff { wire["intervention"] = "off" }
     if let entered { wire["entered"] = entered }

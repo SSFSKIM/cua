@@ -214,6 +214,7 @@ final class HeldActivations: @unchecked Sendable {
       defer {
         meta.activationGuardMs = activation.guardMs ?? meta.activationGuardMs
         meta.activationClick = activation.click ?? meta.activationClick
+        meta.activationClickKind = activation.clickKind ?? meta.activationClickKind
       }
       try activation.activate()
     } catch {

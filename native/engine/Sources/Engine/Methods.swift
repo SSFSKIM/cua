@@ -59,17 +59,13 @@ final class Engine: @unchecked Sendable {
   let cursorEnabled: Bool
   /// The cursor's diagnostic arm, `cursorDebug` in engine.json as read at launch (Config.swift); nil for none.
   let cursorDebug: CursorDebug?
-  /// The paste slot's B arm (#187's 3b), `pasteFocusEnforcement` in engine.json as read at launch (Config.swift): on, the
-  /// paste route's activation posts its click at an AXActivationPoint outside the window's frame (Activation.swift).
-  let pasteFocusEnforcement: Bool
   weak var server: Server?
 
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
        screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general,
        pasteActivation: ActivationSystem = ActivationSystem(), cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true,
-       cursorDebug: CursorDebug? = nil, pasteFocusEnforcement: Bool = false) {
+       cursorDebug: CursorDebug? = nil) {
     self.paths = paths
-    self.pasteFocusEnforcement = pasteFocusEnforcement
     self.apps = AppDirectory(usagePath: paths.usage)
     self.routes = routes
     self.cursorEnabled = cursorEnabled
@@ -136,9 +132,6 @@ final class Engine: @unchecked Sendable {
       // The agent cursor's device switch as read at launch (`cursor` in engine.json).
       "cursor": cursorEnabled ? "on" : "off",
       "cursorDebug": cursorDebug?.rawValue ?? NSNull(),
-      // The paste slot's arm switch as read at launch (`pasteFocusEnforcement` in engine.json; #187's 3b), so a slot can
-      // check the arm it runs is the one it set.
-      "pasteFocusEnforcement": pasteFocusEnforcement,
     ]
   }
 

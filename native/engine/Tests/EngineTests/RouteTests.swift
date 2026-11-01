@@ -373,19 +373,25 @@ final class ActivationGuardTests: XCTestCase {
                           system: seam.system)
   }
 
-  func testTheActivationClickIsPostedOnlyInsideTheWindowsFrame() throws {
+  /// The click at the activation point only inside the window's frame; outside it, or with no point, the inert click
+  /// outside the frame (#187, 2026-11-01), so the arm subtype 1 sets is always consumed. All to the target's pid.
+  func testTheActivationClickIsPostedAtThePointOnlyInsideTheWindowsFrame() throws {
     let inside = GuardSeam(frontmost: user)
     try activation(inside, activationPoint: CGPoint(x: 110, y: 76)).activate()
     XCTAssertEqual(inside.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)])
     XCTAssertEqual(inside.posts.map(\.pid), [target, target, target])
+    XCTAssertEqual(inside.posts[1].location, CGPoint(x: 110, y: 76))
 
     let outside = GuardSeam(frontmost: user)
     try activation(outside, activationPoint: CGPoint(x: -1, y: 1441)).activate()
-    XCTAssertEqual(outside.posts.map(\.kind), [.appKit(1)], "subtype 1 alone, as Chrome's route-3 clicks delivered")
+    XCTAssertEqual(outside.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)], "Chrome's: the inert click")
+    XCTAssertEqual(outside.posts[1].location, CGPoint(x: -1, y: 1441), "far enough outside: at the point itself")
+    XCTAssertEqual(outside.posts.map(\.pid), [target, target, target])
 
     let unsupported = GuardSeam(frontmost: user)
     try activation(unsupported, activationPoint: nil).activate()
-    XCTAssertEqual(unsupported.posts.map(\.kind), [.appKit(1)])
+    XCTAssertEqual(unsupported.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)])
+    XCTAssertEqual(unsupported.posts[1].location, CGPoint(x: frame.minX - 24, y: frame.midY), "no point: the offset point")
   }
 
   func testTheTargetComingToTheFrontIsRefusedAfterTheUsersAppIsBroughtBack() {
@@ -497,9 +503,9 @@ final class ClickDeliveryTests: XCTestCase {
                                           targetActive: { false }, post: seam.system.post, meta: &meta)) { error in
       XCTAssertEqual((error as? EngineError)?.errorName, "activationFailed")
     }
-    XCTAssertFalse(seam.posts.contains { if case .mouse = $0.kind { return true } else { return false } },
-                   "no mouse event: the activation click is outside here, and the click's own events are never posted")
-    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1)], "never retried with ⌘ or otherwise")
+    XCTAssertFalse(seam.posts.contains { $0.location == clickTarget().point }, "the click's own events are never posted")
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)],
+                   "the activation and its inert click; never retried with ⌘ or otherwise")
     XCTAssertEqual(meta.inputRoute, .activation, "the refusal names the route that failed")
     XCTAssertNil(meta.startedAt)
     XCTAssertNil(meta.endedAt)
@@ -512,8 +518,9 @@ final class ClickDeliveryTests: XCTestCase {
     var meta = meta()
     try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation, targetActive: { false },
                      post: seam.system.post, meta: &meta)
-    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)])
-    XCTAssertEqual(seam.posts.compactMap(\.flags), [[], []], "no ⌘ on route 3's click")
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .mouse(.leftMouseDown),
+                                           .mouse(.leftMouseUp), .appKit(2)], "the activation's inert click, then the click")
+    XCTAssertEqual(seam.posts.compactMap(\.flags), [[], [], [], []], "no ⌘ on route 3's clicks")
     XCTAssertEqual(meta.inputRoute, .activation)
     XCTAssertNotNil(meta.startedAt)
     XCTAssertNotNil(meta.activationGuardMs)
@@ -594,7 +601,8 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(Double(delivery.releasedAt - delivery.holdStartedAt), try XCTUnwrap(seam.releasedAt) - 0,
                    "the hold's start on the release's Unix clock: the activation's, before the click's events")
     XCTAssertEqual(meta.activationGuardMs, 10, "the activation's own guard settles on one sample when a delivery guard follows")
-    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)])
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .mouse(.leftMouseDown),
+                                           .mouse(.leftMouseUp), .appKit(2)], "the activation's inert click raises nothing; the click does")
   }
 
   /// A click that brings the target's process to the front: the user's app is made frontmost again.
@@ -1259,7 +1267,8 @@ struct GuardPost: Equatable {
 /// order and the activation point answered.
 final class GuardSeam {
   var posts: [GuardPost] = []
-  /// Run after each left mouse down is posted (#200: what the app does at the action's own mouse down).
+  /// Run after each left mouse down is posted but the activation's own click (#200: what the app does at the action's own
+  /// mouse down).
   var onMouseDown: (() -> Void)?
   /// When set, the window order the guards read: whether the target's window is above the user's. A raise of the
   /// user's window puts it back on top.
@@ -1345,7 +1354,10 @@ final class GuardSeam {
         self.posts.append(GuardPost(kind: kind, pid: pid, flags: nil))
       }
       if let after = self.frontmostAfterPost { self.frontmost = after }
-      if made?.type == .leftMouseDown { self.onMouseDown?() }
+      // The activation's own click, the mouse down right after subtype 1, takes AppKit's armed branch: key and main, no
+      // ordering (#200's reading, #187's for the inert click). What the app does is at the action's mouse down.
+      let activationClick = self.posts.dropLast().last?.kind == .appKit(1)
+      if made?.type == .leftMouseDown && !activationClick { self.onMouseDown?() }
     }
     system.frontmost = {
       self.onFrontmostRead?()

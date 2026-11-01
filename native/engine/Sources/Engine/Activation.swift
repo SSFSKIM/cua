@@ -5,8 +5,9 @@ import Foundation
 // Route 3, fake activation (the spec's Design, "Input" route 3; R/F-helper-logic.md §5.4–5.5, R/sky-behaviour.md §12):
 // the app is made to believe it is active while the user's app stays frontmost. To the target pid: an AppKit-defined
 // event of subtype 1 (application activated; flags 0xC0000, the window number) plus a left click at the window's
-// AXActivationPoint with route 2's recipe, the click posted only where a hit-test shows the point inert (the window or
-// chrome that is no control) and inside the window's frame (cua's declared differences, U13 and the focus hold's review). Around it, when another app is frontmost: screen updates held with the
+// AXActivationPoint with route 2's recipe, the click posted there only where a hit-test shows the point inert (the window or
+// chrome that is no control) and inside the window's frame (cua's declared differences, U13 and the focus hold's review),
+// else at an inert point outside the frame. Around it, when another app is frontmost: screen updates held with the
 // private SLSDisableUpdate/SLSReenableUpdate, released when the guard ends or, by a timer, at `activationHoldCapMs`,
 // whichever is first, so a slow guard (a raise waiting out its AX timeout included) never freezes the display for long;
 // the release itself runs on a serial queue of its own, off the request path (ScreenUpdateReleases), since it blocks
@@ -26,9 +27,9 @@ import Foundation
 // the poll's exit test; here it is the user's app frontmost and the target window not above the user's on three
 // consecutive samples.
 //
-// The paste slot's B arm of #187's 3b (engine.json `pasteFocusEnforcement`, the paste route only; the Decision Log's #187
-// entry, amended 2026-11-01): the activation click is posted at an AXActivationPoint outside the window's frame too,
-// as the vendor's enforceActiveState posts it (FUN_10071f65c, F §5.5), instead of skipped (`liftsOutsideFrameSkip`).
+// An activation never leaves an arm (the Decision Log's #187 inert-click entry, 2026-11-01): where the click at the
+// activation point is skipped, an inert click stamped with the window's number goes outside its frame instead
+// (`activationClickPlan`), on every route; it replaced the paste slot's outside-frame lift and its engine.json switch.
 
 /// How long the screen-update hold may last: well under the guard's 1 s poll, and above the guards the sittings
 /// measured (37–58 ms, a coordinate click into TextEdit 82), so a guard of the usual length holds as the vendor's does.
@@ -284,15 +285,11 @@ final class FakeActivation {
   let windowFrame: CGRect?
   let windowID: CGWindowID?
   /// Where the activation click must not land (the target of a click with another button than the left,
-  /// `activationSparing`); the click is skipped there.
+  /// `activationSparing`); no activation click goes there, the inert one included.
   let sparing: CGRect?
   /// The guard keeps the user's window on top by re-activating the user's app rather than by AXRaise on its window, and
   /// reads that window from the window list: no Accessibility call on any other app (the menu's held activation).
   let restoresByActivationOnly: Bool
-  /// The paste slot's B arm (#187's 3b): an activation point outside the window's frame takes the click as the vendor
-  /// posts it, rather than the `outsideFrame` skip, when the frame and the window number are known (the vendor's click,
-  /// FUN_10071f65c, is skipped without either). Every other skip stands. Only the paste route sets it.
-  let liftsOutsideFrameSkip: Bool
   private let system: ActivationSystem
   private(set) var activated = false
   /// How long the guard held after the activation pair, for the result's meta; nil when no guard ran.
@@ -304,10 +301,9 @@ final class FakeActivation {
   private var openHold: OpenHold?
 
   init(pid: pid_t, appPid: pid_t? = nil, window: AXUIElement, windowFrame: CGRect?, windowID: CGWindowID?, sparing: CGRect? = nil,
-       restoresByActivationOnly: Bool = false, liftsOutsideFrameSkip: Bool = false, system: ActivationSystem = ActivationSystem()) {
+       restoresByActivationOnly: Bool = false, system: ActivationSystem = ActivationSystem()) {
     self.pid = pid
     self.sparing = sparing
-    self.liftsOutsideFrameSkip = liftsOutsideFrameSkip
     self.restoresByActivationOnly = restoresByActivationOnly
     self.appPid = appPid ?? pid
     self.window = window
@@ -325,12 +321,12 @@ final class FakeActivation {
               restoresByActivationOnly: restoresByActivationOnly, system: system)
   }
 
-  /// What the activation click did, once the activation pair was posted; nil when none was.
+  /// What the inert-point rule decided at the activation point, once subtype 1 was posted; nil when it was not.
   private(set) var click: ActivationClick?
+  /// The click the activation posted (at the activation point, the inert one, or none and why); nil before subtype 1.
+  private(set) var clickKind: ActivationClickKind?
   /// Where the activation point lay against the window's frame, once the activation pair was posted; nil before.
   private(set) var pointPlace: ActivationPointPlace?
-  /// The click went at a point outside the frame (`liftsOutsideFrameSkip`).
-  private(set) var liftedClick = false
   /// When the activation's subtype 1 and its click were posted, on the system's clock; nil when not.
   private(set) var activatedAt: Double?
   private(set) var clickPostedAt: Double?
@@ -549,8 +545,10 @@ final class FakeActivation {
   }
 
   /// The vendor's enforceActiveState for an app that does not believe it is active: subtype 1, then a left click at the
-  /// window's AXActivationPoint when the point is inert (`activationClickDecision`), or outside a known frame under
-  /// `liftsOutsideFrameSkip`, else the event alone.
+  /// window's AXActivationPoint when the point is inert (`activationClickDecision`), else the inert click outside the
+  /// window's frame (`activationClickPlan`), so the arm subtype 1 sets is consumed; no click only where none can be
+  /// stamped and placed safely. The click goes to the process alone: the agent cursor is told of an action's own events
+  /// by its route (`announce`), never of this one.
   private func postActivation() {
     post(subtype: NSEvent.EventSubtype.applicationActivated.rawValue)
     activated = true
@@ -561,15 +559,14 @@ final class FakeActivation {
     let decision = activationClickDecision(activationPoint, windowFrame: windowFrame, sparing: sparing) {
       activationPoint.flatMap { system.hitAt(pid, $0) }
     }
-    let place = activationPointPlace(activationPoint, windowFrame: windowFrame)
-    pointPlace = place
-    let lifted = liftsOutsideFrameSkip && decision == .outsideFrame && place == .outside && windowID != nil
-    click = lifted ? .posted : decision
-    guard decision == .posted || lifted, let point = activationPoint else { return }
+    pointPlace = activationPointPlace(activationPoint, windowFrame: windowFrame)
+    click = decision
+    let plan = activationClickPlan(decision, activationPoint: activationPoint, windowFrame: windowFrame, windowID: windowID, sparing: sparing)
+    clickKind = plan.kind
+    guard let point = plan.point else { return }
     let target = ClickTarget(point: point, windowFrame: windowFrame, windowID: windowID, pid: pid)
     _ = postToProcess(clickEvents(target, button: .left, count: 1, flags: []), pid: pid, post: system.post)
     clickPostedAt = system.now()
-    liftedClick = lifted
   }
 
   @discardableResult

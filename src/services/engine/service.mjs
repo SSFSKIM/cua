@@ -36,8 +36,9 @@
 //   engine did not take, with the reason ("windowMinimized": a minimized window is observed in place with no screenshot,
 //   and the facade's getScreenshot then fails "Screenshot unavailable"); on input results and input errors the engine's meta as
 //   cua/inputRoute, cua/actionInterval {startedAt, endedAt}, cua/receivedAt, cua/hidIdleMs, and when the engine sends
-//   them cua/activationGuardMs, cua/activationClick (route 3's activation click: "posted", or why it was skipped),
-//   cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
+//   them cua/activationGuardMs, cua/activationClick (what the inert-point rule decided at the window's activation
+//   point: "posted" there, or why not), cua/activationClickKind (the click the activation posted, #187: {kind:
+//   "activationPoint" | "inertOutside" with point "activationPoint" | "offset" | "skipped" with skippedReason}), cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
 //   no Input Monitoring grant), cua/entered (the UTF-16 units a type_text entered, on its result and on the error that
 //   stopped it), cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
 //   row for the app) and cua/delivery (route 3's delivery guard after a pointer action's events, #200: the restores it
@@ -89,7 +90,7 @@ const SPIKE_ROUTES = new Set(['1', "2'", '2', '3']);
 // The keys a call sets only sometimes, reset at its start.
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
-  'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
+  'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null,
 };
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187), and its bound.
@@ -98,7 +99,7 @@ const NOTE_CHARS = 500;
 // The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's
 // value-free diagnostics, #187; `elementClick`: an element click's plan, the ladder's reason and the hit-test's answer,
 // #188).
-const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
+const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
   'elementClick'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a

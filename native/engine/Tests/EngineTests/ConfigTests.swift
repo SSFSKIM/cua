@@ -94,19 +94,16 @@ final class EngineSettingsTests: XCTestCase {
     }
   }
 
-  /// `pasteFocusEnforcement`: the paste slot's B arm of #187's 3b, off unless the file says true; strict like the others,
-  /// so a slot's arm is never silently dropped.
-  func testPasteFocusEnforcementIsOffUnlessTheFileSaysTrue() throws {
-    XCTAssertFalse(try parse(nil).pasteFocusEnforcement, "no file: off")
-    XCTAssertFalse(try parse("{}").pasteFocusEnforcement, "absent: off")
-    XCTAssertFalse(try parse(#"{"pasteFocusEnforcement": false}"#).pasteFocusEnforcement)
-    XCTAssertTrue(try parse(#"{"pasteFocusEnforcement": true, "cursor": true}"#).pasteFocusEnforcement)
-    for text in [#"{"pasteFocusEnforcement": 1}"#, #"{"pasteFocusEnforcement": "true"}"#, #"{"pasteFocusEnforcement": null}"#,
-                 #"{"pasteFocusEnforcement": "B"}"#] {
-      XCTAssertThrowsError(try parse(text), text) { error in
-        let message = (error as? EngineSettings.Invalid)?.message ?? ""
-        XCTAssertTrue(message.contains("pasteFocusEnforcement") && message.contains("/h/.config/cua/engine.json") && message.contains("true or false"), message)
-      }
+  /// `pasteFocusEnforcement`, the retired switch of #187's 3b slot (every activation now posts its click, Activation.swift;
+  /// the Decision Log's #187 entry of 2026-11-01): a file still carrying it, with any value, starts the engine as one
+  /// without it does, as every key the engine does not read.
+  func testTheRetiredPasteFocusEnforcementKeyIsIgnored() throws {
+    for text in [#"{"pasteFocusEnforcement": true, "cursor": false}"#, #"{"pasteFocusEnforcement": false, "cursor": false}"#,
+                 #"{"pasteFocusEnforcement": "B", "cursor": false}"#] {
+      let settings = try parse(text)
+      XCTAssertEqual(settings.peerPolicy, .uid, text)
+      XCTAssertFalse(settings.cursor, "the keys beside it are still read: \(text)")
+      XCTAssertEqual(settings.routes, [:], text)
     }
   }
 

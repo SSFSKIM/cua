@@ -265,7 +265,8 @@ struct ActivationHit: Equatable {
   let actions: [String]?
 }
 
-/// What route 3's activation click did (the result's meta `activationClick`): posted, or skipped and why.
+/// What the inert-point rule decided at the window's AXActivationPoint (the result's meta `activationClick`): posted
+/// there, or why not; where a click went instead is `ActivationClickKind`.
 enum ActivationClick: String, Equatable {
   case posted
   case noPoint        // the window has no AXActivationPoint
@@ -274,6 +275,70 @@ enum ActivationClick: String, Equatable {
   case control        // the hit-test there answered a control, or an element not known to be inert
   case actionsUnknown // the hit-test answered an element whose actions could not be read
   case hitTestFailed  // the hit-test there answered nothing
+}
+
+/// The click route 3's activation posted after subtype 1 (the result's meta `activationClickKind`, and the paste's
+/// `focusEnforcement.click`; #187, 2026-11-01: an activation never leaves an arm). Subtype 1 arms an inactive app's
+/// `_mouseActivationInProgress`, and only a mouse down consumes the arm, making the window key; left armed, the window
+/// stays without key status until the person's next real click, and a key equivalent or ⌘V reaches no window. So where
+/// the click at the activation point is skipped, an inert click stamped with the window's number goes outside the frame:
+/// AppKit routes a pid-posted mouse down by its window number, never by its point, so it reaches that window, takes the
+/// armed branch (key and main, no ordering) and, its hit view nil, reaches no view.
+enum ActivationClickKind: Equatable {
+  /// At the window's AXActivationPoint, inert and inside the frame (`ActivationClick.posted`).
+  case activationPoint
+  /// The inert click, at the point named.
+  case inertOutside(InertClickPoint)
+  /// None posted, and why.
+  case skipped(ActivationClickSkip)
+
+  var wire: [String: Any] {
+    switch self {
+    case .activationPoint: return ["kind": "activationPoint"]
+    case .inertOutside(let point): return ["kind": "inertOutside", "point": point.rawValue]
+    case .skipped(let reason): return ["kind": "skipped", "skippedReason": reason.rawValue]
+    }
+  }
+}
+
+/// Where the inert click went: the AXActivationPoint itself, far enough outside the frame, or the offset point.
+enum InertClickPoint: String, Equatable {
+  case activationPoint, offset
+}
+
+/// Why an activation posted no click at all.
+enum ActivationClickSkip: String, Equatable {
+  case spared          // the activation point lies in a non-left click's target (`ActivationClick.spared`)
+  case noWindowNumber  // nothing to stamp the click with, and AppKit routes it by that number alone
+  case noFrame         // the window's frame is unknown, so no point is known to lie outside it
+}
+
+/// A titled resizable window's resize band reaches 4 pt outside its frame (`_resizeDirectionForMouseLocation:`, its
+/// exterior resize thickness, macOS 26.6.2): a mouse down there hits the theme frame and may start resize tracking. So
+/// the inert click uses the AXActivationPoint only when it lies at least `inertClickActivationPointClearance` beyond the
+/// frame (twice the band), and otherwise goes `inertClickFrameOffset` left of the frame at its mid-height (six times the
+/// band, clear of the corners and the title bar). A point off every screen is fine: AppKit routes by the window number.
+let inertClickActivationPointClearance: CGFloat = 8
+let inertClickFrameOffset: CGFloat = 24
+
+/// The click an activation posts after subtype 1 and where (nil: none): at the activation point when the inert-point
+/// rule posted it there, else the inert click outside the frame, unless the point was spared, the window has no number
+/// or its frame is unknown. An inert click that would land in `sparing` is spared too.
+func activationClickPlan(_ decision: ActivationClick, activationPoint: CGPoint?, windowFrame: CGRect?, windowID: CGWindowID?,
+                         sparing: CGRect?) -> (kind: ActivationClickKind, point: CGPoint?) {
+  if decision == .posted { return (.activationPoint, activationPoint) }
+  if decision == .spared { return (.skipped(.spared), nil) }
+  guard windowID != nil else { return (.skipped(.noWindowNumber), nil) }
+  guard let frame = windowFrame else { return (.skipped(.noFrame), nil) }
+  let inert: (point: CGPoint, place: InertClickPoint)
+  if let point = activationPoint,
+     max(frame.minX - point.x, point.x - frame.maxX, frame.minY - point.y, point.y - frame.maxY) >= inertClickActivationPointClearance {
+    inert = (point, .activationPoint)
+  } else {
+    inert = (CGPoint(x: frame.minX - inertClickFrameOffset, y: frame.midY), .offset)
+  }
+  if let sparing, sparing.contains(inert.point) { return (.skipped(.spared), nil) }
+  return (.inertOutside(inert.place), inert.point)
 }
 
 /// Where the window's AXActivationPoint lies against its frame (the paste's `focusEnforcement`, #187's 3b): value-free,
@@ -306,9 +371,9 @@ func activationPointIsInert(_ hit: ActivationHit) -> Bool {
 /// of the focus hold): only when the point lies inside the window's frame, outside `sparing` (the target of a click with
 /// another button than the left, whose left click there would be one the model never asked for; the M2a vendor reading,
 /// item 8), and a hit-test there (`hit`, asked only then) answers the window or chrome that is no control. Otherwise the
-/// believed-active state rests on the activation's events alone, which delivered on Chrome, whose point is outside its
-/// frame (U13). A declared difference from the vendor, which posts the click wherever the point is (F §5.5): a click
-/// that lands on a control would invoke it before the action the model asked for.
+/// inert click outside the frame takes its place (`activationClickPlan`, #187 of 2026-11-01, which replaced the skip). A
+/// declared difference from the vendor, which posts the click wherever the point is (F §5.5): a click that lands on a
+/// control would invoke it before the action the model asked for.
 func activationClickDecision(_ activationPoint: CGPoint?, windowFrame: CGRect?, sparing: CGRect?,
                              hit: () -> ActivationHit?) -> ActivationClick {
   guard let activationPoint else { return .noPoint }

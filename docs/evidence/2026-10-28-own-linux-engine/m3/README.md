@@ -139,19 +139,33 @@ the derived record, `watch-*.json` the sampler's; the raw traces stay on the VM.
 
 ### Acceptance 6's gnome-text-editor case and Acceptance 8, through the facade (`facade/device-mode.json`)
 
-`scripts/accept/linux-device-mode.mjs` (new): a `cua serve` session in each device mode binds a gnome-text-editor
-window of its own (GTK 4, listed for clicks, keys and paste) and sends it a coordinate click, a key and `typeText`
-through the real facade; the field is read through the fixture's own AT-SPI reads, never through the engine. **PASS,
-15/15**:
+`scripts/accept/linux-device-mode.mjs` (new; reworked in M3.3's fix round 1): a `cua serve` session in each device
+mode binds a gnome-text-editor window of its own (GTK 4, listed for clicks, keys and paste) and sends it a coordinate
+click, a key and `typeText` through the real facade. Before every input a harness-owned xterm covers the screen and
+holds the focus, so the editor starts behind it. Each call runs inside the differential harness's continuous witness
+(`scripts/linux-engine-diff/witness.mjs`: the root's property, restack and focus events in order, the focus and the
+pointer sampled every 5 ms), open until 300 ms after the answer. The field is read through the fixture's own AT-SPI
+reads, never through the engine. Run on `:0` with the frozen build (`--engine-bin`'s file, `task19/engine/cua-engine`),
+**PASS, 19/19**:
 
-| mode | input | answer | the field and the desktop |
-|---|---|---|---|
-| shared | click, `pressKey('BackSpace')`, `typeText` | each `org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first` | text and caret unchanged, the active window unchanged |
-| dedicated | `typeText('cua171 안녕 é 🙂\nline2')` | success | reads back exactly that string, once; the window active |
-| dedicated | `pressKey('BackSpace')` | success | the last character removed |
-| dedicated | click near the field's start | success | the caret from 19 to 1 |
+| mode | input | answer | the field | the witness and the desktop |
+|---|---|---|---|---|
+| shared | click, `pressKey('BackSpace')`, `typeText` | each `org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first` | text and caret unchanged | strict span clean (72 samples each, gaps ≤ 5.8 ms); the front window still active and in front |
+| dedicated | `typeText('cua171 안녕 é 🙂\nline2')` | success | reads back exactly that string, once | the foreground allowance clean, with the editor activated, raised and focused (`active`, `stacking`, `focus` allowed); at the end the editor active and above the front window |
+| dedicated | `pressKey('BackSpace')` | success | the last character removed | the same, brought forward again from behind the front window |
+| dedicated | click near the field's start | success | the caret from 19 to 1 | the same |
 
-Each session asked the window's approval once, ended its task and exited cleanly.
+The negative controls, which the fixture's own judges must fail, failed them:
+- **shared:** a refused `typeText` during which the harness activates the editor and restores the front window. The
+  strict span records `stacking`, `focus` and `active`, so the shared judge fails it, although the front window is in
+  front again at the end.
+- **dedicated:** a `getAXState` (a read that activates nothing), judged as a dedicated input granted its effect. The
+  span shows no activation, so the dedicated judge fails it.
+
+Each session asked the window's approval once, ended its task and exited cleanly. The cleanup step passed: the front
+xterm and both editors each `terminated` on SIGTERM with their exits awaited, the witness stopped, and the directory
+removed after them. (The first sitting of this fixture, before the fix round, judged the desktop only before and
+300 ms after each call; it is superseded.)
 
 ### repl-parity, the native suite (`parity/`)
 

@@ -144,6 +144,17 @@ test('an engine error reaches the caller as its sentence, the late drag-and-drop
   assert.deepEqual(events, ['wait']);
 });
 
+test('beforeLaunch sends the engine its preflight, which acts: a pending late drag-and-drop notice is its answer, else it resolves', async t => {
+  const notice = 'Google-chrome started a drag and drop after your drag ended; it may have dropped and changed the desktop; this request was not run, so read the window before sending it again';
+  const engine = fakeLinuxEngine(t, {behaviour: `export function answer(command, input, ctx) { if (command === 'preflight' && ctx.count === 2) return {error: ${JSON.stringify(notice)}}; }`});
+  const events = [];
+  const svc = service(t, engine, {settler: recordingSettler(events)});
+  await assert.rejects(svc.beforeLaunch(), {message: notice});
+  assert.equal(await svc.beforeLaunch(), undefined);
+  assert.deepEqual(sent(engine), [['preflight', {}], ['preflight', {}]]);
+  assert.deepEqual(events, ['wait', 'wait'], 'it waits for the settle as input does; the launch it stands for is the supervisor\'s');
+});
+
 test('the settle: input waits then defers; reads wait and never defer; clipboard_release neither waits nor defers', async t => {
   const engine = fakeLinuxEngine(t);
   const events = [];

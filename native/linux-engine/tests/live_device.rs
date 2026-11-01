@@ -961,6 +961,74 @@ fn a_late_drag_and_drop_lets_releases_and_reads_run_and_refuses_the_next_acting_
     );
 }
 
+/// `preflight`, the request a caller sends before changing the desktop by another route (cua's wrapper launching an
+/// application through the supervisor, after a `list_apps` read): it acts, so after a late take it answers the notice
+/// and the one after it runs; after a failed watch it answers the watch-failure sentence. It sends nothing either way.
+#[test]
+fn preflight_answers_a_pending_late_drag_and_drop_or_watch_failure_as_an_acting_request_and_sends_nothing() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::Focuses);
+    focus_nothing();
+    let mut deferred = Engine::start_with(&["--dnd-defer-take"]);
+    let app = app_of(&mut deferred, window);
+    assert_eq!(
+        deferred.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null)
+    );
+    sleep(SETTLE);
+    assert!(
+        deferred.request("list_apps", json!({})).is_ok(),
+        "the launch's read runs"
+    );
+    assert_eq!(
+        deferred.request("preflight", json!({})),
+        Err(format!(
+            "{app} started a drag and drop after your drag ended; it may have dropped and changed the desktop; this \
+             request was not run, so read the window before sending it again"
+        ))
+    );
+    assert_eq!(
+        deferred.request("preflight", json!({})),
+        Ok(Value::Null),
+        "reported once"
+    );
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+        ],
+        "the drag, the watch's Escape, and nothing from either preflight"
+    );
+
+    let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
+    focus_nothing();
+    let mut lost = Engine::start_with_env(&[], &[("CUA_ENGINE_FAULT", "late-watch-disconnect")]);
+    let app = app_of(&mut lost, window);
+    assert_eq!(
+        lost.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null)
+    );
+    sleep(SETTLE);
+    let sentence = lost
+        .request("preflight", json!({}))
+        .expect_err("the failed watch is the answer");
+    assert!(
+        sentence.starts_with(&format!("the drag-and-drop watch after your drag into {app} failed (")),
+        "{sentence}"
+    );
+    assert_eq!(
+        lost.request("preflight", json!({"x": 1})),
+        Err("failed to parse command input: unknown field `x`, there are no fields".into()),
+        "it takes no input"
+    );
+    stop.send(()).unwrap();
+    assert_eq!(recorder.join().unwrap().len(), 2, "the drag's press and release alone");
+}
+
 /// The keycode of a keysym on the server's keyboard mapping.
 fn keycode_of(conn: &RustConnection, keysym: u32) -> u8 {
     let setup = conn.setup();

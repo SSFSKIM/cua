@@ -12,8 +12,9 @@
 //   {type: 'drag_move', handle_id, point}          -> undefined
 //   {type: 'drag_end', handle_id}                  -> undefined; the handle is forgotten
 //
-// with the vendor's sentences for a method it does not have and a drag handle never started. Setup also starts the
-// engine: its version is checked (MIN_ENGINE_VERSION) and its capability report read. Setup always answers with the
+// with the vendor's sentences for a method it does not have and a drag handle never started. Beside handleRpc it exports
+// `beforeLaunch`, which the wrapper calls just before it launches an application through the supervisor (createService's
+// beforeLaunch). Setup also starts the engine: its version is checked (MIN_ENGINE_VERSION) and its capability report read. Setup always answers with the
 // methods, even when the engine cannot be driven (too old, not runnable, not configured): the facade's Sky proxy
 // (src/cua-api/sky.mjs) answers every member of a failed setup, `then` included, with a rejecting function, so a
 // rejected setup would leave the facade's bootstrap pending for ever. Instead every method then refuses with the
@@ -87,12 +88,27 @@ export function createService({env = process.env, settler = new ActionSettler()}
     }
   }
 
-  return {handleRpc, close: () => engine?.close()};
+  // Before the wrapper launches an application through the supervisor (src/services/sky.mjs), which changes the desktop
+  // by a route the engine never sees: the engine's `preflight`, a request that acts and sends nothing, so a late drag
+  // and drop or a failed watch the engine has not reported yet is answered here, as it would be to any acting request
+  // (Decision Log, 2026-10-31), and the launch does not happen. It waits for the settle as input does.
+  async function beforeLaunch() {
+    client();
+    await settler.wait();
+    await engine.request('preflight', {});
+  }
+
+  return {handleRpc, beforeLaunch, close: () => engine?.close()};
 }
 
-// The service as the trusted worker loads it: one per worker.
+// The service as the trusted worker loads it: one per worker. `beforeLaunch` is cua's own: the vendor's service has no
+// such export, and the wrapper calls it only where the module has it.
 let service = null;
 export function handleRpc(message) {
   service ??= createService();
   return service.handleRpc(message);
+}
+export function beforeLaunch() {
+  service ??= createService();
+  return service.beforeLaunch();
 }

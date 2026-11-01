@@ -99,10 +99,12 @@ pub struct Engine {
 /// unreported (the design session's ruling, 2026-10-31). Reads run (`list_windows`, `list_apps`, `get_screenshot`,
 /// `get_window_state`, `clipboard_read`, `capabilities`), and so do releases of what is held (`key_up`,
 /// `clipboard_release`, `drag_handle`'s `end`), so a held key or button is never left down at the server; unknown
-/// commands answer their own error.
+/// commands answer their own error. `preflight` sends nothing, but stands for an action its caller takes by another
+/// route (cua's wrapper launching an application through the supervisor), so it acts.
 pub fn acts(command: &str, input: Option<&Value>) -> bool {
     match command {
-        "press_key"
+        "preflight"
+        | "press_key"
         | "key_down"
         | "click"
         | "move"
@@ -218,6 +220,8 @@ impl Engine {
             "type_text" => self.type_text(request.input),
             "type_characters" => self.type_characters(request.input),
             "capabilities" => self.capabilities(request.input),
+            // reached only with nothing to report: the refusal above answered otherwise
+            "preflight" => parse_input::<NoInput>(request.input).map(|_| Value::Null),
             "server" => Err(anyhow!("server command cannot be nested")),
             command if wire::COMMANDS.contains(&command) => Err(anyhow!(wire::not_available(command))),
             command => Err(anyhow!("unknown command `{command}`")),
@@ -504,6 +508,8 @@ mod tests {
             "clipboard_write",
             "type_text",
             "type_characters",
+            // sends nothing itself: it stands for an action taken by another route (the wrapper's supervisor launch)
+            "preflight",
         ] {
             assert!(acts(command, None), "{command} acts");
         }

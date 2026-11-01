@@ -13,7 +13,8 @@ desktop) on the observation side (M1a.1); `press_key`, `key_down`, `key_up`, `cl
 (M1a.2). M2.1 adds the clipboard core and `clipboard_read` and `clipboard_release`; M2.2 the paste route for
 `type_text` and `clipboard_write`, and `type_characters`. M3.1 adds `capabilities` (`caps.rs`: the X11 backend's
 fixed capabilities, the device mode, the version and the commit) and applies the device mode to every input kind a
-family ignores on the background route (below).
+family ignores on the background route (below). M3's review adds `preflight`, a request that acts and sends nothing
+(below).
 
 ```bash
 cargo build --release
@@ -106,15 +107,18 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     request path for 300 ms from the release, or until a request that acts stops it. A take then gets the cancel's
     Escape at once (synthetic, to Chrome's window, never XTEST). The first request that sends input or changes state
     (`press_key`, `key_down`, `click`, `move`, `move_relative`, `scroll`, `drag`, `drag_handle`'s start and moves,
-    `perform_secondary_action`, `activate_window`, `launch_app`, `clipboard_write`, `type_text`, `type_characters`) is
-    answered, not run, with `<app> started a drag and drop after your drag ended; it may have dropped and changed the
+    `perform_secondary_action`, `activate_window`, `launch_app`, `clipboard_write`, `type_text`, `type_characters`,
+    `preflight`) is answered, not run, with `<app> started a drag and drop after your drag ended; it may have dropped and changed the
     desktop; this request was not run, so read the window before sending it again` (`--stats` `late_dnd`). Reads
     (`list_windows`, `list_apps`, `get_screenshot`, `get_window_state`, `clipboard_read`, `capabilities`) and releases
     of what is held (`key_up`, `clipboard_release`, `drag_handle`'s end) run meanwhile, so no key or button stays down
     at the server. A watch that failed (its connection lost, a round trip failed) is reported the same way: `the
     drag-and-drop watch after your drag into <app> failed (<why>), so a drop may have happened unseen and changed the
     desktop; …`; a panicking watch ends the engine (the release profile aborts on a panic). The live tests inject both
-    through `CUA_ENGINE_FAULT`, honoured only in a build with the `live` feature, never a release asset. Known limit: a take later
+    through `CUA_ENGINE_FAULT`, honoured only in a build with the `live` feature, never a release asset. `preflight`
+    (no input, answers null) is for a caller about to change the desktop by a route the engine never sees: cua's
+    service sends it just before its wrapper launches an application through the supervisor, so that launch gets the
+    notice, and does not happen, as an engine request would. Known limit: a take later
     than 300 ms after the release, or after an acting request has begun, is not seen; M3.1 measured none after the
     release in 240 takes, idle and under load;
   - a take whose cancel could not be sent: `… it was cancelled, but whether the drop landed cannot be confirmed. …`.

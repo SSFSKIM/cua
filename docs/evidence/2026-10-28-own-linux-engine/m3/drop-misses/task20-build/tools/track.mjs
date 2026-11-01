@@ -9,7 +9,7 @@
 //   dnd     the short HTML5 drag and drop (reference: dies outside, task 20)
 // One JSON line per drag: the answer, its effect, and the buttonless moves the page saw during the press.
 // Env: CUA_BIN the engine; OUTSIDE and INSIDE the park points (screen, default 1170,715 on the front window in its
-// corner, and 300,560 inside Chrome away from every path); KINDS to narrow.
+// corner, and 300,560 inside Chrome away from every path); KINDS and PARKS to narrow.
 import { appendFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { relative } from 'node:path';
@@ -73,7 +73,9 @@ try {
     for (const lane of lanes) {
       const engine = new Engine({ label: lane.label, bin, args: lane.args, stats: true }).start();
       try {
-        for (const park of i % 2 === 0 ? ['outside', 'inside'] : ['inside', 'outside']) {
+        // PARKS narrows the conditions (`inside`: undisturbed drags only)
+        const order = i % 2 === 0 ? ['outside', 'inside'] : ['inside', 'outside'];
+        for (const park of order.filter((p) => (process.env.PARKS ?? 'outside,inside').split(',').includes(p))) {
           for (const kind of kinds) {
             desktop.raise(chrome);
             execFileSync('xdotool', ['windowactivate', '--sync', String(chrome.id)]);

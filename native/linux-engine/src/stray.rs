@@ -10,8 +10,9 @@
 //! which the server sends to every client that selects it whoever holds a grab, and the core crossings of the target
 //! window. The drag's own events are never among them: the background route's are synthetic (`SendEvent` reaches only
 //! the window's client) and the XTEST routes' motions come from the XTEST pointer device, which the watch leaves out on
-//! those routes. A crossing that ends a grab (mode `Ungrab`) is the target's release of its own capture, after the
-//! drag's release.
+//! those routes. A crossing that ends a grab (mode `Ungrab`) after the drag's release is the target's release of its own
+//! capture; one before the release is another client's grab ending, which crosses into the window with no button as
+//! any crossing does, so the watch reads what arrived up to just before the release apart from what came after it.
 
 use anyhow::{Context, Result};
 use x11rb::connection::Connection;
@@ -33,13 +34,24 @@ pub enum Seen {
     },
 }
 
+/// When the watch read an event: by a round trip just before the drag's release, or after it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    /// Read up to just before the release: the server sent it before the release went out.
+    Press,
+    /// Read after the release.
+    Released,
+}
+
 /// Whether an event the watch saw is one that did not come from the drag and can reach the target as a move with no
 /// button: raw motion from any device but the drag's own (`own_source`, the XTEST pointer on the XTEST routes), and any
-/// crossing of the target window but the end of a grab.
-pub fn is_stray(seen: Seen, target: Window, own_source: Option<u16>) -> bool {
+/// crossing of the target window but the end of a grab after the release (the target's release of its own capture).
+pub fn is_stray(seen: Seen, target: Window, own_source: Option<u16>, phase: Phase) -> bool {
     match seen {
         Seen::RawMotion { source } => Some(source) != own_source,
-        Seen::Crossing { window, mode, .. } => window == target && mode != NotifyMode::UNGRAB,
+        Seen::Crossing { window, mode, .. } => {
+            window == target && !(mode == NotifyMode::UNGRAB && phase == Phase::Released)
+        }
     }
 }
 
@@ -107,10 +119,11 @@ pub struct StrayWatch {
     broken: bool,
 }
 
-/// The watch during one drag: what it selected, and on which route.
+/// The watch during one drag: what it selected, on which route, and the strays read so far.
 pub struct Watching {
     target: Window,
     own_source: Option<u16>,
+    strays: Strays,
 }
 
 impl StrayWatch {
@@ -164,21 +177,33 @@ impl StrayWatch {
         Ok(Watching {
             target,
             own_source: if xtest_route { self.xtest_pointer } else { None },
+            strays: Strays::default(),
         })
+    }
+
+    /// Reads what reached the watch up to now, just before the drag's release: a round trip, so every event the server
+    /// sent before it has arrived. A grab's end among them is another client's, not the target's cleanup.
+    pub fn before_release(&mut self, watching: &mut Watching) -> Result<()> {
+        let read = self.read(watching, Phase::Press);
+        self.broken |= read.is_err();
+        read
     }
 
     /// Ends one drag's watch, right after its release: a round trip, so every event the server sent before it has
     /// arrived, the strays among them, and the selections dropped (no round trip waits for that: anything that arrives
     /// later is dropped by the next drag's start).
-    pub fn finish(&mut self, watching: Watching) -> Result<Strays> {
-        let finished = self.read(&watching);
+    pub fn finish(&mut self, mut watching: Watching) -> Result<Strays> {
+        let finished = self.read(&mut watching, Phase::Released).and_then(|()| {
+            self.select(watching.target, false)?;
+            self.conn.flush()?;
+            Ok(())
+        });
         self.broken |= finished.is_err();
-        finished
+        finished.map(|()| watching.strays)
     }
 
-    fn read(&mut self, watching: &Watching) -> Result<Strays> {
+    fn read(&mut self, watching: &mut Watching, phase: Phase) -> Result<()> {
         self.conn.get_input_focus()?.reply()?;
-        let mut strays = Strays::default();
         while let Some(event) = self.conn.poll_for_event()? {
             let seen = match event {
                 Event::XinputRawMotion(e) => Seen::RawMotion { source: e.sourceid },
@@ -194,13 +219,11 @@ impl StrayWatch {
                 },
                 _ => continue,
             };
-            if is_stray(seen, watching.target, watching.own_source) {
-                strays.0.push(seen);
+            if is_stray(seen, watching.target, watching.own_source, phase) {
+                watching.strays.0.push(seen);
             }
         }
-        self.select(watching.target, false)?;
-        self.conn.flush()?;
-        Ok(strays)
+        Ok(())
     }
 
     fn select(&self, target: Window, on: bool) -> Result<()> {
@@ -247,47 +270,76 @@ mod tests {
 
     #[test]
     fn real_motion_is_a_stray_unless_it_is_the_xtest_route_s_own() {
-        assert!(
-            is_stray(Seen::RawMotion { source: 9 }, TARGET, None),
-            "the background route: any motion"
-        );
-        assert!(
-            is_stray(Seen::RawMotion { source: XTEST }, TARGET, None),
-            "another client's XTEST nudge on the background route"
-        );
-        assert!(
-            !is_stray(Seen::RawMotion { source: XTEST }, TARGET, Some(XTEST)),
-            "the XTEST route's own motion"
-        );
-        assert!(
-            is_stray(Seen::RawMotion { source: 9 }, TARGET, Some(XTEST)),
-            "a mouse on the XTEST route"
-        );
+        for phase in [Phase::Press, Phase::Released] {
+            assert!(
+                is_stray(Seen::RawMotion { source: 9 }, TARGET, None, phase),
+                "the background route: any motion"
+            );
+            assert!(
+                is_stray(Seen::RawMotion { source: XTEST }, TARGET, None, phase),
+                "another client's XTEST nudge on the background route"
+            );
+            assert!(
+                !is_stray(Seen::RawMotion { source: XTEST }, TARGET, Some(XTEST), phase),
+                "the XTEST route's own motion"
+            );
+            assert!(
+                is_stray(Seen::RawMotion { source: 9 }, TARGET, Some(XTEST), phase),
+                "a mouse on the XTEST route"
+            );
+        }
     }
 
     #[test]
-    fn a_crossing_of_the_target_is_a_stray_but_the_end_of_a_grab() {
+    fn a_crossing_of_the_target_is_a_stray_but_a_grab_s_end_after_the_release() {
+        for phase in [Phase::Press, Phase::Released] {
+            assert!(
+                is_stray(crossing(TARGET, true, NotifyMode::GRAB), TARGET, None, phase),
+                "Chrome's own grab, pointer outside"
+            );
+            assert!(
+                is_stray(crossing(TARGET, true, NotifyMode::NORMAL), TARGET, None, phase),
+                "a popup gone from under the pointer"
+            );
+            assert!(
+                is_stray(crossing(TARGET, false, NotifyMode::NORMAL), TARGET, None, phase),
+                "a popup mapped under the pointer"
+            );
+            assert!(
+                !is_stray(crossing(0x0820_0001, true, NotifyMode::NORMAL), TARGET, None, phase),
+                "another window"
+            );
+        }
+        // a grab that ends before the release is not the target's cleanup: another client's grab, held when the drag
+        // began, released during it, crosses into the window with no button (task 20 review)
+        assert!(is_stray(
+            crossing(TARGET, true, NotifyMode::UNGRAB),
+            TARGET,
+            None,
+            Phase::Press
+        ));
+        assert!(is_stray(
+            crossing(TARGET, false, NotifyMode::UNGRAB),
+            TARGET,
+            None,
+            Phase::Press
+        ));
+        // after the release, the target's release of its own capture
         assert!(
-            is_stray(crossing(TARGET, true, NotifyMode::GRAB), TARGET, None),
-            "Chrome's own grab, pointer outside"
-        );
-        assert!(
-            is_stray(crossing(TARGET, true, NotifyMode::NORMAL), TARGET, None),
-            "a popup gone from under the pointer"
-        );
-        assert!(
-            is_stray(crossing(TARGET, false, NotifyMode::NORMAL), TARGET, None),
-            "a popup mapped under the pointer"
-        );
-        assert!(
-            !is_stray(crossing(TARGET, false, NotifyMode::UNGRAB), TARGET, None),
+            !is_stray(
+                crossing(TARGET, false, NotifyMode::UNGRAB),
+                TARGET,
+                None,
+                Phase::Released
+            ),
             "the target's release of its capture"
         );
-        assert!(!is_stray(crossing(TARGET, true, NotifyMode::UNGRAB), TARGET, None));
-        assert!(
-            !is_stray(crossing(0x0820_0001, true, NotifyMode::NORMAL), TARGET, None),
-            "another window"
-        );
+        assert!(!is_stray(
+            crossing(TARGET, true, NotifyMode::UNGRAB),
+            TARGET,
+            None,
+            Phase::Released
+        ));
     }
 
     #[test]

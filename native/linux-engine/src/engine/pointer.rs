@@ -316,6 +316,15 @@ fn drag_along(
         {
             return cancel_in_time(x, route, guard, &mut pressed);
         }
+        // what reached the window up to the release, read apart from what comes after it: a grab that ends before the
+        // release is another client's, and crosses into the window as any crossing does
+        if let Some(press) = press.as_deref_mut()
+            && let Some(watching) = press.watching.as_mut()
+            && let Err(error) = press.watch.before_release(watching)
+        {
+            press.watching = None;
+            press.strays = Some(Err(error));
+        }
         if let Some((at, left)) = taken {
             *scheduled =
                 Some(json!({ "steps_after_take": left, "release_after_take_ms": at.elapsed().as_secs_f64() * 1000.0 }));

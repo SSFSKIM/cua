@@ -1130,6 +1130,9 @@ fn capturing_window(nudge: bool) -> (Window, mpsc::Sender<()>, std::thread::Join
                 match event {
                     Event::ButtonPress(e) => {
                         seen.push(Input::ButtonPress { button: e.detail, sent });
+                        if let Some(cue) = PRESS_SEEN.lock().unwrap().take() {
+                            let _ = cue.send(());
+                        }
                         let mask = EventMask::BUTTON_RELEASE | EventMask::POINTER_MOTION;
                         let (none, now, mode) = (x11rb::NONE, x11rb::CURRENT_TIME, GrabMode::ASYNC);
                         probe
@@ -1224,6 +1227,54 @@ fn a_chromium_drag_with_the_real_pointer_outside_its_window_answers_that_it_may_
         "dedicated: the foreground route"
     );
 }
+
+/// Another client's pointer grab, held when the drag begins and released during it (as the drag's press arrives at the
+/// window), crosses back into the window with no button held, in mode `Ungrab`, and resets Blink's press as any crossing
+/// does (task 20 review): the drag answers that it may not have started, never success. Only a grab's end after the
+/// release is the target's cleanup of its own capture.
+#[test]
+fn a_foreign_grab_released_during_the_drag_answers_that_the_drag_may_not_have_started() {
+    use x11rb::protocol::xproto::GrabMode;
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = capturing_window(false);
+    focus_nothing();
+    pointer_to(300, 250);
+    // the foreign client: a pointer grab on the root, held until the window has the press
+    let (pressed, released) = mpsc::channel::<()>();
+    let (grabbed, held) = mpsc::channel();
+    let foreign = std::thread::spawn(move || {
+        let (conn, screen) = x11rb::connect(None).expect("an X connection");
+        let root = conn.setup().roots[screen].root;
+        let (none, now, mode) = (x11rb::NONE, x11rb::CURRENT_TIME, GrabMode::ASYNC);
+        let status = conn
+            .grab_pointer(false, root, EventMask::BUTTON_PRESS, mode, mode, none, none, now)
+            .unwrap()
+            .reply()
+            .unwrap()
+            .status;
+        grabbed.send(status).unwrap();
+        let _ = released.recv_timeout(Duration::from_secs(10));
+        conn.ungrab_pointer(x11rb::CURRENT_TIME).unwrap();
+        conn.sync().unwrap();
+    });
+    assert_eq!(
+        held.recv().unwrap(),
+        x11rb::protocol::xproto::GrabStatus::SUCCESS,
+        "the foreign grab is held"
+    );
+    let mut shared = Engine::start();
+    let app = app_of(&mut shared, window);
+    *PRESS_SEEN.lock().unwrap() = Some(pressed);
+    let answer = shared.request("drag", json!({"window": {"id": window}, "path": path}));
+    foreign.join().unwrap();
+    assert_eq!(answer, Err(may_not_have_started(&app)));
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    recorder.join().unwrap();
+}
+
+/// Told when a `capturing_window` receives a press (the foreign grab's cue to end).
+static PRESS_SEEN: std::sync::Mutex<Option<mpsc::Sender<()>>> = std::sync::Mutex::new(None);
 
 /// The real pointer moved in the press window (the window's client nudges it a pixel and back as the press arrives,
 /// after the atomic press's grab): the watch sees the motion, no drag and drop began, and the drag answers that it may

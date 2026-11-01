@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# press-table.py <runs.jsonl>...: the new engine's park runs (track.mjs) by lane, park and kind: landed, answered the
+# press-table.py <runs.jsonl>...: (raw, or trimmed by trim.py) the new engine's park runs (track.mjs) by lane, park and kind: landed, answered the
 # stray sentence, the route recorded, what the watch saw; then the atomic press's grab over every drag (p50, p99, max)
 # and the false errors (a stray answer with the pointer parked inside, nothing disturbing).
 import json
@@ -19,7 +19,8 @@ for path in sys.argv[1:]:
         c = cells[(row["lane"], row["park"], row["kind"])]
         c["n"] += 1
         c["landed"] += bool(row["landed"])
-        stats = row.get("stats") or {}
+        # the raw rows nest the engine's record under `stats`; the trimmed ones (trim.py) carry `route` and `press` flat
+        stats = row.get("stats") or {k: row[k] for k in ("route", "press") if k in row}
         stray = not row["ok"] and STRAY in (row.get("error") or "")
         c["stray"] += stray
         c["landed_stray"] += stray and bool(row["landed"])

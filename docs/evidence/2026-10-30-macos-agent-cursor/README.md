@@ -600,6 +600,59 @@ after-action watch on every action, which a later reply reports (`cua/afterActio
 delivered, no late or unguarded raise, no `raiseLeft`**, over the full count, with the watcher's record whole. The vendor's rows are recorded, not judged:
 they say whether its "no raise" is "no delivery".
 
+## Item 244: the first observation of a fresh Electron app holds the page (#244)
+
+**About 4 minutes at the Mac when the branch's engine is already built and approved (3–5): the scene 1, cua's two
+variants about 1, the vendor's plain variant under 1, the judge and the scene down 1. Add about 5 for the build and
+approval (the owner's key prompt and grants).** Unattended once it starts; nobody touches the Mac while it runs. The
+kit is `scripts/cursor-sitting/first-observation.mjs`; its header says what each step does and how it is judged.
+
+It runs on a build with #244's fix (b667560e or later on `fix/244-chromium-first-observation`), built and approved as in
+the sitting's step 1. Only the Electron fixture is a scene, and nothing is placed or activated. The kit brings the
+fixture down and up again for every variant, and each `up` refuses while TextEdit runs outside the run, Finder shows a
+window that is not the run's, or Finder is hidden: quit TextEdit and close Finder's windows first.
+
+```sh
+REPO=/Users/new/Developer/GitHub/cua/.claude/worktrees/fix-244; cd "$REPO"
+S="node scripts/cursor-sitting.mjs"; SC="node scripts/repl-parity/scenes-mac.mjs"
+RUN="$HOME/.local/share/cua-244/run"; OUT244="$REPO/docs/evidence/2026-10-30-macos-agent-cursor/item-244"
+# before (unattended, nothing drawn): the fixture built, the target guard's probe compiled, every step printed
+$SC build-electron && $S prepare
+$S first-observation drive --engine cua --out "$OUT244" --dry-run --quiet
+# the engine, unless `engine status` already shows this branch's build approved
+node bin/cua.mjs engine build --sign-wait 600000   # OWNER: the key prompt
+node bin/cua.mjs engine approve                    # OWNER: the three grants
+node bin/cua.mjs engine status                     # expected: approved: yes; accessibility true
+# the scene
+$SC preflight --run "$RUN"                         # expected: no refusals
+$SC up electron --run "$RUN"
+# the item: cua's engine, both variants (plain, then sonoma); then the vendor's plain variant, recorded only
+$S first-observation drive --engine cua --run "$RUN" --out "$OUT244"
+$S first-observation drive --engine vendor --run "$RUN" --out "$OUT244" --variant plain
+$S first-observation judge --out "$OUT244"         # item-244.md; exit 1 unless cua's plain variant passes
+# down
+$SC down all --run "$RUN"
+```
+
+| variant | the fixture | judged |
+|---|---|---|
+| plain | relaunched fresh, as the scenes bring it up | on cua's engine |
+| sonoma | relaunched fresh with `--enable-features=SonomaAccessibilityActivationRefinements` (the scenes CLI's `--electron-arg`), where the role read gives Chromium only its native APIs | recorded: the design session rules on a longer web-area wait from it |
+
+Each variant runs on its own session, opened with the fixture as its scene but **not bound**: a bind is itself an
+observation (getApp, then the screenshot BIND takes), so a bound session has observed the app twice before any cell.
+Its first cell is the session's first engine observation of the fixture, one `cua.computer.get_app_state`, whose text
+the cell inspects (the button found by its index, the line and character counts, whether the page's web area is
+there); then five warm observations, one a cell, each with its own `cua/observation` meta; a hold until the fixture's
+record says complete mode is on (at most 4 s); the close; and the record read until complete mode is off (at least
+2.5 s past the close, at most 5 s). The fixture's record (`cua-fixture-accessibility.jsonl` in the run's
+`electron-user-data`) has one `event` line per enablement-attribute write; the judge counts them before the open, inside
+the session and after the close (the release's write). **Pass, for cua's engine on the plain variant: the button in
+the first observation, exactly one write in the session, complete mode on before the close, and off within 2.5 s of
+the close.** The report gives the first observation's `appRoleReadMs`, `webAreaFound`, `webAreaWaitMs` and prior, the
+warm role reads and priors (expected `owned`), and the record's times; an engine without #244's diagnostics reads
+incomplete, never pass. To run one variant again: `--variant sonoma`.
+
 ## Known limits
 
 - With an approved engine built before #235, the first-call document's agent-cursor paragraph (on every macOS computer

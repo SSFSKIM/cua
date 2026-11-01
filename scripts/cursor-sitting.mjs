@@ -97,6 +97,16 @@
 //       driven window left above Chrome's, a window gone) stops it and the cases after it. `drive` then judges the
 //       engine's cases; `judge` writes every case on both engines to <out>/item-200.md and prints it. --samples sets
 //       every case's count (a's is twice it, half under Chrome). Exit 1 unless every cua case run passes.
+//   cursor-sitting.mjs first-observation drive --engine cua|vendor --run <dir> --out <dir> [--variant plain,sonoma] [--quiet]
+//                     [--dry-run]
+//   cursor-sitting.mjs first-observation judge --out <dir>
+//       #244's live check (./cursor-sitting/first-observation.mjs): per variant (plain; sonoma, the fixture launched with
+//       SonomaAccessibilityActivationRefinements on), the Electron fixture relaunched fresh, a session that binds nothing,
+//       its first cell the session's first engine observation of the fixture (its text inspected), warm observations,
+//       a hold for complete mode, the close and the release, from the fixture's accessibility record; recorded in
+//       <out>/item-244-<variant>-<engine>.jsonl. `drive` then judges the engine's variants; `judge` writes every variant
+//       on both engines to <out>/item-244.md and prints it. Exit 1 unless cua's plain variant passes (judge), or unless
+//       nothing stopped and every judged variant run passes (drive).
 //   cursor-sitting.mjs remote prepare|enroll|run --kit <dir> [--port n] [--run <dir> --out <dir>] [--quiet] [--dry-run]
 //       Acceptance 8's loopback device (./cursor-sitting/remote.mjs): prepare the kit (and print what it still needs),
 //       enrol it on a loopback relay, then run: the relay and the agent started, three client sessions driven
@@ -114,6 +124,7 @@ import {restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
 import {PLANS} from './cursor-sitting/plans.mjs';
 import {CASES, elementFrameTool, ENGINES, itemOf, judgeCase, moveWindowTool, orderFileOf, orderLines, orderWatchProbe, placeSteps, raiseMarkdown,
   raiseSteps} from './cursor-sitting/raise.mjs';
+import {ENGINES as FIRST_ENGINES, firstMarkdown, firstSteps, itemOf as firstItemOf, judgeFirst, VARIANTS} from './cursor-sitting/first-observation.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
 import {liveIo, runSteps} from './cursor-sitting/runner.mjs';
 import {clipPathProblem, REPO_ROOT} from './cursor-sitting/recording.mjs';
@@ -126,7 +137,7 @@ const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'string'}, aside: {type: 'string'}, run: {type: 'string'}, out: {type: 'string'},
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
   arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'}, source: {type: 'string'}, 'no-clip': {type: 'boolean', default: false}, still: {type: 'boolean', default: false}, control: {type: 'boolean', default: false},
-  case: {type: 'string'}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
+  case: {type: 'string'}, variant: {type: 'string'}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
 const absolute = (values, name) => {
@@ -281,6 +292,42 @@ async function driveRaise(values) {
   const judged = judgeRaise(out, {engine});
   print(raiseMarkdown(judged));
   return !stopped && judged.every(j => j.engine === 'vendor' || j.verdict === 'PASS') ? 0 : 1;
+}
+
+// #244's judgements from the evidence: every variant recorded on each engine (or only `engine`). -> [judged].
+export function judgeFirstObservation(out, {engine = null} = {}) {
+  return Object.keys(VARIANTS).flatMap(variant => FIRST_ENGINES.filter(e => !engine || e === engine).flatMap(e => {
+    const rows = readJsonl(join(out, `item-${firstItemOf(variant, e)}.jsonl`));
+    return rows.length ? [judgeFirst({variant, engine: e, rows})] : [];
+  }));
+}
+const firstPassed = judged => judged.some(j => j.engine === 'cua' && j.variant === 'plain' && j.verdict === 'PASS');
+
+// #244's drive: each variant in order, each its own item; a variant that throws is marked in its jsonl and stops those
+// after it.
+async function driveFirstObservation(values) {
+  const engine = values.engine;
+  if (!FIRST_ENGINES.includes(engine)) throw new Error('first-observation drive takes --engine cua or --engine vendor');
+  const variants = (values.variant ?? Object.keys(VARIANTS).join(',')).split(',');
+  if (variants.some(v => !VARIANTS[v])) throw new Error(`--variant takes variants of ${Object.keys(VARIANTS).join(', ')}, comma-separated`);
+  const out = absolute(values, 'out'), dryRun = values['dry-run'];
+  const run = dryRun ? values.run ?? '/nonexistent' : absolute(values, 'run');
+  const io = liveIo({run, out, quiet: values.quiet});
+  let steps = 0, stopped = null;
+  for (const variant of variants) {
+    const item = firstItemOf(variant, engine), plan = firstSteps(variant, {engine});
+    steps += plan.length;
+    try { await runSteps(plan, {item, out, io, engine, dryRun}); } catch (error) {
+      stopped = `${item}: ${error.message}`;
+      appendFileSync(join(out, `item-${item}.jsonl`), `${JSON.stringify({item, at: Date.now(), kind: 'stopped', error: error.message})}\n`);
+      print(`stopped at ${stopped}; the variants after it were not run`);
+      break;
+    }
+  }
+  if (dryRun) { print(`dry run: ${steps} steps, nothing sent`); return 0; }
+  const judged = judgeFirstObservation(out, {engine}).filter(j => variants.includes(j.variant));
+  print(firstMarkdown(judged));
+  return !stopped && judged.every(j => j.verdict === 'recorded' || j.verdict === 'PASS') ? 0 : 1;
 }
 
 async function drive(steps, {item, values, gap = null}) {
@@ -459,6 +506,17 @@ export async function main(argv) {
     }
     throw new Error('raise takes drive or judge');
   }
+  if (command === 'first-observation') {
+    const sub = positionals[0];
+    if (sub === 'drive') return driveFirstObservation(values);
+    if (sub === 'judge') {
+      const out = absolute(values, 'out'), judged = judgeFirstObservation(out);
+      writeFileSync(join(out, 'item-244.md'), firstMarkdown(judged));
+      print(firstMarkdown(judged));
+      return firstPassed(judged) ? 0 : 1;
+    }
+    throw new Error('first-observation takes drive or judge');
+  }
   if (command === 'remote') {
     const kit = absolute(values, 'kit'), sub = positionals[0];
     if (sub === 'prepare') {
@@ -487,7 +545,7 @@ export async function main(argv) {
     }
     throw new Error('remote takes prepare, enroll or run');
   }
-  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | source consent|restore | clip frames|order | raise drive|judge | remote prepare|enroll|run (see the header)');
+  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | source consent|restore | clip frames|order | raise drive|judge | first-observation drive|judge | remote prepare|enroll|run (see the header)');
 }
 
 if (process.argv[1] && SCRIPT === resolve(process.argv[1])) {

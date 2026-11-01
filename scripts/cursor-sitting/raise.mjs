@@ -734,17 +734,19 @@ export function raiseTasks({io, run, guard, out, windowList, probe, textView, mo
       return {ok: true, frame: answer.frame, window: w.bounds, coveredByChrome: Boolean(front && inside(middle(answer.frame), front))};
     },
     // f: the fixture brought down and up again by the scenes CLI (a harness app the kit owns), so the case starts on a
-    // process whose accessibility tree nothing has enabled (freshFixtureProblem).
-    'fixture-relaunch': async () => {
+    // process whose accessibility tree nothing has enabled (freshFixtureProblem). `launchArgs`: switches the new process
+    // is launched with besides its own (#244's variant; the scenes CLI's --electron-arg).
+    'fixture-relaunch': async (launchArgs = []) => {
       let before = null;
       try { before = io.scene('electron'); } catch {}
       const down = scenes(['down', 'electron']);
       const was = before && {pid: before.pid, window: before.window?.number ?? null};
       if (down?.down !== true) return {ok: false, before: was, down, problem: `the fixture did not come down (${down?.reason ?? down?.error ?? 'no answer'})`};
-      const up = scenes(['up', 'electron']);
+      const up = scenes(['up', 'electron', ...launchArgs.flatMap(a => ['--electron-arg', a])]);
       if (!up?.pid || !up?.window?.number) return {ok: false, before: was, down, up, problem: `the fixture did not come up (${up?.error ?? 'no record'})`};
       const text = fixtureRecord(), problem = freshFixtureProblem({before: before?.pid ?? null, after: up.pid, accessibilityText: text});
-      return {ok: problem === null, before: was, pid: up.pid, window: up.window.number, accessibility: fixtureAccessibility(text), ...(problem ? {problem} : {})};
+      return {ok: problem === null, before: was, pid: up.pid, window: up.window.number, accessibility: fixtureAccessibility(text), ...(launchArgs.length ? {extraArgs: up.extraArgs ?? null} : {}),
+        ...(problem ? {problem} : {})};
     },
     // f: the fixture's accessibility as its record says now, after the placement and before the session opens (recorded).
     'fixture-accessibility': async () => ({ok: true, accessibility: fixtureAccessibility(fixtureRecord())}),

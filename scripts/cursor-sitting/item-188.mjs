@@ -40,7 +40,9 @@ import {SCENE_MARKER} from './target-guard.mjs';
 const j = JSON.stringify;
 export const S188 = 's';
 export const ENGINES_188 = Object.freeze(['cua', 'vendor']);
-export const ITEMS_188 = Object.freeze({rows: engine => `188-rows-${engine}`, click: engine => `188-click-${engine}`});
+// `place` and `end`: a standalone #188 run's own placement and source restore (`--part 188`), so no #188 run writes an
+// item #187's judge reads.
+export const ITEMS_188 = Object.freeze({rows: engine => `188-rows-${engine}`, click: engine => `188-click-${engine}`, place: '188-place', end: '188-end'});
 export const ALL_ITEMS_188 = Object.freeze(ENGINES_188.flatMap(e => [ITEMS_188.rows(e), ITEMS_188.click(e)]));
 const DRIVEN = 'electron', USER = 'finder';
 
@@ -140,6 +142,8 @@ export function row188({spec, prepare = null, front = null, act = null, after = 
   if (invalid === null && !check?.ok) invalid = 'the check cell failed';
   else if (invalid === null && check.value?.invalid) invalid = String(check.value.invalid);
   if (invalid === null && background && after?.watcher !== true) invalid = 'the activation watcher was not running after the action';
+  // The oracle reads a missing focus as not judged: a background row passes only on a reading of the user window's focus.
+  if (invalid === null && background && !after?.focus) invalid = `the user window's keyboard focus could not be read after the action${after?.focusError ? ` (${after.focusError})` : ''}`;
   const outcome = check?.ok && check.value?.outcome ? Object.fromEntries(Object.entries(check.value.outcome).map(([k, v]) => [k, scrubbed(v)])) : null;
   const observation = prepare?.meta?.observation ?? null;
   return {key: spec.key, item: spec.item, id: spec.id, engine: spec.engine, regime: spec.regime, method: spec.method, case: spec.case, user: spec.user,
@@ -370,10 +374,18 @@ export function item188Tasks(d) {
     '188-after': async ([key, regime], ctx) => {
       const s = st(ctx), row = (s.rows[key] ??= {});
       if (regime !== 'background') { row.after = {reading: reading()}; return {ok: true, key}; }
+      // A focus read that fails is kept as the failure: the row needs a reading to pass (row188).
       const w = s.userWindow, owned = ownedPids(d.state());
-      const focus = w ? attempt(() => ownedFocus(d.probe(['focus', '--window', [w.pid, w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height].join(',')]), owned, w)) : null;
-      row.after = {reading: reading(), focus, watcher: alive(s)};
-      return {ok: row.after.watcher, key, focus};
+      let focus = null, focusError = w ? null : 'no user window was read';
+      if (w) {
+        try { focus = ownedFocus(d.probe(['focus', '--window', [w.pid, w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height].join(',')]), owned, w) ?? null; } catch (error) {
+          focusError = String(error?.message ?? error).split('\n')[0].slice(0, 200);
+        }
+        if (!focus && !focusError) focusError = 'the focus probe gave no answer';
+      }
+      row.after = {reading: reading(), focus, ...(focusError ? {focusError} : {}), watcher: alive(s)};
+      const problem = focusError ? `the user window's keyboard focus could not be read after the action (${focusError})` : !row.after.watcher ? 'the activation watcher was not running after the action' : null;
+      return {ok: problem === null, key, focus, ...(problem ? {problem} : {})};
     },
     '188-row': async ([key, engine, k], ctx) => {
       const s = st(ctx), row = (s.rows[key] ??= {}), r = ROWS_188[Number(k)], id = rowId188(r), item = key.slice(0, key.lastIndexOf('.'));

@@ -248,7 +248,8 @@ export function plan187({part = 'all', vendor = false} = {}) {
     ...CONTROLS.map(group => control(group, 'A'))];
   const b = [{item: ITEMS.b, stage: 'b', steps: groupItem({item: ITEMS.b, group: 'chrome-composing', blocks: bSchedule().map(s => ({...s, switchTo: s.arm === 'B' ? 'on' : 'off'}))})},
     ...CONTROLS.map(group => control(group, 'B'))];
-  if (part === '188') return [place, ...items188, end];
+  // Alone, #188's run places and restores under items of its own: #187's judge reads 187-end's latest attempt.
+  if (part === '188') return [{item: ITEMS_188.place, stage: 'place', steps: placeSteps()}, ...items188, {item: ITEMS_188.end, stage: 'end', steps: endSteps()}];
   return [place, ...(part === 'all' ? items188 : []), ...(part === 'b' ? [] : a), ...(part === 'a' ? [] : b), end];
 }
 

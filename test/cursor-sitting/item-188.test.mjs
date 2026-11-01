@@ -65,7 +65,8 @@ test('the #188 rows never run under 2-Set: every item gates on ABC before its fi
     assert.ok(s.findIndex(x => x.task === '188-abc' && x.args[1] === 'end') > s.findLastIndex(x => x.run), `${item.item}: the source read back after the last cell`);
     assert.ok(!s.some(x => x.task === 'select-source' && x.args[0] !== 'latin'), `${item.item} selects nothing but ABC`);
   }
-  assert.deepEqual(plan187({part: '188'}).map(p => p.item), [ITEMS.place, ...ALL_ITEMS_188, ITEMS.end]);
+  assert.deepEqual(plan187({part: '188'}).map(p => p.item), [ITEMS_188.place, ...ALL_ITEMS_188, ITEMS_188.end]);
+  assert.ok(plan187({part: '188'}).every(p => p.item.startsWith('188-')), 'a #188 rerun writes no item of #187\'s');
   assert.ok(!plan187({part: 'a'}).some(p => ALL_ITEMS_188.includes(p.item)), '--part a is #187\'s Part A alone');
   assert.ok(!plan187({vendor: true}).some(p => ALL_ITEMS_188.includes(p.item)));
 });
@@ -190,7 +191,7 @@ test('cell 3\'s record is value-free whatever its answers carry, and keeps the e
 // The Mac, faked for #188: the fixture and Finder up, a source the probe reads, an activation watcher, a session whose
 // cells answer by their markers. `source`: what input-source reads; `activateDuring`: row keys whose act activates the
 // fixture (an interference the watcher sees).
-function fakeMac188(out, {source = ABC, activateDuring = []} = {}) {
+function fakeMac188(out, {source = ABC, activateDuring = [], focusThrows = false} = {}) {
   let clock = 1_790_000_000_000, front = 'electron';
   const tick = () => (clock += 5), calls = [], log = [];
   const scene = id => ({id, app: `/Apps/${id}.app`, pid: PIDS[id], ...(id === 'finder' ? {} : {at: 1}), window: {number: NUMBERS[id]}});
@@ -229,6 +230,7 @@ function fakeMac188(out, {source = ABC, activateDuring = []} = {}) {
     frontmost: () => ({pid: PIDS[front], bundleId: front, topWindow: {ownerPid: PIDS[front], number: NUMBERS[front], bounds: BOUNDS[front]}}),
     probe: args => {
       if (args[0] === 'input-source') return {id: source, layout: source === ABC ? 'ABC' : '2SetHangul'};
+      if (args[0] === 'focus' && focusThrows) throw new Error('spawnSync timed out');
       if (args[0] === 'focus') return {focusedApp: {pid: PIDS.finder}, named: true, valueHash: 'a'.repeat(64)};
       if (args[0] === 'text-view') return {windows: [{minimized: false, textArea: {selectedRange: {...range}}}], focused: {role: 'AXTextArea', textAreaOfWindow: 0}};
       return null;
@@ -283,6 +285,34 @@ test('cell 3 end to end on fakes: (i) by index with the element click\'s meta, (
   assert.match(markdown188(judged).join('\n'), /\| cua \| i \| 20\+7 \(20\+7\) \| 20\+7 \| kept \| 1 \| action, AXPress, advertised, same \|/);
   assert.deepEqual(leaks(JSON.stringify(evidence)), []);
   assert.equal(LABELS_188.click(ITEMS_188.click('cua'), 'i'), '188-click-cua i click');
+});
+
+test('review P2: a #188 rerun (--part 188) writes nothing #187\'s judge reads, so it cannot flip #187\'s verdict', async t => {
+  const out = scratch(t);
+  const {io} = fakeMac188(out);
+  io.tasks['187-preflight'] = async () => ({ok: true});
+  io.tasks['187-place'] = async () => ({ok: true});
+  io.tasks.activate = async () => ({ok: true});
+  // #187's evidence as a landed slot left it, then a #188 rerun whose source restore fails.
+  io.tasks['select-source'] = async args => ({ok: args[0] !== 'owner', which: args[0], switched: true, requested: ABC, current: {id: args[0] === 'owner' ? KOREAN_2SET : ABC}});
+  for (const {item, steps} of plan187({part: '188'})) await runSteps(steps, {item, out, io, log: () => {}}).catch(() => {});
+  const written = Object.keys(read187(out));
+  assert.ok(written.length > 0 && written.every(name => name.startsWith('188-')), written.join(', '));
+  assert.ok(!written.includes(ITEMS.end));
+});
+
+test('review P2: a background row passes only with a successful focus reading of the user window after its act', async t => {
+  assert.match(row188(rowInput({after: {...rowInput().after, focus: null, focusError: 'spawnSync timed out'}})).invalid, /keyboard focus could not be read after the action \(spawnSync timed out\)/);
+  assert.match(row188(rowInput({after: {...rowInput().after, focus: null}})).invalid, /keyboard focus could not be read/);
+  assert.equal(row188(rowInput({r: ROWS_188[0], after: {reading: rowInput({r: ROWS_188[0]}).after.reading}})).invalid, null, 'the frontmost row reads no user window');
+  const out = scratch(t);
+  const {io} = fakeMac188(out, {focusThrows: true});
+  const judged = judge188({[ITEMS_188.rows('cua')]: await run188(out, io, ITEMS_188.rows('cua'), rowsItem188('cua'))});
+  assert.deepEqual(judged.rows.cua.map(r => r.verdict), ['PASS', 'INVALID', 'INVALID', 'INVALID']);
+  assert.notEqual(judged.cua.verdict, 'PASS');
+  const after = read187(out)[ITEMS_188.rows('cua')].filter(r => r.task === '188-after' && r.result.key.endsWith('.1'))[0].result;
+  assert.equal(after.ok, false);
+  assert.match(after.problem, /focus/);
 });
 
 test('neither the #188 rows nor cell 3 ever counts for #187\'s verdict', () => {

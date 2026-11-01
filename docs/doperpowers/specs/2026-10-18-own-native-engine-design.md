@@ -501,7 +501,8 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
   paste: the paste route's value-free diagnostics of its last line (#187), on its result and every error after its first
     line began: {line, lines, notificationSource ("trusted" | "untrusted" | "none"), baselineEmpty, keyFocusAtPaste?
     {holds, frontmost, keyFocusProcess, focusedInWindow (null: unreadable)}, readWait? ("handedOver" | "released" |
-    "timeout" | "deadline"), readWaitMs?, readAfterPostMs? (signed, negative for a read before ⌘V), effectWait?
+    "timeout" | "deadline"), readWaitMs?, readAfterPostMs? (the first hand-over, signed, negative for a read before ⌘V),
+    firstReadAfterPostMs? (the first hand-over at or after ⌘V, which the no-channel answer keys on), effectWait?
     ("notification" | "reading" | "timeout" | "deadline" | "noChannel"), effectWaitMs?, mainLagMs?, mainLagOpen?,
     stage? ("read" | "effect"), confirmed?, unconfirmedLines? (the operation's, when any), restore ("restored" |
     "skippedChanged" | "notTaken")}; never the clipboard's contents or the field's text
@@ -1386,7 +1387,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      element exposes neither a selected range nor a character count) and no trusted notification source is registered,
      nothing could show an effect, and the paste answers as soon as the read came, with no wait. "No channel" (cua
      cannot look) is not "looked and saw nothing", so the vendor's 100 ms blind success (the vendor never reaches it:
-     its observer is always created) becomes **success with an unconfirmed note when the first hand-over came at or
+     its observer is always created) becomes **success with an unconfirmed note when a hand-over (of any representation) came at or
      after ⌘V's post** (a read after ⌘V is positive evidence of delivery, with none against it; an error would cost every
      Korean type_text into such a field an observation and stop multi-line text at every line), and **`pasteUnconfirmed`
      when the only read came before ⌘V** (a foreign reader's: the provider is not asked again for the target). The

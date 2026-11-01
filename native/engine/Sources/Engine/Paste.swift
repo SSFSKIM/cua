@@ -123,6 +123,8 @@ final class PasteEffect: @unchecked Sendable {
   private let lock = NSLock()
   private var handedOver = false
   private var readAt: Double?
+  private var postedAt: Double?
+  private var readAfterPost: Double?
   private var started = false
   private var seen = false
   private var baseline = EffectReading()
@@ -147,6 +149,8 @@ final class PasteEffect: @unchecked Sendable {
     lock.lock()
     handedOver = false
     readAt = nil
+    postedAt = nil
+    readAfterPost = nil
     started = false
     seen = false
     baseline = reading
@@ -155,15 +159,25 @@ final class PasteEffect: @unchecked Sendable {
 
   /// An observer now reports to this watch (`notification`), its notifications counting only when `trusted`.
   func observed(_ source: NotificationSource) { locked { self.source = source } }
-  /// The provider handed the data over: its first time since `begin` is kept for the diagnostics.
+  /// The provider handed a representation over: the first time since `begin` is kept for the diagnostics, and so is the
+  /// first at or after ⌘V's post, separately, since each representation of an item (HTML, RTF, plain) is handed over on
+  /// its own: a reader before ⌘V and the target after it are two hand-overs (#187 re-review). A representation read
+  /// again gives no callback.
   func providerRead() {
     let at = now()
     locked {
       handedOver = true
       if readAt == nil { readAt = at }
+      if let postedAt, at >= postedAt, readAfterPost == nil { readAfterPost = at }
     }
   }
-  func pasteStarted() { locked { started = true } }
+  /// ⌘V is about to be posted, at `at` on `now`'s clock (when given: what a hand-over after it is judged against).
+  func pasteStarted(at: Double? = nil) {
+    locked {
+      started = true
+      postedAt = at
+    }
+  }
   /// An observed `AXSelectedTextChanged` or `AXValueChanged`.
   func notification() { locked { if source == .trusted && handedOver && started { seen = true } } }
 
@@ -172,6 +186,8 @@ final class PasteEffect: @unchecked Sendable {
   var notificationSource: NotificationSource { locked { source } }
   var baselineEmpty: Bool { locked { baseline.isEmpty } }
   var firstReadAt: Double? { locked { readAt } }
+  /// The first hand-over at or after ⌘V's post (nil when none came after it).
+  var firstReadAfterPostAt: Double? { locked { readAfterPost } }
 
   /// Polls for the effect until `timeoutMs` passes. With neither a trusted source nor a baseline there is nothing that
   /// could show one, and it answers `noChannel` at once. Each read is given the time left, and a changed reading that
@@ -244,6 +260,9 @@ struct PasteDiagnostics {
   var readWait: ReadOutcome? = nil
   var readWaitMs: Double? = nil
   var readAfterPostMs: Double? = nil
+  /// The first hand-over at or after ⌘V's post (a representation the target took after a reader took another before):
+  /// what a paste with no channel is answered by.
+  var firstReadAfterPostMs: Double? = nil
   /// An `EffectOutcome`'s name, or "deadline" when the request's deadline ended the wait before its 2 s.
   var effectWait: String? = nil
   var effectWaitMs: Double? = nil
@@ -266,6 +285,7 @@ struct PasteDiagnostics {
     if let readWait { wire["readWait"] = readWait.rawValue }
     if let readWaitMs { wire["readWaitMs"] = rounded(readWaitMs) }
     if let readAfterPostMs { wire["readAfterPostMs"] = rounded(readAfterPostMs) }
+    if let firstReadAfterPostMs { wire["firstReadAfterPostMs"] = rounded(firstReadAfterPostMs) }
     if let effectWait { wire["effectWait"] = effectWait }
     if let effectWaitMs { wire["effectWaitMs"] = rounded(effectWaitMs) }
     if let mainLagMs { wire["mainLagMs"] = rounded(mainLagMs) }
@@ -337,8 +357,8 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         let written = write.own
         try checkInFlight()
         meta.paste?.keyFocusAtPaste = keyFocusAtPaste()
-        effect.pasteStarted()
         let postAt = effect.now()
+        effect.pasteStarted(at: postAt)
         let lag = MainLag()
         mainProbe { [effect] in lag.mark(effect.now()) }
         probe = (postAt, lag)
@@ -351,6 +371,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         let handed = provider.waitForRead(timeoutMs: readBudget)
         meta.paste?.readWaitMs = effect.now() - readStart
         meta.paste?.readAfterPostMs = effect.firstReadAt.map { $0 - postAt }
+        meta.paste?.firstReadAfterPostMs = effect.firstReadAfterPostAt.map { $0 - postAt }
         meta.paste?.readWait = handed ? (provider.read ? .handedOver : .released) : (readBudget < readTimeoutMs ? .deadline : .timeout)
         guard handed else { throw clipboardReadTimedOut }
         guard pasteboard.changeCount == written else { throw clipboardConflict }
@@ -366,7 +387,8 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         meta.paste?.confirmed = confirmed
         if !confirmed {
           // No channel, and the read came after ⌘V: pasted, unconfirmed. Anything else is unconfirmed as an error.
-          guard seen == .noChannel, let after = meta.paste?.readAfterPostMs, after >= 0 else { throw pasteUnconfirmed }
+          // No channel, and a hand-over came at or after ⌘V (any representation's, not only the first read).
+          guard seen == .noChannel, effect.firstReadAfterPostAt != nil else { throw pasteUnconfirmed }
           outcome.unconfirmedLines += 1
           meta.paste?.unconfirmedLines = outcome.unconfirmedLines
         }

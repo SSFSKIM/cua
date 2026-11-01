@@ -691,6 +691,32 @@ final class PasteOperationTests: XCTestCase {
                    "Pasted, unconfirmed: the app read the text after ⌘V, but this field can't be read back, so the change couldn't be seen. Observe the field if the next step depends on it.")
   }
 
+  /// Several representations (an HTML paste): a clipboard manager takes the plain text before ⌘V and the target takes
+  /// the HTML after it. Separate hand-overs: the one after ⌘V counts, so with no channel the answer is the unconfirmed
+  /// success; the first read's time is kept for the diagnostics (#187 re-review, P2).
+  func testWithNoChannelAHandOverAfterCommandVCountsThoughAnotherCameBefore() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let representations = [PasteRepresentation(type: .html, data: Data("<b>x</b>".utf8)), PasteRepresentation(type: .string, data: Data("x".utf8))]
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    let outcome = try run([.content(representations, units: 1)], pasteboard, effect: effect(reading: { EffectReading() }),
+                          checkInFlight: { [unowned self] in
+                            _ = pasteboard.appReads(.string)  // a clipboard manager, 10 ms before ⌘V
+                            clock += 10
+                          }, postPaste: { [unowned self] in
+                            clock += 2
+                            _ = pasteboard.appReads(.html)  // the target, 2 ms after ⌘V
+                            return true
+                          }, entered: &entered, meta: &meta)
+    XCTAssertEqual(outcome, PasteOutcome(pastedLines: 1, unconfirmedLines: 1))
+    XCTAssertEqual(diagnostics(meta)["readAfterPostMs"] as? Double, -10, "the first hand-over, kept")
+    XCTAssertEqual(diagnostics(meta)["firstReadAfterPostMs"] as? Double, 2, "the first hand-over at or after ⌘V")
+    XCTAssertEqual(diagnostics(meta)["confirmed"] as? Bool, false)
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+  }
+
   /// No channel and the only read came before ⌘V (a foreign reader: the lazy provider is not asked again for the
   /// target): `pasteUnconfirmed`, at once.
   func testWithNoChannelAReadOnlyBeforeCommandVIsPasteUnconfirmed() {
@@ -709,6 +735,7 @@ final class PasteOperationTests: XCTestCase {
     XCTAssertEqual(clock, 5, "no wait")
     XCTAssertEqual(entered, 0)
     XCTAssertEqual(diagnostics(meta)["readAfterPostMs"] as? Double, -5)
+    XCTAssertNil(diagnostics(meta)["firstReadAfterPostMs"], "the same type read again after ⌘V gives no callback")
     XCTAssertEqual(diagnostics(meta)["confirmed"] as? Bool, false)
     XCTAssertEqual(diagnostics(meta)["effectWait"] as? String, "noChannel")
     XCTAssertEqual(pasteboard.strings(), ["the owner's"])

@@ -637,7 +637,7 @@ $SC down all --run "$RUN"
 | variant | the fixture | judged |
 |---|---|---|
 | plain | relaunched fresh, as the scenes bring it up | on cua's engine |
-| sonoma | relaunched fresh with `--enable-features=SonomaAccessibilityActivationRefinements` (the scenes CLI's `--electron-arg`), where the role read gives Chromium only its native APIs | recorded: the design session rules on a longer web-area wait from it |
+| sonoma | relaunched fresh with `--enable-features=SonomaAccessibilityActivationRefinements` (the scenes CLI's `--electron-arg`), where the role read gives Chromium only its native APIs | recorded: the evidence for the fallback, a longer web-area wait (#246) |
 
 Each variant runs on its own session, opened with the fixture as its scene but **not bound**: a bind is itself an
 observation (getApp, then the screenshot BIND takes), so a bound session has observed the app twice before any cell.

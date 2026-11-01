@@ -6,7 +6,7 @@
 // Each variant runs on its own fresh fixture process and its own session:
 //   plain   the fixture as the scenes bring it up
 //   sonoma  the fixture launched with SonomaAccessibilityActivationRefinements on, where the role read gives Chromium
-//           only its native APIs and the page waits for complete mode (the case a longer web-area wait would cover)
+//           only its native APIs and the page waits for complete mode (the case the fallback, a longer web-area wait, would cover: #246)
 // The steps:
 // 1. The fixture brought down and up again (#200's `fixture-relaunch`, ./raise.mjs), its accessibility record off since
 //    its start line; the variant's switch on its process's command line, and no other variant's (`ps`).
@@ -18,8 +18,8 @@
 //    end on the Unix-ms clock the fixture's record uses. The reply's `cua/observation` meta is kept (./session.mjs).
 // 4. WARM more observations, one call a cell, so each keeps its own meta: the role read's warm cost and the later priors
 //    ("owned" once the engine owns the attribute).
-// 5. Held until complete mode is on (a "poll" line enabled true in the record), at most COMPLETE_WAIT_MS.
-// 6. The session closed; the record read until complete mode is off (a "poll" line enabled false) and at least
+// 5. Held until complete mode is on (a line of the record, of any source, saying enabled true), at most COMPLETE_WAIT_MS.
+// 6. The session closed; the record read until the mode it ends in is off (its latest line, of any source) and at least
 //    RELEASE_MS past the close, at most RELEASE_WAIT_MS.
 // 7. From the record (this launch's lines: from its last start line), the write events ("event": Electron fires
 //    accessibility-support-changed at every set) before the open, inside the session (from the mark before the open to
@@ -27,8 +27,9 @@
 // Pass, for cua's engine on the plain variant: the button in the first observation; exactly one write in the session;
 // complete mode on before the close; off within RELEASE_MS of the session's close (from when close returned: the
 // engine releases when the connection ends) and still off at the end of the release window, with no write after the
-// close but the release's own. Every warm observation must have answered with its role read, or the run is incomplete. The sonoma variant and the vendor's engine are recorded, not judged: the
-// design session rules on a longer wait from sonoma.
+// close but the release's own. Every warm observation must have answered with its role read, or the run is incomplete.
+// The sonoma variant and the vendor's engine are recorded, not judged: the fallback, a longer web-area wait, is #246,
+// and sonoma's row is its evidence.
 import {execFileSync} from 'node:child_process';
 import {existsSync, readFileSync} from 'node:fs';
 import {join} from 'node:path';
@@ -83,34 +84,38 @@ export function launchSlice(lines) {
 }
 
 const isEvent = l => l.source === 'event';
-const isPoll = (l, enabled) => l.source === 'poll' && l.enabled === enabled;
+// The mode (Chromium's complete accessibility mode, on or off) at any time is the `enabled` of the record's latest line
+// of any source: the fixture's event line carries the mode as it stands after the set, and its poll writes a line only
+// when the mode differs from the last line written, so an off the release's own event line already says is never
+// followed by a "poll" one (the live slot of 2026-11-01).
+const hasMode = l => typeof l?.enabled === 'boolean';
 // What a launch's record says of one session: `openedAt` the mark before the open, `closingAt` the mark before the
-// close, `closedAt` the one after it (Unix ms). -> {start, writes: {beforeOpen, inSession, afterClose} (the event
-// lines), onBeforeOpen (a line saying on before the open), completeOn (the first "poll" on), onAfterWriteMs (from the
-// last write before it), completeOff (the first "poll" off at or after the closing mark), offAfterCloseMs (from
-// `closedAt`), offAfterReleaseWriteMs, reOn (a "poll" on after that off: the release did not hold), finalOn (the latest
-// recorded mode: the last "poll", else the start line)}.
+// close, `closedAt` the one after it (Unix ms). Writes are event lines; the mode is read from every line. -> {start,
+// writes: {beforeOpen, inSession, afterClose}, onBeforeOpen (a line saying on before the open), completeOn (the first
+// line saying on), onAfterWriteMs (from the last write before it), completeOff (the first line at or after the closing
+// mark that turns the mode from on to off), offAfterCloseMs (from `closedAt`), offAfterReleaseWriteMs, reOn (a line
+// saying on after that off: the release did not hold), finalOn (the mode the record ends in)}.
 export function recordFacts({record, openedAt, closingAt, closedAt}) {
-  const lines = launchSlice(record ?? []), events = lines.filter(isEvent);
+  const lines = launchSlice(record ?? []), events = lines.filter(isEvent), modes = lines.filter(hasMode);
   const beforeOpen = events.filter(l => l.at < openedAt), inSession = events.filter(l => l.at >= openedAt && l.at < closingAt);
   const afterClose = events.filter(l => l.at >= closingAt);
-  const completeOn = lines.find(l => isPoll(l, true)) ?? null;
-  const writeBefore = completeOn ? events.filter(l => l.at <= completeOn.at).at(-1) : null;
-  const completeOff = lines.find(l => isPoll(l, false) && l.at >= closingAt) ?? null;
+  const completeOn = modes.find(l => l.enabled === true) ?? null;
+  const writeBefore = completeOn ? events.filter(l => l !== completeOn && l.at <= completeOn.at).at(-1) : null;
+  const offAt = modes.findIndex((l, k) => l.enabled === false && l.at >= closingAt && modes[k - 1]?.enabled === true);
+  const completeOff = offAt < 0 ? null : modes[offAt];
   const releaseWrite = afterClose[0] ?? null;
-  const reOn = completeOff ? lines.find(l => isPoll(l, true) && l.at > completeOff.at) ?? null : null;
-  const finalOn = (lines.filter(l => l.source === 'poll').at(-1) ?? lines[0])?.enabled ?? null;
-  return {reOn, finalOn, start: lines[0] ?? null, writes: {beforeOpen, inSession, afterClose},
-    onBeforeOpen: lines.find(l => l.enabled === true && l.at < openedAt) ?? null,
+  const reOn = offAt < 0 ? null : modes.slice(offAt + 1).find(l => l.enabled === true) ?? null;
+  return {reOn, finalOn: modes.at(-1)?.enabled ?? null, start: lines[0] ?? null, writes: {beforeOpen, inSession, afterClose},
+    onBeforeOpen: modes.find(l => l.enabled === true && l.at < openedAt) ?? null,
     completeOn, onAfterWriteMs: completeOn && writeBefore ? completeOn.at - writeBefore.at : null,
     completeOff, offAfterCloseMs: completeOff && Number.isFinite(closedAt) ? completeOff.at - closedAt : null,
     offAfterReleaseWriteMs: completeOff && releaseWrite && releaseWrite.at <= completeOff.at ? completeOff.at - releaseWrite.at : null};
 }
 
-// The latest recorded mode, when it is off and was recorded at or after `since`: the "poll" line saying so, else null.
-// A past off that a later "poll" contradicts is not the state the record ends in.
+// The mode the record ends in, when it is off and was recorded at or after `since`: the latest line, of any source,
+// else null. A past off that a later line contradicts is not the state the record ends in.
 export const offSince = (lines, since) => {
-  const latest = lines.filter(l => l.source === 'poll').at(-1);
+  const latest = lines.filter(hasMode).at(-1);
   return latest?.enabled === false && latest.at >= since ? latest : null;
 };
 
@@ -196,7 +201,7 @@ const spreadText = s => (s.n ? `${v(s.min)} / ${v(s.median)} / ${v(s.max)} (${s.
 // The judgements as Markdown: the record's table, the engine's diagnostics, then each variant's notes.
 export function firstMarkdown(judged) {
   const lines = ['# #244: the first observation of a fresh Electron app (scripts/cursor-sitting/first-observation.mjs)', '',
-    `Each variant ran on a freshly launched fixture (its accessibility record off) and a session that bound nothing, so its first cell made the session's first engine observation of the fixture (one \`get_app_state\`, its text inspected in the cell). Writes are the fixture's \`accessibility-support-changed\` events, one per enablement-attribute write; complete mode is the record's \`poll\` line (Chromium's own accessibility mode on or off). In the session counts from the mark before the open to the mark before the close; after the close is the release's write. Off is measured from when the session's close returned. Pass, for cua's engine on the plain variant: the button in the first observation, exactly 1 write in the session, complete mode on before the close, and off within ${RELEASE_MS} ms of the close and still off when the record was last read, with no write after the close but the release's; every warm observation answered with its role read, or the run is incomplete. The sonoma variant (${SONOMA_SWITCH}) and the vendor's engine are recorded, not judged.`, '',
+    `Each variant ran on a freshly launched fixture (its accessibility record off) and a session that bound nothing, so its first cell made the session's first engine observation of the fixture (one \`get_app_state\`, its text inspected in the cell). Writes are the fixture's \`accessibility-support-changed\` events, one per enablement-attribute write; complete mode (Chromium's own accessibility mode, on or off) is the \`enabled\` of the record's latest line of any source, since the event line carries the mode after its set and the fixture's poll writes only a change from the last line. In the session counts from the mark before the open to the mark before the close; after the close is the release's write. Off is the first line after the close, of any source, that turns the mode from on to off (the release's own event line can carry it), measured from when the session's close returned (negative: the release wrote before the close returned). The role read's \`appRoleReadMs\` was recorded under ordinary load: #244 sets no timing bar for it. Pass, for cua's engine on the plain variant: the button in the first observation, exactly 1 write in the session, complete mode on before the close, and off within ${RELEASE_MS} ms of the close and still off when the record was last read, with no write after the close but the release's; every warm observation answered with its role read, or the run is incomplete. The sonoma variant (${SONOMA_SWITCH}) and the vendor's engine are recorded, not judged; sonoma's row is the evidence for the fallback, a longer web-area wait, which is #246.`, '',
     '| variant | engine | button in the first observation (index) | its text: lines / chars, page | writes: before the open / in the session / after the close | complete mode on (ms after the last write) | off (ms after the close; after the release\'s write) | verdict |',
     '|---|---|---|---|---|---|---|---|'];
   for (const r of judged) {
@@ -278,10 +283,10 @@ export function firstTasks({run, processArgs = liveProcessArgs, now = Date.now, 
       return {...relaunch, ok: problem === null, variant, launchArgs, ...(problem ? {problem: `the fixture's process ${relaunch.pid}: ${problem}`} : {})};
     },
     'first-mark': async ([name], ctx) => { const at = now(); marks(ctx)[name] = at; return {ok: true, name, at}; },
-    // Held until the record says complete mode is on (since the open).
+    // Held until the record says complete mode is on (since the open; a line of any source).
     'first-complete': async (_args, ctx) => {
       const opened = marks(ctx).open ?? 0;
-      const r = await awaitRecord({read: recordText, done: lines => lines.find(l => isPoll(l, true) && l.at >= opened), boundMs: COMPLETE_WAIT_MS, now, sleep});
+      const r = await awaitRecord({read: recordText, done: lines => lines.find(l => l.enabled === true && l.at >= opened), boundMs: COMPLETE_WAIT_MS, now, sleep});
       return {ok: r.hit !== null, on: r.hit, waitedMs: r.waitedMs, ...(r.hit ? {} : {problem: `complete mode did not come on within ${COMPLETE_WAIT_MS} ms`})};
     },
     // After the close: the record read until its latest mode is off (offSince) and RELEASE_MS have passed since the close,

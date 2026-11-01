@@ -7,7 +7,7 @@ import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync}
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {main} from '../../scripts/cursor-sitting.mjs';
-import {APP_KEY, awaitRecord, firstMarkdown, firstSteps, firstTasks, judgeFirst, LABELS, launchArgsProblem, launchSlice, OBSERVATION, recordFacts, RELEASE_MS,
+import {APP_KEY, awaitRecord, firstMarkdown, firstSteps, firstTasks, judgeFirst, LABELS, launchArgsProblem, launchSlice, OBSERVATION, offSince, recordFacts, RELEASE_MS,
   SONOMA_SWITCH, WARM} from '../../scripts/cursor-sitting/first-observation.mjs';
 import {MARKER} from '../../scripts/native-baseline/cells.mjs';
 import {FIXTURE_ACCESSIBILITY_FILE} from '../../scripts/native-matrix/fixtures/electron-fixture.mjs';
@@ -22,7 +22,8 @@ const line = (at, source, enabled = false) => ({at, enabled, source});
 // observation, complete mode about 2 s later, the release's write at the close and complete mode off about 2 s after it.
 const T = 1_790_000_000_000;
 const EARLIER = [line(T - 90_000, 'start'), line(T - 89_000, 'event'), line(T - 88_000, 'event'), line(T - 86_000, 'poll', true), line(T - 80_000, 'poll', false)];
-const RECORD = [line(T, 'start'), line(T + 3150, 'event'), line(T + 5160, 'poll', true), line(T + 5900, 'event'), line(T + 7950, 'poll', false)];
+// Here the release's event still reads on, and a poll line carries the off (the other shape is LIVE's, below).
+const RECORD = [line(T, 'start'), line(T + 3150, 'event'), line(T + 5160, 'poll', true), line(T + 5900, 'event', true), line(T + 7950, 'poll', false)];
 const MARKS = {open: T + 1000, close: T + 5300, closed: T + 6000};
 
 // A variant's rows as the runner records them; `record` is what the release task kept (this launch's lines).
@@ -120,6 +121,40 @@ test('complete mode must still be off at the end of the release window, after th
   fail([...RECORD, line(T + 8100, 'event'), line(T + 8300, 'poll', true)], /2 write events after the close, not the release's alone; complete mode came on again \d+ ms after the close, after going off/);
   fail([...RECORD, line(T + 8300, 'poll', true)], /^complete mode came on again 2300 ms after the close, after going off$/);
   fail([...RECORD.slice(0, 4), line(T + 5950, 'event'), RECORD[4]], /^2 write events after the close, not the release's alone$/);
+});
+
+// The live slot's plain run on cua (2026-11-01): the release's write cleared complete mode at once, so its own event line
+// says off, and the fixture's poll, which writes only a change from the last line, never wrote one after it.
+const L = 1_793_518_128_282;
+const LIVE = [line(L, 'start'), line(L + 1599, 'event'), line(L + 3676, 'poll', true), line(L + 3926, 'event')];
+const LIVE_MARKS = {open: L + 556, close: L + 3736, closed: L + 3976};
+const liveRows = (record = LIVE) => runRows({record}).map(r => (r.task === 'first-mark' ? {...r, result: {...r.result, at: LIVE_MARKS[r.args[0]]}} : r));
+
+test('the mode at any time is the latest line\'s, of any source: an off carried by the release\'s own event line passes', () => {
+  const f = recordFacts({record: LIVE, openedAt: LIVE_MARKS.open, closingAt: LIVE_MARKS.close, closedAt: LIVE_MARKS.closed});
+  assert.deepEqual([f.completeOn.at, f.onAfterWriteMs, f.completeOff?.at, f.completeOff?.source, f.offAfterReleaseWriteMs, f.finalOn, f.reOn], [L + 3676, 2077, L + 3926, 'event', 0, false, null]);
+  assert.equal(f.offAfterCloseMs, -50, 'the release wrote before the close returned');
+  const j = judgeFirst({variant: 'plain', engine: 'cua', rows: liveRows()});
+  assert.equal(j.verdict, 'PASS', j.why);
+  assert.deepEqual(j.writes, {beforeOpen: 0, inSession: 1, afterClose: 1});
+  // Off by a poll line after a release event that still read on works as before.
+  const byPoll = [...LIVE.slice(0, 3), line(L + 3926, 'event', true), line(L + 5980, 'poll', false)];
+  assert.equal(judgeFirst({variant: 'plain', engine: 'cua', rows: liveRows(byPoll)}).verdict, 'PASS');
+  assert.equal(offSince(byPoll.slice(0, 4), LIVE_MARKS.close), null, 'an event that reads on is not off');
+  assert.equal(offSince(LIVE, LIVE_MARKS.close)?.source, 'event');
+  // A true line of either source after the off fails, also as the record's last line more than 2.5 s after the close.
+  for (const source of ['event', 'poll']) {
+    const late = judgeFirst({variant: 'plain', engine: 'cua', rows: liveRows([...LIVE, line(LIVE_MARKS.closed + RELEASE_MS + 100, source, true)])});
+    assert.equal(late.verdict, 'FAIL', `${source}, last and late`);
+    assert.match(late.why, new RegExp(`came on again ${RELEASE_MS + 100} ms after the close`));
+    const j2 = judgeFirst({variant: 'plain', engine: 'cua', rows: liveRows([...LIVE, line(L + 4500, source, true)])});
+    assert.equal(j2.verdict, 'FAIL', source);
+    assert.match(j2.why, /complete mode came on again 524 ms after the close, after going off/);
+    assert.equal(offSince([...LIVE, line(L + 4500, source, true)], LIVE_MARKS.close), null);
+  }
+  // Complete mode on by an event line counts from the write before it, not from itself.
+  const onByEvent = recordFacts({record: [line(L, 'start'), line(L + 1599, 'event'), line(L + 3676, 'event', true)], openedAt: LIVE_MARKS.open, closingAt: LIVE_MARKS.close, closedAt: LIVE_MARKS.closed});
+  assert.deepEqual([onByEvent.completeOn.source, onByEvent.onAfterWriteMs], ['event', 2077]);
 });
 
 test('the sonoma variant and the vendor\'s engine are recorded with what they would be; the vendor needs no cua meta', () => {

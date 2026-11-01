@@ -161,23 +161,27 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
 /// registry; the default, a registry of the action's own, shares with nothing (the unit tests'). `beforeActivating` (the
 /// in-flight intervention check) runs under the registry's lock, so a user event that lands while the action waits
 /// behind another holder's activation stops it before its activation and activation click; `beforePosting` runs again
-/// just before the events, and `announce` once they are made and about to be posted.
+/// just before the events, and `announce` once they are made and about to be posted. Under route 3 the standing
+/// activation's subtype 1 is re-armed just before each ordering mouse down (`rearmingOrderingMouseDowns`).
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
                     foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {},
                     announce: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
   var release: (() -> Bool)?
   defer { _ = release?() }  // every path out of the action, error or success, ends its lease
+  var standing: FakeActivation?
   if route == .activation, let activation {
     // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
     // focusing click inside set_value's held activation).
     release = try activations.acquire(pid: activation.pid, beforeActivating: beforeActivating, make: { activation }, meta: &meta)
+    standing = activations.activation(of: activation.pid)
   }
   // The interval is stamped as the events are posted, so an error after them (route 4's restore) still says they were.
   func send() throws {
     try beforePosting()
-    let made = events()
+    var made = events()
     guard !made.isEmpty else { throw EngineError(name: "eventCreationFailed", "The mouse events could not be created.") }
+    if let standing { made = rearmingOrderingMouseDowns(made, rearm: standing.rearmEvent) }
     announce()
     meta.posting { _ = postToProcess(made, pid: pid, post: post); return true }
   }
@@ -185,6 +189,20 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     defer { meta.keyWindowRestored = foreground.keyWindowRestored }  // on a restore failure too
     try foreground.run(send)
   } else { try send() }
+}
+
+/// Route 3's re-arm (#200): `events` with `rearm`'s subtype 1, for the event's window, just before each ordering mouse
+/// down. The activation's own subtype 1 arms AppKit's `_mouseActivationInProgress` for one mouse down, which the
+/// activation click (or an earlier click under a held activation) consumes; an ordering mouse down that finds it cleared
+/// asks the window server to raise the window above the user's, after the guard has ended. Re-armed, the mouse down is
+/// taken as the activation's own: the window made key and the click delivered, with no ordering request. The pair goes
+/// out back to back on one thread through one `postToPid`, the subtype first.
+func rearmingOrderingMouseDowns(_ events: [CGEvent], rearm: (CGWindowID?) -> CGEvent?) -> [CGEvent] {
+  events.flatMap { event -> [CGEvent] in
+    guard isOrderingMouseDown(event) else { return [event] }
+    let window = event.getIntegerValueField(eventField(91))
+    return rearm(window > 0 ? CGWindowID(window) : nil).map { [$0, event] } ?? [event]
+  }
 }
 
 /// Typed text keyed unit by unit (the spec's Design, "Text"): the input source checked before every event and after the

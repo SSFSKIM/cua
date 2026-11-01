@@ -224,6 +224,22 @@ final class FocusHoldTests: XCTestCase {
     XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 1)
   }
 
+  /// #200: a click inside a held activation (a set_value's focusing click, a click amid a focus hold) runs no activation
+  /// of its own, but the hold's subtype 1 was consumed long ago: it is re-armed just before the click's mouse down.
+  func testAClickInsideAHeldActivationIsReArmedBeforeItsMouseDown() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try hold(connection, seam, meta: &meta)
+    let before = seam.posts.count
+    var clickMeta = self.meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
+                     targetActive: { false }, post: seam.system.post, meta: &clickMeta)
+    XCTAssertEqual(Array(seam.posts[before...]).map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)],
+                   "the re-arm, the click, and no deactivation while the hold holds")
+    XCTAssertEqual(activations.holders(target), 1)
+  }
+
   // MARK: Finding 2: a per-action activation leases the process's activation
 
   private func clickTarget() -> ClickTarget {
@@ -244,8 +260,8 @@ final class FocusHoldTests: XCTestCase {
     try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
                      targetActive: { false }, beforePosting: { connection.endFocusHold() }, post: seam.system.post, meta: &clickMeta)
     let during = Array(seam.posts[before...]).map(\.kind)
-    XCTAssertEqual(during, [.mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)],
-                   "no second activation, the click's events, and the deactivation only after them")
+    XCTAssertEqual(during, [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)],
+                   "no second activation (the subtype is the click's re-arm, #200), the click's events, and the deactivation only after them")
     XCTAssertNil(clickMeta.activationGuardMs, "the click shared the held activation")
     XCTAssertEqual(activations.holders(target), 0)
   }
@@ -260,7 +276,7 @@ final class FocusHoldTests: XCTestCase {
     try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
                      targetActive: { false }, beforePosting: { try self.hold(connection, seam, meta: &holdMeta) },
                      post: seam.system.post, meta: &clickMeta)
-    XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 1, "the hold shared the click's activation")
+    XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 2, "the hold shared the click's activation (the second is the click's re-arm, #200)")
     XCTAssertFalse(seam.posts.contains { $0.kind == .appKit(2) }, "the click's teardown never withdraws a held process")
     XCTAssertEqual(activations.holders(target), 1)
     connection.endFocusHold()

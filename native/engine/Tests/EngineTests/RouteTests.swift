@@ -454,8 +454,11 @@ final class ClickDeliveryTests: XCTestCase {
     var meta = meta()
     try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation, targetActive: { false },
                      post: seam.system.post, meta: &meta)
-    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)])
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)],
+                   "the activation, its re-arm just before the mouse down (#200), the click, the deactivation")
     XCTAssertEqual(seam.posts.compactMap(\.flags), [[], []], "no ⌘ on route 3's click")
+    XCTAssertEqual(seam.posts.compactMap(\.location), [CGPoint(x: 300, y: 400), CGPoint(x: 300, y: 400)], "the click itself unchanged")
+    XCTAssertEqual(seam.appKitWindows, [41, 41, 41], "each subtype names the click's window")
     XCTAssertEqual(meta.inputRoute, .activation)
     XCTAssertNotNil(meta.startedAt)
     XCTAssertNotNil(meta.activationGuardMs)
@@ -497,6 +500,74 @@ final class ClickDeliveryTests: XCTestCase {
                                           beforePosting: { throw userChanged("TextEdit") }, announce: { stopped += 1 },
                                           post: { _, _ in }, meta: &meta))
     XCTAssertEqual(stopped, 0, "an in-flight stop before the events moves no cursor")
+  }
+
+  /// #200: a route-3 click's mouse down into a key window of an app that believes itself active is an ordering click,
+  /// which AppKit answers by asking the window server to raise the window, unless subtype 1 has armed
+  /// `_mouseActivationInProgress`; the activation click (when posted) consumes that. So subtype 1 goes out again just
+  /// before every ordering mouse down: a double click's first press only (the second has click count 2).
+  func testADoubleClickIsReArmedBeforeItsFirstPressOnly() throws {
+    let seam = GuardSeam(frontmost: user)
+    let activation = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame, windowID: 41, system: seam.system)
+    var meta = meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 2, activation: activation, targetActive: { false },
+                     post: seam.system.post, meta: &meta)
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .mouse(.leftMouseDown),
+                                            .mouse(.leftMouseUp), .appKit(2)])
+  }
+
+  /// The activation click consumes subtype 1's arming, so the re-arm still goes out after it, just before the action's
+  /// mouse down, with nothing between the two.
+  func testTheReArmComesAfterTheActivationClickAndImmediatelyBeforeTheMouseDown() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.activationPoint = CGPoint(x: 110, y: 76)  // inside the frame, on the window itself
+    let activation = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame, windowID: 41, system: seam.system)
+    var meta = meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation, targetActive: { false },
+                     post: seam.system.post, meta: &meta)
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(1), .mouse(.leftMouseDown),
+                                            .mouse(.leftMouseUp), .appKit(2)])
+    XCTAssertEqual(Array(seam.posts.compactMap(\.location).suffix(2)), [CGPoint(x: 300, y: 400), CGPoint(x: 300, y: 400)])
+  }
+
+  /// A right or middle click is no ordering click to AppKit's mouse-down handler: no re-arm.
+  func testOtherButtonsAreNotReArmed() throws {
+    for button in [MouseButton.right, .middle] {
+      let seam = GuardSeam(frontmost: user)
+      let activation = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame, windowID: 41, system: seam.system)
+      var meta = meta()
+      try deliverClick(clickTarget(), route: .activation, button: button, count: 1, activation: activation, targetActive: { false },
+                       post: seam.system.post, meta: &meta)
+      XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 1, "\(button)")
+    }
+  }
+
+  /// A drag's left down is an ordering click; its dragged events and its up are not.
+  func testADragIsReArmedBeforeItsMouseDownOnly() throws {
+    let seam = GuardSeam(frontmost: user)
+    let activation = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: frame, windowID: 41, system: seam.system)
+    var meta = meta()
+    try deliverPointer(to: target, route: .activation, activation: activation, post: seam.system.post, meta: &meta) {
+      dragEvents(from: CGPoint(x: 300, y: 400), to: CGPoint(x: 400, y: 500), window: clickTarget(), flags: [])
+    }
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .appKit(1), .mouse(.leftMouseDown), .other, .other, .other, .mouse(.leftMouseUp), .appKit(2)])
+  }
+
+  func testTheOrderingMouseDownIsAppKitsSingleLeftDownWithoutCommandAlone() {
+    func down(_ type: NSEvent.EventType = .leftMouseDown, count: Int = 1, flags: CGEventFlags = []) -> CGEvent {
+      let event = NSEvent.mouseEvent(with: type, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+                                     eventNumber: 1, clickCount: count, pressure: 1)!.cgEvent!
+      event.flags = flags
+      return event
+    }
+    XCTAssertTrue(isOrderingMouseDown(down()))
+    XCTAssertTrue(isOrderingMouseDown(down(flags: [.maskShift])))
+    XCTAssertTrue(isOrderingMouseDown(down(flags: [.maskCommand, .maskShift])), "⌘ with another modifier still orders")
+    XCTAssertFalse(isOrderingMouseDown(down(flags: [.maskCommand])), "⌘ alone: AppKit's background ⌘-click")
+    XCTAssertFalse(isOrderingMouseDown(down(count: 2)))
+    XCTAssertFalse(isOrderingMouseDown(down(.leftMouseUp)))
+    XCTAssertFalse(isOrderingMouseDown(down(.rightMouseDown)))
+    XCTAssertFalse(isOrderingMouseDown(down(.leftMouseDragged, count: 0)))
   }
 
   func testTheForcedSpikeRoutesPostWithoutTheActivation() throws {
@@ -667,6 +738,8 @@ struct GuardPost: Equatable {
 /// order and the activation point answered.
 final class GuardSeam {
   var posts: [GuardPost] = []
+  /// The window number each AppKit-defined post names, in order.
+  var appKitWindows: [Int] = []
   var holds = 0
   var releases = 0
   var releasedAt: Double?
@@ -721,7 +794,9 @@ final class GuardSeam {
       let made = NSEvent(cgEvent: event)
       let kind: GuardPost.Kind
       switch made?.type {
-      case .appKitDefined?: kind = .appKit(Int(made!.subtype.rawValue))
+      case .appKitDefined?:
+        kind = .appKit(Int(made!.subtype.rawValue))
+        self.appKitWindows.append(made!.windowNumber)
       case let type? where [.leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp, .otherMouseDown, .otherMouseUp].contains(type):
         kind = .mouse(type)
       default: kind = .other

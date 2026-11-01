@@ -79,7 +79,7 @@ export function engineProcesses(root, {proc = '/proc', fs = nodeFs} = {}) {
 }
 
 // The distinct engines seen across observations (pids dropped: a restarted engine of the same executable is the same).
-// An observation recorded before the service was read keeps no `service`.
+// An observation without a `service` (recorded before M3's service attestation) is kept as it is, and judged unproven.
 export function mergeObservations(...lists) {
   const seen = new Map();
   for (const {pid, ...observed} of lists.flat()) seen.set(JSON.stringify([observed.exe, observed.kind, observed.parent, observed.service]), observed);
@@ -156,8 +156,11 @@ export function engineAnsweredProblem(record, name) {
   const stray = observed.find(o => o.parent !== TRUSTED_WORKER);
   if (stray) return `${name}: the engine ran as a child of ${stray.parent ?? 'an unknown process'}, not of the trusted worker (${TRUSTED_WORKER})`;
   // From #171 M3 each engine runs behind its own lane's service (src/runtime/launch.mjs): the vendor engine behind
-  // @oai/sky's, cua-engine behind cua's. An observation from before the service was read carries no `service`.
-  const driven = observed.find(o => 'service' in o && o.service !== requested);
+  // @oai/sky's, cua-engine behind cua's, read from its trusted worker (serviceOf). Every observation must carry that
+  // evidence: one without it (a run recorded before M3's service attestation, or a field lost) proves no service.
+  const unattested = observed.find(o => !('service' in o));
+  if (unattested) return `${name}: an engine observation of ${unattested.exe} carries no service evidence, so which service drove it is unproven`;
+  const driven = observed.find(o => o.service !== requested);
   if (driven) return `${name}: ${driven.service ? `the ${driven.service}` : 'an unknown'} service drove the engine, not the ${requested} lane's (the trusted worker's CUA_SKY_SERVICE)`;
   return null;
 }

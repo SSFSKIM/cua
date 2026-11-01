@@ -87,12 +87,12 @@ function engineAttested(meta) {
 }
 const approvedAttested = approved => (approved?.build ? `${attestedBuild(approved.build)} (cua ${approved.engineVersion ?? '?'}, ${approved.bundlePath ?? '?'})` : null);
 // The services a Linux run's engines were driven by, as the run observed them below its serves (#171 M3,
-// ../repl-parity/engine-answered.mjs engineProcesses), or null for a run that observed none (one from before the
-// service was read keeps its recorded meta.service.answered).
+// ../repl-parity/engine-answered.mjs engineProcesses), an observation without that evidence named `unattested`; null
+// for a run that observed no engine (its recorded meta.service.answered stands).
 function linuxServices(meta) {
   if (meta.platform !== 'linux') return null;
-  const observed = (meta.nativeEngine?.observed ?? []).filter(o => 'service' in o);
-  return observed.length ? [...new Set(observed.map(o => o.service ?? 'an unknown service'))].join(', ') : null;
+  const observed = meta.nativeEngine?.observed ?? [];
+  return observed.length ? [...new Set(observed.map(o => ('service' in o ? o.service ?? 'an unknown service' : 'unattested')))].join(', ') : null;
 }
 // The facts a run attests, as the strings the summary compares and prints.
 export function attestation(meta) {

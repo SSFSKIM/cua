@@ -73,8 +73,10 @@ test('a Linux run attests its engine by kind and source, never by a per-run path
   // From M3 each lane's engine runs behind its own service, read from the trusted worker (engine-answered.mjs).
   assert.equal(vendor.service, 'computer surface, answered by vendor');
   assert.equal(cua.service, 'computer surface, answered by cua');
-  const older = runMeta('vendor', {observed: [{exe: '/x/sky_linux_x64', kind: 'vendor', parent: 'trusted-worker.mjs'}]});
-  assert.equal(attestation(older).service, 'computer surface, answered by vendor', 'a run from before the service was read keeps its recorded service');
+  // an observation without service evidence is attested as such, never as the service the run assumed, and fails the judge
+  const older = runMeta('vendor', {observed: [{exe: runMeta('vendor').nativeEngine.expected, kind: 'vendor', parent: 'trusted-worker.mjs'}]});
+  assert.equal(attestation(older).service, 'computer surface, answered by unattested');
+  assert.match(engineProblem(older, 'run-1'), /carries no service evidence/);
 });
 
 test('engineProblem on Linux: from M3 the cua lane\'s engine is driven by cua\'s service, the vendor lane\'s by the vendor\'s', () => {

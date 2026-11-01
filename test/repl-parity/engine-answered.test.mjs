@@ -95,12 +95,25 @@ test('engineAnsweredProblem: from M3 each lane\'s engine is driven by its own se
     'run: the vendor service drove the engine, not the cua lane\'s (the trusted worker\'s CUA_SKY_SERVICE)');
   assert.equal(engineAnsweredProblem({requested: 'vendor', expected: VENDOR, observed: [{...vendor, service: null}]}, 'run'),
     'run: an unknown service drove the engine, not the vendor lane\'s (the trusted worker\'s CUA_SKY_SERVICE)');
-  assert.equal(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [{exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs'}]}, 'run'), null,
-    'an observation recorded before the service was read is judged as it was');
+});
+
+// The task review (fix round 1): service evidence is required, never assumed from its absence.
+test('engineAnsweredProblem: an observation without service evidence proves no service, alone or beside attested ones', () => {
+  const own = {exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs', service: 'cua'}, vendor = {exe: VENDOR, kind: 'vendor', parent: 'trusted-worker.mjs', service: 'vendor'};
+  const strip = ({service, ...rest}) => rest;
+  const unproven = /^run: an engine observation of .* carries no service evidence, so which service drove it is unproven$/;
+  assert.match(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [strip(own)]}, 'run'), unproven);
+  assert.match(engineAnsweredProblem({requested: 'vendor', expected: VENDOR, observed: [strip(vendor)]}, 'run'), unproven);
+  // a mixture: one attested observation does not cover another that carries no evidence, in either order
+  assert.match(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [own, {...strip(own), parent: 'trusted-worker.mjs'}]}, 'run'), unproven);
+  assert.match(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [strip(own), own]}, 'run'), unproven);
+  // merged observations keep the difference, so the judge sees the unattested one
+  assert.match(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: mergeObservations([own], [strip(own)])}, 'run'), unproven);
+  assert.equal(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: mergeObservations([own], [{...own, pid: 9}])}, 'run'), null);
 });
 
 test('engineAnsweredProblem: sound only when the requested engine, at the expected executable, answered alone as the trusted worker\'s child', () => {
-  const own = {exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs'}, vendor = {exe: VENDOR, kind: 'vendor', parent: 'trusted-worker.mjs'};
+  const own = {exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs', service: 'cua'}, vendor = {exe: VENDOR, kind: 'vendor', parent: 'trusted-worker.mjs', service: 'vendor'};
   assert.equal(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: [own]}, 'run'), null);
   assert.equal(engineAnsweredProblem({requested: 'vendor', expected: VENDOR, observed: [vendor]}, 'run'), null);
   assert.match(engineAnsweredProblem({requested: 'cua', expected: OWN, observed: []}, 'run'), /^run: no engine process answered/);
@@ -118,7 +131,7 @@ test('engineAnsweredProblem: sound only when the requested engine, at the expect
 
 test('laneEngineProblem: a run that names its engine has a sound observation for every native case', async () => {
   const {laneEngineProblem} = await import('../../scripts/repl-parity/engine-answered.mjs');
-  const own = {exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs'};
+  const own = {exe: OWN, kind: 'cua', parent: 'trusted-worker.mjs', service: 'cua'};
   const entry = id => ({case: id, connection: 'connection-2', requested: 'cua', expected: OWN, observed: [own]});
   const meta = {engine: 'cua', caseIds: ['native/a', 'native/b', 'cells/x'], engineAnswered: [entry('native/a'), entry('native/b')]};
   assert.equal(laneEngineProblem(meta), null);

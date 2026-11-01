@@ -4,9 +4,10 @@
 // Mac: sessions through ./session.mjs, cues spoken with `say`, the go file the operator touches once the owner is done,
 // the harness scenes' activation, the engine's stop and status through this checkout's CLI, engine.json's switch, the
 // approved bundle's activation watcher and focus probe, item 1's screen recording (./recording.mjs), and #200's window
-// placement, order watcher, delivery reads and the fixture's relaunch (./raise.mjs), and #244's first-observation reads of
-// the fixture's accessibility record (./first-observation.mjs). Whatever the item changed outside its sessions is put back
-// in `finally`: engine.json as it was, the watchers and the recorder stopped, every session closed.
+// placement, order watcher, delivery reads and the fixture's relaunch (./raise.mjs), #244's first-observation reads of
+// the fixture's accessibility record (./first-observation.mjs), and #187's slot (./item-187.mjs: engine.json's
+// pasteFocusEnforcement switch, the composition, each row's readings). Whatever the item changed outside its sessions is
+// put back in `finally`: engine.json as it was, the watchers and the recorder stopped, every session closed.
 import {execFileSync, spawn} from 'node:child_process';
 import {appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
@@ -26,6 +27,8 @@ import {BUILT_IN_SCREEN, coverOver, farPoint, liveWindowList, overlaysAbove, pla
 import {liveSourceSwitch, restoreAfterFailure, sourceTargetProblem, switchSource} from './input-source.mjs';
 import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
 import {firstTasks} from './first-observation.mjs';
+import {item187Tasks, liveDeps187, stop187} from './item-187.mjs';
+import {readConsent} from './input-source.mjs';
 import {liveElementFrame, liveMoveWindow, raiseTasks, stopRaiseWatch} from './raise.mjs';
 import {openDriven} from './session.mjs';
 import {latinSourceProblem, STILL_TAIL_MS, STILL_WAIT_MAX_MS} from './timing.mjs';
@@ -53,6 +56,9 @@ export const cursorOffSettings = text => patchedSettings(text, {cursor: false});
 
 // engine.json with the cursor's diagnostic arm `arm` (`cursorDebug`), the other keys kept.
 export const cursorDebugSettings = (text, arm) => patchedSettings(text, {cursorDebug: arm});
+
+// engine.json with #187's paste slot switch (`pasteFocusEnforcement`, true: arm B), the other keys kept.
+export const pasteFocusSettings = (text, on) => patchedSettings(text, {pasteFocusEnforcement: on});
 
 // The Mac's io for `runSteps`. `run`: the harness scenes' run directory; `out`: the item's evidence directory; `gap`:
 // a series' signpost reads, run in its waits.
@@ -108,6 +114,11 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
       'engine-json-off': async () => writeSettings(cursorOffSettings),
       // Likewise, the cursor's diagnostic arm written (the engine reads it at its next launch).
       'engine-json-arm': async ([arm]) => ({...writeSettings(text => cursorDebugSettings(text, arm)), arm}),
+      // Likewise, #187's paste slot switch: `on` is arm B, `off` arm A written explicitly.
+      'engine-json-paste': async ([which]) => {
+        if (!['on', 'off'].includes(which)) throw new Error('engine-json-paste takes on or off');
+        return {...writeSettings(text => pasteFocusSettings(text, which === 'on')), pasteFocusEnforcement: which === 'on'};
+      },
       // The default's 60 Hz cap, proven before the series of the arm that lifts it (`uncapped`; ./frames.mjs): the
       // approved bundle's cursor probe glides twice and rocks, on its own transparent window, nothing driven, with the
       // arm and then without it; the window server's frames inside each glide and the rock counted. Recorded, never stopping the
@@ -224,6 +235,7 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
     // What the finally puts back: engine.json, and the engine stopped so none keeps running under the changed file.
     cleanup: async ctx => {
       await stopRaiseWatch(ctx);
+      await stop187(ctx);
       if (ctx.settingsChanged) {
         await ctx.io.tasks['engine-json-restore']();
         await ctx.io.tasks['engine-stop']();
@@ -242,6 +254,9 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
     textView: textViewOf, moveWindow: liveMoveWindow(), elementFrame: liveElementFrame(), scenes: args => scenes(args, 120_000)}));
   // #244's tasks (./first-observation.mjs): the relaunch with the variant's switch, the marks, the record's reads.
   Object.assign(io.tasks, firstTasks({run}));
+  // #187's tasks (./item-187.mjs): the slot's preconditions and placement, the composition, each row's readings.
+  Object.assign(io.tasks, item187Tasks(liveDeps187({io, run, out, guard, cli: args => cli(args), settingsFile, probe: args => runProbe(enginePaths().bundle, args),
+    bundle: enginePaths().bundle, windowList: () => liveWindowList(), moveWindow: liveMoveWindow(), consent: () => readConsent(out)})));
   function writeSettings(write) {
     const text = existsSync(settingsFile) ? readFileSync(settingsFile, 'utf8') : null;
     if (existsSync(before) || existsSync(`${before}.absent`)) throw new Error(`${before} exists from an earlier run: restore engine.json from it by hand, then remove it`);
@@ -328,7 +343,7 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
       else if (step.series) record({step: n, kind: 'series', series: step.series, counts: step.counts});
       else if (step.task) {
         const result = await io.tasks[step.task](step.args ?? [], ctx);
-        if (step.task === 'engine-json-off' || step.task === 'engine-json-arm') ctx.settingsChanged = true;
+        if (['engine-json-off', 'engine-json-arm', 'engine-json-paste'].includes(step.task)) ctx.settingsChanged = true;
         if (step.task === 'engine-json-restore') ctx.settingsChanged = false;
         if (step.task === 'watch-start') ctx.watch = result.watch;
         if (step.task === 'watch-stop') ctx.watch = null;

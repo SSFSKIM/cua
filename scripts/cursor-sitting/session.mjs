@@ -41,9 +41,10 @@ export function parseCells(text) {
 // before it stopped; route 3's delivery guard after a pointer action's events (#200: its restores, the hold's release
 // time) and the connection's after-action repairs, which a later call carries (#200: the flashes after an action's
 // release, keyed by its delivery's post time); an observation's own diagnostics (#244: the role read, what enablement read
-// and set, the web area's wait).
+// and set, the web area's wait); a paste's value-free diagnostics (#187: its stage, waits, read time against ⌘V, the key
+// focus at ⌘V, and the slot's arm with what its activation did, `focusEnforcement`).
 const KEPT_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'actionInterval', 'receivedAt', 'hidIdleMs', 'intervention', 'entered', 'delivery',
-  'afterActionRepairs', 'observation'];
+  'afterActionRepairs', 'observation', 'paste'];
 
 // What the sitting keeps of a js reply: the cell's answer, the route the engine reported for the last call, the
 // attested engine, that call's meta (KEPT_META, the keys it carried), and the images it emitted (base64, SHOT only).

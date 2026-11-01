@@ -107,6 +107,17 @@
 //       <out>/item-244-<variant>-<engine>.jsonl. `drive` then judges the engine's variants; `judge` writes every variant
 //       on both engines to <out>/item-244.md and prints it. Exit 1 unless cua's plain variant passes (judge), or unless
 //       nothing stopped and every judged variant run passes (drive).
+//   cursor-sitting.mjs paste-187 drive --run <dir> --out <dir> [--part all|a|b | --vendor] [--quiet] [--dry-run]
+//   cursor-sitting.mjs paste-187 judge --out <dir>
+//       #187's live slot (./cursor-sitting/item-187.mjs; the runbook's "Item 187"): pastes into Chrome for Testing's
+//       counters page behind a Hangul composition in TextEdit's run window, then the same under arm B, the engine.json
+//       switch pasteFocusEnforcement. `drive` checks the preconditions (the owner's yes to the source switch recorded,
+//       every scene up, Chrome on the counters page, engine.json without the switch), places the harness windows, runs
+//       Part A (chrome/composing@textedit 18 × 2, then the three controls) and, unless every Part A row delivered, Part B
+//       (ABAB blocks of 9 rows, 4 a side, then the controls under B), each item recorded in <out>/item-187-<name>.jsonl,
+//       and selects the owner's source again; `--part a` or `--part b` runs one part; `--vendor` runs the vendor's 9 paste
+//       rows, refused unless arm B has run and some B row did not deliver. `judge` writes <out>/item-187.md. Exit 1
+//       unless arm B lands or the end-early rule ended the slot with Part A delivering every row.
 //   cursor-sitting.mjs remote prepare|enroll|run --kit <dir> [--port n] [--run <dir> --out <dir>] [--quiet] [--dry-run]
 //       Acceptance 8's loopback device (./cursor-sitting/remote.mjs): prepare the kit (and print what it still needs),
 //       enrol it on a loopback relay, then run: the relay and the agent started, three client sessions driven
@@ -125,6 +136,7 @@ import {PLANS} from './cursor-sitting/plans.mjs';
 import {CASES, elementFrameTool, ENGINES, itemOf, judgeCase, moveWindowTool, orderFileOf, orderLines, orderWatchProbe, placeSteps, raiseMarkdown,
   raiseSteps} from './cursor-sitting/raise.mjs';
 import {ENGINES as FIRST_ENGINES, firstMarkdown, firstSteps, itemOf as firstItemOf, judgeFirst, VARIANTS} from './cursor-sitting/first-observation.mjs';
+import {endEarly, item187Markdown, ITEMS as ITEMS_187, judge187, judgedOk, menuTool, plan187, vendorAllowed} from './cursor-sitting/item-187.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
 import {liveIo, runSteps} from './cursor-sitting/runner.mjs';
 import {clipPathProblem, REPO_ROOT} from './cursor-sitting/recording.mjs';
@@ -137,7 +149,7 @@ const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'string'}, aside: {type: 'string'}, run: {type: 'string'}, out: {type: 'string'},
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
   arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'}, source: {type: 'string'}, 'no-clip': {type: 'boolean', default: false}, still: {type: 'boolean', default: false}, control: {type: 'boolean', default: false},
-  case: {type: 'string'}, variant: {type: 'string'}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
+  case: {type: 'string'}, variant: {type: 'string'}, part: {type: 'string'}, vendor: {type: 'boolean', default: false}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
 const absolute = (values, name) => {
@@ -330,6 +342,52 @@ async function driveFirstObservation(values) {
   return !stopped && judged.every(j => j.verdict === 'recorded' || j.verdict === 'PASS') ? 0 : 1;
 }
 
+// #187's evidence: every item's rows, from <out>/item-187-<name>.jsonl (the watchers' files left out). -> {item: rows}.
+export function read187(out) {
+  if (!existsSync(out)) return {};
+  return Object.fromEntries(readdirSync(out).map(f => f.match(/^item-(187-[\w-]+)\.jsonl$/)?.[1]).filter(name => name && !name.endsWith('-order'))
+    .map(name => [name, readJsonl(join(out, `item-${name}.jsonl`))]));
+}
+const rows187 = rows => lastAttempt(rows ?? []).filter(r => r.kind === 'task' && r.task === '187-row' && r.result).map(r => r.result);
+
+// #187's drive: the plan's items in order, each its own item; an item that throws is marked in its jsonl and stops the
+// items after it but the last, which selects the owner's source again. Part B is skipped, in a whole run, when every
+// Part A row delivered (the end-early rule, read from Part A's evidence).
+async function drive187(values) {
+  const part = values.part ?? 'all';
+  if (!['all', 'a', 'b'].includes(part)) throw new Error('--part takes all, a or b');
+  if (values.vendor && values.part) throw new Error('--vendor runs the vendor lane alone; it takes no --part');
+  const out = absolute(values, 'out'), dryRun = values['dry-run'];
+  const run = dryRun ? values.run ?? '/nonexistent' : absolute(values, 'run');
+  if (values.vendor && !dryRun) {
+    const allowed = vendorAllowed(judge187(read187(out)));
+    if (!allowed.allowed) throw new Error(`the vendor lane runs only once arm B has failed to deliver: ${allowed.why}`);
+  }
+  const io = liveIo({run, out, quiet: values.quiet});
+  let steps = 0, stopped = null, early = null;
+  for (const {item, stage, steps: plan} of plan187({part, vendor: values.vendor})) {
+    if (stopped && stage !== 'end') continue;
+    if (stage === 'b' && part === 'all' && !dryRun) {
+      early ??= endEarly(rows187(read187(out)[ITEMS_187.a1]));
+      if (early.applies) { print(`Part B skipped: ${early.why} (the end-early rule)`); continue; }
+    }
+    steps += plan.length;
+    try { await runSteps(plan, {item, out, io, dryRun}); } catch (error) {
+      stopped = `${item}: ${error.message}`;
+      appendFileSync(join(out, `item-${item}.jsonl`), `${JSON.stringify({item, at: Date.now(), kind: 'stopped', error: error.message})}\n`);
+      print(`stopped at ${stopped}; the items after it were not run`);
+    }
+  }
+  if (dryRun) {
+    print(`dry run: ${steps} steps, nothing sent${part === 'all' && !values.vendor ? ' (Part B\'s steps included: they run unless every Part A row delivers)' : ''}`);
+    return 0;
+  }
+  const judged = judge187(read187(out));
+  writeFileSync(join(out, 'item-187.md'), item187Markdown(judged));
+  print(item187Markdown(judged));
+  return !stopped && judgedOk(judged) ? 0 : 1;
+}
+
 async function drive(steps, {item, values, gap = null}) {
   const out = absolute(values, 'out');
   const run = values['dry-run'] ? values.run ?? '/nonexistent' : absolute(values, 'run');
@@ -348,6 +406,7 @@ export async function main(argv) {
     print(`#200's order watcher: ${orderWatchProbe()}`);
     print(`#200's window mover: ${moveWindowTool()}`);
     print(`#200's element-frame reader: ${elementFrameTool()}`);
+    print(`#187's menu reader: ${menuTool()}`);
     return 0;
   }
   if (command === 'save') {
@@ -517,6 +576,17 @@ export async function main(argv) {
     }
     throw new Error('first-observation takes drive or judge');
   }
+  if (command === 'paste-187') {
+    const sub = positionals[0];
+    if (sub === 'drive') return drive187(values);
+    if (sub === 'judge') {
+      const out = absolute(values, 'out'), judged = judge187(read187(out));
+      writeFileSync(join(out, 'item-187.md'), item187Markdown(judged));
+      print(item187Markdown(judged));
+      return judgedOk(judged) ? 0 : 1;
+    }
+    throw new Error('paste-187 takes drive or judge');
+  }
   if (command === 'remote') {
     const kit = absolute(values, 'kit'), sub = positionals[0];
     if (sub === 'prepare') {
@@ -545,7 +615,7 @@ export async function main(argv) {
     }
     throw new Error('remote takes prepare, enroll or run');
   }
-  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | source consent|restore | clip frames|order | raise drive|judge | first-observation drive|judge | remote prepare|enroll|run (see the header)');
+  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | source consent|restore | clip frames|order | raise drive|judge | first-observation drive|judge | paste-187 drive|judge | remote prepare|enroll|run (see the header)');
 }
 
 if (process.argv[1] && SCRIPT === resolve(process.argv[1])) {

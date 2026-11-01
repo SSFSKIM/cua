@@ -39,7 +39,12 @@
 // times, so it is a failure under B, and the judge counts the restores.
 //   vendor  9 paste rows on the vendor's engine, recorded only, run only once B has failed to deliver.
 // Arm B lands only if every B row delivers exactly, with no page mousedown or click, no menu opened, no raise, no front
-// app change, the composition kept, every clipboard restore intact, the arm confirmed, and no control regressing under B.
+// app change, the composition kept, every clipboard restore intact, the arm confirmed, and no control regressing under B
+// against a complete, valid A baseline (each control whole under both arms: every row valid, its order watcher whole, its
+// B rows' arm confirmed; anything less is incomplete). The slot succeeds when B lands, or when the end-early rule ends it
+// with Part A's controls complete, and in either case only once 187-end has selected the owner's source again and read
+// it back. Every evidence gap (no counter read before the act, a menu snapshot whose reads did not all succeed and no
+// verified notification watch) makes the row incomplete, never clean.
 // Arm A is diagnostic: which stage of the paste fails (`cua/paste`'s stage, read and effect waits).
 import {execFileSync, spawn} from 'node:child_process';
 import {closeSync, existsSync, openSync, readFileSync, writeFileSync} from 'node:fs';
@@ -260,9 +265,9 @@ export function pageAgreement({mid = null, after = null}, expectedLength) {
 }
 
 // Whether Chrome showed an open menu (menu-open.swift's read): a menu bar item selected, a menu among the app's children,
-// or the focus in a menu; null when it could not be read.
+// or the focus in a menu; null unless the helper says every read of the snapshot succeeded (`ok`).
 export function menuOpened(read) {
-  if (read?.trusted !== true) return null;
+  if (read?.trusted !== true || read.ok !== true) return null;
   return read.selected > 0 || read.openMenus > 0 || ['AXMenu', 'AXMenuItem'].includes(read.focusedRole);
 }
 
@@ -288,11 +293,13 @@ export function rowRecord({spec, prepare = null, act = null, check = null, page 
             : !act.ok ? `the act cell failed: ${act.error}`
               : !check?.ok ? `the read-back failed: ${check?.error ?? 'no answer'}`
                 : check.value?.invalid ? `the read-back: ${check.value.invalid}`
+                  : page && !page.mid ? 'no page counters before the act: the row\'s counter evidence is incomplete'
                   : background && spec.engine === 'cua' && !freshActivation(meta) ? 'no fresh activation (no activationGuardMs, or focusEnforcement.activated false): the act ran under a held activation'
                     : background && stateAtStart !== null && stateAtStart !== 'front-above' ? `the window order at the act was ${stateAtStart}, not the user window above the driven one`
                       : front && front.mid !== front.expected ? `the frontmost process before the act was ${front.mid ?? 'unreadable'}, not ${front.expected}`
                         : null;
-  const opened = menu ? (menu.observed > 0 ? true : menuOpened(menu.read)) : null;
+  // No menu opened needs a whole snapshot, or a notification watch the helper verified it registered; else unread.
+  const opened = menu ? (menu.observed > 0 ? true : menuOpened(menu.read) ?? (menu.watchVerified === true ? false : null)) : null;
   const armMeta = metaArm(paste), other = spec.arm === 'A' ? 'B' : 'A';
   const armConfirmed = ARMS.includes(spec.arm) ? (armStatus === spec.arm || armMeta === spec.arm) && armStatus !== other && armMeta !== other : null;
   return {ok: invalid === null && delivered, key: spec.key, item: spec.item, group: spec.group, id: rowId(spec.group, spec.method, spec.string), arm: spec.arm, block: spec.block,
@@ -304,7 +311,8 @@ export function rowRecord({spec, prepare = null, act = null, check = null, page 
     front: front && {...front, changed: front.after !== front.expected || activations.length > 0},
     activations: activations.map(a => ({bundleId: a.bundleId ?? null, at: a.at ?? null})), raises: raisedAt.length, raisedAt, stateAtStart, userKept,
     clipboardRestored: clipboard ? clipboard.mid !== null && clipboard.mid === clipboard.after : null,
-    menu: menu && {selected: menu.read?.selected ?? null, openMenus: menu.read?.openMenus ?? null, focusedRole: menu.read?.focusedRole ?? null, observed: menu.observed ?? 0, opened},
+    menu: menu && {snapshot: menu.read?.ok === true && menu.read?.trusted === true, selected: menu.read?.selected ?? null, openMenus: menu.read?.openMenus ?? null,
+      focusedRole: menu.read?.focusedRole ?? null, observed: menu.observed ?? 0, watchVerified: menu.watchVerified === true, opened},
     armStatus, armMeta, armConfirmed};
 }
 
@@ -346,8 +354,30 @@ export function summarize(rows) {
     activationToCommandVMs: spread(valid.map(r => r.paste?.focusEnforcement?.activationToCommandVMs)), clickToCommandVMs: spread(valid.map(r => r.paste?.focusEnforcement?.clickToCommandVMs))};
 }
 
-// Whether arm B lands (the 3b ruling). `bRows`, `aRows`: 187-B's rows by arm; `controls`: [{group, a, b, recorded}];
-// `watcher`: 187-B's order-watch-stop result; `stopped`: why an item stopped. -> {verdict, why, fail, short, ...}.
+// Why a background item's order-watcher record does not cover it, or null: an end record, no gap past WATCH_GAP_MS.
+const watcherProblem = watcher => (!watcher?.ok ? 'the order watcher\'s record is missing or has no end'
+  : !(watcher.maxGapMs <= WATCH_GAP_MS) ? `the order watcher's longest gap was ${watcher.maxGapMs} ms, past ${WATCH_GAP_MS}` : null);
+
+// Why a control item does not give complete, valid coverage under `arm`: run, not stopped, every row recorded and valid,
+// its order watcher whole (a composing control), and under B every row's arm confirmed by the engine. `c`: {group, arm,
+// recorded, stopped, rows, watcher}. -> [why].
+export function controlCoverage(c) {
+  const label = `the ${groupName(c.group)} control under arm ${c.arm}`;
+  if (!c.recorded) return [`the ${groupName(c.group)} control was not run under arm ${c.arm}`];
+  const problems = [];
+  if (c.stopped) problems.push(`${label} stopped: ${c.stopped}`);
+  if (c.rows.length < ROWS.length) problems.push(`${label} has ${c.rows.length} of ${ROWS.length} rows`);
+  const invalid = c.rows.filter(r => r.invalid !== null).length;
+  if (invalid) problems.push(`${label} has ${invalid} invalid row(s)`);
+  if (GROUPS[c.group].user) { const w = watcherProblem(c.watcher); if (w) problems.push(`${label}: ${w}`); }
+  const unconfirmed = c.arm === 'B' ? c.rows.filter(r => r.armConfirmed !== true).length : 0;
+  if (unconfirmed) problems.push(`${label}: arm B is not confirmed by the engine on ${unconfirmed} row(s)`);
+  return problems;
+}
+
+// Whether arm B lands (the 3b ruling). `bRows`, `aRows`: 187-B's rows by arm; `controls`: [{group, a, b}], each side a
+// control item's coverage input (controlCoverage); `watcher`: 187-B's order-watch-stop result; `stopped`: why an item
+// stopped. -> {verdict, why, fail, short, ...}.
 function judgeB({ran, bRows, aRows, controls, watcher, stopped, early}) {
   if (!ran) return {verdict: early?.applies ? 'NOT RUN (end-early: Part A delivered every row)' : 'NOT RUN', why: early?.applies ? [early.why] : [], fail: [], short: [], regressions: [], raised: []};
   const fail = [], short = [];
@@ -362,15 +392,18 @@ function judgeB({ran, bRows, aRows, controls, watcher, stopped, early}) {
   count(bRows.filter(r => r.userKept === false).length, 'B row(s) that disturbed the composition');
   count(bRows.filter(r => r.clipboardRestored === false).length, 'B row(s) whose clipboard restore did not hold');
   count(bRows.filter(r => r.armConfirmed !== true).length, 'B row(s) whose arm the engine did not confirm (engine status .status.pasteFocusEnforcement or the cua/paste meta\'s arm)');
+  // A regression is judged only against a complete, valid A baseline, row by matching row, and only on B rows that are
+  // valid with the engine confirming arm B; anything less leaves the comparison incomplete, never passed.
   const regressions = [];
   for (const c of controls) {
-    if (!c.recorded) { short.push(`the ${groupName(c.group)} control was not run under arm B`); continue; }
-    if (c.b.length < ROWS.length) short.push(`the ${groupName(c.group)} control under arm B has ${c.b.length} of ${ROWS.length} rows`);
-    for (const r of c.b) {
-      const before = c.a.find(x => x.id === r.id);
-      if (r.invalid !== null) { short.push(`${r.id} under arm B is invalid (${r.invalid})`); continue; }
-      const lost = before?.invalid === null && before.delivered && !r.delivered;
-      const added = interferenceOf(r).filter(f => !before || !interferenceOf(before).includes(f));
+    const baseline = controlCoverage(c.a);
+    if (baseline.length) short.push(`no complete A baseline for the ${groupName(c.group)} control: ${baseline.join('; ')}`);
+    short.push(...controlCoverage(c.b));
+    for (const r of c.b.rows) {
+      const before = c.a.rows.find(x => x.id === r.id);
+      if (r.invalid !== null || r.armConfirmed !== true || !before || before.invalid !== null) continue;
+      const lost = before.delivered && !r.delivered;
+      const added = interferenceOf(r).filter(f => !interferenceOf(before).includes(f));
       if (lost || added.length) regressions.push({id: r.id, lost, added});
     }
   }
@@ -381,8 +414,8 @@ function judgeB({ran, bRows, aRows, controls, watcher, stopped, early}) {
   if (invalid.length) short.push(`${invalid.length} B row(s) invalid: ${Object.entries(tally(invalid.map(r => r.invalid))).map(([w, n]) => `${w} × ${n}`).join('; ')}`);
   const unread = bRows.filter(r => r.menu && r.menu.opened === null).length;
   if (unread) short.push(`Chrome's menus could not be read after ${unread} B row(s)`);
-  if (!watcher?.ok) short.push('the window-order watcher\'s record of Part B is missing or has no end');
-  else if (!(watcher.maxGapMs <= WATCH_GAP_MS)) short.push(`the window-order watcher's longest gap was ${watcher.maxGapMs} ms, past ${WATCH_GAP_MS}`);
+  const w = watcherProblem(watcher);
+  if (w) short.push(`Part B: ${w}`);
   if (stopped.length) short.push(...stopped);
   const verdict = fail.length ? 'DOES NOT LAND' : short.length ? 'INCOMPLETE' : 'LANDS';
   return {verdict, why: fail.length ? fail : short, fail, short, regressions, raised: raised.map(r => ({key: r.key, raisedAt: r.raisedAt}))};
@@ -391,8 +424,21 @@ function judgeB({ran, bRows, aRows, controls, watcher, stopped, early}) {
 // Every item's judgement from the evidence (`items`: {item: its jsonl rows}). -> {groups, endEarly, b, addedMs, vendor}.
 export function judge187(items) {
   const rowsOf = name => (items[name] ? lastAttempt(items[name]) : []);
-  const records = name => rowsOf(name).filter(r => r.kind === 'task' && r.task === '187-row' && r.result).map(r => r.result);
   const taskResult = (name, task) => rowsOf(name).findLast(r => r.kind === 'task' && r.task === task)?.result ?? null;
+  // Each row's raises: what its own read saw, what the between-row restore's fresh read saw after it, and what the final
+  // watcher record holds inside the row's span (`rowRaises`), reconciled into one set per row.
+  const records = name => {
+    const late = new Map();
+    const add = (key, times) => { for (const at of times ?? []) late.set(key, new Set([...(late.get(key) ?? []), at])); };
+    for (const r of rowsOf(name)) if (r.kind === 'task' && r.task === '187-order-restore') add(r.result?.key, r.result?.lateRaisedAt);
+    for (const [key, times] of Object.entries(taskResult(name, '187-order-stop')?.rowRaises ?? {})) add(key, times);
+    return rowsOf(name).filter(r => r.kind === 'task' && r.task === '187-row' && r.result).map(r => {
+      const extra = [...(late.get(r.result.key) ?? [])].filter(at => !(r.result.raisedAt ?? []).includes(at));
+      if (!extra.length) return r.result;
+      const raisedAt = [...(r.result.raisedAt ?? []), ...extra].sort((x, y) => x - y);
+      return {...r.result, raisedAt, raises: raisedAt.length, reconciled: extra.length};
+    });
+  };
   const stoppedOf = name => rowsOf(name).findLast(r => r.kind === 'stopped')?.error ?? null;
   const groups = [];
   const add = (name, group, arm, target, filter = () => true) => {
@@ -419,11 +465,41 @@ export function judge187(items) {
     g.restores = rowsOf(g.item).filter(r => r.kind === 'task' && r.task === '187-order-restore' && r.result?.restored && arms.get(r.result.key) === g.arm)
       .map(r => ({key: r.result.key, raisedAt: r.result.raisedAt ?? [], ok: r.result.ok}));
   }
+  const side = (g, arm, rows) => ({group: g, arm, rows, recorded: Boolean(items[ITEMS.control(g, arm)]), stopped: stoppedOf(ITEMS.control(g, arm)),
+    watcher: taskResult(ITEMS.control(g, arm), '187-order-stop')});
   const b = judgeB({ran: Boolean(items[ITEMS.b]), bRows, aRows, early, stopped, watcher: taskResult(ITEMS.b, '187-order-stop'),
-    controls: CONTROLS.map(g => ({group: g, a: controlsA[g], b: controlsB[g], recorded: Boolean(items[ITEMS.control(g, 'B')])}))});
+    controls: CONTROLS.map(g => ({group: g, a: side(g, 'A', controlsA[g]), b: side(g, 'B', controlsB[g])}))});
+  const aControls = CONTROLS.flatMap(g => controlCoverage(side(g, 'A', controlsA[g])));
+  const restore = restoreOf(rowsOf(ITEMS.end), {recorded: Boolean(items[ITEMS.end]), stopped: stoppedOf(ITEMS.end)});
+  const overall = overallOf({ranB: Boolean(items[ITEMS.b]), b, early, aControls, restore});
   const median = rows => spread(rows.filter(r => r.invalid === null).map(r => r.actMs)).median ?? null;
   const addedMs = {A: median(aRows), B: median(bRows), difference: median(aRows) !== null && median(bRows) !== null ? median(bRows) - median(aRows) : null};
-  return {groups, endEarly: early, aStages: tally(a1.filter(r => r.invalid === null && !r.delivered).map(stageOf)), b, addedMs, vendor: items[ITEMS.vendor] ? summarize(vendor) : null};
+  return {groups, endEarly: early, aStages: tally(a1.filter(r => r.invalid === null && !r.delivered).map(stageOf)), b, addedMs, aControls, restore, overall,
+    vendor: items[ITEMS.vendor] ? summarize(vendor) : null};
+}
+
+// The owner's source at the end (187-end's select-source): restored only when it was switched and read back as the one
+// requested. -> {ok, requested, current, why}.
+export function restoreOf(rows, {recorded, stopped}) {
+  const result = rows.findLast(r => r.kind === 'task' && r.task === 'select-source')?.result ?? null;
+  const base = {requested: result?.requested ?? null, current: result?.current?.id ?? null};
+  if (!recorded) return {ok: false, ...base, why: 'the owner\'s input source was not selected again (187-end not recorded)'};
+  if (stopped && !result) return {ok: false, ...base, why: `the owner's input source was not selected again (187-end stopped: ${stopped})`};
+  if (!result) return {ok: false, ...base, why: 'the owner\'s input source was not selected again (187-end has no selection)'};
+  const ok = result.ok === true && result.switched === true && typeof result.requested === 'string' && result.current?.id === result.requested;
+  return {ok, ...base, why: ok ? null : `the owner's input source was not restored: ${result.problem ?? (result.switched !== true ? result.reason ?? 'nothing was switched' : `read back ${result.current?.id ?? 'nothing'}, not ${result.requested}`)}`};
+}
+
+// The slot's outcome: arm B landing, or the end-early rule with Part A's controls complete, and the owner's source
+// restored. -> {ok, verdict, why}.
+function overallOf({ranB, b, early, aControls, restore}) {
+  let verdict, why;
+  if (ranB) [verdict, why] = [b.verdict, [...b.why]];
+  else if (early?.applies) [verdict, why] = aControls.length ? ['INCOMPLETE', [...aControls]] : ['ENDED EARLY', [early.why]];
+  else [verdict, why] = ['NOT RUN', [early ? `${early.why}: Part B has not run` : 'Part A was not recorded']];
+  const reached = verdict === 'LANDS' || verdict === 'ENDED EARLY';
+  if (!restore.ok) why.push(restore.why);
+  return {ok: reached && restore.ok, verdict: reached && !restore.ok ? 'NOT OK' : verdict, why};
 }
 
 // Whether the vendor lane may run (ruling 4): only once B has run and some valid B row did not deliver.
@@ -433,8 +509,9 @@ export function vendorAllowed(judged) {
   const undelivered = b ? b.valid - b.delivered : 0;
   return undelivered > 0 ? {allowed: true, why: `${undelivered} valid B row(s) did not deliver`} : {allowed: false, why: `every valid B row delivered (${judged.b.verdict})`};
 }
-// The judge's exit status: 0 when arm B lands, or when the end-early rule ended the slot with Part A delivering.
-export const judgedOk = judged => judged.b.verdict === 'LANDS' || (judged.b.verdict.startsWith('NOT RUN') && judged.endEarly?.applies === true);
+// The judge's exit status: 0 when arm B lands, or the end-early rule ended the slot with Part A's controls complete, and
+// the owner's source was restored.
+export const judgedOk = judged => judged.overall.ok;
 
 const listed = m => Object.entries(m ?? {}).map(([k, n]) => `${k} × ${n}`).join(', ') || '–';
 const ms = x => (Number.isFinite(x) ? x.toFixed(1) : '–');
@@ -443,7 +520,10 @@ const spreadText = s => (s?.n ? `${ms(s.median)} (${ms(s.min)}–${ms(s.max)}, n
 export function item187Markdown(judged) {
   const lines = ['# #187: paste behind a composition, and the activation before ⌘V (scripts/cursor-sitting/item-187.mjs)', '',
     'A row is delivered only when the engine\'s read-back is exact and the page\'s own beacon, sent after the act, reports the expected length. A background row whose act carried no `activationGuardMs` acted under a held activation and is invalid. Page counts are the counters page\'s deltas over the act (window and textarea focus/blur, document-level mousedown and click); raises are the 5 ms order watcher\'s; the clipboard is the type-list digest before and after. Arm B lands only if every B row delivers, with no page mousedown or click, no menu opened, no raise, no front app change, the composition kept, every clipboard restore intact, the arm confirmed by the engine, and no control regressing under B. Arm A is diagnostic; the vendor\'s rows are recorded only.', '',
+    `## Overall: ${judged.overall.verdict}`, '', ...(judged.overall.why.length ? judged.overall.why.map(w => `- ${w}`) : ['- every condition held']), '',
+    `The owner's input source: ${judged.restore.ok ? `restored (${judged.restore.current}, read back)` : `NOT restored (${judged.restore.why})`}.`, '',
     `## Arm B: ${judged.b.verdict}`, '', ...(judged.b.why.length ? judged.b.why.map(w => `- ${w}`) : ['- every condition held']), ''];
+  if (judged.aControls.length) lines.push(`Part A's controls are incomplete: ${judged.aControls.join('; ')}.`, '');
   if (judged.endEarly) lines.push(`Part A (end-early rule): ${judged.endEarly.why}${judged.endEarly.applies ? '; the slot ends after the controls' : '; Part B runs'}.`, '');
   if (Object.keys(judged.aStages).length) lines.push(`Part A's undelivered rows by paste stage: ${listed(judged.aStages)}.`, '');
   if (judged.addedMs.A !== null || judged.addedMs.B !== null) lines.push(`Per-paste act time in Part B, median over valid rows: arm A ${ms(judged.addedMs.A)} ms, arm B ${ms(judged.addedMs.B)} ms; added by B ${ms(judged.addedMs.difference)} ms.`, '');
@@ -523,9 +603,18 @@ export function item187Tasks(d) {
     // next row (the paste route has no after-action watch): the kit's placement, the user window's app activated, the
     // order read again; failing that, once more through the release scene (activated, then the user's). Harness windows
     // only. Nothing to do: {restored: false}. A scene that cannot be put back stops the item (the step is required).
+    // The watcher is read again here, after the row's last reading: a raise it shows only now (written late, or caused
+    // during the row's readings) is the row's too (`lateRaisedAt`, which the judge adds to the row), and the row's span
+    // for the final record's reconciliation ends here.
     '187-order-restore': async ([key, group], ctx) => {
-      const s = st(ctx), g = GROUPS[group], raised = s.rows[key]?.raised;
-      if (!s.order || !raised || (raised.raisedAt.length === 0 && raised.stateNow !== 'back-above')) return {ok: true, key, restored: false};
+      const s = st(ctx), g = GROUPS[group], row = s.rows[key];
+      if (!s.order || !row) return {ok: true, key, restored: false};
+      const from = row.mid?.at ?? row.start, run = d.order.attempt(s.order);
+      const seen = raisesIn(run).filter(c => c.at >= from).map(c => c.at), stateBefore = stateAt(run, Infinity);
+      row.closedAt = d.now();
+      const lateRaisedAt = seen.filter(at => !(row.raised?.raisedAt ?? []).includes(at));
+      const raised = {raisedAt: seen, stateNow: stateBefore};
+      if (seen.length === 0 && stateBefore !== 'back-above') return {ok: true, key, restored: false};
       const stateNow = async () => { await d.sleep(ORDER_SETTLE_MS); return stateAt(d.order.attempt(s.order), Infinity); };
       const placed = place(), how = ['placement', `activate ${g.user}`];
       await d.activate(g.user);
@@ -537,7 +626,7 @@ export function item187Tasks(d) {
         state = await stateNow();
       }
       const ok = state === 'front-above';
-      return {ok, key, restored: true, raisedAt: raised.raisedAt, stateBefore: raised.stateNow, state, how, placed: placed.ok,
+      return {ok, key, restored: true, raisedAt: raised.raisedAt, lateRaisedAt, stateBefore: raised.stateNow, state, how, placed: placed.ok,
         ...(ok ? {} : {problem: `the ${g.user} window could not be put back above the ${g.driven} window (${state})`})};
     },
     '187-processes': async ([item]) => { const names = attempt(d.processNames); return {ok: names !== null, item, total: names?.length ?? null, readers: names ? clipboardReaders(names) : null}; },
@@ -559,8 +648,16 @@ export function item187Tasks(d) {
       if (!watch) return {ok: false, item, problem: 'no watcher is running'};
       s.order = null;
       s.stops.delete('order');
-      const run = await d.order.stop(watch);
-      return {ok: Boolean(run?.end), item, raises: raisesIn(run).length, reads: run?.end?.samples ?? null, maxGapMs: run?.end?.maxGapMs ?? null, lateSamples: run?.end?.lateSamples ?? null};
+      const run = await d.order.stop(watch), raises = raisesIn(run);
+      // The final record's raises inside each row's span (from its act to the restore's read), for the judge to reconcile
+      // with the rows' own records.
+      const rowRaises = {};
+      for (const [key, row] of Object.entries(s.rows)) {
+        const from = row.mid?.at ?? row.start, to = row.closedAt ?? row.end ?? Infinity;
+        const times = raises.filter(c => c.at >= from && c.at <= to).map(c => c.at);
+        if (times.length) rowRaises[key] = times;
+      }
+      return {ok: Boolean(run?.end), item, raises: raises.length, rowRaises, reads: run?.end?.samples ?? null, maxGapMs: run?.end?.maxGapMs ?? null, lateSamples: run?.end?.lateSamples ?? null};
     },
     '187-activations-start': async ([item], ctx) => {
       const s = st(ctx), watch = d.activations.start();
@@ -590,7 +687,7 @@ export function item187Tasks(d) {
       s.menu = null;
       s.stops.delete('menu');
       const run = await d.menu.stop(handle);
-      return {ok: Boolean(run?.end), item, opened: run?.opened ?? null};
+      return {ok: Boolean(run?.end), item, opened: run?.opened ?? null, registered: handle.registered === true};
     },
     // The arm the engine reports for the block, read once its session has started it.
     '187-arm': async ([tag, arm], ctx) => {
@@ -633,8 +730,9 @@ export function item187Tasks(d) {
       return {ok: true, key, front: mid.front, pageSeq: mid.page?.seq ?? null};
     },
     // The row's record (rowRecord), from the cells' answers and the readings after the act.
+    // Every reading after the act comes first; the observation interval, for activations and raises, ends after them.
     '187-row': async ([key, group, arm, block, i, method, stringId], ctx) => {
-      const end = d.now(), g = GROUPS[group], s = st(ctx), row = s.rows[key] ?? {}, tag = key.slice(0, key.lastIndexOf('.')), item = tag.slice(0, tag.lastIndexOf('#'));
+      const g = GROUPS[group], s = st(ctx), row = (s.rows[key] ??= {}), tag = key.slice(0, key.lastIndexOf('.')), item = tag.slice(0, tag.lastIndexOf('#'));
       const r = ROWS.find(x => x.method === method && x.string.id === stringId);
       const spec = {key, item, group, arm, block: Number(block), i: Number(i), string: stringId, method, expectedLength: r.string.text.length, regime: g.regime, engine: arm === 'vendor' ? 'vendor' : 'cua'};
       const act = ctx.results[LABELS.act(key, method, stringId)] ?? null, from = row.mid?.at ?? null;
@@ -645,10 +743,18 @@ export function item187Tasks(d) {
         for (const t0 = d.now(); !fresh(after) && d.now() - t0 < PAGE_SETTLE_MS;) { await d.sleep(PAGE_POLL_MS); after = attempt(d.pageCounters); }
         page = {mid: row.mid.page, after};
       }
+      const compose = s.compose[tag];
+      const userKept = g.user && compose && act ? (f => f?.named === true && f.valueHash === compose.jamo)(attempt(() => d.probe(['focus', '--window', compose.window]))) : null;
+      const menuRead = g.driven === 'chrome' && row.mid ? attempt(() => d.menu.read(d.scene('chrome').pid)) : null;
+      const fixture = involvesElectron(g) && row.mid ? {mid: row.mid.fixture, after: attempt(d.fixtureCounters)} : null;
+      const clipboard = row.mid ? {mid: row.mid.clipboard, after: attempt(d.clipboard)} : null;
+      const front = row.mid ? {mid: row.mid.front, after: d.frontmost()?.pid ?? null, expected: d.scene(g.user ?? g.driven).pid} : null;
+      const end = d.now();
+      row.end = end;
       const inSpan = l => from !== null && l.at >= from && l.at <= end;
       const activations = s.activations ? (attempt(() => d.activations.lines(s.activations)) ?? []).filter(l => l.kind === 'activated' && inSpan(l)) : [];
-      // A raise is the row's from its act's start to this reading (nothing else of the row runs after), so one the act
-      // causes late is still its own.
+      // A raise is the row's from its act's start to this reading, so one the act causes late is still its own; the
+      // restore after the row reads the watcher again.
       let raisedAt = [], stateAtStart = null;
       if (s.order && from !== null) {
         const run = d.order.attempt(s.order);
@@ -656,15 +762,10 @@ export function item187Tasks(d) {
         stateAtStart = stateAt(run, from);
         row.raised = {raisedAt, stateNow: stateAt(run, Infinity)};
       }
-      const compose = s.compose[tag];
-      const userKept = g.user && compose && act ? (f => f?.named === true && f.valueHash === compose.jamo)(attempt(() => d.probe(['focus', '--window', compose.window]))) : null;
-      const menu = g.driven === 'chrome' && row.mid ? {read: attempt(() => d.menu.read(d.scene('chrome').pid)),
-        observed: s.menu ? (attempt(() => d.menu.lines(s.menu)) ?? []).filter(l => l.kind === 'menu-opened' && l.at >= from).length : 0} : null;
-      const record = rowRecord({spec, prepare: ctx.results[LABELS.prepare(key)] ?? null, act, check: ctx.results[LABELS.check(key)] ?? null, page,
-        fixture: involvesElectron(g) && row.mid ? {mid: row.mid.fixture, after: attempt(d.fixtureCounters)} : null,
-        front: row.mid ? {mid: row.mid.front, after: d.frontmost()?.pid ?? null, expected: d.scene(g.user ?? g.driven).pid} : null,
-        activations, raisedAt, stateAtStart, userKept, clipboard: row.mid ? {mid: row.mid.clipboard, after: attempt(d.clipboard)} : null, menu,
-        armStatus: s.arms[tag] ?? null, disturbed: Boolean(ctx.results[disturbedOf(tag)])});
+      const menu = g.driven === 'chrome' && row.mid ? {read: menuRead, watchVerified: s.menu?.registered === true,
+        observed: s.menu ? (attempt(() => d.menu.lines(s.menu)) ?? []).filter(l => l.kind === 'menu-opened' && inSpan(l)).length : 0} : null;
+      const record = rowRecord({spec, prepare: ctx.results[LABELS.prepare(key)] ?? null, act, check: ctx.results[LABELS.check(key)] ?? null, page, fixture, front,
+        activations, raisedAt, stateAtStart, userKept, clipboard, menu, armStatus: s.arms[tag] ?? null, disturbed: Boolean(ctx.results[disturbedOf(tag)])});
       if (record.userKept === false) ctx.results[disturbedOf(tag)] = true;
       return record;
     },
@@ -693,7 +794,8 @@ async function startMenuWatch({file, pid, bin = menuTool(), boundMs = 10_000}) {
   let child;
   try { child = spawn(bin, ['watch', String(pid)], {stdio: ['ignore', fd, 'ignore']}); } finally { closeSync(fd); }
   for (const t0 = Date.now(); Date.now() - t0 < boundMs; await sleep(50)) {
-    if (fileLines(file).some(l => l.kind === 'start' && l.pid === child.pid)) return {child, pid: child.pid, file};
+    const begun = fileLines(file).find(l => l.kind === 'start' && l.pid === child.pid);
+    if (begun) return {child, pid: child.pid, file, registered: begun.registered === true};
     if (child.exitCode !== null) break;
   }
   child.kill('SIGKILL');

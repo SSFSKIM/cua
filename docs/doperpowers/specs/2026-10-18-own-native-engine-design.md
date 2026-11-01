@@ -506,7 +506,9 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     firstReadAfterPostMs? (the first hand-over at or after ⌘V, which the no-channel answer keys on), effectWait?
     ("notification" | "reading" | "timeout" | "deadline" | "noChannel"), effectWaitMs?, mainLagMs?, mainLagOpen?,
     stage? ("read" | "effect"), confirmed?, unconfirmedLines? (the operation's, when any), restore ("restored" |
-    "skippedChanged" | "notTaken")}; never the clipboard's contents or the field's text
+    "skippedChanged" | "notTaken"), focusEnforcement {arm ("A" | "B", engine.json `pasteFocusEnforcement`), activated,
+    point? ("inside" | "outside" | "unknownFrame" | "none"), liftedClick, activationToCommandVMs?, clickToCommandVMs?}
+    (the paste slot's 3b arm, Decision Log #187 amended 2026-11-01)}; never the clipboard's contents or the field's text
   elementClick: an element click's plan (#188), on its result and its errors: {plan ("action" | "synthesized"), action?
     (AXPick | AXPress), reason ("advertised" | "descendant" | "noAction" | "notPlainLeft" | "forced"), hit? ("element" |
     "descendant" | "ancestor" | "other" | "noAnswer"), hitTest? ("application")}, hit present when a hit-test was taken
@@ -1440,6 +1442,35 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   this change: making background Chrome take ⌘V (3b, an attended A/B under these diagnostics) and the late ⌘V after a
   restore pasting the person's clipboard, which no engine step can stop once ⌘V is posted (the vendor shares it).
   Date/Author: 2026-11-01, cursor235's implementer for the design session's ruling on #187.
+  *Amended 2026-11-01 (3b, `fix/187-3b-chrome-focus`, the design session's 3b ruling): 3b is the attended slot's B arm,
+  behind an engine.json switch, and ships only on the slot's evidence.* **The mechanism the design session gave:** route
+  3's AppKit-defined subtype 1 only sets the app's `isActive` and arms `_mouseActivationInProgress`; the window becomes
+  key at the next mouse down (AppKit's key-only branch, no ordering). Route 3's own click supplies that mouse down; a
+  paste posts none, so background Chrome, whose `AXActivationPoint` lies outside its frame (U13) and so takes no
+  activation click under the inert-point rule (the focus hold's review, 2026-10-22, fix 3), is left active with no key
+  window, and ⌘V goes nowhere. The vendor supplies it: `enforceActiveState(app.primaryWindow)` (`FUN_1001b2ed8`, before
+  the pasteboard is written; F §7.1, §5.5) posts subtype 1 plus a left click at the window's `AXActivationPoint`
+  wherever the point is (`FUN_10071f65c`, which skips the click only without a window number or a frame). **The arm:**
+  `pasteFocusEnforcement: true` in engine.json (absent or false: arm A, today's behaviour unchanged) lifts the
+  inert-point rule's outside-frame skip for the paste route's activation only (paste and type_text's paste route): an
+  activation point outside a known frame, with a known window number, takes the activation click as every route-3
+  activation click is made (the same pair, order and recipe: the window number in the `NSEvent`, fields 91 and 92 set to
+  it, the window location translated by the frame's origin, no flags, subtype 3, which is also the vendor's recipe in
+  `FUN_10071f65c`), on the reasoning that a point outside the frame keeps the app's views from taking it as a click. The
+  inside-frame rule (a control or an unread hit takes no click) and every other step stand: the activation's guard
+  polls after the click and repairs a raise it causes; the paste route runs no delivery guard or after-action watch
+  (those are the pointer actions', #200), so a raise later than the guard's end is the slot's order watchers' to see.
+  The engine's `status` reports the switch (`pasteFocusEnforcement`, read by `cua engine status --json` as
+  `.status.pasteFocusEnforcement`), since an unknown key is ignored and arm B could otherwise run silently as A; every
+  paste's `meta.paste` carries `focusEnforcement` {`arm` "A"/"B", `activated` (this paste ran the activation pair),
+  `point` (the activation point inside or outside the frame, or the frame unknown, or none), `liftedClick`, and, once
+  ⌘V is posted, `activationToCommandVMs` and `clickToCommandVMs`}, value-free. **Not a lasting setting:** the slot's
+  rule (B ships only if it delivers with zero page clicks, no menu opened, and window order and front app unchanged)
+  decides, and the PR that follows either makes the lift the paste's behaviour, retiring the switch, or removes it.
+  Tests: `PasteActivationTests` (switch off: the outside point takes no click; switch on, paste and type_text: the pair
+  at the outside point with its window fields, the guard repairing its raise, the record; only the outside-frame skip
+  lifted; the status reports the switch), `PasteOperationTests` (the record's times to each line's ⌘V),
+  `ActivationClickTests` (a non-paste route's activation unchanged), `ConfigTests` (the key's strict parse).
 - Decision (#188, 2026-11-01, `fix/188-electron-field-focus`; amends the input results' meta in Interfaces, "Observation
   (skyshot)"'s focus read and the method matrix's prepares): **an element click records how it was carried, every
   observation's meta names the focus a selection cannot mask, and the matrix's prepares stop inheriting an earlier

@@ -184,6 +184,32 @@ for (const [why, answers] of [['status counts another connection', {connections:
   });
 }
 
+// #237: a busy engine refuses the build before the build costs anything; the swap's own check stays the authority
+// against a client that connects meanwhile (the case above where only shutdown answers busy).
+test('a busy engine refuses the build before any step: no swift build, no staging, nothing signed, and the error names the holder', async t => {
+  const w = world(t, {engineAnswers: {connections: 1, holders: [{pid: 42091, label: 'MAWS'}]}});
+  w.placeBundle({approved: true});
+  const engine = await w.startEngine();
+  await assert.rejects(buildEngine(w.deps), error => {
+    assert.equal(error.code, 'engine_busy');
+    assert.equal(error.message, `the engine (pid ${engine.pid}) has 1 other connection open: pid 42091 (MAWS)`);
+    return true;
+  });
+  assert.deepEqual(w.calls, [], 'no swift build and no codesign ran');
+  assert.ok(!existsSync(join(w.dir, 'staging')), 'no staging directory');
+  assert.ok(!existsSync(join(w.dir, 'build')), 'no scratch build');
+  assert.deepEqual(engine.received.map(r => r.method), ['status'], 'one status read, no shutdown');
+  assert.equal(w.plistBuild(), OLD_BUILD);
+});
+
+test('a bundle already current is reported as such even while the engine is busy: nothing to do comes before the busy check', async t => {
+  const w = world(t, {engineAnswers: {connections: 1}});
+  w.placeBundle({build: w.checkoutBuild(), approved: true});
+  const engine = await w.startEngine();
+  assert.equal((await buildEngine(w.deps)).changed, false);
+  assert.deepEqual(engine.received, [], 'the engine is not even asked');
+});
+
 test('a bundle whose build and signature already match is left as it is: nothing is built or stopped', async t => {
   const w = world(t);
   w.placeBundle({build: w.checkoutBuild(), approved: true});

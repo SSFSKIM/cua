@@ -317,7 +317,8 @@ export function engineRecords({dir = engineDirectory()} = {}) {
 
 const tail = text => lastLines(text, {count: 12, separator: '\n'});
 
-// Builds, assembles and signs the engine in staging, then replaces the approved bundle: the running engine is stopped
+// Builds, assembles and signs the engine in staging, then replaces the approved bundle; an engine already busy refuses
+// before the build starts. The running engine is stopped
 // with `shutdown` first (a `busy` answer fails the build with the bundle, approved.json and the engine untouched and the
 // staged bundle discarded), then the old bundle is moved aside and the staged one into place (two renames), and
 // pending.json is written. A bundle whose build already matches and whose signature is the one asked for is left as it
@@ -339,6 +340,10 @@ export async function buildEngine({identity, scratchPath, sourceRoot = ENGINE_SO
     log(`cua's engine build ${shortBuild(build)} is already at ${paths.bundle}; nothing to do`);
     return {bundlePath: paths.bundle, engineVersion: current.engineVersion, build, signature: signatureReport(current.signature, configured), changed: false, stopped: null};
   }
+  // A busy engine refuses now, before the build, the staging and the signing cost anything (#237); an engine that is not
+  // running is not busy. The swap's own check (stop, below) stays the authority against a client that connects meanwhile.
+  const running = await statusOf(ctx);
+  if (running?.connections > 0) busy(running.pid, running.connections, running.holders);
 
   mkdirSync(paths.dir, {recursive: true, mode: 0o700});
   chmodSync(paths.dir, 0o700);

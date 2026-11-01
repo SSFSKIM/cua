@@ -20,14 +20,7 @@ Text commands (M2): the clipboard after each sample (the harness's prior text ke
 | device-chrome-dnd | chrome_dnd_covered_dedicated | cua | – | foreground | foreground | stacking, focus, active, pointer | – |
 | device-chrome-dnd | chrome_dnd_short_in_front_shared | cua | – | background | background | stacking | – |
 
-run valid; every verdict PASS, finished 2026-11-01T14:23:43.616Z
-
-## [object Object]
-
-| scene | op | engine | cold ms | warm ms | n warm | bus calls cold / warm | awaited alone | wasted max | witness clean | audit | effect | equal | verdict |
-|---|---|---|---:|---:|---:|---:|---:|---:|---|---|---|---|---|
-
 Harness preparation failures (the gate's rule, Decision Log 2026-11-01): 0 resampled and 0 invalid of 90 samples, against the run's cap of 1% (0.9).
 
-run unfinished
+run valid; every verdict PASS, finished 2026-11-01T14:23:43.616Z
 

@@ -51,8 +51,18 @@ through the desktop route.
 - After a take, the remaining steps are at most 12 ms apart. The rest of the floor re-visits the path's
   second-to-last sample and its last, 12 ms apart, ending on the last.
 - With no take by 250 ms, the drag is released and answers as before.
-- `--stats` `hold` records the bound, the path's time, the wait, whether the take came, the take's time after the
-  press, and the keepalives sent.
+- `--stats` `hold`, after the task review's fix round 1, has one shape on every drag the hold watches:
+  - `bound_ms`;
+  - `path_ms`, the press to the path's end;
+  - `held`, whether there was no take by the path's end, so the hold ran;
+  - `waited_ms`, 0 when the hold did not run;
+  - `taken`, whether a take came by the release;
+  - `take_after_press_ms`, null without a take;
+  - `keepalives`.
+
+  The bound and the take's time count from the button's press itself. `runs/proof240/` was recorded before that fix,
+  with a conditional shape: a drag whose take came during its path recorded only `take_after_press_ms` and
+  `keepalives`, and its bound counted from just after the press's threshold batch, 1–4 ms later.
 
 **The keepalives against the press watch** (`runs/proof240/`, `runs/proof240.json`, `tools/proof.mjs`): 240
 undisturbed drags of the built engine, with the gate's ballast. The four cases were in front, shared (background
@@ -96,7 +106,10 @@ route), and covered, dedicated (foreground route, XTEST), each with a long and a
 
 ## Files
 
-- `runs/<run>/results.jsonl`, `summary.md`: the harness's own records. The short drop's rows carry the scratch
+- `runs/<run>/results.jsonl`, `summary.md`: the harness's own records. The `prepare-faults` rows of `hold2`, `fast1`,
+  `warm1` and `proof240` were written while the rule's aggregate was named `run`, which replaced the run's name. They
+  are corrected to `total` with the run's name restored, and their `summary.md` rendered again (task review, fix round
+  1; `tools/fix1-evidence.mjs`). The short drop's rows carry the scratch
   engine's `scratch` record (press, take, path end) and `dnd_wait`; `proof240` carries the built engine's `hold`.
 - `tools/`: the scratch engine's patches over the branch's engine as of 47143d38 (its sources unchanged until step B), the scratch harness's patch (the
   `scratch` stats, `SCRATCH_WARM_FIRST`, `SCRATCH_BALLAST`), the run scripts, and the table, proof and cost scripts.

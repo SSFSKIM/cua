@@ -246,5 +246,5 @@
 {"run":"t22-proof240","kind":"verdict","scene":"device-chrome-dnd","op":"chrome_dnd_covered_dedicated","candidate":"cua","device":"foreground","pass":true,"reasons":[],"verdict":"pass"}
 {"run":"t22-proof240","kind":"verdict","scene":"device-chrome-dnd","op":"chrome_dnd_short_in_front_shared","candidate":"cua","device":"background","pass":true,"reasons":[],"verdict":"pass"}
 {"run":"t22-proof240","kind":"verdict","scene":"device-chrome-dnd","op":"chrome_dnd_short_covered_dedicated","candidate":"cua","device":"foreground","pass":true,"reasons":[],"verdict":"pass"}
-{"run":{"samples":240,"resampled":0,"invalid":0,"limit":2.4,"over":false},"kind":"prepare-faults","cases":[],"pass":true,"reasons":[]}
+{"run":"t22-proof240","kind":"prepare-faults","cases":[],"pass":true,"reasons":[],"total":{"samples":240,"resampled":0,"invalid":0,"limit":2.4,"over":false}}
 {"run":"t22-proof240","kind":"end","valid":true,"pass":true,"failed":[],"parity":[],"refused":[],"finished":"2026-11-01T15:04:58.957Z"}

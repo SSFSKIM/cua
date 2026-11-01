@@ -4,7 +4,8 @@
 // Mac: sessions through ./session.mjs, cues spoken with `say`, the go file the operator touches once the owner is done,
 // the harness scenes' activation, the engine's stop and status through this checkout's CLI, engine.json's switch, the
 // approved bundle's activation watcher and focus probe, item 1's screen recording (./recording.mjs), and #200's window
-// placement, order watcher, delivery reads and the fixture's relaunch (./raise.mjs). Whatever the item changed outside its sessions is put back
+// placement, order watcher, delivery reads and the fixture's relaunch (./raise.mjs), and #244's first-observation reads of
+// the fixture's accessibility record (./first-observation.mjs). Whatever the item changed outside its sessions is put back
 // in `finally`: engine.json as it was, the watchers and the recorder stopped, every session closed.
 import {execFileSync, spawn} from 'node:child_process';
 import {appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
@@ -24,6 +25,7 @@ import {startFrameStream} from './signposts.mjs';
 import {BUILT_IN_SCREEN, coverOver, farPoint, liveWindowList, overlaysAbove, plannedSettle, windowListProbe} from './glide.mjs';
 import {liveSourceSwitch, restoreAfterFailure, sourceTargetProblem, switchSource} from './input-source.mjs';
 import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
+import {firstTasks} from './first-observation.mjs';
 import {liveElementFrame, liveMoveWindow, raiseTasks, stopRaiseWatch} from './raise.mjs';
 import {openDriven} from './session.mjs';
 import {latinSourceProblem, STILL_TAIL_MS, STILL_WAIT_MAX_MS} from './timing.mjs';
@@ -238,6 +240,8 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
   // #200's tasks (./raise.mjs): the harness windows placed, the arrangement checked, the order watcher, the deliveries.
   Object.assign(io.tasks, raiseTasks({io, run, guard, out, windowList: () => liveWindowList(), probe: args => runProbe(enginePaths().bundle, args),
     textView: textViewOf, moveWindow: liveMoveWindow(), elementFrame: liveElementFrame(), scenes: args => scenes(args, 120_000)}));
+  // #244's tasks (./first-observation.mjs): the relaunch with the variant's switch, the marks, the record's reads.
+  Object.assign(io.tasks, firstTasks({run}));
   function writeSettings(write) {
     const text = existsSync(settingsFile) ? readFileSync(settingsFile, 'utf8') : null;
     if (existsSync(before) || existsSync(`${before}.absent`)) throw new Error(`${before} exists from an earlier run: restore engine.json from it by hand, then remove it`);
@@ -252,7 +256,7 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
 }
 
 const describe = step => {
-  if (step.open) return `open session ${step.open}${step.device ? ` on the device ${step.device}` : ''} on ${step.scenes.join(', ')}${step.env ? ` with ${JSON.stringify(step.env)}` : ''}${step.engine ? ` (${step.engine} engine)` : ''}`;
+  if (step.open) return `open session ${step.open}${step.device ? ` on the device ${step.device}` : ''} on ${step.scenes.join(', ')}${step.bind === false ? ' (none bound)' : ''}${step.env ? ` with ${JSON.stringify(step.env)}` : ''}${step.engine ? ` (${step.engine} engine)` : ''}`;
   if (step.run) return `${step.run}: ${step.label}${step.keys ? ` (only while ${step.keys} is frontmost)` : ''}`;
   if (step.together) return `at once: ${step.together.map(describe).join(' | ')}`;
   if (step.cue) return `CUE (spoken to the owner, then ${step.ms} ms): ${step.cue}`;
@@ -304,8 +308,9 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
       if (dryRun) { record({step: n, kind: 'plan', text: describe(step)}); continue; }
       if (step.when && !step.when(ctx.results)) { record({step: n, kind: 'skipped', text: describe(step)}); continue; }
       if (step.open) {
-        ctx.sessions[step.open] = await io.open({name: step.open, engine: step.engine ?? engine, env: step.env ?? {}, scenes: step.scenes.map(io.scene), device: step.device ?? null});
-        record({step: n, kind: 'open', session: step.open, env: step.env ?? {}, engine: step.engine ?? engine});
+        ctx.sessions[step.open] = await io.open({name: step.open, engine: step.engine ?? engine, env: step.env ?? {}, scenes: step.scenes.map(io.scene), device: step.device ?? null,
+          bind: step.bind !== false});
+        record({step: n, kind: 'open', session: step.open, env: step.env ?? {}, engine: step.engine ?? engine, ...(step.bind === false ? {bound: false} : {})});
       } else if (step.run) await runCell(step);
       else if (step.together) await Promise.all(step.together.map(runCell));
       else if (step.cue) { record({step: n, kind: 'cue', text: step.cue}); await io.cue(step.cue); await io.wait(step.ms); }

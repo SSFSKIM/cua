@@ -5,8 +5,8 @@
 // refusal can be placed against the person's input.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {MARKER} from '../../scripts/native-baseline/cells.mjs';
-import {readReply} from '../../scripts/cursor-sitting/session.mjs';
+import {FIRST, MARKER} from '../../scripts/native-baseline/cells.mjs';
+import {openDriven, readReply} from '../../scripts/cursor-sitting/session.mjs';
 
 const answer = value => `${MARKER}${JSON.stringify({ok: true, value, inCellMs: 70})}`;
 const reply = (meta, text = answer({ms: 60})) => ({result: {content: [{type: 'text', text}], _meta: meta}});
@@ -40,4 +40,28 @@ test('a refusal keeps the intervention guard\'s reading: the time since the last
   assert.deepEqual(refused.meta, {actionInterval: {startedAt: 30, endedAt: 2050}, receivedAt: 25, hidIdleMs: 1840, entered: 412});
   assert.deepEqual(readReply(reply({'cua/hidIdleMs': 0, 'cua/intervention': 'off'})).meta, {hidIdleMs: 0, intervention: 'off'},
     'with detection off the reading is the machine-wide idle time, and the meta says so');
+});
+
+test('an observation keeps its own diagnostics (#244: the role read, the prior, the web area\'s wait)', () => {
+  const observation = {appRoleReadMs: 0.4, enablementPrior: 'owned', webAreaFound: true, webAreaWaitMs: 312};
+  assert.deepEqual(readReply(reply({'cua/nativeEngine': {engine: 'cua'}, 'cua/engineMs': 120, 'cua/observation': observation})).meta, {engineMs: 120, observation});
+});
+
+// A session whose serve is a fake: what each opening sends.
+async function opened(bind) {
+  const sent = [];
+  const fake = () => ({initialize: async () => {}, terminate: async () => {}, close: async () => {}, call: async () => ({}),
+    js: async code => { sent.push(code); return reply({'cua/nativeEngine': {engine: 'cua'}}, answer({ready: true})); }});
+  const scene = {id: 'electron', app: '/c/F.app', pid: 7, at: 1, window: {number: 5}};
+  const session = await openDriven({name: 's', engine: 'cua', env: {}, scenes: [scene], guard: {problem: () => null, frontmost: () => null}, open: fake, ...(bind === undefined ? {} : {bind})});
+  return {sent, session};
+}
+
+test('a session opened with bind false sends only its first cell, and its scene is still one a cell may act on', async () => {
+  const bound = await opened(undefined);
+  assert.equal(bound.sent.length, 2, 'the default binds the scene: an observation before any cell');
+  assert.match(bound.sent[1], /cua\.getApp\("\/c\/F\.app"\)/);
+  const bare = await opened(false);
+  assert.deepEqual(bare.sent, [FIRST]);
+  assert.equal((await bare.session.run('/* cursor-sitting:scene electron */ 1')).ok, true, 'the guard knows the scene');
 });

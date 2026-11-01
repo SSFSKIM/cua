@@ -40,9 +40,10 @@ export function parseCells(text) {
 // (hidIdleMs; with detection off, `intervention: "off"` and the machine-wide idle time), and what a type_text entered
 // before it stopped; route 3's delivery guard after a pointer action's events (#200: its restores, the hold's release
 // time) and the connection's after-action repairs, which a later call carries (#200: the flashes after an action's
-// release, keyed by its delivery's post time).
+// release, keyed by its delivery's post time); an observation's own diagnostics (#244: the role read, what enablement read
+// and set, the web area's wait).
 const KEPT_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'actionInterval', 'receivedAt', 'hidIdleMs', 'intervention', 'entered', 'delivery',
-  'afterActionRepairs'];
+  'afterActionRepairs', 'observation'];
 
 // What the sitting keeps of a js reply: the cell's answer, the route the engine reported for the last call, the
 // attested engine, that call's meta (KEPT_META, the keys it carried), and the images it emitted (base64, SHOT only).
@@ -89,10 +90,12 @@ export function gate({name, engine, scenes, guard, send}) {
 // {run(code, {keys}), endTask(), close(), asked}. `keys`: a scene id whose process must be frontmost for the cell to go.
 // `guard` (./target-guard.mjs liveTargetGuard): `problem(record)` before every scene cell, `frontmost()` for keys; a
 // changed target is refused and stops the session. `device`: a registered device's name, switched to with devices_use
-// before the first cell (Acceptance 8's loopback).
-export async function openDriven({name, engine, env, scenes, guard, device = null}) {
+// before the first cell (Acceptance 8's loopback). `bind: false` binds none of them (each bind is an observation): the
+// scenes are still the guard's, so a cell may act on them, but the session's first observation of each is a cell's own
+// (#244). `open`: the session's opener (scripts/accept/mcp-session.mjs openSession; the tests' fake).
+export async function openDriven({name, engine, env, scenes, guard, device = null, bind = true, open = openSession}) {
   const asked = [];
-  const session = openSession({args: [CLI, 'serve'], clientName: `cua-cursor-sitting-${name}`, env: serveEnv({engine, env}),
+  const session = open({args: [CLI, 'serve'], clientName: `cua-cursor-sitting-${name}`, env: serveEnv({engine, env}),
     onServerRequest: msg => {
       const accepted = isSceneApproval(msg, SCENE_BUNDLE_IDS);
       asked.push({app: msg?.params?._meta?.tool_params?.app ?? null, answer: accepted ? 'accept (session)' : 'decline'});
@@ -110,7 +113,7 @@ export async function openDriven({name, engine, env, scenes, guard, device = nul
     if (!first.ok) throw new Error(`${name}: the first cell failed: ${first.error}`);
     // A local session's first result must attest the pinned engine; a device's attests the device's own.
     if (!device && first.engine !== engine) throw new Error(`${name}: the first result attests ${first.engine ?? 'no engine'}, not the pinned ${engine}`);
-    for (const scene of scenes) {
+    for (const scene of bind ? scenes : []) {
       const bound = await run(BIND(scene.id, scene.app));
       if (!bound.ok) throw new Error(`${name}: binding ${scene.id} failed: ${bound.error}`);
     }

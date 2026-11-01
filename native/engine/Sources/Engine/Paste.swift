@@ -28,7 +28,9 @@ import Foundation
 // diagnostics in the meta (`paste`, PasteDiagnostics), among them whether the app held key focus at ⌘V
 // (`keyFocusAtPaste`), recorded only: it never refuses, and what the paste's own activation did (`focusEnforcement`):
 // its click, at the activation point or the inert one outside the frame, which makes the window key before ⌘V
-// (Activation.swift; the Decision Log's #187 inert-click entry, 2026-11-01).
+// (Activation.swift; the Decision Log's #187 inert-click entry, 2026-11-01). The paste's first event goes out through
+// route 3's delivery guard inside its activation's hold, and the after-action watch runs on until a second after its
+// last event, every line's (`pasteOperation`; the Decision Log's #200 paste entry, 2026-11-01).
 //
 // type_text's paste route is the same operation over its text's lines: each line pasted, each newline a Return press
 // posted by route 2′ as typed text's are, one snapshot and one restore around the whole, `entered` counting what
@@ -468,12 +470,15 @@ private final class MainLag: @unchecked Sendable {
 /// `meta.paste` only, as is `focusEnforcement`, whose times to ⌘V are read on `activationNow` (route 3's clock) there
 /// too. A line with no channel to see its effect (`EffectOutcome.noChannel`) counts as pasted, unconfirmed,
 /// when its read came after ⌘V was posted (positive evidence of delivery, none against it), and is `pasteUnconfirmed`
-/// when the only read came before (a foreign reader's: the provider is not asked again for the target).
+/// when the only read came before (a foreign reader's: the provider is not asked again for the target). Every ⌘V and
+/// Return goes out through `deliver`, which posts it and answers the delivery guard's outcome when one ran (#200 on the
+/// paste route: the engine's runs it on the first event alone), kept as `meta.delivery`.
 @discardableResult
 func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteEffect, readTimeoutMs: Double = pasteReadTimeoutMs,
               remainingMs: () -> Double = { .infinity }, keyFocusAtPaste: () -> KeyFocusReading? = { nil },
               focusEnforcement: PasteFocusEnforcement? = nil, activationNow: () -> Double = monotonicMilliseconds,
               mainProbe: (@escaping @Sendable () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) },
+              deliver: (() -> Void) -> DeliveryGuardOutcome? = { $0(); return nil },
               checkInFlight: () throws -> Void, postPaste: () -> Bool, postReturn: () -> Bool,
               entered: inout Int, meta: inout InputMeta) throws -> PasteOutcome {
   let state = pasteboard.snapshot()
@@ -511,6 +516,14 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
     }
     meta.paste = record
   }
+  /// One ⌘V or Return posted through `deliver`; the action interval is the events' own, never the guard's samples.
+  func posting(_ events: () -> Bool) -> Bool {
+    withoutActuallyEscaping(events) { events in
+      var posted = false
+      if let outcome = deliver({ posted = meta.posting(events) }) { meta.delivery = outcome }
+      return posted
+    }
+  }
   // A Return before a later line is settled (its effect waited for) before that line's baseline; one after the last
   // pasted line is not, since no later baseline depends on it.
   let lastContent = parts.lastIndex { if case .content = $0 { return true } else { return false } }
@@ -541,7 +554,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         let lag = MainLag()
         mainProbe { [effect] in lag.mark(effect.now()) }
         probe = (postAt, lag)
-        guard meta.posting(postPaste) else { throw EngineError(name: "eventCreationFailed", "The paste key events could not be created.") }
+        guard posting(postPaste) else { throw EngineError(name: "eventCreationFailed", "The paste key events could not be created.") }
         meta.paste?.stage = "read"
 
         // The read wait: its 2 s, or the request's deadline when that comes first.
@@ -585,7 +598,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         }
         try checkInFlight()
         let returnAt = effect.now()
-        guard meta.posting(postReturn) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
+        guard posting(postReturn) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
         line += 1
         if settles {
           effect.keyPosted(at: returnAt)
@@ -727,7 +740,11 @@ extension Engine {
   }
 
   /// The operation, holding the engine-wide lock: the app prepared by route 3's activation when it does not believe it
-  /// has focus, then pasted into.
+  /// has focus, then pasted into. Its first event (a ⌘V, or a Return opening the text) goes out through the delivery
+  /// guard, inside the hold the paste's own activation left open, as a pointer action's events do (#200 on the paste
+  /// route, the Decision Log's 2026-11-01 entry); the after-action watch that follows runs on while the later lines and
+  /// Returns go out and until a second after the last of them (`RepairWindow`), on its own thread: the paste's waits and
+  /// its restore never wait for it.
   @discardableResult
   func pasteOperation(_ parts: [PastePart], _ target: PasteTarget, _ context: ExecutionContext,
                       entered: inout Int, meta: inout InputMeta) throws -> PasteOutcome {
@@ -735,23 +752,47 @@ extension Engine {
     return try withPasteLock(pasteLock, deadline: context.deadline) {
       // Waiting for the lock took time: a user event since the guard was read stops the paste before anything is done.
       try target.guarding.checkInFlight()
+      // An earlier action's after-action watch ends before anything of this one happens (its activation included).
+      let watches = context.connection.afterAction
+      watches.cancel()
+      let repairWindow = RepairWindow()
+      defer { repairWindow.ended() }  // on every path out: the window closes a second after the paste's last event
       // Route 3's activation leased for the paste (shared when a hold keeps the process active); every path out, error
       // or success, ends the lease. A guard that failed still says how long it held. The in-flight check runs again once
       // the registry's lock is held: a user event while the paste waited behind another holder's activation stops it
       // before its activation. Its click, at the activation point or the inert one outside the frame, makes the window
-      // key before ⌘V (#187); the paste's own activation is kept for its diagnostics.
+      // key before ⌘V (#187); the paste's own activation is kept for its diagnostics, and its guard leaves its hold open
+      // for the delivery guard at the paste's first event.
+      let application = target.application
+      let system = pasteActivation
+      let activated = primaryWindow(of: application) ?? application
+      let placed = system.windowPlacement(activated, target.pid)
+      var release: (() -> Bool)?
+      defer { _ = release?() }
       var made: FakeActivation?
-      let release = try heldActivations.acquire(pid: target.pid, beforeActivating: target.guarding.checkInFlight, make: {
-        let window = primaryWindow(of: target.application) ?? target.application
-        let placed = pasteActivation.windowPlacement(window, target.pid)
-        let activation = FakeActivation(pid: target.pid, window: window, windowFrame: placed.frame, windowID: placed.id, system: pasteActivation)
+      defer { made?.releaseOpenHold() }  // a stop before the first event ends the activation's hold with the paste
+      release = try heldActivations.acquire(pid: target.pid, beforeActivating: target.guarding.checkInFlight, make: {
+        let activation = FakeActivation(pid: target.pid, window: activated, windowFrame: placed.frame, windowID: placed.id, system: system)
+        activation.holdsThroughDelivery = true
         made = activation
         return activation
       }, meta: &meta)
-      defer { _ = release() }
       let enforcement = PasteFocusEnforcement(activation: made)
+      // The activation the paste's events go out under, its own or the one it shares; its guard checks the paste's window.
+      let standing = heldActivations.activation(of: target.pid)
+      var guarded = false
+      func deliver(_ post: () -> Void) -> DeliveryGuardOutcome? {
+        withoutActuallyEscaping(post) { post in
+          let posting = { post(); repairWindow.posted(at: system.now()) }  // the window's end runs from the event itself
+          guard !guarded, let standing else {
+            posting()
+            return nil
+          }
+          guarded = true  // one delivery guard, and one hold, an action
+          return standing.deliver(window: placed.id, watches: watches, repairWindow: repairWindow, posting)
+        }
+      }
 
-      let application = target.application
       let effect = PasteEffect(readWithin: { effectReading(of: application, withinMs: $0) })
       let observer = NotificationObserver(pid: target.pid, names: ["AXSelectedTextChanged", "AXValueChanged"], keep: false) { _ in
         effect.notification()
@@ -759,16 +800,15 @@ extension Engine {
       defer { observer?.invalidate() }
       effect.observed(pasteNotificationSource(registered: observer != nil, app: target.app, pid: target.pid))
       defer { context.connection.markActed(target.app) }  // a paste stopped midway may have changed the app too
-      // A press's four events go back to back, all of them, so its modifiers are always restored; it counts as posted
-      // when any of them went.
-      let poster = EventPoster.toProcess(target.keyboard)
-      func press(_ key: KeyPress) -> Bool { keyPressEvents(key).map { poster.post($0) }.contains(true) }
       let window = primaryWindow(of: application)
-      let system = pasteActivation
+      // A press's four events go back to back, all of them, so its modifiers are always restored; it counts as posted
+      // when any of them went. They go to the keys' target through route 3's post, as the activation's own events do.
+      let poster = EventPoster(source: CGEventSource(stateID: .hidSystemState)) { system.post($0, target.keyboard) }
+      func press(_ key: KeyPress) -> Bool { keyPressEvents(key).map { poster.post($0) }.contains(true) }
       return try runPaste(parts, pasteboard: pasteboardAccess(), effect: effect,
                    remainingMs: { Double(context.deadline - unixMilliseconds()) },
                    keyFocusAtPaste: { keyFocusReading(pid: target.pid, keyboard: target.keyboard, application: application, window: window, system: system) },
-                   focusEnforcement: enforcement, activationNow: system.now,
+                   focusEnforcement: enforcement, activationNow: system.now, deliver: deliver,
                    checkInFlight: target.guarding.checkInFlight,
                    postPaste: { press(commandV) }, postReturn: { press(KeyPress(keyCode: returnKeyCode, modifiers: [])) },
                    entered: &entered, meta: &meta)

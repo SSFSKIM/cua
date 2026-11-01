@@ -17,7 +17,7 @@ import Foundation
 // startedAt, endedAt, receivedAt, hidIdleMs}, startedAt/endedAt null while nothing was posted, inputRoute null until a
 // route is chosen; the guard's duration rides as activationGuardMs when route 3 ran one, `intervention: "off"` when
 // detection is off, `entered` on a type_text that keyed (never a concealed one), and `routeAdvice` once route 3's guard
-// has failed three actions in a row for the app; route 3's pointer actions add `delivery` (#200), the paste route its
+// has failed three actions in a row for the app; route 3's pointer actions and the paste route add `delivery` (#200), the paste route its
 // value-free diagnostics as `paste` (#187, Paste.swift), and every result on a
 // connection whose after-action watch has repaired carries `afterActionRepairs` (Activation.swift AfterActionWatches).
 // The settle an action arms runs at the next get_app_state (markActed).

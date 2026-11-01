@@ -1603,7 +1603,125 @@ extension PasteActivationTests {
       XCTAssertNil(record["arm"], "no switch, no arm")
       XCTAssertNil(record["liftedClick"], "retired: `click` says what was posted")
       XCTAssertNil(record["clickToCommandVMs"], "stopped before ⌘V: no time to it")
+      XCTAssertEqual(seam.holds, 1, "one screen-update hold for the paste")
+      XCTAssertEqual(seam.releases, 1, "a stop before the first ⌘V ends the hold the activation left open")
+      XCTAssertNil(meta.delivery, "no event of the paste's own went out: no delivery guard")
     }
+  }
+
+  // MARK: The delivery guard and the after-action watch on the paste route (#200's, the slot of 2026-11-01)
+
+  /// A paste through the engine to its end on the seam, into a window it places (frame and number 41): the paste's keys
+  /// go out through route 3's post (the seam's), the fake app reads the pasteboard at each ⌘V's key down, and `onKeyDown`
+  /// runs at each key down with its key code (⌘V's 0x09, Return's 0x24). The meta it answered with.
+  private func pasteToItsEnd(_ text: String, typed: Bool, seam: GuardSeam, connection: ConnectionState, pasteboard: TestPasteboard,
+                             onKeyDown: @escaping (CGKeyCode) -> Void = { _ in }) throws -> InputMeta {
+    var system = seam.system
+    let post = system.post
+    system.post = { event, pid in
+      if event.type == .keyDown {
+        let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+        if code == 0x09 { _ = pasteboard.appReads() }
+        onKeyDown(code)
+      }
+      post(event, pid)
+    }
+    system.windowPlacement = { _, _ in (Self.chromeFrame, 41) }
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false },
+                        pasteboard: { pasteboard.access }, pasteActivation: system)
+    let context = ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: unixMilliseconds() + 60_000, lineage: nil)
+    let app = ResolvedApp(appPath: "/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "TextEdit", running: nil)
+    let pasteTarget = PasteTarget(app: app, pid: target, application: AXUIElementCreateApplication(target), keyboard: target,
+                                  guarding: .off(app: "TextEdit"))
+    var meta = InputMeta(context)
+    var entered = 0
+    if typed {
+      _ = try engine.typeTextByPaste(text, pasteTarget, context, meta: &meta)
+    } else {
+      try engine.pasteOperation([.content(plain(text), units: text.utf16.count)], pasteTarget, context, entered: &entered, meta: &meta)
+    }
+    return meta
+  }
+
+  /// The paste's first ⌘V goes out through the delivery guard, inside the screen-update hold its activation left open:
+  /// a raise of the target's window at ⌘V is undone before the hold is released, one hold for the whole action, and
+  /// the result carries `delivery` as a pointer action's does; the activation's own guard ends on one sample.
+  func testThePastesFirstCommandVGoesThroughTheDeliveryGuardInsideTheActivationsHold() throws {
+    for typed in [false, true] {
+      let seam = GuardSeam(frontmost: user)
+      seam.targetAbove = false
+      let pasteboard = TestPasteboard()
+      pasteboard.userCopies("the owner's")
+      var commandVs = 0
+      var heldAtRaise = false
+      let meta = try pasteToItsEnd(typed ? "a\nb" : "x", typed: typed, seam: seam, connection: ConnectionState(id: 1, fd: -1),
+                                   pasteboard: pasteboard) { code in
+        guard code == 0x09 else { return }
+        commandVs += 1
+        if commandVs == 1 {
+          seam.targetAbove = true  // the app raises its window at the first ⌘V
+          heldAtRaise = seam.holds > seam.releases
+        }
+      }
+      let label = typed ? "type_text" : "paste"
+      XCTAssertEqual(commandVs, typed ? 2 : 1, label)
+      XCTAssertTrue(heldAtRaise, "the first ⌘V went out inside the activation's hold (\(label))")
+      XCTAssertEqual(seam.targetAbove, false, "the user's window is back on top (\(label))")
+      XCTAssertEqual(seam.raises, 1, label)
+      XCTAssertEqual(seam.repairsOutsideHold, 0, "repaired inside the hold (\(label))")
+      XCTAssertEqual(seam.holds, 1, "one hold for the activation and the paste (\(label))")
+      XCTAssertEqual(seam.releases, 1, label)
+      let delivery = try XCTUnwrap(meta.delivery, label)
+      XCTAssertEqual(delivery.restores, 1, label)
+      XCTAssertFalse(delivery.raiseLeft, label)
+      XCTAssertNotNil(meta.wire["delivery"], "on the wire as a pointer action's (\(label))")
+      XCTAssertEqual(meta.activationGuardMs, 10, "the activation's guard settles on one sample when a delivery guard follows (\(label))")
+      XCTAssertEqual(pasteboard.strings(), ["the owner's"], "restored (\(label))")
+    }
+  }
+
+  /// The after-action watch covers the whole paste: it runs while every later line and Return goes out, however long
+  /// the lines' waits (here past the first ⌘V's own second), and until a second after the paste's last event; the paste
+  /// answers, its pasteboard restored, while the watch still runs. Its repairs are keyed by the delivery's `postedAt`.
+  func testTheWatchCoversEveryLineAndASecondAfterThePastesLastEvent() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let connection = ConnectionState(id: 7, fd: -1)
+    var raisesAtTheReturn: Int?
+    var lastCommandVAt: Double?
+    var commandVs = 0
+    let meta = try pasteToItsEnd("a\nb", typed: true, seam: seam, connection: connection, pasteboard: pasteboard) { code in
+      if code == returnKeyCode {
+        seam.advance(1_200)  // line 1's waits outlast a second after the first ⌘V
+        seam.targetAbove = true
+        seam.advance(20)
+        raisesAtTheReturn = seam.raises
+      } else if code == 0x09 {
+        commandVs += 1
+        if commandVs == 2 { lastCommandVAt = seam.clock }
+      }
+    }
+    XCTAssertEqual(raisesAtTheReturn, 1, "a raise between the lines, past the first ⌘V's second, is repaired")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"], "the paste answered with its restore done")
+    XCTAssertTrue(connection.afterAction.watching, "and the watch still running")
+    let last = try XCTUnwrap(lastCommandVAt)
+    seam.targetAbove = true
+    seam.advance(last + deliveryRepairWindowMs - 100 - seam.clock)
+    XCTAssertEqual(seam.raises, 2, "repaired inside the second after the last ⌘V")
+    XCTAssertEqual(seam.targetAbove, false)
+    seam.advance(200)
+    XCTAssertFalse(connection.afterAction.watching, "past it the watch has ended")
+    seam.targetAbove = true
+    seam.advance(100)
+    XCTAssertEqual(seam.raises, 2)
+    let wire = try XCTUnwrap(connection.afterAction.wire)
+    XCTAssertEqual(wire["repairs"] as? Int, 2)
+    let actions = try XCTUnwrap(wire["actions"] as? [[String: Any]])
+    XCTAssertEqual(actions.count, 1)
+    XCTAssertEqual(actions[0]["postedAt"] as? Int, Int(try XCTUnwrap(meta.delivery).postedAt), "keyed by the paste's delivery")
   }
 
   /// The retired switch is not in the engine's status: an engine.json still carrying it changes nothing.

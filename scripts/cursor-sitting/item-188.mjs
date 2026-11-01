@@ -45,6 +45,7 @@ export const ENGINES_188 = Object.freeze(['cua', 'vendor']);
 export const ITEMS_188 = Object.freeze({rows: engine => `188-rows-${engine}`, click: engine => `188-click-${engine}`, place: '188-place', end: '188-end'});
 export const ALL_ITEMS_188 = Object.freeze(ENGINES_188.flatMap(e => [ITEMS_188.rows(e), ITEMS_188.click(e)]));
 const DRIVEN = 'electron', USER = 'finder';
+export const ACTIVATE_ATTEMPTS = 3, ACTIVATE_WAIT_MS = 300;
 
 // The four rows (#188's acceptance), in the matrix's order: the frontmost regime, then the background one behind Finder.
 export const ROWS_188 = Object.freeze([
@@ -174,6 +175,17 @@ export const CLICK_POINT_PT = Object.freeze([60, (ELECTRON_FIELD_LAYOUT.from[1] 
 const lineStart = FIELD_LINES.slice(0, CLICK_LINE).reduce((n, l) => n + l.length + 1, 0);
 export const CLICK_LINE_RANGE = Object.freeze([lineStart, lineStart + FIELD_LINES[CLICK_LINE].length]);
 
+// Where a caret offset sits in the value's lines: {line, column}, both 0-based, or null outside the value.
+export function lineColumnOf(offset) {
+  if (!Number.isInteger(offset) || offset < 0 || offset > CLICK_VALUE.length) return null;
+  let start = 0;
+  for (const [line, text] of FIELD_LINES.entries()) {
+    if (offset <= start + text.length) return {line, column: offset - start};
+    start += text.length + 1;
+  }
+  return null;
+}
+
 const head = `${SCENE_MARKER(DRIVEN)}\n${prelude(DRIVEN)}`;
 // The field given the known value, then the selection or the caret; the last observation's index kept for the click.
 const fieldWithValue = `const ax0 = await observe();
@@ -288,6 +300,10 @@ export function clickRecord188({item, engine, part, prepare = null, before = nul
   return {item, engine, part, invalid, expected, precondition: rangeBefore ? sameRange(rangeBefore, expected) : null,
     before: rangeBefore, after: rangeAfter, ...(invalid ? {outcome: null} : selectionOutcome(part, rangeBefore, rangeAfter, afterRead)),
     afterRead, focusedOnField, probeFocusOnField: typeof after?.focusedIsTextArea === 'boolean' ? after.focusedIsTextArea : null,
+    // (ii)'s intended target as caret offsets, so a landing elsewhere is measured: the target line and its range, where the
+    // caret landed (line, column) and its offset from that range (negative before it, positive after it). Offsets only.
+    target: part === 'ii' ? {line: CLICK_LINE, range: [...CLICK_LINE_RANGE]} : null,
+    landed: part === 'ii' && rangeAfter ? {line: lineColumnOf(rangeAfter.location)?.line ?? null, column: lineColumnOf(rangeAfter.location)?.column ?? null, fromTarget: rangeAfter.location < CLICK_LINE_RANGE[0] ? rangeAfter.location - CLICK_LINE_RANGE[0] : rangeAfter.location > CLICK_LINE_RANGE[1] ? rangeAfter.location - CLICK_LINE_RANGE[1] : 0} : null,
     point: part === 'ii' && Array.isArray(prepare?.value?.point) ? prepare.value.point.map(num) : null,
     route: num(click?.route) ?? word(click?.route ?? null), clickMs: num(click?.value?.clickMs), activationClick: word(click_.activationClick ?? null), activationGuardMs: num(click_.activationGuardMs),
     elementClick: ec ? {plan: word(ec.plan), action: word(ec.action ?? null), reason: word(ec.reason), hit: word(ec.hit ?? null), hitTest: word(ec.hitTest ?? null)} : null,
@@ -312,6 +328,13 @@ export function item188Tasks(d) {
     s.windows.push({kind: 'harness', key, at: [from, d.now()], apps: [SCENES[scene].bundleId]});
     return answer;
   };
+  // Whether `scene`'s run window is the top window of the frontmost app; else what is on top (numbers only).
+  const runWindowOnTop = scene => {
+    const r = reading(), sc = d.scene(scene), top = r.topWindow;
+    const ok = userWindowOf(r, sc.pid) !== null && top.number === sc.window?.number;
+    return {ok, top: ok ? null : top?.owned ? `window ${top.number ?? 'unnumbered'} of process ${top.ownerPid}${r.frontmost?.pid === sc.pid ? '' : `, the frontmost being process ${r.frontmost?.pid ?? 'none'}`}`
+      : top ? `a window of an app the run does not own${r.frontmost?.pid === sc.pid ? '' : `, the frontmost being ${r.frontmost?.owned ? `process ${r.frontmost.pid}` : 'an app the run does not own'}`}` : 'no window'};
+  };
   const userNow = s => { const r = reading(); const w = userWindowOf(r, d.scene(USER).pid); return {r, w, same: Boolean(w && s.userWindow) && w.pid === s.userWindow.pid && ['x', 'y', 'width', 'height'].every(k => w.bounds[k] === s.userWindow.bounds[k])}; };
   return {
     '188-preflight': async scenes => {
@@ -319,9 +342,23 @@ export function item188Tasks(d) {
       return {ok: missing.length === 0, scenes, ...(missing.length ? {problem: `the ${missing.join(' and ')} scene${missing.length > 1 ? 's are' : ' is'} not up (scenes-mac.mjs up ${missing.join(', ')})`} : {})};
     },
     // A scene brought to the front, the step's activation the harness's; as the user window ('user'), its window read.
+    // The driven scene is done only when its run window is the frontmost app's top window (a harness window, such as the
+    // user's Finder window, can come back above it): activated again up to ACTIVATE_ATTEMPTS times in all, a short wait between.
     '188-activate': async ([scene, role], ctx) => {
-      const s = st(ctx), answer = await activate(s, scene, `activate:${scene}`);
-      if (role !== 'user') return {ok: answer?.ok !== false, scene};
+      const s = st(ctx);
+      if (role !== 'user') {
+        let answer = null, on = {ok: false}, attempts = 0;
+        while (attempts < ACTIVATE_ATTEMPTS) {
+          if (attempts > 0) await d.sleep(ACTIVATE_WAIT_MS);
+          answer = await activate(s, scene, `activate:${scene}`);
+          attempts += 1;
+          on = runWindowOnTop(scene);
+          if (on.ok) break;
+        }
+        const ok = answer?.ok !== false && on.ok;
+        return {ok, scene, attempts, ...(on.ok ? {} : {problem: answer?.ok === false ? `the ${scene} scene did not activate` : `the ${scene} scene's run window is not on top after ${attempts} activation(s): ${on.top}`})};
+      }
+      const answer = await activate(s, scene, `activate:${scene}`);
       s.userWindow = userWindowOf(reading(), d.scene(scene).pid);
       return {ok: answer?.ok !== false && s.userWindow !== null, scene, userWindow: s.userWindow, ...(s.userWindow ? {} : {problem: `the user window (${scene}) did not come to the front`})};
     },
@@ -465,6 +502,8 @@ export function judge188(items) {
 }
 
 const cellText = r => `${r.verdict}${r.why ? ` (${r.why})` : ''}`;
+// (ii)'s target and landing, offsets and line/column numbers only.
+const targetText = r => (r.target ? `${r.target.range[0]}..${r.target.range[1]} (line ${r.target.line}); ${r.landed ? r.landed.line === null ? 'landed outside the value' : `landed line ${r.landed.line}, column ${r.landed.column}${r.landed.fromTarget ? `, ${Math.abs(r.landed.fromTarget)} ${r.landed.fromTarget < 0 ? 'before' : 'after'} the line` : ''}` : 'landing unread'}` : '–');
 const rangeText = r => (r ? `${r.location}+${r.length}` : '–');
 // The two sections, for item-187.md.
 export function markdown188(j188) {
@@ -482,14 +521,14 @@ export function markdown188(j188) {
   }
   lines.push('', '## #188 cell 3, the click and the selection (recorded only, never counted for #187 or #188)', '',
     '(i) the field holding the known value with one word selected, then an element click by index; (ii) the caret at the value\'s end, then a coordinate click mid-text (the facade\'s `click([x, y])`). The range is the approved bundle\'s AXSelectedTextRange read (`location+length`), the expected one before the click shown first.', '',
-    '| engine | part | before (expected) | after | outcome | route | element click (plan, action, reason, hit) | focus on the field after | ABC |', '|---|---|---|---|---|---|---|---|---|');
+    '| engine | part | before (expected) | after | outcome | route | element click (plan, action, reason, hit) | focus on the field after | ABC | target line range (0-based line) and where the caret landed |', '|---|---|---|---|---|---|---|---|---|---|');
   for (const engine of ENGINES_188) {
     const c = j188.click[engine];
     for (const p of PARTS) {
       const r = c.parts[p];
-      if (!r) { lines.push(`| ${engine} | ${p} | – | – | ${c.recorded ? c.stopped ? `stopped: ${c.stopped}` : 'not recorded' : 'NOT RUN'} | – | – | – | ${c.abc ? 'yes' : 'no'} |`); continue; }
+      if (!r) { lines.push(`| ${engine} | ${p} | – | – | ${c.recorded ? c.stopped ? `stopped: ${c.stopped}` : 'not recorded' : 'NOT RUN'} | – | – | – | ${c.abc ? 'yes' : 'no'} | – |`); continue; }
       const ec = r.elementClick;
-      lines.push(`| ${engine} | ${p} | ${rangeText(r.before)} (${rangeText(r.expected)}) | ${rangeText(r.after)} | ${r.invalid ?? `${r.outcome}${r.where ? ` ${r.where}` : ''}${r.by === 'trailer' ? ' (by the trailer)' : ''}`} | ${r.route ?? '–'}${r.activationClick ? `, ${r.activationClick}` : ''} | ${ec ? [ec.plan, ec.action, ec.reason, ec.hit].filter(Boolean).join(', ') : '–'} | ${r.focusedOnField ?? r.afterRead?.focusedByTrailer ?? '–'} | ${c.abc ? 'yes' : 'no'} |`);
+      lines.push(`| ${engine} | ${p} | ${rangeText(r.before)} (${rangeText(r.expected)}) | ${rangeText(r.after)} | ${r.invalid ?? `${r.outcome}${r.where ? ` ${r.where}` : ''}${r.by === 'trailer' ? ' (by the trailer)' : ''}`} | ${r.route ?? '–'}${r.activationClick ? `, ${r.activationClick}` : ''} | ${ec ? [ec.plan, ec.action, ec.reason, ec.hit].filter(Boolean).join(', ') : '–'} | ${r.focusedOnField ?? r.afterRead?.focusedByTrailer ?? '–'} | ${c.abc ? 'yes' : 'no'} | ${targetText(r)} |`);
     }
   }
   lines.push('');

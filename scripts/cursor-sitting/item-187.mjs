@@ -40,6 +40,7 @@
 //   vendor  9 paste rows on the vendor's engine, recorded only, run only once B has failed to deliver.
 //   188     before A, under ABC: #188's four repaired Electron rows and its cell 3 (./item-188.mjs), on cua's engine and
 //           the vendor's; counted for #188 only, reported in their own sections, never part of this slot's verdict.
+//           `--part 188-vendor-click` runs only cell 3 on the vendor's engine, likewise apart.
 // Arm B lands only if every B row delivers exactly, with no page mousedown or click, no menu opened, no raise, no front
 // app change, the composition kept, every clipboard restore intact, the arm confirmed, and no control regressing under B
 // against a complete, valid A baseline (each control whole under both arms: every row valid, its order watcher whole, its
@@ -233,7 +234,7 @@ const endSteps = () => [
 ];
 
 // The drive's items in order, each {item, stage, steps}: `part` all (#188's items, then A, then B unless end-early), a,
-// b or 188 (#188's alone); `vendor` the vendor lane alone. #188's items (./item-188.mjs: its four rows and cell 3, cua's
+// b, 188 (#188's alone) or 188-vendor-click (only cell 3 on the vendor's engine, #188's alone); `vendor` the vendor lane alone. #188's items (./item-188.mjs: its four rows and cell 3, cua's
 // engine then the vendor's) run right after the placement, before any block engages Korean, and count only for #188.
 export function plan187({part = 'all', vendor = false} = {}) {
   const place = {item: ITEMS.place, stage: 'place', steps: placeSteps()}, end = {item: ITEMS.end, stage: 'end', steps: endSteps()};
@@ -249,7 +250,11 @@ export function plan187({part = 'all', vendor = false} = {}) {
   const b = [{item: ITEMS.b, stage: 'b', steps: groupItem({item: ITEMS.b, group: 'chrome-composing', blocks: bSchedule().map(s => ({...s, switchTo: s.arm === 'B' ? 'on' : 'off'}))})},
     ...CONTROLS.map(group => control(group, 'B'))];
   // Alone, #188's run places and restores under items of its own: #187's judge reads 187-end's latest attempt.
-  if (part === '188') return [{item: ITEMS_188.place, stage: 'place', steps: placeSteps()}, ...items188, {item: ITEMS_188.end, stage: 'end', steps: endSteps()}];
+  // `188-vendor-click`: the same, with only cell 3 on the vendor's engine (the cell a rerun of that one cell needs).
+  if (part === '188' || part === '188-vendor-click') {
+    const only = part === '188' ? items188 : [{item: ITEMS_188.click('vendor'), stage: '188', steps: clickItem188('vendor')}];
+    return [{item: ITEMS_188.place, stage: 'place', steps: placeSteps()}, ...only, {item: ITEMS_188.end, stage: 'end', steps: endSteps()}];
+  }
   return [place, ...(part === 'all' ? items188 : []), ...(part === 'b' ? [] : a), ...(part === 'a' ? [] : b), end];
 }
 

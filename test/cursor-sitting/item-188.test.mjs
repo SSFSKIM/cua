@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {read187} from '../../scripts/cursor-sitting.mjs';
 import {item187Markdown, ITEMS, judge187, judgedOk, plan187} from '../../scripts/cursor-sitting/item-187.mjs';
-import {ALL_ITEMS_188, caseOf188, CLICK_LINE_RANGE, CLICK_VALUE, clickItem188, clickRecord188, END_RANGE, item188Tasks, ITEMS_188, judge188, LABELS_188, markdown188, row188,
+import {ACTIVATE_ATTEMPTS, ACTIVATE_WAIT_MS, ALL_ITEMS_188, caseOf188, CLICK_LINE, CLICK_LINE_RANGE, CLICK_VALUE, clickItem188, clickRecord188, END_RANGE, item188Tasks, ITEMS_188, judge188, LABELS_188, markdown188, row188,
   rowId188, ROWS_188, rowsItem188, selectionOutcome, WORD_RANGE} from '../../scripts/cursor-sitting/item-188.mjs';
 import {runSteps} from '../../scripts/cursor-sitting/runner.mjs';
 import {caseCells} from '../../scripts/native-matrix/matrix-cells.mjs';
@@ -191,8 +191,8 @@ test('cell 3\'s record is value-free whatever its answers carry, and keeps the e
 // The Mac, faked for #188: the fixture and Finder up, a source the probe reads, an activation watcher, a session whose
 // cells answer by their markers. `source`: what input-source reads; `activateDuring`: row keys whose act activates the
 // fixture (an interference the watcher sees).
-function fakeMac188(out, {source = ABC, activateDuring = [], focusThrows = false} = {}) {
-  let clock = 1_790_000_000_000, front = 'electron';
+function fakeMac188(out, {source = ABC, activateDuring = [], focusThrows = false, electronStuck = 0} = {}) {
+  let clock = 1_790_000_000_000, front = 'electron', stuck = electronStuck;
   const tick = () => (clock += 5), calls = [], log = [];
   const scene = id => ({id, app: `/Apps/${id}.app`, pid: PIDS[id], ...(id === 'finder' ? {} : {at: 1}), window: {number: NUMBERS[id]}});
   let range = {location: 0, length: 0}, actKey = 0;
@@ -226,7 +226,8 @@ function fakeMac188(out, {source = ABC, activateDuring = [], focusThrows = false
   };
   const deps = {
     out, scene, state: () => ({scenes: {electron: {pid: PIDS.electron}, finder: {pid: PIDS.finder}}}),
-    activate: async id => { calls.push(['activate', id]); front = id; return {ok: true}; },
+    activate: async id => { calls.push(['activate', id]); if (id === 'electron' && stuck > 0) { stuck -= 1; front = 'finder'; } else front = id; return {ok: true}; },
+    sleep: async ms => { calls.push(['sleep', ms]); },
     frontmost: () => ({pid: PIDS[front], bundleId: front, topWindow: {ownerPid: PIDS[front], number: NUMBERS[front], bounds: BOUNDS[front]}}),
     probe: args => {
       if (args[0] === 'input-source') return {id: source, layout: source === ABC ? 'ABC' : '2SetHangul'};
@@ -280,8 +281,12 @@ test('cell 3 end to end on fakes: (i) by index with the element click\'s meta, (
   assert.equal(i.outcome, 'kept');
   assert.equal(i.elementClick.action, 'AXPress');
   assert.equal(ii.outcome, 'moved to the click point');
+  assert.deepEqual(ii.target, {line: CLICK_LINE, range: [...CLICK_LINE_RANGE]});
+  assert.deepEqual(ii.landed, {line: CLICK_LINE, column: 5, fromTarget: 0});
+  assert.equal(i.target, null);
   assert.deepEqual(ii.point, [86, 121]);
   assert.equal(judged.click.cua.abc, true);
+  assert.match(markdown188(judged).join('\n'), /\| cua \| ii \|.*\| 20\.\.33 \(line 2\); landed line 2, column 5 \|/);
   assert.match(markdown188(judged).join('\n'), /\| cua \| i \| 20\+7 \(20\+7\) \| 20\+7 \| kept \| 1 \| action, AXPress, advertised, same \|/);
   assert.deepEqual(leaks(JSON.stringify(evidence)), []);
   assert.equal(LABELS_188.click(ITEMS_188.click('cua'), 'i'), '188-click-cua i click');
@@ -331,4 +336,65 @@ test('neither the #188 rows nor cell 3 ever counts for #187\'s verdict', () => {
   const md = item187Markdown(judge187(passing));
   assert.match(md, /## #188 rows \(counted for #188, never for #187\): PASS on cua/);
   assert.match(md, /## #188 cell 3, the click and the selection \(recorded only, never counted for #187 or #188\)/);
+});
+
+test('cell 3 (ii) measures where the caret landed against the target line, offsets and line/column only', () => {
+  const rec = after => clickRecord188({item: 'x', engine: 'vendor', part: 'ii', prepare: {ok: true, value: {ready: true, point: [1, 2]}}, before: {range: END_RANGE}, click: {ok: true, value: {threw: false}}, after: {range: after}});
+  assert.deepEqual(CLICK_LINE_RANGE, [FIELD_LINES[0].length + FIELD_LINES[1].length + 2, FIELD_LINES[0].length + FIELD_LINES[1].length + 2 + FIELD_LINES[2].length]);
+  assert.deepEqual(rec({location: CLICK_LINE_RANGE[0] + 5, length: 0}).landed, {line: CLICK_LINE, column: 5, fromTarget: 0});
+  assert.deepEqual(rec({location: CLICK_LINE_RANGE[1], length: 0}).landed, {line: CLICK_LINE, column: FIELD_LINES[CLICK_LINE].length, fromTarget: 0});
+  assert.deepEqual(rec({location: 3, length: 0}).landed, {line: 0, column: 3, fromTarget: 3 - CLICK_LINE_RANGE[0]});
+  const end = rec(END_RANGE);
+  assert.equal(end.outcome, 'stayed');
+  assert.deepEqual(end.landed, {line: FIELD_LINES.length - 1, column: FIELD_LINES.at(-1).length, fromTarget: END_RANGE.location - CLICK_LINE_RANGE[1]});
+  assert.equal(rec({location: CLICK_VALUE.length + 4, length: 0}).landed.line, null);
+  assert.equal(rec(null).landed, null);
+  assert.deepEqual(leaks(JSON.stringify(end)), []);
+});
+
+test('the driven scene\'s 188-activate reports ok only once the fixture\'s run window is on top: up to 3 activations, a short wait between', async t => {
+  assert.equal(ACTIVATE_ATTEMPTS, 3);
+  const activateElectron = async stuck => {
+    const {io, calls} = fakeMac188(scratch(t), {electronStuck: stuck});
+    return {answer: await io.tasks['188-activate'](['electron'], {results: {}}), calls};
+  };
+  const first = await activateElectron(0);
+  assert.deepEqual([first.answer.ok, first.answer.attempts], [true, 1]);
+  assert.equal(first.calls.filter(c => c[0] === 'sleep').length, 0);
+  const third = await activateElectron(2);
+  assert.deepEqual([third.answer.ok, third.answer.attempts], [true, 3]);
+  assert.deepEqual(third.calls.filter(c => c[0] === 'activate'), Array(3).fill(['activate', 'electron']));
+  assert.deepEqual(third.calls.filter(c => c[0] === 'sleep'), [['sleep', ACTIVATE_WAIT_MS], ['sleep', ACTIVATE_WAIT_MS]]);
+  const never = await activateElectron(5);
+  assert.equal(never.answer.ok, false);
+  assert.equal(never.answer.attempts, 3);
+  assert.match(never.answer.problem, new RegExp(`window ${NUMBERS.finder} of process ${PIDS.finder}`));
+  assert.equal(never.calls.filter(c => c[0] === 'activate').length, 3);
+  assert.deepEqual(never.calls.filter(c => c[0] === 'activate').filter(c => c[1] !== 'electron'), [], 'only the fixture is ever activated');
+  // The user role is unchanged: one activation, the window read.
+  const {io, calls} = fakeMac188(scratch(t));
+  const user = await io.tasks['188-activate'](['finder', 'user'], {results: {}});
+  assert.equal(user.ok, true);
+  assert.equal(calls.filter(c => c[0] === 'activate').length, 1);
+  // A stuck fixture stops the ABC gate's item at the activate step (required), before any source is selected.
+  const out = scratch(t), stuck = fakeMac188(out, {electronStuck: 9});
+  await assert.rejects(runSteps(rowsItem188('vendor'), {item: ITEMS_188.rows('vendor'), out, io: stuck.io, log: () => {}}), /188-activate refused/);
+  assert.equal(stuck.calls.filter(c => c[0] === 'select-source').length, 0);
+});
+
+test('--part 188-vendor-click: #188\'s own place step, cell 3 on the vendor alone, its own end step, and nothing #187 reads', async t => {
+  const plan = plan187({part: '188-vendor-click'});
+  assert.deepEqual(plan.map(p => p.item), [ITEMS_188.place, ITEMS_188.click('vendor'), ITEMS_188.end]);
+  const shape = steps => steps.map(x => x.task ?? x.label ?? x.say ?? Object.keys(x).join());
+  assert.deepEqual(shape(plan[1].steps), shape(clickItem188('vendor')));
+  const out = scratch(t);
+  const {io, calls} = fakeMac188(out);
+  io.tasks['187-preflight'] = async () => ({ok: true});
+  io.tasks['187-place'] = async () => ({ok: true});
+  io.tasks.activate = async () => ({ok: true});
+  for (const {item, steps} of plan) await runSteps(steps, {item, out, io, log: () => {}});
+  const written = Object.keys(read187(out));
+  assert.deepEqual(written.sort(), [ITEMS_188.click('vendor'), ITEMS_188.end, ITEMS_188.place].sort());
+  assert.ok(!written.includes(ITEMS.end));
+  assert.deepEqual(calls.filter(c => c[0] === 'open').map(c => c[1]), ['vendor']);
 });

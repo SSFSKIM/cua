@@ -555,9 +555,12 @@ test('the CLI: the dry run prints every step and touches nothing; judge writes i
   assert.deepEqual(leaks(text), []);
   const vendor = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--vendor']));
   assert.match(vendor.text, /dry run: \d+ steps/);
-  await assert.rejects(main(['paste-187', 'drive', '--out', out, '--dry-run', '--part', 'c']), /--part takes all, a, b or 188/);
+  await assert.rejects(main(['paste-187', 'drive', '--out', out, '--dry-run', '--part', 'c']), /--part takes all, a, b, 188 or 188-vendor-click/);
   const only188 = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--part', '188']));
   assert.match(only188.text, new RegExp(`dry run: ${plan187({part: '188'}).reduce((n, p) => n + p.steps.length, 0)} steps, nothing sent`));
+  assert.equal(existsSync(out), false);
+  const vendorClick = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--part', '188-vendor-click']));
+  assert.match(vendorClick.text, new RegExp(`dry run: ${plan187({part: '188-vendor-click'}).reduce((n, p) => n + p.steps.length, 0)} steps, nothing sent`));
   assert.equal(existsSync(out), false);
   await assert.rejects(main(['paste-187', 'drive', '--out', dir, '--run', dir, '--vendor']), /only once arm B has failed to deliver/);
   const judged = await quietly(() => main(['paste-187', 'judge', '--out', dir]));

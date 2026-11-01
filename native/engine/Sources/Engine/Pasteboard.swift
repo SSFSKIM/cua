@@ -44,8 +44,9 @@ protocol PasteboardAccess: AnyObject {
   func write(_ item: NSPasteboardItem, expecting expected: Int) -> PasteboardWrite?
   /// Clears the pasteboard and, unless the snapshot was empty, writes its items back, only while the change count is
   /// still `own`, the engine's own (checked in the same main-thread operation, immediately before the clear); when it
-  /// moved, someone else wrote the pasteboard since and their contents are left alone.
-  func restore(_ snapshot: PasteboardSnapshot?, expecting own: Int)
+  /// moved, someone else wrote the pasteboard since and their contents are left alone. True when it restored.
+  @discardableResult
+  func restore(_ snapshot: PasteboardSnapshot?, expecting own: Int) -> Bool
 }
 
 /// An NSPasteboard: the general one for the engine, a uniquely named one in the unit tests.
@@ -80,18 +81,20 @@ final class SystemPasteboard: PasteboardAccess, @unchecked Sendable {
     }
   }
 
-  func restore(_ snapshot: PasteboardSnapshot?, expecting own: Int) {
-    if general && !DesktopGate.allows("NSPasteboard.general restore") { return }
-    onMain {
-      guard pasteboard.changeCount == own else { return }
+  @discardableResult
+  func restore(_ snapshot: PasteboardSnapshot?, expecting own: Int) -> Bool {
+    if general && !DesktopGate.allows("NSPasteboard.general restore") { return false }
+    return onMain {
+      guard pasteboard.changeCount == own else { return false }
       pasteboard.clearContents()
-      guard let snapshot else { return }
+      guard let snapshot else { return true }
       let items = snapshot.map { representations in
         let item = NSPasteboardItem()
         for representation in representations { item.setData(representation.data, forType: representation.type) }
         return item
       }
       pasteboard.writeObjects(items)
+      return true
     }
   }
 }

@@ -297,7 +297,8 @@ export function activationsOf(lines, watch) {
 // What the paste check writes: a plain paste, a Markdown paste (bold), and type_text's paste route over two lines.
 export const PASTE = Object.freeze({text: 'cua paste plain', markdown: '**cua paste bold**', typed: 'cua typed paste\nsecond typed line'});
 // Each paste step's deadline. The engine bounds its own waits by it (the paste lock's wait answers timeoutReached; the
-// read and effect waits answer clipboardReadTimedOut at 2 s each), and the client gives the connection up a grace after
+// read wait answers clipboardReadTimedOut and the effect wait pasteUnconfirmed, each at 2 s or the deadline, #187),
+// and the client gives the connection up a grace after
 // it (src/services/engine/client.mjs), so no paste step outlives about 25 s; the alert's text read is bounded the same
 // way, shorter.
 export const PASTE_DEADLINE_MS = 20_000;

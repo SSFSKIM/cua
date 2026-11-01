@@ -6,6 +6,13 @@ import Foundation
 
 let elementMessagingTimeout: Float = 1.0
 
+/// The messaging timeout of a read bounded by `leftMs` of a deadline: the time left, at most the usual 1 s and at least
+/// 50 ms; nil once nothing is left (no read is sent).
+func boundedMessagingTimeout(leftMs: Double) -> Float? {
+  guard leftMs > 0 else { return nil }
+  return Float(max(0.05, min(Double(elementMessagingTimeout), leftMs / 1000)))
+}
+
 func prepare(_ element: AXUIElement) -> AXUIElement {
   AXUIElementSetMessagingTimeout(element, elementMessagingTimeout)
   return element

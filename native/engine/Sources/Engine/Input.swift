@@ -17,7 +17,8 @@ import Foundation
 // startedAt, endedAt, receivedAt, hidIdleMs}, startedAt/endedAt null while nothing was posted, inputRoute null until a
 // route is chosen; the guard's duration rides as activationGuardMs when route 3 ran one, `intervention: "off"` when
 // detection is off, `entered` on a type_text that keyed (never a concealed one), and `routeAdvice` once route 3's guard
-// has failed three actions in a row for the app; route 3's pointer actions add `delivery` (#200), and every result on a
+// has failed three actions in a row for the app; route 3's pointer actions add `delivery` (#200), the paste route its
+// value-free diagnostics as `paste` (#187, Paste.swift), and every result on a
 // connection whose after-action watch has repaired carries `afterActionRepairs` (Activation.swift AfterActionWatches).
 // The settle an action arms runs at the next get_app_state (markActed).
 // Spike-only arguments, which the facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘
@@ -82,6 +83,8 @@ struct InputMeta {
   var keyWindowRestored: Bool?
   /// Route 3's pointer actions: what the delivery guard after the action's events saw and did (#200); nil when none ran.
   var delivery: DeliveryGuardOutcome?
+  /// The paste route's value-free diagnostics of its last line (#187, Paste.swift `PasteDiagnostics`); nil off it.
+  var paste: PasteDiagnostics?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -132,6 +135,7 @@ struct InputMeta {
     if let routeAdvice { wire["routeAdvice"] = routeAdvice }
     if let keyWindowRestored { wire["keyWindowRestored"] = keyWindowRestored }
     if let delivery { wire["delivery"] = delivery.wire }
+    if let paste { wire["paste"] = paste.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }
@@ -439,9 +443,9 @@ extension Engine {
       case .refusedConcealed:
         throw concealedInputUnavailable(sourceID: source.id, perContext: source.keyboardLayout && perContextUnknown)
       case .paste:
-        try typeTextByPaste(text, PasteTarget(app: app, pid: pid, application: application, keyboard: target, guarding: guarding),
-                            context, meta: &meta)
-        return ["meta": meta.wire]
+        let note = try typeTextByPaste(text, PasteTarget(app: app, pid: pid, application: application, keyboard: target, guarding: guarding),
+                                       context, meta: &meta)
+        return pasteResult(meta, note: note)
       case .keyed: break
       }
       guard let layout = KeyLayout.current() else {

@@ -569,6 +569,41 @@ final class EnablementReleaseTests: XCTestCase {
     web.release(connection: 2)
     XCTAssertEqual(app.written, ["AXManualAccessibility=true", "AXManualAccessibility=false", "AXManualAccessibility=true", "AXManualAccessibility=false"])
   }
+
+  /// What a paste's trust in a Chromium or Electron process's notifications keys on (#187): the enablement holds while
+  /// the engine owns the attribute, or it read true; not before any observation, not after the write-back, and not
+  /// when the write failed on a value that read false.
+  func testTheEnablementHoldsWhileOwnedOrReadTrueAndNotAfterTheWriteBack() {
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    XCTAssertFalse(web.enablementHolds(pid: 7, launched: launched), "never observed: the role read alone is not counted")
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    XCTAssertTrue(web.enablementHolds(pid: 7, launched: launched), "owned")
+    XCTAssertFalse(web.enablementHolds(pid: 7, launched: Date(timeIntervalSince1970: 2_000)), "another generation of the pid")
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    XCTAssertTrue(web.enablementHolds(pid: 7, launched: launched), "still owned, nothing re-read")
+    web.release(connection: 1)
+    XCTAssertFalse(web.enablementHolds(pid: 7, launched: launched), "written back")
+
+    let other = FakeApplication(names: ["AXManualAccessibility"])
+    other.values["AXManualAccessibility"] = true  // VoiceOver's
+    _ = web.enable(pid: 8, launched: launched, connection: 1, access: other.access)
+    XCTAssertTrue(web.enablementHolds(pid: 8, launched: launched), "read true: another client's, on")
+
+    let failing = FakeApplication(names: ["AXManualAccessibility"])
+    failing.failWrites = true
+    _ = web.enable(pid: 9, launched: launched, connection: 1, access: failing.access)
+    XCTAssertFalse(web.enablementHolds(pid: 9, launched: launched), "read false and the write failed")
+  }
+
+  /// Chromium and Electron by their principal class; web-shaped by a URL scheme alone is not enough (Safari's own
+  /// notifications need no enablement).
+  func testChromiumFamilyIsByPrincipalClass() {
+    XCTAssertTrue(chromiumFamily(info: ["NSPrincipalClass": "AtomApplication"]))
+    XCTAssertTrue(chromiumFamily(info: ["NSPrincipalClass": "BrowserCrApplication"]))
+    XCTAssertFalse(chromiumFamily(info: ["NSPrincipalClass": "NSApplication", "CFBundleURLTypes": [["CFBundleURLSchemes": ["http"]]]]))
+    XCTAssertFalse(chromiumFamily(info: [:]))
+  }
 }
 
 /// The minimized rule wired into the pointer methods: scroll and drag (and a click at a point) are refused before their

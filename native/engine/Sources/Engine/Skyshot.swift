@@ -40,9 +40,8 @@ func readPrimaryWindow(_ read: (String) -> (value: CFTypeRef?, error: AXError)) 
 func deadlineBounded(deadline: Int64, now: @escaping () -> Int64, setTimeout: @escaping (Float) -> Void,
                      copy: @escaping (String) -> (value: CFTypeRef?, error: AXError)) -> (String) -> (value: CFTypeRef?, error: AXError) {
   { name in
-    let left = deadline - now()
-    guard left > 0 else { return (nil, .cannotComplete) }
-    setTimeout(Float(max(0.05, min(Double(elementMessagingTimeout), Double(left) / 1000))))
+    guard let timeout = boundedMessagingTimeout(leftMs: Double(deadline - now())) else { return (nil, .cannotComplete) }
+    setTimeout(timeout)
     return copy(name)
   }
 }

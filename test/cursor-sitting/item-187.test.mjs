@@ -248,8 +248,9 @@ test('the plan: the preconditions and placement first, the switch and a stopped 
 // `activationsInWaitAt`: rows whose page beacon lags, Chrome and then TextEdit activated while the row waits for it.
 // `tailRaise`: Chrome raised while the block closes its session, after the last row's restore check; `menuWatch`: the
 // notification watcher's fate (ok, ended, dead, unreadable) and `menuSnapshot` whether the snapshot reads succeed.
-function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [], tailRaise = false, menuWatch = 'ok', menuSnapshot = true} = {}) {
-  let clock = T0, front = 'textedit', composed = false;
+function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [], tailRaise = false, menuWatch = 'ok', menuSnapshot = true, lostKeys = 0, latinKey = false} = {}) {
+  let clock = T0, front = 'textedit', composed = false, typedLatin = false;
+  const keystrokes = [];
   const bounds = {chrome: {x: 300, y: 80, width: 800, height: 600}, textedit: {x: 500, y: 100, width: 700, height: 500}, electron: {x: 900, y: 120, width: 500, height: 400}};
   const numbers = {chrome: 11, textedit: 12, electron: 13};
   const changes = [], calls = [], activationsLog = [];
@@ -293,8 +294,12 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
     windowList: () => ['textedit', 'chrome', 'electron'].map(id => ({number: numbers[id], bounds: bounds[id]})),
     probe: args => {
       if (args[0] === 'input-source') return {id: KOREAN_2SET, layout: HANGUL_LAYOUT, perContextInput: false};
-      if (args[0] === 'keystroke') { composed = true; return {exitStatus: 0, units: 1}; }
-      if (args[0] === 'focus') return {named: true, valueHash: composed ? sha256Hex(COMPOSITION.composed) : EMPTY_HASH};
+      if (args[0] === 'keystroke') {
+        keystrokes.push(args);
+        if (keystrokes.length > lostKeys) { if (latinKey) typedLatin = true; else composed = true; }
+        return {exitStatus: 0, units: 1};
+      }
+      if (args[0] === 'focus') return {named: true, valueHash: composed ? sha256Hex(COMPOSITION.composed) : typedLatin ? sha256Hex(COMPOSITION.key) : EMPTY_HASH};
       return null;
     },
     engineStatus: () => ({build: 'b1', approved: true, status: {pasteFocusEnforcement: true}}), engineJson: () => ({}),
@@ -314,7 +319,7 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
     },
   };
   Object.assign(io.tasks, item187Tasks(deps));
-  return {io, calls};
+  return {io, calls, keystrokes};
 }
 
 test('a raise after a B row: the kit puts the order back before the next row, the row is a B failure with the raise\'s time, and the judge counts it', async t => {
@@ -364,6 +369,28 @@ test('the composition: a row that disturbs it makes the rest of its block invali
   assert.equal(records[0].userKept, false);
   assert.deepEqual(records.slice(1).map(r => r.invalid), Array(2).fill('an earlier row of the block disturbed the user window\'s composition'));
   assert.equal(calls.filter(c => c[0] === 'act').length, 1, 'no act after the disturbance');
+});
+
+test('the composition key: scheduled after the probe\'s launch, posted once more only when the field reads empty (a lost key)', async t => {
+  const compose = async options => {
+    const out = scratch(t);
+    const mac = fakeMac(out, options);
+    // A refused composition stops the item (a required step): its record is what is judged here.
+    await runSteps(groupItem({item: ITEMS.a1, group: 'chrome-composing', blocks: [{block: 0, arm: 'A', rows: ROWS.slice(0, 1)}]}), {item: ITEMS.a1, out, io: mac.io, log: () => {}})
+      .catch(error => { if (!/187-compose refused/.test(error.message)) throw error; });
+    return {result: read187(out)[ITEMS.a1].find(r => r.task === '187-compose').result, keystrokes: mac.keystrokes};
+  };
+  const first = await compose({});
+  assert.equal(first.result.ok, true);
+  assert.equal(first.result.posts, 1);
+  const at = first.keystrokes[0][first.keystrokes[0].indexOf('--at') + 1];
+  assert.ok(Number(at) > T0, 'the key is scheduled with --at');
+  const lost = await compose({lostKeys: 1});
+  assert.deepEqual([lost.result.ok, lost.result.posts, lost.keystrokes.length], [true, 2, 2]);
+  const lostTwice = await compose({lostKeys: 2});
+  assert.deepEqual([lostTwice.result.ok, lostTwice.result.posts, lostTwice.result.read], [false, 2, 'empty']);
+  const latin = await compose({latinKey: true});
+  assert.deepEqual([latin.result.ok, latin.result.posts, latin.result.read], [false, 1, 'latin'], 'a field holding the Latin key is never typed over');
 });
 
 test('value-free helpers: the clipboard readers by name only; an open menu by roles and counts', () => {

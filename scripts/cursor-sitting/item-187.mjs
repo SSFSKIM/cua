@@ -72,6 +72,8 @@ import {PROBE_CACHE, SCENE_MARKER} from './target-guard.mjs';
 const j = JSON.stringify;
 export const S = 's';
 export const SWITCH = 'pasteFocusEnforcement';
+// The composition key's schedule after the probe's launch (the native matrix's --lead), and its posts at most.
+export const COMPOSE_LEAD_MS = 1500, COMPOSE_POSTS = 2;
 export const ARMS = Object.freeze(['A', 'B']);
 export const METHODS = Object.freeze(['typeText', 'paste']);
 // Hold 3's nine strings, each typed and pasted: 18 rows a pass.
@@ -737,18 +739,26 @@ export function item187Tasks(d) {
       const window = [w.pid, w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height].join(','), jamo = sha256Hex(COMPOSITION.composed);
       const empty = attempt(() => d.probe(['focus', '--window', window]));
       if (empty?.named !== true || empty.valueHash !== EMPTY_HASH) return {ok: false, tag, problem: 'the focus probe did not read the user window\'s field focused and empty'};
-      const posted = attempt(() => d.probe(['keystroke', '--ansi-keys', '--user-pid', String(w.pid), '--user-bounds', [w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height].join(','), COMPOSITION.key]));
-      if (probeStatus(posted) !== 0) return {ok: false, tag, problem: `the probe's key was not posted (status ${probeStatus(posted)})`};
-      let composed = false, reads = 0, last = null;
-      for (; reads < SETTLE_READS && !composed; reads++) {
-        if (reads) await d.sleep(SETTLE_READ_MS);
-        last = attempt(() => d.probe(['focus', '--window', window]));
-        composed = last?.valueHash === jamo;
+      // The key is scheduled COMPOSE_LEAD_MS after the probe's launch, as the native matrix's composing rows post it: an
+      // unscheduled post right at the probe's launch was lost live (the field read empty after it, 2 of 4 setups). A key
+      // lost that way leaves the field empty, so it is posted once more; any other reading is never typed over.
+      const post = () => attempt(() => d.probe(['keystroke', '--ansi-keys', '--at', String(d.now() + COMPOSE_LEAD_MS), '--user-pid', String(w.pid),
+        '--user-bounds', [w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height].join(','), COMPOSITION.key]));
+      let composed = false, reads = 0, last = null, posts = 0;
+      while (posts < COMPOSE_POSTS && !composed && (posts === 0 || last?.valueHash === EMPTY_HASH)) {
+        const posted = post();
+        posts++;
+        if (probeStatus(posted) !== 0) return {ok: false, tag, posts, problem: `the probe's key was not posted (status ${probeStatus(posted)})`};
+        for (let r = 0; r < SETTLE_READS && !composed; r++, reads++) {
+          if (r) await d.sleep(SETTLE_READ_MS);
+          last = attempt(() => d.probe(['focus', '--window', window]));
+          composed = last?.valueHash === jamo;
+        }
       }
       if (composed) st(ctx).compose[tag] = {window, jamo};
       // What the field read instead, by class only: empty (the key was lost), the Latin key, or something else.
       const read = composed ? 'jamo' : last?.valueHash === EMPTY_HASH ? 'empty' : last?.valueHash === sha256Hex(COMPOSITION.key) ? 'latin' : last?.named === true ? 'other' : 'unread';
-      return {ok: composed, tag, reads, read, ...(composed ? {} : {problem: `the user window's field did not read the composed jamo after the probe's key (it read ${read})`})};
+      return {ok: composed, tag, reads, posts, read, ...(composed ? {} : {problem: `the user window's field did not read the composed jamo after the probe's key (it read ${read})`})};
     },
     '187-before': async ([key], ctx) => { st(ctx).rows[key] = {start: d.now()}; return {ok: true, key}; },
     // The readings right before the act; the act's span starts after them.

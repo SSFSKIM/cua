@@ -185,15 +185,6 @@ private final class OnceRelease: @unchecked Sendable {
   }
 }
 
-/// AppKit's ordering click (#200; `-[NSWindow(NSEventRouting) _handleMouseDownEvent:isDelayedEvent:]`, read on macOS
-/// 26.6.2): a left mouse down with click count 1 whose modifiers among shift, control, option, ⌘ and help (0x5E0000)
-/// are not ⌘ alone. Into a key window of an app that believes itself active, AppKit answers it by asking the window
-/// server to order the window front (`_NSDoDeferredWindowOrdering`), unless subtype 1 has armed
-/// `_mouseActivationInProgress`, which the next mouse down consumes (the window made key, no ordering request).
-func isOrderingMouseDown(_ event: CGEvent) -> Bool {
-  event.type == .leftMouseDown && event.getIntegerValueField(.mouseEventClickState) == 1 && event.flags.rawValue & 0x5E0000 != 0x100000
-}
-
 /// One action's fake activation of the app `pid` for its window.
 final class FakeActivation {
   let pid: pid_t
@@ -321,24 +312,13 @@ final class FakeActivation {
     _ = postToProcess(clickEvents(target, button: .left, count: 1, flags: []), pid: pid, post: system.post)
   }
 
-  /// The activation's subtype 1 again, for `window` (the mouse down's own; else the activation's), made for the caller
-  /// to post just before an ordering mouse down (`isOrderingMouseDown`, #200): the activation click or an earlier click
-  /// consumed the first one's arming. Nil when no fake activation stands: the app believed it had focus, or this one
-  /// was withdrawn.
-  func rearmEvent(window: CGWindowID?) -> CGEvent? {
-    activated ? appKitEvent(subtype: NSEvent.EventSubtype.applicationActivated.rawValue, window: window ?? windowID) : nil
-  }
-
   @discardableResult
   private func post(subtype: Int16) -> Bool {
-    guard let event = appKitEvent(subtype: subtype, window: windowID) else { return false }
+    guard let event = NSEvent.otherEvent(with: .appKitDefined, location: .zero, modifierFlags: NSEvent.ModifierFlags(rawValue: 0xC0000),
+                                         timestamp: 0, windowNumber: Int(windowID ?? 0), context: nil, subtype: subtype, data1: 0, data2: 0)?.cgEvent
+    else { return false }
     event.timestamp = DispatchTime.now().uptimeNanoseconds
     system.post(event, pid)
     return true
-  }
-
-  private func appKitEvent(subtype: Int16, window: CGWindowID?) -> CGEvent? {
-    NSEvent.otherEvent(with: .appKitDefined, location: .zero, modifierFlags: NSEvent.ModifierFlags(rawValue: 0xC0000), timestamp: 0,
-                       windowNumber: Int(window ?? 0), context: nil, subtype: subtype, data1: 0, data2: 0)?.cgEvent
   }
 }

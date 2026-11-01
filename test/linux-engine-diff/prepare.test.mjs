@@ -8,8 +8,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { ENGINE, ORACLE, PrepareStepError, judgePrepareFaults, prepareFailureRow, sampleUnderRule } from '../../scripts/linux-engine-diff/prepare.mjs';
-import { prepareFaultsMarkdown } from '../../scripts/linux-engine-diff/report.mjs';
-import { runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
+import { prepareFaultsMarkdown, renderSummary } from '../../scripts/linux-engine-diff/report.mjs';
+import { judgeOperation, runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
 import { NO_HANDLE, TEXT_OPS, handleOfFirstWord } from '../../scripts/linux-engine-diff/text.mjs';
 
 const fieldText = () => 'cua171 differential scene';
@@ -48,16 +48,30 @@ test('a selection the window refuses twice is a harness-oracle failure: no Copy 
   assert.equal(ctx.prepareError, undefined, 'no handle sent in place of one: the sample is not run');
 });
 
-test("the engine's Copy failing twice is the engine's failure: a handle no engine issued, never a harness fault", async () => {
+test("the engine's Copy failing is the engine's failure: never retried, a handle no engine issued, never a harness fault", async () => {
   const { ctx, requests } = handleCtx({ selects: [true, true], copies: [refusedCopy, refusedCopy] });
   assert.equal(await handleOfFirstWord(ctx), NO_HANDLE);
-  assert.deepEqual(requests, ['clipboard_read', 'clipboard_read']);
+  assert.deepEqual(requests, ['clipboard_read'], 'the Copy is not tried again');
   assert.deepEqual(
     ctx.prepareAttempts.map((a) => a.step),
-    [ENGINE, ENGINE],
+    [ENGINE],
   );
   assert.equal(ctx.prepareStep, ENGINE);
   assert.match(ctx.prepareError, /^clipboard_read for a handle failed: editable element has no selected text to Copy/);
+});
+
+test("a Copy that fails and would succeed when tried again still fails the sample's verdict: no retry hides it", async () => {
+  // the task 22 review's probe: a failed Copy, then a successful one, had given a valid handle and a passing verdict
+  const { ctx, requests } = handleCtx({ selects: [true, true], copies: [refusedCopy, copied] });
+  assert.equal(await handleOfFirstWord(ctx), NO_HANDLE);
+  assert.deepEqual(requests, ['clipboard_read']);
+  assert.equal(ctx.prepareStep, ENGINE);
+  assert.match(ctx.prepareError, /no selected text to Copy/);
+  const rows = ['pinned', 'newest', 'cua'].flatMap((engine) => ['cold', 'warm'].map((series) => ({ kind: 'sample', engine, series, ok: true, ms: 1, witness: true, equal: true, clipboard_kept: true, effect: true })));
+  rows.push({ kind: 'sample', engine: 'cua', series: 'warm', ok: true, ms: 1, witness: true, equal: true, clipboard_kept: true, effect: true, prepare_error: ctx.prepareError });
+  const verdict = judgeOperation(rows, { vendors: ['pinned', 'newest'], candidate: 'cua', text: true, judgeSpeed: false });
+  assert.equal(verdict.pass, false);
+  assert.match(verdict.reasons.join('; '), /cua: 1 sample's preparation failed \(clipboard_read for a handle failed: editable element has no selected text to Copy\)/);
 });
 
 test("an oracle refusal then the engine's failure is the engine's failure: the engine's request is never excused", async () => {
@@ -221,7 +235,7 @@ test('a run with no harness-oracle failure passes the rule and lists no case', (
   const faults = judgePrepareFaults(sampleRows('gedit', 'clipboard_write', 41));
   assert.equal(faults.pass, true);
   assert.deepEqual(faults.cases, []);
-  assert.deepEqual(faults.run, { samples: 41, resampled: 0, invalid: 0, limit: 0.41, over: false });
+  assert.deepEqual(faults.total, { samples: 41, resampled: 0, invalid: 0, limit: 0.41, over: false });
 });
 
 test('a case may have 2 resampled or invalid samples; a third fails the run', () => {
@@ -252,7 +266,7 @@ test("more than 1% of the run's samples fails the run though every case is withi
   const faults = judgePrepareFaults(rows);
   assert.ok(faults.cases.every((c) => !c.over));
   assert.equal(faults.pass, false);
-  assert.deepEqual(faults.run, { samples: 300, resampled: 3, invalid: 3, limit: 3, over: true });
+  assert.deepEqual(faults.total, { samples: 300, resampled: 3, invalid: 3, limit: 3, over: true });
   assert.match(faults.reasons.join('; '), /the run: 6 of 300 samples resampled or invalid \(3 resampled, 3 invalid\), more than 1% of the run's samples \(3\)/);
 });
 
@@ -266,6 +280,23 @@ test("the summary lists the rule's counts per case and for the run, and each fai
   assert.deepEqual(prepareFaultsMarkdown(sampleRows('gedit', 'tree', 3)), [], 'a run from before the rule shows nothing');
   const none = judgePrepareFaults(sampleRows('gedit', 'tree', 3));
   assert.deepEqual(prepareFaultsMarkdown([{ kind: 'prepare-faults', ...none }]), ['', "Harness preparation failures (the gate's rule, Decision Log 2026-11-01): 0 resampled and 0 invalid of 3 samples, against the run's cap of 1% (0.03)."]);
+});
+
+test("the rule's record, emitted as run.mjs emits every row, keeps its run's name and renders under it", () => {
+  // run.mjs's emitter writes `{run, ...row}`: a payload field named `run` would replace the run's name (task 22 review)
+  const run = 't22-render';
+  const emitted = [];
+  const emit = (row) => emitted.push(JSON.parse(JSON.stringify({ run, ...row })));
+  emit({ kind: 'meta', commit: 'c', cua_version: 'v', occlusion: 'covered', blocks: 1, samples_tree: 7, samples_input: 5, engines: [] });
+  const rows = [...sampleRows('gedit', 'clipboard_write', 40), { ...failure('gedit', 'clipboard_write', 'resampled'), error: 'refused' }];
+  for (const r of rows) emit(r);
+  emit({ kind: 'prepare-faults', ...judgePrepareFaults(rows) });
+  emit({ kind: 'end', valid: true, pass: true, failed: [], parity: [], refused: [], finished: 'now' });
+  assert.ok(emitted.every((r) => r.run === run), 'every row keeps its run');
+  const md = renderSummary(emitted);
+  assert.equal(md.match(/^## /gm).length, 1, md);
+  assert.doesNotMatch(md, /object Object|run unfinished/);
+  assert.match(md, /## t22-render[\s\S]*Harness preparation failures \(the gate's rule, Decision Log 2026-11-01\): 1 resampled and 0 invalid of 40 samples/);
 });
 
 test('a cap the rule fails fails the run outcome, its reason in the verdict line', () => {

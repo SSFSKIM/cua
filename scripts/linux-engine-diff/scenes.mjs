@@ -56,29 +56,79 @@ export function configure(id, x, y, w, h) {
 export const GEOMETRY = { gedit: [910, 756], chrome: [1050, 780] };
 
 export class Desktop {
-  constructor({ cua, run }) {
+  /** `reader` and `previousActive`: the display-free tests' own (stop.test.mjs); a run's are the defaults. */
+  constructor({ cua, run, reader, previousActive }) {
     this.run = run;
     this.dir = mkdtempSync(join(tmpdir(), `cua171-diff-${run}-`));
-    this.reader = new Engine({ label: 'reader', bin: cua }).start();
+    this.reader = reader ?? new Engine({ label: 'reader', bin: cua }).start();
+    // every window the harness asked for, registered before it is asked for (so a stop finds it), its id once found
     this.windows = [];
-    this.previousActive = activeWindow();
+    this.previousActive = previousActive ?? activeWindow();
+    // the opens in flight, and whether the run is stopping: then no window is asked for any more
+    this.opening = new Set();
+    this.stopping = false;
     // a run stopped by SIGINT or SIGTERM closes what it opened, as one that ends does (stop.mjs)
     this.stopHooks = [];
-    this.unhookStop = cleanupOnStop(async () => {
-      for (const hook of this.stopHooks) {
-        try {
-          await hook();
-        } catch {
-          // each tried on its own; the windows close regardless
-        }
-      }
-      await this.closeAll();
-    });
+    this.unhookStop = cleanupOnStop(() => this.stop());
   }
 
   /** Something of the run's own to stop before the windows close when the run is stopped (its witness). */
   onStop(hook) {
     this.stopHooks.push(hook);
+  }
+
+  /**
+   * The cleanup of a stopped run: no window is asked for any more, the opens in flight end (each bounded by its own
+   * wait for its window, which a stop does not cut short, so a window that appears meanwhile is found), the run's own
+   * hooks run, and everything registered is closed.
+   */
+  async stop() {
+    this.stopping = true;
+    await Promise.allSettled([...this.opening]);
+    for (const hook of this.stopHooks) {
+      try {
+        await hook();
+      } catch {
+        // each tried on its own; the windows close regardless
+      }
+    }
+    await this.closeAll();
+  }
+
+  /** Refuses a new window once the run is stopping. */
+  assertOpen() {
+    if (this.stopping) throw new Error('the harness is stopping: no window is opened now');
+  }
+
+  /** An open, tracked while it is in flight (`stop`). */
+  track(open) {
+    const opened = open();
+    this.opening.add(opened);
+    opened.then(
+      () => this.opening.delete(opened),
+      () => this.opening.delete(opened),
+    );
+    return opened;
+  }
+
+  /** The harness's Chrome windows titled `title` (`xdotool`, no reader needed). */
+  findByTitle(title) {
+    try {
+      const pattern = `^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
+      return execFileSync('xdotool', ['search', '--name', pattern], { encoding: 'utf8', timeout: 15000 }).trim().split('\n').filter(Boolean).map(Number);
+    } catch {
+      // none
+      return [];
+    }
+  }
+
+  /** A Chrome window closed as Chrome's own close does (WM_DELETE_WINDOW): the browser is the person's. */
+  closeWindow(id) {
+    try {
+      execFileSync(XPROBE, ['close', String(id)]);
+    } catch {
+      // already gone
+    }
   }
 
   label(...parts) {
@@ -107,49 +157,55 @@ export class Desktop {
   }
 
   /** gedit on a scratch file the harness writes; `content` is the file's text. */
-  async openGedit(role, content) {
-    const label = this.label('gedit', role);
-    const file = join(this.dir, `${label}.txt`);
-    writeFileSync(file, content);
-    const child = spawn('gedit', ['--standalone', file], { stdio: 'ignore', detached: true });
-    child.unref();
-    const name = basename(file);
-    const info = await this.waitForWindow((w) => w.app === 'org.gnome.gedit' && w.title.includes(name), label);
-    const scene = { kind: 'gedit', role, label, file, content, pid: child.pid, id: info.id };
-    this.windows.push(scene);
-    this.place(scene.id, 'gedit');
-    await this.waitForTree(scene);
-    return scene;
+  openGedit(role, content) {
+    this.assertOpen();
+    return this.track(async () => {
+      const label = this.label('gedit', role);
+      const file = join(this.dir, `${label}.txt`);
+      writeFileSync(file, content);
+      const child = spawn('gedit', ['--standalone', file], { stdio: 'ignore', detached: true });
+      child.unref();
+      // registered with its process at once: a stop or a window that never comes ends the process
+      const scene = { kind: 'gedit', role, label, file, content, pid: child.pid, id: null };
+      this.windows.push(scene);
+      const name = basename(file);
+      const info = await this.waitForWindow((w) => w.app === 'org.gnome.gedit' && w.title.includes(name), label);
+      scene.id = info.id;
+      if (this.stopping) return scene;
+      this.place(scene.id, 'gedit');
+      await this.waitForTree(scene);
+      return scene;
+    });
   }
 
   /** A Chrome window on one of the harness's pages, its title unique to this window. */
-  async openChrome(role, page, { stem = page.replace(/\.html$/, ''), query = '' } = {}) {
-    // `stem`: the scene's name where two scenes open one page, so every window's title stays its own; `query`: the
-    // page's own parameters
-    const label = this.label(stem, role);
-    const url = `${pathToFileURL(join(PAGES, page)).href}${query ? `?${query}` : ''}#${encodeURIComponent(label)}`;
-    const child = spawn('google-chrome', ['--new-window', url], { stdio: 'ignore', detached: true });
-    child.unref();
-    const title = `${label} - Google Chrome`;
-    let info;
-    try {
-      info = await this.waitForWindow((w) => w.title === title, label, 30000);
-    } catch (error) {
-      // the harness closes what it opened, also when its window did not come up as exactly one
-      for (const w of (await this.listWindows()).filter((x) => x.title === title)) {
-        try {
-          execFileSync(XPROBE, ['close', String(w.id)]);
-        } catch {
-          // already gone
-        }
+  openChrome(role, page, { stem = page.replace(/\.html$/, ''), query = '' } = {}) {
+    this.assertOpen();
+    return this.track(async () => {
+      // `stem`: the scene's name where two scenes open one page, so every window's title stays its own; `query`: the
+      // page's own parameters
+      const label = this.label(stem, role);
+      const url = `${pathToFileURL(join(PAGES, page)).href}${query ? `?${query}` : ''}#${encodeURIComponent(label)}`;
+      const title = `${label} - Google Chrome`;
+      // registered before Chrome is asked for it, by its title: a stop meanwhile closes it by that title
+      const scene = { kind: 'chrome', role, label, page, title, id: null };
+      this.windows.push(scene);
+      const child = spawn('google-chrome', ['--new-window', url], { stdio: 'ignore', detached: true });
+      child.unref();
+      let info;
+      try {
+        info = await this.waitForWindow((w) => w.title === title, label, 30000);
+      } catch (error) {
+        // the harness closes what it opened, also when its window did not come up as exactly one
+        await this.close([scene]);
+        throw error;
       }
-      throw error;
-    }
-    const scene = { kind: 'chrome', role, label, page, id: info.id };
-    this.windows.push(scene);
-    this.place(scene.id, 'chrome');
-    await this.waitForTree(scene);
-    return scene;
+      scene.id = info.id;
+      if (this.stopping) return scene;
+      this.place(scene.id, 'chrome');
+      await this.waitForTree(scene);
+      return scene;
+    });
   }
 
   /** Waits until the scene's tree reads through AT-SPI and two reads agree (the page or the document settled). */
@@ -157,6 +213,8 @@ export class Desktop {
     const deadline = Date.now() + timeoutMs;
     let previous = null;
     while (Date.now() < deadline) {
+      // a stopping run closes the window instead
+      if (this.stopping) return null;
       const { response } = await this.reader.request('get_window_state', { window: { id: scene.id }, include_screenshot: false });
       if (response.ok && response.output.ax_tree_source === 'at_spi') {
         const text = JSON.stringify(response.output.ax_tree);
@@ -169,15 +227,21 @@ export class Desktop {
   }
 
   /** The front window: an xterm that holds the focus, covering the screen (covered) or in a corner (visible). */
-  async openFront(occlusion) {
-    const label = this.label('front');
-    const child = spawn('xterm', ['-T', label, '-e', 'sleep', '86400'], { stdio: 'ignore', detached: true });
-    child.unref();
-    const info = await this.waitForWindow((w) => w.title === label, label);
-    this.front = { kind: 'xterm', role: 'front', label, pid: child.pid, id: info.id };
-    this.windows.push(this.front);
-    this.arrangeFront(occlusion);
-    return this.front;
+  openFront(occlusion) {
+    this.assertOpen();
+    return this.track(async () => {
+      const label = this.label('front');
+      const child = spawn('xterm', ['-T', label, '-e', 'sleep', '86400'], { stdio: 'ignore', detached: true });
+      child.unref();
+      const front = { kind: 'xterm', role: 'front', label, pid: child.pid, id: null };
+      this.windows.push(front);
+      const info = await this.waitForWindow((w) => w.title === label, label);
+      front.id = info.id;
+      this.front = front;
+      if (this.stopping) return front;
+      this.arrangeFront(occlusion);
+      return front;
+    });
   }
 
   arrangeFront(occlusion) {
@@ -298,7 +362,8 @@ export class Desktop {
         }
       }
       try {
-        if (scene.kind === 'chrome') execFileSync(XPROBE, ['close', String(scene.id)]);
+        // a Chrome window not found yet: whatever came up with its title
+        if (scene.kind === 'chrome') for (const id of scene.id ? [scene.id] : this.findByTitle(scene.title)) this.closeWindow(id);
         else if (scene.group) process.kill(-scene.pid, 'SIGTERM');
         else process.kill(scene.pid, 'SIGTERM');
       } catch {

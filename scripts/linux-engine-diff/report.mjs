@@ -177,8 +177,8 @@ export function renderSummary(lines) {
 export function prepareFaultsMarkdown(rows) {
   const faults = rows.find((r) => r.kind === 'prepare-faults');
   if (!faults) return [];
-  const { run } = faults;
-  const head = `Harness preparation failures (the gate's rule, Decision Log 2026-11-01): ${run.resampled} resampled and ${run.invalid} invalid of ${run.samples} samples, against the run's cap of 1% (${run.limit})${run.over ? ', **over the cap**' : ''}`;
+  const { total } = faults;
+  const head = `Harness preparation failures (the gate's rule, Decision Log 2026-11-01): ${total.resampled} resampled and ${total.invalid} invalid of ${total.samples} samples, against the run's cap of 1% (${total.limit})${total.over ? ', **over the cap**' : ''}`;
   if (!faults.cases.length) return ['', `${head}.`];
   const out = ['', `${head}:`, '', '| scene | op | samples | resampled | invalid | cap | |', '|---|---|---:|---:|---:|---:|---|'];
   for (const c of faults.cases) out.push(`| ${c.scene} | ${c.op} | ${c.samples} | ${c.resampled} | ${c.invalid} | ${c.limit} | ${c.over ? '**over the cap**' : 'within'} |`);

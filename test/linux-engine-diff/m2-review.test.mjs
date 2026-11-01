@@ -73,7 +73,7 @@ test("a candidate sample whose preparation failed fails the verdict, and no engi
   assert.equal(vendor.bar.warm, 0.2);
 });
 
-test('both Copy attempts failing give the sample a handle no engine issued, and its verdict fails', async () => {
+test("a Copy that fails gives the sample a handle no engine issued, and its verdict fails", async () => {
   const requests = [];
   const ctx = {
     scene: { id: 7, field: 'f' },
@@ -86,7 +86,7 @@ test('both Copy attempts failing give the sample a handle no engine issued, and 
     },
   };
   assert.equal(await handleOfFirstWord(ctx), NO_HANDLE);
-  assert.deepEqual(requests, ['clipboard_read', 'clipboard_read'], 'tried twice');
+  assert.deepEqual(requests, ['clipboard_read'], "the engine's Copy is never retried (task 22 review)");
   assert.match(ctx.prepareError, /^clipboard_read for a handle failed: editable element has no selected text to Copy/);
   // the release that follows answers success, fast; the sample still fails cua's verdict
   const rows = [sample('pinned', 'cold', 1), sample('pinned', 'warm', 0.2), sample('cua', 'cold', 0.5), sample('cua', 'warm', 0.05, { prepare_error: ctx.prepareError })];

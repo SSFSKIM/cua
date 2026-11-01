@@ -109,14 +109,15 @@ function selectFirstWord(ctx) {
 export const NO_HANDLE = 'cua171-no-handle';
 
 /**
- * A `clipboard_read` of the document's first word, for the operations that need a handle (untimed, witnessed), tried
- * twice, each failed attempt recorded with its step (`ctx.prepareAttempts`, prepare.mjs). An engine whose Copy failed
- * (the pinned build, once its window is in some states, M2.3) is sent a handle it never issued, and its sample records
- * why (`prepare_error`, `prepare_step` engine): the request still runs, its answer and effect are judged as any other,
- * so a candidate's failure here fails its verdict and a vendor build's is recorded; the engine's request is never
- * excused, so an attempt failed at the engine decides this even beside an oracle's failure. Only when every attempt
- * failed at the oracle's selection (a window that refused it, gedit once in m3-gate-final) does the preparation fail at
- * the oracle's step, and the gate's rule resamples the sample (prepare.mjs).
+ * A `clipboard_read` of the document's first word, for the operations that need a handle (untimed, witnessed), each
+ * failed attempt recorded with its step (`ctx.prepareAttempts`, prepare.mjs). Only the harness oracle's selection is
+ * tried again (twice in all): the engine's Copy is never retried, since a retry that succeeded would hide the engine's
+ * own failure (task 22 review). An engine whose Copy failed (the pinned build, once its window is in some states, M2.3)
+ * is sent a handle it never issued, and its sample records why (`prepare_error`, `prepare_step` engine): the request
+ * still runs, its answer and effect are judged as any other, so a candidate's failure here fails its verdict and a
+ * vendor build's is recorded. Only when every attempt failed at the oracle's selection (a window that refused it, gedit
+ * once in m3-gate-final) does the preparation fail at the oracle's step, and the gate's rule resamples the sample
+ * (prepare.mjs).
  */
 export async function handleOfFirstWord(ctx) {
   ctx.prepareAttempts ??= [];
@@ -131,14 +132,14 @@ export async function handleOfFirstWord(ctx) {
     }
     const { response } = await companion(ctx, () => ctx.engine.request('clipboard_read', { window: { id: ctx.scene.id } }));
     if (response.ok) return response.output;
-    ctx.prepareAttempts.push({ step: ENGINE, error: String(response.error).slice(0, 200) });
-    await sleep(200);
+    // the engine's own failure: never retried, the sample's verdict carries it
+    const error = String(response.error).slice(0, 200);
+    ctx.prepareAttempts.push({ step: ENGINE, error });
+    ctx.prepareStep = ENGINE;
+    ctx.prepareError = `clipboard_read for a handle failed: ${error}`;
+    return NO_HANDLE;
   }
-  const engineFailed = ctx.prepareAttempts.filter((a) => a.step === ENGINE);
-  if (!engineFailed.length) throw new PrepareStepError(ORACLE, ctx.prepareAttempts.at(-1).error, ctx.prepareAttempts);
-  ctx.prepareStep = ENGINE;
-  ctx.prepareError = `clipboard_read for a handle failed: ${engineFailed.at(-1).error}`;
-  return NO_HANDLE;
+  throw new PrepareStepError(ORACLE, ctx.prepareAttempts.at(-1).error, ctx.prepareAttempts);
 }
 
 const release = (ctx, handle) => companion(ctx, () => ctx.engine.request('clipboard_release', { handle }));

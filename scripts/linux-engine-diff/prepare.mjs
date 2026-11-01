@@ -70,8 +70,8 @@ const caseLimit = (samples) => Math.max(2, samples / 100);
 /**
  * The rule's counts over a run's rows (`sample` and `prepare-failure`): per case (scene and operation, every engine's
  * samples), the samples taken (counted ones plus invalid ones), how many were resampled and how many left invalid, and
- * the same for the run, each against its cap. `cases` lists only the cases with a failure. Answers `{cases, run, pass,
- * reasons}`.
+ * the same for the whole run (`total`, never `run`: a results row's `run` names its run), each against its cap. `cases`
+ * lists only the cases with a failure. Answers `{cases, total, pass, reasons}`.
  */
 export function judgePrepareFaults(rows) {
   const byCase = new Map();
@@ -99,9 +99,9 @@ export function judgePrepareFaults(rows) {
       return { ...c, limit, over };
     });
   const sum = (key) => all.reduce((n, c) => n + c[key], 0);
-  const run = { samples: sum('samples'), resampled: sum('resampled'), invalid: sum('invalid') };
-  run.limit = run.samples / 100;
-  run.over = run.resampled + run.invalid > run.limit;
-  if (run.over) reasons.push(`the run: ${run.resampled + run.invalid} of ${run.samples} samples resampled or invalid (${run.resampled} resampled, ${run.invalid} invalid), more than 1% of the run's samples (${run.limit})`);
-  return { cases, run, pass: reasons.length === 0, reasons };
+  const total = { samples: sum('samples'), resampled: sum('resampled'), invalid: sum('invalid') };
+  total.limit = total.samples / 100;
+  total.over = total.resampled + total.invalid > total.limit;
+  if (total.over) reasons.push(`the run: ${total.resampled + total.invalid} of ${total.samples} samples resampled or invalid (${total.resampled} resampled, ${total.invalid} invalid), more than 1% of the run's samples (${total.limit})`);
+  return { cases, total, pass: reasons.length === 0, reasons };
 }

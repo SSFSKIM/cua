@@ -365,6 +365,8 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
     const opened = await desktop.openChrome(role, page ?? 'matrix.html');
     scene = { ...opened, family: name, kindOf: family.kind };
   } else {
+    // a stopping run opens nothing more (scenes.mjs `stop`); the process is registered as soon as it is started
+    desktop.assertOpen();
     const ctx = { label, dir: join(desktop.dir, label), geometry, page, doc, motion };
     mkdirSync(ctx.dir, { recursive: true });
     const spec = family.launch(ctx);

@@ -1,21 +1,22 @@
-// #187's live slot kit (scripts/cursor-sitting/item-187.mjs): the ABAB schedule, a row's record and its false-pass
-// traps, the judge (beacon and read-back disagreeing, a held activation, a raise, a page click, an open menu, an
-// unconfirmed arm, a control regressing), the end-early rule, the order put back after a raise, value-freeness and the
-// CLI's dry run. Nothing is driven: the runner runs against fakes.
+// #187's re-slot kit (scripts/cursor-sitting/item-187.mjs): the plan (no engine.json switch, the confirming cell's two
+// halves, chrome/composing@textedit in 2 blocks of 9, the controls, #259's cell), a row's record and its key-window
+// readings, the per-line confirmation, the bar (each condition alone keeps it from landing), the order put back after a
+// raise, the composition key never typed over a delayed one, the cell run end to end, value-freeness and the CLI's dry
+// runs. Nothing is driven: the runner runs against fakes.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {main, read187} from '../../scripts/cursor-sitting.mjs';
-import {A1_TARGET, ARMS, B_TARGET, bSchedule, clipboardReaders, CONTROLS, endEarly, freshActivation, GROUPS, groupItem, item187Markdown, item187Tasks, ITEMS, judge187,
-  judgedOk, LABELS, menuOpened, metaArm, plan187, releaseOf, ROWS, rowRecord, statusArm, vendorAllowed, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
-import {ALL_ITEMS_188} from '../../scripts/cursor-sitting/item-188.mjs';
+import {BLOCK_ROWS, CELL_REPS, CELL_ROW, cellItem, cellVerdict, clipboardReaders, COMPOSE_LEAD_MS, COMPOSE_REPOST_LEAD_MS, COMPOSING_BLOCKS, CONTROLS, freshActivation, GROUPS, groupItem,
+  item187Markdown, item187Tasks, ITEMS, judge187, judgedOk, keyHeld, LABELS, menuOpened, PARTS, perLineProblem, plan187, releaseOf, ROWS, rowRecord, TARGET, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
+import {ITEMS_188, ITEMS_259} from '../../scripts/cursor-sitting/item-188.mjs';
 import {describeStep, runSteps} from '../../scripts/cursor-sitting/runner.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
 import {EMPTY_HASH} from '../../scripts/native-matrix/probe-plan.mjs';
 import {COMPOSITION, KOREAN_2SET, UNICODE_STRINGS} from '../../scripts/native-matrix/unicode-plan.mjs';
-import {HANGUL_LAYOUT} from '../../scripts/native-matrix/unicode-run.mjs';
+import {HANGUL_LAYOUT, SETTLE_READS} from '../../scripts/native-matrix/unicode-run.mjs';
 
 const T0 = 1_790_000_000_000;
 const PIDS = {chrome: 201, textedit: 202, electron: 203};
@@ -24,258 +25,353 @@ const scratch = t => { const dir = mkdtempSync(join(tmpdir(), 'cua-187-')); t.af
 const quietly = async run => { const write = process.stdout.write; let text = ''; process.stdout.write = chunk => { text += chunk; return true; }; try { return {code: await run(), text}; } finally { process.stdout.write = write; } };
 // No string's text may appear in what the kit keeps (the latin string's words are common, so its full text is checked).
 const leaks = text => UNICODE_STRINGS.filter(s => String(text).includes(s.text)).map(s => s.id);
+const KEY = {trusted: true, ok: true, frontmost: true, found: true, focused: true, main: true, focusedWindow: 'run', mainWindow: 'run'};
+const KEYLESS = {...KEY, focused: false, main: false, focusedWindow: 'none', mainWindow: 'none'};
+const BACK = {...KEY, frontmost: false, focused: false, main: true, focusedWindow: 'run'};
+// Every line of `text` confirmed by its own change, each later line opened by a settled Return.
+const linesOf = text => text.split('\n').map((_, k) => ({line: k + 1, stage: 'effect', confirmed: true, effectWait: 'reading', baseline: {characters: 10 * k}, confirming: {characters: 10 * k + 2},
+  ...(k > 0 ? {openingReturn: {settle: 'reading', settleMs: 15, toCommandVMs: 20}} : {})}));
 
-// A row's readings, all as a delivering, undisturbed row under `arm` reads them; `over` replaces any of them.
-function input({group = 'chrome-composing', arm = 'B', block = 1, i = 0, row = ROWS[1], item = ITEMS.b, ...over} = {}) {
+// A row's readings, all as a delivering, undisturbed row reads them; `over` replaces any of them.
+function input({group = 'chrome-composing', block = 0, i = 0, row = ROWS[1], item = ITEMS.composing, engine = 'cua', ...over} = {}) {
   const g = GROUPS[group], expectedLength = row.string.text.length, chrome = g.driven === 'chrome';
   return {
-    spec: {key: `${item}#${block}.${i}`, item, group, arm, block, i, string: row.string.id, method: row.method, expectedLength, regime: g.regime, engine: arm === 'vendor' ? 'vendor' : 'cua'},
+    spec: {key: `${item}#${block}.${i}`, item, group, block, i, string: row.string.id, method: row.method, expectedLength, lines: row.string.text.split('\n').length, regime: g.regime, engine},
     prepare: {ok: true, value: {ready: true}},
-    act: {ok: true, value: {actMs: arm === 'B' ? 190 : 150, threw: false, message: null}, route: 'paste',
-      meta: {activationGuardMs: 41, activationClick: 'outsideFrame', entered: expectedLength,
-        paste: {stage: 'effect', confirmed: true, readWait: 'handedOver', readAfterPostMs: 12, effectWait: 'seen', restore: 'restored',
-          focusEnforcement: {arm: arm === 'vendor' ? 'A' : arm, activated: true, point: 'outside', liftedClick: arm === 'B', activationToCommandVMs: 30, clickToCommandVMs: 20}}}},
+    act: {ok: true, value: {actMs: 190, threw: false, message: null}, route: 'paste',
+      meta: {activationGuardMs: 41, activationClick: 'outsideFrame', activationClickKind: {kind: 'inertOutside', point: 'offset', when: 'early'}, entered: expectedLength, delivery: {restores: 0},
+        paste: {stage: 'effect', confirmed: true, readWait: 'handedOver', readAfterPostMs: 12, effectWait: 'reading', restore: 'restored',
+          focusEnforcement: {activated: true, point: 'outside', click: {kind: 'inertOutside', point: 'offset'}, activationToCommandVMs: 30, clickToCommandVMs: 20}, perLine: linesOf(row.string.text)}}},
     check: {ok: true, value: {ok: true, outcome: {exact: true, nfcEqual: true, length: expectedLength, expectedLength}}},
-    page: chrome ? {mid: {seq: 4, length: 0, counts: {...ZERO}}, after: {seq: 5, length: expectedLength, counts: {...ZERO}}} : null,
+    page: chrome ? {mid: {seq: 4, length: 0, counts: {...ZERO}, focused: g.user ? false : true}, after: {seq: 5, length: expectedLength, counts: {...ZERO}, focused: g.user ? false : true}} : null,
     fixture: null,
     front: {mid: PIDS[g.user ?? g.driven], after: PIDS[g.user ?? g.driven], expected: PIDS[g.user ?? g.driven]},
     activations: [], raisedAt: [], stateAtStart: g.user ? 'front-above' : null, userKept: g.user ? true : null,
     clipboard: {mid: 'digest', after: 'digest'}, menu: chrome ? {read: {trusted: true, ok: true, selected: 0, openMenus: 0, focusedRole: 'AXTextArea'}, observed: 0} : null,
-    armStatus: ARMS.includes(arm) ? arm : null, disturbed: false, ...over};
+    keyWindow: g.user ? BACK : KEY, disturbed: false, ...over};
 }
 const record = options => rowRecord(input(options));
 const taskRow = result => ({kind: 'task', task: '187-row', result});
 const start = {kind: 'start'};
+// The record with readings replaced (a row of the evidence, recomputed).
+const reRecord = (r, over) => rowRecord(input({item: r.item, group: r.group, block: r.block, i: r.i, row: [...ROWS, CELL_ROW].find(x => x.method === r.method && x.string.id === r.string), ...over}));
 
-// The whole slot's evidence with every row delivering and nothing disturbed; `tweak(record)` may change any B row.
 // The order watcher's end record of a background item: whole, no raise.
 const orderStop = (over = {}) => ({kind: 'task', task: '187-order-stop', result: {ok: true, maxGapMs: 12, raises: 0, rowRaises: {}, tailRaises: {}, setupRaises: 0, unattributed: [], ...over}});
 // The last item: the owner's source selected again and read back.
 const endItem = (result = {ok: true, which: 'owner', switched: true, requested: 'com.apple.keylayout.ABC', current: {id: 'com.apple.keylayout.ABC'}}) =>
   [start, {kind: 'task', task: 'activate', result: {ok: true}}, {kind: 'task', task: 'select-source', args: ['owner', 'textedit'], result}];
-const controlItem = (group, arm, tweak = r => r) => [start, ...ROWS.map((row, i) => taskRow(tweak(record({item: ITEMS.control(group, arm), group, arm, block: 0, i, row})))),
-  ...(GROUPS[group].user ? [orderStop()] : [])];
-function evidence({tweakB = r => r, tweakControlB = r => r, tweakControlA = r => r, a1 = true, b = true, end = true} = {}) {
+// One cell repetition's record, as '187-cell' writes it; `over` replaces any part.
+const cellRecord = (half, rep, over = {}) => ({tag: `${ITEMS.cell(half, rep)}#0`, half, rep,
+  press: {ok: true, pressed: true, plan: 'action', action: 'AXPress', reason: 'advertised', kind: {kind: 'inertOutside', point: 'offset', when: 'early'}},
+  pressRead: {inFront: true, found: true, focused: true, empty: true}, keyBefore: {reading: {...BACK, focused: false}, pageFocused: false},
+  keyAfter: {reading: KEY, pageFocused: true, settledMs: 120}, row: record({item: ITEMS.cell(half, rep), group: 'chrome-cell', row: CELL_ROW}), ...over});
+const cellItemRows = (half, rep, over) => [start, {kind: 'task', task: '187-cell', result: cellRecord(half, rep, over)}];
+const groupRows = (item, group, rows, tweak = r => r) => [start, ...rows.map(([block, i, row]) => taskRow(tweak(record({item, group, block, i, row})))), ...(GROUPS[group].user ? [orderStop()] : [])];
+const putbackRow = (over = {}) => [start, {kind: 'task', task: '187-putback', result: {ok: true, saved: 'dd7a09235885', current: {build: 'dd7a09235885', approved: true}, ...over}}];
+
+// The whole re-slot's evidence with every condition holding; the tweaks change rows of one group.
+function evidence({tweakComposing = r => r, tweakControl = r => r, cell = () => ({}), end = true, putback = true} = {}) {
   const items = {};
-  if (a1) items[ITEMS.a1] = [start, ...[0, 1].flatMap(block => ROWS.map((row, i) => taskRow(record({item: ITEMS.a1, arm: 'A', block, i, row})))), orderStop()];
-  for (const group of CONTROLS) items[ITEMS.control(group, 'A')] = controlItem(group, 'A', tweakControlA);
+  items[ITEMS.composing] = groupRows(ITEMS.composing, 'chrome-composing', COMPOSING_BLOCKS.flatMap((rows, block) => rows.map((row, i) => [block, i, row])), tweakComposing);
+  for (const group of CONTROLS) items[ITEMS.control(group)] = groupRows(ITEMS.control(group), group, ROWS.map((row, i) => [0, i, row]), tweakControl);
+  for (let rep = 0; rep < CELL_REPS; rep++) items[ITEMS.cell('after', rep)] = cellItemRows('after', rep, cell(rep));
   if (end) items[ITEMS.end] = endItem();
-  if (!b) return items;
-  items[ITEMS.b] = [start, ...bSchedule().flatMap(s => s.rows.map((row, i) => { const r = record({item: ITEMS.b, arm: s.arm, block: s.block, i, row}); return taskRow(s.arm === 'B' ? tweakB(r) : r); })),
-    orderStop()];
-  for (const group of CONTROLS) items[ITEMS.control(group, 'B')] = controlItem(group, 'B', tweakControlB);
+  if (putback) items[ITEMS.putback] = putbackRow();
   return items;
 }
-// The record with readings replaced (a row of the evidence, recomputed).
-const reRecord = (r, over) => rowRecord(input({item: r.item, group: r.group, arm: r.arm, block: r.block, i: r.i, row: ROWS.find(x => x.method === r.method && x.string.id === r.string), ...over}));
+const firstOnly = (fn, over) => { let done = false; return r => (done ? r : (done = true, fn(r, over))); };
 
-test('the rows: hold 3\'s nine strings typed and pasted; the vendor lane pastes them; Part B is ABAB with each arm seeing every row twice', () => {
+test('the rows: hold 3\'s nine strings typed and pasted; chrome/composing@textedit as 2 blocks of 9 runs each once; the cell pastes the one-line Latin string', () => {
   assert.equal(ROWS.length, 18);
+  assert.equal(TARGET, 18);
   assert.deepEqual([...new Set(ROWS.map(r => r.method))], ['typeText', 'paste']);
   assert.equal(VENDOR_ROWS.length, 9);
-  assert.ok(VENDOR_ROWS.every(r => r.method === 'paste'));
-  const blocks = bSchedule();
-  assert.deepEqual(blocks.map(b => b.arm).join(''), 'ABABABAB');
-  assert.deepEqual(blocks.map(b => b.block), [0, 1, 2, 3, 4, 5, 6, 7]);
-  assert.ok(blocks.every(b => b.rows.length === 9));
-  for (let p = 0; p < 4; p++) assert.deepEqual(blocks[2 * p].rows, blocks[2 * p + 1].rows, 'a pair\'s A and B blocks run the same rows');
-  assert.notDeepEqual(blocks[0].rows, blocks[4].rows, 'the later pairs run their half in another order');
-  for (const arm of ARMS) {
-    const seen = blocks.filter(b => b.arm === arm).flatMap(b => b.rows);
-    assert.equal(seen.length, B_TARGET);
-    for (const row of ROWS) assert.equal(seen.filter(r => r === row).length, 2, `${arm} sees ${row.method}.${row.string.id} twice`);
-  }
-  assert.equal(A1_TARGET, 36);
+  assert.equal(COMPOSING_BLOCKS.length, 2);
+  assert.ok(COMPOSING_BLOCKS.every(b => b.length === BLOCK_ROWS && b.length === 9));
+  assert.deepEqual(COMPOSING_BLOCKS.flat(), [...ROWS], 'every row once');
+  assert.equal(CELL_ROW.method, 'paste');
+  assert.ok(!CELL_ROW.string.text.includes('\n'));
   assert.equal(releaseOf('chrome-composing'), 'electron');
   assert.equal(releaseOf('textedit-composing'), 'chrome');
   assert.equal(releaseOf('chrome-korean'), null);
+  assert.equal(releaseOf('chrome-cell'), null);
 });
 
-test('a row is delivered only when the engine\'s read-back and the page\'s fresh beacon agree', () => {
+test('the re-slot\'s plan: the placement, the cell\'s AFTER half, the placement again, the 2 blocks, the controls once, #259\'s cell, the owner\'s source; no switch, no engine stop, no arm read', () => {
+  const plan = plan187();
+  assert.deepEqual(plan.map(p => p.item), [ITEMS.place, ...[0, 1, 2].map(rep => ITEMS.cell('after', rep)), ITEMS.placeAgain, ITEMS.composing, ...CONTROLS.map(ITEMS.control), ITEMS_259.click, ITEMS.end]);
+  const steps = plan.flatMap(p => p.steps);
+  assert.ok(!steps.some(s => ['engine-json-paste', 'engine-json-restore', 'engine-stop', '187-arm'].includes(s.task)), 'nothing writes engine.json, stops the engine or reads an arm');
+  assert.deepEqual(plan[0].steps.filter(s => s.task).map(s => s.task), ['187-preflight', '187-place', 'activate']);
+  assert.deepEqual(plan.find(p => p.item === ITEMS.placeAgain).steps.filter(s => s.task).map(s => s.task), ['187-place', 'activate']);
+  assert.deepEqual(plan.at(-1).steps.filter(s => s.task).map(s => [s.task, ...(s.args ?? [])]), [['activate', 'textedit'], ['select-source', 'owner', 'textedit']]);
+  const composing = plan.find(p => p.item === ITEMS.composing).steps;
+  assert.equal(composing.filter(s => s.open).length, 2, 'a session per block, each on a fresh composition');
+  assert.equal(composing.filter(s => s.task === '187-compose').length, 2);
+  assert.equal(composing.filter(s => s.task === '187-row').length, 18);
+  for (const group of CONTROLS) assert.equal(plan.find(p => p.item === ITEMS.control(group)).steps.filter(s => s.task === '187-row').length, 18);
+  // Korean engaged only after the refocus, with ABC first, gated by the runner's select-source.
+  const setup = composing.slice(composing.findIndex(s => s.open), composing.findIndex(s => s.task === '187-compose') + 1).filter(s => s.task).map(s => [s.task, ...(s.args ?? [])].join(' '));
+  assert.deepEqual(setup.slice(0, 9), [`187-setup ${ITEMS.composing}#0 start`, `187-ready ${ITEMS.composing}#0 setup: the driven field emptied and focused`, 'activate textedit', 'select-source latin textedit',
+    `select-source named textedit ${KOREAN_2SET}`, 'activate electron', 'activate textedit', `187-korean ${ITEMS.composing}#0 textedit`, `187-ready ${ITEMS.composing}#0 setup: the user window's field emptied and focused`]);
+  // Every act under the key guard of the user window, after a release observation of the third scene, and every
+  // background row followed by the order's restore.
+  const acts = composing.filter(s => s.run && /act:/.test(s.label));
+  assert.ok(acts.every(s => s.keys === 'textedit'));
+  composing.forEach((s, k) => { if (s.task === '187-row') assert.equal(composing[k + 1].task, '187-order-restore'); });
+  assert.ok(composing.some(s => s.run && /release: the electron scene/.test(s.label)));
+  // Nothing the plan prints names a string's text.
+  assert.deepEqual(leaks(plan.flatMap(p => p.steps.map(describeStep)).join('\n')), []);
+});
+
+test('the confirming cell: Chrome relaunched, TextEdit in front under ABC, the field clicked in the background, its hold ended, open -a, the key read, a paste whose prepare clicks nothing', () => {
+  const steps = cellItem({half: 'after', rep: 0});
+  const order = steps.map(s => s.task ?? (s.open ? 'open' : s.close ? 'close' : s.run ? s.label.replace(/^\S+ /, '') : null)).filter(Boolean);
+  const at = name => order.findIndex(x => (typeof x === 'string' ? x.startsWith(name) : false));
+  assert.ok(at('187-relaunch') < at('activate') && at('activate') < at('select-source') && at('select-source') < at('open'));
+  assert.ok(at('press:') < at('press read') && at('press read') < at('release: the textedit') && at('release: the textedit') < at('187-open'));
+  assert.ok(at('187-open') < at('187-mid') && at('187-mid') < at('187-row') && at('187-row') < at('187-cell'));
+  assert.deepEqual(steps.filter(s => s.task === '187-key').map(s => s.args[2]), ['before', 'after']);
+  assert.deepEqual(steps.find(s => s.task === 'select-source').args, ['latin', 'textedit']);
+  assert.ok(steps.find(s => s.task === '187-relaunch').required && steps.find(s => s.task === '187-open').required);
+  const prepare = steps.find(s => s.run && /prepare:/.test(s.label)), act = steps.find(s => s.run && /act:/.test(s.label)), press = steps.find(s => s.run && /press:/.test(s.label));
+  assert.ok(!/__app\.(click|setValue|typeText|paste)/.test(prepare.cell), 'the paste row\'s prepare sends no input');
+  assert.match(press.cell, /await __app\.click\(__index\)/);
+  const afterClick = press.cell.slice(press.cell.indexOf('await __app.click(__index)') + 'await __app.click(__index)'.length);
+  assert.ok(!/__app\.|observe\(/.test(afterClick), 'the click is the press cell\'s last call, so its meta is the click\'s');
+  assert.equal(act.keys, 'chrome');
+  assert.match(act.cell, /__app\.paste\(/);
+  // The before part: the put-back read against the save, the three repetitions, the owner's source.
+  const before = plan187({part: 'before', saved: '/saved'});
+  assert.deepEqual(before.map(p => p.item), [ITEMS.putback, ...[0, 1, 2].map(rep => ITEMS.cell('before', rep)), ITEMS.end]);
+  assert.deepEqual(before[0].steps.find(s => s.task === '187-putback').args, ['/saved']);
+  assert.ok(!before[0].steps.find(s => s.task === '187-putback').required, 'the BEFORE half runs on whatever engine is installed, recorded');
+});
+
+test('the parts: each reruns alone between the placement and the owner\'s source; #188 and #259 under #188\'s own; the vendor\'s lanes', () => {
+  assert.deepEqual(PARTS, ['reslot', 'before', 'cell', 'composing', 'controls', '259', '188', '188-vendor-click']);
+  assert.deepEqual(plan187({part: 'cell'}).map(p => p.item), [ITEMS.place, ...[0, 1, 2].map(rep => ITEMS.cell('after', rep)), ITEMS.placeAgain, ITEMS.end]);
+  assert.deepEqual(plan187({part: 'composing'}).map(p => p.item), [ITEMS.place, ITEMS.composing, ITEMS.end]);
+  assert.deepEqual(plan187({part: 'controls'}).map(p => p.item), [ITEMS.place, ...CONTROLS.map(ITEMS.control), ITEMS.end]);
+  assert.deepEqual(plan187({part: '259'}).map(p => p.item), [ITEMS_188.place, ITEMS_259.click, ITEMS_188.end]);
+  assert.deepEqual(plan187({vendor: true}).map(p => p.item), [ITEMS.place, ITEMS.vendorKorean, ITEMS.vendor, ITEMS.end], 'the vendor\'s chrome/korean rows first');
+  assert.equal(plan187({vendor: true})[1].steps.filter(s => s.task === '187-row').length, 9);
+  assert.ok(!plan187().some(p => p.item.startsWith('188-')), '#188\'s items are out of the default');
+  assert.throws(() => plan187({part: 'a'}), /--part takes reslot, before/);
+});
+
+test('a row is delivered only when the engine\'s read-back and the page\'s fresh beacon agree; the key-window state before the act is kept', () => {
   const good = record();
   assert.equal(good.delivered, true);
   assert.equal(good.invalid, null);
   assert.equal(good.ok, true);
-  assert.equal(good.armConfirmed, true);
-  // The engine says exact, the page's beacon after the act says empty: not delivered, and the disagreement is named.
+  assert.deepEqual(good.keyWindow, BACK);
+  assert.equal(good.pageFocused, false);
+  assert.deepEqual(good.activationClickKind, {kind: 'inertOutside', point: 'offset', when: 'early'});
+  assert.deepEqual(good.delivery, {restores: 0});
   const empty = record({page: {mid: {seq: 4, length: 0, counts: ZERO}, after: {seq: 5, length: 0, counts: ZERO}}});
   assert.equal(empty.delivered, false);
   assert.equal(empty.disagree, true);
-  // A stale beacon (none after the act) never agrees, even with the expected length from an earlier row.
   const expected = ROWS[1].string.text.length;
   const stale = record({page: {mid: {seq: 5, length: expected, counts: ZERO}, after: {seq: 5, length: expected, counts: ZERO}}});
   assert.equal(stale.page.beaconAfterAct, false);
   assert.equal(stale.delivered, false);
-  // The page agrees but the engine's read-back is not exact: not delivered either.
   const inexact = record({check: {ok: true, value: {ok: false, outcome: {exact: false, length: expected, expectedLength: expected}}}});
   assert.equal(inexact.delivered, false);
-  assert.equal(inexact.disagree, true);
-  // No page at all (a control on TextEdit or Electron): the read-back alone.
-  assert.equal(record({group: 'electron-composing', arm: 'A', item: ITEMS.control('electron-composing', 'A')}).delivered, true);
+  assert.equal(record({group: 'electron-composing', item: ITEMS.control('electron-composing')}).delivered, true, 'no page: the read-back alone');
+  assert.equal(record({group: 'electron-composing', item: ITEMS.control('electron-composing')}).pageFocused, null);
+  assert.match(record({page: {mid: null, after: {seq: 5, length: expected, counts: ZERO}}}).invalid, /page counters before the act/);
 });
 
-test('a background act without a fresh activation is invalid, never counted; a frontmost one needs none', () => {
-  const held = record({act: {...input().act, meta: {...input().act.meta, activationGuardMs: undefined}}});
-  assert.match(held.invalid, /held activation/);
-  assert.equal(held.ok, false);
-  const shared = record({act: {...input().act, meta: {...input().act.meta, paste: {...input().act.meta.paste, focusEnforcement: {arm: 'B', activated: false}}}}});
-  assert.match(shared.invalid, /held activation/);
+test('a background act without a fresh activation is invalid; a frontmost one needs none', () => {
+  assert.match(record({act: {...input().act, meta: {...input().act.meta, activationGuardMs: undefined}}}).invalid, /held activation/);
+  assert.match(record({act: {...input().act, meta: {...input().act.meta, paste: {...input().act.meta.paste, focusEnforcement: {activated: false}}}}}).invalid, /held activation/);
   assert.equal(freshActivation({activationGuardMs: 40}), true);
-  const front = record({group: 'chrome-korean', arm: 'A', item: ITEMS.control('chrome-korean', 'A'), act: {...input().act, meta: {entered: 3}}});
-  assert.equal(front.invalid, null);
-  assert.equal(record({arm: 'vendor', item: ITEMS.vendor, act: {...input().act, meta: {}}}).invalid, null, 'the vendor\'s rows are not gated');
+  assert.equal(record({group: 'chrome-korean', item: ITEMS.control('chrome-korean'), act: {...input().act, meta: {entered: 3}}}).invalid, null);
+  assert.equal(record({engine: 'vendor', item: ITEMS.vendor, act: {...input().act, meta: {}}}).invalid, null, 'the vendor\'s rows are not gated');
   assert.match(record({disturbed: true}).invalid, /disturbed/);
   assert.match(record({stateAtStart: 'back-above'}).invalid, /window order/);
   assert.match(record({front: {mid: 999, after: 999, expected: PIDS.textedit}}).invalid, /frontmost process/);
 });
 
-test('the arm: the engine\'s status or the paste\'s own focusEnforcement.arm confirms it; a contradiction does not', () => {
-  assert.equal(statusArm({status: {pasteFocusEnforcement: true}}), 'B');
-  assert.equal(statusArm({status: {pasteFocusEnforcement: false}}), 'A');
-  assert.equal(statusArm({status: {}}), null);
-  assert.equal(metaArm({focusEnforcement: {arm: 'B'}}), 'B');
-  assert.equal(metaArm({}), null);
-  assert.equal(record({armStatus: null}).armConfirmed, true, 'the meta alone confirms');
-  const noMeta = {...input().act, meta: {...input().act.meta, paste: {stage: 'effect'}}};
-  assert.equal(record({act: noMeta}).armConfirmed, true, 'the status alone confirms');
-  assert.equal(record({armStatus: null, act: noMeta}).armConfirmed, false, 'neither confirms');
-  assert.equal(record({armStatus: 'A'}).armConfirmed, false, 'the status contradicts the meta');
+test('the key: the app frontmost with its run window AXFocused and AXMain, and on Chrome the page focused; an unread reading is no answer', () => {
+  assert.equal(keyHeld(KEY, true), true);
+  assert.equal(keyHeld(KEY), true, 'no page to read');
+  assert.equal(keyHeld(KEYLESS, false), false);
+  assert.equal(keyHeld(KEY, false), false, 'the window key but the page not focused');
+  assert.equal(keyHeld(KEY, null), null, 'the page unread');
+  assert.equal(keyHeld(KEYLESS, null), false, 'not key whatever the page says');
+  assert.equal(keyHeld({...KEY, ok: false}, true), null);
+  assert.equal(keyHeld({trusted: false}, true), null);
+  assert.equal(keyHeld(null, true), null);
 });
 
-test('the judge: every condition holding, arm B lands', () => {
+test('the per-line record: every line confirmed by its own change, each later line opened by a settled Return; the slot\'s false success fails it', () => {
+  const lines = ROWS.find(r => r.string.id === 'lines' && r.method === 'paste');
+  const ok = record({row: lines});
+  assert.equal(ok.lines, 2);
+  assert.equal(perLineProblem(ok), null);
+  const withPerLine = perLine => record({row: lines, act: {...input({row: lines}).act, meta: {...input({row: lines}).act.meta, paste: {...input({row: lines}).act.meta.paste, perLine}}}});
+  assert.match(perLineProblem(withPerLine(undefined)), /no per-line record/);
+  assert.match(perLineProblem(withPerLine(linesOf('one'))), /1 per-line record\(s\) for 2 line\(s\)/);
+  const [l1, l2] = linesOf('a\nb');
+  assert.match(perLineProblem(withPerLine([l1, {...l2, confirmed: false, effectWait: 'timeout'}])), /line 2 was not confirmed by its own change/);
+  assert.match(perLineProblem(withPerLine([l1, {...l2, effectWait: 'noChannel', confirmed: false}])), /line 2 was not confirmed/);
+  // B#3.5 of the slot: line 2 confirmed by a reading taken against a baseline before its Return's own effect.
+  const {openingReturn, ...unsettled} = l2;
+  assert.match(perLineProblem(withPerLine([l1, unsettled])), /line 2's opening Return was not settled before its baseline/);
+  assert.match(perLineProblem(withPerLine([l1, {...l2, openingReturn: {settle: 'timeout'}}])), /not settled/);
+  assert.match(perLineProblem(withPerLine([l1, {...l2, confirming: l2.baseline}])), /confirming reading is its own baseline/);
+  assert.equal(perLineProblem(withPerLine([l1, {...l2, effectWait: 'notification', confirming: undefined}])), null, 'a trusted notification confirms');
+  assert.match(perLineProblem(withPerLine([l2, l1])), /not lines 1\.\.2 in order/);
+  assert.equal(openingReturn.settle, 'reading');
+});
+
+test('the bar: every condition holding, the re-slot lands, with the baseline cited', () => {
   const judged = judge187(evidence());
-  assert.equal(judged.b.verdict, 'LANDS', judged.b.why.join('; '));
+  assert.equal(judged.overall.verdict, 'LANDS', judged.overall.why.join('; '));
   assert.equal(judgedOk(judged), true);
-  assert.equal(judged.endEarly.applies, true);
-  assert.ok(judged.addedMs.difference > 0, 'B\'s act time against A\'s is reported');
-  assert.match(item187Markdown(judged), /## Arm B: LANDS/);
+  const md = item187Markdown(judged);
+  assert.match(md, /## Overall: LANDS/);
+  assert.match(md, /0 of 99 valid rows delivered, every one stopping at the read \(timeout\) stage/);
+  assert.match(md, /AFTER: 3 of 3 repetitions key and delivered/);
+  assert.match(md, /BEFORE: not recorded/);
+  assert.deepEqual(leaks(md), []);
 });
 
-test('the judge\'s false-pass traps: each one alone keeps arm B from landing', () => {
-  const first = (fn, over) => { let done = false; return r => (done ? r : (done = true, fn(r, over))); };
+test('the bar\'s traps: each one alone is DOES NOT LAND, never a partial verdict', () => {
+  const lines = (r, perLine) => reRecord(r, {act: {...input().act, meta: {...input().act.meta, paste: {...input().act.meta.paste, perLine}}}});
   const cases = [
-    ['the read-back and the beacon disagree', {tweakB: first(reRecord, {page: {mid: {seq: 4, length: 0, counts: ZERO}, after: {seq: 5, length: 0, counts: ZERO}}})}, 'DOES NOT LAND', /not delivered exactly \(1 with the engine's read-back and the page's beacon disagreeing\)/],
-    ['a stale activation', {tweakB: first(reRecord, {act: {...input().act, meta: {...input().act.meta, activationGuardMs: null}}})}, 'INCOMPLETE', /held activation/],
-    ['a raise', {tweakB: first(reRecord, {raisedAt: [T0 + 5]})}, 'DOES NOT LAND', /raised Chrome's window above TextEdit's/],
-    ['a page click', {tweakB: first(reRecord, {page: {mid: {seq: 4, length: 0, counts: ZERO}, after: {seq: 6, length: ROWS[1].string.text.length, counts: {...ZERO, mousedown: 1, click: 1}}}})}, 'DOES NOT LAND', /2 page mousedown\/click/],
-    ['an open menu', {tweakB: first(reRecord, {menu: {read: {trusted: true, ok: true, selected: 1, openMenus: 0, focusedRole: null}, observed: 0}})}, 'DOES NOT LAND', /menu opened/],
-    ['an observed AXMenuOpened', {tweakB: first(reRecord, {menu: {read: {trusted: true, ok: true, selected: 0, openMenus: 0}, observed: 1}})}, 'DOES NOT LAND', /menu opened/],
-    ['an unread menu', {tweakB: first(reRecord, {menu: {read: {trusted: false}, observed: 0}})}, 'INCOMPLETE', /menus could not be read/],
-    ['an unconfirmed arm', {tweakB: r => reRecord(r, {armStatus: null, act: {...input().act, meta: {...input().act.meta, paste: {stage: 'effect'}}}})}, 'DOES NOT LAND', /arm the engine did not confirm/],
-    ['a front-app change', {tweakB: first(reRecord, {activations: [{kind: 'activated', bundleId: 'com.google.chrome.for.testing', at: T0}]})}, 'DOES NOT LAND', /changed the front app/],
-    ['the composition disturbed', {tweakB: first(reRecord, {userKept: false})}, 'DOES NOT LAND', /disturbed the composition/],
-    ['a clipboard restore that did not hold', {tweakB: first(reRecord, {clipboard: {mid: 'a', after: 'b'}})}, 'DOES NOT LAND', /clipboard restore/],
-    ['a control regressing under B', {tweakControlB: first(reRecord, {check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 3}}}})}, 'DOES NOT LAND', /control row\(s\) regressed/],
-    ['a control raising under B', {tweakControlB: first(reRecord, {raisedAt: [T0]})}, 'DOES NOT LAND', /control row\(s\) regressed/],
+    ['a composing row undelivered', {tweakComposing: firstOnly(reRecord, {page: {mid: {seq: 4, length: 0, counts: ZERO}, after: {seq: 5, length: 0, counts: ZERO}}})}, /chrome\/composing@textedit: 17 of 18 rows valid and delivered/],
+    ['a composing row invalid', {tweakComposing: firstOnly(reRecord, {act: {...input().act, meta: {...input().act.meta, activationGuardMs: null}}})}, /17 of 18 rows valid and delivered \(18 recorded\); invalid: no fresh activation/],
+    ['a composing row\'s lines unconfirmed', {tweakComposing: r => (r.string === 'lines' && r.method === 'typeText' ? lines(r, linesOf('a\nb').map((l, k) => (k ? {...l, openingReturn: undefined} : l))) : r)}, /whose lines were not each confirmed by their own change/],
+    ['a control row undelivered', {tweakControl: firstOnly(reRecord, {check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 3}}}})}, /the electron\/composing@textedit control: 17 of 18/],
+    ['a raise in a row', {tweakComposing: firstOnly(reRecord, {raisedAt: [T0 + 5]})}, /1 raise\(s\): 1 in rows/],
+    ['a raise in a cell row', {cell: rep => (rep === 0 ? {row: reRecord(record({item: ITEMS.cell('after', 0), group: 'chrome-cell', row: CELL_ROW}), {group: 'chrome-cell', item: ITEMS.cell('after', 0), raisedAt: [T0]})} : {})}, /1 raise\(s\): 1 in rows/],
+    ['a page click', {tweakComposing: firstOnly(reRecord, {page: {mid: {seq: 4, length: 0, counts: ZERO}, after: {seq: 6, length: ROWS[0].string.text.length, counts: {...ZERO, mousedown: 1, click: 1}}}})}, /touched the person's side \(page click\)/],
+    ['an open menu', {tweakComposing: firstOnly(reRecord, {menu: {read: {trusted: true, ok: true, selected: 1, openMenus: 0, focusedRole: null}, observed: 0}})}, /1 row\(s\) with a menu opened in Chrome/],
+    ['an unread menu', {tweakComposing: firstOnly(reRecord, {menu: {read: {trusted: false}, observed: 0}})}, /menus could not be read after 1 row/],
+    ['a front-app change', {tweakControl: firstOnly(reRecord, {activations: [{kind: 'activated', bundleId: 'com.google.chrome.for.testing', at: T0}]})}, /touched the person's side \(front app\)/],
+    ['the composition disturbed', {tweakComposing: firstOnly(reRecord, {userKept: false})}, /touched the person's side \(composition\)/],
+    ['a clipboard restore that did not hold', {tweakComposing: firstOnly(reRecord, {clipboard: {mid: 'a', after: 'b'}})}, /touched the person's side \(clipboard\)/],
+    ['a cell repetition not key', {cell: rep => (rep === 1 ? {keyAfter: {reading: KEYLESS, pageFocused: false}} : {})}, /AFTER half: 2 of 3 repetitions key and delivered \(.*2: the key was not held after the activation/],
+    ['a cell repetition whose page focus is unread', {cell: rep => (rep === 0 ? {keyAfter: {reading: KEY, pageFocused: null}} : {})}, /key-window state after the activation was not read whole/],
+    ['a cell repetition not on the action plan', {cell: rep => (rep === 2 ? {press: {ok: true, pressed: true, plan: 'synthesized'}} : {})}, /the click's plan was synthesized, not the action plan/],
+    ['a cell repetition that did not deliver', {cell: rep => (rep === 0 ? {row: reRecord(record({item: ITEMS.cell('after', 0), group: 'chrome-cell', row: CELL_ROW}), {group: 'chrome-cell', item: ITEMS.cell('after', 0), check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 44}}}})} : {})}, /the paste did not deliver/],
+    ['the put-back not read', {putback: false}, /the engine put-back was not read/],
+    ['the source not restored', {end: false}, /owner's input source was not selected again/],
   ];
-  for (const [what, options, verdict, why] of cases) {
+  for (const [what, options, why] of cases) {
     const judged = judge187(evidence(options));
-    assert.equal(judged.b.verdict, verdict, what);
-    assert.match(judged.b.why.join('; '), why, what);
+    assert.equal(judged.overall.verdict, 'DOES NOT LAND', what);
+    assert.match(judged.overall.why.join('; '), why, what);
     assert.equal(judgedOk(judged), false, what);
   }
-  const gap = evidence();
-  gap[ITEMS.b].at(-1).result.maxGapMs = 80;
-  assert.equal(judge187(gap).b.verdict, 'INCOMPLETE');
+  const missingRep = evidence();
+  delete missingRep[ITEMS.cell('after', 2)];
+  assert.match(judge187(missingRep).overall.why.join('; '), /2 of 3 repetitions key and delivered \(.*3: not recorded/);
   const short = evidence();
-  short[ITEMS.b].splice(-3, 1);
-  assert.match(judge187(short).b.why.join('; '), /35 of 36 B rows/);
-  const noControl = evidence();
-  delete noControl[ITEMS.control('chrome-korean', 'B')];
-  assert.match(judge187(noControl).b.why.join('; '), /not run under arm B/);
+  short[ITEMS.control('chrome-korean')].splice(3, 1);
+  assert.match(judge187(short).overall.why.join('; '), /chrome\/korean control: 17 of 18 rows valid and delivered \(17 recorded\)/);
+  const stopped = evidence();
+  stopped[ITEMS.control('textedit-composing')].push({kind: 'stopped', error: '187-korean refused'});
+  assert.match(judge187(stopped).overall.why.join('; '), /textedit\/composing@electron control stopped: 187-korean refused/);
+  const wrongEngine = evidence();
+  wrongEngine[ITEMS.putback] = putbackRow({ok: false, current: {build: '6226f2698ab0', approved: true}, problem: 'the installed build is 6226f2698ab0, not the saved dd7a09235885'});
+  assert.match(judge187(wrongEngine).overall.why.join('; '), /the engine was not put back: the installed build is 6226f2698ab0/);
+  const failedSource = evidence();
+  failedSource[ITEMS.end] = endItem({ok: false, which: 'owner', switched: true, requested: 'com.apple.keylayout.ABC', current: {id: KOREAN_2SET}, problem: 'read back 2-Set'});
+  assert.match(item187Markdown(judge187(failedSource)), /owner's input source NOT restored/);
 });
 
-test('the end-early rule: every Part A row delivered ends the slot after the controls; anything less runs Part B', () => {
-  const rows = [0, 1].flatMap(block => ROWS.map((row, i) => record({item: ITEMS.a1, arm: 'A', block, i, row})));
-  assert.equal(endEarly(rows).applies, true);
-  assert.equal(endEarly(rows.slice(1)).applies, false, 'a missing row');
-  assert.equal(endEarly([reRecord(rows[0], {page: {mid: {seq: 1, length: 0, counts: ZERO}, after: {seq: 1, length: 0, counts: ZERO}}}), ...rows.slice(1)]).applies, false, 'one row undelivered');
-  assert.equal(endEarly([reRecord(rows[0], {disturbed: true}), ...rows.slice(1)]).applies, false, 'one row invalid');
-  const ended = judge187(evidence({b: false}));
-  assert.match(ended.b.verdict, /^NOT RUN \(end-early/);
-  assert.equal(judgedOk(ended), true);
-  assert.equal(vendorAllowed(ended).allowed, false);
-  const partial = evidence({b: false});
-  partial[ITEMS.a1][1] = taskRow(reRecord(partial[ITEMS.a1][1].result, {check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 1}}}}));
-  const notEnded = judge187(partial);
-  assert.equal(notEnded.b.verdict, 'NOT RUN');
-  assert.equal(judgedOk(notEnded), false);
-  assert.match(item187Markdown(notEnded), /Part B runs/);
+test('the bar\'s watchers: a gap past 50 ms, an unreconciled total, a tail raise or an unattributed raise each fail it; a raise inside the kit\'s own setup does not', () => {
+  const replaceStop = (item, over) => { const e = evidence(); e[item].splice(-1, 1, orderStop(over)); return judge187(e); };
+  assert.match(replaceStop(ITEMS.control('electron-composing'), {maxGapMs: 80}).overall.why.join('; '), /electron\/composing@textedit control: the order watcher's longest gap was 80 ms, past 50/);
+  assert.match(replaceStop(ITEMS.composing, {raises: 2}).overall.why.join('; '), /saw 2 raise\(s\), but 0 are accounted for/);
+  const key = `${ITEMS.composing}#1.8`;
+  assert.match(replaceStop(ITEMS.composing, {raises: 1, tailRaises: {[key]: [T0 + 9]}}).overall.why.join('; '), /1 raise\(s\): 1 in rows \(a block's tail counted with its last row\), 0 outside/);
+  assert.match(replaceStop(ITEMS.composing, {raises: 1, unattributed: [T0 + 3]}).overall.why.join('; '), /1 raise\(s\): 0 in rows .*1 outside every row and setup step/);
+  assert.equal(replaceStop(ITEMS.control('textedit-composing'), {raises: 1, setupRaises: 1}).overall.verdict, 'LANDS', 'the refocus through the driven app is the kit\'s own setup');
+  const none = evidence();
+  none[ITEMS.control('textedit-composing')].pop();
+  assert.match(judge187(none).overall.why.join('; '), /record is missing or has no end/);
+  const reconciled = evidence(), rowKey = reconciled[ITEMS.composing].find(r => r.task === '187-row').result.key;
+  reconciled[ITEMS.composing].splice(-1, 1, orderStop({raises: 1, rowRaises: {[rowKey]: [T0 + 7]}}));
+  assert.match(judge187(reconciled).overall.why.join('; '), /1 raise\(s\): 1 in rows/, 'a raise the final record holds in a row\'s span is the row\'s');
 });
 
-test('the vendor lane: only once arm B ran and some valid B row did not deliver', () => {
-  assert.equal(vendorAllowed(judge187(evidence())).allowed, false);
-  const failed = judge187(evidence({tweakB: r => reRecord(r, {page: {mid: {seq: 1, length: 0, counts: ZERO}, after: {seq: 2, length: 0, counts: ZERO}}})}));
-  assert.equal(vendorAllowed(failed).allowed, true);
+test('the BEFORE half is recorded only: its prediction is reported, a delivery there says the mechanism is wrong, and neither moves the bar', () => {
+  const items = evidence();
+  const before = rep => cellItemRows('before', rep, {keyAfter: {reading: KEYLESS, pageFocused: false},
+    row: reRecord(record({item: ITEMS.cell('before', rep), group: 'chrome-cell', row: CELL_ROW}), {group: 'chrome-cell', item: ITEMS.cell('before', rep),
+      act: {ok: true, value: {actMs: 2100, threw: true, message: 'timed out'}, route: 'paste', meta: {paste: {stage: 'read', readWait: 'timeout', confirmed: null}}},
+      check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: CELL_ROW.string.text.length}}}})});
+  for (let rep = 0; rep < CELL_REPS; rep++) items[ITEMS.cell('before', rep)] = before(rep);
+  const judged = judge187(items);
+  assert.equal(judged.overall.verdict, 'LANDS');
+  assert.deepEqual(judged.cells.before.map(c => [c.keyless, c.readTimeout, c.delivered]), Array(3).fill([true, true, false]));
+  assert.match(item187Markdown(judged), /BEFORE \(recorded only\): 3 of 3 repetitions keyless with the read timing out, as predicted\./);
+  items[ITEMS.cell('before', 1)] = cellItemRows('before', 1);
+  const wrong = judge187(items);
+  assert.equal(wrong.overall.verdict, 'LANDS', 'the BEFORE half never moves the bar');
+  assert.match(item187Markdown(wrong), /1 BEFORE repetition\(s\) delivered: the mechanism is wrong/);
+  assert.deepEqual(cellVerdict(null), {recorded: false, setUp: false, key: null, delivered: false, keyless: null, readTimeout: false, why: 'not recorded'});
 });
 
-test('the plan: the preconditions and placement first, the switch and a stopped engine before every B block, the arm read after each open, the owner\'s source last', () => {
-  const plan = plan187();
-  assert.deepEqual(plan.map(p => p.item), [ITEMS.place, ...ALL_ITEMS_188, ITEMS.a1, ...CONTROLS.map(g => ITEMS.control(g, 'A')), ITEMS.b, ...CONTROLS.map(g => ITEMS.control(g, 'B')), ITEMS.end]);
-  assert.deepEqual(plan187({part: 'a'}).map(p => p.item), [ITEMS.place, ITEMS.a1, ...CONTROLS.map(g => ITEMS.control(g, 'A')), ITEMS.end]);
-  assert.deepEqual(plan[0].steps.filter(s => s.task).map(s => s.task), ['187-preflight', '187-place', 'activate']);
-  assert.deepEqual(plan.at(-1).steps.filter(s => s.task).map(s => [s.task, ...(s.args ?? [])]), [['activate', 'textedit'], ['select-source', 'owner', 'textedit']]);
-  const b = plan.find(p => p.item === ITEMS.b).steps;
-  const switches = b.filter(s => s.task === 'engine-json-paste').map(s => s.args[0]);
-  assert.deepEqual(switches, ['off', 'on', 'off', 'on', 'off', 'on', 'off', 'on']);
-  b.forEach((s, k) => {
-    if (s.task === 'engine-json-paste') { assert.equal(b[k + 1].task, 'engine-stop'); assert.ok(b[k + 2].open, 'the session opens on the stopped engine'); assert.equal(b[k + 3].task, '187-arm'); }
-    if (s.task === 'engine-json-restore') assert.equal(b[k + 1].task, 'engine-stop');
-  });
-  assert.equal(b.filter(s => s.task === '187-row').length, 2 * B_TARGET);
-  // Korean engaged only after the refocus, with ABC first, gated by the runner's select-source.
-  const setup = b.slice(b.findIndex(s => s.task === '187-arm'), b.findIndex(s => s.task === '187-compose') + 1).filter(s => s.task).map(s => [s.task, ...(s.args ?? [])].join(' '));
-  assert.deepEqual(setup.slice(0, 10), ['187-arm 187-B#0 A', '187-setup 187-B#0 start', '187-ready 187-B#0 setup: the driven field emptied and focused', 'activate textedit', 'select-source latin textedit',
-    `select-source named textedit ${KOREAN_2SET}`, 'activate electron', 'activate textedit', '187-korean 187-B#0 textedit', '187-ready 187-B#0 setup: the user window\'s field emptied and focused']);
-  // Every act under the key guard of the user window, after a release observation of the third scene, and every
-  // background row followed by the order's restore.
-  const acts = b.filter(s => s.run && /act:/.test(s.label));
-  assert.ok(acts.every(s => s.keys === 'textedit'));
-  b.forEach((s, k) => { if (s.task === '187-row') assert.equal(b[k + 1].task, '187-order-restore'); });
-  assert.ok(b.some(s => s.run && /release: the electron scene/.test(s.label)));
-  assert.ok(plan.find(p => p.item === ITEMS.control('electron-composing', 'B')).steps.some(s => s.task === 'engine-json-paste' && s.args[0] === 'on'));
-  assert.ok(!plan.find(p => p.item === ITEMS.a1).steps.some(s => s.task === 'engine-json-paste'), 'Part A runs the engine as built');
-  assert.deepEqual(plan187({part: 'a'}).map(p => p.item).filter(i => i === ITEMS.b), []);
-  assert.deepEqual(plan187({vendor: true}).map(p => p.item), [ITEMS.place, ITEMS.vendorKorean, ITEMS.vendor, ITEMS.end], 'the vendor\'s chrome/korean rows first');
-  assert.equal(plan187({vendor: true})[1].steps.filter(s => s.task === '187-row').length, 9);
-  // Nothing the plan prints names a string's text.
-  assert.deepEqual(leaks(plan.flatMap(p => p.steps.map(describeStep)).join('\n')), []);
-});
-
-// The Mac, faked: three scenes, a page that counts what the act enters, an order watcher whose record the fake's raises
-// and activations write, a composition the probe's key starts. `raiseAt`: the row keys whose act raises Chrome.
-// `lateRaiseAt`: rows whose act raises Chrome, the watcher writing it only after the row's own read (a write lag);
-// `activationsInWaitAt`: rows whose page beacon lags, Chrome and then TextEdit activated while the row waits for it.
-// `tailRaise`: Chrome raised while the block closes its session, after the last row's restore check; `menuWatch`: the
-// notification watcher's fate (ok, ended, dead, unreadable) and `menuSnapshot` whether the snapshot reads succeed.
-function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [], tailRaise = false, menuWatch = 'ok', menuSnapshot = true, lostKeys = 0, latinKey = false} = {}) {
-  let clock = T0, front = 'textedit', composed = false, typedLatin = false;
-  const keystrokes = [];
+// The Mac, faked: three scenes, a page that counts what the act enters (and whether the page has the focus), an order
+// watcher whose record the fake's raises and activations write, a composition the probe's key starts, Chrome's relaunch
+// and the person's activation. `raiseAt`: the row keys whose act raises Chrome. `lateRaiseAt`: rows whose act raises
+// Chrome, the watcher writing it only after the row's own read; `activationsInWaitAt`: rows whose page beacon lags,
+// Chrome and then TextEdit activated while the row waits for it. `tailRaise`: Chrome raised while the block closes its
+// session; `menuWatch`: the notification watcher's fate (ok, ended, dead, unreadable) and `menuSnapshot` whether the
+// snapshot reads succeed. `lostKeys`: composition keys lost; `delayedReads`: focus reads before the first key lands;
+// `latinKey`: the key lands as the Latin letter; `keyless`: Chrome left without a key window by `open -a`.
+function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [], tailRaise = false, menuWatch = 'ok', menuSnapshot = true, lostKeys = 0, delayedReads = 0, latinKey = false, keyless = false} = {}) {
+  let clock = T0, front = 'textedit', composed = false, typedLatin = false, keyedAt = null, fieldReads = 0;
+  const pids = {...PIDS}, keystrokes = [], keyClock = [], sleeps = [];
   const bounds = {chrome: {x: 300, y: 80, width: 800, height: 600}, textedit: {x: 500, y: 100, width: 700, height: 500}, electron: {x: 900, y: 120, width: 500, height: 400}};
   const numbers = {chrome: 11, textedit: 12, electron: 13};
   const changes = [], calls = [], activationsLog = [];
   let attempts = 0, lagReads = 0, stalePage = null, pairDue = false;
-  let page = {seq: 0, length: 0, counts: {...ZERO}};
+  const chromeKey = () => front === 'chrome' && !keyless;
+  let page = {seq: 0, length: 0, counts: {...ZERO}, focused: false};
+  const beacon = over => { page = {...page, seq: page.seq + 1, focused: chromeKey(), ...over}; };
   const tick = () => (clock += 5);
   const order = state => changes.push({kind: 'order', at: tick(), prev: clock - 5, state});
   const stateNow = () => changes.at(-1)?.state ?? 'front-above';
-  const scene = id => ({id, app: `/Apps/${id}.app`, pid: PIDS[id], at: 1, window: {number: numbers[id]}});
+  const scene = id => ({id, app: `/Apps/${id}.app`, pid: pids[id], at: 1, window: {number: numbers[id]}});
   const session = {
     run: async (code, {keys}) => {
       tick();
-      if (code.includes('// cua-187: prepare')) { page = {...page, seq: page.seq + 1, length: 0}; return {ok: true, value: {ready: true}, route: null, meta: {}, images: []}; }
+      if (code.includes('// cua-187: press read')) return {ok: true, value: {inFront: true, found: true, focused: true, empty: page.length === 0}, route: null, meta: {}, images: []};
+      if (code.includes('// cua-187: press')) {
+        calls.push(['press']);
+        return {ok: true, value: {pressed: true, threw: false, errorName: null}, route: 3, images: [],
+          meta: {activationGuardMs: 30, activationClickKind: {kind: 'inertOutside', point: 'offset', when: 'early'}, elementClick: {plan: 'action', action: 'AXPress', reason: 'advertised', hit: 'same'}}};
+      }
+      if (code.includes('// cua-187: prepare')) {
+        calls.push(['prepare', code.includes('(no click)') ? 'no click' : 'emptied']);
+        if (!code.includes('(no click)')) page = {...page, seq: page.seq + 1, length: 0};
+        return {ok: true, value: {ready: true}, route: null, meta: {}, images: []};
+      }
       if (code.includes('// cua-187: act')) {
         const text = JSON.parse(code.match(/__app\.(?:typeText|paste)\(("(?:[^"\\]|\\.)*")\)/)[1]);
         const key = calls.filter(c => c[0] === 'act').length;
         calls.push(['act', keys]);
         if (activationsInWaitAt.includes(key)) { stalePage = {...page}; lagReads = 2; pairDue = true; }
-        page = {...page, seq: page.seq + 1, length: text.length};
+        const lands = !(GROUPS['chrome-cell'] && keys === 'chrome' && keyless);
+        if (lands) beacon({length: text.length});
         if (raiseAt.includes(key)) order('back-above');
         if (lateRaiseAt.includes(key)) { order('back-above'); changes.at(-1).visibleAfter = attempts + 2; }
-        return {ok: true, value: {actMs: 180, threw: false, message: null}, route: 'paste', images: [],
-          meta: {activationGuardMs: 40, activationClick: 'outsideFrame', entered: text.length, paste: {stage: 'effect', confirmed: true, focusEnforcement: {arm: 'B', activated: true, point: 'outside', liftedClick: true}}}};
+        return {ok: true, value: {actMs: lands ? 180 : 2100, threw: !lands, message: lands ? null : 'timed out'}, route: 'paste', images: [],
+          meta: {activationGuardMs: 40, activationClick: 'outsideFrame', entered: lands ? text.length : 0,
+            paste: lands ? {stage: 'effect', confirmed: true, focusEnforcement: {activated: true, point: 'outside'}, perLine: linesOf(text)} : {stage: 'read', readWait: 'timeout'}}};
       }
-      if (code.includes('// cua-187: check')) { const expectedLength = Number(code.match(/expectedLength: (\d+)/)[1]); return {ok: true, value: {ok: true, outcome: {exact: true, nfcEqual: true, length: expectedLength, expectedLength}}, route: null, meta: {}, images: []}; }
+      if (code.includes('// cua-187: check')) {
+        const expectedLength = Number(code.match(/expectedLength: (\d+)/)[1]), exact = page.length === expectedLength;
+        return {ok: true, value: {ok: exact, outcome: {exact, nfcEqual: exact, length: page.length, expectedLength}}, route: null, meta: {}, images: []};
+      }
       return {ok: true, value: {inFront: true}, route: null, meta: {}, images: []};
     },
     close: async () => { if (tailRaise) order('back-above'); return 0; }, endTask: async () => ({}),
@@ -283,29 +379,44 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
   const io = {
     scene, open: async () => session, wait: async () => {}, cue: async () => {}, waitGo: async () => {}, goFile: join(out, 'go'),
     tasks: {
-      activate: async ([id]) => { calls.push(['activate', id]); front = id; if (id === 'textedit' && stateNow() === 'back-above') order('front-above'); return {ok: true}; },
+      activate: async ([id]) => { calls.push(['activate', id]); front = id; if (id === 'textedit' && stateNow() === 'back-above') order('front-above'); beacon(); return {ok: true}; },
       'select-source': async args => { calls.push(['select-source', ...args]); return {ok: true, switched: true}; },
-      'engine-json-paste': async () => ({ok: true}), 'engine-stop': async () => ({ok: true}), 'engine-json-restore': async () => ({ok: true}),
     },
   };
   const deps = {
     out, scene, state: () => ({scenes: {chrome: {page: {variant: 'counters'}}, textedit: {}, electron: {}}}), activate: id => io.tasks.activate([id]),
-    frontmost: () => ({pid: PIDS[front], topWindow: {number: numbers[front]}}), windows: pid => { const id = Object.keys(PIDS).find(k => PIDS[k] === pid); return [{number: numbers[id], bounds: bounds[id], onScreen: true}]; },
+    frontmost: () => ({pid: pids[front], topWindow: {number: numbers[front]}}), windows: pid => { const id = Object.keys(pids).find(k => pids[k] === pid); return [{number: numbers[id], bounds: bounds[id], onScreen: true}]; },
     windowList: () => ['textedit', 'chrome', 'electron'].map(id => ({number: numbers[id], bounds: bounds[id]})),
+    scenes: args => {
+      calls.push(['scenes', ...args]);
+      if (args[0] === 'down') return {scene: args[1], down: true};
+      pids[args[1]] += 100;
+      front = args[1];
+      page = {seq: 0, length: 0, counts: {...ZERO}, focused: true};
+      return {scene: args[1], pid: pids[args[1]], window: {number: numbers[args[1]]}};
+    },
+    openApp: app => { calls.push(['open', app]); front = Object.keys(pids).find(id => app === `/Apps/${id}.app`); beacon(); },
+    axWindow: ([pid]) => { const id = Object.keys(pids).find(k => pids[k] === Number(pid)), isFront = id === front, key = isFront && (id !== 'chrome' || !keyless);
+      return {trusted: true, ok: true, frontmost: isFront, found: true, focused: key, main: key || !isFront, focusedWindow: key ? 'run' : 'none', mainWindow: key || !isFront ? 'run' : 'none', windows: 1}; },
     probe: args => {
       if (args[0] === 'input-source') return {id: KOREAN_2SET, layout: HANGUL_LAYOUT, perContextInput: false};
       if (args[0] === 'keystroke') {
         keystrokes.push(args);
-        if (keystrokes.length > lostKeys) { if (latinKey) typedLatin = true; else composed = true; }
+        keyClock.push(clock);
+        if (keystrokes.length > lostKeys) { if (latinKey) typedLatin = true; else if (keyedAt === null) keyedAt = fieldReads; }
         return {exitStatus: 0, units: 1};
       }
-      if (args[0] === 'focus') return {named: true, valueHash: composed ? sha256Hex(COMPOSITION.composed) : typedLatin ? sha256Hex(COMPOSITION.key) : EMPTY_HASH};
+      if (args[0] === 'focus') {
+        fieldReads += 1;
+        if (keyedAt !== null && fieldReads > keyedAt + delayedReads) composed = true;
+        return {named: true, valueHash: composed ? sha256Hex(COMPOSITION.composed) : typedLatin ? sha256Hex(COMPOSITION.key) : EMPTY_HASH};
+      }
       return null;
     },
-    engineStatus: () => ({build: 'b1', approved: true, status: {pasteFocusEnforcement: true}}), engineJson: () => ({}),
+    engineStatus: () => ({build: 'b1', approved: true, status: {}}), savedRecord: () => ({status: {build: 'b1'}}),
     consent: () => ({consent: true, owner: {id: 'com.apple.keylayout.ABC'}}), clipboard: () => 'digest', processNames: () => ['/usr/sbin/pboard', '/bin/zsh'],
     pageCounters: () => (lagReads > 0 ? (lagReads--, {...stalePage}) : {...page}), fixtureCounters: () => null,
-    moveWindow: ([pid, , dx, dy]) => { const id = Object.keys(PIDS).find(k => PIDS[k] === Number(pid)); bounds[id] = {...bounds[id], x: bounds[id].x + Number(dx), y: bounds[id].y + Number(dy)}; calls.push(['move', id]); return {moved: true}; },
+    moveWindow: ([pid, , dx, dy]) => { const id = Object.keys(pids).find(k => pids[k] === Number(pid)); bounds[id] = {...bounds[id], x: bounds[id].x + Number(dx), y: bounds[id].y + Number(dy)}; calls.push(['move', id]); return {moved: true}; },
     order: {start: async ({file}) => ({pid: 77, file, start: {state: 'front-above'}}), stop: async () => ({start: {state: 'front-above'}, changes, end: {samples: 400, maxGapMs: 9}}),
       attempt: () => { attempts += 1; return {start: {state: 'front-above', at: T0}, changes: changes.filter(c => !(c.visibleAfter > attempts)), end: null}; }},
     activations: {start: () => ({}), lines: () => [...activationsLog], stop: () => []},
@@ -314,83 +425,143 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
       lines: () => { if (menuWatch === 'unreadable') throw new Error('the log could not be read'); return menuWatch === 'ended' ? [{kind: 'end', at: T0, why: 'crashed'}] : []; }},
     write: () => {}, now: () => tick(),
     sleep: async ms => {
+      sleeps.push(ms);
       clock += ms;
       if (pairDue) { pairDue = false; activationsLog.push({kind: 'activated', bundleId: 'com.google.chrome.for.testing', at: tick()}, {kind: 'activated', bundleId: 'com.apple.TextEdit', at: tick()}); }
     },
   };
   Object.assign(io.tasks, item187Tasks(deps));
-  return {io, calls, keystrokes};
+  return {io, calls, keystrokes, keyClock, sleeps};
 }
+const block = (rows, n = 1) => groupItem({item: ITEMS.composing, group: 'chrome-composing', blocks: [{block: n, rows}]});
+const rowsOfRun = out => read187(out)[ITEMS.composing];
 
-test('a raise after a B row: the kit puts the order back before the next row, the row is a B failure with the raise\'s time, and the judge counts it', async t => {
+test('a raise after a row: the kit puts the order back before the next row, the row keeps the raise\'s time, and the bar counts it', async t => {
   const out = scratch(t);
   const {io, calls} = fakeMac(out, {raiseAt: [1]});
-  const steps = groupItem({item: ITEMS.b, group: 'chrome-composing', blocks: [{block: 1, arm: 'B', rows: ROWS.slice(0, 3), switchTo: 'on'}]});
-  await runSteps(steps, {item: ITEMS.b, out, io, log: () => {}});
-  const rows = readFileSync(join(out, `item-${ITEMS.b}.jsonl`), 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l));
-  const records = rows.filter(r => r.task === '187-row').map(r => r.result);
+  await runSteps(block(ROWS.slice(0, 3)), {item: ITEMS.composing, out, io, log: () => {}});
+  const rows = rowsOfRun(out), records = rows.filter(r => r.task === '187-row').map(r => r.result);
   assert.deepEqual(records.map(r => r.raises), [0, 1, 0]);
-  assert.equal(records[1].raisedAt.length, 1);
-  assert.ok(Number.isFinite(records[1].raisedAt[0]));
   assert.equal(records[1].delivered, true, 'the raised row delivered; the raise alone fails it');
   assert.equal(records[2].invalid, null, 'the next row starts with the order put back');
-  assert.equal(records[2].stateAtStart, 'front-above');
+  assert.ok(records.every(r => r.keyWindow?.ok === true && r.keyWindow.frontmost === false), 'every row read Chrome\'s key-window state in the background');
+  assert.ok(records.every(r => r.pageFocused === false));
   const restores = rows.filter(r => r.task === '187-order-restore').map(r => r.result);
   assert.deepEqual(restores.map(r => r.restored), [false, true, false]);
-  assert.equal(restores[1].ok, true);
-  assert.deepEqual(restores[1].raisedAt, records[1].raisedAt);
   assert.deepEqual(restores[1].how, ['placement', 'activate textedit']);
-  const restoreAt = rows.findIndex(r => r.task === '187-order-restore' && r.result.restored);
-  const nextRow = rows.findIndex((r, k) => k > restoreAt && r.task === '187-before');
-  assert.ok(restoreAt > 0 && nextRow > restoreAt, 'the restore runs before the next row');
   assert.ok(calls.filter(c => c[0] === 'act').every(c => c[1] === 'textedit'), 'every act went under the user window\'s key guard');
-  // The judge, with this block standing in for Part B's B rows.
   const items = evidence();
-  items[ITEMS.b] = [start, ...rows.filter(r => r.task === '187-row' || r.task === '187-order-restore' || r.task === '187-order-stop')];
+  items[ITEMS.composing] = [start, ...rows.filter(r => ['187-row', '187-order-restore', '187-order-stop'].includes(r.task))];
   const judged = judge187(items);
-  assert.equal(judged.b.verdict, 'DOES NOT LAND');
-  assert.match(judged.b.why.join('; '), new RegExp(`1 B row\\(s\\) raised Chrome's window above TextEdit's \\(${records[1].key} at ${records[1].raisedAt[0]}\\)`));
-  assert.equal(judged.groups.find(g => g.item === ITEMS.b && g.arm === 'B').restores.length, 1);
+  assert.equal(judged.overall.verdict, 'DOES NOT LAND');
+  assert.match(judged.overall.why.join('; '), /1 raise\(s\): 1 in rows/);
   assert.match(item187Markdown(judged), /the kit put the window order back after 1 row/);
-  // Value-free: nothing the run kept names a string's text, and the rows carry no value.
-  const kept = readFileSync(join(out, `item-${ITEMS.b}.jsonl`), 'utf8');
+  const kept = readFileSync(join(out, `item-${ITEMS.composing}.jsonl`), 'utf8');
   assert.deepEqual(leaks(kept), []);
   assert.ok(!/"(value|text)":"[^"]/.test(JSON.stringify(records)), 'a record holds no text field');
+});
+
+test('a raise the watcher writes after the row\'s own read, an activation pair during the beacon\'s wait, and a raise in the block\'s tail are each the row\'s', async t => {
+  const late = scratch(t);
+  await runSteps(block(ROWS.slice(0, 3)), {item: ITEMS.composing, out: late, io: fakeMac(late, {lateRaiseAt: [1]}).io, log: () => {}});
+  const restores = rowsOfRun(late).filter(r => r.task === '187-order-restore').map(r => r.result);
+  assert.deepEqual(restores.map(r => r.restored), [false, true, false]);
+  assert.equal(restores[1].lateRaisedAt.length, 1);
+  const pair = scratch(t);
+  await runSteps(block(ROWS.slice(0, 2)), {item: ITEMS.composing, out: pair, io: fakeMac(pair, {activationsInWaitAt: [0]}).io, log: () => {}});
+  const records = rowsOfRun(pair).filter(r => r.task === '187-row').map(r => r.result);
+  assert.deepEqual([records[0].activations.length, records[0].front.changed, records[1].front.changed], [2, true, false]);
+  const tail = scratch(t);
+  await runSteps(block(ROWS.slice(0, 2)), {item: ITEMS.composing, out: tail, io: fakeMac(tail, {tailRaise: true}).io, log: () => {}});
+  const stop = rowsOfRun(tail).find(r => r.task === '187-order-stop').result, last = rowsOfRun(tail).filter(r => r.task === '187-row').at(-1).result;
+  assert.equal(stop.tailRaises[last.key].length, 1, 'the tail raise goes to the block\'s last row');
+});
+
+test('the menu watch counts only while it stayed alive and its log was readable through the row', async t => {
+  const openedOf = async options => {
+    const out = scratch(t);
+    await runSteps(block(ROWS.slice(0, 1)), {item: ITEMS.composing, out, io: fakeMac(out, {menuSnapshot: false, ...options}).io, log: () => {}});
+    return rowsOfRun(out).find(r => r.task === '187-row').result.menu;
+  };
+  assert.equal((await openedOf({menuWatch: 'ok'})).opened, false);
+  for (const fate of ['ended', 'dead', 'unreadable']) assert.equal((await openedOf({menuWatch: fate})).opened, null, `a watch that ${fate} is no evidence`);
+  assert.equal((await openedOf({menuWatch: 'unreadable'})).observed, null, 'a log that cannot be read is unread, not zero events');
+  const swift = readFileSync(new URL('../../scripts/cursor-sitting/menu-open.swift', import.meta.url), 'utf8');
+  assert.match(swift, /"ok": ok/, 'the helper says whether every read succeeded');
 });
 
 test('the composition: a row that disturbs it makes the rest of its block invalid, unsent', async t => {
   const out = scratch(t);
   const {io, calls} = fakeMac(out);
-  // The composition's hash as kept differs from what the field reads after the first row: it was disturbed.
   const tasks = io.tasks, probe = tasks['187-compose'];
   tasks['187-compose'] = async (args, ctx) => { const r = await probe(args, ctx); ctx.r187.compose[args[0]].jamo = 'f'.repeat(64); return r; };
-  await runSteps(groupItem({item: ITEMS.a1, group: 'chrome-composing', blocks: [{block: 0, arm: 'A', rows: ROWS.slice(0, 3)}]}), {item: ITEMS.a1, out, io, log: () => {}});
-  const records = read187(out)[ITEMS.a1].filter(r => r.task === '187-row').map(r => r.result);
+  await runSteps(block(ROWS.slice(0, 3), 0), {item: ITEMS.composing, out, io, log: () => {}});
+  const records = rowsOfRun(out).filter(r => r.task === '187-row').map(r => r.result);
   assert.equal(records[0].userKept, false);
   assert.deepEqual(records.slice(1).map(r => r.invalid), Array(2).fill('an earlier row of the block disturbed the user window\'s composition'));
   assert.equal(calls.filter(c => c[0] === 'act').length, 1, 'no act after the disturbance');
 });
 
-test('the composition key: scheduled after the probe\'s launch, posted once more only when the field reads empty (a lost key)', async t => {
+test('the composition key (review P2 on 15583c65): a delayed first key is waited out, never typed over; only a field still empty after the lead gets the key again, on a short lead', async t => {
   const compose = async options => {
-    const out = scratch(t);
-    const mac = fakeMac(out, options);
-    // A refused composition stops the item (a required step): its record is what is judged here.
-    await runSteps(groupItem({item: ITEMS.a1, group: 'chrome-composing', blocks: [{block: 0, arm: 'A', rows: ROWS.slice(0, 1)}]}), {item: ITEMS.a1, out, io: mac.io, log: () => {}})
-      .catch(error => { if (!/187-compose refused/.test(error.message)) throw error; });
-    return {result: read187(out)[ITEMS.a1].find(r => r.task === '187-compose').result, keystrokes: mac.keystrokes};
+    const out = scratch(t), mac = fakeMac(out, options);
+    await runSteps(block(ROWS.slice(0, 1), 0), {item: ITEMS.composing, out, io: mac.io, log: () => {}}).catch(error => { if (!/187-compose refused/.test(error.message)) throw error; });
+    return {result: rowsOfRun(out).find(r => r.task === '187-compose').result, keystrokes: mac.keystrokes, sleeps: mac.sleeps,
+      leads: mac.keystrokes.map((k, n) => Number(k[k.indexOf('--at') + 1]) - mac.keyClock[n]), posted: mac.keyClock};
   };
   const first = await compose({});
-  assert.equal(first.result.ok, true);
-  assert.equal(first.result.posts, 1);
-  const at = first.keystrokes[0][first.keystrokes[0].indexOf('--at') + 1];
-  assert.ok(Number(at) > T0, 'the key is scheduled with --at');
+  assert.deepEqual([first.result.ok, first.result.posts, first.result.waited], [true, 1, false]);
+  assert.ok(Number(first.keystrokes[0][first.keystrokes[0].indexOf('--at') + 1]) > T0, 'the key is scheduled with --at');
+  // The first key lands only after every settle read: the old repost would have typed a second ㄱ over it.
+  const delayed = await compose({delayedReads: SETTLE_READS});
+  assert.deepEqual([delayed.result.ok, delayed.result.posts, delayed.result.waited, delayed.keystrokes.length], [true, 1, true, 1]);
+  assert.ok(delayed.sleeps.includes(COMPOSE_LEAD_MS), 'the lead is waited out before the field is read again');
   const lost = await compose({lostKeys: 1});
-  assert.deepEqual([lost.result.ok, lost.result.posts, lost.keystrokes.length], [true, 2, 2]);
+  assert.deepEqual([lost.result.ok, lost.result.posts, lost.result.waited, lost.keystrokes.length], [true, 2, true, 2]);
+  assert.deepEqual(lost.leads, [COMPOSE_LEAD_MS, COMPOSE_REPOST_LEAD_MS], 'the first key on the matrix\'s lead, the repost on a short one');
+  assert.equal(COMPOSE_REPOST_LEAD_MS, 200);
+  // The fake's probe returns at once (the real one returns once its key is posted, its lead later): between the posts
+  // the settle reads and then the lead again are waited out.
+  assert.ok(lost.posted[1] - lost.posted[0] >= (SETTLE_READS - 1) * 250 + COMPOSE_LEAD_MS, 'the repost comes only after the settle reads and the lead again were waited out');
   const lostTwice = await compose({lostKeys: 2});
   assert.deepEqual([lostTwice.result.ok, lostTwice.result.posts, lostTwice.result.read], [false, 2, 'empty']);
   const latin = await compose({latinKey: true});
-  assert.deepEqual([latin.result.ok, latin.result.posts, latin.result.read], [false, 1, 'latin'], 'a field holding the Latin key is never typed over');
+  assert.deepEqual([latin.result.ok, latin.result.posts, latin.result.read, latin.result.waited], [false, 1, 'latin', false], 'a field holding the Latin key is never typed over');
+});
+
+test('the confirming cell end to end: the relaunch, the press on the action plan, open -a, the key read with the page focused, and the paste; keyless, the paste times out', async t => {
+  const run = async options => {
+    const out = scratch(t), mac = fakeMac(out, options), item = ITEMS.cell(options.keyless ? 'before' : 'after', 0);
+    await runSteps(cellItem({half: options.keyless ? 'before' : 'after', rep: 0}), {item, out, io: mac.io, log: () => {}});
+    return {rows: read187(out)[item], calls: mac.calls};
+  };
+  const after = await run({});
+  const cell = after.rows.find(r => r.task === '187-cell').result;
+  assert.equal(cell.ok, true, JSON.stringify(cell.verdict));
+  assert.deepEqual([cell.press.plan, cell.press.action, cell.press.reason, cell.press.kind.when], ['action', 'AXPress', 'advertised', 'early']);
+  assert.deepEqual([cell.keyBefore.reading.frontmost, cell.keyAfter.reading.frontmost, cell.keyAfter.reading.focused, cell.keyAfter.reading.main, cell.keyAfter.pageFocused], [false, true, true, true, true]);
+  assert.deepEqual([cell.verdict.setUp, cell.verdict.key, cell.verdict.delivered], [true, true, true]);
+  assert.equal(cell.row.keyWindow.focused, true, 'the row read the key right before its act');
+  const relaunch = after.rows.find(r => r.task === '187-relaunch').result;
+  assert.deepEqual([relaunch.ok, relaunch.before, relaunch.pid], [true, PIDS.chrome, PIDS.chrome + 100]);
+  assert.deepEqual(after.calls.filter(c => ['scenes', 'open'].includes(c[0])), [['scenes', 'down', 'chrome'], ['scenes', 'up', 'chrome', '--page', 'counters'], ['open', '/Apps/chrome.app']]);
+  assert.deepEqual(after.calls.find(c => c[0] === 'prepare'), ['prepare', 'no click']);
+  const order = after.calls.map(c => c[0]);
+  assert.ok(order.indexOf('press') < order.indexOf('open') && order.indexOf('open') < order.indexOf('act'));
+  const before = await run({keyless: true});
+  const keyless = before.rows.find(r => r.task === '187-cell').result;
+  assert.deepEqual([keyless.verdict.keyless, keyless.verdict.readTimeout, keyless.verdict.delivered], [true, true, false]);
+  assert.equal(keyless.ok, true, 'the BEFORE half records; it never fails a run');
+  assert.deepEqual(leaks(JSON.stringify(after.rows) + JSON.stringify(before.rows)), []);
+});
+
+test('the put-back reading: the build installed against the save\'s record, approved; recorded, never refusing', async t => {
+  const out = scratch(t), {io} = fakeMac(out);
+  assert.deepEqual(await io.tasks['187-putback'](['/saved'], {results: {}}), {ok: true, saved: 'b1', current: {build: 'b1', approved: true}, scenesUp: true, consent: true});
+  const tasks = item187Tasks({state: () => ({scenes: {chrome: {}}}), consent: () => null, engineStatus: () => ({build: 'b2', approved: false}), savedRecord: () => ({status: {build: 'b1'}})});
+  const other = await tasks['187-putback'](['/saved'], {results: {}});
+  assert.equal(other.ok, false);
+  assert.match(other.problem, /the installed build is b2, not the saved b1; the installed engine is not approved; the textedit scene is not up/);
 });
 
 test('value-free helpers: the clipboard readers by name only; an open menu by roles and counts', () => {
@@ -399,199 +570,38 @@ test('value-free helpers: the clipboard readers by name only; an open menu by ro
   assert.equal(menuOpened({trusted: true, ok: true, selected: 0, openMenus: 1}), true);
   assert.equal(menuOpened({trusted: true, ok: true, selected: 0, openMenus: 0, focusedRole: 'AXMenuItem'}), true);
   assert.equal(menuOpened({trusted: false}), null);
+  assert.equal(menuOpened({trusted: true, ok: false, selected: 0, openMenus: 0}), null);
   const r = record({act: {...input().act, value: {actMs: 1, threw: true, message: 'Timed out waiting for the application to read the clipboard'}}});
   assert.deepEqual(leaks(JSON.stringify(r)), []);
-  assert.equal(LABELS.act('187-B#1.0', 'paste', 'hangul'), '187-B#1.0 act: paste.hangul');
+  assert.equal(LABELS.act(`${ITEMS.composing}#1.0`, 'paste', 'hangul'), `${ITEMS.composing}#1.0 act: paste.hangul`);
+  const swift = readFileSync(new URL('../../scripts/cursor-sitting/ax-state.swift', import.meta.url), 'utf8');
+  assert.match(swift, /kAXFocusedAttribute/);
+  assert.match(swift, /kAXMainAttribute/);
+  assert.match(swift, /kAXFrontmostAttribute/);
+  assert.ok(!/kAXValueAttribute|kAXTitleAttribute|kAXSelectedTextAttribute\b/.test(swift), 'the reader reads no text');
 });
 
-test('review P1.1: arm B\'s control comparison needs complete, valid A baselines; without one the result is incomplete, never LANDS', () => {
-  const failing = r => reRecord(r, {check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 3}}}});
-  const noA = evidence({tweakControlB: failing});
-  for (const g of CONTROLS) delete noA[ITEMS.control(g, 'A')];
-  const judged = judge187(noA);
-  assert.equal(judged.b.verdict, 'INCOMPLETE');
-  assert.match(judged.b.why.join('; '), /no complete A baseline/);
-  const invalidA = evidence();
-  invalidA[ITEMS.control('electron-composing', 'A')][1] = taskRow(reRecord(invalidA[ITEMS.control('electron-composing', 'A')][1].result, {disturbed: true}));
-  assert.equal(judge187(invalidA).b.verdict, 'INCOMPLETE');
-  const shortA = evidence();
-  shortA[ITEMS.control('chrome-korean', 'A')].splice(3, 1);
-  assert.match(judge187(shortA).b.why.join('; '), /chrome\/korean control under arm A has 17 of 18 rows/);
-});
-
-test('review P1.2: end-early success needs the three A controls finished with valid coverage; their delivery failures stay diagnostic', () => {
-  const stopped = evidence({b: false});
-  stopped[ITEMS.control('textedit-composing', 'A')] = [start, {kind: 'stopped', error: '187-korean refused: the Korean source did not engage'}];
-  const judged = judge187(stopped);
-  assert.equal(judgedOk(judged), false);
-  assert.equal(judged.overall.verdict, 'INCOMPLETE');
-  assert.match(judged.overall.why.join('; '), /textedit\/composing@electron control under arm A/);
-  const missing = evidence({b: false});
-  delete missing[ITEMS.control('chrome-korean', 'A')];
-  assert.equal(judgedOk(judge187(missing)), false);
-  const undelivered = evidence({b: false, tweakControlA: r => reRecord(r, {check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 3}}}})});
-  assert.equal(judgedOk(judge187(undelivered)), true, 'a control\'s known delivery failures do not stop the end-early success');
-});
-
-test('review P1.3: the owner\'s source restore (187-end) is part of overall success and of the report', () => {
-  assert.equal(judgedOk(judge187(evidence())), true);
-  const none = evidence({end: false});
-  assert.equal(judgedOk(judge187(none)), false);
-  assert.match(judge187(none).overall.why.join('; '), /owner's input source/);
-  const failed = evidence();
-  failed[ITEMS.end] = endItem({ok: false, which: 'owner', switched: true, requested: 'com.apple.keylayout.ABC', current: {id: 'com.apple.inputmethod.Korean.2SetKorean'}, problem: 'read back 2-Set'});
-  const judged = judge187(failed);
-  assert.equal(judged.b.verdict, 'LANDS');
-  assert.equal(judgedOk(judged), false);
-  assert.match(item187Markdown(judged), /owner's input source: NOT restored/);
-  const unread = evidence();
-  unread[ITEMS.end] = endItem({ok: true, which: 'owner', switched: true, requested: 'com.apple.keylayout.ABC', current: null});
-  assert.equal(judgedOk(judge187(unread)), false, 'a restore without its read-back is not a restore');
-  assert.match(item187Markdown(judge187(evidence())), /owner's input source: restored \(com\.apple\.keylayout\.ABC, read back\)/);
-});
-
-test('review P1.4: a raise the watcher writes after the row\'s own read is still seen before the next row, put back, and attributed to the row', async t => {
-  const out = scratch(t);
-  const {io} = fakeMac(out, {lateRaiseAt: [1]});
-  await runSteps(groupItem({item: ITEMS.b, group: 'chrome-composing', blocks: [{block: 1, arm: 'B', rows: ROWS.slice(0, 3), switchTo: 'on'}]}), {item: ITEMS.b, out, io, log: () => {}});
-  const rows = read187(out)[ITEMS.b];
-  const restores = rows.filter(r => r.task === '187-order-restore').map(r => r.result);
-  assert.deepEqual(restores.map(r => r.restored), [false, true, false]);
-  assert.equal(restores[1].lateRaisedAt.length, 1);
-  const records = rows.filter(r => r.task === '187-row').map(r => r.result);
-  assert.equal(records[2].invalid, null, 'the next row starts with the order put back');
-  const items = evidence();
-  items[ITEMS.b] = [start, ...rows.filter(r => ['187-row', '187-order-restore', '187-order-stop'].includes(r.task))];
-  const judged = judge187(items);
-  assert.match(judged.b.why.join('; '), new RegExp(`raised Chrome's window above TextEdit's \\(${records[1].key} at`));
-});
-
-test('review P1.4: the final watcher\'s raises in a row\'s span are reconciled with the row records', () => {
-  const items = evidence();
-  const b = items[ITEMS.b], key = b.find(r => r.task === '187-row' && r.result.arm === 'B').result.key;
-  b[b.length - 1] = orderStop({raises: 1, rowRaises: {[key]: [T0 + 7]}});
-  const judged = judge187(items);
-  assert.equal(judged.b.verdict, 'DOES NOT LAND');
-  assert.match(judged.b.why.join('; '), new RegExp(`${key.replace(/[#.]/g, m => `\\${m}`)} at ${T0 + 7}`));
-});
-
-test('review P1.5: an activation pair during the row\'s wait for the page\'s beacon counts as a front-app change', async t => {
-  const out = scratch(t);
-  const {io} = fakeMac(out, {activationsInWaitAt: [0]});
-  await runSteps(groupItem({item: ITEMS.b, group: 'chrome-composing', blocks: [{block: 1, arm: 'B', rows: ROWS.slice(0, 2), switchTo: 'on'}]}), {item: ITEMS.b, out, io, log: () => {}});
-  const records = read187(out)[ITEMS.b].filter(r => r.task === '187-row').map(r => r.result);
-  assert.equal(records[0].activations.length, 2);
-  assert.equal(records[0].front.changed, true);
-  assert.equal(records[1].front.changed, false);
-});
-
-test('review P2.6: a chrome row with no counter read before the act has incomplete counter evidence, never delivered-and-valid', () => {
-  const expected = ROWS[1].string.text.length;
-  const r = record({page: {mid: null, after: {seq: 5, length: expected, counts: {...ZERO, click: 1}}}});
-  assert.match(r.invalid, /page counters before the act/);
-  assert.equal(r.ok, false);
-});
-
-test('review P2.7: an unreadable menu snapshot is no evidence; only a good snapshot or a verified watch says no menu opened', () => {
-  assert.equal(menuOpened({trusted: true, ok: false, menuBar: false, items: 0, selected: 0, openMenus: 0}), null);
-  assert.equal(menuOpened({trusted: true, selected: 0, openMenus: 0}), null, 'a snapshot that does not say it read everything');
-  const unread = {read: {trusted: true, ok: false, selected: 0, openMenus: 0}, observed: 0};
-  assert.equal(record({menu: {...unread, watchVerified: false}}).menu.opened, null);
-  assert.equal(record({menu: {...unread, watchVerified: true}}).menu.opened, false);
-  assert.equal(judge187(evidence({tweakB: r => reRecord(r, {menu: unread})})).b.verdict, 'INCOMPLETE');
-  assert.match(readFileSync(new URL('../../scripts/cursor-sitting/menu-open.swift', import.meta.url), 'utf8'), /"ok": ok/, 'the helper says whether every read succeeded');
-});
-
-test('review P2.8: B control rows count in the comparison only with the engine confirming arm B', () => {
-  const unconfirmed = r => reRecord(r, {armStatus: null, act: {...input().act, meta: {...input().act.meta, paste: {stage: 'effect'}}}});
-  const judged = judge187(evidence({tweakControlB: unconfirmed}));
-  assert.equal(judged.b.verdict, 'INCOMPLETE');
-  assert.match(judged.b.why.join('; '), /arm B is not confirmed/);
-});
-
-test('review P2.9: each composing control\'s own order-watcher coverage must be whole', () => {
-  const gap = evidence();
-  gap[ITEMS.control('electron-composing', 'B')].splice(-1, 1, orderStop({maxGapMs: 80}));
-  assert.match(judge187(gap).b.why.join('; '), /electron\/composing@textedit control under arm B: the order watcher's longest gap was 80 ms/);
-  const none = evidence();
-  none[ITEMS.control('textedit-composing', 'A')].pop();
-  assert.equal(judge187(none).b.verdict, 'INCOMPLETE');
-});
-
-test('re-review P1: a raise in the block\'s tail, after the last row\'s restore check, is reconciled and keeps B from landing', async t => {
-  const out = scratch(t);
-  const {io} = fakeMac(out, {tailRaise: true});
-  await runSteps(groupItem({item: ITEMS.b, group: 'chrome-composing', blocks: [{block: 1, arm: 'B', rows: ROWS.slice(0, 2), switchTo: 'on'}]}), {item: ITEMS.b, out, io, log: () => {}});
-  const rows = read187(out)[ITEMS.b], stop = rows.find(r => r.task === '187-order-stop').result;
-  const last = rows.filter(r => r.task === '187-row').at(-1).result;
-  assert.equal(stop.raises, 1);
-  assert.equal(stop.tailRaises[last.key].length, 1, 'the tail raise goes to the block\'s last row');
-  const items = evidence();
-  items[ITEMS.b] = [start, ...rows.filter(r => ['187-row', '187-order-restore', '187-order-stop'].includes(r.task))];
-  const judged = judge187(items);
-  assert.equal(judged.b.verdict, 'DOES NOT LAND');
-  assert.match(judged.b.why.join('; '), /raised Chrome's window/);
-});
-
-test('re-review P1: the watcher\'s raise total must equal attributed plus setup-explained raises', () => {
-  const lands = evidence();
-  lands[ITEMS.b].splice(-1, 1, orderStop({raises: 1, setupRaises: 1}));
-  assert.equal(judge187(lands).b.verdict, 'LANDS', 'a raise inside the kit\'s own setup or restore step is explained');
-  const loose = evidence();
-  loose[ITEMS.b].splice(-1, 1, orderStop({raises: 1, unattributed: [T0 + 3]}));
-  assert.equal(judge187(loose).b.verdict, 'DOES NOT LAND');
-  assert.match(judge187(loose).b.why.join('; '), /1 raise\(s\) of Chrome's window outside every row and every setup step/);
-  const mismatch = evidence();
-  mismatch[ITEMS.b].splice(-1, 1, orderStop({raises: 2}));
-  assert.notEqual(judge187(mismatch).b.verdict, 'LANDS');
-  const old = evidence();
-  old[ITEMS.b].splice(-1, 1, {kind: 'task', task: '187-order-stop', result: {ok: true, maxGapMs: 12, raises: 0}});
-  assert.notEqual(judge187(old).b.verdict, 'LANDS', 'an unreconciled record never lands');
-});
-
-test('re-review P2: the menu watch counts only while it stayed alive and its log was readable through the row', async t => {
-  const openedOf = async options => {
-    const out = scratch(t);
-    const {io} = fakeMac(out, {menuSnapshot: false, ...options});
-    await runSteps(groupItem({item: ITEMS.b, group: 'chrome-composing', blocks: [{block: 1, arm: 'B', rows: ROWS.slice(0, 1), switchTo: 'on'}]}), {item: ITEMS.b, out, io, log: () => {}});
-    return read187(out)[ITEMS.b].find(r => r.task === '187-row').result.menu;
-  };
-  assert.equal((await openedOf({menuWatch: 'ok'})).opened, false);
-  for (const fate of ['ended', 'dead', 'unreadable']) {
-    const menu = await openedOf({menuWatch: fate});
-    assert.equal(menu.opened, null, `a watch that ${fate} is no evidence`);
-    assert.equal(menu.watchVerified, false);
-  }
-  assert.equal((await openedOf({menuWatch: 'unreadable'})).observed, null, 'a log that cannot be read is unread, not zero events');
-});
-
-test('re-review P2: menu-open.swift reads the focused element\'s role with its status', () => {
-  const swift = readFileSync(new URL('../../scripts/cursor-sitting/menu-open.swift', import.meta.url), 'utf8');
-  const focus = swift.slice(swift.indexOf('kAXFocusedUIElementAttribute as CFString'), swift.indexOf('emit(["trusted": true, "ok"'));
-  assert.match(focus, /read\(f, kAXRoleAttribute\)/, 'the role through the status-bearing reader');
-  assert.match(focus, /failed\.append\("focusedRole"\)/, 'a failed or malformed role read is not ok');
-});
-
-test('the CLI: the dry run prints every step and touches nothing; judge writes item-187.md', async t => {
+test('the CLI: the dry runs print every step and touch nothing; judge writes item-187.md', async t => {
   const dir = scratch(t), out = join(dir, 'never-made');
+  const count = options => plan187(options).reduce((n, p) => n + p.steps.length, 0);
   const {code, text} = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet']));
   assert.equal(code, 0);
-  const total = plan187().reduce((n, p) => n + p.steps.length, 0);
-  assert.match(text, new RegExp(`dry run: ${total} steps, nothing sent`));
+  assert.match(text, new RegExp(`dry run: ${count()} steps, nothing sent`));
   assert.equal(existsSync(out), false, 'the dry run creates nothing');
   assert.deepEqual(leaks(text), []);
+  const before = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--part', 'before']));
+  assert.match(before.text, new RegExp(`dry run: ${count({part: 'before'})} steps, nothing sent`));
+  assert.match(before.text, /task 187-putback <saved>/);
+  for (const part of ['cell', 'composing', 'controls', '259', '188', '188-vendor-click']) {
+    const answer = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--part', part]));
+    assert.match(answer.text, new RegExp(`dry run: ${count({part})} steps, nothing sent`), part);
+  }
   const vendor = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--vendor']));
-  assert.match(vendor.text, /dry run: \d+ steps/);
-  await assert.rejects(main(['paste-187', 'drive', '--out', out, '--dry-run', '--part', 'c']), /--part takes all, a, b, b-controls, 188 or 188-vendor-click/);
-  assert.deepEqual(plan187({part: 'b-controls'}).map(p => p.item), [ITEMS.place, ...['electron-composing', 'textedit-composing', 'chrome-korean'].map(g => ITEMS.control(g, 'B')), ITEMS.end]);
-  const only188 = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--part', '188']));
-  assert.match(only188.text, new RegExp(`dry run: ${plan187({part: '188'}).reduce((n, p) => n + p.steps.length, 0)} steps, nothing sent`));
+  assert.match(vendor.text, new RegExp(`dry run: ${count({vendor: true})} steps`));
   assert.equal(existsSync(out), false);
-  const vendorClick = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--part', '188-vendor-click']));
-  assert.match(vendorClick.text, new RegExp(`dry run: ${plan187({part: '188-vendor-click'}).reduce((n, p) => n + p.steps.length, 0)} steps, nothing sent`));
-  assert.equal(existsSync(out), false);
-  await assert.rejects(main(['paste-187', 'drive', '--out', dir, '--run', dir, '--vendor']), /only once arm B has failed to deliver/);
+  await assert.rejects(main(['paste-187', 'drive', '--out', out, '--dry-run', '--part', 'a']), /--part takes reslot, before, cell, composing, controls, 259, 188, 188-vendor-click/);
+  await assert.rejects(main(['paste-187', 'drive', '--out', dir, '--run', dir, '--part', 'before']), /--part before takes --saved/);
   const judged = await quietly(() => main(['paste-187', 'judge', '--out', dir]));
   assert.equal(judged.code, 1, 'nothing recorded: nothing lands');
-  assert.match(readFileSync(join(dir, 'item-187.md'), 'utf8'), /## Arm B: NOT RUN/);
+  assert.match(readFileSync(join(dir, 'item-187.md'), 'utf8'), /## Overall: DOES NOT LAND/);
 });

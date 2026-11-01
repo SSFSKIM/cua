@@ -90,7 +90,7 @@ test('the shared page answers /counters with 404; the counters page serves its o
   const shared = await startScenePage();
   const counters = await startScenePage({page: 'counters', onCounters: record => got.push(record)});
   t.after(() => Promise.all([shared.close(), counters.close()]));
-  const body = JSON.stringify({seq: 1, length: 0, counts: Object.fromEntries(COUNTER_NAMES.map(n => [n, 0])), value: 'x'});
+  const body = JSON.stringify({seq: 1, length: 0, counts: Object.fromEntries(COUNTER_NAMES.map(n => [n, 0])), focused: false, value: 'x'});
   assert.equal((await fetch(new URL(COUNTERS_PATH, shared.url), {method: 'POST', body})).status, 404);
   const sharedPage = await fetch(shared.url);
   assert.equal(await sharedPage.text(), PAGE_HTML);
@@ -100,7 +100,7 @@ test('the shared page answers /counters with 404; the counters page serves its o
   assert.equal(page.headers.get('content-security-policy'), COUNTERS_CSP);
   assert.equal((await fetch(new URL(COUNTERS_PATH, counters.url), {method: 'POST', body})).status, 204);
   assert.equal((await fetch(new URL(READY_PATH, counters.url), {method: 'POST'})).status, 204, 'the load beacon still answers');
-  assert.deepEqual(got, [{seq: 1, length: 0, counts: Object.fromEntries(COUNTER_NAMES.map(n => [n, 0]))}]);
+  assert.deepEqual(got, [{seq: 1, length: 0, counts: Object.fromEntries(COUNTER_NAMES.map(n => [n, 0])), focused: false}]);
   await assert.rejects(startScenePage({page: 'other'}), /page variant/);
 });
 
@@ -118,7 +118,7 @@ test('up chrome --page counters: parsed, refused for another scene or variant, a
   assert.equal(await (await fetch(page.url)).text(), COUNTERS_PAGE_HTML);
   assert.equal(readPageCounters(run), null);
   const counts = Object.fromEntries(COUNTER_NAMES.map(n => [n, 1]));
-  for (const seq of [2, 1]) await fetch(new URL(COUNTERS_PATH, page.url), {method: 'POST', body: JSON.stringify({seq, length: 7 + seq, counts, value: 'never kept'})});
+  for (const seq of [2, 1]) await fetch(new URL(COUNTERS_PATH, page.url), {method: 'POST', body: JSON.stringify({seq, length: 7 + seq, counts, focused: true, value: 'never kept'})});
   const kept = readPageCounters(run);
   assert.equal(kept.seq, 2, 'a beacon that arrives after a later one is not kept over it');
   assert.equal(kept.length, 9);

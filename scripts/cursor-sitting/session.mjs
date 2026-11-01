@@ -42,10 +42,12 @@ export function parseCells(text) {
 // time) and the connection's after-action repairs, which a later call carries (#200: the flashes after an action's
 // release, keyed by its delivery's post time); an observation's own diagnostics (#244: the role read, what enablement read
 // and set, the web area's wait); a paste's value-free diagnostics (#187: its stage, waits, read time against ⌘V, the key
-// focus at ⌘V, and the slot's arm with what its activation did, `focusEnforcement`); an element click's plan, the
-// ladder's reason and the hit-test's answer (#188, `elementClick`).
-const KEPT_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'actionInterval', 'receivedAt', 'hidIdleMs', 'intervention', 'entered', 'delivery',
-  'afterActionRepairs', 'observation', 'paste', 'elementClick'];
+// focus at ⌘V, what its activation did, `focusEnforcement`, and every line's record, `perLine`); the click the
+// activation posted (#187, `activationClickKind`: at the activation point, the inert one outside the frame, or none and
+// why); an element click's plan, the ladder's reason and the hit-test's answer (#188, `elementClick`); a coordinate
+// click's placement from the screenshot point to the posted events (#259, `coordinateClick`).
+export const KEPT_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'activationClickKind', 'actionInterval', 'receivedAt', 'hidIdleMs', 'intervention', 'entered',
+  'delivery', 'afterActionRepairs', 'observation', 'paste', 'elementClick', 'coordinateClick'];
 
 // What the sitting keeps of a js reply: the cell's answer, the route the engine reported for the last call, the
 // attested engine, that call's meta (KEPT_META, the keys it carried), and the images it emitted (base64, SHOT only).

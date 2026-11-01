@@ -654,16 +654,18 @@ observation must answer with its role read, or the run reads incomplete. The rep
 warm role reads and priors (expected `owned`), and the record's times; an engine without #244's diagnostics reads
 incomplete, never pass. To run one variant again: `--variant sonoma`.
 
-## Item 187: a paste behind a Hangul composition, and the activation before ⌘V (#187)
+## Item 187: a paste behind a Hangul composition on the shipping build (#187), the re-slot
 
-**About 44–60 minutes, the owner about 13–16 of them at the start**: before 5 (unattended), with the owner 11–15 (the
-build and approval, their steps below), Finder's scene and setup 1–2, #188's items 1.5–2.5, Part A 8–11, Part B 12–16
-with its controls, the judge, Finder's teardown and cleanup 4–6. Nobody
-touches the Mac once the drive starts: an input in a driven app is the person's to the engine and refuses the next
-action, and anything typed meanwhile goes through 2-Set Korean. The kit is `scripts/cursor-sitting/item-187.mjs`; its
-header says what each row does and how it is judged. It runs on this branch's engine (the paste diagnostics and the
-`pasteFocusEnforcement` switch, e3a63f83 or later on `fix/187-3b-chrome-focus`), built and approved at the slot, and on
-the harness scenes only (Chrome for Testing 155, never the owner's Chrome or profile: a stated limit).
+**About 30–38 minutes, the owner about 8–10 of them at the start** (the step list below). Nobody touches the Mac once
+the drive starts: an input in a driven app is the person's to the engine and refuses the next action, and anything typed
+meanwhile goes through 2-Set Korean. Run under a CPU hold (other sessions paused): the slot of 2026-11-01 ran at a load
+average near 245, and two control watchers' longest gaps (213 and 185 ms) failed the 50 ms rule on that alone. The kit
+is `scripts/cursor-sitting/item-187.mjs`; its header says what each row does and how the bar judges it. It runs on this
+branch's shipping build (no engine.json switch: the inert click outside the frame replaces every skipped activation
+click, the paste route settles each Return and records every line, and goes out through route 3's delivery guard),
+built and approved at the slot, and on the harness scenes only (Chrome for Testing, never the owner's Chrome or profile).
+The slot of 2026-11-01 (`item-187/runs.md`, `item-187/item-187.md`) is its baseline and is cited, not re-run: on
+6226f2698ab0 as built, 0 of 99 valid rows delivered behind the composition, every one stopping at the read stage.
 
 **The owner, at the start of the slot.** Ask each; the kit does none of them:
 
@@ -675,109 +677,126 @@ the harness scenes only (Chrome for Testing 155, never the owner's Chrome or pro
 3. **Their own TextEdit documents**: saved and TextEdit quit (or set aside by them). The harness refuses to start while
    a TextEdit it did not launch runs, and the kit empties the run's own document.
 4. **Their own Chrome windows**: whether to hide them or move them out of the way. That takes their fresh yes at every
-   slot; never assume it from an earlier one. The kit moves only the harness's windows.
-5. **Their own Finder windows** (#188's rows): closed by them, or the Finder scene refuses to come up (it never closes,
-   moves or hides the owner's windows). The scene opens its own window on a run folder of 200 files, and its setup hides
-   the sidebar, the status bar and the path bar through Finder's View settings, which `down` writes back
-   (`scenes-mac.mjs restore-finder` after a run that died). Their yes is fresh at every slot.
-6. **Do Not Disturb** on, so no banner lands over the harness windows.
-7. **Nothing sensitive on the clipboard**, and no clipboard manager started: a ⌘V handled after the engine's restore
-   would paste the clipboard's previous contents into the harness field (not observed; the vendor shares it). The kit
-   records, per item, the names of processes that could read the clipboard (names only).
-8. The terminal running the kit stays trusted for Accessibility (granted 2026-10-31): the placement and Chrome's menu
-   reader need it.
+   slot; never assume it from an earlier one. The kit moves only the harness's windows, and the confirming cell's
+   `open -a` names the harness Chrome for Testing's own bundle path.
+5. **Do Not Disturb** on, so no banner lands over the harness windows.
+6. **Nothing sensitive on the clipboard**, and no clipboard manager started: a ⌘V handled after the engine's restore
+   would paste the clipboard's previous contents into the harness field. The kit records, per item, the names of
+   processes that could read the clipboard (names only).
+7. The terminal running the kit stays **trusted for Accessibility** (granted 2026-10-31): the placement, Chrome's menu
+   reader, the key-window reads and #259's geometry read (`ax-state.swift`) need it; untrusted, they answer
+   `trusted: false` and the placement stops the drive at once.
 
-Then the owner may leave once Part A starts.
+Then the owner may leave once the drive starts.
 
 ```sh
 REPO=/Users/new/Developer/GitHub/cua/.claude/worktrees/fix-187b; cd "$REPO"
-S="node scripts/cursor-sitting.mjs"; SC="node scripts/repl-parity/scenes-mac.mjs"; GD="node scripts/native-matrix/goldens-device.mjs"
-SLOT="$HOME/.local/share/cua-187"; RUN="$SLOT/run"; OUT187="$REPO/docs/evidence/2026-10-30-macos-agent-cursor/item-187"
-SAVED="$SLOT/engine-before"; ASIDE="$SLOT/engine-slot"
-# before (operator, unattended, nothing drawn): the fixtures and Swift tools, the plan printed (nothing touched)
+S="node scripts/cursor-sitting.mjs"; SC="node scripts/repl-parity/scenes-mac.mjs"
+SLOT="$HOME/.local/share/cua-187"; RUN="$SLOT/run"; OUT187="$REPO/docs/evidence/2026-10-30-macos-agent-cursor/item-187-reslot"
+SAVED="$SLOT/engine-before-reslot"; ASIDE="$SLOT/engine-reslot"
+# before (operator, unattended, nothing drawn): the fixtures and Swift tools, the plans printed (nothing touched)
 $SC place-chrome && $SC build-electron && $S prepare
-$S paste-187 drive --out "$OUT187" --dry-run --quiet        # expected: "dry run: 2177 steps, nothing sent"
-$S save --home "$HOME" --to "$SAVED"                         # the current engine and engine.json kept
-$SC frontmost                                                # the owner's front app, put back at the end
-defaults read com.apple.HIToolbox AppleGlobalTextInputProperties   # expected: does not exist
+$S paste-187 drive --out "$OUT187" --dry-run --quiet                 # expected: "dry run: 755 steps, nothing sent"
+$S paste-187 drive --out "$OUT187" --dry-run --quiet --part before   # expected: "dry run: 80 steps, nothing sent"
+$S save --home "$HOME" --to "$SAVED"                                  # the current engine (dd7a…) and engine.json kept
+$SC frontmost                                                         # the owner's front app, put back at the end
+defaults read com.apple.HIToolbox AppleGlobalTextInputProperties      # expected: does not exist
 # with the owner (their steps above)
-node bin/cua.mjs engine build --sign-wait 600000             # OWNER: the key prompt
-node bin/cua.mjs engine approve                              # OWNER: the three grants
-node bin/cua.mjs engine status                               # expected: approved: yes, this branch's build
-mkdir -p "$OUT187" && $S source consent yes --out "$OUT187"  # only on the owner's yes
-# the scenes: Chrome on the counters page; Finder's run window as #188's user window (the owner's own closed first)
-$SC preflight --run "$RUN"                                   # expected: no refusals
-$SC up textedit --run "$RUN" && $SC up chrome --run "$RUN" --page counters && $SC up electron --run "$RUN" && $SC up finder --run "$RUN"
-$GD steps finder --run "$RUN" --phase setup                  # list view, no selection, its chrome hidden (through the approved engine)
-# the slot: #188's items under ABC, Part A, then Part B unless every Part A row delivered; then the owner's source again
+node bin/cua.mjs engine build --sign-wait 600000                      # OWNER: the key prompt
+node bin/cua.mjs engine approve                                       # OWNER: the three grants
+node bin/cua.mjs engine status                                        # expected: approved: yes, this branch's build
+mkdir -p "$OUT187" && $S source consent yes --out "$OUT187"           # only on the owner's yes
+# the scenes: Chrome on the counters page
+$SC preflight --run "$RUN"                                            # expected: no refusals
+$SC up textedit --run "$RUN" && $SC up chrome --run "$RUN" --page counters && $SC up electron --run "$RUN"
+# the re-slot: the placement, the cell's AFTER half, the 2 blocks, the controls, #259's cell, the owner's source
 $S paste-187 drive --run "$RUN" --out "$OUT187"
-$S paste-187 judge --out "$OUT187"                           # item-187.md; exit 1 unless B lands or the slot ended early
-# #188's items again alone, if one stopped (they never stop #187's): --part 188
-# only when a B row did not deliver (ruling 4; refused otherwise): the vendor's 9 paste rows, recorded only
-$S paste-187 drive --run "$RUN" --out "$OUT187" --vendor
+# a part that stopped, once its scene is put back: --part cell | composing | controls | 259 (the judge reads each item's last attempt)
+# the owner's engine back, then the cell's BEFORE half on it (the scenes still up), then the owner's source again
+$S restore --home "$HOME" --from "$SAVED" --aside "$ASIDE"            # expected: ok, the saved build approved
+$S paste-187 drive --run "$RUN" --out "$OUT187" --part before --saved "$SAVED"
+$S paste-187 judge --out "$OUT187"                                    # item-187.md; exit 1 unless the bar holds
 # put back
-$S source restore --out "$OUT187"                            # the owner's source, read back
-defaults read com.apple.HIToolbox AppleGlobalTextInputProperties   # still does not exist
-diff "$SAVED/engine.json" ~/.config/cua/engine.json && echo "engine.json as before"   # no pasteFocusEnforcement left
-$GD steps finder --run "$RUN" --phase teardown               # Finder's chrome shown again, the run's window closed
+$S source restore --out "$OUT187"                                     # the owner's source, read back
+defaults read com.apple.HIToolbox AppleGlobalTextInputProperties      # still does not exist
 $SC down all --run "$RUN"
 $SC reactivate --bundle-id <saved bundle id> --pid <saved pid>
 ```
 
-| item | rows | arm | why |
+**The step list** (minutes; the owner's at the start only):
+
+| # | step | who | minutes |
 |---|---|---|---|
-| 188-rows-cua, 188-rows-vendor | the native matrix's four Electron rows #255 repaired: electron/frontmost/paste.replace, then behind the run's Finder window electron/background/typeText.replace, pressKey.tab and paste.replace@finder | – (ABC, before Korean) | #188's acceptance on cua; the vendor's the comparison; counted for #188, never for #187 |
-| 188-click-cua, 188-click-vendor | cell 3: (i) an element click on the fixture's field holding a selection, (ii) a coordinate click mid-text with the caret at the end, the fixture frontmost | – (ABC) | #188's product question: does cua's click keep a selection where the vendor's places a caret; recorded only |
-| 187-A1 | chrome/composing@textedit: hold 3's 9 strings typed and pasted, × 2, a fresh composition each | A, the engine as built | does today's build still fail behind the composition, and at which paste stage |
-| 187-electron-composing-A, 187-textedit-composing-A, 187-chrome-korean-A | 18 each: electron/composing@textedit, textedit/composing@electron, chrome/korean with Chrome frontmost | A | the controls that delivered on the mini |
-| 187-B | chrome/composing@textedit as ABAB: 4 pairs of 9-row blocks, each arm every row twice | A then B in each pair, engine.json written and the engine stopped before each block | 3b's A/B |
-| 187-*-B | the three controls again | B | nothing regresses under B |
-| 187-vendor | the 9 paste rows on the vendor's engine | – | recorded only, and only when B did not deliver |
+| 1 | the fixtures, the Swift tools, both dry runs, the engine saved, the owner's front app read | operator, unattended | 4–5 |
+| 2 | the owner's yes to the Korean switch (`source consent yes`) | owner | 1 |
+| 3 | `engine build` (the key prompt) and `engine approve` (the three grants), status read | owner | 5–6 |
+| 4 | their TextEdit documents saved and TextEdit quit; their Chrome windows handled by them; Do Not Disturb on; nothing sensitive on the clipboard; the terminal's Accessibility trust confirmed | owner | 2–3 |
+| 5 | the scenes' preflight and up (TextEdit, Chrome on the counters page, Electron) | operator | 1–2 |
+| 6 | 187-place: the preconditions, Chrome at the left, TextEdit over its right half | drive | 0.5 |
+| 7 | the confirming cell's AFTER half: 3 repetitions (relaunch about 10–15 s, the session, the click, `open -a`, the key read, one paste) | drive | 2 |
+| 8 | 187-place-again (the cell relaunched Chrome) | drive | 0.5 |
+| 9 | chrome/composing@textedit: 2 blocks of 9, each on a fresh composition | drive | 2–3 |
+| 10 | the three controls, 18 rows each | drive | 3–5 |
+| 11 | #259's cell on the fixture, under ABC | drive | 0.5 |
+| 12 | 187-end: the owner's source selected again and read back | drive | 0.5 |
+| 13 | the owner's engine put back (`restore`), the BEFORE half's 3 repetitions on it, 187-end again | operator, then drive | 4–5 |
+| 14 | judge, `source restore`, the scenes down, the owner's front app back | operator | 2 |
+| | **total** | | **about 30–38** |
 
-**#188's items** (`scripts/cursor-sitting/item-188.mjs`, about 2 minutes for all four, run first, right after the
-placement). Each selects ABC with the fixture in front (the owner's consent) and reads it back before its first act and
-after its last; under any other source it sends nothing. The rows are plan.mjs's own cases and prepares (the stated
-clear, the masked reason, the focus judged by `focusVerdict` from cua's `focusedIndex` or, on the vendor, the trailer),
-sent as the matrix's cells and judged as `caseRow` judges a row, with its oracle around each background act (front app,
-top window, Finder's keyboard focus, no activation outside the kit's own, no route 4); only the fixture is bound, so the
-engine never observes Finder. A row passes when it is valid, delivered and, behind Finder, not interfering; the report's
-"#188 rows" section gives each row on both engines, its `prepared`, `focusReadBy`, route and the oracle's readings.
-The prepare's own click carries no `cua/elementClick` out of its cell (a cell's meta is its last call's); cell 3 records
-the same field's. Cell 3 reads the field's AXSelectedTextRange through the approved bundle's `--probe text-view` before
-and after each click (location and length only), the observation after it and the click's meta, and reports kept,
-collapsed or moved for (i) and moved to the click point, stayed or elsewhere for (ii), recorded only. A #188 item that
-stops is marked and the drive goes on to Part A; rerun them with `--part 188`.
+| item | rows | why |
+|---|---|---|
+| 187-cell-after-0..2 | the confirming cell, one frontmost paste each | does the shipping build leave Chrome key after a click-less element click and the person's activation (predicted: key and delivered 3/3) |
+| 187-chrome-composing | chrome/composing@textedit: hold 3's 9 strings typed and pasted, in 2 blocks of 9 | the paste behind the composition, every line confirmed by its own change |
+| 187-electron-composing, 187-textedit-composing, 187-chrome-korean | 18 each: electron/composing@textedit, textedit/composing@electron, chrome/korean with Chrome frontmost | the controls, nothing regressing |
+| 259-click-cua | #188's cell (ii) with the caret at the start | #259: where cua's coordinate click lands against the field's scroll (recorded only) |
+| 187-cell-before-0..2 | the confirming cell on the engine put back (`--part before`) | the mechanism's other side (predicted: keyless, the read timing out; recorded only) |
+| 188-*, 187-vendor* | `--part 188`, `--part 188-vendor-click`, `--vendor` | kept as parts, out of the re-slot |
 
-Each block opens its own session on the stopped engine and reads the arm back (`engine status --json`
-`.status.pasteFocusEnforcement`; each paste's `cua/paste.focusEnforcement.arm` too). Korean is engaged as hold 3 did:
-ABC with the user window on top, 2-Set Korean, the user window refocused through another scene, and only a reading of
-source 2-Set and layout 2SetHangul after that counts; then the user window's field is emptied and the bundle's probe
-posts `r` into it, read back as ㄱ. Each row: the driven field emptied, one observation of the third scene (so the act
-gets a fresh activation of its own), the readings before (front app, clipboard type-list digest, page and fixture
-counters), the act under the key guard of the user window, the field read back by hash, then the readings after (the
-page's beacon, front app, activations, window order, the composition's hash, the clipboard digest, Chrome's menus). The
-paste route has no after-action watch, so when the 5 ms order watcher sees Chrome's window above TextEdit's after a row,
-the kit puts the order back with its own placement and TextEdit's activation before the next row (harness windows only;
-the item stops if it cannot), and the row keeps the raise's time.
+**The confirming cell** (the slot report's §2): Chrome for Testing relaunched clean by the scenes tool (`down chrome`,
+`up chrome --page counters`: a new process, no activation state left over), TextEdit in front under ABC; the page's
+textarea clicked by its index in the background (cua's element click: Chromium advertises AXPress on it, so the plan is
+the action plan, which posts no click of its own; the record keeps the plan and the activation's `activationClickKind`);
+one observation of TextEdit, ending the click's held activation, so the paste cannot share it; Chrome activated as the
+person would (`open -a` on the harness Chrome's bundle path, its process frontmost within 3 s or the repetition stops);
+the key-window state read until it holds or 1 s passes (the run window's AXFocused and AXMain and the app's AXFrontmost by
+`ax-state.swift window`, value-free; the page's `document.hasFocus()` from the counters page's beacon, which carries it
+since every change of it comes with a window focus or blur); then one paste whose prepare clicks nothing (the field is
+only read empty, its focus recorded), so no mouse-down reaches Chrome before ⌘V. Each repetition is its own item: one
+that stops leaves the others to run. AFTER lands only key and delivered 3/3 with every click on the action plan. The
+BEFORE half runs the same steps on whatever engine is installed once `restore` put the owner's back (`--part before
+--saved`, whose first item reads the installed build against the save's record): recorded only; a BEFORE repetition that
+delivers says the mechanism is wrong, and the report says so.
 
-A row is delivered only when the engine's read-back is exact **and** the counters page's own beacon after the act reads
-the expected length. A background row whose act carried no fresh activation (`activationGuardMs`, and
-`focusEnforcement.activated` not false) is invalid, never counted; a row after one that disturbed the composition is
-invalid and unsent. **Arm B lands only if every B row delivers exactly, with no page mousedown or click, no menu opened in
-Chrome, no raise, no front app change, the composition kept, every clipboard restore intact, the arm confirmed by the
-engine, and no control regressing under B**. The comparison needs each control whole under both arms (every row
-recorded and valid, a composing control's order watcher whole, every B row's arm confirmed): `--part b` without Part A's
-controls is incomplete, never a landing. Invalid rows, a missing row, a watcher gap past 50 ms, a row with no counter
-read before its act, or Chrome's menus unreadable (no whole snapshot and no verified notification watch) make it
-incomplete. A raise the watcher shows only after the row's own read is still the row's (the restore reads it again, and
-the final record is reconciled: every raise it holds is a row's, the block tail's (its last row's), or inside the kit's own setup or restore step; any other fails B). **The slot succeeds only when B lands, or the end-early rule ends it with
-Part A's three controls complete, and `187-end` has selected the owner's source again and read it back**; `judge` exits 1
-otherwise and its report says which.
-Arm A is diagnostic: the report gives the undelivered rows by paste stage (`cua/paste`'s stage, read and effect waits),
-the read time against ⌘V, the act's time per arm (B's added ms), and B's activation-to-⌘V and click-to-⌘V times. **If
-every Part A row delivers, Part B is skipped and the slot ends after the controls** (ruling 6). An item that stops is
-marked in its jsonl and the drive stops there (the owner's source is still selected again); rerun from the part it
-stopped in with `--part a` or `--part b` once the scene is put back: the judge reads each item's last attempt.
+**Each row** (as in the slot): the driven field emptied, one observation of the third scene (so the act gets a fresh
+activation), the readings before (front app, clipboard type-list digest, page and fixture counters, and now the driven
+app's key-window state and, on Chrome, the page's focus), the act under the key guard of the user window, the field
+read back by hash, then the readings after (the page's beacon, front app, activations, window order, the composition's
+hash, the clipboard digest, Chrome's menus). The row keeps the engine's value-free meta: `cua/paste` with its `perLine`,
+`activationClickKind`, `delivery` and `afterActionRepairs`. A Chrome window the 5 ms order watcher sees above TextEdit's
+after a row is put back by the kit's own placement before the next row, the row keeping the raise's time. The
+composition's key, when the field still reads empty after its settle reads, is posted again only after the lead has
+been waited out and the field read empty once more, on a 200 ms lead: a delayed first key is never typed over.
+
+**The bar** (written into the judge; anything less is DOES NOT LAND, never a partial verdict): chrome/composing@textedit
+18/18 valid and delivered, each row's `perLine` holding every line confirmed by its own change (a reading or a trusted
+notification; every line after the first opened by a Return whose settle saw its effect before that line's baseline; a
+reading-confirmed line's confirming reading not its baseline); the three controls 18/18 each; the cell's AFTER half key
+and delivered 3/3; every background item's order watcher whole with its longest gap within 50 ms and its raises
+reconciled; no raise (in a row, a block's tail or outside every row and setup step) and no menu opened in Chrome (every
+menu reading whole); no row touching the person's side otherwise (the front app, the composition, the clipboard, a page
+click); the put-back verified: 187-end's last attempt selected the owner's source and read it back, and the before
+part's put-back reading found the saved engine's build installed and approved. `judge` exits 1 otherwise and its report
+says which condition failed. #259's cell and #188's items are reported in their own sections and never move the bar.
+
+**#259's cell** (`scripts/cursor-sitting/item-188.mjs`, cua only, recorded only): the fixture's field given (ii)'s value
+with the caret at its end, its geometry read through Accessibility (`ax-state.swift text`: the field's frame and each
+line's first character's top, numbers only), the caret moved to offset 0 and the geometry read again, then the same
+coordinate click. The DOM's `scrollTop` is not readable from outside the page; the first line's offset from the field's
+top (the field's inset less its scroll) at the end against the one at the start is how far the caret at the end
+scrolled the field. The report gives the target line and where the caret landed (line and column), the line lying under
+the posted point by the start's geometry, the scroll, and the engine's six `cua/coordinateClick` values (screenshot
+point, window point, posted location, posted window location, the window frame used and the one read before the
+events).
 
 ## Known limits
 

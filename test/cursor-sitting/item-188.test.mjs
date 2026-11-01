@@ -8,8 +8,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {read187} from '../../scripts/cursor-sitting.mjs';
 import {item187Markdown, ITEMS, judge187, judgedOk, plan187} from '../../scripts/cursor-sitting/item-187.mjs';
-import {ACTIVATE_ATTEMPTS, ACTIVATE_WAIT_MS, ALL_ITEMS_188, caseOf188, CLICK_LINE, CLICK_LINE_RANGE, CLICK_VALUE, clickItem188, clickRecord188, END_RANGE, item188Tasks, ITEMS_188, judge188, LABELS_188, markdown188, row188,
-  rowId188, ROWS_188, rowsItem188, selectionOutcome, WORD_RANGE} from '../../scripts/cursor-sitting/item-188.mjs';
+import {ACTIVATE_ATTEMPTS, ACTIVATE_WAIT_MS, ALL_ITEMS_188, caseOf188, CLICK_LINE, CLICK_LINE_RANGE, CLICK_VALUE, clickItem188, clickItem259, clickRecord188, END_RANGE, geometryOf, item188Tasks, ITEMS_188,
+  ITEMS_259, judge188, judge259, LABELS_188, LINE_STARTS, lineUnder, markdown188, markdown259, record259, row188, rowId188, ROWS_188, rowsItem188, selectionOutcome, START_RANGE, WORD_RANGE} from '../../scripts/cursor-sitting/item-188.mjs';
 import {runSteps} from '../../scripts/cursor-sitting/runner.mjs';
 import {caseCells} from '../../scripts/native-matrix/matrix-cells.mjs';
 import {FIELD_LINES, FOCUS_REASONS, PASTED, TYPED} from '../../scripts/native-matrix/plan.mjs';
@@ -48,13 +48,11 @@ test('the four rows are the matrix\'s: ids, cells and prepares as plan.mjs and m
 });
 
 test('the #188 rows never run under 2-Set: every item gates on ABC before its first act, and all of them run before Korean is engaged', () => {
-  const plan = plan187();
+  const plan = plan187({part: '188'});
   const order = plan.map(p => p.item);
-  assert.deepEqual(order.slice(0, 6), [ITEMS.place, ITEMS_188.rows('cua'), ITEMS_188.click('cua'), ITEMS_188.rows('vendor'), ITEMS_188.click('vendor'), ITEMS.a1]);
+  assert.deepEqual(order, [ITEMS_188.place, ITEMS_188.rows('cua'), ITEMS_188.click('cua'), ITEMS_188.rows('vendor'), ITEMS_188.click('vendor'), ITEMS_188.end]);
   const steps = plan.flatMap(p => p.steps.map(s => ({...s, item: p.item})));
-  const firstKorean = steps.findIndex(s => s.task === 'select-source' && s.args.includes(KOREAN_2SET));
-  const last188 = steps.findLastIndex(s => ALL_ITEMS_188.includes(s.item));
-  assert.ok(firstKorean > last188, 'no 2-Set selection before the last #188 step');
+  assert.ok(!steps.some(s => s.task === 'select-source' && s.args.includes(KOREAN_2SET)), 'no 2-Set selection in a #188 run');
   for (const item of plan.filter(p => ALL_ITEMS_188.includes(p.item))) {
     const s = item.steps, gate = s.findIndex(x => x.task === '188-abc' && x.args[1] === 'start');
     const select = s.findIndex(x => x.task === 'select-source');
@@ -67,7 +65,8 @@ test('the #188 rows never run under 2-Set: every item gates on ABC before its fi
   }
   assert.deepEqual(plan187({part: '188'}).map(p => p.item), [ITEMS_188.place, ...ALL_ITEMS_188, ITEMS_188.end]);
   assert.ok(plan187({part: '188'}).every(p => p.item.startsWith('188-')), 'a #188 rerun writes no item of #187\'s');
-  assert.ok(!plan187({part: 'a'}).some(p => ALL_ITEMS_188.includes(p.item)), '--part a is #187\'s Part A alone');
+  assert.ok(!plan187().some(p => ALL_ITEMS_188.includes(p.item)), 'the re-slot runs no #188 item');
+  assert.ok(!plan187({part: 'composing'}).some(p => ALL_ITEMS_188.includes(p.item)));
   assert.ok(!plan187({vendor: true}).some(p => ALL_ITEMS_188.includes(p.item)));
 });
 
@@ -195,7 +194,7 @@ function fakeMac188(out, {source = ABC, activateDuring = [], focusThrows = false
   let clock = 1_790_000_000_000, front = 'electron', stuck = electronStuck;
   const tick = () => (clock += 5), calls = [], log = [];
   const scene = id => ({id, app: `/Apps/${id}.app`, pid: PIDS[id], ...(id === 'finder' ? {} : {at: 1}), window: {number: NUMBERS[id]}});
-  let range = {location: 0, length: 0}, actKey = 0;
+  let range = {location: 0, length: 0}, actKey = 0, scroll = 0;
   const reply = (value, meta = {}, route = null) => ({ok: true, value, route, meta, engine: 'cua', images: []});
   const session = {
     run: async (code, {keys}) => {
@@ -209,11 +208,13 @@ function fakeMac188(out, {source = ABC, activateDuring = [], focusThrows = false
       }
       if (code.includes('return {invalid: "the case was not prepared"}')) return reply({ok: true, outcome: {exact: true, inserted: 1}});
       if (code.includes('// cua-188: click prepare (i)')) { range = {...WORD_RANGE}; return reply({ready: true}); }
-      if (code.includes('// cua-188: click prepare (ii)')) { range = {...END_RANGE}; return reply({ready: true, point: [86, 121]}); }
+      if (code.includes('// cua-188: click prepare (ii)')) { range = {...END_RANGE}; scroll = 6 * 17; return reply({ready: true, point: [86, 121]}); }
+      if (code.includes('// cua-259: the caret at the start')) { range = {...START_RANGE}; scroll = 0; return reply({ready: true}); }
       if (code.includes('// cua-188: click\n')) {
         calls.push(['click', code.includes('__c3.point') ? 'point' : 'index']);
         if (code.includes('__c3.point')) range = {location: CLICK_LINE_RANGE[0] + 5, length: 0};
-        return reply({clickMs: 20, threw: false}, code.includes('__c3.index') ? {elementClick: {plan: 'action', action: 'AXPress', reason: 'advertised', hit: 'same', hitTest: 'application'}} : {}, code.includes('__c3.index') ? 1 : 3);
+        return reply({clickMs: 20, threw: false}, code.includes('__c3.index') ? {elementClick: {plan: 'action', action: 'AXPress', reason: 'advertised', hit: 'same', hitTest: 'application'}}
+          : {coordinateClick: PLACEMENT}, code.includes('__c3.index') ? 1 : 3);
       }
       if (code.includes('// cua-188: the observation after the click')) return reply({fieldIndex: 4, focusedByTrailer: false, selectedLength: range.length || null, sameWord: range.length === 7, valueIntact: true}, {observation: {focusedIndex: 4}});
       return reply({});
@@ -237,12 +238,18 @@ function fakeMac188(out, {source = ABC, activateDuring = [], focusThrows = false
       return null;
     },
     activations: {start: () => ({pid: 1}), alive: () => true, stop: () => [...log]},
+    // The field's geometry: its frame, and each line's first character 17 pt below the one before, less the scroll.
+    axText: ([pid, ...offsets]) => (calls.push(['axText', Number(pid)]), {trusted: true, ok: true, failed: [], role: 'AXTextArea', frame: {x: 170, y: 169, width: 270, height: 30}, characters: CLICK_VALUE.length,
+      selected: {...range}, bounds: offsets.map(o => ({x: 172, y: 172 + 17 * LINE_STARTS.indexOf(Number(o)) - scroll, width: 7, height: 16}))}),
     write: () => {}, now: () => tick(),
   };
   Object.assign(io.tasks, item188Tasks(deps));
   return {io, calls};
 }
 const run188 = async (out, io, item, steps) => { await runSteps(steps, {item, out, io, log: () => {}}); return read187(out)[item]; };
+// A coordinate click's placement as the engine records it (#259): numbers only.
+const PLACEMENT = {screenshotPoint: {x: 86, y: 121}, windowPoint: {x: 43, y: 60.5}, postedLocation: {x: 183, y: 211}, postedWindowLocation: {x: 43, y: 60.5},
+  windowFrame: {x: 140, y: 100, width: 720, height: 560}, frameBeforePost: {x: 140, y: 100, width: 720, height: 560}};
 
 test('the rows item end to end on fakes: four rows recorded, the oracle and the activations accounted, PASS', async t => {
   const out = scratch(t);
@@ -328,7 +335,7 @@ test('neither the #188 rows nor cell 3 ever counts for #187\'s verdict', () => {
   for (const extra of [failing, passing]) {
     const judged = judge187(extra);
     assert.deepEqual(judged.overall, base.overall);
-    assert.deepEqual(judged.b, base.b);
+    assert.deepEqual(judged.bar, base.bar);
     assert.equal(judgedOk(judged), judgedOk(base));
     assert.deepEqual(judged.groups, base.groups, 'no #188 item is one of #187\'s groups');
   }
@@ -397,4 +404,55 @@ test('--part 188-vendor-click: #188\'s own place step, cell 3 on the vendor alon
   assert.deepEqual(written.sort(), [ITEMS_188.click('vendor'), ITEMS_188.end, ITEMS_188.place].sort());
   assert.ok(!written.includes(ITEMS.end));
   assert.deepEqual(calls.filter(c => c[0] === 'open').map(c => c[1]), ['vendor']);
+});
+
+test('#259\'s cell: (ii) on cua, the geometry read with the caret at the end and at the start, then the click from the start; under ABC, recorded only', () => {
+  const steps = clickItem259(), labels = steps.map(s => s.label ?? `${s.task ?? ''} ${(s.args ?? []).join(' ')}`.trim());
+  assert.equal(steps.find(s => s.open).engine, 'cua');
+  const at = name => labels.findIndex(l => l.includes(name));
+  assert.ok(at('188-abc 259-click-cua start') < at('ii prepare') && at('ii prepare') < at('259-geometry 259-click-cua end') && at('259-geometry 259-click-cua end') < at('caret to the start')
+    && at('caret to the start') < at('259-geometry 259-click-cua start') && at('259-geometry 259-click-cua start') < at('ii click') && at('ii click') < at('259-record'));
+  assert.deepEqual(steps.filter(s => s.task === 'select-source').map(s => s.args[0]), ['latin']);
+  assert.equal(ITEMS_259.click, '259-click-cua');
+  assert.deepEqual(START_RANGE, {location: 0, length: 0});
+  assert.deepEqual(LINE_STARTS.slice(0, 3), [0, FIELD_LINES[0].length + 1, CLICK_LINE_RANGE[0]]);
+  // The geometry's arithmetic: the line under a point by the line tops; the first line's offset from the field's top.
+  assert.equal(lineUnder(211, [172, 189, 206, 223]), 2);
+  assert.equal(lineUnder(171, [172, 189, 206, 223]), null);
+  assert.equal(lineUnder(239, [172, 189, 206, 223]), 3, 'the last line as tall as the one before it');
+  assert.equal(lineUnder(250, [172, 189, 206, 223]), null);
+  assert.equal(lineUnder(null, [172, 189]), null);
+  const g = geometryOf({trusted: true, ok: true, role: 'AXTextArea', frame: {x: 1, y: 100, width: 9, height: 9}, bounds: LINE_STARTS.map((_, k) => ({x: 1, y: 103 + 17 * k, width: 7, height: 16}))});
+  assert.deepEqual([g.ok, g.firstLineOffset, g.lineTops[2]], [true, 3, 137]);
+  assert.equal(geometryOf({trusted: true, ok: true, role: 'AXTextField', frame: {x: 1, y: 1, width: 1, height: 1}, bounds: []}).ok, false, 'another element is no reading');
+  assert.equal(geometryOf({trusted: false}).ok, false);
+});
+
+test('#259\'s cell end to end on fakes: the scroll the caret at the end made, the six placement values, and the line under the posted point beside the landing', async t => {
+  const out = scratch(t);
+  const {io, calls} = fakeMac188(out);
+  const evidence = await run188(out, io, ITEMS_259.click, clickItem259());
+  assert.equal(calls.filter(c => c[0] === 'axText').length, 2);
+  const judged = judge259({[ITEMS_259.click]: evidence}), r = judged.record;
+  assert.equal(judged.abc, true);
+  assert.equal(r.invalid, null);
+  assert.equal(r.precondition, true, 'the caret read at the start before the click');
+  assert.deepEqual(r.landed, {line: CLICK_LINE, column: 5, fromTarget: 0});
+  assert.deepEqual([r.scroll.offsetAtEnd, r.scroll.offsetAtStart, r.scroll.endScrolledBy], [3 - 102, 3, 102]);
+  assert.deepEqual(r.placement, PLACEMENT);
+  assert.deepEqual([r.lineUnderPoint, r.agrees], [2, true]);
+  const md = markdown259(judged).join('\n');
+  assert.match(md, /## #259 diagnostic cell/);
+  assert.match(md, /\| the field scrolled by the caret at the end \(pt\) \| 102 \|/);
+  assert.match(md, /\| postedLocation \(global pt\) \| \(183, 211\) \|/);
+  assert.match(md, /\| the line under the posted point \(AX geometry\) \| line 2, where the caret landed \|/);
+  assert.deepEqual(leaks(JSON.stringify(evidence) + md), []);
+  // In #187's report, apart from the bar.
+  const items = {[ITEMS_259.click]: evidence};
+  assert.deepEqual(judge187(items).overall, judge187({}).overall);
+  assert.match(item187Markdown(judge187(items)), /## #259 diagnostic cell/);
+  assert.match(markdown259(judge259({})).join('\n'), /NOT RUN/);
+  // A caret that did not reach the start leaves the record invalid with its reason, never a landing.
+  const stuck = record259({item: ITEMS_259.click, prepare: {ok: true, value: {ready: true, point: [1, 2]}}, caret: {ok: true, value: {ready: false, reason: 'a selection is left in the field'}}});
+  assert.match(stuck.invalid, /a selection is left in the field/);
 });

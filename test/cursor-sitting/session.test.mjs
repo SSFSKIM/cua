@@ -52,6 +52,16 @@ test('an element click keeps its plan, the ladder\'s reason and the hit-test\'s 
   assert.deepEqual(readReply(reply({'cua/nativeEngine': {engine: 'cua'}, 'cua/elementClick': elementClick})).meta, {elementClick});
 });
 
+test('a re-slot row keeps the activation\'s click, the paste\'s per-line records, the delivery guard, the after-action repairs and a coordinate click\'s placement (#187, #259)', () => {
+  const kind = {kind: 'inertOutside', point: 'offset', when: 'early'};
+  const paste = {stage: 'effect', confirmed: true, perLine: [{line: 1, confirmed: true, effectWait: 'reading'}, {line: 2, confirmed: true, effectWait: 'reading', openingReturn: {settle: 'reading', settleMs: 12}}]};
+  const delivery = {restores: 0, postedAt: 10}, repairs = {total: 0}, placement = {screenshotPoint: {x: 1, y: 2}, windowPoint: {x: 1, y: 2}, postedLocation: {x: 3, y: 4},
+    postedWindowLocation: {x: 1, y: 2}, windowFrame: {x: 2, y: 2, width: 9, height: 9}, frameBeforePost: {x: 2, y: 2, width: 9, height: 9}};
+  const read = readReply(reply({'cua/nativeEngine': {engine: 'cua'}, 'cua/activationClickKind': kind, 'cua/paste': paste, 'cua/delivery': delivery,
+    'cua/afterActionRepairs': repairs, 'cua/coordinateClick': placement}));
+  assert.deepEqual(read.meta, {activationClickKind: kind, paste, delivery, afterActionRepairs: repairs, coordinateClick: placement});
+});
+
 // A session whose serve is a fake: what each opening sends.
 async function opened(bind, scenes = [{id: 'electron', app: '/c/F.app', pid: 7, at: 1, window: {number: 5}}]) {
   const sent = [];

@@ -27,6 +27,17 @@
 // Both run only under ABC: each item selects it (the owner's consent, ./input-source.mjs) with the fixture in front
 // and reads it back before its first act and again after its last; an item that does not read ABC there sends nothing,
 // and its rows are not counted.
+//
+// #259's diagnostic cell (SSFSKIM/cua#259: cua's coordinate click in (ii) landed a line below the target where the
+// vendor's landed on it), cua only, recorded only, in #187's re-slot: (ii) again, the field given its value with the
+// caret at its end as before, then the caret moved to the START (offset 0) and the click sent from there. Before the
+// click the field's geometry is read through Accessibility (./ax-state.swift text, outside either engine: its frame and
+// the top of each line's first character, numbers only), with the caret at the end and again at the start, so the
+// textarea's scroll shows as the first line's offset from the field's top (the DOM's scrollTop is not readable from
+// outside the page: the AX offset at the end against the one at the start is how far the end scrolled it); with the
+// engine's `cua/coordinateClick` (the screenshot point, the window-local point, the posted global and window
+// locations, the window frame used and the one read just before the events), the line lying under the posted point by
+// that geometry is set beside the line the caret landed on.
 import {cell} from '../native-baseline/cells.mjs';
 import {caseCells, prelude} from '../native-matrix/matrix-cells.mjs';
 import {ownedFocus, ownedPids} from '../native-matrix/matrix-device.mjs';
@@ -43,6 +54,7 @@ export const ENGINES_188 = Object.freeze(['cua', 'vendor']);
 // `place` and `end`: a standalone #188 run's own placement and source restore (`--part 188`), so no #188 run writes an
 // item #187's judge reads.
 export const ITEMS_188 = Object.freeze({rows: engine => `188-rows-${engine}`, click: engine => `188-click-${engine}`, place: '188-place', end: '188-end'});
+export const ITEMS_259 = Object.freeze({click: '259-click-cua'});
 export const ALL_ITEMS_188 = Object.freeze(ENGINES_188.flatMap(e => [ITEMS_188.rows(e), ITEMS_188.click(e)]));
 const DRIVEN = 'electron', USER = 'finder';
 export const ACTIVATE_ATTEMPTS = 3, ACTIVATE_WAIT_MS = 300;
@@ -66,6 +78,8 @@ export const LABELS_188 = Object.freeze({
   click: (item, part) => `${item} ${part} click`,
   read: (item, part) => `${item} ${part} read: the observation after the click`,
   range: (item, part, when) => `${item} ${part} range ${when}`,
+  caretStart: item => `${item} ii caret to the start`,
+  geometry: (item, when) => `${item} ii geometry, the caret at the ${when}`,
 });
 
 // ---- the #188 rows ---------------------------------------------------------------------------------------------------
@@ -167,6 +181,10 @@ export const CLICK_WORD = 'charlie';
 // (i)'s selection, and (ii)'s caret at the value's end.
 export const WORD_RANGE = Object.freeze({location: CLICK_VALUE.indexOf(CLICK_WORD), length: CLICK_WORD.length});
 export const END_RANGE = Object.freeze({location: CLICK_VALUE.length, length: 0});
+// #259's caret, at the value's start.
+export const START_RANGE = Object.freeze({location: 0, length: 0});
+// Each line's first offset in the value (where #259's geometry reads a character's top).
+export const LINE_STARTS = Object.freeze(FIELD_LINES.map((_, k) => FIELD_LINES.slice(0, k).reduce((n, l) => n + l.length + 1, 0)));
 // (ii)'s point, in the fixture window's points: the middle of the drag's span of lines (the field's third line) and
 // about five characters into it (fixtures/electron/fixture.css; plan.mjs ELECTRON_FIELD_LAYOUT); the line's range of
 // caret offsets, start to end inclusive.
@@ -225,6 +243,16 @@ const __t = performance.now(); let threw = false, errorName = null;
 try { await __app.click(${target}); } catch (e) { threw = true; errorName = String(e?.errorName ?? e?.name ?? "").slice(0, 80) || null; }
 return {clickMs: performance.now() - __t, threw, errorName};`);
 export const CLICK_ACT = Object.freeze({i: clicked('globalThis.__c3.index'), ii: clicked('globalThis.__c3.point')});
+// #259: the caret moved to the value's start (before its first word), nothing selected; the point (ii)'s prepare took
+// stays the click's.
+export const CARET_START = cell(`${head}
+// cua-259: the caret at the start
+if (!Number.isInteger(globalThis.__c3?.index)) return {ready: false, reason: "no field index from the prepare"};
+await __app.selectText(globalThis.__c3.index, ${j(FIELD_LINES[0].split(' ')[0])}, {selectionType: "cursor_before"});
+const now = await observe(), index = indexOfTarget(now, "Fixture text");
+if (index === null || selectedTextOf(now) !== null) return {ready: false, reason: "a selection is left in the field"};
+globalThis.__c3.index = index;
+return {ready: true};`);
 export const CLICK_READ = cell(`${head}
 // cua-188: the observation after the click
 const ax = await observe();
@@ -260,6 +288,33 @@ export function clickItem188(engine) {
   ];
 }
 
+// #259's cell on cua: (ii)'s prepare (the caret at the end), the geometry, the caret to the start, the geometry again,
+// then the click and its readings as (ii)'s.
+export function clickItem259() {
+  const item = ITEMS_259.click;
+  const ready = results => results[LABELS_188.clickPrepare(item, 'ii')]?.ok === true && results[LABELS_188.clickPrepare(item, 'ii')].value?.ready === true;
+  const atStart = results => ready(results) && results[LABELS_188.caretStart(item)]?.ok === true && results[LABELS_188.caretStart(item)].value?.ready === true;
+  const done = results => Boolean(results[LABELS_188.click(item, 'ii')]);
+  return [
+    {say: `#259 ${item}: cell (ii) on cua with the caret at the start, recorded only: the field's geometry read with the caret at the end and at the start, then the coordinate click`},
+    {series: [item], counts: {cells: 1}},
+    {task: '188-preflight', args: [DRIVEN], required: true},
+    {open: S188, engine: 'cua', scenes: [DRIVEN]},
+    ...abcSteps(item),
+    {run: S188, cell: CLICK_PREPARE.ii, label: LABELS_188.clickPrepare(item, 'ii')},
+    {task: '259-geometry', args: [item, 'end'], when: ready},
+    {run: S188, cell: CARET_START, label: LABELS_188.caretStart(item), when: ready},
+    {task: '259-geometry', args: [item, 'start'], when: atStart},
+    {task: '188-range', args: [item, 'ii', 'before'], when: atStart},
+    {run: S188, cell: CLICK_ACT.ii, label: LABELS_188.click(item, 'ii'), when: atStart},
+    {task: '188-range', args: [item, 'ii', 'after'], when: done},
+    {run: S188, cell: CLICK_READ, label: LABELS_188.read(item, 'ii'), when: done},
+    {task: '259-record', args: [item]},
+    {task: '188-abc', args: [item, 'end']},
+    {close: S188},
+  ];
+}
+
 const sameRange = (a, b) => Boolean(a && b) && a.location === b.location && a.length === b.length;
 // What a click did to the field's selection, from the probe's ranges before and after (the trailer's reading when the
 // probe read none). -> {outcome, where?, by}.
@@ -286,8 +341,7 @@ const rangeOf = r => (r && Number.isFinite(r.location) && Number.isFinite(r.leng
 const word = v => (typeof v === 'string' && v.length <= 80 ? v : null);
 // One part's record from its answers, value-free by construction: ranges, lengths, booleans and the engine's
 // enumerations only. `before`, `after`: the probe's readings ({range, focusedIsTextArea, error}).
-export function clickRecord188({item, engine, part, prepare = null, before = null, click = null, after = null, read = null}) {
-  const expected = part === 'i' ? WORD_RANGE : END_RANGE;
+export function clickRecord188({item, engine, part, prepare = null, before = null, click = null, after = null, read = null, expected = part === 'i' ? WORD_RANGE : END_RANGE}) {
   const ready = prepare?.ok === true && prepare.value?.ready === true;
   const invalid = !prepare ? 'the prepare cell was not sent' : !prepare.ok ? 'the prepare cell failed' : !ready ? `not prepared: ${word(prepare.value?.reason) ?? 'no reason'}`
     : !click ? 'the click was not sent' : !click.ok ? 'the click cell failed' : click.value?.threw ? `the click threw${click.value.errorName ? ` (${word(click.value.errorName)})` : ''}` : null;
@@ -308,6 +362,79 @@ export function clickRecord188({item, engine, part, prepare = null, before = nul
     route: num(click?.route) ?? word(click?.route ?? null), clickMs: num(click?.value?.clickMs), activationClick: word(click_.activationClick ?? null), activationGuardMs: num(click_.activationGuardMs),
     elementClick: ec ? {plan: word(ec.plan), action: word(ec.action ?? null), reason: word(ec.reason), hit: word(ec.hit ?? null), hitTest: word(ec.hitTest ?? null)} : null,
     probeError: word(before?.error ?? after?.error ?? null)};
+}
+
+// ---- #259's cell ------------------------------------------------------------------------------------------------------
+
+const rectOf = r => (r && ['x', 'y', 'width', 'height'].every(k => Number.isFinite(r[k])) ? {x: r.x, y: r.y, width: r.width, height: r.height} : null);
+const pointOf = p => (p && Number.isFinite(p.x) && Number.isFinite(p.y) ? {x: p.x, y: p.y} : null);
+// ax-state.swift text's answer, kept as numbers: the field's role and frame, and each line's top (its first character's
+// frame's y), with the first line's offset from the field's top (the field's inset less its scroll).
+export function geometryOf(answer) {
+  const frame = rectOf(answer?.frame), tops = LINE_STARTS.map((_, k) => rectOf(answer?.bounds?.[k])?.y ?? null);
+  const ok = answer?.trusted === true && answer.ok === true && answer.role === 'AXTextArea' && frame !== null && tops.every(Number.isFinite);
+  return {ok, role: typeof answer?.role === 'string' ? answer.role : null, frame, characters: Number.isInteger(answer?.characters) ? answer.characters : null,
+    selected: rangeOf(answer?.selected), lineTops: tops, firstLineOffset: frame && Number.isFinite(tops[0]) ? tops[0] - frame.y : null};
+}
+// The line under global y by a geometry's line tops (each line from its top to the next's; the last as tall as the one
+// before it), or null outside them or unread.
+export function lineUnder(y, tops) {
+  if (!Number.isFinite(y) || !tops?.every(Number.isFinite) || tops.length < 2) return null;
+  const last = tops.at(-1) + (tops.at(-1) - tops.at(-2));
+  for (let k = 0; k < tops.length; k++) if (y >= tops[k] && y < (tops[k + 1] ?? last)) return k;
+  return null;
+}
+// #259's record: (ii)'s, from the caret at the start, with the geometry at both carets, the engine's six placement
+// values, and the line under the posted point beside the line the caret landed on.
+export function record259({item, prepare = null, caret = null, before = null, click = null, after = null, read = null, geometry = {}}) {
+  const atStart = caret?.ok === true && caret.value?.ready === true;
+  const base = clickRecord188({item, engine: 'cua', part: 'ii', prepare: atStart || !caret ? prepare : caret, before, click, after, read, expected: START_RANGE});
+  const cc = metaOf(click).coordinateClick ?? null;
+  const placement = cc && {screenshotPoint: pointOf(cc.screenshotPoint), windowPoint: pointOf(cc.windowPoint), postedLocation: pointOf(cc.postedLocation),
+    postedWindowLocation: pointOf(cc.postedWindowLocation), windowFrame: rectOf(cc.windowFrame), frameBeforePost: rectOf(cc.frameBeforePost)};
+  const end = geometry.end ?? null, start = geometry.start ?? null;
+  const scroll = {offsetAtEnd: end?.firstLineOffset ?? null, offsetAtStart: start?.firstLineOffset ?? null,
+    endScrolledBy: Number.isFinite(end?.firstLineOffset) && Number.isFinite(start?.firstLineOffset) ? start.firstLineOffset - end.firstLineOffset : null};
+  const underPoint = lineUnder(placement?.postedLocation?.y, start?.lineTops);
+  return {...base, cell: '259', geometry: {end, start}, scroll, placement, lineUnderPoint: underPoint,
+    agrees: underPoint !== null && base.landed?.line != null ? underPoint === base.landed.line : null};
+}
+// #259's judgement: the cell's last record, recorded only. -> {ran, stopped, abc, record}.
+export function judge259(items) {
+  const evidence = items[ITEMS_259.click] ? lastAttempt(items[ITEMS_259.click]) : [];
+  const gates = taskResults(evidence, '188-abc');
+  return {ran: Boolean(items[ITEMS_259.click]), stopped: evidence.findLast(r => r.kind === 'stopped')?.error ?? null,
+    abc: gates.find(g => g.edge === 'start')?.ok === true && gates.find(g => g.edge === 'end')?.ok === true, record: taskResults(evidence, '259-record').at(-1) ?? null};
+}
+const num1 = v => (Number.isFinite(v) ? String(Number(v.toFixed(1))) : '–');
+const pointText = p => (p ? `(${num1(p.x)}, ${num1(p.y)})` : '–');
+const rectText = r => (r ? `(${num1(r.x)}, ${num1(r.y)}, ${num1(r.width)} × ${num1(r.height)})` : '–');
+// #259's section, for item-187.md.
+export function markdown259(j259) {
+  const title = '## #259 diagnostic cell: (ii) with the caret at the start (cua only, recorded only, never counted for #187 or #188)';
+  if (!j259?.ran) return [title, '', 'NOT RUN', ''];
+  const r = j259.record;
+  if (!r) return [title, '', `not recorded${j259.stopped ? ` (stopped: ${j259.stopped})` : ''}`, ''];
+  const lineOf = l => (l === null || l === undefined ? '–' : `line ${l}`);
+  return [title, '',
+    'The fixture\'s field given (ii)\'s value with the caret at its end, its geometry read through Accessibility (its frame and each line\'s first character\'s top: numbers only), the caret moved to offset 0 and the geometry read again, then the same coordinate click. The first line\'s offset from the field\'s top is the field\'s inset less its scroll, so the end\'s offset against the start\'s is how far the caret at the end scrolled the field. The line under the posted point is read off the start geometry\'s line tops; lines are 0-based.', '',
+    '| | value |', '|---|---|',
+    `| ABC before and after | ${j259.abc ? 'yes' : 'no'} |`,
+    `| before the click (expected) | ${r.before ? `${r.before.location}+${r.before.length}` : '–'} (${r.expected.location}+${r.expected.length}) |`,
+    `| outcome | ${r.invalid ?? `${r.outcome}${r.where ? ` ${r.where}` : ''}`} |`,
+    `| target | offsets ${r.target ? `${r.target.range[0]}..${r.target.range[1]} (${lineOf(r.target.line)})` : '–'} |`,
+    `| landed | ${r.landed ? r.landed.line === null ? 'outside the value' : `${lineOf(r.landed.line)}, column ${r.landed.column}${r.landed.fromTarget ? `, ${Math.abs(r.landed.fromTarget)} ${r.landed.fromTarget < 0 ? 'before' : 'after'} the target line` : ''}` : 'unread'} |`,
+    `| the line under the posted point (AX geometry) | ${lineOf(r.lineUnderPoint)}${r.agrees === null ? '' : r.agrees ? ', where the caret landed' : ', not where the caret landed'} |`,
+    `| first line's offset from the field's top, caret at the end / at the start (pt) | ${num1(r.scroll?.offsetAtEnd)} / ${num1(r.scroll?.offsetAtStart)} |`,
+    `| the field scrolled by the caret at the end (pt) | ${num1(r.scroll?.endScrolledBy)} |`,
+    `| field frame (AX, the start's) | ${rectText(r.geometry?.start?.frame)} |`,
+    `| screenshotPoint (px) | ${pointText(r.placement?.screenshotPoint)} |`,
+    `| windowPoint (pt) | ${pointText(r.placement?.windowPoint)} |`,
+    `| postedLocation (global pt) | ${pointText(r.placement?.postedLocation)} |`,
+    `| postedWindowLocation (pt) | ${pointText(r.placement?.postedWindowLocation)} |`,
+    `| windowFrame | ${rectText(r.placement?.windowFrame)} |`,
+    `| frameBeforePost | ${rectText(r.placement?.frameBeforePost)} |`,
+    `| route, click ms | ${r.route ?? '–'}, ${num1(r.clickMs)} |`, ''];
 }
 
 // ---- the tasks -------------------------------------------------------------------------------------------------------
@@ -442,6 +569,17 @@ export function item188Tasks(d) {
     '188-click-record': async ([item, engine, part], ctx) => clickRecord188({item, engine, part, prepare: ctx.results[LABELS_188.clickPrepare(item, part)] ?? null,
       before: ctx.results[LABELS_188.range(item, part, 'before')] ?? null, click: ctx.results[LABELS_188.click(item, part)] ?? null,
       after: ctx.results[LABELS_188.range(item, part, 'after')] ?? null, read: ctx.results[LABELS_188.read(item, part)] ?? null}),
+    // #259: the focused field's geometry (ax-state.swift text): its frame and each line's first character's frame.
+    '259-geometry': async ([item, when], ctx) => {
+      const answer = attempt(() => d.axText([String(d.scene(DRIVEN).pid), ...LINE_STARTS.map(String)]));
+      const kept = geometryOf(answer);
+      ctx.results[LABELS_188.geometry(item, when)] = kept;
+      return {item, when, ...kept, ...(kept.ok ? {} : {problem: answer?.trusted === false ? 'the terminal running the kit is not trusted for Accessibility' : `the field's geometry was not read whole (${(answer?.failed ?? ['no answer']).join(', ')})`})};
+    },
+    '259-record': async ([item], ctx) => record259({item, prepare: ctx.results[LABELS_188.clickPrepare(item, 'ii')] ?? null, caret: ctx.results[LABELS_188.caretStart(item)] ?? null,
+      before: ctx.results[LABELS_188.range(item, 'ii', 'before')] ?? null, click: ctx.results[LABELS_188.click(item, 'ii')] ?? null,
+      after: ctx.results[LABELS_188.range(item, 'ii', 'after')] ?? null, read: ctx.results[LABELS_188.read(item, 'ii')] ?? null,
+      geometry: {end: ctx.results[LABELS_188.geometry(item, 'end')] ?? null, start: ctx.results[LABELS_188.geometry(item, 'start')] ?? null}}),
   };
 }
 

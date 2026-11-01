@@ -107,20 +107,21 @@
 //       <out>/item-244-<variant>-<engine>.jsonl. `drive` then judges the engine's variants; `judge` writes every variant
 //       on both engines to <out>/item-244.md and prints it. Exit 1 unless cua's plain variant passes (judge), or unless
 //       nothing stopped and every judged variant run passes (drive).
-//   cursor-sitting.mjs paste-187 drive --run <dir> --out <dir> [--part all|a|b|188|188-vendor-click | --vendor] [--quiet] [--dry-run]
+//   cursor-sitting.mjs paste-187 drive --run <dir> --out <dir> [--part reslot|before|cell|composing|controls|259|188|188-vendor-click | --vendor]
+//                                    [--saved <dir>] [--quiet] [--dry-run]
 //   cursor-sitting.mjs paste-187 judge --out <dir>
-//       #187's live slot (./cursor-sitting/item-187.mjs; the runbook's "Item 187"): pastes into Chrome for Testing's
-//       counters page behind a Hangul composition in TextEdit's run window, then the same under arm B, the engine.json
-//       switch pasteFocusEnforcement. `drive` checks the preconditions (the owner's yes to the source switch recorded,
-//       every scene up, Chrome on the counters page, engine.json without the switch), places the harness windows, runs
-//       #188's items under ABC (./cursor-sitting/item-188.mjs: the matrix's four repaired Electron rows, three behind the
-//       run's Finder window, and cell 3, on cua's engine and the vendor's; reported apart, never in #187's verdict;
-//       `--part 188` runs them alone, `--part 188-vendor-click` only cell 3 on the vendor's engine), then
-//       Part A (chrome/composing@textedit 18 × 2, then the three controls) and, unless every Part A row delivered, Part B
-//       (ABAB blocks of 9 rows, 4 a side, then the controls under B), each item recorded in <out>/item-187-<name>.jsonl,
-//       and selects the owner's source again; `--part a` or `--part b` runs one part; `--vendor` runs the vendor's 9 paste
-//       rows, refused unless arm B has run and some B row did not deliver. `judge` writes <out>/item-187.md. Exit 1
-//       unless arm B lands or the end-early rule ended the slot with Part A delivering every row.
+//       #187's re-slot (./cursor-sitting/item-187.mjs; the runbook's "Item 187"): pastes into Chrome for Testing's
+//       counters page behind a Hangul composition in TextEdit's run window, on the shipping build. `drive` (the default
+//       part, reslot) checks the preconditions (the owner's yes to the source switch recorded, every scene up, Chrome on
+//       the counters page), places the harness windows, runs the confirming cell's AFTER half (three repetitions: Chrome
+//       relaunched by the scenes tool, its field clicked in the background, Chrome activated by `open -a`, the key read,
+//       one frontmost paste), places the windows again, runs chrome/composing@textedit as 2 blocks of 9, the three
+//       controls once each and #259's diagnostic cell (recorded only), each item recorded in <out>/item-<name>.jsonl, and
+//       selects the owner's source again. `--part before --saved <the save's directory>` runs the cell's BEFORE half once
+//       the owner's engine is put back (the put-back read against the save, recorded only); `--part cell`, `composing`,
+//       `controls` rerun that part alone, `259` the #259 cell alone; `--part 188` runs #188's items alone,
+//       `188-vendor-click` only its cell 3 on the vendor's engine; `--vendor` the vendor's lanes (recorded only).
+//       `judge` writes <out>/item-187.md. Exit 1 unless the bar holds (the item's header).
 //   cursor-sitting.mjs remote prepare|enroll|run --kit <dir> [--port n] [--run <dir> --out <dir>] [--quiet] [--dry-run]
 //       Acceptance 8's loopback device (./cursor-sitting/remote.mjs): prepare the kit (and print what it still needs),
 //       enrol it on a loopback relay, then run: the relay and the agent started, three client sessions driven
@@ -139,7 +140,7 @@ import {PLANS} from './cursor-sitting/plans.mjs';
 import {CASES, elementFrameTool, ENGINES, itemOf, judgeCase, moveWindowTool, orderFileOf, orderLines, orderWatchProbe, placeSteps, raiseMarkdown,
   raiseSteps} from './cursor-sitting/raise.mjs';
 import {ENGINES as FIRST_ENGINES, firstMarkdown, firstSteps, itemOf as firstItemOf, judgeFirst, VARIANTS} from './cursor-sitting/first-observation.mjs';
-import {endEarly, item187Markdown, ITEMS as ITEMS_187, judge187, judgedOk, menuTool, plan187, vendorAllowed} from './cursor-sitting/item-187.mjs';
+import {axStateTool, item187Markdown, judge187, judgedOk, menuTool, PARTS as PARTS_187, plan187} from './cursor-sitting/item-187.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
 import {liveIo, runSteps} from './cursor-sitting/runner.mjs';
 import {clipPathProblem, REPO_ROOT} from './cursor-sitting/recording.mjs';
@@ -152,7 +153,7 @@ const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'string'}, aside: {type: 'string'}, run: {type: 'string'}, out: {type: 'string'},
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
   arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'}, source: {type: 'string'}, 'no-clip': {type: 'boolean', default: false}, still: {type: 'boolean', default: false}, control: {type: 'boolean', default: false},
-  case: {type: 'string'}, variant: {type: 'string'}, part: {type: 'string'}, vendor: {type: 'boolean', default: false}, 'vendor-ungated': {type: 'boolean', default: false}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
+  case: {type: 'string'}, variant: {type: 'string'}, part: {type: 'string'}, vendor: {type: 'boolean', default: false}, saved: {type: 'string'}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
 const absolute = (values, name) => {
@@ -345,50 +346,40 @@ async function driveFirstObservation(values) {
   return !stopped && judged.every(j => j.verdict === 'recorded' || j.verdict === 'PASS') ? 0 : 1;
 }
 
-// #187's evidence: every item's rows, from <out>/item-187-<name>.jsonl and #188's <out>/item-188-<name>.jsonl (the
-// watchers' files left out). -> {item: rows}.
+// #187's evidence: every item's rows, from <out>/item-187-<name>.jsonl and #188's and #259's <out>/item-18[8]|259-<name>.jsonl
+// (the watchers' files left out). -> {item: rows}.
 export function read187(out) {
   if (!existsSync(out)) return {};
-  return Object.fromEntries(readdirSync(out).map(f => f.match(/^item-(18[78]-[\w-]+)\.jsonl$/)?.[1]).filter(name => name && !name.endsWith('-order'))
+  return Object.fromEntries(readdirSync(out).map(f => f.match(/^item-((?:18[78]|259)-[\w-]+)\.jsonl$/)?.[1]).filter(name => name && !name.endsWith('-order'))
     .map(name => [name, readJsonl(join(out, `item-${name}.jsonl`))]));
 }
-const rows187 = rows => lastAttempt(rows ?? []).filter(r => r.kind === 'task' && r.task === '187-row' && r.result).map(r => r.result);
 
 // #187's drive: the plan's items in order, each its own item; an item that throws is marked in its jsonl and stops the
-// items after it but the last, which selects the owner's source again. A #188 item that throws is marked and the drive
-// goes on: #188 never stops #187's slot (each later item sets up its own scene). Part B is skipped, in a whole run, when
-// every Part A row delivered (the end-early rule, read from Part A's evidence).
+// items after it but the last, which selects the owner's source again. A cell repetition, #259's cell or a #188 item
+// that throws is marked and the drive goes on: each later item sets up its own scene, and the placement after the cell
+// stops the drive if Chrome did not come back.
+const GOES_ON = new Set(['cell', '259', '188']);
 async function drive187(values) {
-  const part = values.part ?? 'all';
-  if (!['all', 'a', 'b', 'b-controls', '188', '188-vendor-click'].includes(part)) throw new Error('--part takes all, a, b, b-controls, 188 or 188-vendor-click');
+  const part = values.part ?? 'reslot';
+  if (!PARTS_187.includes(part)) throw new Error(`--part takes ${PARTS_187.join(', ')}`);
   if (values.vendor && values.part) throw new Error('--vendor runs the vendor lane alone; it takes no --part');
   const out = absolute(values, 'out'), dryRun = values['dry-run'];
   const run = dryRun ? values.run ?? '/nonexistent' : absolute(values, 'run');
-  // --vendor-ungated: the design session's ruling at the slot (1ea561bc:256) runs the lane whatever B showed.
-  if (values.vendor && !dryRun && !values['vendor-ungated']) {
-    const allowed = vendorAllowed(judge187(read187(out)));
-    if (!allowed.allowed) throw new Error(`the vendor lane runs only once arm B has failed to deliver: ${allowed.why}`);
-  }
+  if (part === 'before' && !dryRun && !values.saved) throw new Error('--part before takes --saved <the directory `save` wrote before the build>, read for the put-back');
+  const saved = values.saved ? absolute(values, 'saved') : '<saved>';
   const io = liveIo({run, out, quiet: values.quiet});
-  let steps = 0, stopped = null, early = null;
-  for (const {item, stage, steps: plan} of plan187({part, vendor: values.vendor})) {
+  let steps = 0, stopped = null;
+  for (const {item, stage, steps: plan} of plan187({part, vendor: values.vendor, saved})) {
     if (stopped && stage !== 'end') continue;
-    if (stage === 'b' && part === 'all' && !dryRun) {
-      early ??= endEarly(rows187(read187(out)[ITEMS_187.a1]));
-      if (early.applies) { print(`Part B skipped: ${early.why} (the end-early rule)`); continue; }
-    }
     steps += plan.length;
     try { await runSteps(plan, {item, out, io, dryRun}); } catch (error) {
       appendFileSync(join(out, `item-${item}.jsonl`), `${JSON.stringify({item, at: Date.now(), kind: 'stopped', error: error.message})}\n`);
-      if (stage === '188') { print(`#188's ${item} stopped: ${error.message}; #187's items go on`); continue; }
+      if (GOES_ON.has(stage)) { print(`${item} stopped: ${error.message}; the drive goes on`); continue; }
       stopped = `${item}: ${error.message}`;
       print(`stopped at ${stopped}; the items after it were not run`);
     }
   }
-  if (dryRun) {
-    print(`dry run: ${steps} steps, nothing sent${part === 'all' && !values.vendor ? ' (Part B\'s steps included: they run unless every Part A row delivers)' : ''}`);
-    return 0;
-  }
+  if (dryRun) { print(`dry run: ${steps} steps, nothing sent`); return 0; }
   const judged = judge187(read187(out));
   writeFileSync(join(out, 'item-187.md'), item187Markdown(judged));
   print(item187Markdown(judged));
@@ -414,6 +405,7 @@ export async function main(argv) {
     print(`#200's window mover: ${moveWindowTool()}`);
     print(`#200's element-frame reader: ${elementFrameTool()}`);
     print(`#187's menu reader: ${menuTool()}`);
+    print(`#187's key-window and #259's geometry reader: ${axStateTool()}`);
     return 0;
   }
   if (command === 'save') {

@@ -89,10 +89,18 @@ test('the watcher\'s file holds every attempt; a run is found by its pid, and a 
 const run = (changes, {end = true} = {}) => orderAttempt(orderLines([WATCH.split('\n')[0],
   ...changes.map(([at, state, prev = at - 5]) => JSON.stringify({at, kind: 'order', prev, state})), ...(end ? [WATCH.split('\n')[3]] : [])].join('\n')));
 
+test('a raise past the release that the engine repaired after it, inside its window, is a flash, not late', () => {
+  const meta = {actionInterval: {startedAt: 1000, endedAt: 1001}, delivery: {holdStartedAt: 960, releasedAt: 1060, repairedAfterRelease: true, raiseLeft: false}};
+  assert.equal(callWatch({meta, attempt: run([[1040, 'back-above'], [1120, 'front-above']]), from: 1000, until: 2000}).flash, 1);
+  assert.equal(callWatch({meta, attempt: run([[1040, 'back-above'], [1120, 'front-above']]), from: 1000, until: 2000}).outlived, 0);
+  const unrepaired = {...meta, delivery: {...meta.delivery, repairedAfterRelease: false}};
+  assert.equal(callWatch({meta: unrepaired, attempt: run([[1040, 'back-above'], [1120, 'front-above']]), from: 1000, until: 2000}).outlived, 1);
+});
+
 test('a raise the guard undoes before its release is neither late nor unguarded; after it, or outliving it, is late', () => {
   const meta = {actionInterval: {startedAt: 1050, endedAt: 1052}, delivery: {restores: 1, holdStartedAt: 1040, releasedAt: 1080}};
   const undone = callWatch({meta, attempt: run([[1055, 'back-above'], [1065, 'front-above']]), from: 1000, until: 2000});
-  assert.deepEqual(undone, {guarded: true, raises: 1, postToRaiseMs: 5, postToReleaseMs: 30, late: 0, outlived: 0, undecided: 0, unguarded: 0});
+  assert.deepEqual(undone, {guarded: true, raises: 1, postToRaiseMs: 5, postToReleaseMs: 30, late: 0, outlived: 0, undecided: 0, unguarded: 0, flash: 0});
   assert.equal(callWatch({meta, attempt: run([[1055, 'back-above'], [1065, 'front-above'], [1300, 'back-above']]), from: 1000, until: 2000}).late, 1);
   assert.equal(callWatch({meta, attempt: run([[1055, 'back-above'], [1093, 'front-above']]), from: 1000, until: 2000}).outlived, 0,
     'the last read that saw it (1088) is inside the 10 ms grace, the next shows it gone');
@@ -204,7 +212,7 @@ test('the fixture\'s counters are summed over each click\'s before and after; th
     read(1, 'before', {windowFocus: 2, appDidBecomeActive: 4}), read(1, 'after', {windowFocus: 2, appDidBecomeActive: 5})]);
   assert.deepEqual(deltas, {sum: {windowFocus: 1, appDidBecomeActive: 3}, samples: {windowFocus: 1, appDidBecomeActive: 2}});
   const md = raiseMarkdown([judgeCase({kase: 'a', engine: 'cua', rows: caseRows(), order: ORDER})]);
-  assert.match(md, /\| a: a coordinate click in TextEdit's text.* \| cua \| 2 \/ 2 \| 2 \| 1 \| 1 \| 0 \| 0 \| 0 \| 0 \| 0 \| \*\*PASS\*\* \|/);
+  assert.match(md, /\| a: a coordinate click in TextEdit's text.* \| cua \| 2 \/ 2 \| 2 \| 1 \| 1 \| 0 \(0\) \| 0 \| 0 \| 0 \| 0 \| 0 \| \*\*PASS\*\* \|/);
   assert.match(md, /\| a \| cua \| 5\.0 \/ 5\.0 \/ 5\.0 \/ 5\.0 \(1\) \| 30\.0 \/ 30\.0 \/ 30\.0 \/ 30\.0 \(2\) \| 2 of 2 \|/);
 });
 

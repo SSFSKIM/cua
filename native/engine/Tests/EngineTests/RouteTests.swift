@@ -575,7 +575,40 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(seam.holds, 1, "never a second hold")
     XCTAssertEqual(seam.releases, 1)
     XCTAssertEqual(delivery.screenHoldMs, activationHoldCapMs)
-    XCTAssertEqual(seam.repairsOutsideHold, 0, "the sample that finds the cap passed raises nothing: the display is out")
+    XCTAssertGreaterThan(seam.repairsOutsideHold, 0, "after the release it keeps repairing inside the repair window")
+    XCTAssertTrue(delivery.repairedAfterRelease)
+    XCTAssertGreaterThanOrEqual(delivery.guardMs, deliveryRepairWindowMs, "until the window ends, the raise never settling")
+  }
+
+  /// #200's first live sample: the app raised only after the cap had released the hold. The guard repairs it after the
+  /// release, inside the repair window, reported apart from the restores made under the hold.
+  func testARaiseFoundAfterTheReleaseIsRepairedAndReportedApart() throws {
+    // 40 ms samples: the activation's sample at 40, the post, a stable sample at 80, the raise found at 120 (past the cap).
+    let seam = GuardSeam(frontmost: user, step: 40, targetInFront: { sample in sample == 3 })
+    var meta = meta()
+    try click(seam, meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertTrue(delivery.capped)
+    XCTAssertTrue(delivery.repairedAfterRelease)
+    XCTAssertEqual(delivery.repairAfterReleaseLatencyMs, 80)
+    XCTAssertEqual(delivery.restores, 0, "none under the hold")
+    XCTAssertFalse(delivery.raiseLeft)
+    XCTAssertEqual(seam.repairsOutsideHold, 1)
+    XCTAssertEqual(seam.holds, 1, "never a second hold")
+  }
+
+  /// The person's input since the click stops the repairs after the release: their own click into the app is never
+  /// undone. The raise is left, reported.
+  func testAPersonsInputSinceTheClickStopsTheRepairsAfterTheRelease() throws {
+    let seam = GuardSeam(frontmost: user, step: 40, targetInFront: { sample in sample >= 3 })
+    seam.secondsSinceInput = 0.01
+    var meta = meta()
+    try click(seam, meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertTrue(delivery.personInput)
+    XCTAssertFalse(delivery.repairedAfterRelease)
+    XCTAssertTrue(delivery.raiseLeft)
+    XCTAssertEqual(seam.repairsOutsideHold, 0)
   }
 
   /// A restore that blocks past the cap (an AXRaise waiting out its timeout): the guard ends there, on what the order
@@ -594,8 +627,8 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(seam.repairsOutsideHold, 0)
   }
 
-  /// A re-activation the system accepts but that leaves the target in front is no restore: at the cap the target is
-  /// still frontmost, reported as a raise left, and nothing is re-activated once the hold is released.
+  /// A re-activation the system accepts but that leaves the target in front is no restore: at the window's end the target
+  /// is still frontmost, reported as a raise left.
   func testAReactivationThatLeavesTheTargetInFrontIsReportedAsARaiseLeft() throws {
     let seam = GuardSeam(frontmost: user)  // re-activations accepted, never effective
     seam.onMouseDown = { seam.frontmost = self.target }
@@ -606,7 +639,7 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertFalse(delivery.frontmostRestored, "no sample saw the user's app in front again")
     XCTAssertTrue(delivery.capped)
     XCTAssertTrue(delivery.raiseLeft)
-    XCTAssertEqual(seam.repairsOutsideHold, 0)
+    XCTAssertTrue(delivery.repairedAfterRelease, "re-activations go on after the release, inside the window")
   }
 
   /// A frontmost restore that a sample saw, then lost again to the target: the restore is reported, and so is the raise
@@ -868,6 +901,9 @@ final class GuardSeam {
   /// When set, the window order the guards read: whether the target's window is above the user's. A raise of the
   /// user's window puts it back on top.
   var targetAbove: Bool?
+  /// Seconds since the last HID input, as the delivery guard reads it after the hold's release (no person's input by
+  /// default).
+  var secondsSinceInput: Double = 1_000
   /// When set, the window order by window: the target process's windows above the user's (a guard's read names the one
   /// it checks). A raise of the user's window puts it back above them all. Takes precedence over `targetAbove`.
   var windowsAbove: Set<CGWindowID>?
@@ -950,6 +986,7 @@ final class GuardSeam {
       return self.frontmost
     }
     system.keyFocus = { nil }
+    system.secondsSinceInput = { self.secondsSinceInput }
     system.holdScreenUpdates = {
       self.holds += 1
       self.heldAt = self.clock

@@ -61,6 +61,9 @@ export const WATCH_INTERVAL_MS = 5;
 // The longest gap between two of the watcher's reads that still lets the record stand: a raise undone inside a longer
 // one could pass unseen. The MacBook held 5 ms with gaps of 12–24 ms at a load average of 70 (measured).
 export const WATCH_GAP_MS = 50;
+// The engine's repair window after an action's events (native/engine Activation.swift deliveryRepairWindowMs): a raise
+// it repairs after the hold's release, inside it, is a flash.
+const REPAIR_WINDOW_MS = 1_000;
 // A raise still seen this long after the hold's release outlived it: two of the watcher's intervals, its resolution.
 export const OUTLIVE_MS = 2 * WATCH_INTERVAL_MS;
 // Between samples, so each sample's span is its own and a deferred ordering lands inside it.
@@ -286,11 +289,23 @@ export function callWatch({meta = {}, attempt, from, until = Infinity}) {
   const changes = attempt?.changes ?? [];
   const raises = raisesIn(attempt).filter(c => c.at >= from && c.at < until);
   const post = meta.actionInterval?.startedAt ?? null, releasedAt = meta.delivery?.releasedAt > 0 ? meta.delivery.releasedAt : null;
-  if (releasedAt === null) return {guarded: false, raises: raises.length, postToRaiseMs: null, postToReleaseMs: null, late: 0, outlived: 0, undecided: 0, unguarded: raises.length};
+  if (releasedAt === null) return {guarded: false, raises: raises.length, postToRaiseMs: null, postToReleaseMs: null, late: 0, outlived: 0, undecided: 0, unguarded: raises.length, flash: 0};
   const holdStart = meta.delivery.holdStartedAt > 0 ? meta.delivery.holdStartedAt : Number.isFinite(post) ? post : releasedAt;
   const grace = releasedAt + OUTLIVE_MS;
-  const counts = {late: 0, outlived: 0, undecided: 0, unguarded: 0};
+  const counts = {late: 0, outlived: 0, undecided: 0, unguarded: 0, flash: 0};
+  // A raise seen past the release that the guard repaired after it (the engine's repairedAfterRelease), undone inside
+  // the engine's repair window after the post: on the display for that long, a flash, counted apart and not failed.
+  const repairWindowEnd = meta.delivery?.repairedAfterRelease === true && Number.isFinite(post) ? post + REPAIR_WINDOW_MS + OUTLIVE_MS : null;
+  const flashOr = (raise, kind) => {
+    if (repairWindowEnd === null) return kind;
+    const undone = changes.find(c => c.at > raise.at && c.state !== 'back-above');
+    return undone && undone.at <= repairWindowEnd ? 'flash' : kind;
+  };
   const kindOf = raise => {
+    const kind = baseKindOf(raise);
+    return kind === 'late' || kind === 'outlived' ? flashOr(raise, kind) : kind;
+  };
+  const baseKindOf = raise => {
     if (raise.at > grace) return 'late';
     if (raise.at < holdStart) return 'unguarded';
     if (prevOf(raise) < holdStart && raise.at - prevOf(raise) > OUTLIVE_MS) return 'undecided';
@@ -360,6 +375,7 @@ export function judgeCase({kase, engine, rows, order}) {
   const deliveries = actions.map(w => w.row.meta?.delivery).filter(Boolean);
   const raises = raisesIn(attempt), losses = lossesIn(attempt);
   const late = watched.reduce((n, w) => n + w.late + w.outlived, 0);
+  const flashes = watched.reduce((n, w) => n + w.flash, 0);
   const unguarded = opening + watched.reduce((n, w) => n + w.unguarded, 0);
   const undecided = watched.reduce((n, w) => n + w.undecided, 0);
   const undecidedSamples = [...new Set(watched.filter(w => w.undecided).map(w => w.row.sample?.i ?? null))];
@@ -384,7 +400,8 @@ export function judgeCase({kase, engine, rows, order}) {
     : !watchStop?.result?.ok ? 'the watcher was not stopped by the kit at the case\'s end' : null;
   const base = {case: kase, engine, target, samples: complete.length, delivered: delivered.length,
     halves: Object.fromEntries(halves.map(part => [part, complete.filter(([, h]) => h[part].delivered).length])),
-    raises: raises.length, restores: deliveries.reduce((n, d) => n + (d.restores ?? 0), 0), late, unguarded, opening, undecided, undecidedSamples, raiseLeft,
+    raises: raises.length, restores: deliveries.reduce((n, d) => n + (d.restores ?? 0), 0), flashes,
+    repairedAfterRelease: deliveries.filter(d => d.repairedAfterRelease).length, late, unguarded, opening, undecided, undecidedSamples, raiseLeft,
     capped: deliveries.filter(d => d.capped).length, guarded: `${deliveries.length} of ${actions.length}`,
     postToRaiseMs: spread(actions.map(w => w.postToRaiseMs)), postToReleaseMs: spread(actions.map(w => w.postToReleaseMs)),
     seen, losses: losses.length, undelivered, stopped, watcher,
@@ -409,11 +426,11 @@ const spreadText = s => (s.n ? `${ms(s.min)} / ${ms(s.median)} / ${ms(s.p95)} / 
 export function raiseMarkdown(judged) {
   const lines = ['# #200: background actions, raises and delivery (scripts/cursor-sitting/raise.mjs)', '',
     'Raises are what the 5 ms watcher saw of the window server\'s order (the guard\'s screen hold keeps them off the display); restores, capped and raise left are what route 3\'s delivery guard reported (`cua/delivery`). A late raise was seen by a read more than 10 ms past the hold\'s release (begun after it, or outliving it); an unguarded one came before the hold began or during a call with no guard; an undecided one sits in a gap of the watcher\'s reads that leaves either unknown, and makes the case incomplete, not failed. Pass, for cua\'s engine: every sample delivered, no late or unguarded raise, no raise left, nothing undecided, the full count, the case ended cleanly and the watcher\'s record whole through its tail. The vendor\'s rows are recorded, not judged.', '',
-    '| case | engine | samples | delivered | raises seen | restores | late | unguarded | undecided | capped | raise left | verdict |', '|---|---|---|---|---|---|---|---|---|---|---|---|'];
+    '| case | engine | samples | delivered | raises seen | restores | repaired after release (flashes) | late | unguarded | undecided | capped | raise left | verdict |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|'];
   for (const j of judged) {
     const halves = Object.keys(j.halves).length > 1 ? ` (${Object.entries(j.halves).map(([p, n]) => `${p} ${n}`).join(', ')})` : '';
     const verdictText = j.engine === 'vendor' ? `recorded (would be ${j.wouldBe})` : `**${j.verdict}**`;
-    lines.push(`| ${j.case}: ${CASES[j.case].what} | ${j.engine} | ${j.samples} / ${j.target} | ${j.delivered}${halves} | ${j.raises} | ${j.restores} | ${j.late} | ${j.unguarded} | ${j.undecided} | ${j.capped} | ${j.raiseLeft} | ${verdictText} |`);
+    lines.push(`| ${j.case}: ${CASES[j.case].what} | ${j.engine} | ${j.samples} / ${j.target} | ${j.delivered}${halves} | ${j.raises} | ${j.restores} | ${j.repairedAfterRelease} (${j.flashes}) | ${j.late} | ${j.unguarded} | ${j.undecided} | ${j.capped} | ${j.raiseLeft} | ${verdictText} |`);
   }
   lines.push('', '| case | engine | post → first raise, ms (min / median / p95 / max, n) | post → hold released, ms | guarded actions | routes | activation clicks |', '|---|---|---|---|---|---|---|');
   for (const j of judged) lines.push(`| ${j.case} | ${j.engine} | ${spreadText(j.postToRaiseMs)} | ${spreadText(j.postToReleaseMs)} | ${j.guarded} | ${listed(j.routes)} | ${listed(j.activationClicks)} |`);

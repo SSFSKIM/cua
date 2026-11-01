@@ -40,6 +40,11 @@ let activationGuardStableSamplesBeforeDelivery = 1
 /// may end, so an app slow to handle the click still raises inside the hold (0 until the sittings measure it).
 let deliveryGuardStableSamples = 3
 let deliveryGuardMinimumMs: Double = 0
+/// The delivery guard's poll inside the hold (a short sleep: the reads themselves take most of a sample under load), and
+/// how long after the events it may still repair once the cap has released the hold (#200's first live sample: the
+/// app raised 38 ms after the click, past a hold that began 42 ms before it).
+let deliveryGuardSampleMs: Double = 2
+let deliveryRepairWindowMs: Double = 1_000
 
 /// SkyLight's update hold (F §11, salts 16 and 17) and the connection it takes.
 private enum SkyLight {
@@ -108,6 +113,9 @@ struct ActivationSystem {
   }
   var now: () -> Double = monotonicMilliseconds
   var sleep: (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }
+  /// Seconds since the last input of any type on the HID system state: a person's input since an action's events stops
+  /// the delivery guard's repairs after the hold's release.
+  var secondsSinceInput: () -> Double = { CGEventSource.secondsSinceLastEventType(.hidSystemState, eventType: CGEventType(rawValue: ~0)!) }
   /// Runs `work` after the given milliseconds on another thread (the hold's cap, kept while the guard is blocked).
   var schedule: (Double, @escaping @Sendable () -> Void) -> Void = { ms, work in
     DispatchQueue.global(qos: .userInteractive).asyncAfter(deadline: .now() + .microseconds(Int(ms * 1000)), execute: work)
@@ -217,14 +225,23 @@ struct DeliveryGuardOutcome: Equatable {
   /// When the screen-update hold began (Unix ms; the activation's when this action ran it, else the guard's own): a
   /// raise before it was on the display. Read as `releasedAt` less the hold's own monotonic span, one clock for both.
   var holdStartedAt: Int64 = 0
-  /// When the hold's release was asked for (Unix ms), for a sitting's own clock.
+  /// When the hold was released (Unix ms; the cap's time when the cap released it), for a sitting's own clock.
   var releasedAt: Int64 = 0
+  /// A repair (the user's window raised back, or the user's app made frontmost again) made after the hold's release,
+  /// inside the repair window: the person may have seen the raise for that long. Counted apart from `restores`.
+  var repairedAfterRelease = false
+  /// From the action's events to the first repair after the release; nil when none.
+  var repairAfterReleaseLatencyMs: Double?
+  /// The guard stopped repairing after the release because the person gave input since the action's events.
+  var personInput = false
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["restores": restores, "frontmostRestored": frontmostRestored, "otherAppFront": otherAppFront,
                                "guardMs": guardMs, "screenHoldMs": screenHoldMs, "capped": capped, "raiseLeft": raiseLeft,
-                               "holdStartedAt": Int(holdStartedAt), "releasedAt": Int(releasedAt)]
+                               "holdStartedAt": Int(holdStartedAt), "releasedAt": Int(releasedAt),
+                               "repairedAfterRelease": repairedAfterRelease, "personInput": personInput]
     if let restoreLatencyMs { wire["restoreLatencyMs"] = restoreLatencyMs }
+    if let repairAfterReleaseLatencyMs { wire["repairAfterReleaseLatencyMs"] = repairAfterReleaseLatencyMs }
     return wire
   }
 }
@@ -407,8 +424,11 @@ final class FakeActivation {
     let posted = system.now()
     let round = { (ms: Double) in (ms * 1000).rounded() / 1000 }
     // The cap's timer releases the hold on its own, so the deadline is read again after whatever may block (the poll's
-    // sleep, the reads, a restore): past it nothing more is repaired, where the user would see the repair.
+    // sleep, the reads, a restore). Past it a repair shows on the display, so it is made only inside the repair window
+    // after the events, only while the person has given no input since them (their own click into the app is never
+    // undone), and reported apart (`repairedAfterRelease`).
     let capPassed = { system.now() - hold.startedAt >= activationHoldCapMs }
+    let personActed = { system.secondsSinceInput() * 1000 < system.now() - posted }
     var stable = 0
     // What the last sample saw, after every repair made before it: the report rests on it, not on a call's own answer
     // (a re-activation the system accepts may leave the target in front).
@@ -416,8 +436,7 @@ final class FakeActivation {
     var targetAbove = false
     var reactivationPending = false
     while stable < deliveryGuardStableSamples || system.now() - posted < deliveryGuardMinimumMs {
-      // Once the cap has passed, a sample only reads what is left, with no sleep before it.
-      if !capPassed() { system.sleep(activationGuardSampleMs) }
+      system.sleep(capPassed() ? activationGuardSampleMs : deliveryGuardSampleMs)
       let front = signposted("route3.delivery.frontmost") { system.frontmost() }
       if front != hold.user.pid {
         guard let front, front == pid || front == appPid else {
@@ -438,20 +457,33 @@ final class FakeActivation {
           targetAbove = false
         }
       }
-      if capPassed() {
-        outcome.capped = true
-        break
+      let released = capPassed()
+      if released {
+        outcome.capped = outcome.capped || stable < deliveryGuardStableSamples
+        if system.now() - posted >= deliveryRepairWindowMs { break }
+        if (targetFront || targetAbove) && personActed() {
+          outcome.personInput = true
+          break
+        }
+      }
+      let repairedAt = { (latency: Double) in
+        if released {
+          outcome.repairedAfterRelease = true
+          if outcome.repairAfterReleaseLatencyMs == nil { outcome.repairAfterReleaseLatencyMs = latency }
+        } else if outcome.restoreLatencyMs == nil {
+          outcome.restoreLatencyMs = latency
+        }
       }
       if targetFront {
         stable = 0
         let accepted = system.reactivate(hold.user.pid)
-        if outcome.restoreLatencyMs == nil { outcome.restoreLatencyMs = round(system.now() - posted) }
+        repairedAt(round(system.now() - posted))
         guard accepted else { break }  // refused: the target stays in front, reported
         reactivationPending = true
       } else if targetAbove, let window = hold.user.window {
         window.restore()
-        outcome.restores += 1
-        if outcome.restoreLatencyMs == nil { outcome.restoreLatencyMs = round(system.now() - posted) }
+        if !released { outcome.restores += 1 }
+        repairedAt(round(system.now() - posted))
         stable = 0
       } else {
         stable += 1
@@ -462,8 +494,9 @@ final class FakeActivation {
     outcome.raiseLeft = targetFront || targetAbove
     let held = system.now() - hold.startedAt
     hold.release()
-    outcome.releasedAt = unixMilliseconds()
-    outcome.holdStartedAt = outcome.releasedAt - Int64(held.rounded())
+    let now = unixMilliseconds()
+    outcome.holdStartedAt = now - Int64(held.rounded())
+    outcome.releasedAt = outcome.holdStartedAt + Int64(min(held, activationHoldCapMs).rounded())
     return outcome
   }
 

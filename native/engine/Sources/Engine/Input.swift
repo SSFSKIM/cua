@@ -443,9 +443,9 @@ extension Engine {
       case .refusedConcealed:
         throw concealedInputUnavailable(sourceID: source.id, perContext: source.keyboardLayout && perContextUnknown)
       case .paste:
-        try typeTextByPaste(text, PasteTarget(app: app, pid: pid, application: application, keyboard: target, guarding: guarding),
-                            context, meta: &meta)
-        return ["meta": meta.wire]
+        let note = try typeTextByPaste(text, PasteTarget(app: app, pid: pid, application: application, keyboard: target, guarding: guarding),
+                                       context, meta: &meta)
+        return pasteResult(meta, note: note)
       case .keyed: break
       }
       guard let layout = KeyLayout.current() else {

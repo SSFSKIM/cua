@@ -425,11 +425,12 @@ final class PasteOperationTests: XCTestCase {
     PasteEffect(source: source ?? (observer ? .trusted : .none), read: reading, now: { [unowned self] in clock }, sleep: { [unowned self] in clock += $0 })
   }
 
+  @discardableResult
   private func run(_ parts: [PastePart], _ pasteboard: TestPasteboard, effect: PasteEffect, readTimeoutMs: Double = 0,
                    remainingMs: () -> Double = { .infinity }, keyFocusAtPaste: () -> KeyFocusReading? = { nil },
                    mainProbe: (@escaping @Sendable () -> Void) -> Void = { $0() },
                    checkInFlight: () throws -> Void = {}, postPaste: () -> Bool, postReturn: () -> Bool = { true },
-                   entered: inout Int, meta: inout InputMeta) throws {
+                   entered: inout Int, meta: inout InputMeta) throws -> PasteOutcome {
     try runPaste(parts, pasteboard: pasteboard.access, effect: effect, readTimeoutMs: readTimeoutMs, remainingMs: remainingMs,
                  keyFocusAtPaste: keyFocusAtPaste, mainProbe: mainProbe, checkInFlight: checkInFlight,
                  postPaste: postPaste, postReturn: postReturn, entered: &entered, meta: &meta)
@@ -599,6 +600,8 @@ final class PasteOperationTests: XCTestCase {
     XCTAssertNotNil(meta.startedAt, "⌘V was posted")
     XCTAssertEqual(diagnostics(meta)["readWait"] as? String, "timeout")
     XCTAssertNil(diagnostics(meta)["effectWait"], "the read wait ended it")
+    XCTAssertEqual(diagnostics(meta)["stage"] as? String, "read")
+    XCTAssertNil(diagnostics(meta)["confirmed"], "never reached the effect stage")
     XCTAssertNil(diagnostics(meta)["readAfterPostMs"], "no read")
     XCTAssertEqual(diagnostics(meta)["restore"] as? String, "restored")
   }
@@ -654,27 +657,96 @@ final class PasteOperationTests: XCTestCase {
     XCTAssertEqual(diagnostics(meta)["readWait"] as? String, "handedOver")
     XCTAssertEqual(diagnostics(meta)["effectWait"] as? String, "timeout")
     XCTAssertEqual(diagnostics(meta)["effectWaitMs"] as? Double ?? 0, 2_000, accuracy: 25)
+    XCTAssertEqual(diagnostics(meta)["confirmed"] as? Bool, false, "a channel, and no change came")
+    XCTAssertEqual(diagnostics(meta)["stage"] as? String, "effect")
     XCTAssertEqual(diagnostics(meta)["restore"] as? String, "restored")
   }
 
-  /// No channel up front (the baseline empty, no trusted notification source): `pasteUnconfirmed` as soon as the read
-  /// came, with no wait at all, where the vendor's blind path would have answered success (#187).
-  func testWithNoChannelTheReadIsAnsweredUnconfirmedAtOnce() {
+  /// No channel up front (the baseline empty, no trusted notification source) and the read came after ⌘V: success at
+  /// once, unconfirmed (the vendor's 100 ms blind success, gated on the read's timing; #187), with no wait at all.
+  func testWithNoChannelAReadAfterCommandVIsAnUnconfirmedSuccessAtOnce() throws {
     let pasteboard = TestPasteboard()
     pasteboard.userCopies("the owner's")
     var entered = 0
     var meta = meta()
     clock = 0
-    XCTAssertThrowsError(try run([.content(plain("x"), units: 1)], pasteboard, effect: effect(reading: { EffectReading() }), postPaste: {
-      _ = pasteboard.appReads()
+    let outcome = try run([.content(plain("x"), units: 1)], pasteboard, effect: effect(reading: { EffectReading() }), postPaste: { [unowned self] in
+      clock += 2
+      _ = pasteboard.appReads()  // the app's read, 2 ms after ⌘V's post
       return true
-    }, entered: &entered, meta: &meta)) { XCTAssertEqual(($0 as? EngineError)?.errorName, "pasteUnconfirmed") }
-    XCTAssertEqual(clock, 0, "no wait")
+    }, entered: &entered, meta: &meta)
+    XCTAssertEqual(outcome, PasteOutcome(pastedLines: 1, unconfirmedLines: 1))
+    XCTAssertEqual(entered, 1)
+    XCTAssertEqual(clock, 2, "no wait")
     XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+    XCTAssertEqual(diagnostics(meta)["confirmed"] as? Bool, false)
+    XCTAssertEqual(diagnostics(meta)["stage"] as? String, "effect")
     XCTAssertEqual(diagnostics(meta)["effectWait"] as? String, "noChannel")
+    XCTAssertEqual(diagnostics(meta)["readAfterPostMs"] as? Double, 2)
+    XCTAssertEqual(diagnostics(meta)["unconfirmedLines"] as? Int, 1)
     XCTAssertEqual(diagnostics(meta)["baselineEmpty"] as? Bool, true)
     XCTAssertEqual(diagnostics(meta)["notificationSource"] as? String, "none")
     XCTAssertEqual(diagnostics(meta)["restore"] as? String, "restored")
+    XCTAssertEqual(pasteUnconfirmedNote(outcome),
+                   "Pasted, unconfirmed: the app read the text after ⌘V, but this field can't be read back, so the change couldn't be seen. Observe the field if the next step depends on it.")
+  }
+
+  /// No channel and the only read came before ⌘V (a foreign reader: the lazy provider is not asked again for the
+  /// target): `pasteUnconfirmed`, at once.
+  func testWithNoChannelAReadOnlyBeforeCommandVIsPasteUnconfirmed() {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    XCTAssertThrowsError(try run([.content(plain("x"), units: 1)], pasteboard, effect: effect(reading: { EffectReading() }),
+                                 checkInFlight: { [unowned self] in
+                                   _ = pasteboard.appReads()  // a clipboard manager, before ⌘V
+                                   clock += 5
+                                 }, postPaste: { _ = pasteboard.appReads(); return true }, entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "pasteUnconfirmed")
+    }
+    XCTAssertEqual(clock, 5, "no wait")
+    XCTAssertEqual(entered, 0)
+    XCTAssertEqual(diagnostics(meta)["readAfterPostMs"] as? Double, -5)
+    XCTAssertEqual(diagnostics(meta)["confirmed"] as? Bool, false)
+    XCTAssertEqual(diagnostics(meta)["effectWait"] as? String, "noChannel")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+  }
+
+  /// type_text over a field whose lines have no channel for some of them: it goes on to the next line, and the note
+  /// counts the unconfirmed lines.
+  func testTypedTextGoesOnPastAnUnconfirmedLineAndCountsIt() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var characters = 0
+    var line = 1
+    var log: [String] = []
+    var entered = 0
+    var meta = meta()
+    let text = "ab\ncd\nef"
+    // Line 2's field exposes nothing to read back; lines 1 and 3 show their change.
+    let reading = { line == 2 ? EffectReading() : EffectReading(range: nil, characters: characters) }
+    let outcome = try run(pasteParts(typing: text), pasteboard, effect: effect(reading: reading), postPaste: {
+      log.append("paste " + (pasteboard.appReads() ?? "nil"))
+      characters += 2
+      return true
+    }, postReturn: { line += 1; log.append("Return"); return true }, entered: &entered, meta: &meta)
+    XCTAssertEqual(log, ["paste ab", "Return", "paste cd", "Return", "paste ef"])
+    XCTAssertEqual(outcome, PasteOutcome(pastedLines: 3, unconfirmedLines: 1))
+    XCTAssertEqual(entered, unitsOf(text))
+    XCTAssertEqual(diagnostics(meta)["confirmed"] as? Bool, true, "the last line's own")
+    XCTAssertEqual(diagnostics(meta)["unconfirmedLines"] as? Int, 1, "the operation's count")
+    XCTAssertEqual(pasteUnconfirmedNote(outcome),
+                   "3 lines pasted, 1 unconfirmed: the app read each after ⌘V, but this field can't be read back, so the change couldn't be seen. Observe the field if the next step depends on it.")
+    XCTAssertNil(pasteUnconfirmedNote(PasteOutcome(pastedLines: 3, unconfirmedLines: 0)), "nothing to say when every line was seen")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+  }
+
+  /// A later line's error after an unconfirmed one says how many of the complete lines were unconfirmed.
+  func testTheTypedCountClauseNamesUnconfirmedLines() {
+    XCTAssertEqual(typedPasteError(pasteUnconfirmed, entered: 6, total: 9, line: 3, lines: 3, unconfirmedLines: 1).message,
+                   pasteUnconfirmed.message + " Confirmed entered: 6 of 9 characters (2 of 3 lines complete, 1 of them unconfirmed); line 3 is in an unknown state.")
   }
 
   /// No read at all with no channel is still the read stage: the read is waited for, the effect never.
@@ -688,22 +760,24 @@ final class PasteOperationTests: XCTestCase {
   }
 
   /// An untrusted observer (a Chromium or Electron process without #244's enablement) is no source: with an empty
-  /// baseline the answer is at once, and its notifications never confirm.
-  func testAnUntrustedObserverIsNoSource() {
+  /// baseline the answer is at once (here a read after ⌘V: unconfirmed), and its notifications never confirm.
+  func testAnUntrustedObserverIsNoSource() throws {
     let pasteboard = TestPasteboard()
     pasteboard.userCopies("the owner's")
     var entered = 0
     var meta = meta()
     clock = 0
     let untrusted = effect(source: .untrusted, reading: { EffectReading() })
-    XCTAssertThrowsError(try run([.content(plain("x"), units: 1)], pasteboard, effect: untrusted, postPaste: {
+    let outcome = try run([.content(plain("x"), units: 1)], pasteboard, effect: untrusted, postPaste: {
       _ = pasteboard.appReads()
       untrusted.notification()  // what Chromium may post for its own chrome: not counted
       return true
-    }, entered: &entered, meta: &meta)) { XCTAssertEqual(($0 as? EngineError)?.errorName, "pasteUnconfirmed") }
+    }, entered: &entered, meta: &meta)
+    XCTAssertEqual(outcome.unconfirmedLines, 1, "not confirmed by the untrusted notification")
     XCTAssertEqual(clock, 0)
     XCTAssertEqual(diagnostics(meta)["notificationSource"] as? String, "untrusted")
     XCTAssertEqual(diagnostics(meta)["effectWait"] as? String, "noChannel")
+    XCTAssertEqual(diagnostics(meta)["confirmed"] as? Bool, false)
     XCTAssertEqual(pasteboard.strings(), ["the owner's"])
 
     let watch = effect(source: .untrusted, reading: { EffectReading(range: [1, 0], characters: 1) })
@@ -826,7 +900,7 @@ final class PasteOperationTests: XCTestCase {
             }, postPaste: { characters = 6; return true }, entered: &entered, meta: &meta)
     let wire = diagnostics(meta)
     XCTAssertEqual(Set(wire.keys), ["line", "lines", "notificationSource", "baselineEmpty", "keyFocusAtPaste", "readWait", "readWaitMs",
-                                    "readAfterPostMs", "effectWait", "effectWaitMs", "mainLagMs", "restore"])
+                                    "readAfterPostMs", "effectWait", "effectWaitMs", "mainLagMs", "restore", "stage", "confirmed"])
     XCTAssertEqual(wire["readAfterPostMs"] as? Double, -5, "read 5 ms before ⌘V")
     XCTAssertEqual(wire["readWait"] as? String, "handedOver")
     XCTAssertEqual(wire["effectWait"] as? String, "reading")
@@ -1044,8 +1118,8 @@ final class PasteActivationTests: XCTestCase {
       var meta = InputMeta(context)
       var entered = 0
       XCTAssertThrowsError(try typed
-        ? engine.typeTextByPaste("x\ny", pasteTarget, context, meta: &meta)
-        : engine.pasteOperation([.content(plain("x"), units: 1)], pasteTarget, context, entered: &entered, meta: &meta)) {
+        ? String(describing: engine.typeTextByPaste("x\ny", pasteTarget, context, meta: &meta))
+        : String(describing: engine.pasteOperation([.content(plain("x"), units: 1)], pasteTarget, context, entered: &entered, meta: &meta))) {
         XCTAssertEqual(($0 as? EngineError)?.errorName, "activationFailed", typed ? "type_text" : "paste")
       }
       XCTAssertEqual(meta.inputRoute, .paste)

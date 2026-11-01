@@ -90,6 +90,9 @@ const PER_CALL = {
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null,
 };
+// The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187), and its bound.
+const NOTED_METHODS = new Set(['paste', 'type_text']);
+const NOTE_CHARS = 500;
 // The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's
 // value-free diagnostics, #187).
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste'];
@@ -242,6 +245,9 @@ export function createService({nodeRepl, client = null}) {
       throw error;
     }
     if (result?.meta) setMeta(inputMeta(result.meta));
+    // The paste route's note on a success it could not confirm (#187), as text in the tool result: the facade returns
+    // nothing of an input's result to model code, and _meta is not the model's text.
+    if (NOTED_METHODS.has(method) && typeof result?.note === 'string' && result.note) nodeRepl?.emitContentItem?.(result.note.slice(0, NOTE_CHARS));
     return undefined;
   }
 

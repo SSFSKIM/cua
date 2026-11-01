@@ -10,6 +10,7 @@ import {join} from 'node:path';
 import {main, read187} from '../../scripts/cursor-sitting.mjs';
 import {A1_TARGET, ARMS, B_TARGET, bSchedule, clipboardReaders, CONTROLS, endEarly, freshActivation, GROUPS, groupItem, item187Markdown, item187Tasks, ITEMS, judge187,
   judgedOk, LABELS, menuOpened, metaArm, plan187, releaseOf, ROWS, rowRecord, statusArm, vendorAllowed, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
+import {ALL_ITEMS_188} from '../../scripts/cursor-sitting/item-188.mjs';
 import {describeStep, runSteps} from '../../scripts/cursor-sitting/runner.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
 import {EMPTY_HASH} from '../../scripts/native-matrix/probe-plan.mjs';
@@ -210,7 +211,8 @@ test('the vendor lane: only once arm B ran and some valid B row did not deliver'
 
 test('the plan: the preconditions and placement first, the switch and a stopped engine before every B block, the arm read after each open, the owner\'s source last', () => {
   const plan = plan187();
-  assert.deepEqual(plan.map(p => p.item), [ITEMS.place, ITEMS.a1, ...CONTROLS.map(g => ITEMS.control(g, 'A')), ITEMS.b, ...CONTROLS.map(g => ITEMS.control(g, 'B')), ITEMS.end]);
+  assert.deepEqual(plan.map(p => p.item), [ITEMS.place, ...ALL_ITEMS_188, ITEMS.a1, ...CONTROLS.map(g => ITEMS.control(g, 'A')), ITEMS.b, ...CONTROLS.map(g => ITEMS.control(g, 'B')), ITEMS.end]);
+  assert.deepEqual(plan187({part: 'a'}).map(p => p.item), [ITEMS.place, ITEMS.a1, ...CONTROLS.map(g => ITEMS.control(g, 'A')), ITEMS.end]);
   assert.deepEqual(plan[0].steps.filter(s => s.task).map(s => s.task), ['187-preflight', '187-place', 'activate']);
   assert.deepEqual(plan.at(-1).steps.filter(s => s.task).map(s => [s.task, ...(s.args ?? [])]), [['activate', 'textedit'], ['select-source', 'owner', 'textedit']]);
   const b = plan.find(p => p.item === ITEMS.b).steps;
@@ -553,7 +555,10 @@ test('the CLI: the dry run prints every step and touches nothing; judge writes i
   assert.deepEqual(leaks(text), []);
   const vendor = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--vendor']));
   assert.match(vendor.text, /dry run: \d+ steps/);
-  await assert.rejects(main(['paste-187', 'drive', '--out', out, '--dry-run', '--part', 'c']), /--part takes all, a or b/);
+  await assert.rejects(main(['paste-187', 'drive', '--out', out, '--dry-run', '--part', 'c']), /--part takes all, a, b or 188/);
+  const only188 = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--part', '188']));
+  assert.match(only188.text, new RegExp(`dry run: ${plan187({part: '188'}).reduce((n, p) => n + p.steps.length, 0)} steps, nothing sent`));
+  assert.equal(existsSync(out), false);
   await assert.rejects(main(['paste-187', 'drive', '--out', dir, '--run', dir, '--vendor']), /only once arm B has failed to deliver/);
   const judged = await quietly(() => main(['paste-187', 'judge', '--out', dir]));
   assert.equal(judged.code, 1, 'nothing recorded: nothing lands');

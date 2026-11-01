@@ -47,15 +47,27 @@ test('an observation keeps its own diagnostics (#244: the role read, the prior, 
   assert.deepEqual(readReply(reply({'cua/nativeEngine': {engine: 'cua'}, 'cua/engineMs': 120, 'cua/observation': observation})).meta, {engineMs: 120, observation});
 });
 
+test('an element click keeps its plan, the ladder\'s reason and the hit-test\'s answer (#188)', () => {
+  const elementClick = {plan: 'action', action: 'AXPress', reason: 'advertised', hit: 'same', hitTest: 'application'};
+  assert.deepEqual(readReply(reply({'cua/nativeEngine': {engine: 'cua'}, 'cua/elementClick': elementClick})).meta, {elementClick});
+});
+
 // A session whose serve is a fake: what each opening sends.
-async function opened(bind) {
+async function opened(bind, scenes = [{id: 'electron', app: '/c/F.app', pid: 7, at: 1, window: {number: 5}}]) {
   const sent = [];
   const fake = () => ({initialize: async () => {}, terminate: async () => {}, close: async () => {}, call: async () => ({}),
     js: async code => { sent.push(code); return reply({'cua/nativeEngine': {engine: 'cua'}}, answer({ready: true})); }});
-  const scene = {id: 'electron', app: '/c/F.app', pid: 7, at: 1, window: {number: 5}};
-  const session = await openDriven({name: 's', engine: 'cua', env: {}, scenes: [scene], guard: {problem: () => null, frontmost: () => null}, open: fake, ...(bind === undefined ? {} : {bind})});
+  const session = await openDriven({name: 's', engine: 'cua', env: {}, scenes, guard: {problem: () => null, frontmost: () => null}, open: fake, ...(bind === undefined ? {} : {bind})});
   return {sent, session};
 }
+
+test('a session opened with bind naming some scenes binds those alone; the others are still the guard\'s (#188: Finder as the user window)', async () => {
+  const finder = {id: 'finder', app: '/System/Library/CoreServices/Finder.app', pid: 9, window: {number: 6}};
+  const some = await opened(['electron'], [{id: 'electron', app: '/c/F.app', pid: 7, at: 1, window: {number: 5}}, finder]);
+  assert.equal(some.sent.length, 2, 'the first cell and the fixture\'s bind');
+  assert.ok(!some.sent.some(code => code.includes('Finder.app')), 'Finder is never observed');
+  assert.equal((await some.session.run('1', {keys: null})).ok, true);
+});
 
 test('a session opened with bind false sends only its first cell, and its scene is still one a cell may act on', async () => {
   const bound = await opened(undefined);

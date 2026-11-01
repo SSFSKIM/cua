@@ -107,12 +107,15 @@
 //       <out>/item-244-<variant>-<engine>.jsonl. `drive` then judges the engine's variants; `judge` writes every variant
 //       on both engines to <out>/item-244.md and prints it. Exit 1 unless cua's plain variant passes (judge), or unless
 //       nothing stopped and every judged variant run passes (drive).
-//   cursor-sitting.mjs paste-187 drive --run <dir> --out <dir> [--part all|a|b | --vendor] [--quiet] [--dry-run]
+//   cursor-sitting.mjs paste-187 drive --run <dir> --out <dir> [--part all|a|b|188 | --vendor] [--quiet] [--dry-run]
 //   cursor-sitting.mjs paste-187 judge --out <dir>
 //       #187's live slot (./cursor-sitting/item-187.mjs; the runbook's "Item 187"): pastes into Chrome for Testing's
 //       counters page behind a Hangul composition in TextEdit's run window, then the same under arm B, the engine.json
 //       switch pasteFocusEnforcement. `drive` checks the preconditions (the owner's yes to the source switch recorded,
 //       every scene up, Chrome on the counters page, engine.json without the switch), places the harness windows, runs
+//       #188's items under ABC (./cursor-sitting/item-188.mjs: the matrix's four repaired Electron rows, three behind the
+//       run's Finder window, and cell 3, on cua's engine and the vendor's; reported apart, never in #187's verdict;
+//       `--part 188` runs them alone), then
 //       Part A (chrome/composing@textedit 18 × 2, then the three controls) and, unless every Part A row delivered, Part B
 //       (ABAB blocks of 9 rows, 4 a side, then the controls under B), each item recorded in <out>/item-187-<name>.jsonl,
 //       and selects the owner's source again; `--part a` or `--part b` runs one part; `--vendor` runs the vendor's 9 paste
@@ -342,20 +345,22 @@ async function driveFirstObservation(values) {
   return !stopped && judged.every(j => j.verdict === 'recorded' || j.verdict === 'PASS') ? 0 : 1;
 }
 
-// #187's evidence: every item's rows, from <out>/item-187-<name>.jsonl (the watchers' files left out). -> {item: rows}.
+// #187's evidence: every item's rows, from <out>/item-187-<name>.jsonl and #188's <out>/item-188-<name>.jsonl (the
+// watchers' files left out). -> {item: rows}.
 export function read187(out) {
   if (!existsSync(out)) return {};
-  return Object.fromEntries(readdirSync(out).map(f => f.match(/^item-(187-[\w-]+)\.jsonl$/)?.[1]).filter(name => name && !name.endsWith('-order'))
+  return Object.fromEntries(readdirSync(out).map(f => f.match(/^item-(18[78]-[\w-]+)\.jsonl$/)?.[1]).filter(name => name && !name.endsWith('-order'))
     .map(name => [name, readJsonl(join(out, `item-${name}.jsonl`))]));
 }
 const rows187 = rows => lastAttempt(rows ?? []).filter(r => r.kind === 'task' && r.task === '187-row' && r.result).map(r => r.result);
 
 // #187's drive: the plan's items in order, each its own item; an item that throws is marked in its jsonl and stops the
-// items after it but the last, which selects the owner's source again. Part B is skipped, in a whole run, when every
-// Part A row delivered (the end-early rule, read from Part A's evidence).
+// items after it but the last, which selects the owner's source again. A #188 item that throws is marked and the drive
+// goes on: #188 never stops #187's slot (each later item sets up its own scene). Part B is skipped, in a whole run, when
+// every Part A row delivered (the end-early rule, read from Part A's evidence).
 async function drive187(values) {
   const part = values.part ?? 'all';
-  if (!['all', 'a', 'b'].includes(part)) throw new Error('--part takes all, a or b');
+  if (!['all', 'a', 'b', '188'].includes(part)) throw new Error('--part takes all, a, b or 188');
   if (values.vendor && values.part) throw new Error('--vendor runs the vendor lane alone; it takes no --part');
   const out = absolute(values, 'out'), dryRun = values['dry-run'];
   const run = dryRun ? values.run ?? '/nonexistent' : absolute(values, 'run');
@@ -373,8 +378,9 @@ async function drive187(values) {
     }
     steps += plan.length;
     try { await runSteps(plan, {item, out, io, dryRun}); } catch (error) {
-      stopped = `${item}: ${error.message}`;
       appendFileSync(join(out, `item-${item}.jsonl`), `${JSON.stringify({item, at: Date.now(), kind: 'stopped', error: error.message})}\n`);
+      if (stage === '188') { print(`#188's ${item} stopped: ${error.message}; #187's items go on`); continue; }
+      stopped = `${item}: ${error.message}`;
       print(`stopped at ${stopped}; the items after it were not run`);
     }
   }

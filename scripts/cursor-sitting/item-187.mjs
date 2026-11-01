@@ -38,6 +38,8 @@
 // and the user window's app brought to the front (harness windows only), before the next row; the row keeps the raise's
 // times, so it is a failure under B, and the judge counts the restores.
 //   vendor  9 paste rows on the vendor's engine, recorded only, run only once B has failed to deliver.
+//   188     before A, under ABC: #188's four repaired Electron rows and its cell 3 (./item-188.mjs), on cua's engine and
+//           the vendor's; counted for #188 only, reported in their own sections, never part of this slot's verdict.
 // Arm B lands only if every B row delivers exactly, with no page mousedown or click, no menu opened, no raise, no front
 // app change, the composition kept, every clipboard restore intact, the arm confirmed, and no control regressing under B
 // against a complete, valid A baseline (each control whole under both arms: every row valid, its order watcher whole, its
@@ -62,6 +64,7 @@ import {HANGUL_LAYOUT, REFOCUS_THROUGH, SETTLE_READ_MS, SETTLE_READS} from '../n
 import {readPageCounters, readState} from '../repl-parity/scenes-mac.mjs';
 import {OBSERVE} from './cells.mjs';
 import {runWindowBounds} from './focus.mjs';
+import {clickItem188, ENGINES_188, ITEMS_188, judge188, markdown188, rowsItem188} from './item-188.mjs';
 import {arrangementProblem, orderAttempt, orderLines, placementPlan, raisesIn, spread, startOrderWatch, stateAt, stopOrderWatch, WATCH_GAP_MS} from './raise.mjs';
 import {PROBE_CACHE, SCENE_MARKER} from './target-guard.mjs';
 
@@ -229,10 +232,12 @@ const endSteps = () => [
   {task: 'select-source', args: ['owner', 'textedit'], required: true},
 ];
 
-// The drive's items in order, each {item, stage, steps}: `part` all (A, then B unless end-early), a or b; `vendor` the
-// vendor lane alone.
+// The drive's items in order, each {item, stage, steps}: `part` all (#188's items, then A, then B unless end-early), a,
+// b or 188 (#188's alone); `vendor` the vendor lane alone. #188's items (./item-188.mjs: its four rows and cell 3, cua's
+// engine then the vendor's) run right after the placement, before any block engages Korean, and count only for #188.
 export function plan187({part = 'all', vendor = false} = {}) {
   const place = {item: ITEMS.place, stage: 'place', steps: placeSteps()}, end = {item: ITEMS.end, stage: 'end', steps: endSteps()};
+  const items188 = ENGINES_188.flatMap(engine => [{item: ITEMS_188.rows(engine), stage: '188', steps: rowsItem188(engine)}, {item: ITEMS_188.click(engine), stage: '188', steps: clickItem188(engine)}]);
   if (vendor) {
     return [place, {item: ITEMS.vendor, stage: 'vendor', steps: groupItem({item: ITEMS.vendor, group: 'chrome-composing', engine: 'vendor',
       blocks: [{block: 0, arm: 'vendor', rows: VENDOR_ROWS}]})}, end];
@@ -243,7 +248,8 @@ export function plan187({part = 'all', vendor = false} = {}) {
     ...CONTROLS.map(group => control(group, 'A'))];
   const b = [{item: ITEMS.b, stage: 'b', steps: groupItem({item: ITEMS.b, group: 'chrome-composing', blocks: bSchedule().map(s => ({...s, switchTo: s.arm === 'B' ? 'on' : 'off'}))})},
     ...CONTROLS.map(group => control(group, 'B'))];
-  return [place, ...(part === 'b' ? [] : a), ...(part === 'a' ? [] : b), end];
+  if (part === '188') return [place, ...items188, end];
+  return [place, ...(part === 'all' ? items188 : []), ...(part === 'b' ? [] : a), ...(part === 'a' ? [] : b), end];
 }
 
 // ---- a row's record --------------------------------------------------------------------------------------------------
@@ -482,8 +488,9 @@ export function judge187(items) {
   const overall = overallOf({ranB: Boolean(items[ITEMS.b]), b, early, aControls, restore});
   const median = rows => spread(rows.filter(r => r.invalid === null).map(r => r.actMs)).median ?? null;
   const addedMs = {A: median(aRows), B: median(bRows), difference: median(aRows) !== null && median(bRows) !== null ? median(bRows) - median(aRows) : null};
+  // #188's rows and cell 3, judged apart (./item-188.mjs): reported, never part of `overall`.
   return {groups, endEarly: early, aStages: tally(a1.filter(r => r.invalid === null && !r.delivered).map(stageOf)), b, addedMs, aControls, restore, overall,
-    vendor: items[ITEMS.vendor] ? summarize(vendor) : null};
+    vendor: items[ITEMS.vendor] ? summarize(vendor) : null, item188: judge188(items)};
 }
 
 // The owner's source at the end (187-end's select-source): restored only when it was switched and read back as the one
@@ -559,6 +566,7 @@ export function item187Markdown(judged) {
     if (notes.length) lines.push('', `## ${g.item} (${groupName(g.group)}, arm ${g.arm})`, '', ...notes.map(n => `- ${n}`));
   }
   if (judged.vendor) lines.push('', `The vendor's lane (recorded only): ${judged.vendor.delivered} of ${judged.vendor.n} paste rows delivered.`);
+  lines.push('', ...markdown188(judged.item188));
   return `${lines.join('\n')}\n`;
 }
 
@@ -872,7 +880,8 @@ export function liveDeps187({io, run, out, guard, cli, settingsFile, probe, bund
       return dir ? JSON.parse(readFileSync(join(dir, FIXTURE_COUNTERS_FILE), 'utf8')).counts ?? null : null;
     },
     order: {start: startOrderWatch, stop: stopOrderWatch, attempt: watch => orderAttempt(fileLines(watch.file), watch.pid)},
-    activations: {start: () => startWatch(bundle, run), lines: watch => fileLines(join(watch.dir, 'out.json')), stop: watch => stopWatch(watch)},
+    activations: {start: () => startWatch(bundle, run), lines: watch => fileLines(join(watch.dir, 'out.json')), stop: watch => stopWatch(watch),
+      alive: watch => { try { process.kill(watch.pid, 0); return true; } catch { return false; } }},
     menu: {
       read: pid => JSON.parse(execFileSync(menuTool(), ['read', String(pid)], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 15_000}).trim().split('\n').at(-1)),
       start: startMenuWatch, stop: stopMenuWatch, alive: handle => handle.child.exitCode === null && handle.child.signalCode === null,

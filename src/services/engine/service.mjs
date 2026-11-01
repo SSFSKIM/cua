@@ -94,12 +94,12 @@ const PER_CALL = {
 const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
-// web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, what web enablement read
-// before it touched the attribute and which attribute it set, whether the web area was seen or waited for (and how
-// long), and each settle's status, duration and counts. A bounded whitelist of scalars (a string of at most 64
-// characters), and the notification counts as at most 16 names to integers; never the text, the tree or the timings of
-// every phase.
-const OBSERVATION_DIAGNOSTICS = ['launched', 'reopened', 'webShaped', 'enablementPrior', 'enabled', 'chromium', 'webAreaSeen', 'webAreaFound', 'webAreaWaitMs',
+// web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application
+// element's role read before enablement (its cost, #244), what web enablement read before it touched the attribute and
+// which attribute it set, whether the web area was seen or waited for (and how long), and each settle's status,
+// duration and counts. A bounded whitelist of scalars (a string of at most 64 characters), and the notification counts
+// as at most 16 names to integers; never the text, the tree or the timings of every phase.
+const OBSERVATION_DIAGNOSTICS = ['launched', 'reopened', 'webShaped', 'appRoleReadMs', 'enablementPrior', 'enabled', 'chromium', 'webAreaSeen', 'webAreaFound', 'webAreaWaitMs',
   ...['openSettle', 'settle'].flatMap(prefix => ['', 'Ms', 'Notifications', 'NotificationCounts', 'BusyWalks', 'BusyVetoes', 'Observed', 'QuietAtMs'].map(part => prefix + part)),
   'settleTreeReused'];
 const DIAGNOSTIC_STRING_CHARS = 64, DIAGNOSTIC_COUNTS = 16;

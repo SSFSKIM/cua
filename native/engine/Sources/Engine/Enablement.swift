@@ -5,8 +5,16 @@ import os
 
 // Enablement (the spec's Design, "Observation (skyshot)"; F §1.7, §1.9). An application element that lists
 // AXManualAccessibility gets it set (Electron, Chromium), else one that lists AXEnhancedUserInterface gets that, never
-// both. The attribute is re-read on every observation and set only when it does not read true (the vendor's rule; the
-// critique of 2026-10-19, A3, withdrew the once-per-process memory, which a process that resets the attribute defeats).
+// both. An observation reads the attribute and sets it when it does not read true (the vendor's rule); once the engine
+// has set and owns it (below), later observations of that process generation neither read nor write it, as the
+// vendor's per-(app, kind) assertion writes once (Decision Log, #244, 2026-11-01, reversing the critique of 2026-10-19,
+// A3, which had withdrawn the once-per-process memory). Electron's getter is computed and keeps reading false, so a
+// re-read could not see a reset, and every write restarts Electron's 2 s countdown to its complete mode and fires the
+// app's `accessibility-support-changed`; the trade is that a process resetting the attribute itself keeps a missing tree
+// until the next release, as with the vendor. A value that read true or could not be read is not owned and is read
+// again at every observation. Before the enablement, every observation of an eligible app reads the application
+// element's role (`observeEnablement`), which gives Chromium and Electron their Basic mode, and the page's tree, at
+// once; that mode lasts the app's lifetime and nothing releases it (a declared difference the vendor shares).
 // cua's departures: enablement is set only on web-shaped apps (F §1.7's detection) and the vendor's named bundles
 // (`com.apple.iWork*`, `com.spotify.client`), where the vendor sets AXEnhancedUserInterface on any app that lists it in
 // its full-UI context, since that attribute changes how an AppKit app (the owner's Finder) behaves while it stays set
@@ -79,10 +87,12 @@ func processStartTime(pid: pid_t) -> Date? {
 }
 
 /// How the enablement reaches one process's application element: its attribute names (nil while they cannot be read,
-/// a process still launching), one attribute's Boolean value (nil when unreadable), a write, and whether the process is
-/// still the one observed (a pid an ended process left behind may be another launch's by the time of a release).
+/// a process still launching), its role read (`observeEnablement`; the values are not used), one attribute's Boolean
+/// value (nil when unreadable), a write, and whether the process is still the one observed (a pid an ended process left
+/// behind may be another launch's by the time of a release).
 struct EnablementAccess: @unchecked Sendable {
   var listed: () -> [String]?
+  var readRole: () -> Void
   var read: (String) -> Bool?
   var write: (String, Bool) -> Bool
   var current: () -> Bool
@@ -95,6 +105,11 @@ struct EnablementAccess: @unchecked Sendable {
         var names: CFArray?
         return AXUIElementCopyAttributeNames(application, &names) == .success ? (names as? [String] ?? []) : nil
       },
+      readRole: {
+        var values: CFArray?
+        let names = [kAXRoleAttribute, kAXSubroleAttribute, kAXRoleDescriptionAttribute] as CFArray
+        _ = AXUIElementCopyMultipleAttributeValues(application, names, AXCopyMultipleAttributeOptions(rawValue: 0), &values)
+      },
       read: { bool(attribute(application, $0)) },
       write: { AXUIElementSetAttributeValue(application, $0 as CFString, ($1 ? kCFBooleanTrue : kCFBooleanFalse)!) == .success },
       current: {
@@ -104,9 +119,10 @@ struct EnablementAccess: @unchecked Sendable {
 }
 
 /// What an enablement attribute read before the engine touched it at an observation: the live harness's evidence that
-/// a release writes back only what read false (`timings.enablementPrior`).
+/// a release writes back only what read false (`timings.enablementPrior`); `owned` when nothing was read, because the
+/// engine set and owns the attribute since an earlier observation of the process.
 enum EnablementPrior: Equatable {
-  case readTrue, readFalse, unreadable
+  case readTrue, readFalse, unreadable, owned
 
   init(_ read: Bool?) { self = read.map { $0 ? .readTrue : .readFalse } ?? .unreadable }
 
@@ -115,6 +131,7 @@ enum EnablementPrior: Equatable {
     case .readTrue: return "true"
     case .readFalse: return "false"
     case .unreadable: return "unreadable"
+    case .owned: return "owned"
     }
   }
 }
@@ -126,7 +143,8 @@ private final class EnabledProcess: @unchecked Sendable {
   let access: EnablementAccess
   /// The attribute the process lists (`enablementAttribute`), once its names could be read; `.some(nil)`: neither.
   var listed: String??
-  /// The attribute the engine set after reading it false, which it releases; nil otherwise.
+  /// The attribute the engine set after reading it false, which it releases and, until then, neither reads nor writes
+  /// again; nil otherwise.
   var owned: String?
   /// Whether the process's generation is known; a write-back is remembered only then, since a key of the pid alone
   /// would match a later process reusing it.
@@ -186,16 +204,31 @@ final class WebAccessibility: @unchecked Sendable {
     return shaped
   }
 
+  /// getAppState's enablement step, on an eligible app only (`enablementEligible`; nil for any other, which gets
+  /// neither): the application element's role read (AXRole, AXSubrole and AXRoleDescription in one request, at every
+  /// observation, never cached), then `enableReporting`. Reading the role gives Chromium and Electron their Basic
+  /// accessibility mode, and with it the page's tree, at once, where the attribute's complete mode lands 2 s after its
+  /// write (#244; the vendor's eager `ApplicationUIElement.init(pid:)`, F §1.3). The two are timed apart, as
+  /// `appRoleRead` and `enable`.
+  func observeEnablement(eligible: Bool, pid: pid_t, launched: Date?, connection: Int, access: @autoclosure () -> EnablementAccess,
+                         timings: inout Timings) -> (set: String?, prior: EnablementPrior?)? {
+    guard eligible else { return nil }
+    let access = access()
+    timings.time("appRoleRead") { access.readRole() }
+    return timings.time("enable") { enableReporting(pid: pid, launched: launched, connection: connection, access: access) }
+  }
+
   /// An observation of an eligible process by `connection`: the connection is recorded as observing it, and the one
-  /// enablement attribute the process lists is set when it does not read true now, or whatever it reads when the engine
-  /// wrote it back since it last set it. Returns the attribute this call set
-  /// (nil when none is listed, the names cannot be read yet, it reads true, or the write failed).
+  /// enablement attribute the process lists is left alone while the engine owns it, else set when it does not read true
+  /// now, or whatever it reads when the engine wrote it back since it last set it. Returns the attribute this call set
+  /// (nil when none is listed, the names cannot be read yet, the engine owns it, it reads true, or the write failed).
   func enable(pid: pid_t, launched: Date?, connection: Int, access: EnablementAccess) -> String? {
     enableReporting(pid: pid, launched: launched, connection: connection, access: access).set
   }
 
-  /// `enable`, also answering what the attribute read before this call touched it (nil when nothing was read: none is
-  /// listed, or the names cannot be read yet), which the observation reports as `timings.enablementPrior`.
+  /// `enable`, also answering what the attribute read before this call touched it (`.owned` when the engine owns it
+  /// and read nothing; nil when none is listed, or the names cannot be read yet), which the observation reports as
+  /// `timings.enablementPrior`.
   func enableReporting(pid: pid_t, launched: Date?, connection: Int, access: EnablementAccess) -> (set: String?, prior: EnablementPrior?) {
     let key = Self.process(pid, launched)
     lock.lock()
@@ -208,6 +241,8 @@ final class WebAccessibility: @unchecked Sendable {
     defer { entry.io.unlock() }
     if entry.listed == nil, let names = entry.access.listed() { entry.listed = .some(enablementAttribute(listed: names)) }
     guard let listed = entry.listed, let name = listed else { return (nil, nil) }
+    // Written once per owned process generation (#244): until the release writes it back, or the process ends.
+    if entry.owned != nil { return (nil, .owned) }
     let read = entry.access.read(name)
     let prior = EnablementPrior(read)
     lock.lock()

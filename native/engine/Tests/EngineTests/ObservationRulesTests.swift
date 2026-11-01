@@ -3,8 +3,8 @@ import XCTest
 
 // M2a.4's observation rules (the spec's Design, "Observation (skyshot)", "Settle" and "Result meta"; the Decision Log's
 // "M2a pre-flight" item 2, "M2a vendor reading" items 1 and 2, the critique's A3): when an observation settles, what a
-// minimized primary window gets, and the enablement that is re-checked per observation and released when the last
-// connection that observed the process closes.
+// minimized primary window gets, and the enablement that is written once per owned process (#244) and released when the
+// last connection that observed the process closes.
 
 final class ObservationSettleTests: XCTestCase {
   func testAFirstObservationOfARunningAppWithItsWindowCapturesAtOnceWebShapedOrNot() {
@@ -89,7 +89,7 @@ final class MinimizedWindowTests: XCTestCase {
   }
 }
 
-/// A fake application's enablement attributes, recording every write.
+/// A fake application's enablement attributes, recording every write, and its role reads, reads and writes in order.
 private final class FakeApplication: @unchecked Sendable {
   var names: [String]?
   var values: [String: Bool] = [:]
@@ -98,6 +98,8 @@ private final class FakeApplication: @unchecked Sendable {
   var writes: [(String, Bool)] = []
   var namesRead = 0
   var failWrites = false
+  /// The application element's calls in order: "role", "read <attribute>", "write <attribute>=<value>".
+  var calls: [String] = []
   /// Runs inside every write before it takes effect (a barrier a test holds a release's reset at).
   var duringWrite: (String, Bool) -> Void = { _, _ in }
 
@@ -106,9 +108,14 @@ private final class FakeApplication: @unchecked Sendable {
   var access: EnablementAccess {
     EnablementAccess(
       listed: { self.namesRead += 1; return self.names },
-      read: { self.unreadable.contains($0) ? nil : self.values[$0] ?? false },  // an attribute nobody set reads false
+      readRole: { self.calls.append("role") },
+      read: {
+        self.calls.append("read \($0)")
+        return self.unreadable.contains($0) ? nil : self.values[$0] ?? false  // an attribute nobody set reads false
+      },
       write: { name, value in
         self.duringWrite(name, value)
+        self.calls.append("write \(name)=\(value)")
         self.writes.append((name, value))
         guard !self.failWrites else { return false }
         self.values[name] = value
@@ -118,20 +125,99 @@ private final class FakeApplication: @unchecked Sendable {
   }
 
   var written: [String] { writes.map { "\($0.0)=\($0.1)" } }
+  var reads: Int { calls.filter { $0.hasPrefix("read ") }.count }
 }
 
 final class EnablementReleaseTests: XCTestCase {
   private let launched = Date(timeIntervalSince1970: 1_000)
 
-  func testItIsSetWhenItReadsFalseAndReCheckedOnEveryObservation() {
+  func testItIsSetWhenItReadsFalseAndThenNeitherReadNorWrittenWhileOwned() {
+    // #244: Electron's getter reads false until its complete mode lands (and after), and every write restarts that
+    // mode's 2 s countdown and fires the app's accessibility-support-changed, so an owned attribute is written once.
     let web = WebAccessibility()
     let app = FakeApplication(names: ["AXManualAccessibility", "AXEnhancedUserInterface"])
     app.values["AXManualAccessibility"] = false
     XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXManualAccessibility", "never both")
-    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "it reads true now: nothing written")
-    app.values["AXManualAccessibility"] = false  // the process reset it
-    XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXManualAccessibility", "re-checked, not remembered once per process")
-    XCTAssertEqual(app.written, ["AXManualAccessibility=true", "AXManualAccessibility=true"])
+    app.values["AXManualAccessibility"] = false  // Electron's computed getter, or a process that reset it (the A3 trade)
+    for _ in 0..<5 { XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "owned: nothing read or written") }
+    XCTAssertEqual(app.written, ["AXManualAccessibility=true"], "six observations, one write")
+    XCTAssertEqual(app.reads, 1, "read once, before the write")
+  }
+
+  func testAnOwnedProcessIsReleasedWithOneWriteOfFalse() {
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    for connection in 1...3 { _ = web.enable(pid: 7, launched: launched, connection: connection, access: app.access) }
+    for connection in 1...3 { web.release(connection: connection) }
+    web.releaseAll()
+    XCTAssertEqual(app.written, ["AXManualAccessibility=true", "AXManualAccessibility=false"])
+  }
+
+  func testAReleasedProcessIsEnabledAndOwnedAgainAtTheNextObservation() {
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    web.release(connection: 1)
+    XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "AXManualAccessibility", "written again")
+    for _ in 0..<3 { XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "owned again: once") }
+    web.release(connection: 2)
+    XCTAssertEqual(app.written, ["AXManualAccessibility=true", "AXManualAccessibility=false", "AXManualAccessibility=true", "AXManualAccessibility=false"],
+                   "owned, so released again")
+  }
+
+  func testAnAttributeThatReadsTrueIsNeverOwnedAndIsReReadAtEveryObservation() {
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    app.values["AXManualAccessibility"] = true  // VoiceOver's, or another assistive client's
+    for _ in 0..<3 { XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: app.access)) }
+    XCTAssertEqual(app.reads, 3, "not owned: re-read every time")
+    web.release(connection: 1)
+    XCTAssertTrue(app.writes.isEmpty)
+    app.values["AXManualAccessibility"] = false  // the other client let it go
+    XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "AXManualAccessibility", "the re-read sees it")
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: app.access))
+    XCTAssertEqual(app.reads, 4, "owned from that write")
+  }
+
+  func testAnUnreadableAttributeIsReadAndWrittenAtEveryObservationSinceItIsNeverOwned() {
+    // Unchanged by #244: an unreadable value may be another client's, so the engine never owns it, and only an owned
+    // attribute is remembered; each observation reads it and, by the vendor's rule, sets it.
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    app.unreadable = ["AXManualAccessibility"]
+    for _ in 0..<3 { XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXManualAccessibility") }
+    XCTAssertEqual(app.reads, 3)
+    XCTAssertEqual(app.written, Array(repeating: "AXManualAccessibility=true", count: 3))
+  }
+
+  func testTheApplicationsRoleIsReadAtEveryObservationBeforeTheEnablement() {
+    // #244's B: reading the application element's role gives Chromium and Electron their Basic mode, and with it the
+    // web tree, at once (the vendor's eager ApplicationUIElement.init, F §1.3). Never cached.
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    var timings = Timings()
+    for _ in 0..<3 {
+      _ = web.observeEnablement(eligible: true, pid: 7, launched: launched, connection: 1, access: app.access, timings: &timings)
+    }
+    XCTAssertEqual(app.calls, ["role", "read AXManualAccessibility", "write AXManualAccessibility=true", "role", "role"])
+    XCTAssertNotNil(timings.wire["appRoleReadMs"], "timed apart from the enablement")
+    XCTAssertNotNil(timings.wire["enableMs"])
+    let neither = FakeApplication(names: ["AXTitle"])
+    let step = web.observeEnablement(eligible: true, pid: 8, launched: launched, connection: 1, access: neither.access, timings: &timings)
+    XCTAssertEqual(neither.calls, ["role"], "eligible, so the role is read even where no attribute is listed")
+    XCTAssertNil(step?.prior)
+  }
+
+  func testAnIneligibleAppGetsNoRoleReadAndNoEnablement() {
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    var timings = Timings()
+    XCTAssertNil(web.observeEnablement(eligible: false, pid: 7, launched: launched, connection: 1, access: app.access, timings: &timings))
+    XCTAssertTrue(app.calls.isEmpty)
+    XCTAssertEqual(app.namesRead, 0)
+    XCTAssertNil(timings.wire["appRoleReadMs"])
+    XCTAssertTrue(web.observers(pid: 7, launched: launched).isEmpty, "not recorded as observing it")
   }
 
   func testEnhancedUserInterfaceOnlyWhenManualIsNotListed() {
@@ -183,6 +269,7 @@ final class EnablementReleaseTests: XCTestCase {
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
     app.unreadable = ["AXManualAccessibility"]
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    XCTAssertEqual(app.reads, 1, "owned: the later observation does not read it")
     web.release(connection: 1)
     XCTAssertEqual(app.written.last, "AXManualAccessibility=false")
   }
@@ -199,7 +286,7 @@ final class EnablementReleaseTests: XCTestCase {
     web.releaseAll()
     XCTAssertEqual(failures.count, 2, "shutdown retried it")
     app.failWrites = false
-    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "it still reads true: nothing to set")
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "still owned: nothing read or set")
     web.release(connection: 2)
     XCTAssertEqual(app.values["AXManualAccessibility"], false, "the next close released what the engine still owns")
     XCTAssertEqual(failures.count, 2)
@@ -372,7 +459,7 @@ final class EnablementReleaseTests: XCTestCase {
     XCTAssertEqual(first.prior?.wire, "false")
     let second = web.enableReporting(pid: 7, launched: launched, connection: 1, access: app.access)
     XCTAssertNil(second.set)
-    XCTAssertEqual(second.prior?.wire, "true", "set by the engine at the first observation")
+    XCTAssertEqual(second.prior?.wire, "owned", "set and owned by the engine at the first observation: nothing read")
     let other = FakeApplication(names: ["AXEnhancedUserInterface"])
     other.unreadable = ["AXEnhancedUserInterface"]
     XCTAssertEqual(web.enableReporting(pid: 8, launched: launched, connection: 1, access: other.access).prior?.wire, "unreadable")

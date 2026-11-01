@@ -226,12 +226,11 @@ extension Engine {
     var enabledNow = false
     let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
     let eligible = enablementEligible(bundleIdentifier: app.bundleIdentifier, webShaped: webShaped)
-    if eligible {
-      let enabling = timings.time("enable") {
-        webAccessibility.enableReporting(pid: appPid, launched: generation, connection: connection.id, access: .live(pid: appPid, launched: generation))
-      }
-      // What the attribute read before this observation touched it: "true", "false" or "unreadable"; absent when the
-      // app lists neither attribute (or is not eligible).
+    // The application element's role read, then the enablement (Enablement.swift `observeEnablement`), on eligible apps.
+    if let enabling = webAccessibility.observeEnablement(eligible: eligible, pid: appPid, launched: generation, connection: connection.id,
+                                                         access: .live(pid: appPid, launched: generation), timings: &timings) {
+      // What the attribute read before this observation touched it: "true", "false" or "unreadable", or "owned" when the
+      // engine owns what it set earlier and read nothing; absent when the app lists neither attribute (or is not eligible).
       if let prior = enabling.prior { timings.set("enablementPrior", prior.wire) }
       if let attribute = enabling.set {
         timings.set("enabled", attribute)

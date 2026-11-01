@@ -310,7 +310,8 @@ export function pasteVerdict(steps) {
 }
 
 // The engine's enablement diagnostics on one observation (its `timings`, M2a.4): `enablementPrior` what the attribute
-// read before the observation touched it ("true", "false" or "unreadable"; absent when the app lists neither), `enabled`
+// read before the observation touched it ("true", "false" or "unreadable", or "owned" when the engine owns what it set
+// at an earlier observation and read nothing; absent when the app lists neither), `enabled`
 // the attribute it set, which the engine does only when it read false; `webAreaSeen` that an earlier observation of the
 // process found the web area, which a release forgets. Kept beside the enablement cell's verdict, never judged: the
 // attribute's readback is not Chromium's mode (./residue-checks.mjs enablementVerdict).

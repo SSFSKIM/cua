@@ -197,8 +197,8 @@ private final class OnceRelease: @unchecked Sendable {
 struct DeliveryGuardOutcome: Equatable {
   /// How many times the target's window was found above the user's and the user's window raised back.
   var restores = 0
-  /// The click brought the target's process (or the bound app's) to the front, and the user's app was made frontmost
-  /// again.
+  /// The click brought the target's process (or the bound app's) to the front, the user's app was re-activated, and a
+  /// later sample saw it frontmost again (kept when the target came back after).
   var frontmostRestored = false
   /// Another app came to the front during the guard (most likely the user's own switch): left alone, the guard ended.
   var otherAppFront = false
@@ -211,7 +211,8 @@ struct DeliveryGuardOutcome: Equatable {
   var screenHoldMs: Double = 0
   /// The guard reached the hold's cap before its stable samples: the display was released, the guard ended there.
   var capped = false
-  /// At the guard's end the target's window was above the user's, or the user's app was not frontmost: left as it was.
+  /// The guard's last sample saw the target's window above the user's, or the target's process (or the bound app's) in
+  /// front: left as it was, at the cap or after a refused re-activation.
   var raiseLeft = false
   /// When the hold's release was asked for (Unix ms), for a sitting's own clock.
   var releasedAt: Int64 = 0
@@ -374,12 +375,14 @@ final class FakeActivation {
   /// (#200's readings). So a target window above the user's is answered with the user's window raised back, and the
   /// target's process (or the bound app's) in front with the user's app made frontmost again, until
   /// `deliveryGuardStableSamples` consecutive samples find both right, no sooner than `deliveryGuardMinimumMs` after the
-  /// events, all before the hold is released. The hold is the activation's own when this action ran it
+  /// events, all before the hold is released. The window checked is the action's (`window`, the one its events name),
+  /// else the activation's: a held or shared activation keeps its first holder's window, and a later click may aim at
+  /// another window of the process (a dialog). The hold is the activation's own when this action ran it
   /// (`holdsThroughDelivery`), else one of the guard's own inside a held or shared activation: one hold an action.
   /// At the hold's cap the guard ends and leaves the order as it is, reported (`capped`, `raiseLeft`); a third app in
   /// front is the user's and is left alone. Nil, with `post` run alone, when no fake activation stands or the user's app
   /// is not another app in front: nothing to guard.
-  func deliver(_ post: () -> Void) -> DeliveryGuardOutcome? {
+  func deliver(window: CGWindowID? = nil, _ post: () -> Void) -> DeliveryGuardOutcome? {
     let system = system
     let hold: OpenHold
     if let open = takeOpenHold() {
@@ -395,47 +398,65 @@ final class FakeActivation {
       system.schedule(activationHoldCapMs) { release() }
       hold = OpenHold(release: release, startedAt: started, user: guarded)
     }
+    let targetWindow = window ?? windowID
     var outcome = DeliveryGuardOutcome()
     post()
     let posted = system.now()
     let round = { (ms: Double) in (ms * 1000).rounded() / 1000 }
+    // The cap's timer releases the hold on its own, so the deadline is read again after whatever may block (the poll's
+    // sleep, the reads, a restore): past it nothing more is repaired, where the user would see the repair.
+    let capPassed = { system.now() - hold.startedAt >= activationHoldCapMs }
     var stable = 0
+    // What the last sample saw, after every repair made before it: the report rests on it, not on a call's own answer
+    // (a re-activation the system accepts may leave the target in front).
+    var targetFront = false
     var targetAbove = false
-    var frontRight = true
+    var reactivationPending = false
     while stable < deliveryGuardStableSamples || system.now() - posted < deliveryGuardMinimumMs {
-      if system.now() - hold.startedAt >= activationHoldCapMs {
-        outcome.capped = true
-        break
-      }
-      system.sleep(activationGuardSampleMs)
+      // Once the cap has passed, a sample only reads what is left, with no sleep before it.
+      if !capPassed() { system.sleep(activationGuardSampleMs) }
       let front = signposted("route3.delivery.frontmost") { system.frontmost() }
       if front != hold.user.pid {
         guard let front, front == pid || front == appPid else {
           outcome.otherAppFront = true
+          targetFront = false
+          targetAbove = false
           break
         }
-        frontRight = system.reactivate(hold.user.pid)
-        outcome.frontmostRestored = outcome.frontmostRestored || frontRight
-        if outcome.restoreLatencyMs == nil { outcome.restoreLatencyMs = round(system.now() - posted) }
-        stable = 0
-        if !frontRight { break }
-        continue
+        targetFront = true
+        targetAbove = false
+      } else {
+        targetFront = false
+        if reactivationPending { outcome.frontmostRestored = true }
+        reactivationPending = false
+        if let targetWindow, let window = hold.user.window {
+          targetAbove = signposted("route3.delivery.windowOrder") { system.isInFront(targetWindow, window.id) }
+        } else {
+          targetAbove = false
+        }
       }
-      if let windowID, let window = hold.user.window,
-         signposted("route3.delivery.windowOrder", { system.isInFront(windowID, window.id) }) {
-        targetAbove = true
+      if capPassed() {
+        outcome.capped = true
+        break
+      }
+      if targetFront {
+        stable = 0
+        let accepted = system.reactivate(hold.user.pid)
+        if outcome.restoreLatencyMs == nil { outcome.restoreLatencyMs = round(system.now() - posted) }
+        guard accepted else { break }  // refused: the target stays in front, reported
+        reactivationPending = true
+      } else if targetAbove, let window = hold.user.window {
         window.restore()
         outcome.restores += 1
         if outcome.restoreLatencyMs == nil { outcome.restoreLatencyMs = round(system.now() - posted) }
         stable = 0
       } else {
-        targetAbove = false
         stable += 1
       }
     }
     outcome.guardMs = round(system.now() - posted)
     outcome.screenHoldMs = round(min(system.now() - hold.startedAt, activationHoldCapMs))
-    outcome.raiseLeft = !frontRight || (outcome.capped && targetAbove)
+    outcome.raiseLeft = targetFront || targetAbove
     hold.release()
     outcome.releasedAt = unixMilliseconds()
     return outcome

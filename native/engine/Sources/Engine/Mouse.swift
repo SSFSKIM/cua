@@ -178,6 +178,11 @@ func stampWindow(_ event: CGEvent, id: CGWindowID?, frame: CGRect?, point: CGPoi
   if let frame { setWindowLocation?(event, CGPoint(x: point.x - frame.minX, y: point.y - frame.minY)) }
 }
 
+/// The window the events are aimed at (`stampWindow`'s field 91), the first that names one; nil when none does.
+func stampedWindow(of events: [CGEvent]) -> CGWindowID? {
+  events.lazy.map { CGWindowID(truncatingIfNeeded: $0.getIntegerValueField(eventField(91))) }.first { $0 != 0 }
+}
+
 /// Posts `events` to `pid` back to back, each stamped with the current time, through `post` (route 3's seam passes its
 /// own). Returns the Unix milliseconds of the first and last post.
 func postToProcess(_ events: [CGEvent], pid: pid_t, post: (CGEvent, pid_t) -> Void = { $0.postToPid($1) }) -> (startedAt: Int64, endedAt: Int64) {

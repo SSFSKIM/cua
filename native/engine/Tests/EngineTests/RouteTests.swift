@@ -573,6 +573,62 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(seam.holds, 1, "never a second hold")
     XCTAssertEqual(seam.releases, 1)
     XCTAssertEqual(delivery.screenHoldMs, activationHoldCapMs)
+    XCTAssertEqual(seam.repairsOutsideHold, 0, "the sample that finds the cap passed raises nothing: the display is out")
+  }
+
+  /// A restore that blocks past the cap (an AXRaise waiting out its timeout): the guard ends there, on what the order
+  /// is after the restore, and repairs nothing more.
+  func testARestoreThatBlocksPastTheCapEndsOnTheOrderItLeft() throws {
+    let seam = GuardSeam(frontmost: user, raiseCost: 95)
+    seam.targetAbove = false
+    seam.onMouseDown = { seam.targetAbove = true }
+    var meta = meta()
+    try click(seam, meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertTrue(delivery.capped)
+    XCTAssertEqual(delivery.restores, 1)
+    XCTAssertFalse(delivery.raiseLeft, "the restore took: no raise is left, though the guard ended at the cap")
+    XCTAssertEqual(seam.raises, 1)
+    XCTAssertEqual(seam.repairsOutsideHold, 0)
+  }
+
+  /// A re-activation the system accepts but that leaves the target in front is no restore: at the cap the target is
+  /// still frontmost, reported as a raise left, and nothing is re-activated once the hold is released.
+  func testAReactivationThatLeavesTheTargetInFrontIsReportedAsARaiseLeft() throws {
+    let seam = GuardSeam(frontmost: user)  // re-activations accepted, never effective
+    seam.onMouseDown = { seam.frontmost = self.target }
+    var meta = meta()
+    try click(seam, meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertFalse(seam.reactivated.isEmpty)
+    XCTAssertFalse(delivery.frontmostRestored, "no sample saw the user's app in front again")
+    XCTAssertTrue(delivery.capped)
+    XCTAssertTrue(delivery.raiseLeft)
+    XCTAssertEqual(seam.repairsOutsideHold, 0)
+  }
+
+  /// A frontmost restore that a sample saw, then lost again to the target: the restore is reported, and so is the raise
+  /// left at the guard's end.
+  func testAFrontmostRestoreSeenAndThenLostIsReportedWithTheRaiseLeft() throws {
+    let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    seam.onMouseDown = { seam.frontmost = self.target }
+    var seenRestored = false
+    seam.onFrontmostRead = {
+      guard !seam.reactivated.isEmpty else { return }
+      if seenRestored {
+        seam.frontmost = self.target
+        seam.reactivationRefused = [self.user]
+      } else if seam.frontmost == self.user {
+        seenRestored = true
+      }
+    }
+    var meta = meta()
+    try click(seam, meta: &meta)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(seam.reactivated, [user, user])
+    XCTAssertTrue(delivery.frontmostRestored)
+    XCTAssertTrue(delivery.raiseLeft)
+    XCTAssertFalse(delivery.capped)
   }
 
   /// A click with nothing raised: three stable samples after the click, no restore.
@@ -809,6 +865,13 @@ final class GuardSeam {
   /// When set, the window order the guards read: whether the target's window is above the user's. A raise of the
   /// user's window puts it back on top.
   var targetAbove: Bool?
+  /// When set, the window order by window: the target process's windows above the user's (a guard's read names the one
+  /// it checks). A raise of the user's window puts it back above them all. Takes precedence over `targetAbove`.
+  var windowsAbove: Set<CGWindowID>?
+  /// Run before each read of the frontmost app answers (#200: what the apps do between a guard's samples).
+  var onFrontmostRead: (() -> Void)?
+  /// Raises and re-activations made while no screen-update hold was open (#200: none once the cap released it).
+  var repairsOutsideHold = 0
   var holds = 0
   var releases = 0
   var releasedAt: Double?
@@ -877,7 +940,10 @@ final class GuardSeam {
       if let after = self.frontmostAfterPost { self.frontmost = after }
       if made?.type == .leftMouseDown { self.onMouseDown?() }
     }
-    system.frontmost = { self.frontmost }
+    system.frontmost = {
+      self.onFrontmostRead?()
+      return self.frontmost
+    }
     system.keyFocus = { nil }
     system.holdScreenUpdates = {
       self.holds += 1
@@ -885,6 +951,7 @@ final class GuardSeam {
     }
     system.reactivate = { pid in
       self.reactivated.append(pid)
+      if self.holds == self.releases { self.repairsOutsideHold += 1 }
       let reactivates = self.reactivates && !self.reactivationRefused.contains(pid)
       if reactivates && self.reactivationTakesFront { self.frontmost = pid }
       return reactivates
@@ -896,10 +963,16 @@ final class GuardSeam {
     }
     system.userWindowNumber = { _ in 42 }
     var samples = 0
-    system.isInFront = { _, _ in samples += 1; return self.targetAbove ?? self.targetInFront(samples) }
+    system.isInFront = { window, _ in
+      samples += 1
+      if let above = self.windowsAbove { return above.contains(window) }
+      return self.targetAbove ?? self.targetInFront(samples)
+    }
     system.raise = { _ in
       self.raises += 1
+      if self.holds == self.releases { self.repairsOutsideHold += 1 }
       if self.targetAbove != nil { self.targetAbove = false }
+      if self.windowsAbove != nil { self.windowsAbove = [] }
       self.advance(self.raiseCost)
     }
     system.activationPoint = { _ in self.activationPoint }

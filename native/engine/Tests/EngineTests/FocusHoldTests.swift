@@ -244,6 +244,24 @@ final class FocusHoldTests: XCTestCase {
     XCTAssertNil(clickMeta.activationGuardMs, "the click shared the held activation")
   }
 
+  /// #200: a click on another window of the held process (a dialog) is guarded on that window, not on the one the held
+  /// activation was taken for.
+  func testAClickOnAnotherWindowOfTheHeldProcessIsGuardedOnThatWindow() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try hold(connection, seam, meta: &meta)
+    seam.windowsAbove = []
+    seam.onMouseDown = { seam.windowsAbove = [77] }
+    let dialog = ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: window, windowID: 77, pid: target)
+    var clickMeta = self.meta()
+    try deliverClick(dialog, route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
+                     targetActive: { false }, post: seam.system.post, meta: &clickMeta)
+    XCTAssertEqual(clickMeta.delivery?.restores, 1, "the dialog's raise was seen and undone")
+    XCTAssertEqual(clickMeta.delivery?.raiseLeft, false)
+    XCTAssertEqual(seam.windowsAbove, [])
+  }
+
   // MARK: Finding 2: a per-action activation leases the process's activation
 
   private func clickTarget() -> ClickTarget {

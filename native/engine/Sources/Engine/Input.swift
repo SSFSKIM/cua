@@ -166,7 +166,7 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
 /// behind another holder's activation stops it before its activation and activation click; `beforePosting` runs again
 /// just before the events, and `announce` once they are made and about to be posted. Under route 3 the events go out
 /// through the standing activation's delivery guard (`FakeActivation.deliver`, #200), inside the activation's own
-/// screen-update hold when this action ran it.
+/// screen-update hold when this action ran it, on the window the events name.
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
                     foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {},
                     announce: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
@@ -191,7 +191,7 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     var delivered: DeliveryGuardOutcome?
     func postEvents() { _ = postToProcess(made, pid: pid, post: post) }
     meta.posting {
-      if let standing { delivered = standing.deliver(postEvents) } else { postEvents() }
+      if let standing { delivered = standing.deliver(window: stampedWindow(of: made), postEvents) } else { postEvents() }
       return true
     }
     meta.delivery = delivered

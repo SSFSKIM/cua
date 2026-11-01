@@ -1020,6 +1020,13 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: task-20-report.md (local), "Fix round 1"; `ci-gate --gates engine-linux,test` GREEN on d50d489a (run 41291099858).
   Date/Author: 2026-11-01, the plan-executor (session linux171), from the fixer's report and the task review.
 
+- Decision (2026-11-01, M3, the design session): a gate rule for a sample whose harness-side preparation fails, declared before M3's gate rerun. In `m3-gate-final` one cold `clipboard_write` sample of 41 failed because the harness oracle's AT-SPI selection was refused (`scripts/linux-engine-diff/text.mjs`, `selectFirstWord`), which left no handle and failed cua's verdict for a harness fault. From now on, in every case alike:
+  - Every preparation attempt records the step that failed: the harness oracle's step or cua's request.
+  - A sample whose preparation failed at a harness oracle's step may be resampled once. The resample must reproduce the sample's condition, so a cold sample is resampled cold, re-established by the gate's own definition of cold. A resample that cannot reproduce the condition counts the sample as invalid, never as replaced.
+  - A failure at cua's own request, a Copy, paste or any engine command, is never resampled: it fails the verdict as before.
+  - Invalid and resampled samples are reported per case and for the run. More than 2, or 1% of a case's samples if that is larger, fails the run; so does more than 1% of all the run's samples.
+  Date/Author: 2026-11-01, the design session (cua_repl session 1ea561bc), from the plan-executor's proposal, folded by the plan-executor (session linux171).
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

@@ -27,10 +27,15 @@
 // The agent cursor (docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, "Lifecycle and identity"): with a
 // `cursor` context ({label?, color?, enabled}, the service's), every new connection sends the `cursor` request right
 // after its ping, so it reaches the engine before anything else the connection sends (the engine answers one request at
-// a time, in order); `hideCursor` (end_task) sends `{hide: true}` on the live connection, in turn behind any request in
-// flight, and never connects or launches an engine for it. Neither is awaited by a request, and nothing that comes of
-// them fails one: an unanswered cursor request is abandoned at its bound (5 s) without closing the connection, another
-// failure is logged, and an engine without the method answers methodNotFound, that connection sent no more of them.
+// a time, in order). The connect's request is awaited by no request, and nothing that comes of it fails one: an
+// unanswered cursor request is abandoned at its bound (5 s) without closing the connection, another failure is logged,
+// and an engine without the method answers methodNotFound, that connection sent no more of them.
+//
+// end_task (#237, `release`): the live connection is sent `{hide: true}` (when the session has a cursor) and closed at
+// once, neither waited for, so end_task frees the engine for other clients (its `status` stops counting the connection,
+// and `cua engine build` and `approve` proceed) without waiting on it. The engine reads the hide before the close, so
+// the cursor fades and its panel goes once the fade is over, and an after-action watch still running finishes on the
+// engine's side. Nothing is connected or launched for it; the next request reconnects as after any close.
 import {readFileSync} from 'node:fs';
 import {dirname, join} from 'node:path';
 import {
@@ -267,17 +272,14 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     async status() {
       return (await call('status', {}, {suspend: false})).result;
     },
-    // end_task: the session's cursor fades at once, on the live connection only. Its frame is written in turn behind a
-    // request in flight, but its answer is not waited for in turn: the next request is written right after it (O5).
-    async hideCursor() {
+    // end_task: the hide (when the session has a cursor and the engine the method), then the close, both written now
+    // on the live connection and neither answer waited for (see the header). A request still in flight fails as on any
+    // close.
+    release() {
       const target = connection;
-      if (!cursor || !target || target.closed || target.noCursor) return;
-      let answered;
-      const send = () => { if (!target.closed && !target.noCursor) answered = sendCursor(target, {hide: true}); };
-      const written = tail.then(send, send);
-      tail = written.then(() => {}, () => {});
-      await written;
-      await answered;
+      if (!target || target.closed) return;
+      if (cursor && !target.noCursor) sendCursor(target, {hide: true});
+      target.close();
     },
     close() { connection?.close(); },
   };

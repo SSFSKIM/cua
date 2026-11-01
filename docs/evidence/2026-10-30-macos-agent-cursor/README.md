@@ -691,7 +691,7 @@ SLOT="$HOME/.local/share/cua-187"; RUN="$SLOT/run"; OUT187="$REPO/docs/evidence/
 SAVED="$SLOT/engine-before"; ASIDE="$SLOT/engine-slot"
 # before (operator, unattended, nothing drawn): the fixtures and Swift tools, the plan printed (nothing touched)
 $SC place-chrome && $SC build-electron && $S prepare
-$S paste-187 drive --out "$OUT187" --dry-run --quiet        # expected: "dry run: 2023 steps, nothing sent"
+$S paste-187 drive --out "$OUT187" --dry-run --quiet        # expected: "dry run: 2055 steps, nothing sent"
 $S save --home "$HOME" --to "$SAVED"                         # the current engine and engine.json kept
 $SC frontmost                                                # the owner's front app, put back at the end
 defaults read com.apple.HIToolbox AppleGlobalTextInputProperties   # expected: does not exist
@@ -746,7 +746,7 @@ recorded and valid, a composing control's order watcher whole, every B row's arm
 controls is incomplete, never a landing. Invalid rows, a missing row, a watcher gap past 50 ms, a row with no counter
 read before its act, or Chrome's menus unreadable (no whole snapshot and no verified notification watch) make it
 incomplete. A raise the watcher shows only after the row's own read is still the row's (the restore reads it again, and
-the final record is reconciled with the rows). **The slot succeeds only when B lands, or the end-early rule ends it with
+the final record is reconciled: every raise it holds is a row's, the block tail's (its last row's), or inside the kit's own setup or restore step; any other fails B). **The slot succeeds only when B lands, or the end-early rule ends it with
 Part A's three controls complete, and `187-end` has selected the owner's source again and read it back**; `judge` exits 1
 otherwise and its report says which.
 Arm A is diagnostic: the report gives the undelivered rows by paste stage (`cua/paste`'s stage, read and effect waits),

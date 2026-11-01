@@ -48,7 +48,7 @@ const start = {kind: 'start'};
 
 // The whole slot's evidence with every row delivering and nothing disturbed; `tweak(record)` may change any B row.
 // The order watcher's end record of a background item: whole, no raise.
-const orderStop = (over = {}) => ({kind: 'task', task: '187-order-stop', result: {ok: true, maxGapMs: 12, raises: 0, rowRaises: {}, ...over}});
+const orderStop = (over = {}) => ({kind: 'task', task: '187-order-stop', result: {ok: true, maxGapMs: 12, raises: 0, rowRaises: {}, tailRaises: {}, setupRaises: 0, unattributed: [], ...over}});
 // The last item: the owner's source selected again and read back.
 const endItem = (result = {ok: true, which: 'owner', switched: true, requested: 'com.apple.keylayout.ABC', current: {id: 'com.apple.keylayout.ABC'}}) =>
   [start, {kind: 'task', task: 'activate', result: {ok: true}}, {kind: 'task', task: 'select-source', args: ['owner', 'textedit'], result}];
@@ -223,7 +223,7 @@ test('the plan: the preconditions and placement first, the switch and a stopped 
   assert.equal(b.filter(s => s.task === '187-row').length, 2 * B_TARGET);
   // Korean engaged only after the refocus, with ABC first, gated by the runner's select-source.
   const setup = b.slice(b.findIndex(s => s.task === '187-arm'), b.findIndex(s => s.task === '187-compose') + 1).filter(s => s.task).map(s => [s.task, ...(s.args ?? [])].join(' '));
-  assert.deepEqual(setup.slice(0, 9), ['187-arm 187-B#0 A', '187-ready 187-B#0 setup: the driven field emptied and focused', 'activate textedit', 'select-source latin textedit',
+  assert.deepEqual(setup.slice(0, 10), ['187-arm 187-B#0 A', '187-setup 187-B#0 start', '187-ready 187-B#0 setup: the driven field emptied and focused', 'activate textedit', 'select-source latin textedit',
     `select-source named textedit ${KOREAN_2SET}`, 'activate electron', 'activate textedit', '187-korean 187-B#0 textedit', '187-ready 187-B#0 setup: the user window\'s field emptied and focused']);
   // Every act under the key guard of the user window, after a release observation of the third scene, and every
   // background row followed by the order's restore.
@@ -244,7 +244,9 @@ test('the plan: the preconditions and placement first, the switch and a stopped 
 // and activations write, a composition the probe's key starts. `raiseAt`: the row keys whose act raises Chrome.
 // `lateRaiseAt`: rows whose act raises Chrome, the watcher writing it only after the row's own read (a write lag);
 // `activationsInWaitAt`: rows whose page beacon lags, Chrome and then TextEdit activated while the row waits for it.
-function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = []} = {}) {
+// `tailRaise`: Chrome raised while the block closes its session, after the last row's restore check; `menuWatch`: the
+// notification watcher's fate (ok, ended, dead, unreadable) and `menuSnapshot` whether the snapshot reads succeed.
+function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [], tailRaise = false, menuWatch = 'ok', menuSnapshot = true} = {}) {
   let clock = T0, front = 'textedit', composed = false;
   const bounds = {chrome: {x: 300, y: 80, width: 800, height: 600}, textedit: {x: 500, y: 100, width: 700, height: 500}, electron: {x: 900, y: 120, width: 500, height: 400}};
   const numbers = {chrome: 11, textedit: 12, electron: 13};
@@ -273,7 +275,7 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = []}
       if (code.includes('// cua-187: check')) { const expectedLength = Number(code.match(/expectedLength: (\d+)/)[1]); return {ok: true, value: {ok: true, outcome: {exact: true, nfcEqual: true, length: expectedLength, expectedLength}}, route: null, meta: {}, images: []}; }
       return {ok: true, value: {inFront: true}, route: null, meta: {}, images: []};
     },
-    close: async () => 0, endTask: async () => ({}),
+    close: async () => { if (tailRaise) order('back-above'); return 0; }, endTask: async () => ({}),
   };
   const io = {
     scene, open: async () => session, wait: async () => {}, cue: async () => {}, waitGo: async () => {}, goFile: join(out, 'go'),
@@ -300,7 +302,9 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = []}
     order: {start: async ({file}) => ({pid: 77, file, start: {state: 'front-above'}}), stop: async () => ({start: {state: 'front-above'}, changes, end: {samples: 400, maxGapMs: 9}}),
       attempt: () => { attempts += 1; return {start: {state: 'front-above', at: T0}, changes: changes.filter(c => !(c.visibleAfter > attempts)), end: null}; }},
     activations: {start: () => ({}), lines: () => [...activationsLog], stop: () => []},
-    menu: {read: () => ({trusted: true, ok: true, selected: 0, openMenus: 0, focusedRole: 'AXTextArea'}), start: async () => ({registered: true}), stop: async () => ({opened: 0, end: {at: clock}}), lines: () => []},
+    menu: {read: () => ({trusted: true, ok: menuSnapshot, selected: 0, openMenus: 0, focusedRole: 'AXTextArea'}), start: async () => ({registered: true}),
+      stop: async () => ({opened: 0, end: {at: clock}}), alive: () => menuWatch !== 'dead',
+      lines: () => { if (menuWatch === 'unreadable') throw new Error('the log could not be read'); return menuWatch === 'ended' ? [{kind: 'end', at: T0, why: 'crashed'}] : []; }},
     write: () => {}, now: () => tick(),
     sleep: async ms => {
       clock += ms;
@@ -483,6 +487,60 @@ test('review P2.9: each composing control\'s own order-watcher coverage must be 
   const none = evidence();
   none[ITEMS.control('textedit-composing', 'A')].pop();
   assert.equal(judge187(none).b.verdict, 'INCOMPLETE');
+});
+
+test('re-review P1: a raise in the block\'s tail, after the last row\'s restore check, is reconciled and keeps B from landing', async t => {
+  const out = scratch(t);
+  const {io} = fakeMac(out, {tailRaise: true});
+  await runSteps(groupItem({item: ITEMS.b, group: 'chrome-composing', blocks: [{block: 1, arm: 'B', rows: ROWS.slice(0, 2), switchTo: 'on'}]}), {item: ITEMS.b, out, io, log: () => {}});
+  const rows = read187(out)[ITEMS.b], stop = rows.find(r => r.task === '187-order-stop').result;
+  const last = rows.filter(r => r.task === '187-row').at(-1).result;
+  assert.equal(stop.raises, 1);
+  assert.equal(stop.tailRaises[last.key].length, 1, 'the tail raise goes to the block\'s last row');
+  const items = evidence();
+  items[ITEMS.b] = [start, ...rows.filter(r => ['187-row', '187-order-restore', '187-order-stop'].includes(r.task))];
+  const judged = judge187(items);
+  assert.equal(judged.b.verdict, 'DOES NOT LAND');
+  assert.match(judged.b.why.join('; '), /raised Chrome's window/);
+});
+
+test('re-review P1: the watcher\'s raise total must equal attributed plus setup-explained raises', () => {
+  const lands = evidence();
+  lands[ITEMS.b].splice(-1, 1, orderStop({raises: 1, setupRaises: 1}));
+  assert.equal(judge187(lands).b.verdict, 'LANDS', 'a raise inside the kit\'s own setup or restore step is explained');
+  const loose = evidence();
+  loose[ITEMS.b].splice(-1, 1, orderStop({raises: 1, unattributed: [T0 + 3]}));
+  assert.equal(judge187(loose).b.verdict, 'DOES NOT LAND');
+  assert.match(judge187(loose).b.why.join('; '), /1 raise\(s\) of Chrome's window outside every row and every setup step/);
+  const mismatch = evidence();
+  mismatch[ITEMS.b].splice(-1, 1, orderStop({raises: 2}));
+  assert.notEqual(judge187(mismatch).b.verdict, 'LANDS');
+  const old = evidence();
+  old[ITEMS.b].splice(-1, 1, {kind: 'task', task: '187-order-stop', result: {ok: true, maxGapMs: 12, raises: 0}});
+  assert.notEqual(judge187(old).b.verdict, 'LANDS', 'an unreconciled record never lands');
+});
+
+test('re-review P2: the menu watch counts only while it stayed alive and its log was readable through the row', async t => {
+  const openedOf = async options => {
+    const out = scratch(t);
+    const {io} = fakeMac(out, {menuSnapshot: false, ...options});
+    await runSteps(groupItem({item: ITEMS.b, group: 'chrome-composing', blocks: [{block: 1, arm: 'B', rows: ROWS.slice(0, 1), switchTo: 'on'}]}), {item: ITEMS.b, out, io, log: () => {}});
+    return read187(out)[ITEMS.b].find(r => r.task === '187-row').result.menu;
+  };
+  assert.equal((await openedOf({menuWatch: 'ok'})).opened, false);
+  for (const fate of ['ended', 'dead', 'unreadable']) {
+    const menu = await openedOf({menuWatch: fate});
+    assert.equal(menu.opened, null, `a watch that ${fate} is no evidence`);
+    assert.equal(menu.watchVerified, false);
+  }
+  assert.equal((await openedOf({menuWatch: 'unreadable'})).observed, null, 'a log that cannot be read is unread, not zero events');
+});
+
+test('re-review P2: menu-open.swift reads the focused element\'s role with its status', () => {
+  const swift = readFileSync(new URL('../../scripts/cursor-sitting/menu-open.swift', import.meta.url), 'utf8');
+  const focus = swift.slice(swift.indexOf('kAXFocusedUIElementAttribute as CFString'), swift.indexOf('emit(["trusted": true, "ok"'));
+  assert.match(focus, /read\(f, kAXRoleAttribute\)/, 'the role through the status-bearing reader');
+  assert.match(focus, /failed\.append\("focusedRole"\)/, 'a failed or malformed role read is not ok');
 });
 
 test('the CLI: the dry run prints every step and touches nothing; judge writes item-187.md', async t => {

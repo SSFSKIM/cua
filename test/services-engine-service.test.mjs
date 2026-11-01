@@ -383,6 +383,27 @@ test('cua/settle rides on the observation whose settle hit its cap, and on no ot
   assert.equal(meta['cua/settle'], 'capped');
 });
 
+// Route 3's after-action watch (#200): its repairs, made after the action answered, ride on the connection's later
+// results, an input's meta or an observation's.
+const AFTER_ACTION = {repairs: 2, actions: [{postedAt: 1793400000000, repairs: 2, latencyMs: 81.5}]};
+
+test('cua/afterActionRepairs rides on a later input result and on an observation, as the engine sent it, and stands on no other call', async t => {
+  let report = AFTER_ACTION;
+  const {getApp, call, meta, trees} = await session(t, {handlers: {
+    'execute:drag': () => ({meta: {...INPUT_META, delivery: DELIVERY, ...(report ? {afterActionRepairs: report} : {})}}),
+  }});
+  const {app} = await getApp('TextEdit');
+  assert.equal(meta['cua/afterActionRepairs'], null);
+  await call(() => app.drag([1, 2], [3, 4]));
+  assert.deepEqual(meta['cua/afterActionRepairs'], AFTER_ACTION);
+  report = null;
+  await call(() => app.drag([1, 2], [3, 4]));
+  assert.equal(meta['cua/afterActionRepairs'], null, 'none left standing from the call before');
+  trees.get(APPS.TextEdit.appPath).afterActionRepairs = AFTER_ACTION;
+  await call(() => app.getAXState({emit: false}));
+  assert.deepEqual(meta['cua/afterActionRepairs'], AFTER_ACTION, 'an observation after the last action reports its repairs too');
+});
+
 // The engine's observation diagnostics (Skyshot timings) as Chromium and Electron rows need them: enablement, the web
 // area's wait and the settle.
 const DIAGNOSED_TIMINGS = {totalMs: 1, walkMs: 3.5, nodes: 40, webShaped: true, enablementPrior: 'false', enabled: 'AXManualAccessibility', chromium: true, webAreaSeen: true,

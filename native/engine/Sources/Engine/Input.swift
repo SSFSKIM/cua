@@ -17,7 +17,9 @@ import Foundation
 // startedAt, endedAt, receivedAt, hidIdleMs}, startedAt/endedAt null while nothing was posted, inputRoute null until a
 // route is chosen; the guard's duration rides as activationGuardMs when route 3 ran one, `intervention: "off"` when
 // detection is off, `entered` on a type_text that keyed (never a concealed one), and `routeAdvice` once route 3's guard
-// has failed three actions in a row for the app. The settle an action arms runs at the next get_app_state (markActed).
+// has failed three actions in a row for the app; route 3's pointer actions add `delivery` (#200), and every result on a
+// connection whose after-action watch has repaired carries `afterActionRepairs` (Activation.swift AfterActionWatches).
+// The settle an action arms runs at the next get_app_state (markActed).
 // Spike-only arguments, which the facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘
 // post, is reachable only this way), `spikeEventSource` ("private", post keys from a private event source instead of
 // the HID-system one) and `spikeKeyed` (type_text: key through the layout regardless of the source routing, probe (e)'s
@@ -130,6 +132,7 @@ struct InputMeta {
     if let routeAdvice { wire["routeAdvice"] = routeAdvice }
     if let keyWindowRestored { wire["keyWindowRestored"] = keyWindowRestored }
     if let delivery { wire["delivery"] = delivery.wire }
+    if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }
 }
@@ -171,6 +174,9 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
                     foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {},
                     announce: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
+  // An earlier action's after-action watch ends before anything of this one happens (its activation included).
+  let watches = meta.context.connection.afterAction
+  watches.cancel()
   var release: (() -> Bool)?
   defer { _ = release?() }  // every path out of the action, error or success, ends its lease
   var standing: FakeActivation?
@@ -191,7 +197,7 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     var delivered: DeliveryGuardOutcome?
     func postEvents() { _ = postToProcess(made, pid: pid, post: post) }
     meta.posting {
-      if let standing { delivered = standing.deliver(window: stampedWindow(of: made), postEvents) } else { postEvents() }
+      if let standing { delivered = standing.deliver(window: stampedWindow(of: made), watches: watches, postEvents) } else { postEvents() }
       return true
     }
     meta.delivery = delivered

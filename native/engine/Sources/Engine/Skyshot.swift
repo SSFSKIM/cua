@@ -393,6 +393,9 @@ extension Engine {
     ]
     if let settleMarker { skyshot["settle"] = settleMarker }
     if let omitted = plan.screenshotOmitted { skyshot["screenshotOmitted"] = omitted }
+    // The connection's after-action repairs (#200), as input results carry them: an observation after the last action
+    // reports that action's too.
+    if let afterActionRepairs = connection.afterAction.wire { skyshot["afterActionRepairs"] = afterActionRepairs }
     return skyshot
   }
 

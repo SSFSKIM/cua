@@ -484,10 +484,17 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     "actionsUnknown", "hitTestFailed"); pointUnconfirmed: true when the hit-test at a synthesized element
     point answered nothing or only a container (M1a.2); delivery: route 3's delivery guard after a pointer action's events
     (#200), present when one ran: {restores, frontmostRestored, otherAppFront, restoreLatencyMs?, guardMs, screenHoldMs,
-    capped, raiseLeft, holdStartedAt, releasedAt}; frontmostRestored and raiseLeft are what the guard's samples saw, not
-    what its requests answered, and nothing is repaired once the hold's cap has passed; holdStartedAt and releasedAt are
-    Unix ms, the hold's start (the activation's when the action ran it, else the guard's own) read as releasedAt less the
-    hold's monotonic span, so a sitting can tell a raise before the hold (on the display) from one inside it
+    capped, raiseLeft, holdStartedAt, releasedAt, postedAt, repairedAfterRelease, repairAfterReleaseLatencyMs?,
+    personInput}; frontmostRestored and raiseLeft are what the guard's samples saw, not what its requests answered;
+    past the hold's cap the guard repairs on until 1 s after the events unless the person gave input since them
+    (repairedAfterRelease, personInput); holdStartedAt, releasedAt and postedAt are Unix ms on one clock, the hold's start
+    (the activation's when the action ran it, else the guard's own) read as releasedAt less the hold's monotonic span, so
+    a sitting can tell a raise before the hold (on the display) from one inside it, and postedAt the events' post;
+    afterActionRepairs: on every input result and every observation of a connection once its after-action watch has
+    repaired (#200: after each guard returns, a watch repairs until 1 s after the events under the guard's rules, ended
+    by the connection's next execute): {repairs, actions: [{postedAt, repairs, latencyMs}]}, the connection's total and
+    the last 8 repaired actions, each keyed by its delivery's postedAt, latencyMs its first repair's from the events;
+    each repair is also a `route3.afterAction.repair` signpost event
   noScreenshotForCoordinates: a coordinate click, drag or scroll with no usable screenshot on the connection ("Screenshot"); nothing
     posted, the input meta carried with startedAt/endedAt null; the sentence names getScreenshot as the way to get an image to click
     in (c13759a4's "There is no screenshot of the app's window to place the coordinates in. Try to get the on-screen content again
@@ -1174,20 +1181,40 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   the target's window above the user's with the user's window raised back and the target's (or the bound app's) process
   in front with the user's app made frontmost again, until three stable samples, before the hold is released; a click
   inside a held or shared activation takes a hold of its own, and the guard checks the action's own window (a shared
-  activation may have been made for another window of the process); never a second hold for one action; at the 100 ms
-  cap the guard ends, repairs nothing more and leaves the order as it is, reported (`delivery.capped`, `raiseLeft`, both
-  read from its samples rather than from what its requests answered); a third app in front is the user's, never undone:
-  the guard restores only to the app that was frontmost before the click, and only when the target or the bound app
-  took the front. The counts are parameters (`activationGuardStableSamplesBeforeDelivery`, `deliveryGuardStableSamples`,
-  `deliveryGuardMinimumMs`, 0 until the live check measures how late an app raises). Costs: about 30 ms per route-3
-  pointer action (cua's M2b click cells 4–140 ms in-cell against the vendor's 229–1038 ms, `m2b/hold3`); the target ends
-  second, above a third app's window that sat between (as the vendor's observer leaves it); a raise after the release is
-  not caught (the vendor's observer would catch it: the follow-up if the live check shows late raises). Rejected:
+  activation may have been made for another window of the process); never a second hold for one action; the hold is
+  released at the 100 ms cap whatever the guard's state, and past it the guard repairs on until 1 s after the events
+  unless the person gave input since them (`delivery.repairedAfterRelease`, `personInput`), then leaves the order as it
+  is, reported (`delivery.capped`, `raiseLeft`, both read from its samples rather than from what its requests
+  answered); a third app in front is the user's, never undone: the guard restores only to the app that was frontmost
+  before the click, and only when the target or the bound app took the front. The counts are parameters
+  (`activationGuardStableSamplesBeforeDelivery`, `deliveryGuardStableSamples`, `deliveryGuardMinimumMs`, 60 ms since
+  the first live samples saw TextEdit raise 21 and 38 ms after the click). Costs: about 30 ms per route-3 pointer action
+  plus the minimum wait (cua's M2b click cells 4–140 ms in-cell against the vendor's 229–1038 ms, `m2b/hold3`); the
+  target ends second, above a third app's window that sat between (as the vendor's observer leaves it). Rejected:
   re-arming subtype 1 before the mouse down (arms nothing), dropping the activation click (the click is swallowed on
   views that refuse the first mouse), a subtype 2–1 pair (the same, with a visible resign), keying through AXMain or
   AXFocused (orders or keys nothing), the vendor's ⌘ (changes what a click means, U10), extending the 100 ms cap (a longer
   freeze). The cua_repl host notes now tell agents to leave the person's windows as they are rather than raise, activate,
   hide or unhide an app to reach a covered window (the 10-23 sessions' raises were such calls).
+  Amended (the design session's ruling, after the first live check saw a raise 21 ms after a guard that had settled at
+  14 ms): **the after-release repair is a safety net on every route-3 pointer action, not only past the cap.** When a
+  delivery guard returns, an after-action watch (`AfterActionWatch`, Activation.swift) samples every 10 ms on another
+  thread until 1 s after the events, under the guard's rules (the user's window raised back over the target's, the
+  user's app made frontmost again over the target's or the bound app's, never over a third app, nothing once the person
+  gave input since the events, ended by a refused re-activation); the action answers at the release as before, so the
+  watch adds no latency, and `deliveryGuardMinimumMs` now decides only how many repairs stay invisible. Its repairs are
+  flashes, made with no hold open, and the action that caused them has already answered, so they are recorded on the
+  connection (`AfterActionWatches`) and carried as `afterActionRepairs` by every later input result and observation of
+  it, each repaired action keyed by its delivery's `postedAt` (Interfaces), plus a `route3.afterAction.repair` signpost
+  event each: cumulative and keyed rather than drained, because a cell's reply keeps only its last call's meta and a
+  sitting must match each repair to its action. The watch ends when the connection's next execute begins, at its very
+  start, and when any pointer action begins (before its activation); a sample runs under the watch's lock and the
+  cancel takes it, so no repair starts once the next request has begun, at the cost of that request waiting out one
+  sample in progress. Rejected: the cancel on the next action's guard alone (an observation or an element action, or a
+  menu's deliberate activation, would run under a watch still answering the target in front), a drained per-call
+  counter (lost when a cell makes two input calls), and folding the guard's own past-the-cap repairs into the watch
+  (it would end each capped action at the cap with `raiseLeft` set and the repair reported elsewhere; left for a later
+  change). Other connections' requests do not end a connection's watch.
   Date/Author: 2026-11-01, cursor235 for cua_repl's rulings on #200.
 
 ## Outcomes & Retrospective

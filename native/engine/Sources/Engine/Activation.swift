@@ -42,8 +42,9 @@ let activationGuardStableSamplesBeforeDelivery = 1
 let deliveryGuardStableSamples = 3
 let deliveryGuardMinimumMs: Double = 60
 /// The delivery guard's poll inside the hold (a short sleep: the reads themselves take most of a sample under load), and
-/// how long after the events it may still repair once the cap has released the hold (#200's first live sample: the
-/// app raised 38 ms after the click, past a hold that began 42 ms before it).
+/// how long after the events a raise is still repaired once the hold is released, by the guard itself past the cap and
+/// by the after-action watch on every action (#200's first live samples: the app raised 38 ms after the click, past a
+/// hold that began 42 ms before it, and 21 ms after a guard that had settled at 14 ms).
 let deliveryGuardSampleMs: Double = 2
 let deliveryRepairWindowMs: Double = 1_000
 
@@ -228,6 +229,9 @@ struct DeliveryGuardOutcome: Equatable {
   var holdStartedAt: Int64 = 0
   /// When the hold was released (Unix ms; the cap's time when the cap released it), for a sitting's own clock.
   var releasedAt: Int64 = 0
+  /// When the action's events were posted (Unix ms, on the release's clock): the key of the after-action watch's
+  /// repairs (`AfterActionWatches`), which later results report.
+  var postedAt: Int64 = 0
   /// A repair (the user's window raised back, or the user's app made frontmost again) made after the hold's release,
   /// inside the repair window: the person may have seen the raise for that long. Counted apart from `restores`.
   var repairedAfterRelease = false
@@ -239,7 +243,7 @@ struct DeliveryGuardOutcome: Equatable {
   var wire: [String: Any] {
     var wire: [String: Any] = ["restores": restores, "frontmostRestored": frontmostRestored, "otherAppFront": otherAppFront,
                                "guardMs": guardMs, "screenHoldMs": screenHoldMs, "capped": capped, "raiseLeft": raiseLeft,
-                               "holdStartedAt": Int(holdStartedAt), "releasedAt": Int(releasedAt),
+                               "holdStartedAt": Int(holdStartedAt), "releasedAt": Int(releasedAt), "postedAt": Int(postedAt),
                                "repairedAfterRelease": repairedAfterRelease, "personInput": personInput]
     if let restoreLatencyMs { wire["restoreLatencyMs"] = restoreLatencyMs }
     if let repairAfterReleaseLatencyMs { wire["repairAfterReleaseLatencyMs"] = repairAfterReleaseLatencyMs }
@@ -249,7 +253,7 @@ struct DeliveryGuardOutcome: Equatable {
 
 /// The user a guard keeps in front: the frontmost app, and its window the target's must stay behind with how that
 /// window is brought back on top.
-private struct GuardedUser {
+fileprivate struct GuardedUser {
   let pid: pid_t
   let window: (id: CGWindowID, restore: () -> Void)?
 }
@@ -400,10 +404,13 @@ final class FakeActivation {
   /// else the activation's: a held or shared activation keeps its first holder's window, and a later click may aim at
   /// another window of the process (a dialog). The hold is the activation's own when this action ran it
   /// (`holdsThroughDelivery`), else one of the guard's own inside a held or shared activation: one hold an action.
-  /// At the hold's cap the guard ends and leaves the order as it is, reported (`capped`, `raiseLeft`); a third app in
-  /// front is the user's and is left alone. Nil, with `post` run alone, when no fake activation stands or the user's app
-  /// is not another app in front: nothing to guard.
-  func deliver(window: CGWindowID? = nil, _ post: () -> Void) -> DeliveryGuardOutcome? {
+  /// Past the hold's cap it repairs on inside the repair window, unless the person acted, reported apart
+  /// (`repairedAfterRelease`), and ends there leaving the order as it is (`capped`, `raiseLeft`); a third app in front is
+  /// the user's and is left alone. Once it returns, the after-action watch (`AfterActionWatch`) runs on to the repair
+  /// window's end under the same rules, on `watches` (the connection's), so a raise after the guard settled is repaired
+  /// too, as a flash a later result reports; the action does not wait for it. Nil, with `post` run alone, when no fake
+  /// activation stands or the user's app is not another app in front: nothing to guard.
+  func deliver(window: CGWindowID? = nil, watches: AfterActionWatches? = nil, _ post: () -> Void) -> DeliveryGuardOutcome? {
     let system = system
     let hold: OpenHold
     if let open = takeOpenHold() {
@@ -436,6 +443,7 @@ final class FakeActivation {
     var targetFront = false
     var targetAbove = false
     var reactivationPending = false
+    var refused = false
     while stable < deliveryGuardStableSamples || system.now() - posted < deliveryGuardMinimumMs {
       system.sleep(capPassed() ? activationGuardSampleMs : deliveryGuardSampleMs)
       let front = signposted("route3.delivery.frontmost") { system.frontmost() }
@@ -479,7 +487,7 @@ final class FakeActivation {
         stable = 0
         let accepted = system.reactivate(hold.user.pid)
         repairedAt(round(system.now() - posted))
-        guard accepted else { break }  // refused: the target stays in front, reported
+        guard accepted else { refused = true; break }  // refused: the target stays in front, reported
         reactivationPending = true
       } else if targetAbove, let window = hold.user.window {
         window.restore()
@@ -493,11 +501,19 @@ final class FakeActivation {
     outcome.guardMs = round(system.now() - posted)
     outcome.screenHoldMs = round(min(system.now() - hold.startedAt, activationHoldCapMs))
     outcome.raiseLeft = targetFront || targetAbove
-    let held = system.now() - hold.startedAt
+    let ended = system.now()
+    let held = ended - hold.startedAt
     hold.release()
     let now = unixMilliseconds()
     outcome.holdStartedAt = now - Int64(held.rounded())
     outcome.releasedAt = outcome.holdStartedAt + Int64(min(held, activationHoldCapMs).rounded())
+    outcome.postedAt = now - Int64((ended - posted).rounded())
+    // The watch takes over where the guard could still repair: not past the window, not after the person's input, a
+    // third app's front or a refused re-activation.
+    if let watches, !outcome.otherAppFront, !outcome.personInput, !refused, ended - posted < deliveryRepairWindowMs {
+      watches.begin(AfterActionWatch(system: system, user: hold.user, pid: pid, appPid: appPid, window: targetWindow, posted: posted,
+                                     postedAt: outcome.postedAt, sink: watches))
+    }
     return outcome
   }
 
@@ -536,5 +552,129 @@ final class FakeActivation {
     event.timestamp = DispatchTime.now().uptimeNanoseconds
     system.post(event, pid)
     return true
+  }
+}
+
+/// One pointer action's after-action watch (#200): from its delivery guard's return to `deliveryRepairWindowMs` after its
+/// events, a sample every `activationGuardSampleMs` on `schedule`'s thread, under the guard's rules: the target's window
+/// above the user's is answered with the user's window raised back, the target's process (or the bound app's) in front
+/// with the user's app made frontmost again; it ends at the window's end, at the person's first input since the events,
+/// when a third app is in front (theirs), when a re-activation is refused, or when cancelled. A sample runs under the
+/// watch's lock, which `cancel` takes: once `cancel` returns no repair starts. Each repair is a flash (no hold is open),
+/// recorded on the connection (`AfterActionWatches.record`).
+final class AfterActionWatch: @unchecked Sendable {
+  private let lock = NSLock()
+  private var cancelled = false
+  private let system: ActivationSystem
+  private let user: GuardedUser
+  private let pid: pid_t
+  private let appPid: pid_t
+  private let window: CGWindowID?
+  private let posted: Double
+  private let postedAt: Int64
+  private let sink: AfterActionWatches
+
+  fileprivate init(system: ActivationSystem, user: GuardedUser, pid: pid_t, appPid: pid_t, window: CGWindowID?, posted: Double,
+                   postedAt: Int64, sink: AfterActionWatches) {
+    self.system = system
+    self.user = user
+    self.pid = pid
+    self.appPid = appPid
+    self.window = window
+    self.posted = posted
+    self.postedAt = postedAt
+    self.sink = sink
+  }
+
+  fileprivate func start() { next() }
+
+  /// Ends the watch, waiting out a sample in progress.
+  func cancel() { lock.withLock { cancelled = true } }
+
+  private func next() {
+    system.schedule(activationGuardSampleMs) { [self] in
+      if lock.withLock({ !cancelled && sample() }) { next() }
+    }
+  }
+
+  /// One sample and its repair; false when the watch ends.
+  private func sample() -> Bool {
+    let system = system
+    guard system.now() - posted < deliveryRepairWindowMs else { return false }
+    let front = signposted("route3.afterAction.frontmost") { system.frontmost() }
+    let targetFront: Bool
+    if front != user.pid {
+      guard let front, front == pid || front == appPid else { return false }  // a third app: the person's front
+      targetFront = true
+    } else if let window, let userWindow = user.window, signposted("route3.afterAction.windowOrder", { system.isInFront(window, userWindow.id) }) {
+      targetFront = false
+    } else {
+      return true
+    }
+    guard system.secondsSinceInput() * 1000 >= system.now() - posted else { return false }  // the person acted
+    if targetFront {
+      let accepted = system.reactivate(user.pid)
+      sink.record(postedAt: postedAt, latencyMs: system.now() - posted, kind: "frontmost")
+      return accepted
+    }
+    user.window?.restore()
+    sink.record(postedAt: postedAt, latencyMs: system.now() - posted, kind: "window")
+    return true
+  }
+}
+
+/// A connection's after-action watches (#200): the one live watch (a connection runs one request at a time, and each
+/// action's watch replaces the last), and the repairs they made, which every later input result's meta and observation
+/// carry as `afterActionRepairs` {repairs: the connection's total, actions: [{postedAt, repairs, latencyMs}] for the last
+/// `reportedActions` actions repaired, each keyed by its delivery's `postedAt`, with its first repair's latency from its
+/// events}: the action whose watch repaired had already answered. Each repair is a signpost event too
+/// (`route3.afterAction.repair`).
+final class AfterActionWatches: @unchecked Sendable {
+  static let reportedActions = 8
+
+  private let lock = NSLock()
+  private var live: AfterActionWatch?
+  private var repairs = 0
+  private var actions: [(postedAt: Int64, repairs: Int, latencyMs: Double)] = []
+
+  /// Ends the live watch, waiting out its sample in progress: no repair starts once this returns. Every request that
+  /// acts or observes on the connection calls it first (Methods.swift `execute`), as does every pointer action.
+  func cancel() {
+    let watch = lock.withLock { () -> AfterActionWatch? in
+      defer { live = nil }
+      return live
+    }
+    watch?.cancel()
+  }
+
+  fileprivate func begin(_ watch: AfterActionWatch) {
+    cancel()
+    lock.withLock { live = watch }
+    watch.start()
+  }
+
+  fileprivate func record(postedAt: Int64, latencyMs: Double, kind: StaticString) {
+    let latency = (latencyMs * 1000).rounded() / 1000
+    lock.withLock {
+      repairs += 1
+      if let last = actions.indices.last, actions[last].postedAt == postedAt {
+        actions[last].repairs += 1
+      } else {
+        actions.append((postedAt, 1, latency))
+        if actions.count > Self.reportedActions { actions.removeFirst() }
+      }
+    }
+    if timingSignposts.isEnabled {
+      let kind = "\(kind)"
+      timingSignposts.emitEvent("route3.afterAction.repair", "postedAt=\(postedAt) latencyMs=\(latency, format: .fixed(precision: 1)) kind=\(kind, privacy: .public)")
+    }
+  }
+
+  /// The report, nil until the connection's first after-action repair.
+  var wire: [String: Any]? {
+    lock.withLock {
+      repairs == 0 ? nil : ["repairs": repairs,
+                            "actions": actions.map { ["postedAt": Int($0.postedAt), "repairs": $0.repairs, "latencyMs": $0.latencyMs] as [String: Any] }]
+    }
   }
 }

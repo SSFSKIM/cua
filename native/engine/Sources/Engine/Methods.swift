@@ -163,6 +163,9 @@ final class Engine: @unchecked Sendable {
   }
 
   private func execute(_ params: [String: Any], _ connection: ConnectionState, _ receivedAt: Int64) throws -> Any {
+    // Before anything else, the connection's after-action watch ends (#200, Activation.swift): no repair of an earlier
+    // action is made once this request, which may act or observe, has begun; its own guard takes over.
+    connection.afterAction.cancel()
     // The deadline first, before anything is dispatched (the vendor's order, F §8.9); a settle or a launch wait still
     // running when it passes is cancelled as timeoutReached (cua's addition, Skyshot.swift).
     let deadline = (params["deadlineUnixMilliseconds"] as? NSNumber)?.int64Value ?? receivedAt + 120_000

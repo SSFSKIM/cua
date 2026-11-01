@@ -714,6 +714,142 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertEqual(seam.holds, 0)
   }
 
+  // MARK: The after-release watch (#200)
+
+  /// A click on `connection`, whose meta's context carries it (the watch's registry is the connection's).
+  private func click(_ seam: GuardSeam, on connection: ConnectionState) throws -> InputMeta {
+    var meta = InputMeta(ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+    try click(seam, meta: &meta)
+    return meta
+  }
+
+  /// The action returns at the hold's release as before; a raise that comes after it (the live check's: 21 ms after a
+  /// 14 ms settle) is repaired by the watch that runs on after the release, and recorded on the connection for the next
+  /// result's meta, keyed by the action's post time.
+  func testTheActionReturnsAtTheReleaseAndTheWatchRepairsARaiseAfterIt() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let connection = ConnectionState(id: 7, fd: -1)
+    let meta = try click(seam, on: connection)
+    let delivery = try XCTUnwrap(meta.delivery)
+    XCTAssertEqual(delivery.guardMs, deliveryGuardMinimumMs, "no added latency: the action returned at its release")
+    XCTAssertEqual(seam.releasedAt, seam.clock)
+    XCTAssertNil(connection.afterAction.wire, "nothing repaired yet")
+    seam.advance(15)
+    XCTAssertEqual(seam.raises, 0)
+    seam.targetAbove = true  // the app raises its window after the release
+    seam.advance(20)
+    XCTAssertEqual(seam.targetAbove, false, "the user's window is back on top")
+    XCTAssertEqual(seam.raises, 1)
+    XCTAssertEqual(seam.repairsOutsideHold, 1, "a flash: made with no hold open")
+    let wire = try XCTUnwrap(connection.afterAction.wire)
+    XCTAssertEqual(wire["repairs"] as? Int, 1)
+    let actions = try XCTUnwrap(wire["actions"] as? [[String: Any]])
+    XCTAssertEqual(actions.count, 1)
+    XCTAssertEqual(actions[0]["postedAt"] as? Int, Int(delivery.postedAt), "keyed by the action's post time, as its delivery meta says it")
+    XCTAssertEqual(actions[0]["repairs"] as? Int, 1)
+    XCTAssertEqual(actions[0]["latencyMs"] as? Double, delivery.guardMs + 20,
+                   "from the post: the guard's 60 ms, a quiet sample 10 ms after the release, then the one that found it")
+    XCTAssertNotNil(InputMeta(meta.context).wire["afterActionRepairs"], "every later input result on the connection carries it")
+    XCTAssertNil(InputMeta(ExecutionContext(connection: ConnectionState(id: 8, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil)).wire["afterActionRepairs"],
+                 "another connection's results do not")
+    seam.advance(deliveryRepairWindowMs)
+    let posts = seam.posts.count
+    seam.targetAbove = true
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.targetAbove, true, "past post + 1 s the watch has ended")
+    XCTAssertEqual(seam.posts.count, posts)
+  }
+
+  /// The target's process taking the front after the release: the user's app made frontmost again, only that app.
+  func testTheWatchRestoresTheFrontmostAppWhenTheTargetTakesItAfterTheRelease() throws {
+    let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    let connection = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: connection)
+    seam.frontmost = target
+    seam.advance(15)
+    XCTAssertEqual(seam.reactivated, [user])
+    XCTAssertEqual(seam.frontmost, user)
+    XCTAssertEqual(connection.afterAction.wire?["repairs"] as? Int, 1)
+  }
+
+  /// The next action on the connection ends the watch before anything of its own happens: a target that comes to the
+  /// front then (the next action's own doing, say a menu's deliberate activation) is never answered by the old watch.
+  func testTheNextActionOnTheConnectionCancelsTheWatchWithNoRepairAfter() throws {
+    let seam = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    let connection = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: connection)
+    seam.frontmost = target  // the next click's app believes it has focus: no activation, no guard of its own
+    _ = try click(seam, on: connection)
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.reactivated, [], "the first click's watch was cancelled as the next action began")
+    XCTAssertNil(connection.afterAction.wire)
+  }
+
+  /// Every execute on the connection cancels the watch at its start (here one refused at once by the lock screen).
+  func testEveryRequestThatActsOrObservesOnTheConnectionCancelsTheWatch() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let connection = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: connection)
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { true })
+    let params: [String: Any] = ["method": "get_app_state", "args": ["app": "TextEdit"], "deadlineUnixMilliseconds": unixMilliseconds() + 60_000]
+    _ = engine.handle(Request(id: 1, method: "execute", params: params), on: connection, receivedAt: unixMilliseconds())
+    seam.targetAbove = true
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.raises, 0)
+    XCTAssertEqual(seam.targetAbove, true)
+  }
+
+  /// A cancel waits out a sample already running, so no repair starts once it has returned; a watch cancelled from
+  /// inside its own sample (the race at its tightest) repairs nothing.
+  func testACancelDuringASampleLeavesNoRepairAfterIt() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let connection = ConnectionState(id: 7, fd: -1)
+    _ = try click(seam, on: connection)
+    let done = DispatchSemaphore(value: 0)
+    seam.onFrontmostRead = {
+      seam.onFrontmostRead = nil
+      seam.targetAbove = true
+      // Another thread's cancel, taken while this sample runs: it returns only once the sample is over.
+      DispatchQueue.global().async { connection.afterAction.cancel(); done.signal() }
+      XCTAssertEqual(done.wait(timeout: .now() + 0.2), .timedOut, "the cancel waits for the running sample")
+    }
+    seam.advance(15)
+    XCTAssertEqual(seam.raises, 1, "the sample the cancel waited for finished its own repair")
+    XCTAssertEqual(done.wait(timeout: .now() + 5), .success, "and the cancel returned once it was over")
+    seam.targetAbove = true
+    seam.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(seam.raises, 1, "nothing after the cancel")
+    XCTAssertEqual(seam.targetAbove, true)
+  }
+
+  /// The person's input since the click, or a third app in front, ends the watch: their own click into the app is never
+  /// undone, and a third app's front is theirs.
+  func testThePersonsInputOrAThirdAppInFrontEndsTheWatchWithNoRepair() throws {
+    let input = GuardSeam(frontmost: user)
+    input.targetAbove = false
+    let inputConnection = ConnectionState(id: 7, fd: -1)
+    _ = try click(input, on: inputConnection)
+    input.secondsSinceInput = 0.005
+    input.targetAbove = true
+    input.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(input.raises, 0)
+    XCTAssertNil(inputConnection.afterAction.wire)
+
+    let third = GuardSeam(frontmost: user, reactivationTakesFront: true)
+    let thirdConnection = ConnectionState(id: 8, fd: -1)
+    _ = try click(third, on: thirdConnection)
+    third.frontmost = 990_003
+    third.advance(15)
+    third.frontmost = target  // the watch has ended: even the target in front later is left
+    third.advance(deliveryRepairWindowMs)
+    XCTAssertEqual(third.reactivated, [])
+    XCTAssertNil(thirdConnection.afterAction.wire)
+  }
+
   func testTheDeliveryGuardIsOnTheWire() {
     var meta = meta()
     meta.delivery = DeliveryGuardOutcome(restores: 1, frontmostRestored: false, otherAppFront: false, restoreLatencyMs: 10, guardMs: 40,

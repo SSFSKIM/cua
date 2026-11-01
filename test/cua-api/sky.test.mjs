@@ -85,6 +85,13 @@ const scenarios = [
     check(record) {
       assert.deepEqual(record.result, [undefined, 'function', {error: 'Error', message: 'sky helper unavailable'}, ['target']]);
     }},
+  {name: 'a failed setup leaves the facade unthenable: then, toJSON and symbol-keyed members read undefined',
+    differs: '#236: the vendor answers them with the rejecting function, so awaiting its facade never settles',
+    options: {setup: new Error('sky helper unavailable')},
+    run: async sky => [typeof sky.then, typeof sky.toJSON, typeof sky[Symbol.toPrimitive], typeof sky[Symbol.iterator], typeof sky.click],
+    check(record) {
+      assert.deepEqual(record.result, ['undefined', 'undefined', 'undefined', 'undefined', 'function']);
+    }},
   {name: 'without a trusted rpc the facade refuses as the vendor does',
     options: {noRpc: true},
     run: async sky => sky.target,
@@ -104,6 +111,27 @@ for (const scenario of scenarios) {
     const mine = await run(OWN, scenario.options, scenario.run);
     const theirs = await run(VENDOR, scenario.options, scenario.run);
     if (scenario.name.startsWith('Linux drag')) for (const record of [mine, theirs]) for (const request of record.requests) if (request.handle_id) request.handle_id = '<uuid>';
-    assert.deepEqual(mine, theirs);
+    if (scenario.differs) assert.notDeepEqual(mine, theirs, `declared difference (${scenario.differs}) did not appear`);
+    else assert.deepEqual(mine, theirs);
   });
 }
+
+// #236: resolving a promise with the facade (an async function returning it, as create-tinysky-alt's loadComputer
+// does) must settle after a failed setup, leaving no rejection unhandled. Own facade only: the vendor's never settles.
+test('a failed setup: a promise resolved with the facade settles, and no rejection is left unhandled', async () => {
+  const unhandled = [];
+  const onUnhandled = error => unhandled.push(plain(error));
+  process.on('unhandledRejection', onUnhandled);
+  const saved = globalThis.nodeRepl;
+  globalThis.nodeRepl = {rpc: async () => { throw new Error('sky helper unavailable'); }};
+  try {
+    const {sky} = await import(`${OWN}?instance=${++instance}`);
+    const settled = await Promise.race([(async () => sky)().then(value => value === sky), new Promise(resolve => setTimeout(resolve, 100, 'pending'))]);
+    const coerced = [String(sky), JSON.stringify(sky)];
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.deepEqual([settled, coerced, unhandled], [true, ['[object Object]', '{}'], []]);
+  } finally {
+    globalThis.nodeRepl = saved;
+    process.off('unhandledRejection', onUnhandled);
+  }
+});

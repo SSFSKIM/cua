@@ -102,6 +102,8 @@ async function setupBrowser({browser, exclude_browser_confirmations}) {
 
 async function loadComputer(options) {
   if (options.computer === false) return;
-  const {sky} = await import('./sky.mjs');
+  const {setupError, sky} = await import('./sky.mjs');
+  // cua's own addition (#236): a refused setup fails the bootstrap with its own error rather than an unknown target.
+  if (setupError !== undefined) throw setupError;
   return sky;
 }

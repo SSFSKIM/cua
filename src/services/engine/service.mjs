@@ -38,8 +38,10 @@
 //   them cua/activationGuardMs, cua/activationClick (route 3's activation click: "posted", or why it was skipped),
 //   cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
 //   no Input Monitoring grant), cua/entered (the UTF-16 units a type_text entered, on its result and on the error that
-//   stopped it) and cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
-//   row for the app). cua/serviceMs is the wrapper's (src/services/sky.mjs).
+//   stopped it), cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
+//   row for the app) and cua/delivery (route 3's delivery guard after a pointer action's events, #200: the restores it
+//   made, whether it brought the user's app back to the front, the latency of the first, its own time, the screen hold's,
+//   whether it reached the hold's cap and left a raise). cua/serviceMs is the wrapper's (src/services/sky.mjs).
 // - The unknown secondary action's sentence: the vendor's ends with the decimal element index, which only the service
 //   knows, so the engine's invalidSecondaryAction is answered as `<action> is not a valid secondary action for <index>`
 //   (R/F-helper-logic.md §16.3), its code, name and meta kept.
@@ -83,9 +85,10 @@ const SPIKE_ROUTES = new Set(['1', "2'", '2', '3']);
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
+  'cua/delivery': null,
 };
 // The engine's optional input meta keys, carried under cua/<key> when it sends them.
-const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice'];
+const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
 // web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, what web enablement read

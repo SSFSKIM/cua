@@ -224,6 +224,26 @@ final class FocusHoldTests: XCTestCase {
     XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 1)
   }
 
+  /// #200: a click inside a held activation runs no activation of its own, and its mouse down raises the window by
+  /// AppKit's rule all the same: it takes a hold of its own for the delivery guard, which raises the user's window back.
+  func testAClickInsideAHeldActivationIsGuardedUnderAHoldOfItsOwn() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try hold(connection, seam, meta: &meta)
+    let holds = seam.holds, releases = seam.releases
+    seam.targetAbove = false
+    seam.onMouseDown = { seam.targetAbove = true }
+    var clickMeta = self.meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
+                     targetActive: { false }, post: seam.system.post, meta: &clickMeta)
+    XCTAssertEqual(seam.holds, holds + 1)
+    XCTAssertEqual(seam.releases, releases + 1)
+    XCTAssertEqual(clickMeta.delivery?.restores, 1)
+    XCTAssertEqual(seam.targetAbove, false)
+    XCTAssertNil(clickMeta.activationGuardMs, "the click shared the held activation")
+  }
+
   // MARK: Finding 2: a per-action activation leases the process's activation
 
   private func clickTarget() -> ClickTarget {

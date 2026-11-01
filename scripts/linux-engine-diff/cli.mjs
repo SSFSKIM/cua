@@ -11,7 +11,7 @@ export const USAGE = `usage:
       [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
   linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd --cua <bin> --out <dir> [--run <name>]
-      [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
+      [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
@@ -65,6 +65,24 @@ export function parseArgs(argv) {
     else if (flag === '--no-grabs') a.grabs = false;
     // the dnd experiment on the page's short drop (40 px from the near source), every lane's window activated first
     else if (flag === '--dnd-short') a.dndShort = true;
+    // the dnd experiment cold (task 20): every drag the first request of a fresh engine, the lanes interleaved, each
+    // window in front after the device case's settle; `--cover-ms` covers it fully first, as the gate's previous case did
+    else if (flag === '--dnd-cold') a.dndCold = true;
+    // each cold drag after the gate's case before it: cua's dedicated long drop into the covered window (foreground route)
+    else if (flag === '--prelude') {
+      if (need() !== 'dedicated') throw new Error('--prelude takes dedicated: the device case before the cold drop in a block');
+      a.prelude = 'dedicated';
+    }
+    // and with the gate's other Chrome windows open behind it (dnd.mjs GATE_BALLAST), as a full verdict run has them
+    else if (flag === '--ballast') {
+      if (need() !== 'gate') throw new Error('--ballast takes gate: the Chrome windows of a full verdict run');
+      a.ballast = 'gate';
+    }
+    else if (flag === '--cover-ms') {
+      const n = Number(need());
+      if (!Number.isInteger(n) || n < 0) throw new Error('--cover-ms needs a whole number of ms, 0 or more');
+      a.coverMs = n;
+    }
     else if (flag === '--load') a.load = true;
     else if (flag === '--load-factor') {
       // CPU workers per core under --load (M3.1: a drag-and-drop race's edge is found by raising it)
@@ -93,6 +111,10 @@ export function parseArgs(argv) {
     } else throw new Error(`unknown argument ${flag}\n${USAGE}`);
   }
   if (a.experiment) a.mode = 'experiment';
+  for (const [key, flag] of [['coverMs', '--cover-ms'], ['prelude', '--prelude'], ['ballast', '--ballast']]) {
+    if (a[key] !== undefined && !a.dndCold) throw new Error(`${flag} is the cold drag-and-drop run's (--dnd-cold)`);
+  }
+  if (a.dndCold) a.coverMs ??= 0;
   const require = (...keys) => {
     for (const key of keys) {
       const flag = Object.entries({ ...VALUE_FLAGS }).find(([, k]) => k === key)?.[0] ?? `--${key}`;

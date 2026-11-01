@@ -11,7 +11,8 @@
 //! - `send_event` {event, destination, detail, time?, x?, y?, state?, mode?} for key, button and focus events, and
 //!   `fake_input` {event, detail, time, x, y} (XTEST) for key and button events;
 //! - `motions` {via, n, first_time?, last_time?}: a client's motion events since its last other recorded element,
-//!   counted rather than listed.
+//!   counted rather than listed; with `XPROBE_EVERY_MOTION=1` each is listed as `motion` {via, time, x, y}, a synthetic
+//!   one with its window and its button and modifier state.
 
 use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -194,10 +195,12 @@ impl Parser {
                     wall,
                     "motion",
                     &format!(
-                        "\"via\":\"send_event\",\"time\":{},\"x\":{},\"y\":{}",
+                        "\"via\":\"send_event\",\"time\":{},\"x\":{},\"y\":{},\"window\":{},\"state\":{}",
                         u32_at(e, 4),
                         i16_at(e, 20),
-                        i16_at(e, 22)
+                        i16_at(e, 22),
+                        u32_at(e, 12),
+                        u16::from_le_bytes([e[28], e[29]])
                     ),
                 ));
             } else {
@@ -568,6 +571,28 @@ mod tests {
                 && lines[1].contains("\"n\":2,\"first_time\":101,\"last_time\":103")
         );
         assert!(lines[2].contains("\"event\":\"button_release\"") && lines[2].contains("\"x\":4"));
+    }
+
+    #[test]
+    fn every_motion_lists_each_synthetic_motion_with_its_window_and_button_state() {
+        let mut p = Parser::new(None, None).every_motion(true);
+        let mut r = vec![25, 0, 11, 0];
+        r.extend_from_slice(&42u32.to_le_bytes());
+        r.extend_from_slice(&0u32.to_le_bytes());
+        let mut e = [0u8; 32];
+        e[0] = 6;
+        e[4..8].copy_from_slice(&101u32.to_le_bytes());
+        e[12..16].copy_from_slice(&43u32.to_le_bytes());
+        e[20..22].copy_from_slice(&530i16.to_le_bytes());
+        e[22..24].copy_from_slice(&185i16.to_le_bytes());
+        e[28..30].copy_from_slice(&0x100u16.to_le_bytes());
+        r.extend_from_slice(&e);
+        assert_eq!(
+            p.requests(1, &element(7, &r), 0),
+            vec![
+                "{\"kind\":\"motion\",\"client\":1,\"server_time\":7,\"wall_ms\":0,\"via\":\"send_event\",\"time\":101,\"x\":530,\"y\":185,\"window\":43,\"state\":256}"
+            ]
+        );
     }
 
     #[test]

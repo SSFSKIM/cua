@@ -277,7 +277,36 @@ export function parseDragStatus(texts) {
     scroller: num(line('scroller '), 'scroller'),
     dnd: Object.fromEntries(['starts', 'drops', 'downs', 'detail', 'gap', 'selects', 'ends', 'effect', 'lat', 'dur', 'ups', 'at'].map((key) => [key, num(line('dnd '), key)])),
     canvas: { strokes: num(line('canvas '), 'strokes'), moves: num(line('canvas '), 'moves'), dev: num(line('canvas '), 'dev') },
+    moves: parsePointerLog(line('moves ')),
   };
+}
+
+/** Blink's drag threshold off the Mac (`mouse_event_manager.cc` `kDragThresholdX/Y`): a press starts a drag on a move this far out in x or y. */
+export const DRAG_THRESHOLD_PX = 4;
+
+/**
+ * The drag page's pointer log of the drag source's last press (task 20): `moves seq <press count> n <moves> start <t>/<h>
+ * up … cancel … end … m <t>/<h>/<dx>/<dy>/<buttons>/<coalesced> …`, where `t` is the event's own time and `h` the time its
+ * handler ran, both ms after the press's, `dx`/`dy` the move's offset from the press in CSS px, and -1 an event that never
+ * came. `past` is the first move past the drag threshold with the left button held, which is what lets Blink start the
+ * drag (`MouseEventManager::HandleDrag`), or null.
+ */
+export function parsePointerLog(text) {
+  if (text === null) return null;
+  const num = (key) => text.match(new RegExp(`\\b${key} (-?\\d+)`))?.[1];
+  const at = (key) => {
+    const m = text.match(new RegExp(`\\b${key} (-1|(-?[\\d.]+)/(-?[\\d.]+))(?= |$)`));
+    return !m || m[1] === '-1' ? null : { t: Number(m[2]), h: Number(m[3]) };
+  };
+  const moves = (text.split(/ m(?: |$)/)[1] ?? '')
+    .split(' ')
+    .filter(Boolean)
+    .map((token) => {
+      const [t, h, dx, dy, buttons, coalesced] = token.split('/').map(Number);
+      return { t, h, dx, dy, buttons, coalesced };
+    });
+  const past = moves.findIndex((m) => (Math.abs(m.dx) >= DRAG_THRESHOLD_PX || Math.abs(m.dy) >= DRAG_THRESHOLD_PX) && (m.buttons & 1) === 1);
+  return { seq: Number(num('seq')), n: Number(num('n')), start: at('start'), up: at('up'), cancel: at('cancel'), end: at('end'), moves, past: past === -1 ? null : past };
 }
 
 function primary() {
@@ -301,7 +330,8 @@ export async function readEffect(ctx, scene, at, kind) {
   if (at.page) {
     const nodes = preorder((await desktop.state(scene)).ax_tree);
     const status = parseDragStatus(nodes.flatMap((n) => [n.name, n.value, n.text].filter((s) => typeof s === 'string')));
-    return kind === 'dnd' ? status.dnd : kind === 'canvas' ? status.canvas : status[kind];
+    // a drag and drop's counts carry the pointer log of the source's last press (task 20)
+    return kind === 'dnd' ? { ...status.dnd, log: status.moves } : kind === 'canvas' ? status.canvas : status[kind];
   }
   if (kind === 'scale4') return (await readGtk4Status(desktop, scene))?.scale ?? null;
   if (kind === 'select' && at.text.pixels) return { capture: await captureWindow(ctx.cua, scene, desktop.dir) };

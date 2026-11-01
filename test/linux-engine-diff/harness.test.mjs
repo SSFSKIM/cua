@@ -378,6 +378,22 @@ test('the Interfaces command line parses, with M0 variants', async () => {
   assert.equal(short.dndShort, true);
   assert.deepEqual(dndLanes(short).map((l) => [l.label, l.activate]), [['pinned', true], ['newest', true], ['cua', true]]);
   assert.deepEqual(dndLanes(parseArgs([...dnd, '--lanes', 'pinned,cua'])).map((l) => l.activate ?? false), [false, false]);
+  // the cold drop (task 20): every drag the first request of a fresh engine, its window in front, after a full cover
+  const cold = parseArgs([...dnd, '--dnd-short', '--dnd-cold', '--cover-ms', '3000', '--lanes', 'pinned,cua']);
+  assert.equal(cold.dndCold, true);
+  assert.equal(cold.coverMs, 3000);
+  assert.deepEqual(dndLanes(cold).map((l) => l.activate), [true, true], 'a cold drag is made in front, as the gate case is');
+  assert.equal(parseArgs([...dnd, '--dnd-cold']).coverMs, 0, 'no cover unless asked');
+  assert.throws(() => parseArgs([...dnd, '--cover-ms', '-1']), /--cover-ms/);
+  assert.throws(() => parseArgs([...dnd, '--cover-ms', '500']), /--dnd-cold/);
+  // with the gate's other Chrome windows open behind it, as a full verdict run has them
+  assert.equal(parseArgs([...dnd, '--dnd-cold', '--ballast', 'gate']).ballast, 'gate');
+  // and after the case a block runs before it: cua's dedicated long drop, through the foreground route
+  assert.equal(parseArgs([...dnd, '--dnd-cold', '--prelude', 'dedicated']).prelude, 'dedicated');
+  assert.throws(() => parseArgs([...dnd, '--dnd-cold', '--prelude', 'shared']), /--prelude/);
+  assert.throws(() => parseArgs([...dnd, '--prelude', 'dedicated']), /--dnd-cold/);
+  assert.throws(() => parseArgs([...dnd, '--dnd-cold', '--ballast', 'more']), /--ballast/);
+  assert.throws(() => parseArgs([...dnd, '--ballast', 'gate']), /--dnd-cold/);
 });
 
 // ---------------------------------------------------------------------------------------------------------------

@@ -14,6 +14,9 @@
 // The lanes (`--lanes` narrows them): the pinned and newest vendor engines, cua, cua's `--variant` lanes (the
 // drag-and-drop candidate's `dedicated` and forced-late ones), and `cua:active`, cua with the window activated before
 // each drag, the window already in front, where the candidate lets the drop go ahead in shared mode.
+// `--dnd-cold` (task 20, the m3-gate's no-dragstart miss) makes every drag a fresh engine's first request in front, the
+// lanes taking turns, optionally after the gate's preceding case (`--prelude dedicated`), a full cover (`--cover-ms`) and
+// with the gate's other Chrome windows open (`--ballast gate`); each row carries the page's counters and pointer log.
 
 import { execFileSync, spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -24,7 +27,8 @@ import { FAMILIES, openFamily } from './families.mjs';
 import { Oracle } from './oracle.mjs';
 import { DND_REFUSAL } from './deviations.mjs';
 import { desktopState } from './device.mjs';
-import { negativeCheck } from './run.mjs';
+import { negativeCheck, openScene } from './run.mjs';
+import { blockOrder } from './stats.mjs';
 import { XPROBE } from './scenes.mjs';
 import { judgeRestacks, startWitness } from './witness.mjs';
 
@@ -147,77 +151,170 @@ export function dndLanes(args) {
     ...args.variants.map((v) => ({ ...v, bin: args.cua, ...(v.label.startsWith('cua:active') ? { activate: true } : {}) })),
   ];
   const lanes = args.lanes ? all.filter((l) => args.lanes.includes(l.label)) : all.filter((l) => l.label !== 'cua:active');
-  // the short drop is measured in front for every lane, the vendor builds' included (task 18)
-  return args.dndShort ? lanes.map((l) => ({ ...l, activate: true })) : lanes;
+  // the short drop, and every cold drag, is measured in front for every lane, the vendor builds' included (tasks 18, 20)
+  return args.dndShort || args.dndCold ? lanes.map((l) => ({ ...l, activate: true })) : lanes;
 }
 
-/** One lane's drags into its own window: the run rows, each emitted. */
+/** The cold run's drags in order: round `i` makes one drag a lane, the lanes' order rotating from round to round. */
+export function coldRounds(lanes, n) {
+  return Array.from({ length: n }, (_, i) => blockOrder(lanes, i).map((spec) => ({ i, spec }))).flat();
+}
+
+/** A lane's engine, with its `--stats` line for cua: its route and its drag-and-drop record (`dnd`, `after_take`). */
+const laneEngine = (spec) => new Engine({ ...spec, stats: spec.label.startsWith('cua') }).start();
+
+/** One lane's drags into its own window, on one engine: the run rows, each emitted. */
 async function series(ctx, spec, scene, family, n) {
-  const { desktop, witness, emit, occlusion } = ctx;
+  const { desktop, occlusion } = ctx;
   desktop.arrange(scene, occlusion);
   const at = await locate(ctx, scene, ['dnd']);
-  // with its `--stats` line: cua's route and its drag-and-drop record (`dnd`: in front, started, the signature and its wait)
-  const engine = new Engine({ ...spec, stats: spec.label.startsWith('cua') }).start();
+  const engine = laneEngine(spec);
   const runs = [];
   try {
     for (let i = 0; i < n; i++) {
       desktop.arrange(scene, occlusion);
       if (spec.activate) execFileSync('xdotool', ['windowactivate', '--sync', String(scene.id)]);
       await sleep(400);
-      const before = desktopState();
-      const drops = (await readEffect(ctx, scene, at, 'dnd')).drops;
-      // `--no-grabs`: no sampler during the drag (its own grabs can fail Chrome's), the grab after the answer still read
-      const probes = ctx.grabs ? undefined : { startGrabs: async () => ({ stop: async () => [] }) };
-      const { value, w, report, during, afterAnswer, grabAfter, owners } = await withDropProbes(async ({ xdnd, grabs }) => {
-        const { value, witness: w, report } = await witness.span(`${spec.label}:dnd`, () => engine.request('drag', { window: { id: scene.id }, path: runPath(at, ctx.path, i) }));
-        const during = await grabs.stop();
-        const afterAnswer = desktopState();
-        const grabAfter = JSON.parse(execFileSync(XPROBE, ['grabs'], { encoding: 'utf8' }));
-        const owners = await xdnd.stop();
-        return { value, w, report, during, afterAnswer, grabAfter, owners };
-      }, probes);
-      await sleep(1000);
-      const later = desktopState();
-      const dropped = (await readEffect(ctx, scene, at, 'dnd')).drops;
-      const run = {
-        kind: 'dnd-run',
-        family,
-        occlusion,
-        engine: spec.label,
-        i,
-        ok: value.response.ok === true,
-        error: value.response.ok ? undefined : String(value.response.error).slice(0, 300),
-        ms: Math.round(value.ms * 10) / 10,
-        stats_route: value.stats?.route,
-        stats_dnd: value.stats?.dnd,
-        dropped: typeof drops === 'number' && dropped === drops + 1,
-        witness: w.clean,
-        witness_fields: w.fields,
-        // the witness's record: each change read back (a notify that left the value as it was is marked `notify`), the
-        // activation requests, and whether any restack moved a mapped window that is not override-redirect
-        witness_changes: (report.changes ?? []).slice(0, 20),
-        activations: (report.focus ?? []).filter((e) => e.kind === 'activate'),
-        restacked_managed: (judgeRestacks(report, null).violations ?? []).filter((e) => !e.or).length,
-        focus_events: (report.focus ?? []).slice(0, 30),
-        restacks: (report.restacks ?? []).slice(0, 30),
-        xdnd_owners: owners,
-        grabs_during: during,
-        grab_after: grabAfter,
-        before,
-        changed_at_answer: changedFields(before, afterAnswer),
-        changed_later: changedFields(before, later),
-        after_answer: afterAnswer,
-        later,
-      };
-      emit(run);
-      runs.push(run);
-      desktop.focusFront();
-      await sleep(700);
+      runs.push(await oneDrag(ctx, spec, scene, family, at, engine, i));
     }
   } finally {
     await engine.close();
   }
   return runs;
+}
+
+/**
+ * The cold run (task 20; the m3-gate miss): every drag the first request of a fresh engine process, as a block's cold
+ * sample of the differential run's device case is. The engine starts before its window's arrangement, as `runSample`
+ * starts it before a case's preparation. Then, with `prelude`, the case a block runs just before (`dedicatedDrop`); with
+ * `coverMs`, the front window covers the screen that long; and the window is put in front (visible, raised, activated)
+ * and left to settle for the device case's 1200 ms before the drag. The lanes take turns (`coldRounds`), each on its own
+ * window.
+ */
+async function coldSeries(ctx, lanes, scenes, family, n, { coverMs = 0, prelude = null } = {}) {
+  const { desktop } = ctx;
+  const at = {};
+  for (const spec of lanes) {
+    desktop.arrange(scenes[spec.label], 'visible');
+    at[spec.label] = await locate(ctx, scenes[spec.label], ['dnd']);
+  }
+  const runs = Object.fromEntries(lanes.map((l) => [l.label, []]));
+  for (const { i, spec } of coldRounds(lanes, n)) {
+    const scene = scenes[spec.label];
+    const engine = laneEngine(spec);
+    try {
+      if (prelude) await dedicatedDrop(ctx, scene, at[spec.label], prelude);
+      if (coverMs > 0) {
+        desktop.arrangeFront('covered');
+        await sleep(coverMs);
+      }
+      // the device case's `alreadyInFront`: the front window back in its corner, the window raised, then activated
+      desktop.arrangeFront('visible');
+      desktop.raise(scene);
+      execFileSync('xdotool', ['windowactivate', '--sync', String(scene.id)]);
+      await sleep(COLD_SETTLE_MS);
+      runs[spec.label].push(await oneDrag(ctx, spec, scene, family, at[spec.label], engine, i, { cold: true, cover_ms: coverMs, prelude: prelude ? 'dedicated' : null }));
+    } finally {
+      await engine.close();
+    }
+  }
+  return runs;
+}
+
+/**
+ * The Chrome windows the m3-gate run had open besides the drag page and the stub, per scene, as run.mjs opens them for a
+ * full verdict run (a shared window for reads, one per engine for input and screenshots, one per engine for text): the
+ * Chrome the gate's cold drop met, whose stalls task 18 saw only in full runs.
+ */
+export const GATE_BALLAST = { chrome: 4, 'chrome-input': 3, 'over-budget': 1, retention: 3, 'chrome-textarea': 3, 'chrome-address-bar': 3, 'device-chrome': 1 };
+
+/**
+ * The device case a block runs just before its cold short drop in front (device.mjs, `chrome_dnd_covered_dedicated`):
+ * the window covered, its settle, then cua in dedicated mode drags the long path into it through the foreground route
+ * (activated, XTEST: the real pointer ends at the drop zone), and the front window takes the focus back.
+ */
+async function dedicatedDrop(ctx, scene, at, { cua }) {
+  const { desktop, emit } = ctx;
+  const engine = new Engine({ label: 'prelude', bin: cua, args: ['--desktop', 'dedicated'] }).start();
+  try {
+    desktop.arrangeFront('covered');
+    await sleep(COLD_SETTLE_MS);
+    const { response, ms } = await engine.request('drag', { window: { id: scene.id }, path: runPath(at, 'dnd', 0) });
+    emit({ kind: 'dnd-prelude', window: scene.id, ok: response.ok === true, error: response.ok ? undefined : String(response.error).slice(0, 300), ms: Math.round(ms * 10) / 10 });
+    await sleep(400);
+  } finally {
+    await engine.close();
+  }
+  desktop.focusFront();
+}
+
+/** The device case's settle before a drag-and-drop sample (device.mjs `DND_SETTLE_MS`). */
+const COLD_SETTLE_MS = 1200;
+
+/** The drag page's drag-and-drop counters, without the pointer log. */
+const counts = ({ log, ...rest }) => rest;
+
+/** One drag in its witness span, the probes around it, and its run row, emitted. */
+async function oneDrag(ctx, spec, scene, family, at, engine, i, extra = {}) {
+  const { desktop, witness, emit, occlusion } = ctx;
+  const before = desktopState();
+  const page = await readEffect(ctx, scene, at, 'dnd');
+  const drops = page.drops;
+  // `--no-grabs`: no sampler during the drag (its own grabs can fail Chrome's), the grab after the answer still read
+  const probes = ctx.grabs ? undefined : { startGrabs: async () => ({ stop: async () => [] }) };
+  const { value, w, report, during, afterAnswer, grabAfter, owners } = await withDropProbes(async ({ xdnd, grabs }) => {
+    const { value, witness: w, report } = await witness.span(`${spec.label}:dnd`, () => engine.request('drag', { window: { id: scene.id }, path: runPath(at, ctx.path, i) }));
+    const during = await grabs.stop();
+    const afterAnswer = desktopState();
+    const grabAfter = JSON.parse(execFileSync(XPROBE, ['grabs'], { encoding: 'utf8' }));
+    const owners = await xdnd.stop();
+    return { value, w, report, during, afterAnswer, grabAfter, owners };
+  }, probes);
+  await sleep(1000);
+  const later = desktopState();
+  const after = await readEffect(ctx, scene, at, 'dnd');
+  const dropped = after.drops;
+  const run = {
+    kind: 'dnd-run',
+    family,
+    occlusion,
+    engine: spec.label,
+    i,
+    ok: value.response.ok === true,
+    error: value.response.ok ? undefined : String(value.response.error).slice(0, 300),
+    ms: Math.round(value.ms * 10) / 10,
+    stats_route: value.stats?.route,
+    stats_dnd: value.stats?.dnd,
+    stats_after_take: value.stats?.after_take,
+    stats_dnd_wait: value.stats?.dnd_wait,
+    stats_event_time: value.stats?.event_time,
+    dropped: typeof drops === 'number' && dropped === drops + 1,
+    witness: w.clean,
+    witness_fields: w.fields,
+    // the witness's record: each change read back (a notify that left the value as it was is marked `notify`), the
+    // activation requests, and whether any restack moved a mapped window that is not override-redirect
+    witness_changes: (report.changes ?? []).slice(0, 20),
+    activations: (report.focus ?? []).filter((e) => e.kind === 'activate'),
+    restacked_managed: (judgeRestacks(report, null).violations ?? []).filter((e) => !e.or).length,
+    focus_events: (report.focus ?? []).slice(0, 30),
+    restacks: (report.restacks ?? []).slice(0, 30),
+    xdnd_owners: owners,
+    grabs_during: during,
+    grab_after: grabAfter,
+    before,
+    changed_at_answer: changedFields(before, afterAnswer),
+    changed_later: changedFields(before, later),
+    after_answer: afterAnswer,
+    later,
+    // the page's pointer log of the drag (task 20), and the cold run's conditions
+    page_counts: { before: counts(page), after: counts(after) },
+    page_log: after.log,
+    ...extra,
+  };
+  emit(run);
+  desktop.focusFront();
+  await sleep(700);
+  return run;
 }
 
 /** A lane's summary row. */
@@ -241,15 +338,21 @@ export async function runDnd(args, { desktop, emit }) {
   const stubScene = await desktop.openChrome('stub', 'scene.html');
   await desktop.openFront(args.occlusion === 'covered' ? 'covered' : 'visible');
   const witness = await startWitness(XPROBE);
+  const ctx = { desktop, oracle, witness, emit, occlusion: args.occlusion, grabs: args.grabs !== false, path: args.dndShort ? 'dnd-short' : 'dnd' };
   const md = [
-    `HTML5 drag and drop (pages/drag.html's \`dnd\` path), ${n} drags a lane, each window ${args.occlusion} (dnd.mjs). Columns: drops that landed; answers that refused the drop as declared (deviations.mjs) / that said the drop may have happened; runs whose witness changed, by field; runs that took XdndSelection; runs where a grab was in force during the drag; runs with a grab left after the answer; runs whose active window, focus or stacking differed from before right after the answer, and 1 s later.`,
+    `HTML5 drag and drop (pages/drag.html's \`${ctx.path}\` path), ${n} drags a lane, each window ${args.dndCold ? `in front, every drag a fresh engine's first request${args.coverMs ? ` after ${args.coverMs} ms under a full cover` : ''}` : args.occlusion} (dnd.mjs). Columns: drops that landed; answers that refused the drop as declared (deviations.mjs) / that said the drop may have happened; runs whose witness changed, by field; runs that took XdndSelection; runs where a grab was in force during the drag; runs with a grab left after the answer; runs whose active window, focus or stacking differed from before right after the answer, and 1 s later.`,
     '',
     '| family | lane | drops | refused / may have dropped | witness changed | took XdndSelection | grab during | grab after | changed at the answer | changed 1 s later |',
     '|---|---|---:|---|---|---:|---:|---:|---|---|',
   ];
-  const ctx = { desktop, oracle, witness, emit, occlusion: args.occlusion, grabs: args.grabs !== false, path: args.dndShort ? 'dnd-short' : 'dnd' };
+  const ballast = [];
   try {
     if (!(await negativeCheck(desktop, witness, stubScene, emit))) throw new Error('the witness did not fail the activating stub; the run is invalid');
+    if (args.ballast === 'gate') {
+      for (const [scene, n] of Object.entries(GATE_BALLAST)) {
+        for (let k = 0; k < n; k++) ballast.push(await openScene(desktop, scene, `ballast${k}`, { text: ['chrome-textarea', 'chrome-address-bar'].includes(scene) }));
+      }
+    }
     for (const family of args.families?.length ? args.families : ['chrome']) {
       const scenes = {};
       try {
@@ -260,8 +363,10 @@ export async function runDnd(args, { desktop, emit }) {
         }
         desktop.arrangeFront(args.occlusion === 'covered' ? 'covered' : 'visible');
         await sleep(1000);
+        const prelude = args.prelude === 'dedicated' ? { cua: args.cua } : null;
+        const runs = args.dndCold ? await coldSeries(ctx, lanes, scenes, family, n, { coverMs: args.coverMs, prelude }) : null;
         for (const spec of lanes) {
-          md.push(summaryRow(family, spec.label, await series(ctx, spec, scenes[spec.label], family, n), n));
+          md.push(summaryRow(family, spec.label, runs?.[spec.label] ?? (await series(ctx, spec, scenes[spec.label], family, n)), n));
           process.stdout.write(`${md.at(-1)}\n`);
         }
       } finally {
@@ -269,6 +374,7 @@ export async function runDnd(args, { desktop, emit }) {
       }
     }
   } finally {
+    await desktop.close(ballast);
     await witness.stop();
   }
   return { md, complete: true, failed: [] };

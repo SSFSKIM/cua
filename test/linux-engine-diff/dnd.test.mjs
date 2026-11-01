@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { changedFields, dndLanes } from '../../scripts/linux-engine-diff/dnd.mjs';
+import { GATE_BALLAST, changedFields, coldRounds, dndLanes } from '../../scripts/linux-engine-diff/dnd.mjs';
 import { readQtCounts } from '../../scripts/linux-engine-diff/families.mjs';
 import { KIND_FAMILIES, QT_TOOL_BUTTON, hoverTarget } from '../../scripts/linux-engine-diff/kinds.mjs';
 
@@ -18,6 +18,18 @@ test('the drag-and-drop lanes: the window-in-front lane runs only when asked for
     ['cua:active', '/c', [], true],
     ['cua:dedicated', '/c', ['--desktop', 'dedicated'], false],
   ]);
+});
+
+test('cold drags interleave the lanes: one drag a lane each round, the order rotating, so every lane meets the same sitting', () => {
+  const lanes = [{ label: 'pinned' }, { label: 'newest' }, { label: 'cua' }];
+  assert.deepEqual(
+    coldRounds(lanes, 3).map(({ i, spec }) => `${i}:${spec.label}`),
+    ['0:pinned', '0:newest', '0:cua', '1:newest', '1:cua', '1:pinned', '2:cua', '2:pinned', '2:newest'],
+  );
+});
+
+test("the gate's ballast: the Chrome windows m3-gate had open besides the drag page and the stub, as run.mjs opens them", () => {
+  assert.deepEqual(GATE_BALLAST, { chrome: 4, 'chrome-input': 3, 'over-budget': 1, retention: 3, 'chrome-textarea': 3, 'chrome-address-bar': 3, 'device-chrome': 1 });
 });
 
 test('a drop changes the desktop in the fields that differ', () => {

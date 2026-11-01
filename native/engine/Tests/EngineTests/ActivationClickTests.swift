@@ -72,6 +72,23 @@ final class ActivationClickTests: XCTestCase {
     }
   }
 
+  /// The paste slot's switch (#187's 3b) lifts the outside-frame skip for the paste route's activation only: a route-3
+  /// click's activation, made as every non-paste route makes it, still skips the click at a point outside the frame,
+  /// whatever engine.json says (the switch never reaches it), and the click itself lands as before.
+  func testANonPasteRoutesActivationStillSkipsTheClickOutsideTheFrame() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.activationPoint = CGPoint(x: -1, y: 1441)
+    let made = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: window, windowID: 41, system: seam.system)
+    XCTAssertFalse(made.liftsOutsideFrameSkip)
+    var meta = InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+    try deliverClick(ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: window, windowID: 41, pid: target), route: .activation,
+                     button: .left, count: 1, activation: made, targetActive: { false }, post: seam.system.post, meta: &meta)
+    let clicks = seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }
+    XCTAssertEqual(clicks.map(\.location), [CGPoint(x: 300, y: 400)], "the action's own click only")
+    XCTAssertEqual(meta.activationClick, .outsideFrame)
+    XCTAssertNil(meta.paste, "no paste record off the paste route")
+  }
+
   func testNoActivationClickFieldWhenNoActivationRan() {
     let meta = InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
     XCTAssertNil(meta.wire["activationClick"])

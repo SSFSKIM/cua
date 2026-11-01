@@ -7,7 +7,10 @@ import Foundation
 // owner's per-app route-4 override (the spec's Design, "Input" route 4): `{<bundle id>: 4}`, absent or empty meaning no
 // app gets route 4. `cursor` is the agent cursor's per-device switch (#235's spec, "Settings"): `false` turns every
 // session's cursor off, absent or `true` leaves it on. `cursorDebug` names one diagnostic arm of the cursor for an attended
-// sitting (CursorDebug; #235's Decision Log, 2026-10-31), absent meaning none. Any other value of any of them, or a file that is not a JSON
+// sitting (CursorDebug; #235's Decision Log, 2026-10-31), absent meaning none. `pasteFocusEnforcement` is the attended
+// slot's B arm of #187's 3b (the Decision Log's #187 entry, amended 2026-11-01): `true` lets the paste route's activation
+// post its click at an AXActivationPoint outside the window's frame (Activation.swift), absent or `false` leaves today's
+// skip; a slot setting, not a lasting one. Any other value of any of them, or a file that is not a JSON
 // object, stops the engine at start with a sentence naming the setting, so a policy, an override or a switch the owner
 // wrote is never silently replaced or dropped.
 
@@ -51,6 +54,8 @@ struct EngineSettings {
   var cursor = true
   /// The cursor's diagnostic arm, none by default.
   var cursorDebug: CursorDebug?
+  /// The slot's B arm of #187's 3b on the paste route, off by default.
+  var pasteFocusEnforcement = false
 
   /// A setting the engine cannot run under; `message` names the setting and the file.
   struct Invalid: Error {
@@ -76,7 +81,17 @@ struct EngineSettings {
       policy = named
     }
     return EngineSettings(peerPolicy: policy, routes: try parseRoutes(object["routes"], path: path), cursor: try parseCursor(object["cursor"], path: path),
-                          cursorDebug: try parseCursorDebug(object["cursorDebug"], path: path))
+                          cursorDebug: try parseCursorDebug(object["cursorDebug"], path: path),
+                          pasteFocusEnforcement: try parsePasteFocusEnforcement(object["pasteFocusEnforcement"], path: path))
+  }
+
+  /// `pasteFocusEnforcement`: absent, or a JSON boolean.
+  private static func parsePasteFocusEnforcement(_ given: Any?, path: String) throws -> Bool {
+    guard let given else { return false }
+    guard let flag = given as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else {
+      throw Invalid(message: "pasteFocusEnforcement in \(path) must be true or false (or absent); true is the paste slot's B arm (#187)")
+    }
+    return flag.boolValue
   }
 
   /// `cursorDebug`: absent, or the name of one arm.

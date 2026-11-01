@@ -94,6 +94,22 @@ final class EngineSettingsTests: XCTestCase {
     }
   }
 
+  /// `pasteFocusEnforcement`: the paste slot's B arm of #187's 3b, off unless the file says true; strict like the others,
+  /// so a slot's arm is never silently dropped.
+  func testPasteFocusEnforcementIsOffUnlessTheFileSaysTrue() throws {
+    XCTAssertFalse(try parse(nil).pasteFocusEnforcement, "no file: off")
+    XCTAssertFalse(try parse("{}").pasteFocusEnforcement, "absent: off")
+    XCTAssertFalse(try parse(#"{"pasteFocusEnforcement": false}"#).pasteFocusEnforcement)
+    XCTAssertTrue(try parse(#"{"pasteFocusEnforcement": true, "cursor": true}"#).pasteFocusEnforcement)
+    for text in [#"{"pasteFocusEnforcement": 1}"#, #"{"pasteFocusEnforcement": "true"}"#, #"{"pasteFocusEnforcement": null}"#,
+                 #"{"pasteFocusEnforcement": "B"}"#] {
+      XCTAssertThrowsError(try parse(text), text) { error in
+        let message = (error as? EngineSettings.Invalid)?.message ?? ""
+        XCTAssertTrue(message.contains("pasteFocusEnforcement") && message.contains("/h/.config/cua/engine.json") && message.contains("true or false"), message)
+      }
+    }
+  }
+
   func testTheSettingsLiveUnderHome() {
     XCTAssertEqual(EngineSettings.path(environment: ["HOME": "/Users/x"]), "/Users/x/.config/cua/engine.json")
   }

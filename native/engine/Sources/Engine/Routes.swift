@@ -238,6 +238,20 @@ enum ActivationClick: String, Equatable {
   case hitTestFailed  // the hit-test there answered nothing
 }
 
+/// Where the window's AXActivationPoint lies against its frame (the paste's `focusEnforcement`, #187's 3b): value-free,
+/// never the point itself.
+enum ActivationPointPlace: String, Equatable {
+  case inside, outside
+  case unknownFrame  // the window's frame could not be read
+  case none          // the window has no AXActivationPoint
+}
+
+func activationPointPlace(_ point: CGPoint?, windowFrame: CGRect?) -> ActivationPointPlace {
+  guard let point else { return .none }
+  guard let windowFrame else { return .unknownFrame }
+  return windowFrame.contains(point) ? .inside : .outside
+}
+
 /// The roles a hit-test may answer at the activation point for the click to go: the window itself and the window's
 /// chrome that is not a control (its title, a plain group or toolbar), as U13 read on TextEdit, Finder and Electron.
 private let inertActivationRoles: Set<String> = ["AXWindow", "AXStaticText", "AXImage", "AXGroup", "AXToolbar", "AXSplitGroup"]

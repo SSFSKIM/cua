@@ -46,6 +46,14 @@ func webShaped(info: [String: Any]) -> Bool {
   return types.contains { ($0["CFBundleURLSchemes"] as? [String] ?? []).contains { $0.lowercased() == "http" } }
 }
 
+/// Whether an app is Chromium's or Electron's by its Info.plist's principal class: the apps whose page posts no
+/// accessibility notifications until web accessibility is on, so a paste trusts their notifications only while #244's
+/// enablement holds (Paste.swift `notificationSource`).
+func chromiumFamily(info: [String: Any]) -> Bool {
+  guard let principal = info["NSPrincipalClass"] as? String else { return false }
+  return principal == "AtomApplication" || principal == "BrowserCrApplication"
+}
+
 /// Whether an app is enabled at all: web-shaped, or one of the bundles the vendor enables by name (F §1.9).
 func enablementEligible(bundleIdentifier: String?, webShaped: Bool) -> Bool {
   if webShaped { return true }
@@ -146,6 +154,9 @@ private final class EnabledProcess: @unchecked Sendable {
   /// The attribute the engine set after reading it false, which it releases and, until then, neither reads nor writes
   /// again; nil otherwise.
   var owned: String?
+  /// Whether the attribute is on as the engine last left or read it: owned, written true, or read true (another
+  /// client's); false once written back. What a paste's trust in the process's notifications keys on (#187).
+  var on = false
   /// Whether the process's generation is known; a write-back is remembered only then, since a key of the pid alone
   /// would match a later process reusing it.
   let generationKnown: Bool
@@ -162,6 +173,7 @@ private final class EnabledProcess: @unchecked Sendable {
 final class WebAccessibility: @unchecked Sendable {
   private let lock = NSLock()
   private var webShapedByPath: [String: Bool] = [:]
+  private var chromiumByPath: [String: Bool] = [:]
   private var webAreaSeen: Set<String> = []
   private var writtenBack: Set<String> = []
   private var processes: [String: EnabledProcess] = [:]
@@ -217,6 +229,30 @@ final class WebAccessibility: @unchecked Sendable {
     return shaped
   }
 
+  /// `chromiumFamily` of the app at `appPath`, read once per path.
+  func isChromiumFamily(_ appPath: String) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    if let known = chromiumByPath[appPath] { return known }
+    let info = (NSDictionary(contentsOfFile: appPath + "/Contents/Info.plist") as? [String: Any]) ?? [:]
+    let chromium = chromiumFamily(info: info)
+    chromiumByPath[appPath] = chromium
+    return chromium
+  }
+
+  /// Whether the process's enablement holds now (#187): its attribute owned by the engine, or written or read true at
+  /// its last observation, and not written back since. False for a process no connection has observed, whose role
+  /// read alone (Basic mode) is not counted.
+  func enablementHolds(pid: pid_t, launched: Date?) -> Bool {
+    lock.lock()
+    let entry = processes[Self.process(pid, launched)]
+    lock.unlock()
+    guard let entry else { return false }
+    entry.io.lock()
+    defer { entry.io.unlock() }
+    return entry.on
+  }
+
   /// getAppState's enablement step, on an eligible app only (`enablementEligible`; nil for any other, which gets
   /// neither): the application element's role read (AXRole, AXSubrole and AXRoleDescription in one request, at every
   /// observation, never cached), then `enableReporting`. Reading the role gives Chromium and Electron their Basic
@@ -261,7 +297,12 @@ final class WebAccessibility: @unchecked Sendable {
     lock.lock()
     let reEnabling = writtenBack.contains(key)
     lock.unlock()
-    guard read != true || reEnabling, entry.access.write(name, true) else { return (nil, prior) }
+    guard read != true || reEnabling, entry.access.write(name, true) else {
+      // Not written: on only when it read true and that is not AppKit's readback after the engine's own write-back.
+      entry.on = read == true && !reEnabling
+      return (nil, prior)
+    }
+    entry.on = true
     lock.lock()
     writes[key, default: 0] += 1
     // Owned, and so released later, only when it read false (A3): an unreadable value may be another client's. A value
@@ -310,8 +351,10 @@ final class WebAccessibility: @unchecked Sendable {
     if let owned = entry.owned {
       if !entry.access.current() {
         entry.owned = nil  // the process ended (its pid may be another launch's): nothing to write back
+        entry.on = false
       } else if entry.access.write(owned, false) {
         entry.owned = nil
+        entry.on = false
         reset = true
       } else {
         releaseFailed("enablement release failed: \(owned) on pid \(key.prefix { $0 != "@" }); kept for a later close or shutdown")

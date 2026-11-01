@@ -157,7 +157,7 @@ Which route each family lands on was decided by measurement, not assumed. The se
 
 **Text** (`typeText`): the engine reads the active input source (`TISCopyCurrentKeyboardInputSource`) and routes by it. With a Latin source active, every character the layout can produce is keyed as the vendor keys it (`R/F-helper-logic.md` §6.2): one key press per UTF-16 unit, four events each (flags, key down, key up, flags restored), 250 µs apart, whose virtual key code and modifier flags come from a reverse map of the layout (`UCKeyTranslate` with `kUCKeyActionDisplay` over key codes 0–127 under the vendor's eight shift/option/control masks, never ⌘, built once per layout and rebuilt on `kTISNotifySelectedKeyboardInputSourceChanged`; the engine also compares the current source's id (`TISCopyCurrentKeyboardInputSource`, read directly rather than through a notification flag, since the notification would wait for the run loop the request occupies) before every event and after the last, so a source switch during a keyed request, the user switching to Hangul for their own window mid-action, stops the request with the error name `inputSourceChanged` and a bounded sentence naming how many characters (UTF-16 units) were entered, rather than letting the Hangul input method compose the remaining Latin keys; the wrapper's value-free classification admits that name, and for a concealed request renders its "may have been partly entered" sentence) and whose Unicode string (`CGEventKeyboardSetUnicodeString`) is the character, so an app that reads virtual key codes and an app that reads the event's characters both receive it; a character the layout cannot key (an emoji, CJK, a combining sequence) goes as a Unicode-string event with key code 0, in chunks of at most 20 UTF-16 units that never split a surrogate pair or a combining sequence (cua's departure: the vendor logs and drops such characters, `R/F-helper-logic.md` §6.2, which is what the Korean and Unicode matrix must beat). Events are posted to the owning process by route 2′, the plain post, with no fake activation first (the vendor's fake activation before every keyboard action, §6.1, is a declared difference: route 2′ delivered keyed text and key presses on all four scenes in the second sitting without firing the app's activation hooks, "Input"); a newline is a real Return key event. With the Korean source active, the Text Services Manager interprets key events by key code and composition state, so neither form is trusted: the engine takes the paste route for the text and sends Return as key events (the paste route is M2a's; the spike refused such a request with a sentence naming it, so probe (e)'s Korean-source rows are unmeasured until then). One more case makes the session-wide reading unreliable: macOS can hold an input source per app (Keyboard → Input Sources → "Automatically switch to a document's input source", the per-context input preference in `com.apple.HIToolbox`), and when it is on, a background driven app may sit in its own Hangul context while the session's source reads Latin; the engine reads that preference and, when it is on and the driven app is not frontmost, treats the source as unknown and takes the paste route. M0 probe (e) checks whether keyed Latin events are transliterated to jamo by the Hangul input method in that state. Every paste fallback is reported (`cua/inputRoute: "paste"`). There is no per-app fallback list: the matrix proves the keyed form on its scenes, and the ruling is any ordinary app. **Secrets never take the paste route.** The vendor's typeText keyed through the layout and never touched the pasteboard, which clipboard managers poll and keep; so `src/services/sky.mjs` marks the request copy it substitutes into with `concealed: true`, and for a concealed `type_text` the engine keys the text under a Latin source whose reading is reliable (the per-context preference off, or the driven app frontmost) and otherwise fails closed before anything is entered with the error name `concealedInputUnavailable`; a concealed `paste` is refused with the same name. The wrapper's value-free classification (`src/services/sky.mjs`, `secret-input.mjs`) admits that name and renders it as its own fixed sentence, which says that nothing was entered, names the active input source, and names `setValue` as the alternative (a settable field takes the value through `AXValue`, no keystrokes and no pasteboard); the wrapper's generic "may have been partly entered" sentence is reserved for every other failure after substitution. Never the value. The vendor keys through the layout and drops what it cannot key; `src/mcp/surface.mjs`'s "paste emoji" rule and its secrets rule are revised in M4 once the matrix shows what cua carries.
 
-**Paste** (`paste {text, format: text|md|html}`): declare the pasteboard contents through a lazy data provider (an `NSPasteboardItem` whose data is supplied when an app asks for it; the vendor's representations, `R/F-helper-logic.md` §7.2: `text` → plain only; `html` and `md` (Markdown converted to HTML first) → `public.html` as the source, `public.rtf`, and plain as the rendered text), with `NSPasteboardContentsCurrentHostOnly` so the paste stays off Universal Clipboard, and in addition, cua's own, the `org.nspasteboard.ConcealedType` and `org.nspasteboard.TransientType` marker types that clipboard managers honour by not recording the item (the vendor writes no markers); snapshot the previous contents; give the app route 3's fake activation when it does not believe it has focus, as the vendor does before ⌘V (§7.1, 7.3); post ⌘V to the owning process; treat the provider's callback as the evidence that the app read the pasteboard (bounded at 2 s), then wait up to 2 s, polling every 25 ms, for an effect (a `valueChanged` or `selectedTextChanged` notification, or a change of the focused element's selected range or character count against the snapshot taken before the paste), both waits failing with `Timed out waiting for the application to read the clipboard` as the vendor's do (§7.4–7.5); then restore the previous pasteboard contents on every path, success or error, only if the change count is still the engine's own (a human's newer clipboard is never overwritten; the vendor's "The user may have conflicted with your paste operation" sentence covers that case, §7.6). Secret substitution is unaffected: the wrapper places the value into the request before the service runs, whichever route delivers it. The vendor serializes pastes process-wide while cua's one-in-flight rule is per connection, so two connections pasting at once could clobber the pasteboard and each other's restore (`R/sky-behaviour.md` §23.5): the engine holds one engine-wide FIFO paste lock from the snapshot through the restore, across connections, and `type_text`'s paste route takes the same lock (the critique of 2026-10-19).
+**Paste** (`paste {text, format: text|md|html}`): declare the pasteboard contents through a lazy data provider (an `NSPasteboardItem` whose data is supplied when an app asks for it; the vendor's representations, `R/F-helper-logic.md` §7.2: `text` → plain only; `html` and `md` (Markdown converted to HTML first) → `public.html` as the source, `public.rtf`, and plain as the rendered text), with `NSPasteboardContentsCurrentHostOnly` so the paste stays off Universal Clipboard, and in addition, cua's own, the `org.nspasteboard.ConcealedType` and `org.nspasteboard.TransientType` marker types that clipboard managers honour by not recording the item (the vendor writes no markers); snapshot the previous contents; give the app route 3's fake activation when it does not believe it has focus, as the vendor does before ⌘V (§7.1, 7.3); post ⌘V to the owning process; treat the provider's callback as the evidence that the app read the pasteboard (bounded at 2 s), then wait up to 2 s, polling every 25 ms, for an effect (a `valueChanged` or `selectedTextChanged` notification, or a change of the focused element's selected range or character count against the snapshot taken before the paste), the read wait failing with `clipboardReadTimedOut` (the vendor's sentence, extended) and the effect wait with `pasteUnconfirmed`, both bounded by the request's deadline too, with no effect wait at all when nothing could show an effect (then a read after ⌘V answers success with an unconfirmed note in the result's text, a read only before ⌘V `pasteUnconfirmed`), where the vendor answers both with its one read sentence (§7.4–7.5; cua's departure, Decision Log #187, 2026-11-01); then restore the previous pasteboard contents on every path, success or error, only if the change count is still the engine's own (a human's newer clipboard is never overwritten; the vendor's "The user may have conflicted with your paste operation" sentence covers that case, §7.6). Secret substitution is unaffected: the wrapper places the value into the request before the service runs, whichever route delivers it. The vendor serializes pastes process-wide while cua's one-in-flight rule is per connection, so two connections pasting at once could clobber the pasteboard and each other's restore (`R/sky-behaviour.md` §23.5): the engine holds one engine-wide FIFO paste lock from the snapshot through the restore, across connections, and `type_text`'s paste route takes the same lock (the critique of 2026-10-19).
 
 **Scroll**: one scroll-wheel event in pixels, `round(pages × max(the element's or window's length on that axis, 100))`, at the element's centre or the point, the element first scrolled into view (the vendor's amount, revised 2026-10-21, Decision Log "M2a vendor reading"; a horizontal scroll carries its delta on the horizontal axis); a scroll never arms the settle (the vendor's rule, `R/F-helper-logic.md` §8.1). **Drag**: down, interpolated moves, up, posted to the owning process.
 
@@ -498,6 +498,18 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     by the connection's next execute): {repairs, actions: [{postedAt, repairs, latencyMs}]}, the connection's total and
     the last 8 repaired actions, each keyed by its delivery's postedAt, latencyMs its first repair's from the events;
     each repair is also a `route3.afterAction.repair` signpost event
+  paste: the paste route's value-free diagnostics of its last line (#187), on its result and every error after its first
+    line began: {line, lines, notificationSource ("trusted" | "untrusted" | "none"), baselineEmpty, keyFocusAtPaste?
+    {holds, frontmost, keyFocusProcess, focusedInWindow (null: unreadable)}, readWait? ("handedOver" | "released" |
+    "timeout" | "deadline"), readWaitMs?, readAfterPostMs? (the first hand-over, signed, negative for a read before ⌘V),
+    firstReadAfterPostMs? (the first hand-over at or after ⌘V, which the no-channel answer keys on), effectWait?
+    ("notification" | "reading" | "timeout" | "deadline" | "noChannel"), effectWaitMs?, mainLagMs?, mainLagOpen?,
+    stage? ("read" | "effect"), confirmed?, unconfirmedLines? (the operation's, when any), restore ("restored" |
+    "skippedChanged" | "notTaken")}; never the clipboard's contents or the field's text
+  note: on a paste or type_text result that pasted a line with no channel to see it, read after ⌘V (#187): the sentence
+    the service adds to the tool result's content
+  pasteUnconfirmed (engine-only, not admitted by the wrapper: a concealed request never pastes): ⌘V was sent and the text
+    read from the clipboard, but no effect was seen, or none could be (Decision Log, #187)
   noScreenshotForCoordinates: a coordinate click, drag or scroll with no usable screenshot on the connection ("Screenshot"); nothing
     posted, the input meta carried with startedAt/endedAt null; the sentence names getScreenshot as the way to get an image to click
     in (c13759a4's "There is no screenshot of the app's window to place the coordinates in. Try to get the on-screen content again
@@ -1346,6 +1358,84 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   refusal. CI's `engine-swift` job runs `swift test`, so the gate is closed there too; `--probe` and the debug
   executable the integration tests run directly never load XCTest and stay open.
   Date/Author: 2026-11-01, cursor235's implementer for cua_repl's ruling on #237.
+- Decision (#187, 2026-11-01, `fix/187-paste-clipboard-timeout`; amends "Paste" in Design and M2a.3's item 4): **the
+  paste route answers by stage, tells the model that delivery is unknown, answers at once when nothing could confirm,
+  binds both waits to the deadline, and records value-free diagnostics on every paste.** Both of the old throw sites
+  came after ⌘V was posted and answered the vendor's one sentence, "Timed out waiting for the application to read the
+  clipboard", which read as "nothing happened": the dogfood's Korean typeText raised it with the text already in the
+  field, and the model's retry doubled it. The vendor shares the defect: its effect poll's timeout is remapped to the
+  same case-5 sentence (`FUN_1001b534c`; `R/F-helper-logic.md` §7.5). **Declared difference from the vendor's single
+  sentence:**
+  1. **Split by stage.** No hand-over within the read wait stays `clipboardReadTimedOut`. A hand-over with no effect seen
+     where a channel could have shown one is the new `pasteUnconfirmed` (-10005), an error, never a success with a
+     warning: the hand-over names no reader, so a clipboard manager's read meets it with nothing pasted (no channel at
+     all is item 3's case). A change count that moved still turns either into
+     `clipboardConflict` (F §7.6).
+  2. **The text contract.** The sentence itself carries what the model needs, since model code sees only the message
+     (`_meta` is not content): the stage in plain words, that delivery is unknown, and to observe the field with
+     get_app_state before any retry, never blindly. `clipboardReadTimedOut`: "Timed out waiting for the application to
+     read the clipboard: ⌘V was sent, but no app read the pasted text in time. Whether anything was entered is unknown:
+     observe the field with get_app_state before any retry, and never retry blindly." (a late read, or a late ⌘V
+     after the restore, can still enter something). `pasteUnconfirmed`: "The paste could not be confirmed: ⌘V was sent and
+     the pasted text was read from the clipboard, but no change was seen in the field. The text may have arrived:
+     observe the field with get_app_state before any retry, and never retry blindly." type_text's paste route appends
+     what was confirmed and that the failed line's state is unknown: " Confirmed entered: 3 of 8 characters (1 of 3 lines
+     complete); line 2 is in an unknown state." (one line: "…; the line being pasted is in an unknown state.").
+     `entered` still excludes the failed line, so the count is what landed for certain. The service passes the message
+     through unchanged (`Computer Use server error -10005: …`).
+  3. **No confirmation channel answers at once, gated on the read's timing.** When the baseline is empty (the focused
+     element exposes neither a selected range nor a character count) and no trusted notification source is registered,
+     nothing could show an effect, and the paste answers as soon as the read came, with no wait. "No channel" (cua
+     cannot look) is not "looked and saw nothing", so the vendor's 100 ms blind success (the vendor never reaches it:
+     its observer is always created) becomes **success with an unconfirmed note when a hand-over (of any representation) came at or
+     after ⌘V's post** (a read after ⌘V is positive evidence of delivery, with none against it; an error would cost every
+     Korean type_text into such a field an observation and stop multi-line text at every line), and **`pasteUnconfirmed`
+     when the only read came before ⌘V** (a foreign reader's: the provider is not asked again for the target). The
+     success's text reaches the model as a content item of the tool result: the engine's result carries `note`, and
+     the service passes it to `nodeRepl.emitContentItem`, since the facade returns nothing of an input's result to model
+     code. paste: "Pasted, unconfirmed: the app read the text after ⌘V, but this field can't be read back, so the change
+     couldn't be seen. Observe the field if the next step depends on it." type_text goes on to the next line and counts
+     them: "3 lines pasted, 1 unconfirmed: the app read each after ⌘V, but this field can't be read back, so the change
+     couldn't be seen. Observe the field if the next step depends on it." Such lines count in `entered`; a later line's
+     error says how many of the complete lines were unconfirmed ("2 of 3 lines complete, 1 of them unconfirmed").
+     `meta.paste` carries `confirmed: false`, the `stage` and `unconfirmedLines`. A registered trusted observer keeps the
+     2 s wait and answers `pasteUnconfirmed` at its end. **A Chromium or Electron
+     process's notifications are trusted only while #244's enablement holds for it** (`WebAccessibility.enablementHolds`:
+     the attribute owned by the engine, or written or read true at the process generation's last observation, and not
+     written back since; the role read's Basic mode alone does not count), since its page posts no `AXValueChanged` with
+     web accessibility off; otherwise its observer is untrusted, counts as no source, and its notifications never
+     confirm. Chromium and Electron are told by the Info.plist's principal class (`AtomApplication`,
+     `BrowserCrApplication`), not by web-shapedness, which Safari's URL scheme also meets.
+  4. **Diagnostics on every paste, failure or success** (`meta.paste`, carried as `cua/paste` and kept in the native
+     matrix's engine meta), for the last line pasted or tried: which wait ended it and how (`readWait`, `effectWait`
+     with "deadline" and "noChannel"), each wait's time, the first hand-over's time against ⌘V's post, signed, so a read
+     before ⌘V (a clipboard manager's) is visible, the main thread's lag (a block queued on it at ⌘V: how long it waited,
+     or at least how long when it had not run at the answer, since the hand-over is served there), the restore's outcome
+     (restored, skipped because the count moved, or not needed), the notification source and whether the baseline was
+     empty. Never the clipboard's contents, the field's text or its reading. **3a's predicate, `keyFocusAtPaste`,
+     recorded only:** read just before each ⌘V, it holds when the app is frontmost or the window server's key-focus
+     process (`CPSGetKeyFocusProcess`) is the app's or the keys' target's, and the app's focused element lies in the
+     window route 3 prepared (`primaryWindow`, the app's focused window first). The inputs ride beside `holds`: two
+     process reads and two Accessibility reads, no event. It is the cheapest analogue of the vendor's
+     `targetForKeyboardEvent` after `safelyEnforceActiveState` (`FUN_1001b382c`), which cua does not run; hold 3's
+     Chrome background rows are the suspected case of an app "active" with no key focus. It never refuses in this
+     change: refusal, under #188's preparation family ("the field could not be given the focus"), waits for the live
+     slot to show the predicate separates delivered from undelivered pastes.
+  5. **The deadline binds both waits.** Each wait takes the lesser of its 2 s and the request's remaining deadline, and a
+     deadline that ends it first answers that stage's error (`clipboardReadTimedOut` or `pasteUnconfirmed`), recorded as
+     "deadline"; the client's grace past the deadline lets that answer arrive. The paste lock's wait was already bound.
+     The effect poll's own reads are bound too (the review of 2026-11-01, P2): each of `effectReading`'s three AX
+     requests takes the wait's time left as its messaging timeout (at most 1 s, at least 50 ms, the observation's
+     `deadlineBounded` rule, now `boundedMessagingTimeout`), none is sent once the time is spent, and a changed reading
+     that came back after the time ran out is not accepted, so a slow target's late reply answers the stage's error
+     rather than confirming a line and moving multi-line typing on.
+  Restore and concealed safety are unchanged: the restore runs on every path, guarded by the change count, and a
+  concealed request never pastes. Proven offline on `runPaste`'s seams (the fake clock, the test's own pasteboard, the
+  main-thread probe, the key-focus read), the trust rule and `enablementHolds` on the enablement fakes, and the engine's
+  trust decision on a stub Chromium bundle; nothing here posted, activated or touched the general pasteboard. Not in
+  this change: making background Chrome take ⌘V (3b, an attended A/B under these diagnostics) and the late ⌘V after a
+  restore pasting the person's clipboard, which no engine step can stop once ⌘V is posted (the vendor shares it).
+  Date/Author: 2026-11-01, cursor235's implementer for the design session's ruling on #187.
 
 ## Outcomes & Retrospective
 

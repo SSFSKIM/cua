@@ -274,18 +274,24 @@ async function measureSample(s, ctx) {
   ctx.before = before;
   const [command, input] = def.request(ctx);
   let startedInSpan = false;
-  const send = () => {
+  const send = async () => {
     if (!engine.started) {
       engine.start();
       startedInSpan = true;
     }
-    return engine.request(command, input);
+    // the harness's own input beside the request (device.mjs `nudges`), started just before it and ended inside the span
+    const beside = def.alongside?.(ctx);
+    try {
+      return await engine.request(command, input);
+    } finally {
+      await beside;
+    }
   };
   const tag = `${s.label}:${s.sceneName}:${op}`;
   // a cua text command's route is known beforehand: its witness is judged against it and the route the engine reports
   // taking (Decision Log, M2.2); a vendor build's is judged strictly
   const expected = VENDORS.includes(s.label) ? null : routeOf(op, s.sceneName);
-  const answered = witness && target && (isText(op) || isDevice(op)) ? await routeWitness(witness, tag, target.id, expected, send, { inFront: OPS[op].inFront === true, opensWindows: command === 'click' && input.mouse_button === 'right' }) : await span(tag, send);
+  const answered = witness && target && (isText(op) || isDevice(op)) ? await routeWitness(witness, tag, target.id, expected, send, { inFront: OPS[op].inFront === true, opensWindows: command === 'click' && input.mouse_button === 'right', pointerMoves: OPS[op].pointerMoves === true }) : await span(tag, send);
   const { response, ms, sinceSpawnMs, stats } = answered.value;
   const row = { kind: 'sample', engine: s.label, scene: s.sceneName, op, block: s.block, series: i === 0 ? 'cold' : 'warm', i };
   if (expected) row.route_expected = expected;
@@ -304,6 +310,8 @@ async function measureSample(s, ctx) {
     if (stats.event_time) row.event_time = stats.event_time;
     if (stats.dnd_wait) row.dnd_wait = stats.dnd_wait;
     if (stats.after_take) row.after_take = stats.after_take;
+    // a Chromium drag's atomic press and what its watch saw (task 20: stray.rs)
+    if (stats.press) row.press = stats.press;
   }
   if (def.after) await def.after(ctx, response);
   if (def.effect && row.ok && def.read && !def.follow) {
@@ -571,6 +579,7 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
     opened.dndAt = await locate({ desktop, oracle: desktop.oracle }, opened, ['dnd']);
     opened.dndPath = runPath(opened.dndAt, 'dnd', 0);
     opened.dndShortPath = runPath(opened.dndAt, 'dnd-short', 0);
+    opened.selectPaths = [runPath(opened.dndAt, 'select', 0), runPath(opened.dndAt, 'select', 1)];
     return withApp(desktop, opened);
   }
   if (scene === 'device-firefox' || scene === 'device-chrome') {

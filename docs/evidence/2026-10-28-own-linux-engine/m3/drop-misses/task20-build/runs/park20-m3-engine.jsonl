@@ -1,0 +1,201 @@
+{"setup": true, "window": {"app": "Google-chrome", "focused": true, "height": 780, "id": 7211657, "modal": false, "title": "cua171-diff-task20b-track-../../../../../../../../../.local/share/cua-171/task20b/pages/track-track - Google Chrome", "width": 1050, "window_type": "normal", "x": 0, "y": 0}, "page": {"x": 4, "y": 87}, "parks": {"outside": ["1170", "715"], "inside": ["300", "560"]}, "lanes": [{"label": "cua", "args": []}]}
+{"lane": "cua", "i": 0, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 133.9, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 0, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 131.8, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 0, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 133.6, "route": "background"}
+{"lane": "cua", "i": 0, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 131.1, "route": "background"}
+{"lane": "cua", "i": 0, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 131.3, "route": "background"}
+{"lane": "cua", "i": 0, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 131.3, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 0, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 131.9, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 0, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.8, "route": "background"}
+{"lane": "cua", "i": 0, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 133.5, "route": "background"}
+{"lane": "cua", "i": 0, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 464.3, "route": "background"}
+{"lane": "cua", "i": 1, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 133.4, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 1, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 131, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 1, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.2, "route": "background"}
+{"lane": "cua", "i": 1, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 131.3, "route": "background"}
+{"lane": "cua", "i": 1, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 466.3, "route": "background"}
+{"lane": "cua", "i": 1, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 131.2, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 1, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 132.2, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 1, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 134.3, "route": "background"}
+{"lane": "cua", "i": 1, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 132.5, "route": "background"}
+{"lane": "cua", "i": 1, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 131.2, "route": "background"}
+{"lane": "cua", "i": 2, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 134.2, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 2, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 134.8, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 2, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 131.5, "route": "background"}
+{"lane": "cua", "i": 2, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 132.9, "route": "background"}
+{"lane": "cua", "i": 2, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 132.3, "route": "background"}
+{"lane": "cua", "i": 2, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 135.4, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 2, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 136.1, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 2, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.9, "route": "background"}
+{"lane": "cua", "i": 2, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 135.4, "route": "background"}
+{"lane": "cua", "i": 2, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 463, "route": "background"}
+{"lane": "cua", "i": 3, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 135.8, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 3, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 130.4, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 3, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.7, "route": "background"}
+{"lane": "cua", "i": 3, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 141.2, "route": "background"}
+{"lane": "cua", "i": 3, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 464.5, "route": "background"}
+{"lane": "cua", "i": 3, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 131.8, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 3, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 131.5, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 3, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 131.5, "route": "background"}
+{"lane": "cua", "i": 3, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 133.5, "route": "background"}
+{"lane": "cua", "i": 3, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 131.5, "route": "background"}
+{"lane": "cua", "i": 4, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 135.6, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 4, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 137.3, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 4, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 132.1, "route": "background"}
+{"lane": "cua", "i": 4, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 130.8, "route": "background"}
+{"lane": "cua", "i": 4, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 131.3, "route": "background"}
+{"lane": "cua", "i": 4, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 131.7, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 4, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 132, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 4, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.8, "route": "background"}
+{"lane": "cua", "i": 4, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 133.3, "route": "background"}
+{"lane": "cua", "i": 4, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 474.1, "route": "background"}
+{"lane": "cua", "i": 5, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 138.2, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 5, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 131.3, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 5, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131, "route": "background"}
+{"lane": "cua", "i": 5, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 140.3, "route": "background"}
+{"lane": "cua", "i": 5, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 468.4, "route": "background"}
+{"lane": "cua", "i": 5, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 131.6, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 5, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 130, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 5, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 132.1, "route": "background"}
+{"lane": "cua", "i": 5, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 133.6, "route": "background"}
+{"lane": "cua", "i": 5, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 133, "route": "background"}
+{"lane": "cua", "i": 6, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 132.5, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 6, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 131.4, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 6, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 131.8, "route": "background"}
+{"lane": "cua", "i": 6, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 131.8, "route": "background"}
+{"lane": "cua", "i": 6, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 137.3, "route": "background"}
+{"lane": "cua", "i": 6, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 138.1, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 6, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 131, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 6, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 134.4, "route": "background"}
+{"lane": "cua", "i": 6, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 133.3, "route": "background"}
+{"lane": "cua", "i": 6, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 470.2, "route": "background"}
+{"lane": "cua", "i": 7, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 141.7, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 7, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 132.1, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 7, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 136.9, "route": "background"}
+{"lane": "cua", "i": 7, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 134.8, "route": "background"}
+{"lane": "cua", "i": 7, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 469.8, "route": "background"}
+{"lane": "cua", "i": 7, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 131.8, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 7, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 136.2, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 7, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 131.5, "route": "background"}
+{"lane": "cua", "i": 7, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 131.6, "route": "background"}
+{"lane": "cua", "i": 7, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 131.8, "route": "background"}
+{"lane": "cua", "i": 8, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 134.3, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 8, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 133.8, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 8, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 131.1, "route": "background"}
+{"lane": "cua", "i": 8, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 132.1, "route": "background"}
+{"lane": "cua", "i": 8, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 133.1, "route": "background"}
+{"lane": "cua", "i": 8, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 132.5, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 8, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 131, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 8, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 137.6, "route": "background"}
+{"lane": "cua", "i": 8, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 131.1, "route": "background"}
+{"lane": "cua", "i": 8, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 467.7, "route": "background"}
+{"lane": "cua", "i": 9, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 137.3, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 9, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 132, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 9, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.8, "route": "background"}
+{"lane": "cua", "i": 9, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 133.7, "route": "background"}
+{"lane": "cua", "i": 9, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 471.9, "route": "background"}
+{"lane": "cua", "i": 9, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 131, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 9, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 133, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 9, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 131.8, "route": "background"}
+{"lane": "cua", "i": 9, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 132.9, "route": "background"}
+{"lane": "cua", "i": 9, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 130.8, "route": "background"}
+{"lane": "cua", "i": 10, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 133.4, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 10, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 131.8, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 10, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 132.8, "route": "background"}
+{"lane": "cua", "i": 10, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 132, "route": "background"}
+{"lane": "cua", "i": 10, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 130.7, "route": "background"}
+{"lane": "cua", "i": 10, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 133.3, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 10, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 131.8, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 10, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 132.5, "route": "background"}
+{"lane": "cua", "i": 10, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 136, "route": "background"}
+{"lane": "cua", "i": 10, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 470.7, "route": "background"}
+{"lane": "cua", "i": 11, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 133.5, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 11, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 132.9, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 11, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.3, "route": "background"}
+{"lane": "cua", "i": 11, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 135.3, "route": "background"}
+{"lane": "cua", "i": 11, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 463.7, "route": "background"}
+{"lane": "cua", "i": 11, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 135.4, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 11, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 134.2, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 11, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 131.2, "route": "background"}
+{"lane": "cua", "i": 11, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 131.8, "route": "background"}
+{"lane": "cua", "i": 11, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 131.4, "route": "background"}
+{"lane": "cua", "i": 12, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 133.3, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 12, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 135.9, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 12, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 132.7, "route": "background"}
+{"lane": "cua", "i": 12, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 132.1, "route": "background"}
+{"lane": "cua", "i": 12, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 134.1, "route": "background"}
+{"lane": "cua", "i": 12, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 130.7, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 12, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 132.2, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 12, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.9, "route": "background"}
+{"lane": "cua", "i": 12, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 132.2, "route": "background"}
+{"lane": "cua", "i": 12, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 462, "route": "background"}
+{"lane": "cua", "i": 13, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 134.3, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 13, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 131.5, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 13, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.7, "route": "background"}
+{"lane": "cua", "i": 13, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 132.7, "route": "background"}
+{"lane": "cua", "i": 13, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 470, "route": "background"}
+{"lane": "cua", "i": 13, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 133, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 13, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 134.6, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 13, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 136.6, "route": "background"}
+{"lane": "cua", "i": 13, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 135.3, "route": "background"}
+{"lane": "cua", "i": 13, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 132.9, "route": "background"}
+{"lane": "cua", "i": 14, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 133.4, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 14, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 131.4, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 14, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 132.7, "route": "background"}
+{"lane": "cua", "i": 14, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 140.8, "route": "background"}
+{"lane": "cua", "i": 14, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 137.4, "route": "background"}
+{"lane": "cua", "i": 14, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 131.3, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 14, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 131.2, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 14, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.2, "route": "background"}
+{"lane": "cua", "i": 14, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 134, "route": "background"}
+{"lane": "cua", "i": 14, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 469.9, "route": "background"}
+{"lane": "cua", "i": 15, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 133.7, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 15, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 131.5, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 15, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.9, "route": "background"}
+{"lane": "cua", "i": 15, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 138, "route": "background"}
+{"lane": "cua", "i": 15, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 462, "route": "background"}
+{"lane": "cua", "i": 15, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 131.4, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 15, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 137.7, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 15, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 131.1, "route": "background"}
+{"lane": "cua", "i": 15, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 134.1, "route": "background"}
+{"lane": "cua", "i": 15, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 131.4, "route": "background"}
+{"lane": "cua", "i": 16, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 132.3, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 16, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 137.9, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 16, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 131.8, "route": "background"}
+{"lane": "cua", "i": 16, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 134.3, "route": "background"}
+{"lane": "cua", "i": 16, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 132.1, "route": "background"}
+{"lane": "cua", "i": 16, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 130.8, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 16, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 131.3, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 16, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 132.2, "route": "background"}
+{"lane": "cua", "i": 16, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 131.7, "route": "background"}
+{"lane": "cua", "i": 16, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 470.3, "route": "background"}
+{"lane": "cua", "i": 17, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 133.1, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 17, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 140.1, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 17, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 139.3, "route": "background"}
+{"lane": "cua", "i": 17, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 139, "route": "background"}
+{"lane": "cua", "i": 17, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 466.5, "route": "background"}
+{"lane": "cua", "i": 17, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 130.8, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 17, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 132.5, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 17, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 132.4, "route": "background"}
+{"lane": "cua", "i": 17, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 131.2, "route": "background"}
+{"lane": "cua", "i": 17, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 132.8, "route": "background"}
+{"lane": "cua", "i": 18, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 133.1, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 18, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 130.9, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 18, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 132.2, "route": "background"}
+{"lane": "cua", "i": 18, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 131.1, "route": "background"}
+{"lane": "cua", "i": 18, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 130.5, "route": "background"}
+{"lane": "cua", "i": 18, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 131.4, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 18, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 131.4, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 18, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.6, "route": "background"}
+{"lane": "cua", "i": 18, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 134.6, "route": "background"}
+{"lane": "cua", "i": 18, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 459.7, "route": "background"}
+{"lane": "cua", "i": 19, "park": "inside", "pointer": [300, 560], "kind": "mouse", "landed": true, "ok": true, "ms": 133.8, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 19, "park": "inside", "pointer": [300, 560], "kind": "pointer", "landed": true, "ok": true, "ms": 132.3, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 19, "park": "inside", "pointer": [300, 560], "kind": "range", "landed": true, "ok": true, "ms": 131.9, "route": "background"}
+{"lane": "cua", "i": 19, "park": "inside", "pointer": [300, 560], "kind": "select", "landed": true, "ok": true, "ms": 142, "route": "background"}
+{"lane": "cua", "i": 19, "park": "inside", "pointer": [300, 560], "kind": "dnd", "landed": true, "ok": true, "ms": 468.2, "route": "background"}
+{"lane": "cua", "i": 19, "park": "outside", "pointer": [1170, 715], "kind": "mouse", "landed": true, "ok": true, "ms": 132.8, "buttonless": 0, "route": "background"}
+{"lane": "cua", "i": 19, "park": "outside", "pointer": [1170, 715], "kind": "pointer", "landed": true, "ok": true, "ms": 137.1, "buttonless": 0, "cancels": 0, "route": "background"}
+{"lane": "cua", "i": 19, "park": "outside", "pointer": [1170, 715], "kind": "range", "landed": false, "ok": true, "ms": 130.8, "route": "background"}
+{"lane": "cua", "i": 19, "park": "outside", "pointer": [1170, 715], "kind": "select", "landed": false, "ok": true, "ms": 132.8, "route": "background"}
+{"lane": "cua", "i": 19, "park": "outside", "pointer": [1170, 715], "kind": "dnd", "landed": false, "ok": true, "ms": 133.7, "route": "background"}

@@ -51,14 +51,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * quiet span) or stay grabbed; a route other than the expected one fails. Where the foreground route is expected, the
  * target's top-level (its window manager frame) is read before the span, for the restack judge.
  */
-export async function routeWitness(witness, tag, target, expected, fn, { inFront = false, opensWindows = false } = {}) {
+export async function routeWitness(witness, tag, target, expected, fn, { inFront = false, opensWindows = false, pointerMoves = false } = {}) {
   const frame = expected === 'foreground' || inFront ? toplevel(target) : null;
   const result = await witness.span(tag, fn);
   const route = result.value?.stats?.route ?? null;
   // the in-front allowance (witness.mjs): only for a case that declares it, and a request the engine recorded as made
   // to a window already in front
   const front = inFront && result.value?.stats?.dnd?.in_front === true;
-  const judged = judgeRouteSpan(result.report, { expected, reported: route, target, frame, focusWithin: (w) => within(w, target), inFront: front, opensWindows });
+  const judged = allowPointer(judgeRouteSpan(result.report, { expected, reported: route, target, frame, focusWithin: (w) => within(w, target), inFront: front, opensWindows }), pointerMoves);
   if (!judged.foreground) return { ...result, route, judged };
   const quiet = await witness.span(`${tag}:after`, () => sleep(300));
   const held = grabs();
@@ -66,6 +66,16 @@ export async function routeWitness(witness, tag, target, expected, fn, { inFront
   if (!quiet.witness.clean) fields.push(...quiet.witness.fields.map((f) => `${f} after the request`));
   if (held.pointer !== 'free' || held.keyboard !== 'free') fields.push(`grab left (${JSON.stringify(held)})`);
   return { ...result, route, judged: { clean: fields.length === 0, fields, allowed: judged.allowed } };
+}
+
+/**
+ * A route judgement with the real pointer's moves allowed, for a case whose harness moves the pointer itself during the
+ * span (device.mjs `nudges`): the pointer field alone leaves the failed fields; every other field stands.
+ */
+export function allowPointer(judged, pointerMoves) {
+  if (!pointerMoves || !judged.fields.includes('pointer')) return judged;
+  const fields = judged.fields.filter((f) => f !== 'pointer');
+  return { ...judged, clean: fields.length === 0, fields, allowed: [...(judged.allowed ?? []), 'pointer'] };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

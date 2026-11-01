@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { auditNothingSent, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
-import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndMayHaveDroppedSentence, judgeDevice } from '../../scripts/linux-engine-diff/device.mjs';
+import { DEVICE_OPS, DEVICE_SCENE_OPS, capabilitiesAnswer, scalePath, deviceSentence, dndCancelledSentence, dndLateNotice, dndMayHaveDroppedSentence, judgeDevice, strayNotice } from '../../scripts/linux-engine-diff/device.mjs';
+import { allowPointer } from '../../scripts/linux-engine-diff/safety.mjs';
 import { OPS, SCENE_OPS } from '../../scripts/linux-engine-diff/ops.mjs';
 import { DEVICE_REFUSAL, DND_REFUSAL, declaredRefusal } from '../../scripts/linux-engine-diff/deviations.mjs';
 import { pagePath } from '../../scripts/linux-engine-diff/drag.mjs';
@@ -24,7 +25,7 @@ test('a refused request is audited for nothing sent: a SendEvent of any kind, or
 
 test("Acceptance 8's cases: each kind and condition, refused in shared mode, foreground in dedicated, the rest background", () => {
   const plan = planOps(['device-gtk4', 'device-firefox', 'device-xterm', 'device-qt', 'device-chrome', 'device-chrome-dnd', 'gnome-text-editor'], Object.values(DEVICE_SCENE_OPS).flat().filter((op) => op !== 'capabilities'));
-  assert.equal(plan.length, 43);
+  assert.equal(plan.length, 46);
   for (const { op, scene } of plan) {
     const def = OPS[op];
     assert.ok(SCENE_OPS[scene].includes(op));
@@ -154,7 +155,7 @@ test('a cancel forced too late passes only if every answer is honest and the dro
 
 test('the in-front drop passes only where the engine recorded the window in front and the desktop ended as it began', () => {
   assert.equal(DEVICE_OPS.chrome_dnd_in_front_shared.inFront, true, 'the witness allowance is declared for the in-front drops alone');
-  assert.deepEqual(Object.keys(DEVICE_OPS).filter((op) => DEVICE_OPS[op].inFront), ['chrome_dnd_in_front_shared', 'chrome_dnd_short_in_front_shared']);
+  assert.deepEqual(Object.keys(DEVICE_OPS).filter((op) => DEVICE_OPS[op].inFront), ['chrome_dnd_in_front_shared', 'chrome_dnd_short_in_front_shared', 'chrome_dnd_short_pointer_outside_shared', 'chrome_select_nudged_shared']);
   const good = row({ ok: true, effect: true, route: 'background', dnd: { in_front: true }, desktop_same: true });
   const audit = { clean: true, kind: 'background', answered: [{ ok: true }] };
   assert.deepEqual(judgeDevice('chrome_dnd_in_front_shared', [good], audit), { pass: true, reasons: [] });
@@ -202,4 +203,53 @@ test('the forced late take passes only where the drag answered plainly, the next
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, witness: true }], audit).pass, false, 'a drop the witness did not record');
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [{ ...good, dropped: false, witness: true }], audit).pass, false, 'no drop: nothing shown');
   assert.equal(judgeDevice('chrome_dnd_late_take_shared', [good, { ...good, dropped: false, witness: true }], audit).pass, true, 'a missed drop beside landed ones');
+});
+
+test("a Chromium drag a stray pointer event may have reset passes only with the engine's sentence, nothing dropped, the witness unchanged and the background audit clean", () => {
+  assert.equal(
+    strayNotice('Google-chrome'),
+    'Google-chrome may not have started the drag, and the page may have taken the press as a click: the desktop pointer was outside the window, or entered or moved in it during the press. Read the window to see what happened before dragging again',
+    "stray.rs's sentence",
+  );
+  for (const op of ['chrome_dnd_short_pointer_outside_shared', 'chrome_select_nudged_shared']) {
+    assert.equal(DEVICE_OPS[op].device, 'stray');
+    assert.deepEqual(DEVICE_OPS[op].cuaArgs('device-chrome-dnd'), [], `${op}: shared mode`);
+    assert.ok(DEVICE_SCENE_OPS['device-chrome-dnd'].includes(op));
+    const sentence = strayNotice('Google-chrome');
+    const good = row({ ok: false, error: sentence, expected_error: sentence, dropped: false, dnd: { in_front: true }, desktop_same: true });
+    const background = { clean: true, kind: 'background', answered: [{ ok: false, error: sentence, expected_error: sentence }] };
+    assert.deepEqual(judgeDevice(op, [good], background), { pass: true, reasons: [] }, op);
+    assert.equal(judgeDevice(op, [{ ...good, ok: true, error: undefined }], background).pass, false, `${op}: answered success`);
+    assert.equal(judgeDevice(op, [{ ...good, error: dndCancelledSentence('Google-chrome') }], background).pass, false, `${op}: another answer`);
+    assert.equal(judgeDevice(op, [{ ...good, dropped: true }], background).pass, false, `${op}: it dropped`);
+    assert.equal(judgeDevice(op, [{ ...good, witness: false }], background).pass, false, `${op}: the desktop changed`);
+    assert.equal(judgeDevice(op, [good], { ...background, answered: [{ ok: true }] }).pass, false, `${op}: the audited drag answered success`);
+    assert.equal(judgeDevice(op, [good], { clean: false, kind: 'background', forbidden: ['XTEST FakeInput'] }).pass, false, `${op}: the engine sent XTEST`);
+  }
+  // the nudges are the case's own: the witness allows the pointer it moves, and nothing else
+  assert.equal(DEVICE_OPS.chrome_select_nudged_shared.pointerMoves, true);
+  assert.equal(typeof DEVICE_OPS.chrome_select_nudged_shared.alongside, 'function');
+  assert.ok(Object.keys(DEVICE_OPS).filter((op) => DEVICE_OPS[op].pointerMoves).every((op) => op === 'chrome_select_nudged_shared'));
+  // dedicated: the pointer outside takes the foreground route, and the drop lands
+  const ded = DEVICE_OPS.chrome_dnd_short_pointer_outside_dedicated;
+  assert.equal(ded.device, 'foreground');
+  assert.deepEqual(ded.cuaArgs('device-chrome-dnd'), ['--desktop', 'dedicated']);
+  assert.equal(routeOf('chrome_dnd_short_pointer_outside_dedicated', 'device-chrome-dnd'), 'foreground');
+});
+
+test('every Chromium case that takes the background route parks the real pointer in its window first, so no case depends on where the one before left it', () => {
+  const chromium = [...DEVICE_SCENE_OPS['device-chrome'], ...DEVICE_SCENE_OPS['device-chrome-dnd']];
+  const background = chromium.filter((op) => !['refusal', 'foreground'].includes(DEVICE_OPS[op].device) && op !== 'chrome_dnd_short_pointer_outside_shared');
+  assert.deepEqual(background.filter((op) => !DEVICE_OPS[op].park), [], 'parked in the window');
+  assert.equal(background.length, 9);
+  assert.equal(DEVICE_OPS.chrome_dnd_short_pointer_outside_shared.park, undefined, 'parked outside by its condition instead');
+});
+
+test("the pointer allowance lifts the pointer field alone, and only for a case whose harness moves the pointer", () => {
+  const judged = { clean: false, fields: ['pointer'], allowed: [] };
+  assert.deepEqual(allowPointer(judged, true), { clean: true, fields: [], allowed: ['pointer'] });
+  assert.deepEqual(allowPointer(judged, false), judged, 'no allowance declared');
+  assert.deepEqual(allowPointer({ clean: false, fields: ['pointer', 'focus'], allowed: [] }, true), { clean: false, fields: ['focus'], allowed: ['pointer'] }, 'the focus still fails');
+  const clean = { clean: true, fields: [], allowed: [] };
+  assert.equal(allowPointer(clean, true), clean, 'nothing to lift');
 });

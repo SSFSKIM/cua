@@ -397,7 +397,14 @@ variants included; their evidence is written either way. The run's `end` row kee
   the others success), and at least one. `capabilities` is checked against the engine's version and build. The cancel
   and the late case run again with the drop's signature already held (`obscuredInFront`: Chrome activated, and an
   override-redirect window of the harness's own, `xprobe overlay`, over its bottom-right corner, away from the path,
-  so the drag is watched); the engine must record the bits held (`dnd.held_at_start`).
+  so the drag is watched); the engine must record the bits held (`dnd.held_at_start`). The `stray` cases (task 20)
+  expect the answer that the drag may not have started, nothing dropped, and the background audit clean: Chrome in
+  front with the real pointer parked outside its window, on the front window (its capture grab crosses in), and with
+  the pointer parked inside while xdotool nudges it a pixel and back every 2 ms all through a text selection (a drag
+  that never takes a drag and drop is in its press window until its release; the case's `alongside` input starts just
+  before the request, and the witness allows the pointer field alone, `pointerMoves`). In dedicated mode the pointer
+  parked outside takes the foreground route and the short drop lands. A parked pointer goes back where the case found
+  it in the sample's cleanup.
 - **The witness's allowances** (`witness.mjs`):
   - **Foreground.** Override-redirect windows of the target's own X client (its resource-id base) may map, restack
     and unmap; one may stay mapped at the end only where the input opens it, as a right click's menu. Every other

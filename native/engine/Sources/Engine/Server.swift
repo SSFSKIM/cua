@@ -180,15 +180,24 @@ final class Server: @unchecked Sendable {
   /// but for two things that finish first (#237): its after-action watch runs on to its natural end, unless a request on
   /// any connection ends it sooner, and a fade under way plays out before its cursor's panel goes.
   func unregister(_ connection: ConnectionState) {
-    lock.lock()
-    open[connection.id] = nil
-    lock.unlock()
+    retire(connection)
     close(connection.fd)
     connection.endMenuInteraction()  // a held menu activation goes with its connection (MenuSpan.swift)
     connection.endFocusHold()  // and its focus hold (FocusHold.swift)
-    engine.connectionClosed(connection)  // its drives end, the intervention tap with the last; its after-action watch runs on (Intervention.swift)
+    engine.connectionClosed(connection)  // its drives end, the intervention tap with the last (Intervention.swift)
     engine.webAccessibility.release(connection: connection.id)  // enablement no connection observes now (Enablement.swift)
     engine.cursor.closed(connection: connection.id)  // its cursor's panel goes, after a fade under way (Cursor/CursorHub.swift)
+  }
+
+  /// The close's first step, one move under the lock: the connection leaves `open` and its after-action watch, if one
+  /// runs, joins the closed connections' (Activation.swift `ClosedConnectionWatches`). So whatever finds the connection
+  /// gone (a status, a shutdown's count, another connection's execute) finds its watch where an execute or the shutdown
+  /// ends it: never in between (#237's review).
+  func retire(_ connection: ConnectionState) {
+    lock.lock()
+    defer { lock.unlock() }
+    engine.closedWatches.adopt(connection.afterAction)
+    open[connection.id] = nil
   }
 
   /// Accepts a shutdown atomically with accept: with no connection open but `connection`, closes the listener under the

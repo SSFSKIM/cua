@@ -716,6 +716,10 @@ final class AfterActionWatches: @unchecked Sendable {
 /// An engine shutting down ends them all (Server.swift `stopAndExit`).
 final class ClosedConnectionWatches: @unchecked Sendable {
   private let lock = NSLock()
+  /// Held for a whole drain: a drain that finds the registry emptied by another still running waits for that one's
+  /// cancellations (each waits out its watch's sample), so no caller goes ahead while a watch it raced can still repair
+  /// (#237's review). Never taken under `lock`.
+  private let draining = NSLock()
   private var held: [ObjectIdentifier: AfterActionWatches] = [:]
 
   /// A closed connection's watches: held while their watch runs, released at once when none does.
@@ -727,13 +731,15 @@ final class ClosedConnectionWatches: @unchecked Sendable {
   }
 
   /// Ends every closed connection's watch, each waiting out its sample in progress: no repair of theirs starts once this
-  /// returns.
+  /// returns, whichever drain took them.
   func cancelAll() {
-    let all = lock.withLock { () -> [AfterActionWatches] in
-      defer { held = [:] }
-      return Array(held.values)
+    draining.withLock {
+      let all = lock.withLock { () -> [AfterActionWatches] in
+        defer { held = [:] }
+        return Array(held.values)
+      }
+      for watches in all { watches.cancel() }
     }
-    for watches in all { watches.cancel() }
   }
 
   /// How many closed connections' watches still run (the unit tests').

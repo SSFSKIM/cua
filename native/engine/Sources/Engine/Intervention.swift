@@ -414,11 +414,9 @@ extension Engine {
     return answer
   }
 
-  /// A connection closed: its after-action watch runs on to its natural end, until a request on any connection ends it
-  /// (#237, Activation.swift `ClosedConnectionWatches`), its drives end, and the tap is torn down once no connection
-  /// drives any app.
+  /// A connection closed: its drives end, and the tap is torn down once no connection drives any app. Its after-action
+  /// watch was adopted already, as it left the open connections (Server.swift `retire`, #237).
   func connectionClosed(_ connection: ConnectionState) {
-    closedWatches.adopt(connection.afterAction)
     intervention.release(connection: connection.id)
   }
 }

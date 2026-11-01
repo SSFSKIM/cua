@@ -16,7 +16,7 @@ import { ORACLE, PrepareStepError, judgePrepareFaults, judgeTextRestores, judgeW
 import { prepareFaultsMarkdown, renderSummary } from '../../scripts/linux-engine-diff/report.mjs';
 import { restoreLaneScene, warmUpRecord } from '../../scripts/linux-engine-diff/run.mjs';
 import { runOutcome, verdictLine } from '../../scripts/linux-engine-diff/stats.mjs';
-import { CandidateTextLost, TEXT_OPS, handleOfFirstWord, sceneTextBefore, selectFirstWord } from '../../scripts/linux-engine-diff/text.mjs';
+import { CandidateTextLost, NO_HANDLE, TEXT_OPS, handleOfFirstWord, sceneTextBefore, selectFirstWord } from '../../scripts/linux-engine-diff/text.mjs';
 
 const GEDIT_TEXT = 'cua171 differential scene\nline two of the scratch file\n';
 const chars = (s) => [...s];
@@ -529,4 +529,71 @@ test("the summary names the backstop's restore and its warm-up on the failure it
   assert.deepEqual(faults.cases.map((c) => [c.resampled, c.invalid, c.over]), [[1, 0, false]], 'a restored resample is still a resample');
   const md = prepareFaultsMarkdown([...rows, { kind: 'prepare-faults', ...faults }]).join('\n');
   assert.match(md, /- gedit clipboard_read pinned 1\/3 \(warm\): resampled; failed at the oracle step: cua171-diff-run-gedit-text_pinned refused the selection; its scene restored before the resample \(gedit 10 replaced by 11, window 42 by 42; the operation run once on it: ok, witness clean\)/);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// fix round 2 (the re-review): a warm-up's engine-side preparation is judged; no restore is lost or counted twice
+
+test("a candidate's warm-up whose own Copy failed fails the run, though its release answered ok (the reviewer's probe)", async () => {
+  // the real preparation of a warm clipboard_release: the companion clipboard_read fails, NO_HANDLE is released fine
+  const buffer = new GtkBuffer();
+  const ctx = ctxOf(buffer, { label: 'cua', i: 2 });
+  ctx.engine.request = async () => ({ response: { ok: false, error: 'editable element has no selected text to Copy' } });
+  await TEXT_OPS.clipboard_release.prepare(ctx);
+  assert.equal(ctx.handle, NO_HANDLE);
+  const record = warmUpRecord({ row: { kind: 'sample', ok: true, ms: 0.2, witness: true, prepare_error: ctx.prepareError, prepare_step: ctx.prepareStep }, fault: null });
+  assert.equal(record.ok, true);
+  const candidate = judgeWarmUps([warmFailure('cua', record, { op: 'clipboard_release' })], ['pinned', 'newest']);
+  assert.deepEqual(candidate.reasons, ["gedit clipboard_release cua 1/2: the backstop's warm-up's preparation failed: clipboard_read for a handle failed: editable element has no selected text to Copy"]);
+  const outcome = runOutcome([], { valid: true, faults: { pass: true, reasons: [] }, warmUps: candidate });
+  assert.equal(outcome.code, 1, 'never charged to the oracle allowance');
+  assert.equal(judgeWarmUps([warmFailure('pinned', record, { op: 'clipboard_release' })], ['pinned', 'newest']).pass, true, "a vendor's is recorded only");
+});
+
+test("a resample refused at the oracle after its restore keeps that restore, counted once (the reviewer's probe)", async () => {
+  // the pinned lane: the first attempt refused, the scene restored and warmed up (which deletes the word again), the
+  // resample's restore puts it back, then the oracle refuses the selection anyway
+  const results = [
+    { row: { kind: 'prepare-failure', engine: 'pinned', scene: 'gedit', op: 'clipboard_read', block: 1, series: 'warm', i: 2, step: ORACLE, error: 'refused', attempts: [] }, fault: ORACLE },
+    { row: { kind: 'prepare-failure', engine: 'pinned', scene: 'gedit', op: 'clipboard_read', block: 1, series: 'warm', i: 2, step: ORACLE, error: 'refused again', attempts: [], text_restored: RESTORED }, fault: ORACLE },
+  ];
+  const emitted = [];
+  const restoreScene = async () => ({ old_id: 9, new_id: 9, warm_up: { ok: false, error: 'editable Paste did not insert text', witness: true, ms: 10204, text_restored: RESTORED }, ms: 13000 });
+  const out = await sampleUnderRule({ cold: false, take: async () => results.shift(), renew: async () => true, restoreScene, emit: (r) => emitted.push(r) });
+  assert.equal(out.counted, null);
+  assert.deepEqual(emitted[0].resample.text_restored, RESTORED);
+  const restores = judgeTextRestores(emitted, ['pinned', 'newest', 'cua']);
+  assert.deepEqual(restores.lanes, { pinned: 2, newest: 0, cua: 0 }, "the warm-up's and the resample's, each once");
+  assert.equal(judgePrepareFaults(emitted).total.samples, 1, 'one invalid sample, no more');
+});
+
+test("a warm-up refused at the oracle after its restore keeps that restore, counted once (the reviewer's probe)", async () => {
+  const record = warmUpRecord({ row: { kind: 'prepare-failure', step: ORACLE, error: 'cua171-diff-run-gedit-text_pinned refused the selection', text_restored: RESTORED }, fault: ORACLE });
+  assert.deepEqual(record, { refused: 'cua171-diff-run-gedit-text_pinned refused the selection', text_restored: RESTORED });
+  const desktop = fakeDesktop();
+  const windows = { gedit: { text: { pinned: { kind: 'gedit', role: 'text_pinned', id: 9 } } } };
+  const emitted = [];
+  const out = await sampleUnderRule({
+    cold: false,
+    take: async () => ({ row: { kind: 'prepare-failure', engine: 'pinned', scene: 'gedit', op: 'clipboard_read', block: 1, series: 'warm', i: 2, step: ORACLE, error: 'refused', attempts: [] }, fault: ORACLE }),
+    renew: async () => true,
+    restoreScene: () => restoreLaneScene({ desktop, windows, sceneName: 'gedit', label: 'pinned', occlusion: 'covered', warmUp: async () => record }),
+    emit: (r) => emitted.push(r),
+  });
+  assert.equal(out.counted, null);
+  assert.deepEqual(judgeTextRestores(emitted, ['pinned', 'newest', 'cua']).lanes, { pinned: 1, newest: 0, cua: 0 });
+});
+
+test('a restore reaching the collector by two paths is counted once: the warm-up record copied onto the counted resample', async () => {
+  const results = [
+    { row: { kind: 'prepare-failure', engine: 'pinned', scene: 'gedit', op: 'clipboard_read', block: 1, series: 'warm', i: 2, step: ORACLE, error: 'refused', attempts: [], text_restored: RESTORED }, fault: ORACLE },
+    { row: { kind: 'sample', engine: 'pinned', scene: 'gedit', op: 'clipboard_read', block: 1, series: 'warm', i: 2, ok: true, text_restored: RESTORED }, fault: null },
+  ];
+  const emitted = [];
+  const restoreScene = async () => ({ old_id: 9, new_id: 9, warm_up: { ok: true, witness: true, ms: 600, text_restored: RESTORED }, ms: 4000 });
+  const out = await sampleUnderRule({ cold: false, take: async () => results.shift(), renew: async () => true, restoreScene, emit: (r) => emitted.push(r) });
+  emitted.push(out.counted.row);
+  assert.deepEqual(out.counted.row.scene_restore.warm_up.text_restored, RESTORED, 'the record reaches the counted sample too');
+  // the first attempt's, the warm-up's and the resample's: three restores, each once
+  assert.deepEqual(judgeTextRestores(emitted, ['pinned', 'newest', 'cua']).lanes, { pinned: 3, newest: 0, cua: 0 });
 });

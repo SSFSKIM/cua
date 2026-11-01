@@ -69,7 +69,8 @@ export async function sampleUnderRule({ cold, take, renew, restoreScene = null, 
   }
   const second = await take();
   if (second.fault === ORACLE) {
-    emit({ ...first.row, outcome: 'invalid', resample: { step: second.row.step, error: second.row.error, attempts: second.row.attempts } });
+    // the resample's own restore, made before its refusal, is kept (prepare.mjs judgeTextRestores counts it)
+    emit({ ...first.row, outcome: 'invalid', resample: { step: second.row.step, error: second.row.error, attempts: second.row.attempts, ...(second.row.text_restored ? { text_restored: second.row.text_restored } : {}) } });
     return { counted: null, stop: cold };
   }
   emit({ ...first.row, outcome: 'resampled' });
@@ -81,9 +82,12 @@ export async function sampleUnderRule({ cold, take, renew, restoreScene = null, 
 /**
  * The scene text put back before preparations (text.mjs `sceneTextBefore`), counted per lane over a run's rows, every
  * lane listed, a lane with none at 0: `{lanes, samples}`. Every restore counts wherever it was made: a sample's, a failed
- * preparation's and the bus pass's (`text_restored`), the backstop's warm-up's (`scene_restore.warm_up.text_restored`,
- * marked `warm_up`), the audit's (its row's `text_restores`, block `audit`), and a candidate's `text-lost`, the restore
- * it needed and never got. Counting adds no sample: a restore never touches the caps or the medians.
+ * preparation's and the bus pass's (`text_restored`), a refused resample's (`resample.text_restored`, marked
+ * `resample`), the backstop's warm-up's, refused or not (`scene_restore.warm_up.text_restored`, marked `warm_up`), the
+ * audit's (its row's `text_restores`, block `audit`), and a candidate's `text-lost`, the restore it needed and never got.
+ * Each record is read from the one row that owns it: a counted resample also carries its failure's `scene_restore`,
+ * whose warm-up is counted from the failure's row alone. Counting adds no sample: a restore never touches the caps or
+ * the medians.
  */
 export function judgeTextRestores(rows, lanes) {
   const at = (r, extra = {}) => ({ engine: r.engine, scene: r.scene, op: r.op, block: r.block, series: r.series, i: r.i, ...extra });
@@ -92,8 +96,10 @@ export function judgeTextRestores(rows, lanes) {
     if (r.kind === 'audit') return (r.text_restores ?? []).map(({ i, ...record }) => at({ ...r, block: 'audit', i }, record));
     if (!['sample', 'prepare-failure', 'text-bus'].includes(r.kind)) return [];
     const own = r.text_restored ? [at(r, r.text_restored)] : [];
-    const warm = r.kind === 'prepare-failure' && r.scene_restore?.warm_up?.text_restored ? [at(r, { ...r.scene_restore.warm_up.text_restored, warm_up: true })] : [];
-    return [...own, ...warm];
+    if (r.kind !== 'prepare-failure') return own;
+    const resample = r.resample?.text_restored ? [at(r, { ...r.resample.text_restored, resample: true })] : [];
+    const warm = r.scene_restore?.warm_up?.text_restored ? [at(r, { ...r.scene_restore.warm_up.text_restored, warm_up: true })] : [];
+    return [...own, ...warm, ...resample];
   });
   const counts = Object.fromEntries(lanes.map((l) => [l, 0]));
   for (const s of samples) counts[s.engine] = (counts[s.engine] ?? 0) + 1;
@@ -103,8 +109,10 @@ export function judgeTextRestores(rows, lanes) {
 /**
  * The backstop's warm-ups judged (task 24, fix round 1): a candidate's warm-up is its own request on the fresh window, so
  * an answer that failed fails the run with the engine's own error text, and a witness that saw a change fails it as any
- * candidate's would; the harness-fault allowance covers only the oracle's own steps. A vendor build's warm-up is
- * recorded and judged nothing: its warm samples follow its own answers too. `{pass, reasons}`.
+ * candidate's would; so does an engine-side preparation that failed (`prepare_error`: its companion Copy, whose
+ * handle no engine issued, even when the request then answered ok). The harness-fault allowance covers only the oracle's
+ * own steps. A vendor build's warm-up is recorded and judged nothing: its warm samples follow its own answers too.
+ * `{pass, reasons}`.
  */
 export function judgeWarmUps(rows, vendors) {
   const reasons = [];
@@ -112,6 +120,7 @@ export function judgeWarmUps(rows, vendors) {
     const w = r.kind === 'prepare-failure' ? r.scene_restore?.warm_up : null;
     if (!w || w.refused || vendors.includes(r.engine)) continue;
     const at = `${r.scene} ${r.op} ${r.engine} ${r.block}/${r.i}`;
+    if (w.prepare_error) reasons.push(`${at}: the backstop's warm-up's preparation failed: ${w.prepare_error}`);
     if (w.ok !== true) reasons.push(`${at}: the backstop's warm-up failed: ${w.error ?? 'no answer'}`);
     if (w.witness === false) reasons.push(`${at}: the backstop's warm-up changed the desktop (${(w.witness_fields ?? []).join(', ')})`);
   }

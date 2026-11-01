@@ -192,7 +192,7 @@ export function textRestoresMarkdown(rows) {
   const out = ['', `${head}:`, ''];
   for (const r of restores.samples) {
     const what = r.lost ? `found '${r.found}', **never put back: a sample of its lane left the text wrong, and the run stopped**` : `found '${r.found}', put back '${r.inserted}'`;
-    out.push(`- ${r.scene} ${r.op} ${r.engine} ${r.block}/${r.i}${r.series ? ` (${r.series})` : ''}${r.warm_up ? ", the backstop's warm-up" : ''}: ${what}`);
+    out.push(`- ${r.scene} ${r.op} ${r.engine} ${r.block}/${r.i}${r.series ? ` (${r.series})` : ''}${r.warm_up ? ", the backstop's warm-up" : r.resample ? ', its resample' : ''}: ${what}`);
   }
   return out;
 }

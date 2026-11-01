@@ -655,7 +655,8 @@ export async function restoreLaneScene({ desktop, windows, sceneName, label, occ
  * to make. Judged by prepare.mjs `judgeWarmUps`.
  */
 export function warmUpRecord({ row, fault }) {
-  if (fault === ORACLE) return { refused: row.error };
+  // a refused preparation keeps the restore it made before the refusal (counted in the lane's total)
+  if (fault === ORACLE) return { refused: row.error, ...(row.text_restored ? { text_restored: row.text_restored } : {}) };
   const out = { ok: row.ok === true };
   if (row.error !== undefined) out.error = row.error;
   out.witness = row.witness ?? null;

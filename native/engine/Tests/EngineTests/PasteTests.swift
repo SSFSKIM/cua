@@ -1005,6 +1005,60 @@ final class PasteOperationTests: XCTestCase {
     XCTAssertNotNil(typedPasteError(withMetaError, entered: 0, total: 5, line: nil, lines: nil).extra["meta"], "the meta kept")
   }
 
+  /// A reading that itself uses up the wait's time (a slow target's AX reply near the deadline) is not accepted: the
+  /// wait answers its timeout, not a confirmation that would move multi-line typing on (#187 review, P2). Each read is
+  /// given the time left, which the engine's reading turns into its messaging timeouts.
+  func testAReadThatUsesUpTheRemainingTimeIsNotAccepted() {
+    var budgets: [Double] = []
+    var characters = 0
+    let watch = PasteEffect(readWithin: { [unowned self] left in
+      budgets.append(left)
+      if budgets.count > 1 {  // the reads after the baseline: the target answers 500 ms later, changed
+        clock += 500
+        characters += 1
+      }
+      return EffectReading(range: nil, characters: characters)
+    }, now: { [unowned self] in clock }, sleep: { [unowned self] in clock += $0 })
+    clock = 0
+    watch.begin()
+    watch.pasteStarted()
+    watch.providerRead()
+    XCTAssertEqual(watch.wait(timeoutMs: 50, intervalMs: 25), .timeout)
+    XCTAssertEqual(budgets.first, .infinity, "the baseline, before the write, is not bounded by the wait")
+    XCTAssertEqual(budgets.dropFirst().first, 50, "the first poll's read is given the whole budget")
+
+    // Through runPaste with the request's deadline: the stage's error, never a success.
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var reads = 0
+    let slow = PasteEffect(readWithin: { [unowned self] _ in
+      reads += 1
+      if reads > 1 { clock += 500 }
+      return EffectReading(range: nil, characters: reads > 1 ? 1 : 0)
+    }, now: { [unowned self] in clock }, sleep: { [unowned self] in clock += $0 })
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    XCTAssertThrowsError(try run(pasteParts(typing: "a\nb"), pasteboard, effect: slow, remainingMs: { [unowned self] in 50 - clock },
+                                 postPaste: { _ = pasteboard.appReads(); return true }, entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "pasteUnconfirmed")
+    }
+    XCTAssertEqual(entered, 0, "line b was never reached")
+    XCTAssertEqual(diagnostics(meta)["effectWait"] as? String, "deadline")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+  }
+
+  /// The AX messaging timeout an effect read gets from the time left: at most the usual 1 s, at least 50 ms, none once
+  /// the time is spent (no read is sent).
+  func testTheBoundedMessagingTimeout() {
+    XCTAssertEqual(boundedMessagingTimeout(leftMs: .infinity), elementMessagingTimeout)
+    XCTAssertEqual(boundedMessagingTimeout(leftMs: 5_000), elementMessagingTimeout)
+    XCTAssertEqual(boundedMessagingTimeout(leftMs: 300) ?? 0, 0.3, accuracy: 0.0001)
+    XCTAssertEqual(boundedMessagingTimeout(leftMs: 10) ?? 0, 0.05, accuracy: 0.0001)
+    XCTAssertNil(boundedMessagingTimeout(leftMs: 0))
+    XCTAssertNil(effectReading(of: AXUIElementCreateApplication(990_001), withinMs: 0), "nothing read once the time is spent")
+  }
+
   /// The observer's notification counts only once the app has read and ⌘V was posted.
   func testANotificationCountsOnlyAfterTheReadAndThePaste() throws {
     let watch = effect(observer: true, reading: { EffectReading(range: [1, 0], characters: 1) })

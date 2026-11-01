@@ -1423,6 +1423,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   5. **The deadline binds both waits.** Each wait takes the lesser of its 2 s and the request's remaining deadline, and a
      deadline that ends it first answers that stage's error (`clipboardReadTimedOut` or `pasteUnconfirmed`), recorded as
      "deadline"; the client's grace past the deadline lets that answer arrive. The paste lock's wait was already bound.
+     The effect poll's own reads are bound too (the review of 2026-11-01, P2): each of `effectReading`'s three AX
+     requests takes the wait's time left as its messaging timeout (at most 1 s, at least 50 ms, the observation's
+     `deadlineBounded` rule, now `boundedMessagingTimeout`), none is sent once the time is spent, and a changed reading
+     that came back after the time ran out is not accepted, so a slow target's late reply answers the stage's error
+     rather than confirming a line and moving multi-line typing on.
   Restore and concealed safety are unchanged: the restore runs on every path, guarded by the change count, and a
   concealed request never pastes. Proven offline on `runPaste`'s seams (the fake clock, the test's own pasteboard, the
   main-thread probe, the key-focus read), the trust rule and `enablementHolds` on the enablement fakes, and the engine's

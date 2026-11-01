@@ -111,11 +111,13 @@ enum EffectOutcome: String {
 }
 
 /// The effect wait of one paste (F §7.5): a trusted observer's notification counts once the app was handed the data and
-/// ⌘V was posted; otherwise a change of the reading against its baseline. `read` and the clock are replaceable for the
-/// tests; the clock also times the paste's diagnostics (`runPaste`).
+/// ⌘V was posted; otherwise a change of the reading against its baseline. The reading is given the milliseconds the
+/// wait has left (infinite for the baseline), which the engine's reading caps its AX messaging timeouts by, and answers
+/// nil when it sent no read. The reading and the clock are replaceable for the tests; the clock also times the paste's
+/// diagnostics (`runPaste`).
 final class PasteEffect: @unchecked Sendable {
   private var source: NotificationSource
-  private let read: () -> EffectReading
+  private let read: (Double) -> EffectReading?
   let now: () -> Double
   private let sleep: (Double) -> Void
   private let lock = NSLock()
@@ -125,17 +127,23 @@ final class PasteEffect: @unchecked Sendable {
   private var seen = false
   private var baseline = EffectReading()
 
-  init(source: NotificationSource = .none, read: @escaping () -> EffectReading, now: @escaping () -> Double = monotonicMilliseconds,
+  init(source: NotificationSource = .none, readWithin: @escaping (Double) -> EffectReading?, now: @escaping () -> Double = monotonicMilliseconds,
        sleep: @escaping (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }) {
     self.source = source
-    self.read = read
+    self.read = readWithin
     self.now = now
     self.sleep = sleep
   }
 
+  /// A reading that takes no budget (the unit tests' instant one).
+  convenience init(source: NotificationSource = .none, read: @escaping () -> EffectReading, now: @escaping () -> Double = monotonicMilliseconds,
+                   sleep: @escaping (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }) {
+    self.init(source: source, readWithin: { _ in read() }, now: now, sleep: sleep)
+  }
+
   /// Before a write: the baseline taken, the flags reset.
   func begin() {
-    let reading = read()
+    let reading = read(.infinity) ?? EffectReading()
     lock.lock()
     handedOver = false
     readAt = nil
@@ -166,15 +174,19 @@ final class PasteEffect: @unchecked Sendable {
   var firstReadAt: Double? { locked { readAt } }
 
   /// Polls for the effect until `timeoutMs` passes. With neither a trusted source nor a baseline there is nothing that
-  /// could show one, and it answers `noChannel` at once.
+  /// could show one, and it answers `noChannel` at once. Each read is given the time left, and a changed reading that
+  /// came back after the time ran out is not accepted (#187 review: a slow target's late reply must not confirm a line).
   func wait(timeoutMs: Double = pasteEffectTimeoutMs, intervalMs: Double = pasteEffectIntervalMs) -> EffectOutcome {
     let (baseline, trusted) = locked { (self.baseline, source == .trusted) }
     guard trusted || !baseline.isEmpty else { return .noChannel }
     let start = now()
     while true {
       if locked({ seen }) { return .notification }
-      if !baseline.isEmpty && read() != baseline { return .reading }
+      let left = timeoutMs - (now() - start)
+      if left <= 0 { return .timeout }
+      let changed = !baseline.isEmpty && read(left).map { $0 != baseline } == true
       if now() - start >= timeoutMs { return .timeout }
+      if changed { return .reading }
       sleep(max(0, min(intervalMs, timeoutMs - (now() - start))))
     }
   }
@@ -506,7 +518,7 @@ extension Engine {
       defer { _ = release() }
 
       let application = target.application
-      let effect = PasteEffect(read: { effectReading(of: application) })
+      let effect = PasteEffect(readWithin: { effectReading(of: application, withinMs: $0) })
       let observer = NotificationObserver(pid: target.pid, names: ["AXSelectedTextChanged", "AXValueChanged"], keep: false) { _ in
         effect.notification()
       }
@@ -553,12 +565,26 @@ func keyFocusReading(pid: pid_t, keyboard: pid_t, application: AXUIElement, wind
 private let commandV = KeyPress(keyCode: 0x09, modifiers: .command)
 
 /// The application's focused element's selected range and character count (F §7.1's baseline), each where supported.
-func effectReading(of application: AXUIElement) -> EffectReading {
+/// Bounded by `withinMs` (the effect wait's time left, #187 review): each of its three requests gets the time left then
+/// as its messaging timeout (`boundedMessagingTimeout`), and nil is answered, with no request sent, once it is spent.
+/// The application element's usual timeout is put back after.
+func effectReading(of application: AXUIElement, withinMs budget: Double = .infinity) -> EffectReading? {
+  let end = monotonicMilliseconds() + budget
+  func bound(_ element: AXUIElement) -> Bool {
+    guard budget.isFinite else { return true }
+    guard let timeout = boundedMessagingTimeout(leftMs: end - monotonicMilliseconds()) else { return false }
+    AXUIElementSetMessagingTimeout(element, timeout)
+    return true
+  }
+  defer { if budget.isFinite { AXUIElementSetMessagingTimeout(application, elementMessagingTimeout) } }
+  guard bound(application) else { return nil }
   guard let focused = elementAttribute(application, kAXFocusedUIElementAttribute) else { return EffectReading() }
   var reading = EffectReading()
+  guard bound(focused) else { return nil }
   if let range = rangeWire(attribute(focused, kAXSelectedTextRangeAttribute)), let location = range["location"], let length = range["length"] {
     reading.range = [location, length]
   }
+  guard bound(focused) else { return nil }
   reading.characters = (attribute(focused, kAXNumberOfCharactersAttribute) as? NSNumber)?.intValue
   return reading
 }

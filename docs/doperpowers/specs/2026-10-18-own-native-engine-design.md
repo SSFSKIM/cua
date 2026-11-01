@@ -1274,6 +1274,50 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   kSonomaAccessibilityActivationRefinements on would get only native APIs from the role, and its page would wait for
   complete mode; the longer wait after a write (#244's candidate C) is held for that case.
   Date/Author: 2026-11-01, cursor235 for the design session's ruling on #244.
+- Decision (#237, 2026-11-01, `fix/237-engine-busy-after-end-task`; amends #200's entry above for a closed connection):
+  **end_task closes the session's engine connection, and the engine finishes two things of a closed connection before
+  its state goes; `status` names who holds the engine.** The service's connection lived as long as its trusted worker
+  (up to the 15-minute idle stop after end_task), so `status.connections` counted a session that had ended its task and
+  `cua engine build` and `approve` refused `engine_busy` (#237's evidence). Now end_task's turn-ended hook sends the
+  session's `cursor {hide: true}` and closes the connection, both written at once and neither waited for; the next
+  engine-bound request reconnects, as after any close (the client's connect: milliseconds against a running engine).
+  What a task loses at that boundary is per-connection engine state: element indexes, web enablement (released at the
+  close and written once at the next task's first observation, which waits for the page;
+  `testATaskAfterEndTaskReEnablesOnceAndItsWarmObservationsWriteNothing`), the intervention re-query state and, with the
+  last connection, the tap. App approvals live in the proxy and are not asked again; js_reset is unchanged. On the
+  engine (Server.swift `unregister`), the connection leaves the open map at once, so `status` and shutdown's busy
+  count drop at the close, and of its state:
+  1. **Its after-action watch runs to its natural end**, under #200's rules unchanged (the repair window, the person's
+     input, a third app in front, a refused re-activation): end_task follows an action closely, and a raise 200 ms after
+     the events must still be repaired. `ClosedConnectionWatches` (Activation.swift) holds the connection's watches
+     until the watch ends and then lets go, so the watch still holds its sink weakly and nothing holds it in a cycle;
+     only the watches outlive the connection, not its lineages or anything else. The next `execute` on **any**
+     connection ends every closed connection's watch first, as an execute ends its own connection's: a later client's
+     work is never answered by an earlier client's watch. Requests that neither act nor observe (`ping`, `status`,
+     `cursor`) leave it, as they leave a connection's own watch, so a reconnecting session's handshake or another
+     session's `cua engine status` changes nothing.
+  2. **A fade under way plays out before the cursor's panel goes** (CursorHub `closed`): the hide reaches the engine
+     just before the close, and closing at once cut #235's 0.44 s fade. The fade is committed again under the close's
+     generation, so a hide commit the close superseded on its way to the main thread still plays; a cursor shown and
+     not fading (a client gone without end_task) goes at once, as before.
+  3. **Everything else goes at once**, as before: the menu span and the focus hold (activations held for the client's
+     next actions, which will not come; their withdrawal raises nothing the watch would answer), the connection's drives
+     and with the last of them the intervention tap (the watch reads the person's input from the HID idle time, not the
+     tap), and web enablement (nothing of the watch's reads it).
+  **Shutdown while a closed connection's watch runs** (build or approve once nobody is connected): `stopAndExit` ends
+  every such watch, each waiting out its sample in progress (one 10 ms sample at most), then exits; it neither waits for
+  the watch's natural end nor exits mid-repair. A fading panel goes with the process.
+  **Holders**: the engine reads each admitted connection's peer pid at accept (`LOCAL_PEERPID`; the uid check is
+  unchanged) and keeps the session's label from its `cursor` requests, whatever the cursor switches; `status` adds
+  `holders: [{pid, label}]` for the other connections, keeping `connections`, and shutdown's `busy` carries them; the
+  CLI's `engine_busy` and `cua engine status` name them (`pid 42091 (MAWS)`), and an engine without holders still gives
+  the count. The pid is the supervisor's that holds the socket; the label is client-asserted, a name to ask, never a
+  credential. Rejected: the engine not counting a connection with no open task (a protocol change for task state, and
+  a race between the count and the shutdown that a session would see as one failed call); closing at js_reset (inside
+  a task, it would retire the task's own indexes); waiting in the client for the fade (end_task's reply would wait
+  about half a second). Not covered: a session that never calls end_task still holds the engine until the idle stop;
+  the vendor runtime's own connection lifetime across end_task was not read.
+  Date/Author: 2026-11-01, cursor235's implementer for cua_repl's ruling on #237.
 
 ## Outcomes & Retrospective
 

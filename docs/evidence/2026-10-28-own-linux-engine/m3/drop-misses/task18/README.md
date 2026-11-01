@@ -112,6 +112,13 @@ no sooner than 350 ms after the take. No step is shorter than before (`dnd.rs` `
   - The run exits 1 on two gedit clipboard series, not on any drop. The pinned build's Copy in its own gedit
     succeeded 1 time in 117 (clipboard_read cold) and 5 in 105 (warm), and clipboard_release warm has 80 of 90
     `prepare_error`. Those few fast successes made the pinned build the bar, and it can never reach 20 usable samples.
+  - *Correction, 2026-11-01 (task 24):* those Copy failures were the harness's, not the pinned build's.
+    - Each lane's gedit text window is opened once per run. The pinned build's failed `type_text_selection` deletes the
+      selected first word and pastes nothing, so its 54-character buffer was empty after 9 samples. Every later Copy
+      found no selection.
+    - Across five runs, the pinned build's Copy succeeded on 30 of 30 samples while its buffer held the first word, and
+      on 0 of 342 once the buffer was emptied. This run's 6 successes are its block 0 samples.
+    - The record above is left as it was. See [`m3/README.md`](../../README.md), "M3's gate, third run".
 - **The bar rule** (the design session, test-first in `test/linux-engine-diff/bar-rule.test.mjs`). A vendor build
   sampled to the top-ups' end (40) with fewer than 20 usable samples has failed the operation and sets no bar in that
   series. The rule binds the vendor builds only.

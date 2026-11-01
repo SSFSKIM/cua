@@ -21,10 +21,14 @@ func tokenNumber(_ token: String) -> Int? {
   return number
 }
 
-/// One connection's state, touched only by that connection's thread.
+/// One connection's state, touched only by that connection's thread (but for `afterAction` and `holderLabel`, each under
+/// its own lock).
 final class ConnectionState: @unchecked Sendable {
   let id: Int
   let fd: Int32
+  /// The peer's pid at accept (LOCAL_PEERPID), which `status` names this connection by to the others (#237); nil when it
+  /// could not be read.
+  let peerPid: pid_t?
   /// Lineages by app key (`ResolvedApp.key`).
   var lineages: [String: Lineage] = [:]
   /// Per app this connection drives, the ledger sequence its re-query flag was last cleared at (or it began driving the
@@ -51,12 +55,23 @@ final class ConnectionState: @unchecked Sendable {
   /// watch's) touches, under its own lock.
   let afterAction = AfterActionWatches()
 
-  init(id: Int, fd: Int32, menuSpan: ActivationSpan = ActivationSpan(),
+  init(id: Int, fd: Int32, peerPid: pid_t? = nil, menuSpan: ActivationSpan = ActivationSpan(),
        focusHold: ActivationSpan = ActivationSpan(label: "focus", idleMs: focusHoldIdleMs)) {
     self.id = id
     self.fd = fd
+    self.peerPid = peerPid
     self.menuSpan = menuSpan
     self.focusHold = focusHold
+  }
+
+  private let holderLock = NSLock()
+  private var holderLabelValue: String?
+  /// The session's label as its `cursor` requests last gave it (its sminos name or project folder), whatever the
+  /// cursor's switches, which `status` names this connection by to the others (#237); read from any connection's thread.
+  /// Client-asserted, so a name for a person to ask, never a credential.
+  var holderLabel: String? {
+    get { holderLock.withLock { holderLabelValue } }
+    set { holderLock.withLock { holderLabelValue = newValue } }
   }
 
 

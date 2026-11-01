@@ -314,7 +314,7 @@ extension Engine {
             if let point = pointing.point {  // route 1: the element's clickable point, as the action goes out
               cursor.act(connection: context.connection.id, app: app.key, window: pointing.windowID, .click(point))
             }
-            try deliverAction(action, route: route, perform: { AXUIElementPerformAction(target.element, $0 as CFString) }, meta: &meta)
+            try deliverAction(action, route: route, perform: { gatedPerform(target.element, $0) }, meta: &meta)
           case .synthesized(let route):
             try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding,
                                  connection: context.connection.id, meta: &meta)
@@ -349,7 +349,7 @@ extension Engine {
                              targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
                              beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
                              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
-                             post: { $0.postToPid($1) }, meta: &meta) }
+                             post: gatedPost, meta: &meta) }
           }
         }
       }

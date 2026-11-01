@@ -4,7 +4,8 @@ import Foundation
 // The socket server (the spec's Design, "Socket and peer check" and "Process model"): `engine.sock` beside the bundle
 // (from Bundle.main.bundlePath) or at CUA_ENGINE_SOCKET for a direct run, in a 0700 directory; `flock` on `engine.lock`
 // beside it before the socket is unlinked or bound, the loser exiting at once; every connection the peer policy does not
-// admit closed on accept (Config.swift: `peerPolicy`, whose one value is "uid", getpeereid's uid against the engine's).
+// admit closed on accept (Config.swift: `peerPolicy`, whose one value is "uid", getpeereid's uid against the engine's);
+// an admitted one's peer pid is read too (LOCAL_PEERPID), only so `status` can name who holds the engine (#237).
 // One thread per connection, which reads its next request only after answering the last. An engine that finds another
 // one already serving at the socket (connect succeeds) exits rather than replacing it.
 // Every exit is logged with its reason (Lifecycle.swift).
@@ -153,7 +154,7 @@ final class Server: @unchecked Sendable {
         close(fd)
         continue
       }
-      guard let connection = register(fd) else { continue }
+      guard let connection = register(fd, peerPid: peerPid(fd)) else { continue }
       let thread = Thread { [self] in serve(connection) }
       thread.name = "cua-engine connection \(connection.id)"
       thread.stackSize = 4 << 20
@@ -162,41 +163,54 @@ final class Server: @unchecked Sendable {
   }
 
   /// Registers an accepted connection; nil (the connection closed) once a shutdown was accepted.
-  private func register(_ fd: Int32) -> ConnectionState? {
+  func register(_ fd: Int32, peerPid: pid_t? = nil) -> ConnectionState? {
     lock.lock()
     defer { lock.unlock() }
     if shuttingDown {
       close(fd)
       return nil
     }
-    let connection = ConnectionState(id: nextConnection, fd: fd)
+    let connection = ConnectionState(id: nextConnection, fd: fd, peerPid: peerPid)
     nextConnection += 1
     open[connection.id] = connection
     return connection
   }
 
-  private func unregister(_ connection: ConnectionState) {
-    lock.lock()
-    open[connection.id] = nil
-    lock.unlock()
+  /// A connection closed: it stops counting at once (`others`, so status and shutdown's busy count), and its state goes,
+  /// but for two things that finish first (#237): its after-action watch runs on to its natural end, unless a request on
+  /// any connection ends it sooner, and a fade under way plays out before its cursor's panel goes.
+  func unregister(_ connection: ConnectionState) {
+    retire(connection)
     close(connection.fd)
     connection.endMenuInteraction()  // a held menu activation goes with its connection (MenuSpan.swift)
     connection.endFocusHold()  // and its focus hold (FocusHold.swift)
-    engine.connectionClosed(connection)  // its after-action watch and drives end; the intervention tap goes with the last (Intervention.swift)
+    engine.connectionClosed(connection)  // its drives end, the intervention tap with the last (Intervention.swift)
     engine.webAccessibility.release(connection: connection.id)  // enablement no connection observes now (Enablement.swift)
-    engine.cursor.closed(connection: connection.id)  // its cursor's panel is ordered out and released (Cursor/CursorHub.swift)
+    engine.cursor.closed(connection: connection.id)  // its cursor's panel goes, after a fade under way (Cursor/CursorHub.swift)
+  }
+
+  /// The close's first step, one move under the lock: the connection leaves `open` and its after-action watch, if one
+  /// runs, joins the closed connections' (Activation.swift `ClosedConnectionWatches`). So whatever finds the connection
+  /// gone (a status, a shutdown's count, another connection's execute) finds its watch where an execute or the shutdown
+  /// ends it: never in between (#237's review).
+  func retire(_ connection: ConnectionState) {
+    lock.lock()
+    defer { lock.unlock() }
+    engine.closedWatches.adopt(connection.afterAction)
+    open[connection.id] = nil
   }
 
   /// Accepts a shutdown atomically with accept: with no connection open but `connection`, closes the listener under the
-  /// lock, so no connection can arrive between the count and the exit, and answers 0; else the busy count.
-  func beginShutdown(_ connection: ConnectionState) -> Int {
+  /// lock, so no connection can arrive between the count and the exit, and answers no holder; else the holders that make
+  /// it busy (`holders(than:)`).
+  func beginShutdown(_ connection: ConnectionState) -> [[String: Any]] {
     lock.lock()
     defer { lock.unlock() }
-    let others = open.keys.filter { $0 != connection.id }.count
-    guard others == 0 else { return others }
+    let others = holdersLocked(than: connection)
+    guard others.isEmpty else { return others }
     shuttingDown = true
     close(listener)
-    return 0
+    return []
   }
 
   /// Open connections other than `connection`: `status.connections` and shutdown's busy count.
@@ -204,6 +218,18 @@ final class Server: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return open.keys.filter { $0 != connection.id }.count
+  }
+
+  /// The open connections other than `connection`, in accept order, each as `status.holders` names it (#237): {pid, the
+  /// peer's at accept, or null; label, the session's cursor label, or null}.
+  func holders(than connection: ConnectionState) -> [[String: Any]] {
+    lock.lock()
+    defer { lock.unlock() }
+    return holdersLocked(than: connection)
+  }
+
+  private func holdersLocked(than connection: ConnectionState) -> [[String: Any]] {
+    open.values.filter { $0.id != connection.id }.sorted { $0.id < $1.id }.map(holderRow)
   }
 
   private func serve(_ connection: ConnectionState) {
@@ -242,12 +268,30 @@ final class Server: @unchecked Sendable {
       connection.endFocusHold()
       engine.cursor.closed(connection: connection.id)
     }
+    engine.closedWatches.cancelAll()  // a closed connection's after-action watch ends with the engine (#237)
     engine.cursor.drain()
     ScreenUpdateReleases.shared.drain()  // a route-3 release still pending runs before the exit
     engine.webAccessibility.releaseAll()  // the engine's enablement goes with it
     unlink(paths.socket)
     Lifecycle.exit("shutdown requested", status: 0)
   }
+}
+
+/// The pid of the process at the other end of the Unix socket `fd` (LOCAL_PEERPID, the pid that connected); nil when it
+/// cannot be read.
+func peerPid(_ fd: Int32) -> pid_t? {
+  var pid: pid_t = 0
+  var length = socklen_t(MemoryLayout<pid_t>.size)
+  guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, &pid, &length) == 0, pid > 0 else { return nil }
+  return pid
+}
+
+/// The longest holder label `status` carries: a session's name, never a document.
+let holderLabelLimit = 64
+
+/// How `status` names a connection to the others: its peer's pid and its session's label, each null when unknown.
+func holderRow(_ connection: ConnectionState) -> [String: Any] {
+  ["pid": connection.peerPid.map { Int($0) as Any } ?? NSNull(), "label": connection.holderLabel.map { String($0.prefix(holderLabelLimit)) as Any } ?? NSNull()]
 }
 
 func unixMilliseconds() -> Int64 { Int64((Date().timeIntervalSince1970 * 1000).rounded()) }

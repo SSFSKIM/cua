@@ -70,6 +70,22 @@ test('status reports the engine\'s identity and grants, and counts the connectio
   await until(async () => (await wire.result('status')).connections === 0);
 });
 
+test('status names the other connections by their peer pid and session label (#237), and a closed one stops counting', {skip}, async t => {
+  const {wire, socket} = await engine(t);
+  assert.deepEqual((await wire.result('status')).holders, []);
+  const session = await Wire.connect(socket);
+  const unnamed = await Wire.connect(socket);
+  await session.result('cursor', {label: 'MAWS', enabled: true});
+  await unnamed.result('ping', {clientApiVersion: API_VERSION});
+  const status = await wire.result('status');
+  assert.equal(status.connections, 2);
+  assert.deepEqual(status.holders, [{pid: process.pid, label: 'MAWS'}, {pid: process.pid, label: null}], 'the pid that connected: this test\'s');
+  session.close();
+  await until(async () => (await wire.result('status')).connections === 1);
+  assert.deepEqual((await wire.result('status')).holders, [{pid: process.pid, label: null}]);
+  unnamed.close();
+});
+
 test('framing: pipelined frames are answered in order, a frame split byte by byte is read whole, and errors keep the connection', {skip}, async t => {
   const {wire} = await engine(t);
   wire.write(Buffer.concat([

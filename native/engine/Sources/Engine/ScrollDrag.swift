@@ -161,7 +161,7 @@ extension Engine {
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                              beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
                              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .drag([start.point, end.point])) },
-                             post: { $0.postToPid($1) }, meta: &meta) {
+                             post: gatedPost, meta: &meta) {
             let active = NSRunningApplication(processIdentifier: owner)?.isActive == true
             return dragEvents(from: start.point, to: end.point, window: window, flags: clickFlags(route, targetActive: active))
           }

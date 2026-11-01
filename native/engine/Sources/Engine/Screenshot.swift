@@ -18,6 +18,7 @@ private let captureTimeoutSeconds = 10
 func screenCaptureFailed(_ detail: String) -> EngineError { EngineError(name: "screenCaptureFailed", "The screen capture failed. \(detail)") }
 
 func shareableContent() throws -> SCShareableContent {
+  try DesktopGate.check("SCShareableContent")
   let box = Box<Result<SCShareableContent, Error>>()
   let done = DispatchSemaphore(value: 0)
   SCShareableContent.getExcludingDesktopWindows(true, onScreenWindowsOnly: true) { content, error in
@@ -73,6 +74,7 @@ func onScreenWindowIDs() -> [CGWindowID]? {
 }
 
 func captureImage(_ filter: SCContentFilter, _ configuration: SCStreamConfiguration) throws -> CGImage {
+  try DesktopGate.check("SCScreenshotManager.captureImage")
   let box = Box<Result<CGImage, Error>>()
   let done = DispatchSemaphore(value: 0)
   SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration) { image, error in

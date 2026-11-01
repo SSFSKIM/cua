@@ -411,6 +411,30 @@ final class EnablementReleaseTests: XCTestCase {
                    "owned again, so released again")
   }
 
+  /// #237's condition 2: end_task now closes the session's connection, so every task boundary is a release. The task
+  /// after it (a new connection, the same session) writes the enablement once, at its first observation, which waits
+  /// for the page; its warm observations write nothing, as the first task's did not.
+  func testATaskAfterEndTaskReEnablesOnceAndItsWarmObservationsWriteNothing() {
+    let web = WebAccessibility()
+    let app = FakeApplication(names: ["AXManualAccessibility"])
+    XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "AXManualAccessibility", "the first task's first observation")
+    web.noteWebArea(pid: 7, launched: launched)
+    for _ in 0..<3 { XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 1, access: app.access), "a warm observation") }
+    web.release(connection: 1)  // end_task: the connection closes
+    app.values["AXManualAccessibility"] = true  // Chromium's readback after the write-back
+    let first = web.enableReporting(pid: 7, launched: launched, connection: 2, access: app.access)
+    XCTAssertEqual(first.set, "AXManualAccessibility", "the next task's first observation enables again")
+    XCTAssertTrue(waits(web, enabledNow: first.set != nil, launched: launched), "and waits for the page, so it is complete")
+    web.noteWebArea(pid: 7, launched: launched)
+    for _ in 0..<3 {
+      let warm = web.enable(pid: 7, launched: launched, connection: 2, access: app.access)
+      XCTAssertNil(warm, "a warm observation of the next task writes nothing")
+      XCTAssertFalse(waits(web, enabledNow: warm != nil, launched: launched), "nor waits")
+    }
+    XCTAssertEqual(app.written, ["AXManualAccessibility=true", "AXManualAccessibility=false", "AXManualAccessibility=true"],
+                   "one write per task, one release between them")
+  }
+
   func testATrueTheEngineNeverOwnedIsNeverWrittenAcrossConnections() {
     let web = WebAccessibility()
     let voiceOver = FakeApplication(names: ["AXManualAccessibility"])

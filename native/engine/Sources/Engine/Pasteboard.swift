@@ -68,8 +68,12 @@ final class SystemPasteboard: PasteboardAccess, @unchecked Sendable {
     }
   }
 
+  /// Whether this is the person's pasteboard, whose writes pass the desktop gate (a test's uniquely named one does not).
+  private var general: Bool { pasteboard.name == .general }
+
   func write(_ item: NSPasteboardItem, expecting expected: Int) -> PasteboardWrite? {
-    onMain {
+    if general && !DesktopGate.allows("NSPasteboard.general write") { return nil }
+    return onMain {
       guard pasteboard.changeCount == expected else { return nil }
       let own = pasteboard.prepareForNewContents(with: .currentHostOnly)
       return PasteboardWrite(own: own, written: pasteboard.writeObjects([item]))
@@ -77,6 +81,7 @@ final class SystemPasteboard: PasteboardAccess, @unchecked Sendable {
   }
 
   func restore(_ snapshot: PasteboardSnapshot?, expecting own: Int) {
+    if general && !DesktopGate.allows("NSPasteboard.general restore") { return }
     onMain {
       guard pasteboard.changeCount == own else { return }
       pasteboard.clearContents()

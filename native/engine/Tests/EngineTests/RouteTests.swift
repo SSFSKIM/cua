@@ -530,7 +530,7 @@ final class ClickDeliveryTests: XCTestCase {
     XCTAssertFalse(delivery.raiseLeft)
     XCTAssertFalse(delivery.capped)
     XCTAssertEqual(delivery.restoreLatencyMs, 10, "found at the first sample after the click")
-    XCTAssertEqual(delivery.guardMs, 40, "the restore's sample, then three stable ones")
+    XCTAssertEqual(delivery.guardMs, deliveryGuardMinimumMs, "the restore's sample, three stable ones, and on to the minimum wait")
     XCTAssertEqual(seam.releasedAt, seam.clock, "released once the delivery guard settled")
     XCTAssertEqual(delivery.screenHoldMs, seam.releasedAt, "the hold ran from the activation's start (clock 0)")
     XCTAssertEqual(Double(delivery.releasedAt - delivery.holdStartedAt), try XCTUnwrap(seam.releasedAt) - 0,
@@ -674,7 +674,7 @@ final class ClickDeliveryTests: XCTestCase {
     let delivery = try XCTUnwrap(meta.delivery)
     XCTAssertEqual(delivery.restores, 0)
     XCTAssertNil(delivery.restoreLatencyMs)
-    XCTAssertEqual(delivery.guardMs, 30)
+    XCTAssertEqual(delivery.guardMs, deliveryGuardMinimumMs, "three stable samples, and on to the minimum wait")
     XCTAssertEqual(seam.holds, 1)
     XCTAssertEqual(seam.releases, 1)
   }

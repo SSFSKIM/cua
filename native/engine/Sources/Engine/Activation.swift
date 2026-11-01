@@ -37,9 +37,10 @@ let activationGuardSampleMs: Double = 10
 let activationGuardStableSamples = 3
 let activationGuardStableSamplesBeforeDelivery = 1
 /// The delivery guard's (#200): the stable samples it ends on, and the least time it waits after the events before it
-/// may end, so an app slow to handle the click still raises inside the hold (0 until the sittings measure it).
+/// may end, so an app slow to handle the click still raises while the guard watches (60: the first live samples saw
+/// TextEdit raise 21 and 38 ms after the click, 2026-11-01).
 let deliveryGuardStableSamples = 3
-let deliveryGuardMinimumMs: Double = 0
+let deliveryGuardMinimumMs: Double = 60
 /// The delivery guard's poll inside the hold (a short sleep: the reads themselves take most of a sample under load), and
 /// how long after the events it may still repair once the cap has released the hold (#200's first live sample: the
 /// app raised 38 ms after the click, past a hold that began 42 ms before it).

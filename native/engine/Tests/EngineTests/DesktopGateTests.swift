@@ -55,4 +55,40 @@ final class DesktopGateTests: XCTestCase {
       "AXUIElementSetAttributeValue(AXManualAccessibility)", "CGEvent.postToPid",
     ])
   }
+
+  private var refusalsFail: XCTExpectedFailure.Options {
+    let options = XCTExpectedFailure.Options()
+    options.issueMatcher = { $0.compactDescription.contains("the desktop gate refused") }
+    return options
+  }
+
+  /// The review of ce8fb2a1..2f9a83ef: a call that can put up a system permission dialog or a capture confirmation is
+  /// an act on the desktop too. Each prompting request is refused and answers the non-prompting reading instead; a
+  /// listing or capture of the screen throws.
+  func testPermissionPromptsAndScreenCapturesAreRefused() throws {
+    let before = DesktopGate.refusals.count
+    try XCTExpectFailure("every prompting call fails the running test", options: refusalsFail) {
+      XCTAssertEqual(gatedAccessibilityPrompt(), AXIsProcessTrusted(), "refused: the preflight's answer, no prompt")
+      XCTAssertEqual(gatedScreenCaptureRequest(), CGPreflightScreenCaptureAccess(), "refused: the preflight's answer, no prompt")
+      XCTAssertThrowsError(try shareableContent()) { XCTAssertEqual(($0 as? EngineError)?.errorName, "desktopGateClosed") }
+    }
+    XCTAssertEqual(Array(DesktopGate.refusals.dropFirst(before)),
+                   ["AXIsProcessTrustedWithOptions(prompt)", "CGRequestScreenCaptureAccess", "SCShareableContent"])
+  }
+
+  /// `approve`, the method whose whole purpose is the prompts: it asks for Accessibility with its prompt whatever the
+  /// grant, so that call is always refused; the Screen Recording request is made only without the grant, and the capture
+  /// only with both.
+  func testApproveMakesNoPromptInATest() throws {
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { true })
+    let before = DesktopGate.refusals.count
+    try XCTExpectFailure("the refused prompts fail the running test", options: refusalsFail) {
+      _ = engine.handle(Request(id: 1, method: "approve", params: [:]), on: ConnectionState(id: 1, fd: -1), receivedAt: unixMilliseconds())
+    }
+    let refused = Array(DesktopGate.refusals.dropFirst(before))
+    XCTAssertEqual(refused.first, "AXIsProcessTrustedWithOptions(prompt)")
+    if !CGPreflightScreenCaptureAccess() { XCTAssertTrue(refused.contains("CGRequestScreenCaptureAccess")) }
+    XCTAssertTrue(Set(refused).isSubset(of: ["AXIsProcessTrustedWithOptions(prompt)", "CGRequestScreenCaptureAccess", "SCShareableContent"]), "\(refused)")
+  }
 }

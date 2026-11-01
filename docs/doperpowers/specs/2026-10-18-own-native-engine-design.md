@@ -1328,9 +1328,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   another process's GUI now passes one gate (`DesktopGate`, Sources/Engine/DesktopGate.swift): the app launch
   (`NSWorkspace.openApplication`), the re-activation (`NSRunningApplication.activate`), every CGEvent post (to a process
   and to the HID tap), Accessibility actions and attribute writes (`AXOps`' defaults, route 1's action, the enablement
-  write, the probes' writes), the screen-update hold (`SLSDisableUpdate`), writes to the general pasteboard, and the
+  write, the probes' writes), the screen-update hold (`SLSDisableUpdate`), writes to the general pasteboard, the
   agent cursor's panel ordered onto the screen (the engine's own window, but it is drawn over the person's windows and
-  ordered against them, so it counts). Reads (observations, the window list, captures) are not acts and stay outside.
+  ordered against them, so it counts), and every call that can put up a system dialog (the review of ce8fb2a1..2f9a83ef):
+  the Accessibility request with its prompt and `CGRequestScreenCaptureAccess` (in `approve`, `requireAccessibility`
+  and `requireScreenRecording`; refused, each answers the non-prompting preflight instead), and the screen's listing
+  and capture (`SCShareableContent`, `SCScreenshotManager.captureImage`), which can raise the capture confirmation.
+  The engine requests no other grant (it only preflights Input Monitoring, and creates its listen tap only once that
+  reads granted). Reads that cannot prompt (observations, the window list, the preflights) stay outside. A refused
+  call's name is built only once the gate is found closed, so the engine pays nothing for it.
   In the engine the gate is open and passing costs a flag read. It is closed in any process that has XCTest loaded, so
   the test bundle closes it by being loaded and no test can forget to; there a call that reaches the real system is
   refused (it does nothing, or throws `desktopGateClosed` naming the call where the call can throw), recorded by the

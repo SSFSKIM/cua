@@ -156,8 +156,8 @@ final class Engine: @unchecked Sendable {
   /// Requests both grants with their prompts; once both are granted, captures one display image and discards it,
   /// which raises the capture confirmation of a new on-disk copy. Only the owner, at the console, answers these.
   private func approve() -> [String: Any] {
-    let accessibility = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
-    let screenRecording = CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess()
+    let accessibility = gatedAccessibilityPrompt()
+    let screenRecording = CGPreflightScreenCaptureAccess() || gatedScreenCaptureRequest()
     var captured = false
     if accessibility && screenRecording, let content = try? shareableContent(), let display = content.displays.first {
       let configuration = SCStreamConfiguration()
@@ -261,7 +261,7 @@ final class Engine: @unchecked Sendable {
   /// Fails `permissionsPending` without the Accessibility grant, asking for it once with the system prompt.
   func requireAccessibility() throws {
     guard !AXIsProcessTrusted() else { return }
-    _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+    _ = gatedAccessibilityPrompt()
     throw EngineError(.permissionsPending, "cua Engine needs the Accessibility permission: allow \"cua Engine\" in System Settings > Privacy & Security > Accessibility, then retry.")
   }
 
@@ -269,7 +269,7 @@ final class Engine: @unchecked Sendable {
   /// a new grant only to a relaunched engine.
   func requireScreenRecording() throws {
     guard !CGPreflightScreenCaptureAccess() else { return }
-    _ = CGRequestScreenCaptureAccess()
+    _ = gatedScreenCaptureRequest()
     throw EngineError(.permissionsPending, "cua Engine needs the Screen Recording permission: allow \"cua Engine\" in System Settings > Privacy & Security > Screen & System Audio Recording; a relaunch of the engine is pending before screenshots can use it.")
   }
 

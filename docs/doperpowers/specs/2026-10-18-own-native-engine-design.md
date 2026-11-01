@@ -484,7 +484,8 @@ error    {code: number (the vendor's codes where mapped; -10005 otherwise), mess
     "actionsUnknown", "hitTestFailed"); pointUnconfirmed: true when the hit-test at a synthesized element
     point answered nothing or only a container (M1a.2); delivery: route 3's delivery guard after a pointer action's events
     (#200), present when one ran: {restores, frontmostRestored, otherAppFront, restoreLatencyMs?, guardMs, screenHoldMs,
-    capped, raiseLeft, releasedAt}
+    capped, raiseLeft, releasedAt}; frontmostRestored and raiseLeft are what the guard's samples saw, not what its
+    requests answered, and nothing is repaired once the hold's cap has passed
   noScreenshotForCoordinates: a coordinate click, drag or scroll with no usable screenshot on the connection ("Screenshot"); nothing
     posted, the input meta carried with startedAt/endedAt null; the sentence names getScreenshot as the way to get an image to click
     in (c13759a4's "There is no screenshot of the app's window to place the coordinates in. Try to get the on-screen content again
@@ -1170,9 +1171,12 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   activation's guard settles on one stable sample and keeps its hold open; the events go out; a delivery guard answers
   the target's window above the user's with the user's window raised back and the target's (or the bound app's) process
   in front with the user's app made frontmost again, until three stable samples, before the hold is released; a click
-  inside a held or shared activation takes a hold of its own; never a second hold for one action; at the 100 ms cap the
-  guard ends and leaves the order as it is, reported (`delivery.capped`, `raiseLeft`); a third app in front is the
-  user's. The counts are parameters (`activationGuardStableSamplesBeforeDelivery`, `deliveryGuardStableSamples`,
+  inside a held or shared activation takes a hold of its own, and the guard checks the action's own window (a shared
+  activation may have been made for another window of the process); never a second hold for one action; at the 100 ms
+  cap the guard ends, repairs nothing more and leaves the order as it is, reported (`delivery.capped`, `raiseLeft`, both
+  read from its samples rather than from what its requests answered); a third app in front is the user's, never undone:
+  the guard restores only to the app that was frontmost before the click, and only when the target or the bound app
+  took the front. The counts are parameters (`activationGuardStableSamplesBeforeDelivery`, `deliveryGuardStableSamples`,
   `deliveryGuardMinimumMs`, 0 until the live check measures how late an app raises). Costs: about 30 ms per route-3
   pointer action (cua's M2b click cells 4–140 ms in-cell against the vendor's 229–1038 ms, `m2b/hold3`); the target ends
   second, above a third app's window that sat between (as the vendor's observer leaves it); a raise after the release is

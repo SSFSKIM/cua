@@ -52,6 +52,9 @@ final class ElementPointing {
     hit = found
     return found
   }
+
+  /// The hit-test's answer if `relation` has been taken, without taking it (the click's record, ElementClickRecord).
+  var taken: HitRelation? { hit }
 }
 
 /// The area route 3's activation click must not land in: for a click with any button but the left, the target's own

@@ -8,7 +8,10 @@
 //   prepare   a cell body that puts the scene into a pre-state the outcome is distinguishable from (a selection the
 //             action must replace or collapse, a value the action must change, a status no earlier row left) with harness
 //             actions of its own, verifies it, and returns {ready: true} or {ready: false, reason}. A case that is not
-//             ready sends nothing more and its row is invalid, never a fail.
+//             ready sends nothing more and its row is invalid, never a fail. Each row stands on its own: what an
+//             earlier row left in a field that the prepare needs in a known state (a selection) is undone by a step the
+//             prepare states (`__m.prepared`, the row's `prepared`), never inherited. A prepare that needs its field
+//             focused leaves its reading in `__m.focus` (focusOn), and the row judges it (focusVerdict).
 //   act       the one facade call the row measures, on `__m` (prepare's state) and `__app`; a refusal is caught and kept
 //             (`__m.threw`, `__m.errorName`), so the cell itself never fails on one.
 //   check     a cell body: observes and returns {ok, outcome}, the exact post-state the requested transition produces
@@ -55,6 +58,39 @@ export const REFUSALS = Object.freeze({
 
 // ---- shared bodies --------------------------------------------------------------------------------------------------
 
+// Why a prepare's field is not shown focused (#188). The renderer's trailer shows selected text or selected elements
+// instead of the focused element (src/services/engine/render.mjs trailer), so a trailer a selection masks says nothing
+// about the focus and is never reported as a field that could not be given it.
+export const FOCUS_REASONS = Object.freeze({
+  unfocused: 'the field could not be given the focus',
+  masked: 'the focus could not be read: a selection masks the trailer',
+});
+// The stated step that clears a selection masking the trailer: the field emptied (an AXPress on Chromium's textarea,
+// cua's click on it, keeps an existing selection where a posted click places a caret; writing the same value back does
+// not collapse it). Whether cua's click should keep the selection is a question of its own, not this harness's.
+const CLEARED = 'field emptied to clear a selection';
+// The field `index` (in `now`) given the focus: a click when the trailer does not show the field focused; with
+// `clear`, the stated clear when a selection still masks the trailer after it. A field the unmasked trailer shows
+// unfocused is not ready; otherwise the reading ('focused' or 'masked') is left in `__m.focus` for the row's verdict,
+// which reads the observation's own focus where the engine reports one.
+const focusOn = ({clear}) => `if (focusReading(now, index) !== "focused") { await __app.click(index); now = await observe(); }
+${clear ? `if (focusReading(now, index) === "masked") { await __app.setValue(index, ""); now = await observe(); __m.prepared.push(${j(CLEARED)}); }` : ''}
+if (focusReading(now, index) === "unfocused") return {ready: false, reason: ${j(FOCUS_REASONS.unfocused)}};
+__m.focus = {index, trailer: focusReading(now, index)};`;
+// The row's verdict on a prepare's focus reading `focus` ({index, trailer}), given the engine's meta of the prepare's
+// last observation (`cua/observation`, ./lane.mjs engineMetaOf; null on the vendor, which reports none). cua's names the
+// focused element by index (src/services/engine/service.mjs), which no selection masks, so it is read in the trailer's
+// place whenever it is there; it is the prepare's last observation, the state the act starts from. -> {by:
+// 'observation' | 'trailer', problem: null | reason}.
+export function focusVerdict(focus, observation) {
+  if (observation && Object.hasOwn(observation, 'focusedIndex')) {
+    const problem = observation.focusedIndex === focus.index ? null
+      : `${FOCUS_REASONS.unfocused}${typeof observation.focusRead === 'string' ? ` (the focus read answered ${observation.focusRead})` : ''}`;
+    return {by: 'observation', problem};
+  }
+  return {by: 'trailer', problem: focus.trailer === 'focused' ? null : FOCUS_REASONS[focus.trailer] ?? FOCUS_REASONS.unfocused};
+}
+
 const observed = `const ax = await observe();
 if (!inFront(ax)) return {ready: false, reason: "the scene window is not the app's front window"};`;
 const listApps = target => ({
@@ -87,13 +123,14 @@ return {ok: refusedAs(${j(sentence)}) && unchanged, outcome: {refused: __m.threw
 });
 // A text field put into a known pre-state: focused, holding `value` (when given), with `word` (once in it) selected.
 // The focus is read before the selection and the selection after it: the renderer's trailer shows selected text instead
-// of the focused element (src/services/engine/render.mjs trailer), so no one observation shows both. The value must be
-// unchanged by the selection. -> the prepare body's lines, leaving `now` (the observation) and `index` (the field).
+// of the focused element (src/services/engine/render.mjs trailer), so no one observation shows both. A selection an
+// earlier row left masks the first reading; with a `value` to write the field is emptied first as a stated step
+// (focusOn), and the row reads cua's own focus of the last observation (focusVerdict). The value must be unchanged by
+// the selection. -> the prepare body's lines, leaving `now` (the observation) and `index` (the field).
 const selectedIn = ({find, value = null, word, focus = true}) => `${observed}
 let now = ax, index = ${find};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
-${focus ? `if (focusedIndexOf(now) !== index) { await __app.click(index); now = await observe(); }
-if (focusedIndexOf(now) !== index) return {ready: false, reason: "the field could not be given the focus"};` : ''}
+${focus ? focusOn({clear: value !== null}) : ''}
 ${value === null ? '' : `if (plain(valueOfIndex(now, index)) !== ${value}) { await __app.setValue(index, ${value}); now = await observe(); }`}
 if (count(plain(valueOfIndex(now, index)), ${word}) !== 1) return {ready: false, reason: "the word to replace is not in the field once"};
 const unselected = plain(valueOfIndex(now, index));
@@ -344,8 +381,7 @@ return {ok: toggled, outcome: {toggled}};`},
 let now = ax;
 const index = ${named('Scene notes')};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
-if (focusedIndexOf(now) !== index) { await __app.click(index); now = await observe(); }
-if (focusedIndexOf(now) !== index) return {ready: false, reason: "the field could not be given the focus"};
+${focusOn({clear: true})}
 return {ready: true};`,
     act: 'await __app.pressKey("Tab");',
     check: `const ax = await observe();
@@ -400,8 +436,7 @@ return {ok: after === __m.before + 1, outcome: {pressedOnce: after === __m.befor
 let now = ax;
 const index = ${named('Fixture text')};
 if (index === null) return {ready: false, reason: "the field is not in the text"};
-if (focusedIndexOf(now) !== index) { await __app.click(index); now = await observe(); }
-if (focusedIndexOf(now) !== index) return {ready: false, reason: "the field could not be given the focus"};
+${focusOn({clear: true})}
 return {ready: true};`,
     act: 'await __app.pressKey("Tab");',
     check: `const ax = await observe();

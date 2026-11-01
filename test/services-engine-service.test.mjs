@@ -467,7 +467,7 @@ test('the observation\'s diagnostics ride only as cua/observation meta, a bounde
   const {getApp, call, meta, trees, service} = await session(t);
   const {app} = await getApp('TextEdit');
   const tree = trees.get(APPS.TextEdit.appPath);
-  assert.equal(meta['cua/observation'], null, 'timings with none of the diagnostics leave the key reset');
+  assert.deepEqual(meta['cua/observation'], {focusedIndex: null}, 'timings with none of the diagnostics: the focus read alone (#188)');
   // The same observation with and without the diagnostics: what the facade returns (what a cell prints, the model's
   // text) and what the service answers are the same bytes.
   const plain = {facade: JSON.stringify(await call(() => app.getAXStateAndScreenshot({emit: false, disableDiffing: true})))};
@@ -486,14 +486,45 @@ test('the observation\'s diagnostics ride only as cua/observation meta, a bounde
   assert.deepEqual(assembleResult({ok: true, output, responseMeta: {...meta}}).content, assembleResult({ok: true, output, responseMeta: plain.meta}).content);
   assert.deepEqual(meta['cua/observation'], {webShaped: true, appRoleReadMs: 0.375, enablementPrior: 'false', enabled: 'AXManualAccessibility', chromium: true, webAreaSeen: true, webAreaFound: true,
     webAreaWaitMs: 12.25, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
-    settleBusyWalks: 0, settleBusyVetoes: 0, settleObserved: true, settleQuietAtMs: 101.125, settleTreeReused: true},
-  'the whitelist only: no phase timing, node count, focus read or unknown key, nothing nested beyond the notification counts');
+    settleBusyWalks: 0, settleBusyVetoes: 0, settleObserved: true, settleQuietAtMs: 101.125, settleTreeReused: true, focusRead: 'notAnElement', focusedIndex: null},
+  'the whitelist only: no phase timing, node count or unknown key, nothing nested beyond the notification counts');
   // An input call resets it, and an observation without the diagnostics leaves it reset.
   await call(() => app.click(1));
   assert.equal(meta['cua/observation'], null);
   tree.timings = {totalMs: 1};
   await call(() => app.getAXState({emit: false}));
-  assert.equal(meta['cua/observation'], null);
+  assert.deepEqual(meta['cua/observation'], {focusedIndex: null});
+});
+
+// #188: the focus a selection cannot mask. The trailer shows selected text instead of the focused element (render.mjs
+// trailer), so the observation's meta names the app's focused element by its index and role, and the engine's focus
+// read when it named none; never its text.
+test('cua/observation names the focused element by index and role whatever the trailer shows, and the focus read when none was named', async t => {
+  const {getApp, call, meta, trees} = await session(t);
+  const {app} = await getApp('TextEdit');
+  const tree = trees.get(APPS.TextEdit.appPath);
+  Object.assign(tree, {focused: 't2', selectedText: 'a secret selection'});
+  const text = await call(() => app.getAXState({emit: false, disableDiffing: true}));
+  assert.ok(text.includes('Selected text:') && !text.includes('The focused UI element is'), 'the selection masks the trailer\'s focus line');
+  assert.deepEqual(meta['cua/observation'], {focusedIndex: 2, focusedRole: 'AXButton'});
+  assert.ok(!JSON.stringify(meta['cua/observation']).includes('secret'), 'value-free');
+  Object.assign(tree, {selectedText: null});
+  assert.match(await call(() => app.getAXState({emit: false, disableDiffing: true})), /The focused UI element is 2 /, 'the same index as the unmasked trailer\'s');
+  assert.deepEqual(meta['cua/observation'], {focusedIndex: 2, focusedRole: 'AXButton'});
+  Object.assign(tree, {focused: null, timings: {totalMs: 1, focusRead: 'AXError -25212'}});
+  await call(() => app.getAXState({emit: false}));
+  assert.deepEqual(meta['cua/observation'], {focusRead: 'AXError -25212', focusedIndex: null});
+});
+
+test('an element click\'s plan rides as cua/elementClick on its result, and stands on no other call', async t => {
+  const record = {plan: 'action', action: 'AXPress', reason: 'advertised', hit: 'element', hitTest: 'application'};
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => ({meta: {...INPUT_META, elementClick: record}})}});
+  const {app} = await getApp('TextEdit');
+  assert.equal(meta['cua/elementClick'], null);
+  await call(() => app.click(1));
+  assert.deepEqual(meta['cua/elementClick'], record);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/elementClick'], null, 'reset by the next call');
 });
 
 test('an observation of a minimized window carries no screenshot and its meta says why; the next observation clears it', async t => {

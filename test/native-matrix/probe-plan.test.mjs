@@ -89,7 +89,7 @@ test('TextEdit: the text view stays findable once emptied (its identifier then p
   for (const start of [{value: 'cua scene document\nLine 01', focused: false}, {value: '', focused: false}, {value: '', focused: true}]) {
     const {state, app} = textEditDouble(start);
     const result = await runPrepared('textedit', app);
-    assert.deepEqual(result?.value, {ready: true}, JSON.stringify(start));
+    assert.deepEqual(result?.value, start.value === '' ? {ready: true} : {ready: true, prepared: ['field emptied']}, JSON.stringify(start));
     assert.equal(state.value, '');
     assert.equal(state.focused, true);
     assert.deepEqual(state.sets, start.value === '' ? [] : [2]);
@@ -103,13 +103,15 @@ test('TextEdit: the text view stays findable once emptied (its identifier then p
   assert.deepEqual(parseCell(output.join('\n'))?.value, {hash: EMPTY_HASH, length: 0});
 });
 
-test('Chrome and Electron prepare and read back exactly as before', () => {
+test('Chrome and Electron prepare and read back as before, the preparation changed only by #188', () => {
   const sha = s => createHash('sha256').update(s).digest('hex').slice(0, 16);
   assert.equal(TEXT_FIELDS.chrome, 'indexOfTarget(ax, "Scene notes")');
   assert.equal(TEXT_FIELDS.electron, 'indexOfTarget(ax, "Fixture text")');
-  // The bodies' sources as of 38ecfa07, before the TextEdit locator changed.
+  // The bodies' sources as of 38ecfa07, before the TextEdit locator changed; the preparation's since #188, which names
+  // the emptying in its result and reports a trailer a selection masks as its own reason (the same calls, in the same
+  // order).
   assert.deepEqual(['chrome', 'electron'].map(s => [sha(emptyField(s)), sha(fieldCheck(s, 'x')), sha(fieldCheck(s, null))]), [
-    ['7ca74a0117f13c23', '41639a7e0fddf612', '5cf0e282ecc58ddc'],
-    ['d1a0d9c29f49d7c6', '3495030f8aa3813c', 'bb2fde8b360fdc61'],
+    ['e8b238e9385f95ec', '41639a7e0fddf612', '5cf0e282ecc58ddc'],
+    ['3c254c5f5131ca19', '3495030f8aa3813c', 'bb2fde8b360fdc61'],
   ]);
 });

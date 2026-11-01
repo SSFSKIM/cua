@@ -5,7 +5,8 @@
 //
 // A method case (./plan.mjs) is three cells, because the facade's response meta carries only its last call's
 // `cua/inputRoute` (src/services/engine/service.mjs resets the per-call keys at each call):
-//   prepare  resets `globalThis.__m`, observes, finds the case's element by name and returns {ready} or {ready: false, reason}
+//   prepare  resets `globalThis.__m`, observes, finds the case's element by name and returns {ready} or {ready: false, reason},
+//            with the steps it states (`prepared`, ./plan.mjs) and its field's focus reading (`focus`) when it has them
 //   act      exactly one facade call, so the act's `_meta` carries that call's route; the device clock around it
 //            (`at`, attributing the activations watcher's events to the row) and the call's own time (`actMs`)
 //   check    observes and returns {ok, outcome}, or {invalid} when the case was not prepared
@@ -61,10 +62,12 @@ export function caseCells(target, c) {
   const head = prelude(SCENE_OF[target]);
   return {
     prepare: cell(`${head}
-const __m = globalThis.__m = {ready: false, threw: null};
+const __m = globalThis.__m = {ready: false, threw: null, prepared: []};
 const __r = await (async () => {${c.prepare}\n})();
 __m.ready = __r?.ready === true;
-return __m.ready ? {ready: true} : {ready: false, reason: String(__r?.reason ?? "not ready").slice(0, 200)};`),
+const __prepared = [...__m.prepared, ...(Array.isArray(__r?.prepared) ? __r.prepared : [])].map(s => String(s).slice(0, 80));
+const __stated = {...(__m.ready && __m.focus ? {focus: __m.focus} : {}), ...(__prepared.length ? {prepared: __prepared} : {})};
+return __m.ready ? {ready: true, ...__stated} : {ready: false, reason: String(__r?.reason ?? "not ready").slice(0, 200), ...__stated};`),
     act: cell(`${head}
 const __m = globalThis.__m;
 if (!__m?.ready) throw new Error("the case was not prepared; nothing was sent");

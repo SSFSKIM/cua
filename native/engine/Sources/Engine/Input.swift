@@ -85,6 +85,8 @@ struct InputMeta {
   var delivery: DeliveryGuardOutcome?
   /// The paste route's value-free diagnostics of its last line (#187, Paste.swift `PasteDiagnostics`); nil off it.
   var paste: PasteDiagnostics?
+  /// An element click's plan, the ladder's reason and the hit-test's answer (#188, Routes.swift ElementClickRecord).
+  var elementClick: ElementClickRecord?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -136,6 +138,7 @@ struct InputMeta {
     if let keyWindowRestored { wire["keyWindowRestored"] = keyWindowRestored }
     if let delivery { wire["delivery"] = delivery.wire }
     if let paste { wire["paste"] = paste.wire }
+    if let elementClick { wire["elementClick"] = elementClick.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }
@@ -265,7 +268,8 @@ extension Engine {
   /// that advertises the action and whose clickable point does not land on a strict descendant of it (the vendor's
   /// nested-content gate, applied to every element by cua); every other element click is synthesized by route 3 at the
   /// midpoint of the element's visible frame (`synthesizedClick`), its activation click sparing the element for any
-  /// button but the left. A plain left click on a menu-bar item with a menu records the item (MenuRecord.swift) and
+  /// button but the left; its meta records the plan, the ladder's reason and the hit-test's answer (`elementClick`,
+  /// ElementClickRecord). A plain left click on a menu-bar item with a menu records the item (MenuRecord.swift) and
   /// posts nothing; any other click on a menu-bar item or the menu bar is refused before anything is posted. A
   /// successful element click clears the app's menu record. A coordinate click is in the pixels of the last screenshot
   /// of the app's primary window on this connection, refused (`noScreenshotForCoordinates`, nothing posted) when there
@@ -306,7 +310,10 @@ extension Engine {
                                         synthesized: synthesizedClickRoute(forced: nil, foreground: foreground)) {
           pointing.relation == .descendant  // no point, or no answer: the action needs no point
         }
+        meta.elementClick = elementClickRecord(plan, forced: forced, button: button, count: count, actions: target.entry.actions, hit: pointing.taken)
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
+          // A synthesized click takes its reach check's hit-test itself: recorded on a refusal too.
+          defer { meta.elementClick?.hit = pointing.taken }
           switch plan {
           case .action(let action):
             // Route 3's held activation first when the app does not believe it has focus (FocusHold.swift).

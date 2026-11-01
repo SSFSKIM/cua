@@ -1,7 +1,8 @@
 // What the native matrix's cells read off an observation's text, in the vendor's grammar (src/services/engine/render.mjs
 // renders cua's in the same one): element lines, a labelled part, a value across the lines a multi-line value spans,
-// the trailer (the focused element, selected text, selected elements), Finder's rows and visible range, TextEdit's
-// scroll bar, and the finding-elements scorer's target search and line measures. Every function is self-contained (it
+// the trailer (the focused element, selected text, selected elements, and whether a selection masks the focus),
+// Finder's rows and visible range, TextEdit's scroll bar, and the finding-elements scorer's target search and line
+// measures. Every function is self-contained (it
 // calls only the others listed in EMBEDDED), so a cell embeds them by their source and runs them inside the REPL on the
 // device: what leaves the cell is the answer, never the text. Role words are localized (TextEdit runs in English, the
 // other scenes in the system's language, Korean on the mini), so nothing here depends on one except the finding
@@ -82,6 +83,13 @@ export function selectedIndexesOf(ax) {
     out.push(Number(m[1]));
   }
   return out;
+}
+// How the trailer reads the element `index`'s focus: 'focused' (its focus line names it), 'masked' (selected text or
+// selected elements take the trailer's place, src/services/engine/render.mjs trailer, so the text cannot say where the
+// focus is) or 'unfocused' (nothing masks the trailer, and it names another element or none).
+export function focusReading(ax, index) {
+  if (focusedIndexOf(ax) === index) return 'focused';
+  return selectedTextOf(ax) !== null || selectedIndexesOf(ax).length ? 'masked' : 'unfocused';
 }
 // Finder: the row holding the file `name` (its name field's line is two levels below the row), or null when the name
 // is not in the text (outside the visible subset).
@@ -257,6 +265,6 @@ export function selectionEvidence(ax, index, before = null) {
 
 // The helpers' source, for a cell to embed (in this order: each calls only earlier ones or indexOfTarget).
 export const EMBEDDED = [`const windowTitleOf = ${windowTitleOf.toString()};`, indexOfTarget, elementLines, lineOfIndex, parentIndexOf, indexOfPart, indexOfId, valueOfIndex,
-  focusedIndexOf, selectedTextOf, selectedIndexesOf, rowIndexOfName, showingOf, scrollBarValueBeside,
+  focusedIndexOf, selectedTextOf, selectedIndexesOf, focusReading, rowIndexOfName, showingOf, scrollBarValueBeside,
   `const SUBROLE_WORDS = ${JSON.stringify(SUBROLE_WORDS)};`, findTarget, `const ROLE_WORDS = ${JSON.stringify(ROLE_WORDS)};`, `const LABELS = ${LABELS.toString()};`,
   namedLines, idCount, sha256Hex, fieldReading, selectionEvidence].map(f => (typeof f === 'string' ? f : f.toString())).join('\n');

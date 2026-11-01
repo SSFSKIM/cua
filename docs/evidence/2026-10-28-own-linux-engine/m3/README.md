@@ -9,7 +9,7 @@ The vendor builds are the pinned 26.928.40906 and the newest 26.1023.51421. M3 r
 | M3.1, the engine's device mode and capability report | `kinds/`, `diff/`, `rejudge/`, `device-fix1/`, `device-fix2/`, `device-fix3/`, `late-take/` | the measurements behind `families.rs`, the Chrome drag-and-drop guard, M3.1's verdict run and its fix rounds ([M3.1](#m31-the-device-modes-measurements-and-the-verdict-run), below) |
 | M3.2, cua's own Linux service | `services/` | the two services render the same states and numbers on one engine; no vendor module with cua's engine ([its README](services/README.md)) |
 | the drop-miss follow-up | `drop-misses/`, `drop-misses/task18/` | the mechanism of M3.1's Chrome drop misses and the 350 ms release floor ([its README](drop-misses/task18/README.md)) |
-| M3's gate | `gate/`, `gate-final/`, `gate-verdict/` | the fresh full verdict runs: `m3-gate` on the M3.3 engine and `m3-gate-final` on the merged head after task 20. **Both exit 1**. `m3-gate-verdict`, after tasks 22 and 23, was **stopped by ruling** once the harness-fault caps were exceeded (below) |
+| M3's gate | `gate/`, `gate-final/`, `gate-verdict/`, `gate-t25/` | the fresh full verdict runs: `m3-gate` on the M3.3 engine and `m3-gate-final` on the merged head after task 20. **Both exit 1**. `m3-gate-verdict`, after tasks 22 and 23, was **stopped by ruling** once the harness-fault caps were exceeded. `m3-gate-t25`, after task 24, was **stopped by ruling** 9 minutes in: its cua engine was a VM build, not the bytes that ship (below) |
 | M3.3, doctor, provisioning and the facade proof | `doctor/`, `provision/`, `facade/`, `accept/`, `parity/`, `baseline/` | below |
 
 The engine of every M3.3 run and of the gate is one frozen release build of the head's engine sources: the engine
@@ -17,6 +17,39 @@ sources last changed at 1b7debef, built at bcf64d68, `cua-engine 0.3.0 (bcf64d68
 `01955bef9ff69fa9af948c50c324edb07dfbd303474e179f7f0c7f42e163032d`. No M3.3 commit touches `native/linux-engine/`.
 Until 0.3.0 is released and pinned, the installed engine is 0.2.0, which cua's service refuses (`MIN_ENGINE_VERSION`
 0.3.0), so the facade runs name the build: `--engine-bin` for the suites, `CUA_LINUX_ENGINE_BIN` for the fixtures.
+
+## M3's gate, fourth run (`gate-t25/`, run `m3-gate-t25`): stopped by ruling, the wrong build target
+
+**The gate is not met.** `m3-gate-t25` was started as a fresh full differential verdict run after task 24's scene-text
+fix, and the design session stopped it: the gate must judge the bytes that ship.
+
+- **Gate commit:** 380b132b, whose code is b01ac8fd's (380b132b changes only the spec).
+- **Engine:** a release build of that head's engine sources made on the VM, `cargo build --release --locked`, frozen as
+  a copy outside the worktree: `cua-engine 0.3.0 (380b132bdabf)`, SHA-256
+  `0cd99eb3057efbbac7fba8c61734885a929c7fc6049848534022b233127c5556`. That build targets
+  `x86_64-unknown-linux-gnu` (dynamic, glibc). The release ships the `linux-engine` workflow's
+  `x86_64-unknown-linux-musl` static-pie, built by the same rustc 1.94.1. **That target mismatch is why the run was
+  stopped.** It says nothing about the engine's behaviour.
+- **The vendor builds** are byte-identical to `m3-gate-verdict`'s: pinned SHA-256 `7ac3c2ae45a3dacc9209063e91d2df4ea9f206b814a9ffd976f5bcf90d73f1cd`,
+  newest `88ce5e0ae64290dd36dbb2942a33ece6a7222f7294fc66410f4e26c29e4b2991` (the run's meta record). cua's hash
+  differs from that run's (`88a647bc…`) only because the binary embeds its build commit. The engine sources at
+  f3ad9dbb and 380b132b are identical.
+- **Command:** `m3-gate-verdict`'s scenes, device cases and flags, with `--run m3-gate-t25 --out docs/evidence/2026-10-28-own-linux-engine/m3/gate-t25`.
+- **Run:** 2026-11-01 20:39:56Z, stopped with SIGINT at 20:49:21Z, exit 130 at 20:49:23Z. Task 22's hook closed its
+  scene windows. The stray checks before the start and after the stop found no harness process, and only the owner's
+  window on `:0`.
+
+The run was valid at its start: the stub engine failed both the witness and the audit, and the foreground and in-front
+standing controls held. `results.jsonl` holds its 454 rows as they stood, 450 of them samples: block 0 of `desktop`,
+`gedit` and `chrome`, and `chrome-input` up to its first `right_click_fallback` sample. There are no top-ups and no
+summary. These are observations from an incomplete run, not verdicts:
+- No preparation failed in any lane.
+- The first-word restores: pinned 6, newest 0, cua 0. Each put back the word that one of the pinned build's failed
+  `type_text_selection` samples had deleted (each found `" diffe"`): before its `type_text_selection` warm 1–5 and
+  its `clipboard_read` cold 0, as task 24 expected.
+- Every cua sample answered ok. The failed samples are the vendors' known ones: the pinned build's x64 paste defect
+  (`type_text`, `type_text_selection`, `clipboard_write`, 6 each) and its missing `type_characters` (6), and the newest
+  build's `clipboard_write` in gedit (6 of 6; it failed on every sample of the three earlier gate runs too).
 
 ## M3's gate, third run (`gate-verdict/`, run `m3-gate-verdict`): stopped by ruling, a failed run
 

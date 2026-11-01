@@ -4,7 +4,7 @@
 // Mac: sessions through ./session.mjs, cues spoken with `say`, the go file the operator touches once the owner is done,
 // the harness scenes' activation, the engine's stop and status through this checkout's CLI, engine.json's switch, the
 // approved bundle's activation watcher and focus probe, item 1's screen recording (./recording.mjs), and #200's window
-// placement, order watcher and delivery reads (./raise.mjs). Whatever the item changed outside its sessions is put back
+// placement, order watcher, delivery reads and the fixture's relaunch (./raise.mjs). Whatever the item changed outside its sessions is put back
 // in `finally`: engine.json as it was, the watchers and the recorder stopped, every session closed.
 import {execFileSync, spawn} from 'node:child_process';
 import {appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
@@ -58,6 +58,12 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
   const cli = (args, env = {}) => JSON.parse(execFileSync(process.execPath, [CLI, ...args], {encoding: 'utf8', env: {...process.env, ...env}, timeout: 60_000}));
   const settingsFile = engineJsonOf(home), before = join(out, 'engine.json.before');
   const guard = liveTargetGuard({bundle: enginePaths().bundle});
+  // The scenes CLI on the run (scripts/repl-parity/scenes-mac.mjs): its last JSON line, also when it exits non-zero.
+  const scenes = (args, timeout = 30_000) => {
+    let text;
+    try { text = execFileSync(process.execPath, [SCENES_CLI, ...args, '--run', run], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout}); } catch (error) { text = String(error.stdout ?? ''); }
+    try { return JSON.parse(text.trim().split('\n').at(-1)); } catch { return {ok: false, error: 'the scenes CLI printed no answer'}; }
+  };
   let sources = null;
   // Why a source may not be selected for `scene` now (its launch, its run window on top of the frontmost app), or null.
   const sourceTarget = scene => {
@@ -87,11 +93,7 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
     goFile: join(out, 'go'),
     tasks: {
       // The scene's process brought to the front (its answer's `ok`, false when another stayed in front).
-      activate: async ([scene]) => {
-        let text;
-        try { text = execFileSync(process.execPath, [SCENES_CLI, 'activate', scene, '--run', run], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 30_000}); } catch (error) { text = String(error.stdout ?? ''); }
-        try { return JSON.parse(text.trim().split('\n').at(-1)); } catch { return {ok: false, error: 'the scenes CLI printed no answer'}; }
-      },
+      activate: async ([scene]) => scenes(['activate', scene]),
       'engine-stop': async () => cli(['engine', 'stop', '--json']),
       // The device switch as the running engine reports it; with `arm`, its cursorDebug must be that arm too.
       'engine-status': async ([expect, arm]) => {
@@ -235,7 +237,7 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
   };
   // #200's tasks (./raise.mjs): the harness windows placed, the arrangement checked, the order watcher, the deliveries.
   Object.assign(io.tasks, raiseTasks({io, run, guard, out, windowList: () => liveWindowList(), probe: args => runProbe(enginePaths().bundle, args),
-    textView: textViewOf, moveWindow: liveMoveWindow(), elementFrame: liveElementFrame()}));
+    textView: textViewOf, moveWindow: liveMoveWindow(), elementFrame: liveElementFrame(), scenes: args => scenes(args, 120_000)}));
   function writeSettings(write) {
     const text = existsSync(settingsFile) ? readFileSync(settingsFile, 'utf8') : null;
     if (existsSync(before) || existsSync(`${before}.absent`)) throw new Error(`${before} exists from an earlier run: restore engine.json from it by hand, then remove it`);

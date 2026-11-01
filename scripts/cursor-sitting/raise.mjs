@@ -35,9 +35,17 @@
 //     e  a plain click on a row of the run's Finder window (the date cell, never the name, which would start a rename):
 //        that row alone selected, so the click kept its meaning (a ⌘-click adds to a selection)
 //     f  a coordinate click on a plain push button in a background window, a view that refuses the first mouse: the
-//        Electron fixture's button, at the middle of its frame (./element-frame.swift): its count up by one. The
-//        fixture's activation, focus and blur counters are read before and after each click, recorded only.
+//        Electron fixture's button, at the middle of its frame (./element-frame.swift): its count up by one. The case
+//        starts on a fresh fixture process (brought down and up by the kit, its accessibility record off), placed and
+//        Chrome activated again; then the engine under test observes it and must find the button by its index (its
+//        tree read there, before anything else reads it), then the frame reader, then the clicks. The fixture's
+//        activation, focus and blur counters are read before and after each click, recorded only.
+// - After the tail, one observation: the engine reports a repair its after-action watch made after an action had
+//   answered (`cua/afterActionRepairs`) on the connection's later replies, so the last action's needs a reply after it.
 // - The vendor's half runs the same cases (`--engine vendor`); its rows are recorded, never judged.
+// A late or outlived raise the engine repaired inside its repair window after the post, by the guard past its cap
+// (`repairedAfterRelease`) or by the after-action watch (a later reply's `afterActionRepairs`, keyed by the delivery's
+// `postedAt`), and that the watcher saw undone there, is a flash: counted and reported, not failed.
 // Pass, for cua's engine: every sample delivered, no late or unguarded raise, no `raiseLeft`, nothing undecided, over
 // the case's full count; the case ended cleanly (its last raise check passed, its session closed, its watcher stopped by
 // the kit) and the watcher's record whole (started before the first sample, reaching the close after the tail, no gap
@@ -46,11 +54,12 @@ import {execFileSync, spawn} from 'node:child_process';
 import {closeSync, existsSync, openSync, readFileSync} from 'node:fs';
 import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {FIXTURE_COUNTERS_FILE} from '../native-matrix/fixtures/electron-fixture.mjs';
+import {FIXTURE_ACCESSIBILITY_FILE, FIXTURE_COUNTERS_FILE} from '../native-matrix/fixtures/electron-fixture.mjs';
 import {compiled} from '../native-matrix/matrix-device.mjs';
 import {readState, textEditDocument} from '../repl-parity/scenes-mac.mjs';
-import {ALIGN_CLICK, ALIGNMENT, CARET_BEFORE, CLICK_AT, FINDER_ROW_CLICK, FINDER_ROW_READ, FINDER_TOP, OBSERVED_CLICK, OBSERVED_CLICK_GLOBAL, OBSERVED_CLICK_PT, OBSERVED_DRAG,
-  PRESSED} from './cells.mjs';
+import {ALIGN_CLICK, ALIGNMENT, CARET_BEFORE, CLICK_AT, CONTROL_FOUND, FINDER_ROW_CLICK, FINDER_ROW_READ, FINDER_TOP, OBSERVE, OBSERVED_CLICK, OBSERVED_CLICK_GLOBAL,
+  OBSERVED_CLICK_PT, OBSERVED_DRAG, PRESSED} from './cells.mjs';
+import {fixtureAccessibility} from './focus.mjs';
 import {BUILT_IN_SCREEN} from './glide.mjs';
 import {PROBE_CACHE} from './target-guard.mjs';
 
@@ -163,6 +172,18 @@ export function buttonProblem(answer, window) {
   if (!answer?.found) return `the fixture's button was not found: ${answer?.error ?? 'no answer'}`;
   if (!window) return 'the fixture\'s run window is not on screen';
   return inside(middle(answer.frame), window) ? null : 'the button\'s middle is not inside the fixture\'s run window';
+}
+
+// Why the relaunched fixture is not fresh, or null: a new process (`before`, `after`: the scene records' pids), whose
+// accessibility record (the fixture's JSON lines, appended across launches) has a start line, and no line from it on
+// says accessibility is on.
+export function freshFixtureProblem({before = null, after, accessibilityText}) {
+  if (before !== null && before === after) return `the fixture kept its process ${after}`;
+  const lines = orderLines(accessibilityText);
+  const k = lines.findLastIndex(l => l.source === 'start');
+  if (k < 0) return 'the fixture\'s accessibility record has no start line for its new process';
+  const on = lines.slice(k).find(l => l.enabled === true);
+  return on ? `the fixture's accessibility was already on (${on.source} at ${on.at}) before the case's first observation` : null;
 }
 
 // ---- delivery -----------------------------------------------------------------------------------------------------
@@ -283,9 +304,12 @@ const prevOf = c => (Number.isFinite(c.prev) ? c.prev : c.at);
 //              read on past the grace)
 //   undecided  a gap in the reads leaves it unknown whether it began before the hold or lasted past the grace: incomplete
 //              evidence, not a raise
+//   flash      late or outlived, but the engine repaired after the release for this action (the guard past its cap, or
+//              the after-action watch: `repaired`, the post times a later reply's afterActionRepairs keyed) and the
+//              watcher saw it undone inside the repair window after the post
 // With the guard, also the first raise after the post and how long after it, and how long after the post the hold was
-// released. -> {guarded, raises, postToRaiseMs, postToReleaseMs, late, outlived, undecided, unguarded}.
-export function callWatch({meta = {}, attempt, from, until = Infinity}) {
+// released. -> {guarded, raises, postToRaiseMs, postToReleaseMs, late, outlived, undecided, unguarded, flash}.
+export function callWatch({meta = {}, attempt, from, until = Infinity, repaired = null}) {
   const changes = attempt?.changes ?? [];
   const raises = raisesIn(attempt).filter(c => c.at >= from && c.at < until);
   const post = meta.actionInterval?.startedAt ?? null, releasedAt = meta.delivery?.releasedAt > 0 ? meta.delivery.releasedAt : null;
@@ -293,9 +317,11 @@ export function callWatch({meta = {}, attempt, from, until = Infinity}) {
   const holdStart = meta.delivery.holdStartedAt > 0 ? meta.delivery.holdStartedAt : Number.isFinite(post) ? post : releasedAt;
   const grace = releasedAt + OUTLIVE_MS;
   const counts = {late: 0, outlived: 0, undecided: 0, unguarded: 0, flash: 0};
-  // A raise seen past the release that the guard repaired after it (the engine's repairedAfterRelease), undone inside
-  // the engine's repair window after the post: on the display for that long, a flash, counted apart and not failed.
-  const repairWindowEnd = meta.delivery?.repairedAfterRelease === true && Number.isFinite(post) ? post + REPAIR_WINDOW_MS + OUTLIVE_MS : null;
+  // A raise seen past the release that the engine repaired after it (the guard's repairedAfterRelease, or the
+  // after-action watch's repair of this action), undone inside the engine's repair window after the post: on the
+  // display for that long, a flash, counted apart and not failed.
+  const engineRepaired = meta.delivery?.repairedAfterRelease === true || repaired?.has(meta.delivery?.postedAt) === true;
+  const repairWindowEnd = engineRepaired && Number.isFinite(post) ? post + REPAIR_WINDOW_MS + OUTLIVE_MS : null;
   const flashOr = (raise, kind) => {
     if (repairWindowEnd === null) return kind;
     const undone = changes.find(c => c.at > raise.at && c.state !== 'back-above');
@@ -318,6 +344,25 @@ export function callWatch({meta = {}, attempt, from, until = Infinity}) {
   for (const raise of raises) { const kind = kindOf(raise); if (kind) counts[kind] += 1; }
   const first = Number.isFinite(post) ? raises.find(c => c.at >= post) : undefined;
   return {guarded: true, raises: raises.length, postToRaiseMs: first ? first.at - post : null, postToReleaseMs: Number.isFinite(post) ? releasedAt - post : null, ...counts};
+}
+
+// The connection's after-action repairs as the case's replies carried them (the engine's `afterActionRepairs`,
+// cumulative on every later input result and observation of the session): each repaired action's post time to its
+// repairs and first repair's latency (the most any reply reported), and the session's total. -> {total, actions: Map}.
+export function afterActionRepairsIn(rows) {
+  const actions = new Map();
+  let total = 0;
+  for (const r of rows) {
+    const report = r.kind === 'cell' ? r.meta?.afterActionRepairs : null;
+    if (!report) continue;
+    total = Math.max(total, Number.isInteger(report.repairs) ? report.repairs : 0);
+    for (const a of report.actions ?? []) {
+      if (!Number.isFinite(a?.postedAt)) continue;
+      const was = actions.get(a.postedAt);
+      if (!was || a.repairs > was.repairs) actions.set(a.postedAt, {repairs: a.repairs, latencyMs: a.latencyMs ?? null});
+    }
+  }
+  return {total, actions};
 }
 
 // ---- the judge ----------------------------------------------------------------------------------------------------
@@ -369,7 +414,8 @@ export function judgeCase({kase, engine, rows, order}) {
   // cell (the session's opening) are unguarded.
   const cells = last.filter(r => r.kind === 'cell' && Number.isFinite(r.startedAt)).sort((x, y) => x.startedAt - y.startedAt);
   const end = attempt?.end?.at ?? Infinity;
-  const watched = cells.map((c, k) => ({row: c, ...callWatch({meta: c.meta, attempt, from: c.startedAt, until: cells[k + 1]?.startedAt ?? end})}));
+  const afterAction = afterActionRepairsIn(last);
+  const watched = cells.map((c, k) => ({row: c, ...callWatch({meta: c.meta, attempt, from: c.startedAt, until: cells[k + 1]?.startedAt ?? end, repaired: afterAction.actions})}));
   const opening = raisesIn(attempt).filter(c => !cells.length || c.at < cells[0].startedAt).length;
   const actions = watched.filter(w => halves.includes(w.row.sample?.part));
   const deliveries = actions.map(w => w.row.meta?.delivery).filter(Boolean);
@@ -401,9 +447,11 @@ export function judgeCase({kase, engine, rows, order}) {
   const base = {case: kase, engine, target, samples: complete.length, delivered: delivered.length,
     halves: Object.fromEntries(halves.map(part => [part, complete.filter(([, h]) => h[part].delivered).length])),
     raises: raises.length, restores: deliveries.reduce((n, d) => n + (d.restores ?? 0), 0), flashes,
-    repairedAfterRelease: deliveries.filter(d => d.repairedAfterRelease).length, late, unguarded, opening, undecided, undecidedSamples, raiseLeft,
+    repairedAfterRelease: deliveries.filter(d => d.repairedAfterRelease).length, watchRepaired: deliveries.filter(d => afterAction.actions.has(d.postedAt)).length,
+    watchRepairs: afterAction.total, late, unguarded, opening, undecided, undecidedSamples, raiseLeft,
     capped: deliveries.filter(d => d.capped).length, guarded: `${deliveries.length} of ${actions.length}`,
     postToRaiseMs: spread(actions.map(w => w.postToRaiseMs)), postToReleaseMs: spread(actions.map(w => w.postToReleaseMs)),
+    postToWatchRepairMs: spread(deliveries.map(d => afterAction.actions.get(d.postedAt)?.latencyMs)),
     seen, losses: losses.length, undelivered, stopped, watcher,
     routes: tally(actions.map(w => (w.row.route == null ? null : `${w.row.sample.part} ${w.row.route}`))),
     activationClicks: tally(actions.map(w => (w.row.meta?.activationClick == null ? null : `${w.row.sample.part} ${w.row.meta.activationClick}`))),
@@ -425,18 +473,19 @@ const spreadText = s => (s.n ? `${ms(s.min)} / ${ms(s.median)} / ${ms(s.p95)} / 
 // The judgements as Markdown: two tables (raises and delivery; timing), then each case's notes.
 export function raiseMarkdown(judged) {
   const lines = ['# #200: background actions, raises and delivery (scripts/cursor-sitting/raise.mjs)', '',
-    'Raises are what the 5 ms watcher saw of the window server\'s order (the guard\'s screen hold keeps them off the display); restores, capped and raise left are what route 3\'s delivery guard reported (`cua/delivery`). A late raise was seen by a read more than 10 ms past the hold\'s release (begun after it, or outliving it); an unguarded one came before the hold began or during a call with no guard; an undecided one sits in a gap of the watcher\'s reads that leaves either unknown, and makes the case incomplete, not failed. Pass, for cua\'s engine: every sample delivered, no late or unguarded raise, no raise left, nothing undecided, the full count, the case ended cleanly and the watcher\'s record whole through its tail. The vendor\'s rows are recorded, not judged.', '',
-    '| case | engine | samples | delivered | raises seen | restores | repaired after release (flashes) | late | unguarded | undecided | capped | raise left | verdict |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|'];
+    'Raises are what the 5 ms watcher saw of the window server\'s order (the guard\'s screen hold keeps them off the display); restores, capped and raise left are what route 3\'s delivery guard reported (`cua/delivery`); repaired after release counts the actions the engine repaired once the hold was released, by the guard past its cap and by the after-action watch (`cua/afterActionRepairs`, on a later reply), and a flash is a raise past the release that such a repair undid inside 1 s of the events, counted and not failed. A late raise was seen by a read more than 10 ms past the hold\'s release (begun after it, or outliving it) and not so repaired; an unguarded one came before the hold began or during a call with no guard; an undecided one sits in a gap of the watcher\'s reads that leaves either unknown, and makes the case incomplete, not failed. Pass, for cua\'s engine: every sample delivered, no late or unguarded raise, no raise left, nothing undecided, the full count, the case ended cleanly and the watcher\'s record whole through its tail. The vendor\'s rows are recorded, not judged.', '',
+    '| case | engine | samples | delivered | raises seen | restores | repaired after release: guard + watch (flashes) | late | unguarded | undecided | capped | raise left | verdict |', '|---|---|---|---|---|---|---|---|---|---|---|---|---|'];
   for (const j of judged) {
     const halves = Object.keys(j.halves).length > 1 ? ` (${Object.entries(j.halves).map(([p, n]) => `${p} ${n}`).join(', ')})` : '';
     const verdictText = j.engine === 'vendor' ? `recorded (would be ${j.wouldBe})` : `**${j.verdict}**`;
-    lines.push(`| ${j.case}: ${CASES[j.case].what} | ${j.engine} | ${j.samples} / ${j.target} | ${j.delivered}${halves} | ${j.raises} | ${j.restores} | ${j.repairedAfterRelease} (${j.flashes}) | ${j.late} | ${j.unguarded} | ${j.undecided} | ${j.capped} | ${j.raiseLeft} | ${verdictText} |`);
+    lines.push(`| ${j.case}: ${CASES[j.case].what} | ${j.engine} | ${j.samples} / ${j.target} | ${j.delivered}${halves} | ${j.raises} | ${j.restores} | ${j.repairedAfterRelease} + ${j.watchRepaired} (${j.flashes}) | ${j.late} | ${j.unguarded} | ${j.undecided} | ${j.capped} | ${j.raiseLeft} | ${verdictText} |`);
   }
-  lines.push('', '| case | engine | post → first raise, ms (min / median / p95 / max, n) | post → hold released, ms | guarded actions | routes | activation clicks |', '|---|---|---|---|---|---|---|');
-  for (const j of judged) lines.push(`| ${j.case} | ${j.engine} | ${spreadText(j.postToRaiseMs)} | ${spreadText(j.postToReleaseMs)} | ${j.guarded} | ${listed(j.routes)} | ${listed(j.activationClicks)} |`);
+  lines.push('', '| case | engine | post → first raise, ms (min / median / p95 / max, n) | post → hold released, ms | post → watch\'s first repair, ms | guarded actions | routes | activation clicks |', '|---|---|---|---|---|---|---|---|');
+  for (const j of judged) lines.push(`| ${j.case} | ${j.engine} | ${spreadText(j.postToRaiseMs)} | ${spreadText(j.postToReleaseMs)} | ${spreadText(j.postToWatchRepairMs ?? {n: 0})} | ${j.guarded} | ${listed(j.routes)} | ${listed(j.activationClicks)} |`);
   for (const j of judged) {
     const notes = [
       ...(j.opening ? [`${j.opening} unguarded raise(s) while the session opened, before the first cell`] : []),
+      ...(j.watchRepairs ? [`the after-action watch made ${j.watchRepairs} repair(s) over the session, on ${j.watchRepaired} sample action(s)`] : []),
       ...j.seen.map(s => `${s.late ? `${s.late} late raise(s)` : ''}${s.outlived ? `${s.late ? ', ' : ''}${s.outlived} raise(s) outlived the hold` : ''}${s.unguarded ? `${s.unguarded} unguarded raise(s)` : ''} during "${s.label}"`),
       ...(j.undecided ? [`${j.undecided} raise(s) undecided by a gap in the watcher's reads, in sample(s) ${j.undecidedSamples.join(', ')}: incomplete evidence, not a raise`] : []),
       ...j.undelivered.map(u => `sample ${u.i}${Object.keys(j.halves).length > 1 ? ` (${u.part})` : ''} not delivered: ${u.why}`),
@@ -467,6 +516,8 @@ export const LABELS = Object.freeze({
   })[kase](),
   alignment: i => `b#${i} the alignment read`, finderRead: i => `e#${i} Finder's selection read`,
   pressed: i => (i < 0 ? 'f: the fixture\'s count before' : `f#${i} the fixture's count read`),
+  found: 'f: the fixture\'s button found by its index in the engine\'s observation',
+  tail: kase => `${kase}: one observation after the tail (the after-action repairs read)`,
 });
 
 // The placement before the first case: the harness windows moved (Finder's and the fixture's when their cases run),
@@ -509,6 +560,7 @@ export function raiseSteps(kase, {engine, samples = CASES[kase].samples}) {
       {run: S, cell: FINDER_ROW_READ(row), label: LABELS.finderRead(i), sample: at('e', i, 'read')},
       {task: 'deliver', args: ['finder-row', 'e', String(i), 'row']}, ...checked('e', i)]; })],
     f: () => [
+      {run: S, cell: CONTROL_FOUND('fixtureButton'), label: LABELS.found, sample: at('f', -1, 'observe'), required: true},
       {task: 'element-frame', args: ['f'], required: true},
       {run: S, cell: PRESSED, label: LABELS.pressed(-1), sample: at('f', -1, 'read')},
       ...n.flatMap(i => [
@@ -519,15 +571,24 @@ export function raiseSteps(kase, {engine, samples = CASES[kase].samples}) {
         {task: 'deliver', args: ['pressed', 'f', String(i), 'click']},
         ...checked('f', i)])],
   }[kase];
+  // f starts on a fresh fixture process, nothing having read its tree: brought down and up, placed again, Chrome in front.
+  const fresh = kase === 'f' ? [
+    {task: 'fixture-relaunch', required: true},
+    {task: 'raise-place', args: ['electron'], required: true},
+    {task: 'activate', args: [FRONT], required: true},
+    {task: 'fixture-accessibility'},
+  ] : [];
   return [
     {say: `#200 case ${kase} on the ${engine} engine: ${what}, ${samples} samples`},
     {series: [itemOf(kase, engine)], counts: {samples}},
+    ...fresh,
     {task: 'arrangement', args: [kase, String(samples)], required: true},
     {task: 'order-watch-start', args: [kase, engine], required: true},
     {open: S, engine, scenes: [back]},
     ...(back === 'textedit' ? [{task: 'text-view', args: [kase, 'before']}] : []),
     ...body(),
     {wait: TAIL_MS},
+    {run: S, cell: OBSERVE(back), label: LABELS.tail(kase), sample: at(kase, -1, 'tail')},
     {task: 'raise-check', args: [kase, 'end'], required: true},
     {close: S},
     {task: 'order-watch-stop', args: [kase]},
@@ -580,8 +641,8 @@ export async function stopRaiseWatch(ctx) {
 // directory; `guard`: the target guard's readings (./target-guard.mjs: frontmost(), windows(pid)); `windowList()`:
 // every on-screen window front to back; `probe(args)`: the approved bundle's probe, its last JSON line;
 // `textView(answer)`: its text-view reading; `moveWindow(args)`: move-window.swift's answer; `elementFrame(args)`:
-// element-frame.swift's.
-export function raiseTasks({io, run, guard, out, windowList, probe, textView, moveWindow, elementFrame}) {
+// element-frame.swift's; `scenes(args)`: the scenes CLI's answer (scripts/repl-parity/scenes-mac.mjs, on `run`).
+export function raiseTasks({io, run, guard, out, windowList, probe, textView, moveWindow, elementFrame, scenes}) {
   const state = ctx => (ctx.raise ??= {watch: null, range: null});
   const runWindow = id => { const r = io.scene(id); return {id, pid: r.pid, number: r.window.number, bounds: guard.windows(r.pid).find(w => w.number === r.window.number && w.onScreen !== false)?.bounds ?? null}; };
   const readRange = id => {
@@ -597,6 +658,10 @@ export function raiseTasks({io, run, guard, out, windowList, probe, textView, mo
     return callWatch({meta: answer.meta, attempt, from: answer.meta?.actionInterval?.startedAt ?? since});
   };
   // The action's own record beside its delivery: its route, the guard's report and the events' post.
+  const fixtureRecord = () => {
+    const dir = readState(run).scenes?.electron?.userDataDir, file = dir ? join(dir, FIXTURE_ACCESSIBILITY_FILE) : null;
+    return file && existsSync(file) ? readFileSync(file, 'utf8') : '';
+  };
   const actionOf = (label, answer) => (answer ? {label, route: answer.route ?? null, delivery: answer.meta?.delivery ?? null, actionInterval: answer.meta?.actionInterval ?? null} : null);
   return {
     // The harness windows moved where placementPlan puts them, each through Accessibility by its own process and bounds,
@@ -635,6 +700,21 @@ export function raiseTasks({io, run, guard, out, windowList, probe, textView, mo
       const front = runWindow(FRONT).bounds;
       return {ok: true, frame: answer.frame, window: w.bounds, coveredByChrome: Boolean(front && inside(middle(answer.frame), front))};
     },
+    // f: the fixture brought down and up again by the scenes CLI (a harness app the kit owns), so the case starts on a
+    // process whose accessibility tree nothing has enabled (freshFixtureProblem).
+    'fixture-relaunch': async () => {
+      let before = null;
+      try { before = io.scene('electron'); } catch {}
+      const down = scenes(['down', 'electron']);
+      const was = before && {pid: before.pid, window: before.window?.number ?? null};
+      if (down?.down !== true) return {ok: false, before: was, down, problem: `the fixture did not come down (${down?.reason ?? down?.error ?? 'no answer'})`};
+      const up = scenes(['up', 'electron']);
+      if (!up?.pid || !up?.window?.number) return {ok: false, before: was, down, up, problem: `the fixture did not come up (${up?.error ?? 'no record'})`};
+      const text = fixtureRecord(), problem = freshFixtureProblem({before: before?.pid ?? null, after: up.pid, accessibilityText: text});
+      return {ok: problem === null, before: was, pid: up.pid, window: up.window.number, accessibility: fixtureAccessibility(text), ...(problem ? {problem} : {})};
+    },
+    // f: the fixture's accessibility as its record says now, after the placement and before the session opens (recorded).
+    'fixture-accessibility': async () => ({ok: true, accessibility: fixtureAccessibility(fixtureRecord())}),
     // f: the fixture's activation, focus and blur counters, read from its user-data directory (no engine call).
     'fixture-counters': async ([, i, when]) => {
       const dir = readState(run).scenes?.electron?.userDataDir, file = dir ? join(dir, FIXTURE_COUNTERS_FILE) : null;

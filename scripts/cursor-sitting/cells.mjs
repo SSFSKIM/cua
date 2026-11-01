@@ -76,6 +76,17 @@ const changedWithinMs = performance.now() - __a0;
 return {ms, before, after: valueOfIndex(ax, ${find}), changedWithinMs};`);
 };
 
+// An observation that must find `control` by its index (#200's case f: proof that the session's engine reads the
+// control's tree there, before anything else reads it). -> {index}.
+export const CONTROL_FOUND = control => {
+  const {scene, find} = CONTROLS[control];
+  return cell(`${head(scene)}
+const ax = await observe();
+const index = ${find};
+if (index === null) throw new Error(${j(`${control} is not in the ${scene} window's text: the engine's observation did not find it by its index`)});
+return {index};`);
+};
+
 // Which of TextEdit's alignment buttons flips it, from the observation `ax`: align center when it is off, else align left.
 const ALIGN_PICK = `const center = indexOfPart(ax, "Description", "align center");
 if (center === null) throw new Error("TextEdit's alignment control is not in its text");

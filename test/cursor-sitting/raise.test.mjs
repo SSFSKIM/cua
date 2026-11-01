@@ -6,8 +6,8 @@ import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {main} from '../../scripts/cursor-sitting.mjs';
-import {alignmentFlipped, aPoint, arrangementProblem, buttonProblem, callWatch, caretMoved, CASES, cDrag, counterDeltas, DOCUMENT_TEXT, eRow, judgeCase, LABELS,
-  lineAt, lossesIn, orderAttempt, orderLines, placementPlan, placeSteps, plannedPoints, pressedOnce, raiseMarkdown, raisesIn, raiseSteps, selectionMade, spread,
+import {afterActionRepairsIn, alignmentFlipped, aPoint, arrangementProblem, buttonProblem, callWatch, caretMoved, CASES, cDrag, counterDeltas, DOCUMENT_TEXT, eRow,
+  freshFixtureProblem, judgeCase, LABELS, lineAt, lossesIn, orderAttempt, orderLines, placementPlan, placeSteps, plannedPoints, pressedOnce, raiseMarkdown, raisesIn, raiseSteps, selectionMade, spread,
   stateAt, finderRowAlone, wordSelected} from '../../scripts/cursor-sitting/raise.mjs';
 import {scenesOf, targetProblem} from '../../scripts/cursor-sitting/target-guard.mjs';
 
@@ -95,6 +95,27 @@ test('a raise past the release that the engine repaired after it, inside its win
   assert.equal(callWatch({meta, attempt: run([[1040, 'back-above'], [1120, 'front-above']]), from: 1000, until: 2000}).outlived, 0);
   const unrepaired = {...meta, delivery: {...meta.delivery, repairedAfterRelease: false}};
   assert.equal(callWatch({meta: unrepaired, attempt: run([[1040, 'back-above'], [1120, 'front-above']]), from: 1000, until: 2000}).outlived, 1);
+});
+
+// A guard that settled and released at 1060, then a raise at 1081 (the live check's: 21 ms after a settled guard).
+const SETTLED = {actionInterval: {startedAt: 1000, endedAt: 1001}, delivery: {holdStartedAt: 960, releasedAt: 1060, postedAt: 1000, repairedAfterRelease: false, raiseLeft: false}};
+
+test('a raise after a settled guard that the after-action watch repaired, keyed by the action\'s post, is a flash; unrepaired, or never undone in 1 s, it is late', () => {
+  const later = run([[1081, 'back-above'], [1095, 'front-above']]);
+  assert.deepEqual([callWatch({meta: SETTLED, attempt: later, from: 1000, until: 2000, repaired: new Map([[1000, {repairs: 1, latencyMs: 90}]])}).flash,
+    callWatch({meta: SETTLED, attempt: later, from: 1000, until: 2000, repaired: new Map([[1000, {repairs: 1, latencyMs: 90}]])}).late], [1, 0]);
+  assert.equal(callWatch({meta: SETTLED, attempt: later, from: 1000, until: 2000}).late, 1, 'no repair reported: late');
+  assert.equal(callWatch({meta: SETTLED, attempt: later, from: 1000, until: 2000, repaired: new Map([[999, {repairs: 1}]])}).late, 1, 'another action\'s repair');
+  const kept = run([[1081, 'back-above'], [2100, 'front-above']]);
+  assert.equal(callWatch({meta: SETTLED, attempt: kept, from: 1000, until: 3000, repaired: new Map([[1000, {repairs: 1}]])}).late, 1, 'undone only past post + 1 s');
+});
+
+test('the after-action repairs are read from every cell\'s reply, keyed by post time, the most any reply said', () => {
+  const report = (repairs, actions) => ({kind: 'cell', meta: {afterActionRepairs: {repairs, actions}}});
+  const read = afterActionRepairsIn([report(1, [{postedAt: 1000, repairs: 1, latencyMs: 81}]), {kind: 'task', meta: {afterActionRepairs: {repairs: 9, actions: []}}},
+    report(3, [{postedAt: 1000, repairs: 1, latencyMs: 81}, {postedAt: 2000, repairs: 2, latencyMs: 300}]), {kind: 'cell', meta: {}}]);
+  assert.equal(read.total, 3);
+  assert.deepEqual([...read.actions.entries()], [[1000, {repairs: 1, latencyMs: 81}], [2000, {repairs: 2, latencyMs: 300}]]);
 });
 
 test('a raise the guard undoes before its release is neither late nor unguarded; after it, or outliving it, is late', () => {
@@ -196,6 +217,22 @@ test('the judge fails a late raise, a raise left, an unguarded raise or an undel
   assert.deepEqual([vendor.verdict, vendor.wouldBe], ['recorded', 'FAIL']);
 });
 
+test('the judge counts a raise after a settled guard as a flash when a later reply reports the watch\'s repair of that action', () => {
+  const late = orderLines(`${WATCH.split('\n').slice(0, 3).join('\n')}\n{"at":1200,"kind":"order","prev":1195,"state":"back-above"}\n{"at":1210,"kind":"order","prev":1205,"state":"front-above"}\n${WATCH.split('\n')[3]}`);
+  const keyed = i => ({restores: i === 0 ? 1 : 0, holdStartedAt: 1040 + i * 1000, releasedAt: 1080 + i * 1000, postedAt: 1050 + i * 1000, capped: false, raiseLeft: false});
+  const rows = caseRows({delivery: keyed});
+  const second = rows.find(r => r.kind === 'cell' && r.sample?.i === 1);
+  second.meta.afterActionRepairs = {repairs: 1, actions: [{postedAt: 1050, repairs: 1, latencyMs: 152}]};
+  const j = judgeCase({kase: 'a', engine: 'cua', rows, order: late});
+  assert.equal(j.verdict, 'PASS', j.why);
+  assert.deepEqual([j.flashes, j.late, j.watchRepaired, j.watchRepairs], [1, 0, 1, 1]);
+  assert.deepEqual(j.postToWatchRepairMs, {n: 1, min: 152, median: 152, p95: 152, max: 152});
+  assert.match(raiseMarkdown([j]), /\| 0 \+ 1 \(1\) \|/);
+  delete second.meta.afterActionRepairs;
+  const unreported = judgeCase({kase: 'a', engine: 'cua', rows, order: late});
+  assert.deepEqual([unreported.verdict, unreported.late, unreported.flashes], ['FAIL', 1, 0]);
+});
+
 test('a case cut short, or a watcher record with no end, is incomplete, never a pass', () => {
   const short = judgeCase({kase: 'a', engine: 'cua', rows: caseRows({stop: true}), order: ORDER});
   assert.equal(short.verdict, 'INCOMPLETE');
@@ -212,8 +249,8 @@ test('the fixture\'s counters are summed over each click\'s before and after; th
     read(1, 'before', {windowFocus: 2, appDidBecomeActive: 4}), read(1, 'after', {windowFocus: 2, appDidBecomeActive: 5})]);
   assert.deepEqual(deltas, {sum: {windowFocus: 1, appDidBecomeActive: 3}, samples: {windowFocus: 1, appDidBecomeActive: 2}});
   const md = raiseMarkdown([judgeCase({kase: 'a', engine: 'cua', rows: caseRows(), order: ORDER})]);
-  assert.match(md, /\| a: a coordinate click in TextEdit's text.* \| cua \| 2 \/ 2 \| 2 \| 1 \| 1 \| 0 \(0\) \| 0 \| 0 \| 0 \| 0 \| 0 \| \*\*PASS\*\* \|/);
-  assert.match(md, /\| a \| cua \| 5\.0 \/ 5\.0 \/ 5\.0 \/ 5\.0 \(1\) \| 30\.0 \/ 30\.0 \/ 30\.0 \/ 30\.0 \(2\) \| 2 of 2 \|/);
+  assert.match(md, /\| a: a coordinate click in TextEdit's text.* \| cua \| 2 \/ 2 \| 2 \| 1 \| 1 \| 0 \+ 0 \(0\) \| 0 \| 0 \| 0 \| 0 \| 0 \| \*\*PASS\*\* \|/);
+  assert.match(md, /\| a \| cua \| 5\.0 \/ 5\.0 \/ 5\.0 \/ 5\.0 \(1\) \| 30\.0 \/ 30\.0 \/ 30\.0 \/ 30\.0 \(2\) \| – \| 2 of 2 \|/);
 });
 
 test('the kit places TextEdit at the left and Chrome over its right half; the arrangement checks order and the points', () => {
@@ -268,8 +305,42 @@ test('every case\'s steps: each cell names its scene, each action\'s label is th
     assert.ok(tasks.indexOf('close') < tasks.indexOf('order-watch-stop'));
     assert.equal(steps.filter(s => s.task === 'deliver').length, 3 * CASES[kase].halves.length);
     assert.ok(steps.filter(s => s.task === 'raise-check').every(s => s.required));
+    // After the tail, one observation carries the last action's after-action repairs, before the end's raise check.
+    const tail = steps.findIndex(s => s.label === LABELS.tail(kase));
+    assert.ok(tail > 0 && steps[tail - 1].wait && steps[tail + 1].task === 'raise-check' && steps[tail + 1].args[1] === 'end', kase);
   }
   assert.deepEqual(placeSteps({extras: ['finder']}).map(s => s.task).filter(Boolean), ['raise-place', 'activate']);
+});
+
+// The order case f's steps run in: on a fresh fixture, the engine's own observation before the frame reader.
+const F_ORDER = ['fixture-relaunch', 'raise-place', 'activate', 'arrangement', 'order-watch-start', 'open', 'found', 'element-frame', 'click'];
+const fOrder = steps => F_ORDER.map(name => steps.findIndex(s => (name === 'open' ? s.open : name === 'found' ? s.label === LABELS.found
+  : name === 'click' ? s.label === LABELS.action('f', 0, 'click') : s.task === name)));
+
+test('case f starts on a fresh fixture: relaunched, placed, Chrome in front, then the engine finds the button by index before the frame reader', () => {
+  for (const engine of ['cua', 'vendor']) {
+    const steps = raiseSteps('f', {engine, samples: 2}), at = fOrder(steps);
+    assert.ok(at.every(k => k >= 0), `${engine}: every step is there (${at})`);
+    assert.deepEqual([...at].sort((a, b) => a - b), at, `${engine}: in order`);
+    for (const k of at.slice(0, 3)) assert.equal(steps[k].required, true, steps[k].task);
+    assert.deepEqual(steps[at[1]].args, ['electron']);
+    const found = steps[at[6]];
+    assert.equal(found.required, true, 'a missing button stops the case');
+    const code = found.cell;
+    assert.match(code, /indexOfTarget\(ax, "Fixture button"\)/);
+    assert.match(code, /fixtureButton is not in the electron window's text: the engine's observation did not find it by its index/);
+  }
+  assert.equal(raiseSteps('a', {engine: 'cua', samples: 2}).some(s => s.task === 'fixture-relaunch'), false, 'only f relaunches the fixture');
+});
+
+test('the relaunched fixture must be a new process whose accessibility nothing has turned on', () => {
+  const record = lines => lines.map(l => JSON.stringify(l)).join('\n');
+  const old = [{at: 1, enabled: false, source: 'start'}, {at: 2, enabled: true, source: 'poll'}];
+  assert.equal(freshFixtureProblem({before: 10, after: 11, accessibilityText: record([...old, {at: 5, enabled: false, source: 'start'}])}), null);
+  assert.match(freshFixtureProblem({before: 10, after: 10, accessibilityText: record(old)}), /kept its process 10/);
+  assert.match(freshFixtureProblem({before: 10, after: 11, accessibilityText: record([...old, {at: 5, enabled: false, source: 'start'}, {at: 6, enabled: true, source: 'event'}])}),
+    /already on \(event at 6\)/);
+  assert.match(freshFixtureProblem({before: null, after: 11, accessibilityText: ''}), /no start line/);
 });
 
 test('Finder\'s system process passes the target guard by running, its window in front', () => {
@@ -285,6 +356,17 @@ test('raise drive --dry-run prints every case\'s steps and writes nothing; judge
   const out = join(scratch(t), 'evidence');
   assert.equal(await quietly(() => main(['raise', 'drive', '--engine', 'vendor', '--out', out, '--dry-run', '--quiet'])), 0);
   assert.equal(existsSync(out), false);
+  // f's printed plan, on either engine: the relaunch, the placement, then the engine's observation before the frame reader.
+  const printed = [];
+  const write = process.stdout.write;
+  process.stdout.write = chunk => { printed.push(String(chunk)); return true; };
+  try { assert.equal(await main(['raise', 'drive', '--engine', 'cua', '--case', 'f', '--samples', '1', '--out', out, '--dry-run', '--quiet']), 0); } finally { process.stdout.write = write; }
+  const all = printed.join(''), text = all.slice(all.indexOf('#200 case f on the cua engine')), where = needle => text.indexOf(needle);
+  assert.ok(text.length < all.length, 'the placement item comes first');
+  const order = ['task fixture-relaunch', 'task raise-place electron', 'task activate chrome', 'task arrangement f', 'open session s', `s: ${LABELS.found}`, 'task element-frame f',
+    `s: ${LABELS.action('f', 0, 'click')}`, `s: ${LABELS.tail('f')}`];
+  assert.ok(order.every(n => where(n) >= 0), order.filter(n => where(n) < 0).join('; '));
+  assert.deepEqual(order.map(where), [...order.map(where)].sort((a, b) => a - b));
   await assert.rejects(main(['raise', 'drive', '--engine', 'other', '--out', out, '--dry-run']), /--engine cua or --engine vendor/);
   await assert.rejects(main(['raise', 'drive', '--engine', 'cua', '--case', 'a,z', '--out', out, '--dry-run']), /--case takes/);
   const dir = scratch(t);

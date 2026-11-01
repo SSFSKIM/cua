@@ -548,8 +548,8 @@ the vendor's 5–6, the judge and the scenes down 2. Nobody touches the Mac whil
 attributed to the person and refuses the next action). The kit is `scripts/cursor-sitting/raise.mjs`; its header says
 what each case does and how it is judged.
 
-It runs on a build with #200's delivery guard (6e944928 or later on `fix/200-background-raise`), built and approved as
-in the sitting's step 1, with the cursor at its default. The kit places the harness windows itself, through
+It runs on a build with #200's delivery guard and after-action watch (a3ae1d5a or later on
+`fix/200-background-raise`), built and approved as in the sitting's step 1, with the cursor at its default. The kit places the harness windows itself, through
 Accessibility, so the terminal it runs in must be trusted for Accessibility (the MacBook's was on 2026-10-31); an
 untrusted one stops at the placement with that sentence, and the owner grants it. Only harness windows are moved:
 TextEdit's run window to the screen's left, Chrome for Testing's over its right half, the run's Finder window and the
@@ -582,7 +582,7 @@ $GD steps finder --run "$RUN" --phase teardown && $SC down all --run "$RUN"
 | c | a drag in TextEdit's text | a new, non-empty selection | 20 |
 | d | a double click on a word | a new selection that is exactly one word of the document | 20 |
 | e | a plain click on a row of the run's Finder window | that row alone selected (a ⌘-click would add to a selection) | 20 |
-| f | a coordinate click on a plain push button that refuses the first mouse: the Electron fixture's button, at its frame's middle | its count up by one; the fixture's activation, focus and blur counters read before and after, recorded only | 20 |
+| f | a coordinate click on a plain push button that refuses the first mouse: the Electron fixture's button, at its frame's middle; on a fixture the kit brings down and up again for each engine (its accessibility record off), the engine's own observation finding the button by its index before the frame reader runs | its count up by one; the fixture's activation, focus and blur counters read before and after, recorded only | 20 |
 
 Each case checks the arrangement first (Chrome's process frontmost, its window above the driven one in the window
 list, each planned point under Chrome or clear of it) and runs on its own session, so no activation carries over. A
@@ -593,8 +593,11 @@ what the watcher saw: post to the first raise, post to the hold's release, a lat
 reads the watcher: the driven window left above Chrome's, a window gone or the watcher gone stops the case and those
 after it (rerun with `--case <the rest>` once the scene is put back). The judge reports per case the raises the
 watcher saw, the restores the guard counted, late and unguarded raises, capped and `raiseLeft` counts, and post→raise
-and post→release (min, median, p95, max). **Pass, for cua's engine: every sample delivered, no late or unguarded raise,
-no `raiseLeft`**, over the full count, with the watcher's record whole. The vendor's rows are recorded, not judged:
+and post→release (min, median, p95, max). A raise past the hold's release that the engine repaired inside 1 s of the
+events is a flash, counted and not failed: by the guard past its cap (`delivery.repairedAfterRelease`) or by the
+after-action watch on every action, which a later reply reports (`cua/afterActionRepairs`, keyed by the delivery's
+`postedAt`; one observation after each case's tail carries the last action's). **Pass, for cua's engine: every sample
+delivered, no late or unguarded raise, no `raiseLeft`**, over the full count, with the watcher's record whole. The vendor's rows are recorded, not judged:
 they say whether its "no raise" is "no delivery".
 
 ## Known limits

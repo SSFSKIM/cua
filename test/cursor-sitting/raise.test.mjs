@@ -68,7 +68,7 @@ const WATCH = [
   '{"at":900,"back":2,"front":1,"intervalMs":5,"kind":"start","pid":77,"realtime":true,"state":"front-above"}',
   '{"at":1055,"kind":"order","prev":1050,"sample":32,"state":"back-above"}',
   '{"at":1065,"kind":"order","prev":1060,"sample":34,"state":"front-above"}',
-  '{"at":3000,"kind":"end","lateSamples":0,"maxGapMs":9.5,"samples":420,"state":"front-above","why":"SIGTERM"}',
+  '{"at":3000,"kind":"end","lastRead":2998,"lateSamples":0,"maxGapMs":9.5,"samples":420,"state":"front-above","why":"SIGTERM"}',
 ].join('\n');
 
 test('the watcher\'s file holds every attempt; a run is found by its pid, and a half-written line is skipped', () => {
@@ -118,6 +118,10 @@ test('a raise outlives the hold only when a read past the grace shows it; a gap 
   const left = callWatch({meta, attempt: run([[1055, 'back-above']]), from: 1000, until: 2000});
   assert.equal(left.outlived, 1, 'never undone, and the watcher read on to its end');
   assert.equal(callWatch({meta, attempt: run([[1055, 'back-above']], {end: false}), from: 1000, until: 2000}).undecided, 1, 'the record stops: undecided');
+  const lastRead = orderAttempt(orderLines([WATCH.split('\n')[0], '{"at":1055,"kind":"order","prev":1050,"state":"back-above"}',
+    '{"at":1100,"kind":"end","lastRead":1085,"maxGapMs":9.5,"samples":10,"state":"back-above","why":"SIGTERM"}'].join('\n')));
+  const unread = callWatch({meta, attempt: lastRead, from: 1000, until: 2000});
+  assert.deepEqual([unread.outlived, unread.undecided], [0, 1], 'the end record was written at 1100, but its last read was at 1085: nothing shows the order past 1090');
 });
 
 test('a sample a watcher gap leaves undecided makes the case incomplete, reported apart from raises', () => {

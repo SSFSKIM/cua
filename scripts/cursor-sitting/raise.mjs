@@ -295,7 +295,8 @@ export function callWatch({meta = {}, attempt, from, until = Infinity}) {
     if (raise.at < holdStart) return 'unguarded';
     if (prevOf(raise) < holdStart && raise.at - prevOf(raise) > OUTLIVE_MS) return 'undecided';
     const undone = changes.find(c => c.at > raise.at && c.state !== 'back-above');
-    if (!undone) return attempt?.end?.at > grace ? 'outlived' : 'undecided';
+    // Never undone: outlived only when the watcher's last read (not its end record's writing) came past the grace.
+    if (!undone) return attempt?.end?.lastRead > grace ? 'outlived' : 'undecided';
     if (prevOf(undone) > grace) return 'outlived';
     return undone.at > grace && undone.at - prevOf(undone) > OUTLIVE_MS ? 'undecided' : null;
   };

@@ -98,6 +98,64 @@ final class ElementClickPlanTests: XCTestCase {
   }
 }
 
+// MARK: The element click's record (#188)
+
+/// What an element click's result meta says of how it was carried: the plan (the element's own action or a synthesized
+/// click), why the ladder chose it, and the hit-test's answer against the element when one was taken, so a recorded
+/// click on a text field tells an AXPress (which keeps the field's selection) from a synthesized click (which places a
+/// caret). Value-free: action names and enumeration words only.
+final class ElementClickRecordTests: XCTestCase {
+  private func record(forced: InputRoute? = nil, button: MouseButton = .left, count: Int = 1, actions: [String],
+                      hit: HitRelation? = nil) throws -> ElementClickRecord {
+    let plan = try elementClickPlan(forced: forced, button: button, count: count, role: "AXTextArea", actions: actions) { hit == .descendant }
+    return elementClickRecord(plan, forced: forced, button: button, count: count, actions: actions, hit: hit)
+  }
+
+  func testEachRungOfTheLadderNamesWhyItWasTaken() throws {
+    // The Electron field advertises AXPress and the application's hit-test answers the field itself (hold 10).
+    let pressed = try record(actions: ["AXPress", "AXShowMenu", "AXScrollToVisible"], hit: .element)
+    XCTAssertEqual(pressed.plan, .action("AXPress"))
+    XCTAssertEqual(pressed.reason, .advertised)
+    // The gate: the point lands inside the element, so the click is synthesized.
+    XCTAssertEqual(try record(actions: ["AXPress"], hit: .descendant).reason, .descendant)
+    // The TextEdit text view advertises no press; no hit-test was taken for the plan.
+    let synthesized = try record(actions: ["AXShowMenu"])
+    XCTAssertEqual(synthesized.plan, .synthesized(.activation))
+    XCTAssertEqual(synthesized.reason, .noAction)
+    XCTAssertEqual(try record(button: .right, actions: ["AXPress"]).reason, .notPlainLeft)
+    XCTAssertEqual(try record(count: 2, actions: ["AXPress"]).reason, .notPlainLeft)
+    XCTAssertEqual(try record(forced: .activation, actions: ["AXPress"]).reason, .forced)
+    XCTAssertEqual(try record(forced: .action, actions: ["AXPress"]).reason, .forced)
+  }
+
+  func testTheWireNamesThePlanTheReasonAndTheHitAgainstTheApplicationsHitTest() throws {
+    let pressed = try record(actions: ["AXPress"], hit: .element).wire
+    XCTAssertEqual(pressed["plan"] as? String, "action")
+    XCTAssertEqual(pressed["action"] as? String, "AXPress")
+    XCTAssertEqual(pressed["reason"] as? String, "advertised")
+    XCTAssertEqual(pressed["hit"] as? String, "element")
+    XCTAssertEqual(pressed["hitTest"] as? String, "application", "cua hit-tests the owner's application element, not the window")
+    var synthesized = try record(actions: ["AXShowMenu"])
+    XCTAssertEqual(synthesized.wire["plan"] as? String, "synthesized")
+    XCTAssertNil(synthesized.wire["action"])
+    XCTAssertNil(synthesized.wire["hit"], "no hit-test taken: none reported")
+    XCTAssertNil(synthesized.wire["hitTest"])
+    synthesized.hit = .ancestor  // the synthesized click's own reach check, recorded after it
+    XCTAssertEqual(synthesized.wire["hit"] as? String, "ancestor")
+    for relation in [HitRelation.noAnswer, .element, .descendant, .ancestor, .other] {
+      XCTAssertEqual(try record(actions: ["AXShowMenu"], hit: relation).wire["hit"] as? String, "\(relation)")
+    }
+    XCTAssertTrue(JSONSerialization.isValidJSONObject(pressed))
+  }
+
+  func testTheInputMetaCarriesTheRecordOnlyForAnElementClick() throws {
+    var meta = InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+    XCTAssertNil(meta.wire["elementClick"])
+    meta.elementClick = try record(actions: ["AXPress"], hit: .element)
+    XCTAssertEqual((meta.wire["elementClick"] as? [String: Any])?["plan"] as? String, "action")
+  }
+}
+
 // MARK: The descendant hit-test gate
 
 final class DescendantGateTests: XCTestCase {

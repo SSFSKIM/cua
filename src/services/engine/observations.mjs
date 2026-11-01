@@ -13,6 +13,9 @@
 //       invalid element ID`; one issued and retired since, or any index for an app this connection has not observed,
 //       answers the vendor's "no longer valid" sentence (cua never reuses an index, so a stale one is always refused).
 //   lineage(app) -> the lineage of the app's latest observation, which every action carries (a coordinate's too).
+//   focus(app) -> {focusedIndex, focusedRole?}: the index the latest observation gave the app's focused element and its
+//       role, or focusedIndex null when the observation named none (#188: the focus a selection in the trailer cannot
+//       mask; value-free).
 //
 // The refusals are the engine's sentences under its error form (-10005 with the vendor's envelope), so the model reads
 // one form whichever side refuses.
@@ -46,6 +49,14 @@ export function createObservations() {
 
     lineage(app) {
       return latest.get(app)?.numbering.lineage;
+    },
+
+    focus(app) {
+      const {skyshot, numbering} = latest.get(app) ?? {};
+      const index = skyshot?.focused == null ? undefined : numbering.indexes.get(skyshot.focused);
+      if (index === undefined) return {focusedIndex: null};
+      const role = [...(skyshot.nodes ?? []), ...(skyshot.menuBar ?? [])].find(node => node.token === skyshot.focused)?.role;
+      return {focusedIndex: index, ...(typeof role === 'string' ? {focusedRole: role} : {})};
     },
   };
 }

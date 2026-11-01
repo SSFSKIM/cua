@@ -9,7 +9,7 @@ The vendor builds are the pinned 26.928.40906 and the newest 26.1023.51421. M3 r
 | M3.1, the engine's device mode and capability report | `kinds/`, `diff/`, `rejudge/`, `device-fix1/`, `device-fix2/`, `device-fix3/`, `late-take/` | the measurements behind `families.rs`, the Chrome drag-and-drop guard, M3.1's verdict run and its fix rounds ([M3.1](#m31-the-device-modes-measurements-and-the-verdict-run), below) |
 | M3.2, cua's own Linux service | `services/` | the two services render the same states and numbers on one engine; no vendor module with cua's engine ([its README](services/README.md)) |
 | the drop-miss follow-up | `drop-misses/`, `drop-misses/task18/` | the mechanism of M3.1's Chrome drop misses and the 350 ms release floor ([its README](drop-misses/task18/README.md)) |
-| M3's gate | `gate/` | the fresh full verdict run on the final engine, `m3-gate`: **it exits 1** (below) |
+| M3's gate | `gate/`, `gate-final/` | the fresh full verdict runs: `m3-gate` on the M3.3 engine and `m3-gate-final` on the merged head after task 20. **Both exit 1** (below) |
 | M3.3, doctor, provisioning and the facade proof | `doctor/`, `provision/`, `facade/`, `accept/`, `parity/`, `baseline/` | below |
 
 The engine of every M3.3 run and of the gate is one frozen release build of the head's engine sources: the engine
@@ -17,6 +17,70 @@ sources last changed at 1b7debef, built at bcf64d68, `cua-engine 0.3.0 (bcf64d68
 `01955bef9ff69fa9af948c50c324edb07dfbd303474e179f7f0c7f42e163032d`. No M3.3 commit touches `native/linux-engine/`.
 Until 0.3.0 is released and pinned, the installed engine is 0.2.0, which cua's service refuses (`MIN_ENGINE_VERSION`
 0.3.0), so the facade runs name the build: `--engine-bin` for the suites, `CUA_LINUX_ENGINE_BIN` for the fixtures.
+
+## M3's gate, second run (`gate-final/`, run `m3-gate-final`): it fails
+
+**The gate is not met.** `m3-gate-final` is a fresh full differential verdict run, from 2026-11-01 10:23:06Z to
+12:50:32Z. It ran after task 20's press watch and its fix round, on the branch merged with `origin/main`.
+
+- **Gate commit:** 37c3228c, the merge of main at a2c94e78 (#252), with plugin 0.21.0.
+- **Engine:** one release build of that head's engine sources, frozen as a copy outside the worktree before the run
+  and never rebuilt during it: `cua-engine 0.3.0 (37c3228cc6a4)`, SHA-256
+  `5d8aa1e159a29f475e7826c2ac76fb7d4fe657ae0e219f6a91287ea5bc4e2084`.
+- **Engine sources:** they last changed at 6dc17da3, task 20's fix round.
+
+```
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua <the frozen build> \
+  --scene desktop,gedit,chrome,chrome-input,over-budget,retention,chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target,device-gtk4,device-firefox,device-xterm,device-qt,device-chrome,device-chrome-dnd \
+  --ops all --blocks 3 --run m3-gate-final --out docs/evidence/2026-10-28-own-linux-engine/m3/gate-final
+```
+
+The scenes and device cases are `m3-gate`'s, plus task 20's per-branch Chrome cases: the pointer parked outside in
+shared and in dedicated mode, and the nudged selection. The verdict line:
+
+> run valid; **FAIL**: device-chrome-dnd chrome_dnd_short_in_front_shared cua, gedit clipboard_write cua; **parity**
+> (declared, not a pass): desktop get_screenshot cua; **declared refusal** (a loss, not a pass): chrome-input drag cua
+
+It **exits 1**. The run is valid: the stub engine failed both the witness and the audit, and the foreground and
+in-front standing controls held.
+
+**The two failing verdicts.**
+- `chrome_dnd_short_in_front_shared`: the effect was not verified on 3 of 9 samples, the three cold samples (block/i
+  0/0, 1/0, 2/0). Each answered success in 133.8–138.1 ms, carries no `after_take` record (no take seen before the
+  release), with the pointer inside, no strays, a clean witness and the desktop unchanged. The page counted the press
+  and a `dragstart` but no drop. All six warm samples landed, each released 350.2 ms after its take. Each cold sample
+  directly follows `chrome_dnd_covered_dedicated` (the foreground route) in a fresh engine; each warm sample follows its
+  own case's previous sample. `m3-gate` had the same order and missed 1 of its 3 cold samples.
+- `gedit clipboard_write`: one top-up cold sample (`topup-0-0`). Its preparation failed (`clipboard_read for a handle
+  failed: cua171-diff-m3-gate-final-gedit-text_cua refused the selection`), so it was sent a handle no engine had
+  issued, and it answered `unknown clipboard handle; copy again in this Linux helper`. The other 40 samples passed.
+
+The design session has both findings. M3 does not merge on this run.
+
+**Everything else passes.** 65 speed series judged on 20 or more samples a side: 62 **faster** and 3 **same (within noise)**.
+None is **within the bound**, so there is no "within the bound" table. The same-within-noise series are desktop
+`launch_app` cold [−0.965, 0.625] and gedit `clipboard_release` cold [−0.735, 0.14] and warm [−0.01, 0.025]. Desktop
+`get_screenshot` cold stands at its declared parity. Every other device case passed on every sample, task 20's
+per-branch cases included, and so did every paste safety case. `results.jsonl` and `summary.md` are the run's own
+files, committed as they came out.
+
+**The shipped head against the gate commit.** Main moved three times during the gate session. #253 and #254 were
+merged after 37c3228c and before this record, with the run left going (the design session's ruling). Between
+37c3228c and this record's head, nothing under `native/linux-engine/`, `scripts/linux-engine-diff/` (the harness and its
+scenes) or `src/services/engine/linux/` changed. The files that differ:
+
+| files | from | why the gate does not exercise them |
+|---|---|---|
+| `src/chrome/client-mode.mjs` | #253 | comments only |
+| `test/chrome-client-mode-contract.test.mjs`, `test/helpers/fake-maws-peer.mjs` | #253 | tests |
+| `native/engine/Sources/Engine/{AX,Enablement,Input,Paste,Pasteboard,Skyshot}.swift`, `native/engine/Tests/EngineTests/{ObservationRulesTests,PasteTests}.swift` | #254 | the macOS engine |
+| `scripts/native-matrix/{lane,live-device}.mjs` | #254 | the macOS native matrix |
+| `src/services/engine/service.mjs`, `test/services-engine-service.test.mjs` | #254 | the macOS engine service, not the Linux one. The change is additive and acts only on a `note` the engine sends on paste or type_text, or on a `paste` meta key, which cua-engine never sends |
+| `docs/doperpowers/specs/2026-10-18-own-native-engine-design.md` | #254 | the macOS engine's spec |
+| `docs/evidence/2026-10-28-own-linux-engine/m3/` | this branch | this evidence |
+
+`ci-gate`, every gate, was GREEN on 37c3228c (run 41294919425), on eacadd62 (41300115827) and on 754dea8a
+(41305956966).
 
 ## M3's gate: the full verdict run (`gate/`, run `m3-gate`): it fails
 

@@ -13,10 +13,17 @@ use std::time::{Duration, Instant};
 /// How long one wire request may take before the test gives up on the engine.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
+/// The engine under test: the binary `CUA_ENGINE_BIN` names (the release workflow's shipped asset), or cargo's build.
 pub fn engine_bin() -> PathBuf {
     std::env::var_os("CUA_ENGINE_BIN")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_BIN_EXE_cua-engine")))
+        .unwrap_or_else(live_build)
+}
+
+/// Cargo's build of the engine for these tests, whatever `CUA_ENGINE_BIN` names: built with the `live` feature, so it
+/// carries the fault injection (`CUA_ENGINE_FAULT`) that a shipped binary never does.
+fn live_build() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_cua-engine"))
 }
 
 /// The engine as a child speaking the wire, killed on drop.
@@ -54,24 +61,30 @@ impl Engine {
 
     /// An engine, leaving any window on the display open.
     pub fn spawn() -> Engine {
-        Engine::spawn_with(&[], &[])
+        Engine::spawn_with(&engine_bin(), &[], &[])
     }
 
     /// An engine started with these options after `server` (`--desktop dedicated`), on a display with no unconfirmed
     /// paste's window open.
     pub fn start_with(options: &[&str]) -> Engine {
-        Engine::start_with_env(options, &[])
-    }
-
-    /// [`Engine::start_with`] with these variables in the engine's environment (the live build's fault injection).
-    pub fn start_with_env(options: &[&str], env: &[(&str, &str)]) -> Engine {
         clear_display_record();
-        Engine::spawn_with(options, env)
+        Engine::spawn_with(&engine_bin(), options, &[])
     }
 
-    fn spawn_with(options: &[&str], env: &[(&str, &str)]) -> Engine {
-        let bin = engine_bin();
-        let mut child = Command::new(&bin)
+    /// [`Engine::start_with`] with this fault injected (`CUA_ENGINE_FAULT`), always on cargo's live build: a shipped
+    /// binary has no fault injection, so under `CUA_ENGINE_BIN` the fault would silently not happen.
+    pub fn start_with_fault(options: &[&str], fault: &str) -> Engine {
+        clear_display_record();
+        Engine::spawn_with(&live_build(), options, &[("CUA_ENGINE_FAULT", fault)])
+    }
+
+    /// The engine's process id.
+    pub fn pid(&self) -> u32 {
+        self.child.id()
+    }
+
+    fn spawn_with(bin: &std::path::Path, options: &[&str], env: &[(&str, &str)]) -> Engine {
+        let mut child = Command::new(bin)
             .arg("server")
             .args(options)
             .envs(env.iter().copied())

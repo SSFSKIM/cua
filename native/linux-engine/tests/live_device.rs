@@ -1006,7 +1006,7 @@ fn preflight_answers_a_pending_late_drag_and_drop_or_watch_failure_as_an_acting_
 
     let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
     focus_nothing();
-    let mut lost = Engine::start_with_env(&[], &[("CUA_ENGINE_FAULT", "late-watch-disconnect")]);
+    let mut lost = Engine::start_with_fault(&[], "late-watch-disconnect");
     let app = app_of(&mut lost, window);
     assert_eq!(
         lost.request("drag", json!({"window": {"id": window}, "path": path})),
@@ -1052,7 +1052,7 @@ fn a_failed_after_release_watch_never_lets_the_next_acting_request_run() {
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
     focus_nothing();
-    let mut lost = Engine::start_with_env(&[], &[("CUA_ENGINE_FAULT", "late-watch-disconnect")]);
+    let mut lost = Engine::start_with_fault(&[], "late-watch-disconnect");
     let app = app_of(&mut lost, window);
     assert_eq!(
         lost.request("drag", json!({"window": {"id": window}, "path": path})),
@@ -1081,7 +1081,7 @@ fn a_failed_after_release_watch_never_lets_the_next_acting_request_run() {
         "the refused click sent nothing"
     );
     let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
-    let mut panicked = Engine::start_with_env(&[], &[("CUA_ENGINE_FAULT", "late-watch-panic")]);
+    let mut panicked = Engine::start_with_fault(&[], "late-watch-panic");
     let dragged = panicked.try_request("drag", json!({"window": {"id": window}, "path": path}));
     assert_eq!(dragged, None, "the engine ended instead of answering");
     assert_eq!(
@@ -1094,6 +1094,116 @@ fn a_failed_after_release_watch_never_lets_the_next_acting_request_run() {
     assert!(
         !seen.iter().skip(2).any(|i| matches!(i, Input::ButtonPress { .. })),
         "nothing after the drag: {seen:?}"
+    );
+}
+
+/// The X clients a process holds open, by their resource-id base, as the server reports them (X-Resource
+/// `QueryClientIds`, by local process id): read from outside, so it finds a shipped binary's connections as they are.
+fn clients_of(conn: &RustConnection, pid: u32) -> Vec<u32> {
+    use x11rb::protocol::res::{ClientIdMask, ClientIdSpec, ConnectionExt as _};
+    let all = ClientIdSpec {
+        client: 0,
+        mask: ClientIdMask::LOCAL_CLIENT_PID,
+    };
+    let ids = conn.res_query_client_ids(&[all]).unwrap().reply().unwrap().ids;
+    ids.into_iter()
+        .filter(|id| id.value == [pid])
+        .map(|id| id.spec.client)
+        .collect()
+}
+
+/// The sockets a process holds open (`/proc/<pid>/fd`): each descriptor with its link (`socket:[<inode>]`), the inode
+/// telling a new socket from an old one whose number was reused.
+fn sockets_of(pid: u32) -> Vec<(i32, String)> {
+    std::fs::read_dir(format!("/proc/{pid}/fd"))
+        .unwrap()
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let link = std::fs::read_link(entry.path()).ok()?.to_str()?.to_string();
+            let fd = entry.file_name().to_str()?.parse().ok()?;
+            link.starts_with("socket:").then_some((fd, link))
+        })
+        .collect()
+}
+
+/// A child process's connection lost from outside it: a duplicate of its descriptor taken with `pidfd_getfd` (allowed
+/// to a parent) and the socket shut down both ways, so the process reads end of file, as when the server closes a
+/// connection, and the server closes its client.
+fn cut_connection(pid: u32, fd: i32) {
+    use rustix::process::{Pid, PidfdFlags, PidfdGetfdFlags, pidfd_getfd, pidfd_open};
+    let pid = Pid::from_raw(pid as i32).expect("a process id");
+    let pidfd = pidfd_open(pid, PidfdFlags::empty()).expect("a pidfd for the engine");
+    let socket = pidfd_getfd(&pidfd, fd, PidfdGetfdFlags::empty()).expect("the engine's socket, duplicated");
+    rustix::net::shutdown(&socket, rustix::net::Shutdown::Both).expect("the socket shut down");
+}
+
+/// The rule that a failed after-release watch refuses the next acting request, proved on the binary under test with
+/// nothing injected, so the release workflow proves it on each shipped asset: the watch's X connection is lost, and the
+/// next acting request, a click and then a `preflight`, is refused with the watch-failure sentence and sends nothing,
+/// while a read runs. The watch's connection is found from outside, as the one socket and the one X client a drag
+/// adds to the engine; a first drag has already opened the drag's own pointer watch (`stray.rs`), which the engine
+/// keeps between drags. The X client gone once the socket is cut shows the socket was that client's connection.
+#[test]
+fn a_watch_whose_x_connection_is_lost_refuses_the_next_acting_request_and_sends_nothing() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
+    focus_nothing();
+    let (conn, _) = x11rb::connect(None).expect("an X connection");
+    let mut engine = Engine::start();
+    let app = app_of(&mut engine, window);
+    let drag = |engine: &mut Engine| {
+        let drag = engine.request("drag", json!({"window": {"id": window}, "path": path}));
+        assert_eq!(drag, Ok(Value::Null), "a plain drag, its watch handed over");
+    };
+    drag(&mut engine);
+    sleep(SETTLE);
+    for (command, input) in [
+        ("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
+        ("preflight", json!({})),
+    ] {
+        let pid = engine.pid();
+        let (sockets, clients) = (sockets_of(pid), clients_of(&conn, pid));
+        drag(&mut engine);
+        let added_sockets: Vec<(i32, String)> = sockets_of(pid)
+            .into_iter()
+            .filter(|s| !sockets.iter().any(|(_, link)| *link == s.1))
+            .collect();
+        let added_clients: Vec<u32> = clients_of(&conn, pid)
+            .into_iter()
+            .filter(|c| !clients.contains(c))
+            .collect();
+        let ([(fd, _)], [watch]) = (&added_sockets[..], &added_clients[..]) else {
+            panic!("the drag opened one connection, its after-release watch's: {added_sockets:?} {added_clients:?}")
+        };
+        cut_connection(pid, *fd);
+        sleep(SETTLE);
+        assert!(
+            !clients_of(&conn, pid).contains(watch),
+            "the server closed the watch's client"
+        );
+        assert!(engine.request("list_windows", json!({})).is_ok(), "a read runs");
+        let sentence = engine
+            .request(command, input)
+            .expect_err("the failed watch is the answer");
+        assert!(
+            sentence.starts_with(&format!("the drag-and-drop watch after your drag into {app} failed ("))
+                && sentence.ends_with(
+                    "), so a drop may have happened unseen and changed the desktop; this request was not run, so \
+                     read the window before sending it again"
+                ),
+            "{command}: {sentence}"
+        );
+        assert_eq!(engine.request("preflight", json!({})), Ok(Value::Null), "reported once");
+    }
+    stop.send(()).unwrap();
+    let drag = [
+        Input::ButtonPress { button: 1, sent: true },
+        Input::ButtonRelease { button: 1, sent: true },
+    ];
+    assert_eq!(
+        recorder.join().unwrap(),
+        drag.repeat(3),
+        "the three drags alone: the refused click and the preflights sent nothing"
     );
 }
 

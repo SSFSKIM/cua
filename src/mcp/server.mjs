@@ -99,6 +99,7 @@ export function createServer({
   hostNotes = hostNotesFor(surfaces, {platform, devices: devices !== null, feedbackDir}),
   model, sandboxState = null, completionDeadlineMs = 5000, teardownBudgetMs = 5000, newId = randomUUID, inAppBrowser = false,
   diagnostics = line => process.stderr.write(`cua serve: ${line}\n`), onWithdrawn = () => {}, runtimeIdleMs = 0, idleTimer = realTimer, nativeEngine = null,
+  cursorContext = null,
 }) {
   let nextUpstreamId = 0;
   let clientModel = model;
@@ -163,7 +164,7 @@ export function createServer({
   // The connection's target (src/mcp/target.mjs), with the device tools, when a device directory is given (stdio).
   let clientInitialize = null;
   const target = devices && connectionTarget({devices, write, diagnostics, onWithdrawn, feedbackDir,
-    initializeParams: () => clientInitialize,
+    initializeParams: () => clientInitialize, cursorContext,
     localTaskOpen: () => lifecycle.state !== 'idle' || [...waiting.values()].some(({name}) => WORK_TOOLS.has(name))});
 
   const lifecycle = new TaskLifecycle({

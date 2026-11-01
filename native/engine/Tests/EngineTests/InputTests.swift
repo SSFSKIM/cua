@@ -284,6 +284,31 @@ final class FrontWindowTests: XCTestCase {
     XCTAssertFalse(Probe.matchesFront(document, pid: 503, bounds: CGRect(x: 10, y: 20, width: 300, height: 400)), "the owner decides")
     XCTAssertFalse(Probe.matchesFront(document, pid: 502, bounds: CGRect(x: 40, y: 20, width: 300, height: 400)), "the bounds decide")
   }
+
+  /// The agent cursor's panel (#235) is a display-wide layer-0 window of the engine, ordered above the window it acts in:
+  /// the gate skips the engine's own windows, which never take a key, and finds the window beneath.
+  func testTheEnginesOwnCursorWindowIsSkipped() {
+    let cursor = [kCGWindowLayer as String: NSNumber(value: 0), kCGWindowOwnerPID as String: NSNumber(value: 700),
+                  kCGWindowBounds as String: ["X": 0, "Y": 0, "Width": 1512, "Height": 982] as NSDictionary]
+    let document = [kCGWindowLayer as String: NSNumber(value: 0), kCGWindowOwnerPID as String: NSNumber(value: 502)]
+    let engine: (pid_t) -> Bool = { $0 == 700 }
+    XCTAssertEqual(Probe.frontLayer0Window([cursor, cursor, document], skipping: engine).map { $0[kCGWindowOwnerPID as String] as? Int }, 502)
+    XCTAssertEqual(Probe.frontLayer0Window([cursor, document]).map { $0[kCGWindowOwnerPID as String] as? Int }, 700, "nothing skipped unless asked")
+    XCTAssertNil(Probe.frontLayer0Window([cursor], skipping: engine))
+  }
+
+  func testTheEnginesProcessesAreThoseRunningFromItsBundle() {
+    let paths: [pid_t: String] = [700: "/A/cua Engine.app/Contents/MacOS/cua-engine", 701: "/A/cua Engine.app.old/Contents/MacOS/cua-engine",
+                                  702: "/Applications/TextEdit.app/Contents/MacOS/TextEdit"]
+    let runs = Probe.runsFrom(bundle: "/A/cua Engine.app", path: { paths[$0] })
+    XCTAssertTrue(runs(700))
+    XCTAssertFalse(runs(701), "a sibling directory is not the bundle")
+    XCTAssertFalse(runs(702))
+    XCTAssertFalse(runs(703), "an owner whose path does not resolve is not the engine")
+    let own = Probe.executablePath(getpid())
+    XCTAssertEqual(own.map { FileManager.default.isExecutableFile(atPath: $0) }, true, "the live reading resolves this process")
+    XCTAssertNil(Probe.executablePath(-1))
+  }
 }
 
 /// Route 3's sequencing through its seam (review round 3's follow-up to round 2's P1): the posts, the screen-update hold

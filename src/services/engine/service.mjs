@@ -38,8 +38,13 @@
 //   them cua/activationGuardMs, cua/activationClick (route 3's activation click: "posted", or why it was skipped),
 //   cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
 //   no Input Monitoring grant), cua/entered (the UTF-16 units a type_text entered, on its result and on the error that
-//   stopped it) and cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
-//   row for the app). cua/serviceMs is the wrapper's (src/services/sky.mjs).
+//   stopped it), cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
+//   row for the app) and cua/delivery (route 3's delivery guard after a pointer action's events, #200: the restores it
+//   made, whether it brought the user's app back to the front, the latency of the first, its own time, the screen hold's,
+//   whether it reached the hold's cap and left a raise, when the events were posted). cua/afterActionRepairs rides on
+//   input results and on observations alike once the connection's after-action watch has repaired (#200: the repairs
+//   route 3's watch made after an action had answered, the connection's total and the last actions', each keyed by its
+//   delivery's postedAt). cua/serviceMs is the wrapper's (src/services/sky.mjs).
 // - The unknown secondary action's sentence: the vendor's ends with the decimal element index, which only the service
 //   knows, so the engine's invalidSecondaryAction is answered as `<action> is not a valid secondary action for <index>`
 //   (R/F-helper-logic.md §16.3), its code, name and meta kept.
@@ -49,6 +54,12 @@
 //   it to its launch, through the harness serve's launch hook (scripts/native-baseline/spike-route.mjs). Without it no
 //   spike switch reaches the engine from model code (bd1136f1), and with it only the click's route can be chosen: the
 //   policy, the forbidden list and the approval run as for any click.
+// - The agent cursor (docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, "Lifecycle and identity"): the
+//   session's `cursor` request (cursorParams), made from the three variables the launcher resolved on the trusted side
+//   and put in the worker's environment (src/runtime/cursor-identity.mjs: CUA_CURSOR_LABEL, CUA_CURSOR_COLOR, and
+//   CUA_CURSOR=0 for off), goes to the engine on every connection the client opens (./client.mjs); a turn-ended hook
+//   (end_task) hides the cursor on the live connection. An engine without the method answers methodNotFound and the
+//   session goes on without a cursor.
 import {createEngineClient} from './client.mjs';
 import {createObservations} from './observations.mjs';
 import {createPolicy, toolSurface} from './policy.mjs';
@@ -77,17 +88,18 @@ const SPIKE_ROUTES = new Set(['1', "2'", '2', '3']);
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
   'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
+  'cua/delivery': null, 'cua/afterActionRepairs': null,
 };
 // The engine's optional input meta keys, carried under cua/<key> when it sends them.
-const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice'];
+const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
-// web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, what web enablement read
-// before it touched the attribute and which attribute it set, whether the web area was seen or waited for (and how
-// long), and each settle's status, duration and counts. A bounded whitelist of scalars (a string of at most 64
-// characters), and the notification counts as at most 16 names to integers; never the text, the tree or the timings of
-// every phase.
-const OBSERVATION_DIAGNOSTICS = ['launched', 'reopened', 'webShaped', 'enablementPrior', 'enabled', 'chromium', 'webAreaSeen', 'webAreaFound', 'webAreaWaitMs',
+// web-shaped app shows how its observations went: whether the app is web-shaped and Chromium's, the application
+// element's role read before enablement (its cost, #244), what web enablement read before it touched the attribute and
+// which attribute it set, whether the web area was seen or waited for (and how long), and each settle's status,
+// duration and counts. A bounded whitelist of scalars (a string of at most 64 characters), and the notification counts
+// as at most 16 names to integers; never the text, the tree or the timings of every phase.
+const OBSERVATION_DIAGNOSTICS = ['launched', 'reopened', 'webShaped', 'appRoleReadMs', 'enablementPrior', 'enabled', 'chromium', 'webAreaSeen', 'webAreaFound', 'webAreaWaitMs',
   ...['openSettle', 'settle'].flatMap(prefix => ['', 'Ms', 'Notifications', 'NotificationCounts', 'BusyWalks', 'BusyVetoes', 'Observed', 'QuietAtMs'].map(part => prefix + part)),
   'settleTreeReused'];
 const DIAGNOSTIC_STRING_CHARS = 64, DIAGNOSTIC_COUNTS = 16;
@@ -101,6 +113,16 @@ function observationDiagnostics(timings) {
     .map(key => [key, timings[key]]);
   return kept.length ? Object.fromEntries(kept) : null;
 }
+
+// The session's cursor request from the worker's environment: what the launcher wrote there, a label and a #rrggbb colour
+// only when it is one, and the switch.
+export function cursorParams(env) {
+  const label = typeof env?.CUA_CURSOR_LABEL === 'string' && env.CUA_CURSOR_LABEL ? env.CUA_CURSOR_LABEL : null;
+  const color = typeof env?.CUA_CURSOR_COLOR === 'string' && /^#[0-9a-fA-F]{6}$/.test(env.CUA_CURSOR_COLOR) ? env.CUA_CURSOR_COLOR : null;
+  return {...(label ? {label} : {}), ...(color ? {color} : {}), enabled: env?.CUA_CURSOR !== '0'};
+}
+// How long end_task's hook may take: one request on the live connection.
+const TURN_ENDED_MS = 2_000;
 
 // An observation of another bundle than the approved one (internal: the call is redone once).
 class IdentityChanged extends Error {}
@@ -130,8 +152,10 @@ export function createService({nodeRepl, client = null}) {
     if (typeof appPath !== 'string' || !appPath.startsWith('/')) {
       throw new Error('cua: the native engine is not configured for this runtime: CUA_ENGINE_APP must name the engine bundle by absolute path [engine_not_configured]');
     }
-    return (client = createEngineClient({nodeRepl, appPath}));
+    return (client = createEngineClient({nodeRepl, appPath, cursor: cursorParams(nodeRepl?.env)}));
   };
+  // end_task: the cursor fades at once, if this session's client ever reached the engine.
+  nodeRepl?.addTurnEndedHandler?.({timeoutMs: TURN_ENDED_MS, run: () => client?.hideCursor?.()});
   const nativeEngine = identity => ({engine: 'cua', version: identity.engineVersion, build: identity.build});
 
   // One engine request; the engine's identity goes into the result meta, an input error's meta too, and the round trip
@@ -183,6 +207,7 @@ export function createService({nodeRepl, client = null}) {
     const text = observations.observe(target.appPath, skyshot, {disableDiff: input.disableDiff === true});
     if (skyshot.settle) setMeta({'cua/settle': skyshot.settle});
     if (skyshot.screenshotOmitted) setMeta({'cua/screenshotOmitted': skyshot.screenshotOmitted});
+    if (skyshot.afterActionRepairs) setMeta({'cua/afterActionRepairs': skyshot.afterActionRepairs});
     const diagnostics = observationDiagnostics(skyshot.timings);
     if (diagnostics) setMeta({'cua/observation': diagnostics});
     return {app: target.appPath, screenshot: skyshot.screenshot?.url ? {url: skyshot.screenshot.url} : null, text};

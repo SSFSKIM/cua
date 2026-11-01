@@ -1,0 +1,42 @@
+{"at":1793424707732,"go":"owner: switch to the second Space, then ask to start"}
+{"at":1793424723689,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry.","route":null}
+{"at":1793424724878,"shot":"6-space-00","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424725903,"act":"scroll","ok":true,"value":{"ms":13.165124999999534},"route":"2'"}
+{"at":1793424727060,"shot":"6-space-01","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424728083,"act":"scroll","ok":true,"value":{"ms":3.0078340000000026},"route":"2'"}
+{"at":1793424729267,"shot":"6-space-02","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424730345,"act":"scroll","ok":true,"value":{"ms":15.906291999999667},"route":"2'"}
+{"at":1793424731518,"shot":"6-space-03","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424732577,"act":"scroll","ok":true,"value":{"ms":7.36449999999968},"route":"2'"}
+{"at":1793424733808,"shot":"6-space-04","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424734795,"act":"scroll","ok":true,"value":{"ms":2.7604170000013255},"route":"2'"}
+{"at":1793424736020,"shot":"6-space-05","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424737038,"act":"scroll","ok":true,"value":{"ms":6.574958000001061},"route":"2'"}
+{"at":1793424738202,"shot":"6-space-06","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424739217,"act":"scroll","ok":true,"value":{"ms":6.003875000002154},"route":"2'"}
+{"at":1793424740374,"shot":"6-space-07","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424741386,"act":"scroll","ok":true,"value":{"ms":3.5847090000024764},"route":"2'"}
+{"at":1793424742556,"shot":"6-space-08","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424743637,"act":"scroll","ok":true,"value":{"ms":3.166125000003376},"route":"2'"}
+{"at":1793424744997,"shot":"6-space-09","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424746035,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry.","route":null}
+{"at":1793424747218,"shot":"6-space-10","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424748225,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry.","route":null}
+{"at":1793424749409,"shot":"6-space-11","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424750427,"act":"scroll","ok":true,"value":{"ms":7.113917000002402},"route":"2'"}
+{"at":1793424751556,"shot":"6-space-12","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424752567,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry.","route":null}
+{"at":1793424753765,"shot":"6-space-13","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424754758,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry.","route":null}
+{"at":1793424755914,"shot":"6-space-14","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424756903,"act":"scroll","ok":true,"value":{"ms":7.347708000001148},"route":"2'"}
+{"at":1793424758018,"shot":"6-space-15","bounds":{"h":250,"w":66,"x":1184,"y":92}}
+{"at":1793424759010,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry.","route":null}
+{"at":1793424760180,"shot":"6-space-16","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424761182,"act":"scroll","ok":false,"error":"Computer Use server error -10016: The user is still interacting with '/System/Applications/TextEdit.app'. Wait 5 seconds and retry.","route":null}
+{"at":1793424762348,"shot":"6-space-17","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424763387,"act":"scroll","ok":true,"value":{"ms":3.867292000002635},"route":"2'"}
+{"at":1793424764530,"shot":"6-space-18","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424765491,"act":"scroll","ok":true,"value":{"ms":2.083208999996714},"route":"2'"}
+{"at":1793424766658,"shot":"6-space-19","bounds":{"h":860,"w":634,"x":878,"y":33}}
+{"at":1793424767702,"done":true}

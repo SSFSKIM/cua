@@ -33,7 +33,8 @@ export function frontmostProcess({exec = run} = {}) {
 
 const probe = (args, {exec = run} = {}) => JSON.parse(exec('/usr/bin/swift', [FRONT_WINDOW_SCRIPT, ...args], {timeout: 120_000}));
 // FrontWindowProbe's frontmost application and top window. -> {at, frontmost: {bundleId, pid} | null, topWindow | null}.
-export const frontWindow = options => probe(['front'], options);
+// `skipPids`: owners whose windows the reading passes over (the engine's own, ./front-window.swift --skip-pid).
+export const frontWindow = ({skipPids = [], ...options} = {}) => probe(['front', ...skipPids.flatMap(pid => ['--skip-pid', String(pid)])], options);
 // A process's layer-0 windows, front to back. -> [{ownerPid, number, bounds, onScreen}].
 export const appWindows = (pid, options) => appWindowState(pid, options).windows;
 // The same reading with whether the app is hidden (Cmd-H; null when LaunchServices does not know the pid). -> {windows, hidden}.

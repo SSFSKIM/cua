@@ -4,7 +4,7 @@
 // take effect without a reconnect; and the device session client (src/remote/client.mjs) to reach one. The credential
 // is read here, in the server process, and handed to the client only: no result, error or diagnostic carries it.
 //
-// deviceDirectory({env}) → {list(), probe(name), open(name, {initializeParams, onMessage, signal, diagnostics})}:
+// deviceDirectory({env}) → {list(), probe(name), open(name, {initializeParams, cursor, onMessage, signal, diagnostics})}:
 // - list() → [{name, deviceId, relayUrl}], by name; an unreadable registry throws its CuaError (devices_invalid).
 // - probe(name) → {status: online|offline|locked|unauthorized, code?}, never opening a session (probeDevice); a device
 //   with no usable credential reads unauthorized, credential_missing, without asking it.
@@ -49,10 +49,10 @@ export function deviceDirectory({env = process.env, fetch = globalThis.fetch, st
       }
       return probeDevice({endpoint: endpointOf(entry), credential, fetch, timeoutMs: probeTimeoutMs});
     },
-    async open(name, {initializeParams, onMessage, signal, diagnostics = () => {}}) {
+    async open(name, {initializeParams, cursor = null, onMessage, signal, diagnostics = () => {}}) {
       const entry = entryOf(name);
       const credential = await credentialOf(entry);
-      return openDeviceSession({endpoint: endpointOf(entry), credential, initializeParams, fetch, onMessage, signal,
+      return openDeviceSession({endpoint: endpointOf(entry), credential, initializeParams, cursor, fetch, onMessage, signal,
         diagnostics: line => diagnostics(`device ${name}: ${line}`)});
     },
   };

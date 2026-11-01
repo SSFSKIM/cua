@@ -694,3 +694,15 @@ The literal Windows deletions broke the grammar of two sentences in `tinysky-alt
 |---|---|
 | `Linux always return full accessibility state.` | `Linux always returns full accessibility state.` |
 | ``Linux app `paste` support only `text` and use the platform's native text input.`` | ``Linux app `paste` supports only `text` and uses the platform's native text input.`` |
+
+### Table 3 addition (2026-10-30, #235)
+
+The agent cursor's design, approved by the owner (`docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md`, M3),
+adds one paragraph of cua's own to the first-call document, without touching `core.md`'s port: what the person sees
+while the agent acts, so a model neither waits for the cursor nor looks for it in its screenshots. It is its own
+document, `docs/cua-api/agent-cursor.md`, which the facade's `read_core` places after the core and before the policy only
+where the computer surface's target is macOS: there cua's host serves only cua's own engine (the launcher refuses cua's
+host with the vendor engine), so the paragraph appears exactly where it is true, and never for the vendor engine, a
+browser-only session or Linux. The rule above is otherwise unchanged. The paragraph:
+
+> While you act in an app, a cursor labelled with this session's name shows the user where each action lands, unless the user has turned it off, and fades a few seconds after your last action. Your actions do not wait for it, it is not the user's pointer, and your screenshots do not show it.

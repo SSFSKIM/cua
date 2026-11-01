@@ -1,0 +1,32 @@
+{"item":"11-vendor","at":1793426000719,"kind":"start","steps":40,"dryRun":false}
+{"item":"11-vendor","at":1793426000720,"step":1,"kind":"say","text":"Acceptance 11, the vendor engine: the same scripted moves in the TextEdit document, 1.5 s apart"}
+{"item":"11-vendor","at":1793426000866,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"11-vendor","at":1793426003531,"step":3,"kind":"open","session":"a","env":{},"engine":"vendor"}
+{"item":"11-vendor","at":1793426003531,"step":4,"kind":"say","text":"move 1: first click: fades in at the target"}
+{"item":"11-vendor","at":1793426003686,"step":5,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":84.24895900000001,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426004267,"step":6,"kind":"cell","session":"a","label":"first click: fades in at the target","ok":true,"value":{"ms":510.87254200000007,"point":[338,774]},"inCellMs":510.89599999999996,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426005769,"step":8,"kind":"say","text":"move 2: a short move (the scoot)"}
+{"item":"11-vendor","at":1793426011806,"step":9,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":5975.375209000001,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426012094,"step":10,"kind":"cell","session":"a","label":"a short move (the scoot)","ok":true,"value":{"ms":223.9941660000004,"point":[432,860]},"inCellMs":224.0082910000001,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426013596,"step":12,"kind":"say","text":"move 3: a long move (a curved path)"}
+{"item":"11-vendor","at":1793426014100,"step":13,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":440.17275000000154,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426014956,"step":14,"kind":"cell","session":"a","label":"a long move (a curved path)","ok":true,"value":{"ms":790.1800000000003,"point":[1148,1462]},"inCellMs":790.197666,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426016458,"step":16,"kind":"say","text":"move 4: backward"}
+{"item":"11-vendor","at":1793426016980,"step":17,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":453.0287909999988,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426017539,"step":18,"kind":"cell","session":"a","label":"backward","ok":true,"value":{"ms":494.76124999999956,"point":[203,688]},"inCellMs":494.8092090000009,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426019040,"step":20,"kind":"say","text":"move 5: to the window's right edge"}
+{"item":"11-vendor","at":1793426019524,"step":21,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":432.2137079999993,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426019586,"step":22,"kind":"cell","session":"a","label":"to the window's right edge","ok":false,"error":"Computer Use server error -10005: windowNotFoundAtPosition((1580.0, 463.0))","inCellMs":7.077334000001429,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426021087,"step":24,"kind":"say","text":"move 6: a drag (selects text)"}
+{"item":"11-vendor","at":1793426021240,"step":25,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":89.5345410000009,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426022336,"step":26,"kind":"cell","session":"a","label":"a drag (selects text)","ok":true,"value":{"ms":1021.5777909999997},"inCellMs":1021.6005000000005,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426023838,"step":28,"kind":"say","text":"move 7: a scroll (a glide, no dip)"}
+{"item":"11-vendor","at":1793426024331,"step":29,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":439.16033400000015,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426024723,"step":30,"kind":"cell","session":"a","label":"a scroll (a glide, no dip)","ok":true,"value":{"ms":334.48612499999945},"inCellMs":334.49974999999904,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426026225,"step":32,"kind":"say","text":"move 8: three targets in quick succession (retargeting)"}
+{"item":"11-vendor","at":1793426026727,"step":33,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":443.35629100000006,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426027202,"step":34,"kind":"cell","session":"a","label":"three targets in quick succession (retargeting)","ok":true,"value":{"ms":416.53354200000103,"point":[270,602]},"inCellMs":416.5531250000022,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426027909,"step":35,"kind":"cell","session":"a","label":"three targets in quick succession (retargeting)","ok":true,"value":{"ms":656.4927920000009,"point":[1080,602]},"inCellMs":656.5110840000016,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426028528,"step":36,"kind":"cell","session":"a","label":"three targets in quick succession (retargeting)","ok":true,"value":{"ms":558.1134579999998,"point":[675,1376]},"inCellMs":558.1490829999966,"route":null,"engine":"vendor"}
+{"item":"11-vendor","at":1793426030031,"step":38,"kind":"watch","id":"motion-vendor","text":"the vendor cursor's motion through the moves (judged against the other engine's run)"}
+{"item":"11-vendor","at":1793426036122,"step":40,"kind":"close","session":"a","exit":{"code":0,"signal":null}}

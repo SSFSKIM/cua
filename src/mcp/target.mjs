@@ -56,7 +56,9 @@ function sessionEnd(reply, failure) {
   return null;
 }
 
-export function connectionTarget({devices, write, diagnostics, initializeParams, localTaskOpen, feedbackDir, onWithdrawn = () => {}}) {
+// `cursorContext` (when given) returns the connection's agent cursor context, a promise (src/mcp/connection.mjs), which a
+// device session's open sends as `cua/cursor` (src/remote/client.mjs).
+export function connectionTarget({devices, write, diagnostics, initializeParams, localTaskOpen, feedbackDir, onWithdrawn = () => {}, cursorContext = null}) {
   let current = null;              // the device target: {name, link, opening, taskOpen, pendingWork, inflight, ended}; null is local
   let switching = null;            // the devices_use under way
   let closing = false;
@@ -128,7 +130,8 @@ export function connectionTarget({devices, write, diagnostics, initializeParams,
   // new-session note) on the first call it answers; devices_use's own answer announces the one it opens.
   async function openLink(name, signal, {announced = false} = {}) {
     const link = {name, session: null, announced};
-    link.session = await devices.open(name, {initializeParams: initializeParams(), signal, diagnostics,
+    const cursor = cursorContext ? await cursorContext() : null;
+    link.session = await devices.open(name, {initializeParams: initializeParams(), cursor, signal, diagnostics,
       onMessage: msg => fromDevice(link, msg)});
     return link;
   }

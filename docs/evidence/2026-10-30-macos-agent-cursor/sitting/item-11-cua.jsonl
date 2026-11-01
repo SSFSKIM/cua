@@ -1,0 +1,32 @@
+{"item":"11-cua","at":1793426073535,"kind":"start","steps":40,"dryRun":false}
+{"item":"11-cua","at":1793426073535,"step":1,"kind":"say","text":"Acceptance 11, the cua engine: the same scripted moves in the TextEdit document, 1.5 s apart"}
+{"item":"11-cua","at":1793426073683,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":24591,"bundleId":"com.apple.TextEdit"}}}
+{"item":"11-cua","at":1793426074714,"step":3,"kind":"open","session":"a","env":{},"engine":"cua"}
+{"item":"11-cua","at":1793426074714,"step":4,"kind":"say","text":"move 1: first click: fades in at the target"}
+{"item":"11-cua","at":1793426074823,"step":5,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":50.72758299999998,"route":null,"engine":"cua"}
+{"item":"11-cua","at":1793426074890,"step":6,"kind":"cell","session":"a","label":"first click: fades in at the target","ok":true,"value":{"ms":4.804665999999997,"point":[294,774]},"inCellMs":4.825999999999908,"route":3,"engine":"cua"}
+{"item":"11-cua","at":1793426076392,"step":8,"kind":"say","text":"move 2: a short move (the scoot)"}
+{"item":"11-cua","at":1793426076863,"step":9,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":410.7634170000001,"route":null,"engine":"cua"}
+{"item":"11-cua","at":1793426076929,"step":10,"kind":"cell","session":"a","label":"a short move (the scoot)","ok":true,"value":{"ms":2.9028330000001006,"point":[376,860]},"inCellMs":2.917667000000165,"route":3,"engine":"cua"}
+{"item":"11-cua","at":1793426078430,"step":12,"kind":"say","text":"move 3: a long move (a curved path)"}
+{"item":"11-cua","at":1793426078947,"step":13,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":453.5055830000001,"route":null,"engine":"cua"}
+{"item":"11-cua","at":1793426079012,"step":14,"kind":"cell","session":"a","label":"a long move (a curved path)","ok":true,"value":{"ms":2.5878750000001673,"point":[998,1462]},"inCellMs":2.601166999999805,"route":3,"engine":"cua"}
+{"item":"11-cua","at":1793426080514,"step":16,"kind":"say","text":"move 4: backward"}
+{"item":"11-cua","at":1793426081014,"step":17,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":443.08841699999994,"route":null,"engine":"cua"}
+{"item":"11-cua","at":1793426081079,"step":18,"kind":"cell","session":"a","label":"backward","ok":true,"value":{"ms":3.2666250000002037,"point":[176,688]},"inCellMs":3.284250000000611,"route":3,"engine":"cua"}
+{"item":"11-cua","at":1793426082581,"step":20,"kind":"say","text":"move 5: to the window's right edge"}
+{"item":"11-cua","at":1793426083089,"step":21,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":444.42825000000084,"route":null,"engine":"cua"}
+{"item":"11-cua","at":1793426083155,"step":22,"kind":"cell","session":"a","label":"to the window's right edge","ok":true,"value":{"ms":3.5725000000002183,"point":[1139,860]},"inCellMs":3.5906250000007276,"route":3,"engine":"cua"}
+{"item":"11-cua","at":1793426084657,"step":24,"kind":"say","text":"move 6: a drag (selects text)"}
+{"item":"11-cua","at":1793426085168,"step":25,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":451.6602500000008,"route":null,"engine":"cua"}
+{"item":"11-cua","at":1793426085229,"step":26,"kind":"cell","session":"a","label":"a drag (selects text)","ok":true,"value":{"ms":4.206291999998939},"inCellMs":4.222834000000148,"route":3,"engine":"cua"}
+{"item":"11-cua","at":1793426086731,"step":28,"kind":"say","text":"move 7: a scroll (a glide, no dip)"}
+{"item":"11-cua","at":1793426087249,"step":29,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":451.07074999999895,"route":null,"engine":"cua"}
+{"item":"11-cua","at":1793426087337,"step":30,"kind":"cell","session":"a","label":"a scroll (a glide, no dip)","ok":true,"value":{"ms":4.910499999999956},"inCellMs":4.936916000000565,"route":"2'","engine":"cua"}
+{"item":"11-cua","at":1793426088838,"step":32,"kind":"say","text":"move 8: three targets in quick succession (retargeting)"}
+{"item":"11-cua","at":1793426089004,"step":33,"kind":"cell","session":"a","label":"observe before the move","ok":true,"value":{"inFront":true},"inCellMs":98.58820799999921,"route":null,"engine":"cua"}
+{"item":"11-cua","at":1793426089071,"step":34,"kind":"cell","session":"a","label":"three targets in quick succession (retargeting)","ok":true,"value":{"ms":2.6374160000013944,"point":[235,602]},"inCellMs":2.6554999999989377,"route":3,"engine":"cua"}
+{"item":"11-cua","at":1793426089149,"step":35,"kind":"cell","session":"a","label":"three targets in quick succession (retargeting)","ok":true,"value":{"ms":12.577416999998604,"point":[939,602]},"inCellMs":12.59900000000016,"route":3,"engine":"cua"}
+{"item":"11-cua","at":1793426089217,"step":36,"kind":"cell","session":"a","label":"three targets in quick succession (retargeting)","ok":true,"value":{"ms":10.870708000000377,"point":[587,1376]},"inCellMs":10.887249999999767,"route":3,"engine":"cua"}
+{"item":"11-cua","at":1793426090718,"step":38,"kind":"watch","id":"motion-cua","text":"the cua cursor's motion through the moves (judged against the other engine's run)"}
+{"item":"11-cua","at":1793426096960,"step":40,"kind":"close","session":"a","exit":{"code":0,"signal":null}}

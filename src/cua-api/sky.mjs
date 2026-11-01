@@ -7,14 +7,16 @@
 // methods; `sky` then exposes `target`, one method per advertised name (each `rpc("sky", {type: "execute", method,
 // args})`) and, on Linux when advertised, `drag_handle`. Screenshots and Linux window state arrive as data URLs and are
 // decoded to bytes; a Linux window state's ax_tree gains to_string (./linux-accessibility-tree.mjs). A failed setup is
-// kept: reading an unadvertised member then returns a function that rejects with it. Not ported: the branch for a
+// kept and exported as `setupError`: reading an unadvertised member then returns a function that rejects with it,
+// except the members the language looks up on its own (`then`, `toJSON` and every symbol), which read undefined. The
+// vendor answers those too, which makes its facade a thenable that never settles (#236). Not ported: the branch for a
 // process with no nodeRepl at all, which drives Sky's native client directly (the native engine, not this facade);
 // cua's kernel always has nodeRepl, so this module refuses as the vendor does when no trusted rpc is configured.
 import {accessibility_tree} from './linux-accessibility-tree.mjs';
 
 const nodeRepl = globalThis.nodeRepl;
 let setup;
-let setupError;
+export let setupError;
 let client;
 if (typeof nodeRepl?.rpc == 'function') {
   try {
@@ -29,7 +31,7 @@ export const sky = new Proxy({}, {
     const target = skyClient();
     const value = Reflect.get(target, name);
     if (typeof value == 'function') return value.bind(target);
-    if (name in target || setupError === undefined) return value;
+    if (name in target || setupError === undefined || IMPLICIT.has(name) || typeof name == 'symbol') return value;
     return () => Promise.reject(setupError);
   },
   getOwnPropertyDescriptor(_, name) {
@@ -40,6 +42,9 @@ export const sky = new Proxy({}, {
     return Object.keys(skyClient());
   },
 });
+
+// Members a promise, JSON.stringify or a conversion reads without the agent asking for them.
+const IMPLICIT = new Set(['then', 'toJSON']);
 
 function skyClient() {
   if (client != null) return client;

@@ -3,8 +3,9 @@ import ApplicationServices
 import Foundation
 import ScreenCaptureKit
 
-// The protocol's methods (Interfaces, EngineProtocol): ping, status, approve, shutdown, and execute with the facade's
-// method vocabulary plus resolve_app. Nothing here asks for a permission before a request needs it: status reads the
+// The protocol's methods (Interfaces, EngineProtocol): ping, status, approve, shutdown, execute with the facade's
+// method vocabulary plus resolve_app, and cursor (the agent cursor's per-session identity, switch and hide, #235; additive
+// to cua-engine-1: an older engine answers it methodNotFound, which the service takes as no cursor). Nothing here asks for a permission before a request needs it: status reads the
 // grants with the non-prompting preflight calls only. Every execute is refused while the Mac is locked (the spec's
 // Design, "Lock screen"), whatever its method; the protocol's own methods answer, so doctor can still read status.
 
@@ -23,6 +24,9 @@ struct Outcome {
 
 /// The input methods: every error they return carries the input meta (Interfaces, input errors), paste's included, so a
 /// lock-screen refusal reads the same on every input method.
+/// The methods that act through the keyboard alone: they move no cursor, but they are its activity.
+private let keyboardOnlyMethods: Set<String> = ["press_key", "type_text", "paste"]
+
 private let inputMethods: Set<String> = ["click", "press_key", "type_text", "paste", "drag", "perform_secondary_action", "scroll", "select_text", "set_value"]
 
 final class Engine: @unchecked Sendable {
@@ -47,18 +51,30 @@ final class Engine: @unchecked Sendable {
   let pasteLock = FIFOLock()
   /// The outside world of the paste's route-3 activation (Paste.swift): the system's, replaced in the unit tests.
   let pasteActivation: ActivationSystem
+  /// The agent cursor (Cursor/CursorHub.swift): the live one draws; the default keeps its state and draws nothing.
+  let cursor: CursorHub
+  /// The device's switch, `cursor` in engine.json as read at launch (Config.swift): off, no session draws a cursor.
+  let cursorEnabled: Bool
+  /// The cursor's diagnostic arm, `cursorDebug` in engine.json as read at launch (Config.swift); nil for none.
+  let cursorDebug: CursorDebug?
   weak var server: Server?
 
   init(paths: ServerPaths, routes: [String: Int] = [:], intervention: InterventionMonitor = InterventionMonitor(),
        screenLocked: @escaping () -> Bool = screenIsLocked, pasteboard: @escaping () -> PasteboardAccess = SystemPasteboard.general,
-       pasteActivation: ActivationSystem = ActivationSystem()) {
+       pasteActivation: ActivationSystem = ActivationSystem(), cursor: CursorHub = CursorHub(), cursorEnabled: Bool = true,
+       cursorDebug: CursorDebug? = nil) {
     self.paths = paths
     self.apps = AppDirectory(usagePath: paths.usage)
     self.routes = routes
+    self.cursorEnabled = cursorEnabled
+    self.cursorDebug = cursorDebug
     self.intervention = intervention
     self.screenLocked = screenLocked
     self.pasteboardAccess = pasteboard
     self.pasteActivation = pasteActivation
+    self.cursor = cursor
+    // The person acting in an app a cursor acts in turns that cursor half-transparent: from the detector's own ledger.
+    intervention.ledger.onRecord = { [cursor] pid in cursor.userActed(pid: pid) }
     activationObservers = observeRealActivations(NSWorkspace.shared.notificationCenter, registry: heldActivations)
   }
 
@@ -73,6 +89,7 @@ final class Engine: @unchecked Sendable {
         if others > 0 { throw EngineError(name: "busy", "busy", extra: ["connections": others]) }
         return Outcome(result: .success([String: Any]()), exitAfter: true)
       case "execute": return Outcome(result: .success(try execute(request.params, connection, receivedAt)))
+      case "cursor": return Outcome(result: .success(try cursorRequest(request.params, connection)))
       default: throw EngineError(rpc: .methodNotFound, "Method not found: \(request.method.prefix(64))")
       }
     } catch let error as EngineError {
@@ -108,7 +125,26 @@ final class Engine: @unchecked Sendable {
       // apps route 3's guard has failed three actions in a row for (each named by `routeAdvice` on its refusal).
       "routes": routes,
       "routeAdvice": routeAdvice.advised,
+      // The agent cursor's device switch as read at launch (`cursor` in engine.json).
+      "cursor": cursorEnabled ? "on" : "off",
+      "cursorDebug": cursorDebug?.rawValue ?? NSNull(),
     ]
+  }
+
+  /// `cursor`: the session's label, colour and switch, or `{"hide": true}` (end_task). The answer says whether this
+  /// session's cursor is on, and if not, whose switch turned it off: the device's (engine.json) wins over the session's.
+  private func cursorRequest(_ params: [String: Any], _ connection: ConnectionState) throws -> [String: Any] {
+    let request = try CursorRequest(params)
+    if cursorEnabled {
+      if request == .hide {
+        cursor.hide(connection: connection.id)
+      } else {
+        connection.cursor.apply(request)
+        cursor.configure(connection: connection.id, connection.cursor.identity(connection: connection.id), enabled: connection.cursor.enabled)
+      }
+    }
+    let reason: String? = !cursorEnabled ? "engine.json" : !connection.cursor.enabled ? "session" : nil
+    return ["cursor": reason == nil ? "on" : "off", "reason": reason ?? NSNull()]
   }
 
   /// Requests both grants with their prompts; once both are granted, captures one display image and discards it,
@@ -127,21 +163,30 @@ final class Engine: @unchecked Sendable {
   }
 
   private func execute(_ params: [String: Any], _ connection: ConnectionState, _ receivedAt: Int64) throws -> Any {
+    // Before anything else, the connection's after-action watch ends (#200, Activation.swift): no repair of an earlier
+    // action is made once this request, which may act or observe, has begun; its own guard takes over.
+    connection.afterAction.cancel()
     // The deadline first, before anything is dispatched (the vendor's order, F §8.9); a settle or a launch wait still
     // running when it passes is cancelled as timeoutReached (cua's addition, Skyshot.swift).
     let deadline = (params["deadlineUnixMilliseconds"] as? NSNumber)?.int64Value ?? receivedAt + 120_000
     guard deadline > receivedAt else { throw EngineError(rpc: .deadlineExceeded, "Request deadline exceeded") }
     guard let method = params["method"] as? String else { throw EngineError(rpc: .invalidParams, "Invalid params: method is required") }
+    let interval = timingSignposts.isEnabled ? timingSignposts.beginInterval("request", id: timingSignposts.makeSignpostID(), "\(method, privacy: .public)") : nil
+    defer { if let interval { timingSignposts.endInterval("request", interval) } }
     let args = params["args"] as? [String: Any] ?? [:]
-    let context = ExecutionContext(connection: connection, receivedAt: receivedAt, hidIdleMs: hidIdleMilliseconds(),
+    // The prologue's steps are timing intervals of their own (Signposts.swift), so a sitting can place what moves there.
+    let hidIdle = signposted("prologue.hidIdle") { hidIdleMilliseconds() }
+    let context = ExecutionContext(connection: connection, receivedAt: receivedAt, hidIdleMs: hidIdle,
                                    deadline: deadline, lineage: params["lineage"] as? String)
     // The lock screen, then every app-scoped method resolves, so the forbidden list holds on every call whoever the
     // client is. An input method refused here carries the input meta like any other error of an input method (nothing
     // posted).
     // A request on the connection holds off the menu span's idle bound while it runs; a span that lapsed while idle takes
     // its record with it before anything reads the record (MenuSpan.swift).
-    if let lapsed = connection.menuSpan.requestBegan() { connection.menuRecords[lapsed] = nil }
-    _ = connection.focusHold.requestBegan()  // the focus hold's bound likewise (FocusHold.swift); a lapse there clears nothing
+    signposted("prologue.holds") {
+      if let lapsed = connection.menuSpan.requestBegan() { connection.menuRecords[lapsed] = nil }
+      _ = connection.focusHold.requestBegan()  // the focus hold's bound likewise (FocusHold.swift); a lapse there clears nothing
+    }
     var target: ResolvedApp?
     // Only a request on the record (an observation of the held app, or a press or record on it) restarts the idle bound,
     // and only one that observes or acts on the focus hold's app restarts that one's.
@@ -151,10 +196,18 @@ final class Engine: @unchecked Sendable {
       connection.focusHold.requestEnded(onRecord: focusHoldRenews(method: method, app: target?.key, heldApp: connection.focusHold.app))
     }
     do {
-      try refuseWhenLocked(isLocked: screenLocked)
-      if method != "list_apps" && (args["app"] != nil || args["pid"] != nil) { target = try resolveApp(args) }
+      try signposted("prologue.lockCheck") { try refuseWhenLocked(isLocked: screenLocked) }
+      if method != "list_apps" && (args["app"] != nil || args["pid"] != nil) { target = try signposted("prologue.resolveApp") { try resolveApp(args) } }
     } catch let error as EngineError where inputMethods.contains(method) {
       throw withMeta(error, InputMeta(context))
+    }
+    // The cursor's activity (the spec's Design, "Hooks"): every request counts, a keyboard-only one may bring a faded
+    // cursor back at its last point in the app; the 5 s idle runs from the end of the last request.
+    timingSignposts.emitEvent("cursor.begin")
+    cursor.begin(connection: connection.id, app: target?.key, keyboardOnly: keyboardOnlyMethods.contains(method))
+    defer {
+      timingSignposts.emitEvent("cursor.end")
+      cursor.end(connection: connection.id)
     }
     // The held menu activation: kept for the recorded menu's observations, ended after the item press (unless the
     // request recorded a menu anew), ended before anything aimed elsewhere.

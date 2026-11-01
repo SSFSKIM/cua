@@ -889,3 +889,32 @@ test('devices_list curl guidance passes IPv6 relay origins intact through zsh',
     assert.equal(run.stdout, `${entry.relayUrl}/\n`);
   }
 });
+
+// The agent cursor of a remote session (#235's spec, "Remote devices"): the client's own context goes in the device
+// session's initialize parameters as `cua/cursor`, and reaches that session's open on the device checked.
+test('a device session\'s initialize carries the client\'s cursor context as cua/cursor; without one, no key', async t => {
+  const home = userHome(t);
+  const opened = [];
+  const base = inProcessConnections();
+  const wrapped = async options => { opened.push(options.cursor); return base(options); };
+  wrapped.opened = base.opened;
+  const mini = await device(t, {open: wrapped});
+  await register(home, 'mini', mini);
+  const context = {label: 'cursor235', color: '#8250df', enabled: true};
+  const h = await local(t, home, {cursorContext: () => Promise.resolve(context)});
+  assert.equal((await use(h, 'mini')).result.isError, false);
+  const [init] = mini.posts('initialize');
+  assert.deepEqual(init.message.params['cua/cursor'], context);
+  assert.deepEqual(init.message.params.clientInfo, CLIENT_INIT.clientInfo, 'the client\'s own params beside it');
+  assert.deepEqual(opened, [context], 'the device\'s open is given it, checked');
+  const plain = await device(t);
+  await register(home, 'plain', plain);
+  const other = await local(t, home, {cursorContext: () => Promise.resolve({label: null, color: '#57606a', enabled: false})});
+  assert.equal((await use(other, 'plain')).result.isError, false);
+  assert.deepEqual(plain.posts('initialize')[0].message.params['cua/cursor'], {color: '#57606a', enabled: false}, 'no label: none sent');
+  const none = await device(t);
+  await register(home, 'none', none);
+  const bare = await local(t, home);
+  assert.equal((await use(bare, 'none')).result.isError, false);
+  assert.equal(Object.hasOwn(none.posts('initialize')[0].message.params, 'cua/cursor'), false);
+});

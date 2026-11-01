@@ -760,7 +760,13 @@ test('restoreInputSource: nothing is restored while a probe that would not exit 
 const OWNER_WINDOWS = [{ownerPid: 50, ownerName: 'Mail', ownerBundleId: 'com.apple.mail', layer: 0, number: 900, name: 'Inbox — private subject', bounds: {}},
   {ownerPid: 51, ownerName: 'Dock', ownerBundleId: 'com.apple.dock', layer: 20, number: 901, name: null, bounds: {}}];
 const PRIVACY_ALERT = {ownerPid: 77, ownerName: 'UserNotificationCenter', ownerBundleId: 'com.apple.UserNotificationCenter', layer: 8, number: 950, name: 'secret title', bounds: {}};
-function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = false, alertAfter = null, compose = keys => (keys === 'rk' ? '가' : keys), frontStaysFinder = false, pressFlags = 0} = {}) {
+// The approved engine's agent cursor (#235): a display-wide layer-0 panel of the engine's process, ordered in once the engine
+// first acts and above the window it acts in, which the front reading shows unless the engine's pids are skipped.
+const ENGINE_PID = 31;
+const CURSOR_WINDOW = {ownerPid: ENGINE_PID, ownerName: 'cua Engine', ownerBundleId: 'io.github.ssfskim.cua.engine', layer: 0, number: 990, name: 'cua Agent Cursor',
+  bounds: {x: 0, y: 0, width: 1512, height: 982}};
+function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = false, alertAfter = null, compose = keys => (keys === 'rk' ? '가' : keys), frontStaysFinder = false, pressFlags = 0,
+  cursor = false, enginePids = cursor ? [ENGINE_PID] : []} = {}) {
   const file = join(scratch(), 'input-source.json');
   const {state: input, io: inputIo} = fakeInput({perContext, select: id => (id === KOREAN_2SET && !selectKorean ? ABC : id)});
   let clipboard = 'owner digest';
@@ -780,7 +786,9 @@ function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = f
   const io = deviceIo({...inputIo, probe, savedInputSource: file, clipboard: () => clipboard, windows: () => structuredClone(screen.windows),
     activate: async id => { if (id === 'textedit' && !frontStaysFinder) screen.front = TEXTEDIT; return {ok: true}; },
     frontmost: () => ({pid: screen.front.pid, bundleId: screen.front === TEXTEDIT ? 'com.apple.TextEdit' : 'com.apple.finder'}),
-    frontWindow: () => ({topWindow: {ownerPid: screen.front.pid, number: screen.front.window.number, bounds: screen.front.window.bounds}}),
+    frontWindow: ({skipPids = []} = {}) => (screen.cursor && !skipPids.includes(ENGINE_PID) ? {topWindow: {ownerPid: ENGINE_PID, number: CURSOR_WINDOW.number, bounds: CURSOR_WINDOW.bounds}}
+      : {topWindow: {ownerPid: screen.front.pid, number: screen.front.window.number, bounds: screen.front.window.bounds}}),
+    enginePids: () => enginePids,
     keyboardLayout: () => ({inputSourceId: input.current, keyboardLayoutId: 'com.apple.keylayout.2SetHangul'})});
   const execute = client.execute.bind(client);
   client.execute = async (method, args, options) => {
@@ -791,6 +799,7 @@ function pasteDevice({clipboardAfter = null, selectKorean = true, perContext = f
     }
     const out = await execute(method, args, options);
     if (method === alertAfter) screen.windows.push(PRIVACY_ALERT);
+    if (cursor && method !== 'get_app_state' && !screen.cursor) { screen.cursor = true; screen.windows.unshift(CURSOR_WINDOW); }
     return out;
   };
   if (clipboardAfter) {
@@ -1054,4 +1063,26 @@ test('probeBarrier: a probe the run journaled that still runs, or a launch never
   const unresolved = [{kind: 'probe', pid: null, start: null, label: 'input-source#b'}];
   assert.match(probeBarrier(run, io({journal: unresolved, rows: [watcher, {...probe, pid: 911}]})), /never identified/);
   assert.equal(probeBarrier(run, io({journal: unresolved, rows: [watcher]})), null, 'the watcher alone holds nothing');
+});
+
+// The agent cursor on screen (#235's spec, "The harness"): its panel is a new layer-0 window of the engine's, which the
+// alert watch leaves out with the engine's pids, as the matrix's alert check does, and which the composition guard's
+// front reading skips, as the keystroke probe's own gate does.
+test('pasteCheck with the agent cursor on screen: its window is no alert and the composition row still posts under the guard', async () => {
+  const device = pasteDevice({cursor: true, compose: KEYED});
+  const out = await pasteRun(device);
+  assert.equal(device.screen.cursor, true, 'the cursor window appeared during the section');
+  assert.equal(out.steps.pasteAlert, false, JSON.stringify(out.steps.alert));
+  assert.equal(out.verdict.pass, true, JSON.stringify(out));
+  const row = out.steps.hidComposition;
+  for (const variant of COMPOSITION_VARIANTS) {
+    assert.equal(row.variants[variant].keys.skipped, undefined, `${variant}: ${JSON.stringify(row.variants[variant].keys.guard ?? {})}`);
+    assert.equal(row.variants[variant].keys.frontChangedAfter, false, variant);
+  }
+});
+
+test('the cursor window of a process that is not the engine under test is still an alert, and still the front window', async () => {
+  const device = pasteDevice({cursor: true, enginePids: [], compose: KEYED});
+  const out = await pasteRun(device);
+  assert.equal(out.steps.pasteAlert, true, 'a new layer-0 window of another process aborts the section');
 });

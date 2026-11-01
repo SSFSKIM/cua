@@ -11,8 +11,8 @@ import {join} from 'node:path';
 import {
   SCENE_IDS, SCENES, PAIRS, BACKGROUND_PAIRINGS, CONCURRENT_USE, CONCURRENT_USE_SHEET, userWindowFor, refusals,
   ownedProcesses, documentWindows, refusingWindows, finderFolderFiles, textEditDocument, describeScenes, FINDER_TYPING_NAME, TEXTEDIT_STYLED_LINE, TEXTEDIT_MARKDOWN_CAP,
-  upScene, downScene, preflight, readState, reactivateApp, chromeArgs, chromeArgsProblems, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
-  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded,
+  upScene, downScene, preflight, readState, TEXTEDIT_HOLD_MS, reactivateApp, chromeArgs, chromeArgsProblems, chromePreferences, electronArgs, sceneCommand, exitCodeFor,
+  setupSteps, teardownSteps, teardownFor, activateScene, restoreFinder, fixedStateProblems, finderOwned, isSceneWindow, FINDER_FILES_MODIFIED, readPageLoaded, parse,
 } from '../../scripts/repl-parity/scenes-mac.mjs';
 import {indexOfTarget, indexOfRowCell, actionIndex, windowTitleOf} from '../../scripts/repl-parity/scenes-mac-text.mjs';
 import {parseAsns, parseAppInfo, awaitOwnLaunch, stopRecorded, readFinderPreferences, writeFinderPreference, openApp, activateApp, activateProcess, ACTIVATE_PROCESS_SCRIPT} from '../../scripts/repl-parity/scenes-mac-device.mjs';
@@ -252,7 +252,7 @@ function fakeDevice({running = [], windows = {}, finderPid = 736, finderHidden =
       const pid = nextPid++;
       launches[pid] = clock;
       running.push({pid, bundleId});
-      windows[pid] = [{number: nextWindow++, bounds: {x: 140, y: 100, width: 720, height: 560}}];
+      windows[pid] = [{number: nextWindow++, bounds: {x: 140, y: 100, width: 720, height: 560}, onScreen: true}];
     },
     awaitOwnLaunch: async ({bundleId, before}) => { const p = running.find(r => r.bundleId === bundleId && !before.includes(r.pid)); return {pid: p.pid, at: launches[p.pid]}; },
     stopRecorded: async record => {
@@ -300,6 +300,62 @@ test('up records the run\'s own launch with its window; a second up of the same 
   assert.deepEqual(preflight({run, io}).refusals, []);
 }));
 
+test('up electron takes extra switches after the fixture\'s own, kept in its record; anything else is refused before a launch', async () => withRun(async run => {
+  const io = fakeDevice(), extra = ['--enable-features=SonomaAccessibilityActivationRefinements'];
+  const record = await upScene('electron', {run, io, electronExtra: extra});
+  const [, request] = io.calls[0];
+  assert.deepEqual(request.args, [...electronArgs({userDataDir: join(run, 'electron-user-data')}), ...extra]);
+  assert.deepEqual(record.extraArgs, extra);
+  assert.deepEqual(readState(run).scenes.electron.extraArgs, extra);
+  await withRun(async other => assert.equal((await upScene('electron', {run: other, io: fakeDevice()})).extraArgs, undefined, 'a plain up records none'));
+  for (const [id, bad, why] of [['electron', ['a-path'], /takes a switch/], ['electron', ['--'], /takes a switch/], ['textedit', extra, /electron scene only/]]) {
+    const idle = fakeDevice();
+    await withRun(async other => assert.rejects(upScene(id, {run: other, io: idle, electronExtra: bad}), why));
+    assert.deepEqual(idle.calls, [], `${id} ${bad}: nothing launched`);
+  }
+  // The CLI: --electron-arg repeats and keeps its order; a value that is itself a switch is taken as the value.
+  const {positional, flags} = parse(['up', 'electron', '--run', '/r', '--electron-arg', '--a=1', '--electron-arg', '--b']);
+  assert.deepEqual([positional, flags.run, flags['electron-arg']], [['electron'], '/r', ['--a=1', '--b']]);
+  assert.deepEqual(parse(['up', 'electron', '--run', '/r']).flags['electron-arg'], []);
+}));
+
+test('up textedit records the document window only once it has been TextEdit\'s one on-screen window for TEXTEDIT_HOLD_MS', async () => withRun(async run => {
+  // The window comes 1 s after the launch; TextEdit's off-screen and too-small windows do not count.
+  const io = fakeDevice(), list = io.appWindows;
+  let launchedAt = null;
+  const open = io.openApp;
+  io.openApp = request => { open(request); launchedAt = io.now(); };
+  io.appWindows = pid => {
+    const own = list(pid);
+    if (launchedAt === null || io.now() - launchedAt < 1000) return [];
+    return [...own, {number: 1, bounds: {x: 0, y: 0, width: 800, height: 500}, onScreen: false}, {number: 2, bounds: {x: 0, y: 0, width: 40, height: 40}, onScreen: true}];
+  };
+  const record = await upScene('textedit', {run, io});
+  assert.equal(record.window.number, 900);
+  assert.ok(io.now() - launchedAt >= 1000 + TEXTEDIT_HOLD_MS, `held ${io.now() - launchedAt} ms`);
+}));
+
+test('up textedit refuses, stopping its launch, when TextEdit shows a second on-screen window (its Open panel at launch), or never one alone', async () => withRun(async run => {
+  // Twice on 2026-10-31 TextEdit raised its Open panel 1.3 s after the document: the record named the document while
+  // the panel was in front, and the kit's guards refused (47652 vs 47653, 47685 vs 47686).
+  for (const [label, second, pattern] of [
+    ['the panel 1.3 s after the document', 1300, /TextEdit has 2 on-screen windows \(900, 47653\).*Open panel.*none is recorded/],
+    ['the panel with the document', 0, /TextEdit has 2 on-screen windows/],
+  ]) {
+    const io = fakeDevice(), list = io.appWindows;
+    let launchedAt = null;
+    const open = io.openApp;
+    io.openApp = request => { open(request); launchedAt = io.now(); };
+    io.appWindows = pid => [...list(pid), ...(launchedAt !== null && io.now() - launchedAt >= second ? [{number: 47653, bounds: {x: 300, y: 200, width: 900, height: 500}, onScreen: true}] : [])];
+    await assert.rejects(upScene('textedit', {run, io}), pattern, label);
+    assert.deepEqual(io.calls.filter(c => c[0] === 'stop').length, 1, `${label}: the run's launch was stopped`);
+    assert.deepEqual(readState(run), {scenes: {}}, label);
+  }
+  const io = fakeDevice();
+  io.appWindows = () => [];
+  await assert.rejects(upScene('textedit', {run, io}), /no on-screen window of TextEdit \(process \d+\) within 20000 ms/);
+}));
+
 test('up textedit --layout wide-page: the same document in page layout, zoomed to 200% so the page is wider than the window; any other layout or scene refuses', async () => withRun(async run => {
   const io = fakeDevice();
   const wide = await upScene('textedit', {run, io, layout: 'wide-page'});
@@ -317,7 +373,7 @@ test('up of each scene: TextEdit on the run\'s document in English, Chrome on th
   const textedit = await upScene('textedit', {run, io});
   assert.equal(fs.readFileSync(textedit.document, 'utf8'), textEditDocument().rtf);
   assert.deepEqual(io.calls[0][1].files, [textedit.document]);
-  assert.deepEqual(io.calls[0][1].args, ['-AppleLanguages', '(en)', '-ApplePersistenceIgnoreState', 'YES']);
+  assert.deepEqual(io.calls[0][1].args, ['-AppleLanguages', '(en)', '-ApplePersistenceIgnoreState', 'YES', '-NSRequiresOpenUntitledWindowAtLaunch', 'NO']);
   const chrome = await upScene('chrome', {run, io});
   assert.equal(chrome.page.url, 'http://127.0.0.1:4000/');
   assert.deepEqual(io.calls[1][1].args, chromeArgs({userDataDir: chrome.userDataDir, url: chrome.page.url}));

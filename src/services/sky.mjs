@@ -1,8 +1,9 @@
 // The trusted "sky" service: node_repl's trusted worker loads this module (NODE_REPL_TRUSTED_SERVICES, registered by
 // `cua serve` through buildLaunch) in place of the vendor's @oai/sky/service, and every request is delegated to the sky
 // service the launcher names in CUA_SKY_SERVICE (never agent input): the vendor's @oai/sky/service, or on macOS cua's own
-// (src/services/engine/, #117), which raises the vendor's error classes and names. Either exports only handleRpc and
-// registers no lifecycle hooks, so delegating handleRpc keeps everything it does.
+// (src/services/engine/, #117), which raises the vendor's error classes and names. Either exports only handleRpc; cua's
+// registers its one lifecycle hook (end_task's turn-ended hook, which hides the agent cursor, #235) through
+// globalThis.nodeRepl itself, the same nodeRepl this wrapper has, so delegating handleRpc keeps everything it does.
 //
 // Secret substitution. Exactly these pinned commands (@oai/sky 0.7.5, as the cua API sends them through
 // nodeRepl.rpc("sky", …)) are eligible, and only when the eligible field is entirely `{{secret:<label>}}`. macOS:

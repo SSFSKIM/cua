@@ -7,7 +7,7 @@
 // host does. Synthetic trees only; no app is observed or driven.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {shortScratch} from './fixtures/runtime-fixture.mjs';
@@ -17,7 +17,8 @@ import {approvalMemory} from '../src/mcp/approval-memory.mjs';
 import {createSkyService} from '../src/services/sky.mjs';
 import {bind_mac_app} from '../src/cua-api/bind-mac-app.mjs';
 import {createEngineClient} from '../src/services/engine/client.mjs';
-import {METHODS, createService} from '../src/services/engine/service.mjs';
+import {METHODS, createService, cursorParams} from '../src/services/engine/service.mjs';
+import {infoPlist} from '../scripts/spike/engine/assemble.mjs';
 
 const APPS = {
   TextEdit: {appPath: '/System/Applications/TextEdit.app', bundleIdentifier: 'com.apple.TextEdit', displayName: 'TextEdit', isRunning: true, pid: 501},
@@ -28,6 +29,9 @@ const byPath = Object.fromEntries(Object.values(APPS).map(app => [app.appPath, a
 const NO_LONGER_VALID = 'The element ID is no longer valid. Try to get the on-screen content again and see if that resolves the issue.';
 const ENGINE_MS = {resolve_app: 999};
 const INPUT_META = {inputRoute: 3, startedAt: 1000, endedAt: 1042, receivedAt: 990, hidIdleMs: 31000, activationGuardMs: 41.5, activationClick: 'posted', pointUnconfirmed: true};
+// Route 3's delivery guard after a pointer action (#200): one restore, under the cap.
+const DELIVERY = {restores: 1, frontmostRestored: false, otherAppFront: false, restoreLatencyMs: 10, guardMs: 40, screenHoldMs: 52.5, capped: false,
+  raiseLeft: false, holdStartedAt: 1793399999947, releasedAt: 1793400000000};
 
 const win = title => node('t0', 0, 'AXWindow', {roleDescription: 'standard window', title, actions: ['AXRaise']});
 const button = (token, title) => node(token, 1, 'AXButton', {roleDescription: 'button', title, actions: ['AXPress']});
@@ -348,6 +352,7 @@ test('intervention, entered and routeAdvice ride as cua/ meta on results and on 
   const {getApp, call, meta} = await session(t, {handlers: {
     'execute:type_text': () => { throw new EngineFailure(-10016, 'The user changed \'/System/Applications/TextEdit.app\'. Re-query the latest state with `get_app_state` before sending more actions.', 'userIntervened', {meta: stopped}); },
     'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, pointUnconfirmed: undefined, intervention: 'off', hidIdleMs: 52000}}),
+    'execute:drag': () => ({meta: {...INPUT_META, delivery: DELIVERY}}),
     'execute:click': () => { throw new EngineFailure(-10005, 'The action was not performed: another app came to the front.', 'activationFailed', {meta: {...INPUT_META, startedAt: null, endedAt: null, routeAdvice: 'add "routes": {"com.apple.TextEdit": 4}'}}); },
   }});
   const {app} = await getApp('TextEdit');
@@ -359,11 +364,14 @@ test('intervention, entered and routeAdvice ride as cua/ meta on results and on 
   assert.equal(meta['cua/intervention'], 'off');
   assert.equal(meta['cua/entered'], null, 'a key press carries no count, and none is left standing');
   assert.equal(meta['cua/hidIdleMs'], 52000);
+  await call(() => app.drag([1, 2], [3, 4]));
+  assert.deepEqual(meta['cua/delivery'], DELIVERY, 'route 3\'s delivery guard (#200), as the engine sent it');
   await assert.rejects(call(() => app.click(1)), /another app came to the front/);
+  assert.equal(meta['cua/delivery'], null, 'a refused click carries none, and none is left standing');
   assert.equal(meta['cua/routeAdvice'], 'add "routes": {"com.apple.TextEdit": 4}');
   assert.equal(meta['cua/intervention'], null);
   await call(() => app.getAXState({emit: false}));
-  for (const key of ['cua/intervention', 'cua/entered', 'cua/routeAdvice']) assert.equal(meta[key], null, key);
+  for (const key of ['cua/intervention', 'cua/entered', 'cua/routeAdvice', 'cua/delivery']) assert.equal(meta[key], null, key);
 });
 
 test('cua/settle rides on the observation whose settle hit its cap, and on no other', async t => {
@@ -375,9 +383,30 @@ test('cua/settle rides on the observation whose settle hit its cap, and on no ot
   assert.equal(meta['cua/settle'], 'capped');
 });
 
+// Route 3's after-action watch (#200): its repairs, made after the action answered, ride on the connection's later
+// results, an input's meta or an observation's.
+const AFTER_ACTION = {repairs: 2, actions: [{postedAt: 1793400000000, repairs: 2, latencyMs: 81.5}]};
+
+test('cua/afterActionRepairs rides on a later input result and on an observation, as the engine sent it, and stands on no other call', async t => {
+  let report = AFTER_ACTION;
+  const {getApp, call, meta, trees} = await session(t, {handlers: {
+    'execute:drag': () => ({meta: {...INPUT_META, delivery: DELIVERY, ...(report ? {afterActionRepairs: report} : {})}}),
+  }});
+  const {app} = await getApp('TextEdit');
+  assert.equal(meta['cua/afterActionRepairs'], null);
+  await call(() => app.drag([1, 2], [3, 4]));
+  assert.deepEqual(meta['cua/afterActionRepairs'], AFTER_ACTION);
+  report = null;
+  await call(() => app.drag([1, 2], [3, 4]));
+  assert.equal(meta['cua/afterActionRepairs'], null, 'none left standing from the call before');
+  trees.get(APPS.TextEdit.appPath).afterActionRepairs = AFTER_ACTION;
+  await call(() => app.getAXState({emit: false}));
+  assert.deepEqual(meta['cua/afterActionRepairs'], AFTER_ACTION, 'an observation after the last action reports its repairs too');
+});
+
 // The engine's observation diagnostics (Skyshot timings) as Chromium and Electron rows need them: enablement, the web
 // area's wait and the settle.
-const DIAGNOSED_TIMINGS = {totalMs: 1, walkMs: 3.5, nodes: 40, webShaped: true, enablementPrior: 'false', enabled: 'AXManualAccessibility', chromium: true, webAreaSeen: true,
+const DIAGNOSED_TIMINGS = {totalMs: 1, walkMs: 3.5, nodes: 40, webShaped: true, appRoleReadMs: 0.375, enablementPrior: 'false', enabled: 'AXManualAccessibility', chromium: true, webAreaSeen: true,
   webAreaFound: true, webAreaWaitMs: 12.25, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
   settleBusyWalks: 0, settleBusyVetoes: 0, settleObserved: true, settleQuietAtMs: 101.125, settleTreeReused: true, focusRead: 'notAnElement', enableMs: 0.5};
 
@@ -402,7 +431,7 @@ test('the observation\'s diagnostics ride only as cua/observation meta, a bounde
   const {assembleResult} = await import('../src/repl-host/results.mjs');
   const output = JSON.parse(diagnosed.service).text;
   assert.deepEqual(assembleResult({ok: true, output, responseMeta: {...meta}}).content, assembleResult({ok: true, output, responseMeta: plain.meta}).content);
-  assert.deepEqual(meta['cua/observation'], {webShaped: true, enablementPrior: 'false', enabled: 'AXManualAccessibility', chromium: true, webAreaSeen: true, webAreaFound: true,
+  assert.deepEqual(meta['cua/observation'], {webShaped: true, appRoleReadMs: 0.375, enablementPrior: 'false', enabled: 'AXManualAccessibility', chromium: true, webAreaSeen: true, webAreaFound: true,
     webAreaWaitMs: 12.25, settle: 'settled', settleMs: 251.5, settleNotifications: 3, settleNotificationCounts: {AXValueChanged: 2, AXFocusedUIElementChanged: 1},
     settleBusyWalks: 0, settleBusyVetoes: 0, settleObserved: true, settleQuietAtMs: 101.125, settleTreeReused: true},
   'the whitelist only: no phase timing, node count, focus read or unknown key, nothing nested beyond the notification counts');
@@ -512,4 +541,53 @@ test('Chrome: the tool surface carries the vendor\'s Chrome flag, and the approv
   assert.equal(meta['codex/computerUseChrome'], true);
   assert.equal(record.asked[0].meta.riskLevel, 'high');
   assert.match(record.asked[0].meta.subtitle, /^Allowing Computer Use to use this app introduces new risks/);
+});
+
+// The agent cursor (#235's spec, "Lifecycle and identity", Interfaces): the session's cursor request is made from the
+// three variables the launcher put in the worker's environment, sent on the service's own connection at connect, and
+// end_task's turn-ended hook hides it.
+test('the cursor request the service sends for each environment: the label, a #rrggbb colour, and CUA_CURSOR=0\'s off switch', () => {
+  assert.deepEqual(cursorParams({}), {enabled: true});
+  assert.deepEqual(cursorParams({CUA_CURSOR_LABEL: 'Research', CUA_CURSOR_COLOR: '#2f6feb'}), {label: 'Research', color: '#2f6feb', enabled: true});
+  assert.deepEqual(cursorParams({CUA_CURSOR_LABEL: 'linux171', CUA_CURSOR_COLOR: '#8250df', CUA_CURSOR: '0'}), {label: 'linux171', color: '#8250df', enabled: false});
+  assert.deepEqual(cursorParams({CUA_CURSOR_LABEL: '', CUA_CURSOR_COLOR: 'blue', CUA_CURSOR: '1'}), {enabled: true}, 'what is not a label or a colour is not sent');
+  assert.deepEqual(cursorParams(undefined), {enabled: true});
+});
+
+// The service as the trusted worker makes it: its own client, from CUA_ENGINE_APP (a fixture bundle with the engine's
+// Info.plist), the socket beside it, and the turn-ended hook it registers.
+async function ownService(t, env, {handlers = {}} = {}) {
+  const s = shortScratch('cua-esc-');
+  t.after(s.cleanup);
+  const app = join(s.dir, 'cua Engine.app');
+  mkdirSync(join(app, 'Contents'), {recursive: true});
+  writeFileSync(join(app, 'Contents', 'Info.plist'), infoPlist({version: '0.1.0', build: 'b1'}));
+  const engine = await startFakeEngine(t, join(s.dir, 'engine.sock'), {handlers: {
+    'execute:list_apps': () => [], cursor: () => ({cursor: 'on', reason: null}), ...handlers}});
+  const hooks = [];
+  const nodeRepl = {env: {CUA_ENGINE_APP: app, ...env}, nativePipe: nativePipe(), launchServices: {openApplication: async () => assert.fail('no launch')},
+    setResponseMeta: () => {}, withSuspendedTimeout: fn => fn(), addTurnEndedHandler: hook => { hooks.push(hook); return () => {}; }};
+  const service = createService({nodeRepl});
+  const turnEnded = () => Promise.all(hooks.map(hook => hook.run({session_id: 's', turn_id: 't'})));
+  return {service, engine, hooks, turnEnded};
+}
+
+test('the service tells the engine its session\'s cursor at connect, and end_task\'s turn-ended hook hides it', async t => {
+  const {service, engine, hooks, turnEnded} = await ownService(t, {CUA_CURSOR_LABEL: 'linux171', CUA_CURSOR_COLOR: '#8250df'});
+  assert.equal(hooks.length, 1);
+  assert.ok(Number.isSafeInteger(hooks[0].timeoutMs) && hooks[0].timeoutMs > 0);
+  await turnEnded();
+  assert.equal(engine.received.length, 0, 'a session that never reached the engine has no cursor to hide');
+  await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]});
+  await turnEnded();
+  assert.deepEqual(engine.received.map(r => [r.method, r.method === 'cursor' ? r.params : r.params?.method ?? null]),
+    [['ping', null], ['cursor', {label: 'linux171', color: '#8250df', enabled: true}], ['execute', 'list_apps'], ['cursor', {hide: true}]]);
+});
+
+test('against an engine without the cursor method the session goes on, and end_task sends it nothing', async t => {
+  const {service, engine, turnEnded} = await ownService(t, {CUA_CURSOR: '0'}, {handlers: {cursor: undefined}});
+  assert.deepEqual(await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]}), []);
+  await turnEnded();
+  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'cursor', 'execute']);
+  assert.deepEqual(engine.received[1].params, {enabled: false});
 });

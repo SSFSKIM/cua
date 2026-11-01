@@ -224,6 +224,63 @@ final class FocusHoldTests: XCTestCase {
     XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 1)
   }
 
+  /// #200: a click inside a held activation runs no activation of its own, and its mouse down raises the window by
+  /// AppKit's rule all the same: it takes a hold of its own for the delivery guard, which raises the user's window back.
+  func testAClickInsideAHeldActivationIsGuardedUnderAHoldOfItsOwn() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try hold(connection, seam, meta: &meta)
+    let holds = seam.holds, releases = seam.releases
+    seam.targetAbove = false
+    seam.onMouseDown = { seam.targetAbove = true }
+    var clickMeta = self.meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
+                     targetActive: { false }, post: seam.system.post, meta: &clickMeta)
+    XCTAssertEqual(seam.holds, holds + 1)
+    XCTAssertEqual(seam.releases, releases + 1)
+    XCTAssertEqual(clickMeta.delivery?.restores, 1)
+    XCTAssertEqual(seam.targetAbove, false)
+    XCTAssertNil(clickMeta.activationGuardMs, "the click shared the held activation")
+    let delivery = try XCTUnwrap(clickMeta.delivery), heldAt = try XCTUnwrap(seam.heldAt)
+    XCTAssertGreaterThan(heldAt, 0, "the click's own hold, taken after the held activation's")
+    XCTAssertEqual(Double(delivery.releasedAt - delivery.holdStartedAt), try XCTUnwrap(seam.releasedAt) - heldAt,
+                   "the hold's start is the guard's own, on the release's Unix clock")
+  }
+
+  /// #200: inside a held activation the delivery guard takes its own hold before the events; the action interval starts
+  /// as the events go out, after that setup (InputMeta.posting's contract).
+  func testAClickInsideAHeldActivationStartsItsIntervalAtTheEventsAfterTheGuardsSetup() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try hold(connection, seam, meta: &meta)
+    var heldAtUnix: Int64?
+    seam.onHold = { heldAtUnix = unixMilliseconds(); usleep(30_000) }
+    var clickMeta = self.meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
+                     targetActive: { false }, post: seam.system.post, meta: &clickMeta)
+    XCTAssertGreaterThanOrEqual(try XCTUnwrap(clickMeta.startedAt), try XCTUnwrap(heldAtUnix) + 30, "after the guard's hold was taken")
+  }
+
+  /// #200: a click on another window of the held process (a dialog) is guarded on that window, not on the one the held
+  /// activation was taken for.
+  func testAClickOnAnotherWindowOfTheHeldProcessIsGuardedOnThatWindow() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try hold(connection, seam, meta: &meta)
+    seam.windowsAbove = []
+    seam.onMouseDown = { seam.windowsAbove = [77] }
+    let dialog = ClickTarget(point: CGPoint(x: 300, y: 400), windowFrame: window, windowID: 77, pid: target)
+    var clickMeta = self.meta()
+    try deliverClick(dialog, route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
+                     targetActive: { false }, post: seam.system.post, meta: &clickMeta)
+    XCTAssertEqual(clickMeta.delivery?.restores, 1, "the dialog's raise was seen and undone")
+    XCTAssertEqual(clickMeta.delivery?.raiseLeft, false)
+    XCTAssertEqual(seam.windowsAbove, [])
+  }
+
   // MARK: Finding 2: a per-action activation leases the process's activation
 
   private func clickTarget() -> ClickTarget {

@@ -1,0 +1,9 @@
+03:17:20Z
+{ 31.91 27.38 29.34 }
+  0.1 maws-supervisor
+ %CPU COMM
+ 45.8 /Users/new/.local/bin/claude
+ 15.9 /System/Library/CoreServices/ReportCrash
+ 14.9 /System/Library/PrivateFrameworks/AppStoreDaemon.framework/Support/appstoreagent
+ 13.4 /Users/new/Developer/GitHub/claude-usage-menubar/ClaudeUsage.app/Contents/MacOS/ClaudeUsage
+ 12.7 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/Metadata.framework/Versions/A/Support/mdworker_shared

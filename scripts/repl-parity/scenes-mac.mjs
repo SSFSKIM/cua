@@ -5,7 +5,8 @@
 //
 //   textedit  AppKit text. TextEdit (/System/Applications/TextEdit.app), launched by the run on a run-owned rich-text
 //             document, in English (-AppleLanguages) so its controls' names are the ones the targets name, and with
-//             state restoration ignored so the document is its only window.
+//             state restoration ignored and no untitled window or Open panel at launch so the document is its only
+//             window; `up` records it only once it has stayed TextEdit's one on-screen window (awaitOnlyWindow).
 //   finder    AppKit lists. Finder's process is the system's and is never the run's; only its window on a run-owned
 //             folder of 200 files is. Its fixed state is list view with no row selected and with the sidebar, the status
 //             bar and the path bar hidden (./scenes-mac-finder.mjs), so the window carries nothing the run does not own
@@ -56,6 +57,7 @@
 //   node scripts/repl-parity/scenes-mac.mjs place-chrome [--cache <root>]   place the pinned Chrome for Testing
 //   node scripts/repl-parity/scenes-mac.mjs build-electron [--cache <root>] build the Electron fixture app
 //   node scripts/repl-parity/scenes-mac.mjs up <scene> --run <dir> [--chrome-app <app>] [--electron-app <app>]
+//                                                [--electron-arg <switch>]…   the fixture launched with these switches too
 //   node scripts/repl-parity/scenes-mac.mjs activate <scene> --run <dir>    the run's process to the front (exit 1 if not)
 //   node scripts/repl-parity/scenes-mac.mjs teardown-steps <scene> --run <dir>
 //   node scripts/repl-parity/scenes-mac.mjs down <scene|all> --run <dir>   (exit 1 when something stays up or changed)
@@ -145,7 +147,14 @@ export const SCENES = Object.freeze({
     window: {title: 'cua-scene'},
     action: {click: TEXTEDIT_LINES[0]},
     placement: 'as TextEdit places a document window; recorded at up',
-    launchArgs: ['-AppleLanguages', '(en)', '-ApplePersistenceIgnoreState', 'YES'],
+    // NSRequiresOpenUntitledWindowAtLaunch NO, in this process's argument domain only: AppKit's launch step that opens an
+    // untitled document, or in its place the app-centric Open panel (NSShowAppCentricOpenPanelInsteadOfUntitledFile),
+    // when no window is open yet is skipped. TextEdit reads the run's document concurrently, so that step could find
+    // no window and raise the panel beside it (2026-10-31, twice). Read from AppKit (macOS 26.6.2, dyld_info
+    // -disassemble): the open event's completion block (-[NSApplication _handleAEOpenEvent:]_block_invoke) calls
+    // _doOpenUntitled only when _requiresOpeningUntitledWindowAtLaunch, no open or print event was handled and no window
+    // is open; that gate is _NSGetBoolAppConfig of this key, read through NSUserDefaults, so a launch argument sets it.
+    launchArgs: ['-AppleLanguages', '(en)', '-ApplePersistenceIgnoreState', 'YES', '-NSRequiresOpenUntitledWindowAtLaunch', 'NO'],
     start: `${OPEN}, the run's document as the file`, stop: `${STOP}; the driver quits it through the engine first where it can (super+q, as the baseline does)`,
     typing: {target: 'document', mode: 'text', readBack: 'the document\'s AXValue contains the text sent'},
     targets: [
@@ -401,11 +410,35 @@ async function startOwn({app, bundleId, files, args, io}) {
   io.openApp({app, files, args, newInstance: true});
   return io.awaitOwnLaunch({bundleId, before, startedAt});
 }
-// Launches `app` and waits for its window; a launch whose window never comes is stopped again, since it is the run's.
-// -> {pid, at, window}.
-async function launchOwn({io, ...options}) {
+// How long TextEdit's one on-screen window must stay its only one before `up` records it: past the 1.3 s after which
+// it raised its Open panel beside the document at launch (the unified log of 2026-10-31 14:00:28-30 PDT).
+export const TEXTEDIT_HOLD_MS = 2500;
+// TextEdit's window once it is the process's one on-screen document window and has stayed so for `holdMs`, polled for
+// up to `boundMs`. The run's own launch opened only the run's document, ignoring saved state and with no untitled
+// window at launch, so that window is the document's; the probe reads no window names (it never needs Screen
+// Recording), so its title is checked later, by the engine's own reading (fixedStateProblems, the target guards). A
+// second on-screen window is an error, never a choice: it would be the one in front. -> {number, bounds}.
+async function awaitOnlyWindow(pid, {io, boundMs = 20_000, holdMs = TEXTEDIT_HOLD_MS}) {
+  let alone = null;
+  for (const t0 = io.now(); ;) {
+    const shown = documentWindows(io.appWindows(pid)).filter(w => w.onScreen === true);
+    if (shown.length > 1) throw new Error(`TextEdit has ${shown.length} on-screen windows (${shown.map(w => w.number).join(', ')}); the run's document must be its only one (a second at launch is likely its Open panel): none is recorded`);
+    if (shown.length === 1 && alone?.number === shown[0].number) {
+      if (io.now() - alone.since >= holdMs) return {number: shown[0].number, bounds: shown[0].bounds};
+    } else {
+      alone = shown.length === 1 ? {number: shown[0].number, since: io.now()} : null;
+    }
+    if (io.now() - t0 >= boundMs) {
+      throw new Error(alone ? `TextEdit's window ${alone.number} was not its only one for ${holdMs} ms within ${boundMs} ms` : `no on-screen window of TextEdit (process ${pid}) within ${boundMs} ms`);
+    }
+    await io.sleep(250);
+  }
+}
+// Launches `app` and waits for its window (`awaitOne`: awaitWindow's new window by default); a launch whose window never
+// comes is stopped again, since it is the run's. -> {pid, at, window}.
+async function launchOwn({io, awaitOne = pid => awaitWindow(pid, {io}), ...options}) {
   const launch = await startOwn({...options, io});
-  try { return {...launch, window: await awaitWindow(launch.pid, {io})}; }
+  try { return {...launch, window: await awaitOne(launch.pid)}; }
   catch (error) { await io.stopRecorded(launch); throw error; }
 }
 // How long `up chrome` waits, once Chrome's window is there, for the page to report its load (scene-page.mjs's beacon):
@@ -459,17 +492,23 @@ function freshChromeProfile(run) {
   fs.writeFileSync(join(userDataDir, 'Default', 'Preferences'), JSON.stringify(chromePreferences()), {mode: 0o600});
   return userDataDir;
 }
-export const electronArgs = ({userDataDir, placement = SCENES.electron.placement}) => [
-  `--cua-fixture-user-data=${userDataDir}`, `--cua-fixture-bounds=${[placement.x, placement.y, placement.width, placement.height].join(',')}`];
+// `extra`: Chromium switches the fixture is launched with besides its own (#244's variant: a feature turned on), each a
+// `--` switch, since Electron would take any other argument for a path to open.
+export const electronArgs = ({userDataDir, placement = SCENES.electron.placement, extra = []}) => [
+  `--cua-fixture-user-data=${userDataDir}`, `--cua-fixture-bounds=${[placement.x, placement.y, placement.width, placement.height].join(',')}`, ...extra];
 
 // Brings one scene up. -> the scene's record: {scene, app, bundleId, pid, at?, window, setup, ...}, where `setup` lists
 // the driver's steps to the fixed state (setupSteps). Finder's also carries the chrome `preferences` read before its
 // window opened, and `savedPreferences` says when the owner's values were saved and whether that record was `kept`
-// from earlier (this run's earlier up, or a run that died before restoring them).
-export async function upScene(id, {run, chromeApp, electronApp, layout, io = defaultIo()}) {
+// from earlier (this run's earlier up, or a run that died before restoring them). `electronExtra`: the fixture's extra
+// switches (electronArgs), kept in its record as `extraArgs`.
+export async function upScene(id, {run, chromeApp, electronApp, electronExtra = [], layout, io = defaultIo()}) {
   const scene = sceneOf(id), state = readState(run);
   if (state.scenes[id]) throw new Error(`scene ${id} is already up in this run; bring it down first`);
   if (layout !== undefined && id !== 'textedit') throw new Error('--layout applies to the textedit scene only');
+  if (electronExtra.length && id !== 'electron') throw new Error('--electron-arg applies to the electron scene only');
+  const notSwitch = electronExtra.find(a => typeof a !== 'string' || !/^--[\w-]/.test(a));
+  if (notSwitch !== undefined) throw new Error(`--electron-arg takes a switch (--name or --name=value), not ${JSON.stringify(notSwitch)}`);
   const checked = preflight({run, io});
   if (checked.refusals.length) throw new Refused(checked.refusals);
   let record;
@@ -477,7 +516,8 @@ export async function upScene(id, {run, chromeApp, electronApp, layout, io = def
     const doc = textEditDocument({layout}), dir = join(run, 'textedit'), file = join(dir, doc.name);
     fs.mkdirSync(dir, {recursive: true, mode: 0o700});
     fs.writeFileSync(file, doc.rtf, {mode: 0o600});
-    record = {app: scene.app, document: file, ...(layout && layout !== 'default' ? {layout} : {}), ...await launchOwn({app: scene.app, bundleId: scene.bundleId, files: [file], args: scene.launchArgs, io})};
+    record = {app: scene.app, document: file, ...(layout && layout !== 'default' ? {layout} : {}), ...await launchOwn({app: scene.app, bundleId: scene.bundleId, files: [file], args: scene.launchArgs, io,
+      awaitOne: pid => awaitOnlyWindow(pid, {io})})};
   } else if (id === 'finder') {
     const folder = join(run, 'finder', FINDER_FOLDER), pid = checked.finderPid;
     if (!pid) throw new Error('Finder is not running');
@@ -521,7 +561,8 @@ export async function upScene(id, {run, chromeApp, electronApp, layout, io = def
   } else {
     const app = electronApp ?? io.buildElectron().appPath, userDataDir = join(run, 'electron-user-data');
     fs.mkdirSync(userDataDir, {recursive: true, mode: 0o700});
-    record = {app, userDataDir, ...await launchOwn({app, bundleId: scene.bundleId, args: electronArgs({userDataDir}), io})};
+    record = {app, userDataDir, ...(electronExtra.length ? {extraArgs: [...electronExtra]} : {}),
+      ...await launchOwn({app, bundleId: scene.bundleId, args: electronArgs({userDataDir, extra: electronExtra}), io})};
   }
   record = {scene: id, bundleId: scene.bundleId, ...record};
   record.setup = setupSteps(id, record);
@@ -709,10 +750,11 @@ export const exitCodeFor = out => (out?.refusals?.length || out?.down === false 
 
 // ---- CLI --------------------------------------------------------------------------------------------------------------
 
-function parse(argv) {
-  const [command, ...rest] = argv, flags = {}, positional = [];
+// --electron-arg may repeat (its values are kept in order); every other flag takes its last value.
+export function parse(argv) {
+  const [command, ...rest] = argv, flags = {'electron-arg': []}, positional = [];
   for (let i = 0; i < rest.length; i++) {
-    if (rest[i].startsWith('--')) { flags[rest[i].slice(2)] = rest[i + 1]; i++; } else positional.push(rest[i]);
+    if (rest[i] === '--electron-arg') { flags['electron-arg'].push(rest[i + 1]); i++; } else if (rest[i].startsWith('--')) { flags[rest[i].slice(2)] = rest[i + 1]; i++; } else positional.push(rest[i]);
   }
   return {command, positional, flags};
 }
@@ -733,7 +775,7 @@ export async function main(argv) {
     case 'front': return frontWindow();
     case 'frontmost': return frontmostProcess();
     case 'reactivate': return reactivateApp({bundleId: flags['bundle-id'], pid: Number(flags.pid)});
-    case 'up': return upScene(target, {run: runDir(flags), chromeApp: flags['chrome-app'], electronApp: flags['electron-app'], layout: flags.layout});
+    case 'up': return upScene(target, {run: runDir(flags), chromeApp: flags['chrome-app'], electronApp: flags['electron-app'], electronExtra: flags['electron-arg'], layout: flags.layout});
     case 'activate': return activateScene(target, {run: runDir(flags)});
     case 'teardown-steps': return {scene: target, steps: teardownFor(target, {run: runDir(flags)})};
     case 'restore-finder': return restoreFinder();

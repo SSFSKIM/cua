@@ -1,0 +1,8 @@
+{"item":"200-f-cua","at":1793503827564,"kind":"start","steps":151,"dryRun":false}
+{"item":"200-f-cua","at":1793503827564,"step":1,"kind":"say","text":"#200 case f on the cua engine: a coordinate click on a plain push button that refuses the first mouse: the Electron fixture's button, 20 samples"}
+{"item":"200-f-cua","at":1793503827564,"step":2,"kind":"series","series":["200-f-cua"],"counts":{"samples":20}}
+{"item":"200-f-cua","at":1793503827919,"step":3,"kind":"task","task":"arrangement","args":["f","20"],"result":{"ok":true,"frontmost":31372,"front":{"number":49270,"bounds":{"height":760,"width":1000,"x":329,"y":130}},"back":{"number":49263,"bounds":{"height":560,"width":720,"x":24,"y":80}}}}
+{"item":"200-f-cua","at":1793503827972,"step":4,"kind":"task","task":"order-watch-start","args":["f","cua"],"result":{"ok":true,"pid":20953,"file":"item-200-f-cua-order.jsonl","state":"front-above","realtime":true}}
+{"item":"200-f-cua","at":1793503831427,"step":5,"kind":"open","session":"s","env":{},"engine":"cua"}
+{"item":"200-f-cua","at":1793503831845,"step":6,"kind":"task","task":"element-frame","args":["f"],"result":{"ok":false,"answer":{"error":"no AXButton named Fixture button in the process's windows (13 elements read)","found":false,"trusted":true},"problem":"the fixture's button was not found: no AXButton named Fixture button in the process's windows (13 elements read)"}}
+{"item":"200-f-cua","at":1793503832092,"kind":"stopped","error":"element-frame refused: the fixture's button was not found: no AXButton named Fixture button in the process's windows (13 elements read)"}

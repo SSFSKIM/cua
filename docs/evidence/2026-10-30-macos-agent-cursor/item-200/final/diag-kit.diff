@@ -1,0 +1,41 @@
+diff --git a/scripts/cursor-sitting/cells.mjs b/scripts/cursor-sitting/cells.mjs
+index 318fd98c..2c3156fe 100644
+--- a/scripts/cursor-sitting/cells.mjs
++++ b/scripts/cursor-sitting/cells.mjs
+@@ -86,6 +86,15 @@ const index = ${find};
+ if (index === null) throw new Error(${j(`${control} is not in the ${scene} window's text: the engine's observation did not find it by its index`)});
+ return {index};`);
+ };
++// DIAGNOSTIC (temporary, final slot): the observation's size and whether `control` is in it, without failing.
++export const CONTROL_SEEN = control => {
++  const {scene, find} = CONTROLS[control];
++  return cell(`${head(scene)}
++const ax = await observe();
++const text = typeof ax === 'string' ? ax : JSON.stringify(ax);
++const index = ${find};
++return {index, lines: text.split('\\n').length, chars: text.length, at: Date.now()};`);
++};
+ 
+ // Which of TextEdit's alignment buttons flips it, from the observation `ax`: align center when it is off, else align left.
+ const ALIGN_PICK = `const center = indexOfPart(ax, "Description", "align center");
+diff --git a/scripts/cursor-sitting/raise.mjs b/scripts/cursor-sitting/raise.mjs
+index c21e9bf1..a825ec2d 100644
+--- a/scripts/cursor-sitting/raise.mjs
++++ b/scripts/cursor-sitting/raise.mjs
+@@ -57,7 +57,7 @@ import {fileURLToPath} from 'node:url';
+ import {FIXTURE_ACCESSIBILITY_FILE, FIXTURE_COUNTERS_FILE} from '../native-matrix/fixtures/electron-fixture.mjs';
+ import {compiled} from '../native-matrix/matrix-device.mjs';
+ import {readState, textEditDocument} from '../repl-parity/scenes-mac.mjs';
+-import {ALIGN_CLICK, ALIGNMENT, CARET_BEFORE, CLICK_AT, CONTROL_FOUND, FINDER_ROW_CLICK, FINDER_ROW_READ, FINDER_TOP, OBSERVE, OBSERVED_CLICK, OBSERVED_CLICK_GLOBAL,
++import {ALIGN_CLICK, ALIGNMENT, CARET_BEFORE, CLICK_AT, CONTROL_FOUND, CONTROL_SEEN, FINDER_ROW_CLICK, FINDER_ROW_READ, FINDER_TOP, OBSERVE, OBSERVED_CLICK, OBSERVED_CLICK_GLOBAL,
+   OBSERVED_CLICK_PT, OBSERVED_DRAG, PRESSED} from './cells.mjs';
+ import {fixtureAccessibility} from './focus.mjs';
+ import {BUILT_IN_SCREEN} from './glide.mjs';
+@@ -593,6 +593,7 @@ export function raiseSteps(kase, {engine, samples = CASES[kase].samples}) {
+       {run: S, cell: FINDER_ROW_READ(row), label: LABELS.finderRead(i), sample: at('e', i, 'read')},
+       {task: 'deliver', args: ['finder-row', 'e', String(i), 'row']}, ...checked('e', i)]; })],
+     f: () => [
++      {run: S, cell: CONTROL_SEEN('fixtureButton'), label: 'f diag +0', sample: at('f', -1, 'observe')}, {wait: 2000}, {run: S, cell: CONTROL_SEEN('fixtureButton'), label: 'f diag +2s', sample: at('f', -1, 'observe')}, {wait: 3000}, {run: S, cell: CONTROL_SEEN('fixtureButton'), label: 'f diag +5s', sample: at('f', -1, 'observe')},
+       {run: S, cell: CONTROL_FOUND('fixtureButton'), label: LABELS.found, sample: at('f', -1, 'observe'), required: true},
+       {task: 'element-frame', args: ['f'], required: true},
+       {run: S, cell: PRESSED, label: LABELS.pressed(-1), sample: at('f', -1, 'read')},

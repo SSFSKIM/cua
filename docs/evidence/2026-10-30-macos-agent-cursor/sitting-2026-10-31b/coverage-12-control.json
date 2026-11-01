@@ -1,0 +1,15 @@
+{
+  "item": "12-control",
+  "attempt": 1793478490516,
+  "complete": true,
+  "samples": 40,
+  "covered": 40,
+  "missing": [],
+  "first": 1793478492602.354,
+  "last": 1793478820542.594,
+  "reads": {
+    "ok": true,
+    "reads": 14,
+    "failures": []
+  }
+}

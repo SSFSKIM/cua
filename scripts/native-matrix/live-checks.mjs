@@ -116,7 +116,9 @@ export function alertWatch(before, now, {runPids}) {
 // ---- The HID composition row (MAWS P4-B2, a measurement) -----------------------------------------------------------
 
 // The hard guard before HID-tap keys are posted (they go to whatever is in front): the frontmost process is the run's
-// TextEdit (lsappinfo), the frontmost layer-0 window is the scene window (CGWindowList) and the engine's read of
+// TextEdit (lsappinfo), the frontmost layer-0 window not the engine's (CGWindowList; the agent cursor's panel, #235,
+// never takes a key, so the reading skips the engine's pids, as the keystroke probe's own gate does) is the scene
+// window, and the engine's read of
 // TextEdit's own key window (its focused window first) has that front window's frame as CGWindowList reads it now. The
 // bounds recorded at the scene's up are not the comparison: TextEdit may place or resize its window after up (hold 1
 // refused every variant on them). A refusal keeps what it read (`seen`) and, for the key window, both frames.
@@ -308,7 +310,8 @@ export function pasteVerdict(steps) {
 }
 
 // The engine's enablement diagnostics on one observation (its `timings`, M2a.4): `enablementPrior` what the attribute
-// read before the observation touched it ("true", "false" or "unreadable"; absent when the app lists neither), `enabled`
+// read before the observation touched it ("true", "false" or "unreadable", or "owned" when the engine owns what it set
+// at an earlier observation and read nothing; absent when the app lists neither), `enabled`
 // the attribute it set, which the engine does only when it read false; `webAreaSeen` that an earlier observation of the
 // process found the web area, which a release forgets. Kept beside the enablement cell's verdict, never judged: the
 // attribute's readback is not Chromium's mode (./residue-checks.mjs enablementVerdict).
@@ -402,6 +405,12 @@ export const parseJournal = text => String(text).split('\n').map(line => line.sp
 export const parseProcessTable = text => String(text).split('\n')
   .map(line => /^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\w{3}\s+\w{3}\s+\d+\s+[\d:]+\s+\d{4})\s+(.*)$/.exec(line)).filter(Boolean)
   .map(([, pid, ppid, uid, start, command]) => ({pid: Number(pid), ppid: Number(ppid), uid: Number(uid), start: startOf(start), command}));
+// The processes running from a bundle (any of `bundles`, its path as given and as resolved): the engine under test, whose
+// agent cursor's panels (#235) are on-screen windows of its own. -> [pid].
+export function bundlePids(processes, bundles) {
+  const prefixes = bundles.filter(Boolean).map(bundle => `${bundle.replace(/\/+$/, '')}/`);
+  return processes.filter(p => prefixes.some(prefix => p.command.startsWith(prefix))).map(p => p.pid);
+}
 // A probe of the approved bundle (its engine executable run with --probe).
 export const isBundleProbe = (command, bundle) => Boolean(bundle) && command.startsWith(`${bundle}/Contents/MacOS/cua-engine --probe `);
 // What looks like the harness's work without being journaled: its device CLIs run from the harness checkout, the

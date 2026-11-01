@@ -57,7 +57,7 @@ import {engineCheck, engineClientFor, main as goldensDeviceMain, ownershipProble
 import {controllerCheckout} from './goldens.mjs';
 import {REPO_ROOT} from './goldens-install.mjs';
 import {
-  FIRST_LINE, KOREAN_2SET, alertWatch, finderCheck, compositionGuard, compositionReading, MENU_ITEMS, PASTE_TARGETS, allSelected, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
+  FIRST_LINE, KOREAN_2SET, alertWatch, bundlePids, finderCheck, compositionGuard, compositionReading, MENU_ITEMS, PASTE_TARGETS, allSelected, failureOf, firstLineBold, frontAppAction, inputSourceVerdict, liveRefusals,
   menuBarItem, menuItemAt, minimizeButton, minimizedVerdict, parsePerContext, pasteVerdict, perContextRestore, putBackPlan, restoreTarget, textArea,
   JOURNAL_FILE, RECOVERY_BOUNDS, isBundleProbe, parseJournal, parseProcessTable, recoveryPlan,
 } from './live-checks.mjs';
@@ -354,9 +354,10 @@ async function pasteSteps({record, user, client, io, screenshots, steps, userInF
   if (owned.length) return `the observation is not the run's TextEdit window (${owned.map(p => p.message).join('; ')}); nothing was sent`;
 
   // The alert watch: the screen before the first step is the baseline; anything it flags stops the section, untouched.
+  // The engine's own windows (the agent cursor's panel, #235) are the run's, as in the matrix's alert check.
   const baseline = io.windows();
   const watchAlerts = async at => {
-    const watch = alertWatch(baseline, io.windows(), {runPids: [record.pid, user.pid]});
+    const watch = alertWatch(baseline, io.windows(), {runPids: [record.pid, user.pid, ...io.enginePids()]});
     if (!watch.abort) { steps.pasteAlert = false; return; }
     steps.pasteAlert = true;
     steps.alert = {at, ...watch.export, text: await alertText(client, watch.readable, screenshots)};
@@ -472,7 +473,8 @@ async function compositionVariant({variant, record, client, io, observe, watchAl
   const flags = VARIANT_FLAGS[variant];
   const post = async text => {
     const observed = (await observe()).window;
-    const top = io.frontWindow()?.topWindow ?? null;
+    const engine = io.enginePids();
+    const top = io.frontWindow({skipPids: engine})?.topWindow ?? null;
     const frontmost = io.frontmost();
     const guard = compositionGuard({frontmost, topWindow: top, observedWindow: observed, record});
     if (!guard.post) return {skipped: guard.reason, guard};
@@ -481,7 +483,7 @@ async function compositionVariant({variant, record, client, io, observe, watchAl
     let output;
     try { output = io.probe(args); } finally { posts.lastAt = io.now(); }
     const after = io.frontmost();
-    const topAfter = io.frontWindow()?.topWindow ?? null;
+    const topAfter = io.frontWindow({skipPids: engine})?.topWindow ?? null;
     return {invocation: `cua-engine --probe ${args.map(a => (a === '\n' ? '"\\n"' : a)).join(' ')}`, output, exitStatus: probeStatus(output),
       frontChangedAfter: after?.pid !== record.pid || topAfter?.number !== record.window.number};
   };
@@ -988,7 +990,9 @@ export const defaultIo = run => {
   clipboard: () => clipboardDigest(),
   windows: () => systemWindows(),
   keyboardLayout: () => keyboardLayout(),
-  frontWindow: () => frontWindow(),
+  frontWindow: ({skipPids = []} = {}) => frontWindow({skipPids}),
+  // The approved engine's processes: the resident engine, whose agent cursor's panels are windows of its own, and probes.
+  enginePids: () => bundlePids(processTable(), [approvedBundle(), probeBundle()]),
   finderWindows: () => { const pid = runningApps(FINDER_BUNDLE_ID)[0]?.pid; return pid ? appWindows(pid).filter(w => w.onScreen).map(w => w.number) : []; },
   finderPreferences: () => readFinderPreferences(),
   finderSavedPreferences: () => readSavedPreferences(),

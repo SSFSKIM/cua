@@ -160,9 +160,32 @@ test('route-4 overrides and the apps routeAdvice names are listed; advice warns;
   assert.equal(fromFile.report.routeAdvice, null);
 });
 
+// The agent cursor's device switch (#235's spec, "Settings"): the running engine's, as it read engine.json at launch,
+// else engine.json's; a file the running engine has not read is noted, as for the route-4 overrides.
+test('the row reports cursor: on, or cursor: off (engine.json), from the running engine, else from engine.json', async () => {
+  const on = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({status: status({cursor: 'on'})})});
+  assert.equal(on.report.cursor, 'on');
+  assert.match(on.row.detail, /; cursor: on(;|$)/);
+  assert.equal(on.row.status, 'pass');
+  const off = await row({CUA_NATIVE_ENGINE: 'cua'}, {config: {cursor: false}, read: facts({status: status({cursor: 'off'})})});
+  assert.equal(off.report.cursor, 'off');
+  assert.match(off.row.detail, /; cursor: off \(engine\.json\)(;|$)/);
+  assert.equal(off.row.status, 'pass', 'off is the owner\'s choice, not a fault');
+  const fromFile = await row({CUA_NATIVE_ENGINE: 'cua'}, {config: {cursor: false}, read: facts({running: false, status: null, launch: {error: 'x'}})});
+  assert.equal(fromFile.report.cursor, 'off');
+  assert.match(fromFile.row.detail, /cursor: off \(engine\.json\)/);
+  const unread = await row({CUA_NATIVE_ENGINE: 'cua'}, {config: {cursor: false}, read: facts({status: status({cursor: 'on'})})});
+  assert.equal(unread.report.cursor, 'on');
+  assert.match(unread.row.detail, /cursor: on; ~\/\.config\/cua\/engine\.json now turns it off, which the running engine has not read: cua engine stop applies it at the next launch/);
+  const older = await row({CUA_NATIVE_ENGINE: 'cua'}, {read: facts({status: status()})});
+  assert.equal(older.report.cursor, null, 'an engine whose status says nothing of a cursor has none');
+  assert.match(older.row.detail, /cursor: none \(this engine has no agent cursor\)/);
+});
+
 test('an engine.json the engine refuses to start with fails the row', async () => {
   for (const [config, words] of [[{routes: {'com.example.canvas': 3}}, /routes in ~\/\.config\/cua\/engine\.json must map bundle ids to 4/],
-    [{routes: []}, /routes in ~\/\.config\/cua\/engine\.json must map bundle ids to 4/], [{peerPolicy: 'ancestor'}, /peerPolicy in ~\/\.config\/cua\/engine\.json must be "uid"/]]) {
+    [{routes: []}, /routes in ~\/\.config\/cua\/engine\.json must map bundle ids to 4/], [{peerPolicy: 'ancestor'}, /peerPolicy in ~\/\.config\/cua\/engine\.json must be "uid"/],
+    [{cursor: 'false'}, /cursor in ~\/\.config\/cua\/engine\.json must be true or false/], [{cursor: 0}, /cursor in ~\/\.config\/cua\/engine\.json must be true or false/]]) {
     const {row: check} = await row({CUA_NATIVE_ENGINE: 'cua'}, {config, read: facts({running: false, status: null, launch: {error: 'did not answer'}})});
     assert.equal(check.status, 'fail', JSON.stringify(config));
     assert.match(check.detail, words);

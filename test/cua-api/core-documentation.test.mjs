@@ -10,6 +10,7 @@ import {createHash} from 'node:crypto';
 import {readFileSync, readdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {applyEdits} from '../../src/repl-host/instructions.mjs';
+import {create_documentation} from '../../src/cua-api/documentation.mjs';
 
 const DOCS = new URL('../../docs/cua-api/', import.meta.url);
 const VENDOR = new URL('./fixtures/vendor-docs/', import.meta.url);
@@ -83,7 +84,19 @@ test('no excluded provider, platform or product name survives in the first-call 
 });
 
 test('docs/cua-api holds only the shipped documents and their provenance', () => {
-  assert.deepEqual(readdirSync(DOCS).sort(), ['PROVENANCE.md', 'confirmations.md', 'core.md', 'other-browser-apis.md']);
+  assert.deepEqual(readdirSync(DOCS).sort(), ['PROVENANCE.md', 'agent-cursor.md', 'confirmations.md', 'core.md', 'other-browser-apis.md']);
+});
+
+// The surface inventory's "Table 3 addition (2026-10-30, #235)": cua's own paragraph, not the vendor's, on what the
+// person sees while the agent acts (docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, M3).
+const AGENT_CURSOR = 'While you act in an app, a cursor labelled with this session\'s name shows the user where each action lands, unless the user has turned it off, and fades a few seconds after your last action. Your actions do not wait for it, it is not the user\'s pointer, and your screenshots do not show it.\n';
+
+test('agent-cursor.md is the Table 3 addition\'s paragraph, and the core carries it only where the facade asks for it', async () => {
+  assert.equal(read(DOCS, 'agent-cursor.md'), AGENT_CURSOR);
+  const read_ = async name => `<${name}>`;
+  assert.equal(await create_documentation(read_).read_core(), '<core-cua-repl>\n<confirmations>');
+  assert.equal(await create_documentation(read_, {agentCursor: () => false}).read_core(), '<core-cua-repl>\n<confirmations>');
+  assert.equal(await create_documentation(read_, {agentCursor: () => true}).read_core(), '<core-cua-repl>\n<agent-cursor>\n<confirmations>');
 });
 
 test('the documents ship with the package, so an installed plugin reads them without the source tree', () => {

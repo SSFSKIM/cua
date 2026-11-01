@@ -1,0 +1,6 @@
+{"item":"ab200-vendor","at":1793420740553,"kind":"start","steps":8,"dryRun":false}
+{"item":"ab200-vendor","at":1793420742614,"step":1,"kind":"open","session":"a","env":{},"engine":"vendor"}
+{"item":"ab200-vendor","at":1793420743186,"step":2,"kind":"cell","session":"a","label":"left","ok":true,"value":{"ms":512.1609169999999,"point":[122,946]},"inCellMs":512.1812910000001,"route":null,"engine":"vendor"}
+{"item":"ab200-vendor","at":1793420745156,"step":4,"kind":"cell","session":"a","label":"right","ok":true,"value":{"ms":713.5663339999996,"point":[1159,1032]},"inCellMs":713.5953329999998,"route":null,"engine":"vendor"}
+{"item":"ab200-vendor","at":1793420746925,"step":6,"kind":"cell","session":"a","label":"back left","ok":true,"value":{"ms":509.49775000000045,"point":[122,1290]},"inCellMs":509.5129590000006,"route":null,"engine":"vendor"}
+{"item":"ab200-vendor","at":1793420748517,"step":8,"kind":"close","session":"a","exit":{"code":0,"signal":null}}

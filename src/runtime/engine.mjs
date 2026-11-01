@@ -22,7 +22,7 @@ import {createInterface} from 'node:readline';
 import {CuaError, fail} from './errors.mjs';
 import {ENGINE_DIRECTORY_IN_HOME} from './layout.mjs';
 import {BUNDLE_ID, BUNDLE_NAME, ENGINE_SOURCE, EXECUTABLE, assembleBundle, engineBuild, engineVersion} from './engine-bundle.mjs';
-import {configuredIdentity, identityMatches, lastLines, readSignature, recordedIdentity, resolveSigningIdentity, runCommand, signatureReport, signBundle, sleepFor} from './engine-sign.mjs';
+import {configuredIdentity, identityMatches, lastLines, readEngineSettings, readSignature, recordedIdentity, resolveSigningIdentity, runCommand, signatureReport, signBundle, sleepFor} from './engine-sign.mjs';
 import {FrameDecoder, encodeFrame} from '../services/engine/protocol.mjs';
 import {bundleIdentity, plistString} from '../services/engine/client.mjs';
 
@@ -211,7 +211,18 @@ function statusReport(ctx, {onDisk, approved, pending}, status) {
     pending: pending ? {build: pending.build ?? null, builtAt: pending.builtAt ?? null} : null,
     running: Boolean(status),
     status,
+    cursor: cursorSwitch(ctx, status),
   };
+}
+
+// The agent cursor's device switch (#235): the running engine's ('on' | 'off', null for an engine that has no cursor),
+// else engine.json's as the engine would read it at its next launch (null when it could not start with the file).
+function cursorSwitch(ctx, status) {
+  if (status) return status.cursor === 'on' || status.cursor === 'off' ? status.cursor : null;
+  let settings;
+  try { settings = readEngineSettings({env: ctx.env}); } catch (error) { if (error instanceof CuaError) return null; throw error; }
+  if (settings.cursor === undefined) return 'on';
+  return typeof settings.cursor === 'boolean' ? (settings.cursor ? 'on' : 'off') : null;
 }
 
 // What `cua doctor`'s engine row reads (the Decision Log's "M3 pre-flight" item 1). An engine already answering at the

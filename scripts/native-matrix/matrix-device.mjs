@@ -82,7 +82,7 @@ import {fileURLToPath} from 'node:url';
 import {launchOf, quitOwned} from '../accept/fixture-app.mjs';
 import {FRONT_WINDOW_SCRIPT} from '../accept/key-guard.mjs';
 import {main as scenesMain, readState, SCENES} from '../repl-parity/scenes-mac.mjs';
-import {alertWatch} from './live-checks.mjs';
+import {alertWatch, bundlePids} from './live-checks.mjs';
 import {defaultIo, PROBE_MS, processTable, restoreInputSource, saveInputSource} from './live-device.mjs';
 import {FIXTURE_ACCESSIBILITY_FILE, FIXTURE_COUNTERS_FILE} from './fixtures/electron-fixture.mjs';
 import {ownedReading} from './oracle.mjs';
@@ -143,12 +143,17 @@ const windowOf = text => { const [pid, x, y, width, height] = text.split(',').ma
 // does not read it): whether its owner runs from the engine under test's roots (enginePids; the vendor engine's cursor
 // overlay), false when it runs from elsewhere, null when unresolved or no roots were given; never its pid. Only the
 // owner's raw pid is kept during the reading; its path is resolved (a `ps`) after `at` closes and after the focus probe,
-// so the lookup never shifts the reading's timings.
-// io: {frontWindow(), probe(args), state(), launched(), watcherRuns(pid), executablePaths(pids), electronRecord()}.
+// so the lookup never shifts the reading's timings. The approved engine's own windows (the agent cursor's display-wide
+// panel, #235, which never takes a key or the front) are passed over, as the keystroke probe's gate and the composition
+// guard pass over them: the processes running from `approvedEngine` (bundlePids, read before the reading opens) are
+// skipped by the front-window probe, so a transient ordering never makes the panel the oracle's front window.
+// io: {enginePids(bundles), frontWindow({skipPids}), probe(args), state(), launched(), watcherRuns(pid), executablePaths(pids),
+// electronRecord()}.
 export function read({focus = null, watcher = null, approvedRuntime = null, approvedEngine = null, electronMode = false}, io) {
+  const skipPids = approvedEngine ? io.enginePids([approvedEngine]) : [];
   const from = Date.now();
   const owned = ownedPids(io.state(), io.launched());
-  const raw = io.frontWindow();
+  const raw = io.frontWindow({skipPids});
   const out = {reading: ownedReading(raw, owned), watcher: Number.isSafeInteger(watcher) && io.watcherRuns(watcher)};
   const unownedTop = out.reading.topWindow?.owned === false ? {pid: raw.topWindow.ownerPid} : null;
   if (focus !== null) {
@@ -477,7 +482,8 @@ export async function main(argv, {io: given = {}} = {}) {
   const live = defaultIo(dir);
   const io = {
     dir, state: () => readState(dir), launched: () => readLaunched(dir), writeLaunched: list => writeLaunched(dir, list),
-    frontWindow: () => JSON.parse(run(compiled(FRONT_WINDOW_SCRIPT, dir), ['front'])),
+    frontWindow: ({skipPids = []} = {}) => JSON.parse(run(compiled(FRONT_WINDOW_SCRIPT, dir), ['front', ...skipPids.flatMap(pid => ['--skip-pid', String(pid)])])),
+    enginePids: bundles => bundlePids(processTable(), bundles.flatMap(bundle => { try { return [bundle, fs.realpathSync(bundle)]; } catch { return [bundle]; } })),
     windows: () => JSON.parse(run(compiled(SYSTEM_WINDOWS_SCRIPT, dir), [])).windows,
     watcherRuns: pid => isWatcher(processTable(), pid),
     probe: live.probe, runningApps: live.runningApps, launchOf: pid => launchOf(pid), quit: pids => quitOwned(pids, {waitMs: LAUNCH_QUIT_MS}),

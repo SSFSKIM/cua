@@ -1,0 +1,137 @@
+// The frames the window server composited during the cursor probe's glides (#235's task-8 report), so the cursor's
+// default 60 Hz cap is proven to have taken effect, or shown not to, against the arm that lifts it (`uncapped`), in the
+// same run as that arm's timing.
+// WindowServer marks every frame it composites with a FrameUpdate signpost (subsystem com.apple.SkyLight, category
+// tracing); a stream of them runs only while the probe glides, before the series' sessions open (./signposts.mjs
+// startFrameStream). The probe's `--glides` prints each glide's span in mach continuous ticks, the clock those
+// signposts are stamped with, and its rock's. The count is the whole display's: what the cursor's animations make
+// WindowServer composite, plus whatever else drew meanwhile (the display runs at the highest rate anything on it asks
+// for).
+export const FRAME_UPDATE_PREDICATE = 'process == "WindowServer" AND subsystem == "com.apple.SkyLight" AND category == "tracing" AND signpostName == "FrameUpdate"';
+// On the MacBook's 120 Hz ProMotion display an uncapped glide's frames come a display frame (8.3 ms) apart, a capped
+// one's two (16.7 ms). The verdict reads the median interval, which a burst of another app's frames inside a glide (the
+// count is the whole display's) barely moves, where it can lift the rate past 66 Hz (measured, #235's task-8 report).
+export const CAPPED_INTERVAL_MS = 14, FULL_INTERVAL_MS = 10;
+// The display before the probes: a second and a half of it, held from 50 frames a second (idle, it composites a few a
+// second: measured 3). Not only at full rate: a capped glide asks for 60, and a client drawing near that rate or above
+// it can lift the glide's frames to the display's (a window at 84.7 Hz let a void cap read "not capped", the run of
+// 2026-10-31c).
+export const QUIET_MS = 1500, HELD_HZ = 50;
+
+const median = xs => {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+// A probe's answer (`--probe cursor --glides`) as spans under its pid.
+export function probeSpans(answer) {
+  const pid = answer?.pid ?? null;
+  // `debug`: the arm the probe says it ran with (CursorProbe.swift's final line), undefined when it says none.
+  return {pid, debug: answer?.debug, glides: (answer?.glides ?? []).map(g => ({pid, begin: g.begin, end: g.end, ms: g.ms, mode: g.mode})),
+    rock: answer?.rock ? {pid, begin: answer.rock.begin, end: answer.rock.end, ms: answer.rock.ms, mode: 'rock'} : null};
+}
+
+// Each span with the frames inside it, their rate, and the median interval between them (ms), scaled by the span's own
+// ticks and ms, so no timebase is assumed. `times`: FrameUpdate times, in order.
+export const glideFrames = (spans, times) => spans.map(span => {
+  const inside = times.filter(t => t >= span.begin && t <= span.end);
+  const msPerTick = span.ms / (span.end - span.begin);
+  const intervals = inside.slice(1).map((t, k) => (t - inside[k]) * msPerTick);
+  return {...span, frames: inside.length, hz: inside.length / (span.ms / 1000), intervalMs: median(intervals)};
+});
+
+const round = (x, digits = 1) => (x === null ? null : Math.round(x * 10 ** digits) / 10 ** digits);
+// Each figure's median over `rows` (glideFrames').
+export function frameSummary(rows) {
+  if (!rows.length) return {glides: 0};
+  return {glides: rows.length, frames: median(rows.map(r => r.frames)), ms: round(median(rows.map(r => r.ms))), hz: round(median(rows.map(r => r.hz))),
+    intervalMs: round(median(rows.map(r => r.intervalMs).filter(x => x !== null)))};
+}
+
+// Whether the cap took effect: `capped`'s glides' frames (the default's) about 60 a second apart where `base`'s (the
+// uncapped arm's, the same probe, the same run) came at the display's full rate; each side's frameSummary. -> {verdict:
+// capped | not capped | undetermined, why}.
+export function capVerdict(base, capped) {
+  if (!base?.glides || !capped?.glides || base.intervalMs == null || capped.intervalMs == null) return {verdict: 'undetermined', why: 'no glide was counted on one side'};
+  const said = side => `a frame every ${side.intervalMs} ms (${side.hz} Hz)`;
+  if (capped.intervalMs < CAPPED_INTERVAL_MS) return {verdict: 'not capped', why: `the capped glides composited ${said(capped)}, under ${CAPPED_INTERVAL_MS} ms apart`};
+  if (base.intervalMs > FULL_INTERVAL_MS) return {verdict: 'undetermined', why: `the uncapped glides composited ${said(base)}, over ${FULL_INTERVAL_MS} ms apart: the display did not run at its full rate for them, so a cap cannot show`};
+  return {verdict: 'capped', why: `capped ${said(capped)} against the uncapped ${said(base)}`};
+}
+
+// The default's cap check (the runner's glide-frames task, before the `uncapped` arm's series): `probe` (the approved
+// bundle's, args -> its answer) glides with `arm`, the arm that lifts the cap (the uncapped side, `base`), and then with
+// no arm (the default, `capped`), and `readFrames` (since -> FrameUpdate times, or a promise of them) counts each
+// side's frames. It does not
+// stop the series for a failed count: a read that fails, or a probe that failed with its exit confirmed, is an
+// undetermined verdict, with the pids of the probes that did run, so the series' own count still leaves their glides
+// out. A probe whose end is unconfirmed (runProbe's `stuck`: never identified, or alive after SIGKILL) is rethrown and
+// stops the series, since it may still be drawing a cursor over the display the series measures.
+export async function glideFramesCheck(arm, {probe, readFrames, glides = 2, now = () => Date.now()}) {
+  const since = new Date(now() - 2000), sides = [], pids = [];
+  try {
+    for (const extra of [['--debug', arm], []]) {
+      const side = probeSpans(probe(['cursor', '--glides', String(glides), ...extra]));
+      sides.push(side);
+      if (Number.isInteger(side.pid)) pids.push(side.pid);
+    }
+    // The probe names the arm it ran with: `arm` on the first side, none on the second, or the arm may never have taken.
+    const named = [[arm, sides[0]], [null, sides[1]]].find(([asked, side]) => side.debug !== asked);
+    if (named) return {ok: false, arm, verdict: 'undetermined', why: `the probe reported the arm ${JSON.stringify(named[1].debug ?? 'none given')} where ${JSON.stringify(named[0])} was asked: the arm may never have taken`, pids};
+    const times = await readFrames(since);
+    const [base, capped] = sides.map(side => {
+      const rows = glideFrames(side.glides, times);
+      return {pid: side.pid, ...frameSummary(rows), rock: side.rock ? glideFrames([side.rock], times)[0] : null, rows};
+    });
+    // A glide with no frames is a gap in the collection, not a rate: frameSummary would pass over it.
+    const empty = [[arm, base], ['default', capped]].flatMap(([name, side]) => side.rows.filter(r => r.frames === 0).map(() => name));
+    if (empty.length) return {ok: false, arm, verdict: 'undetermined', why: `a glide with no frames (${empty.join(', ')}): the frames were not all collected`, base, capped, pids};
+    const {verdict, why} = capVerdict(base, capped);
+    return {ok: verdict === 'capped', arm, verdict, why, base, capped, pids};
+  } catch (error) {
+    if (error?.stuck) throw error;
+    return {ok: false, arm, verdict: 'undetermined', why: `the frames were not counted: ${String(error.message).split('\n')[0]}`, pids};
+  }
+}
+
+// The cap check with its frames from a FrameUpdate stream (`startStream`: ./signposts.mjs startFrameStream) that runs
+// for the check only: started before the probes, drained (stopped, its last lines in) once they end and `settleMs` has
+// let the last frames arrive, and judged from the drained times. A stream that did not start or failed on the way is
+// an undetermined verdict, never a partial count read as a rate.
+// Before the probes the check marks `quietMs` of the display with nothing of the cursor's drawing (its start and end on
+// Date.now()'s clock, `now`) and, once the stream is drained, counts the frames whose own log timestamps fall inside it:
+// log stream delivers late, so counting by delivery would miss the window's frames and take older ones. When another client
+// already holds it (HELD_HZ or more), a glide can composite at the display's rate whatever its own range asks, and the
+// FrameUpdate count, which names no window, cannot tell a cap ignored from one overridden, so a "not capped" then reads
+// undetermined (#235's task-8 report, the runs of 2026-10-31b and 2026-10-31c).
+export async function capCheckWithStream(arm, {probe, startStream, glides = 2, settleMs = 1000, quietMs = QUIET_MS,
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)), now = () => Date.now()}) {
+  const frames = await startStream();
+  let kept = null;
+  const finish = async () => (kept ??= await frames.stop());
+  try {
+    let window = null;
+    if (frames.started) {
+      const start = now();
+      await sleep(quietMs);
+      window = {start, end: now()};
+    }
+    const check = await glideFramesCheck(arm, {probe, glides, readFrames: async () => {
+      if (frames.started) await sleep(settleMs);
+      await finish();
+      if (!frames.started || !kept.ok) throw new Error(`the FrameUpdate stream ${frames.started ? 'failed' : 'did not start'}: ${kept.error ?? 'no reason given'}`);
+      return kept.times;
+    }});
+    await finish();
+    let quiet = null;
+    if (window && kept?.ok && kept.walls) {
+      const inside = kept.walls.filter(t => t >= window.start && t < window.end).length, ms = window.end - window.start;
+      quiet = {start: window.start, end: window.end, ms, frames: inside, hz: Math.round(inside / (ms / 1000) * 10) / 10};
+    }
+    if (check.verdict === 'not capped' && quiet && quiet.hz >= HELD_HZ) {
+      return {...check, quiet, verdict: 'undetermined', why: `the display ran at ${quiet.hz} Hz before the probes, with nothing of the cursor's drawing: another client held it (from ${HELD_HZ} Hz), so a cap cannot show (${check.why})`};
+    }
+    return {...check, quiet};
+  } finally { await finish(); }
+}

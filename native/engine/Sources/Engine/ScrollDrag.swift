@@ -123,6 +123,7 @@ extension Engine {
         guard let event = scrollEvent(direction, delta: delta, at: target) else {
           throw EngineError(name: "eventCreationFailed", "The scroll event could not be created.")
         }
+        cursor.act(connection: context.connection.id, app: app.key, window: target.windowID, .scroll(target.point))
         meta.posting { _ = postToProcess([event], pid: target.pid); return true }
       }
       return ["meta": meta.wire]  // a scroll never arms the settle (F §8.1)
@@ -158,7 +159,9 @@ extension Engine {
         try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
           try deliverPointer(to: owner, route: route, activation: activation, activations: heldActivations,
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
-                             beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight, post: { $0.postToPid($1) }, meta: &meta) {
+                             beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
+                             announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .drag([start.point, end.point])) },
+                             post: { $0.postToPid($1) }, meta: &meta) {
             let active = NSRunningApplication(processIdentifier: owner)?.isActive == true
             return dragEvents(from: start.point, to: end.point, window: window, flags: clickFlags(route, targetActive: active))
           }

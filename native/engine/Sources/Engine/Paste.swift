@@ -32,8 +32,12 @@ import Foundation
 //
 // type_text's paste route is the same operation over its text's lines: each line pasted, each newline a Return press
 // posted by route 2′ as typed text's are, one snapshot and one restore around the whole, `entered` counting what
-// landed. Every input method's call order holds (the Decision Log's M2a.1 entry, item 5): the intervention guard read,
-// its reading put in the meta, the pre-action refusal, then the in-flight check before each ⌘V and each Return. The
+// landed. A Return before a later line is settled before that line's baseline (#187, the slot of 2026-11-01): its
+// effect waited for, bounded as the effect wait is, so a late newline can never confirm the next line's paste, and a
+// Return whose effect never shows stops the text there as `pasteUnconfirmed` at its own stage, `returnEffect`; each
+// line's record rides in `meta.paste.perLine`. Every input method's call order holds (the Decision Log's M2a.1 entry,
+// item 5): the intervention guard read, its reading put in the meta, the pre-action refusal, then the in-flight check
+// before each ⌘V and each Return. The
 // action interval is the posted events' (`InputMeta.posting`): activation and the pasteboard are not input to the app,
 // so a paste stopped before its ⌘V keeps startedAt and endedAt null.
 
@@ -50,6 +54,11 @@ let clipboardReadTimedOut = EngineError(name: "clipboardReadTimedOut",
 /// field, or the field reports none.
 let pasteUnconfirmed = EngineError(name: "pasteUnconfirmed",
   "The paste could not be confirmed: ⌘V was sent and the pasted text was read from the clipboard, but no change was seen in the field. The text may have arrived: observe the field with get_app_state before any retry, and never retry blindly.")
+/// The Return between two lines showed no effect in time (#187, the slot of 2026-11-01): the next line is not pasted,
+/// since its baseline could not hold the Return's effect and that late effect could then confirm it. The paste stage's
+/// name, its own sentence.
+let returnUnconfirmed = EngineError(name: "pasteUnconfirmed",
+  "The text could not be confirmed: a Return was sent for a newline between lines, but no change was seen in the field, so the next line was not pasted. The Return may have arrived: observe the field with get_app_state before any retry, and never retry blindly.")
 let clipboardConflict = EngineError(name: "clipboardConflict",
   "The user may have conflicted with your paste operation. Check the app's state to ensure the user's content did not paste instead of your intended content before continuing.")
 
@@ -89,6 +98,14 @@ struct EffectReading: Equatable {
   var characters: Int? = nil
 
   var isEmpty: Bool { range == nil && characters == nil }
+
+  /// Its numbers for the per-line records (`PasteDiagnostics.perLine`): counts and offsets, never text.
+  var wire: [String: Any] {
+    var wire: [String: Any] = [:]
+    if let range { wire["range"] = range }
+    if let characters { wire["characters"] = characters }
+    return wire
+  }
 }
 
 /// The paste's notification source for the effect wait (#187): none (no observer registered), one whose notifications
@@ -130,6 +147,7 @@ final class PasteEffect: @unchecked Sendable {
   private var started = false
   private var seen = false
   private var baseline = EffectReading()
+  private var confirming: EffectReading?
 
   init(source: NotificationSource = .none, readWithin: @escaping (Double) -> EffectReading?, now: @escaping () -> Double = monotonicMilliseconds,
        sleep: @escaping (Double) -> Void = { usleep(UInt32(max(0, $0) * 1000)) }) {
@@ -156,6 +174,7 @@ final class PasteEffect: @unchecked Sendable {
     started = false
     seen = false
     baseline = reading
+    confirming = nil
     lock.unlock()
   }
 
@@ -180,6 +199,15 @@ final class PasteEffect: @unchecked Sendable {
       postedAt = at
     }
   }
+  /// A Return was posted at `at` on `now`'s clock: a key has no hand-over, so a notification after it counts for its
+  /// settle (`settle`).
+  func keyPosted(at: Double) {
+    locked {
+      handedOver = true
+      started = true
+      postedAt = at
+    }
+  }
   /// An observed `AXSelectedTextChanged` or `AXValueChanged`.
   func notification() { locked { if source == .trusted && handedOver && started { seen = true } } }
 
@@ -190,6 +218,9 @@ final class PasteEffect: @unchecked Sendable {
   var firstReadAt: Double? { locked { readAt } }
   /// The first hand-over at or after ⌘V's post (nil when none came after it).
   var firstReadAfterPostAt: Double? { locked { readAfterPost } }
+  /// The baseline the last `begin` took, and the reading that confirmed the last wait (nil unless it was `reading`).
+  var baselineReading: EffectReading { locked { baseline } }
+  var confirmingReading: EffectReading? { locked { confirming } }
 
   /// Polls for the effect until `timeoutMs` passes. With neither a trusted source nor a baseline there is nothing that
   /// could show one, and it answers `noChannel` at once. Each read is given the time left, and a changed reading that
@@ -202,9 +233,37 @@ final class PasteEffect: @unchecked Sendable {
       if locked({ seen }) { return .notification }
       let left = timeoutMs - (now() - start)
       if left <= 0 { return .timeout }
-      let changed = !baseline.isEmpty && read(left).map { $0 != baseline } == true
+      let reading = baseline.isEmpty ? nil : read(left)
       if now() - start >= timeoutMs { return .timeout }
-      if changed { return .reading }
+      if let reading, reading != baseline {
+        locked { confirming = reading }
+        return .reading
+      }
+      sleep(max(0, min(intervalMs, timeoutMs - (now() - start))))
+    }
+  }
+
+  /// The settle of a Return posted between two lines (#187, the slot of 2026-11-01), after `begin` before the Return and
+  /// `keyPosted` after it, so the next line's baseline holds the Return's effect and only that line's own paste can
+  /// confirm it. With a baseline, the reading must move from it and then hold for one interval (a reading's requests are
+  /// not atomic, and a late half of the Return's effect must not land after the next baseline): `reading`, also when it
+  /// moved and the time ran out before it held. With none, a trusted notification after the post (`notification`); with
+  /// neither, `noChannel` at once (the next line can then be confirmed by no reading either). `timeout` when the effect
+  /// never showed; a reading that came back after the time ran out is not accepted, as in `wait`.
+  func settle(timeoutMs: Double = pasteEffectTimeoutMs, intervalMs: Double = pasteEffectIntervalMs) -> EffectOutcome {
+    let baseline = locked { self.baseline }
+    guard !baseline.isEmpty else { return wait(timeoutMs: timeoutMs, intervalMs: intervalMs) }
+    let start = now()
+    var moved: EffectReading?
+    while true {
+      let left = timeoutMs - (now() - start)
+      if left <= 0 { return moved == nil ? .timeout : .reading }
+      let reading = read(left)
+      if now() - start >= timeoutMs { return moved == nil ? .timeout : .reading }
+      if let reading, reading != baseline {
+        if reading == moved { return .reading }
+        moved = reading
+      }
       sleep(max(0, min(intervalMs, timeoutMs - (now() - start))))
     }
   }
@@ -288,9 +347,30 @@ enum RestoreOutcome: String {
   case restored, skippedChanged, notTaken
 }
 
+/// The Return that opened a line (#187, the slot of 2026-11-01), on that line's diagnostics: how its settle ended (an
+/// `EffectOutcome`'s name, or "deadline"), the time from its post to that end, and from its post to the line's ⌘V.
+/// `postedAt` is on the paste's clock and stays off the wire.
+struct OpeningReturn {
+  var postedAt: Double
+  var settle: String? = nil
+  var settleMs: Double? = nil
+  var toCommandVMs: Double? = nil
+
+  var wire: [String: Any] {
+    var wire: [String: Any] = [:]
+    if let settle { wire["settle"] = settle }
+    if let settleMs { wire["settleMs"] = (settleMs * 10).rounded() / 10 }
+    if let toCommandVMs { wire["toCommandVMs"] = (toCommandVMs * 10).rounded() / 10 }
+    return wire
+  }
+}
+
 /// One paste's value-free diagnostics (#187), for the last line the operation pasted or tried to (the one that failed,
-/// or the last on success), carried in the input meta as `paste`: never the clipboard's contents, the field's text or
-/// its reading. Times are milliseconds on the engine's monotonic clock; `readAfterPostMs` is signed, negative for a
+/// or the last on success), carried in the input meta as `paste`: never the clipboard's contents or the field's text.
+/// `perLine` adds one record per line the operation reached (the slot of 2026-11-01): a line is reached when its paste
+/// began or the Return opening it was posted and settled (a Return after the last pasted line is not settled, and the
+/// line it opens has no record), each with its waits, its times against its own ⌘V, its baseline and confirming
+/// readings as numbers only, and its opening Return; the top-level fields stay the last line's. Times are milliseconds on the engine's monotonic clock; `readAfterPostMs` is signed, negative for a
 /// read before ⌘V was posted (a clipboard manager's, say). The main thread serves the provider's hand-over, so
 /// `mainLagMs` is how long a block queued on it at ⌘V waited to run (`mainLagOpen` while it had not run at the answer:
 /// the lag is then at least the value).
@@ -314,12 +394,41 @@ struct PasteDiagnostics {
   var mainLagMs: Double? = nil
   var mainLagOpen = false
   var restore: RestoreOutcome? = nil
-  /// The wait the line reached: "read" once ⌘V was posted, "effect" once the read wait passed; nil before ⌘V.
+  /// The wait the line reached: "returnEffect" once the Return opening it was posted (its settle), "read" once ⌘V was
+  /// posted, "effect" once the read wait passed; nil before either.
   var stage: String? = nil
   /// Whether the line's effect was seen, once its effect stage ended (false also for an unconfirmed success).
   var confirmed: Bool? = nil
   /// The operation's lines so far that were pasted with no channel to see them, read after ⌘V (`PasteOutcome`).
   var unconfirmedLines = 0
+  /// The line's effect baseline and, when a reading confirmed it, that reading (`perLine` only).
+  var baseline: EffectReading? = nil
+  var confirming: EffectReading? = nil
+  /// When the effect wait ended, from ⌘V's post: the confirmation's time when it was confirmed.
+  var effectAfterPostMs: Double? = nil
+  /// The Return that opened the line, settled before its baseline (nil for line 1 and a line no settled Return opened).
+  var openingReturn: OpeningReturn? = nil
+  /// The operation's earlier lines' records, oldest first.
+  var earlier: [PasteDiagnostics] = []
+
+  /// One line's record in `perLine`.
+  var lineWire: [String: Any] {
+    var wire: [String: Any] = ["line": line]
+    if let stage { wire["stage"] = stage }
+    if let confirmed { wire["confirmed"] = confirmed }
+    if let keyFocusAtPaste { wire["keyFocusAtPaste"] = keyFocusAtPaste.wire }
+    if let readWait { wire["readWait"] = readWait.rawValue }
+    if let readWaitMs { wire["readWaitMs"] = rounded(readWaitMs) }
+    if let readAfterPostMs { wire["readAfterPostMs"] = rounded(readAfterPostMs) }
+    if let firstReadAfterPostMs { wire["firstReadAfterPostMs"] = rounded(firstReadAfterPostMs) }
+    if let effectWait { wire["effectWait"] = effectWait }
+    if let effectWaitMs { wire["effectWaitMs"] = rounded(effectWaitMs) }
+    if let effectAfterPostMs { wire["effectAfterPostMs"] = rounded(effectAfterPostMs) }
+    if let baseline { wire["baseline"] = baseline.wire }
+    if let confirming { wire["confirming"] = confirming.wire }
+    if let openingReturn { wire["openingReturn"] = openingReturn.wire }
+    return wire
+  }
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["line": line, "lines": lines, "notificationSource": notificationSource.rawValue, "baselineEmpty": baselineEmpty]
@@ -337,6 +446,7 @@ struct PasteDiagnostics {
     if let mainLagMs { wire["mainLagMs"] = rounded(mainLagMs) }
     if mainLagOpen { wire["mainLagOpen"] = true }
     if let restore { wire["restore"] = restore.rawValue }
+    wire["perLine"] = (earlier + [self]).map { $0.lineWire }
     return wire
   }
 
@@ -384,14 +494,34 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
     }
     meta.paste?.restore = restored
   }
+  /// The line `number`'s diagnostics, its baseline just taken, made the meta's: the earlier lines' records carried on
+  /// (`perLine`), and the line's own opening Return when its record was begun at that Return.
+  func beginLine(_ number: Int) {
+    var record = PasteDiagnostics(line: number, lines: lines, notificationSource: effect.notificationSource, baselineEmpty: effect.baselineEmpty,
+                                  focusEnforcement: focusEnforcement, unconfirmedLines: outcome.unconfirmedLines)
+    record.baseline = effect.baselineReading
+    if var current = meta.paste {
+      if current.line == number {
+        record.openingReturn = current.openingReturn
+        record.earlier = current.earlier
+      } else {
+        record.earlier = current.earlier
+        current.earlier = []
+        record.earlier.append(current)
+      }
+    }
+    meta.paste = record
+  }
+  // A Return before a later line is settled (its effect waited for) before that line's baseline; one after the last
+  // pasted line is not, since no later baseline depends on it.
+  let lastContent = parts.lastIndex { if case .content = $0 { return true } else { return false } }
   do {
-    for part in parts {
+    for (index, part) in parts.enumerated() {
       switch part {
       case .content(let representations, let units):
         let provider = LazyPasteProvider(representations) { effect.providerRead() }
         effect.begin()
-        meta.paste = PasteDiagnostics(line: line, lines: lines, notificationSource: effect.notificationSource, baselineEmpty: effect.baselineEmpty,
-                                      focusEnforcement: focusEnforcement, unconfirmedLines: outcome.unconfirmedLines)
+        beginLine(line)
         probe = nil
         guard let item = provider.item() else { throw clipboardWriteFailed }
         // The write takes the pasteboard only while it still holds what the engine last saw there (the snapshot's count
@@ -407,6 +537,7 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         meta.paste?.keyFocusAtPaste = keyFocusAtPaste()
         meta.paste?.focusEnforcement?.commandV(at: activationNow())
         let postAt = effect.now()
+        if let returnAt = meta.paste?.openingReturn?.postedAt { meta.paste?.openingReturn?.toCommandVMs = postAt - returnAt }
         effect.pasteStarted(at: postAt)
         let lag = MainLag()
         mainProbe { [effect] in lag.mark(effect.now()) }
@@ -431,6 +562,8 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         let effectStart = effect.now()
         let seen = effect.wait(timeoutMs: effectBudget)
         meta.paste?.effectWaitMs = effect.now() - effectStart
+        meta.paste?.effectAfterPostMs = effect.now() - postAt
+        meta.paste?.confirming = effect.confirmingReading
         meta.paste?.effectWait = seen == .timeout && effectBudget < pasteEffectTimeoutMs ? "deadline" : seen.rawValue
         let confirmed = seen == .notification || seen == .reading
         meta.paste?.confirmed = confirmed
@@ -444,17 +577,41 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         outcome.pastedLines += 1
         entered += units
       case .returnKey(let units):
+        // The Return's settle (#187, the slot of 2026-11-01): its baseline taken before it is posted, on the record of the
+        // line it opens, then its effect waited for, bounded as the effect wait is, so the next line's baseline holds it.
+        let settles = lastContent.map { index < $0 } ?? false
+        if settles {
+          effect.begin()
+          beginLine(line + 1)
+        }
         try checkInFlight()
+        let returnAt = effect.now()
         guard meta.posting(postReturn) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
-        entered += units
         line += 1
+        if settles {
+          effect.keyPosted(at: returnAt)
+          meta.paste?.stage = "returnEffect"
+          meta.paste?.openingReturn = OpeningReturn(postedAt: returnAt)
+          let budget = min(pasteEffectTimeoutMs, max(0, remainingMs()))
+          let settled = effect.settle(timeoutMs: budget)
+          meta.paste?.openingReturn?.settleMs = effect.now() - returnAt
+          meta.paste?.openingReturn?.settle = settled == .timeout && budget < pasteEffectTimeoutMs ? "deadline" : settled.rawValue
+          if settled == .timeout {
+            // The Return's effect never showed: the line it opens is unconfirmed and not pasted, and the Return not counted.
+            meta.paste?.confirmed = false
+            throw returnUnconfirmed
+          }
+        }
+        entered += units
       }
     }
   } catch let error as EngineError {
-    // A read or effect timeout with the count moved is the conflict (F §7.6): the user's copy, not the app's silence.
+    // A read or effect timeout with the count moved is the conflict (F §7.6): the user's copy, not the app's silence. A
+    // Return's settle is no paste of anyone's contents, so its error stays its own.
     let moved = own.map { pasteboard.changeCount != $0 } ?? false
+    let pasting = meta.paste?.stage != "returnEffect"
     finish(restore(snapshot, own: own, on: pasteboard))
-    throw moved && [clipboardReadTimedOut.errorName, pasteUnconfirmed.errorName].contains(error.errorName) ? clipboardConflict : error
+    throw moved && pasting && [clipboardReadTimedOut.errorName, pasteUnconfirmed.errorName].contains(error.errorName) ? clipboardConflict : error
   }
   finish(restore(snapshot, own: own, on: pasteboard))
   return outcome

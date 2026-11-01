@@ -521,7 +521,7 @@ final class PasteOperationTests: XCTestCase {
       log.append("paste " + (pasteboard.appReads() ?? "nil"))
       characters += 1
       return true
-    }, postReturn: { log.append("Return"); return true }, entered: &entered, meta: &meta)) {
+    }, postReturn: { log.append("Return"); characters += 1; return true }, entered: &entered, meta: &meta)) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "clipboardConflict")
     }
     XCTAssertEqual(log, ["paste a", "Return"], "line b was never written")
@@ -551,7 +551,7 @@ final class PasteOperationTests: XCTestCase {
       log.append("paste " + (pasteboard.appReads() ?? "nil"))
       characters += 1
       return true
-    }, postReturn: { afterReturn = true; log.append("Return"); return true }, entered: &entered, meta: &meta)) {
+    }, postReturn: { afterReturn = true; characters += 1; log.append("Return"); return true }, entered: &entered, meta: &meta)) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "clipboardConflict")
     }
     XCTAssertTrue(copied)
@@ -927,7 +927,7 @@ final class PasteOperationTests: XCTestCase {
             }, postPaste: { characters = 6; return true }, entered: &entered, meta: &meta)
     let wire = diagnostics(meta)
     XCTAssertEqual(Set(wire.keys), ["line", "lines", "notificationSource", "baselineEmpty", "keyFocusAtPaste", "readWait", "readWaitMs",
-                                    "readAfterPostMs", "effectWait", "effectWaitMs", "mainLagMs", "restore", "stage", "confirmed"])
+                                    "readAfterPostMs", "effectWait", "effectWaitMs", "mainLagMs", "restore", "stage", "confirmed", "perLine"])
     XCTAssertEqual(wire["readAfterPostMs"] as? Double, -5, "read 5 ms before ⌘V")
     XCTAssertEqual(wire["readWait"] as? String, "handedOver")
     XCTAssertEqual(wire["effectWait"] as? String, "reading")
@@ -1013,7 +1013,7 @@ final class PasteOperationTests: XCTestCase {
       pastes += 1
       if pastes == 1 { characters += 2 }  // line 1 lands visibly; line 2's effect is never seen
       return true
-    }, entered: &entered, meta: &meta)) { error in
+    }, postReturn: { characters += 1; return true }, entered: &entered, meta: &meta)) { error in
       let typed = typedPasteError(error as! EngineError, entered: entered, total: unitsOf(text), line: meta.paste?.line, lines: meta.paste?.lines)
       XCTAssertEqual(typed.errorName, "pasteUnconfirmed")
       XCTAssertEqual(typed.message, pasteUnconfirmed.message + " Confirmed entered: 3 of 8 characters (1 of 3 lines complete); line 2 is in an unknown state.")
@@ -1145,7 +1145,7 @@ final class PasteOperationTests: XCTestCase {
       log.append("paste " + (pasteboard.appReads() ?? "nil"))
       characters += 1
       return true
-    }, postReturn: { log.append("Return"); return true }, entered: &entered, meta: &meta)
+    }, postReturn: { log.append("Return"); characters += 1; return true }, entered: &entered, meta: &meta)
     XCTAssertEqual(log, ["paste 줄1", "Return", "paste 줄2"])
     XCTAssertEqual(entered, unitsOf("줄1\n줄2"))
     XCTAssertEqual(pasteboard.strings(), ["the owner's"])
@@ -1169,8 +1169,257 @@ final class PasteOperationTests: XCTestCase {
                                  checkInFlight: {
       checks += 1
       if checks == 3 { throw userChanged("TextEdit") }
-    }, postPaste: { _ = pasteboard.appReads(); characters += 2; return true }, entered: &entered, meta: &meta))
+    }, postPaste: { _ = pasteboard.appReads(); characters += 2; return true }, postReturn: { characters += 1; return true },
+       entered: &entered, meta: &meta))
     XCTAssertEqual(entered, 3)
+  }
+
+  // MARK: The Return between lines (#187, the slot of 2026-11-01)
+
+  /// A field whose Return lands `lateMs` after its post (its newline and caret move), and whose pastes land only while
+  /// `lands` says so: the reading on the fake clock, for the tests of the Return between lines.
+  private final class LateReturnField {
+    var characters = 0
+    var returnAt: [Double] = []
+    var lateMs: Double = 10
+    var returnLands = true
+    func reading(_ clock: Double) -> EffectReading {
+      let returns = returnLands ? returnAt.filter { clock >= $0 + lateMs }.count : 0
+      return EffectReading(range: [characters + returns, 0], characters: characters + returns)
+    }
+  }
+
+  /// The live false success of 2026-11-01 (B#3.5, `줄1⏎줄2` into Chrome): line 2's ⌘V never landed, but its baseline was
+  /// taken right after the Return was posted, before the Return's own effect showed, so the Return's late newline
+  /// "confirmed" line 2 a poll later. The Return's effect is settled first: line 2's baseline holds it, and only line 2's
+  /// own paste could confirm line 2, which here never lands.
+  func testAReturnThatLandsLateNeverConfirmsTheNextLine() {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let field = LateReturnField()
+    var pastes = 0
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    XCTAssertThrowsError(try run(pasteParts(typing: "a\nb"), pasteboard, effect: effect { [unowned self] in field.reading(clock) }, postPaste: {
+      _ = pasteboard.appReads()
+      pastes += 1
+      if pastes == 1 { field.characters += 1 }  // line 1 lands; line 2 is read and never inserted
+      return true
+    }, postReturn: { [unowned self] in field.returnAt.append(clock); return true }, entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "pasteUnconfirmed")
+    }
+    XCTAssertEqual(entered, 2, "line 1 and its Return, never line 2")
+    XCTAssertEqual(diagnostics(meta)["line"] as? Int, 2)
+    XCTAssertEqual(diagnostics(meta)["stage"] as? String, "effect")
+    XCTAssertEqual(diagnostics(meta)["confirmed"] as? Bool, false)
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+    let records = try? XCTUnwrap(diagnostics(meta)["perLine"] as? [[String: Any]])
+    XCTAssertEqual(records?.last?["baseline"] as? [String: AnyHashable], ["range": [2, 0], "characters": 2], "line 2's baseline holds the Return")
+  }
+
+  /// A Return whose effect never shows within the bound: the line it opens is unconfirmed at the Return's own stage, never
+  /// a success; that line is never pasted, the Return is not counted, and the sentence says so with what was confirmed.
+  func testAReturnWhoseEffectNeverShowsLeavesItsLineUnconfirmedAtItsStage() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let field = LateReturnField()
+    field.returnLands = false
+    var log: [String] = []
+    var entered = 0
+    let bareMeta = meta()
+    var meta = bareMeta
+    clock = 0
+    XCTAssertThrowsError(try run(pasteParts(typing: "ab\ncd"), pasteboard, effect: effect { [unowned self] in field.reading(clock) }, postPaste: {
+      log.append("paste " + (pasteboard.appReads() ?? "nil"))
+      field.characters += 2
+      return true
+    }, postReturn: { [unowned self] in log.append("Return"); field.returnAt.append(clock); return true }, entered: &entered, meta: &meta)) { error in
+      let typed = typedPasteError(error as! EngineError, entered: entered, total: 5, line: meta.paste?.line, lines: meta.paste?.lines)
+      XCTAssertEqual(typed.errorName, "pasteUnconfirmed")
+      XCTAssertEqual(typed.message, returnUnconfirmed.message + " Confirmed entered: 2 of 5 characters (1 of 2 lines complete); line 2 is in an unknown state.")
+    }
+    XCTAssertEqual(log, ["paste ab", "Return"], "line 2 never pasted")
+    XCTAssertEqual(entered, 2, "line 1 only: the Return was never seen")
+    XCTAssertEqual(clock, 2_000, accuracy: 30, "the effect wait's bound")
+    let wire = diagnostics(meta)
+    XCTAssertEqual(wire["line"] as? Int, 2)
+    XCTAssertEqual(wire["stage"] as? String, "returnEffect")
+    XCTAssertEqual(wire["confirmed"] as? Bool, false)
+    XCTAssertEqual(wire["restore"] as? String, "restored")
+    let records = try XCTUnwrap(wire["perLine"] as? [[String: Any]])
+    XCTAssertEqual(records.count, 2)
+    XCTAssertEqual(records[1]["stage"] as? String, "returnEffect")
+    let opening = try XCTUnwrap(records[1]["openingReturn"] as? [String: Any])
+    XCTAssertEqual(opening["settle"] as? String, "timeout")
+    XCTAssertEqual(opening["settleMs"] as? Double ?? 0, 2_000, accuracy: 30)
+    XCTAssertNil(opening["toCommandVMs"], "no ⌘V followed")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+
+    // The request's deadline ends the settle first: its stage's error, recorded as "deadline".
+    let short = LateReturnField()
+    short.returnLands = false
+    var shortEntered = 0
+    var shortMeta = bareMeta
+    clock = 0
+    XCTAssertThrowsError(try run(pasteParts(typing: "a\nb"), pasteboard, effect: effect { [unowned self] in short.reading(clock) },
+                                 remainingMs: { [unowned self] in 300 - clock },
+                                 postPaste: { _ = pasteboard.appReads(); short.characters += 1; return true },
+                                 entered: &shortEntered, meta: &shortMeta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "pasteUnconfirmed")
+    }
+    let shortOpening = (diagnostics(shortMeta)["perLine"] as? [[String: Any]])?.last?["openingReturn"] as? [String: Any]
+    XCTAssertEqual(shortOpening?["settle"] as? String, "deadline")
+    XCTAssertEqual(clock, 300, accuracy: 30)
+  }
+
+  /// A Return whose effect never shows while the user copies during its settle: the Return's own error, not the
+  /// conflict (no one's contents were pasted at that stage), and the human's copy is kept.
+  func testAMovedCountDuringAReturnsSettleKeepsItsOwnError() {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var entered = 0
+    var meta = meta()
+    var characters = 0
+    clock = 0
+    XCTAssertThrowsError(try run(pasteParts(typing: "a\nb"), pasteboard, effect: effect { EffectReading(range: nil, characters: characters) },
+                                 postPaste: { _ = pasteboard.appReads(); characters += 1; return true },
+                                 postReturn: { pasteboard.userCopies("human copy"); return true }, entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.message, returnUnconfirmed.message)
+    }
+    XCTAssertEqual(pasteboard.strings(), ["human copy"])
+  }
+
+  /// The per-line records: one per line reached, oldest first, value-free (counts and offsets, never text), each with
+  /// its stage, whether it was confirmed and by which channel, its waits and times against its own ⌘V, and the Return
+  /// that opened it with its post-to-settle and post-to-⌘V times; an empty line between two Returns has its Return's
+  /// record only, and the top-level fields stay the last line's.
+  func testThePerLineRecords() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let field = LateReturnField()
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    try run(pasteParts(typing: "ab\n\ncd"), pasteboard, effect: effect { [unowned self] in field.reading(clock) }, postPaste: { [unowned self] in
+      _ = pasteboard.appReads()
+      clock += 1
+      field.characters += 2
+      return true
+    }, postReturn: { [unowned self] in field.returnAt.append(clock); return true }, entered: &entered, meta: &meta)
+    XCTAssertEqual(entered, 6)
+    let wire = diagnostics(meta)
+    XCTAssertEqual(wire["line"] as? Int, 3, "the top level is the last line's")
+    XCTAssertEqual(wire["lines"] as? Int, 3)
+    XCTAssertEqual(wire["effectWait"] as? String, "reading")
+    let records = try XCTUnwrap(wire["perLine"] as? [[String: Any]])
+    XCTAssertEqual(records.map { $0["line"] as? Int }, [1, 2, 3])
+
+    let first = records[0]
+    XCTAssertEqual(first["stage"] as? String, "effect")
+    XCTAssertEqual(first["confirmed"] as? Bool, true)
+    XCTAssertEqual(first["effectWait"] as? String, "reading")
+    XCTAssertEqual(first["readWait"] as? String, "handedOver")
+    XCTAssertEqual(first["effectAfterPostMs"] as? Double, 1, "seen at the first poll, 1 ms after ⌘V")
+    XCTAssertEqual(first["baseline"] as? [String: AnyHashable], ["range": [0, 0], "characters": 0])
+    XCTAssertEqual(first["confirming"] as? [String: AnyHashable], ["range": [2, 0], "characters": 2])
+    XCTAssertNil(first["openingReturn"])
+
+    let empty = records[1]
+    XCTAssertEqual(empty["stage"] as? String, "returnEffect")
+    XCTAssertNil(empty["confirmed"], "nothing pasted on it")
+    XCTAssertEqual(empty["baseline"] as? [String: AnyHashable], ["range": [2, 0], "characters": 2], "taken before its Return")
+    XCTAssertEqual(empty["openingReturn"] as? [String: AnyHashable], ["settle": "reading", "settleMs": 50.0],
+                   "moved at the poll after its 10 ms and held one interval more")
+
+    let last = records[2]
+    XCTAssertEqual(last["baseline"] as? [String: AnyHashable], ["range": [4, 0], "characters": 4], "both Returns in it")
+    XCTAssertEqual(last["confirming"] as? [String: AnyHashable], ["range": [6, 0], "characters": 6])
+    let opening = try XCTUnwrap(last["openingReturn"] as? [String: Any])
+    XCTAssertEqual(opening["settle"] as? String, "reading")
+    XCTAssertEqual(opening["toCommandVMs"] as? Double, 50, "its ⌘V right after the settle")
+    for record in records {
+      let keys = Set(record.keys)
+      XCTAssertTrue(keys.isSubset(of: ["line", "stage", "confirmed", "keyFocusAtPaste", "readWait", "readWaitMs", "readAfterPostMs",
+                                       "firstReadAfterPostMs", "effectWait", "effectWaitMs", "effectAfterPostMs", "baseline", "confirming",
+                                       "openingReturn"]), "\(keys)")
+    }
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+  }
+
+  /// A Return after the last line is not settled (no later baseline depends on it; a search field's submitting Return
+  /// may change nothing), as before: counted, with no record of its own.
+  func testATrailingReturnIsNotSettled() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var characters = 0
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    try run(pasteParts(typing: "ab\n"), pasteboard, effect: effect { EffectReading(range: nil, characters: characters) },
+            postPaste: { _ = pasteboard.appReads(); characters += 2; return true }, entered: &entered, meta: &meta)
+    XCTAssertEqual(entered, 3)
+    XCTAssertEqual(clock, 0, "no settle waited")
+    XCTAssertEqual(diagnostics(meta)["line"] as? Int, 1)
+    XCTAssertEqual((diagnostics(meta)["perLine"] as? [[String: Any]])?.count, 1)
+  }
+
+  /// With nothing to see a Return by (the baseline empty, no trusted source), the settle answers at once and the next
+  /// line is answered by its read after ⌘V, as a line with no channel is.
+  func testWithNoChannelAReturnIsNotWaitedFor() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    let outcome = try run(pasteParts(typing: "a\nb"), pasteboard, effect: effect(reading: { EffectReading() }), postPaste: { [unowned self] in
+      clock += 1
+      _ = pasteboard.appReads()
+      return true
+    }, entered: &entered, meta: &meta)
+    XCTAssertEqual(outcome, PasteOutcome(pastedLines: 2, unconfirmedLines: 2))
+    XCTAssertEqual(entered, 3)
+    XCTAssertEqual(clock, 2, "no wait beyond the two reads")
+    let opening = (diagnostics(meta)["perLine"] as? [[String: Any]])?.last?["openingReturn"] as? [String: Any]
+    XCTAssertEqual(opening?["settle"] as? String, "noChannel")
+  }
+
+  /// The settle on its own: a reading must move and then hold one interval; a trusted notification after the Return's
+  /// post counts only with no baseline; a reading that came back after the time ran out is not accepted.
+  func testTheReturnsSettle() {
+    var characters = 0
+    var reads = 0
+    let watch = effect { reads += 1; return EffectReading(range: nil, characters: characters) }
+    clock = 0
+    watch.begin()
+    watch.keyPosted(at: 0)
+    XCTAssertEqual(watch.settle(timeoutMs: 100, intervalMs: 25), .timeout)
+    characters = 1
+    watch.begin()
+    characters = 2
+    clock = 0
+    XCTAssertEqual(watch.settle(timeoutMs: 100, intervalMs: 25), .reading)
+    XCTAssertEqual(clock, 25, "moved at once, held at the next poll")
+
+    let trusted = effect(observer: true, reading: { EffectReading() })
+    trusted.begin()
+    trusted.notification()  // before the Return: not its effect
+    clock = 0
+    trusted.keyPosted(at: 0)
+    XCTAssertEqual(trusted.settle(timeoutMs: 50, intervalMs: 25), .timeout)
+    trusted.notification()
+    XCTAssertEqual(trusted.settle(timeoutMs: 50, intervalMs: 25), .notification)
+
+    var slowReads = 0
+    let slow = PasteEffect(readWithin: { [unowned self] _ in  // the baseline, then a moved reading 500 ms late
+      slowReads += 1
+      clock += 500
+      return EffectReading(range: nil, characters: slowReads > 1 ? 1 : 0)
+    }, now: { [unowned self] in clock }, sleep: { [unowned self] in clock += $0 })
+    slow.begin()
+    clock = 0
+    slow.keyPosted(at: 0)
+    XCTAssertEqual(slow.settle(timeoutMs: 100, intervalMs: 25), .timeout)
   }
 }
 
@@ -1430,7 +1679,8 @@ extension PasteOperationTests {
     try runPaste([.content(plain("a"), units: 1), .returnKey(units: 1), .content(plain("b"), units: 1)], pasteboard: pasteboard.access,
                  effect: effect { EffectReading(range: [characters, 0], characters: characters) }, readTimeoutMs: 0,
                  focusEnforcement: record, activationNow: { activationClock }, mainProbe: { $0() }, checkInFlight: {},
-                 postPaste: { _ = pasteboard.appReads(); characters += 1; activationClock += 20; return true }, postReturn: { true },
+                 postPaste: { _ = pasteboard.appReads(); characters += 1; activationClock += 20; return true },
+                 postReturn: { characters += 1; return true },
                  entered: &entered, meta: &meta)
     let wire = try XCTUnwrap(meta.paste?.wire["focusEnforcement"] as? [String: Any])
     XCTAssertEqual(wire["arm"] as? String, "B")

@@ -236,7 +236,7 @@ test('the plan: the preconditions and placement first, the switch and a stopped 
   assert.ok(plan.find(p => p.item === ITEMS.control('electron-composing', 'B')).steps.some(s => s.task === 'engine-json-paste' && s.args[0] === 'on'));
   assert.ok(!plan.find(p => p.item === ITEMS.a1).steps.some(s => s.task === 'engine-json-paste'), 'Part A runs the engine as built');
   assert.deepEqual(plan187({part: 'a'}).map(p => p.item).filter(i => i === ITEMS.b), []);
-  assert.deepEqual(plan187({vendor: true}).map(p => p.item), [ITEMS.place, ITEMS.vendor, ITEMS.end]);
+  assert.deepEqual(plan187({vendor: true}).map(p => p.item), [ITEMS.place, ITEMS.vendorKorean, ITEMS.vendor, ITEMS.end], 'the vendor\'s chrome/korean rows first');
   assert.equal(plan187({vendor: true})[1].steps.filter(s => s.task === '187-row').length, 9);
   // Nothing the plan prints names a string's text.
   assert.deepEqual(leaks(plan.flatMap(p => p.steps.map(describeStep)).join('\n')), []);

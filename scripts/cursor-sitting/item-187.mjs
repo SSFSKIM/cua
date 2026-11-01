@@ -100,7 +100,7 @@ const SCENES = Object.freeze(['chrome', 'textedit', 'electron']);
 export const releaseOf = group => (GROUPS[group].user ? SCENES.find(s => s !== GROUPS[group].driven && s !== GROUPS[group].user) : null);
 export const groupName = group => { const g = GROUPS[group]; return `${g.driven}/${g.condition}${g.user ? `@${g.user}` : ''}`; };
 export const rowId = (group, method, stringId) => `${groupName(group)}/${method}.${stringId}`;
-export const ITEMS = Object.freeze({place: '187-place', a1: '187-A1', b: '187-B', vendor: '187-vendor', end: '187-end', control: (group, arm) => `187-${group}-${arm}`});
+export const ITEMS = Object.freeze({place: '187-place', a1: '187-A1', b: '187-B', vendor: '187-vendor', vendorKorean: '187-vendor-chrome-korean', end: '187-end', control: (group, arm) => `187-${group}-${arm}`});
 const involvesElectron = g => g.driven === 'electron' || g.user === 'electron';
 
 // Part B's blocks: pairs of an arm-A and an arm-B block on the same nine rows, the 18 rows' halves in turn, the later
@@ -241,9 +241,11 @@ const endSteps = () => [
 export function plan187({part = 'all', vendor = false} = {}) {
   const place = {item: ITEMS.place, stage: 'place', steps: placeSteps()}, end = {item: ITEMS.end, stage: 'end', steps: endSteps()};
   const items188 = ENGINES_188.flatMap(engine => [{item: ITEMS_188.rows(engine), stage: '188', steps: rowsItem188(engine)}, {item: ITEMS_188.click(engine), stage: '188', steps: clickItem188(engine)}]);
+  // The vendor's chrome/korean rows first (Chrome frontmost, no composition: whether Chrome reads the vendor's ⌘V under
+  // 2-Set at all), then its chrome/composing@textedit rows.
   if (vendor) {
-    return [place, {item: ITEMS.vendor, stage: 'vendor', steps: groupItem({item: ITEMS.vendor, group: 'chrome-composing', engine: 'vendor',
-      blocks: [{block: 0, arm: 'vendor', rows: VENDOR_ROWS}]})}, end];
+    const lane = (item, group) => ({item, stage: 'vendor', steps: groupItem({item, group, engine: 'vendor', blocks: [{block: 0, arm: 'vendor', rows: VENDOR_ROWS}]})});
+    return [place, lane(ITEMS.vendorKorean, 'chrome-korean'), lane(ITEMS.vendor, 'chrome-composing'), end];
   }
   const control = (group, arm) => ({item: ITEMS.control(group, arm), stage: arm === 'A' ? 'a' : 'b',
     steps: groupItem({item: ITEMS.control(group, arm), group, blocks: [{block: 0, arm, rows: ROWS, ...(arm === 'B' ? {switchTo: 'on'} : {})}]})});
@@ -479,6 +481,7 @@ export function judge187(items) {
   const bRows = add(ITEMS.b, 'chrome-composing', 'B', B_TARGET, r => r.arm === 'B');
   const controlsB = Object.fromEntries(CONTROLS.map(g => [g, add(ITEMS.control(g, 'B'), g, 'B', ROWS.length)]));
   const vendor = add(ITEMS.vendor, 'chrome-composing', 'vendor', VENDOR_ROWS.length);
+  const vendorKorean = add(ITEMS.vendorKorean, 'chrome-korean', 'vendor', VENDOR_ROWS.length);
   const early = items[ITEMS.a1] ? endEarly(a1) : null;
   const stopped = [ITEMS.b, ...CONTROLS.map(g => ITEMS.control(g, 'B'))].map(n => stoppedOf(n) && `${n} stopped: ${stoppedOf(n)}`).filter(Boolean);
   // The restores the kit made after a row, each with the arm of the row it followed.
@@ -498,7 +501,7 @@ export function judge187(items) {
   const addedMs = {A: median(aRows), B: median(bRows), difference: median(aRows) !== null && median(bRows) !== null ? median(bRows) - median(aRows) : null};
   // #188's rows and cell 3, judged apart (./item-188.mjs): reported, never part of `overall`.
   return {groups, endEarly: early, aStages: tally(a1.filter(r => r.invalid === null && !r.delivered).map(stageOf)), b, addedMs, aControls, restore, overall,
-    vendor: items[ITEMS.vendor] ? summarize(vendor) : null, item188: judge188(items)};
+    vendor: items[ITEMS.vendor] ? summarize(vendor) : null, vendorKorean: items[ITEMS.vendorKorean] ? summarize(vendorKorean) : null, item188: judge188(items)};
 }
 
 // The owner's source at the end (187-end's select-source): restored only when it was switched and read back as the one
@@ -573,6 +576,7 @@ export function item187Markdown(judged) {
     ];
     if (notes.length) lines.push('', `## ${g.item} (${groupName(g.group)}, arm ${g.arm})`, '', ...notes.map(n => `- ${n}`));
   }
+  if (judged.vendorKorean) lines.push('', `The vendor's chrome/korean lane (recorded only, Chrome frontmost): ${judged.vendorKorean.delivered} of ${judged.vendorKorean.n} paste rows delivered.`);
   if (judged.vendor) lines.push('', `The vendor's lane (recorded only): ${judged.vendor.delivered} of ${judged.vendor.n} paste rows delivered.`);
   lines.push('', ...markdown188(judged.item188));
   return `${lines.join('\n')}\n`;

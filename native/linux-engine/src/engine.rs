@@ -90,6 +90,8 @@ pub struct Engine {
     /// What an ended watch left to report (a late drag and drop, or the watch's own failure), with the application:
     /// the first acting request answers it, not run.
     late_pending: Option<(String, crate::dnd::WatchEnd)>,
+    /// The Chromium drags' press watch (`stray.rs`), its connection opened by the first such drag.
+    stray_watch: Option<crate::stray::StrayWatch>,
 }
 
 /// Whether a request sends input or changes state, and so is refused while a late drag and drop or a failed watch is
@@ -163,6 +165,7 @@ impl Engine {
             handles: crate::clipboard::Handles::new(),
             late_watch: None,
             late_pending: None,
+            stray_watch: None,
         })
     }
 

@@ -1098,3 +1098,155 @@ fn a_foreground_request_refused_for_its_input_activates_nothing() {
         .unwrap();
     assert!(firefox.has_focus(), "activated");
 }
+
+/// The real pointer put at a desktop point, through XTEST, as a person's mouse would leave it.
+fn pointer_to(x: i16, y: i16) {
+    use x11rb::protocol::xtest::ConnectionExt as _;
+    let (conn, screen) = x11rb::connect(None).expect("an X connection");
+    let root = conn.setup().roots[screen].root;
+    conn.xtest_fake_input(x11rb::protocol::xproto::MOTION_NOTIFY_EVENT, 0, 0, root, x, y, 0)
+        .unwrap();
+    conn.sync().unwrap();
+}
+
+/// A window of the test's own, classed `Google-chrome`, that takes the pointer when a button is pressed in it, as
+/// Chrome's capture does (an active pointer grab on its window, so a real pointer outside it crosses in with no button
+/// held), and gives it back on the release. With `nudge`, it also moves the real pointer a pixel and back on the press,
+/// as a person's mouse would in the press window. It takes no drag and drop, and records the input events it receives
+/// until told to stop.
+fn capturing_window(nudge: bool) -> (Window, mpsc::Sender<()>, std::thread::JoinHandle<Vec<Input>>) {
+    use x11rb::protocol::xproto::{GrabMode, MOTION_NOTIFY_EVENT};
+    use x11rb::protocol::xtest::ConnectionExt as _;
+    let (ready, window) = mpsc::channel();
+    let (stop, stopped) = mpsc::channel();
+    let handle = std::thread::spawn(move || {
+        let probe = Probe::open("Google-chrome", (0, 0, 400, 300));
+        probe.conn.sync().unwrap();
+        ready.send(probe.id).unwrap();
+        let mut seen = Vec::new();
+        while stopped.try_recv().is_err() {
+            while let Some(event) = probe.conn.poll_for_event().unwrap() {
+                let sent = event.sent_event();
+                match event {
+                    Event::ButtonPress(e) => {
+                        seen.push(Input::ButtonPress { button: e.detail, sent });
+                        let mask = EventMask::BUTTON_RELEASE | EventMask::POINTER_MOTION;
+                        let (none, now, mode) = (x11rb::NONE, x11rb::CURRENT_TIME, GrabMode::ASYNC);
+                        probe
+                            .conn
+                            .grab_pointer(false, probe.id, mask, mode, mode, none, none, now)
+                            .unwrap();
+                        if nudge {
+                            for dx in [1, -1] {
+                                probe
+                                    .conn
+                                    .xtest_fake_input(MOTION_NOTIFY_EVENT, 1, 0, x11rb::NONE, dx, 0, 0)
+                                    .unwrap();
+                            }
+                        }
+                        probe.conn.flush().unwrap();
+                    }
+                    Event::ButtonRelease(e) => {
+                        seen.push(Input::ButtonRelease { button: e.detail, sent });
+                        probe.conn.ungrab_pointer(x11rb::CURRENT_TIME).unwrap();
+                        probe.conn.flush().unwrap();
+                    }
+                    _ => {}
+                }
+            }
+            sleep(Duration::from_millis(1));
+        }
+        seen
+    });
+    (window.recv().unwrap(), stop, handle)
+}
+
+/// The sentence a Chromium drag answers when a pointer event that is not the drag's reached its window in the press
+/// window and no drag and drop began (`stray.rs`; the design session's ruling, 2026-11-01).
+fn may_not_have_started(app: &str) -> String {
+    format!(
+        "{app} may not have started the drag, and the page may have taken the press as a click: the desktop pointer \
+         was outside the window, or entered or moved in it during the press. Read the window to see what happened \
+         before dragging again"
+    )
+}
+
+/// A Chromium drag needs the real pointer in its window (task 20): its capture grab crosses in from a pointer outside
+/// with no button, which resets Blink's press. In shared mode the drag is sent and answers that it may not have started,
+/// in front (the hold's path) and not (the drag-and-drop guard's); with the pointer in the window, away from the path,
+/// it succeeds; in dedicated mode a pointer outside takes the foreground route, which puts the pointer there (the
+/// design session's rulings, 2026-11-01).
+#[test]
+fn a_chromium_drag_with_the_real_pointer_outside_its_window_answers_that_it_may_not_have_started() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    for front in [false, true] {
+        let (window, stop, recorder) = capturing_window(false);
+        if front {
+            in_front(window);
+        } else {
+            focus_nothing();
+        }
+        let mut shared = Engine::start();
+        let app = app_of(&mut shared, window);
+        pointer_to(600, 400);
+        let outside = shared.request("drag", json!({"window": {"id": window}, "path": path}));
+        pointer_to(300, 250);
+        let inside = shared.request("drag", json!({"window": {"id": window}, "path": path}));
+        set_active_window(None);
+        assert_eq!(outside, Err(may_not_have_started(&app)), "in front: {front}");
+        assert_eq!(inside, Ok(Value::Null), "in front: {front}: the pointer in the window");
+        sleep(SETTLE);
+        stop.send(()).unwrap();
+        assert_eq!(
+            recorder.join().unwrap(),
+            [
+                Input::ButtonPress { button: 1, sent: true },
+                Input::ButtonRelease { button: 1, sent: true },
+            ]
+            .repeat(2),
+            "in front: {front}: both drags were sent on the background route"
+        );
+    }
+    let (window, stop, recorder) = capturing_window(false);
+    let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+    pointer_to(600, 400);
+    dedicated
+        .request("drag", json!({"window": {"id": window}, "path": path}))
+        .unwrap();
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false },
+        ],
+        "dedicated: the foreground route"
+    );
+}
+
+/// The real pointer moved in the press window (the window's client nudges it a pixel and back as the press arrives,
+/// after the atomic press's grab): the watch sees the motion, no drag and drop began, and the drag answers that it may
+/// not have started, never success.
+#[test]
+fn a_real_pointer_motion_in_the_press_window_answers_that_the_drag_may_not_have_started() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = capturing_window(true);
+    focus_nothing();
+    pointer_to(300, 250);
+    let mut shared = Engine::start();
+    let app = app_of(&mut shared, window);
+    assert_eq!(
+        shared.request("drag", json!({"window": {"id": window}, "path": path})),
+        Err(may_not_have_started(&app))
+    );
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+        ]
+    );
+}

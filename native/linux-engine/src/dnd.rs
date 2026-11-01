@@ -136,12 +136,6 @@ pub fn taken_by_target(owner: Window, target: Window, resource_id_mask: u32) -> 
 /// than this delay still misses, unseen (README, known limits).
 pub const RELEASE_AFTER_TAKE: Duration = Duration::from_millis(350);
 
-/// Whether a drag into this family is a Chromium drag and drop whose release waits for the take's delay
-/// ([`RELEASE_AFTER_TAKE`]): Chrome's X11 drag code, which Electron and other Chromium browsers share.
-pub fn release_waits_after_take(family: &str) -> bool {
-    matches!(family, "Chrome" | "Chromium")
-}
-
 /// When the `done`-th of the `left` steps a drag still had at its source's take ends at the soonest: those steps
 /// spread evenly over `after_take`, so the last of them, and the release after it, comes `after_take` after the take.
 pub fn step_due(taken: Instant, after_take: Duration, done: usize, left: usize) -> Instant {

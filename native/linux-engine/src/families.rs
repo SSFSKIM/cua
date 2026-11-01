@@ -322,6 +322,12 @@ pub const FAMILIES: &[Family] = &[
     },
 ];
 
+/// Whether a family is Chromium's engine (Chrome by its classes, Electron and other Chromium browsers by the toolkit):
+/// Blink's press, which a mouse move with no button resets (`stray.rs`), so its drags press atomically and are watched.
+pub fn blink(family: &str) -> bool {
+    matches!(family, "Chrome" | "Chromium")
+}
+
 /// Whether any entry is keyed by toolkit, so a lookup that found no class needs the application's `ToolkitName`.
 pub fn needs_toolkit() -> bool {
     FAMILIES.iter().any(|f| f.toolkit.is_some())
@@ -528,6 +534,20 @@ mod tests {
                 .filter(|f| f.drop_changes_desktop)
                 .all(|f| f.name == "Chrome")
         );
+    }
+
+    #[test]
+    fn chrome_and_the_chromium_toolkit_press_as_blink_does() {
+        let blink = |class, toolkit: Option<Toolkit>| {
+            family(FAMILIES, Some(class), toolkit.as_ref()).is_some_and(|f| super::blink(f.name))
+        };
+        assert!(blink("Google-chrome", None));
+        assert!(
+            blink("cua-electron-fixture", Some(toolkit("Chromium", Some("1.0")))),
+            "Electron"
+        );
+        assert!(!blink("firefox", None));
+        assert!(!blink("Gedit", Some(toolkit("GTK", Some("3.24.41")))));
     }
 
     #[test]

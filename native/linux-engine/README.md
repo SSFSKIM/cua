@@ -135,6 +135,28 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     350 ms as the ceiling, which helps only if reading the accept cursor has no false positives (task 18's replay of it
     matched Chrome's accept in 85 to 100% of drags by condition, without saying which way the rest failed).
 
+  Every drag into a Chromium-family window (Chrome by its classes, the Chromium toolkit) presses atomically and is
+  watched (`stray.rs`; task 20, evidence `m3/drop-misses/task20/`). Blink resets its press on any mouse move that
+  carries no button, and Chrome turns real pointer events into such moves: a crossing of its window, its own capture
+  grab's included when the real pointer is outside the window, and the real pointer's motion. One that lands after the
+  press and before the first motion past Blink's 4 px drag threshold kills the drag, and the release becomes a click.
+  - The press and every sample through that motion go out under one server grab (`GrabServer`), with the real pointer's
+    place read (`QueryPointer`) inside it, so no other client's request falls between them. `--stats` `press` records
+    the grab's duration (`grab_ms`), the samples sent under it and whether the pointer was in the window.
+  - A watch on a connection of the engine's own (opened by the first such drag, kept for its life) selects XInput 2 raw
+    motion on the root, which reaches every client whoever holds a grab, and the target window's crossings, from just
+    before the grab to just after the release. The drag's own events are never among them (the background route's are
+    synthetic; on the XTEST routes the XTEST pointer's motion is left out), nor is a crossing that ends a grab (the
+    target's release of its capture).
+  - When the watch saw such an event and the target took no drag and drop by the release, the drag answers `<app> may
+    not have started the drag, and the page may have taken the press as a click: the desktop pointer was outside the
+    window, or entered or moved in it during the press. Read the window to see what happened before dragging again`,
+    never success. A take means the drag started, after which a stray event changes nothing.
+  - In shared mode a drag with the real pointer outside the window is sent; Chrome's capture grab crosses in and the
+    answer is that error. Declared: a drag the page tracks itself (mousedown/mousemove/mouseup listeners, or pointer
+    capture) lands with the pointer outside as with it inside, and still answers the error. In dedicated mode a pointer
+    outside the window takes the foreground route, which puts the pointer there (`--stats` `pointer_outside`).
+
   The watch keeps every selection report the connection reads meanwhile, so the input session's server-time probe
   cannot lose one. The `--stats` line's `dnd` records whether the window was in front, the watch saw a start, the
   outcome (`in_time`, `late` for the measurement option's Escape after the release, `no_start`, `undecided`), whether the signature already held at the start, and the

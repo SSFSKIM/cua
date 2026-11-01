@@ -24,6 +24,7 @@ mod readiness;
 mod resolve;
 mod route;
 mod shm;
+mod stray;
 mod table;
 mod tree;
 mod wire;

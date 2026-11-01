@@ -460,6 +460,20 @@ impl X11 {
         self.client_in(top, 0)
     }
 
+    /// The window's parent (the root, or a reparenting window manager's frame).
+    pub fn parent(&self, window: Window) -> Result<Window> {
+        Ok(self.conn.query_tree(window)?.reply()?.parent)
+    }
+
+    /// Whether the real pointer is in `window` (whose parent is `parent`) or one of its inferiors, as the server sees it:
+    /// the deepest window under the pointer is the window or below it, so a window over it, or the pointer elsewhere,
+    /// is outside. A client's pointer grab on the window then crosses nothing (task 20: Chrome's capture grab crosses
+    /// into its window, with no button held, when the pointer is outside it).
+    pub fn pointer_in(&self, window: Window, parent: Window) -> Result<bool> {
+        let reply = self.conn.query_pointer(parent)?.reply()?;
+        Ok(reply.same_screen && reply.child == window)
+    }
+
     fn client_in(&self, window: Window, depth: u32) -> Option<Window> {
         if depth > 8 {
             return None;

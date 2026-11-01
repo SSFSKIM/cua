@@ -5,9 +5,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
-use x11rb::protocol::xproto::ConnectionExt as _;
+use x11rb::connection::Connection as _;
+use x11rb::protocol::xproto::{ConnectionExt as _, Window};
 
-use super::way::target_of;
+use super::way::{Way, target_of};
 use super::{DesktopMode, Engine};
 use crate::desktop::Desktop;
 use crate::dnd::{DndWatch, LateWatch, Outcome, Standing};
@@ -15,6 +16,7 @@ use crate::families::DragPacing;
 use crate::families::Kind;
 use crate::input::chord_keycodes;
 use crate::route::{Route, Target};
+use crate::stray::{StrayWatch, Strays, Watching};
 use crate::wire::{
     ClickInput, DragHandleInput, DragInput, MouseButton, MoveInput, MoveRelativeInput, ScrollInput, parse_input,
 };
@@ -66,6 +68,75 @@ pub fn drag_samples(points: &[(i16, i16)]) -> Vec<(i16, i16)> {
         }
     }
     samples
+}
+
+/// Blink's drag threshold off the Mac (`mouse_event_manager.cc` `kDragThresholdX/Y`): a press starts a drag on a move
+/// this far out in x or y.
+const DRAG_THRESHOLD_PX: i32 = 4;
+
+/// How many of a drag's samples its atomic press sends with the press: through the first sample at Blink's drag
+/// threshold from the first (every sample when none reaches it).
+pub fn press_samples(samples: &[(i16, i16)]) -> usize {
+    let Some(&(x0, y0)) = samples.first() else {
+        return 0;
+    };
+    let past = |&(sx, sy): &(i16, i16)| {
+        (sx as i32 - x0 as i32).abs() >= DRAG_THRESHOLD_PX || (sy as i32 - y0 as i32).abs() >= DRAG_THRESHOLD_PX
+    };
+    samples.iter().position(past).map_or(samples.len(), |k| k + 1)
+}
+
+/// A Chromium-family drag's press (task 20, evidence `m3/drop-misses/task20/`; the design session's rulings of
+/// 2026-11-01). Blink resets a press on any mouse move with no button (`stray.rs`), so another client's request that
+/// crosses the window, or moves the real pointer, between the press and the first motion past the drag threshold
+/// kills the drag. The press and the samples through that motion go out under one server grab, no other client's
+/// request between them, and the real pointer's place is read inside the same grab; the watch (`stray.rs`) runs from
+/// just before the grab to just after the release, for what the grab cannot hold back (a device's own motion, the
+/// target's capture grab crossing in from a pointer outside it).
+pub(super) struct ChromiumPress<'a> {
+    pub watch: &'a mut StrayWatch,
+    pub window: Window,
+    pub parent: Window,
+    /// The drag goes through XTEST (the foreground and desktop routes), whose pointer's motion is its own.
+    pub xtest: bool,
+    /// The watch while the drag runs; still set after the drag only when it ended before its release.
+    pub watching: Option<Watching>,
+    /// What the press did: the grab's duration, the samples sent under it, the real pointer in the window.
+    pub grab: Option<(Duration, usize, bool)>,
+    /// What the watch saw, ended at the release (None: the drag ended before it).
+    pub strays: Option<Result<Strays>>,
+}
+
+/// The press and the samples through Blink's drag threshold under one server grab, the real pointer's place read
+/// first inside it; answers how many samples went out. The grab is released whatever happened.
+fn atomic_press(
+    x: &X11,
+    route: &mut Route,
+    press: &mut ChromiumPress,
+    samples: &[(i16, i16)],
+    pressed: &mut bool,
+) -> Result<usize> {
+    let count = press_samples(samples);
+    let started = Instant::now();
+    x.conn.grab_server()?;
+    let sent = (|| -> Result<bool> {
+        let inside = x.pointer_in(press.window, press.parent)?;
+        route.button(x, 1, true)?;
+        *pressed = true;
+        for &(sx, sy) in &samples[..count] {
+            route.place_again(x, sx, sy)?;
+        }
+        Ok(inside)
+    })();
+    let ungrabbed = x
+        .conn
+        .ungrab_server()
+        .map_err(anyhow::Error::from)
+        .and_then(|_| Ok(x.conn.flush()?));
+    let inside = sent?;
+    ungrabbed?;
+    press.grab = Some((started.elapsed(), count, inside));
+    Ok(count)
 }
 
 fn chord(x: &X11, key: Option<&str>) -> Result<Vec<u8>> {
@@ -159,7 +230,9 @@ fn cancel_in_time(x: &X11, route: &mut Route, guard: &mut DropGuard, pressed: &m
 /// `pacing.step` (`dnd::RELEASE_AFTER_TAKE`, task 18), and `scheduled` records it; a take seen only after the last
 /// sample changes nothing. With the hold's bound (measurement only, `--drag-dnd-wait-ms`), the release waits up to it for
 /// the take, and after a take the last point is nudged by a pixel and back, so a drag and drop that starts after the last
-/// sample still sees the pointer over its target; the wait is answered in `waited`.
+/// sample still sees the pointer over its target; the wait is answered in `waited`. With `press` (a Chromium-family
+/// drag), the press and the samples through Blink's drag threshold go out under one server grab ([`atomic_press`]),
+/// its watch begun just before the grab and ended just after the release, what it saw kept in `press.strays`.
 #[allow(clippy::too_many_arguments)]
 fn drag_along(
     x: &mut X11,
@@ -172,31 +245,42 @@ fn drag_along(
     waited: &mut Option<(bool, Duration)>,
     after_take: Duration,
     scheduled: &mut Option<Value>,
+    mut press: Option<&mut ChromiumPress>,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
     let dragged = (|| -> Result<()> {
         route.place_again(x, points[0].0, points[0].1)?;
-        route.button(x, 1, true)?;
-        pressed = true;
-        std::thread::sleep(pacing.press);
         let samples = drag_samples(points);
         let count = samples.len();
+        // a Chromium-family press: the watch begun, then the press and the samples through the drag threshold under
+        // one server grab (no take can come during it: the target's requests wait for the grab's end)
+        let first = match press.as_deref_mut() {
+            Some(press) => {
+                press.watching = Some(press.watch.begin(press.window, press.xtest)?);
+                atomic_press(x, route, press, &samples, &mut pressed)?
+            }
+            None => {
+                route.button(x, 1, true)?;
+                pressed = true;
+                0
+            }
+        };
+        std::thread::sleep(pacing.press);
         // the take, when it was seen, and how many samples were still to send then
         let mut taken: Option<(Instant, usize)> = None;
         let mut since_take = 0;
-        for (i, (sx, sy)) in samples.into_iter().enumerate() {
+        for (i, (sx, sy)) in samples.into_iter().enumerate().skip(first) {
             route.place_again(x, sx, sy)?;
             let mut wait = pacing.step;
-            if let Some((watch, _)) = hold.as_mut()
-                && !after_take.is_zero()
-            {
+            if let Some((watch, _)) = hold.as_mut() {
                 match taken {
-                    Some((at, left)) => {
+                    Some((at, left)) if !after_take.is_zero() => {
                         since_take += 1;
                         let due = crate::dnd::step_due(at, after_take, since_take, left);
                         wait = wait.max(due.saturating_duration_since(Instant::now()));
                     }
+                    Some(_) => {}
                     None if watch.started(x) => taken = Some((Instant::now(), count - 1 - i)),
                     None => {}
                 }
@@ -239,6 +323,12 @@ fn drag_along(
         pressed = false;
         route.button(x, 1, false)?;
         let released_at = Instant::now();
+        // the watch ends at the release: what reached the window from the press on
+        if let Some(press) = press.as_deref_mut()
+            && let Some(watching) = press.watching.take()
+        {
+            press.strays = Some(press.watch.finish(watching));
+        }
         if let Some(guard) = guard.as_deref_mut() {
             // measurement only: the take the drag went on past, its Escape after the release
             if guard.late && guard.watch.started(x) {
@@ -422,7 +512,23 @@ impl Engine {
             None => Vec::new(),
         };
         let named = input.window.map(|w| w.id);
-        let way = self.route_along(named, Kind::Drag, &samples)?;
+        let mut way = self.route_along(named, Kind::Drag, &samples)?;
+        // a Chromium-family window takes a background drag only with the real pointer in it: its own capture grab
+        // crosses in from a pointer outside with no button, which kills the drag (task 20). In dedicated mode such a
+        // drag takes the foreground route, which puts the pointer there; in shared mode it goes ahead, and the watch
+        // answers what the crossing did (the design session's rulings, 2026-11-01)
+        if let (Way::Background, DesktopMode::Dedicated, Some(window)) = (way, self.cfg.desktop, named)
+            && self.blink(window)
+            && !self
+                .x
+                .parent(window)
+                .and_then(|p| self.x.pointer_in(window, p))
+                .unwrap_or(false)
+        {
+            way = Way::Foreground;
+            self.record_route(way);
+            self.extra.insert("pointer_outside".into(), json!(true));
+        }
         self.enter_checked(way, named, |x| {
             if input.path.len() < 2 {
                 bail!("drag path must contain at least two points");
@@ -459,21 +565,40 @@ impl Engine {
         };
         // a Chromium drag the engine lets drop (no guard: in front, a dedicated desktop, or the desktop route into the
         // window under the start) is watched for its take, so its release comes no sooner than the take's delay after
-        // it (`dnd::RELEASE_AFTER_TAKE`); the measurement hold (`--drag-dnd-wait-ms`) uses the same watch
+        // it (`dnd::RELEASE_AFTER_TAKE`), and so the press watch knows whether the drag started; the measurement hold
+        // (`--drag-dnd-wait-ms`) uses the same watch
         let dropping_into = match target {
             Target::Window(window) | Target::Foreground(window) => Some(window),
             Target::Desktop => window,
         };
-        let mut hold = match dropping_into {
-            Some(window)
-                if guard.is_none()
-                    && !(self.cfg.dnd_wait.is_zero() && self.cfg.dnd_after_take.is_zero())
-                    && self
-                        .family_of(window)
-                        .is_some_and(|f| crate::dnd::release_waits_after_take(f.name)) =>
-            {
-                Some(DndWatch::start(&mut self.x, window)?)
+        let pressing_into = dropping_into.filter(|&w| self.blink(w));
+        // a Chromium-family drag's press: atomic, and watched from just before it to its release; the watch's connection
+        // is the engine's from the first such drag on
+        let (mut watch, parent) = match pressing_into {
+            Some(window) => {
+                let parent = self.x.parent(window)?;
+                let watch = match self.stray_watch.take() {
+                    Some(watch) => watch,
+                    None => StrayWatch::connect()?,
+                };
+                (Some(watch), parent)
             }
+            None => (None, x11rb::NONE),
+        };
+        let mut hold = match pressing_into {
+            Some(window) if guard.is_none() => Some(DndWatch::start(&mut self.x, window)?),
+            _ => None,
+        };
+        let mut press = match (pressing_into, watch.as_mut()) {
+            (Some(window), Some(watch)) => Some(ChromiumPress {
+                watch,
+                window,
+                parent,
+                xtest: !matches!(target, Target::Window(_)),
+                watching: None,
+                grab: None,
+                strays: None,
+            }),
             _ => None,
         };
         let after_take = self.cfg.dnd_after_take;
@@ -506,6 +631,7 @@ impl Engine {
                 &mut waited,
                 after_take,
                 &mut scheduled,
+                press.as_mut(),
             );
             if let Some(event) = route.event_time()
                 && let Ok(server) = crate::input::server_time(x)
@@ -523,7 +649,10 @@ impl Engine {
         if let Some(scheduled) = scheduled {
             self.extra.insert("after_take".into(), scheduled);
         }
-        if let Some(hold) = hold {
+        // whether the target's client took `XdndSelection` by now: a drag and drop started, so no stray reset the press
+        let mut taken = false;
+        if let Some(mut hold) = hold {
+            taken = hold.started(&mut self.x);
             hold.stop(&mut self.x);
             if let Some((taken, wait)) = waited {
                 self.extra.insert(
@@ -532,8 +661,26 @@ impl Engine {
                 );
             }
         }
+        if let Some(guard) = guard.as_mut() {
+            taken = guard.watch.started(&mut self.x);
+        }
+        let strays = press.take().map(|mut press| {
+            // a drag that ended before its release: the watch's selections dropped
+            if let Some(watching) = press.watching.take() {
+                let _ = press.watch.finish(watching);
+            }
+            (press.grab, press.strays)
+        });
+        // what the watch says about a drag that otherwise succeeded: None, or its refusal
+        let watched = match strays {
+            Some((grab, strays)) => self.press_answer(pressing_into, grab, strays, taken, watch),
+            None => None,
+        };
         let Some(mut guard) = guard else {
-            return dragged.map(|()| Value::Null);
+            return match watched {
+                Some(refusal) if dragged.is_ok() => Err(refusal),
+                _ => dragged.map(|()| Value::Null),
+            };
         };
         let started = guard.watch.is_started();
         guard.watch.stop(&mut self.x);
@@ -577,8 +724,61 @@ impl Engine {
         );
         match crate::dnd::answer(outcome, signature, &self.x.get_window(window)?.app) {
             Some(sentence) => bail!(sentence),
-            None => dragged.map(|()| Value::Null),
+            // no drag and drop began: what the press watch saw decides
+            None => match watched {
+                Some(refusal) if dragged.is_ok() => Err(refusal),
+                _ => dragged.map(|()| Value::Null),
+            },
         }
+    }
+
+    /// Whether a window is of a Chromium family (`families::blink`).
+    fn blink(&mut self, window: x11rb::protocol::xproto::Window) -> bool {
+        self.family_of(window).is_some_and(|f| crate::families::blink(f.name))
+    }
+
+    /// A Chromium-family press's record on the `--stats` line (`press`), and what its watch says: None, or the refusal
+    /// of a drag a stray event may have reset, with no take by the release (`stray::answer`), or of one whose watch
+    /// failed. The watch's connection goes back to the engine unless it failed, so the next drag opens a new one.
+    fn press_answer(
+        &mut self,
+        window: Option<x11rb::protocol::xproto::Window>,
+        grab: Option<(Duration, usize, bool)>,
+        strays: Option<Result<Strays>>,
+        taken: bool,
+        watch: Option<StrayWatch>,
+    ) -> Option<anyhow::Error> {
+        let mut record = json!({ "taken": taken });
+        if let Some((held, samples, inside)) = grab {
+            record["grab_ms"] = json!(held.as_secs_f64() * 1000.0);
+            record["samples"] = json!(samples);
+            record["pointer_inside"] = json!(inside);
+        }
+        // the application the refusal names, read only when there is one
+        let app = |x: &mut X11| {
+            window.map_or_else(String::new, |w| {
+                x.get_window(w).map_or_else(|_| format!("window {w}"), |i| i.app)
+            })
+        };
+        let refusal = match strays {
+            // the drag ended before its release: its own error answers
+            None => None,
+            Some(Ok(strays)) => {
+                record["strays"] = strays.stats();
+                (strays.count() > 0 && !taken)
+                    .then(|| crate::stray::answer(strays.count(), taken, &app(&mut self.x)))
+                    .flatten()
+                    .map(anyhow::Error::msg)
+            }
+            Some(Err(error)) => {
+                let why = format!("{error:#}");
+                record["strays"] = json!({ "failed": why });
+                (!taken).then(|| anyhow::Error::msg(crate::stray::watch_failed(&app(&mut self.x), &why)))
+            }
+        };
+        self.stray_watch = watch.filter(StrayWatch::healthy);
+        self.extra.insert("press".into(), record);
+        refusal
     }
 
     /// `drag_handle`: desktop only; start, move and end are the JavaScript's to order (behaviour §10.5). The vendor's
@@ -706,6 +906,20 @@ mod tests {
         assert_eq!(samples.len(), 41);
         assert_eq!(samples.first(), Some(&(200, 300)));
         assert_eq!(samples.last(), Some(&(240, 300)));
+    }
+
+    #[test]
+    fn the_atomic_press_ends_with_the_first_sample_past_blink_s_drag_threshold() {
+        // a 40 px drag: samples 0…4 px, the fifth (4 px out) is Blink's first move that can start the drag
+        assert_eq!(press_samples(&drag_samples(&[(200, 300), (240, 300)])), 5);
+        // up and left (n = 14: x 0, 0, -1, -2, -2, -3, -4), and in y alone: 4 px in either axis
+        assert_eq!(press_samples(&drag_samples(&[(200, 300), (190, 290)])), 7);
+        assert_eq!(press_samples(&drag_samples(&[(200, 300), (200, 260)])), 5);
+        // the joint repeated: (0,0) twice, then 1, 2, 3, 4
+        assert_eq!(press_samples(&drag_samples(&[(0, 0), (0, 0), (10, 0)])), 7);
+        // a path that never reaches the threshold: every sample, the drag never starts anyway
+        assert_eq!(press_samples(&drag_samples(&[(0, 0), (3, 3)])), 5);
+        assert_eq!(press_samples(&[(5, 5)]), 1);
     }
 
     #[test]

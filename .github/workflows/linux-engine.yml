@@ -1,6 +1,7 @@
 # Builds cua's own Linux engine (cua-engine, native/linux-engine/) from a cua commit, for x86_64 and aarch64 (static
 # musl, each on its own native runner), runs the engine's tests there (the unit tests and the live tests under Xvfb,
-# against the very binary that ships), attests its build provenance and publishes both binaries with their SHA-256
+# against the very binary that ships; only the fault-injection tests run cargo's `live` build, since the shipped binary
+# has none, which a step checks), attests its build provenance and publishes both binaries with their SHA-256
 # sums as the release `linux-engine-v<version>`, the version read from native/linux-engine/Cargo.toml at that commit.
 # It refuses a version whose tag or release exists. scripts/linux-engine-pin.mjs then pins the assets
 # (runtime/engine/linux-engine.json), which `cua install` fetches by. Spec
@@ -157,6 +158,24 @@ jobs:
             echo "the binary names a home directory or carries a token-shaped string" >&2; exit 1
           fi
           echo "no home path or token-shaped string in ${ASSET}"
+      - name: Check the binary carries no fault injection
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Fault injection is compiled only with the `live` feature (src/dnd.rs, `inject_fault`), which alone carries
+          # these strings: its variable and its panic message.
+          bin="dist/${ASSET}"
+          found=0
+          for marker in CUA_ENGINE_FAULT late-watch-panic; do
+            # a count, not grep -q: an early exit would fail strings with SIGPIPE, and pipefail would hide the match
+            count=$(strings -a "$bin" | grep -Fc -- "$marker" || true)
+            if [ "$count" != 0 ]; then
+              echo "${ASSET} carries the live build's fault injection: it contains '${marker}'" >&2
+              found=1
+            fi
+          done
+          [ "$found" = 0 ]
+          echo "no fault injection in ${ASSET}"
       - name: Run the engine's tests, the live ones against the built binary
         shell: bash
         working-directory: native/linux-engine

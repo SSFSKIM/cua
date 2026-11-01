@@ -392,6 +392,16 @@ test('the Interfaces command line parses, with M0 variants', async () => {
   assert.equal(parseArgs([...dnd, '--dnd-cold', '--prelude', 'dedicated']).prelude, 'dedicated');
   assert.throws(() => parseArgs([...dnd, '--dnd-cold', '--prelude', 'shared']), /--prelude/);
   assert.throws(() => parseArgs([...dnd, '--prelude', 'dedicated']), /--dnd-cold/);
+  // and, measurement only, another client's momentary grab that long after each drag is sent
+  assert.equal(parseArgs([...dnd, '--dnd-cold', '--grab-at-ms', '20']).grabAtMs, 20);
+  assert.throws(() => parseArgs([...dnd, '--grab-at-ms', '20']), /--dnd-cold/);
+  // and a pointer event that is not the drag's: the real pointer nudged, or a window mapped under it
+  assert.deepEqual(parseArgs([...dnd, '--dnd-cold', '--stray', 'nudge:5']).stray, { kind: 'nudge', ms: 5 });
+  assert.deepEqual(parseArgs([...dnd, '--dnd-cold', '--stray', 'popup:0']).stray, { kind: 'popup', ms: 0 });
+  assert.throws(() => parseArgs([...dnd, '--dnd-cold', '--stray', 'warp:5']), /--stray/);
+  // and the real pointer parked somewhere first (outside the window, for one)
+  assert.deepEqual(parseArgs([...dnd, '--dnd-cold', '--park-pointer', '1170,715']).parkPointer, { x: 1170, y: 715 });
+  assert.throws(() => parseArgs([...dnd, '--dnd-cold', '--park-pointer', 'corner']), /--park-pointer/);
   assert.throws(() => parseArgs([...dnd, '--dnd-cold', '--ballast', 'more']), /--ballast/);
   assert.throws(() => parseArgs([...dnd, '--ballast', 'gate']), /--dnd-cold/);
 });

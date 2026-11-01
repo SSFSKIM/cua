@@ -370,7 +370,10 @@ variants included; their evidence is written either way. The run's `end` row kee
   drag the first request of a fresh engine, its window in front after the device case's 1200 ms settle, the lanes
   taking turns round by round; `--prelude dedicated` runs the case a block runs before it (cua's dedicated long drop
   through the foreground route), `--cover-ms N` covers the window that long first, and `--ballast gate` opens the
-  Chrome windows a full verdict run has open. Each row carries the page's counters and its pointer log.
+  Chrome windows a full verdict run has open. Each row carries the page's counters and its pointer log. Measurement
+  only, for the mechanism: `--stray nudge|popup:<ms>` puts a pointer event that is not the drag's into it (the real
+  pointer nudged a pixel and back through XTEST, or another client's window mapped under the real pointer for 5 ms),
+  `--park-pointer X,Y` parks the real pointer first, and `--grab-at-ms` fires another client's momentary grab.
 - **The drop-miss instruments** (task 18, run beside any run; none is started by the harness): `xprobe request-watch`
   records through RECORD every client's `SetSelectionOwner`, core and XInput 2 pointer and keyboard grabs with their
   replies, server grabs, XDND client messages sent over the wire (Chrome short-circuits its own), and synthetic

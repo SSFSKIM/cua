@@ -208,12 +208,13 @@ async function coldSeries(ctx, lanes, scenes, family, n, { coverMs = 0, prelude 
         desktop.arrangeFront('covered');
         await sleep(coverMs);
       }
+      if (ctx.parkPointer) execFileSync('xdotool', ['mousemove', '--sync', String(ctx.parkPointer.x), String(ctx.parkPointer.y)]);
       // the device case's `alreadyInFront`: the front window back in its corner, the window raised, then activated
       desktop.arrangeFront('visible');
       desktop.raise(scene);
       execFileSync('xdotool', ['windowactivate', '--sync', String(scene.id)]);
       await sleep(COLD_SETTLE_MS);
-      runs[spec.label].push(await oneDrag(ctx, spec, scene, family, at[spec.label], engine, i, { cold: true, cover_ms: coverMs, prelude: prelude ? 'dedicated' : null }));
+      runs[spec.label].push(await oneDrag(ctx, spec, scene, family, at[spec.label], engine, i, { cold: true, cover_ms: coverMs, prelude: prelude ? 'dedicated' : null, pointer_at_press: pointerAt() }));
     } finally {
       await engine.close();
     }
@@ -251,6 +252,59 @@ async function dedicatedDrop(ctx, scene, at, { cua }) {
 /** The device case's settle before a drag-and-drop sample (device.mjs `DND_SETTLE_MS`). */
 const COLD_SETTLE_MS = 1200;
 
+/** `xprobe grabs` started `ms` after now: when it started (ms after now) and what it found. */
+function foreignGrabAfter(ms) {
+  const t0 = Date.now();
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      const started = Date.now() - t0;
+      const child = spawn(XPROBE, ['grabs'], { stdio: ['ignore', 'pipe', 'ignore'] });
+      let out = '';
+      child.stdout.on('data', (d) => {
+        out += d;
+      });
+      child.once('error', () => resolve({ started_ms: started, found: null }));
+      child.once('exit', () => {
+        let found = null;
+        try {
+          found = JSON.parse(out);
+        } catch {
+          // the probe failed
+        }
+        resolve({ started_ms: started, found });
+      });
+    }, ms);
+  });
+}
+
+/** The real pointer's place on the screen (`xdotool getmouselocation`). */
+function pointerAt() {
+  const out = execFileSync('xdotool', ['getmouselocation', '--shell'], { encoding: 'utf8' });
+  const get = (k) => Number(out.match(new RegExp(`^${k}=(\\d+)`, 'm'))?.[1]);
+  return { x: get('X'), y: get('Y') };
+}
+
+/** `stray.kind` (`nudge` or `popup`) at the real pointer, `stray.ms` after now: when it began and where. */
+function strayAfter({ kind, ms }) {
+  const t0 = Date.now();
+  const at = pointerAt();
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      const started = Date.now() - t0;
+      const done = () => resolve({ kind, started_ms: started, at, took_ms: Date.now() - t0 - started });
+      if (kind === 'nudge') {
+        const child = spawn('xdotool', ['mousemove_relative', '--', '1', '0', 'mousemove_relative', '--', '-1', '0'], { stdio: 'ignore' });
+        child.once('exit', done);
+        child.once('error', done);
+      } else {
+        const child = spawn(XPROBE, ['popup', String(at.x - 2), String(at.y - 2), '5', '5', '5'], { stdio: 'ignore' });
+        child.once('exit', done);
+        child.once('error', done);
+      }
+    }, ms);
+  });
+}
+
 /** The drag page's drag-and-drop counters, without the pointer log. */
 const counts = ({ log, ...rest }) => rest;
 
@@ -262,8 +316,18 @@ async function oneDrag(ctx, spec, scene, family, at, engine, i, extra = {}) {
   const drops = page.drops;
   // `--no-grabs`: no sampler during the drag (its own grabs can fail Chrome's), the grab after the answer still read
   const probes = ctx.grabs ? undefined : { startGrabs: async () => ({ stop: async () => [] }) };
+  let foreignGrab = null;
+  let strayEvent = null;
   const { value, w, report, during, afterAnswer, grabAfter, owners } = await withDropProbes(async ({ xdnd, grabs }) => {
-    const { value, witness: w, report } = await witness.span(`${spec.label}:dnd`, () => engine.request('drag', { window: { id: scene.id }, path: runPath(at, ctx.path, i) }));
+    const { value, witness: w, report } = await witness.span(`${spec.label}:dnd`, () => {
+      // measurement only (`--grab-at-ms`): another client grabs the pointer and the keyboard for a moment that long
+      // after the request is sent (`xprobe grabs`), as the dnd experiment's grab sampler did at random
+      if (ctx.grabAtMs !== undefined) foreignGrab = foreignGrabAfter(ctx.grabAtMs);
+      // measurement only (`--stray`): a pointer event that is not the drag's, that long after the request is sent:
+      // the real pointer nudged a pixel and back (XTEST), or another client's window mapped under it for 5 ms
+      if (ctx.stray) strayEvent = strayAfter(ctx.stray);
+      return engine.request('drag', { window: { id: scene.id }, path: runPath(at, ctx.path, i) });
+    });
     const during = await grabs.stop();
     const afterAnswer = desktopState();
     const grabAfter = JSON.parse(execFileSync(XPROBE, ['grabs'], { encoding: 'utf8' }));
@@ -288,6 +352,8 @@ async function oneDrag(ctx, spec, scene, family, at, engine, i, extra = {}) {
     stats_after_take: value.stats?.after_take,
     stats_dnd_wait: value.stats?.dnd_wait,
     stats_event_time: value.stats?.event_time,
+    // the rest of the engine's --stats line, whatever a measurement build adds to it
+    stats_extra: value.stats ? Object.fromEntries(Object.entries(value.stats).filter(([k]) => !['bus', 'route', 'dnd', 'after_take', 'dnd_wait', 'event_time'].includes(k))) : undefined,
     dropped: typeof drops === 'number' && dropped === drops + 1,
     witness: w.clean,
     witness_fields: w.fields,
@@ -309,6 +375,8 @@ async function oneDrag(ctx, spec, scene, family, at, engine, i, extra = {}) {
     // the page's pointer log of the drag (task 20), and the cold run's conditions
     page_counts: { before: counts(page), after: counts(after) },
     page_log: after.log,
+    ...(foreignGrab ? { foreign_grab: await foreignGrab } : {}),
+    ...(strayEvent ? { stray: await strayEvent } : {}),
     ...extra,
   };
   emit(run);
@@ -338,7 +406,7 @@ export async function runDnd(args, { desktop, emit }) {
   const stubScene = await desktop.openChrome('stub', 'scene.html');
   await desktop.openFront(args.occlusion === 'covered' ? 'covered' : 'visible');
   const witness = await startWitness(XPROBE);
-  const ctx = { desktop, oracle, witness, emit, occlusion: args.occlusion, grabs: args.grabs !== false, path: args.dndShort ? 'dnd-short' : 'dnd' };
+  const ctx = { desktop, oracle, witness, emit, occlusion: args.occlusion, grabs: args.grabs !== false, path: args.dndShort ? 'dnd-short' : 'dnd', grabAtMs: args.grabAtMs, stray: args.stray, parkPointer: args.parkPointer };
   const md = [
     `HTML5 drag and drop (pages/drag.html's \`${ctx.path}\` path), ${n} drags a lane, each window ${args.dndCold ? `in front, every drag a fresh engine's first request${args.coverMs ? ` after ${args.coverMs} ms under a full cover` : ''}` : args.occlusion} (dnd.mjs). Columns: drops that landed; answers that refused the drop as declared (deviations.mjs) / that said the drop may have happened; runs whose witness changed, by field; runs that took XdndSelection; runs where a grab was in force during the drag; runs with a grab left after the answer; runs whose active window, focus or stacking differed from before right after the answer, and 1 s later.`,
     '',

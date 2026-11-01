@@ -1547,12 +1547,16 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      of the line it opens), then waits for its effect, bounded as a line's effect wait is (2 s or the request's deadline,
      the effect poll's 25 ms): with a baseline, the reading must move from it and then hold for one poll, since a
      reading's three requests are not atomic and a late half of the Return's effect must not land after the next
-     baseline; with none, a trusted notification after the post; with neither, nothing is waited for (`noChannel`: the
-     next line, equally blind, is answered by its read after ⌘V, item 3's rule). A reading that came back after the time
-     ran out is not accepted, as in the effect wait. The next line's baseline is then read fresh, so it holds the
-     Return's effect and only that line's own paste can confirm it. A Return after the last pasted line is not settled:
-     no later baseline depends on it, and a search field's submitting Return may change nothing, which would make
-     `query⏎` an error. The cost is about two polls per Return between lines (~50 ms).
+     baseline, and a reading that moved but had not held when the time ran out is the timeout of item 2, never success
+     (the review of 0d888300..c32bec9c, finding 3: a range moved at 1975 ms and a count at 2025 ms settled at 2000 ms on a
+     half-applied baseline, and the Return's late count then "confirmed" a dropped next line); with none, a trusted
+     notification from the Return's post on, the gate armed just before it as it is for a ⌘V, so a field's only report
+     arriving while the Return's delivery guard samples counts (finding 2: a text beginning with a newline lost it); with
+     neither, nothing is waited for (`noChannel`: the next line, equally blind, is answered by its read after ⌘V, item
+     3's rule). A reading that came back after the time ran out is not accepted, as in the effect wait. The next line's
+     baseline is then read fresh, so it holds the Return's effect and only that line's own paste can confirm it. A
+     Return after the last pasted line is not settled: no later baseline depends on it, and a search field's submitting
+     Return may change nothing, which would make `query⏎` an error. The cost is about two polls per Return between lines (~50 ms).
   2. **No effect is unconfirmed, never success.** A Return whose effect never shows in the bound answers
      `pasteUnconfirmed` (the same name, so the wrapper's classification and type_text's count clause apply unchanged)
      with its own sentence: "The text could not be confirmed: a Return was sent for a newline between lines, but no
@@ -1576,7 +1580,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   slot, whose confirmations were by reading. Why Chrome read line 2's data and inserted nothing stays open; with this
   change such a line answers `pasteUnconfirmed` after its 2 s, and the per-line records say what moved. Proven offline
   on `runPaste`'s fakes (`PasteOperationTests`: a Return landing 10 ms late no longer confirms an undelivered line 2,
-  and failed before the change; a Return that never lands, by the bound and by the deadline; the moved count during a
+  and failed before the change; a Return that never lands, by the bound and by the deadline; one half-landing across
+  the bound, unconfirmed; a leading Return's notification during its delivery guard counted (both failing before the
+  review's fixes); the moved count during a
   settle; the records' shape over an empty line; a trailing Return; a blind field; the settle on its own); the earlier
   multi-line tests' fake Returns now land, as a real field's do. Nothing live ran; the slot's typeText.lines rows judge
   it next.

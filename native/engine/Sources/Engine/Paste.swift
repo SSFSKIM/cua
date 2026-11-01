@@ -201,8 +201,8 @@ final class PasteEffect: @unchecked Sendable {
       postedAt = at
     }
   }
-  /// A Return was posted at `at` on `now`'s clock: a key has no hand-over, so a notification after it counts for its
-  /// settle (`settle`).
+  /// A Return is about to be posted, at `at` on `now`'s clock: a key has no hand-over, so a notification from here on
+  /// counts for its settle (`settle`).
   func keyPosted(at: Double) {
     locked {
       handedOver = true
@@ -245,11 +245,11 @@ final class PasteEffect: @unchecked Sendable {
     }
   }
 
-  /// The settle of a Return posted between two lines (#187, the slot of 2026-11-01), after `begin` before the Return and
-  /// `keyPosted` after it, so the next line's baseline holds the Return's effect and only that line's own paste can
-  /// confirm it. With a baseline, the reading must move from it and then hold for one interval (a reading's requests are
-  /// not atomic, and a late half of the Return's effect must not land after the next baseline): `reading`, also when it
-  /// moved and the time ran out before it held. With none, a trusted notification after the post (`notification`); with
+  /// The settle of a Return posted between two lines (#187, the slot of 2026-11-01), after `begin` and `keyPosted` before
+  /// the Return, so the next line's baseline holds the Return's effect and only that line's own paste can confirm it.
+  /// With a baseline, the reading must move from it and then hold for one interval (a reading's requests are not atomic,
+  /// and a late half of the Return's effect must not land after the next baseline): `reading`; a reading that moved and
+  /// had not held when the time ran out is `timeout`, never success. With none, a trusted notification after the post (`notification`); with
   /// neither, `noChannel` at once (the next line can then be confirmed by no reading either). `timeout` when the effect
   /// never showed; a reading that came back after the time ran out is not accepted, as in `wait`.
   func settle(timeoutMs: Double = pasteEffectTimeoutMs, intervalMs: Double = pasteEffectIntervalMs) -> EffectOutcome {
@@ -259,9 +259,9 @@ final class PasteEffect: @unchecked Sendable {
     var moved: EffectReading?
     while true {
       let left = timeoutMs - (now() - start)
-      if left <= 0 { return moved == nil ? .timeout : .reading }
+      if left <= 0 { return .timeout }
       let reading = read(left)
-      if now() - start >= timeoutMs { return moved == nil ? .timeout : .reading }
+      if now() - start >= timeoutMs { return .timeout }
       if let reading, reading != baseline {
         if reading == moved { return .reading }
         moved = reading
@@ -598,10 +598,12 @@ func runPaste(_ parts: [PastePart], pasteboard: PasteboardAccess, effect: PasteE
         }
         try checkInFlight()
         let returnAt = effect.now()
+        // The notification gate is armed before the post, as for a ⌘V: a field's only report of the Return may come while
+        // its delivery guard still samples.
+        if settles { effect.keyPosted(at: returnAt) }
         guard posting(postReturn) else { throw EngineError(name: "eventCreationFailed", "A key event could not be created.") }
         line += 1
         if settles {
-          effect.keyPosted(at: returnAt)
           meta.paste?.stage = "returnEffect"
           meta.paste?.openingReturn = OpeningReturn(postedAt: returnAt)
           let budget = min(pasteEffectTimeoutMs, max(0, remainingMs()))

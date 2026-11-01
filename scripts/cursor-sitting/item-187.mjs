@@ -734,13 +734,16 @@ export function item187Tasks(d) {
       if (empty?.named !== true || empty.valueHash !== EMPTY_HASH) return {ok: false, tag, problem: 'the focus probe did not read the user window\'s field focused and empty'};
       const posted = attempt(() => d.probe(['keystroke', '--ansi-keys', '--user-pid', String(w.pid), '--user-bounds', [w.bounds.x, w.bounds.y, w.bounds.width, w.bounds.height].join(','), COMPOSITION.key]));
       if (probeStatus(posted) !== 0) return {ok: false, tag, problem: `the probe's key was not posted (status ${probeStatus(posted)})`};
-      let composed = false, reads = 0;
+      let composed = false, reads = 0, last = null;
       for (; reads < SETTLE_READS && !composed; reads++) {
         if (reads) await d.sleep(SETTLE_READ_MS);
-        composed = attempt(() => d.probe(['focus', '--window', window]))?.valueHash === jamo;
+        last = attempt(() => d.probe(['focus', '--window', window]));
+        composed = last?.valueHash === jamo;
       }
       if (composed) st(ctx).compose[tag] = {window, jamo};
-      return {ok: composed, tag, reads, ...(composed ? {} : {problem: 'the user window\'s field did not read the composed jamo after the probe\'s key'})};
+      // What the field read instead, by class only: empty (the key was lost), the Latin key, or something else.
+      const read = composed ? 'jamo' : last?.valueHash === EMPTY_HASH ? 'empty' : last?.valueHash === sha256Hex(COMPOSITION.key) ? 'latin' : last?.named === true ? 'other' : 'unread';
+      return {ok: composed, tag, reads, read, ...(composed ? {} : {problem: `the user window's field did not read the composed jamo after the probe's key (it read ${read})`})};
     },
     '187-before': async ([key], ctx) => { st(ctx).rows[key] = {start: d.now()}; return {ok: true, key}; },
     // The readings right before the act; the act's span starts after them.

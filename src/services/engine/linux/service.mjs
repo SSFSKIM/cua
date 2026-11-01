@@ -12,16 +12,17 @@
 //   {type: 'drag_move', handle_id, point}          -> undefined
 //   {type: 'drag_end', handle_id}                  -> undefined; the handle is forgotten
 //
-// with the vendor's sentences for a method it does not have and a drag handle never started. Beside handleRpc it exports
-// `beforeLaunch`, which the wrapper calls just before it launches an application through the supervisor (createService's
-// beforeLaunch). Setup also starts the engine: its version is checked (MIN_ENGINE_VERSION) and its capability report read. Setup always answers with the
-// methods, even when the engine cannot be driven (too old, not runnable, not configured): the facade's Sky proxy
-// (src/cua-api/sky.mjs) answers every member of a failed setup, `then` included, with a rejecting function, so a
-// rejected setup would leave the facade's bootstrap pending for ever. Instead every method then refuses with the
-// sentence saying why, before anything is sent, and each call tries again (the version check and the start), so
-// installing the right engine needs no new session. The method list never depends on the report: a method whose
-// capability is missing is refused when called. A window state's other fields pass through, `truncated` among them, which the
-// facade renders as its truncation line (src/cua-api/bind-linux-app.mjs).
+// with the vendor's sentences for a method it does not have and a drag handle never started. Beside handleRpc it
+// exports `beforeLaunch`, which the wrapper calls just before it launches an application through the supervisor
+// (createService's beforeLaunch). Setup also starts the engine: its version is checked (MIN_ENGINE_VERSION) and its
+// capability report read. Setup always answers with the methods, even when the engine cannot be driven (too old, not
+// runnable, not configured): the facade's Sky proxy (src/cua-api/sky.mjs) answers every member of a failed setup,
+// `then` included, with a rejecting function, so a rejected setup would leave the facade's bootstrap pending for ever.
+// Instead every method then refuses with the sentence saying why, before anything is sent, and each call tries again
+// (the version check and the start), so installing the right engine needs no new session. The method list never
+// depends on the report: a method whose capability is missing is refused when called. A window state's other fields
+// pass through, `truncated` among them, which the facade renders as its truncation line
+// (src/cua-api/bind-linux-app.mjs).
 //
 // Configuration, from the trusted worker's environment, which the launch sets: CUA_ENGINE_BIN, the engine (the
 // selection's canonical path), and CUA_DESKTOP_MODE, the device mode it is started in (`shared`, the default, or

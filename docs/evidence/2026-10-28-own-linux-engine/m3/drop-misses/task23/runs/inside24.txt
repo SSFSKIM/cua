@@ -1,0 +1,12 @@
+cua   inside   dnd      landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw leave_grab 24
+cua   inside   mouse    landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+cua   inside   pointer  landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+cua   inside   range    landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+cua   inside   select   landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+ded   inside   dnd      landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw leave_grab 24
+ded   inside   mouse    landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+ded   inside   pointer  landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+ded   inside   range    landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+ded   inside   select   landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+grab: 240 drags, p50 0.685 ms, p99 1.590 ms, max 1.985 ms
+pointer inside, undisturbed: 240 drags, 0 stray answers

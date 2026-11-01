@@ -1,0 +1,3 @@
+jitter points 200; engines before, after
+before  drags 10  ok 10  landed 10  samples under grab [1004]  crossed ['None']  grab p50 88.360 ms max 99.652 ms
+after   drags 10  ok 10  landed 10  samples under grab [8]  crossed ['False']  grab p50 1.122 ms max 1.612 ms

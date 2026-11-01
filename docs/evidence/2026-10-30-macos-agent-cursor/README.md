@@ -656,8 +656,9 @@ incomplete, never pass. To run one variant again: `--variant sonoma`.
 
 ## Item 187: a paste behind a Hangul composition, and the activation before ⌘V (#187)
 
-**About 40–55 minutes, the owner about 12–15 of them at the start**: before 5 (unattended), with the owner 10–14 (the
-build and approval, their steps below), Part A 8–11, Part B 12–16 with its controls, the judge and cleanup 3–5. Nobody
+**About 44–60 minutes, the owner about 13–16 of them at the start**: before 5 (unattended), with the owner 11–15 (the
+build and approval, their steps below), Finder's scene and setup 1–2, #188's items 1.5–2.5, Part A 8–11, Part B 12–16
+with its controls, the judge, Finder's teardown and cleanup 4–6. Nobody
 touches the Mac once the drive starts: an input in a driven app is the person's to the engine and refuses the next
 action, and anything typed meanwhile goes through 2-Set Korean. The kit is `scripts/cursor-sitting/item-187.mjs`; its
 header says what each row does and how it is judged. It runs on this branch's engine (the paste diagnostics and the
@@ -675,23 +676,27 @@ the harness scenes only (Chrome for Testing 155, never the owner's Chrome or pro
    a TextEdit it did not launch runs, and the kit empties the run's own document.
 4. **Their own Chrome windows**: whether to hide them or move them out of the way. That takes their fresh yes at every
    slot; never assume it from an earlier one. The kit moves only the harness's windows.
-5. **Do Not Disturb** on, so no banner lands over the harness windows.
-6. **Nothing sensitive on the clipboard**, and no clipboard manager started: a ⌘V handled after the engine's restore
+5. **Their own Finder windows** (#188's rows): closed by them, or the Finder scene refuses to come up (it never closes,
+   moves or hides the owner's windows). The scene opens its own window on a run folder of 200 files, and its setup hides
+   the sidebar, the status bar and the path bar through Finder's View settings, which `down` writes back
+   (`scenes-mac.mjs restore-finder` after a run that died). Their yes is fresh at every slot.
+6. **Do Not Disturb** on, so no banner lands over the harness windows.
+7. **Nothing sensitive on the clipboard**, and no clipboard manager started: a ⌘V handled after the engine's restore
    would paste the clipboard's previous contents into the harness field (not observed; the vendor shares it). The kit
    records, per item, the names of processes that could read the clipboard (names only).
-7. The terminal running the kit stays trusted for Accessibility (granted 2026-10-31): the placement and Chrome's menu
+8. The terminal running the kit stays trusted for Accessibility (granted 2026-10-31): the placement and Chrome's menu
    reader need it.
 
 Then the owner may leave once Part A starts.
 
 ```sh
 REPO=/Users/new/Developer/GitHub/cua/.claude/worktrees/fix-187b; cd "$REPO"
-S="node scripts/cursor-sitting.mjs"; SC="node scripts/repl-parity/scenes-mac.mjs"
+S="node scripts/cursor-sitting.mjs"; SC="node scripts/repl-parity/scenes-mac.mjs"; GD="node scripts/native-matrix/goldens-device.mjs"
 SLOT="$HOME/.local/share/cua-187"; RUN="$SLOT/run"; OUT187="$REPO/docs/evidence/2026-10-30-macos-agent-cursor/item-187"
 SAVED="$SLOT/engine-before"; ASIDE="$SLOT/engine-slot"
 # before (operator, unattended, nothing drawn): the fixtures and Swift tools, the plan printed (nothing touched)
 $SC place-chrome && $SC build-electron && $S prepare
-$S paste-187 drive --out "$OUT187" --dry-run --quiet        # expected: "dry run: 2055 steps, nothing sent"
+$S paste-187 drive --out "$OUT187" --dry-run --quiet        # expected: "dry run: 2177 steps, nothing sent"
 $S save --home "$HOME" --to "$SAVED"                         # the current engine and engine.json kept
 $SC frontmost                                                # the owner's front app, put back at the end
 defaults read com.apple.HIToolbox AppleGlobalTextInputProperties   # expected: does not exist
@@ -700,29 +705,48 @@ node bin/cua.mjs engine build --sign-wait 600000             # OWNER: the key pr
 node bin/cua.mjs engine approve                              # OWNER: the three grants
 node bin/cua.mjs engine status                               # expected: approved: yes, this branch's build
 mkdir -p "$OUT187" && $S source consent yes --out "$OUT187"  # only on the owner's yes
-# the scenes: Chrome on the counters page
+# the scenes: Chrome on the counters page; Finder's run window as #188's user window (the owner's own closed first)
 $SC preflight --run "$RUN"                                   # expected: no refusals
-$SC up textedit --run "$RUN" && $SC up chrome --run "$RUN" --page counters && $SC up electron --run "$RUN"
-# the slot: Part A, then Part B unless every Part A row delivered; then the owner's source again
+$SC up textedit --run "$RUN" && $SC up chrome --run "$RUN" --page counters && $SC up electron --run "$RUN" && $SC up finder --run "$RUN"
+$GD steps finder --run "$RUN" --phase setup                  # list view, no selection, its chrome hidden (through the approved engine)
+# the slot: #188's items under ABC, Part A, then Part B unless every Part A row delivered; then the owner's source again
 $S paste-187 drive --run "$RUN" --out "$OUT187"
 $S paste-187 judge --out "$OUT187"                           # item-187.md; exit 1 unless B lands or the slot ended early
+# #188's items again alone, if one stopped (they never stop #187's): --part 188
 # only when a B row did not deliver (ruling 4; refused otherwise): the vendor's 9 paste rows, recorded only
 $S paste-187 drive --run "$RUN" --out "$OUT187" --vendor
 # put back
 $S source restore --out "$OUT187"                            # the owner's source, read back
 defaults read com.apple.HIToolbox AppleGlobalTextInputProperties   # still does not exist
 diff "$SAVED/engine.json" ~/.config/cua/engine.json && echo "engine.json as before"   # no pasteFocusEnforcement left
+$GD steps finder --run "$RUN" --phase teardown               # Finder's chrome shown again, the run's window closed
 $SC down all --run "$RUN"
 $SC reactivate --bundle-id <saved bundle id> --pid <saved pid>
 ```
 
 | item | rows | arm | why |
 |---|---|---|---|
+| 188-rows-cua, 188-rows-vendor | the native matrix's four Electron rows #255 repaired: electron/frontmost/paste.replace, then behind the run's Finder window electron/background/typeText.replace, pressKey.tab and paste.replace@finder | – (ABC, before Korean) | #188's acceptance on cua; the vendor's the comparison; counted for #188, never for #187 |
+| 188-click-cua, 188-click-vendor | cell 3: (i) an element click on the fixture's field holding a selection, (ii) a coordinate click mid-text with the caret at the end, the fixture frontmost | – (ABC) | #188's product question: does cua's click keep a selection where the vendor's places a caret; recorded only |
 | 187-A1 | chrome/composing@textedit: hold 3's 9 strings typed and pasted, × 2, a fresh composition each | A, the engine as built | does today's build still fail behind the composition, and at which paste stage |
 | 187-electron-composing-A, 187-textedit-composing-A, 187-chrome-korean-A | 18 each: electron/composing@textedit, textedit/composing@electron, chrome/korean with Chrome frontmost | A | the controls that delivered on the mini |
 | 187-B | chrome/composing@textedit as ABAB: 4 pairs of 9-row blocks, each arm every row twice | A then B in each pair, engine.json written and the engine stopped before each block | 3b's A/B |
 | 187-*-B | the three controls again | B | nothing regresses under B |
 | 187-vendor | the 9 paste rows on the vendor's engine | – | recorded only, and only when B did not deliver |
+
+**#188's items** (`scripts/cursor-sitting/item-188.mjs`, about 2 minutes for all four, run first, right after the
+placement). Each selects ABC with the fixture in front (the owner's consent) and reads it back before its first act and
+after its last; under any other source it sends nothing. The rows are plan.mjs's own cases and prepares (the stated
+clear, the masked reason, the focus judged by `focusVerdict` from cua's `focusedIndex` or, on the vendor, the trailer),
+sent as the matrix's cells and judged as `caseRow` judges a row, with its oracle around each background act (front app,
+top window, Finder's keyboard focus, no activation outside the kit's own, no route 4); only the fixture is bound, so the
+engine never observes Finder. A row passes when it is valid, delivered and, behind Finder, not interfering; the report's
+"#188 rows" section gives each row on both engines, its `prepared`, `focusReadBy`, route and the oracle's readings.
+The prepare's own click carries no `cua/elementClick` out of its cell (a cell's meta is its last call's); cell 3 records
+the same field's. Cell 3 reads the field's AXSelectedTextRange through the approved bundle's `--probe text-view` before
+and after each click (location and length only), the observation after it and the click's meta, and reports kept,
+collapsed or moved for (i) and moved to the click point, stayed or elsewhere for (ii), recorded only. A #188 item that
+stops is marked and the drive goes on to Part A; rerun them with `--part 188`.
 
 Each block opens its own session on the stopped engine and reads the arm back (`engine status --json`
 `.status.pasteFocusEnforcement`; each paste's `cua/paste.focusEnforcement.arm` too). Korean is engaged as hold 3 did:

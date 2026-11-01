@@ -27,14 +27,14 @@ const MARKS = {open: T + 1000, close: T + 5300, closed: T + 6000};
 
 // A variant's rows as the runner records them; `record` is what the release task kept (this launch's lines).
 function runRows({engine = 'cua', variant = 'plain', record = RECORD, found = true, observation = {appRoleReadMs: 0.4, enablementPrior: 'false', enabled: 'AXManualAccessibility', webAreaFound: true, webAreaWaitMs: 312, chromium: true},
-  warmPrior = 'owned', relaunch = {ok: true, pid: 4242, launchArgs: []}, stop = false} = {}) {
+  warmPrior = 'owned', warmCell = () => ({}), relaunch = {ok: true, pid: 4242, launchArgs: []}, stop = false} = {}) {
   const rows = [{kind: 'start', at: T - 10}, {kind: 'series', series: [`244-${variant}-${engine}`], counts: {warm: 2}, at: T - 5},
     {kind: 'task', task: 'first-relaunch', args: [variant], result: relaunch, at: T + 500},
     {kind: 'task', task: 'first-mark', args: ['open'], result: {ok: true, name: 'open', at: MARKS.open}, at: MARKS.open}, {kind: 'open', at: T + 3000},
     {kind: 'cell', label: LABELS.first, ok: true, value: {found, index: found ? 13 : null, lines: found ? 27 : 14, chars: found ? 805 : 326, page: found, startedAt: T + 3100, endedAt: T + 3400, ms: 300},
       meta: {engineMs: 290, ...(observation ? {observation} : {})}, at: T + 3400}];
   if (stop) return [...rows, {kind: 'stopped', error: 'required cell failed'}];
-  for (const i of [0, 1]) rows.push({kind: 'cell', label: LABELS.warm(i), ok: true, value: {found: true, index: 13}, meta: {observation: {appRoleReadMs: [0.2, 0.3][i], enablementPrior: warmPrior}}, at: T + 3600 + i * 100});
+  for (const i of [0, 1]) rows.push({kind: 'cell', label: LABELS.warm(i), ok: true, value: {found: true, index: 13}, meta: {observation: {appRoleReadMs: [0.2, 0.3][i], enablementPrior: warmPrior}}, at: T + 3600 + i * 100, ...warmCell(i)});
   rows.push({kind: 'task', task: 'first-complete', result: {ok: true, waitedMs: 1400}, at: T + 5200},
     {kind: 'task', task: 'first-mark', args: ['close'], result: {ok: true, name: 'close', at: MARKS.close}, at: MARKS.close}, {kind: 'close', at: T + 6000},
     {kind: 'task', task: 'first-mark', args: ['closed'], result: {ok: true, name: 'closed', at: MARKS.closed}, at: MARKS.closed},
@@ -92,6 +92,36 @@ test('evidence the verdict needs, missing, makes it incomplete: never a pass', (
   incomplete({record: []}, /no start line/);
 });
 
+test('cua\'s warm observations must all answer, each with its role read: failed or bare ones leave the verdict incomplete', () => {
+  const judged = warmCell => judgeFirst({variant: 'plain', engine: 'cua', rows: runRows({warmCell})});
+  const failed = judged(() => ({ok: false, error: 'noWindowsAvailable', value: undefined, meta: {}}));
+  assert.equal(failed.verdict, 'INCOMPLETE', 'every warm observation failed: write-once was never exercised');
+  assert.match(failed.why, /warm observation 1 failed: noWindowsAvailable/);
+  const bare = judged(i => (i === 1 ? {meta: {observation: {enablementPrior: 'owned'}}} : {}));
+  assert.equal(bare.verdict, 'INCOMPLETE');
+  assert.match(bare.why, /warm observation 2 reported no role read/);
+  const missing = judgeFirst({variant: 'plain', engine: 'cua', rows: runRows().filter(r => r.label !== LABELS.warm(1))});
+  assert.match(missing.why, /warm observation 2 was not made/);
+  // Each warm observation's prior is reported; the vendor's engine reports no meta and needs none.
+  const pass = judged(i => (i === 0 ? {meta: {observation: {appRoleReadMs: 0.2, enablementPrior: 'false'}}} : {}));
+  assert.deepEqual(pass.warm.each.map(w => w.enablementPrior), ['false', 'owned']);
+  const vendor = judgeFirst({variant: 'plain', engine: 'vendor', rows: runRows({observation: null, warmCell: () => ({meta: {}})})});
+  assert.equal(vendor.wouldBe, 'PASS');
+  assert.equal(judgeFirst({variant: 'plain', engine: 'vendor', rows: runRows({observation: null, warmCell: () => ({ok: false, error: 'x'})})}).wouldBe, 'INCOMPLETE');
+});
+
+test('complete mode must still be off at the end of the release window, after the release\'s write alone', () => {
+  const fail = (record, why) => {
+    const j = judgeFirst({variant: 'plain', engine: 'cua', rows: runRows({record})});
+    assert.equal(j.verdict, 'FAIL', JSON.stringify(record));
+    assert.match(j.why, why);
+  };
+  // Off, then on again: the first off is history, not the state the release left.
+  fail([...RECORD, line(T + 8100, 'event'), line(T + 8300, 'poll', true)], /2 write events after the close, not the release's alone; complete mode came on again \d+ ms after the close, after going off/);
+  fail([...RECORD, line(T + 8300, 'poll', true)], /^complete mode came on again 2300 ms after the close, after going off$/);
+  fail([...RECORD.slice(0, 4), line(T + 5950, 'event'), RECORD[4]], /^2 write events after the close, not the release's alone$/);
+});
+
 test('the sonoma variant and the vendor\'s engine are recorded with what they would be; the vendor needs no cua meta', () => {
   const sonoma = judgeFirst({variant: 'sonoma', engine: 'cua', rows: runRows({found: false, relaunch: {ok: true, pid: 9, launchArgs: [SONOMA_SWITCH]}})});
   assert.deepEqual([sonoma.verdict, sonoma.wouldBe, sonoma.launchArgs], ['recorded', 'FAIL', [SONOMA_SWITCH]]);
@@ -100,7 +130,7 @@ test('the sonoma variant and the vendor\'s engine are recorded with what they wo
   const md = firstMarkdown([judgeFirst({variant: 'plain', engine: 'cua', rows: runRows()}), sonoma, vendor]);
   assert.match(md, /\| plain \| cua \| yes \(13\) \| 27 \/ 805, page \| 0 \/ 1 \/ 1 \| 2010 \| 1950; 2050 \| \*\*PASS\*\* \|/);
   assert.match(md, /\| sonoma \| cua \| no \| 14 \/ 326, no page \| .* recorded \(would be FAIL\) \|/);
-  assert.match(md, /\| plain \| cua \| false \| AXManualAccessibility \| 0\.4 \| true \| 312 \| true \| 0\.2 \/ 0\.3 \/ 0\.3 \(2\) \| owned × 2 \| 2 of 2 \|/);
+  assert.match(md, /\| plain \| cua \| false \| AXManualAccessibility \| 0\.4 \| true \| 312 \| true \| 0\.2 \/ 0\.3 \/ 0\.3 \(2\) \| owned, owned \| 2 of 2 \|/);
   assert.match(md, /launched with --enable-features=SonomaAccessibilityActivationRefinements/);
 });
 
@@ -185,6 +215,12 @@ test('the tasks: the relaunch with the variant\'s switch, the hold for complete 
   assert.equal(released.offAfterCloseMs, 1950);
   assert.ok(clock >= MARKS.closed + RELEASE_MS, 'the record is read for the bound after the close, so a later write is still counted');
   assert.deepEqual(released.record, RECORD);
+  // The live poll takes the record's latest mode, not a past off: on again after it is no release.
+  writeFileSync(file, jsonl([...RECORD, line(T + 8000, 'poll', true)]));
+  clock = MARKS.closed;
+  const reEnabled = await tasks['first-release']([], ctx);
+  assert.deepEqual([reEnabled.ok, reEnabled.off, clock >= MARKS.closed + 5000], [false, null, true]);
+  assert.match(reEnabled.problem, /complete mode was not off/);
 });
 
 test('awaitRecord returns the line once the minimum has passed, or what it read at the bound', async () => {

@@ -649,7 +649,8 @@ record says complete mode is on (at most 4 s); the close; and the record read un
 `electron-user-data`) has one `event` line per enablement-attribute write; the judge counts them before the open, inside
 the session and after the close (the release's write). **Pass, for cua's engine on the plain variant: the button in
 the first observation, exactly one write in the session, complete mode on before the close, and off within 2.5 s of
-the close.** The report gives the first observation's `appRoleReadMs`, `webAreaFound`, `webAreaWaitMs` and prior, the
+the close and still off when the record is last read, with no write after the close but the release's own.** Every warm
+observation must answer with its role read, or the run reads incomplete. The report gives the first observation's `appRoleReadMs`, `webAreaFound`, `webAreaWaitMs` and prior, the
 warm role reads and priors (expected `owned`), and the record's times; an engine without #244's diagnostics reads
 incomplete, never pass. To run one variant again: `--variant sonoma`.
 

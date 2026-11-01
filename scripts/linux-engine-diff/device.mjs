@@ -260,7 +260,6 @@ function pointerOutside(ctx) {
   parkPointer(ctx, OUTSIDE);
 }
 
-
 /**
  * The real pointer nudged a pixel and back every 2 ms for about 600 ms, from just before the request is sent (XTEST,
  * xdotool's own chain, which ends where it began): whenever the press comes, a nudge follows it before the release.

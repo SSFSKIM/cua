@@ -4,7 +4,7 @@
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow};
-use serde_json::Value;
+use serde_json::{Value, json};
 use x11rb::connection::Connection;
 use x11rb::errors::ReplyError;
 use x11rb::protocol::ErrorKind;
@@ -24,7 +24,12 @@ impl Engine {
     /// first failure is the answer, at the cost of one round trip.
     pub(super) fn activate_window(&mut self, input: Option<Value>) -> Result<Value> {
         let input: WindowInput = parse_input(input)?;
-        activate(&self.x, input.window.id)?;
+        if let Some(waited) = activate(&self.x, input.window.id)? {
+            self.extra.insert(
+                "activation".into(),
+                json!({ "map_wait_ms": waited.as_secs_f64() * 1000.0 }),
+            );
+        }
         Ok(Value::Null)
     }
 
@@ -57,10 +62,11 @@ const MAP_POLL: Duration = Duration::from_millis(5);
 ///
 /// A minimized window is not viewable when the focus request arrives, so the server answers it `BadMatch` while the
 /// window manager, acting on the activation request, maps it a few milliseconds later: every engine, the vendor's
-/// two builds included, answered an error for an activation that happened (M4, C22). So on `BadMatch` for a window
-/// not viewable, the focus waits for the window to be mapped, at most [`MAP_WAIT`], and is set again; a window still
-/// not viewable then answers the first error, and nothing more is sent.
-pub(super) fn activate(x: &X11, window: Window) -> Result<()> {
+/// two builds included, answered an error for an activation that happened (M4, C22). So on `BadMatch` the focus waits
+/// for the window to be viewable, at most [`MAP_WAIT`] (no wait when the window manager has mapped it already), and is
+/// set again; a window still not viewable then answers the first error, and nothing more is sent. Returns how long the
+/// focus waited, when it was set again.
+pub(super) fn activate(x: &X11, window: Window) -> Result<Option<Duration>> {
     let (conn, root) = (&x.conn, x.root);
     let message = ClientMessageEvent::new(32, window, x.atom("_NET_ACTIVE_WINDOW"), [1, 0, 0, 0, 0]);
     let mask = EventMask::SUBSTRUCTURE_NOTIFY | EventMask::SUBSTRUCTURE_REDIRECT;
@@ -72,20 +78,26 @@ pub(super) fn activate(x: &X11, window: Window) -> Result<()> {
         .with_context(|| format!("failed to request focus for X11 window {window}"))?;
     (|| -> Result<()> { Ok(raised?.check()?) })().with_context(|| format!("failed to raise X11 window {window}"))?;
     let focused = focused.map_err(ReplyError::from).and_then(|c| c.check());
-    match focused {
-        Err(ReplyError::X11Error(e)) if e.error_kind == ErrorKind::Match && !viewable(x, window)? => {
+    let waited = match focused {
+        Err(ReplyError::X11Error(e)) if e.error_kind == ErrorKind::Match => {
             let first = ReplyError::X11Error(e);
+            let started = Instant::now();
             if !wait_viewable(x, window, MAP_WAIT)? {
                 return Err(anyhow::Error::from(first)).with_context(|| format!("failed to focus X11 window {window}"));
             }
+            let waited = started.elapsed();
             conn.set_input_focus(InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME)?
                 .check()
                 .with_context(|| format!("failed to focus X11 window {window}"))?;
+            Some(waited)
         }
-        other => other.with_context(|| format!("failed to focus X11 window {window}"))?,
-    }
+        other => {
+            other.with_context(|| format!("failed to focus X11 window {window}"))?;
+            None
+        }
+    };
     conn.flush()?;
-    Ok(())
+    Ok(waited)
 }
 
 /// Whether `window` is viewable now.

@@ -446,8 +446,8 @@ fn held_keys_and_buttons_are_released_on_a_minimized_window_and_nothing_activate
 }
 
 /// Plays the window manager's part for one activation: on the `_NET_ACTIVE_WINDOW` request naming `window`, waits
-/// `WM_MAP_DELAY`, then restores it, as Openbox deiconifies a window it is asked to activate.
-fn map_on_activation(window: Window) -> std::thread::JoinHandle<bool> {
+/// `delay`, then restores it, as Openbox deiconifies a window it is asked to activate.
+fn map_on_activation(window: Window, delay: Duration) -> std::thread::JoinHandle<bool> {
     let (conn, screen) = x11rb::connect(None).expect("an X connection");
     let root = conn.setup().roots[screen].root;
     let active = atom(&conn, "_NET_ACTIVE_WINDOW");
@@ -463,7 +463,7 @@ fn map_on_activation(window: Window) -> std::thread::JoinHandle<bool> {
         while Instant::now() < deadline {
             match conn.poll_for_event().unwrap() {
                 Some(Event::ClientMessage(m)) if m.type_ == active && m.window == window => {
-                    sleep(WM_MAP_DELAY);
+                    sleep(delay);
                     conn.change_property32(PropMode::REPLACE, window, wm_state, wm_state, &[NORMAL_STATE, 0])
                         .unwrap();
                     conn.map_window(window).unwrap();
@@ -483,7 +483,7 @@ fn activating_a_minimized_window_waits_for_the_window_manager_to_map_it_then_foc
     let probe = Probe::open("MinimizedProbe", (0, 0, 320, 200));
     probe.minimize();
     probe.unfocus();
-    let wm = map_on_activation(probe.id);
+    let wm = map_on_activation(probe.id, WM_MAP_DELAY);
     let mut engine = Engine::start();
     let started = Instant::now();
     engine
@@ -497,6 +497,30 @@ fn activating_a_minimized_window_waits_for_the_window_manager_to_map_it_then_foc
         "it waited for the map, and no longer: {took:?}"
     );
     eprintln!("activate_window on a minimized window: answered after {took:?}");
+}
+
+/// The window manager maps the window at once: its map can land between the engine's refused focus and its look at
+/// the window, which must still set the focus again (the trial run's one failed activation in 18, M4's T4).
+#[test]
+fn activating_a_minimized_window_the_window_manager_maps_at_once_succeeds_every_time() {
+    let probe = Probe::open("MinimizedProbe", (0, 0, 320, 200));
+    let mut engine = Engine::start();
+    for round in 0..20 {
+        probe.minimize();
+        probe.unfocus();
+        let wm = map_on_activation(probe.id, Duration::ZERO);
+        engine
+            .request("activate_window", json!({"window": probe.target()}))
+            .unwrap_or_else(|e| panic!("round {round}: {e}"));
+        assert!(
+            wm.join().unwrap(),
+            "round {round}: the stand-in window manager saw the request"
+        );
+        assert!(
+            probe.viewable() && probe.has_focus(),
+            "round {round}: restored and focused"
+        );
+    }
 }
 
 #[test]

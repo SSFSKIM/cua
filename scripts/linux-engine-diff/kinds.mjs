@@ -27,7 +27,7 @@ import { FAMILIES, familyNames, openFamily, readGtk4Status, readQtCounts } from 
 import { Oracle } from './oracle.mjs';
 import { captureWindow, pixelsChanged } from './pixels.mjs';
 import { negativeCheck } from './run.mjs';
-import { XPROBE } from './scenes.mjs';
+import { XPROBE, xdotool } from './scenes.mjs';
 import { startWitness } from './witness.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -253,7 +253,7 @@ async function series(ctx, spec, scene, kind, n) {
       let sent;
       if (spec.control) {
         // the control: the window activated, then the same point in root coordinates through XTEST
-        execFileSync('xdotool', ['windowactivate', '--sync', String(scene.id)]);
+        xdotool('windowactivate', '--sync', scene.id);
         await sleep(150);
         sent = await witness.span(`${spec.label}:${family}:${kind}`, () => engine.request(command, { ...input, x: scene.window.x + point.x, y: scene.window.y + point.y }));
       } else {

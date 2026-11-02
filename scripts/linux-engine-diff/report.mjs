@@ -10,6 +10,29 @@ import { matrixMarkdown } from './matrix-judge.mjs';
 import { summarizeEngine, verdictLine } from './stats.mjs';
 
 const fmt = (v) => (v === null || v === undefined ? '–' : String(v));
+
+const windowId = (id) => `0x${id.toString(16).padStart(8, '0')}`;
+function activeText(a) {
+  if (!a) return 'an unreadable active window';
+  if (a.owner === 'none') return 'no window active';
+  return `${windowId(a.id)} active (${a.owner})`;
+}
+
+/**
+ * The run's desktop in one line (scenes.mjs `desktopEnding`): the start and end active windows, each marked foreign or
+ * the harness's (the harness acts on neither), the holder, and the audit of the harness's own trace.
+ */
+export function desktopLine(record) {
+  if (!record) return "desktop: **the harness's own trace did not run**, so its requests went unaudited";
+  const { trace } = record;
+  const changes = `${trace.mutating} change${trace.mutating === 1 ? '' : 's'} of a window`;
+  const audit = trace.foreign.length
+    ? `**${trace.foreign.length} change${trace.foreign.length === 1 ? '' : 's'} of a window it did not open: ${trace.foreign.join('; ')}**`
+    : trace.clean
+      ? 'every one of its own'
+      : '**it recorded no request, so its requests went unaudited**';
+  return `desktop: started with ${activeText(record.active_start)}, ended with ${activeText(record.active_end)}, neither acted on; holder ${record.holder ? windowId(record.holder) : 'none'}; the harness's own trace: ${trace.requests} requests, ${changes}, ${audit}`;
+}
 const frac = (rows, key) => {
   const known = rows.filter((r) => typeof r[key] === 'boolean');
   return known.length ? `${known.filter((r) => r[key]).length}/${known.length}` : '–';
@@ -26,6 +49,8 @@ export function renderSummary(lines) {
       // a matrix is rendered from its rows with the current judgement; other experiments keep their own summary
       if (meta.experiment === 'matrix') out.push(...matrixMarkdown(rows), '');
       else for (const r of rows.filter((x) => x.kind === 'experiment-summary')) out.push(...r.markdown, '');
+      // a run from before the harness audited its own trace has no record
+      for (const r of rows.filter((x) => x.kind === 'experiment-summary' && 'desktop' in x)) out.push(desktopLine(r.desktop), '');
       continue;
     }
     // one execution's rows only: a run name whose rows come from a gate and a dev run (or a run from before #267) is not
@@ -178,6 +203,8 @@ export function renderSummary(lines) {
     const endLabel = gateLabel(end?.gate);
     const ending = !end || end.pass === undefined ? '' : `; ${endLabel ? `${endLabel}: ` : ''}${verdictLine(end, (s) => `**${s}**`)}`;
     out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
+    // a run from before the harness audited its own trace has no record
+    if (end && 'desktop' in end) out.push(desktopLine(end.desktop), '');
   }
   return out.join('\n');
 }

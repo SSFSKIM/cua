@@ -4,14 +4,14 @@
 // that reads CLIPBOARD with a real timestamp; whether a grab is left in force; whether a window lies inside another;
 // and the window manager's stacking order.
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 
-import { XPROBE } from './scenes.mjs';
+import { XPROBE, spawnXprobe, xprobe } from './xtools.mjs';
 
 /** CLIPBOARD's current text: `{ok, owner, text}`, or `{ok: false, why}`. */
 export function clipRead() {
-  return JSON.parse(execFileSync(XPROBE, ['clip-read'], { encoding: 'utf8', timeout: 10000 }).trim());
+  return JSON.parse(xprobe(['clip-read'], { timeout: 10000 }).trim());
 }
 
 /** Whether a pointer or keyboard grab is in force: `{pointer, keyboard}`, each `free` or `grabbed` (or why not). */
@@ -21,12 +21,12 @@ export function grabs() {
 
 /** Whether X window `window` is `ancestor` or lies inside it. */
 export function within(window, ancestor) {
-  return JSON.parse(execFileSync(XPROBE, ['within', String(window), String(ancestor)], { encoding: 'utf8', timeout: 10000 }).trim()).within;
+  return JSON.parse(xprobe(['within', window, ancestor], { timeout: 10000 }).trim()).within;
 }
 
 /** The root child X window `window` lies in: a managed client's window manager frame (`xprobe toplevel`). */
 export function toplevel(window) {
-  return JSON.parse(execFileSync(XPROBE, ['toplevel', String(window)], { encoding: 'utf8', timeout: 10000 }).trim()).toplevel;
+  return JSON.parse(xprobe(['toplevel', window], { timeout: 10000 }).trim()).toplevel;
 }
 
 /**
@@ -34,7 +34,7 @@ export function toplevel(window) {
  * `{open, remaining_ms, client}`, read as the engine reads it.
  */
 export function quarantine() {
-  return JSON.parse(execFileSync(XPROBE, ['quarantine'], { encoding: 'utf8', timeout: 10000 }).trim());
+  return JSON.parse(xprobe(['quarantine'], { timeout: 10000 }).trim());
 }
 
 /**
@@ -65,7 +65,7 @@ export function stacking() {
  * that matches, `send(line)` writes a command (`arm`, `go`, `retake <ms> <text>`), `stop()` ends it.
  */
 export async function startOwner(text) {
-  const child = spawn(XPROBE, ['clip-own', text], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const child = spawnXprobe(['clip-own', text], { stdio: ['pipe', 'pipe', 'inherit'] });
   const lines = [];
   const waiters = [];
   createInterface({ input: child.stdout }).on('line', (line) => {
@@ -122,7 +122,7 @@ export async function startOwner(text) {
  * `cross(window)`, which moves it above `window` and back below it under one server grab and resolves once done.
  */
 export async function startOverlay(args) {
-  const child = spawn(XPROBE, ['overlay', ...args], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const child = spawnXprobe(['overlay', ...args], { stdio: ['pipe', 'pipe', 'inherit'] });
   const lines = createInterface({ input: child.stdout });
   const waiting = [];
   lines.on('line', (line) => waiting.shift()?.(JSON.parse(line)));

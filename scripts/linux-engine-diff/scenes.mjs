@@ -3,6 +3,14 @@
 // window (xterm) that holds the desktop's focus so every scene window is a background window. A reader (one
 // cua-engine process the harness keeps for itself) lists windows and reads effects back through the tree; it is
 // never an engine under measurement. Nothing here logs the text or titles of windows the harness did not open.
+//
+// The harness never changes a window it did not open (the design session, 2026-11-02). The window found active when a
+// run begins is never activated again: the run records it, and the active window it ends with, each marked foreign or
+// the harness's, and acts on neither. A run that begins with a foreign window active first opens and activates a holder
+// window of its own, kept until every other window of the run's is closed, so the window manager's focus fallback lands
+// on the harness's windows throughout; when the holder closes, what the window manager activates is its own doing. The
+// harness's X tools reach the display through the run's own trace (xtools.mjs), whose audit (audit.mjs `auditForeign`)
+// the run's end judges against the windows the harness registered.
 
 import { execFileSync, spawn } from 'node:child_process';
 import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -11,25 +19,47 @@ import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { auditForeign, foreignLine, parseXtrace, startProxy } from './audit.mjs';
 import { Engine } from './engine.mjs';
 import { preorder } from './normalize.mjs';
 import { cleanupOnStop } from './stop.mjs';
+import { spawnXprobe, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
+
+export { XPROBE, xdotool };
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const PAGES = join(here, 'pages');
-export const XPROBE = join(here, 'xprobe', 'target', 'release', 'xprobe');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-export function xdotool(...args) {
-  return execFileSync('xdotool', args.map(String), { encoding: 'utf8', timeout: 15000 }).trim();
-}
 
 export function activeWindow() {
   const text = execFileSync('xprop', ['-root', '_NET_ACTIVE_WINDOW'], { encoding: 'utf8' });
   const match = text.match(/0x[0-9a-f]+/i);
   return match ? Number.parseInt(match[0], 16) : 0;
 }
+
+/** The screen's root window. */
+export function rootWindow() {
+  const text = execFileSync('xwininfo', ['-root'], { encoding: 'utf8' });
+  return Number.parseInt(text.match(/Window id: (0x[0-9a-f]+)/i)[1], 16);
+}
+
+/** A window's parent, or null when it no longer exists (`xwininfo`, a read). */
+function parentOf(id) {
+  try {
+    const text = execFileSync('xwininfo', ['-id', String(id), '-children'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const match = text.match(/Parent window id: (0x[0-9a-f]+)/i);
+    return match ? Number.parseInt(match[1], 16) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Where the holder sits: the corner the front window takes in the visible arrangement, so it overlaps no scene window
+ * the front window does not already overlap, and a covering front window covers it.
+ */
+const HOLDER_PLACE = [1070, 640, 200, 150];
 
 export function a11yBusAddress() {
   const text = execFileSync('xprop', ['-root', 'AT_SPI_BUS'], { encoding: 'utf8' });
@@ -56,25 +86,123 @@ export function configure(id, x, y, w, h) {
 /** The geometry every scene window of a kind is given, so equivalent windows are the same size and place. */
 export const GEOMETRY = { gedit: [910, 756], chrome: [1050, 780], recorder: [600, 400] };
 
+/**
+ * A run's end as its `end` row records it (`Desktop.ending`): the start and end active windows, each marked foreign
+ * or the harness's, the holder, and the audit of the harness's own trace. `foreign` lists what fails the run: each
+ * change of a window the harness did not open, or a trace that cannot show there was none.
+ */
+export function desktopEnding(ending) {
+  if (!ending) return { record: null, foreign: ["the harness: its trace did not run, so its requests went unaudited"] };
+  const { audit } = ending;
+  const foreign = audit.foreign.map((f) => `the harness: ${foreignLine(f)}`);
+  if (!audit.traced) foreign.push(`the harness: its trace recorded no request${audit.error ? ` (${audit.error})` : ''}, so its requests went unaudited`);
+  return {
+    record: { active_start: ending.start, active_end: ending.end, holder: ending.holder, trace: { clean: audit.clean, requests: audit.requests, mutating: audit.mutating, foreign: audit.foreign.slice(0, 10).map(foreignLine) } },
+    foreign,
+  };
+}
+
 export class Desktop {
   /**
-   * `reader` and `previousActive`: the display-free tests' own (stop.test.mjs); a run's are the defaults. `logs`: the
+   * `reader` and `startActive`: the display-free tests' own (stop.test.mjs); a run's are the defaults. `logs`: the
    * run's output directory, where the scene applications' stderr is kept (`spawnApp`); without it, it is discarded.
+   * A run calls `begin` before it opens anything.
    */
-  constructor({ cua, run, reader, previousActive, logs }) {
+  constructor({ cua, run, reader, startActive, logs }) {
     this.run = run;
     this.dir = mkdtempSync(join(tmpdir(), `cua171-diff-${run}-`));
     this.logs = logs ? join(logs, 'apps') : null;
     this.reader = reader ?? new Engine({ label: 'reader', bin: cua }).start();
     // every window the harness asked for, registered before it is asked for (so a stop finds it), its id once found
     this.windows = [];
-    this.previousActive = previousActive ?? activeWindow();
+    // the windows closed since: still the harness's own for the audit of its trace
+    this.closed = [];
+    // windows the harness found by their run-unique title and closed before it had registered their id
+    this.adopted = new Set();
+    // the window active before the run opened anything; it is recorded, never activated again
+    this.startActive = startActive ?? activeWindow();
+    this.holder = null;
+    this.trace = null;
+    // what the run's end records (`closeEverything`): the start and end active windows, the holder, the trace's audit
+    this.ending = null;
     // the opens in flight, and whether the run is stopping: then no window is asked for any more
     this.opening = new Set();
     this.stopping = false;
     // a run stopped by SIGINT or SIGTERM closes what it opened, as one that ends does (stop.mjs)
     this.stopHooks = [];
     this.unhookStop = cleanupOnStop(() => this.stop());
+  }
+
+  /**
+   * The run's start: its own trace, through which every X tool of the harness's then connects (xtools.mjs), and, when
+   * the window found active is foreign, the holder opened and activated before anything else. `startTrace` is the
+   * display-free tests' own. Returns the window found active, marked.
+   */
+  async begin({ startTrace = startProxy } = {}) {
+    this.root = rootWindow();
+    this.trace = await startTrace();
+    useHarnessDisplay(this.trace.env);
+    if (this.ownerOf(this.startActive) === 'foreign') await this.openHolder();
+    return this.activeRecord(this.startActive);
+  }
+
+  /** Every window id the harness opened in this run: the windows it registered, closed ones included. */
+  harnessIds() {
+    const ids = [...this.windows, ...this.closed].map((w) => w.id).filter((id) => Number.isSafeInteger(id) && id > 0);
+    return new Set([...ids, ...this.adopted]);
+  }
+
+  /** `harness` for a window the run opened, `foreign` for any other, `none` for no window. */
+  ownerOf(id) {
+    if (!id) return 'none';
+    return this.harnessIds().has(id) ? 'harness' : 'foreign';
+  }
+
+  activeRecord(id) {
+    return { id, owner: this.ownerOf(id) };
+  }
+
+  /**
+   * Whether a window an X request names is the harness's: one it registered (its own windows and the scene
+   * applications'), or a window inside one of them (the child an engine's background event is addressed to), found
+   * by walking its parents on the display. A window gone by then is not found, so it counts as foreign: the judgement
+   * fails closed. One predicate per audit, its walks cached.
+   */
+  harnessPredicate() {
+    const ids = this.harnessIds();
+    const known = new Map();
+    return (id) => {
+      if (ids.has(id)) return true;
+      if (!known.has(id)) {
+        let found = false;
+        for (let at = parentOf(id), depth = 0; at && at !== this.root && depth < 64; at = parentOf(at), depth++) {
+          if (ids.has(at)) {
+            found = true;
+            break;
+          }
+        }
+        known.set(id, found);
+      }
+      return known.get(id);
+    };
+  }
+
+  /** The holder: a terminal of the harness's own, placed in the front window's corner and activated. */
+  openHolder() {
+    this.assertOpen();
+    return this.track(async () => {
+      const label = this.label('holder');
+      const child = this.spawnApp(label, 'xterm', ['-T', label, '-e', 'sleep', '86400']);
+      const holder = { kind: 'xterm', role: 'holder', label, pid: child.pid, id: null };
+      this.windows.push(holder);
+      this.holder = holder;
+      const info = await this.waitForWindow((w) => w.title === label, label);
+      holder.id = info.id;
+      if (this.stopping) return holder;
+      configure(holder.id, ...HOLDER_PLACE);
+      xdotool('windowactivate', '--sync', holder.id);
+      return holder;
+    });
   }
 
   /** Something of the run's own to stop before the windows close when the run is stopped (its witness). */
@@ -156,7 +284,7 @@ export class Desktop {
   findByTitle(title) {
     try {
       const pattern = `^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
-      return execFileSync('xdotool', ['search', '--name', pattern], { encoding: 'utf8', timeout: 15000 }).trim().split('\n').filter(Boolean).map(Number);
+      return xdotool('search', '--name', pattern).split('\n').filter(Boolean).map(Number);
     } catch {
       // none
       return [];
@@ -166,7 +294,7 @@ export class Desktop {
   /** A Chrome window closed as Chrome's own close does (WM_DELETE_WINDOW): the browser is the person's. */
   closeWindow(id) {
     try {
-      execFileSync(XPROBE, ['close', String(id)]);
+      xprobe(['close', id]);
     } catch {
       // already gone
     }
@@ -381,7 +509,7 @@ export class Desktop {
     return this.track(async () => {
       const label = this.label('recorder', role);
       const [w, h] = GEOMETRY.recorder;
-      const child = spawn(XPROBE, ['record', '0', '0', String(w), String(h), 'managed', label], { stdio: ['pipe', 'pipe', 'ignore'] });
+      const child = spawnXprobe(['record', 0, 0, w, h, 'managed', label], { stdio: ['pipe', 'pipe', 'ignore'] });
       const scene = { kind: 'recorder', role, label, pid: child.pid, id: null, size: [w, h] };
       this.windows.push(scene);
       const lines = [];
@@ -449,7 +577,13 @@ export class Desktop {
       }
       try {
         // a Chrome window not found yet: whatever came up with its title
-        if (scene.kind === 'chrome') for (const id of scene.id ? [scene.id] : this.findByTitle(scene.title)) this.closeWindow(id);
+        if (scene.kind === 'chrome') {
+          for (const id of scene.id ? [scene.id] : this.findByTitle(scene.title)) {
+            // found by its title, unique to the run: the harness's own, though its id was never registered
+            this.adopted.add(id);
+            this.closeWindow(id);
+          }
+        }
         else if (scene.group) process.kill(-scene.pid, 'SIGTERM');
         else process.kill(scene.pid, 'SIGTERM');
       } catch {
@@ -457,6 +591,7 @@ export class Desktop {
       }
     }
     this.windows = this.windows.filter((w) => !scenes.includes(w));
+    this.closed.push(...scenes.filter((w) => !this.closed.includes(w)));
     await sleep(1000);
     for (const scene of scenes.filter((s) => s.group)) {
       try {
@@ -473,19 +608,40 @@ export class Desktop {
     return this.closing;
   }
 
+  /**
+   * The run's end: every window of the run's closed, the holder last; the window found active at the start is not
+   * activated again (it is foreign: nothing of the run's was open then). A run that began records `ending`: the start
+   * and end active windows, each marked, the holder, and the audit of its trace, which covers this cleanup too.
+   */
   async closeEverything() {
-    await this.close(this.windows);
+    await this.close(this.windows.filter((w) => w !== this.holder));
     await this.reader.close();
+    // the holder last: until here the window manager's fallback lands on it; after it, the window manager chooses
+    if (this.holder && this.windows.includes(this.holder)) await this.close([this.holder]);
     rmSync(this.dir, { recursive: true, force: true });
     this.pruneLogs();
-    if (this.previousActive) {
-      try {
-        xdotool('windowactivate', this.previousActive);
-      } catch {
-        // the previously active window is gone
-      }
-    }
+    if (this.trace) this.ending = await this.finishTrace();
     // only once everything is closed: a signal meanwhile still waits for this cleanup
     this.unhookStop();
+  }
+
+  /** The trace stopped and audited, the harness's tools back on the session's display, and the run's end recorded. */
+  async finishTrace() {
+    let end = null;
+    try {
+      end = activeWindow();
+    } catch {
+      // unreadable: recorded as unknown
+    }
+    let audit;
+    try {
+      const text = await this.trace.stop();
+      audit = auditForeign(parseXtrace(text), { isHarness: this.harnessPredicate(), root: this.root });
+    } catch (error) {
+      audit = { clean: false, traced: false, requests: 0, mutating: 0, foreign: [], error: error.message };
+    } finally {
+      useHarnessDisplay(null);
+    }
+    return { start: this.activeRecord(this.startActive), end: end === null ? null : this.activeRecord(end), holder: this.holder?.id ?? null, audit };
   }
 }

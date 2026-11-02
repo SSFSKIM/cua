@@ -15,8 +15,10 @@ export function median(values) {
  * `restores` (prepare.mjs `judgeTextRestores`' `lanes`): the scene text put back per lane, carried to the verdict line;
  * `stop`: why the run stopped before its verdicts (a candidate's own text lost, task 24), one more failure.
  * `warmUps` (prepare.mjs `judgeWarmUps`): each candidate warm-up that failed is one more failure.
+ * `foreign`: each change of a window the harness did not open (audit.mjs `auditForeign`, by the harness or an engine
+ * it drove), and each trace that could not show there was none, is one more failure, whatever the verdicts.
  */
-export function runOutcome(verdicts, { valid, faults = null, restores = null, stop = null, warmUps = null }) {
+export function runOutcome(verdicts, { valid, faults = null, restores = null, stop = null, warmUps = null, foreign = [] }) {
   const name = (v) => `${v.scene} ${v.op} ${v.candidate}`;
   const judged = verdicts.filter((v) => v.kind === 'verdict');
   const parity = judged.filter((v) => !v.pass && v.verdict === 'parity').map(name);
@@ -27,6 +29,7 @@ export function runOutcome(verdicts, { valid, faults = null, restores = null, st
   if (faults && !faults.pass) failed.push(`harness preparation failures over the cap (${faults.reasons.join('; ')})`);
   if (warmUps && !warmUps.pass) failed.push(...warmUps.reasons);
   if (stop) failed.push(stop);
+  for (const f of foreign) failed.push(`a window the harness did not open was changed: ${f}`);
   const pass = failed.length === 0;
   return { valid, pass, failed, parity, refused, ...(restores ? { restores } : {}), code: valid && pass ? 0 : 1 };
 }

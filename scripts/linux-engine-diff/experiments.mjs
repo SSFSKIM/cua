@@ -32,7 +32,7 @@ import { qtBridge } from './qt-bridge.mjs';
 import { engineReadiness } from './readiness-check.mjs';
 import { analyzeTrial } from './readiness.mjs';
 import { writeSummary } from './report.mjs';
-import { Desktop, GEOMETRY, XPROBE } from './scenes.mjs';
+import { Desktop, GEOMETRY, XPROBE, desktopEnding } from './scenes.mjs';
 import { median } from './stats.mjs';
 
 /** The fixed wait before a window's first capture (Decision Log, M0.3), and the margin M0.4 holds it to. */
@@ -322,6 +322,8 @@ export async function runExperiment(args) {
   // a matrix run that could not judge a family it was asked for is incomplete, and the run exits nonzero
   let outcome = { complete: true, failed: [] };
   try {
+    // the run's own trace, and the holder when a foreign window is active (scenes.mjs `begin`)
+    await desktop.begin();
     if (args.experiment === 'capture-readiness') md = await captureReadiness(desktop, emit, { families: args.families });
     else if (args.experiment === 'key-pace') md = await keyPace(desktop, emit, args.cua, { families: args.families });
     else if (args.experiment === 'qt-bridge') md = await qtBridge(desktop, emit, { vendor: args.vendor });
@@ -349,7 +351,11 @@ export async function runExperiment(args) {
     await desktop.closeAll();
     if (load) await load.stop();
   }
-  emit({ kind: 'experiment-summary', markdown: md, complete: outcome.complete, failed: outcome.failed, finished: new Date().toISOString() });
+  // the harness's own trace, judged once every window of the run's is closed: a change of a window it did not open
+  // makes the run incomplete, whatever it measured
+  const ending = desktopEnding(desktop.ending);
+  if (ending.foreign.length) outcome = { complete: false, failed: [...outcome.failed, ...ending.foreign.map((f) => `a window the harness did not open was changed: ${f}`)] };
+  emit({ kind: 'experiment-summary', markdown: md, complete: outcome.complete, failed: outcome.failed, desktop: ending.record, finished: new Date().toISOString() });
   process.stdout.write(`${md.join('\n')}\n`);
   writeSummary(args.out);
   return outcome.complete;

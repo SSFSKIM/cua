@@ -38,6 +38,7 @@ import { basename, join } from 'node:path';
 import { imageVerdict } from './images.mjs';
 import { preorder } from './normalize.mjs';
 import { activeWindow, configure, xdotool, XPROBE } from './scenes.mjs';
+import { xprobe } from './xtools.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -69,8 +70,8 @@ export function foreignActive(active, harness) {
   return active !== 0 && !harness.includes(active);
 }
 
-/** The harness's own windows: its scene windows and its front window. */
-const harnessIds = (desktop) => [...desktop.windows.map((w) => w.id), desktop.front?.id].filter((id) => Number.isSafeInteger(id));
+/** The harness's own windows: every window the run registered (scenes.mjs `harnessIds`), its front and holder among them. */
+const harnessIds = (desktop) => [...desktop.harnessIds()];
 
 /**
  * The scene window minimized, the harness's front window holding the focus first; the active window afterwards is
@@ -78,7 +79,7 @@ const harnessIds = (desktop) => [...desktop.windows.map((w) => w.id), desktop.fr
  */
 export async function minimize(ctx) {
   ctx.desktop.focusFront();
-  const took = JSON.parse(execFileSync(XPROBE, ['minimize', String(ctx.scene.id)], { encoding: 'utf8' }).trim());
+  const took = JSON.parse(xprobe(['minimize', ctx.scene.id]).trim());
   const active = activeWindow();
   ctx.minimized = { ms: took.ms, active_after: active };
   if (foreignActive(active, harnessIds(ctx.desktop))) {
@@ -98,7 +99,7 @@ function placement(id) {
  * differed for that). Waits until two reads 120 ms apart agree, at most 3 s.
  */
 async function restoreSettled(id) {
-  execFileSync(XPROBE, ['restore', String(id)], { encoding: 'utf8' });
+  xprobe(['restore', id]);
   const deadline = Date.now() + 3000;
   let last = placement(id);
   for (;;) {
@@ -352,7 +353,7 @@ function release({ mode, holdRoute }) {
 /** The keycodes the X server holds down (`xprobe keys-down`), or null when they could not be read. */
 function keysDown() {
   try {
-    return JSON.parse(execFileSync(XPROBE, ['keys-down'], { encoding: 'utf8' }).trim());
+    return JSON.parse(xprobe(['keys-down']).trim());
   } catch {
     return null;
   }

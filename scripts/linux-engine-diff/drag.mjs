@@ -26,7 +26,7 @@ import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
 import { captureWindow, pixelsChanged } from './pixels.mjs';
 import { negativeCheck } from './run.mjs';
-import { XPROBE } from './scenes.mjs';
+import { XPROBE, xdotool } from './scenes.mjs';
 import { median } from './stats.mjs';
 import { startWitness } from './witness.mjs';
 
@@ -466,7 +466,7 @@ async function series(ctx, spec, scene, at, kind, n, { prime = false } = {}) {
       const path = runPath(at, kind, i);
       let sent;
       if (spec.control) {
-        execFileSync('xdotool', ['windowactivate', '--sync', String(scene.id)]);
+        xdotool('windowactivate', '--sync', scene.id);
         await sleep(150);
         const root = path.map((p) => ({ x: scene.window.x + p.x, y: scene.window.y + p.y }));
         sent = await witness.span(`${spec.label}:${family}:drag:${kind}`, () => engine.request('drag', { path: root }));

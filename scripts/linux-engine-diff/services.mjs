@@ -39,7 +39,7 @@ import {join} from 'node:path';
 import {parseArgs} from 'node:util';
 import {pathToFileURL} from 'node:url';
 import {splitTruncationLine} from './normalize.mjs';
-import {Desktop} from './scenes.mjs';
+import {Desktop, desktopEnding} from './scenes.mjs';
 import {judgeTruncation} from './services-judge.mjs';
 
 const {values} = parseArgs({options: {'vendor-js': {type: 'string'}, engine: {type: 'string'}, out: {type: 'string'}, scenes: {type: 'string', default: 'gedit,chrome,over-budget'}}});
@@ -155,6 +155,8 @@ const desktop = new Desktop({cua: values.engine, run: `services-${process.pid}`,
 const rows = [];
 const setup = [];
 try {
+  // the run's own trace, and the holder when a foreign window is active (scenes.mjs `begin`)
+  await desktop.begin();
   for (const {sky} of lanes) setup.push({target: sky.target, methods: Object.keys(sky).filter(key => key !== 'target')});
   const setupExpected = lane => lane.target === 'linux' && lane.methods.length === 20 && lane.methods.includes('get_window_state');
   const setupEqual = JSON.stringify(setup[0]) === JSON.stringify(setup[1]);
@@ -201,6 +203,9 @@ try {
   await desktop.closeAll();
   cuaService.close();
 }
+// the harness's own trace, judged once every window of the run's is closed
+const ending = desktopEnding(desktop.ending);
+rows.push({scene: '-', step: 'harness-windows', ok: ending.foreign.length === 0, equal: true, expected: {vendor: true, cua: true}, desktop: ending.record, ...(ending.foreign.length ? {vendorError: ending.foreign.join('; ')} : {})});
 
 const engineVersion = execFileSync(values.engine, ['--version'], {encoding: 'utf8'}).trim();
 const commit = execFileSync('git', ['rev-parse', 'HEAD'], {encoding: 'utf8'}).trim();

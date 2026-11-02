@@ -7,7 +7,7 @@ import { copyFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { Engine } from './engine.mjs';
-import { Desktop } from './scenes.mjs';
+import { Desktop, desktopEnding } from './scenes.mjs';
 import { FIXTURE_DIR } from './wire-check.mjs';
 
 export async function recordWire(args) {
@@ -20,6 +20,7 @@ export async function recordWire(args) {
     process.stdout.write(`cua-${kind}.json: ${request.command}\n`);
   };
   try {
+    await desktop.begin();
     const scene = await desktop.openGedit('fixture', 'cua171 wire fixture\nline two\n');
     const ask = async (id, command, input) => {
       const { response } = await engine.request(command, input);
@@ -38,4 +39,7 @@ export async function recordWire(args) {
     await engine.close();
     await desktop.closeAll();
   }
+  // the harness's own trace: a change of a window it did not open fails the recording
+  const { foreign } = desktopEnding(desktop.ending);
+  if (foreign.length) throw new Error(`a window the harness did not open was changed: ${foreign.join('; ')}`);
 }

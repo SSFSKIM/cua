@@ -208,6 +208,23 @@ variants included; their evidence is written either way. The run's `end` row kee
   by the opcode the server reported for XTEST, minor 2). The verdict needs cua's audit clean wherever a vendor
   build's witness or audit is. The negative check drives the stub through a proxy too, and the run is valid only when
   the witness and the audit both fail it. `--no-audit` leaves the pass out.
+- **Windows the harness did not open** (the design session, 2026-11-02; `scenes.mjs`, `xtools.mjs`, `audit.mjs`
+  `auditForeign`): no request of the harness's, or of an engine it drives, may change a window the harness did not
+  open (activate, focus, configure, map or unmap, destroy, reparent, kill, warp into, or any SendEvent or client
+  message to it; a `SelectionNotify` answering the window's own clipboard request is no change of it). The window
+  found active at the start is recorded and never activated again. A run that starts with a foreign window active
+  first opens and activates a holder (an xterm in the front window's corner), closed after every other window of the
+  run's; what the window manager activates then is its own doing. `Desktop.begin` starts the run's own xtrace proxy,
+  and every `xdotool` and every xprobe command but the observers (the witness, the RECORD and selection watches,
+  `retention`, `snap`, `imgdiff`, `grabs`) connects through it (`xtools.mjs`; a test keeps it so). The harness's
+  windows are the ones it registered (its own and the scene applications', closed ones included, and Chrome windows
+  it found by their run-unique title), the windows the traced clients created, and any window whose parents lead to
+  one of them (`harnessPredicate`, walked on the display while the window exists; a window it can no longer resolve
+  counts as foreign). The trace is audited at the run's end, the cleanup included, and every audit pass's engine trace
+  the same way, whatever the operation's route; any foreign change, or a harness trace that recorded nothing, fails
+  the run. The `meta` row records the start's active window, and the `end` row (`desktop`) both active windows, each
+  marked `foreign` or `harness`, the holder and the trace's audit. The negative checks raise and activate only the top
+  two of the harness's own windows.
 - **Deviations** (`deviations.mjs`): a difference from the pinned build passes only when a declared deviation names
   its operation, its field and cua's exact answer. (In M1a the text and clipboard commands were checked apart, cua
   alone, each refused with `<command> is not available in this engine build`; M2 replaced that with its text

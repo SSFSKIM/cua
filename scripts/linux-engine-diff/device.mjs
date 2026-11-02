@@ -41,12 +41,11 @@
 
 import { readFileSync } from 'node:fs';
 
-import { execFileSync, spawn } from 'node:child_process';
-
 import { readGtk4Status } from './families.mjs';
 import { MINIMIZED_OPS, MINIMIZED_SCENE_OPS, judgeMinimized } from './minimized.mjs';
 import { stacking, startOverlay } from './clip.mjs';
 import { activeWindow, configure, xdotool } from './scenes.mjs';
+import { spawnXdotool } from './xtools.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -67,7 +66,7 @@ export const strayNotice = (app) =>
 
 /** The desktop state a drop could change: the active window, the X input focus, the stacking order. */
 export function desktopState() {
-  const focus = execFileSync('xdotool', ['getwindowfocus'], { encoding: 'utf8' }).trim();
+  const focus = xdotool('getwindowfocus');
   return { active: activeWindow(), focus: Number(focus), stacking: stacking() };
 }
 
@@ -189,7 +188,7 @@ const covered = (ctx) => ctx.desktop.arrangeFront('covered');
 /** The scene window fully visible and already in front: activated (the active window, the focus, on top). */
 function alreadyInFront(ctx) {
   visible(ctx);
-  execFileSync('xdotool', ['windowactivate', '--sync', String(ctx.scene.id)]);
+  xdotool('windowactivate', '--sync', ctx.scene.id);
 }
 
 /**
@@ -228,7 +227,7 @@ const CORNER = 40;
 
 /** The real pointer's place on the screen. */
 function pointerAt() {
-  const out = execFileSync('xdotool', ['getmouselocation', '--shell'], { encoding: 'utf8' });
+  const out = xdotool('getmouselocation', '--shell');
   const get = (k) => Number(out.match(new RegExp(`^${k}=(-?\\d+)`, 'm'))?.[1]);
   return { x: get('X'), y: get('Y') };
 }
@@ -268,7 +267,7 @@ function pointerOutside(ctx) {
  */
 function nudges() {
   const chain = Array.from({ length: 150 }, () => ['mousemove_relative', '--', '1', '0', 'sleep', '0.002', 'mousemove_relative', '--', '-1', '0', 'sleep', '0.002']).flat();
-  const child = spawn('xdotool', chain, { stdio: 'ignore' });
+  const child = spawnXdotool(chain, { stdio: 'ignore' });
   return new Promise((resolve) => {
     child.once('exit', resolve);
     child.once('error', resolve);

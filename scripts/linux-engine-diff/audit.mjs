@@ -212,6 +212,108 @@ export function auditHeldRelease({ requests, extensions }, target, { route, mark
   return { clean: traced && found.length === 0, traced, requests: requests.length, samples, forbidden: found };
 }
 
+/** The requests that change a window, by major opcode: activation and every client message go through SendEvent. */
+const MUTATING = {
+  4: 'DestroyWindow',
+  5: 'DestroySubwindows',
+  7: 'ReparentWindow',
+  8: 'MapWindow',
+  9: 'MapSubwindows',
+  10: 'UnmapWindow',
+  11: 'UnmapSubwindows',
+  12: 'ConfigureWindow',
+  13: 'CirculateWindow',
+  25: 'SendEvent',
+  41: 'WarpPointer',
+  42: 'SetInputFocus',
+  113: 'KillClient',
+};
+
+const idOf = (text, field) => {
+  const m = text.match(new RegExp(`\\b${field}=(?:0x([0-9a-f]+)|([A-Za-z]+)\\(0x([0-9a-f]+)\\))`));
+  if (!m) return undefined;
+  return m[1] !== undefined ? Number.parseInt(m[1], 16) : { keyword: m[2], value: Number.parseInt(m[3], 16) };
+};
+
+/**
+ * What a mutating request does and the windows it names that must be the harness's: `{what, windows}`, or null for a
+ * request that changes no window. A window is a number, or `{keyword}` for xtrace's named values (`None`,
+ * `PointerRoot`, `InputFocus`, `PointerWindow`), which are never the harness's where they name a target. The root is
+ * the desktop's own channel, not a window anyone opened: a SendEvent to it, and a client message naming it (the
+ * desktop switch xdotool sends before an activation), name no window; any other request naming it is foreign. A
+ * `SelectionNotify` answers the requestor's own `ConvertSelection` (ICCCM), so it changes nothing of the requestor's,
+ * and `WarpPointer`'s `None` or root destination moves the pointer without naming a window.
+ */
+export function mutation(request, root) {
+  const name = MUTATING[request.major];
+  if (!name || request.minor !== null) return null;
+  const { text } = request;
+  const named = (...fields) => fields.map((f) => idOf(text, f)).filter((w) => w !== undefined);
+  if (request.major === 25) {
+    const event = text.match(/event-mask=\S*\s+([A-Za-z]+)\(\d+\)/)?.[1] ?? 'event';
+    if (event === 'SelectionNotify') return { what: 'SendEvent SelectionNotify', windows: [] };
+    const destination = idOf(text, 'destination');
+    const windows = destination === root ? [] : [destination];
+    if (event === 'ClientMessage') {
+      const window = text.match(/ClientMessage\(33\).*?\bwindow=0x([0-9a-f]+)/);
+      const id = window ? Number.parseInt(window[1], 16) : undefined;
+      if (id !== root) windows.push(id);
+      const type = text.match(/type=0x[0-9a-f]+\("([^"]+)"\)/)?.[1];
+      return { what: `${type ?? 'a'} ClientMessage`, windows };
+    }
+    return { what: `SendEvent ${event}`, windows };
+  }
+  if (request.major === 41) {
+    const destination = idOf(text, 'dst-window');
+    return { what: name, windows: destination === root || destination?.keyword === 'None' ? [] : [destination] };
+  }
+  const fields = { 42: ['focus'], 113: ['resource'], 7: ['window', 'parent'] }[request.major] ?? ['window'];
+  const windows = named(...fields);
+  // a change whose window cannot be read is judged as foreign, never passed
+  return { what: name, windows: windows.length ? windows : [undefined] };
+}
+
+/** The windows a trace's own clients created: theirs, so their changes are the creator's own. */
+function createdWindows(requests) {
+  const created = new Set();
+  for (const r of requests) {
+    if (r.major !== 1) continue;
+    const id = idOf(r.text, 'window');
+    if (typeof id === 'number') created.add(id);
+  }
+  return created;
+}
+
+const shownWindow = (w) => (typeof w === 'number' ? `0x${w.toString(16).padStart(8, '0')}` : w === undefined ? 'an unreadable window' : (w.keyword ?? w));
+
+/**
+ * The harness's invariant (the design session, 2026-11-02): no request of a traced client changes a window the harness
+ * did not open. Every mutating request (`mutation`) is judged by the windows it names: each must be one the traced
+ * clients created, or one `isHarness(id)` says is the harness's (its own windows and the scene applications', with
+ * their children). Reads, event selections and property writes are not changes of a window and are not judged. A trace
+ * with no requests is not clean. Returns `{clean, traced, requests, mutating, foreign: [{conn, seq, what, window,
+ * text}]}`.
+ */
+export function auditForeign({ requests }, { isHarness, root }) {
+  const created = createdWindows(requests);
+  const foreign = [];
+  let mutating = 0;
+  for (const r of requests) {
+    const change = mutation(r, root);
+    if (!change) continue;
+    mutating++;
+    for (const window of new Set(change.windows)) {
+      if (typeof window === 'number' && window !== root && (created.has(window) || isHarness(window))) continue;
+      foreign.push({ conn: r.conn, seq: r.seq, what: change.what, window: typeof window === 'number' ? window : shownWindow(window), text: r.text });
+    }
+  }
+  const traced = requests.length > 0;
+  return { clean: traced && foreign.length === 0, traced, requests: requests.length, mutating, foreign };
+}
+
+/** One foreign change as a line: what it was and the window it named. */
+export const foreignLine = (f) => `${f.what} on ${shownWindow(f.window)}`;
+
 function freeDisplay() {
   for (let n = 40; n < 100; n++) {
     if (!existsSync(`/tmp/.X11-unix/X${n}`) && !existsSync(`/tmp/.X${n}-lock`)) return n;

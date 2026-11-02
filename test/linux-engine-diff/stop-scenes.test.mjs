@@ -48,7 +48,7 @@ test('a SIGTERM while a Chrome window is being discovered waits for it, closes t
     `import { appendFileSync, existsSync } from 'node:fs';
 import { Desktop } from ${JSON.stringify(SCENES)};
 const reader = ${readerSource(chrome.asked, title, 300)};
-const desktop = new Desktop({ cua: 'unused', run: 'stoptest', reader, previousActive: 0 });
+const desktop = new Desktop({ cua: 'unused', run: 'stoptest', reader, startActive: 0 });
 // nothing listed by its title yet when the signal comes: only the discovery can find it
 desktop.findByTitle = () => [];
 desktop.closeWindow = (id) => appendFileSync(${JSON.stringify(log)}, 'close ' + id + '\\n');
@@ -80,7 +80,7 @@ test('a stopping run asks for no new window', async () => {
   const chrome = fakeChrome();
   const saved = process.env.PATH;
   process.env.PATH = chrome.env.PATH;
-  const desktop = new Desktop({ cua: 'unused', run: 'stoptest2', reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, previousActive: 0 });
+  const desktop = new Desktop({ cua: 'unused', run: 'stoptest2', reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0 });
   try {
     desktop.stopping = true;
     assert.throws(() => desktop.openChrome('r', 'scene.html'), /the harness is stopping/);
@@ -101,7 +101,7 @@ test('a Chrome window whose discovery failed is closed by its title', async () =
   const saved = process.env.PATH;
   process.env.PATH = chrome.env.PATH;
   const closed = [];
-  const desktop = new Desktop({ cua: 'unused', run: 'stoptest3', reader: { request: async () => ({ response: { ok: false, error: 'reader gone' } }), close: async () => {} }, previousActive: 0 });
+  const desktop = new Desktop({ cua: 'unused', run: 'stoptest3', reader: { request: async () => ({ response: { ok: false, error: 'reader gone' } }), close: async () => {} }, startActive: 0 });
   desktop.findByTitle = (title) => (title === 'cua171-diff-stoptest3-scene-r - Google Chrome' ? [77] : []);
   desktop.closeWindow = (id) => closed.push(id);
   try {

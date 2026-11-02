@@ -35,7 +35,7 @@ function setup(run, windows, { logs = true } = {}) {
   const out = join(dir, 'out');
   const saved = process.env.PATH;
   process.env.PATH = `${dir}${delimiter}${saved}`;
-  const desktop = new Desktop({ cua: 'unused', run, reader: reader(windows), previousActive: 0, ...(logs ? { logs: out } : {}) });
+  const desktop = new Desktop({ cua: 'unused', run, reader: reader(windows), startActive: 0, ...(logs ? { logs: out } : {}) });
   desktop.place = () => {};
   desktop.waitForTree = async () => {};
   desktop.arrangeFront = () => {};

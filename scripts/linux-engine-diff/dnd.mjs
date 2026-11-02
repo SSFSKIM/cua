@@ -30,6 +30,7 @@ import { desktopState } from './device.mjs';
 import { negativeCheck, openScene } from './run.mjs';
 import { blockOrder } from './stats.mjs';
 import { XPROBE } from './scenes.mjs';
+import { spawnXdotool, spawnXprobe, xdotool } from './xtools.mjs';
 import { judgeRestacks, startWitness } from './witness.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -173,7 +174,7 @@ async function series(ctx, spec, scene, family, n) {
   try {
     for (let i = 0; i < n; i++) {
       desktop.arrange(scene, occlusion);
-      if (spec.activate) execFileSync('xdotool', ['windowactivate', '--sync', String(scene.id)]);
+      if (spec.activate) xdotool('windowactivate', '--sync', scene.id);
       await sleep(400);
       runs.push(await oneDrag(ctx, spec, scene, family, at, engine, i));
     }
@@ -208,11 +209,11 @@ async function coldSeries(ctx, lanes, scenes, family, n, { coverMs = 0, prelude 
         desktop.arrangeFront('covered');
         await sleep(coverMs);
       }
-      if (ctx.parkPointer) execFileSync('xdotool', ['mousemove', '--sync', String(ctx.parkPointer.x), String(ctx.parkPointer.y)]);
+      if (ctx.parkPointer) xdotool('mousemove', '--sync', ctx.parkPointer.x, ctx.parkPointer.y);
       // the device case's `alreadyInFront`: the front window back in its corner, the window raised, then activated
       desktop.arrangeFront('visible');
       desktop.raise(scene);
-      execFileSync('xdotool', ['windowactivate', '--sync', String(scene.id)]);
+      xdotool('windowactivate', '--sync', scene.id);
       await sleep(COLD_SETTLE_MS);
       runs[spec.label].push(await oneDrag(ctx, spec, scene, family, at[spec.label], engine, i, { cold: true, cover_ms: coverMs, prelude: prelude ? 'dedicated' : null, pointer_at_press: pointerAt() }));
     } finally {
@@ -279,7 +280,7 @@ function foreignGrabAfter(ms) {
 
 /** The real pointer's place on the screen (`xdotool getmouselocation`). */
 function pointerAt() {
-  const out = execFileSync('xdotool', ['getmouselocation', '--shell'], { encoding: 'utf8' });
+  const out = xdotool('getmouselocation', '--shell');
   const get = (k) => Number(out.match(new RegExp(`^${k}=(\\d+)`, 'm'))?.[1]);
   return { x: get('X'), y: get('Y') };
 }
@@ -293,11 +294,11 @@ function strayAfter({ kind, ms }) {
       const started = Date.now() - t0;
       const done = () => resolve({ kind, started_ms: started, at, took_ms: Date.now() - t0 - started });
       if (kind === 'nudge') {
-        const child = spawn('xdotool', ['mousemove_relative', '--', '1', '0', 'mousemove_relative', '--', '-1', '0'], { stdio: 'ignore' });
+        const child = spawnXdotool(['mousemove_relative', '--', '1', '0', 'mousemove_relative', '--', '-1', '0'], { stdio: 'ignore' });
         child.once('exit', done);
         child.once('error', done);
       } else {
-        const child = spawn(XPROBE, ['popup', String(at.x - 2), String(at.y - 2), '5', '5', '5'], { stdio: 'ignore' });
+        const child = spawnXprobe(['popup', at.x - 2, at.y - 2, 5, 5, 5], { stdio: 'ignore' });
         child.once('exit', done);
         child.once('error', done);
       }

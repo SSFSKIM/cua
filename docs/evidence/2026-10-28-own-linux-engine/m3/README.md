@@ -10,13 +10,95 @@ The vendor builds are the pinned 26.928.40906 and the newest 26.1023.51421. M3 r
 | M3.2, cua's own Linux service | `services/` | the two services render the same states and numbers on one engine; no vendor module with cua's engine ([its README](services/README.md)) |
 | the drop-miss follow-up | `drop-misses/`, `drop-misses/task18/` | the mechanism of M3.1's Chrome drop misses and the 350 ms release floor ([its README](drop-misses/task18/README.md)) |
 | M3's gate | `gate-musl/` (the verdict); `gate/`, `gate-final/`, `gate-verdict/`, `gate-t25/` (earlier runs) | **M3's verdict is `m3-gate-musl`: it exits 0**, on the release workflow's attested x64 musl build of cd4c9297 ([below](#m3s-gate-the-verdict-gate-musl-run-m3-gate-musl-it-passes)). The earlier fresh full verdict runs did not pass: `m3-gate` on the M3.3 engine and `m3-gate-final` on the merged head after task 20 **both exit 1**. `m3-gate-verdict`, after tasks 22 and 23, was **stopped by ruling** once the harness-fault caps were exceeded. `m3-gate-t25`, after task 24, was **stopped by ruling** 9 minutes in, because its cua engine was a VM build, not the bytes that ship |
+| M3's release and the pinned engine | `release/` | `linux-engine-v0.3.0`, whose x64 asset is the gated bytes, pinned and installed: Acceptance 9 in a fresh home, Acceptance 1 and the device-mode fixture on the installed engine, the release build's feature graph ([below](#m3s-release-and-the-pinned-engine-release)) |
 | M3.3, doctor, provisioning and the facade proof | `doctor/`, `provision/`, `facade/`, `accept/`, `parity/`, `baseline/` | below |
 
 The engine of every M3.3 run and of `m3-gate` is one frozen release build of the head's engine sources: the engine
 sources last changed at 1b7debef, built at bcf64d68, `cua-engine 0.3.0 (bcf64d68401c)`, SHA-256
 `01955bef9ff69fa9af948c50c324edb07dfbd303474e179f7f0c7f42e163032d`. No M3.3 commit touches `native/linux-engine/`.
-Until 0.3.0 is released and pinned, the installed engine is 0.2.0, which cua's service refuses (`MIN_ENGINE_VERSION`
-0.3.0), so the facade runs name the build: `--engine-bin` for the suites, `CUA_LINUX_ENGINE_BIN` for the fixtures.
+Until 0.3.0 was released and pinned, the installed engine was 0.2.0, which cua's service refuses (`MIN_ENGINE_VERSION`
+0.3.0), so the facade runs named the build: `--engine-bin` for the suites, `CUA_LINUX_ENGINE_BIN` for the fixtures.
+Since the pin (9bf9d3a9), the installed engine is the released 0.3.0 (`release/`, below).
+
+## M3's release and the pinned engine (`release/`)
+
+**The release.** `linux-engine.yml` ran with `publish: true` on the branch `release/linux-engine-v0.3.0`, at
+cd4c9297, the gate commit: run [41364541329](https://github.com/SSFSKIM/cua/actions/runs/41364541329)
+(`workflow_dispatch`, success). For both arches, natively, the run:
+- built the engine;
+- checked that the binary carries no runner path, no token and no fault injection;
+- ran the engine's tests, the live ones against the built binary;
+- attested each asset and verified the attestations as the pin script does.
+
+It then published `linux-engine-v0.3.0`. The tag points at cd4c9297, and the release was published 2026-11-02 00:00:41Z.
+
+**The pin.** `node scripts/linux-engine-pin.mjs linux-engine-v0.3.0` printed "(attestation verified)" for both assets
+and wrote `runtime/engine/linux-engine.json` (9bf9d3a9):
+
+| arch | asset | SHA-256 |
+|---|---|---|
+| x64 | `cua-engine-0.3.0-linux-x64`, 1,692,384 bytes | `5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60` |
+| arm64 | `cua-engine-0.3.0-linux-arm64`, 1,446,096 bytes | `57e699b4eaf8a817b54b3cbdbb473ac038cdf5d7e2ca60c66f7c476a793d9e5f` |
+
+**The published x64 asset is the gated binary, byte for byte.** Its SHA-256 equals that of the candidate `m3-gate-musl`
+judged (the build-only run 41350086196's artifact, above), and so does that of the release's own download and of every
+installed copy below. Both runs built from the same commit with the same toolchain and produced the same bytes.
+
+**The toolchain.** Each target is built with rustc 1.94.1 (`native/linux-engine/rust-toolchain.toml`) for
+`x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`, each on its own native runner, and is a static-pie.
+
+**The release build's feature graph** (`release/feature-graph/`, made by its `feature-graph.sh`):
+- What it is: `cargo tree -e no-dev` for each musl target, the resolved features without dev edges, before (380b132b)
+  and after (cd4c9297) task 26's `[dev-dependencies]`.
+- **Before and after are identical for both targets.** The dev-only features never reach the shipped binary:
+  - x11rb has no `res` (`composite, damage, render, shape, shm, xfixes, xinput, xtest`);
+  - rustix has no `process` (`alloc, default, event, fs, mm, net, std, system`).
+- rustix's `net` was there before task 26, through x11rb.
+
+On the #171 VM (x86-64), on the pinned asset, at 9bf9d3a9:
+
+- **Acceptance 9, fresh home** (`release/fresh-home.txt`; the temporary home was removed afterwards).
+  - `CUA_HOME=<fresh> node bin/cua.mjs install --engine`: "installed cua's Linux engine 0.3.0 (linux-engine-v0.3.0) at
+    <fresh>/engine/linux/cua-engine".
+  - `file`: `ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, … stripped`.
+  - `--version` prints `cua-engine 0.3.0 (cd4c929758ca)`, and its SHA-256 is the pin's, `5f4a1600…`.
+  - `CUA_NATIVE_ENGINE=cua node bin/cua.mjs doctor` passes the engine row and the accessibility row:
+    > PASS engine: cua's engine is selected (CUA_NATIVE_ENGINE=cua): sessions here run the pinned cua-engine 0.3.0
+    > (linux-engine-v0.3.0) at <fresh>/engine/linux/cua-engine, SHA-256
+    > 5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60, behind service cua (cua's own Linux service);
+    > device mode shared (…); capabilities, from cua-engine started for this check and stopped: backend x11, build
+    > cd4c929758ca, capture.desktop true, capture.window retained, desktop shared, input.background true,
+    > input.desktop true, text.literal true, text.paste verified, tree at_spi, version 0.3.0
+
+    > PASS accessibility.enabled: org.a11y.Status IsEnabled is true on the session bus at unix:path=/run/user/501/bus,
+    > so Qt applications put their accessibility trees on the bus
+  - Doctor exits 0. Its three `chrome.*` rows are BLOCKED because a fresh home has no Chrome registration; that is the
+    browser surface, not the engine.
+- **Acceptance 1 and the Linux acceptance fixture, VM default home** (`release/default-home.txt`,
+  `release/accept-linux-native-cua.json`).
+  - `node bin/cua.mjs install --engine` replaced 0.2.0 (`8b49b6825ae5`): "installed cua's Linux engine 0.3.0
+    (linux-engine-v0.3.0) at /Users/new/.local/share/cua/engine/linux/cua-engine". The installed engine is
+    `cua-engine 0.3.0 (cd4c929758ca)` with SHA-256 `5f4a1600…`.
+  - The fixture then ran as `CUA_NATIVE_ENGINE=cua node scripts/accept/linux-native.mjs`, with no
+    `CUA_LINUX_ENGINE_BIN`, under `release/accept-watch.mjs` (M2's sampler, unchanged), which sampled the process
+    table every 50 ms.
+  - **PASS**, all 11 steps, over 3,370 samples.
+  - The most `sky_linux` processes seen at once was 0.
+  - The one engine process was `/Users/new/.local/share/cua/engine/linux/cua-engine`, the installed one, a child of
+    the trusted worker (`src/repl-host/trusted-worker.mjs`).
+- **Acceptance 6's gnome-text-editor case and Acceptance 8 through the facade, on the installed engine**
+  (`release/device-mode.json`, the fixture's own report; `release/device-mode-watch.json`).
+  - `CUA_NATIVE_ENGINE=cua node scripts/accept/linux-device-mode.mjs` ran with no `--engine-bin` and no
+    `CUA_LINUX_ENGINE_BIN` (the report's `engineBin` is null), unchanged, under the same 50 ms sampler
+    (`release/device-watch.mjs`).
+  - **18 of 18 steps PASS**, both negative controls included, over 570 samples.
+  - 0 `sky_linux` processes were seen.
+  - The two engine processes, one per device mode's `cua serve`, were both the installed
+    `/Users/new/.local/share/cua/engine/linux/cua-engine`, each a child of the trusted worker.
+  - The fixture closed everything it opened. A stray check afterwards found no harness process and only the owner's
+    window on `:0`.
+- **Not run here:** the arm64 install, which is M5's on the arm64 VM. The release run tested the arm64 asset natively
+  on GitHub's `ubuntu-24.04-arm` runner.
 
 ## M3's gate, the verdict (`gate-musl/`, run `m3-gate-musl`): it passes
 

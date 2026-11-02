@@ -122,6 +122,13 @@ pub fn acts(command: &str, input: Option<&Value>) -> bool {
     }
 }
 
+/// The `truncated` that `get_window_state` reports beside its tree (Design, The tree read; M4): the accessibility read's
+/// cut points, and nothing when it cut nothing or when the tree is the X11 fallback, which no read made. An addition
+/// to the vendor's output that its JavaScript ignores.
+fn reported_truncation(source: &str, truncated: tree::Truncated) -> Option<tree::Truncated> {
+    (source == "at_spi" && !truncated.is_empty()).then_some(truncated)
+}
+
 /// The `--stats` line's record of a reported after-release watch.
 fn late_stats(app: &str, end: &crate::dnd::WatchEnd) -> Value {
     match end {
@@ -396,6 +403,7 @@ impl Engine {
                 "tables_sampled": read_stats.tables_sampled,
                 "tables_listed": read_stats.tables_listed,
                 "hit_tests": read_stats.hit_tests,
+                "truncated": read_stats.truncated,
             }),
         );
         let tree = match input.query.as_deref() {
@@ -421,7 +429,12 @@ impl Engine {
             }
             screenshots.push(json!({ "filepath": self.save_screenshot(&rgb, width, height)? }));
         }
-        Ok(json!({ "ax_tree": tree, "ax_tree_source": source, "screenshots": screenshots, "window": info }))
+        let mut state =
+            json!({ "ax_tree": tree, "ax_tree_source": source, "screenshots": screenshots, "window": info });
+        if let Some(truncated) = reported_truncation(source, read_stats.truncated) {
+            state["truncated"] = json!(truncated);
+        }
+        Ok(state)
     }
 
     /// `capabilities` (Design, The capability report): the backend's capabilities and the device mode.
@@ -489,8 +502,29 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::acts;
+    use super::{acts, reported_truncation};
+    use crate::tree::Truncated;
     use serde_json::json;
+
+    #[test]
+    fn truncation_is_reported_only_for_an_accessibility_read_that_cut_something() {
+        let cut = Truncated {
+            nodes: 12,
+            depth: 2,
+            failed: 1,
+        };
+        assert_eq!(reported_truncation("at_spi", cut), Some(cut));
+        assert_eq!(
+            json!(reported_truncation("at_spi", cut)),
+            json!({"nodes": 12, "depth": 2, "failed": 1})
+        );
+        assert_eq!(
+            reported_truncation("at_spi", Truncated::default()),
+            None,
+            "omitted when every count is 0"
+        );
+        assert_eq!(reported_truncation("x11", cut), None, "the X11 fallback is no read");
+    }
 
     #[test]
     fn a_late_drag_and_drop_refuses_only_requests_that_send_input_or_change_state() {

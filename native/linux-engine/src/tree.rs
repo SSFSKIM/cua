@@ -115,8 +115,30 @@ pub const WINDOW: Window = Window {
     slack: 8,
 };
 
+/// Where a read was cut (Design, The tree read; M4): each count is a point where the read left out a node it had
+/// listed, and with it a subtree it never read, so the sum is a lower bound on the elements not shown. They come
+/// only from what the read already knows, with no call of their own: `nodes`, the listed children the element limit
+/// refused; `depth`, the children listed at depth 63 that the depth limit refused (a child past both limits counts
+/// under the element limit, which the vendor checks first); `failed`, the admitted nodes whose `GetRoleName` failed.
+/// A table over 5,000 children shows its visible cells by the vendor's rule (behaviour §5.4), not a cut.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct Truncated {
+    pub nodes: u32,
+    pub depth: u32,
+    pub failed: u32,
+}
+
+impl Truncated {
+    /// Nothing was cut: `get_window_state` then reports no `truncated`.
+    pub fn is_empty(&self) -> bool {
+        *self == Truncated::default()
+    }
+}
+
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct ReadStats {
+    /// What the read cut, which `get_window_state` reports beside the tree.
+    pub truncated: Truncated,
     pub admitted: u32,
     pub discovered: usize,
     pub wasted_calls: u64,
@@ -475,6 +497,8 @@ struct Pending {
     calls: u32,
     sampling: Option<Sampling>,
     children: Option<Vec<usize>>,
+    /// Children `GetChildren` listed below depth 63, which the depth limit refuses: never created, only counted.
+    past_depth: u32,
     done: bool,
     subtree_done: bool,
     /// Nodes in the finished subtree, itself included (depth-refused children are never created).
@@ -530,6 +554,7 @@ impl Frontier {
             calls: 0,
             sampling: None,
             children: None,
+            past_depth: 0,
             done: false,
             subtree_done: false,
             size: 0,
@@ -762,7 +787,9 @@ impl Frontier {
             && let Some((refs, leaves)) = Self::child_refs(node)
         {
             let depth = node.depth + 1;
+            let mut past_depth = 0;
             let ids: Vec<usize> = if depth > MAX_DEPTH {
+                past_depth = refs.len() as u32;
                 Vec::new()
             } else {
                 refs.into_iter()
@@ -772,6 +799,7 @@ impl Frontier {
             let node = &mut self.nodes[index];
             node.open_children = ids.len() as u32;
             node.children = Some(ids);
+            node.past_depth = past_depth;
         }
         let node = &mut self.nodes[index];
         if !node.done && node.data.complete(node.leaf) && (node.children.is_some() || node.data.role_failed()) {
@@ -801,7 +829,7 @@ impl Frontier {
         }
     }
 
-    /// The vendor's admission over the finished data: preorder, one counter, the limits.
+    /// The vendor's admission over the finished data: preorder, one counter, the limits; and where it cut.
     fn build(&mut self) -> (Option<AxNode>, ReadStats) {
         let mut stats = ReadStats {
             discovered: self.nodes.len(),
@@ -810,7 +838,7 @@ impl Frontier {
         };
         let mut admitted = vec![false; self.nodes.len()];
         let mut counter = 0;
-        let tree = self.build_node(0, &mut counter, &mut admitted);
+        let tree = self.build_node(0, &mut counter, &mut admitted, &mut stats.truncated);
         stats.admitted = counter;
         for (i, node) in self.nodes.iter().enumerate() {
             stats.wasted_calls += match (admitted[i], node.data.role_failed()) {
@@ -830,20 +858,39 @@ impl Frontier {
         (tree, stats)
     }
 
-    fn build_node(&mut self, index: usize, counter: &mut u32, admitted: &mut [bool]) -> Option<AxNode> {
+    /// Admits `index` and its subtree, counting each node it refuses or drops in `cut` (`Truncated`): every node
+    /// refused here is a listed child of an admitted node, and an admitted node's children are always listed, so the
+    /// counts do not depend on how far the frontier speculated.
+    fn build_node(
+        &mut self,
+        index: usize,
+        counter: &mut u32,
+        admitted: &mut [bool],
+        cut: &mut Truncated,
+    ) -> Option<AxNode> {
         if *counter >= NODE_LIMIT {
+            cut.nodes += 1;
             return None;
         }
         *counter += 1;
         admitted[index] = true;
         debug_assert!(self.nodes[index].done, "an admitted node is complete");
-        self.nodes[index].data.role()?;
+        if self.nodes[index].data.role().is_none() {
+            cut.failed += 1;
+            return None;
+        }
+        // a node at depth 63 has only refused children; they follow it in preorder, with the counter as it left it
+        match self.nodes[index].past_depth {
+            0 => {}
+            n if *counter >= NODE_LIMIT => cut.nodes += n,
+            n => cut.depth += n,
+        }
         let children: Vec<AxNode> = self.nodes[index]
             .children
             .clone()
             .unwrap_or_default()
             .into_iter()
-            .filter_map(|c| self.build_node(c, counter, admitted))
+            .filter_map(|c| self.build_node(c, counter, admitted, cut))
             .collect();
         let node = &mut self.nodes[index];
         let data = std::mem::take(&mut node.data);

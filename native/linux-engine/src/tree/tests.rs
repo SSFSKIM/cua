@@ -19,11 +19,14 @@ fn call<T: Transport>(t: &mut T, obj: &ObjRef, field: Field) -> Result<CallResul
     }
 }
 
-/// The vendor's tree read: None when the root's role fails; the counter is the nodes admitted.
-fn read_vendor<T: Transport>(t: &mut T, root: &ObjRef) -> Result<(Option<AxNode>, u32)> {
+/// The vendor's tree read: None when the root's role fails. Beside it, where the walk refused or dropped a node it
+/// knew of, counted one by one at the refusal itself (the vendor drops them silently; cua reports them, M4), so the
+/// frontier's counts have a sequential reference.
+fn read_vendor<T: Transport>(t: &mut T, root: &ObjRef) -> Result<(Option<AxNode>, Truncated)> {
     let mut counter = 0;
-    let tree = visit_vendor(t, root, 0, &mut counter, false)?;
-    Ok((tree, counter))
+    let mut cut = Truncated::default();
+    let tree = visit_vendor(t, root, 0, &mut counter, &mut cut, false)?;
+    Ok((tree, cut))
 }
 
 fn visit_vendor<T: Transport>(
@@ -31,9 +34,16 @@ fn visit_vendor<T: Transport>(
     obj: &ObjRef,
     depth: u32,
     counter: &mut u32,
+    cut: &mut Truncated,
     leaf: bool,
 ) -> Result<Option<AxNode>> {
-    if *counter >= NODE_LIMIT || depth > MAX_DEPTH {
+    // the vendor's two refusals, the element limit's checked first
+    if *counter >= NODE_LIMIT {
+        cut.nodes += 1;
+        return Ok(None);
+    }
+    if depth > MAX_DEPTH {
+        cut.depth += 1;
         return Ok(None);
     }
     let before = *counter;
@@ -41,6 +51,7 @@ fn visit_vendor<T: Transport>(
     let mut data = Data::default();
     data.store(Field::Role, &call(t, obj, Field::Role)?);
     let Some(role) = data.role().map(str::to_string) else {
+        cut.failed += 1;
         return Ok(None);
     };
     for field in [Field::Name, Field::Description] {
@@ -101,7 +112,7 @@ fn visit_vendor<T: Transport>(
     };
     let mut children = Vec::new();
     for child in refs {
-        if let Some(node) = visit_vendor(t, &child, depth + 1, counter, leaves)? {
+        if let Some(node) = visit_vendor(t, &child, depth + 1, counter, cut, leaves)? {
             children.push(node);
         }
     }
@@ -410,6 +421,13 @@ fn vendor(objects: HashMap<String, Fake>, grid: Option<Grid>) -> (Option<AxNode>
     bus.grid = grid;
     let (tree, _) = read_vendor(&mut bus, &root()).unwrap();
     (tree, bus)
+}
+
+/// The vendor model's cut points on `objects`.
+fn vendor_cut(objects: HashMap<String, Fake>, grid: Option<Grid>) -> Truncated {
+    let mut bus = FakeBus::new(objects, Window { calls: 1, ..WINDOW });
+    bus.grid = grid;
+    read_vendor(&mut bus, &root()).unwrap().1
 }
 
 #[test]
@@ -1049,4 +1067,243 @@ fn a_table_after_a_large_nested_subtree_scans_with_the_exact_budget() {
         assert_eq!(got.as_ref(), Some(&expected), "W {}", window.calls);
         assert_eq!((stats.tables_sampled, stats.tables_listed), (1, 0));
     }
+}
+
+// -------------------------------------------------------------------------------------------------------------
+// Truncation (Design, The tree read; M4): the cut points the read already knows, counted with no call of their own
+
+/// `n` leaves under `parent` (paths `<parent>/<i>`), each a list item.
+fn leaves(objects: &mut HashMap<String, Fake>, parent: &str, n: usize) -> Vec<String> {
+    let paths: Vec<String> = (0..n).map(|i| format!("{parent}/{i}")).collect();
+    for p in &paths {
+        objects.insert(
+            p.clone(),
+            Fake {
+                role: Some("list item"),
+                ..Default::default()
+            },
+        );
+    }
+    paths
+}
+
+/// A chain of panels under the root, `/c1` at depth 1 down to `/c63` at depth 63, which holds `below` leaves (at depth
+/// 64, past the limit). Returns the chain's first path.
+fn chain_to_63(objects: &mut HashMap<String, Fake>, below: usize) -> String {
+    for d in 1..=63 {
+        let children = if d < 63 {
+            vec![format!("/c{}", d + 1)]
+        } else {
+            leaves(objects, "/c63", below)
+        };
+        objects.insert(
+            format!("/c{d}"),
+            Fake {
+                role: Some("panel"),
+                children,
+                ..Default::default()
+            },
+        );
+    }
+    "/c1".into()
+}
+
+/// A root frame holding `children`.
+fn frame(objects: &mut HashMap<String, Fake>, children: Vec<String>) {
+    objects.insert(
+        "/0".into(),
+        Fake {
+            role: Some("frame"),
+            children,
+            ..Default::default()
+        },
+    );
+}
+
+/// A list `path` of `n` leaves.
+fn list(objects: &mut HashMap<String, Fake>, path: &str, n: usize) {
+    let children = leaves(objects, path, n);
+    objects.insert(
+        path.into(),
+        Fake {
+            role: Some("list"),
+            children,
+            ..Default::default()
+        },
+    );
+}
+
+/// The frontier's counts on `objects` at window `window`, checked against the vendor model's tree and cut points.
+fn frontier_cut(objects: &HashMap<String, Fake>, window: Window) -> Truncated {
+    let mut bus = FakeBus::new(objects.clone(), window);
+    let (got, stats) = read(&mut bus, &root(), window).unwrap();
+    assert_eq!(
+        got,
+        vendor(objects.clone(), None).0,
+        "the vendor's tree, W {}",
+        window.calls
+    );
+    assert_eq!(
+        stats.truncated,
+        vendor_cut(objects.clone(), None),
+        "the model's cut points, W {}",
+        window.calls
+    );
+    stats.truncated
+}
+
+const WINDOWS: [Window; 5] = [
+    Window { calls: 1, ..WINDOW },
+    Window { calls: 2, ..WINDOW },
+    Window { calls: 7, ..WINDOW },
+    WINDOW,
+    Window { calls: 64, ..WINDOW },
+];
+
+#[test]
+fn the_element_limit_counts_every_refused_child_it_listed() {
+    // the root and 4,999 items are admitted; the other 15,001 listed items are each refused
+    let mut objects = HashMap::new();
+    list(&mut objects, "/0", 20_000);
+    for window in WINDOWS {
+        assert_eq!(
+            frontier_cut(&objects, window),
+            Truncated {
+                nodes: 15_001,
+                depth: 0,
+                failed: 0
+            }
+        );
+    }
+}
+
+#[test]
+fn the_depth_limit_counts_the_children_listed_at_depth_63_with_no_call_of_its_own() {
+    for below in [1, 3] {
+        let mut objects = HashMap::new();
+        let first = chain_to_63(&mut objects, below);
+        frame(&mut objects, vec![first]);
+        assert_eq!(
+            frontier_cut(&objects, WINDOW),
+            Truncated {
+                nodes: 0,
+                depth: below as u32,
+                failed: 0
+            }
+        );
+        // the count is the GetChildren reply of `/c63`, a call the vendor makes too: the same calls, none to depth 64
+        let (_, model) = vendor(objects.clone(), None);
+        let mut bus = FakeBus::new(objects, WINDOW);
+        read(&mut bus, &root(), WINDOW).unwrap();
+        assert_eq!(sorted_calls(bus.calls.clone()), sorted_calls(model.calls));
+        assert!(!bus.calls.iter().any(|(p, _)| p.starts_with("/c63/")));
+    }
+}
+
+#[test]
+fn a_failed_role_counts_once_whatever_its_subtree_holds() {
+    // `/3`'s GetRoleName fails; its child `/5` is never listed, so the count is a lower bound
+    for window in WINDOWS {
+        assert_eq!(
+            frontier_cut(&mixed(), window),
+            Truncated {
+                nodes: 0,
+                depth: 0,
+                failed: 1
+            }
+        );
+    }
+}
+
+#[test]
+fn a_child_past_both_limits_counts_under_the_element_limit() {
+    // `/c63` is admitted as node 4,999 or as node 5,000: its two children are refused by the depth limit while the
+    // count allows another node, and by the element limit once it does not, as the vendor checks the limit first
+    for (items, expected) in [
+        (
+            4934,
+            Truncated {
+                nodes: 0,
+                depth: 2,
+                failed: 0,
+            },
+        ),
+        (
+            4935,
+            Truncated {
+                nodes: 2,
+                depth: 0,
+                failed: 0,
+            },
+        ),
+    ] {
+        let mut objects = HashMap::new();
+        list(&mut objects, "/a", items);
+        let first = chain_to_63(&mut objects, 2);
+        frame(&mut objects, vec!["/a".into(), first]);
+        for window in WINDOWS {
+            assert_eq!(
+                frontier_cut(&objects, window),
+                expected,
+                "{items} items, W {}",
+                window.calls
+            );
+        }
+    }
+}
+
+#[test]
+fn every_cause_counts_apart_in_one_read() {
+    // the root, the failed `/x` and the chain's 63 make 65; the list is node 66 and keeps 4,934 of its 6,000 items
+    let mut objects = HashMap::new();
+    objects.insert(
+        "/x".into(),
+        Fake {
+            role: None,
+            children: vec!["/x/0".into()],
+            ..Default::default()
+        },
+    );
+    leaves(&mut objects, "/x", 1);
+    let first = chain_to_63(&mut objects, 2);
+    list(&mut objects, "/w", 6000);
+    frame(&mut objects, vec!["/x".into(), first, "/w".into()]);
+    for window in WINDOWS {
+        assert_eq!(
+            frontier_cut(&objects, window),
+            Truncated {
+                nodes: 1066,
+                depth: 2,
+                failed: 1
+            }
+        );
+    }
+}
+
+#[test]
+fn a_read_that_cuts_nothing_reports_nothing() {
+    let objects = uniform(6, 3);
+    let cut = frontier_cut(&objects, WINDOW);
+    assert_eq!(cut, Truncated::default());
+    assert!(cut.is_empty());
+    assert!(
+        !Truncated {
+            nodes: 0,
+            depth: 0,
+            failed: 1
+        }
+        .is_empty()
+    );
+    // a table over 5,000 children shows its visible cells by the vendor's rule: its other children are not cut points
+    let grid = Grid::uniform((0, 100), (300, 100), (100, 25), 0);
+    let mut bus = FakeBus::new(with_table(3, 6000, 6000, &grid), WINDOW).with_grid(grid);
+    let (_, stats) = read(&mut bus, &root(), WINDOW).unwrap();
+    assert!(stats.truncated.is_empty(), "{:?}", stats.truncated);
+}
+
+#[test]
+fn the_over_budget_shape_counts_what_the_vendor_refuses() {
+    let objects = over_budget();
+    let cut = frontier_cut(&objects, WINDOW);
+    assert!(cut.nodes > 0 && cut.depth == 0 && cut.failed == 0, "{cut:?}");
 }

@@ -158,9 +158,9 @@ export function prepareCandidate({ source, gate, root = REPO_ROOT, hostArch = pr
   const host = HOST_ARCHES[hostArch] ?? hostArch;
   if (!elf) refuse('the candidate is not an ELF file');
   if (elf.libc !== 'musl' || elf.linkage === 'dynamic') {
-    refuse(`the candidate is a ${elf.target} build (${elf.linkage}${elf.interpreter ? `, interpreter ${elf.interpreter}` : ''}): the release ships the workflow's ${host}-unknown-linux-musl static-pie`);
+    refuse(`the candidate is built for ${elf.target} (${elf.linkage}${elf.interpreter ? `, interpreter ${elf.interpreter}` : ''}): the release ships the workflow's ${host}-unknown-linux-musl static-pie`);
   }
-  if (elf.arch !== host) refuse(`the candidate is a ${elf.target} build and this host runs ${host}`);
+  if (elf.arch !== host) refuse(`the candidate is built for ${elf.target}, and this host runs ${host}`);
   if (!commit) refuse(`the checkout's commit could not be read (git -C ${root} rev-parse HEAD)`);
   if (!changes) refuse(`the checkout's state could not be read (git -C ${root} status): ${status.stderr.trim()}`);
   if (changes.length) {

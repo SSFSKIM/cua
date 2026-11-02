@@ -152,6 +152,34 @@ test("parentage comes from the trace at request time: a child an engine's reply 
   assert.equal(xaudit([...tree, `013:<:0007: 16: Request(12): ConfigureWindow window=${hex(FRAME)} values={stack-mode=Above(0x00)}`]).clean, true);
 });
 
+test("a whole run's trace is read from its file line by line, keeping only what the judge reads, to the same verdict", async () => {
+  const { mkdtempSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const { parseXtraceFile } = await import('../../scripts/linux-engine-diff/audit.mjs');
+  const { foreignKeep } = await import('../../scripts/linux-engine-diff/foreign.mjs');
+  const lines = [
+    "001:<:0001: 20: Request(16): InternAtom only-if-exists=false(0x00) name='_NET_WM_NAME'",
+    `001:<:0002: 12: Request(101): GetKeyboardMapping first-keycode=0x08 count=0xf8`,
+    `001:<:0003:  8: Request(15): QueryTree window=${hex(MINE)}`,
+    `001:>:0003:36: Reply to QueryTree: root=${hex(ROOT)} parent=${hex(ROOT)} children=0x00600123;`,
+    `001:<:0004: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00600123 event-mask=0 KeyPress(2) keycode=0x26`,
+    `001:<:0005: 16: Request(12): ConfigureWindow window=${hex(PERSON)} values={x=1 y=1}`,
+  ];
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-trace-file-'));
+  try {
+    const file = join(dir, 'x11.log');
+    writeFileSync(file, `${lines.join('\n')}\n`);
+    const fromFile = await parseXtraceFile(file, { keep: foreignKeep });
+    assert.deepEqual(fromFile.requests.map((r) => r.major), [15, 25, 12], 'the reads and the changes the judge reads; nothing else');
+    const verdict = auditForeign(fromFile, { registered, root: ROOT });
+    assert.deepEqual(verdict, xaudit(lines));
+    assert.deepEqual(windowsOf(verdict), [PERSON]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------------------------------------------------
 // The whole-run RECORD (every client's requests, server-side)
 
@@ -235,6 +263,30 @@ test("the record: a frame that holds the harness window through its own inner wi
     req(OURS, 43, 'ConfigureWindow', { window: TITLE }),
   ];
   assert.deepEqual(windowsOf(raudit(lines)), [TITLE]);
+});
+
+test("the record: a popup the client of a harness window opens during the run (a drag image) is that window's; not another client's, nor a managed window", () => {
+  const DRAG = 0x707acb;
+  const lines = [
+    ...START,
+    req(CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }),
+    // Chrome's drag image, override-redirect on the root, under the pointer for the whole drop
+    req(CHROME, 30, 'CreateWindow', { window: DRAG, parent: ROOT, or: true }),
+    req(ENGINE, 40, 'FakeInput', { type: 'MotionNotify', detail: 0, focus: SCENE, pointer: DRAG }),
+    req(ENGINE, 41, 'FakeInput', { type: 'ButtonRelease', detail: 1, focus: SCENE, pointer: DRAG }),
+  ];
+  assert.equal(raudit(lines).clean, true, JSON.stringify(raudit(lines).foreign));
+  // a new managed window of the same client (a browser window the person opens) is not
+  const managed = [...START, req(CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), req(CHROME, 30, 'CreateWindow', { window: DRAG, parent: ROOT }), req(ENGINE, 40, 'FakeInput', { type: 'MotionNotify', detail: 0, focus: SCENE, pointer: DRAG })];
+  assert.deepEqual(windowsOf(raudit(managed)), [DRAG]);
+  // a popup of a client with no harness window of its own is not, nor one opened after its harness window closed
+  const other = [...START, req(CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), req(WM, 30, 'CreateWindow', { window: 0x200099, parent: ROOT, or: true }), req(ENGINE, 40, 'FakeInput', { type: 'MotionNotify', detail: 0, focus: SCENE, pointer: 0x200099 })];
+  assert.deepEqual(windowsOf(raudit(other)), [0x200099]);
+  const after = [...START, req(CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), rec('destroyed', { window: SCENE }), req(CHROME, 30, 'CreateWindow', { window: DRAG, parent: ROOT, or: true }), req(ENGINE, 40, 'SendEvent', { destination: DRAG, event: 'KeyPress' })];
+  assert.deepEqual(windowsOf(raudit(after)), [DRAG]);
+  // override-redirect set after the creation counts the same
+  const later = [...START, req(CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), req(CHROME, 30, 'CreateWindow', { window: DRAG, parent: ROOT }), req(CHROME, 31, 'ChangeWindowAttributes', { window: DRAG, mask: 0x200, or: true }), req(ENGINE, 40, 'SendEvent', { destination: DRAG, event: 'KeyPress' })];
+  assert.equal(raudit(later).clean, true);
 });
 
 test('the record: a registered window existing before the record began is never the harness’s', () => {

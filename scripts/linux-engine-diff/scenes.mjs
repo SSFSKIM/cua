@@ -25,9 +25,9 @@ import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { parseXtrace, startProxy } from './audit.mjs';
+import { parseXtrace, parseXtraceFile, startProxy } from './audit.mjs';
 import { Engine } from './engine.mjs';
-import { auditForeign, auditRecord, foreignLine } from './foreign.mjs';
+import { auditForeign, auditRecord, auditRecordFile, foreignKeep, foreignLine } from './foreign.mjs';
 import { preorder } from './normalize.mjs';
 import { cleanupOnStop } from './stop.mjs';
 import { spawnXprobe, startRunRecord, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
@@ -107,7 +107,7 @@ export function desktopEnding(ending) {
       active_end: ending.end,
       holder: ending.holder,
       trace: { clean: audit.clean, requests: audit.requests, mutating: audit.mutating, foreign: audit.foreign.slice(0, 10).map(foreignLine), unplaced: audit.unplaced ?? 0 },
-      record: { clean: record.clean, requests: record.requests, mutating: record.mutating, foreign: record.foreign.slice(0, 10).map(foreignLine), unplaced: record.unplaced ?? 0, unattributed: record.unattributed ?? null, ...(record.error ? { error: record.error } : {}) },
+      record: { clean: record.clean, requests: record.requests, mutating: record.mutating, foreign: record.foreign.slice(0, 10).map(foreignLine), ...(record.foreign.length ? { first_foreign: record.foreign.slice(0, 5).map(({ client, what, window, text }) => ({ client, what, window, request: text })) } : {}), unplaced: record.unplaced ?? 0, unattributed: record.unattributed ?? null, ...(record.error ? { error: record.error } : {}) },
     },
     foreign,
   };
@@ -667,8 +667,9 @@ export class Desktop {
     const registered = this.registry();
     let audit;
     try {
-      const text = await this.trace.stop();
-      audit = auditForeign(parseXtrace(text), { registered, root: this.root });
+      // read from its file line by line, keeping what the judge reads: a whole run's trace is too large for one string
+      const trace = await this.trace.stop({ parse: (log) => parseXtraceFile(log, { keep: foreignKeep }) });
+      audit = auditForeign(typeof trace === 'string' ? parseXtrace(trace) : trace, { registered, root: this.root });
     } catch (error) {
       audit = { clean: false, traced: false, requests: 0, mutating: 0, foreign: [], error: error.message };
     } finally {
@@ -676,7 +677,8 @@ export class Desktop {
     }
     let record;
     try {
-      record = auditRecord(await this.record.stop(), { registered, root: this.root });
+      const judged = await this.record.stop({ parse: (file) => auditRecordFile(file, { registered, root: this.root }) });
+      record = typeof judged === 'string' ? auditRecord(judged, { registered, root: this.root }) : judged;
     } catch (error) {
       record = { clean: false, traced: false, requests: 0, mutating: 0, foreign: [], error: error.message };
     }

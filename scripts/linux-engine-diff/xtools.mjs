@@ -11,7 +11,7 @@
 // (`retentionTrials`); `grabs` takes the root's pointer and keyboard, so it runs only on a private display the harness
 // marked (xprobe refuses any other), and nothing here runs it on the session's.
 
-import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -99,15 +99,22 @@ export async function startRunRecord({ ours = process.pid, env = process.env, re
   let stopped = null;
   return {
     file,
-    stop() {
+    /**
+     * Ends the record and answers it: its text, or with `parse` (foreign.mjs `auditRecordFile`'s kind), what
+     * `parse(file)` answers, read before the file is removed. A record whose process failed says so in its last line.
+     */
+    stop({ parse = null } = {}) {
       stopped ??= (async () => {
         child.stdin.end();
         const timer = setTimeout(() => child.kill('SIGTERM'), 15000);
         await exited;
         clearTimeout(timer);
-        const text = read();
-        rmSync(dir, { recursive: true, force: true });
-        return stderr.trim() && !text.includes('"kind":"end"') ? `${text}\n${JSON.stringify({ kind: 'failed', error: stderr.trim() })}\n` : text;
+        try {
+          if (child.exitCode !== 0 && stderr.trim()) appendFileSync(file, `${JSON.stringify({ kind: 'failed', error: stderr.trim() })}\n`);
+          return parse ? await parse(file) : read();
+        } finally {
+          rmSync(dir, { recursive: true, force: true });
+        }
       })();
       return stopped;
     },

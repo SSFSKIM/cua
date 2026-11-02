@@ -223,7 +223,10 @@ variants included; their evidence is written either way. The run's `end` row kee
   - *Whose a window is*, judged in trace order: a window the harness registered, for the life it had when the harness
     found it (`Desktop.registry`, each id with when it was found); a window our connection created, once the server
     accepted the creation (no error for its sequence number), under the root or one of ours; a window another client
-    created inside one of ours; a window manager frame while it holds one of ours. A life ends at its DestroyNotify, a
+    created inside one of ours; a window manager frame while it holds one of ours; and an override-redirect window on
+    the root that the client of a live harness window opens during the run (its menu, tooltip or drag image: Chrome's
+    drag image sits under the pointer for a whole drop), as the witness's foreground allowance takes the target
+    client's override-redirect windows. A life ends at its DestroyNotify, a
     DestroyWindow, or its creating client's end, so a reused id is foreign again. A window reparented into one of ours
     keeps the owner it had. Parentage is the trace's own, at request time: no window is resolved on the display after
     the run.
@@ -236,7 +239,10 @@ variants included; their evidence is written either way. The run's `end` row kee
     harness's process and is one of its X tools or engines. `auditRecord` judges every request of ours, sampled by an
     audit pass or not; the record places XTEST by reading the focus and the pointer right after the server handled it.
     A client it could not attribute is counted, not judged. Any foreign change, a harness trace that recorded nothing,
-    or a record that did not begin and end cleanly fails the run.
+    or a record that did not begin and end cleanly fails the run. Both are read from their files line by line, the
+    trace keeping only the requests the judge reads (`parseXtraceFile`, `auditRecordFile`), and xtrace shows lists to
+    256 entries (`-m 256`): each xdotool call's connection setup and keymaps were 60 KB, and a 40-minute run's trace
+    passed Node's 512 MB string limit.
   - *No window of the person's can be taken for the run's*: every title carries the run's label and a random nonce of
     the run's own (`Desktop.label`), and a window already on the display when the run began is never found or adopted
     (`Desktop.preexisting`), whatever its title.

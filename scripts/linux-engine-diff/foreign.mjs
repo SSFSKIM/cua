@@ -25,6 +25,9 @@
 // had. One exemption: the property a foreign client named in its own SelectionRequest, written while that request is
 // served (the selection owner's answer, ICCCM), and the SelectionNotify that completes it.
 
+import { createReadStream } from 'node:fs';
+import { createInterface } from 'node:readline';
+
 const shown = (w) => (typeof w === 'number' ? `0x${w.toString(16).padStart(8, '0')}` : w === undefined || w === null ? 'an unreadable window' : (w.keyword ?? String(w)));
 
 /** One foreign change as a line: what it was and the window it named. */
@@ -51,6 +54,8 @@ export function judgeForeign(elements, { registered, root, strictBirth = false }
   const lives = new Map();
   // each window's children as the stream last showed them: by a creation, a reparent, or (xtrace) a reply
   const children = new Map();
+  // the clients that have a registered window alive, by client: whose popups are the harness's
+  const harnessClients = new Map();
   const open = new Map();
   const foreign = [];
   let requests = 0;
@@ -81,11 +86,21 @@ export function judgeForeign(elements, { registered, root, strictBirth = false }
     if (old?.parent !== undefined) children.get(old.parent)?.delete(el.window);
     lives.set(el.window, life);
     setParent(el.window, el.parent);
+    if (isRegistered(el.window, life)) {
+      if (!harnessClients.has(el.c)) harnessClients.set(el.c, new Set());
+      harnessClients.get(el.c).add(el.window);
+    }
+    return life;
   };
+  // an override-redirect window on the root, opened during the run by the client of a live harness window (its menu,
+  // its tooltip, its drag image): that window's own, as the witness's foreground allowance takes the target client's
+  // override-redirect windows
+  const popup = (life) => life.or === true && life.parent === root && life.born && (harnessClients.get(life.creator)?.size ?? 0) > 0;
   // a window's end ends its subtree too
   const end = (w, depth = 0) => {
     const life = lifeOf(w);
     life.alive = false;
+    if (life.creator !== undefined) harnessClients.get(life.creator)?.delete(w);
     if (life.parent !== undefined) children.get(life.parent)?.delete(w);
     if (depth < 64) for (const c of [...(children.get(w) ?? [])]) end(c, depth + 1);
     children.delete(w);
@@ -104,7 +119,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false }
   const within = (w, depth = 0) => {
     if (!live(w) || depth > 64) return false;
     const life = lifeOf(w);
-    if (life.owned || life.inside || isRegistered(w, life)) return true;
+    if (life.owned || life.inside || life.popup || isRegistered(w, life)) return true;
     return life.replyParent !== undefined && !life.reparentedByUs && within(life.replyParent, depth + 1);
   };
   // holding one of ours: a window manager's frame, through as many of its own windows as it puts around the client
@@ -158,7 +173,8 @@ export function judgeForeign(elements, { registered, root, strictBirth = false }
         if (!parentOk) flag(el, 'CreateWindow under', el.parent);
         if (!rejected) born(el, { owned: parentOk });
       } else if (!rejected) {
-        born(el, { inside: el.parent !== root && within(el.parent) });
+        const life = born(el, { inside: el.parent !== root && within(el.parent), or: el.or === true });
+        life.popup = popup(life);
       }
       continue;
     }
@@ -168,8 +184,14 @@ export function judgeForeign(elements, { registered, root, strictBirth = false }
         if (changeOf(el, root)) unattributed.mutating++;
       }
       if (rejected) continue;
-      if (el.op === 'ReparentWindow') setParent(el.window, el.parent);
-      else if (el.op === 'DestroyWindow') end(el.window);
+      if (el.op === 'ReparentWindow') {
+        setParent(el.window, el.parent);
+        lifeOf(el.window).popup = popup(lifeOf(el.window));
+      } else if (el.op === 'ChangeWindowAttributes' && el.or !== undefined && lifeOf(el.window).creator === el.c) {
+        const life = lifeOf(el.window);
+        life.or = el.or;
+        life.popup = popup(life);
+      } else if (el.op === 'DestroyWindow') end(el.window);
       else if (el.op === 'DestroySubwindows') for (const c of [...(children.get(el.window) ?? [])]) end(c);
       continue;
     }
@@ -314,6 +336,12 @@ const CORE_OPS = { 1: 'CreateWindow', 2: 'ChangeWindowAttributes', 4: 'DestroyWi
 const READS = new Set(['GetInputFocus', 'QueryPointer', 'QueryTree', 'TranslateCoordinates']);
 const COMPOSITE_OPS = { 1: 'RedirectWindow', 2: 'RedirectSubwindows', 3: 'UnredirectWindow', 4: 'UnredirectSubwindows' };
 const EVENT_TYPES = { 2: 'KeyPress', 3: 'KeyRelease', 4: 'ButtonPress', 5: 'ButtonRelease', 6: 'MotionNotify' };
+
+/** Whether the judge reads an xtrace request (audit.mjs `parseXtraceFile`'s `keep`, for a whole run's trace). */
+export function foreignKeep(r, extensions) {
+  if (r.minor === null) return r.major in CORE_OPS;
+  return ['Composite', 'XTEST'].includes(r.ext) || r.major === extensions.Composite || r.major === extensions.XTEST;
+}
 
 /** One xtrace request as a judge element, or null for one the judge does not read. */
 function xtraceRequest(r, extensions) {
@@ -485,64 +513,68 @@ const keyword = (fieldName, value) => (typeof value === 'number' && RECORD_KEYWO
 export function recordElements(lines, root) {
   const out = [];
   const meta = { ready: false, ended: false, error: null };
-  for (const line of lines) {
-    let r;
-    try {
-      r = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    switch (r.kind) {
-      case 'ready':
-        meta.ready = true;
-        out.push({ k: 'ready' });
-        break;
-      case 'failed':
-        meta.error = r.error ?? 'the record failed';
-        break;
-      case 'end':
-        meta.ended = true;
-        break;
-      case 'client':
-        out.push({ k: 'client', c: r.client, ours: r.ours === true ? true : r.ours === false ? false : null, name: `${r.exe ?? 'unknown'}${r.pid ? ` pid ${r.pid}` : ''}` });
-        break;
-      case 'died':
-        out.push({ k: 'died', c: r.client });
-        break;
-      case 'destroyed':
-        out.push({ k: 'destroyed', w: r.window });
-        break;
-      case 'selreq':
-        out.push({ k: 'selreq', c: r.client, requestor: r.requestor, property: r.property || r.target });
-        break;
-      case 'error':
-        out.push({ k: 'error', c: r.client, seq: r.seq, major: r.major });
-        break;
-      case 'req': {
-        const el = { k: 'req', c: r.client, seq: r.seq, ms: r.ms, op: r.op, text: null, ...r };
-        delete el.kind;
-        delete el.client;
-        if (r.op === 'ChangeWindowAttributes') el.attributes = attributeNames(r.mask);
-        if (r.op === 'ChangeProperty') {
-          el.incr = r.type_name === 'INCR';
-          el.empty = r.length === 0;
-        }
-        for (const f of ['focus', 'destination', 'dst', 'resource']) if (f in r && r.op !== 'FakeInput') el[f] = keyword(f, r[f]);
-        if (r.op === 'SendEvent' && r.event === 'ClientMessage') {
-          el.cmWindow = r.cm_window;
-          el.cmType = r.cm_type ?? null;
-        }
-        if (r.op === 'FakeInput') el.target = fakeTarget(r, root);
-        if (r.op === 'WarpPointer') el.target = r.pointer === null || r.pointer === undefined ? null : r.pointer === 0 ? root : r.pointer;
-        el.text = describe(r);
-        out.push(el);
-        break;
-      }
-      default:
-        break;
-    }
-  }
+  for (const line of lines) recordLine(line, out, meta, root);
   return { elements: out, meta };
+}
+
+/** One line of the record into the judge's elements (`out`) and the record's own state (`meta`). */
+function recordLine(line, out, meta, root) {
+  let r;
+  try {
+    r = JSON.parse(line);
+  } catch {
+    return;
+  }
+  switch (r.kind) {
+    case 'ready':
+      meta.ready = true;
+      out.push({ k: 'ready' });
+      break;
+    case 'failed':
+      meta.error = r.error ?? 'the record failed';
+      break;
+    case 'end':
+      meta.ended = true;
+      break;
+    case 'client':
+      out.push({ k: 'client', c: r.client, ours: r.ours === true ? true : r.ours === false ? false : null, name: `${r.exe ?? 'unknown'}${r.pid ? ` pid ${r.pid}` : ''}` });
+      break;
+    case 'died':
+      out.push({ k: 'died', c: r.client });
+      break;
+    case 'destroyed':
+      out.push({ k: 'destroyed', w: r.window });
+      break;
+    case 'selreq':
+      out.push({ k: 'selreq', c: r.client, requestor: r.requestor, property: r.property || r.target });
+      break;
+    case 'error':
+      out.push({ k: 'error', c: r.client, seq: r.seq, major: r.major });
+      break;
+    case 'req': {
+      const el = { k: 'req', c: r.client, seq: r.seq, ms: r.ms, op: r.op, text: null, ...r };
+      delete el.kind;
+      delete el.client;
+      if (r.op === 'ChangeWindowAttributes') el.attributes = attributeNames(r.mask);
+      if ('or' in r) el.or = r.or === true || r.or === 1;
+      if (r.op === 'ChangeProperty') {
+        el.incr = r.type_name === 'INCR';
+        el.empty = r.length === 0;
+      }
+      for (const f of ['focus', 'destination', 'dst', 'resource']) if (f in r && r.op !== 'FakeInput') el[f] = keyword(f, r[f]);
+      if (r.op === 'SendEvent' && r.event === 'ClientMessage') {
+        el.cmWindow = r.cm_window;
+        el.cmType = r.cm_type ?? null;
+      }
+      if (r.op === 'FakeInput') el.target = fakeTarget(r, root);
+      if (r.op === 'WarpPointer') el.target = r.pointer === null || r.pointer === undefined ? null : r.pointer === 0 ? root : r.pointer;
+      el.text = describe(r);
+      out.push(el);
+      break;
+    }
+    default:
+      break;
+  }
 }
 
 /** Where a recorded XTEST event landed: a key at the focus (or under the pointer for PointerRoot), the rest under the pointer. */
@@ -572,8 +604,20 @@ const describe = (r) => {
  * is not clean.
  */
 export function auditRecord(text, { registered, root }) {
-  const lines = text.split('\n').filter(Boolean);
-  const { elements, meta } = recordElements(lines, root);
+  const { elements, meta } = recordElements(text.split('\n').filter(Boolean), root);
+  return recordVerdict(elements, meta, { registered, root });
+}
+
+/** The same audit of the record's file, read line by line: a whole run's record is too large for one string. */
+export async function auditRecordFile(path, { registered, root }) {
+  const out = [];
+  const meta = { ready: false, ended: false, error: null };
+  const lines = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity });
+  for await (const line of lines) if (line) recordLine(line, out, meta, root);
+  return recordVerdict(out, meta, { registered, root });
+}
+
+function recordVerdict(elements, meta, { registered, root }) {
   const judged = judgeForeign(elements, { registered, root, strictBirth: true });
   const error = meta.error ?? (!meta.ready ? 'the record never began' : !meta.ended ? 'the record did not end cleanly, so it may be incomplete' : null);
   const traced = meta.ready && meta.ended && !meta.error;

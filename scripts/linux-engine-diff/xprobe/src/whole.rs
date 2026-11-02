@@ -121,6 +121,20 @@ fn event_name(code: u8) -> &'static str {
     }
 }
 
+/// The override-redirect value a window request's value list sets (`CWOverrideRedirect`, bit 9), or None: the mask at
+/// `mask_at`, the values from `values_at`, one word for each bit set, in bit order.
+fn override_redirect(r: &[u8], mask_at: usize, values_at: usize) -> Option<bool> {
+    if r.len() < mask_at + 4 {
+        return None;
+    }
+    let mask = u32_at(r, mask_at);
+    if mask & (1 << 9) == 0 {
+        return None;
+    }
+    let at = values_at + 4 * (mask & ((1 << 9) - 1)).count_ones() as usize;
+    (r.len() >= at + 4).then(|| u32_at(r, at) != 0)
+}
+
 /// A request's bytes with a BIG-REQUESTS extended length taken out, so its fields sit where the core protocol puts
 /// them; and its length in bytes.
 fn normalized(request: &[u8]) -> Option<(Vec<u8>, usize)> {
@@ -332,17 +346,22 @@ impl Watch {
         let head = format!("\"client\":{base},\"seq\":{seq},\"t\":{time}");
         let window = |at: usize| if r.len() >= at + 4 { u32_at(r, at) } else { 0 };
         if let Some((op, structural)) = core_op(major) {
-            if !structural && !judged {
+            // every client's override-redirect changes too: whether a window is a popup
+            let sets_or = major == CHANGE_WINDOW_ATTRIBUTES && override_redirect(r, 8, 12).is_some();
+            if !structural && !judged && !sets_or {
                 return None;
             }
+            let or = |mask_at: usize, values_at: usize| match override_redirect(r, mask_at, values_at) {
+                Some(v) => format!(",\"or\":{v}"),
+                None => String::new(),
+            };
             let fields = match major {
-                CREATE_WINDOW | REPARENT_WINDOW => {
-                    if major == CREATE_WINDOW {
-                        self.announced.remove(&window(4));
-                    }
-                    format!("\"window\":{},\"parent\":{}", window(4), window(8))
+                CREATE_WINDOW => {
+                    self.announced.remove(&window(4));
+                    format!("\"window\":{},\"parent\":{}{}", window(4), window(8), or(28, 32))
                 }
-                CHANGE_WINDOW_ATTRIBUTES => format!("\"window\":{},\"mask\":{}", window(4), window(8)),
+                REPARENT_WINDOW => format!("\"window\":{},\"parent\":{}", window(4), window(8)),
+                CHANGE_WINDOW_ATTRIBUTES => format!("\"window\":{},\"mask\":{}{}", window(4), window(8), or(8, 12)),
                 CHANGE_PROPERTY if r.len() >= 24 => {
                     let (property, kind) = (u32_at(r, 8), u32_at(r, 12));
                     let name = self.atom_name(query, property);
@@ -727,8 +746,32 @@ mod tests {
             lines,
             [
                 "{\"kind\":\"req\",\"client\":4194304,\"seq\":41,\"t\":7,\"op\":\"ConfigureWindow\",\"window\":6291458}",
-                "{\"kind\":\"req\",\"client\":4194304,\"seq\":42,\"t\":8,\"op\":\"ChangeWindowAttributes\",\"window\":6291458,\"mask\":512}",
+                "{\"kind\":\"req\",\"client\":4194304,\"seq\":42,\"t\":8,\"op\":\"ChangeWindowAttributes\",\"window\":6291458,\"mask\":512,\"or\":true}",
             ]
+        );
+    }
+
+    #[test]
+    fn a_windows_override_redirect_flag_is_read_from_its_creation_and_any_later_change_by_any_client() {
+        let mut w = watch();
+        // CreateWindow: the fixed part, then value-mask = background-pixel (bit 1) | override-redirect (bit 9)
+        let mut create = request(1, 24, &[0x600009, 0x1ff, 0, 0, 0, 0, 0x202, 0, 1]);
+        create[2..4].copy_from_slice(&10u16.to_le_bytes());
+        let mut data = element(1, 5, &create);
+        // ChangeWindowAttributes by the person's client: override-redirect off; another of its own, event-mask only
+        data.extend(element(1, 6, &request(2, 0, &[0x600009, 0x200, 0])));
+        data.extend(element(1, 7, &request(2, 0, &[0x600009, 0x800, 1])));
+        let lines: Vec<String> = w.requests(0x600000, &data, None).iter().map(|l| json(l)).collect();
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(
+            lines[0].ends_with("\"op\":\"CreateWindow\",\"window\":6291465,\"parent\":511,\"or\":true}"),
+            "{}",
+            lines[0]
+        );
+        assert!(
+            lines[1].ends_with("\"op\":\"ChangeWindowAttributes\",\"window\":6291465,\"mask\":512,\"or\":false}"),
+            "{}",
+            lines[1]
         );
     }
 

@@ -5,9 +5,10 @@
 // XTEST's major opcode as the server reported it to the traced client, with minor 2.
 
 import { spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, createReadStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 
 const REQUEST = /^(\d+):<:([0-9a-f]+):\s*\d+:\s*(?:([A-Za-z0-9-]+)-)?Request\((\d+)(?:,(\d+))?\):\s*(\S+)?(.*)$/;
 const QUERY = /^(\d+):<:([0-9a-f]+):.*Request\(98\): QueryExtension name='([^']+)'/;
@@ -19,6 +20,40 @@ const QUERY_REPLY = /^(\d+):>:([0-9a-f]+):.*Reply to QueryExtension: present=tru
  */
 const SERVER = /^(\d+):>:(?:([0-9a-f]+):(?:\d+: Reply to (QueryTree|TranslateCoordinates|GetInputFocus|QueryPointer): |(Error) \d+=\w+: | Event (?:\(generated\) )?(SelectionRequest|DestroyNotify)\(\d+\) )| (Success), )(.*)$/;
 
+/** A parse's state, and one trace line read into it (`parseXtrace`, `parseXtraceFile`). */
+const parseState = () => ({ requests: [], elements: [], extensions: {}, asked: new Map(), offset: 0 });
+
+function readLine(state, line, keep) {
+  const at = state.offset;
+  state.offset += Buffer.byteLength(line) + 1;
+  const q = line.match(QUERY);
+  if (q) state.asked.set(`${q[1]}|${q[2]}`, q[3]);
+  const r = line.match(QUERY_REPLY);
+  if (r && state.asked.has(`${r[1]}|${r[2]}`)) state.extensions[state.asked.get(`${r[1]}|${r[2]}`)] = Number(r[3]);
+  const s = line.match(SERVER);
+  if (s) {
+    state.elements.push({ k: 'line', conn: Number(s[1]), seq: s[2] === undefined ? null : Number.parseInt(s[2], 16), what: s[3] ?? s[4] ?? s[5] ?? s[6], text: s[7].slice(0, 4000) });
+    return;
+  }
+  const m = line.match(REQUEST);
+  if (!m) return;
+  const request = {
+    conn: Number(m[1]),
+    seq: Number.parseInt(m[2], 16),
+    major: Number(m[4]),
+    minor: m[5] === undefined ? null : Number(m[5]),
+    ext: m[3] ?? null,
+    name: m[6]?.replace(/:$/, '') ?? null,
+    text: line.slice(0, 400),
+    at,
+  };
+  if (keep && !keep(request, state.extensions)) return;
+  state.requests.push(request);
+  state.elements.push({ k: 'req', r: request });
+}
+
+const parsed = ({ requests, extensions, elements }) => ({ requests, extensions, elements });
+
 /**
  * A trace's requests `{conn, seq, major, minor, name, text, at}`, the extensions' major opcodes the server reported,
  * and `elements`: in the trace's order, each request (`{k: 'req', r}`) and each server line the foreign-window judge
@@ -26,39 +61,20 @@ const SERVER = /^(\d+):>:(?:([0-9a-f]+):(?:\d+: Reply to (QueryTree|TranslateCoo
  * bytes, which the proxy's marks are measured in.
  */
 export function parseXtrace(text) {
-  const requests = [];
-  const elements = [];
-  const extensions = {};
-  const asked = new Map();
-  let offset = 0;
-  for (const line of text.split('\n')) {
-    const at = offset;
-    offset += Buffer.byteLength(line) + 1;
-    const q = line.match(QUERY);
-    if (q) asked.set(`${q[1]}|${q[2]}`, q[3]);
-    const r = line.match(QUERY_REPLY);
-    if (r && asked.has(`${r[1]}|${r[2]}`)) extensions[asked.get(`${r[1]}|${r[2]}`)] = Number(r[3]);
-    const s = line.match(SERVER);
-    if (s) {
-      elements.push({ k: 'line', conn: Number(s[1]), seq: s[2] === undefined ? null : Number.parseInt(s[2], 16), what: s[3] ?? s[4] ?? s[5] ?? s[6], text: s[7].slice(0, 4000) });
-      continue;
-    }
-    const m = line.match(REQUEST);
-    if (!m) continue;
-    const request = {
-      conn: Number(m[1]),
-      seq: Number.parseInt(m[2], 16),
-      major: Number(m[4]),
-      minor: m[5] === undefined ? null : Number(m[5]),
-      ext: m[3] ?? null,
-      name: m[6]?.replace(/:$/, '') ?? null,
-      text: line.slice(0, 400),
-      at,
-    };
-    requests.push(request);
-    elements.push({ k: 'req', r: request });
-  }
-  return { requests, extensions, elements };
+  const state = parseState();
+  for (const line of text.split('\n')) readLine(state, line);
+  return parsed(state);
+}
+
+/**
+ * The same parse of a trace file, read line by line, so a whole run's trace never has to fit in one string; `keep`
+ * (`(request, extensions) => boolean`) keeps only the requests a judge reads, so it need not fit in memory either.
+ */
+export async function parseXtraceFile(path, { keep = null } = {}) {
+  const state = parseState();
+  const lines = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity });
+  for await (const line of lines) readLine(state, line, keep);
+  return parsed(state);
 }
 
 /** What makes a request forbidden on the background route, or null. */
@@ -251,7 +267,9 @@ export async function startProxy({ display = process.env.DISPLAY ?? ':0' } = {})
   // the person's ~/.Xauthority is never written
   const auth = join(dir, 'Xauthority');
   copyFileSync(process.env.XAUTHORITY ?? join(homedir(), '.Xauthority'), auth);
-  const child = spawn('xtrace', ['-k', '-d', display, '-D', `:${n}`, '-c', '-f', auth, '-F', auth, '-o', log], { stdio: ['ignore', 'ignore', 'pipe'] });
+  // lists shown to 256 entries: every client's connection setup, XKB keymap and keyboard mapping are tens of KB of
+  // lists, the bulk of a whole run's trace (T4b's audit round), and no audit reads that far into a list
+  const child = spawn('xtrace', ['-k', '-m', '256', '-d', display, '-D', `:${n}`, '-c', '-f', auth, '-F', auth, '-o', log], { stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = '';
   child.stderr.on('data', (d) => {
     stderr += d;
@@ -290,14 +308,21 @@ export async function startProxy({ display = process.env.DISPLAY ?? ':0' } = {})
       marks.push({ tag, at: last });
       return last;
     },
-    async stop() {
+    /**
+     * Ends the proxy and answers the trace: its text, or with `parse` (`parseXtraceFile`'s kind), what `parse(log)`
+     * answers, read from the file before it is removed.
+     */
+    async stop({ parse = null } = {}) {
       child.kill('SIGTERM');
       await exited;
-      const text = existsSync(log) ? readFileSync(log, 'utf8') : '';
-      rmSync(dir, { recursive: true, force: true });
-      // xtrace leaves its display's socket behind when it is ended; the next pass would find the number taken
-      rmSync(`/tmp/.X11-unix/X${n}`, { force: true });
-      return text;
+      try {
+        if (parse) return await parse(log);
+        return existsSync(log) ? readFileSync(log, 'utf8') : '';
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+        // xtrace leaves its display's socket behind when it is ended; the next pass would find the number taken
+        rmSync(`/tmp/.X11-unix/X${n}`, { force: true });
+      }
     },
   };
 }

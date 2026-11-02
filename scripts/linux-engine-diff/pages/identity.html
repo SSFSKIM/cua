@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 identity scene</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  #marker { font-size: 32px; padding: 12px; }
+</style>
+</head>
+<body>
+<!-- The differential harness's identity scene (M4's T5): several Chrome windows with one title, the run's own, from the
+     URL's fragment, and one size, each page showing its own marker, from the query's `marker`, so a tree read shows
+     which window it read. The title never carries the marker. The key line records the keys held now and how many
+     times Shift went up, so a release reads back. -->
+<h1 id="marker">marker none</h1>
+<p id="keys">held none ups 0</p>
+<script>
+  document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
+  const marker = new URLSearchParams(location.search).get('marker');
+  if (marker) document.getElementById('marker').textContent = `marker ${marker}`;
+  const held = new Set();
+  let ups = 0;
+  const show = () => {
+    document.getElementById('keys').textContent = `held ${held.size ? [...held].sort().join(',') : 'none'} ups ${ups}`;
+  };
+  document.addEventListener('keydown', (e) => {
+    held.add(e.key);
+    show();
+  });
+  document.addEventListener('keyup', (e) => {
+    held.delete(e.key);
+    if (e.key === 'Shift') ups += 1;
+    show();
+  });
+</script>
+</body>
+</html>

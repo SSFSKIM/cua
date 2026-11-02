@@ -534,6 +534,10 @@ test("no two scenes' windows resolve to one label, so none shares another's titl
       this.label('recorder', role);
       throw new Recorded();
     },
+    openDuplicates(role, toolkit) {
+      this.label('identity', toolkit, role);
+      throw new Recorded();
+    },
     // the Desktop's own, on to families.mjs openFamily, which names the window and stops at `assertOpen`
     openFamilyScene: Desktop.prototype.openFamilyScene,
     assertOpen() {

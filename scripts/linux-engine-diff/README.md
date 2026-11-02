@@ -580,6 +580,21 @@ variants included; their evidence is written either way. The run's `end` row kee
   with no press, no motion, no activation and no focus request. `activate_window` restores the window and answers
   success; a withdrawn window answers the first focus error at the engine's 1 s bound. Elsewhere in the run, a
   listing's minimized windows are set aside where the deviation declares them (`setAsideMinimized`).
+- **Identity** (M4's T5, `identity.mjs`, the scenes `identity` (Chrome), `identity-gtk3`, `identity-gtk4` and
+  `identity-kate`): cua alone, on windows of one process with one title, unique to the run, and one size, each
+  showing its own marker (`Desktop.openDuplicates`: Chrome windows on `pages/identity.html`, opened one at a time and
+  each found as the one new window of the title; or one process of `pages/identity-windows.py`, which reports each
+  window's marker and X11 id once it is mapped). Each sample reads one window in turn; the harness arranges the
+  windows before the request, outside the spans, and waits until their origins read back (and, on GTK, until one
+  frame says `active`). Placed apart, each read answers its own tree, its marker and no other's (GTK 4, whose
+  extents are window-relative, the sentence); stacked with the front window active, each answers `Window <id>
+  matches several accessibility windows; close or retitle the duplicates`; stacked with the read window active, GTK 3
+  answers its own tree (the active-state tie-break) and Chrome, which marks no frame active, the sentence; stacked
+  with another duplicate active, the sentence. On the Chrome scene, stacked, an element click, a secondary action,
+  `type_text` and `clipboard_read` answer the sentence with nothing sent (the `nothing-sent` audit), and Shift held
+  while the windows are apart is released once they are stacked, the page then showing it up. kate's two windows each
+  read their own document, by the caption rule. Every read's answer must be one `deviations.mjs` declares for the
+  scene.
 - **The witness's allowances** (`witness.mjs`):
   - **Foreground.** Override-redirect windows of the target's own X client (its resource-id base) may map, restack
     and unmap; one may stay mapped at the end only where the input opens it, as a right click's menu. Every other

@@ -24,6 +24,7 @@ import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './
 import { desktopEntry } from './desktop-entry.mjs';
 import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe, setAsideMinimized, setAsideTruncation, truncationMismatch } from './deviations.mjs';
 import { judgeDevice } from './device.mjs';
+import { IDENTITY_OPS, identityAuditKind } from './identity.mjs';
 import { MINIMIZED_OPS, minimizedAuditKind } from './minimized.mjs';
 import { Engine } from './engine.mjs';
 import { medianDifferenceInterval, normalizeAnswer } from './events.mjs';
@@ -609,6 +610,19 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
   if (scene === 'minimized') return withApp(desktop, await desktop.openGedit(role, GEDIT_TEXT, { stem: 'minimized' }));
   if (scene === 'minimized-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role, { stem: 'minimized-xterm' }));
   if (scene === 'minimized-recorder') return withApp(desktop, await desktop.openRecorder(role));
+  // M4's T5: the identity scenes (identity.mjs), windows of one title and size, each with its own marker
+  if (scene === 'identity') return desktop.openDuplicates(role, 'chrome');
+  if (scene === 'identity-gtk3') return desktop.openDuplicates(role, 'gtk3');
+  if (scene === 'identity-gtk4') return desktop.openDuplicates(role, 'gtk4');
+  if (scene === 'identity-kate') {
+    // two kate windows, each its own process and document, its document's name (the window's label) its marker
+    const windows = [];
+    for (const n of [1, 2]) {
+      const opened = await desktop.openFamilyScene('kate', `${role}_${n}`, { stem: 'identitykate' });
+      windows.push({ ...opened, marker: opened.label });
+    }
+    return { kind: 'identity', toolkit: 'kate', role, id: windows[0].id, windows, size: [900, 700], marksActive: false };
+  }
   if (scene === 'device-qt') {
     const { openFamily } = await import('./families.mjs');
     const { DRAG_DOC, verticalScrollBar } = await import('./drag.mjs');
@@ -1159,7 +1173,7 @@ async function diffRun(args, candidate, { handoff }) {
           // release the hold proven and then exactly its release, attributed by the case's marks in the trace)
           const nothingAudit = OPS[op].device === 'refusal';
           const trace = parseXtrace(await proxy.stop());
-          const auditKind = op in MINIMIZED_OPS ? minimizedAuditKind(op) : foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
+          const auditKind = op in MINIMIZED_OPS ? minimizedAuditKind(op) : op in IDENTITY_OPS ? identityAuditKind(op) : foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
           const audited = {
             foreground: () => auditForeground(trace, target.id),
             'nothing-sent': () => auditNothingSent(trace),

@@ -38,6 +38,9 @@ const previousUnconfirmed = (op) => ({
   section: 'Decision Log, M2.1 (serving generations across pastes); M2 whole-branch review (the display-wide window)',
 });
 
+/** cua's answer for a window whose frame cannot be told apart from its duplicates' (identity.rs). */
+export const DUPLICATES = /^Window \d+ matches several accessibility windows; close or retitle the duplicates$/;
+
 /** The counts of cua's `truncated` (Interfaces: `{nodes: u32, depth: u32, failed: u32}`). */
 const TRUNCATION_KEYS = ['nodes', 'depth', 'failed'];
 
@@ -147,6 +150,25 @@ export const DEVIATIONS = [
     reason:
       "activate_window on a minimized window succeeds once the window manager has mapped it: the vendor builds, like cua 0.3.0, send SetInputFocus behind the activation request while the window is still unmapped and answer BadMatch for an activation that happened (Openbox maps and activates it within 50 ms). cua waits for the map, at most 1 s, and sets the focus again; a window still unmapped then answers the same error",
     section: 'Decision Log, M4 pre-flight (C22); M4 T4',
+  },
+  // M4's T5: identity (Design, Window association), against the vendor's one-node X11 tree (behaviour §4)
+  ...['identity', 'identity-gtk3', 'identity-gtk4'].map((scene) => ({
+    op: 'get_window_state',
+    scene,
+    field: 'identity',
+    answer: (c) => (c.ok === true && c.output?.ax_tree_source === 'at_spi') || (c.ok === false && DUPLICATES.test(String(c.error))),
+    reason:
+      "windows of one process with one title and one size: where the vendor builds answer every read with a one-node X11 tree that looks like an empty window, cua tells their frames apart by each frame's screen extents against the window's place (its client's or its window manager frame's rectangle), then by the frame's `active` state against _NET_ACTIVE_WINDOW, and reads the window's own tree; what still leaves several, and GTK 4 (window-relative extents), answers `Window <id> matches several accessibility windows; close or retitle the duplicates`, on reads and on every request that associates, never the X11 fallback",
+    section: 'Design, Observation (Window association); Decision Log, M4 pre-flight (F5, C14, C15); M4 T5',
+  })),
+  {
+    op: 'get_window_state',
+    scene: 'identity-kate',
+    field: 'identity',
+    answer: (c) => c.ok === true && c.output?.ax_tree_source === 'at_spi',
+    reason:
+      "kate titles its window `<file>  — Kate` and names its frame `<file> `, which no engine's title match finds, so every vendor build answers kate's X11 tree; cua reads the frame whose trimmed Name is the title's caption (the text before its last ` — `), when it is the only such frame of the process and its extents put it at the window",
+    section: 'Plan of Work, M4 (an association rule for kate\'s frame Name); Decision Log, M4 pre-flight (F5); M4 T5',
   },
   {
     op: 'interrupted_hold',

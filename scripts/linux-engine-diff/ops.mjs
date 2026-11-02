@@ -55,6 +55,11 @@ export const SCENE_OPS = {
   minimized: DEVICE_SCENE_OPS.minimized,
   'minimized-xterm': DEVICE_SCENE_OPS['minimized-xterm'],
   'minimized-recorder': DEVICE_SCENE_OPS['minimized-recorder'],
+  // M4's T5: identity (identity.mjs), cua alone
+  identity: DEVICE_SCENE_OPS.identity,
+  'identity-gtk3': DEVICE_SCENE_OPS['identity-gtk3'],
+  'identity-gtk4': DEVICE_SCENE_OPS['identity-gtk4'],
+  'identity-kate': DEVICE_SCENE_OPS['identity-kate'],
 };
 
 const GEDIT = [910, 756];

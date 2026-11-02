@@ -88,7 +88,7 @@ export function configure(id, x, y, w, h) {
 }
 
 /** The geometry every scene window of a kind is given, so equivalent windows are the same size and place. */
-export const GEOMETRY = { gedit: [910, 756], chrome: [1050, 780], recorder: [600, 400] };
+export const GEOMETRY = { gedit: [910, 756], chrome: [1050, 780], recorder: [600, 400], identity: [600, 380] };
 
 /**
  * A run's end as its `end` row records it (`Desktop.ending`): the start and end active windows, each marked foreign
@@ -316,14 +316,15 @@ export class Desktop {
    * evidence: GTK 3's criticals were the only trace of the stack bug behind both vendor builds' gedit `clipboard_write`
    * failure (#268). stdin and stdout are discarded; without a log directory, everything is, as before.
    */
-  spawnApp(label, cmd, args, options = {}) {
+  spawnApp(label, cmd, args, { stdout = 'ignore', ...options } = {}) {
     let fd = null;
     if (this.logs) {
       mkdirSync(this.logs, { recursive: true });
       fd = openSync(join(this.logs, `${label}.stderr`), 'a');
     }
     try {
-      const child = spawn(cmd, args, { ...options, stdio: fd === null ? 'ignore' : ['ignore', 'ignore', fd], detached: true });
+      // `stdout: 'pipe'` for a scene program that reports on it (pages/identity-windows.py)
+      const child = spawn(cmd, args, { ...options, stdio: ['ignore', stdout, fd === null ? 'ignore' : fd], detached: true });
       child.unref();
       return child;
     } finally {
@@ -469,6 +470,120 @@ export class Desktop {
       await this.waitForTree(scene);
       return scene;
     });
+  }
+
+  /**
+   * The identity scene (M4's T5, identity.mjs; Acceptance 7): `count` windows with one title, unique to the run, and one
+   * size, each showing its own marker (`<label>-<n>`), so a read shows which window it read while the X11 titles and
+   * sizes leave the windows indistinguishable. `toolkit`: `chrome`, windows of the running Chrome on
+   * pages/identity.html, opened one at a time, each found as the one window of the title not found before; or `gtk3`
+   * or `gtk4`, one process of pages/identity-windows.py, which reports each window's marker and X11 id once it is
+   * mapped. Every window is registered as the run's own as soon as it is known; the scene is `{kind: 'identity',
+   * toolkit, label, title, id (the first window's), windows: [{id, marker, label}], size, pid?, marksActive}`, its
+   * windows placed apart.
+   */
+  openDuplicates(role, toolkit, { count = 3 } = {}) {
+    this.assertOpen();
+    return this.track(async () => {
+      const label = this.label('identity', toolkit, role);
+      const [w, h] = GEOMETRY.identity;
+      const windows = [];
+      let title = label;
+      let pid = null;
+      if (toolkit === 'chrome') {
+        title = `${label} - Google Chrome`;
+        for (let n = 1; n <= count && !this.stopping; n++) {
+          // registered before Chrome is asked for it, by the title: a stop meanwhile closes it by that title
+          const win = { kind: 'chrome', role: `${role}_${n}`, label, page: 'identity.html', title, id: null, marker: `${label}-${n}` };
+          this.windows.push(win);
+          const url = `${pathToFileURL(join(PAGES, 'identity.html')).href}?marker=${encodeURIComponent(win.marker)}#${encodeURIComponent(label)}`;
+          // not `spawnApp`: the window belongs to the person's running Chrome, and this launcher only hands it the URL
+          spawn('google-chrome', ['--new-window', url], { stdio: 'ignore', detached: true }).unref();
+          const known = new Set(windows.map((x) => x.id));
+          try {
+            win.id = (await this.waitForWindow((x) => x.title === title && !known.has(x.id), win.marker, 30000)).id;
+          } catch (error) {
+            await this.close([win]);
+            throw error;
+          }
+          windows.push(win);
+        }
+      } else {
+        const child = this.spawnApp(label, 'python3', ['-I', join(PAGES, 'identity-windows.py'), toolkit, label, label, count, w, h], { stdout: 'pipe' });
+        pid = child.pid;
+        // one entry per window, the process's: a stop or a window that never comes ends the process
+        const pending = { kind: 'fixture', role, label, pid, id: null };
+        this.windows.push(pending);
+        const reported = [];
+        const lines = createInterface({ input: child.stdout });
+        lines.on('line', (line) => {
+          try {
+            reported.push(JSON.parse(line));
+          } catch {
+            // not a report
+          }
+        });
+        const deadline = Date.now() + 20000;
+        while (reported.length < count && Date.now() < deadline && !this.stopping) await sleep(100);
+        lines.close();
+        child.stdout.destroy();
+        if (reported.length < count) throw new Error(`${label} reported ${reported.length} of its ${count} windows`);
+        this.windows = this.windows.filter((x) => x !== pending);
+        for (const { marker, xid } of reported.sort((a, b) => a.marker - b.marker)) {
+          const win = { kind: 'fixture', role: `${role}_${marker}`, label, pid, id: xid, marker: `${label}-${marker}` };
+          this.windows.push(win);
+          this.foundNow(xid);
+          windows.push(win);
+        }
+      }
+      const scene = { kind: 'identity', toolkit, role, label, title, id: windows[0]?.id ?? null, windows, size: [w, h], pid, marksActive: toolkit !== 'chrome' };
+      if (this.stopping) return scene;
+      windows.forEach((win, n) => configure(win.id, n === 1 ? 640 : 0, n === 2 ? 400 : 0, w, h));
+      await this.waitForFrames(scene);
+      return scene;
+    });
+  }
+
+  /**
+   * Waits, at most 30 s, until the scene's process shows a frame of the scene's title for each of its windows, read by
+   * the harness's own reader of the bus (oracle.mjs), independent of any engine; then, for Chrome, whose page fills its
+   * frame a moment later, while the reader's read of a window answers its tree without the window's marker yet. A
+   * reader that does not tell the windows apart (an engine under test as a control) ends that wait at once. Not
+   * finding them is the cases' to fail, not the scene's: the scene is returned all the same, with `frames_ready`.
+   */
+  async waitForFrames(scene) {
+    const oracle = await this.ensureOracle();
+    const pid = scene.pid ?? Number(execFileSync('xprop', ['-id', String(scene.id), '_NET_WM_PID'], { encoding: 'utf8' }).match(/(\d+)\s*$/)?.[1]);
+    const deadline = Date.now() + 30000;
+    scene.frames_ready = false;
+    while (Date.now() < deadline && !this.stopping) {
+      try {
+        const frames = oracle.appsOf(pid).flatMap((app) => oracle.children(app)).filter((f) => oracle.name(f) === scene.title);
+        if (frames.length >= scene.windows.length) {
+          scene.frames_ready = true;
+          break;
+        }
+      } catch {
+        // read again
+      }
+      await sleep(500);
+    }
+    if (scene.toolkit !== 'chrome') return;
+    for (const win of scene.windows) {
+      while (Date.now() < deadline && !this.stopping) {
+        const { response } = await this.reader.request('get_window_state', { window: { id: win.id }, include_screenshot: false });
+        if (!response.ok || response.output.ax_tree_source !== 'at_spi') break;
+        if (preorder(response.output.ax_tree).some((n) => n.name === `marker ${win.marker}`)) break;
+        await sleep(300);
+      }
+    }
+  }
+
+  /** The harness's own reader of the accessibility bus (oracle.mjs), made once. */
+  async ensureOracle() {
+    const { Oracle } = await import('./oracle.mjs');
+    this.oracle ??= new Oracle();
+    return this.oracle;
   }
 
   /** Waits until the scene's tree reads through AT-SPI and two reads agree (the page or the document settled). */

@@ -43,9 +43,10 @@ impl Engine {
         let info = self.x.get_window(window)?;
         let resolved = self.with_bus(|bus, x| {
             let frame = match atspi::associate(bus, x, &info)? {
-                Association::Frame(frame) => frame,
+                Association::Frame(frame, _) => frame,
                 Association::NoMatch => return Ok(Err("window has no AT-SPI accessibility tree".to_string())),
                 Association::Refused(sentence) => return Ok(Err(sentence)),
+                Association::Duplicates => return Ok(Err(crate::identity::duplicates_sentence(info.id))),
             };
             resolve::element(bus, &frame, element)
         });

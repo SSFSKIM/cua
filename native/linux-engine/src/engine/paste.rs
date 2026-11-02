@@ -186,9 +186,10 @@ impl Engine {
             None => Err(self
                 .with_bus(|bus, x| {
                     Ok(match atspi::associate(bus, x, &info)? {
-                        Association::Frame(frame) => Ok(frame),
+                        Association::Frame(frame, _) => Ok(frame),
                         Association::NoMatch => Err("window has no AT-SPI accessibility tree".to_string()),
                         Association::Refused(sentence) => Err(sentence),
+                        Association::Duplicates => Err(crate::identity::duplicates_sentence(info.id)),
                     })
                 })?
                 .map_err(anyhow::Error::msg)?),

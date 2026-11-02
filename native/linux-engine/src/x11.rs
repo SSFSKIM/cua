@@ -68,6 +68,7 @@ const ATOM_NAMES: &[&str] = &[
     "_NET_WM_PID",
     "AT_SPI_BUS",
     "XdndSelection",
+    "_NET_FRAME_EXTENTS",
 ];
 
 pub struct X11 {
@@ -469,6 +470,13 @@ impl X11 {
         self.get_property(window, AtomEnum::WM_NAME.into())
             .ok()
             .and_then(|r| property_text(&r.value))
+    }
+
+    /// `_NET_FRAME_EXTENTS` (`[left, right, top, bottom]`), the window manager's frame around the window, when it
+    /// publishes exactly four values (`identity::Placement`).
+    pub fn frame_extents(&self, window: Window) -> Option<[u32; 4]> {
+        let reply = self.get_property(window, self.atom("_NET_FRAME_EXTENTS")).ok()?;
+        values32(&reply).try_into().ok()
     }
 
     /// The class part of `WM_CLASS` (`families.rs`).

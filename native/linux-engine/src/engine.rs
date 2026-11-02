@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 
 use crate::apps;
@@ -159,6 +159,16 @@ fn minimized_sentence(window: u32) -> String {
 /// to the vendor's output that its JavaScript ignores.
 fn reported_truncation(source: &str, truncated: tree::Truncated) -> Option<tree::Truncated> {
     (source == "at_spi" && !truncated.is_empty()).then_some(truncated)
+}
+
+/// What a state read found on the accessibility bus: the tree and how its frame was told, duplicates nothing tells
+/// apart, a frame told by its active state that was no longer the active window's once read, or nothing usable (the
+/// X11 fallback).
+enum Observed {
+    Tree(tree::AxNode, atspi::Told),
+    Duplicates,
+    Changed,
+    Fallback,
 }
 
 /// The `--stats` line's record of a reported after-release watch.
@@ -423,22 +433,42 @@ impl Engine {
         let window = self.cfg.window;
         let mut read_stats = tree::ReadStats::default();
         let at_spi = self.with_bus(|bus, x| {
-            let frame = match atspi::associate(bus, x, &info)? {
-                Association::Frame(frame) => frame,
-                Association::NoMatch | Association::Refused(_) => return Ok(None),
+            let (frame, told) = match atspi::associate(bus, x, &info)? {
+                Association::Frame(frame, told) => (frame, told),
+                Association::Duplicates => return Ok(Observed::Duplicates),
+                Association::NoMatch | Association::Refused(_) => return Ok(Observed::Fallback),
             };
             let (tree, stats) = tree::read(bus, &frame, window)?;
             read_stats = stats;
-            Ok(tree)
+            // a frame told apart by its active state, checked again once its tree is read: a toolkit marks the frame a
+            // moment after the activation, so a read that began on the previous active window's frame is refused, not
+            // answered with that window's tree
+            if told == atspi::Told::Active
+                && !(atspi::frame_active(bus, &frame)? && x.get_window(info.id).is_ok_and(|w| w.focused))
+            {
+                return Ok(Observed::Changed);
+            }
+            // a root that fails to read is the vendor's fallback (behaviour §4)
+            Ok(tree.map_or(Observed::Fallback, |tree| Observed::Tree(tree, told)))
         });
-        let (tree, source) = match at_spi {
-            Ok(Some(tree)) => (tree, "at_spi"),
-            _ => (self.x.fallback_tree(id)?, "x11"),
+        let (tree, source, told) = match at_spi {
+            Ok(Observed::Tree(tree, told)) => (tree, "at_spi", Some(told)),
+            // duplicates are never the X11 fallback, which would look like an empty window (Design, Window association)
+            Ok(Observed::Duplicates) => {
+                self.extra.insert("tree".into(), json!({ "identity": "duplicates" }));
+                bail!(crate::identity::duplicates_sentence(id));
+            }
+            Ok(Observed::Changed) => {
+                self.extra.insert("tree".into(), json!({ "identity": "changed" }));
+                bail!(atspi::identity_changed(id));
+            }
+            _ => (self.x.fallback_tree(id)?, "x11", None),
         };
         self.extra.insert(
             "tree".into(),
             json!({
                 "source": source,
+                "identity": told.map(atspi::Told::name),
                 "admitted": read_stats.admitted,
                 "discovered": read_stats.discovered,
                 "wasted_calls": read_stats.wasted_calls,

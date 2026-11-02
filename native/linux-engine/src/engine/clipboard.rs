@@ -36,11 +36,12 @@ impl Engine {
         let before = clipboard.generation()?;
         let copied = self.with_bus(|bus, x| {
             let frame = match atspi::associate(bus, x, &info)? {
-                Association::Frame(frame) => frame,
+                Association::Frame(frame, _) => frame,
                 Association::NoMatch => {
                     return Ok(Err("window has no AT-SPI accessibility tree".to_string().into()));
                 }
                 Association::Refused(sentence) => return Ok(Err(sentence.into())),
+                Association::Duplicates => return Ok(Err(crate::identity::duplicates_sentence(info.id).into())),
             };
             let Some(focused) = copy::focused(bus, &frame)? else {
                 return Ok(Err(

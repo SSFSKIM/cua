@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use anyhow::{Result, anyhow, bail};
 
 use crate::dbus::{Arg, Bus, CallResult, MethodCall, Value};
+use crate::identity::{self, By, Placement, Rect, Seen, TieBreak};
 use crate::tree::{self, Field, ObjRef, Transport};
 use crate::x11::{WindowInfo, X11};
 
@@ -173,11 +174,189 @@ pub fn toolkit_of(bus: &mut Bus, pid: u32) -> Result<Option<crate::families::Too
     }))
 }
 
-/// What association concluded (behaviour §4): a frame, no match, or a sentence.
+/// What association concluded (behaviour §4): a frame and how it was found, no match, a sentence, or duplicates.
 pub enum Association {
-    Frame(ObjRef),
+    Frame(ObjRef, Told),
     NoMatch,
     Refused(String),
+    /// Several frames match the window and nothing tells them apart (`identity.rs`): every request answers
+    /// `identity::duplicates_sentence`, an observation's included, never with the X11 fallback (Design, Window
+    /// association; M4's T5).
+    Duplicates,
+}
+
+/// How association found a window's frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Told {
+    /// The vendor's own match: the one frame of the title, or the one of the X11 size.
+    Title,
+    /// Among same-title duplicates, the one frame at the window's place (`identity::tie_break`).
+    Position,
+    /// Among same-title duplicates stacked on one place, the one `active` frame of the active window: a state the
+    /// toolkit may update a moment after the activation, so a read checks it again once it has read the tree.
+    Active,
+    /// No frame of the title, and the one frame of the process named for the title's caption, at the window's place:
+    /// kate's frame (`identity::caption`).
+    Caption,
+}
+
+impl Told {
+    pub fn name(self) -> &'static str {
+        match self {
+            Told::Title => "title",
+            Told::Position => "position",
+            Told::Active => "active",
+            Told::Caption => "caption",
+        }
+    }
+}
+
+/// Whether an application's toolkit is GTK 4, whose frames report their extents relative to the window (M0.4), so a
+/// position cannot tell its duplicates apart.
+fn is_gtk4(bus: &mut Bus, app: &ObjRef) -> Result<bool> {
+    const NAME: [Arg<'static>; 2] = [Arg::Str("org.a11y.atspi.Application"), Arg::Str("ToolkitName")];
+    const VERSION: [Arg<'static>; 2] = [Arg::Str("org.a11y.atspi.Application"), Arg::Str("Version")];
+    let get = |args| MethodCall {
+        dest: &app.bus,
+        path: &app.path,
+        iface: PROPERTIES,
+        member: "Get",
+        args,
+    };
+    let results = call_all(bus, &[get(&NAME), get(&VERSION)])?;
+    Ok(first_str(&results[0]).is_some_and(|name| {
+        let toolkit = crate::families::Toolkit {
+            name,
+            version: first_str(&results[1]),
+        };
+        toolkit.name.eq_ignore_ascii_case("GTK") && toolkit.major() == Some(4)
+    }))
+}
+
+/// Where an X11 window is (`identity::Placement`): its described client rectangle and its window manager's frame.
+fn placement(x: &X11, info: &WindowInfo) -> Placement {
+    let client = Rect {
+        x: info.x.into(),
+        y: info.y.into(),
+        width: info.width.into(),
+        height: info.height.into(),
+    };
+    Placement::new(client, x.frame_extents(info.id))
+}
+
+const SCREEN: [Arg<'static>; 1] = [Arg::U32(0)];
+
+fn extents_call(obj: &ObjRef) -> MethodCall<'_> {
+    MethodCall {
+        dest: &obj.bus,
+        path: &obj.path,
+        iface: "org.a11y.atspi.Component",
+        member: "GetExtents",
+        args: &SCREEN,
+    }
+}
+
+fn state_call(obj: &ObjRef) -> MethodCall<'_> {
+    MethodCall {
+        dest: &obj.bus,
+        path: &obj.path,
+        iface: ACCESSIBLE,
+        member: "GetState",
+        args: &[],
+    }
+}
+
+/// AT-SPI's `ACTIVE` state, bit 1 of `GetState`'s first word: not among the vendor's state names (the tree's
+/// `states` never carry it), so it is read from the words themselves.
+const ACTIVE_BIT: u32 = 1 << 1;
+
+/// Whether a `GetState` reply says `active`; a failed or malformed reply says not.
+fn is_active(result: &CallResult) -> bool {
+    let Ok(values) = result else { return false };
+    match values.first() {
+        Some(Value::Array(words)) => {
+            matches!(words.as_slice(), [Value::U32(low), Value::U32(_)] if low & ACTIVE_BIT != 0)
+        }
+        _ => false,
+    }
+}
+
+/// Whether a frame's states include `active` now (`Told::Active`'s check once a tree is read).
+pub fn frame_active(bus: &mut Bus, frame: &ObjRef) -> Result<bool> {
+    Ok(is_active(&bus.call(&state_call(frame))?))
+}
+
+fn rect_of(result: &CallResult) -> Option<Rect> {
+    crate::table::extents_of(result).ok().map(Rect::from_corners)
+}
+
+/// A frame matched by name: its object, its Name and the index of its application in the process's list.
+type Named = (ObjRef, String, usize);
+
+/// Tells same-title duplicates apart (`identity::tie_break`): the frame and how, or None when nothing does, which
+/// GTK 4 always is. Its extents and states are read together, one round trip.
+fn tell_apart(
+    bus: &mut Bus,
+    x: &X11,
+    info: &WindowInfo,
+    apps: &[&ObjRef],
+    candidates: &[&Named],
+    siblings: &[WindowInfo],
+) -> Result<Option<(Named, Told, Rect)>> {
+    let mut asked = Vec::new();
+    for (_, _, app) in candidates {
+        if !asked.contains(app) {
+            asked.push(*app);
+            if is_gtk4(bus, apps[*app])? {
+                return Ok(None);
+            }
+        }
+    }
+    let calls: Vec<MethodCall> = candidates
+        .iter()
+        .flat_map(|(frame, _, _)| [extents_call(frame), state_call(frame)])
+        .collect();
+    let results = call_all(bus, &calls)?;
+    let seen: Vec<Seen> = results
+        .chunks(2)
+        .map(|pair| Seen {
+            extents: rect_of(&pair[0]),
+            active: is_active(&pair[1]),
+        })
+        .collect();
+    let target = placement(x, info);
+    let places: Vec<Placement> = siblings.iter().map(|s| placement(x, s)).collect();
+    Ok(match identity::tie_break(&seen, &target, &places, info.focused) {
+        TieBreak::Frame(i, by) => Some((
+            candidates[i].clone(),
+            match by {
+                By::Position => Told::Position,
+                By::Active => Told::Active,
+            },
+            seen[i].extents.expect("a frame at the window's place has extents"),
+        )),
+        TieBreak::Several => None,
+    })
+}
+
+/// The caption rule (kate, M0.4): where no frame of the process is named for the window's title, the one frame whose
+/// trimmed Name is the title's caption (`identity::caption`), when it is the only such frame of the process and its
+/// extents put it at the window. None otherwise: no match, as before.
+fn by_caption(bus: &mut Bus, x: &X11, info: &WindowInfo, frames: &[Named]) -> Result<Option<(Named, Rect)>> {
+    let Some(caption) = info.title.as_deref().and_then(identity::caption) else {
+        return Ok(None);
+    };
+    let named: Vec<&Named> = frames
+        .iter()
+        .filter(|(_, n, _)| identity::names_caption(n, caption))
+        .collect();
+    let [only] = named.as_slice() else {
+        return Ok(None);
+    };
+    let Some(at) = rect_of(&bus.call(&extents_call(&only.0))?) else {
+        return Ok(None);
+    };
+    Ok(placement(x, info).holds(at).then(|| ((*only).clone(), at)))
 }
 
 /// Associates X11 window `window` (already described as `info`) with its AT-SPI frame, step by step as the vendor
@@ -223,8 +402,8 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Associ
             "AT-SPI provider with process ID {pid} is unavailable for X11 window {id}"
         )));
     }
-    let mut frames: Vec<(ObjRef, String)> = Vec::new();
-    for app in matching {
+    let mut frames: Vec<Named> = Vec::new();
+    for (index, app) in matching.iter().enumerate() {
         let children = match refs_of(&bus.call(&children_call(app))?) {
             Ok(children) => children,
             Err(error) => return Ok(Association::Refused(error)),
@@ -232,24 +411,77 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Associ
         let calls: Vec<MethodCall> = children.iter().map(name_call).collect();
         for (child, result) in children.iter().zip(call_all(bus, &calls)?) {
             match first_str(&result) {
-                Some(name) => frames.push((child.clone(), name)),
+                Some(name) => frames.push((child.clone(), name, index)),
                 None => return Ok(Association::Refused("AT-SPI window identity is unavailable".into())),
             }
         }
     }
     let same = |a: &str, b: &str| a.len() == b.len() && a.eq_ignore_ascii_case(b);
-    let by_title: Vec<&(ObjRef, String)> = match &title {
-        Some(t) => frames.iter().filter(|(_, n)| same(n, t)).collect(),
+    let by_title: Vec<&Named> = match &title {
+        Some(t) => frames.iter().filter(|(_, n, _)| same(n, t)).collect(),
         None => frames.iter().collect(),
     };
-    let by_wm_name: Vec<&(ObjRef, String)> = match &wm_name {
-        Some(t) => frames.iter().filter(|(_, n)| same(n, t)).collect(),
+    let by_wm_name: Vec<&Named> = match &wm_name {
+        Some(t) => frames.iter().filter(|(_, n, _)| same(n, t)).collect(),
         None => Vec::new(),
     };
     let candidates = if by_title.is_empty() { by_wm_name } else { by_title };
-    if candidates.is_empty() {
-        return Ok(Association::NoMatch);
-    }
+    // How the frame was told and, where its place decided, its extents then, checked again before it is accepted.
+    let mut told = Told::Title;
+    let mut extents_used: Option<Rect> = None;
+    let mut size_used = None;
+    let frame = if candidates.is_empty() {
+        match by_caption(bus, x, info, &frames)? {
+            Some((frame, at)) => {
+                told = Told::Caption;
+                extents_used = Some(at);
+                frame
+            }
+            None => return Ok(Association::NoMatch),
+        }
+    } else {
+        match pick(bus, x, info, &matching, &candidates, pid, &title)? {
+            Pick::Frame(frame, how) => {
+                match how {
+                    How::Vendor(size) => size_used = size,
+                    How::Told(by, at) => {
+                        told = by;
+                        extents_used = Some(at);
+                    }
+                }
+                frame
+            }
+            Pick::Done(association) => return Ok(association),
+        }
+    };
+    verify(bus, x, info, pid, &wm_name, frame, told, size_used, extents_used)
+}
+
+/// What `pick` chose among the frames named for the title: a frame and how, or the association's answer.
+enum Pick {
+    Frame(Named, How),
+    Done(Association),
+}
+
+enum How {
+    /// The vendor's rule, with the X11 size it compared where it compared one.
+    Vendor(Option<(u16, u16)>),
+    /// The tie-break between duplicates, and the frame's extents it decided on.
+    Told(Told, Rect),
+}
+
+/// Behaviour §4 steps 6–7, the vendor's decision among the frames named for the title, except where it gives up on
+/// duplicates (a sibling of the same title and size, or several frames of the X11 size), which `tell_apart` decides.
+fn pick(
+    bus: &mut Bus,
+    x: &mut X11,
+    info: &WindowInfo,
+    apps: &[&ObjRef],
+    candidates: &[&Named],
+    pid: u32,
+    title: &Option<String>,
+) -> Result<Pick> {
+    let id = info.id;
 
     // Same-title X11 siblings: another listed window of the same process whose title or WM_NAME is the first
     // candidate's Name.
@@ -278,45 +510,74 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Associ
             "ambiguous AT-SPI window identity for X11 window {id}: {reason}"
         ))
     };
-    let mut size_used = None;
-    let frame = if candidates.len() == 1 && siblings.is_empty() {
-        candidates[0].clone()
-    } else if title.is_none() {
-        return Ok(ambiguous(format!(
+    let duplicates = |told: Option<(Named, Told, Rect)>| match told {
+        Some((frame, by, at)) => Pick::Frame(frame, How::Told(by, at)),
+        None => Pick::Done(Association::Duplicates),
+    };
+    if candidates.len() == 1 && siblings.is_empty() {
+        return Ok(Pick::Frame(candidates[0].clone(), How::Vendor(None)));
+    }
+    if title.is_none() {
+        return Ok(Pick::Done(ambiguous(format!(
             "multiple windows in process {pid} match the available identity"
-        )));
-    } else if let Some(s) = siblings
+        ))));
+    }
+    // the vendor's "X11 window <sibling> has the same title and size": duplicates
+    if siblings
         .iter()
-        .find(|s| s.width == info.width && s.height == info.height)
+        .any(|s| s.width == info.width && s.height == info.height)
     {
-        return Ok(ambiguous(format!("X11 window {} has the same title and size", s.id)));
-    } else {
-        let mut kept = Vec::new();
-        for candidate in &candidates {
-            match size_of(bus, &candidate.0)? {
-                Ok((w, h)) if w == info.width as i32 && h == info.height as i32 => kept.push((*candidate).clone()),
-                Ok(_) => {}
-                Err(cause) => return Ok(ambiguous(format!("window size is unavailable: {cause}"))),
-            }
+        return Ok(duplicates(tell_apart(bus, x, info, apps, candidates, &siblings)?));
+    }
+    let mut kept = Vec::new();
+    for candidate in candidates {
+        match size_of(bus, &candidate.0)? {
+            Ok((w, h)) if w == info.width as i32 && h == info.height as i32 => kept.push(*candidate),
+            Ok(_) => {}
+            Err(cause) => return Ok(Pick::Done(ambiguous(format!("window size is unavailable: {cause}")))),
         }
-        if kept.len() != 1 {
-            return Ok(ambiguous("matching titles do not have one matching size".into()));
-        }
-        size_used = Some((info.width, info.height));
-        kept.remove(0)
-    };
+    }
+    match kept.as_slice() {
+        [only] => Ok(Pick::Frame(
+            (*only).clone(),
+            How::Vendor(Some((info.width, info.height))),
+        )),
+        [] => Ok(Pick::Done(ambiguous(
+            "matching titles do not have one matching size".into(),
+        ))),
+        // the vendor's "matching titles do not have one matching size" with several of the size: duplicates
+        several => Ok(duplicates(tell_apart(bus, x, info, apps, several, &siblings)?)),
+    }
+}
 
-    // Re-verification (behaviour §4 step 8).
-    let changed = || {
-        Association::Refused(format!(
-            "window identity changed while resolving X11 window {id}; retry the operation"
-        ))
-    };
+/// The sentence for a window whose identity changed while it was being associated (behaviour §4 step 8).
+pub fn identity_changed(window: u32) -> String {
+    format!("window identity changed while resolving X11 window {window}; retry the operation")
+}
+
+/// Re-verification before a frame is accepted (behaviour §4 step 8): the window's title, PID and `WM_NAME`, the X11
+/// size and the frame's size where the size decided, the window's place and the frame's extents where the place did,
+/// the window still active and its frame still `active` where the active state did, and the frame's Name, each as it
+/// was. Any change is `window identity changed while resolving X11 window <id>; retry the operation`.
+#[allow(clippy::too_many_arguments)]
+fn verify(
+    bus: &mut Bus,
+    x: &mut X11,
+    info: &WindowInfo,
+    pid: u32,
+    wm_name: &Option<String>,
+    frame: Named,
+    told: Told,
+    size_used: Option<(u16, u16)>,
+    extents_used: Option<Rect>,
+) -> Result<Association> {
+    let id = info.id;
+    let changed = || Association::Refused(identity_changed(id));
     let again = match x.get_window(id) {
         Ok(again) => again,
         Err(_) => return Ok(changed()),
     };
-    if again.title != title || x.pid(id) != Some(pid) || x.wm_name(id) != wm_name {
+    if again.title != info.title || x.pid(id) != Some(pid) || x.wm_name(id) != *wm_name {
         return Ok(changed());
     }
     if let Some((w, h)) = size_used
@@ -326,10 +587,19 @@ pub fn associate(bus: &mut Bus, x: &mut X11, info: &WindowInfo) -> Result<Associ
     {
         return Ok(changed());
     }
+    if let Some(at) = extents_used
+        && ((again.x, again.y, again.width, again.height) != (info.x, info.y, info.width, info.height)
+            || rect_of(&bus.call(&extents_call(&frame.0))?) != Some(at))
+    {
+        return Ok(changed());
+    }
+    if told == Told::Active && (!again.focused || !is_active(&bus.call(&state_call(&frame.0))?)) {
+        return Ok(changed());
+    }
     if first_str(&bus.call(&name_call(&frame.0))?).as_deref() != Some(frame.1.as_str()) {
         return Ok(changed());
     }
-    Ok(Association::Frame(frame.0))
+    Ok(Association::Frame(frame.0, told))
 }
 
 /// `Component.GetSize`: two int32 > 0.
@@ -447,4 +717,31 @@ pub fn role_name(bus: &mut Bus, obj: &ObjRef) -> Result<Option<String>> {
     Ok(result
         .ok()
         .and_then(|v| v.first().and_then(Value::as_str).map(str::to_string)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Told, is_active};
+    use crate::dbus::Value;
+
+    #[test]
+    fn the_active_state_is_read_from_the_state_words_themselves() {
+        let state = |low: u32| Ok(vec![Value::Array(vec![Value::U32(low), Value::U32(0)])]);
+        // GTK 3's active frame: active enabled resizable sensitive showing visible
+        assert!(is_active(&state(0x4320_0102)));
+        // Chrome's frames, active or not: enabled sensitive showing visible
+        assert!(!is_active(&state(0x4300_0100)));
+        assert!(!is_active(&Ok(vec![Value::Array(vec![Value::U32(2)])])), "one word");
+        assert!(!is_active(&Ok(vec![Value::U32(2)])), "not an array");
+        assert!(!is_active(&Err("org.freedesktop.DBus.Error.UnknownObject".into())));
+    }
+
+    #[test]
+    fn how_a_frame_was_told_is_named_for_the_stats_line() {
+        let names: Vec<&str> = [Told::Title, Told::Position, Told::Active, Told::Caption]
+            .iter()
+            .map(|t| t.name())
+            .collect();
+        assert_eq!(names, ["title", "position", "active", "caption"]);
+    }
 }

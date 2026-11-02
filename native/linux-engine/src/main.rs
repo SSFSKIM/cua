@@ -17,6 +17,7 @@ mod families;
 #[cfg(test)]
 mod fault;
 mod field;
+mod identity;
 mod input;
 mod keys;
 mod paste;

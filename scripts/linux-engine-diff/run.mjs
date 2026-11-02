@@ -771,13 +771,13 @@ export async function runDiff(args) {
   const candidate = prepareCandidate({ source: args.cua, gate: !args.dev });
   process.stdout.write(`${gateLabel(candidate.record.gate) ?? 'release gate'}; ${candidateLine(candidate.record)}\n`);
   try {
-    return await diffRun({ ...args, cua: candidate.path }, candidate.record);
+    return await diffRun({ ...args, cua: candidate.path }, candidate.record, candidate.dir);
   } finally {
     rmSync(candidate.dir, { recursive: true, force: true });
   }
 }
 
-async function diffRun(args, candidate) {
+async function diffRun(args, candidate, candidateDir) {
   const run = args.run ?? `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
   mkdirSync(args.out, { recursive: true });
   const results = join(args.out, 'results.jsonl');
@@ -821,6 +821,8 @@ async function diffRun(args, candidate) {
   });
 
   const desktop = new Desktop({ cua: args.cua, run });
+  // a run stopped by a signal never reaches runDiff's cleanup: its stop removes the stored candidate too (stop.mjs)
+  desktop.onStop(() => rmSync(candidateDir, { recursive: true, force: true }));
   if (plan.some((p) => isText(p.op) || isCase(p.op))) desktop.oracle ??= new Oracle();
   // Every scene label of this run: equivalent windows differ in their own label and list each other's (gedit's
   // recent files), so comparisons across windows replace them all.

@@ -27,21 +27,24 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
 A verdict run is a release gate unless it is given `--dev`. A gate takes as cua's candidate only the bytes a release
 ships: the release workflow's (`.github/workflows/linux-engine.yml`) attested static musl artifact of the commit this
 checkout is at (Decision Log 2026-11-01, "the gate judges the bytes that ship"). A musl build made the way the workflow
-makes it is the same bytes, so the same attestation verifies it; any build that is not is refused like any other
-unattested file. `--cua` names the file:
+makes it passes only if its bytes are the attested artifact's, since the attestation is looked up by the file's
+digest. On the #171 VM they are not: cd4c9297 built there with the workflow's toolchain, `RUSTFLAGS` remaps, hermetic
+Cargo home, `CUA_ENGINE_GIT_SHA` and `strip` gave `15cee88b…` (4 KB smaller), not the attested `5f4a1600…`, and was
+refused as unattested (#267). So a gate takes the workflow's artifact. `--cua` names the file:
 
 ```bash
 # the build-only run of the release workflow on the commit to gate (the head of the ref it is dispatched on)
 gh workflow run linux-engine.yml --repo SSFSKIM/cua --ref "$BRANCH" -f commit="$(git rev-parse HEAD)" -f publish=false
-gh run download "$RUN_ID" --repo SSFSKIM/cua -n "cua-engine-$VERSION-linux-x64" -D "$(mktemp -d)"   # a fresh, empty directory
+DIR=$(mktemp -d)   # a fresh, empty directory for the download
+gh run download "$RUN_ID" --repo SSFSKIM/cua -n "cua-engine-$VERSION-linux-x64" -D "$DIR"
 # or a released engine, with the checkout at the release's commit
-gh release download "linux-engine-v$VERSION" --repo SSFSKIM/cua -p "cua-engine-$VERSION-linux-x64" -D "$(mktemp -d)"
+gh release download "linux-engine-v$VERSION" --repo SSFSKIM/cua -p "cua-engine-$VERSION-linux-x64" -D "$DIR"
 node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$DIR/cua-engine-$VERSION-linux-x64" \
   --scene "$SCENES" --ops all --run "$RUN" --out "$OUT"
 ```
 
 `candidate.mjs` stores the file as `cua-engine`, mode 0700, in a directory of its own under the temporary directory
-(a downloaded artifact has lost its executable bit; the copy is removed when the run ends), and checks that copy, so
+(a downloaded artifact has lost its executable bit; the copy is removed when the run ends or is stopped), and checks that copy, so
 the bytes checked are the bytes every cua lane starts. In order, a gate refuses:
 
 - a file that is not an ELF file, a gnu build (a glibc interpreter or glibc's ABI tag: the host's default
@@ -68,7 +71,7 @@ is not on a terminal.
 `attestation` null. Its summary heading, its verdict line in `summary.md` and on stdout all say `development run, not a
 release gate`. Iterate on dev builds; a speed claim or an adoption run takes a musl build made the workflow's way
 (`--target x86_64-unknown-linux-musl`, the workflow's `RUSTFLAGS` path remaps, `CUA_ENGINE_GIT_SHA`, and its `strip`),
-still a dev run unless its bytes are the attested artifact's.
+still a dev run, or better the workflow's own artifact.
 
 The experiments (`--experiment`) take `--cua` as before and are not gates.
 

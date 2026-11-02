@@ -55,3 +55,10 @@ test("a rendered state's line shows its read's sum, and the tree step's state ke
   assert.equal(judge({ hydrated: null }), false, "sky.mjs's hydration dropped the field");
   assert.equal(judgeTruncation({ scene: 'gedit', lane: 'cua', reads: [read(tree(498, 12))], whole: null, hydrated: null }).holds, true);
 });
+
+test('with no --stats record on this path, the pages that are not built to be cut must read well below the limits with no field', () => {
+  const judge = (scene, state) => judgeTruncation({ scene, lane: 'cua', reads: [read(state)], whole: null }).holds;
+  assert.equal(judge('gedit', tree(498, 12, { nodes: 0, depth: 0, failed: 1 })), false, 'an invented count on an uncut page');
+  assert.equal(judge('chrome', tree(5000, 9)), false, 'a complete 5,000-node read cannot be told from a cut one without the record');
+  assert.equal(judge('chrome', tree(243, 9)), true);
+});

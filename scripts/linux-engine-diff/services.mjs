@@ -24,7 +24,9 @@
 // engine's `truncated`. Equal lanes prove nothing about it, so it is set aside before the lanes are compared and judged
 // in each lane on its own: its count is the sum of the `truncated` that lane's service returned for that very read, and
 // there is no line when none came. In the cua lane every read a step makes, whether or not the step renders it (the
-// query's), must also carry `truncated` exactly when it was cut, as deviations.mjs declares it (services-judge.mjs).
+// query's), must also carry `truncated` as the harness's page is known to hold it: the over-budget page counts both
+// causes, and the other pages read well below both limits with no field (services-judge.mjs). This path has no
+// `--stats` record of each read's cut points; the wire run judges the field exactly against it.
 //
 // usage: node scripts/linux-engine-diff/services.mjs --vendor-js <@oai/sky directory> --engine <cua-engine> --out <dir>
 //          [--scenes gedit,chrome,over-budget]
@@ -208,7 +210,7 @@ const allPass = rows.every(row => row.ok);
 const table = rows.map(row => `| ${row.scene} | ${row.step} | ${row.ok ? 'pass' : '**FAIL**'} | ${row.equal ? 'equal' : '**different**'} | ${row.expected.vendor && row.expected.cua ? 'yes' : `**no** (vendor ${row.expected.vendor}, cua ${row.expected.cua})`} | ${row.nodes?.cua ?? row.lines?.cua ?? ''} | ${row.truncated?.cua ? `${JSON.stringify(row.truncated.cua)}${row.line ? `, line ${row.line.cua}` : ''}` : ''} | ${row.vendorError ?? ''} |`);
 writeFileSync(join(values.out, 'summary.md'), [`# Two services, one engine: ${allPass ? 'every step passes' : 'FAILURES'}`, '',
   `Engine: \`${engineVersion}\` (${values.engine}); checkout ${commit}; scenes ${SCENES.join(', ')}; ${new Date().toISOString()}.`, '',
-  'A step passes when the two lanes are equal and each gives the step\'s expected outcome: the ordinary steps succeed with their window, state, tree or screenshot present; `unknown-id` and `unknown-action` fail with the sentence they exist to reach. The truncation line is set aside before the lanes are compared and judged in each lane: its count is the `truncated` that lane\'s service returned for the read, and every read the cua lane\'s steps make, the query\'s included, carries `truncated` exactly when it was cut (deviations.mjs; the over-budget page is built with both limits\' cuts).', '',
+  'A step passes when the two lanes are equal and each gives the step\'s expected outcome: the ordinary steps succeed with their window, state, tree or screenshot present; `unknown-id` and `unknown-action` fail with the sentence they exist to reach. The truncation line is set aside before the lanes are compared and judged in each lane: its count is the `truncated` that lane\'s service returned for the read, and every read the cua lane\'s steps make, the query\'s included, carries `truncated` as the page is known to hold it: the over-budget page counts both limits\' cuts, and the other pages read well below both limits with no field (deviations.mjs `fixtureTruncationMismatch`; this path has no `--stats` record, against which the wire run judges the field exactly).', '',
   '| scene | step | verdict | vendor service vs cua service | expected outcome | nodes / rendered lines (cua) | truncated, line count (cua) | both lanes\' error |', '|---|---|---|---|---|---|---|---|', ...table, ''].join('\n'));
 console.log(allPass ? 'VERDICT: every step passes' : 'VERDICT: failures');
 process.exit(allPass ? 0 : 1);

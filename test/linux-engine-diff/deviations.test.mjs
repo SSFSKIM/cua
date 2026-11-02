@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { DEVIATIONS, declaredDeviation, lineAsReported, setAsideTruncation, truncationAsDeclared } from '../../scripts/linux-engine-diff/deviations.mjs';
+import { DEVIATIONS, declaredDeviation, fixtureTruncationMismatch, lineAsReported, setAsideTruncation, truncationMismatch } from '../../scripts/linux-engine-diff/deviations.mjs';
 
 test('every declared deviation names its operation, field, reason and the spec section', () => {
   assert.ok(DEVIATIONS.length >= 6);
@@ -164,39 +164,90 @@ test('a declared truncated is set aside before the state is compared, and any ot
   assert.deepEqual(setAsideTruncation({ op: 'tree', scene: 'over-budget', response: failed }), { response: failed, deviation: null });
 });
 
-test('a read carries truncated exactly when its tree was cut: present as declared, absent where nothing shows a cut', () => {
-  // whole reads: present as declared, and absent only below the element limit
-  assert.equal(truncationAsDeclared({ scene: 'calc', state: tree(5000, 20, { truncated: { nodes: 31, depth: 0, failed: 0 } }) }), true);
-  assert.equal(truncationAsDeclared({ scene: 'calc', state: tree(5000, 20) }), false, 'the element limit was reached: the field is required');
-  assert.equal(truncationAsDeclared({ scene: 'gedit', state: tree(498, 12) }), true);
-  assert.equal(truncationAsDeclared({ scene: 'chrome', state: tree(243, 9) }), true);
-  assert.equal(truncationAsDeclared({ scene: 'gedit', state: tree(498, 12, { truncated: { nodes: 0, depth: 0, failed: 0 } }) }), false, 'no all-zero field');
-  assert.equal(truncationAsDeclared({ scene: 'gedit', state: tree(498, 12, { truncated: { nodes: 2, depth: 0, failed: 0 } }) }), false, 'a cut the tree does not show');
-  assert.equal(truncationAsDeclared({ scene: 'gedit', state: tree(1, 0, { source: 'x11' }) }), true, 'the X11 fallback carries nothing');
-  assert.equal(truncationAsDeclared({ scene: 'gedit', state: tree(1, 0, { source: 'x11', truncated: { nodes: 0, depth: 0, failed: 1 } }) }), false);
+// A `--stats` line's tree record as the engine writes it beside a get_window_state (engine.rs): the source the answer
+// took and the read's cut points, zeros included, among the read's other counts.
+const record = (truncated, source = 'at_spi') => ({ tree: { source, admitted: 1, discovered: 1, truncated } });
+const NONE = { nodes: 0, depth: 0, failed: 0 };
+const published = (scene, state, stats) => truncationMismatch({ scene, state, stats });
+
+test("a read's truncated is the engine's own record of its cut points: the re-review's four counterexamples", () => {
+  // (a) a depth-only cut keeping a 64-node chain that ends at depth 63: the record's cut requires the field
+  const depthOnly = { nodes: 0, depth: 2, failed: 0 };
+  assert.match(published('calc', tree(64, 63), record(depthOnly)), /record has cut points .* and the answer no truncated/);
+  assert.equal(published('calc', tree(64, 63, { truncated: depthOnly }), record(depthOnly)), null);
+  assert.match(published('calc', tree(64, 63, { truncated: { nodes: 0, depth: 1, failed: 0 } }), record(depthOnly)), /differs from the record/);
+  // the same chain whose node at depth 63 has nothing below it: no cut, no field
+  assert.equal(published('calc', tree(64, 63), record(NONE)), null);
+  // (b) an element-limited read keeping 4,999 nodes, one of its 5,000 admissions failed GetRoleName
+  const elementAndFailed = { nodes: 1001, depth: 0, failed: 1 };
+  assert.match(published('calc', tree(4999, 3), record(elementAndFailed)), /the answer no truncated/);
+  assert.equal(published('calc', tree(4999, 3, { truncated: elementAndFailed }), record(elementAndFailed)), null);
+  assert.match(published('calc', tree(4999, 3, { truncated: { nodes: 1001, depth: 0, failed: 0 } }), record(elementAndFailed)), /differs from the record/);
+  // (c) an uncut tree carrying an invented count
+  assert.match(published('gedit', tree(498, 12, { truncated: { nodes: 0, depth: 0, failed: 1 } }), record(NONE)), /where the record has no cut point/);
+  assert.equal(published('gedit', tree(498, 12), record(NONE)), null);
+  // (d) a complete, uncut tree of exactly 5,000 nodes: no false red
+  assert.equal(published('calc', tree(5000, 3), record(NONE)), null);
+  assert.match(published('calc', tree(5000, 3, { truncated: { nodes: 1, depth: 0, failed: 0 } }), record(NONE)), /no cut point/);
 });
 
-test("the harness's over-budget page is built with both causes: its read must count both", () => {
-  const read = (truncated) => truncationAsDeclared({ scene: 'over-budget', state: tree(5000, 63, { truncated }) });
-  assert.equal(read({ nodes: 1263, depth: 2, failed: 0 }), true);
-  assert.equal(read({ nodes: 1263, depth: 0, failed: 0 }), false, 'the depth cut missing');
-  assert.equal(read({ nodes: 0, depth: 2, failed: 0 }), false, 'the element cut missing');
-  assert.equal(read(undefined), false, 'the released 0.3.0 engine reports nothing');
-  // another scene at the limit with one cause is still as declared
-  assert.equal(truncationAsDeclared({ scene: 'calc', state: tree(5000, 63, { truncated: { nodes: 1263, depth: 0, failed: 0 } }) }), true);
-});
-
-test("a read filtered by a query carries the field exactly when the window's whole read did", () => {
-  const whole = tree(5000, 63, { truncated: { nodes: 1263, depth: 2, failed: 0 } });
-  const filtered = (truncated) => tree(3, 1, { truncated });
-  assert.equal(truncationAsDeclared({ scene: 'over-budget', state: filtered(whole.truncated), whole }), true);
-  assert.equal(truncationAsDeclared({ scene: 'over-budget', state: filtered(undefined), whole }), false, 'an over-budget query missing its field');
-  assert.equal(truncationAsDeclared({ scene: 'over-budget', state: filtered({ nodes: 2 ** 32, depth: 2, failed: 0 }), whole }), false, 'a malformed count');
+test('a read with no record of its cut points fails: missing, unparseable or malformed stats are not "nothing cut"', () => {
   const gedit = tree(498, 12);
-  assert.equal(truncationAsDeclared({ scene: 'gedit', state: filtered(undefined), whole: gedit }), true);
-  assert.equal(truncationAsDeclared({ scene: 'gedit', state: filtered({ nodes: 1, depth: 0, failed: 0 }), whole: gedit }), false, 'a field the whole read did not have');
-  // the 0.3.0 engine: the whole read at the limit with no field requires one on its query as well
-  assert.equal(truncationAsDeclared({ scene: 'calc', state: filtered(undefined), whole: tree(5000, 20) }), false);
+  assert.match(published('gedit', gedit, undefined), /no --stats line/);
+  assert.match(published('gedit', gedit, null), /no --stats line/);
+  assert.match(published('gedit', gedit, {}), /no tree record/);
+  // the released 0.3.0 engine's record: the read's counts, but no cut points
+  assert.match(published('gedit', gedit, { tree: { source: 'at_spi', admitted: 498, discovered: 498 } }), /malformed/);
+  for (const truncated of [{ nodes: 0, depth: 0 }, { ...NONE, more: 0 }, { ...NONE, failed: '0' }, { ...NONE, nodes: -1 }, { ...NONE, depth: 2 ** 32 }, { ...NONE, depth: 0.5 }, null, [0, 0, 0]]) {
+    assert.match(published('gedit', gedit, record(truncated)), /malformed/, JSON.stringify(truncated));
+  }
+  assert.match(published('gedit', gedit, { tree: { truncated: NONE } }), /malformed/, 'no source');
+  assert.match(published('gedit', gedit, { tree: 'at_spi' }), /malformed/);
+  // the record names the source of the answer it came with
+  assert.match(published('gedit', gedit, record(NONE, 'x11')), /source x11 where the answer has at_spi/);
+});
+
+test('the X11 fallback publishes nothing, whatever its record counts: no accessibility read made that tree', () => {
+  // a root whose GetRoleName fails gives the fallback, and the record counts that failure
+  const fallback = tree(1, 0, { source: 'x11' });
+  assert.equal(published('gedit', fallback, record({ nodes: 0, depth: 0, failed: 1 }, 'x11')), null);
+  assert.equal(published('gedit', fallback, record(NONE, 'x11')), null);
+  assert.match(published('gedit', tree(1, 0, { source: 'x11', truncated: { nodes: 0, depth: 0, failed: 1 } }), record({ nodes: 0, depth: 0, failed: 1 }, 'x11')), /no cut point/);
+});
+
+test("the harness's over-budget page is built with both causes: its record and its field must count both", () => {
+  const read = (truncated) => published('over-budget', tree(5000, 63, { truncated }), record(truncated ?? NONE));
+  assert.equal(read({ nodes: 1263, depth: 2, failed: 0 }), null);
+  assert.match(read({ nodes: 1263, depth: 0, failed: 0 }), /built to be cut/, 'the depth cut missing');
+  assert.match(read({ nodes: 0, depth: 2, failed: 0 }), /built to be cut/, 'the element cut missing');
+  assert.match(read(undefined), /built to be cut/, 'an engine that records no cut there');
+  // another scene cut by one cause is as recorded
+  assert.equal(published('calc', tree(5000, 63, { truncated: { nodes: 1263, depth: 0, failed: 0 } }), record({ nodes: 1263, depth: 0, failed: 0 })), null);
+});
+
+test('with no record (the two-services path), the fixtures decide: over-budget is cut by both causes, the other pages are well below the limits', () => {
+  const fixture = (scene, state, whole) => fixtureTruncationMismatch({ scene, state, whole });
+  const CUT = { nodes: 1263, depth: 2, failed: 0 };
+  const whole = tree(5000, 63, { truncated: CUT });
+  assert.equal(fixture('over-budget', whole), null);
+  assert.match(fixture('over-budget', tree(5000, 63)), /built to be cut/, 'the released 0.3.0 engine reports nothing');
+  assert.match(fixture('over-budget', tree(5000, 63, { truncated: { nodes: 1263, depth: 0, failed: 0 } })), /built to be cut/);
+  // a read filtered by a query: the engine filters after its read, so the cut is the whole read's
+  const filtered = (truncated) => tree(3, 1, { truncated });
+  assert.equal(fixture('over-budget', filtered(CUT), whole), null);
+  assert.match(fixture('over-budget', filtered(undefined), whole), /built to be cut/, 'an over-budget query missing its field');
+  assert.match(fixture('over-budget', filtered({ nodes: 2 ** 32, depth: 2, failed: 0 }), whole), /built to be cut/, 'a malformed count');
+  // the other pages: no field, and a whole read well below both limits, so neither limit can have cut it
+  const gedit = tree(498, 12);
+  assert.equal(fixture('gedit', gedit), null);
+  assert.equal(fixture('chrome', tree(243, 9)), null);
+  assert.match(fixture('gedit', tree(498, 12, { truncated: { nodes: 0, depth: 0, failed: 1 } })), /not built to be cut/);
+  assert.match(fixture('chrome', tree(4000, 9)), /well below/, 'a read near the element limit cannot be judged without a record');
+  assert.match(fixture('chrome', tree(5000, 9)), /well below/);
+  assert.match(fixture('chrome', tree(200, 40)), /well below/, 'a read near the depth limit');
+  assert.equal(fixture('gedit', filtered(undefined), gedit), null);
+  assert.match(fixture('gedit', filtered({ nodes: 1, depth: 0, failed: 0 }), gedit), /not built to be cut/);
+  assert.match(fixture('chrome', filtered(undefined), tree(5000, 9)), /well below/, "a query is judged with its window's whole read");
 });
 
 test("the rendered line agrees with the read's truncated: its count the sum, and no line for a read that cut nothing", () => {

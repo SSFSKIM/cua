@@ -47,14 +47,23 @@ export const DEPTH_LIMIT = 63;
 
 const isCount = (value) => Number.isInteger(value) && value >= 0 && value <= 0xffffffff;
 
+/** Exactly the three counts, each an unsigned 32-bit integer (the `--stats` record's cut points, zeros included). */
+const wellFormedCounts = (truncated) =>
+  truncated !== null &&
+  typeof truncated === 'object' &&
+  !Array.isArray(truncated) &&
+  Object.keys(truncated).length === TRUNCATION_KEYS.length &&
+  TRUNCATION_KEYS.every((k) => isCount(truncated[k]));
+
+/** Whether counts name a cut point. */
+const cutAt = (truncated) => TRUNCATION_KEYS.some((k) => truncated[k] > 0);
+
 /**
  * A `truncated` as the wire carries it: exactly the three counts, each an unsigned 32-bit integer, and at least one of
  * them above 0, since the engine reports no field for a read that cut nothing.
  */
 export function wellFormedTruncation(truncated) {
-  if (truncated === null || typeof truncated !== 'object' || Array.isArray(truncated)) return false;
-  const keys = Object.keys(truncated);
-  return keys.length === TRUNCATION_KEYS.length && TRUNCATION_KEYS.every((k) => isCount(truncated[k])) && TRUNCATION_KEYS.some((k) => truncated[k] > 0);
+  return wellFormedCounts(truncated) && cutAt(truncated);
 }
 
 /** A read's tree as its limits see it: its node count and the depth of its deepest node (the root at 0). */
@@ -89,7 +98,7 @@ function cutShownByTree(truncated, state) {
  * What the harness's own pages are built to cut, which their reads must count: a fixture's proof, not a declaration.
  * The over-budget page (pages/over-budget.html) nests a branch past depth 63 before far more than 5,000 elements.
  */
-const FIXTURE_CUTS = { 'over-budget': (t) => t.nodes > 0 && t.depth > 0 };
+const FIXTURE_CUTS = { 'over-budget': { causes: 'the element limit and the depth limit', holds: (t) => t.nodes > 0 && t.depth > 0 } };
 
 export const DEVIATIONS = [
   appliedWhereNoVendorDoes('type_text', 'gnome-text-editor', 'GTK 4 ignores the background route, where both builds send their text, and cua takes the foreground route in dedicated mode (M0.4 matrix; Decision Log, M2 pre-flight)'),
@@ -113,8 +122,8 @@ export const DEVIATIONS = [
   },
   ...['type_text', 'clipboard_write', 'clipboard_read'].map(previousUnconfirmed),
   {
-    // no operation and no scene: every read that was cut, whatever reads it and wherever (truncationAsDeclared
-    // requires the field there and refuses it on a read that was not)
+    // no operation and no scene: every read that was cut, whatever reads it and wherever (truncationMismatch requires
+    // the field exactly as the engine's record of the read's cut points calls for it, and refuses it elsewhere)
     field: 'truncated',
     answer: (c) => c.ok === true && wellFormedTruncation(c.output?.truncated) && cutShownByTree(c.output.truncated, c.output),
     reason:
@@ -152,27 +161,66 @@ export function setAsideTruncation({ op, scene, response }, list = DEVIATIONS) {
   return { response: { ...response, output }, deviation };
 }
 
+const show = (truncated) => (truncated === undefined ? 'none' : JSON.stringify(truncated));
+
 /**
- * Whether a cua read carries `truncated` exactly when it was cut. `state` is the read's answer; `whole`, for a read
- * filtered by a query (the engine filters after its read, so the cut is the read's), the same window's whole read.
- * - A whole read: present, the field is the declared answer, its counts shown by its tree; absent, nothing shows a cut,
- *   so its tree is under the element limit or is the X11 fallback. A tree at exactly 5,000 nodes with nothing more to
- *   list would be a false failure here; the limits leave no other sign of the element cut.
- * - A filtered read: the field where the whole read had one, well formed, and none where it had none.
- * - On a harness page built to be cut (`FIXTURE_CUTS`), the field also counts each cut the page is built with.
+ * Where a cua read's `truncated` is not what the engine's own record of its cut points calls for; null where it is.
+ * `stats` is the engine's `--stats` line for that very request (engine.mjs): its `tree` record names the source the
+ * answer took and counts the read's cut points, zeros included, from the counters the field is built from
+ * (engine.rs `get_window_state`). Exact both ways: a record with a cut point on an accessibility read requires the
+ * field with the same counts, and a record without one requires no field (the X11 fallback publishes nothing, whatever
+ * its record counts: no accessibility read made that tree). A missing, unparseable or malformed record fails, since no
+ * record of the cut points is not a record of none. On a harness page built to be cut (`FIXTURE_CUTS`), the record
+ * must also count each cut the page is built with, so an engine whose record and field agree on nothing still fails
+ * there. The record's own counts are exact by the engine's fake-bus tests (tree/tests.rs).
  */
-export function truncationAsDeclared({ scene, state, whole = state }, list = DEVIATIONS) {
-  const { truncated } = state;
+export function truncationMismatch({ scene, state, stats }) {
+  if (stats === undefined || stats === null) return 'no --stats line for the read, so nothing records where it was cut';
+  const { tree } = stats;
+  if (tree === undefined) return 'its --stats line has no tree record';
+  if (tree === null || typeof tree !== 'object' || typeof tree.source !== 'string' || !wellFormedCounts(tree.truncated)) {
+    return 'its --stats tree record is malformed: it needs the source and the cut points as three u32 counts';
+  }
+  if (tree.source !== state.ax_tree_source) return `its --stats tree record names the source ${tree.source} where the answer has ${state.ax_tree_source}`;
+  const recorded = tree.source === 'at_spi' && cutAt(tree.truncated) ? tree.truncated : undefined;
   const fixture = FIXTURE_CUTS[scene];
-  if (fixture && !(wellFormedTruncation(truncated) && fixture(truncated))) return false;
-  if (whole !== state) return (truncated === undefined) === (whole.truncated === undefined && !limitReached(whole)) && (truncated === undefined || wellFormedTruncation(truncated));
-  if (truncated === undefined) return !limitReached(state);
-  return declaredDeviation({ scene, field: 'truncated', candidate: { ok: true, output: state } }, list) !== null;
+  if (fixture && !(recorded && fixture.holds(recorded))) return `the ${scene} page is built to be cut by ${fixture.causes}; the record has ${show(tree.truncated)}`;
+  if (recorded === undefined) return state.truncated === undefined ? null : `the answer has truncated ${show(state.truncated)} where the record has no cut point`;
+  if (state.truncated === undefined) return `the record has cut points ${show(recorded)} and the answer no truncated`;
+  if (!wellFormedCounts(state.truncated) || TRUNCATION_KEYS.some((k) => state.truncated[k] !== recorded[k])) {
+    return `the answer's truncated ${show(state.truncated)} differs from the record's ${show(recorded)}`;
+  }
+  return null;
 }
 
-/** A whole accessibility read that admitted as many nodes as the element limit allows. */
-const limitReached = (state) => state.ax_tree_source === 'at_spi' && extent(state).nodes >= NODE_LIMIT;
+/** Half of each limit: a read no larger and no deeper cannot have reached either. */
+const WELL_BELOW = { nodes: NODE_LIMIT / 2, depth: Math.floor(DEPTH_LIMIT / 2) };
 
+/**
+ * Where a cua read's `truncated` disagrees with what the harness's own page is known to hold, for a path with no
+ * `--stats` record (the two-services instrument, whose engines cua's service spawns); null where it agrees. `state` is
+ * the read's answer; `whole`, for a read filtered by a query (the engine filters after its read, so the cut is the
+ * read's), the same window's whole read.
+ * - A page built to be cut (`FIXTURE_CUTS`) carries a well-formed field counting each cut it is built with, on every
+ *   read, filtered or not; a whole read's field also agrees with its tree (the declaration).
+ * - Any other page carries no field, and its window's whole read is well below both limits (`WELL_BELOW`), so neither
+ *   limit can have cut it. Without the record that is all this path can tell: a failed GetRoleName there, or a read
+ *   near a limit, is judged only where the record is (`truncationMismatch`).
+ */
+export function fixtureTruncationMismatch({ scene, state, whole = state }, list = DEVIATIONS) {
+  const fixture = FIXTURE_CUTS[scene];
+  if (fixture) {
+    const counted = wellFormedTruncation(state.truncated) && fixture.holds(state.truncated);
+    const agrees = state !== whole || declaredDeviation({ scene, field: 'truncated', candidate: { ok: true, output: state } }, list) !== null;
+    return counted && agrees ? null : `the ${scene} page is built to be cut by ${fixture.causes}; the read has truncated ${show(state.truncated)}`;
+  }
+  if (state.truncated !== undefined) return `the ${scene} page is not built to be cut, and the read has truncated ${show(state.truncated)}`;
+  const { nodes, deepest } = extent(whole);
+  if (nodes > WELL_BELOW.nodes || deepest > WELL_BELOW.depth) {
+    return `with no record of its cut points, a read is judged uncut only well below the limits (${WELL_BELOW.nodes} nodes, depth ${WELL_BELOW.depth}); the ${scene} window's whole read has ${nodes} nodes, the deepest at depth ${deepest}`;
+  }
+  return null;
+}
 /**
  * Whether the count a rendered state's truncation line shows (`splitTruncationLine`, null for no line) is the one its
  * read's `truncated` calls for: the sum of the counts, and no line when the read reported none or cut nothing.

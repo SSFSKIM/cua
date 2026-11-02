@@ -48,8 +48,15 @@ export class Engine {
     });
     createInterface({ input: this.child.stderr }).on('line', (line) => {
       if (line.startsWith('{"stats"')) {
-        const { stats } = JSON.parse(line);
-        this.statsById.set(stats.id, stats);
+        // a line that does not parse leaves its request without stats, which a check that needs them fails
+        let stats;
+        try {
+          ({ stats } = JSON.parse(line));
+        } catch {
+          this.stderrTail = `${this.stderrTail}unparsable --stats line: ${line.slice(0, 200)}\n`.slice(-4000);
+          return;
+        }
+        this.statsById.set(stats?.id, stats);
       } else {
         this.stderrTail = `${this.stderrTail}${line}\n`.slice(-4000);
       }
@@ -78,7 +85,10 @@ export class Engine {
     clearTimeout(timer);
     let stats = null;
     if (this.statsWanted) {
-      for (let i = 0; i < 50 && !this.statsById.has(id); i++) await new Promise((r) => setTimeout(r, 2));
+      // the engine writes a request's line just after its answer; a check that needs it fails without it, so a busy
+      // machine's late line is waited for (2 s), off the timed span, which ended at the answer
+      const until = now() + 2000;
+      while (!this.statsById.has(id) && now() < until) await new Promise((r) => setTimeout(r, 2));
       stats = this.statsById.get(id) ?? null;
       this.statsById.delete(id);
     }

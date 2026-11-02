@@ -3,14 +3,16 @@
 
 import { isDeepStrictEqual } from 'node:util';
 
-import { lineAsReported, truncationAsDeclared } from './deviations.mjs';
+import { fixtureTruncationMismatch, lineAsReported } from './deviations.mjs';
 
 /**
  * One lane's step, judged for `truncated` (M4 T3):
  * - `reads`: every get_window_state answer the step got from the lane's service, in order, each `{state, filtered}`
- *   (`filtered`: its request had a query). In the cua lane each must carry the field exactly when it was cut
- *   (`truncationAsDeclared`), whether or not the step renders anything; a filtered read is judged against `whole`, the
- *   lane's last whole read of the window, and fails when there is none.
+ *   (`filtered`: its request had a query). This path has no `--stats` record of each read's cut points (cua's service
+ *   spawns its engines), so in the cua lane each read is judged against what the harness's page is known to hold
+ *   (`fixtureTruncationMismatch`), whether or not the step renders anything; the wire run judges the field against the
+ *   engine's record. A filtered read is judged with `whole`, the lane's last whole read of the window, and fails when
+ *   there is none.
  * - `hydrated`: the `truncated` of the state the facade gave the step (sky.mjs's hydration keeps it), where the step
  *   returns one; it must be the last read's.
  * - `shown`: the count the step's rendered state's truncation line shows (null for no line), where it renders one; it
@@ -20,7 +22,7 @@ import { lineAsReported, truncationAsDeclared } from './deviations.mjs';
 export function judgeTruncation({ scene, lane, reads, whole = null, hydrated, shown }) {
   let holds = true;
   for (const { state, filtered } of reads) {
-    if (lane === 'cua') holds &&= filtered ? whole !== null && truncationAsDeclared({ scene, state, whole }) : truncationAsDeclared({ scene, state });
+    if (lane === 'cua') holds &&= filtered ? whole !== null && fixtureTruncationMismatch({ scene, state, whole }) === null : fixtureTruncationMismatch({ scene, state }) === null;
     if (!filtered) whole = state;
   }
   const last = reads.at(-1)?.state.truncated ?? null;

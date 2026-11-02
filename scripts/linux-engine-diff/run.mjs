@@ -21,7 +21,7 @@ import { startMonitor } from './busmon.mjs';
 import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
-import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe, setAsideTruncation, truncationAsDeclared } from './deviations.mjs';
+import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe, setAsideTruncation, truncationMismatch } from './deviations.mjs';
 import { judgeDevice } from './device.mjs';
 import { Engine } from './engine.mjs';
 import { medianDifferenceInterval, normalizeAnswer } from './events.mjs';
@@ -957,10 +957,14 @@ async function diffRun(args, candidate, { handoff }) {
           const { row, response: answered } = taken.counted;
           // cua's `truncated` beside a tree (M4): recorded, and set aside before the state is compared only where the
           // deviation declares it (deviations.mjs); anywhere else it stays in the state, which then differs from the
-          // vendor's. A candidate's read is checked here, on its whole state, for the field exactly when it was cut.
+          // vendor's. Over the wire a candidate's read is checked here against the engine's own record of where that
+          // read was cut, its `--stats` tree record: the field exactly as the record calls for it, and a read without
+          // the record fails. "as recorded", or what differs.
           const stateRead = row.ok && ['read', 'shot', 'retention'].includes(OPS[op].kind);
           if (stateRead && answered.output.truncated !== undefined) row.truncated = answered.output.truncated;
-          if (stateRead && !VENDORS.includes(label)) row.truncation_as_declared = truncationAsDeclared({ scene: sceneName, state: answered.output });
+          if (stateRead && via === 'wire' && !VENDORS.includes(label)) {
+            row.truncation = truncationMismatch({ scene: sceneName, state: answered.output, stats: row.stats }) ?? 'as recorded';
+          }
           const { response, deviation: truncation } = stateRead ? setAsideTruncation({ op, scene: sceneName, response: answered }) : { response: answered, deviation: null };
           if (truncation) row.deviation = truncation.op ?? op;
           if (row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot' || OPS[op].kind === 'retention')) {
@@ -1262,13 +1266,15 @@ async function diffRun(args, candidate, { handoff }) {
           }
         }
         if (via === 'wire' && ['read', 'shot', 'retention'].includes(OPS[op].kind)) {
-          // cua's truncation (M4) as declared on every sample: present exactly when the read was cut, so a cut is
-          // required, not only excused (over the wire, where the answer is the engine's own; through the vendor's
-          // JavaScript an undeclared field still differs from the vendor's state). A sample without the check fails.
-          const off = mine.filter((r) => r.ok && r.truncation_as_declared !== true);
+          // cua's truncation (M4) as the engine recorded each read's cut points, on every sample: present exactly when
+          // the record has a cut point, with its counts, so a cut is required, not only excused (over the wire, where
+          // the answer and the record are the engine's own; through the vendor's JavaScript an undeclared field still
+          // differs from the vendor's state). A sample without the check fails.
+          const off = mine.filter((r) => r.ok && r.truncation !== 'as recorded');
           if (off.length) {
             verdict.pass = false;
-            verdict.reasons.push(`${candidate}: truncated not as declared on ${off.length} of ${mine.length} samples`);
+            const why = off.find((r) => r.truncation)?.truncation ?? 'no truncation check recorded';
+            verdict.reasons.push(`${candidate}: truncated not as recorded on ${off.length} of ${mine.length} samples (first: ${why})`);
           }
         }
         const kept = keep[`${candidate}|${sceneName}|${op}`];

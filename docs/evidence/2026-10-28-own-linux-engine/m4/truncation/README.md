@@ -25,3 +25,7 @@ commit 7b2077e4's. The harness ran from the working tree that became the next co
   `tree` newest block 2 i 5; `tree_shot` pinned i 0, newest i 3 and i 5; sample rows 261–285). The cua samples between
   them (gedit `tree_shot` cua block 2) kept the witness clean. Every verdict passed, but because a witness change fell
   in the interval the whole run was repeated undisturbed as `diff/`.
+
+- `fix1/`: the fix round (task 31). `truncated` is declared once for any read that was cut, not per scene. Every
+  count is a u32. A query's read is judged too. The wire run covers every state-read scene, and both negative
+  controls ran on the released 0.3.0 (`fix1/README.md`).

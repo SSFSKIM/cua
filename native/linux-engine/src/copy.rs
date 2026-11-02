@@ -159,11 +159,24 @@ fn int_of(result: &CallResult) -> Option<i32> {
 }
 
 /// Why nothing was copied: the sentence, and whether a context menu the Copy opened is still open, which the caller
-/// closes (with Escape) so the request leaves no menu behind.
+/// closes (with Escape) so the request leaves no menu behind, its answer then saying what the Escape did
+/// ([`after_escape`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Refused {
     pub sentence: String,
     pub menu_open: bool,
+}
+
+/// A refusal that left the Copy's context menu open, with what was done to close it: an Escape sent, which is all
+/// that is known (whether the menu then closed is not observed), or an Escape that could not be sent.
+pub fn after_escape(sentence: &str, escape: std::result::Result<(), &anyhow::Error>) -> String {
+    match escape {
+        Ok(()) => format!("{sentence}; an Escape was sent to close the menu the Copy opened"),
+        Err(error) => format!(
+            "{sentence}; the menu the Copy opened may still be open: an Escape to close it could not be sent \
+             ({error:#})"
+        ),
+    }
 }
 
 impl From<String> for Refused {
@@ -175,18 +188,26 @@ impl From<String> for Refused {
     }
 }
 
-/// Asked just before each of the Copy's effects (`CopyText`, the context menu's `DoAction`, its item's `DoAction`):
-/// whether the window's association still names the frame the element was found in (`atspi::Associated::confirm`).
+/// Asked just before `CopyText`: whether the window's association still names the frame the element was found in
+/// (`atspi::Associated::confirm`).
 pub type Confirm<'a> = dyn FnMut(&mut Bus) -> Result<bool> + 'a;
 
-/// Copies from the focused element of X11 window `window` by the vendor's route choice; why not when it cannot,
-/// `confirm` refusing it just before any effect once the association has changed.
-pub fn copy(
-    bus: &mut Bus,
-    element: &ObjRef,
-    window: u32,
-    confirm: &mut Confirm,
-) -> Result<std::result::Result<(), Refused>> {
+/// What the Copy may do for X11 window `window`: `confirm` refuses `CopyText` once the association has changed, and
+/// `menu_refused`, when given, refuses the context-menu route before it opens a menu, since a menu cannot be bound
+/// to the window (`atspi::Associated::context_menu_refusal`).
+pub struct Guard<'a, 'c> {
+    pub window: u32,
+    pub confirm: &'a mut Confirm<'c>,
+    pub menu_refused: Option<String>,
+}
+
+/// Copies from the focused element by the vendor's route choice; why not when it cannot, or when `guard` refuses.
+pub fn copy(bus: &mut Bus, element: &ObjRef, guard: Guard) -> Result<std::result::Result<(), Refused>> {
+    let Guard {
+        window,
+        confirm,
+        menu_refused,
+    } = guard;
     let interfaces = tree::with_call(element, Field::Interfaces, |c| bus.call(c))?;
     let interfaces: Vec<String> = match interfaces.as_ref().ok().and_then(|v| v.first()) {
         Some(Value::Array(items)) => items.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
@@ -205,7 +226,10 @@ pub fn copy(
             .map(|(i, _)| i)
             .collect();
         if let [index] = menus.as_slice() {
-            return context_menu_item(bus, element, *index as u32, "Copy", window, confirm);
+            if let Some(sentence) = menu_refused {
+                return Ok(Err(sentence.into()));
+            }
+            return context_menu_item(bus, element, *index as u32, "Copy");
         }
     }
     Ok(Err(Refused::from(
@@ -270,14 +294,13 @@ fn editable_copy(
 }
 
 /// Opens the element's context menu and activates its item labelled `label`: the menu is a new child of the
-/// element's application, searched for a `menu item` of that name until it appears or the wait ends.
+/// element's application, searched for a `menu item` of that name until it appears or the wait ends. Which window
+/// opened a menu the application's children do not say, so only the vendor's own association takes this route.
 fn context_menu_item(
     bus: &mut Bus,
     element: &ObjRef,
     action: u32,
     label: &str,
-    window: u32,
-    confirm: &mut Confirm,
 ) -> Result<std::result::Result<(), Refused>> {
     let app = ObjRef {
         bus: element.bus.clone(),
@@ -287,12 +310,11 @@ fn context_menu_item(
         Ok(children_of(&tree::with_call(&app, Field::Children, |c| bus.call(c))?))
     };
     let before: HashSet<ObjRef> = app_children(bus)?.into_iter().collect();
-    if !confirm(bus)? {
-        return Ok(Err(crate::atspi::changed_before_acting(window).into()));
-    }
     if let Err(e) = crate::atspi::do_action(bus, element, action)? {
         return Ok(Err(e.into()));
     }
+    #[cfg(test)]
+    crate::fault::identity(crate::fault::Identity::MenuLookup);
     let deadline = Instant::now() + MENU_WAIT;
     let mut opened = false;
     loop {
@@ -301,16 +323,6 @@ fn context_menu_item(
             opened |= items > 0;
             if let Some(item) = item {
                 // the menu is open: a refusal now says so, and the caller closes it
-                if !confirm(bus)? {
-                    return Ok(Err(Refused {
-                        sentence: crate::atspi::changed_after_input(
-                            window,
-                            "nothing was copied, but the Copy had already opened the element's context menu, which \
-                             is closed again with Escape",
-                        ),
-                        menu_open: true,
-                    }));
-                }
                 return Ok(crate::atspi::do_action(bus, &item, 0)?.map_err(|sentence| Refused {
                     sentence,
                     menu_open: true,
@@ -367,6 +379,21 @@ fn find_menu_item(bus: &mut Bus, frame: &ObjRef, label: &str) -> Result<(Option<
 mod tests {
     use super::*;
     use std::collections::VecDeque;
+
+    #[test]
+    fn a_menu_left_open_is_said_to_have_had_an_escape_sent_never_to_have_closed() {
+        let open = "native menu opened without an available Copy; no clipboard action was sent";
+        assert_eq!(
+            after_escape(open, Ok(())),
+            "native menu opened without an available Copy; no clipboard action was sent; an Escape was sent to close \
+             the menu the Copy opened"
+        );
+        assert_eq!(
+            after_escape(open, Err(&anyhow::anyhow!("BadWindow"))),
+            "native menu opened without an available Copy; no clipboard action was sent; the menu the Copy opened may \
+             still be open: an Escape to close it could not be sent (BadWindow)"
+        );
+    }
 
     #[test]
     fn a_menu_item_is_its_label_alone_or_with_its_shortcut() {

@@ -1,7 +1,7 @@
 //! Test builds only: faults injected into the key events the engine sends, on either route, to prove how the paste
 //! route answers when the X server's acknowledgement of a delivered key is lost, when the server rejects a key before
-//! delivering it, and when a release fails; and hooks at the steps of a window's association, where a test changes the
-//! desktop between two of the engine's own steps. Armed per thread (the engine's requests run on the test's thread),
+//! delivering it, and when a release fails; and hooks at the steps of a window's association and of a request's
+//! effects, where a test changes the desktop between two of the engine's own steps. Armed per thread (the engine's requests run on the test's thread),
 //! and every key event sent is logged.
 
 use std::cell::RefCell;
@@ -114,6 +114,12 @@ pub enum Identity {
     CopyText,
     /// A paste's selection restore, once the focusing click has focused the field (`engine/paste.rs`).
     Restore,
+    /// A paste's clipboard snapshot taken, just before it takes CLIPBOARD (`engine/paste.rs`).
+    Snapshot,
+    /// A paste's CLIPBOARD taken, just before step 4's revalidation (`engine/paste.rs`).
+    Taken,
+    /// The Copy's context menu asked to open, just before the menu is looked for (`copy.rs`).
+    MenuLookup,
 }
 
 /// A hook armed for the `nth` time (from 1) its point is reached since arming.

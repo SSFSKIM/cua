@@ -11,6 +11,8 @@ mod paste;
 #[cfg(test)]
 mod paste_faults;
 mod pointer;
+#[cfg(test)]
+mod refusal_faults;
 mod way;
 mod windows;
 

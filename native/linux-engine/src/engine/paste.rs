@@ -26,7 +26,7 @@ use crate::copy;
 use crate::families::{DEFAULT_PASTE, Kind, PasteRoute};
 use crate::field::{self, Observation};
 use crate::input::{chord_keycodes, focus_is_within};
-use crate::paste::{self, CHANGED, Expected, Transfer, UNCONFIRMED};
+use crate::paste::{self, CHANGED_CAUSE, Expected, Transfer, UNCONFIRMED};
 use crate::route::Route;
 use crate::tree::ObjRef;
 use crate::wire::{ClipboardWriteInput, TypeTextInput, parse_input};
@@ -38,7 +38,8 @@ const FOCUS_POLL: Duration = Duration::from_millis(10);
 /// How many focusing clicks at most (`click_for_focus`).
 const FOCUS_CLICKS: u32 = 2;
 
-const LOST: &str = "another program took the clipboard before the paste was sent; nothing was sent";
+/// Why a paste is refused when another program took CLIPBOARD after the engine had (`paste::not_dispatched` ends it).
+const LOST: &str = "another program took the clipboard before the paste was sent";
 const UNKNOWN_HANDLE: &str = "unknown clipboard handle; copy again in this Linux helper";
 
 /// One paste: where it goes and what it serves.
@@ -55,7 +56,10 @@ struct Request {
 /// What the route found and did, for the `--stats` line.
 #[derive(Default)]
 struct Report {
+    /// A focusing click went to the window: from the moment its pointer was placed.
     clicked: bool,
+    /// The chord's first press was about to go out: from here on the answer is the dispatch's own.
+    dispatched: bool,
     restored: Option<bool>,
     confirmed: bool,
     transfer: Option<&'static str>,
@@ -150,7 +154,7 @@ impl Engine {
         // new is served meanwhile. Read early so a refusal comes before anything is done; read again under the lock,
         // where it decides.
         if let Some(wait) = self.clipboard()?.quarantine()? {
-            bail!(paste::previous_unconfirmed(wait));
+            bail!(paste::previous_unconfirmed(wait, false));
         }
         let window = match request.window {
             Some(id) => id,
@@ -215,102 +219,133 @@ impl Engine {
             .as_mut()
             .ok_or_else(|| anyhow!("AT-SPI accessibility bus is unavailable"))?;
         let clipboard = clipboard.as_mut().expect("connected above");
-        inputs.with_route(x, target, |x, route, _| {
-            let (element, named) = match &named {
-                Ok(element) => (element.clone(), true),
-                Err(associated) => {
-                    let focused = copy::focused(bus, &associated.frame)?.ok_or_else(|| {
-                        anyhow!("window {window} has no focused element to paste into; nothing was sent")
-                    })?;
-                    let element = Element {
-                        info: info.clone(),
-                        target: focused,
-                        ancestors: Vec::new(),
-                        associated: associated.clone(),
-                    };
-                    (element, false)
+        inputs
+            .with_route(x, target, |x, route, _| {
+                let (element, named) = match &named {
+                    Ok(element) => (element.clone(), true),
+                    Err(associated) => {
+                        let focused = copy::focused(bus, &associated.frame)?.ok_or_else(|| {
+                            anyhow!("window {window} has no focused element to paste into; nothing was sent")
+                        })?;
+                        let element = Element {
+                            info: info.clone(),
+                            target: focused,
+                            ancestors: Vec::new(),
+                            associated: associated.clone(),
+                        };
+                        (element, false)
+                    }
+                };
+                // 1. Observe.
+                let mut seen = observe(bus, &element.target)?;
+                if named && !seen.editable {
+                    bail!(NOT_EDITABLE);
                 }
-            };
-            // 1. Observe.
-            let mut seen = observe(bus, &element.target)?;
-            if named && !seen.editable {
-                bail!(NOT_EDITABLE);
-            }
-            // 2. Focus only if needed, then put back the caret or selection the click moved. Each click and the restore
-            // is an effect on what association chose, so the association is confirmed again just before each.
-            if named && !seen.focused {
-                let (rx, ry) = visible_point(bus, &element, "typing")?;
-                report.clicked = true;
-                let clicked_at = Instant::now();
-                let shared = std::cell::RefCell::new(&mut *bus);
-                let mut clicked = false;
-                let (after, clicks) = click_for_focus(
-                    || {
-                        confirmed(&element, &mut shared.borrow_mut(), x, clicked)?;
-                        clicked = true;
-                        route.place(x, rx, ry)?;
-                        route.button(x, 1, true)?;
-                        std::thread::sleep(CLICK_HOLD);
-                        route.button(x, 1, false)
-                    },
-                    || observe(&mut shared.borrow_mut(), &element.target),
-                    FOCUS_WAIT,
-                    FOCUS_POLL,
-                )?;
-                report.clicks = clicks;
-                report.focus_ms = Some(clicked_at.elapsed().as_secs_f64() * 1000.0);
-                if !after.focused {
-                    bail!("element did not take the focus when clicked; nothing was sent");
+                // 2. Focus only if needed, then put back the caret or selection the click moved. Each click and the restore
+                // is an effect on what association chose, so the association is confirmed again just before each.
+                if named && !seen.focused {
+                    let (rx, ry) = visible_point(bus, &element, "typing")?;
+                    let clicked_at = Instant::now();
+                    let shared = std::cell::RefCell::new(&mut *bus);
+                    let clicked = &mut report.clicked;
+                    let (after, clicks) = click_for_focus(
+                        || {
+                            confirmed(&element, &mut shared.borrow_mut(), x, *clicked)?;
+                            // sent from the moment the pointer is placed, so no later refusal says nothing was
+                            *clicked = true;
+                            route.place(x, rx, ry)?;
+                            route.button(x, 1, true)?;
+                            std::thread::sleep(CLICK_HOLD);
+                            route.button(x, 1, false)
+                        },
+                        || observe(&mut shared.borrow_mut(), &element.target),
+                        FOCUS_WAIT,
+                        FOCUS_POLL,
+                    )?;
+                    report.clicks = clicks;
+                    report.focus_ms = Some(clicked_at.elapsed().as_secs_f64() * 1000.0);
+                    if !after.focused {
+                        return Err(refused("element did not take the focus when clicked", true));
+                    }
+                    if let Some(before) = &seen.text {
+                        #[cfg(test)]
+                        crate::fault::identity(crate::fault::Identity::Restore);
+                        confirmed(&element, bus, x, true)?;
+                        report.restored = Some(field::restore(bus, &element.target, before)?);
+                    }
+                    seen = observe(bus, &element.target)?;
                 }
-                if let Some(before) = &seen.text {
-                    #[cfg(test)]
-                    crate::fault::identity(crate::fault::Identity::Restore);
-                    confirmed(&element, bus, x, true)?;
-                    report.restored = Some(field::restore(bus, &element.target, before)?);
+                if !seen.focused {
+                    return Err(refused(CHANGED_CAUSE, report.clicked));
                 }
-                seen = observe(bus, &element.target)?;
-            }
-            if !seen.focused {
-                bail!(CHANGED);
-            }
-            let text = request.text.as_deref().unwrap_or_default();
-            if text.is_empty() && request.empty_is_nothing {
-                // Nothing to paste: the field is focused, and no clipboard work is done.
-                return Ok(());
-            }
-            let insertion = seen.text.as_ref().and_then(|t| t.insertion_point().map(|at| (t, at)));
-            let expected = match insertion.filter(|_| request.text.is_some()) {
-                Some((state, at)) => {
-                    let len = paste::offsets(text, feff);
-                    let until = Instant::now() + crate::dbus::IO_TIMEOUT;
-                    field::read(bus, &element.target, at, len, until)?.map(|(_, before)| Expected {
-                        text: text.to_string(),
-                        at,
-                        len,
-                        feff_after_astral: feff,
-                        count_before: state.count,
-                        before,
-                    })
+                let text = request.text.as_deref().unwrap_or_default();
+                if text.is_empty() && request.empty_is_nothing {
+                    // Nothing to paste: the field is focused, and no clipboard work is done.
+                    return Ok(());
                 }
-                None => None,
-            };
-            report.observed = Some(format!("{:?}", seen.text));
-            report.expected = expected.as_ref().map(|e| (e.at, e.len));
-            let field = Prepared {
-                element,
-                seen,
-                expected,
-            };
-            let delivery = Delivery {
-                window,
-                resource_id_mask,
-                keycodes: &keycodes,
-                payload: &request.payload,
-            };
-            dispatch_and_confirm(x, route, bus, clipboard, field, delivery, report)
-        })?;
+                let insertion = seen.text.as_ref().and_then(|t| t.insertion_point().map(|at| (t, at)));
+                let expected = match insertion.filter(|_| request.text.is_some()) {
+                    Some((state, at)) => {
+                        let len = paste::offsets(text, feff);
+                        let until = Instant::now() + crate::dbus::IO_TIMEOUT;
+                        field::read(bus, &element.target, at, len, until)?.map(|(_, before)| Expected {
+                            text: text.to_string(),
+                            at,
+                            len,
+                            feff_after_astral: feff,
+                            count_before: state.count,
+                            before,
+                        })
+                    }
+                    None => None,
+                };
+                report.observed = Some(format!("{:?}", seen.text));
+                report.expected = expected.as_ref().map(|e| (e.at, e.len));
+                let field = Prepared {
+                    element,
+                    seen,
+                    expected,
+                };
+                let delivery = Delivery {
+                    window,
+                    resource_id_mask,
+                    keycodes: &keycodes,
+                    payload: &request.payload,
+                };
+                dispatch_and_confirm(x, route, bus, clipboard, field, delivery, report)
+            })
+            .map_err(|error| said_after_click(error, report))?;
         Ok(Value::Null)
     }
+}
+
+/// A refusal before the chord whose sentence already says what the request had sent by then (`refused`, an identity
+/// refusal): answered as it is.
+#[derive(Debug)]
+struct Said(String);
+
+impl std::fmt::Display for Said {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Said {}
+
+/// A refusal before the chord: `cause`, and whether a focusing click had already gone to the window
+/// (`paste::not_dispatched`).
+fn refused(cause: &str, clicked: bool) -> anyhow::Error {
+    Said(paste::not_dispatched(cause, clicked)).into()
+}
+
+/// Any other error that ended a paste after its focusing click and before its chord (a busy clipboard lock, a failed
+/// call): it says that the click reached the window and no paste was dispatched, so the caller reads the window before
+/// a retry. "Nothing was sent" is said only when nothing was (the design session, M4's T5 round 3).
+fn said_after_click(error: anyhow::Error, report: &Report) -> anyhow::Error {
+    if !report.clicked || report.dispatched || error.is::<Said>() {
+        return error;
+    }
+    anyhow!(paste::not_dispatched(format!("{error:#}"), true))
 }
 
 /// The focusing click: clicks, then observes every `poll` for up to `wait` until the element reports the focus. A click
@@ -344,7 +379,7 @@ fn click_for_focus(
 /// restore). A change refuses, saying whether a focusing click had already been sent (`identity_refusal`).
 fn confirmed(element: &Element, bus: &mut crate::dbus::Bus, x: &mut X11, clicked: bool) -> Result<()> {
     if !element.associated.confirm(bus, x)? {
-        bail!(identity_refusal(element.info.id, clicked));
+        return Err(Said(identity_refusal(element.info.id, clicked)).into());
     }
     Ok(())
 }
@@ -413,33 +448,38 @@ fn dispatch_and_confirm(
         expected,
     } = field;
     let window = delivery.window;
+    // Every refusal before the chord says whether the focusing click had gone to the window (`refused`); any other
+    // error here is told so by `said_after_click`.
+    let clicked = report.clicked;
     if !desktop_focus_holds(x, route, window)? {
-        bail!(CHANGED);
+        return Err(refused(CHANGED_CAUSE, clicked));
     }
     // 3. Lock, snapshot, own. The lock is released after the paste's cleanup (dropped in reverse order).
     let _lock = clipboard.lock()?;
     if let Some(wait) = clipboard.quarantine()? {
-        bail!(paste::previous_unconfirmed(wait));
+        return Err(Said(paste::previous_unconfirmed(wait, clicked)).into());
     }
-    let restore = clipboard
-        .snapshot()
-        .map_err(|e| anyhow!(paste::nothing_sent(format!("{e:#}"))))?;
+    let restore = clipboard.snapshot().map_err(|e| refused(&format!("{e:#}"), clicked))?;
+    #[cfg(test)]
+    crate::fault::identity(crate::fault::Identity::Snapshot);
     let pasted = clipboard
         .take(delivery.payload.clone(), restore)
-        .map_err(|e| anyhow!(paste::nothing_sent(format!("{e:#}"))))?;
+        .map_err(|e| refused(&format!("{e:#}"), clicked))?;
+    #[cfg(test)]
+    crate::fault::identity(crate::fault::Identity::Taken);
     // 4. Revalidate, then dispatch once.
     if observe(bus, &element.target)? != seen || !desktop_focus_holds(x, route, window)? {
         pasted.settled();
-        bail!(CHANGED);
+        return Err(refused(CHANGED_CAUSE, clicked));
     }
     if pasted.lost() {
         pasted.settled();
-        bail!(LOST);
+        return Err(refused(LOST, clicked));
     }
     // The field was observed in the frame association chose: confirmed again just before the chord.
     if !element.associated.confirm(bus, x)? {
         pasted.settled();
-        bail!(identity_refusal(window, report.clicked));
+        return Err(Said(identity_refusal(window, clicked)).into());
     }
     let time = match route.session() {
         Some(session) => session.now(),
@@ -448,6 +488,7 @@ fn dispatch_and_confirm(
     pasted.dispatched(time, window & !delivery.resource_id_mask);
     // Before the press goes out, so a request the press causes is never earlier than it.
     let dispatched_at = Instant::now();
+    report.dispatched = true;
     let chord = send_chord(x, route, delivery.keycodes);
     let release_failure = chord.release_failed.as_ref().map(|error| {
         format!(
@@ -635,6 +676,38 @@ mod tests {
             identity_refusal(7, true),
             "window identity changed during the request for X11 window 7; no paste was dispatched, but a focusing \
              click already reached the window, so read the window before retrying"
+        );
+    }
+
+    #[test]
+    fn an_error_after_the_focusing_click_and_before_the_chord_says_the_click_reached_the_window() {
+        let said = |error: anyhow::Error, clicked, dispatched| {
+            let report = Report {
+                clicked,
+                dispatched,
+                ..Report::default()
+            };
+            format!("{:#}", said_after_click(error, &report))
+        };
+        assert_eq!(
+            said(anyhow!("clipboard busy"), false, false),
+            "clipboard busy",
+            "no click"
+        );
+        assert_eq!(
+            said(anyhow!("clipboard busy"), true, false),
+            "clipboard busy; no paste was dispatched, but a focusing click already reached the window, so read the \
+             window before retrying"
+        );
+        assert_eq!(
+            said(anyhow!(UNCONFIRMED), true, true),
+            UNCONFIRMED,
+            "after the chord the answer is the dispatch's"
+        );
+        assert_eq!(
+            said(refused(CHANGED_CAUSE, false), true, false),
+            paste::CHANGED,
+            "a sentence that already says what was sent is kept"
         );
     }
 

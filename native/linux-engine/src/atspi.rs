@@ -263,9 +263,8 @@ impl Associated {
 
     /// Whether the window's association still names this frame, on what the server and the bus say now. Run just
     /// before each effect of a request (an element action, the right click, the element scroll, the Copy's `CopyText`
-    /// and each of its context-menu `DoAction`s, a paste's focusing clicks, its selection restore and its chord) and
-    /// after a read, so a frame chosen on evidence that has
-    /// since changed (an `active` state the toolkit corrected) neither receives the effect nor answers the read. The
+    /// (its context menu is refused on these routes, `context_menu_refusal`), a paste's focusing clicks, its selection
+    /// restore and its chord) and after a read, so a frame chosen on evidence that has since changed (an `active` state the toolkit corrected) neither receives the effect nor answers the read. The
     /// whole association is run again and must name the same frame. The vendor's own match is confirmed by nothing:
     /// it is the only frame of the title, with no sibling of it, and the vendor's path stays as it is. What is left
     /// open is the gap between the last confirmation and the effect itself.
@@ -283,6 +282,27 @@ impl Associated {
             Association::Identity(Unassociated::Failed(error)) => Err(error),
             _ => Ok(false),
         }
+    }
+
+    /// Why the Copy may not go through a context menu for this window, on one of cua's own routes. The route finds
+    /// the menu it opened as a new child of the application, not of the window: Chrome's (the elements that take this
+    /// route) is a frame under the application root with no relation to the element or the browser frame, and its X11
+    /// menu window names no `WM_TRANSIENT_FOR` (evidence `m4/identity/probes/menu-ownership/`). A menu found after this
+    /// window's Copy opened one may therefore be a same-title duplicate's, opened meanwhile, which no confirmation of
+    /// this window's association can tell, and its Copy would copy that window's selection as this one's. The vendor's
+    /// own match keeps the vendor's route.
+    pub fn context_menu_refusal(&self) -> Option<String> {
+        let how = match self.told {
+            Told::Title => return None,
+            Told::Position => "its position among same-title duplicates",
+            Told::Active => "its active state among same-title duplicates",
+            Told::Caption => "its caption",
+        };
+        Some(format!(
+            "the focused element of X11 window {} copies only through a context menu, and a context menu cannot be \
+             shown to belong to this window, whose accessibility frame was found by {how}; nothing was sent",
+            self.window
+        ))
     }
 
     /// `confirm`, as an effect's refusal: the sentence that nothing was sent.
@@ -890,6 +910,27 @@ mod tests {
             told,
             window: 7,
         }
+    }
+
+    #[test]
+    fn a_context_menu_copy_is_refused_on_every_route_of_cuas_own() {
+        assert_eq!(associated(Told::Title).context_menu_refusal(), None);
+        let refusal = |told| associated(told).context_menu_refusal().unwrap();
+        let sentence = |how: &str| {
+            format!(
+                "the focused element of X11 window 7 copies only through a context menu, and a context menu cannot \
+                 be shown to belong to this window, whose accessibility frame was found by {how}; nothing was sent"
+            )
+        };
+        assert_eq!(
+            refusal(Told::Position),
+            sentence("its position among same-title duplicates")
+        );
+        assert_eq!(
+            refusal(Told::Active),
+            sentence("its active state among same-title duplicates")
+        );
+        assert_eq!(refusal(Told::Caption), sentence("its caption"));
     }
 
     #[test]

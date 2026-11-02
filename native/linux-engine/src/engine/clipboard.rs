@@ -31,7 +31,7 @@ impl Engine {
         // The application's Copy changes what CLIPBOARD serves, and the application serves it, so no refusal of the
         // engine's could reach a late conversion of an unconfirmed paste: while one's window runs, no Copy is made.
         if let Some(wait) = clipboard.quarantine()? {
-            bail!(crate::paste::previous_unconfirmed(wait));
+            bail!(crate::paste::previous_unconfirmed(wait, false));
         }
         let before = clipboard.generation()?;
         let copied = self.with_bus(|bus, x| {
@@ -44,18 +44,28 @@ impl Engine {
                     format!("window {} has no focused element to Copy from", info.id).into()
                 ));
             };
-            // the walk read the frame association chose: the Copy confirms it again just before each of its effects
-            copy::copy(bus, &focused, info.id, &mut |bus| associated.confirm(bus, x))
+            // the walk read the frame association chose: the Copy confirms it again just before `CopyText`, and on
+            // cua's own routes refuses a context menu, which cannot be bound to the window
+            copy::copy(
+                bus,
+                &focused,
+                copy::Guard {
+                    window: info.id,
+                    confirm: &mut |bus| associated.confirm(bus, x),
+                    menu_refused: associated.context_menu_refusal(),
+                },
+            )
         });
         if let Err(refused) = copied? {
             if refused.menu_open {
                 // The menu the Copy opened is closed, so the request leaves none behind: Escape through the
-                // background route; the refusal stays the answer whatever the key's outcome.
+                // background route. The refusal stays the answer, saying whether the Escape was sent.
                 let Engine { x, inputs, .. } = self;
-                let _ = inputs.with_route(x, Target::Window(info.id), |x, route, _| {
+                let escape = inputs.with_route(x, Target::Window(info.id), |x, route, _| {
                     let held = route.acquire(x, &chord_keycodes(x, "Escape")?)?;
                     route.release(x, &held)
                 });
+                bail!(copy::after_escape(&refused.sentence, escape.as_ref().map(|_| ())));
             }
             bail!(refused.sentence);
         }

@@ -7,8 +7,16 @@ use std::time::{Duration, Instant};
 
 use crate::clipboard::{Outcome, Seen};
 
-/// The design's sentences (M2's Decisions; Decision Log, M2.1).
+/// The design's sentences (M2's Decisions; Decision Log, M2.1). `CHANGED` is said as `not_dispatched(CHANGED_CAUSE,
+/// false)`, its cause apart so the same refusal after a focusing click can say so ([`not_dispatched`]).
+#[cfg(test)]
 pub const CHANGED: &str = "requested field or selection changed before dispatch; nothing was sent";
+pub const CHANGED_CAUSE: &str = "requested field or selection changed before dispatch";
+/// How a refusal before the chord ends once a focusing click has gone to the window: the click may have moved the
+/// field's focus or caret, so a retry is not safe blind (the design session, M4's T5 round 3: "nothing was sent" only
+/// when nothing was).
+pub const AFTER_CLICK: &str =
+    "no paste was dispatched, but a focusing click already reached the window, so read the window before retrying";
 pub const UNCONFIRMED: &str = "Paste was sent once and could not be confirmed; read the field before retrying";
 /// The vendor's, for text the clipboard cannot hold (behaviour §12.1 step 4); cua's limit is 64 MiB.
 pub const TOO_LONG: &str = "clipboard text exceeds byte limit";
@@ -19,17 +27,31 @@ pub const MAX_TEXT_BYTES: usize = crate::clipboard::MAX_SNAPSHOT_BYTES;
 pub const CONFIRM_POLL: Duration = Duration::from_millis(20);
 pub const CONFIRM_WAIT: Duration = Duration::from_secs(2);
 
-/// While an earlier unconfirmed paste's `CurrentTime` refusal runs, `wait` long (Decision Log, M2.1).
-pub fn previous_unconfirmed(wait: Duration) -> String {
-    format!(
-        "a previous paste could not be confirmed and may still be read; nothing was sent; retry after {} s",
-        wait.as_secs() + u64::from(wait.subsec_nanos() > 0)
-    )
+/// While an earlier unconfirmed paste's `CurrentTime` refusal runs, `wait` long (Decision Log, M2.1); `clicked` when
+/// the request's focusing click had already gone to the window.
+pub fn previous_unconfirmed(wait: Duration, clicked: bool) -> String {
+    let cause = "a previous paste could not be confirmed and may still be read";
+    let seconds = wait.as_secs() + u64::from(wait.subsec_nanos() > 0);
+    if clicked {
+        format!("{cause}; {AFTER_CLICK} after {seconds} s")
+    } else {
+        format!("{cause}; nothing was sent; retry after {seconds} s")
+    }
 }
 
 /// A refusal before dispatch whose cause is another sentence (a snapshot bound, the owner's take).
 pub fn nothing_sent(cause: impl std::fmt::Display) -> String {
     format!("{cause}; nothing was sent")
+}
+
+/// A refusal before the chord: `cause`, then that nothing was sent, or, when the request's focusing click had already
+/// gone to the window, [`AFTER_CLICK`].
+pub fn not_dispatched(cause: impl std::fmt::Display, clicked: bool) -> String {
+    if clicked {
+        format!("{cause}; {AFTER_CLICK}")
+    } else {
+        nothing_sent(cause)
+    }
 }
 
 /// For a family with no verified paste route.
@@ -351,16 +373,31 @@ mod tests {
     #[test]
     fn the_sentences() {
         assert_eq!(
-            previous_unconfirmed(Duration::from_millis(7_200)),
+            previous_unconfirmed(Duration::from_millis(7_200), false),
             "a previous paste could not be confirmed and may still be read; nothing was sent; retry after 8 s"
         );
         assert_eq!(
-            previous_unconfirmed(Duration::from_secs(3)),
+            previous_unconfirmed(Duration::from_secs(3), false),
             "a previous paste could not be confirmed and may still be read; nothing was sent; retry after 3 s"
         );
         assert_eq!(
             nothing_sent("clipboard capture timed out: the clipboard owner did not answer TARGETS within 500 ms"),
             "clipboard capture timed out: the clipboard owner did not answer TARGETS within 500 ms; nothing was sent"
+        );
+    }
+
+    #[test]
+    fn a_refusal_says_nothing_was_sent_only_before_any_focusing_click() {
+        assert_eq!(not_dispatched(CHANGED_CAUSE, false), CHANGED);
+        assert_eq!(
+            not_dispatched("clipboard busy", true),
+            "clipboard busy; no paste was dispatched, but a focusing click already reached the window, so read the \
+             window before retrying"
+        );
+        assert_eq!(
+            previous_unconfirmed(Duration::from_millis(4_100), true),
+            "a previous paste could not be confirmed and may still be read; no paste was dispatched, but a focusing \
+             click already reached the window, so read the window before retrying after 5 s"
         );
     }
 }

@@ -10,8 +10,8 @@
 //! They need `--features live` (an X display, AT-SPI) and python3-gi with GTK 3. Without python3-gi each says so on
 //! stderr and passes: the engine-linux gate's runner has none (`tech-debt-tracker.md`).
 
-use std::io::{BufRead, BufReader};
-use std::process::{Child, Command, Stdio};
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -27,17 +27,29 @@ use crate::clipboard::tests::{Asking, convert, serial, text_of};
 use crate::fault::{self, Faults, Identity};
 use crate::wire::Request;
 
-type Log = Arc<Mutex<Vec<Value>>>;
+pub(super) type Log = Arc<Mutex<Vec<Value>>>;
 
-/// The fixture's process, what it has printed, and its two windows' X11 ids.
-struct Twins {
+/// The fixture's process, what it has printed, its windows' X11 ids in order, and its stdin, for its commands.
+pub(super) struct Fixture {
     child: Child,
-    log: Log,
-    a: u32,
-    b: u32,
+    pub(super) log: Log,
+    pub(super) windows: Vec<u32>,
+    stdin: Arc<Mutex<ChildStdin>>,
 }
 
-impl Drop for Twins {
+impl Fixture {
+    /// A sender of the fixture's commands (`popup <n>`, `popdown`, `focus <entry|other> <n>`), for a hook to use.
+    pub(super) fn commands(&self) -> impl Fn(&str) + Clone + 'static {
+        let stdin = self.stdin.clone();
+        move |command: &str| {
+            let mut stdin = stdin.lock().unwrap();
+            writeln!(stdin, "{command}").unwrap();
+            stdin.flush().unwrap();
+        }
+    }
+}
+
+impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
@@ -49,11 +61,26 @@ impl Drop for Twins {
     }
 }
 
+/// The fixture's two windows, A and B.
+struct Twins {
+    fixture: Fixture,
+    a: u32,
+    b: u32,
+}
+
+impl std::ops::Deref for Twins {
+    type Target = Fixture;
+
+    fn deref(&self) -> &Fixture {
+        &self.fixture
+    }
+}
+
 const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/gtk3-twins.py");
 const PATIENCE: Duration = Duration::from_secs(20);
 
 /// Waits until the fixture's records satisfy `ready`.
-fn wait_for(log: &Log, what: &str, ready: impl Fn(&[Value]) -> bool) {
+pub(super) fn wait_for(log: &Log, what: &str, ready: impl Fn(&[Value]) -> bool) {
     let deadline = Instant::now() + PATIENCE;
     while !ready(&log.lock().unwrap()) {
         assert!(Instant::now() < deadline, "{what}: {:?}", log.lock().unwrap());
@@ -62,15 +89,16 @@ fn wait_for(log: &Log, what: &str, ready: impl Fn(&[Value]) -> bool) {
 }
 
 /// Window `n`'s active state, as GTK last reported it.
-fn active(log: &[Value], n: u64) -> Option<bool> {
+pub(super) fn active(log: &[Value], n: u64) -> Option<bool> {
     log.iter()
         .rev()
         .find(|r| r["active"] == json!(n))
         .and_then(|r| r["is"].as_bool())
 }
 
-/// The fixture's two windows, or None (said on stderr) where python3-gi with GTK 3 is not installed.
-fn twins(tag: &str) -> Option<Twins> {
+/// The fixture with `count` windows of one title and `args` its optional arguments (`tests/support/gtk3-twins.py`),
+/// once every window is mapped; or None (said on stderr) where python3-gi with GTK 3 is not installed.
+pub(super) fn fixture(tag: &str, count: u64, args: &[&str]) -> Option<Fixture> {
     let gi = Command::new("python3")
         .args([
             "-c",
@@ -84,13 +112,16 @@ fn twins(tag: &str) -> Option<Twins> {
     }
     let title = format!("cua-engine-twins-{tag}-{}", std::process::id());
     let mut child = Command::new("python3")
-        .args([FIXTURE, &title, "2", "400", "200"])
+        .args([FIXTURE, &title, &count.to_string(), "400", "200"])
+        .args(args)
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
         .expect("python3");
     let log: Log = Arc::default();
     let stdout = child.stdout.take().expect("piped");
+    let stdin = Arc::new(Mutex::new(child.stdin.take().expect("piped")));
     let into = log.clone();
     std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines().map_while(Result::ok) {
@@ -105,17 +136,29 @@ fn twins(tag: &str) -> Option<Twins> {
             .and_then(|r| r["xid"].as_u64())
             .map(|x| x as u32)
     };
-    wait_for(&log, "both windows mapped", |l| {
-        xid(l, 1).is_some() && xid(l, 2).is_some()
+    wait_for(&log, "every window mapped", |l| {
+        (1..=count).all(|n| xid(l, n).is_some())
     });
-    let (a, b) = {
+    let windows = {
         let l = log.lock().unwrap();
-        (xid(&l, 1).unwrap(), xid(&l, 2).unwrap())
+        (1..=count).map(|n| xid(&l, n).unwrap()).collect()
     };
-    Some(Twins { child, log, a, b })
+    Some(Fixture {
+        child,
+        log,
+        windows,
+        stdin,
+    })
 }
 
-fn net_active(conn: &impl Connection) -> u32 {
+/// The fixture's two windows, or None where python3-gi with GTK 3 is not installed.
+fn twins(tag: &str, args: &[&str]) -> Option<Twins> {
+    let fixture = fixture(tag, 2, args)?;
+    let (a, b) = (fixture.windows[0], fixture.windows[1]);
+    Some(Twins { fixture, a, b })
+}
+
+pub(super) fn net_active(conn: &impl Connection) -> u32 {
     conn.intern_atom(false, b"_NET_ACTIVE_WINDOW")
         .unwrap()
         .reply()
@@ -124,7 +167,7 @@ fn net_active(conn: &impl Connection) -> u32 {
 }
 
 /// The window manager's part: the X input focus to `focus`, and `_NET_ACTIVE_WINDOW` naming `named`.
-fn desktop(focus: Option<u32>, named: u32) {
+pub(super) fn desktop(focus: Option<u32>, named: u32) {
     let (conn, screen) = x11rb::connect(None).unwrap();
     let root = conn.setup().roots[screen].root;
     if let Some(focus) = focus {
@@ -137,7 +180,7 @@ fn desktop(focus: Option<u32>, named: u32) {
 }
 
 /// Window `n` (1 for A, 2 for B) active as GTK reports it, the other not.
-fn settled_on(log: &Log, n: u64) {
+pub(super) fn settled_on(log: &Log, n: u64) {
     let other = 3 - n;
     wait_for(log, &format!("GTK marks window {n} active and {other} not"), |l| {
         active(l, n) == Some(true) && active(l, other) != Some(true)
@@ -202,7 +245,7 @@ fn place(twins: &Twins, n: u64, at: (i32, i32)) {
     moved(if n == 1 { twins.a } else { twins.b }, &twins.log, n, at);
 }
 
-fn request(engine: &mut Engine, command: &str, input: Value) -> Result<Value, String> {
+pub(super) fn request(engine: &mut Engine, command: &str, input: Value) -> Result<Value, String> {
     let response = engine.handle(Request {
         id: json!(1),
         command: command.into(),
@@ -216,7 +259,7 @@ fn request(engine: &mut Engine, command: &str, input: Value) -> Result<Value, St
     }
 }
 
-fn read(engine: &mut Engine, window: u32) -> Result<Value, String> {
+pub(super) fn read(engine: &mut Engine, window: u32) -> Result<Value, String> {
     request(
         engine,
         "get_window_state",
@@ -225,7 +268,7 @@ fn read(engine: &mut Engine, window: u32) -> Result<Value, String> {
 }
 
 /// The first node `matches` accepts, depth first.
-fn find<'a>(node: &'a Value, matches: &impl Fn(&Value) -> bool) -> Option<&'a Value> {
+pub(super) fn find<'a>(node: &'a Value, matches: &impl Fn(&Value) -> bool) -> Option<&'a Value> {
     if matches(node) {
         return Some(node);
     }
@@ -233,19 +276,24 @@ fn find<'a>(node: &'a Value, matches: &impl Fn(&Value) -> bool) -> Option<&'a Va
 }
 
 /// The value of the first text node, which is the entry `twin-<n>`: whose window a tree is.
-fn marker(state: &Value) -> Option<String> {
+pub(super) fn marker(state: &Value) -> Option<String> {
     find(&state["ax_tree"], &|n| n["role"] == json!("text"))?["value"]
         .as_str()
         .map(str::to_string)
 }
 
 /// The clipboard's text, as another client reads it now.
-fn clipboard_text() -> String {
+pub(super) fn clipboard_text() -> String {
     text_of(convert("UTF8_STRING", Asking::default()))
 }
 
 fn setup(tag: &str) -> Option<(Engine, Twins)> {
-    let twins = twins(tag)?;
+    setup_with(tag, &[])
+}
+
+/// `setup`, the fixture given `args`.
+fn setup_with(tag: &str, args: &[&str]) -> Option<(Engine, Twins)> {
+    let twins = twins(tag, args)?;
     let mut engine = Engine::new(crate::default_config()).unwrap();
     let deadline = Instant::now() + PATIENCE;
     // both frames are on the bus once a read of the active window answers its own tree
@@ -560,4 +608,63 @@ fn a_paste_whose_frame_changes_after_its_focusing_click_says_the_click_was_sent_
         find(&state["ax_tree"], &|n| n["value"] == json!("other-2")).is_some(),
         "the field's text is as it was"
     );
+}
+
+#[test]
+#[cfg_attr(
+    not(feature = "live"),
+    ignore = "needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)"
+)]
+fn a_context_menu_copy_on_a_window_told_apart_by_position_opens_no_menu_and_copies_nothing() {
+    // The counterexample: B's Copy opens B's context menu, which closes, and A opens one before the lookup. The menu
+    // hangs from the application, not from either window, so a lookup of the application's new children finds A's
+    // Copy, B's association still confirms (it is still apart), and A's selection would be copied as B's. Nothing on
+    // the bus binds a menu to its window, so on cua's own routes the context-menu Copy is refused before it opens one.
+    let _serial = serial();
+    let Some((mut engine, twins)) = setup_with("menu-swap", &["menu"]) else {
+        return;
+    };
+    // B apart from A, told apart by its position, and focused, so its focused element is its menu widget
+    place(&twins, 2, (450, 0));
+    desktop(Some(twins.b), twins.b);
+    settled_on(&twins.log, 2);
+    let (send, log) = (twins.commands(), twins.log.clone());
+    fault::arm_identity(Identity::MenuLookup, 1, move || {
+        wait_for(&log, "B's menu open", |l| {
+            l.contains(&json!({"menu": "open", "window": 2}))
+        });
+        send("popdown");
+        wait_for(&log, "B's menu closed and gone", |l| {
+            l.contains(&json!({"menu": "closed", "window": 2}))
+        });
+        send("popup 1");
+        wait_for(&log, "A's menu open", |l| {
+            l.contains(&json!({"menu": "open", "window": 1}))
+        });
+    });
+    let answer = request(&mut engine, "clipboard_read", json!({"window": {"id": twins.b}}));
+    let replaced = fault::identity_hook_ran();
+    assert_eq!(
+        answer,
+        Err(format!(
+            "the focused element of X11 window {} copies only through a context menu, and a context menu cannot be \
+             shown to belong to this window, whose accessibility frame was found by its position among same-title \
+             duplicates; nothing was sent",
+            twins.b
+        )),
+        "the clipboard now holds {:?}",
+        clipboard_text()
+    );
+    assert!(!replaced, "no menu was opened, so there was none to replace");
+    sleep(Duration::from_millis(300));
+    let menus: Vec<Value> = twins
+        .log
+        .lock()
+        .unwrap()
+        .iter()
+        .filter(|r| r.get("menu").is_some() || r.get("copied").is_some())
+        .cloned()
+        .collect();
+    assert!(menus.is_empty(), "no menu opened and nothing was copied: {menus:?}");
+    assert_eq!(clipboard_text(), "before");
 }

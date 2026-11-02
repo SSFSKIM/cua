@@ -31,7 +31,7 @@ pub(crate) fn serial() -> MutexGuard<'static, ()> {
     guard
 }
 
-fn intern(conn: &RustConnection, name: &str) -> Atom {
+pub(crate) fn intern(conn: &RustConnection, name: &str) -> Atom {
     conn.intern_atom(false, name.as_bytes()).unwrap().reply().unwrap().atom
 }
 
@@ -50,7 +50,7 @@ fn input_only(conn: &RustConnection, mask: EventMask) -> Window {
 }
 
 /// The server's time now, read from a property change.
-fn server_time(conn: &RustConnection) -> u32 {
+pub(crate) fn server_time(conn: &RustConnection) -> u32 {
     let window = input_only(conn, EventMask::PROPERTY_CHANGE);
     conn.change_property8(PropMode::APPEND, window, AtomEnum::WM_NAME, AtomEnum::STRING, &[])
         .unwrap();
@@ -73,7 +73,7 @@ fn clipboard_owner(conn: &RustConnection) -> Window {
 
 /// Gives CLIPBOARD up if anyone holds it, and removes the display's record of an unconfirmed paste's window, so each
 /// test starts from an empty clipboard with no window open.
-fn clear_clipboard() {
+pub(crate) fn clear_clipboard() {
     let (conn, _) = x11rb::connect(None).unwrap();
     let clipboard = intern(&conn, "CLIPBOARD");
     conn.set_selection_owner(x11rb::NONE, clipboard, x11rb::CURRENT_TIME)
@@ -203,7 +203,7 @@ pub(crate) fn text_of(answer: Answer) -> String {
 // An owner
 
 #[derive(Clone)]
-enum Behaviour {
+pub(crate) enum Behaviour {
     /// Owns CLIPBOARD and never answers.
     Silent,
     /// Serves these targets, INCR above 64 KiB.
@@ -219,8 +219,8 @@ enum Behaviour {
     },
 }
 
-struct TestOwner {
-    window: Window,
+pub(crate) struct TestOwner {
+    pub(crate) window: Window,
     stop: Arc<AtomicBool>,
     /// Set to make the owner set CLIPBOARD's owner to its own window again, as an application copying anew does;
     /// cleared once it has.
@@ -229,7 +229,7 @@ struct TestOwner {
 }
 
 impl TestOwner {
-    fn start(behaviour: Behaviour) -> TestOwner {
+    pub(crate) fn start(behaviour: Behaviour) -> TestOwner {
         let (conn, _) = x11rb::connect(None).unwrap();
         let window = input_only(&conn, EventMask::NO_EVENT);
         let clipboard = intern(&conn, "CLIPBOARD");

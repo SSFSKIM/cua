@@ -955,12 +955,14 @@ async function diffRun(args, candidate, { handoff }) {
           if (taken.stop) break;
           if (!taken.counted) continue;
           const { row, response: answered } = taken.counted;
-          // cua's `truncated` beside a tree (M4): recorded, and set aside before the state is compared only where a
-          // deviation declares it (deviations.mjs); anywhere else it stays in the state, which then differs from the vendor's
-          const stateRead = row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot');
+          // cua's `truncated` beside a tree (M4): recorded, and set aside before the state is compared only where the
+          // deviation declares it (deviations.mjs); anywhere else it stays in the state, which then differs from the
+          // vendor's. A candidate's read is checked here, on its whole state, for the field exactly when it was cut.
+          const stateRead = row.ok && ['read', 'shot', 'retention'].includes(OPS[op].kind);
           if (stateRead && answered.output.truncated !== undefined) row.truncated = answered.output.truncated;
+          if (stateRead && !VENDORS.includes(label)) row.truncation_as_declared = truncationAsDeclared({ scene: sceneName, state: answered.output });
           const { response, deviation: truncation } = stateRead ? setAsideTruncation({ op, scene: sceneName, response: answered }) : { response: answered, deviation: null };
-          if (truncation) row.deviation = truncation.op;
+          if (truncation) row.deviation = truncation.op ?? op;
           if (row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot' || OPS[op].kind === 'retention')) {
             row.nodes = retainedIds(response.output).length;
             row.source = response.output.ax_tree_source;
@@ -1210,7 +1212,7 @@ async function diffRun(args, candidate, { handoff }) {
           const deviation = field ? declaredDeviation({ op, scene: sceneName, field, candidate }) : null;
           if (deviation) {
             r.equal = true;
-            r.deviation = deviation.op;
+            r.deviation = deviation.op ?? op;
           }
         }
       }
@@ -1259,11 +1261,11 @@ async function diffRun(args, candidate, { handoff }) {
             verdict.reasons.push(...calls.reasons);
           }
         }
-        if (via === 'wire' && (OPS[op].kind === 'read' || OPS[op].kind === 'shot')) {
-          // cua's truncation (M4) as declared on every sample: the over-budget page's cut is required, not only excused
-          // (over the wire, where the answer is the engine's own; through the vendor's JavaScript an undeclared field
-          // still differs from the vendor's state)
-          const off = mine.filter((r) => r.ok && !truncationAsDeclared({ op, scene: sceneName, truncated: r.truncated }));
+        if (via === 'wire' && ['read', 'shot', 'retention'].includes(OPS[op].kind)) {
+          // cua's truncation (M4) as declared on every sample: present exactly when the read was cut, so a cut is
+          // required, not only excused (over the wire, where the answer is the engine's own; through the vendor's
+          // JavaScript an undeclared field still differs from the vendor's state). A sample without the check fails.
+          const off = mine.filter((r) => r.ok && r.truncation_as_declared !== true);
           if (off.length) {
             verdict.pass = false;
             verdict.reasons.push(`${candidate}: truncated not as declared on ${off.length} of ${mine.length} samples`);

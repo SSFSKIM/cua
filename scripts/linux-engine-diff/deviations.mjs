@@ -41,6 +41,56 @@ const previousUnconfirmed = (op) => ({
 /** The counts of cua's `truncated` (Interfaces: `{nodes: u32, depth: u32, failed: u32}`). */
 const TRUNCATION_KEYS = ['nodes', 'depth', 'failed'];
 
+/** The vendor's admission limits, which cua's read keeps (Design, The tree read): 5,000 nodes, depths 0–63. */
+export const NODE_LIMIT = 5000;
+export const DEPTH_LIMIT = 63;
+
+const isCount = (value) => Number.isInteger(value) && value >= 0 && value <= 0xffffffff;
+
+/**
+ * A `truncated` as the wire carries it: exactly the three counts, each an unsigned 32-bit integer, and at least one of
+ * them above 0, since the engine reports no field for a read that cut nothing.
+ */
+export function wellFormedTruncation(truncated) {
+  if (truncated === null || typeof truncated !== 'object' || Array.isArray(truncated)) return false;
+  const keys = Object.keys(truncated);
+  return keys.length === TRUNCATION_KEYS.length && TRUNCATION_KEYS.every((k) => isCount(truncated[k])) && TRUNCATION_KEYS.some((k) => truncated[k] > 0);
+}
+
+/** A read's tree as its limits see it: its node count and the depth of its deepest node (the root at 0). */
+function extent(state) {
+  let nodes = 0;
+  let deepest = -1;
+  const visit = (node, depth) => {
+    nodes += 1;
+    deepest = Math.max(deepest, depth);
+    for (const child of node.children ?? []) visit(child, depth + 1);
+  };
+  if (state.ax_tree) visit(state.ax_tree, 0);
+  return { nodes, deepest };
+}
+
+/**
+ * Whether a well-formed `truncated` agrees with the whole read it came with, from what that tree shows of its limits:
+ * a node the element limit refused means 5,000 nodes were admitted (those whose `GetRoleName` failed are admitted and
+ * dropped, so they count with the tree's); a child the depth limit refused hangs under a node at depth 63; and only an
+ * accessibility read is cut (the X11 fallback carries nothing). A failed `GetRoleName` leaves nothing in the tree to
+ * see, so `failed` stands on the engine's word, which its fake-bus tests check.
+ */
+function cutShownByTree(truncated, state) {
+  if (state.ax_tree_source !== 'at_spi') return false;
+  const { nodes, deepest } = extent(state);
+  if (truncated.nodes > 0 && nodes + truncated.failed !== NODE_LIMIT) return false;
+  if (truncated.depth > 0 && deepest !== DEPTH_LIMIT) return false;
+  return true;
+}
+
+/**
+ * What the harness's own pages are built to cut, which their reads must count: a fixture's proof, not a declaration.
+ * The over-budget page (pages/over-budget.html) nests a branch past depth 63 before far more than 5,000 elements.
+ */
+const FIXTURE_CUTS = { 'over-budget': (t) => t.nodes > 0 && t.depth > 0 };
+
 export const DEVIATIONS = [
   appliedWhereNoVendorDoes('type_text', 'gnome-text-editor', 'GTK 4 ignores the background route, where both builds send their text, and cua takes the foreground route in dedicated mode (M0.4 matrix; Decision Log, M2 pre-flight)'),
   appliedWhereNoVendorDoes('clipboard_write', 'gedit', "both builds paste a snapshot with EditableText.PasteText after taking CLIPBOARD themselves; GTK 3's text-view PasteText hands its clipboard request a stack pointer, so whenever another process owns CLIPBOARD its callback reads freed stack and inserts nothing (gedit's criticals; arm64 crashed), and the builds fail after 10 s (R/F §7; #268); cua pastes it with the family's chord"),
@@ -63,13 +113,12 @@ export const DEVIATIONS = [
   },
   ...['type_text', 'clipboard_write', 'clipboard_read'].map(previousUnconfirmed),
   {
-    // the over-budget page (pages/over-budget.html) nests a branch past depth 63 before far more than 5,000 elements
-    op: 'tree',
-    scene: 'over-budget',
+    // no operation and no scene: every read that was cut, whatever reads it and wherever (truncationAsDeclared
+    // requires the field there and refuses it on a read that was not)
     field: 'truncated',
-    answer: (c) => c.ok === true && TRUNCATION_KEYS.every((k) => Number.isSafeInteger(c.output?.truncated?.[k])) && c.output.truncated.nodes > 0 && c.output.truncated.depth > 0,
+    answer: (c) => c.ok === true && wellFormedTruncation(c.output?.truncated) && cutShownByTree(c.output.truncated, c.output),
     reason:
-      "cua's get_window_state adds `truncated: {nodes, depth, failed}` beside the tree, the points where its read left out a node it had listed (the element limit, the depth limit, a failed GetRoleName), each hiding a subtree never read, so the facade can say the tree is cut; the vendor drops those nodes silently and its JavaScript ignores the field. The tree itself is still the vendor's exactly. Declared on the over-budget page alone, which is built with both limits' cuts: a read of gedit or Chrome is whole and carries no field",
+      "cua's get_window_state adds `truncated: {nodes, depth, failed}` beside the tree wherever its read was cut, the points where it left out a node it had listed (the element limit, the depth limit, a failed GetRoleName), each hiding a subtree never read, so the facade can say the tree is cut; the vendor drops those nodes silently and its JavaScript ignores the field. The tree itself is still the vendor's exactly. Each count is a u32, one of them above 0, and each agrees with the limits its tree shows; a read that was not cut carries no field",
     section: 'Design, Observation (The tree read: truncated); Decision Log, M3.2 (the line says "at least") and M4 pre-flight (Observation)',
   },
   {
@@ -87,7 +136,7 @@ export const DEVIATIONS = [
  * reference, `candidate` the candidate's answer `{ok, output?, error?}`.
  */
 export function declaredDeviation({ op, scene, field, candidate }, list = DEVIATIONS) {
-  return list.find((d) => d.op === op && (d.scene === undefined || d.scene === scene) && d.field === field && d.answer(candidate)) ?? null;
+  return list.find((d) => (d.op === undefined || d.op === op) && (d.scene === undefined || d.scene === scene) && d.field === field && d.answer(candidate)) ?? null;
 }
 
 /**
@@ -104,14 +153,25 @@ export function setAsideTruncation({ op, scene, response }, list = DEVIATIONS) {
 }
 
 /**
- * Whether a cua read's `truncated` is what its operation and scene call for: the declared answer where a deviation
- * declares the field (the over-budget page must be cut), and none anywhere else.
+ * Whether a cua read carries `truncated` exactly when it was cut. `state` is the read's answer; `whole`, for a read
+ * filtered by a query (the engine filters after its read, so the cut is the read's), the same window's whole read.
+ * - A whole read: present, the field is the declared answer, its counts shown by its tree; absent, nothing shows a cut,
+ *   so its tree is under the element limit or is the X11 fallback. A tree at exactly 5,000 nodes with nothing more to
+ *   list would be a false failure here; the limits leave no other sign of the element cut.
+ * - A filtered read: the field where the whole read had one, well formed, and none where it had none.
+ * - On a harness page built to be cut (`FIXTURE_CUTS`), the field also counts each cut the page is built with.
  */
-export function truncationAsDeclared({ op, scene, truncated }, list = DEVIATIONS) {
-  const declares = list.some((d) => d.field === 'truncated' && d.op === op && (d.scene === undefined || d.scene === scene));
-  if (truncated == null) return !declares;
-  return declaredDeviation({ op, scene, field: 'truncated', candidate: { ok: true, output: { truncated } } }, list) !== null;
+export function truncationAsDeclared({ scene, state, whole = state }, list = DEVIATIONS) {
+  const { truncated } = state;
+  const fixture = FIXTURE_CUTS[scene];
+  if (fixture && !(wellFormedTruncation(truncated) && fixture(truncated))) return false;
+  if (whole !== state) return (truncated === undefined) === (whole.truncated === undefined && !limitReached(whole)) && (truncated === undefined || wellFormedTruncation(truncated));
+  if (truncated === undefined) return !limitReached(state);
+  return declaredDeviation({ scene, field: 'truncated', candidate: { ok: true, output: state } }, list) !== null;
 }
+
+/** A whole accessibility read that admitted as many nodes as the element limit allows. */
+const limitReached = (state) => state.ax_tree_source === 'at_spi' && extent(state).nodes >= NODE_LIMIT;
 
 /**
  * Whether the count a rendered state's truncation line shows (`splitTruncationLine`, null for no line) is the one its

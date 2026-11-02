@@ -235,11 +235,13 @@
     "milestone": "M4",
     "cases": [
       "api/target-app-decorated-tab/getaxstate",
-      "native/target-app-decorated-tab/getaxstate"
+      "native/target-app-decorated-tab/getaxstate",
+      "native/target-app-decorated-tab/getaxstate/minimized"
     ],
     "proofs": {
       "api/target-app-decorated-tab/getaxstate": "binder-double",
-      "native/target-app-decorated-tab/getaxstate": "native-live"
+      "native/target-app-decorated-tab/getaxstate": "native-live",
+      "native/target-app-decorated-tab/getaxstate/minimized": "native-live"
     }
   },
   {

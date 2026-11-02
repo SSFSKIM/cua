@@ -110,10 +110,10 @@ test('checkEnginePair: one sitting, the vendor lane first and the cua lane secon
   assert.throws(() => checkEnginePair(v, {...c, engineAnswered: []}, {}), /did not answer.*records no engine observation/);
 });
 
-// M4's T4: getAXState on a minimized window. The declared vendor result fails the real scenario assertion with exactly
+// M4's T4: getAXState's named variant on a minimized window. The declared vendor result fails the real scenario assertion with exactly
 // the defect's reason, and the declared cua result passes it, so the declaration tracks the case as it is asserted.
 test('the minimized getAXState declaration: the vendor result fails as its defect records, the cua result passes', () => {
-  const GETAX = 'native/target-app-decorated-tab/getaxstate';
+  const GETAX = 'native/target-app-decorated-tab/getaxstate/minimized';
   const scenario = scenarios.find(s => s.id === GETAX);
   const declaration = NATIVE_LINUX_EXPECTED.declarations.find(d => d.case === GETAX);
   const defect = vendorDefects.find(d => d.id === declaration.vendorDefect);

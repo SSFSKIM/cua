@@ -7,9 +7,9 @@ import {laneEngineProblem} from './engine-answered.mjs';
 
 export const NATIVE_LINUX_EXPECTED_FILE = new URL('./expected/native-linux.json', import.meta.url);
 export const TEXT_CASES = Object.freeze(['native/app/typetext', 'native/app/paste']);
-// The cases a declaration may name: M2's text cases, and getAXState on a minimized window (M4's T4), which the vendor
-// engine fails because it leaves a minimized window out of list_windows and cannot read it.
-export const DECLARED_CASES = Object.freeze([...TEXT_CASES, 'native/target-app-decorated-tab/getaxstate']);
+// The cases a declaration may name: M2's text cases, and getAXState's named variant on a minimized window (M4's T4),
+// which the vendor engine fails because it leaves a minimized window out of list_windows and cannot read it.
+export const DECLARED_CASES = Object.freeze([...TEXT_CASES, 'native/target-app-decorated-tab/getaxstate/minimized']);
 // Read as JSON, not through ./vendor-defects.mjs, which is consumed with this module by the comparison.
 const vendorDefects = () => JSON.parse(readFileSync(new URL('../../test/repl-parity/vendor-defects.json', import.meta.url), 'utf8'));
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);

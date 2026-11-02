@@ -162,7 +162,20 @@ export function requiredBehaviors() {
   return rows.map(row=>{if(row.id==='cell/native-pipe/connect-timeout')row.unitProof={file:'test/repl-host/native-pipe.test.mjs',name:'a connect that never completes expires after the connect budget with the vendor sentence; the pending socket is destroyed and a late connect is never delivered'};return secretProofContract(row);});
 }
 
-export function validateInventory(rows, contracts) {
+/**
+ * A member's named variants: its cases beyond `memberCases`, each `<one of those cases>/<name>` and named by a declared
+ * vendor defect (`defects`, test/repl-parity/vendor-defects.json). Returns the variants, or null when an extra case is
+ * not one.
+ */
+export function namedVariants(row, contract, defects) {
+  const own = memberCases(contract);
+  const extra = row.cases.filter(id => !own.includes(id));
+  const variant = id => own.some(base => id.startsWith(`${base}/`) && /^[a-z0-9-]+$/.test(id.slice(base.length + 1)))
+    && defects.some(d => d.case === id);
+  return extra.every(variant) ? extra : null;
+}
+
+export function validateInventory(rows, contracts, defects = JSON.parse(readFileSync(new URL('./vendor-defects.json', import.meta.url), 'utf8'))) {
   assert.ok(Array.isArray(rows), 'inventory must be an array');
   assert.equal(new Set(rows.map(row => row.id)).size, rows.length, 'duplicate inventory id');
   const behavior = requiredBehaviors();
@@ -183,7 +196,9 @@ export function validateInventory(rows, contracts) {
     for (const id of row.cases) assert.match(id, /^(api|native|hidden|capability-host|cells|secrets)\/[a-z0-9.-]+(?:\/[a-z0-9.-]+)+$/, `${row.id}: invalid case id`);
     if (row.kind === 'member') {
       assert.equal(row.milestone, memberMilestone(contract), `${row.id}: due milestone`);
-      assert.deepEqual(sorted(row.cases), sorted(memberCases(contract)), `${row.id}: member/hidden/advertised cases`);
+      const variants = namedVariants(row, contract, defects);
+      assert.ok(variants, `${row.id}: member/hidden/advertised cases (an extra case only as a named variant a vendor defect names)`);
+      assert.deepEqual(sorted(row.cases.filter(id => !variants.includes(id))), sorted(memberCases(contract)), `${row.id}: member/hidden/advertised cases`);
     } else if (row.kind === 'type') {
       const linked = consumers.get(row.id);
       assert.ok(linked.length, `${row.id}: no consuming/returning member`);
@@ -217,6 +232,7 @@ function assertCompleteStage(stage) {
 
 const contracts = () => parseSurface(readFileSync(surfaceUrl, 'utf8'));
 const inventory = () => JSON.parse(readFileSync(inventoryUrl, 'utf8'));
+const vendorDefects = () => JSON.parse(readFileSync(new URL('./vendor-defects.json', import.meta.url), 'utf8'));
 
 test('Table 1 parser excludes Table 2, retains escaped unions and derives stable object/member IDs', () => {
   const rows = parseSurface('## Table 1 — INCLUDED\n| member | browser Tab | id | `id: string \\| number` | `pin:12` | impl | none | text |\n| type | first-call named type | State | `type State = {};` | `pin:13` | impl | none | text |\n## Table 2 — EXCLUDED\n| member | legacy | gone | x | pin | impl | none | text |');
@@ -265,6 +281,31 @@ test('inventory rejects removed/extra rows, duplicate IDs, changed sources, inva
   reject(rows => { rows[0].cases = []; });
   reject(rows => { rows[0].platforms = ['win32']; });
   reject(rows => { rows[0].cases = ['../not-a-scenario']; });
+});
+
+// #171 M4 (the design session): a member's case list is exactly its member cases, plus at most named variants: a case
+// `<one of its member cases>/<name>` that a declared vendor defect (test/repl-parity/vendor-defects.json) names, so a
+// vendor engine's known failure on one condition (getAXState on a minimized window) gets its own case while the plain
+// case stays positive on both lanes. Any other extra case is still rejected.
+test("a member's extra case is admitted only as a named variant of one of its own cases that a declared vendor defect names", () => {
+  const rows = inventory(), surface = contracts(), defects = vendorDefects();
+  const VARIANT = 'native/target-app-decorated-tab/getaxstate/minimized';
+  const member = copy => copy.find(row => row.id === 'member/target-app-decorated-tab/getaxstate');
+  assert.ok(member(rows).cases.includes(VARIANT), 'the committed variant');
+  assert.ok(defects.some(d => d.case === VARIANT), 'named by its vendor defect');
+  validateInventory(rows, surface, defects);
+  const reject = (what, mutate, withDefects = defects) => {
+    const copy = structuredClone(rows);
+    mutate(copy);
+    assert.throws(() => validateInventory(copy, surface, withDefects), /member\/hidden\/advertised cases/, what);
+  };
+  const add = id => copy => { const row = member(copy); row.cases.push(id); row.proofs[id] = 'native-live'; };
+  reject('an extra case that is no variant', add('native/target-app-decorated-tab/getaxstate-extra'));
+  reject('an extra case of another shape', add('api/target-app-decorated-tab/getaxstate2'));
+  reject('a variant no vendor defect names', add('native/target-app-decorated-tab/getaxstate/restored'));
+  reject('a variant of a case the member does not have', add('native/target-app-decorated-tab/click/minimized'), [...defects, {case: 'native/target-app-decorated-tab/click/minimized'}]);
+  reject('a variant of a variant', add(`${VARIANT}/again`), [...defects, {case: `${VARIANT}/again`}]);
+  reject('the committed variant once no vendor defect names it', () => {}, defects.filter(d => d.case !== VARIANT));
 });
 
 test('capability-hidden members need BOTH ordinary hidden-member and advertised-capability proofs', () => {

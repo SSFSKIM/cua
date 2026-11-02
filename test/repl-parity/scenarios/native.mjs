@@ -24,8 +24,10 @@ add('cua/computer.launch-app',take(`cua.computer.launch_app({app:'cua-m4-nonexis
 add('cua/getapp', ['null','"gedit"','{windowId:0}','{windowId:1.5}'].map(x=>take(`cua.getApp(${x})`)).join('')+take(`({bound:typeof app.getAXState==='function',owned:await nativeCheck(nativeFilename)})`),[...Array(4).fill(err('linux getApp requires { windowId } from listApps() or listWindows().')),{bound:true,owned:true}]);
 add('cua/listapps',take(`(async()=>{const all=await cua.listApps({emit:false});const found=all.find(a=>a.windows?.some(w=>w.id===nativeWindow.id));return {found:!!found,id:typeof found?.id,running:found?.isRunning,name:typeof found?.displayName,windows:Array.isArray(found?.windows)};})()`),[{found:true,id:'string',running:true,name:'string',windows:true}]);
 add('cua/listwindows',take(`(async()=>{const all=await cua.listWindows({emit:false});const found=all.find(w=>w.id===nativeWindow.id);return {found:!!found,id:Number.isSafeInteger(found?.id),app:typeof found?.app,title:typeof found?.title};})()`),[{found:true,id:true,app:'string',title:'string'}]);
-// getAXState on a minimized window (#171 M4's T4, Acceptance 7's minimized half): the fixture minimizes the bound gedit
-// once the bind has answered (a second owned gedit opened first takes the window manager's focus fallback, so the
+add('target-app-decorated-tab/getaxstate',take(`(async()=>{const a=await app.getAXState({emit:false,disableDiffing:false}),b=await app.getAXState({emit:false,disableDiffing:true});return {full:[a,b].every(v=>(${isFullNativeTree.toString()})(v,nativeFilename)),source:[a,b].every(v=>v.startsWith('Accessibility source: at_spi\\n')),owned:[a,b].every(v=>v.includes(nativeFilename))};})()`),[{full:true,source:true,owned:true}]);
+// getAXState on a minimized window (#171 M4's T4, Acceptance 7's minimized half), a named variant of the getAXState
+// case, which stays positive on both lanes (the inventory admits a member's variant only where a declared vendor defect
+// names it): the fixture minimizes the bound gedit once the bind has answered (a second owned gedit opened first takes the window manager's focus fallback, so the
 // person's windows never do). Through the real facade the window is listed with `minimized: true` (and no other window
 // is), the focus has fallen on the fixture's own window, getAXState returns its full tree, its screenshot is
 // unavailable, input is refused, and activate_window restores it, so the field goes and the screenshot comes back (the
@@ -35,7 +37,7 @@ add('cua/listwindows',take(`(async()=>{const all=await cua.listWindows({emit:fal
 const minimizedNorm=`var minimizedNorm=e=>({error:String(e?.message??e).replaceAll(String(nativeWindow.id),'<id>').replace(/sequence: \\d+/g,'sequence: <n>')});`;
 const minimizedListed=`(async()=>{const id=nativeWindow.id,front=nativeFilename.replace('cua-m4-','cua-m4front-');let end=Date.now()+10000,all;do{all=await cua.listWindows({emit:false});if(all.find(w=>w.id===id)?.minimized===true)break;await new Promise(r=>setTimeout(r,100));}while(Date.now()<end);return {listed:all.find(w=>w.id===id)?.minimized===true,others:all.filter(w=>w.id!==id).every(w=>!('minimized' in w)),focusedFront:all.find(w=>w.focused)?.title?.includes(front)===true};})()`;
 const minimizedRestored=`(async()=>{const id=nativeWindow.id;let end=Date.now()+10000,mine;do{mine=(await cua.listWindows({emit:false})).find(w=>w.id===id);if(mine&&!('minimized' in mine))break;await new Promise(r=>setTimeout(r,100));}while(Date.now()<end);return {restored:!!mine&&!('minimized' in mine)};})()`;
-add('target-app-decorated-tab/getaxstate',minimizedNorm+take(minimizedListed)
+add('target-app-decorated-tab/getaxstate/minimized',minimizedNorm+take(minimizedListed)
  +take(`(async()=>{const a=await app.getAXState({emit:false,disableDiffing:false}),b=await app.getAXState({emit:false,disableDiffing:true});return {full:[a,b].every(v=>(${isFullNativeTree.toString()})(v,nativeFilename)),source:[a,b].every(v=>v.startsWith('Accessibility source: at_spi\\n')),owned:[a,b].every(v=>v.includes(nativeFilename))};})().catch(minimizedNorm)`)
  +take(`app.getScreenshot({emit:false}).then(b=>({bytes:b.length>100}),minimizedNorm)`)
  +take(`app.pressKey('x').then(()=>'sent',minimizedNorm)`)

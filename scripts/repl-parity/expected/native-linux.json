@@ -25,14 +25,14 @@
     },
     {
       "id": "linux-getaxstate-minimized-m4",
-      "case": "native/target-app-decorated-tab/getaxstate",
+      "case": "native/target-app-decorated-tab/getaxstate/minimized",
       "cells": ["exercise"],
       "vendorDefect": "linux-x64-vendor-engine-minimized-window-unavailable",
       "cua": {
         "assertion": {"ok": true},
         "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"listed\":true,\"others\":true,\"focusedFront\":true},{\"full\":true,\"source\":true,\"owned\":true},{\"error\":\"Screenshot unavailable for window <id>.\"},{\"error\":\"Window <id> is minimized; activate it first\"},\"undefined\",{\"restored\":true},{\"bytes\":true}]"}]}
       },
-      "reason": "#171 M4's T4 runs getAXState on a minimized window: cua lists it with `minimized: true` (no other window carries the field), reads its full tree, answers its screenshot as unavailable, refuses input with `Window <id> is minimized; activate it first`, and activate_window restores it, after which the field is gone and the screenshot returns. The pinned x64 vendor engine leaves the minimized window out of list_windows, so every request answers `Window <id> is unavailable.`, the declared vendor defect named above."
+      "reason": "#171 M4's T4 runs getAXState on a minimized window, the getAXState case's named variant (the plain case stays positive on both lanes): cua lists it with `minimized: true` (no other window carries the field), reads its full tree, answers its screenshot as unavailable, refuses input with `Window <id> is minimized; activate it first`, and activate_window restores it, after which the field is gone and the screenshot returns. The pinned x64 vendor engine leaves the minimized window out of list_windows, so every request answers `Window <id> is unavailable.`, the declared vendor defect named above."
     }
   ]
 }

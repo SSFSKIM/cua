@@ -28,8 +28,8 @@ test('a no-op native drag or scroll cannot pass by returning undefined and leavi
  for(const [id,values] of Object.entries(samples))assert.throws(()=>scenarios.find(s=>s.id===id).assert({results:[{isError:false,content:[{type:'text',text:'NATIVE:'+JSON.stringify(values)}]},end]}),id);
 });
 
-// The getaxstate case runs on a minimized window (#171 M4's T4): its cell, run against a fake facade whose window is
-// listed minimized, read, refused and then restored by activate_window, as cua's engine answers.
+// getAXState's named variant runs on a minimized window (#171 M4's T4): its cell, run against a fake facade whose window
+// is listed minimized, read, refused and then restored by activate_window, as cua's engine answers.
 const WINDOW_ID=4194311;
 function minimizedFacade({getAXState,listed=true,focusedFront=true,refusal=`Window ${WINDOW_ID} is minimized; activate it first`,activate=async()=>undefined}={},filename='owned-fixture.txt'){
  let restored=false;
@@ -48,12 +48,24 @@ async function runMinimizedCell(scenario,facade,filename){
 
 test('Linux full snapshots may change between observations without becoming diffs',async()=>{
  const scenario=scenarios.find(s=>s.id==='native/target-app-decorated-tab/getaxstate');
- const filename='owned-fixture.txt',a=`Accessibility source: at_spi\n0 frame ${filename}\n\t1 text (focused, settable)\n\t2 button Save`,b=a.replace('Save','Save document');let n=0;
- assert.equal((await runMinimizedCell(scenario,minimizedFacade({getAXState:async()=>n++?b:a}),filename)).ok,true);
+ const filename='owned-fixture.txt',a=`Accessibility source: at_spi\n0 frame ${filename}\n\t1 text (focused, settable)\n\t2 button Save`,b=a.replace('Save','Save document');let n=0,value;
+ await new (Object.getPrototypeOf(async()=>{}).constructor)('app','nativeFilename','nativeSay',scenario.cells[0].code)({getAXState:async()=>n++?b:a},filename,v=>{value=v;});
+ assert.equal(scenario.assert({results:[{isError:false,content:[{type:'text',text:'NATIVE:'+JSON.stringify(value)}]},{isError:false,structuredContent:{status:'ended'}}]}).ok,true);
 });
 
 test('native snapshot assertions reject flat, ID-less, truncated and non-window trees',async()=>{
  const scenario=scenarios.find(s=>s.id==='native/target-app-decorated-tab/getaxstate'),filename='owned-fixture.txt';
+ for(const body of [`0 frame ${filename}\n1 text (settable)`,`frame ${filename}\n\ttext (settable)`,`0 frame ${filename} text (settable)`,`0 text (settable) ${filename}\n\t1 frame child`,`0 frame ${filename}\n\t\t1 text (settable)`]){
+  const ax='Accessibility source: at_spi\n'+body;let value;
+  await new (Object.getPrototypeOf(async()=>{}).constructor)('app','nativeFilename','nativeSay',scenario.cells[0].code)({getAXState:async()=>ax},filename,v=>{value=v;});
+  assert.throws(()=>scenario.assert({results:[{isError:false,content:[{type:'text',text:'NATIVE:'+JSON.stringify(value)}]},{isError:false,structuredContent:{status:'ended'}}]}),body);
+ }
+});
+
+test('the minimized variant reads the full tree of a minimized window, and its snapshots may change between observations',async()=>{
+ const scenario=scenarios.find(s=>s.id==='native/target-app-decorated-tab/getaxstate/minimized');
+ const filename='owned-fixture.txt',a=`Accessibility source: at_spi\n0 frame ${filename}\n\t1 text (focused, settable)\n\t2 button Save`,b=a.replace('Save','Save document');let n=0;
+ assert.equal((await runMinimizedCell(scenario,minimizedFacade({getAXState:async()=>n++?b:a}),filename)).ok,true);
  for(const body of [`0 frame ${filename}\n1 text (settable)`,`frame ${filename}\n\ttext (settable)`,`0 frame ${filename} text (settable)`,`0 text (settable) ${filename}\n\t1 frame child`,`0 frame ${filename}\n\t\t1 text (settable)`]){
   const ax='Accessibility source: at_spi\n'+body;
   await assert.rejects(runMinimizedCell(scenario,minimizedFacade({getAXState:async()=>ax}),filename),body);
@@ -61,7 +73,7 @@ test('native snapshot assertions reject flat, ID-less, truncated and non-window 
 });
 
 test('the minimized case fails a window left unlisted, a focus fallen elsewhere, input sent, or an activation that errs',async()=>{
- const scenario=scenarios.find(s=>s.id==='native/target-app-decorated-tab/getaxstate'),filename='owned-fixture.txt';
+ const scenario=scenarios.find(s=>s.id==='native/target-app-decorated-tab/getaxstate/minimized'),filename='owned-fixture.txt';
  const tree=async()=>`Accessibility source: at_spi\n0 frame ${filename}\n\t1 text (focused, settable)`;
  assert.equal((await runMinimizedCell(scenario,minimizedFacade({getAXState:tree}),filename)).ok,true,'the control');
  for(const [what,options] of [

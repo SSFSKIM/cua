@@ -789,44 +789,49 @@ function runHasRows(results, run) {
  * own: a name the out directory already has rows of is refused (`RunRefused`), so one execution's rows never label
  * another's. The candidate `--cua` names is stored as `cua-engine` (mode 0700) and checked before anything runs; a gate's
  * refusal is thrown as a `CandidateRefused`. The stored copy's directory is the run's from before the copy is made: it
- * is removed on a refusal, an error, the run's end, and a stop (SIGINT or SIGTERM) during the checks, which also kills
- * the command they wait on, or during the run (stop.mjs, at the exit). Every engine lane of cua runs the stored copy.
+ * is removed on a refusal, an error, the run's end, and a stop (SIGINT or SIGTERM) at any point. A stop has a handler
+ * from before the copy until the run's own (the Desktop's, stop.mjs) is in place, which the run's `handoff` marks: a
+ * stop during the checks kills the command they wait on (SIGKILL), waits for it to end, removes the copy and exits; a
+ * stop during the run removes it at the exit. Every engine lane of cua runs the stored copy. `start` is the run proper
+ * (the tests pass their own).
  */
-export async function runDiff(args) {
+export async function runDiff(args, { start = diffRun } = {}) {
   const run = args.run ?? `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
   const results = join(args.out, 'results.jsonl');
   if (runHasRows(results, run)) throw new RunRefused(`the run name ${run} already has rows in ${results}: give each execution a --run name of its own`);
   const dir = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
   const remove = () => rmSync(dir, { recursive: true, force: true });
   process.once('exit', remove);
+  // the stop's handler until the run's own is in place (`handoff`): no moment without one, so a stop is never the
+  // default action, which would skip the exit's removal
+  const stopping = new AbortController();
+  let preparing = null;
+  const unhook = cleanupOnStop(async () => {
+    stopping.abort();
+    // the command in flight killed and ended (candidate.mjs), never left running after the harness
+    await preparing?.catch(() => {});
+    remove();
+  });
   try {
-    // the checks' own stop: the run's (Desktop's) is installed once they are over, with no wait between the two
-    const stopping = new AbortController();
-    const unhook = cleanupOnStop(() => {
-      stopping.abort();
-      remove();
-    });
+    preparing = prepareCandidate({ source: args.cua, gate: !args.dev, dir, signal: stopping.signal });
     let candidate;
     try {
-      candidate = await prepareCandidate({ source: args.cua, gate: !args.dev, dir, signal: stopping.signal });
+      candidate = await preparing;
     } catch (error) {
-      if (!stopping.signal.aborted) {
-        unhook();
-        throw error;
-      }
+      if (!stopping.signal.aborted) throw error;
     }
-    // stopped during the checks: the stop exits the process (stop.mjs), and nothing more starts or is reported
+    // stopped during the checks: the stop exits the process once the command has ended, and nothing more starts
     if (stopping.signal.aborted) await new Promise(() => {});
-    unhook();
     process.stdout.write(`${gateLabel(candidate.record.gate) ?? 'release gate'}; ${candidateLine(candidate.record)}\n`);
-    return await diffRun({ ...args, run, cua: candidate.path }, candidate.record);
+    return await start({ ...args, run, cua: candidate.path }, candidate.record, { handoff: unhook });
   } finally {
+    unhook();
     process.off('exit', remove);
     remove();
   }
 }
 
-async function diffRun(args, candidate) {
+async function diffRun(args, candidate, { handoff }) {
   const { run } = args;
   mkdirSync(args.out, { recursive: true });
   const results = join(args.out, 'results.jsonl');
@@ -870,6 +875,8 @@ async function diffRun(args, candidate) {
   });
 
   const desktop = new Desktop({ cua: args.cua, run });
+  // the Desktop's stop handler is in place (stop.mjs): the checks' handler hands over to it, with no moment between
+  handoff();
   if (plan.some((p) => isText(p.op) || isCase(p.op))) desktop.oracle ??= new Oracle();
   // Every scene label of this run: equivalent windows differ in their own label and list each other's (gedit's
   // recent files), so comparisons across windows replace them all.

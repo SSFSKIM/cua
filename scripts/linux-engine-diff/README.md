@@ -46,8 +46,9 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
 `candidate.mjs` stores the file as `cua-engine`, mode 0700, in a directory the run makes first under the temporary
 directory (a downloaded artifact has lost its executable bit), and checks that copy, so the bytes checked are the bytes
 every cua lane starts. The directory is removed on a refusal, an error and the run's end, and by a stop (SIGINT or
-SIGTERM) at any point, during the checks too, where the stop also kills the command they wait on. A gate runs the
-candidate only once it is attested; in order, it refuses:
+SIGTERM) at any point: a handler owns the stop from before the copy is made until the run's own (the Desktop's) is in
+place, and a stop during the checks kills the command they wait on with SIGKILL and waits for it to end before the
+harness exits 130 or 143. A gate runs the candidate only once it is attested; in order, it refuses:
 
 - a file that is not an ELF file, a gnu build (a glibc interpreter or glibc's ABI tag: the host's default
   `x86_64-unknown-linux-gnu`, which `m2-final` and `m3-gate-t25` judged), a dynamic one, or one for another

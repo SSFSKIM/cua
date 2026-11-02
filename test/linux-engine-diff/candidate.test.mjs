@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { after, test } from 'node:test';
@@ -387,4 +387,81 @@ test('a run stopped while its candidate is being prepared leaves no stored copy 
   clearTimeout(killer);
   assert.deepEqual({ code, signal }, { code: 143, signal: null }, 'the harness handled the stop and exited as SIGTERM would');
   assert.deepEqual(readdirSync(tmp).filter((d) => d.startsWith('cua171-candidate-')), [], 'the stored copy was removed');
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// the re-review's findings (PR #273, round 2)
+
+/** The harness's entry run with TMPDIR private, its exit `{code, signal}` once it ends (SIGKILLed after 10 s). */
+function harness(argv, tmp) {
+  const child = spawn(process.execPath, argv, { env: { ...process.env, TMPDIR: tmp }, stdio: 'ignore' });
+  const exited = new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
+  const killer = setTimeout(() => child.kill('SIGKILL'), 10000);
+  return { child, exited: exited.finally(() => clearTimeout(killer)) };
+}
+
+const until = async (check, ms = 10000) => {
+  const started = Date.now();
+  while (!check() && Date.now() - started < ms) await new Promise((r) => setTimeout(r, 20));
+  return check();
+};
+
+const alive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+test('a stop as the run begins, before its own handler is in place, is still handled and leaves no copy', async () => {
+  const tmp = join(scratch, `tmp-${n++}`);
+  mkdirSync(tmp);
+  const runUrl = new URL('../../scripts/linux-engine-diff/run.mjs', import.meta.url).href;
+  const stopUrl = new URL('../../scripts/linux-engine-diff/stop.mjs', import.meta.url).href;
+  // the run in place of the real one: the stop arrives at its start, then synchronous setup, then its own handler (as
+  // the Desktop's), then the handoff. An args the real run would refuse at once (an unknown operation) keeps it hermetic.
+  const driver = join(scratch, `handoff-${n++}.mjs`);
+  writeFileSync(driver, [
+    `import { runDiff } from ${JSON.stringify(runUrl)};`,
+    `import { cleanupOnStop } from ${JSON.stringify(stopUrl)};`,
+    'const args = JSON.parse(process.argv[2]);',
+    'await runDiff(args, { start: async (runArgs, record, { handoff }) => {',
+    "  process.kill(process.pid, 'SIGTERM');",
+    '  const busy = Date.now() + 200;',
+    '  while (Date.now() < busy);',
+    '  cleanupOnStop(() => {});',
+    '  handoff();',
+    '  setInterval(() => {}, 1000); // a run has work in flight; the stop arrives while it waits',
+    '  await new Promise(() => {});',
+    '} });',
+    '',
+  ].join('\n'));
+  const script = file(Buffer.from("#!/bin/sh\necho 'cua-engine 0.3.0 (000000000000)'\n"));
+  const args = { cua: script, dev: true, out: join(scratch, `out-${n++}`), run: 'handoff', scenes: ['desktop'], ops: ['no_such_op'], variants: [] };
+  const { exited } = harness([driver, JSON.stringify(args)], tmp);
+  assert.deepEqual(await exited, { code: 143, signal: null }, 'the stop was handled, not the default action');
+  assert.deepEqual(readdirSync(tmp).filter((d) => d.startsWith('cua171-candidate-')), [], 'the stored copy was removed');
+});
+
+test('a stop during the checks ends the command they wait on, one that ignores SIGTERM included, before the harness exits', async () => {
+  const tmp = join(scratch, `tmp-${n++}`);
+  mkdirSync(tmp);
+  const marker = join(scratch, `pid-${n++}`);
+  // a dev candidate whose --version ignores SIGTERM (an ignored signal stays ignored across exec) and blocks
+  const script = file(Buffer.from(`#!/bin/sh\ntrap '' TERM\necho $$ > '${marker}'\nexec sleep 30\n`));
+  const entry = fileURLToPath(new URL('../../scripts/linux-engine-diff.mjs', import.meta.url));
+  const { child, exited } = harness([entry, '--vendor', '/v', '--newest', '/n', '--cua', script, '--dev', '--scene', 'desktop', '--ops', 'list_windows', '--out', join(scratch, `out-${n++}`), '--run', 'stubborn'], tmp);
+  let pid = null;
+  try {
+    assert.ok(await until(() => existsSync(marker) && /\d/.test(readFileSync(marker, 'utf8'))), "the candidate's --version started");
+    pid = Number(readFileSync(marker, 'utf8').trim());
+    child.kill('SIGTERM');
+    assert.deepEqual(await exited, { code: 143, signal: null });
+    assert.equal(alive(pid), false, `the --version command (pid ${pid}) outlived the harness`);
+    assert.deepEqual(readdirSync(tmp).filter((d) => d.startsWith('cua171-candidate-')), []);
+  } finally {
+    if (pid && alive(pid)) process.kill(pid, 'SIGKILL');
+  }
 });

@@ -22,6 +22,14 @@ export const SIGNER_WORKFLOW = `${REPO}/${WORKFLOW}`;
 /** The checkout the harness runs from: the commit a gate's candidate must be built from. */
 export const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
+/** The checks stopped by the run's stop (stop.mjs): the command in flight was killed and has ended. */
+export class PreparationStopped extends Error {
+  constructor(message = 'the candidate\'s checks were stopped') {
+    super(message);
+    this.name = 'PreparationStopped';
+  }
+}
+
 /** A candidate a gate does not take. */
 export class CandidateRefused extends Error {
   constructor(message) {
@@ -124,11 +132,15 @@ const first = (result) => (result.status === 0 ? result.stdout.trim() : null);
  * checkout's; and only then, the candidate run for the first time, one whose `--version` does not name that commit. A
  * dev run refuses nothing, asks gh nothing, and runs the candidate's `--version` unchecked. `run(command, args)`
  * answers `{status, stdout, stderr}` (or a promise of it); the tests pass a fake git, gh and engine. `signal`, an
- * AbortSignal, kills the command in flight.
+ * AbortSignal, stops the checks: the command in flight is killed (SIGKILL) and reaped, and the promise rejects with a
+ * `PreparationStopped`, never an ordinary command result.
  */
 export async function prepareCandidate({ source, gate, dir, signal, root = REPO_ROOT, hostArch = process.arch, run: runWith = runCommand }) {
-  // `signal` aborts the command in flight (the run's stop)
-  const run = (command, args) => runWith(command, args, { signal });
+  // the run's stop ends the checks: a command in flight is killed and waited for, and none starts after it
+  const run = (command, args) => {
+    if (signal?.aborted) throw new PreparationStopped();
+    return runWith(command, args, { signal });
+  };
   const refuse = (why) => {
     throw new CandidateRefused(`${why}${gate ? '. A gate takes the release workflow\'s attested artifact of the checked-out commit (scripts/linux-engine-diff/README.md, "The candidate"); --dev runs any build, not as a release gate' : ''}`);
   };
@@ -200,15 +212,25 @@ export function candidateLine(c) {
   return `candidate: ${built}; attestation verified: ${proofs.join('; ')}`;
 }
 
-/** A command's `{status, stdout, stderr}`, without blocking the event loop: a stop (stop.mjs) is handled while it runs. */
+/**
+ * A command's `{status, stdout, stderr}`, without blocking the event loop, so a stop (stop.mjs) is handled while it
+ * runs. `signal` aborted kills it with SIGKILL (a command may ignore SIGTERM) and rejects with `PreparationStopped` once
+ * it has ended; so does the 60 s timeout's kill, as an ordinary failed result.
+ */
 function runCommand(command, args, { signal } = {}) {
-  return new Promise((resolve) => {
-    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000, signal });
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000, killSignal: 'SIGKILL', signal });
     let stdout = '';
     let stderr = '';
     child.stdout.setEncoding('utf8').on('data', (d) => (stdout += d));
     child.stderr.setEncoding('utf8').on('data', (d) => (stderr += d));
-    child.once('error', (error) => resolve({ status: -1, stdout: '', stderr: error.message }));
-    child.once('close', (code, signal) => resolve({ status: code ?? -1, stdout, stderr: signal ? `${stderr}killed by ${signal}` : stderr }));
+    // an abort's error comes before the killed command has ended: its close settles the promise
+    child.once('error', (error) => {
+      if (error.name !== 'AbortError') resolve({ status: -1, stdout: '', stderr: error.message });
+    });
+    child.once('close', (code, killed) => {
+      if (signal?.aborted) reject(new PreparationStopped());
+      else resolve({ status: code ?? -1, stdout, stderr: killed ? `${stderr}killed by ${killed}` : stderr });
+    });
   });
 }

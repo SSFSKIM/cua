@@ -1235,6 +1235,12 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `m4/truncation/` (`fix2/` cited); task-30, task-31 and task-32 reports (local); `ci-gate --gates engine-linux,test` GREEN on 22fd7aa1.
   Date/Author: 2026-11-02, the plan-executor (session linux171), from T3's reports and three review rounds; the generic declaration and the record-based check by the design session.
 
+- Decision (2026-11-02, M4, the design session): the harness never changes a window it did not open.
+  - The invariant: the differential harness never sends a mutating request that names a window it did not open (activate, focus, configure, a client message, SendEvent). Reads stay allowed. Every run since M1a ended by re-activating the window found active at its start (`Desktop.closeEverything` restoring `previousActive`), on this VM usually the owner's Chrome. That breaks the invariant, and it is a stale write: if the owner chose another window during the run, the restore overrode their choice. Nothing to undo: those runs only returned the focus to the window found active.
+  - The run skips the restore when the window found active is foreign, and records in its meta the start and end active windows, each marked foreign or harness, with no action on them. A run that starts with a foreign window active first opens and activates a harness holder window, kept until the run ends; the gate sitting starts that way. The window manager's own fallback when the last harness window closes is the window manager's doing, not a request of ours.
+  - The invariant is checked: the X request audit fails any mutating request that carries a foreign window id, with a negative control (a harness build that still restores fails it).
+  Date/Author: 2026-11-02, the design session (cua_repl session 1ea561bc), on T4's fixer's report; folded by the plan-executor (session linux171).
+
 ## Outcomes & Retrospective
 
 Written per milestone as each lands; the whole-plan retrospective at finish. The execution record (tasks, reviews, friction) is `docs/doperpowers/specs/2026-10-28-own-linux-engine-report.md`.

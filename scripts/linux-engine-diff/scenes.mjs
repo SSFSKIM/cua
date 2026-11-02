@@ -19,7 +19,9 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, createReadStream, createWriteStream, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { createGzip } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -677,7 +679,14 @@ export class Desktop {
     }
     let record;
     try {
-      const judged = await this.record.stop({ parse: (file) => auditRecordFile(file, { registered, root: this.root }) });
+      const judged = await this.record.stop({
+        parse: async (file) => {
+          const audit = await auditRecordFile(file, { registered, root: this.root });
+          // a record that failed is kept as the run's evidence, compressed (window ids, atoms and processes, no text)
+          if (!audit.clean && this.logs) await pipeline(createReadStream(file), createGzip(), createWriteStream(join(dirname(this.logs), 'record.jsonl.gz')));
+          return audit;
+        },
+      });
       record = typeof judged === 'string' ? auditRecord(judged, { registered, root: this.root }) : judged;
     } catch (error) {
       record = { clean: false, traced: false, requests: 0, mutating: 0, foreign: [], error: error.message };

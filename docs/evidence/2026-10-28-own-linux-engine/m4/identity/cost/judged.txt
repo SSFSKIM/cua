@@ -1,0 +1,15 @@
+gedit tree | cua 85.1 ms (n 21) | pinned 98.0 ms (n 21) | [-28.25, -1.12] | bound 4.90 | faster
+gedit tree | cua 85.1 ms (n 21) | newest 93.4 ms (n 21) | [-22.68, 0.44] | bound 4.67 | same (within noise)
+gedit tree | cua 85.1 ms (n 21) | T4 pooled 96.2 ms (n 42) | [-25.88, -1.315] | bound 4.81 | faster
+gedit type_text | cua 171.4 ms (n 42) | pinned 169.0 ms (n 42) | [-3.58, 10.005] | bound 8.45 | undetermined
+gedit type_text | cua 171.4 ms (n 42) | newest 169.0 ms (n 42) | [-5.395, 10.73] | bound 8.45 | undetermined
+gedit type_text | cua 171.4 ms (n 42) | T4 pooled 169.0 ms (n 84) | [-3.65, 9.93] | bound 8.45 | undetermined
+gedit clipboard_read | cua 39.8 ms (n 42) | pinned 38.7 ms (n 42) | [-3.03, 4.67] | bound 1.93 | undetermined
+gedit clipboard_read | cua 39.8 ms (n 42) | newest 39.2 ms (n 42) | [-3.22, 4.26] | bound 1.96 | undetermined
+gedit clipboard_read | cua 39.8 ms (n 42) | T4 pooled 39.2 ms (n 84) | [-2.335, 4.175] | bound 1.96 | undetermined
+chrome tree | cua 66.9 ms (n 42) | pinned 66.0 ms (n 42) | [-2.725, 5.125] | bound 3.30 | undetermined
+chrome tree | cua 66.9 ms (n 42) | newest 64.2 ms (n 42) | [-0.095, 5.76] | bound 3.21 | undetermined
+chrome tree | cua 66.9 ms (n 42) | T4 pooled 64.9 ms (n 84) | [-0.765, 4.835] | bound 3.24 | undetermined
+chrome-input click_element | cua 142.2 ms (n 21) | pinned 142.9 ms (n 21) | [-6.2, 4.68] | bound 7.14 | same (within noise)
+chrome-input click_element | cua 142.2 ms (n 21) | newest 146.2 ms (n 21) | [-8.13, 2.52] | bound 7.31 | same (within noise)
+chrome-input click_element | cua 142.2 ms (n 21) | T4 pooled 144.8 ms (n 42) | [-6.185, 2.725] | bound 7.24 | same (within noise)

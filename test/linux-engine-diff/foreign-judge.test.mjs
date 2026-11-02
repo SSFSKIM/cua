@@ -331,6 +331,33 @@ test('the record: a rejected creation is not a window of the harness, and XTEST 
   assert.equal(result.unplaced, 1);
 });
 
+test("the record: an error refuses only the request it answers, never a recorded one 65,536 requests before it", () => {
+  const base = [...START, req(CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT })];
+  const touch = req(OURS, 41, 'ConfigureWindow', { window: SCENE });
+  // Chrome's error for a request the record does not read, with the creation's 16 bits, after a later recorded request
+  const later = [...base, req(CHROME, 70000, 'GetProperty', { window: SCENE, property: 39, delete: true }), rec('error', { client: CHROME, seq: 10 + 65536, major: 14, code: 3 }), touch];
+  assert.equal(raudit(later).clean, true, JSON.stringify(raudit(later).foreign));
+  // straight after the creation, but for another request (its opcode differs)
+  assert.equal(raudit([...base, rec('error', { client: CHROME, seq: 10, major: 14, code: 3 }), touch]).clean, true);
+  // the creation's own error refuses it
+  assert.deepEqual(windowsOf(raudit([...base, rec('error', { client: CHROME, seq: 10, major: 1, code: 14 }), touch])), [SCENE]);
+});
+
+test("the record: a window's birth is timed by the server's clock, however late the record read it", () => {
+  // the record began at wall 1000 with the server at 500; Chrome created the window at server 600 (wall 1100), and
+  // the record read that only at wall 9000; the harness found it at 1200
+  const lines = [
+    JSON.stringify({ kind: 'ready', ms: 1000, t0: 500, root: ROOT, xtest: 132, composite: 142 }),
+    ...START.slice(1),
+    JSON.stringify({ kind: 'req', ms: 9000, client: CHROME, seq: 10, t: 600, op: 'CreateWindow', window: SCENE, parent: ROOT }),
+    req(OURS, 41, 'ConfigureWindow', { window: SCENE }),
+  ];
+  assert.equal(raudit(lines, new Map([[SCENE, [1200]]])).clean, true);
+  // a window created at server 3000 (wall 3500), after the harness found that id at 1200: a later life, not the found one
+  const late = [...lines.slice(0, -2), JSON.stringify({ kind: 'req', ms: 9000, client: CHROME, seq: 10, t: 3000, op: 'CreateWindow', window: SCENE, parent: ROOT }), req(OURS, 41, 'ConfigureWindow', { window: SCENE })];
+  assert.deepEqual(windowsOf(raudit(late, new Map([[SCENE, [1200]]]))), [SCENE]);
+});
+
 test('the record: a record that never started, failed or was cut short is not clean', () => {
   assert.equal(raudit([]).clean, false);
   assert.equal(raudit([]).traced, false);

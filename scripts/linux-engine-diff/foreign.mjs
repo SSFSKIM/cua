@@ -38,8 +38,12 @@ const PROPERTY_OPS = new Set(['ChangeProperty', 'DeleteProperty', 'GetProperty',
 /** Ops that change one window, named by `window`. */
 const WINDOW_OPS = new Set(['DestroyWindow', 'DestroySubwindows', 'MapWindow', 'MapSubwindows', 'UnmapWindow', 'UnmapSubwindows', 'ConfigureWindow', 'CirculateWindow', 'RedirectWindow', 'RedirectSubwindows', 'UnredirectWindow', 'UnredirectSubwindows']);
 
-/** How long after the harness found a window its creation may have been read (the record's own clock lags under load). */
-const FOUND_SLACK_MS = 2000;
+/**
+ * How long after the harness found a window its creation may seem to come: births are timed by the server's clock
+ * (the record's requests carry it), set against the wall clock once when the record begins, so this covers only the
+ * clocks' drift and the reader's own polling, never the record's lag.
+ */
+const FOUND_SLACK_MS = 1000;
 
 /**
  * The judge. `elements`: the stream (`xtraceElements`, `recordElements`). `registered`: the harness's windows, a Set,
@@ -224,15 +228,25 @@ export function judgeForeign(elements, { registered, root, strictBirth = false }
   return { clean: traced && foreign.length === 0, traced, requests, mutating, foreign, unplaced, unattributed: { clients: unattributed.clients.size, mutating: unattributed.mutating } };
 }
 
-/** The request elements the server refused (an error naming their sequence number on their client), as a Set. */
+/**
+ * The request elements the server refused, as a Set: an error names its request's opcode and the low 16 bits of its
+ * sequence number. xtrace shows every request of its connections, and a reply may come after later requests, so there
+ * the error is its connection's latest request with those 16 bits (`exact`). The record holds only some of a client's
+ * requests, but it reads a request's error before that client's next request: there the error is the client's latest
+ * recorded request, if its opcode and 16 bits match, and refuses nothing otherwise (an error for a request the record
+ * does not read, perhaps 65,536 requests after a recorded one with the same 16 bits).
+ */
 function refusedRequests(elements) {
   const refused = new Set();
-  const latest = new Map();
+  const bySeq = new Map();
+  const last = new Map();
   for (const el of elements) {
-    if (el.k === 'req') latest.set(`${el.c}|${el.seq & 0xffff}`, el);
-    else if (el.k === 'error') {
-      const request = latest.get(`${el.c}|${el.seq & 0xffff}`);
-      if (request) refused.add(request);
+    if (el.k === 'req') {
+      bySeq.set(`${el.c}|${el.seq & 0xffff}`, el);
+      last.set(el.c, el);
+    } else if (el.k === 'error') {
+      const request = el.exact ? bySeq.get(`${el.c}|${el.seq & 0xffff}`) : last.get(el.c);
+      if (request && (request.seq & 0xffff) === (el.seq & 0xffff) && (request.major === undefined || request.major === el.major)) refused.add(request);
     }
   }
   return refused;
@@ -345,7 +359,7 @@ export function foreignKeep(r, extensions) {
 
 /** One xtrace request as a judge element, or null for one the judge does not read. */
 function xtraceRequest(r, extensions) {
-  const base = { k: 'req', c: r.conn, seq: r.seq, ours: true, text: r.text };
+  const base = { k: 'req', c: r.conn, seq: r.seq, major: r.major, ours: true, text: r.text };
   const { text } = r;
   if (r.minor === null) {
     const op = CORE_OPS[r.major];
@@ -452,7 +466,7 @@ export function xtraceElements({ elements, extensions }, root) {
       if (base) out.push({ k: 'base', c: conn, base: Number.parseInt(base[1], 16), mask: Number.parseInt(base[2], 16) });
     } else if (what === 'Error') {
       const s = text.match(/\bmajor=(\d+),.*\bseq=([0-9a-f]+)/);
-      if (s) out.push({ k: 'error', c: conn, seq: Number.parseInt(s[2], 16), major: Number(s[1]) });
+      if (s) out.push({ k: 'error', c: conn, seq: Number.parseInt(s[2], 16), major: Number(s[1]), exact: true });
     } else if (what === 'DestroyNotify') {
       const w = field(text, 'window');
       if (typeof w === 'number') out.push({ k: 'destroyed', w });
@@ -528,6 +542,10 @@ function recordLine(line, out, meta, root) {
   switch (r.kind) {
     case 'ready':
       meta.ready = true;
+      // the record's clock against the server's: a request's server time on the wall clock, however late it was read
+      if (typeof r.t0 === 'number') meta.offset = r.ms - r.t0;
+      meta.xtest = r.xtest;
+      meta.composite = r.composite;
       out.push({ k: 'ready' });
       break;
     case 'failed':
@@ -552,7 +570,8 @@ function recordLine(line, out, meta, root) {
       out.push({ k: 'error', c: r.client, seq: r.seq, major: r.major });
       break;
     case 'req': {
-      const el = { k: 'req', c: r.client, seq: r.seq, ms: r.ms, op: r.op, text: null, ...r };
+      const el = { k: 'req', c: r.client, text: null, ...r, ms: meta.offset !== undefined && typeof r.t === 'number' ? r.t + meta.offset : r.ms };
+      el.major = OP_MAJOR[r.op] ?? (r.op === 'FakeInput' ? meta.xtest : r.op in COMPOSITE_MAJOR_OF ? meta.composite : undefined);
       delete el.kind;
       delete el.client;
       if (r.op === 'ChangeWindowAttributes') el.attributes = attributeNames(r.mask);
@@ -576,6 +595,9 @@ function recordLine(line, out, meta, root) {
       break;
   }
 }
+
+const OP_MAJOR = Object.fromEntries(Object.entries(CORE_OPS).map(([major, op]) => [op, Number(major)]));
+const COMPOSITE_MAJOR_OF = Object.fromEntries(Object.values(COMPOSITE_OPS).map((op) => [op, true]));
 
 /** Where a recorded XTEST event landed: a key at the focus (or under the pointer for PointerRoot), the rest under the pointer. */
 function fakeTarget(r, root) {

@@ -6,7 +6,8 @@
 //! [`DEFAULT_EXE`]; a name ending in `*` is a prefix). The judge is `foreign.mjs` `auditRecord`; this only reads.
 //!
 //! One JSON line per element, each with `ms` (the wall clock when it was read):
-//! - `ready` {root, xtest, composite} once recording has begun; `end` once it stopped cleanly; `failed` {error};
+//! - `ready` {root, xtest, composite, t0} once recording has begun (`t0` the server's time then, against which each
+//!   request's server time `t` is read on the wall clock); `end` once it stopped cleanly; `failed` {error};
 //! - `client` {client, pid, exe, ours} (`ours` null when no process could be found for it), `died` {client};
 //! - `req` {client, seq, t, op, …}: from every client, `CreateWindow` {window, parent}, `ReparentWindow` {window,
 //!   parent}, `DestroyWindow` and `DestroySubwindows` {window}; from ours and unattributed clients also
@@ -633,12 +634,14 @@ fn run(args: &[String]) -> Result<()> {
                     watch.owners.remove(&reply.xid_base);
                     vec![Watch::line("died", &format!("\"client\":{}", reply.xid_base))]
                 }
+                // with the server's time then (`t0`), against which each request's time is read on the wall clock
                 4 => vec![Watch::line(
                     "ready",
                     &format!(
-                        "\"root\":{root},\"xtest\":{},\"composite\":{}",
+                        "\"root\":{root},\"xtest\":{},\"composite\":{},\"t0\":{}",
                         xtest.unwrap_or(0),
-                        composite.unwrap_or(0)
+                        composite.unwrap_or(0),
+                        reply.server_time
                     ),
                 )],
                 _ => Vec::new(),

@@ -1,8 +1,9 @@
 # #268: why every vendor gedit `clipboard_write` fails at 10.2 s (M4 T2)
 
-The probe ran on 2026-11-01 at 19:27–19:28 PST, on the #171 VM's display `:0`. It used the newest vendor build,
+The probe ran on 2026-11-01 at 21:47 PST, on the #171 VM's display `:0`. It used the newest vendor build,
 `88ce5e0a…2991` (`deb-26.1023`). The other parts were gedit 46.2 and GTK 3.24.41-4ubuntu1.3. The reader was
-cua-engine 0.3.0, used only to list windows and read trees.
+cua-engine 0.3.0, used only to list windows and read trees. An earlier run, 19:27–19:28, is kept in `run-1/`. Its
+control B changed CLIPBOARD's text as well as its owner (see the end of this file).
 
 **Classification: the vendor builds' own route.** It is not a harness condition. Both builds take CLIPBOARD
 themselves, then call AT-SPI `EditableText.PasteText` on gedit's text view. GTK 3's
@@ -21,14 +22,14 @@ deadline. On arm64 the same stale read crashed gedit (2026-10-06's Linux accepta
 
 | case | what | answer | text | gedit's stderr |
 |---|---|---|---|---|
-| newest ×3 | the newest build's `clipboard_write`, prepared as the gate prepares it: text.mjs's `handleOfFirstWord` (oracle selection, then the build's own Copy), the caret at the end, a harness owner on CLIPBOARD | `editable Paste did not insert text` at 10,204 / 10,203 / 10,204 ms | unchanged (54 characters) | the three criticals once per sample, 302, 316 and 458 ms after the request was sent |
-| control A | gedit's own `CopyText(0, 6)` (gedit owns CLIPBOARD: `cua171`), then `PasteText(54)` from the harness's accessibility client | `true` | `cua171` inserted at the end | none (no file) |
-| control B | the same, but a separate process (`xprobe clip-own`) owns CLIPBOARD before `PasteText` | `true` | unchanged for 2 s | the three criticals, 8 ms after `PasteText` |
+| newest ×3 | the newest build's `clipboard_write`, prepared as the gate prepares it: text.mjs's `handleOfFirstWord` (oracle selection, then the build's own Copy), the caret at the end, a harness owner on CLIPBOARD | `editable Paste did not insert text` at 10,203 / 10,204 / 10,204 ms | unchanged (54 characters) | the three criticals once per sample, 312, 325 and 322 ms after the request was sent |
+| control A | gedit's own `CopyText(0, 6)`, so gedit owns CLIPBOARD and it holds `cua171`; then `PasteText(54)` from the harness's accessibility client | `true` | `cua171` inserted at the end | none (no file) |
+| control B | the same, but a separate process (`xprobe clip-own`) takes CLIPBOARD before `PasteText`, serving the same `cua171` that gedit copied | `true` | unchanged for 2 s | the three criticals, 6 ms after `PasteText` |
 
-Controls A and B differ only in which process owns CLIPBOARD. The same call on the same widget inserts when gedit owns
-the selection, and when another process owns it, inserts nothing and leaves the criticals. Every vendor
-`clipboard_write` puts its own process in that position before it calls `PasteText`. No preparation by the harness
-(handle, buffer, caret, selection, prior owner) can change that.
+Controls A and B paste the same text into the same widget with the same call. Only the process that owns CLIPBOARD
+differs, and that alone decides the outcome: gedit owning it inserts, another process owning it inserts nothing and
+leaves the criticals. Every vendor `clipboard_write` puts its own process in that position before it calls
+`PasteText`. No preparation by the harness (handle, buffer, caret, selection, prior owner) can change that.
 
 The first newest sample shows how the 10.2 s divides:
 
@@ -56,10 +57,17 @@ The gedit `clipboard_write` samples:
   (`scripts/linux-engine-diff/deviations.mjs`).
 - **The harness now keeps every scene application's stderr** (`<out>/apps/`), so a toolkit's complaints are evidence
   in future runs.
-- **cua cannot reach this bug.** Its only `EditableText` call is `CopyText` (`native/linux-engine/src/copy.rs`).
-  `CopyText` is synchronous, with heap-owned data, in GTK 3, GTK 4 and Qt 5 and 6. The guard
-  `native/linux-engine/tests/no_text_mutators.rs` fails the engine's tests if any string literal in `src/` names
-  `PasteText`, `CutText`, `InsertText`, `DeleteText` or `SetTextContents`.
+- **cua cannot reach this bug.**
+  - **The send boundary.** `Bus::send` in `native/linux-engine/src/dbus.rs` refuses `EditableText`'s `PasteText`,
+    `CutText`, `InsertText`, `DeleteText` and `SetTextContents` before anything is sent, with an internal error that
+    names the member.
+  - **The only way out.** Module privacy makes it the only way a method call reaches the bus: the marshalling
+    (`encode_call`), the call type code and the connection's socket and buffer are private to `dbus`.
+    `tests/send_boundary.rs` asserts that privacy from the source, with negative controls.
+  - **The one `EditableText` call.** The engine sends `CopyText` alone (`copy.rs`). `CopyText` is synchronous, with
+    heap-owned data, in GTK 3, GTK 4 and Qt 5 and 6.
+  - **An early warning.** `tests/no_text_mutators.rs` scans for literal spellings of the five names. It is not the
+    guarantee.
 
 ## Files
 
@@ -69,8 +77,13 @@ The gedit `clipboard_write` samples:
   `HH:MM:SS.mmm`, the clipboard owner and text, the answer and the field before and after.
 - `apps/cua171-diff-p268-gedit-newest.stderr`, `apps/cua171-diff-p268-gedit-ctlb.stderr`: gedit's criticals. Control
   A's window printed nothing.
+- `run-1/`: the earlier run, 19:27–19:28. Its newest samples and control A match this run: 10,203–10,204 ms,
+  criticals at +302/+316/+458 ms, and `cua171` inserted. **Its control B is weaker evidence.** The separate owner served
+  its own text (`p268 other owner …`) rather than gedit's `cua171`, so that run changed CLIPBOARD's payload as well
+  as its owner. It still inserted nothing and printed the criticals 8 ms after `PasteText`. The rerun above keeps the
+  payload fixed.
 
-An earlier attempt the same minute (19:26) gave the same three newest samples (10,203–10,204 ms, criticals at
-+337/+360/+327 ms). It stopped at control A, because the oracle's JSON parse does not accept `CopyText`'s empty
-reply; the probe now calls `busctl` directly for it. That attempt's output was discarded. Both runs closed every
-window they opened. The stray check before and after found no harness process, and the owner's Chrome was untouched.
+An attempt before `run-1/`, at 19:26, gave the same three newest samples (criticals at +337/+360/+327 ms). It stopped
+at control A, because the oracle's JSON parse does not accept `CopyText`'s empty reply; the probe now calls `busctl`
+directly for it, and that attempt's output was discarded. Every run closed every window it opened. The stray check
+before and after each run found no harness process, and the owner's Chrome was untouched.

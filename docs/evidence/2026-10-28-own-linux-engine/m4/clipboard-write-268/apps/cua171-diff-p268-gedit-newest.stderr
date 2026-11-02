@@ -1,18 +1,18 @@
 
-(gedit:656134): Gtk-CRITICAL **: 19:27:55.898: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+(gedit:797059): Gtk-CRITICAL **: 21:47:14.382: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
 
-(gedit:656134): Gtk-CRITICAL **: 19:27:55.898: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+(gedit:797059): Gtk-CRITICAL **: 21:47:14.382: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
 
-(gedit:656134): GLib-GObject-CRITICAL **: 19:27:55.898: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+(gedit:797059): GLib-GObject-CRITICAL **: 21:47:14.382: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
 
-(gedit:656134): Gtk-CRITICAL **: 19:28:06.651: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+(gedit:797059): Gtk-CRITICAL **: 21:47:25.137: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
 
-(gedit:656134): Gtk-CRITICAL **: 19:28:06.651: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+(gedit:797059): Gtk-CRITICAL **: 21:47:25.137: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
 
-(gedit:656134): GLib-GObject-CRITICAL **: 19:28:06.651: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+(gedit:797059): GLib-GObject-CRITICAL **: 21:47:25.137: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
 
-(gedit:656134): Gtk-CRITICAL **: 19:28:17.564: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+(gedit:797059): Gtk-CRITICAL **: 21:47:35.871: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
 
-(gedit:656134): Gtk-CRITICAL **: 19:28:17.564: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+(gedit:797059): Gtk-CRITICAL **: 21:47:35.871: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
 
-(gedit:656134): GLib-GObject-CRITICAL **: 19:28:17.564: g_object_unref: assertion 'G_IS_OBJECT (object)' failed
+(gedit:797059): GLib-GObject-CRITICAL **: 21:47:35.871: g_object_unref: assertion 'G_IS_OBJECT (object)' failed

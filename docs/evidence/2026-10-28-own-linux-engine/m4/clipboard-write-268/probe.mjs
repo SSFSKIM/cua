@@ -5,8 +5,8 @@
 //            the end and a harness owner on CLIPBOARD, as the gate prepares it (3 samples);
 //   ctl-a    gedit's own `EditableText.CopyText(0, 6)`, so gedit owns CLIPBOARD, then `EditableText.PasteText(end)`
 //            straight from the harness's accessibility client: GTK answers the request in-process, synchronously;
-//   ctl-b    the same, but a separate process (`startOwner`) owns CLIPBOARD before `PasteText`: GTK's request completes
-//            after `PasteText` returned.
+//   ctl-b    the same, but a separate process (`startOwner`) owns CLIPBOARD before `PasteText`, serving the same text
+//            gedit copied: GTK's request completes after `PasteText` returned. Ownership is the only variable.
 // Writes results.jsonl (one row per case and sample, with wall-clock instants to match gedit's critical lines) to --out.
 //
 // usage: DISPLAY=:0 XAUTHORITY=~/.Xauthority node probe.mjs --cua <cua-engine, the reader> --newest <sky_linux_x64> --out <dir>
@@ -68,7 +68,9 @@ async function control(name, scene, { other }) {
   const copied = 'replied';
   await sleep(200);
   const afterCopy = clip();
-  const owner = other ? await startOwner(`p268 other owner ${Date.now()}`) : null;
+  if (afterCopy.text !== 'cua171') throw new Error(`gedit's Copy left ${JSON.stringify(afterCopy)} on CLIPBOARD`);
+  // control B's owner serves control A's payload, gedit's own copy: the owning process is the only difference
+  const owner = other ? await startOwner(afterCopy.text) : null;
   try {
     caretToEnd(scene);
     const before = field(scene);

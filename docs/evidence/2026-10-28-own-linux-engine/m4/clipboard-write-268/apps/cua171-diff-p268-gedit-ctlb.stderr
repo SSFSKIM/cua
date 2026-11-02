@@ -1,0 +1,6 @@
+
+(gedit:656170): Gtk-CRITICAL **: 19:28:27.897: gtk_text_buffer_get_iter_at_offset: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:656170): Gtk-CRITICAL **: 19:28:27.898: gtk_text_buffer_insert: assertion 'GTK_IS_TEXT_BUFFER (buffer)' failed
+
+(gedit:656170): GLib-GObject-CRITICAL **: 19:28:27.898: g_object_unref: assertion 'G_IS_OBJECT (object)' failed

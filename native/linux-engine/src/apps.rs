@@ -556,6 +556,7 @@ mod tests {
             focused: false,
             height: 10,
             id,
+            minimized: None,
             modal: false,
             title: Some(format!("w{id}")),
             width: 10,

@@ -296,6 +296,7 @@ mod tests {
             focused: false,
             height: 100,
             id: 1,
+            minimized: None,
             modal: false,
             title: None,
             width: 200,

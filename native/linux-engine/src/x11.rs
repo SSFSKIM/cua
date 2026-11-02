@@ -41,6 +41,10 @@ pub struct WindowInfo {
     pub focused: bool,
     pub height: u16,
     pub id: u32,
+    /// `Some(true)` for an iconified window (`WM_STATE` Iconic), which the vendor leaves out of `list_windows`
+    /// (Design, Minimized windows; M4): an additive field the vendor JavaScript passes through.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minimized: Option<bool>,
     pub modal: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
@@ -124,6 +128,15 @@ fn values32(reply: &GetPropertyReply) -> Vec<u32> {
     reply.value32().map(|v| v.collect()).unwrap_or_default()
 }
 
+/// ICCCM's `WM_STATE` value for an iconified window.
+const ICONIC_STATE: u32 = 3;
+
+/// Whether a window is minimized: not viewable, and its `WM_STATE` (ICCCM 4.1.3.1) says Iconic. A window manager also
+/// marks a shaded window or one on another desktop Iconic; each is out of sight, and activating it brings it back.
+pub fn iconic(map_state: MapState, wm_state: &[u32]) -> bool {
+    map_state != MapState::VIEWABLE && wm_state.first() == Some(&ICONIC_STATE)
+}
+
 /// The pending replies for one window's description.
 struct Describe<'c> {
     attributes: Cookie<'c, RustConnection, GetWindowAttributesReply>,
@@ -135,6 +148,7 @@ struct Describe<'c> {
     wm_class: Cookie<'c, RustConnection, GetPropertyReply>,
     window_type: Cookie<'c, RustConnection, GetPropertyReply>,
     wm_state: Cookie<'c, RustConnection, GetPropertyReply>,
+    icccm_state: Cookie<'c, RustConnection, GetPropertyReply>,
 }
 
 /// A described window before its type atom is named.
@@ -206,10 +220,12 @@ impl X11 {
             wm_class: self.property(id, AtomEnum::WM_CLASS.into())?,
             window_type: self.property(id, self.atom("_NET_WM_WINDOW_TYPE"))?,
             wm_state: self.property(id, self.atom("_NET_WM_STATE"))?,
+            icccm_state: self.property(id, self.atom("WM_STATE"))?,
         })
     }
 
-    /// `describe_window` (behaviour §3): None when the window is not Viewable or has no size.
+    /// `describe_window` (behaviour §3): None when the window has no size, or is not Viewable unless it is minimized
+    /// (`iconic`), which the vendor leaves out and cua lists with `minimized: true` (M4).
     fn describe_finish(&self, id: Window, pending: Describe<'_>, focus: Window) -> Result<Option<Described>> {
         let attributes = pending.attributes.reply()?;
         let geometry = pending.geometry.reply()?;
@@ -220,7 +236,9 @@ impl X11 {
         let wm_class = pending.wm_class.reply();
         let window_type = pending.window_type.reply().ok();
         let wm_state = pending.wm_state.reply()?;
-        if attributes.map_state != MapState::VIEWABLE || geometry.width == 0 || geometry.height == 0 {
+        let icccm_state = pending.icccm_state.reply().map(|r| values32(&r)).unwrap_or_default();
+        let minimized = iconic(attributes.map_state, &icccm_state);
+        if (attributes.map_state != MapState::VIEWABLE && !minimized) || geometry.width == 0 || geometry.height == 0 {
             return Ok(None);
         }
         let title = property_text(&net_wm_name.value).or_else(|| property_text(&wm_name.value));
@@ -237,6 +255,7 @@ impl X11 {
                 focused: focus == id,
                 height: geometry.height,
                 id,
+                minimized: minimized.then_some(true),
                 modal,
                 title,
                 width: geometry.width,
@@ -278,7 +297,8 @@ impl X11 {
     }
 
     /// The window `get_window_state` and window requests act on: `X11 window <id> is not mapped` when it does
-    /// not describe (minimized, unmapped and zero-size windows alike); X errors propagate.
+    /// not describe (unmapped and zero-size windows alike); a minimized window describes, with `minimized` set;
+    /// X errors propagate.
     pub fn get_window(&mut self, id: Window) -> Result<WindowInfo> {
         let focus = self.focus()?;
         let pending = self.describe_start(id)?;
@@ -414,6 +434,20 @@ impl X11 {
             stack.extend(i.children.iter().copied());
         }
         Ok(out)
+    }
+
+    /// Whether `window` is minimized (`iconic`) now: one round trip, its two requests together. A window that cannot be
+    /// read is not minimized here; the request that names it answers its own error.
+    pub fn minimized(&self, window: Window) -> bool {
+        let attributes = self.conn.get_window_attributes(window);
+        let state = self.property(window, self.atom("WM_STATE"));
+        let (Ok(attributes), Ok(state)) = (attributes, state) else {
+            return false;
+        };
+        match (attributes.reply(), state.reply()) {
+            (Ok(attributes), Ok(state)) => iconic(attributes.map_state, &values32(&state)),
+            _ => false,
+        }
     }
 
     /// `_NET_WM_PID` when it is exactly one non-zero value.
@@ -945,6 +979,7 @@ mod tests {
             focused: false,
             height: 1,
             id: 4194591,
+            minimized: None,
             modal: false,
             title: Some("Openbox".into()),
             width: 1,
@@ -956,5 +991,27 @@ mod tests {
             serde_json::to_string(&w).unwrap(),
             r#"{"app":"x11:4194591","focused":false,"height":1,"id":4194591,"modal":false,"title":"Openbox","width":1,"x":-100,"y":-100}"#
         );
+        let minimized = WindowInfo {
+            minimized: Some(true),
+            ..w
+        };
+        assert_eq!(
+            serde_json::to_string(&minimized).unwrap(),
+            r#"{"app":"x11:4194591","focused":false,"height":1,"id":4194591,"minimized":true,"modal":false,"title":"Openbox","width":1,"x":-100,"y":-100}"#,
+            "the additive field, in its alphabetical place"
+        );
+    }
+
+    #[test]
+    fn a_window_is_minimized_when_it_is_not_viewable_and_its_wm_state_is_iconic() {
+        assert!(iconic(MapState::UNMAPPED, &[3, 0]));
+        assert!(iconic(MapState::UNVIEWABLE, &[3]));
+        assert!(
+            !iconic(MapState::VIEWABLE, &[3, 0]),
+            "a mapped window is not minimized, whatever it says"
+        );
+        assert!(!iconic(MapState::UNMAPPED, &[1, 0]), "NormalState");
+        assert!(!iconic(MapState::UNMAPPED, &[0, 0]), "WithdrawnState");
+        assert!(!iconic(MapState::UNMAPPED, &[]), "no WM_STATE");
     }
 }

@@ -1,11 +1,15 @@
 //! `activate_window`, the one window request that changes desktop state, deliberately (behaviour §14), and
 //! `launch_app` (§15).
 
+use std::time::{Duration, Instant};
+
 use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
 use x11rb::connection::Connection;
+use x11rb::errors::ReplyError;
+use x11rb::protocol::ErrorKind;
 use x11rb::protocol::xproto::{
-    ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _, EventMask, InputFocus, StackMode, Window,
+    ClientMessageEvent, ConfigureWindowAux, ConnectionExt as _, EventMask, InputFocus, MapState, StackMode, Window,
 };
 
 use super::Engine;
@@ -43,8 +47,19 @@ impl Engine {
     }
 }
 
+/// How long an activated window that is not viewable (a minimized one) may take to be mapped by the window manager
+/// before its input focus is set again (M4, C22).
+pub(super) const MAP_WAIT: Duration = Duration::from_secs(1);
+const MAP_POLL: Duration = Duration::from_millis(5);
+
 /// Activates `window` as `activate_window` does (behaviour §14): the request, the raise and the input focus sent
 /// together and checked in order. The paste's foreground route uses it too (Design, Device mode).
+///
+/// A minimized window is not viewable when the focus request arrives, so the server answers it `BadMatch` while the
+/// window manager, acting on the activation request, maps it a few milliseconds later: every engine, the vendor's
+/// two builds included, answered an error for an activation that happened (M4, C22). So on `BadMatch` for a window
+/// not viewable, the focus waits for the window to be mapped, at most [`MAP_WAIT`], and is set again; a window still
+/// not viewable then answers the first error, and nothing more is sent.
 pub(super) fn activate(x: &X11, window: Window) -> Result<()> {
     let (conn, root) = (&x.conn, x.root);
     let message = ClientMessageEvent::new(32, window, x.atom("_NET_ACTIVE_WINDOW"), [1, 0, 0, 0, 0]);
@@ -56,7 +71,38 @@ pub(super) fn activate(x: &X11, window: Window) -> Result<()> {
     (|| -> Result<()> { Ok(requested?.check()?) })()
         .with_context(|| format!("failed to request focus for X11 window {window}"))?;
     (|| -> Result<()> { Ok(raised?.check()?) })().with_context(|| format!("failed to raise X11 window {window}"))?;
-    (|| -> Result<()> { Ok(focused?.check()?) })().with_context(|| format!("failed to focus X11 window {window}"))?;
+    let focused = focused.map_err(ReplyError::from).and_then(|c| c.check());
+    match focused {
+        Err(ReplyError::X11Error(e)) if e.error_kind == ErrorKind::Match && !viewable(x, window)? => {
+            let first = ReplyError::X11Error(e);
+            if !wait_viewable(x, window, MAP_WAIT)? {
+                return Err(anyhow::Error::from(first)).with_context(|| format!("failed to focus X11 window {window}"));
+            }
+            conn.set_input_focus(InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME)?
+                .check()
+                .with_context(|| format!("failed to focus X11 window {window}"))?;
+        }
+        other => other.with_context(|| format!("failed to focus X11 window {window}"))?,
+    }
     conn.flush()?;
     Ok(())
+}
+
+/// Whether `window` is viewable now.
+fn viewable(x: &X11, window: Window) -> Result<bool> {
+    Ok(x.conn.get_window_attributes(window)?.reply()?.map_state == MapState::VIEWABLE)
+}
+
+/// Polls until `window` is viewable, at most `wait`; whether it became so.
+fn wait_viewable(x: &X11, window: Window, wait: Duration) -> Result<bool> {
+    let deadline = Instant::now() + wait;
+    loop {
+        if viewable(x, window)? {
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
+        }
+        std::thread::sleep(MAP_POLL);
+    }
 }

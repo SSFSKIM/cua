@@ -122,6 +122,38 @@ pub fn acts(command: &str, input: Option<&Value>) -> bool {
     }
 }
 
+/// The window a request sends input to, when that input is refused while the window is minimized (Design, Minimized
+/// windows; M4, the design session's rulings F8 and C21): every window-targeted input, element actions included (a
+/// primary element click, `perform_secondary_action`, `clipboard_read`'s Copy), in either device mode. Releases are
+/// exempt and always run (`key_up`, `clipboard_release`, `drag_handle`'s end; a drag's own release is inside its
+/// request), so nothing is left held on the person's desktop; `activate_window` is the remedy the refusal names;
+/// `get_window_state` reads the tree and answers no screenshot. None for a request with no window (the desktop route)
+/// or one whose window is not a well-formed id, which the request itself refuses.
+fn input_window(command: &str, input: Option<&Value>) -> Option<u32> {
+    match command {
+        "press_key"
+        | "key_down"
+        | "click"
+        | "move"
+        | "scroll"
+        | "drag"
+        | "perform_secondary_action"
+        | "type_text"
+        | "type_characters"
+        | "clipboard_write"
+        | "clipboard_read" => {
+            let id = input?.get("window")?.get("id")?.as_u64()?;
+            u32::try_from(id).ok()
+        }
+        _ => None,
+    }
+}
+
+/// The answer to window-targeted input while its window is minimized: nothing was sent.
+fn minimized_sentence(window: u32) -> String {
+    format!("Window {window} is minimized; activate it first")
+}
+
 /// The `truncated` that `get_window_state` reports beside its tree (Design, The tree read; M4): the accessibility read's
 /// cut points, and nothing when it cut nothing or when the tree is the X11 fallback, which no read made. An addition
 /// to the vendor's output that its JavaScript ignores.
@@ -200,11 +232,21 @@ impl Engine {
         if let Some((app, end)) = &refusal {
             self.extra.insert("late_dnd".into(), late_stats(app, end));
         }
+        // input to a minimized window is refused before anything is sent and before any other check of the request
+        // (the device refusal included), in either mode
+        let minimized = match refusal {
+            None => input_window(&request.command, request.input.as_ref()).filter(|&w| self.x.minimized(w)),
+            Some(_) => None,
+        };
+        if minimized.is_some() {
+            self.extra.insert("minimized".into(), json!(true));
+        }
         let result = match request.command.as_str() {
             _ if refusal.is_some() => Err(anyhow!(match refusal.as_ref().expect("checked") {
                 (app, crate::dnd::WatchEnd::Failed(why)) => crate::dnd::watch_failed_notice(app, why),
                 (app, _) => crate::dnd::late_notice(app),
             })),
+            _ if minimized.is_some() => Err(anyhow!(minimized_sentence(minimized.expect("checked")))),
             "list_windows" => self.list_windows(request.input),
             "list_apps" => self.list_apps(request.input),
             "get_screenshot" => self.get_screenshot(request.input),
@@ -411,7 +453,8 @@ impl Engine {
             None => tree,
         };
         let mut screenshots = Vec::new();
-        if input.include_screenshot.unwrap_or(true) {
+        // a minimized window has no contents to capture: no screenshot, which the facade answers as unavailable
+        if input.include_screenshot.unwrap_or(true) && info.minimized != Some(true) {
             let (rgb, width, height) = self.x.capture_window(id)?;
             if let Some(w) = self.x.last_capture_wait.take() {
                 let ms = |d: std::time::Duration| d.as_secs_f64() * 1000.0;
@@ -502,7 +545,7 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{acts, reported_truncation};
+    use super::{acts, input_window, minimized_sentence, reported_truncation};
     use crate::tree::Truncated;
     use serde_json::json;
 
@@ -524,6 +567,60 @@ mod tests {
             "omitted when every count is 0"
         );
         assert_eq!(reported_truncation("x11", cut), None, "the X11 fallback is no read");
+    }
+
+    #[test]
+    fn a_minimized_window_refuses_every_window_targeted_input_but_releases_reads_and_activation() {
+        let window = json!({"window": {"id": 77, "app": "gedit", "minimized": true}});
+        for command in [
+            "press_key",
+            "key_down",
+            "click",
+            "move",
+            "scroll",
+            "drag",
+            "perform_secondary_action",
+            "type_text",
+            "type_characters",
+            "clipboard_write",
+            // its Copy is an element action, or a context menu and an Escape
+            "clipboard_read",
+        ] {
+            assert_eq!(input_window(command, Some(&window)), Some(77), "{command} is refused");
+        }
+        for command in [
+            // releases always run
+            "key_up",
+            "clipboard_release",
+            "drag_handle",
+            // the remedy the sentence names
+            "activate_window",
+            // reads: the tree is read and the screenshot is answered as unavailable
+            "get_window_state",
+            "list_windows",
+            "capabilities",
+            "launch_app",
+            "preflight",
+            "no_such_command",
+        ] {
+            assert_eq!(input_window(command, Some(&window)), None, "{command} is not refused");
+        }
+        assert_eq!(
+            input_window("press_key", Some(&json!({"key": "a"}))),
+            None,
+            "the desktop route"
+        );
+        assert_eq!(
+            input_window("press_key", Some(&json!({"window": null, "key": "a"}))),
+            None
+        );
+        assert_eq!(input_window("press_key", None), None);
+        assert_eq!(
+            input_window("press_key", Some(&json!({"window": {"id": "77"}}))),
+            None,
+            "a malformed window is the request's own error"
+        );
+        assert_eq!(minimized_sentence(77), "Window 77 is minimized; activate it first");
     }
 
     #[test]

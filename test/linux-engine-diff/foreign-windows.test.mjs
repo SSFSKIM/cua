@@ -394,6 +394,23 @@ test("no two scenes' windows resolve to one label, so none shares another's titl
   for (const own of [fake.label('front'), fake.label('holder'), fake.label('scene', 'stub')]) assert.equal(named.get(own), undefined, `${own} is also a scene's`);
 });
 
+test("the run's failures list each distinct foreign change once, with how many times it came", async () => {
+  const { desktopEnding } = await import('../../scripts/linux-engine-diff/scenes.mjs');
+  const f = (what, window, client = null) => ({ what, window, client });
+  const ending = {
+    start: { id: 0, owner: 'none' },
+    end: { id: 0, owner: 'none' },
+    holder: null,
+    audit: { clean: false, traced: true, requests: 10, mutating: 3, foreign: [f('ChangeProperty', PERSON), f('ChangeProperty', PERSON)] },
+    record: { clean: false, traced: true, requests: 900, mutating: 800, foreign: [...Array(230)].map(() => f('XTEST MotionNotify', PERSON, 'cua-engine pid 7')).concat([f('XTEST ButtonRelease', PERSON, 'cua-engine pid 7')]) },
+  };
+  assert.deepEqual(desktopEnding(ending).foreign, [
+    'the harness: ChangeProperty on 0x00600002 (2 times)',
+    "the run's record: XTEST MotionNotify on 0x00600002 (cua-engine pid 7) (230 times)",
+    "the run's record: XTEST ButtonRelease on 0x00600002 (cua-engine pid 7)",
+  ]);
+});
+
 test("the summary names the run's start and end active windows, its holder and its own trace's audit", () => {
   const record = { active_start: { id: PERSON, owner: 'foreign' }, active_end: { id: PERSON, owner: 'foreign' }, holder: 0x1a00002, trace: { clean: true, requests: 120, mutating: 14, foreign: [] } };
   assert.equal(

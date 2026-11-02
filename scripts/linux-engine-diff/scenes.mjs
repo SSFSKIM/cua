@@ -95,13 +95,20 @@ export const GEOMETRY = { gedit: [910, 756], chrome: [1050, 780], recorder: [600
  * or the harness's, the holder, and the audit of the harness's own trace. `foreign` lists what fails the run: each
  * change of a window the harness did not open, or a trace that cannot show there was none.
  */
+/** Each distinct line once, in the order it first came, with how many times it came where that is more than once. */
+function tally(lines) {
+  const counts = new Map();
+  for (const line of lines) counts.set(line, (counts.get(line) ?? 0) + 1);
+  return [...counts].map(([line, n]) => (n > 1 ? `${line} (${n} times)` : line));
+}
+
 export function desktopEnding(ending) {
   if (!ending) return { record: null, foreign: ["the harness: its trace did not run, so its requests went unaudited"] };
   const { audit, record } = ending;
-  const foreign = audit.foreign.map((f) => `the harness: ${foreignLine(f)}`);
+  const foreign = tally(audit.foreign.map((f) => `the harness: ${foreignLine(f)}`));
   if (!audit.traced) foreign.push(`the harness: its trace recorded no request${audit.error ? ` (${audit.error})` : ''}, so its requests went unaudited`);
   // the whole run's record: every request of the harness's and the engines' clients, sampled by an audit pass or not
-  foreign.push(...record.foreign.map((f) => `the run's record: ${foreignLine(f)}`));
+  foreign.push(...tally(record.foreign.map((f) => `the run's record: ${foreignLine(f)}`)));
   if (!record.traced) foreign.push(`the run's record: ${record.error ?? 'it did not run'}, so the run's requests went unjudged`);
   return {
     record: {

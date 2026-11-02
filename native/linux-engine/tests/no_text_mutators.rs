@@ -1,93 +1,25 @@
-//! The engine never asks an application to change its text through AT-SPI (Constraints; #268): no string literal in
-//! `src/` names `PasteText`, `CutText`, `InsertText`, `DeleteText` or `SetTextContents`, the members a D-Bus call
-//! would have to spell. GTK 3's text-view `PasteText` hands its clipboard request a pointer to its own stack, so when
-//! another process owns CLIPBOARD the callback reads freed stack: nothing is inserted on x86-64, and gedit crashed on
-//! arm64. Comments that say these are never called are not code and do not count. Text reaches an application only
-//! as a key chord through the route; the one `EditableText` member the engine sends is `CopyText` (`copy.rs`).
+//! An early warning, not the guarantee (#268). It catches literal spellings only: a string literal in `src/` that
+//! names `PasteText`, `CutText`, `InsertText`, `DeleteText` or `SetTextContents` as a whole word. A name built any
+//! other way (`concat!`, `stringify!`, an escape such as `\x73`) passes it. The guarantee is the send boundary:
+//! `Bus::send` refuses those `EditableText` members before anything is sent, and module privacy makes it the only way
+//! a method call reaches the bus (`src/dbus.rs`; its tests, and `send_boundary.rs`). This scan only fails earlier, at
+//! the spelling, where the boundary would fail at the call.
 //!
-//! Static, display-free: it runs in every `cargo test`, so the engine-linux gate checks each change to `src/`, where
-//! the harness's bus pass sees only the paths a run exercises.
+//! Why the members are refused: text reaches an application only as a key chord through the route, and GTK 3's
+//! text-view `PasteText` hands its clipboard request a pointer to its own stack, so when another process owns
+//! CLIPBOARD the callback reads freed stack (nothing inserted on x86-64; gedit crashed on arm64).
+//!
+//! Comments and doc attributes (`#[doc = "…"]`) are documentation and do not count; the boundary's own list,
+//! `TEXT_MUTATORS` in `src/dbus.rs`, is the one place the names are spelled.
 
-use std::fs;
-use std::path::{Path, PathBuf};
+#[path = "support/source.rs"]
+mod source;
+
+use source::{engine_sources, lex};
 
 const FORBIDDEN: [&str; 5] = ["PasteText", "CutText", "InsertText", "DeleteText", "SetTextContents"];
-
-/// The contents of every string literal in Rust source, comments skipped: `"…"` with escapes, raw `r"…"` and
-/// `r#"…"#`, byte strings alike; char literals are stepped over so `'"'` opens no string.
-fn string_literals(src: &str) -> Vec<String> {
-    let b = src.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < b.len() {
-        match b[i] {
-            b'/' if b.get(i + 1) == Some(&b'/') => {
-                while i < b.len() && b[i] != b'\n' {
-                    i += 1;
-                }
-            }
-            b'/' if b.get(i + 1) == Some(&b'*') => {
-                let mut depth = 1;
-                i += 2;
-                while i < b.len() && depth > 0 {
-                    if b[i] == b'/' && b.get(i + 1) == Some(&b'*') {
-                        depth += 1;
-                        i += 2;
-                    } else if b[i] == b'*' && b.get(i + 1) == Some(&b'/') {
-                        depth -= 1;
-                        i += 2;
-                    } else {
-                        i += 1;
-                    }
-                }
-            }
-            b'r' if matches!(b.get(i + 1), Some(b'"') | Some(b'#')) && (i == 0 || !is_ident(b[i - 1])) => {
-                let mut j = i + 1;
-                let mut hashes = 0;
-                while b.get(j) == Some(&b'#') {
-                    hashes += 1;
-                    j += 1;
-                }
-                if b.get(j) != Some(&b'"') {
-                    i += 1;
-                    continue;
-                }
-                let start = j + 1;
-                let close: Vec<u8> = std::iter::once(b'"').chain(std::iter::repeat_n(b'#', hashes)).collect();
-                let end = (start..b.len())
-                    .find(|&k| b[k..].starts_with(&close))
-                    .unwrap_or(b.len());
-                out.push(src[start..end].to_string());
-                i = end + close.len();
-            }
-            b'"' => {
-                let start = i + 1;
-                let mut j = start;
-                while j < b.len() && b[j] != b'"' {
-                    j += if b[j] == b'\\' { 2 } else { 1 };
-                }
-                out.push(src[start..j.min(b.len())].to_string());
-                i = j + 1;
-            }
-            b'\'' => {
-                // a char literal ('x', '\n', '"', '\''), else a lifetime ('a): only a literal is stepped over
-                if b.get(i + 1) == Some(&b'\\') {
-                    i += 2;
-                    while i < b.len() && b[i] != b'\'' {
-                        i += 1;
-                    }
-                    i += 1;
-                } else if b.get(i + 2) == Some(&b'\'') {
-                    i += 3;
-                } else {
-                    i += 1;
-                }
-            }
-            _ => i += 1,
-        }
-    }
-    out
-}
+/// The send boundary's own list (`src/dbus.rs`), cut out before the scan.
+const BOUNDARY_LIST: &str = "const TEXT_MUTATORS";
 
 fn is_ident(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_'
@@ -108,32 +40,27 @@ fn named(literal: &str) -> Vec<&'static str> {
         .collect()
 }
 
-fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(dir).expect("src/ is readable") {
-        let path = entry.expect("a directory entry").path();
-        if path.is_dir() {
-            rust_files(&path, out);
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            out.push(path);
-        }
-    }
+/// `dbus.rs` without the boundary's list, from `const TEXT_MUTATORS` to the `];` that ends its array.
+fn without_boundary_list(text: &str) -> String {
+    let start = text
+        .find(BOUNDARY_LIST)
+        .expect("src/dbus.rs declares the send boundary's TEXT_MUTATORS");
+    let end = start + text[start..].find("];").expect("the declaration ends") + 2;
+    format!("{}{}", &text[..start], &text[end..])
 }
 
 #[test]
 fn the_engine_source_names_no_atspi_text_mutator() {
-    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut files = Vec::new();
-    rust_files(&src, &mut files);
-    assert!(files.len() > 10, "the walk found the engine's sources: {}", files.len());
     let mut found = Vec::new();
-    for file in &files {
-        let text = fs::read_to_string(file).expect("a source file reads");
-        for literal in string_literals(&text) {
+    for (path, text) in engine_sources() {
+        let text = if path.as_os_str() == "dbus.rs" {
+            without_boundary_list(&text)
+        } else {
+            text
+        };
+        for literal in lex(&text).literals {
             for name in named(&literal) {
-                found.push(format!(
-                    "{}: \"{literal}\" names {name}",
-                    file.strip_prefix(&src).unwrap().display()
-                ));
+                found.push(format!("{}: \"{literal}\" names {name}", path.display()));
             }
         }
     }
@@ -145,7 +72,7 @@ fn the_engine_source_names_no_atspi_text_mutator() {
 }
 
 #[test]
-fn the_scan_sees_literals_and_skips_comments() {
+fn the_scan_sees_literals_and_skips_comments_and_doc_attributes() {
     let src = r##"
         //! `PasteText`, "PasteText" and InsertText are never called
         /* "DeleteText" in a block /* nested "CutText" */ still a comment */
@@ -153,10 +80,25 @@ fn the_scan_sees_literals_and_skips_comments() {
         let q = '"'; let l: &'a str = "ok"; let esc = "a \"quoted\" PasteTextual";
         call(EDITABLE, "PasteText", &[]);
         let raw = r#"x "InsertText" y"#;
+        #[doc = "documents that CutText is never sent"]
+        #![doc= r"nor DeleteText"]
+        #[cfg_attr(test, doc = "nor SetTextContents")]
+        let doc = "DeleteText";
     "##;
-    let literals = string_literals(src);
+    let literals = lex(src).literals;
     let hits: Vec<&str> = literals.iter().flat_map(|l| named(l)).collect();
-    assert_eq!(hits, ["PasteText", "InsertText"], "{literals:?}");
+    assert_eq!(hits, ["PasteText", "InsertText", "DeleteText"], "{literals:?}");
     assert!(named("org.a11y.atspi.EditableText.DeleteText").contains(&"DeleteText"));
     assert!(named("CopyText").is_empty());
+}
+
+#[test]
+fn only_the_boundary_list_is_cut_out_of_dbus_rs() {
+    let text = "const X: &str = \"a\";\nconst TEXT_MUTATORS: [&str; 1] = [\"PasteText\"];\nlet y = \"CutText\";";
+    let hits: Vec<&str> = lex(&without_boundary_list(text))
+        .literals
+        .iter()
+        .flat_map(|l| named(l))
+        .collect();
+    assert_eq!(hits, ["CutText"]);
 }

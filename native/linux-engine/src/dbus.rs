@@ -5,6 +5,12 @@
 //! `Hello`, marshalling of the types AT-SPI uses, and serial-matched replies with any number of calls in flight.
 //! Unlike the vendor's strictly synchronous client, a call is sent and its reply collected later; the tree read
 //! decides how many are outstanding.
+//!
+//! The send boundary (#268): [`Bus::send`] is the only way a method call reaches a bus, since the marshalling
+//! ([`encode_call`]) and the connection's socket and output buffer are private to this module; `call` and
+//! `calls_until` go through it. It refuses `EditableText`'s text mutators ([`TEXT_MUTATORS`]) before anything is
+//! sent: text reaches an application only as a key chord through the route, and GTK 3's text-view `PasteText`
+//! reads freed stack whenever another process owns CLIPBOARD.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::io::{ErrorKind, Read, Write};
@@ -21,6 +27,22 @@ pub const IO_TIMEOUT: Duration = Duration::from_secs(2);
 
 const METHOD_CALL: u8 = 1;
 pub const METHOD_RETURN: u8 = 2;
+
+const EDITABLE_TEXT: &str = "org.a11y.atspi.EditableText";
+/// `EditableText`'s members that change an application's text, which the engine never sends (Constraints): its one
+/// `EditableText` call is `CopyText` (`copy.rs`).
+const TEXT_MUTATORS: [&str; 5] = ["PasteText", "CutText", "InsertText", "DeleteText", "SetTextContents"];
+
+/// The send boundary's refusal: an internal error naming the member, before anything is sent.
+fn refuse_text_mutator(call: &MethodCall) -> Result<()> {
+    if call.iface == EDITABLE_TEXT && TEXT_MUTATORS.contains(&call.member) {
+        bail!(
+            "internal error: the engine never calls {EDITABLE_TEXT}.{}; nothing was sent",
+            call.member
+        );
+    }
+    Ok(())
+}
 pub const ERROR: u8 = 3;
 const SIGNAL: u8 = 4;
 
@@ -127,8 +149,8 @@ fn put_field(fields: &mut Vec<u8>, code: u8, sig: u8, value: &str) {
 }
 
 /// A METHOD_CALL, little endian, header fields PATH, INTERFACE, MEMBER, DESTINATION, then SIGNATURE when there
-/// are arguments (behaviour §19).
-pub fn encode_call(serial: u32, call: &MethodCall) -> Vec<u8> {
+/// are arguments (behaviour §19). Private: only [`Bus::send`] marshals a call (the send boundary).
+fn encode_call(serial: u32, call: &MethodCall) -> Vec<u8> {
     let mut signature = String::new();
     let mut body = Vec::new();
     for arg in call.args {
@@ -624,8 +646,10 @@ impl Bus {
         Ok(String::from_utf8_lossy(&line).into_owned())
     }
 
-    /// Queues a call and returns its serial. Nothing is written until [`Bus::flush`] or a receive.
-    pub fn send(&mut self, call: &MethodCall) -> u32 {
+    /// Queues a call and returns its serial. Nothing is written until [`Bus::flush`] or a receive. The send boundary:
+    /// a text mutator of `EditableText` is refused here, before it is queued.
+    pub fn send(&mut self, call: &MethodCall) -> Result<u32> {
+        refuse_text_mutator(call)?;
         let serial = self.next_serial;
         self.next_serial = self.next_serial.wrapping_add(1).max(1);
         self.out.extend_from_slice(&encode_call(serial, call));
@@ -643,7 +667,7 @@ impl Bus {
             .entry(format!("{}.{}", call.iface, call.member))
             .or_default() += 1;
         self.stats.max_in_flight = self.stats.max_in_flight.max(self.pending.len());
-        serial
+        Ok(serial)
     }
 
     pub fn flush(&mut self) -> Result<()> {
@@ -699,7 +723,7 @@ impl Bus {
 
     /// Sends one call and waits for its reply, keeping any other replies for [`Bus::recv`].
     pub fn call(&mut self, call: &MethodCall) -> Result<CallResult> {
-        let serial = self.send(call);
+        let serial = self.send(call)?;
         self.flush()?;
         let mut waited = false;
         loop {
@@ -722,7 +746,11 @@ impl Bus {
     /// whatever the bus's silence timeout. None when the deadline passes first: the calls are then abandoned, and
     /// their late replies are discarded when they come.
     pub fn calls_until(&mut self, calls: &[MethodCall], deadline: Instant) -> Result<Option<Vec<CallResult>>> {
-        let serials: Vec<u32> = calls.iter().map(|c| self.send(c)).collect();
+        // a batch with a refused call sends none of it
+        for call in calls {
+            refuse_text_mutator(call)?;
+        }
+        let serials = calls.iter().map(|c| self.send(c)).collect::<Result<Vec<u32>>>()?;
         self.flush()?;
         loop {
             if serials.iter().all(|s| self.ready.iter().any(|(r, _)| r == s)) {
@@ -1312,9 +1340,9 @@ mod tests {
             }
         });
         let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
-        let a = bus.send(&call("A"));
-        let b = bus.send(&call("B"));
-        let c = bus.send(&call("C"));
+        let a = bus.send(&call("A")).unwrap();
+        let b = bus.send(&call("B")).unwrap();
+        let c = bus.send(&call("C")).unwrap();
         assert_eq!(bus.in_flight(), 3);
         let mut got = HashMap::new();
         for _ in 0..3 {
@@ -1349,8 +1377,8 @@ mod tests {
             }
         });
         let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
-        let bad = bus.send(&call("Bad"));
-        let good = bus.send(&call("Good"));
+        let bad = bus.send(&call("Bad")).unwrap();
+        let good = bus.send(&call("Good")).unwrap();
         let mut got = HashMap::new();
         for _ in 0..2 {
             let (serial, result) = bus.recv().unwrap();
@@ -1378,7 +1406,7 @@ mod tests {
             }
         });
         let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
-        bus.send(&call("GetText"));
+        bus.send(&call("GetText")).unwrap();
         let (_, result) = bus.recv().unwrap();
         assert_eq!(result.unwrap(), vec![Value::Str(text)]);
         assert!(bus.stats.peak_staged > 5 * 1024 * 1024);
@@ -1390,8 +1418,8 @@ mod tests {
     fn a_silent_bus_fails_every_outstanding_call_and_keeps_the_connection() {
         let (ours, theirs) = UnixStream::pair().unwrap();
         let mut bus = Bus::over(ours, Duration::from_millis(50)).unwrap();
-        let a = bus.send(&call("A"));
-        let b = bus.send(&call("B"));
+        let a = bus.send(&call("A")).unwrap();
+        let b = bus.send(&call("B")).unwrap();
         let first = bus.recv().unwrap();
         let second = bus.recv().unwrap();
         assert_eq!((first.0, second.0), (a, b));
@@ -1463,8 +1491,80 @@ mod tests {
         let (ours, theirs) = UnixStream::pair().unwrap();
         drop(theirs);
         let mut bus = Bus::over(ours, Duration::from_secs(1)).unwrap();
-        bus.send(&call("A"));
+        bus.send(&call("A")).unwrap();
         let error = bus.recv().unwrap_err();
         assert!(error.downcast_ref::<Broken>().is_some(), "{error}");
+    }
+
+    fn editable(member: &str) -> MethodCall<'_> {
+        MethodCall {
+            dest: ":1.2",
+            path: "/p",
+            iface: "org.a11y.atspi.EditableText",
+            member,
+            args: &[Arg::I32(0)],
+        }
+    }
+
+    /// The bytes waiting at the peer's end of the socket (non-blocking: nothing waiting is nothing sent).
+    fn peer_received(theirs: &mut UnixStream) -> usize {
+        theirs.set_nonblocking(true).unwrap();
+        let mut buf = [0u8; 4096];
+        match theirs.read(&mut buf) {
+            Ok(n) => n,
+            Err(e) if e.kind() == ErrorKind::WouldBlock => 0,
+            Err(e) => panic!("{e}"),
+        }
+    }
+
+    #[test]
+    fn the_send_boundary_refuses_every_text_mutator_before_anything_is_sent() {
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
+        for member in TEXT_MUTATORS {
+            let refused = |e: anyhow::Error| {
+                let text = e.to_string();
+                assert!(
+                    text.contains(&format!("org.a11y.atspi.EditableText.{member}")),
+                    "{text}"
+                );
+            };
+            refused(bus.send(&editable(member)).unwrap_err());
+            refused(bus.call(&editable(member)).unwrap_err());
+            // a batch with one refused call sends none of it, the allowed call before it included
+            refused(
+                bus.calls_until(&[call("A"), editable(member)], Instant::now() + Duration::from_secs(1))
+                    .unwrap_err(),
+            );
+        }
+        bus.flush().unwrap();
+        assert_eq!(bus.in_flight(), 0);
+        assert_eq!(bus.stats.calls, 0);
+        assert_eq!(peer_received(&mut theirs), 0, "nothing reached the bus");
+    }
+
+    #[test]
+    fn the_send_boundary_lets_copy_text_and_the_same_members_of_other_interfaces_through() {
+        let (ours, mut theirs) = UnixStream::pair().unwrap();
+        let server = std::thread::spawn(move || {
+            let mut calls = Vec::new();
+            for _ in 0..2 {
+                let (serial, member) = read_calls(&mut theirs, 1).remove(0);
+                theirs.write_all(&answer(METHOD_RETURN, serial, None, &member)).unwrap();
+                calls.push((serial, member));
+            }
+            calls
+        });
+        let mut bus = Bus::over(ours, Duration::from_secs(5)).unwrap();
+        let copy = bus.call(&editable("CopyText")).unwrap();
+        assert_eq!(copy, Ok(vec![Value::Str("CopyText".into())]));
+        // the interface is matched exactly: only EditableText's members are refused
+        let other = MethodCall {
+            iface: "org.example.EditableTextual",
+            ..editable(TEXT_MUTATORS[2])
+        };
+        assert!(bus.call(&other).unwrap().is_ok());
+        let seen: Vec<String> = server.join().unwrap().into_iter().map(|(_, m)| m).collect();
+        assert_eq!(seen, ["CopyText", TEXT_MUTATORS[2]]);
     }
 }

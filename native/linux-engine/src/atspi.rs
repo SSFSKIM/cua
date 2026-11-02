@@ -17,7 +17,7 @@ const PROPERTIES: &str = "org.freedesktop.DBus.Properties";
 /// The bus as a tree-read transport.
 impl Transport for Bus {
     fn send(&mut self, obj: &ObjRef, field: Field) -> Result<u32> {
-        Ok(tree::with_call(obj, field, |call| Bus::send(self, call)))
+        tree::with_call(obj, field, |call| Bus::send(self, call))
     }
 
     fn recv(&mut self) -> Result<(u32, CallResult)> {
@@ -117,7 +117,7 @@ fn name_call(obj: &ObjRef) -> MethodCall<'_> {
 
 /// Sends `calls` together and returns their results in order.
 pub fn call_all(bus: &mut Bus, calls: &[MethodCall]) -> Result<Vec<CallResult>> {
-    let serials: Vec<u32> = calls.iter().map(|c| bus.send(c)).collect();
+    let serials = calls.iter().map(|c| bus.send(c)).collect::<Result<Vec<u32>>>()?;
     let mut results: HashMap<u32, CallResult> = HashMap::new();
     while results.len() < serials.len() {
         let (serial, result) = bus.recv()?;

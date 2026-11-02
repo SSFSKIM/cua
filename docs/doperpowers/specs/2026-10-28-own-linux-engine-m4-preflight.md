@@ -1,3 +1,5 @@
+> Superseded by `2026-10-28-own-linux-engine-design.md`: its Decision Log entry "M4 pre-flight, the design session" (2026-11-02) and its M4 Plan of Work entry of 2026-11-02. Kept as the record of the pre-flight. Its `L<n>` citations are to the spec at 9d3fdce6, before the fold.
+
 # #171 M4 pre-flight (draft for the plan-executor)
 
 - Spec: `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`, cited as `L<n>`.

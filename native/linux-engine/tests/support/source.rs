@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 pub struct Lexed {
     /// Every string literal's contents (escapes left as written), doc strings excluded.
     pub literals: Vec<String>,
-    /// The source with comments removed and every string literal replaced by `""`.
+    /// The source with comments removed, every string literal replaced by `""` and every char literal by `'_'`.
     pub code: String,
 }
 
@@ -96,20 +96,31 @@ pub fn lex(src: &str) -> Lexed {
                 i = j + 1;
             }
             b'\'' => {
-                // a char literal ('x', '\n', '"', '\''), else a lifetime ('a): only a literal is stepped over
-                let end = if b.get(i + 1) == Some(&b'\\') {
-                    let mut j = i + 2;
+                // a char literal ('x', 'é', '\n', '"', '\'', '\u{7f}'), else a lifetime ('a). A literal becomes '_'
+                // in the code, so a `'{'` opens no brace for the scans that match braces.
+                let width = src[i + 1..].chars().next().map_or(1, char::len_utf8);
+                let literal_end = if b.get(i + 1) == Some(&b'\\') {
+                    // the escaped character itself is skipped, so '\'' ends at its second quote
+                    let mut j = i + 3;
                     while j < b.len() && b[j] != b'\'' {
                         j += 1;
                     }
-                    j + 1
-                } else if b.get(i + 2) == Some(&b'\'') {
-                    i + 3
+                    Some(j + 1)
+                } else if b.get(i + 1 + width) == Some(&b'\'') {
+                    Some(i + 2 + width)
                 } else {
-                    i + 1
+                    None
                 };
-                code.push_str(&src[i..end.min(b.len())]);
-                i = end;
+                match literal_end {
+                    Some(end) => {
+                        code.push_str("'_'");
+                        i = end;
+                    }
+                    None => {
+                        code.push('\'');
+                        i += 1;
+                    }
+                }
             }
             _ => {
                 let len = src[i..].chars().next().map_or(1, char::len_utf8);

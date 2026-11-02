@@ -1135,6 +1135,12 @@ fn list(objects: &mut HashMap<String, Fake>, path: &str, n: usize) {
 
 /// The frontier's counts on `objects` at window `window`, checked against the vendor model's tree and cut points.
 fn frontier_cut(objects: &HashMap<String, Fake>, window: Window) -> Truncated {
+    frontier_read(objects, window).1
+}
+
+/// The frontier's tree and its record of cut points on `objects` at window `window`, both checked against the
+/// vendor model's.
+fn frontier_read(objects: &HashMap<String, Fake>, window: Window) -> (Option<AxNode>, Truncated) {
     let mut bus = FakeBus::new(objects.clone(), window);
     let (got, stats) = read(&mut bus, &root(), window).unwrap();
     assert_eq!(
@@ -1149,7 +1155,12 @@ fn frontier_cut(objects: &HashMap<String, Fake>, window: Window) -> Truncated {
         "the model's cut points, W {}",
         window.calls
     );
-    stats.truncated
+    (got, stats.truncated)
+}
+
+/// The depth of `node`'s deepest descendant below it (0 for a leaf).
+fn deepest(node: &AxNode) -> usize {
+    node.children.iter().map(|c| 1 + deepest(c)).max().unwrap_or(0)
 }
 
 const WINDOWS: [Window; 5] = [
@@ -1306,4 +1317,91 @@ fn the_over_budget_shape_counts_what_the_vendor_refuses() {
     let objects = over_budget();
     let cut = frontier_cut(&objects, WINDOW);
     assert!(cut.nodes > 0 && cut.depth == 0 && cut.failed == 0, "{cut:?}");
+}
+
+// The record against the tree's extent (M4 T3, second fix round): the harness judges the published `truncated`
+// against this record, the `--stats` line's `tree.truncated`, because a tree's size and depth cannot tell these four
+// shapes apart from their neighbours. Each shape, at every window, keeps the vendor's tree and the exact record.
+
+#[test]
+fn a_depth_only_cut_keeps_a_64_node_chain_and_records_the_depth_cut() {
+    // the same 64-node chain, ending at depth 63, with and without children below it: only the record tells them apart
+    for (below, expected) in [
+        (
+            2,
+            Truncated {
+                nodes: 0,
+                depth: 2,
+                failed: 0,
+            },
+        ),
+        (0, Truncated::default()),
+    ] {
+        let mut objects = HashMap::new();
+        let first = chain_to_63(&mut objects, below);
+        frame(&mut objects, vec![first]);
+        for window in WINDOWS {
+            let (tree, cut) = frontier_read(&objects, window);
+            let tree = tree.expect("a tree");
+            assert_eq!((count(&tree), deepest(&tree)), (64, 63));
+            assert_eq!(cut, expected, "{below} below depth 63, W {}", window.calls);
+        }
+    }
+}
+
+#[test]
+fn an_element_cut_with_one_failed_role_keeps_4999_nodes_and_records_both() {
+    // the root and 4,999 items make the 5,000 admissions; item 17's GetRoleName fails, so 4,999 nodes remain, and the
+    // other 1,001 listed items are refused
+    let mut objects = HashMap::new();
+    list(&mut objects, "/0", 6000);
+    objects.get_mut("/0/17").expect("item 17").role = None;
+    for window in WINDOWS {
+        let (tree, cut) = frontier_read(&objects, window);
+        assert_eq!(count(&tree.expect("a tree")), 4999, "W {}", window.calls);
+        assert_eq!(
+            cut,
+            Truncated {
+                nodes: 1001,
+                depth: 0,
+                failed: 1
+            },
+            "W {}",
+            window.calls
+        );
+    }
+}
+
+#[test]
+fn an_uncut_tree_with_no_failures_records_no_cut() {
+    let objects = uniform(6, 3);
+    for window in WINDOWS {
+        let (tree, cut) = frontier_read(&objects, window);
+        assert_eq!(count(&tree.expect("a tree")), 259);
+        assert!(cut.is_empty(), "{cut:?}, W {}", window.calls);
+    }
+}
+
+#[test]
+fn a_complete_tree_of_exactly_5000_nodes_records_no_cut() {
+    let mut objects = HashMap::new();
+    list(&mut objects, "/0", 4999);
+    for window in WINDOWS {
+        let (tree, cut) = frontier_read(&objects, window);
+        assert_eq!(count(&tree.expect("a tree")), 5000);
+        assert!(cut.is_empty(), "{cut:?}, W {}", window.calls);
+    }
+    // one more listed item is the element limit's first cut, with the same 5,000 nodes kept
+    let mut objects = HashMap::new();
+    list(&mut objects, "/0", 5000);
+    let (tree, cut) = frontier_read(&objects, WINDOW);
+    assert_eq!(count(&tree.expect("a tree")), 5000);
+    assert_eq!(
+        cut,
+        Truncated {
+            nodes: 1,
+            depth: 0,
+            failed: 0
+        }
+    );
 }

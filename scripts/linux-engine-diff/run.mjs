@@ -11,12 +11,14 @@
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { auditForeground, auditNothingSent, auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { startMonitor } from './busmon.mjs';
+import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
 import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe, setAsideTruncation, truncationAsDeclared } from './deviations.mjs';
@@ -32,6 +34,7 @@ import { writeSummary } from './report.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
 import { MIN_NOISE_SAMPLES, auditVerdict, blockOrder, judgeCalls, judgeOperation, runOutcome, verdictLine } from './stats.mjs';
+import { cleanupOnStop } from './stop.mjs';
 import { CandidateTextLost, resolveField, sceneTextBefore } from './text.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
 import { judgeForegroundSpan, judgeInFrontSpan, startWitness } from './witness.mjs';
@@ -97,14 +100,6 @@ function fileSha(path) {
 function gitHead() {
   try {
     return execFileSync('git', ['-C', here, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
-  } catch {
-    return null;
-  }
-}
-
-function engineVersion(bin) {
-  try {
-    return execFileSync(bin, ['--version'], { encoding: 'utf8', timeout: 5000 }).trim();
   } catch {
     return null;
   }
@@ -769,14 +764,81 @@ export function judgeWithDecisions(rows, options, decided = new Map()) {
   return { ...speed, engines: all.engines, reasons, verdict, pass: verdict === 'pass', decisions: [...frozen.values()].map(({ keys, ...d }) => d) };
 }
 
-export async function runDiff(args) {
+/** A verdict run that cannot start: its name already has rows in the out directory. */
+export class RunRefused extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'RunRefused';
+  }
+}
+
+/** Whether `results.jsonl` already has rows of the run `run`. */
+function runHasRows(results, run) {
+  if (!existsSync(results)) return false;
+  return readFileSync(results, 'utf8').split('\n').some((line) => {
+    try {
+      return JSON.parse(line).run === run;
+    } catch {
+      return false;
+    }
+  });
+}
+
+/**
+ * A verdict run on its candidate (candidate.mjs): a release gate unless `args.dev`. Each execution has a run name of its
+ * own: a name the out directory already has rows of is refused (`RunRefused`), so one execution's rows never label
+ * another's. The candidate `--cua` names is stored as `cua-engine` (mode 0700) and checked before anything runs; a gate's
+ * refusal is thrown as a `CandidateRefused`. The stored copy's directory is the run's from before the copy is made: it
+ * is removed on a refusal, an error, the run's end, and a stop (SIGINT or SIGTERM) at any point. A stop has a handler
+ * from before the copy until the run's own (the Desktop's, stop.mjs) is in place, which the run's `handoff` marks: a
+ * stop during the checks kills the command they wait on (SIGKILL), waits for it to end, removes the copy and exits; a
+ * stop during the run removes it at the exit. Every engine lane of cua runs the stored copy. `start` is the run proper
+ * (the tests pass their own).
+ */
+export async function runDiff(args, { start = diffRun } = {}) {
   const run = args.run ?? `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
+  const results = join(args.out, 'results.jsonl');
+  if (runHasRows(results, run)) throw new RunRefused(`the run name ${run} already has rows in ${results}: give each execution a --run name of its own`);
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
+  const remove = () => rmSync(dir, { recursive: true, force: true });
+  process.once('exit', remove);
+  // the stop's handler until the run's own is in place (`handoff`): no moment without one, so a stop is never the
+  // default action, which would skip the exit's removal
+  const stopping = new AbortController();
+  let preparing = null;
+  const unhook = cleanupOnStop(async () => {
+    stopping.abort();
+    // the command in flight killed and ended (candidate.mjs), never left running after the harness
+    await preparing?.catch(() => {});
+    remove();
+  });
+  try {
+    preparing = prepareCandidate({ source: args.cua, gate: !args.dev, dir, signal: stopping.signal });
+    let candidate;
+    try {
+      candidate = await preparing;
+    } catch (error) {
+      if (!stopping.signal.aborted) throw error;
+    }
+    // stopped during the checks: the stop exits the process once the command has ended, and nothing more starts
+    if (stopping.signal.aborted) await new Promise(() => {});
+    process.stdout.write(`${gateLabel(candidate.record.gate) ?? 'release gate'}; ${candidateLine(candidate.record)}\n`);
+    return await start({ ...args, run, cua: candidate.path }, candidate.record, { handoff: unhook });
+  } finally {
+    unhook();
+    process.off('exit', remove);
+    remove();
+  }
+}
+
+async function diffRun(args, candidate, { handoff }) {
+  const { run } = args;
   mkdirSync(args.out, { recursive: true });
   const results = join(args.out, 'results.jsonl');
   const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);
   if (!existsSync(XPROBE)) throw new Error(`build the harness's X client first: cargo build --release --manifest-path ${join(here, 'xprobe', 'Cargo.toml')}`);
   const via = args.via ?? 'wire';
-  const cuaVersion = engineVersion(args.cua);
+  const cuaVersion = candidate.version;
 
   const engines = [
     { label: 'pinned', bin: args.vendor, args: [] },
@@ -796,7 +858,9 @@ export async function runDiff(args) {
   emit({
     kind: 'meta',
     commit: gitHead(),
-    cua_version: engineVersion(args.cua),
+    cua_version: candidate.version,
+    gate: candidate.gate,
+    candidate,
     via,
     engines: engines.map((e) => ({ label: e.label, args: e.args, sha256: fileSha(e.bin) })),
     vendor: args.vendor,
@@ -811,6 +875,8 @@ export async function runDiff(args) {
   });
 
   const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
+  // the Desktop's stop handler is in place (stop.mjs): the checks' handler hands over to it, with no moment between
+  handoff();
   if (plan.some((p) => isText(p.op) || isCase(p.op))) desktop.oracle ??= new Oracle();
   // Every scene label of this run: equivalent windows differ in their own label and list each other's (gedit's
   // recent files), so comparisons across windows replace them all.
@@ -1263,7 +1329,7 @@ export async function runDiff(args) {
     // the backstop's warm-ups: a candidate's that failed fails the run (fix round 1)
     const warmUps = judgeWarmUps(after, VENDORS);
     outcome = runOutcome(verdicts, { valid, faults, restores: restores.lanes, warmUps });
-    emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, finished: new Date().toISOString() });
+    emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, finished: new Date().toISOString() });
   } catch (error) {
     if (!(error instanceof CandidateTextLost)) throw error;
     // a candidate's own text window lost its first word: a sample of its lane left the person's text wrong, so the run
@@ -1274,13 +1340,14 @@ export async function runDiff(args) {
     const restores = judgeTextRestores(rows, labels);
     emit({ kind: 'text-restores', ...restores });
     outcome = runOutcome([], { valid, restores: restores.lanes, warmUps: judgeWarmUps(rows, VENDORS), stop: `${at.scene} ${at.op} ${at.engine} ${at.block}/${at.i}: ${error.message}; the run stopped there` });
-    emit({ kind: 'end', valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, finished: new Date().toISOString() });
+    emit({ kind: 'end', gate: candidate.gate, valid: outcome.valid, pass: outcome.pass, failed: outcome.failed, parity: outcome.parity, refused: outcome.refused, restores: outcome.restores, finished: new Date().toISOString() });
   } finally {
     if (witness) await witness.stop();
     await desktop.closeAll();
   }
   writeSummary(args.out);
-  process.stdout.write(`run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${verdictLine(outcome)}\nresults: ${results}\n`);
+  const label = gateLabel(candidate.gate);
+  process.stdout.write(`run ${outcome.valid ? 'valid' : 'INVALID (the negative check did not hold)'}; ${label ? `${label}: ` : ''}${verdictLine(outcome)}\nresults: ${results}\n`);
   return outcome.code === 0;
 }
 

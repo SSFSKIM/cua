@@ -1,0 +1,10 @@
+cua        inside   dnd      landed  20/20  errors   0 buttonless-seen   0 median 468.2 ms
+cua        inside   mouse    landed  20/20  errors   0 buttonless-seen   0 median 133.5 ms
+cua        inside   pointer  landed  20/20  errors   0 buttonless-seen   0 median 131.8 ms
+cua        inside   range    landed  20/20  errors   0 buttonless-seen   0 median 131.9 ms
+cua        inside   select   landed  20/20  errors   0 buttonless-seen   0 median 134.6 ms
+cua        outside  dnd      landed   0/20  errors   0 buttonless-seen   0 median 132.1 ms
+cua        outside  mouse    landed  20/20  errors   0 buttonless-seen   0 median 133.0 ms
+cua        outside  pointer  landed  20/20  errors   0 buttonless-seen   0 median 133.8 ms
+cua        outside  range    landed   0/20  errors   0 buttonless-seen   0 median 132.1 ms
+cua        outside  select   landed   0/20  errors   0 buttonless-seen   0 median 132.5 ms

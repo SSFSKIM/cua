@@ -188,6 +188,8 @@ xset s noblank
 dbus-update-activation-environment --systemd DISPLAY XAUTHORITY
 # own org.a11y.Bus on the session bus now rather than on first use
 /usr/libexec/at-spi-bus-launcher --launch-immediately &
+# org.a11y.Status IsEnabled on before any application starts: Qt 6 puts its tree on the bus only when it is
+dbus-send --session --print-reply --dest=org.a11y.Bus /org/a11y/bus org.freedesktop.DBus.Properties.Set string:org.a11y.Status string:IsEnabled variant:boolean:true >/dev/null
 # Chrome in its Default profile, so cua's extension (installed by policy) starts cua's native host
 google-chrome --profile-directory=Default &
 CONF
@@ -237,6 +239,19 @@ if [[ "$(cat "$state/npm-ci.head" 2>/dev/null)" != "$head" ]]; then
   echo "$head" >"$state/npm-ci.head"
 fi
 ln -sfn /opt/cua/bin/cua.mjs /usr/local/bin/cua
+# The device mode of cua's Linux engine: this desktop belongs to the agent, so the engine may bring a window forward for
+# an application that ignores background input ("desktop": "dedicated" in the user's engine.json, beside its other
+# keys). A mode already set there is the owner's and stays.
+desktop_filter='.desktop //= "dedicated"'
+settings="$home/.config/cua/engine.json"
+current='{}'
+if as_user test -e "$settings"; then current="$(as_user cat "$settings")"; fi
+wanted="$(jq "$desktop_filter" <<<"$current")" || { echo "$settings is not a JSON object: fix or remove it, then run cua-provision.sh again" >&2; exit 1; }
+if [[ "$(jq -S . <<<"$current")" != "$(jq -S . <<<"$wanted")" ]]; then
+  log "device mode dedicated in $settings"
+  as_user mkdir -p "$home/.config/cua"
+  printf '%s\n' "$wanted" | as_user tee "$settings" >/dev/null
+fi
 
 checklist() { # the owner's steps, written for create-hetzner.sh and printed
   local ip n=0; ip="$(curl -fsS --max-time 3 http://169.254.169.254/hetzner/v1/metadata/public-ipv4 2>/dev/null || hostname -I | cut -d' ' -f1)"

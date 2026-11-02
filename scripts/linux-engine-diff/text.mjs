@@ -15,6 +15,7 @@
 // bar. cua's effect and clipboard are judged on every sample, whatever the vendor builds did.
 
 import { clipRead, startOwner } from './clip.mjs';
+import { ENGINE, ORACLE, PrepareStepError } from './prepare.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const chars = (s) => [...s];
@@ -88,33 +89,104 @@ async function clipboardAfter(ctx, expected) {
 /** A companion request of the engine under measurement (a hold of the address bar's focus, a read for a handle). */
 const companion = (ctx, fn) => (ctx.witnessed ? ctx.witnessed(fn) : fn());
 
-/** The document's first word selected; `ctx.selected` its text. */
-function selectFirstWord(ctx) {
+/** The scene's first word, as it opened (`FIRST_WORD` of its content); null for a scene the harness wrote no text to. */
+const firstWordOf = (scene) => (typeof scene.content === 'string' ? chars(scene.content).slice(...FIRST_WORD).join('') : null);
+
+/** A candidate's own text window that lost its first word: a candidate's sample left the text wrong (task 24). */
+export class CandidateTextLost extends Error {
+  constructor(label, record) {
+    super(`${label} lost its first word (found '${record.found}'): a sample of its lane left the text wrong`);
+    this.record = record;
+  }
+}
+
+/**
+ * The scene's first word checked before a sample's preparation, and put back through EditableText when it is missing
+ * (task 24, the design session's ruling after m3-gate-verdict): the pinned build's failed paste over a selection deletes
+ * the range and inserts nothing, which emptied its window after 9 samples. Each lane's window is its own, so only its
+ * lane's requests change it: the same check for every lane, and the restore is recorded on the sample (`{inserted,
+ * found}`, null when nothing was missing). A candidate's (`candidate`) window is never put back: its lane left the
+ * person's text wrong, so the run stops (`CandidateTextLost`). A window that will not take the word back fails the
+ * preparation at the oracle's step.
+ */
+export function sceneTextBefore(ctx, { candidate }) {
+  const word = firstWordOf(ctx.scene);
+  if (word === null) return null;
   const { oracle } = ctx.desktop;
-  if (!oracle.select(ctx.scene.field, ...FIRST_WORD)) throw new Error(`${ctx.scene.label} refused the selection`);
-  ctx.selected = chars(oracle.text(ctx.scene.field)).slice(...FIRST_WORD).join('');
+  const id = ctx.scene.field;
+  const head = () => chars(oracle.text(id)).slice(...FIRST_WORD).join('');
+  let found;
+  try {
+    found = head();
+  } catch (error) {
+    throw new PrepareStepError(ORACLE, `${ctx.scene.label}'s text could not be read: ${String(error.message).slice(0, 160)}`);
+  }
+  if (found === word) return null;
+  if (candidate) throw new CandidateTextLost(ctx.scene.label, { expected: word, found });
+  let taken;
+  try {
+    taken = oracle.insertText(id, 0, word) && head() === word;
+  } catch (error) {
+    throw new PrepareStepError(ORACLE, `${ctx.scene.label}'s first word could not be put back: ${String(error.message).slice(0, 160)}`);
+  }
+  if (!taken) throw new PrepareStepError(ORACLE, `${ctx.scene.label} refused to take back its first word`);
+  return { inserted: word, found };
+}
+
+/**
+ * The document's first word selected through the harness oracle; `ctx.selected` its text. The caret is put at the end
+ * first, which clears a selection the lane's previous sample left (GTK 3 refuses `AddSelection` while one exists:
+ * m3-gate-final's cua `clipboard_write` after its own `clipboard_read`). A window that refuses the selection fails the
+ * preparation at the oracle's step (prepare.mjs: the sample is resampled, never judged).
+ */
+export function selectFirstWord(ctx) {
+  const { oracle } = ctx.desktop;
+  caretToEnd(ctx);
+  let selected;
+  try {
+    selected = oracle.select(ctx.scene.field, ...FIRST_WORD) && chars(oracle.text(ctx.scene.field)).slice(...FIRST_WORD).join('');
+  } catch (error) {
+    throw new PrepareStepError(ORACLE, `${ctx.scene.label}'s selection could not be made: ${String(error.message).slice(0, 160)}`);
+  }
+  if (!selected) throw new PrepareStepError(ORACLE, `${ctx.scene.label} refused the selection`);
+  ctx.selected = selected;
 }
 
 /** The handle an operation sends when its engine could not read one: no engine issued it. */
 export const NO_HANDLE = 'cua171-no-handle';
 
 /**
- * A `clipboard_read` of the document's first word, for the operations that need a handle (untimed, witnessed), tried
- * twice. An engine whose Copy fails both times (the pinned build, once its window is in some states, M2.3) is sent a
- * handle it never issued, and its sample records why (`prepare_error`): the request still runs, its answer and effect
- * are judged as any other, so a candidate's failure here fails its verdict and a vendor build's is recorded.
+ * A `clipboard_read` of the document's first word, for the operations that need a handle (untimed, witnessed), each
+ * failed attempt recorded with its step (`ctx.prepareAttempts`, prepare.mjs). Only the harness oracle's selection is
+ * tried again (twice in all): the engine's Copy is never retried, since a retry that succeeded would hide the engine's
+ * own failure (task 22 review). An engine whose Copy failed (the pinned build, once its window is in some states, M2.3)
+ * is sent a handle it never issued, and its sample records why (`prepare_error`, `prepare_step` engine): the request
+ * still runs, its answer and effect are judged as any other, so a candidate's failure here fails its verdict and a
+ * vendor build's is recorded. Only when every attempt failed at the oracle's selection (a window that refused it, gedit
+ * once in m3-gate-final) does the preparation fail at the oracle's step, and the gate's rule resamples the sample
+ * (prepare.mjs).
  */
 export async function handleOfFirstWord(ctx) {
-  let error;
+  ctx.prepareAttempts ??= [];
   for (let attempt = 0; attempt < 2; attempt++) {
-    selectFirstWord(ctx);
+    try {
+      selectFirstWord(ctx);
+    } catch (e) {
+      if (!(e instanceof PrepareStepError)) throw e;
+      ctx.prepareAttempts.push({ step: ORACLE, error: e.message });
+      await sleep(200);
+      continue;
+    }
     const { response } = await companion(ctx, () => ctx.engine.request('clipboard_read', { window: { id: ctx.scene.id } }));
     if (response.ok) return response.output;
-    error = response.error;
-    await sleep(200);
+    // the engine's own failure: never retried, the sample's verdict carries it
+    const error = String(response.error).slice(0, 200);
+    ctx.prepareAttempts.push({ step: ENGINE, error });
+    ctx.prepareStep = ENGINE;
+    ctx.prepareError = `clipboard_read for a handle failed: ${error}`;
+    return NO_HANDLE;
   }
-  ctx.prepareError = `clipboard_read for a handle failed: ${String(error).slice(0, 200)}`;
-  return NO_HANDLE;
+  throw new PrepareStepError(ORACLE, ctx.prepareAttempts.at(-1).error, ctx.prepareAttempts);
 }
 
 const release = (ctx, handle) => companion(ctx, () => ctx.engine.request('clipboard_release', { handle }));
@@ -170,8 +242,8 @@ export const TEXT_OPS = {
   type_text_selection: {
     ...typeText,
     cuaArgs: () => [],
+    needsFirstWord: () => true,
     prepare: async (ctx) => {
-      caretToEnd(ctx);
       selectFirstWord(ctx);
       await priorClipboard(ctx);
     },
@@ -207,8 +279,8 @@ export const TEXT_OPS = {
   // the application's Copy of a selection: the clipboard then holds the selection; the handle released untimed
   clipboard_read: {
     kind: 'text',
+    needsFirstWord: () => true,
     prepare: async (ctx) => {
-      caretToEnd(ctx);
       selectFirstWord(ctx);
       await priorClipboard(ctx);
     },
@@ -229,6 +301,7 @@ export const TEXT_OPS = {
   clipboard_write: {
     kind: 'text',
     route: () => 'background',
+    needsFirstWord: () => true,
     prepare: async (ctx) => {
       ctx.handle = await handleOfFirstWord(ctx);
       caretToEnd(ctx);
@@ -253,6 +326,8 @@ export const TEXT_OPS = {
     // the one text operation with no effect outside the engine: a release removes the handle from the engine's own map,
     // and the desktop and the clipboard stay as they were (the witness and the bus trace show that)
     effectFree: 'a release changes only the engine’s own handle map; nothing on the desktop or the clipboard to read back',
+    // the cold sample releases a handle never issued and selects nothing
+    needsFirstWord: (ctx) => ctx.i > 0,
     prepare: async (ctx) => {
       if (ctx.i === 0) {
         ctx.handle = 'cua171-never-issued';

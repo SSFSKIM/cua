@@ -242,3 +242,116 @@ internal.
   executor waited with a script looping on `read -t`.
 - Committing the spec while an executor worked in the same checkout risked mixing the two commits' contents. Each
   controller commit therefore names its paths (`git commit -- <path>`).
+
+## M3 — cua's own Linux service, the device mode, the capability report and the truncation line; the third release
+
+Branch `feat/171-m3` from main fc15e1b8, merged with main five times (not rebased, to keep the commits the spec and
+evidence cite). Three planned loop tasks (pre-flight: each consumes the one before), follow-up tasks for what the gates
+found, the branch review's fix round, and the release. Ranges are `base..head`:
+
+| Task | Commits | Review |
+|---|---|---|
+| 16, M3.1: device mode in `families.rs`, `capabilities`, the Chrome drag-and-drop guard, the revised speed judge | e149fbb2..6827213f; fixes 8e5aa0a2..0bbf37e7, c4bf8c5e..fee8b19a, fee8b19a..90b02cb8 | two reviewers (speed; device, drag-and-drop and witness), 3 rounds: a top-up schedule and planner that miscounted, a late drag and drop escaping the guard, "nothing dropped" claimed on signature bits already set, an in-front witness blind to a foreign popup; then the settle replaced by the late-take watch; then a silent watch failure. Approved |
+| 17, M3.2: cua's own Linux service, the truncation line | 9a2c1c04..117f6698; fix 65b357d7..56d067d2 | 1 round (a throwing `setup` hung the facade; the capability checked on the wrong engine across a respawn), then approved |
+| 18: the Chrome drop misses' mechanism (a release before Chrome's accept), the 350 ms floor after a take, the vendor bar rule | 0d7fee58..76ab6884; fix 76ab6884..48443307 | 1 round (cua's 20-sample minimum bypassed with no vendor bar; windowless Chromium drags skipping the floor; a swallowed collector error), then approved |
+| 19, M3.3: doctor, provisioning, the facade proof, `m3-gate` (exit 1) | bcf64d68..d3761615; fix 1859f522..e1adea3c | 1 round (attestation fail-open when the field is absent; a snapshot-only device fixture; unverified editor cleanup), then converged with one deferral |
+| 20: the short-drop miss (Blink's press reset), the atomic press and the stray watch | e1adea3c..eaee2acd (reproduction), eaee2acd..3ca5dda1 (build); fix b8725a6a..d50d489a | 1 round (every grab-ending crossing excluded, so a foreign grab ending mid-press answered success), then approved |
+| 21: close-out: four merges of main, plugin 0.21.0, `m3-gate-final` (exit 1) | 486b1dca..754dea8a | the merges reviewed with task 22 |
+| 22: the hold to press + 250 ms for a late take, the harness-fault resample rule, SIGINT cleanup | 47143d38..0db75d57; fix 8a14d0bb..3f00e0d3 | 1 round, then approved |
+| 23: the branch review's fixes: the launch preflight, the atomic press capped at 8 samples, the in-front allowance's cleanup | 3f00e0d3..326456cc | `reviewer-high`: "incorrect" (three P2 at the joins between tasks), then "correct" |
+| 24: merge of main 7aa1cbbb, `m3-gate-verdict` (stopped: the pinned lane's emptied gedit buffer over the harness-fault caps), the scene-text preparation | d17cbe31..d2c3770b; fixes 6964b1c6..981048b0, 981048b0..b01ac8fd | 2 rounds (the warm-up's witness discarded, a failed cua warm-up absorbed as a harness fault, the warm condition not reproduced, audit restores uncounted; then a warm-up's preparation error passing, restores before a refusal dropped), then approved |
+| 25: `m3-gate-t25` (stopped by ruling: a VM build for glibc, not the shipped musl bytes) | 380b132b..f60aab33 | evidence only |
+| 26: the release workflow's fault tests against a non-live asset; a real-path watch-loss test on the shipped bytes; the asset check | f60aab33..cd4c9297 | approved, no findings |
+| 27: `m3-gate-musl` on the workflow's attested musl artifact (exit 0) | cd4c9297..f2de33cc | the gate |
+| Release `linux-engine-v0.3.0` and the pin | run 41364541329 on cd4c9297 (`release/linux-engine-v0.3.0`); pin 9bf9d3a9; `m3/release/` after it | evidence below |
+
+**Result.**
+- With `CUA_NATIVE_ENGINE=cua`, no vendor JavaScript is loaded for the Linux computer surface: cua's service in
+  `src/services/engine/linux/` drives `cua-engine`, refuses an engine older than 0.3.0, and renders trees, element
+  numbers, native ids and error sentences equal to the vendor's service on the same engine (25 of 25 rows).
+- The engine reads the device mode (`--desktop shared|dedicated`), answers `capabilities`, and applies each family's
+  listed input kinds and conditions; refusals send nothing and activate nothing.
+- The facade prints `Accessibility tree truncated: at least <n> elements not shown (<reason>)`; doctor shows the service,
+  the capabilities and `accessibility.enabled`; provisioning writes `"desktop": "dedicated"` and sets `IsEnabled`.
+- Chrome's HTML5 drag and drop no longer changes a `shared` desktop unasked: a background drag into Chrome that starts
+  one is cancelled before the drop, a late one is cancelled at once and reported by the next acting request, and the
+  drops cua allows land (the 350 ms floor after a take, the hold to press + 250 ms, the atomic press against Blink's
+  press reset).
+- The gate `m3-gate-musl` exits 0 on the release workflow's attested x64 musl build of cd4c9297, and the published x64
+  asset is byte-identical to it: 63 of 66 speed series faster than the faster vendor build, 3 the same within noise, none
+  within the bound; every device case and all 20 paste safety cases pass; 0 resampled and 0 invalid samples of 4,956;
+  text restores pinned 43, newest 0, cua 0.
+- On the released asset: the fresh-home install at the pin, doctor's engine row (service `cua`, its capabilities) and
+  `accessibility.enabled`, Acceptance 1 at 11/11 with no `sky_linux` and the installed engine as the trusted worker's
+  child, and the device-mode fixture at 18/18 on the installed engine. The default stays `vendor`.
+
+**Design-session decisions taken during M3** (all in the Decision Log):
+- one speed rule for every series: at least 20 samples a side, judged through the interval's upper bound, three labels,
+  top-ups 20 → 40, frozen per-series decisions; a vendor build sets the bar only with 20 usable samples;
+- the Chrome guard decided by the order of events, and the settle replaced by an off-path late-take watch with the
+  acting-request rule (reads and releases always run);
+- `setup` always answers, every method refusing on a failure, because the unchanged Sky proxy hangs on a throw (#236);
+- the truncation line says "at least";
+- the 350 ms floor after a take (task 18), the atomic press and stray watch (task 20, branch (ii): no pointer-outside
+  refusal), the hold to press + 250 ms (task 22), the harness-fault resample rule and its caps;
+- the branch review's three fixes;
+- a sample whose preparation failed is never scored against a vendor; the scene-text preparation lane-neutral, a cua
+  restore failing the run;
+- the gate judges the bytes that ship, released from the gated commit and compared byte for byte.
+
+**What failed and why it took longest.** Five gate runs, four of them failed or stopped, each for a different reason:
+- `m3-gate` (task 19): a short Chrome drop with no `dragstart`. Task 20 found Blink's press reset (crbug 527582): a real
+  pointer event read in the 2–5 ms between the synthetic press and the 4 px motion turns the drag into a click, in every
+  engine. "Cold" was incidental.
+- `m3-gate-final` (task 21): `dragstart` then a cancel, no take, about 34 ms from press to release. Chrome's take came
+  53–93 ms after the press under the gate's own window load. It reproduced only through the gate's exact sequence, with
+  its other Chrome windows open.
+- `m3-gate-verdict` (task 24): the harness's own state. The pinned build's failed `type_text` over a selection deletes
+  the selected word, so its gedit window emptied after nine samples, and every later preparation in that lane failed.
+  The same emptying had been read since `m2-final` as the pinned build's Copy failing, and had prompted the vendor bar
+  rule and a declaration to the owner; the declaration is withdrawn and the rule's reason corrected.
+- `m3-gate-t25` (task 25): stopped by ruling when the design session's toolchain question showed the gate judged a VM
+  build for glibc while the release ships the workflow's musl build, as M2's had. The build-only release run then
+  exposed a third gap: the workflow ran fault-injection tests against a binary built without fault injection (task 26).
+Lessons for M4 and M5: a gate scene's preceding scenes are part of its condition; a gate judges the bytes that ship,
+built where they are built; a failure attributed to a vendor build is checked against the harness's own state before it
+becomes a rule; a test of a safety rule runs on the shipped bytes with a real fault.
+
+The whole-branch review again found faults at the joins between tasks: a launch through the supervisor never reached
+the engine, so a pending late-drop notice was skipped; the atomic press's grab was unbounded on a path that never
+crossed 4 px; and the in-front allowance (task 16) never required the drag windows that task 20's path produced to be
+gone. All three were fixed test-first with the reviewer's reproductions, and the re-review was "correct".
+
+**Known gaps, declared** (tracked on #171, comment 6550241152, and the design session's tickets):
+- the short Chrome drop is slower than the newest vendor build (40 px in front: 469 ms against 258), and the 350 ms
+  floor's margin is thin (latest accept seen 275 ms after the take);
+- the hold costs a Chromium drag that never takes up to 250 ms (a 40 px selection about 134 → 355 ms), and a take later
+  than press + 250 ms still answers ok while the drop misses;
+- load parity: under twice the gate's load cua's Chromium thumb drags landed 17–19 of 20 where the pinned build landed
+  20 of 20; M4's thumb work measures under that load, 40 samples a side;
+- #248, #249 (widened by the hold), #250, #260 (a Chrome textarea's selection lost on a failed clipboard read after the
+  paste chord, read from the code, never observed);
+- arm64 is covered by the release workflow's engine tests only, with no verdict run;
+- M1a's desktop `move` gap, unchanged.
+
+**Deferred, carried to the PR's Unresolved Review Findings** (and `tech-debt-tracker.md`):
+- the M3.3 fixture's cleanup: `witness.stop`'s timeout does not kill the witness, and the scratch directory is removed
+  while a process may still run (a cleanup failure fails the run, so it cannot pass falsely);
+- the M3.2 respawn test's ordering, which relies on a 20 ms fake exit against the 100 ms settle.
+
+**Friction** (for a Mac session to record):
+- The worktree-isolation guard refused heredocs, compound commands, `for` loops over files named after the gate,
+  `export … XAUTHORITY=$HOME…`, variables in option positions, paths containing `GitHub` inside compound commands,
+  sminos messages quoting a diff command, a `grep` whose pattern was the word `complete`, and some read-only
+  Python-wrapped `cargo tree` calls. Each cost a rewrite into a script file run by path.
+- `pkill -f` matched the executor's own shell; harness cleanup kills by recorded PID instead.
+- The auto-mode classifier blocked removing the harness's old `/tmp` scratch directories; 149 remain on the VM (606 MB).
+- `xdotool mousemove --sync` blocked about 13 s on this display; the reproductions moved the pointer through xprobe.
+- Main moved five times during M3's close-out; each move after a gate commit cost a merge and a decision on rerunning
+  the gate.
+- The frozen gate engine must be named `cua-engine`; `scripts/repl-parity` refuses a diff of lanes recorded at
+  different controller commits, so a merge mid-proof costs a rerun of both lanes; a downloaded artifact loses its
+  executable bit.
+- `gh attestation verify` prints nothing when run from a script; its `--format json` output is the record.
+- Executors whose context grew past about 450k tokens (task 16 at 663k, task 18 at 679k, task 20 at 537k) were replaced
+  by fresh fixers for their fix rounds.

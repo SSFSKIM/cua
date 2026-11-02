@@ -105,7 +105,7 @@ test('an audit counts only when the audited requests answered as the timed pass 
     { engine, series: 'cold', ms: 100, ok, witness: true, effect: ok ? true : undefined, equal: true },
     { engine, series: 'warm', ms: 90, ok, witness: true, effect: ok ? true : undefined, equal: true },
   ];
-  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua' };
+  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua', judgeSpeed: false };
   const audit = (clean, ...oks) => ({ clean, oks });
   const base = [...rows('pinned', true), ...rows('newest', true), ...rows('cua', true)];
   // cua's operation failed early under the proxy: its setup requests alone made a clean trace
@@ -123,7 +123,7 @@ test('an audit counts only when the audited requests answered as the timed pass 
 test("the events experiment's wire speed verdicts are part of its outcome; through the vendor client they are recorded only", async () => {
   const { eventSpeeds, eventsPass } = await import('../../scripts/linux-engine-diff/events.mjs');
   const step = (command, ms, first = false) => ({ command, ms, first, answer: { ok: true }, events: [] });
-  const rows = [{ route: 'desktop', records: { pinned: [step('key_down', 1, true), step('key_up', 33)], newest: [step('key_down', 1, true), step('key_up', 0.17)], cua: [step('key_down', 0.5, true), step('key_up', 0.24)] } }];
+  const rows = [{ route: 'desktop', records: { pinned: [step('key_down', 1, true), step('key_up', 33)], newest: [step('key_down', 1, true), step('key_up', 0.17)], cua: [step('key_down', 0.5, true), step('key_up', 2.4)] } }];
   const speeds = eventSpeeds(rows, { minSamples: 1 });
   assert.equal(speeds.find((s) => s.command === 'key_up').pass, false);
   assert.equal(eventsPass({ answers: true, speeds, via: 'wire' }), false, 'a wire speed loss fails the experiment');

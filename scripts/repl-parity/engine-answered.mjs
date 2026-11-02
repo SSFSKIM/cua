@@ -3,7 +3,8 @@
 // result attests its engine, so the harness reads the trusted worker's child itself, by its executable
 // (/proc/<pid>/exe, never its command line). A lane is sound only when the engine it requested answered, at the
 // executable the lane names (the pinned runtime's sky_linux_<arch> on the vendor lane; the installed or named
-// cua-engine on the cua lane), as the trusted worker's child, and nothing else did. Used on the device by
+// cua-engine on the cua lane), as the trusted worker's child, and nothing else did; from M3 each engine must also run
+// behind its own lane's service (the worker's CUA_SKY_SERVICE: @oai/sky's, or cua's own Linux service). Used on the device by
 // test/repl-parity/serve-native.mjs and scripts/native-baseline/linux.mjs, and judged on the controller.
 import * as nodeFs from 'node:fs';
 import {basename, join} from 'node:path';
@@ -21,6 +22,22 @@ export function engineKind(exe) {
   return name === 'cua-engine' ? 'cua' : /^sky_linux_[A-Za-z0-9_]+$/.test(name) ? 'vendor' : null;
 }
 
+// The service a sky module is, by its path: cua's own Linux service (src/services/engine/linux/service.mjs, #171 M3),
+// the vendor's @oai/sky service, else null.
+export function serviceKind(path) {
+  const value = String(path ?? '');
+  return value.endsWith('/src/services/engine/linux/service.mjs') ? 'cua' : /\/@oai\/sky\/.*\/service\.js$/.test(value) ? 'vendor' : null;
+}
+
+// The service a trusted worker drives its engine through: the module its sky wrapper loads, CUA_SKY_SERVICE in the
+// environment it started with (src/services/sky.mjs), by serviceKind; null when unset or unreadable.
+function serviceOf(proc, fs, pid) {
+  try {
+    const entry = fs.readFileSync(join(proc, String(pid), 'environ'), 'utf8').split('\0').find(e => e.startsWith('CUA_SKY_SERVICE='));
+    return entry ? serviceKind(entry.slice('CUA_SKY_SERVICE='.length)) : null;
+  } catch { return null; }
+}
+
 // What a process runs, named by its command line: the script a Node process runs (its first argument after the
 // interpreter's options), else the executable's own name.
 const programOf = argv => {
@@ -33,8 +50,8 @@ const programOf = argv => {
 };
 
 // The engine processes among the descendants of `root` (a pid) in the /proc tree at `proc` -> [{pid, exe, kind,
-// parent}]: `exe` what /proc/<pid>/exe names, `parent` its parent's program (programOf). A process that ends while it is
-// read is skipped.
+// parent, service}]: `exe` what /proc/<pid>/exe names, `parent` its parent's program (programOf), `service` the service
+// its parent loaded (serviceOf). A process that ends while it is read is skipped.
 export function engineProcesses(root, {proc = '/proc', fs = nodeFs} = {}) {
   const parents = new Map();
   for (const name of fs.readdirSync(proc)) {
@@ -56,15 +73,16 @@ export function engineProcesses(root, {proc = '/proc', fs = nodeFs} = {}) {
     if (!kind) continue;
     let argv = [];
     try { argv = fs.readFileSync(join(proc, String(parents.get(pid)), 'cmdline'), 'utf8').split('\0').filter(Boolean); } catch {}
-    found.push({pid, exe, kind, parent: programOf(argv)});
+    found.push({pid, exe, kind, parent: programOf(argv), service: serviceOf(proc, fs, parents.get(pid))});
   }
   return found;
 }
 
 // The distinct engines seen across observations (pids dropped: a restarted engine of the same executable is the same).
+// An observation without a `service` (recorded before M3's service attestation) is kept as it is, and judged unproven.
 export function mergeObservations(...lists) {
   const seen = new Map();
-  for (const {exe, kind, parent} of lists.flat()) seen.set(JSON.stringify([exe, kind, parent]), {exe, kind, parent});
+  for (const {pid, ...observed} of lists.flat()) seen.set(JSON.stringify([observed.exe, observed.kind, observed.parent, observed.service]), observed);
   return [...seen.values()];
 }
 
@@ -137,5 +155,12 @@ export function engineAnsweredProblem(record, name) {
   if (other) return `${name}: ${other.exe} (${other.kind}) answered, not the requested ${requested} engine at ${expected}`;
   const stray = observed.find(o => o.parent !== TRUSTED_WORKER);
   if (stray) return `${name}: the engine ran as a child of ${stray.parent ?? 'an unknown process'}, not of the trusted worker (${TRUSTED_WORKER})`;
+  // From #171 M3 each engine runs behind its own lane's service (src/runtime/launch.mjs): the vendor engine behind
+  // @oai/sky's, cua-engine behind cua's, read from its trusted worker (serviceOf). Every observation must carry that
+  // evidence: one without it (a run recorded before M3's service attestation, or a field lost) proves no service.
+  const unattested = observed.find(o => !('service' in o));
+  if (unattested) return `${name}: an engine observation of ${unattested.exe} carries no service evidence, so which service drove it is unproven`;
+  const driven = observed.find(o => o.service !== requested);
+  if (driven) return `${name}: ${driven.service ? `the ${driven.service}` : 'an unknown'} service drove the engine, not the ${requested} lane's (the trusted worker's CUA_SKY_SERVICE)`;
   return null;
 }

@@ -184,6 +184,37 @@ test('accessibility.bus asks the session bus for AT-SPI, at the derived address 
   assert.match(silent.detail, /did not answer/);
 });
 
+// #171 M3 (Plan of Work, M3; Surprises, M0.4): Qt 6 puts its tree on the bus only when org.a11y.Status IsEnabled is
+// true at its start, so doctor reads it from the bus's own launcher.
+const GET_ENABLED = 'dbus-send --session --print-reply --dest=org.a11y.Bus /org/a11y/bus org.freedesktop.DBus.Properties.Get string:org.a11y.Status string:IsEnabled';
+const LIST_NAMES = 'dbus-send --session --print-reply --dest=org.freedesktop.DBus / org.freedesktop.DBus.ListNames';
+const REPLY = value => `method return time=1 sender=:1.5 -> destination=:1.9 serial=3 reply_serial=2\n   variant       boolean ${value}\n`;
+
+test('accessibility.enabled reads org.a11y.Status IsEnabled from AT-SPI\'s bus launcher: true passes, false warns with the remedy', async () => {
+  const env = {XDG_RUNTIME_DIR: '/run/user/1000', PATH: '/usr/bin'};
+  const on = system({answers: {[LIST_NAMES]: {stdout: NAMES(['org.a11y.Bus'])}, [GET_ENABLED]: {stdout: REPLY('true')}}});
+  const enabled = (await rowsOf(env, on))['accessibility.enabled'];
+  assert.deepEqual([enabled.status, enabled.detail], ['pass', 'org.a11y.Status IsEnabled is true on the session bus at unix:path=/run/user/1000/bus, so Qt applications put their accessibility trees on the bus']);
+  assert.equal(on.calls.find(c => c.args.includes('string:IsEnabled')).env.DBUS_SESSION_BUS_ADDRESS, 'unix:path=/run/user/1000/bus');
+  const off = (await rowsOf(env, system({answers: {[LIST_NAMES]: {stdout: NAMES(['org.a11y.Bus'])}, [GET_ENABLED]: {stdout: REPLY('false')}}})))['accessibility.enabled'];
+  assert.equal(off.status, 'warn');
+  assert.equal(off.detail, 'org.a11y.Status IsEnabled is false on the session bus at unix:path=/run/user/1000/bus, so a Qt 6 application started now puts no accessibility tree on the bus '
+    + '(cua sees its windows without their elements): turn it on with dbus-send --session --print-reply --dest=org.a11y.Bus /org/a11y/bus org.freedesktop.DBus.Properties.Set '
+    + 'string:org.a11y.Status string:IsEnabled variant:boolean:true, then restart those applications');
+  // AT-SPI only activatable: the read starts it, as any client's first use does.
+  const activatable = system({answers: {[LIST_NAMES]: {stdout: NAMES([':1.0'])}, 'dbus-send --session --print-reply --dest=org.freedesktop.DBus / org.freedesktop.DBus.ListActivatableNames': {stdout: NAMES(['org.a11y.Bus'])},
+    [GET_ENABLED]: {stdout: REPLY('true')}}});
+  assert.equal((await rowsOf(env, activatable))['accessibility.enabled'].status, 'pass');
+  const refused = (await rowsOf(env, system({answers: {[LIST_NAMES]: {stdout: NAMES(['org.a11y.Bus'])}, [GET_ENABLED]: {code: 1, stderr: 'Error org.freedesktop.DBus.Error.UnknownMethod: No such interface\n'}}})))['accessibility.enabled'];
+  assert.equal(refused.status, 'warn');
+  assert.match(refused.detail, /^org\.a11y\.Status IsEnabled could not be read on the session bus at unix:path=\/run\/user\/1000\/bus \(Error org\.freedesktop\.DBus\.Error\.UnknownMethod: No such interface\)/);
+  // Without AT-SPI on the bus (accessibility.bus fails and says why), nothing is asked.
+  const none = system({answers: {'dbus-send': {stdout: NAMES([':1.0'])}}});
+  const skipped = (await rowsOf(env, none))['accessibility.enabled'];
+  assert.deepEqual([skipped.status, skipped.detail], ['skip', 'no AT-SPI bus to ask (see accessibility.bus)']);
+  assert.equal(none.calls.some(c => c.args.includes('string:IsEnabled')), false);
+});
+
 test('sandbox.userns finds bwrap where the launch check does, on the system path, not the caller\'s PATH', async () => {
   const sys = system({answers: {'bwrap --ro-bind / / true': {}}});
   const onlySystem = {...sys, findTool: name => (name === 'bwrap' ? null : sys.findTool(name))};

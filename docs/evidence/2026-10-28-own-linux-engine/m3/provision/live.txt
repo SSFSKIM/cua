@@ -1,0 +1,17 @@
+== 1. engine.json
+log: device mode dedicated in /tmp/cua-t19-prov.clwIeJ/fresh/.config/cua/engine.json
+fresh: {
+  "desktop": "dedicated"
+}
+kept: {"desktop":"shared"}
+log: device mode dedicated in /tmp/cua-t19-prov.clwIeJ/merged/.config/cua/engine.json
+merged: {"engine":"cua","desktop":"dedicated"}
+again (no log line above means unchanged)
+jq: error (at <stdin>:1): Cannot index array with string "desktop"
+/tmp/cua-t19-prov.clwIeJ/bad/.config/cua/engine.json is not a JSON object: fix or remove it, then run cua-provision.sh again
+bad: exit 1
+== 2. IsEnabled on a private bus
+command: dbus-send --session --print-reply --dest=org.a11y.Bus /org/a11y/bus org.freedesktop.DBus.Properties.Set string:org.a11y.Status string:IsEnabled variant:boolean:true
+before: warn: org.a11y.Status IsEnabled is false on the session bus at unix:path=/tmp/dbus-zanbOwCJb0,guid=ee3b9925fa0743ff2cbb4d496ae6461e, so a Qt 6 application started now puts no accessibility tree on the bus (cua sees its windows without their elements): turn it on with dbus-send --session --print-reply --dest=org.a11y.Bus /org/a11y/bus org.freedesktop.DBus.Properties.Set string:org.a11y.Status string:IsEnabled variant:boolean:true, then restart those applications
+set: exit 0
+after: pass: org.a11y.Status IsEnabled is true on the session bus at unix:path=/tmp/dbus-zanbOwCJb0,guid=ee3b9925fa0743ff2cbb4d496ae6461e, so Qt applications put their accessibility trees on the bus

@@ -1,0 +1,59 @@
+{
+ "drags": 240,
+ "ok": 240,
+ "landed": 240,
+ "stray_answers": 0,
+ "with_strays": 240,
+ "stray_kinds": {
+  "leave_grab": 120,
+  "leave_normal": 120
+ },
+ "with_keepalives": 109,
+ "strays_on_keepalive_drags": {
+  "leave_grab": 54,
+  "leave_normal": 55
+ },
+ "held": 17,
+ "held_taken": 17,
+ "held_landed": 17,
+ "take_after_press_max": 70.17597500000001,
+ "by_op": {
+  "chrome_dnd_in_front_shared": {
+   "drags": 60,
+   "landed": 60,
+   "keepalives": 0,
+   "held": 0,
+   "routes": {
+    "background": 60
+   }
+  },
+  "chrome_dnd_covered_dedicated": {
+   "drags": 60,
+   "landed": 60,
+   "keepalives": 0,
+   "held": 0,
+   "routes": {
+    "foreground": 60
+   }
+  },
+  "chrome_dnd_short_in_front_shared": {
+   "drags": 60,
+   "landed": 60,
+   "keepalives": 54,
+   "held": 17,
+   "routes": {
+    "background": 60
+   }
+  },
+  "chrome_dnd_short_covered_dedicated": {
+   "drags": 60,
+   "landed": 60,
+   "keepalives": 55,
+   "held": 0,
+   "routes": {
+    "foreground": 60
+   }
+  }
+ },
+ "errors": {}
+}

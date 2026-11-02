@@ -1,0 +1,20 @@
+capabilities                                  samples 16  ok 16  in front  0  witness clean  0    verdict None
+chrome_dnd_covered_dedicated                  samples  6  ok  6  in front  0  witness clean  6    verdict True
+chrome_dnd_in_front_shared                    samples  6  ok  6  in front  6  witness clean  6    verdict True
+chrome_dnd_late_shared                        samples  6  ok  0  in front  0  witness clean  0  fields active,focus,stacking  verdict True
+chrome_dnd_late_take_shared                   samples  6  ok  6  in front  0  witness clean  0  fields active,focus,stacking  verdict True
+chrome_dnd_obscured_in_front_late_shared      samples  6  ok  0  in front  0  witness clean  0  fields stacking  verdict True
+chrome_dnd_obscured_in_front_shared           samples  6  ok  0  in front  0  witness clean  6    verdict True
+chrome_dnd_shared                             samples  6  ok  0  in front  0  witness clean  6    verdict True
+chrome_dnd_short_covered_dedicated            samples  6  ok  6  in front  0  witness clean  6    verdict True
+chrome_dnd_short_in_front_shared              samples  6  ok  6  in front  6  witness clean  6    verdict True
+chrome_dnd_short_pointer_outside_dedicated    samples  6  ok  6  in front  0  witness clean  6    verdict True
+chrome_dnd_short_pointer_outside_shared       samples  6  ok  0  in front  6  witness clean  6    verdict True
+chrome_drag_covered_dedicated                 samples  6  ok  6  in front  0  witness clean  6    verdict True
+chrome_drag_covered_path_shared               samples  6  ok  0  in front  0  witness clean  6    verdict True
+chrome_drag_visible_path_shared               samples  6  ok  6  in front  0  witness clean  6    verdict True
+chrome_select_nudged_shared                   samples  6  ok  0  in front  6  witness clean  6    verdict True
+get_screenshot                                samples 41  ok 41  in front  0  witness clean  0    verdict None
+launch_app                                    samples 41  ok 41  in front  0  witness clean  0    verdict None
+list_apps                                     samples 41  ok 41  in front  0  witness clean  0    verdict None
+list_windows                                  samples 41  ok 41  in front  0  witness clean  0    verdict None

@@ -117,6 +117,14 @@ export class Oracle {
     return this.on(id, 'org.a11y.atspi.Text', 'AddSelection', 'ii', start, end)[0] === true;
   }
 
+  /**
+   * Text inserted at a character offset (`EditableText.InsertText`, its length in bytes as GTK reads it): the scene's
+   * own text put back where a lane's request removed it (text.mjs `sceneTextBefore`).
+   */
+  insertText(id, position, text) {
+    return this.on(id, 'org.a11y.atspi.EditableText', 'InsertText', 'isi', position, text, Buffer.byteLength(text))[0] === true;
+  }
+
   grabFocus(id) {
     return this.on(id, 'org.a11y.atspi.Component', 'GrabFocus')[0] === true;
   }

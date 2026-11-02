@@ -39,7 +39,10 @@
 // application "<app>" was not found`); its desktop entry is found as the XDG specification finds a desktop file id
 // (desktopEntryFor), and the supervisor launches it outside the sandbox (nodeRepl.launchServices.openApplication,
 // src/repl-host/launch-services.mjs). It answers as the vendor's launch_app does (undefined). Any other launch_app shape
-// goes to the vendor unchanged, as on macOS.
+// goes to the vendor unchanged, as on macOS. With cua's own Linux service (#171), whose engine refuses the first request
+// that acts after a late drag and drop it has not reported yet, the launch acts too: just before it, the wrapper calls
+// the service's `beforeLaunch` (the engine's `preflight`), whose refusal is the launch's answer; the vendor's service has
+// no such export and is not asked.
 //
 // Approvals on Linux (docs/doperpowers/specs/2026-10-18-own-native-engine-design.md, "The service", Policy and approvals,
 // its Linux sentence): sky_linux has no policy of its own, so this wrapper asks through the policy module
@@ -191,6 +194,10 @@ export function createSkyService({loadVendor, secrets, secretsUnavailable = null
     const entry = Array.isArray(apps) && apps.some(listed => listed?.id === app) ? desktopEntryFor(app, env) : null;
     if (!entry) throw new Error(`launchable application "${app}" was not found`);
     await approved(request);
+    // cua's own Linux service only: the engine's preflight, so a late drag and drop the engine has not reported yet is
+    // this launch's answer, the launch not made (src/services/engine/linux/service.mjs beforeLaunch)
+    const service = await vendorService();
+    if (typeof service.beforeLaunch === 'function') await service.beforeLaunch();
     await openApplication({applicationPath: entry});
   }
 

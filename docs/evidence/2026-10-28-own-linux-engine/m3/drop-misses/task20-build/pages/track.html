@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 track scene</title>
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; }
+  body { font: 20px monospace; width: 1000px; height: 700px; position: relative; background: #ffffff; color: #000000; }
+  #words { position: absolute; left: 20px; top: 20px; margin: 0; white-space: nowrap; }
+  #range { position: absolute; left: 20px; top: 70px; width: 400px; height: 24px; margin: 0; padding: 0; }
+  #mbox { position: absolute; left: 20px; top: 140px; width: 200px; height: 60px; background: #d0a06a; }
+  #pbox { position: absolute; left: 20px; top: 240px; width: 200px; height: 60px; background: #6ad0a0; touch-action: none; }
+  #target { position: absolute; left: 560px; top: 120px; width: 200px; height: 100px; background: #d8e8d0; }
+  #near { position: absolute; left: 505px; top: 165px; width: 50px; height: 40px; background: #6a8fd0; }
+</style>
+</head>
+<body>
+<!-- Task 20b's page-tracked drag scene: the drag page's text, range and short drag and drop at the same places, plus
+     - mbox: a drag tracked by the page itself, mousedown on the box, then mousemove and mouseup on document listeners;
+     - pbox: a drag tracked by pointer capture, pointerdown with setPointerCapture, pointermove and pointerup on the box.
+     A tracked drag lands when its release comes at least 36 px from its press in x, the gesture never cancelled. Each
+     counts its presses, its landings, and the moves it saw with no button held during a press (`z`, what a page that
+     ends a drag on a buttonless move would act on). Everything is written to the title, after the label from the URL's
+     fragment, so the harness reads it through the window's name. -->
+<p id="words">alpha bravo charlie delta echo foxtrot golf</p>
+<input id="range" type="range" min="0" max="100" value="0" aria-label="Range">
+<div id="mbox" aria-label="Mouse box"></div>
+<div id="pbox" aria-label="Pointer box"></div>
+<div id="target" aria-label="Target"></div>
+<div id="near" draggable="true" aria-label="Near source"></div>
+<script>
+  const label = decodeURIComponent(location.hash.slice(1)) || 'track';
+  const $ = (id) => document.getElementById(id);
+  const s = { md: 0, ml: 0, mz: 0, mx: 0, pd: 0, pl: 0, pz: 0, pc: 0, px: 0, sel: 'none', range: 0, starts: 0, drops: 0 };
+  const show = () => {
+    document.title = `${label} | m ${s.md} ${s.ml} ${s.mz} ${s.mx} | p ${s.pd} ${s.pl} ${s.pz} ${s.pc} ${s.px} | r ${s.range} | d ${s.starts} ${s.drops} | s ${s.sel}`;
+  };
+  // the label alone until the first count changes, so the harness finds the window by it
+  document.title = label;
+  // the mouse box: tracked on the document from its mousedown
+  let m = null;
+  $('mbox').addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    m = { x0: e.clientX, dx: 0 };
+    s.md += 1;
+    show();
+  });
+  document.addEventListener('mousemove', (e) => {
+    if (!m) return;
+    if ((e.buttons & 1) === 0) s.mz += 1;
+    m.dx = e.clientX - m.x0;
+  });
+  document.addEventListener('mouseup', (e) => {
+    if (!m || e.button !== 0) return;
+    const dx = e.clientX - m.x0;
+    s.mx = dx;
+    if (Math.abs(dx) >= 36) s.ml += 1;
+    m = null;
+    show();
+  });
+  // the pointer box: pointer capture from its pointerdown
+  let p = null;
+  const pbox = $('pbox');
+  pbox.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    pbox.setPointerCapture(e.pointerId);
+    p = { x0: e.clientX, cancelled: false };
+    s.pd += 1;
+    show();
+  });
+  pbox.addEventListener('pointermove', (e) => {
+    if (!p) return;
+    if ((e.buttons & 1) === 0) s.pz += 1;
+  });
+  pbox.addEventListener('pointercancel', () => {
+    if (!p) return;
+    p.cancelled = true;
+    s.pc += 1;
+    p = null;
+    show();
+  });
+  pbox.addEventListener('pointerup', (e) => {
+    if (!p || e.button !== 0) return;
+    const dx = e.clientX - p.x0;
+    s.px = dx;
+    if (Math.abs(dx) >= 36 && !p.cancelled) s.pl += 1;
+    p = null;
+    show();
+  });
+  $('range').addEventListener('input', () => { s.range = Number($('range').value); show(); });
+  document.addEventListener('selectionchange', () => {
+    s.sel = String(window.getSelection()).replace(/\s+/g, '_') || 'none';
+    show();
+  });
+  $('near').addEventListener('dragstart', (e) => { s.starts += 1; e.dataTransfer.setData('text/plain', 'cua171'); show(); });
+  $('target').addEventListener('dragover', (e) => e.preventDefault());
+  $('target').addEventListener('drop', (e) => { e.preventDefault(); s.drops += 1; show(); });
+</script>
+</body>
+</html>

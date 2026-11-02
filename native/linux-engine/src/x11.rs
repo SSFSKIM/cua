@@ -63,6 +63,7 @@ const ATOM_NAMES: &[&str] = &[
     "_NET_WM_STATE_MODAL",
     "_NET_WM_PID",
     "AT_SPI_BUS",
+    "XdndSelection",
 ];
 
 pub struct X11 {
@@ -87,6 +88,10 @@ pub struct X11 {
     shm: crate::shm::Shm,
     /// How the last desktop screenshot was read: `shm` or `get_image`.
     pub last_desktop_read: Option<&'static str>,
+    /// While a drag's watch on `XdndSelection` runs (`dnd.rs`): the selection-owner reports read by anything on this
+    /// connection, kept for the watch, so a reader that drains events for its own reply (the server-time probe)
+    /// cannot lose one.
+    selection_reports: Option<Vec<x11rb::protocol::xfixes::SelectionNotifyEvent>>,
 }
 
 /// Lossy UTF-8, trailing NULs stripped, Unicode-trimmed, empty as None (behaviour §3, `property_text`).
@@ -166,6 +171,7 @@ impl X11 {
             last_capture_wait: None,
             shm: crate::shm::Shm::new(),
             last_desktop_read: None,
+            selection_reports: None,
         })
     }
 
@@ -454,6 +460,20 @@ impl X11 {
         self.client_in(top, 0)
     }
 
+    /// The window's parent (the root, or a reparenting window manager's frame).
+    pub fn parent(&self, window: Window) -> Result<Window> {
+        Ok(self.conn.query_tree(window)?.reply()?.parent)
+    }
+
+    /// Whether the real pointer is in `window` (whose parent is `parent`) or one of its inferiors, as the server sees it:
+    /// the deepest window under the pointer is the window or below it, so a window over it, or the pointer elsewhere,
+    /// is outside. A client's pointer grab on the window then crosses nothing (task 20: Chrome's capture grab crosses
+    /// into its window, with no button held, when the pointer is outside it).
+    pub fn pointer_in(&self, window: Window, parent: Window) -> Result<bool> {
+        let reply = self.conn.query_pointer(parent)?.reply()?;
+        Ok(reply.same_screen && reply.child == window)
+    }
+
     fn client_in(&self, window: Window, depth: u32) -> Option<Window> {
         if depth > 8 {
             return None;
@@ -505,6 +525,9 @@ impl X11 {
         if let Event::DestroyNotify(e) = &event {
             self.retained.remove(&e.window);
         }
+        if let (Event::XfixesSelectionNotify(e), Some(reports)) = (&event, self.selection_reports.as_mut()) {
+            reports.push(*e);
+        }
         if let Some(readiness) = &self.readiness {
             readiness.note(&event);
         }
@@ -541,6 +564,31 @@ impl X11 {
             window = parent;
         }
         Ok(None)
+    }
+
+    /// The window's standing on the desktop now (`dnd.rs`): the active window, the X input focus within it, on top of
+    /// the window manager's stacking order. A property or reply that cannot be read counts as not.
+    pub fn standing(&self, window: Window) -> crate::dnd::Standing {
+        let last = |name| {
+            self.property(self.root, self.atom(name))
+                .ok()
+                .and_then(|c| c.reply().ok())
+                .and_then(|r| values32(&r).last().copied())
+        };
+        crate::dnd::Standing {
+            active: last("_NET_ACTIVE_WINDOW") == Some(window),
+            focused: crate::input::focus_is_within(self, window).unwrap_or(false),
+            top: last("_NET_CLIENT_LIST_STACKING") == Some(window),
+        }
+    }
+
+    /// Whether every root point of `points` is visible in `window` now (`cover.rs`); any X error is doubt, obscured.
+    pub fn points_unobscured(&self, window: Window, points: &[(i16, i16)]) -> bool {
+        let points: Vec<(i32, i32)> = points.iter().map(|&(x, y)| (x as i32, y as i32)).collect();
+        let geometry = self.conn.get_geometry(window).ok().and_then(|c| c.reply().ok());
+        geometry
+            .and_then(|g| self.cover(window, &g).ok())
+            .is_some_and(|(rect, levels)| crate::cover::points_unobscured(rect, &levels, &points))
     }
 
     /// Whether `window` is fully unobscured now (`cover.rs`); any X error is doubt, and doubt is obscured.
@@ -736,12 +784,34 @@ impl X11 {
         self.shm.prepare(&self.conn);
     }
 
-    /// The pointer's current image through XFixes.
-    fn cursor_image(&mut self) -> Result<crate::capture::Cursor> {
+    /// Selection-owner reports are kept from now on for [`X11::take_selection_reports`], until
+    /// [`X11::stop_selection_reports`].
+    pub fn keep_selection_reports(&mut self) {
+        self.selection_reports = Some(Vec::new());
+    }
+
+    /// Every selection-owner report that arrived since the last call: the events read meanwhile are noted first.
+    pub fn take_selection_reports(&mut self) -> Vec<x11rb::protocol::xfixes::SelectionNotifyEvent> {
+        self.drain_events();
+        self.selection_reports.as_mut().map(std::mem::take).unwrap_or_default()
+    }
+
+    pub fn stop_selection_reports(&mut self) {
+        self.selection_reports = None;
+    }
+
+    /// XFixes, its version negotiated once per connection.
+    pub fn ensure_xfixes(&mut self) -> Result<()> {
         if !self.xfixes_ready {
             self.conn.xfixes_query_version(4, 0)?.reply()?;
             self.xfixes_ready = true;
         }
+        Ok(())
+    }
+
+    /// The pointer's current image through XFixes.
+    fn cursor_image(&mut self) -> Result<crate::capture::Cursor> {
+        self.ensure_xfixes()?;
         let reply = self.conn.xfixes_get_cursor_image()?.reply()?;
         let expected = reply.width as usize * reply.height as usize;
         if reply.cursor_image.len() != expected {

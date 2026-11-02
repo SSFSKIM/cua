@@ -23,8 +23,8 @@ function laneRun(real, {engine, scale = {}, edit = () => {}}) {
   const expected = engine === 'cua' ? BIN : `${meta.home}/runtimes/${release}/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_arm64`;
   Object.assign(meta, {
     environment: {...meta.environment, CUA_NATIVE_ENGINE: engine, ...(engine === 'cua' ? {CUA_LINUX_ENGINE_BIN: BIN} : {})},
-    service: {surface: 'computer', engine: 'sky', answered: 'vendor'},
-    nativeEngine: {requested: engine, bin: engine === 'cua' ? BIN : null, expected, error: null, observed: [{exe: expected, kind: engine, parent: 'trusted-worker.mjs'}]},
+    service: {surface: 'computer', engine},
+    nativeEngine: {requested: engine, bin: engine === 'cua' ? BIN : null, expected, error: null, observed: [{exe: expected, kind: engine, parent: 'trusted-worker.mjs', service: engine}]},
   });
   const rows = real.rows.map(r => {
     if (['method.typeText', 'method.paste'].includes(r.op)) return {...r, wallMs: engine === 'cua' ? 30 : 10_200, outcome: engine === 'cua' ? 'returned' : 'threw', methodError: engine === 'cua' ? undefined : 'editable Paste did not insert text', target: 'survived', inserted: engine === 'cua' ? true : null};
@@ -49,19 +49,20 @@ const op = (result, name) => result.operations.find(o => o.op === name);
 // The engine-answered rows a little faster on the cua lane, so the strict rule has a margin to judge.
 const FASTER = Object.fromEntries(['warm.getState', 'warm.listApps', 'bind.getApp', 'warm.getAXState', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.clear', 'task.total'].map(name => [name, 0.9]));
 
-test('Linux has one lane comparison: cua\'s host, the vendor engine against cua\'s, only the engine differs', () => {
+test('Linux has one lane comparison: cua\'s host, the vendor engine and service against cua\'s, only those differ', () => {
   assert.deepEqual(Object.keys(LINUX_LANE_MODES), ['engines']);
   const lane = LINUX_LANE_MODES.engines;
-  assert.deepEqual({baseline: lane.baseline, candidate: lane.candidate, differ: lane.differ}, {baseline: {host: 'cua', engine: 'vendor'}, candidate: {host: 'cua', engine: 'cua'}, differ: ['engine']});
+  assert.deepEqual({baseline: lane.baseline, candidate: lane.candidate, differ: lane.differ}, {baseline: {host: 'cua', engine: 'vendor'}, candidate: {host: 'cua', engine: 'cua'}, differ: ['engine', 'service']});
 });
 
 test('the Linux engines comparison passes with positive cua text cases against the failing vendor engine', t => {
   const result = judge(t, triple('vendor'), triple('cua', {scale: FASTER}));
   assert.deepEqual(result.problems, []);
   assert.equal(result.verdict, 'PASS', JSON.stringify(result.operations.filter(o => o.verdict === 'fail')));
-  assert.deepEqual(result.permitted.map(p => p.field), ['engine']);
+  assert.deepEqual(result.permitted.map(p => p.field), ['engine', 'service']);
   assert.equal(result.permitted[0].baseline, 'vendor (answered: sky_linux_arm64 of the run\'s runtime)');
   assert.equal(result.permitted[0].candidate, `cua (answered: cua-engine named by --engine-bin ${BIN})`);
+  assert.deepEqual([result.permitted[1].baseline, result.permitted[1].candidate], ['computer surface, answered by vendor', 'computer surface, answered by cua']);
   for (const name of ['method.typeText', 'method.paste']) {
     assert.equal(op(result, name).verdict, 'pass', name);
     assert.match(op(result, name).reasons.join(' '), /better: the method returned, its window survived and its text was read back/);
@@ -126,4 +127,8 @@ test('the Linux comparison refuses the macOS modes, a lane of the wrong engine, 
   assert.ok(swapped.problems.some(p => /the baseline attests the cua engine, not vendor/.test(p)));
   const unattested = judge(t, triple('vendor'), triple('cua', {edit: meta => { delete meta.nativeEngine; }}));
   assert.ok(unattested.problems.some(p => /has no requested engine/.test(p)));
+  // From M3 the cua lane runs cua's service: a cua lane whose engine the vendor's service drove is no evidence.
+  const vendorService = judge(t, triple('vendor'), triple('cua', {scale: FASTER, edit: meta => { meta.nativeEngine.observed[0].service = 'vendor'; }}));
+  assert.equal(vendorService.verdict, 'NO VERDICT');
+  assert.ok(vendorService.problems.some(p => /the vendor service drove the engine, not the cua lane's/.test(p)), JSON.stringify(vendorService.problems));
 });

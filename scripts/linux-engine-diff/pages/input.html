@@ -43,6 +43,9 @@
     document.getElementById('scroll').textContent = `scroll ${Math.round(window.scrollY)}`;
     document.getElementById('context').textContent = `context ${state.context} on ${state.on}`;
     document.getElementById('clicks').textContent = `clicks ${state.clicks}`;
+    // each status line is its own accessible name too: Firefox's tree carries a paragraph's text in no field the
+    // engines read
+    for (const p of document.querySelectorAll('#status p')) p.setAttribute('aria-label', p.textContent);
   };
   const pad = document.getElementById('pad');
   pad.addEventListener('mousemove', () => { state.moves += 1; show(); });
@@ -67,6 +70,7 @@
   document.addEventListener('contextmenu', (e) => { state.context += 1; state.on = e.target.id || e.target.tagName.toLowerCase(); show(); e.preventDefault(); });
   document.getElementById('press').addEventListener('click', () => { state.clicks += 1; show(); });
   window.addEventListener('scroll', show);
+  show();
 </script>
 </body>
 </html>

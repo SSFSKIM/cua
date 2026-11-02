@@ -1,0 +1,88 @@
+
+## cua: 10 drags, modes {"L":0,"A":10,"B":0,"?":0}, unmatched presses 0
+  ms (answer)          n 10 min 132.1 p50 133.2 p90 136 p95 138 p99 138 max 138
+  press→cross (X)      n 10 min 3 p50 3 p90 3 p95 3 p99 3 max 3
+  press→take (X)       none
+  press→release (X)    n 10 min 28 p50 29 p90 31 p95 34 p99 34 max 34
+  steps before take    none
+  take→release (X)     none
+  page: past move h    n 10 min 5 p50 6.9 p90 12.7 p95 15.5 p99 15.5 max 15.5
+  page: dragstart h    none
+  page: coalesced 1st  n 10 min 1 p50 1 p90 1 p95 3 p99 3 max 3
+  candidate: stray seen 0, stray before take 0, A with stray seen 0, atomic 0
+  miss A i0 {"ms":134.9,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":29,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":6,"past_h":6.9,"past_t":7,"first_move_h":0.5,"coalesced_first":1,"start_h":null,"up_h":29.2,"end_h":null,"buttons":[1,0]}}
+  miss A i1 {"ms":133.2,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":30,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":5,"past_h":7.7,"past_t":8,"first_move_h":7.5,"coalesced_first":1,"start_h":null,"up_h":28.9,"end_h":null,"buttons":[1,0]}}
+  miss A i2 {"ms":133.2,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":28,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":5,"past_h":5.3,"past_t":6,"first_move_h":5,"coalesced_first":1,"start_h":null,"up_h":28.1,"end_h":null,"buttons":[1,0]}}
+  miss A i3 {"ms":138,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":34,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":6,"past_h":5,"past_t":5,"first_move_h":0.4,"coalesced_first":1,"start_h":null,"up_h":33.6,"end_h":null,"buttons":[1,0]}}
+  miss A i4 {"ms":132.4,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":29,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":5,"past_h":12.3,"past_t":12,"first_move_h":12,"coalesced_first":1,"start_h":null,"up_h":28,"end_h":null,"buttons":[1,0]}}
+  miss A i5 {"ms":136,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":31,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":6,"past_h":15.5,"past_t":15,"first_move_h":0.4,"coalesced_first":1,"start_h":null,"up_h":30.4,"end_h":null,"buttons":[1,0]}}
+  miss A i6 {"ms":133.2,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":29,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":6,"past_h":12.7,"past_t":13,"first_move_h":0.6,"coalesced_first":1,"start_h":null,"up_h":28.3,"end_h":null,"buttons":[1,0]}}
+  miss A i7 {"ms":132.2,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":28,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":5,"past_h":9.5,"past_t":10,"first_move_h":9.3,"coalesced_first":1,"start_h":null,"up_h":28.1,"end_h":null,"buttons":[1,0]}}
+  miss A i8 {"ms":133.5,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":29,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":5,"past_h":5.5,"past_t":5,"first_move_h":0.6,"coalesced_first":1,"start_h":null,"up_h":28.6,"end_h":null,"buttons":[1,0]}}
+  miss A i9 {"ms":132.1,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":29,"steps_before_take":null,"steps_after_take":null,"stray":2},"page":{"moves":5,"past_h":6.6,"past_t":7,"first_move_h":6.3,"coalesced_first":3,"start_h":null,"up_h":27.9,"end_h":null,"buttons":[1,0]}}
+
+## cua:atomic: 10 drags, modes {"L":9,"A":1,"B":0,"?":0}, unmatched presses 0
+  ms (answer)          n 10 min 130.2 p50 466.6 p90 470 p95 472.8 p99 472.8 max 472.8
+  press→cross (X)      n 10 min 0 p50 1 p90 1 p95 1 p99 1 max 1
+  press→take (X)       n 9 min 5 p50 13 p90 18 p95 18 p99 18 max 18
+  press→release (X)    n 10 min 26 p50 363 p90 366 p95 369 p99 369 max 369
+  steps before take    n 9 min 8 p50 19 p90 28 p95 28 p99 28 max 28
+  take→release (X)     n 9 min 350 p50 350 p90 352 p95 352 p99 352 max 352
+  page: past move h    n 10 min 0.4 p50 6.2 p90 11 p95 13.2 p99 13.2 max 13.2
+  page: dragstart h    n 9 min 0.6 p50 7.5 p90 13.4 p95 13.4 p99 13.4 max 13.4
+  page: coalesced 1st  n 10 min 1 p50 2 p90 3 p95 3 p99 3 max 3
+  candidate: stray seen 0, stray before take 0, A with stray seen 0, atomic 10
+  miss A i5 {"ms":130.2,"x":{"via":"send_event","motions":41,"states":[256],"cross":0,"take":null,"release":26,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":5,"past_h":5.1,"past_t":5,"first_move_h":4.8,"coalesced_first":1,"start_h":null,"up_h":26.2,"end_h":null,"buttons":[1,0]}}
+
+## cua:watch: 10 drags, modes {"L":3,"A":7,"B":0,"?":0}, unmatched presses 0
+  ms (answer)          n 10 min 133.3 p50 134.8 p90 469.1 p95 475.2 p99 475.2 max 475.2
+  press→cross (X)      n 10 min 3 p50 3 p90 3 p95 4 p99 4 max 4
+  press→take (X)       n 3 min 11 p50 13 p90 19 p95 19 p99 19 max 19
+  press→release (X)    n 10 min 29 p50 30 p90 363 p95 370 p99 370 max 370
+  steps before take    n 3 min 11 p50 13 p90 26 p95 26 p99 26 max 26
+  take→release (X)     n 3 min 350 p50 351 p90 351 p95 351 p99 351 max 351
+  page: past move h    n 10 min 3.1 p50 9 p90 13.6 p95 15.1 p99 15.1 max 15.1
+  page: dragstart h    n 3 min 4.4 p50 7.3 p90 15.2 p95 15.2 p99 15.2 max 15.2
+  page: coalesced 1st  n 10 min 1 p50 1 p90 6 p95 9 p99 9 max 9
+  candidate: stray seen 10, stray before take 10, A with stray seen 7, atomic 0
+  miss A i0 {"ms":134.3,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":30,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":5,"past_h":9.7,"past_t":10,"first_move_h":0.6,"coalesced_first":2,"start_h":null,"up_h":29.4,"end_h":null,"buttons":[1,0]}}
+  miss A i3 {"ms":136.1,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":32,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":5,"past_h":4.3,"past_t":5,"first_move_h":3.9,"coalesced_first":1,"start_h":null,"up_h":31.1,"end_h":null,"buttons":[1,0]}}
+  miss A i4 {"ms":134.8,"x":{"via":"send_event","motions":41,"states":[256],"cross":4,"take":null,"release":30,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":5,"past_h":10.4,"past_t":10,"first_move_h":0.5,"coalesced_first":1,"start_h":null,"up_h":29.1,"end_h":null,"buttons":[0,1]}}
+  miss A i5 {"ms":133.3,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":29,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":5,"past_h":13.6,"past_t":13,"first_move_h":13.3,"coalesced_first":2,"start_h":null,"up_h":28.1,"end_h":null,"buttons":[1,0]}}
+  miss A i6 {"ms":134.6,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":29,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":6,"past_h":3.1,"past_t":3,"first_move_h":0.4,"coalesced_first":1,"start_h":null,"up_h":29.3,"end_h":null,"buttons":[1,0]}}
+  miss A i8 {"ms":133.9,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":29,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":5,"past_h":9,"past_t":9,"first_move_h":8.8,"coalesced_first":1,"start_h":null,"up_h":28.5,"end_h":null,"buttons":[1,0]}}
+  miss A i9 {"ms":135.9,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":30,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":5,"past_h":10.5,"past_t":11,"first_move_h":10.3,"coalesced_first":1,"start_h":null,"up_h":29.5,"end_h":null,"buttons":[1,0]}}
+
+## cua:first4: 10 drags, modes {"L":5,"A":5,"B":0,"?":0}, unmatched presses 0
+  ms (answer)          n 10 min 130.8 p50 136.8 p90 474.4 p95 475.1 p99 475.1 max 475.1
+  press→cross (X)      n 10 min 0 p50 1 p90 1 p95 2 p99 2 max 2
+  press→take (X)       n 5 min 5 p50 15 p90 18 p95 18 p99 18 max 18
+  press→release (X)    n 10 min 26 p50 31 p90 367 p95 369 p99 369 max 369
+  steps before take    n 5 min 5 p50 19 p90 21 p95 21 p99 21 max 21
+  take→release (X)     n 5 min 350 p50 350 p90 351 p95 351 p99 351 max 351
+  page: past move h    n 10 min 0.5 p50 10 p90 13.1 p95 13.3 p99 13.3 max 13.3
+  page: dragstart h    n 5 min 0.8 p50 10.1 p90 13.3 p95 13.3 p99 13.3 max 13.3
+  page: coalesced 1st  n 10 min 1 p50 1 p90 15 p95 18 p99 18 max 18
+  candidate: stray seen 0, stray before take 0, A with stray seen 0, atomic 0
+  miss A i0 {"ms":133.5,"x":{"via":"send_event","motions":38,"states":[256],"cross":1,"take":null,"release":28,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":4,"past_h":13.3,"past_t":13,"first_move_h":13.1,"coalesced_first":1,"start_h":null,"up_h":27.6,"end_h":null,"buttons":[1,0]}}
+  miss A i1 {"ms":130.8,"x":{"via":"send_event","motions":38,"states":[256],"cross":1,"take":null,"release":26,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":5,"past_h":11.1,"past_t":11,"first_move_h":10.9,"coalesced_first":1,"start_h":null,"up_h":25.8,"end_h":null,"buttons":[1,0]}}
+  miss A i4 {"ms":130.9,"x":{"via":"send_event","motions":38,"states":[256],"cross":1,"take":null,"release":26,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":6,"past_h":0.5,"past_t":1,"first_move_h":0.5,"coalesced_first":1,"start_h":null,"up_h":26,"end_h":null,"buttons":[1,0]}}
+  miss A i5 {"ms":136.8,"x":{"via":"send_event","motions":38,"states":[256],"cross":1,"take":null,"release":31,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":5,"past_h":8.9,"past_t":9,"first_move_h":8.6,"coalesced_first":1,"start_h":null,"up_h":31.4,"end_h":null,"buttons":[1,0]}}
+  miss A i9 {"ms":134.7,"x":{"via":"send_event","motions":38,"states":[256],"cross":1,"take":null,"release":28,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":5,"past_h":12.3,"past_t":12,"first_move_h":0.3,"coalesced_first":1,"start_h":null,"up_h":27.6,"end_h":null,"buttons":[1,0]}}
+
+## cua:b50: 10 drags, modes {"L":5,"A":5,"B":0,"?":0}, unmatched presses 0
+  ms (answer)          n 10 min 179.8 p50 183.9 p90 467 p95 469.9 p99 469.9 max 469.9
+  press→cross (X)      n 10 min 0 p50 1 p90 1 p95 1 p99 1 max 1
+  press→take (X)       n 5 min 3 p50 10 p90 15 p95 15 p99 15 max 15
+  press→release (X)    n 10 min 76 p50 79 p90 363 p95 365 p99 365 max 365
+  steps before take    n 5 min 2 p50 2 p90 3 p95 3 p99 3 max 3
+  take→release (X)     n 5 min 350 p50 351 p90 351 p95 351 p99 351 max 351
+  page: past move h    n 10 min 0.6 p50 5.3 p90 10.3 p95 55.7 p99 55.7 max 55.7
+  page: dragstart h    n 5 min 0.7 p50 5.3 p90 10.5 p95 10.5 p99 10.5 max 10.5
+  page: coalesced 1st  n 10 min 1 p50 1 p90 2 p95 2 p99 2 max 2
+  candidate: stray seen 0, stray before take 0, A with stray seen 0, atomic 0
+  miss A i2 {"ms":181.5,"x":{"via":"send_event","motions":38,"states":[256],"cross":1,"take":null,"release":77,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":6,"past_h":2.5,"past_t":1,"first_move_h":2.2,"coalesced_first":1,"start_h":null,"up_h":76.6,"end_h":null,"buttons":[1,0]}}
+  miss A i3 {"ms":182.1,"x":{"via":"send_event","motions":38,"states":[256],"cross":1,"take":null,"release":78,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":7,"past_h":8.2,"past_t":1,"first_move_h":0.6,"coalesced_first":1,"start_h":null,"up_h":77.4,"end_h":null,"buttons":[1,0]}}
+  miss A i5 {"ms":179.8,"x":{"via":"send_event","motions":38,"states":[256],"cross":1,"take":null,"release":76,"steps_before_take":null,"steps_after_take":null,"stray":2},"page":{"moves":5,"past_h":55.7,"past_t":56,"first_move_h":2.3,"coalesced_first":1,"start_h":null,"up_h":75.6,"end_h":null,"buttons":[1,0]}}
+  miss A i8 {"ms":182.9,"x":{"via":"send_event","motions":38,"states":[256],"cross":0,"take":null,"release":78,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":7,"past_h":8.1,"past_t":1,"first_move_h":7.9,"coalesced_first":1,"start_h":null,"up_h":77.5,"end_h":null,"buttons":[1,0]}}
+  miss A i9 {"ms":183.9,"x":{"via":"send_event","motions":38,"states":[256],"cross":1,"take":null,"release":79,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":6,"past_h":4.4,"past_t":1,"first_move_h":4.3,"coalesced_first":1,"start_h":null,"up_h":78.2,"end_h":null,"buttons":[1,0]}}

@@ -52,7 +52,7 @@ test('linuxDevice.engines reads the engine processes below the run\'s serves', (
 const runMeta = (requested, extra = {}) => {
   const expected = requested === 'cua' ? BIN : '/s/run-x/runtimes/r/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64';
   return {platform: 'linux', host: 'cua', runtime: {release: '26.928.40906-linux-x64'}, service: {surface: 'computer', engine: 'sky', answered: 'vendor'},
-    nativeEngine: {requested, bin: requested === 'cua' ? BIN : null, expected, error: null, observed: [{exe: expected, kind: requested, parent: 'trusted-worker.mjs'}], ...extra}};
+    nativeEngine: {requested, bin: requested === 'cua' ? BIN : null, expected, error: null, observed: [{exe: expected, kind: requested, parent: 'trusted-worker.mjs', service: requested}], ...extra}};
 };
 
 test('engineProblem on Linux: the requested engine answered alone, at the expected executable, as the trusted worker\'s child', () => {
@@ -70,5 +70,16 @@ test('a Linux run attests its engine by kind and source, never by a per-run path
   assert.equal(cua.engine, `cua (answered: cua-engine named by --engine-bin ${BIN})`);
   assert.equal(attestation(runMeta('cua', {bin: null, expected: '/s/run-y/engine/linux/cua-engine', observed: [{exe: '/s/run-y/engine/linux/cua-engine', kind: 'cua', parent: 'trusted-worker.mjs'}]})).engine,
     'cua (answered: cua-engine installed in the run\'s home)');
-  assert.equal(vendor.service, cua.service, 'the service is the same on both lanes until M3');
+  // From M3 each lane's engine runs behind its own service, read from the trusted worker (engine-answered.mjs).
+  assert.equal(vendor.service, 'computer surface, answered by vendor');
+  assert.equal(cua.service, 'computer surface, answered by cua');
+  // an observation without service evidence is attested as such, never as the service the run assumed, and fails the judge
+  const older = runMeta('vendor', {observed: [{exe: runMeta('vendor').nativeEngine.expected, kind: 'vendor', parent: 'trusted-worker.mjs'}]});
+  assert.equal(attestation(older).service, 'computer surface, answered by unattested');
+  assert.match(engineProblem(older, 'run-1'), /carries no service evidence/);
+});
+
+test('engineProblem on Linux: from M3 the cua lane\'s engine is driven by cua\'s service, the vendor lane\'s by the vendor\'s', () => {
+  assert.match(engineProblem(runMeta('cua', {observed: [{exe: BIN, kind: 'cua', parent: 'trusted-worker.mjs', service: 'vendor'}]}), 'run-1'), /^run-1: the vendor service drove the engine, not the cua lane's/);
+  assert.match(engineProblem(runMeta('vendor', {observed: [{exe: runMeta('vendor').nativeEngine.expected, kind: 'vendor', parent: 'trusted-worker.mjs', service: null}]}), 'run-1'), /an unknown service drove the engine/);
 });

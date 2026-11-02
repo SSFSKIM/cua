@@ -11,8 +11,10 @@ M1a builds it up from M0's spike. It answers every command of the pinned helper 
 desktop) on the observation side (M1a.1); `press_key`, `key_down`, `key_up`, `click`, `move`, `move_relative`,
 `scroll`, `drag`, `drag_handle`, `perform_secondary_action`, `activate_window` and `launch_app` on the input side
 (M1a.2). M2.1 adds the clipboard core and `clipboard_read` and `clipboard_release`; M2.2 the paste route for
-`type_text` and `clipboard_write`, and `type_characters`. `capabilities` (M3) answers
-`capabilities is not available in this engine build`.
+`type_text` and `clipboard_write`, and `type_characters`. M3.1 adds `capabilities` (`caps.rs`: the X11 backend's
+fixed capabilities, the device mode, the version and the commit) and applies the device mode to every input kind a
+family ignores on the background route (below). M3's review adds `preflight`, a request that acts and sends nothing
+(below).
 
 ```bash
 cargo build --release
@@ -76,6 +78,118 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   as the family of the window under its start asks, in place of the vendor's 8 ms between their points.
 - **Elements and windows** (`engine/elements.rs`, `engine/windows.rs`): element clicks through action 0 or a right
   click at the visible point, named actions, the element scroll, `activate_window` and `launch_app`.
+- **The device mode** (`engine/way.rs`, `families.rs`, `route.rs`): a family lists, per input kind, whether it ignores
+  the background route always or unless its window is fully unobscured (`cover.rs`): the paste chord, keys
+  (`press_key`, `key_down`, `key_up`, `type_characters`), clicks (a coordinate `click` into a window and an element's
+  right click), scroll (at a point, the window's centre or an element), `drag` and `move`. GTK 4 ignores all of these
+  always; Gecko its clicks, scrolls, moves and drags unless unobscured; Chromium its drags unless every point and
+  segment of the drag's path is unobscured (`cover.rs`' `points_unobscured`); Qt its scrolls; xterm its keys (and has
+  no verified paste route). Element actions through AT-SPI are never listed. For a listed kind and condition, `--desktop shared`
+  refuses with `<app> does not accept background input; use a dedicated desktop or activate the window first`
+  before anything is sent; `--desktop dedicated` activates the window (`_NET_ACTIVE_WINDOW`, a raise, the input
+  focus), waits for it to hold the focus, and sends the input through XTEST at the same window-relative points (the
+  foreground route); a request whose input is refused for itself (a bad key or chord, a scroll of no pixels, a drag
+  of fewer than two points, characters the layout cannot type) activates nothing. A hold made on the
+  foreground route is released on it, the window activated again first. Every request that consults the table
+  records its route on the `--stats` line (`route`: `background`, `foreground` or `desktop`).
+- **Drag and drop into Chrome** (`dnd.rs`): Chrome's HTML5 drop activates, focuses and raises its window (the
+  Chromium toolkit's other applications, Electron among them, change nothing). In shared mode a background drag into
+  Chrome watches `XdndSelection` through XFixes, from the drag's start, unless
+  Chrome's window is already the active window, holds the focus and is fully unobscured (any doubt counts as not),
+  where the drop goes ahead. The answer follows the order of what the engine saw and sent:
+  - Chrome's own client takes the selection (a drag and drop has begun) before the release: Escape is pressed and
+    released on the background route, then the button, and the drag is refused: `… it was cancelled before the drop,
+    so nothing was dropped. Use a dedicated desktop, or activate the window first`; unless within 300 ms Chrome's
+    window newly becomes active, focused or top of the stacking order (the cross-check), when the answer is that the
+    drop may have happened and the desktop changed;
+  - no take by the release: the drag answers at once as a plain drag (it claims nothing about drops). A watch on its
+    own X connection, subscribed before the drag began and told the instant the button went up, goes on off the
+    request path for 300 ms from the release, or until a request that acts stops it. A take then gets the cancel's
+    Escape at once (synthetic, to Chrome's window, never XTEST). The first request that sends input or changes state
+    (`press_key`, `key_down`, `click`, `move`, `move_relative`, `scroll`, `drag`, `drag_handle`'s start and moves,
+    `perform_secondary_action`, `activate_window`, `launch_app`, `clipboard_write`, `type_text`, `type_characters`,
+    `preflight`) is answered, not run, with `<app> started a drag and drop after your drag ended; it may have dropped
+    and changed the desktop; this request was not run, so read the window before sending it again` (`--stats`
+    `late_dnd`). Reads
+    (`list_windows`, `list_apps`, `get_screenshot`, `get_window_state`, `clipboard_read`, `capabilities`) and releases
+    of what is held (`key_up`, `clipboard_release`, `drag_handle`'s end) run meanwhile, so no key or button stays down
+    at the server. A watch that failed (its connection lost, a round trip failed) is reported the same way: `the
+    drag-and-drop watch after your drag into <app> failed (<why>), so a drop may have happened unseen and changed the
+    desktop; …`; a panicking watch ends the engine (the release profile aborts on a panic). The live tests inject both
+    through `CUA_ENGINE_FAULT`, honoured only in a build with the `live` feature, never a release asset. `preflight`
+    (no input, answers null) is for a caller about to change the desktop by a route the engine never sees: cua's
+    service sends it just before its wrapper launches an application through the supervisor, so that launch gets the
+    notice, and does not happen, as an engine request would. Known limit: a take later than 300 ms after the release,
+    or after an acting request has begun, is not seen; M3.1 measured none after the release in 240 takes, idle and
+    under load;
+  - a take whose cancel could not be sent: `… it was cancelled, but whether the drop landed cannot be confirmed. …`.
+
+  Where the engine lets the drop happen (Chrome already in front, or a dedicated desktop; every Chromium window,
+  whose drop changes nothing; and a drag that names no window, through the window under its start), it watches the
+  take too, and once that window's client takes `XdndSelection` it spaces
+  the path's remaining steps so the release comes no sooner than 350 ms after the take, no step shorter than the
+  family's own (`dnd.rs` `RELEASE_AFTER_TAKE`; `--stats` `after_take`). Chromium sends XdndDrop at the release only if
+  its target has accepted by then, and the target accepts only after the renderer has answered an earlier position. A
+  browser that stalls just after its drag starts (task 18: 16 and 21 stalls in two full verdict runs) accepted 148 to
+  275 ms after the take, so a fast release dropped nothing, and a short drop (40 px) released within about 50 ms of the
+  take dropped nothing even without a stall. The steps after the take come at most 12 ms apart, and what they leave
+  of the 350 ms is filled with motions that re-visit the path's second-to-last sample and its last, ending on the last
+  (`dnd.rs` `KEEPALIVE`, `keepalive`; task 22): Chrome's drag loop sends its target a position only on a motion, and a
+  floor waited out without one dropped nothing after a take on the path's last sample or after it. These keepalives
+  come only after a take, only on such a Chromium drag.
+
+  A short path can end before the take (task 22, evidence `m3/drop-misses/task22/`): under a load of Chrome windows
+  the renderer gets the drag's first moves a frame or a stall late and starts the drag and drop after a 40 px path has
+  ended, and a release before the take drops nothing while the drag answers success (`m3-gate-final`'s three cold
+  misses). So when no take came by the path's end the button stays down for it until 250 ms after the press (`dnd.rs`
+  `TAKE_HOLD_AFTER_PRESS`; takes came 4 to 93 ms after the press over 195 drags of the gate's sequence), and a take then,
+  or one seen at the path's last look, gets the same floor; with no take by then the drag is released and answers as
+  before. `--stats` `hold` has one shape on every drag the hold watches: `bound_ms`, `path_ms` (the press to the path's
+  end), `held` (no take by the path's end, so the hold ran), `waited_ms` (0 when it did not), `taken` (a take by the
+  release), `take_after_press_ms` (null without one) and `keepalives`; the bound and the take's time count from the
+  button's press itself. Known limits, for M4:
+  - an accept later than 350 ms after the take still misses, unseen (the latest seen was 275 ms), and so does a take
+    later than 250 ms after the press: the drag answers success;
+  - a speed gap: a Chromium drag that never takes (a text selection, a range, a short thumb drag) holds its button
+    until 250 ms after the press, paying 250 ms less its path's time: a 40 px Chrome selection goes from about 134 ms
+    to about 355, a 40 px range from about 130 to about 350; a drag whose path lasts 250 ms or more pays nothing;
+  - a speed gap: the short Chrome drop (40 px, in front) takes 469 ms, against the newest vendor build's 258 and the
+    pinned build's 280 (which lands 11 of 12). A lead: release when Chrome's accept cursor shows, with the take plus
+    350 ms as the ceiling, which helps only if reading the accept cursor has no false positives (task 18's replay of it
+    matched Chrome's accept in 85 to 100% of drags by condition, without saying which way the rest failed).
+
+  Every drag into a Chromium-family window (Chrome by its classes, the Chromium toolkit) presses atomically and is
+  watched (`stray.rs`; task 20, evidence `m3/drop-misses/task20/`). Blink resets its press on any mouse move that
+  carries no button, and Chrome turns real pointer events into such moves: a crossing of its window, its own capture
+  grab's included when the real pointer is outside the window, and the real pointer's motion. One that lands after the
+  press and before the first motion past Blink's 4 px drag threshold kills the drag, and the release becomes a click.
+  - The press and every sample through that motion go out under one server grab (`GrabServer`), with the real pointer's
+    place read (`QueryPointer`) inside it, so no other client's request falls between them. The grab holds every other
+    client, the window manager included, so it sends at most 8 samples (`PRESS_SAMPLES_MAX`): a straight path crosses
+    the threshold by its seventh sample, and a path given in 1 px steps by its eighth. Task 20 measured the grab at
+    p50 0.742 ms, p99 1.688 ms and max 4.078 ms over 480 drags whose press sent 5 to 7 samples; the cap keeps a long or
+    jittering path that has not crossed from holding the server for a time its length decides. Such a path goes on
+    with the grab released, and the watch below covers the rest. `--stats` `press` records the grab's duration
+    (`grab_ms`), the samples sent under it, whether the last of them crossed the threshold (`crossed`) and whether the
+    pointer was in the window.
+  - A watch on a connection of the engine's own (opened by the first such drag, kept for its life) selects XInput 2 raw
+    motion on the root, which reaches every client whoever holds a grab, and the target window's crossings, from just
+    before the grab to just after the release. The drag's own events are never among them (the background route's are
+    synthetic; on the XTEST routes the XTEST pointer's motion is left out), nor is a crossing that ends a grab (the
+    target's release of its capture).
+  - When the watch saw such an event and the target took no drag and drop by the release, the drag answers `<app> may
+    not have started the drag, and the page may have taken the press as a click: the desktop pointer was outside the
+    window, or entered or moved in it during the press. Read the window to see what happened before dragging again`,
+    never success. A take means the drag started, after which a stray event changes nothing.
+  - In shared mode a drag with the real pointer outside the window is sent; Chrome's capture grab crosses in and the
+    answer is that error. Declared: a drag the page tracks itself (mousedown/mousemove/mouseup listeners, or pointer
+    capture) lands with the pointer outside as with it inside, and still answers the error. In dedicated mode a pointer
+    outside the window takes the foreground route, which puts the pointer there (`--stats` `pointer_outside`).
+
+  The watch keeps every selection report the connection reads meanwhile, so the input session's server-time probe
+  cannot lose one. The `--stats` line's `dnd` records whether the window was in front, the watch saw a start, the
+  outcome (`in_time`, `late` for the measurement option's Escape after the release, `no_start`, `undecided`), whether the signature already held at the start, and the
+  cross-check and its wait.
 
 ## How it uses the clipboard
 
@@ -137,7 +251,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | Flag | Values (default first) | What it changes |
 |---|---|---|
 | `--mouse-size-px` | 0 | a positive value stamps the pointer into desktop screenshots (the XFixes cursor at its native size; the value sizes the fallback arrow drawn without XFixes) |
-| `--desktop` | `shared`, `dedicated` | the device mode: whether a family that ignores the background route's paste chord or keys is refused, or reached through the foreground route, for `type_text`, `clipboard_write` and `type_characters` (M2; M3 adds the clicks and `press_key`'s keys) |
+| `--desktop` | `shared`, `dedicated` | the device mode: whether input of a kind the window's family ignores on the background route is refused, or sent through the foreground route (above); `capabilities` reports it |
 | `--window-calls` | 32 | W: calls in flight at most |
 | `--window-bytes` | 4194304 | R: reply bytes received and not consumed, plus the reservation per call in flight, stay under it; a larger reply is still read whole |
 | `--call-reservation` | 4096 | bytes reserved per call in flight |
@@ -149,6 +263,10 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
+| `--drag-dnd-after-take-ms` | 350 | how long after a Chromium drag source's take a drag the engine lets drop is released at the soonest, its remaining steps spaced to it (measurement only; 0 turns the spacing off) |
+| `--drag-dnd-hold-ms` | 250 | how long after the press a Chromium drag the engine lets drop keeps its button down for its source's take when none came by the path's end (measurement only; 0 turns the hold off; `--stats` `hold`) |
+| `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
+| `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
 | `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, and how a desktop screenshot was read (`shm` or `get_image`) |
 
 ## Dependencies

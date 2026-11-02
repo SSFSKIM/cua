@@ -27,12 +27,18 @@
 // ability is reported, not judged.
 //
 // On Linux (#171; docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, "Doctor") the row reports cua's own
-// engine, cua-engine in the cua home, from its file and install record only (nothing is launched): the engine sessions
-// here run (the installed one, or what CUA_LINUX_ENGINE_BIN names), its version, release and SHA-256 against this cua's
-// pin, or that it is a local build (`cua engine build`), an older release or an unknown file, and the device mode.
-// `pass` for the pinned engine; `warn` for a local build, an older release, CUA_LINUX_ENGINE_BIN or the default's
-// fallback; `fail` for refused sessions, an unknown or unexecutable file, or an invalid device mode; `skip` while the
-// vendor's engine is preferred. Its capability report is cua's own service's to read (M3).
+// engine, cua-engine in the cua home: the engine sessions here run (the installed one, or what CUA_LINUX_ENGINE_BIN
+// names), its version, release and SHA-256 against this cua's pin, or that it is a local build (`cua engine build`), an
+// older release or an unknown file; the service that drives it (`cua`, cua's own Linux service, src/services/engine/
+// linux; the vendor's engine runs behind the vendor's); the device mode; and the engine's capability report. For the
+// report doctor starts the engine as a session's service does (the version check, `server --desktop <mode>`,
+// `capabilities` first), with the session's display and bus, and stops it once it has answered; it starts nothing
+// while cua's engine is not what sessions run, no file it does not recognize, and nothing without a display, since the
+// engine starts only on one (the report is then unread, and the display row says why). `pass` for the pinned engine
+// with every capability; `warn` for a local build, an older release, CUA_LINUX_ENGINE_BIN, the default's fallback, an
+// unread report for want of a display, or a capability the backend lacks; `fail` for refused sessions, an unknown or
+// unexecutable file, an invalid device mode, or an engine whose report fails as a session's start would; `skip` while
+// the vendor's engine is preferred.
 import {realpathSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {CuaError} from './errors.mjs';
@@ -40,6 +46,7 @@ import {BUNDLE_ID} from './engine-bundle.mjs';
 import {ENGINE_GRANTS, engineDirectory, engineRecords, grantSteps, inspectEngine, shortBuild} from './engine.mjs';
 import {readEngineSettings} from './engine-sign.mjs';
 import {desktopModeFor, nativeEngineSetting} from './launch.mjs';
+import {desktopSessionEnv} from './linux-desktop.mjs';
 import {inspectLinuxEngine, loadEnginePin} from './linux-engine.mjs';
 import {surfacesFrom} from '../mcp/surface.mjs';
 
@@ -64,12 +71,33 @@ export function defaultInspectLinuxEngine({home, arch}) {
   return {...inspectLinuxEngine({home, arch, pin}), ...(pinProblem ? {pinProblem} : {})};
 }
 
+// The capability report of the Linux engine at `path`, started as cua's service starts it (its client: the version
+// check, then `server --desktop <desktop>` with `env`, `capabilities` first) and stopped once it has answered, or after
+// `timeoutMs`. Rejects with the client's sentence, as a session's first computer call would.
+export async function defaultReadLinuxCapabilities({path, desktop, env, timeoutMs = 10000}) {
+  const {createEngineClient} = await import('../services/engine/linux/client.mjs');   // loaded only where it runs
+  const client = createEngineClient({path, desktop, env});
+  const report = client.capabilities();
+  // An engine whose start was still under way at the deadline is stopped when the start ends.
+  report.then(() => client.close(), () => client.close());
+  let timer;
+  const deadline = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`cua-engine did not answer capabilities within ${timeoutMs / 1000} s`)), timeoutMs); });
+  try {
+    return await Promise.race([report, deadline]);
+  } finally {
+    clearTimeout(timer);
+    client.close();
+  }
+}
+
 // -> {row, report}; `report` is undefined off macOS and Linux. `session` is repl.host's selection for a session here
 // (replHostFor's answer, or {code, message} when refused; undefined when repl.host refused every connection before
 // selecting). `engine` carries nativeEngineFor's inputs ({config, installed, defaultEngine, location}), shared with
 // repl.host; `inspect` and `records` read the approved location on macOS, `inspectLinux` the engine placed in the cua
-// home `home` on Linux, for a machine of `arch` (seams for tests, which never launch anything).
-export async function engineCheck({env, platform, arch = process.arch, home, session, engine = {}, inspect = defaultInspectEngine, records = defaultEngineRecords, inspectLinux = defaultInspectLinuxEngine}) {
+// home `home` on Linux, for a machine of `arch`, and `readCapabilities` the Linux engine's capability report
+// (defaultReadLinuxCapabilities' contract) (seams for tests, which never launch anything).
+export async function engineCheck({env, platform, arch = process.arch, home, session, engine = {}, inspect = defaultInspectEngine, records = defaultEngineRecords, inspectLinux = defaultInspectLinuxEngine,
+  readCapabilities = defaultReadLinuxCapabilities}) {
   if (platform !== 'darwin' && platform !== 'linux') return {row: result('engine', 'skip', `cua's native engine is for macOS and Linux; this host is ${platform}`)};
   const linux = platform === 'linux';
   let surfaces;
@@ -92,7 +120,7 @@ export async function engineCheck({env, platform, arch = process.arch, home, ses
   const refused = session.code ? {code: session.code, message: session.message} : null;
   const selection = {selected: refused ? null : session.engine?.engine ?? null, reason: refused ? refused.code : session.engine?.reason ?? null, refused,
     preferred: {engine: preferred.engine, reason: preferred.reason}};
-  if (linux) return linuxRow(selection, {env, config, session, facts: inspectLinux({home, arch})});
+  if (linux) return linuxRow(selection, {env, config, session, facts: inspectLinux({home, arch}), readCapabilities});
   if (preferred.engine === 'vendor') return vendorRow(selection, records({env}));
   const facts = await inspect({env, mayLaunch: selection.selected === 'cua', location: engine.location});
   const settings = settingsOf(config);
@@ -131,11 +159,14 @@ function vendorRow(selection, records) {
 
 // The report's facts on Linux: the selection; `runs`, the engine sessions here run ({path, source: 'installed' |
 // 'override'}, null when they run the vendor's); `installed`, what the cua home holds (inspectLinuxEngine's facts, null
-// when unread); `pinned`, this cua's pin for this machine; and the device mode where cua's engine runs.
+// when unread); `pinned`, this cua's pin for this machine; `service`, what drives the engine (`cua`, cua's own Linux
+// service, or `vendor`; null when refused); and where cua's engine runs, the device mode and its capability report
+// (`capabilities`, or why it is unread, `capabilitiesUnread`).
 function linuxReport({selected = null, reason = null, refused = null, preferred = null, facts = null, runs = null, desktop = null}) {
+  const service = selected === null ? null : selected === 'cua' ? 'cua' : 'vendor';
   const installed = facts && {path: facts.path, exists: facts.exists, executable: facts.executable, sha256: facts.sha256, version: facts.version, build: facts.build,
     release: facts.release, current: facts.current};
-  return {selected, reason, refused, preferred, runs, installed, pinned: facts?.pinned ?? null, desktop};
+  return {selected, reason, refused, preferred, service, runs, installed, pinned: facts?.pinned ?? null, desktop, capabilities: null, capabilitiesUnread: null};
 }
 
 const PIN_NOTE = 'runtime/engine/linux-engine.json comes with the engine\'s first release';
@@ -159,7 +190,7 @@ const DESKTOP_WORDS = {
   default: () => `the default: CUA_DESKTOP_MODE=dedicated, or "desktop": "dedicated" in ${SETTINGS}, gives the agent the desktop`,
 };
 
-function linuxRow(selection, {env, config, session, facts}) {
+async function linuxRow(selection, {env, config, session, facts, readCapabilities}) {
   const verdicts = [];
   const say = (status, text) => { verdicts.push(status); return text; };
   const held = linuxHeld(facts, say);
@@ -167,7 +198,7 @@ function linuxRow(selection, {env, config, session, facts}) {
   const report = linuxReport({...selection, facts});
   if (selection.preferred.engine === 'vendor') {
     const why = selection.preferred.reason === 'default' ? 'the default engine is the vendor\'s' : source('vendor');
-    const serves = selection.refused ? `; sessions here are refused (${selection.refused.code}; see repl.host)` : ', so Linux computer sessions use the vendor\'s sky_linux helper';
+    const serves = selection.refused ? `; sessions here are refused (${selection.refused.code}; see repl.host)` : ', so Linux computer sessions use the vendor\'s sky_linux helper behind the vendor\'s service';
     return {row: result('engine', 'skip', `cua's engine is not selected: ${why}${serves}. CUA_NATIVE_ENGINE=cua, or "engine": "cua" in ${SETTINGS}, selects cua's own: ${held}`), report};
   }
   if (selection.refused) return {row: result('engine', 'fail', `cua's engine is preferred (${source('cua')}), but sessions here are refused (${selection.refused.code}; see repl.host): ${held}`), report};
@@ -175,8 +206,8 @@ function linuxRow(selection, {env, config, session, facts}) {
     return {row: result('engine', 'warn', `cua's engine is the default, but none is installed, so Linux computer sessions keep the vendor's sky_linux helper (${selection.reason}): ${held}`), report};
   const bin = session.engine.bin;
   const runs = bin.source === 'override'
-    ? say('warn', `${bin.path}, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), behind the vendor's service until cua's own; installed: ${held}`)
-    : `${held}, behind the vendor's service until cua's own`;
+    ? say('warn', `${bin.path}, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), ${SERVICE_WORDS}; installed: ${held}`)
+    : `${held}, ${SERVICE_WORDS}`;
   let desktop = null, mode;
   try {
     desktop = desktopModeFor({env, config});
@@ -185,9 +216,45 @@ function linuxRow(selection, {env, config, session, facts}) {
     if (!(error instanceof CuaError)) throw error;
     mode = say('fail', error.message);
   }
-  return {row: result('engine', worst(verdicts), `cua's engine is selected (${source('cua')}): sessions here run ${runs}; ${mode}`),
-    report: {...report, runs: {path: bin.path, source: bin.source}, desktop}};
+  // An invalid device mode has failed the row already, and no session starts the engine in it.
+  const caps = desktop ? await linuxCapabilities({bin, facts, desktop: desktop.mode, env, readCapabilities}) : {report: null, unread: 'the device mode is invalid', words: ''};
+  if (caps.verdict) verdicts.push(caps.verdict);
+  return {row: result('engine', worst(verdicts), `cua's engine is selected (${source('cua')}): sessions here run ${runs}; ${mode}${caps.words}`),
+    report: {...report, service: 'cua', runs: {path: bin.path, source: bin.source}, desktop, capabilities: caps.report, capabilitiesUnread: caps.unread}};
 }
+
+const SERVICE_WORDS = 'behind service cua (cua\'s own Linux service)';
+// An engine that could not open its display says so in its stderr, which the client's sentence carries.
+const NO_DISPLAY = /failed to connect to the X server/;
+const noDisplay = why => ({verdict: 'warn', words: `; its capability report is unread: no X display is reachable here (${why}; see display), and cua-engine starts only on one`});
+
+// The capability report of the engine sessions here run, read as a session's start reads it, with the desktop session
+// the launch hands a session -> {report, unread, verdict?, words}. The engine is started only where a session would
+// start it: a file cua placed or recorded, or the one CUA_LINUX_ENGINE_BIN names, on a display.
+async function linuxCapabilities({bin, facts, desktop, env, readCapabilities}) {
+  if (bin.source !== 'override' && facts.build !== 'pinned' && facts.build !== 'local') {
+    const unread = 'doctor does not start a file it does not recognize';
+    return {report: null, unread, words: `; its capability report is unread: ${unread}`};
+  }
+  if (!env.DISPLAY) return {report: null, unread: 'DISPLAY is not set', ...noDisplay('DISPLAY is not set')};
+  let report;
+  try {
+    report = await readCapabilities({path: bin.path, desktop, env: {...desktopSessionEnv(env), ...(env.HOME ? {HOME: env.HOME} : {})}});
+  } catch (error) {
+    if (NO_DISPLAY.test(error.message)) return {report: null, unread: error.message, ...noDisplay(error.message)};
+    return {report: null, unread: error.message, verdict: 'fail', words: `; its capability report could not be read, and sessions here fail the same way: ${error.message}`};
+  }
+  const {CANNOT} = await import('../services/engine/linux/methods.mjs');   // the service's words, loaded only on Linux
+  const lacking = Object.keys(CANNOT).filter(key => [undefined, null, false].includes(key.split('.').reduce((at, part) => at?.[part], report)));
+  return {report, unread: null, verdict: lacking.length ? 'warn' : null,
+    words: `; capabilities, from cua-engine started for this check and stopped: ${flatten(report).join(', ')}`
+      + lacking.map(key => `; it reports no ${key} capability, so sessions here cannot ${CANNOT[key]}`).join('')};
+}
+
+// A report as `path value` pairs, each field in the order the engine answered it.
+const flatten = (value, prefix = '') => (value && typeof value === 'object' && !Array.isArray(value)
+  ? Object.entries(value).flatMap(([key, inner]) => flatten(inner, prefix ? `${prefix}.${key}` : key))
+  : [`${prefix} ${typeof value === 'string' ? value : JSON.stringify(value)}`]);
 
 // ---- cua's engine preferred ----
 

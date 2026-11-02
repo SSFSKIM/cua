@@ -47,22 +47,37 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * The witness of one request whose route is known beforehand (`expected`: text.mjs `expectedRoute`, null where none
  * applies), judged by `judgeRouteSpan` against the route the engine reports it took (Decision Log, M2.2): the foreground
- * route's allowance only where both are the foreground route, and then nothing may change after the request ends (a
- * quiet span) or stay grabbed; a route other than the expected one fails. Where the foreground route is expected, the
- * target's top-level (its window manager frame) is read before the span, for the restack judge.
+ * route's allowance only where both are the foreground route, and the in-front allowance only for a request the engine
+ * recorded as made to a window already in front; after either, nothing may change once the request ends (a quiet span)
+ * or stay grabbed, since what each allowance excuses is temporary. A route other than the expected one fails. Where
+ * either allowance may apply, the target's top-level (its window manager frame) is read before the span, for the
+ * restack judge. `probes` are the X reads, `toplevel` and `grabs` (clip.mjs), replaced in the display-free tests.
  */
-export async function routeWitness(witness, tag, target, expected, fn) {
-  const frame = expected === 'foreground' ? toplevel(target) : null;
+export async function routeWitness(witness, tag, target, expected, fn, { inFront = false, opensWindows = false, pointerMoves = false, probes = { toplevel, grabs } } = {}) {
+  const frame = expected === 'foreground' || inFront ? probes.toplevel(target) : null;
   const result = await witness.span(tag, fn);
   const route = result.value?.stats?.route ?? null;
-  const judged = judgeRouteSpan(result.report, { expected, reported: route, target, frame, focusWithin: (w) => within(w, target) });
-  if (!judged.foreground) return { ...result, route, judged };
+  // the in-front allowance (witness.mjs): only for a case that declares it, and a request the engine recorded as made
+  // to a window already in front
+  const front = inFront && result.value?.stats?.dnd?.in_front === true;
+  const judged = allowPointer(judgeRouteSpan(result.report, { expected, reported: route, target, frame, focusWithin: (w) => within(w, target), inFront: front, opensWindows }), pointerMoves);
+  if (!judged.foreground && !judged.inFront) return { ...result, route, judged };
   const quiet = await witness.span(`${tag}:after`, () => sleep(300));
-  const held = grabs();
+  const held = probes.grabs();
   const fields = [...judged.fields];
   if (!quiet.witness.clean) fields.push(...quiet.witness.fields.map((f) => `${f} after the request`));
   if (held.pointer !== 'free' || held.keyboard !== 'free') fields.push(`grab left (${JSON.stringify(held)})`);
   return { ...result, route, judged: { clean: fields.length === 0, fields, allowed: judged.allowed } };
+}
+
+/**
+ * A route judgement with the real pointer's moves allowed, for a case whose harness moves the pointer itself during the
+ * span (device.mjs `nudges`): the pointer field alone leaves the failed fields; every other field stands.
+ */
+export function allowPointer(judged, pointerMoves) {
+  if (!pointerMoves || !judged.fields.includes('pointer')) return judged;
+  const fields = judged.fields.filter((f) => f !== 'pointer');
+  return { ...judged, clean: fields.length === 0, fields, allowed: [...(judged.allowed ?? []), 'pointer'] };
 }
 
 // ---------------------------------------------------------------------------------------------------------------

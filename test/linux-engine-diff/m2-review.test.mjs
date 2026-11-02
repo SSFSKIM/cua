@@ -37,7 +37,7 @@ test('the allowance is granted only where the expected route is the one taken; a
   const facts = { target, frame: 0x47a900, focusWithin: (w) => w === target };
   const activated = { focus: [], tree: [[0x400001, 1, 0], [0x47a900, 1, 0]], restacks: [{ kind: 'configure', window: 0x47a900, above: 0x400001, or: 0 }], changes: [{ field: 'active', from: [0x400001], to: [target] }, { field: 'stacking', from: [target, 0x400001], to: [0x400001, target] }] };
   // expected and taken: the foreground allowance
-  assert.deepEqual(judgeRouteSpan(activated, { ...facts, expected: 'foreground', reported: 'foreground' }), { clean: true, fields: [], allowed: ['active', 'stacking'], foreground: true });
+  assert.deepEqual(judgeRouteSpan(activated, { ...facts, expected: 'foreground', reported: 'foreground' }), { clean: true, fields: [], allowed: ['active', 'stacking'], foreground: true, inFront: false });
   // a background scene whose request reported the foreground route: no allowance, and the route itself fails
   const wrong = judgeRouteSpan(activated, { ...facts, expected: 'background', reported: 'foreground' });
   assert.equal(wrong.clean, false);
@@ -47,7 +47,7 @@ test('the allowance is granted only where the expected route is the one taken; a
   assert.deepEqual(judgeRouteSpan({ changes: [] }, { ...facts, expected: 'foreground', reported: null }).fields, ['route not recorded, expected foreground']);
   assert.deepEqual(judgeRouteSpan(activated, { ...facts, expected: 'foreground', reported: 'background' }).fields, ['route background, expected foreground', 'active', 'stacking']);
   // a background request with nothing changed is clean
-  assert.deepEqual(judgeRouteSpan({ changes: [] }, { ...facts, expected: 'background', reported: 'background' }), { clean: true, fields: [], allowed: [], foreground: false });
+  assert.deepEqual(judgeRouteSpan({ changes: [] }, { ...facts, expected: 'background', reported: 'background' }), { clean: true, fields: [], allowed: [], foreground: false, inFront: false });
   // an operation with no expected route (a vendor build, a clipboard read) is judged strictly, whatever it reports
   assert.deepEqual(judgeRouteSpan(activated, { ...facts, expected: null, reported: 'foreground' }).fields, ['active', 'stacking']);
 });
@@ -58,7 +58,8 @@ test('the allowance is granted only where the expected route is the one taken; a
 const sample = (engine, series, ms, extra = {}) => ({ engine, series, ms, ok: true, witness: true, ...extra });
 
 test("a candidate sample whose preparation failed fails the verdict, and no engine's such sample is timed", () => {
-  const opts = { vendors: VENDORS, candidate: 'cua', text: true };
+  // the preparation is judged here; speed needs 20 samples a side (speed-guard.test.mjs)
+  const opts = { vendors: VENDORS, candidate: 'cua', text: true, judgeSpeed: false };
   const rows = [sample('pinned', 'cold', 1), sample('pinned', 'warm', 0.2), sample('newest', 'cold', 1), sample('newest', 'warm', 0.2), sample('cua', 'cold', 0.5), sample('cua', 'warm', 0.1)];
   assert.equal(judgeOperation(rows, opts).pass, true);
   // the candidate released a handle it never issued: it answered fast and succeeded, and still fails
@@ -72,7 +73,7 @@ test("a candidate sample whose preparation failed fails the verdict, and no engi
   assert.equal(vendor.bar.warm, 0.2);
 });
 
-test('both Copy attempts failing give the sample a handle no engine issued, and its verdict fails', async () => {
+test("a Copy that fails gives the sample a handle no engine issued, and its verdict fails", async () => {
   const requests = [];
   const ctx = {
     scene: { id: 7, field: 'f' },
@@ -85,11 +86,28 @@ test('both Copy attempts failing give the sample a handle no engine issued, and 
     },
   };
   assert.equal(await handleOfFirstWord(ctx), NO_HANDLE);
-  assert.deepEqual(requests, ['clipboard_read', 'clipboard_read'], 'tried twice');
+  assert.deepEqual(requests, ['clipboard_read'], "the engine's Copy is never retried (task 22 review)");
   assert.match(ctx.prepareError, /^clipboard_read for a handle failed: editable element has no selected text to Copy/);
   // the release that follows answers success, fast; the sample still fails cua's verdict
   const rows = [sample('pinned', 'cold', 1), sample('pinned', 'warm', 0.2), sample('cua', 'cold', 0.5), sample('cua', 'warm', 0.05, { prepare_error: ctx.prepareError })];
   assert.equal(judgeOperation(rows, { vendors: VENDORS, candidate: 'cua', text: true }).pass, false);
+});
+
+test("a window that refuses the selection twice fails the preparation at the harness oracle's step, and the run goes on", async () => {
+  // t18-verdict: the newest build's gedit text window refused the oracle's selection in a top-up, which ended the run;
+  // m3-gate-final: cua's did once, which failed cua's verdict for a harness fault. The gate's rule (prepare.mjs,
+  // prepare.test.mjs) resamples such a sample instead of judging it
+  const requests = [];
+  let selects = 0;
+  const ctx = {
+    scene: { id: 7, field: 'f', label: 'gedit-text_newest' },
+    desktop: { oracle: { select: () => (selects++, false), text: () => 'cua171 differential scene' } },
+    engine: { request: async (command) => (requests.push(command), { response: { ok: true, output: 'h' } }) },
+  };
+  await assert.rejects(handleOfFirstWord(ctx), (error) => error.step === 'oracle' && /^gedit-text_newest refused the selection$/.test(error.message));
+  assert.equal(selects, 2, 'tried twice');
+  assert.deepEqual(requests, [], 'no Copy without a selection');
+  assert.equal(ctx.prepareError, undefined, 'no handle sent in place of one');
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -105,18 +123,19 @@ test('the noise bound is max(5% of the bar, 1 ms)', () => {
 const spread = (centre, width, n = 31) => Array.from({ length: n }, (_, i) => centre - width + (2 * width * ((i * 7) % n)) / (n - 1));
 
 test('a differential verdict whose interval includes 0 but reaches past the bound is undetermined, so it fails', () => {
-  const series = (engine, values) => values.map((ms, i) => ({ engine, series: i === 0 ? 'cold' : 'warm', ms: i === 0 ? 1 : ms, ok: true }));
+  // 21 cold samples a side, the same in every engine: the warm series is the one judged here
+  const series = (engine, values) => [...values.map((ms) => ({ engine, series: 'warm', ms, ok: true })), ...Array.from({ length: 21 }, () => ({ engine, series: 'cold', ms: 1, ok: true }))];
   // a bar of 10 ms: the bound is 1 ms; cua's samples spread over ±8 ms, its median a little above the bar's
   const rows = [...series('pinned', spread(10, 0.1)), ...series('newest', spread(10.5, 0.1)), ...series('cua', spread(10.05, 8))];
   const v = judgeOperation(rows, { vendors: VENDORS, candidate: 'cua', noise: medianDifferenceInterval });
   const interval = medianDifferenceInterval(rows.filter((r) => r.engine === 'cua' && r.series === 'warm').map((r) => r.ms), rows.filter((r) => r.engine === 'pinned' && r.series === 'warm').map((r) => r.ms));
   assert.ok(interval[0] <= 0 && interval[1] > 1, `the interval ${interval} includes 0 and reaches past 1 ms`);
   assert.equal(v.pass, false);
-  assert.equal(v.noise.length, 0);
-  assert.match(v.reasons.join('; '), /cua: warm .* ms > bar 10 ms, undetermined: the interval \[.*\] reaches past 1 ms/);
+  assert.equal(v.noise.filter((n) => n.series === 'warm').length, 0);
+  assert.match(v.reasons.join('; '), /cua: warm .* ms against the bar 10 ms, undetermined: the interval \[.*\] reaches past 1 ms/);
   // the same spread, narrow: a pass within noise
   const narrow = [...series('pinned', spread(10, 0.1)), ...series('newest', spread(10.5, 0.1)), ...series('cua', spread(10.01, 0.1))];
-  assert.equal(judgeOperation(narrow, { vendors: VENDORS, candidate: 'cua', noise: medianDifferenceInterval }).noise.length, 1);
+  assert.equal(judgeOperation(narrow, { vendors: VENDORS, candidate: 'cua', noise: medianDifferenceInterval }).noise.filter((n) => n.series === 'warm').length, 1);
 });
 
 /** A desktop group of `n` block samples an engine, the engines' times around their centres. */
@@ -154,31 +173,33 @@ test('the declared parity list names the cold desktop screenshot and its Decisio
 });
 
 test("a listed operation above the bar is parity when cua's median lies within the bar's own spread of cold samples, else it fails", () => {
-  const shot = (engine, cold, warm = [25, 25, 25]) => [...cold.map((ms) => sample(engine, 'cold', ms)), ...warm.map((ms) => sample(engine, 'warm', ms))];
+  // each sample seven times over: 21 a side, so the series is judged (Acceptance 3)
+  const times7 = (xs) => Array.from({ length: 7 }, () => xs).flat();
+  const shot = (engine, cold, warm = [25, 25, 25]) => [...times7(cold).map((ms) => sample(engine, 'cold', ms)), ...times7(warm).map((ms) => sample(engine, 'warm', ms))];
   // m2-wire's cold samples: the pinned build sets the bar (33.58), spread 32.22-40.05; cua 36.44
   const rows = [...shot('pinned', [40.05, 32.22, 33.58], [29, 29, 29]), ...shot('newest', [39.44, 37.46, 38.97], [29, 29, 29]), ...shot('cua', [31.68, 36.85, 36.44], [24.6, 24.6, 24.6])];
   const parity = declaredParity({ op: 'get_screenshot', scene: 'desktop', series: 'cold' });
-  const v = judgeOperation(rows, { vendors: VENDORS, candidate: 'cua', parity: [parity] });
+  const v = judgeOperation(rows, { vendors: VENDORS, candidate: 'cua', parity: [parity], noise: medianDifferenceInterval });
   assert.equal(v.pass, false, 'parity is not a pass');
   assert.equal(v.verdict, 'parity');
   assert.deepEqual(v.reasons, []);
   assert.deepEqual(v.parity, [{ series: 'cold', candidate: 36.44, bar: 33.58, against: 'pinned', spread: [32.22, 40.05], section: parity.section }]);
   // outside the spread: a loss
   const slow = [...rows.filter((r) => r.engine !== 'cua'), ...shot('cua', [41, 42, 43], [24.6, 24.6, 24.6])];
-  const lost = judgeOperation(slow, { vendors: VENDORS, candidate: 'cua', parity: [parity] });
+  const lost = judgeOperation(slow, { vendors: VENDORS, candidate: 'cua', parity: [parity], noise: medianDifferenceInterval });
   assert.equal(lost.verdict, 'fail');
-  assert.match(lost.reasons.join(), /cold 42 ms > bar 33.58 ms, outside the bar's spread \[32.22, 40.05\]/);
+  assert.match(lost.reasons.join(), /cold 42 ms .*bar 33.58 ms.*, outside the bar's spread \[32.22, 40.05\]/);
   // an unlisted operation is unaffected
-  assert.equal(judgeOperation(rows, { vendors: VENDORS, candidate: 'cua' }).verdict, 'fail');
-  // the warm series is not listed: a warm loss fails even with the cold parity
-  const warmLoss = [...rows.filter((r) => r.engine !== 'cua'), ...shot('cua', [36.44, 36.44, 36.44], [30, 30, 30])];
-  assert.equal(judgeOperation(warmLoss, { vendors: VENDORS, candidate: 'cua', parity: [parity] }).verdict, 'fail');
+  assert.equal(judgeOperation(rows, { vendors: VENDORS, candidate: 'cua', noise: medianDifferenceInterval }).verdict, 'fail');
+  // the warm series is not listed: a warm loss past the bound fails even with the cold parity
+  const warmLoss = [...rows.filter((r) => r.engine !== 'cua'), ...shot('cua', [36.44, 36.44, 36.44], [31, 31, 31])];
+  assert.equal(judgeOperation(warmLoss, { vendors: VENDORS, candidate: 'cua', parity: [parity], noise: medianDifferenceInterval }).verdict, 'fail');
 });
 
 test('a parity verdict neither fails the run nor counts as a pass', () => {
   const verdict = (pass, extra = {}) => ({ kind: 'verdict', candidate: 'cua', scene: 'desktop', op: 'get_screenshot', pass, reasons: [], ...extra });
   const outcome = runOutcome([verdict(true), verdict(false, { verdict: 'parity', parity: [{ series: 'cold' }] })], { valid: true });
-  assert.deepEqual(outcome, { valid: true, pass: true, failed: [], parity: ['desktop get_screenshot cua'], code: 0 });
+  assert.deepEqual(outcome, { valid: true, pass: true, failed: [], parity: ['desktop get_screenshot cua'], refused: [], code: 0 });
   assert.equal(runOutcome([verdict(false, { verdict: 'fail', reasons: ['x'] })], { valid: true }).code, 1);
 });
 

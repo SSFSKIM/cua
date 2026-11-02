@@ -9,10 +9,10 @@ export const USAGE = `usage:
   linux-engine-diff.mjs --check-wire --vendor-js <@oai/sky directory>
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <bin> --scene <list> --ops <list|all> --out <dir>
       [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
-      [--occlusion covered|visible] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
-  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag --cua <bin> --out <dir> [--run <name>]
-      [--vendor <bin> --newest <bin>] [--family <list>] [--load] [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
-      [--via vendor-js --vendor-js <@oai/sky directory>] (events only)
+      [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
+  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd --cua <bin> --out <dir> [--run <name>]
+      [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--grab-at-ms N] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
+      [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
 
@@ -61,8 +61,54 @@ export function parseArgs(argv) {
     else if (flag === '--summarize') a.mode = 'summarize';
     else if (flag === '--no-counts') a.counts = false;
     else if (flag === '--no-audit') a.audit = false;
+    // the dnd experiment without its 100 ms grab sampler, whose own grabs can fail Chrome's drag-start grab (M3.1)
+    else if (flag === '--no-grabs') a.grabs = false;
+    // the dnd experiment on the page's short drop (40 px from the near source), every lane's window activated first
+    else if (flag === '--dnd-short') a.dndShort = true;
+    // the dnd experiment cold (task 20): every drag the first request of a fresh engine, the lanes interleaved, each
+    // window in front after the device case's settle; `--cover-ms` covers it fully first, as the gate's previous case did
+    else if (flag === '--dnd-cold') a.dndCold = true;
+    // each cold drag after the gate's case before it: cua's dedicated long drop into the covered window (foreground route)
+    else if (flag === '--prelude') {
+      if (need() !== 'dedicated') throw new Error('--prelude takes dedicated: the device case before the cold drop in a block');
+      a.prelude = 'dedicated';
+    }
+    // measurement only: another client's momentary pointer and keyboard grab, that long after each cold drag is sent
+    else if (flag === '--grab-at-ms') {
+      const n = Number(need());
+      if (!Number.isInteger(n) || n < 0) throw new Error('--grab-at-ms needs a whole number of ms, 0 or more');
+      a.grabAtMs = n;
+    }
+    // measurement only: a pointer event that is not the drag's, `<nudge|popup>:<ms>` after each cold drag is sent
+    else if (flag === '--stray') {
+      const m = need().match(/^(nudge|popup):(\d+)$/);
+      if (!m) throw new Error('--stray needs nudge:<ms> or popup:<ms>');
+      a.stray = { kind: m[1], ms: Number(m[2]) };
+    }
+    // measurement only: the real pointer parked at <x>,<y> (screen) just before each cold drag's window is put in front
+    else if (flag === '--park-pointer') {
+      const m = need().match(/^(\d+),(\d+)$/);
+      if (!m) throw new Error('--park-pointer needs <x>,<y>');
+      a.parkPointer = { x: Number(m[1]), y: Number(m[2]) };
+    }
+    // and with the gate's other Chrome windows open behind it (dnd.mjs GATE_BALLAST), as a full verdict run has them
+    else if (flag === '--ballast') {
+      if (need() !== 'gate') throw new Error('--ballast takes gate: the Chrome windows of a full verdict run');
+      a.ballast = 'gate';
+    }
+    else if (flag === '--cover-ms') {
+      const n = Number(need());
+      if (!Number.isInteger(n) || n < 0) throw new Error('--cover-ms needs a whole number of ms, 0 or more');
+      a.coverMs = n;
+    }
     else if (flag === '--load') a.load = true;
+    else if (flag === '--load-factor') {
+      // CPU workers per core under --load (M3.1: a drag-and-drop race's edge is found by raising it)
+      a.load = true;
+      a.loadFactor = Number(need());
+    }
     else if (flag === '--family') a.families = need().split(',').filter(Boolean);
+    else if (flag === '--lanes') a.lanes = need().split(',').filter(Boolean);
     else if (flag === '--geometry') {
       const m = need().match(/^(\d+)x(\d+)$/);
       if (!m) throw new Error('--geometry needs <width>x<height>');
@@ -83,6 +129,10 @@ export function parseArgs(argv) {
     } else throw new Error(`unknown argument ${flag}\n${USAGE}`);
   }
   if (a.experiment) a.mode = 'experiment';
+  for (const [key, flag] of [['coverMs', '--cover-ms'], ['prelude', '--prelude'], ['ballast', '--ballast'], ['grabAtMs', '--grab-at-ms'], ['stray', '--stray'], ['parkPointer', '--park-pointer']]) {
+    if (a[key] !== undefined && !a.dndCold) throw new Error(`${flag} is the cold drag-and-drop run's (--dnd-cold)`);
+  }
+  if (a.dndCold) a.coverMs ??= 0;
   const require = (...keys) => {
     for (const key of keys) {
       const flag = Object.entries({ ...VALUE_FLAGS }).find(([, k]) => k === key)?.[0] ?? `--${key}`;
@@ -94,9 +144,11 @@ export function parseArgs(argv) {
   else if (a.mode === 'summarize') require('out');
   else if (a.mode === 'experiment') {
     require('cua', 'out');
-    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
+    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag', 'kinds', 'dnd'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
     if (['matrix', 'element-click', 'partial-cover', 'events'].includes(a.experiment)) require('vendor', 'newest');
-    if (a.experiment === 'qt-bridge' || a.experiment === 'engine-readiness' || a.experiment === 'drag') require('vendor');
+    if (['qt-bridge', 'engine-readiness', 'drag', 'kinds', 'dnd'].includes(a.experiment)) require('vendor');
+    // the drag and kinds experiments also measure a window with its bottom half covered (Gecko's cover condition)
+    if (!['covered', 'visible', ...(['drag', 'kinds'].includes(a.experiment) ? ['partial', 'partial-deep', 'partial-top'] : [])].includes(a.occlusion)) throw new Error(`--occlusion ${a.occlusion} is not one ${a.experiment} takes`);
     // the events experiment's desktop-only commands through OpenAI's JavaScript client
     if (a.via && !(a.experiment === 'events' && ['wire', 'vendor-js'].includes(a.via))) throw new Error('--via is wire or vendor-js, and among the experiments only events takes it');
     if (a.via === 'vendor-js' && !a.vendorJs) throw new Error(`--via vendor-js needs --vendor-js <@oai/sky directory>\n${USAGE}`);

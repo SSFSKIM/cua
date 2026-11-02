@@ -166,11 +166,14 @@ export const linuxAdapter = {
     row('bind.getApp', 1, bind, {approvals: approvals.length});
     approvals.forEach((a, i) => emit({op: 'approval.elicitation', sample: i + 1, ok: a.action === 'accept', wallMs: Math.round((a.at - bind.started) * 1000) / 1000, app: a.app, action: a.action,
       note: 'wallMs: from the start of the getApp call to the approval request; the harness answers at once'}));
-    // The service is the vendor's @oai/sky on both engine lanes until M3; which engine answered is the engine
-    // attestation's (meta.nativeEngine.observed), and the machine's sky_linux processes are evidence, not attested.
-    meta.service = {surface: 'computer', engine: 'sky', answered: 'vendor'};
+    // From M3 each lane's engine runs behind its own service (the vendor's @oai/sky, or cua's own Linux service).
+    // Which engine answered, and which service drove it, are the engine attestation's (meta.nativeEngine.observed:
+    // each engine's executable and its trusted worker's CUA_SKY_SERVICE, judged when the run ends); `answered` is the
+    // service the bind's engine ran behind. The machine's sky_linux processes are evidence, not attested.
     meta.helpersAtBind = ctx.helperAttestation();
     ctx.observeEngines();
+    const services = [...new Set((meta.nativeEngine?.observed ?? []).map(o => o.service ?? 'unknown'))];
+    meta.service = {surface: 'computer', engine: meta.nativeEngine?.requested ?? 'vendor', answered: services.join(', ') || 'none observed'};
     if (!bind.cell?.ok) throw new Error(`cua.getApp({windowId}) failed: ${bind.cell?.error ?? bind.failure}`);
 
     await measure('warm.getAXState', ctx.samples, linux.AX_FULL);

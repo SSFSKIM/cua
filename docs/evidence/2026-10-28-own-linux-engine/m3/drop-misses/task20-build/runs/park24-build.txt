@@ -1,0 +1,22 @@
+cua   inside   dnd      landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw leave_grab 24
+cua   inside   mouse    landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+cua   inside   pointer  landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+cua   inside   range    landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+cua   inside   select   landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+cua   outside  dnd      landed   0/24  stray-answer  24 (landed  0) other-errors 0 route background 24; watch saw enter_grab 24
+cua   outside  mouse    landed  24/24  stray-answer  24 (landed 24) other-errors 0 route background 24; watch saw enter_grab 24
+cua   outside  pointer  landed  24/24  stray-answer  24 (landed 24) other-errors 0 route background 24; watch saw enter_grab 24
+cua   outside  range    landed   1/24  stray-answer  24 (landed  1) other-errors 0 route background 24; watch saw enter_grab 24
+cua   outside  select   landed   0/24  stray-answer  24 (landed  0) other-errors 0 route background 24; watch saw enter_grab 24
+ded   inside   dnd      landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw leave_grab 24
+ded   inside   mouse    landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+ded   inside   pointer  landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+ded   inside   range    landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+ded   inside   select   landed  24/24  stray-answer   0 (landed  0) other-errors 0 route background 24; watch saw nothing
+ded   outside  dnd      landed  24/24  stray-answer   0 (landed  0) other-errors 0 route foreground 24; watch saw leave_normal 24
+ded   outside  mouse    landed  24/24  stray-answer   0 (landed  0) other-errors 0 route foreground 24; watch saw nothing
+ded   outside  pointer  landed  24/24  stray-answer   0 (landed  0) other-errors 0 route foreground 24; watch saw nothing
+ded   outside  range    landed  24/24  stray-answer   0 (landed  0) other-errors 0 route foreground 24; watch saw nothing
+ded   outside  select   landed  24/24  stray-answer   0 (landed  0) other-errors 0 route foreground 24; watch saw nothing
+grab: 480 drags, p50 0.742 ms, p99 1.688 ms, max 4.078 ms
+pointer inside, undisturbed: 240 drags, 0 stray answers

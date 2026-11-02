@@ -13,6 +13,7 @@
   #scroller div { height: 400px; background: linear-gradient(#f4f4f4, #c8c8c8); }
   #source { position: absolute; left: 360px; top: 130px; width: 100px; height: 50px; background: #6a8fd0; color: #ffffff; }
   #target { position: absolute; left: 560px; top: 120px; width: 200px; height: 100px; background: #d8e8d0; }
+  #near { position: absolute; left: 505px; top: 165px; width: 50px; height: 40px; background: #6a8fd0; }
   #canvas { position: absolute; left: 20px; top: 350px; width: 400px; height: 200px; background: #eeeeee; touch-action: none; }
   #status { position: absolute; left: 460px; top: 350px; margin: 0; font-size: 16px; }
   #status p { margin: 2px 0; }
@@ -28,7 +29,9 @@
        It goes back to its top by itself 2 s after it last scrolled, so every drag of its thumb starts from the top
        (a thumb drag moves the content by how far the thumb went: one short drag would otherwise leave the thumb
        where the next press misses it).
-     - source and target: HTML5 drag and drop; the status line counts drag starts and drops on the target.
+     - source and target: HTML5 drag and drop; the status line counts drag starts and drops on the target. `near` is a
+       second source 5 px from the target, for a short drag and drop (about 40 px, task 18). The `moves` line logs the
+       pointer between a source's press and its release (task 20).
      - canvas: a path-tracking target that draws what plain pointermove events (no coalesced events) report while the
        button is down; the status line counts the moves of the last stroke and the farthest of the path's corners from
        the stroke drawn (CORNERS, canvas pixels), so a drag whose motions arrive merged shows a large deviation.
@@ -38,13 +41,15 @@
 <div id="scroller" aria-label="Scroller"><div></div></div>
 <div id="source" draggable="true" aria-label="Source">drag me</div>
 <div id="target" aria-label="Target"></div>
+<div id="near" draggable="true" aria-label="Near source"></div>
 <canvas id="canvas" width="400" height="200" aria-label="Canvas"></canvas>
 <div id="status">
   <p id="s-select">select none</p>
   <p id="s-range">range 0</p>
   <p id="s-scroll">scroller 0</p>
-  <p id="s-dnd">dnd starts 0 drops 0</p>
+  <p id="s-dnd">dnd starts 0 drops 0 downs 0 detail 0 gap -1 selects 0 ends 0 effect -1 lat -1 dur -1 ups 0 at 0</p>
   <p id="s-canvas">canvas strokes 0 moves 0 dev -1</p>
+  <p id="s-moves">moves seq 0 n 0 start -1 up -1 cancel -1 end -1 m</p>
 </div>
 <script>
   document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
@@ -64,9 +69,74 @@
     clearTimeout(back);
     back = setTimeout(() => { $('scroller').scrollTop = 0; }, 2000);
   });
-  const dnd = { starts: 0, drops: 0 };
-  const showDnd = () => line('s-dnd', `dnd starts ${dnd.starts} drops ${dnd.drops}`);
-  $('source').addEventListener('dragstart', (e) => { dnd.starts += 1; e.dataTransfer.setData('text/plain', 'cua171'); showDnd(); });
+  // the drag source's presses too (M3.1): how many, the click count Chrome gave the last (`detail`), the page-clock gap
+  // in ms from the press before it, and how many selections began anywhere, so a drag read as a repeated click shows.
+  // And how each drag ended (the drop-miss follow-up): dragends, the last one's dropEffect (`effect`: none 0, copy 1,
+  // move 2, link 3), ms from the press to dragstart (`lat`) and from dragstart to dragend (`dur`), the page's mouseups,
+  // and the last press's wall clock (`at`, epoch ms modulo 1e9) to line the drag up with the X server's records.
+  const dnd = { starts: 0, drops: 0, downs: 0, detail: 0, gap: -1, selects: 0, ends: 0, effect: -1, lat: -1, dur: -1, ups: 0, at: 0, last: null, started: null };
+  const EFFECTS = { none: 0, copy: 1, move: 2, link: 3 };
+  const showDnd = () => line('s-dnd', `dnd starts ${dnd.starts} drops ${dnd.drops} downs ${dnd.downs} detail ${dnd.detail} gap ${dnd.gap} selects ${dnd.selects} ends ${dnd.ends} effect ${dnd.effect} lat ${dnd.lat} dur ${dnd.dur} ups ${dnd.ups} at ${dnd.at}`);
+  const down = (e) => {
+    dnd.downs += 1;
+    dnd.detail = e.detail;
+    dnd.gap = dnd.last === null ? -1 : Math.round(e.timeStamp - dnd.last);
+    dnd.last = e.timeStamp;
+    dnd.at = Math.round(performance.timeOrigin + e.timeStamp) % 1e9;
+    showDnd();
+  };
+  document.addEventListener('mouseup', () => { dnd.ups += 1; showDnd(); });
+  document.addEventListener('selectstart', () => { dnd.selects += 1; showDnd(); });
+  const dragstart = (e) => {
+    dnd.starts += 1;
+    dnd.started = e.timeStamp;
+    dnd.lat = dnd.last === null ? -1 : Math.round(e.timeStamp - dnd.last);
+    e.dataTransfer.setData('text/plain', 'cua171');
+    showDnd();
+  };
+  const dragend = (e) => {
+    dnd.ends += 1;
+    dnd.effect = EFFECTS[e.dataTransfer?.dropEffect] ?? 9;
+    dnd.dur = dnd.started === null ? -1 : Math.round(e.timeStamp - dnd.started);
+    showDnd();
+  };
+  // the drag source's pointer log (task 20): every pointermove between its press and the release, so the record shows
+  // whether the renderer saw a move past Blink's drag threshold (4 px) with the button held before the mouseup. Per
+  // event, `t` its own time and `h` the time its handler ran, both ms after the press's; per move its offset from the
+  // press, `buttons`, and how many platform moves the renderer coalesced into it. The line is written once, when the
+  // press ends (pointerup, or dragend once a drag started), so nothing the log does runs during the drag.
+  const MAX_MOVES = 80;
+  let plog = null;
+  const since = (e) => `${(e.timeStamp - plog.t0).toFixed(1)}/${(performance.now() - plog.h0).toFixed(1)}`;
+  const showLog = () => line('s-moves', `moves seq ${plog.seq} n ${plog.moves.length} start ${plog.start} up ${plog.up} cancel ${plog.cancel} end ${plog.end} m${plog.moves.map((m) => ` ${m}`).join('')}`);
+  document.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0 || !['source', 'near'].includes(e.target.id)) return;
+    plog = { seq: dnd.downs + 1, t0: e.timeStamp, h0: performance.now(), x0: e.clientX, y0: e.clientY, start: -1, up: -1, cancel: -1, end: -1, moves: [], open: true };
+  }, true);
+  document.addEventListener('pointermove', (e) => {
+    if (!plog?.open || plog.moves.length >= MAX_MOVES) return;
+    const coalesced = typeof e.getCoalescedEvents === 'function' ? e.getCoalescedEvents().length : 1;
+    plog.moves.push(`${since(e)}/${Math.round(e.clientX - plog.x0)}/${Math.round(e.clientY - plog.y0)}/${e.buttons}/${coalesced}`);
+  }, true);
+  document.addEventListener('pointercancel', (e) => { if (plog?.open) plog.cancel = since(e); }, true);
+  document.addEventListener('pointerup', (e) => {
+    if (!plog?.open || e.button !== 0) return;
+    plog.up = since(e);
+    plog.open = false;
+    showLog();
+  }, true);
+  document.addEventListener('dragstart', (e) => { if (plog?.open) plog.start = since(e); }, true);
+  document.addEventListener('dragend', (e) => {
+    if (!plog?.open) return;
+    plog.end = since(e);
+    plog.open = false;
+    showLog();
+  }, true);
+  for (const id of ['source', 'near']) {
+    $(id).addEventListener('mousedown', down);
+    $(id).addEventListener('dragstart', dragstart);
+    $(id).addEventListener('dragend', dragend);
+  }
   $('target').addEventListener('dragover', (e) => e.preventDefault());
   $('target').addEventListener('drop', (e) => { e.preventDefault(); dnd.drops += 1; showDnd(); });
 

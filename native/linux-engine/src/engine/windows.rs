@@ -62,10 +62,9 @@ const MAP_POLL: Duration = Duration::from_millis(5);
 ///
 /// A minimized window is not viewable when the focus request arrives, so the server answers it `BadMatch` while the
 /// window manager, acting on the activation request, maps it a few milliseconds later: every engine, the vendor's
-/// two builds included, answered an error for an activation that happened (M4, C22). So on `BadMatch` the focus waits
-/// for the window to be viewable, at most [`MAP_WAIT`] (no wait when the window manager has mapped it already), and is
-/// set again; a window still not viewable then answers the first error, and nothing more is sent. Returns how long the
-/// focus waited, when it was set again.
+/// two builds included, answered an error for an activation that happened (M4, C22). So a `BadMatch` is followed by
+/// [`refocus`]: the focus is set again once the window is viewable, and a window still not viewable at [`MAP_WAIT`]
+/// answers the first error, with nothing more sent. Returns how long the focus waited, when it was set again.
 pub(super) fn activate(x: &X11, window: Window) -> Result<Option<Duration>> {
     let (conn, root) = (&x.conn, x.root);
     let message = ClientMessageEvent::new(32, window, x.atom("_NET_ACTIVE_WINDOW"), [1, 0, 0, 0, 0]);
@@ -80,15 +79,16 @@ pub(super) fn activate(x: &X11, window: Window) -> Result<Option<Duration>> {
     let focused = focused.map_err(ReplyError::from).and_then(|c| c.check());
     let waited = match focused {
         Err(ReplyError::X11Error(e)) if e.error_kind == ErrorKind::Match => {
-            let first = ReplyError::X11Error(e);
-            let started = Instant::now();
-            if !wait_viewable(x, window, MAP_WAIT)? {
-                return Err(anyhow::Error::from(first)).with_context(|| format!("failed to focus X11 window {window}"));
-            }
-            let waited = started.elapsed();
-            conn.set_input_focus(InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME)?
-                .check()
-                .with_context(|| format!("failed to focus X11 window {window}"))?;
+            let retry = || -> Result<()> {
+                Ok(conn
+                    .set_input_focus(InputFocus::POINTER_ROOT, window, x11rb::CURRENT_TIME)?
+                    .check()?)
+            };
+            let Some((waited, retried)) = refocus(|| viewable(x, window), retry, MAP_WAIT)? else {
+                return Err(anyhow::Error::from(ReplyError::X11Error(e)))
+                    .with_context(|| format!("failed to focus X11 window {window}"));
+            };
+            retried.with_context(|| format!("failed to focus X11 window {window}"))?;
             Some(waited)
         }
         other => {
@@ -105,16 +105,124 @@ fn viewable(x: &X11, window: Window) -> Result<bool> {
     Ok(x.conn.get_window_attributes(window)?.reply()?.map_state == MapState::VIEWABLE)
 }
 
-/// Polls until `window` is viewable, at most `wait`; whether it became so.
-fn wait_viewable(x: &X11, window: Window, wait: Duration) -> Result<bool> {
-    let deadline = Instant::now() + wait;
+/// What follows a focus request the server refused with `BadMatch` (M4, C22): `viewable` polled until the window is
+/// viewable, at most `bound`, then the focus set once more with `retry`. The retry follows any `BadMatch`, not only one
+/// for a window seen unmapped, since the window manager can map the window between the refusal and the first look at
+/// it (the race 7ea7cd8c fixed). A window viewable at the first look gets the one retry at once, so a `BadMatch` with
+/// another cause is answered by the retry's own result without waiting out the bound (the design session's
+/// condition). Returns `None` when the window was still not viewable at the bound and nothing more was sent, else how
+/// long it waited and the retry's result.
+fn refocus<R>(
+    mut viewable: impl FnMut() -> Result<bool>,
+    retry: impl FnOnce() -> R,
+    bound: Duration,
+) -> Result<Option<(Duration, R)>> {
+    let started = Instant::now();
+    let deadline = started + bound;
     loop {
-        if viewable(x, window)? {
-            return Ok(true);
+        if viewable()? {
+            let waited = started.elapsed();
+            return Ok(Some((waited, retry())));
         }
         if Instant::now() >= deadline {
-            return Ok(false);
+            return Ok(None);
         }
         std::thread::sleep(MAP_POLL);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::Cell;
+    use std::time::{Duration, Instant};
+
+    use anyhow::anyhow;
+
+    use super::{MAP_WAIT, refocus};
+
+    /// The design session's condition on C22's retry (M4): it follows any `BadMatch`, but a window that is viewable
+    /// already, whose `BadMatch` had another cause, gets the one retry at once and its answer, never the bound's wait.
+    #[test]
+    fn a_bad_match_on_a_window_already_viewable_answers_after_the_one_retry_without_waiting_out_the_bound() {
+        let (looks, retries) = (Cell::new(0), Cell::new(0));
+        let started = Instant::now();
+        let refocused = refocus(
+            || {
+                looks.set(looks.get() + 1);
+                Ok(true)
+            },
+            || {
+                retries.set(retries.get() + 1);
+                Err::<(), _>(anyhow!("X11 error X11Error {{ error_kind: Match }}"))
+            },
+            MAP_WAIT,
+        )
+        .unwrap();
+        let elapsed = started.elapsed();
+        let (waited, answer) = refocused.expect("a viewable window is retried");
+        assert_eq!((looks.get(), retries.get()), (1, 1), "one look, one retry");
+        assert!(answer.is_err(), "the retry's own error is the answer");
+        assert!(waited < Duration::from_millis(50), "no wait: {waited:?}");
+        assert!(
+            elapsed < Duration::from_millis(100),
+            "answered at once, not at the {MAP_WAIT:?} bound: {elapsed:?}"
+        );
+    }
+
+    #[test]
+    fn a_window_the_window_manager_maps_during_the_wait_gets_the_focus_once() {
+        let (looks, retries) = (Cell::new(0), Cell::new(0));
+        let refocused = refocus(
+            || {
+                looks.set(looks.get() + 1);
+                Ok(looks.get() > 3)
+            },
+            || {
+                retries.set(retries.get() + 1);
+                Ok::<(), anyhow::Error>(())
+            },
+            MAP_WAIT,
+        )
+        .unwrap();
+        let (_, answer) = refocused.expect("a mapped window is retried");
+        assert!(answer.is_ok());
+        assert_eq!((looks.get(), retries.get()), (4, 1));
+    }
+
+    #[test]
+    fn a_window_nothing_maps_is_not_retried_and_answers_at_the_bound() {
+        let retries = Cell::new(0);
+        let bound = Duration::from_millis(30);
+        let started = Instant::now();
+        let refocused = refocus(
+            || Ok(false),
+            || {
+                retries.set(retries.get() + 1);
+                Ok::<(), anyhow::Error>(())
+            },
+            bound,
+        )
+        .unwrap();
+        assert!(
+            refocused.is_none(),
+            "still unmapped at the bound: the first error is the answer"
+        );
+        assert_eq!(retries.get(), 0, "nothing more is sent");
+        assert!(started.elapsed() >= bound);
+    }
+
+    #[test]
+    fn a_failed_look_at_the_window_is_the_answer() {
+        let retries = Cell::new(0);
+        let refocused = refocus(
+            || Err(anyhow!("BadWindow")),
+            || {
+                retries.set(retries.get() + 1);
+                Ok::<(), anyhow::Error>(())
+            },
+            MAP_WAIT,
+        );
+        assert!(refocused.is_err());
+        assert_eq!(retries.get(), 0);
     }
 }

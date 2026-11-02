@@ -19,7 +19,7 @@ import { auditForeground, auditNothingSent, auditRequests, parseXtrace, startPro
 import { startMonitor } from './busmon.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
-import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe } from './deviations.mjs';
+import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe, setAsideTruncation, truncationAsDeclared } from './deviations.mjs';
 import { judgeDevice } from './device.mjs';
 import { Engine } from './engine.mjs';
 import { medianDifferenceInterval, normalizeAnswer } from './events.mjs';
@@ -888,7 +888,13 @@ export async function runDiff(args) {
           });
           if (taken.stop) break;
           if (!taken.counted) continue;
-          const { row, response } = taken.counted;
+          const { row, response: answered } = taken.counted;
+          // cua's `truncated` beside a tree (M4): recorded, and set aside before the state is compared only where a
+          // deviation declares it (deviations.mjs); anywhere else it stays in the state, which then differs from the vendor's
+          const stateRead = row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot');
+          if (stateRead && answered.output.truncated !== undefined) row.truncated = answered.output.truncated;
+          const { response, deviation: truncation } = stateRead ? setAsideTruncation({ op, scene: sceneName, response: answered }) : { response: answered, deviation: null };
+          if (truncation) row.deviation = truncation.op;
           if (row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot' || OPS[op].kind === 'retention')) {
             row.nodes = retainedIds(response.output).length;
             row.source = response.output.ax_tree_source;
@@ -1185,6 +1191,16 @@ export async function runDiff(args) {
           if (!calls.pass) {
             verdict.pass = false;
             verdict.reasons.push(...calls.reasons);
+          }
+        }
+        if (via === 'wire' && (OPS[op].kind === 'read' || OPS[op].kind === 'shot')) {
+          // cua's truncation (M4) as declared on every sample: the over-budget page's cut is required, not only excused
+          // (over the wire, where the answer is the engine's own; through the vendor's JavaScript an undeclared field
+          // still differs from the vendor's state)
+          const off = mine.filter((r) => r.ok && !truncationAsDeclared({ op, scene: sceneName, truncated: r.truncated }));
+          if (off.length) {
+            verdict.pass = false;
+            verdict.reasons.push(`${candidate}: truncated not as declared on ${off.length} of ${mine.length} samples`);
           }
         }
         const kept = keep[`${candidate}|${sceneName}|${op}`];

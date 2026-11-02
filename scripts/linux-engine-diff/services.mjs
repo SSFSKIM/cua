@@ -20,6 +20,12 @@
 // moment of the scene; the scenes run in one order in both lanes, so the counter the numbering shares across windows is
 // compared too. Nothing that changes a window is sent. Results hold digests and counts, never a tree's text.
 //
+// The truncation line (M4): a rendered state ends with `Accessibility tree truncated: …` when its read carried the
+// engine's `truncated`. Equal lanes prove nothing about it, so it is set aside before the lanes are compared and judged
+// in each lane on its own: its count is the sum of the `truncated` that lane's service returned for that very read, and
+// there is no line when none came. In the cua lane every read must also carry the `truncated` deviations.mjs declares
+// (the over-budget page cut by both limits) and none on any other scene (gedit and Chrome read whole).
+//
 // usage: node scripts/linux-engine-diff/services.mjs --vendor-js <@oai/sky directory> --engine <cua-engine> --out <dir>
 //          [--scenes gedit,chrome,over-budget]
 // exit 0 when every step of every scene is equal across lanes and gives its expected outcome in each (EXPECT below);
@@ -28,8 +34,10 @@ import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
-import {parseArgs} from 'node:util';
+import {isDeepStrictEqual, parseArgs} from 'node:util';
 import {pathToFileURL} from 'node:url';
+import {lineAsReported, truncationAsDeclared} from './deviations.mjs';
+import {splitTruncationLine} from './normalize.mjs';
 import {Desktop} from './scenes.mjs';
 
 const {values} = parseArgs({options: {'vendor-js': {type: 'string'}, engine: {type: 'string'}, out: {type: 'string'}, scenes: {type: 'string', default: 'gedit,chrome,over-budget'}}});
@@ -48,16 +56,22 @@ const {bind_linux_app} = await import('../../src/cua-api/bind-linux-app.mjs');
 const cuaService = createService({env: {CUA_ENGINE_BIN: values.engine, CUA_DESKTOP_MODE: 'shared'}});
 
 // A facade over `service`, as a kernel has it: its own sky.mjs instance over an rpc that carries values as the trusted
-// worker's JSON transport does (undefined crosses as null; non-enumerable functions do not cross).
-async function facade(lane, service) {
+// worker's JSON transport does (undefined crosses as null; non-enumerable functions do not cross). `reads` records the
+// `truncated` of each get_window_state answer the service gives (null for none), for the truncation line's judge.
+async function facade(lane, service, reads) {
   globalThis.nodeRepl = {rpc: async (_name, message) => {
     const answer = await service.handleRpc(message);
+    if (message.type === 'execute' && message.method === 'get_window_state') reads.push(answer?.truncated ?? null);
     return answer === undefined ? null : JSON.parse(JSON.stringify(answer));
   }};
   const {sky} = await import(`../../src/cua-api/sky.mjs?lane=${lane}`);
   return sky;
 }
-const lanes = [{lane: 'vendor', sky: await facade('vendor', vendorService)}, {lane: 'cua', sky: await facade('cua', cuaService)}];
+const lanes = [];
+for (const [lane, service] of [['vendor', vendorService], ['cua', cuaService]]) {
+  const reads = [];
+  lanes.push({lane, reads, sky: await facade(lane, service, reads)});
+}
 
 const settled = async run => { try { return {value: await run()}; } catch (error) { return {error: String(error?.message ?? error)}; } };
 const numbered = node => ({id: node.id, native_id: node.native_id, children: node.children.map(numbered)});
@@ -94,6 +108,7 @@ const STEPS = [
     (function visit(node) { if (node.actions?.length) withActions.push(node.id); node.children.forEach(visit); })(state.ax_tree);
     ctx.actionTarget = withActions[0] ?? state.ax_tree.id;
     ctx.nodes = countNodes(state.ax_tree);
+    ctx.truncated = state.truncated ?? null;
     return {source: state.ax_tree_source, tree: numbered(state.ax_tree)};
   }],
   ['query', async ({sky, ctx}) => (await sky.get_window_state({window: ctx.window, query: ctx.query, include_screenshot: false})).ax_tree.to_string()],
@@ -122,6 +137,28 @@ const EXPECT = {
   'unknown-action': o => /^AT-SPI action "cua171-no-such-action" is unavailable/.test(o.error ?? ''),
 };
 
+// The steps that render a state, and where the rendered text is in their outcome.
+const RENDERED = {state: o => o.value, 'state-after-query': o => o.value, screenshot: o => o.value?.state};
+
+// A step's outcome with its rendered state's truncation line set aside, for the comparison across lanes, and the count
+// that line shows (null for no line; undefined for a step that renders no state).
+function splitOutcome(step, outcome) {
+  const rendered = RENDERED[step]?.(outcome);
+  if (typeof rendered !== 'string') return {compared: outcome, shown: undefined};
+  const {state, shown} = splitTruncationLine(rendered);
+  return {compared: step === 'screenshot' ? {value: {...outcome.value, state}} : {value: state}, shown};
+}
+
+// The truncation judge of one lane's step (the header): the tree step's state keeps the `truncated` its service
+// returned (sky.mjs's hydration), a rendered state's line shows what its read returned, and in the cua lane each read's
+// `truncated` is the one declared for the scene. Every read here is a full tree read, the differential run's `tree`.
+function truncationHolds({step, scene, lane, read, shown, ctx}) {
+  const declared = lane !== 'cua' || truncationAsDeclared({op: 'tree', scene, truncated: read});
+  if (step === 'tree') return read !== undefined && isDeepStrictEqual(ctx.truncated, read) && declared;
+  if (shown === undefined) return true;
+  return read !== undefined && lineAsReported(shown, read) && declared;
+}
+
 const desktop = new Desktop({cua: values.engine, run: `services-${process.pid}`, logs: values.out});
 const rows = [];
 const setup = [];
@@ -139,16 +176,26 @@ try {
     const contexts = Object.fromEntries(lanes.map(({lane}) => [lane, {}]));
     for (const [step, run] of STEPS) {
       const outcomes = {};
-      for (const {lane, sky} of lanes) outcomes[lane] = await settled(() => run({sky, scene, ctx: contexts[lane]}));
-      const equal = JSON.stringify(outcomes.vendor) === JSON.stringify(outcomes.cua);
-      const expected = {vendor: EXPECT[step](outcomes.vendor), cua: EXPECT[step](outcomes.cua)};
-      const row = {scene: name, step, ok: equal && expected.vendor && expected.cua, equal, expected, vendor: summarize(outcomes.vendor), cua: summarize(outcomes.cua)};
+      const read = {};
+      for (const {lane, sky, reads} of lanes) {
+        const before = reads.length;
+        outcomes[lane] = await settled(() => run({sky, scene, ctx: contexts[lane]}));
+        // the `truncated` of the state read this step made (null for none), undefined when it read none
+        read[lane] = reads.length > before ? reads.at(-1) : undefined;
+      }
+      const split = {vendor: splitOutcome(step, outcomes.vendor), cua: splitOutcome(step, outcomes.cua)};
+      const equal = JSON.stringify(split.vendor.compared) === JSON.stringify(split.cua.compared);
+      const truncation = Object.fromEntries(lanes.map(({lane}) => [lane, truncationHolds({step, scene: name, lane, read: read[lane], shown: split[lane].shown, ctx: contexts[lane]})]));
+      const expected = {vendor: EXPECT[step](outcomes.vendor) && truncation.vendor, cua: EXPECT[step](outcomes.cua) && truncation.cua};
+      const row = {scene: name, step, ok: equal && expected.vendor && expected.cua, equal, expected, vendor: summarize(split.vendor.compared), cua: summarize(split.cua.compared)};
+      if (read.vendor !== undefined || read.cua !== undefined) row.truncated = {vendor: read.vendor ?? null, cua: read.cua ?? null};
+      if (split.cua.shown !== undefined) row.line = {vendor: split.vendor.shown, cua: split.cua.shown};
       if (outcomes.vendor.error || outcomes.cua.error) Object.assign(row, {vendorError: outcomes.vendor.error ?? null, cuaError: outcomes.cua.error ?? null});
       if (step === 'tree') row.nodes = {vendor: contexts.vendor.nodes, cua: contexts.cua.nodes};
       if (step === 'state' || step === 'state-after-query') row.lines = {vendor: outcomes.vendor.value?.split('\n').length, cua: outcomes.cua.value?.split('\n').length};
       if (step === 'screenshot') row.jpeg = {vendor: contexts.vendor.jpeg, cua: contexts.cua.jpeg};
       rows.push(row);
-      console.log(`${row.ok ? 'PASS' : 'FAIL'} ${row.equal ? 'equal' : 'different'} expected=${expected.vendor}/${expected.cua} ${name} ${step}${row.nodes ? ` (${row.nodes.cua} nodes)` : ''}${row.vendorError ? ` [${row.vendorError}]` : ''}`);
+      console.log(`${row.ok ? 'PASS' : 'FAIL'} ${row.equal ? 'equal' : 'different'} expected=${expected.vendor}/${expected.cua} ${name} ${step}${row.nodes ? ` (${row.nodes.cua} nodes)` : ''}${row.truncated?.cua ? ` truncated ${JSON.stringify(row.truncated.cua)}` : ''}${row.line?.cua != null ? ` line ${row.line.cua}` : ''}${row.vendorError ? ` [${row.vendorError}]` : ''}`);
     }
   }
 } finally {
@@ -161,10 +208,10 @@ const commit = execFileSync('git', ['rev-parse', 'HEAD'], {encoding: 'utf8'}).tr
 mkdirSync(values.out, {recursive: true});
 writeFileSync(join(values.out, 'results.jsonl'), `${rows.map(row => JSON.stringify(row)).join('\n')}\n`);
 const allPass = rows.every(row => row.ok);
-const table = rows.map(row => `| ${row.scene} | ${row.step} | ${row.ok ? 'pass' : '**FAIL**'} | ${row.equal ? 'equal' : '**different**'} | ${row.expected.vendor && row.expected.cua ? 'yes' : `**no** (vendor ${row.expected.vendor}, cua ${row.expected.cua})`} | ${row.nodes?.cua ?? row.lines?.cua ?? ''} | ${row.vendorError ?? ''} |`);
+const table = rows.map(row => `| ${row.scene} | ${row.step} | ${row.ok ? 'pass' : '**FAIL**'} | ${row.equal ? 'equal' : '**different**'} | ${row.expected.vendor && row.expected.cua ? 'yes' : `**no** (vendor ${row.expected.vendor}, cua ${row.expected.cua})`} | ${row.nodes?.cua ?? row.lines?.cua ?? ''} | ${row.truncated?.cua ? `${JSON.stringify(row.truncated.cua)}${row.line ? `, line ${row.line.cua}` : ''}` : ''} | ${row.vendorError ?? ''} |`);
 writeFileSync(join(values.out, 'summary.md'), [`# Two services, one engine: ${allPass ? 'every step passes' : 'FAILURES'}`, '',
   `Engine: \`${engineVersion}\` (${values.engine}); checkout ${commit}; scenes ${SCENES.join(', ')}; ${new Date().toISOString()}.`, '',
-  'A step passes when the two lanes are equal and each gives the step\'s expected outcome: the ordinary steps succeed with their window, state, tree or screenshot present; `unknown-id` and `unknown-action` fail with the sentence they exist to reach.', '',
-  '| scene | step | verdict | vendor service vs cua service | expected outcome | nodes / rendered lines (cua) | both lanes\' error |', '|---|---|---|---|---|---|---|', ...table, ''].join('\n'));
+  'A step passes when the two lanes are equal and each gives the step\'s expected outcome: the ordinary steps succeed with their window, state, tree or screenshot present; `unknown-id` and `unknown-action` fail with the sentence they exist to reach. The truncation line is set aside before the lanes are compared and judged in each lane: its count is the `truncated` that lane\'s service returned for the read, and the cua lane\'s reads carry the `truncated` declared for the scene (the over-budget page cut by both limits) and none elsewhere.', '',
+  '| scene | step | verdict | vendor service vs cua service | expected outcome | nodes / rendered lines (cua) | truncated, line count (cua) | both lanes\' error |', '|---|---|---|---|---|---|---|---|', ...table, ''].join('\n'));
 console.log(allPass ? 'VERDICT: every step passes' : 'VERDICT: failures');
 process.exit(allPass ? 0 : 1);

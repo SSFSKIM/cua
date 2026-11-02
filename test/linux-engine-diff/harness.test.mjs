@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { attributeCalls, parseMonitor } from '../../scripts/linux-engine-diff/busmon.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { compareStates, normalizeState, retainedIds } from '../../scripts/linux-engine-diff/normalize.mjs';
+import { compareStates, normalizeState, retainedIds, splitTruncationLine } from '../../scripts/linux-engine-diff/normalize.mjs';
 import { analyzeTrial } from '../../scripts/linux-engine-diff/readiness.mjs';
 import { medianDifferenceInterval } from '../../scripts/linux-engine-diff/events.mjs';
 import { blockOrder, median, judgeOperation } from '../../scripts/linux-engine-diff/stats.mjs';
@@ -177,6 +177,26 @@ test('a run-wide label pattern and the volatile Chrome memory text are replaced'
   b.ax_tree.children[0].value = "Open 'cua171-diff-r1-gedit-newest.txt' - Memory usage - 24.3 MB";
   assert.equal(compareStates(a, b, { labelA: pattern, labelB: pattern }).equal, true);
   assert.equal(normalizeState(a, { label: pattern }).ax_tree.children[0].value, "Open '<label>.txt' - Memory usage - <n>");
+});
+
+test("a state's truncated is part of the state as compared, named as the difference (M4 T3)", () => {
+  const cut = { ...state('s', ['a', 'b']), truncated: { nodes: 3, depth: 1, failed: 0 } };
+  assert.deepEqual(normalizeState(cut).truncated, { nodes: 3, depth: 1, failed: 0 });
+  assert.equal('truncated' in normalizeState(state('s', ['a', 'b'])), false, 'a state without it compares as before');
+  const diff = compareStates(state('s', ['a', 'b']), cut);
+  assert.equal(diff.equal, false);
+  assert.equal(diff.first_difference.field, 'truncated');
+  assert.equal(compareStates(cut, { ...cut }).equal, true);
+});
+
+test('a rendered state splits from its trailing truncation line, whose count is read', () => {
+  const tree = 'Accessibility source: at_spi\n0 frame Window\n\t1 push button Open';
+  const line = 'Accessibility tree truncated: at least 33 elements not shown (30 over the element limit, 2 below the depth limit, 1 unreadable)';
+  assert.deepEqual(splitTruncationLine(`${tree}\n${line}`), { state: tree, shown: 33 });
+  assert.deepEqual(splitTruncationLine(tree), { state: tree, shown: null });
+  // only a last line: the same words inside the tree (a node's name) are not the line
+  const named = `${tree}\n\t2 label ${line}\n\t3 push button Close`;
+  assert.deepEqual(splitTruncationLine(named), { state: named, shown: null });
 });
 
 test('retained native ids in preorder', () => {

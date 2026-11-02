@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { DEVIATIONS, declaredDeviation } from '../../scripts/linux-engine-diff/deviations.mjs';
+import { DEVIATIONS, declaredDeviation, lineAsReported, setAsideTruncation, truncationAsDeclared } from '../../scripts/linux-engine-diff/deviations.mjs';
 
 test('every declared deviation names its operation, field, reason and the spec section', () => {
   assert.ok(DEVIATIONS.length >= 6);
@@ -80,4 +80,56 @@ test('interrupted input answering an error where the pinned build answers succes
   const candidate = { ok: false, error: 'X11 error X11Error { error_kind: Window, error_code: 3, sequence: N }' };
   assert.ok(declaredDeviation({ op: 'interrupted_hold', scene: 'events', field: 'answer', candidate }));
   assert.equal(declaredDeviation({ op: 'interrupted_hold', scene: 'events', field: 'answer', candidate: { ok: true, output: null } }), null);
+});
+
+test("cua's truncated is declared on the over-budget tree read alone, with both of its causes counted (M4 T3)", () => {
+  const output = (truncated) => ({ ok: true, output: { ax_tree: {}, truncated } });
+  const both = { nodes: 4200, depth: 2, failed: 0 };
+  assert.ok(declaredDeviation({ op: 'tree', scene: 'over-budget', field: 'truncated', candidate: output(both) }));
+  // the page is built with both causes: a count missing is not the declared answer
+  for (const missing of [{ ...both, depth: 0 }, { ...both, nodes: 0 }, { nodes: 1, depth: 1 }, null]) {
+    assert.equal(declaredDeviation({ op: 'tree', scene: 'over-budget', field: 'truncated', candidate: output(missing) }), null, JSON.stringify(missing));
+  }
+  // gedit and Chrome read whole: no truncated is declared there, nor for another operation
+  for (const [op, scene] of [['tree', 'gedit'], ['tree', 'chrome'], ['tree_shot', 'gedit'], ['tree_shot', 'over-budget']]) {
+    assert.equal(declaredDeviation({ op, scene, field: 'truncated', candidate: output(both) }), null, `${op} ${scene}`);
+  }
+  assert.equal(declaredDeviation({ op: 'tree', scene: 'over-budget', field: 'output', candidate: output(both) }), null, 'the field alone');
+});
+
+test('a declared truncated is set aside before the state is compared, and any other stays in it', () => {
+  const answer = (scene, truncated) => ({ op: 'tree', scene, response: { ok: true, output: { ax_tree: { id: 'a' }, ...(truncated ? { truncated } : {}) } } });
+  const both = { nodes: 4200, depth: 2, failed: 0 };
+  const declared = setAsideTruncation(answer('over-budget', both));
+  assert.deepEqual(declared.response, { ok: true, output: { ax_tree: { id: 'a' } } });
+  assert.equal(declared.deviation.field, 'truncated');
+  // undeclared: on gedit, or a count the declaration does not cover, the field stays and the state differs
+  for (const kept of [answer('gedit', both), answer('over-budget', { ...both, depth: 0 })]) {
+    const { response, deviation } = setAsideTruncation(kept);
+    assert.equal(deviation, null);
+    assert.deepEqual(response, kept.response);
+  }
+  const plain = answer('gedit', null);
+  assert.deepEqual(setAsideTruncation(plain), { response: plain.response, deviation: null });
+  const failed = { op: 'tree', scene: 'over-budget', response: { ok: false, error: 'x' } };
+  assert.deepEqual(setAsideTruncation(failed), { response: failed.response, deviation: null });
+});
+
+test('a read gives its truncated as declared: present as declared on over-budget, absent everywhere else', () => {
+  const both = { nodes: 4200, depth: 2, failed: 0 };
+  assert.equal(truncationAsDeclared({ op: 'tree', scene: 'over-budget', truncated: both }), true);
+  assert.equal(truncationAsDeclared({ op: 'tree', scene: 'over-budget', truncated: null }), false, 'the page must be cut');
+  assert.equal(truncationAsDeclared({ op: 'tree', scene: 'over-budget', truncated: { ...both, nodes: 0 } }), false);
+  assert.equal(truncationAsDeclared({ op: 'tree', scene: 'gedit', truncated: null }), true);
+  assert.equal(truncationAsDeclared({ op: 'tree', scene: 'chrome', truncated: undefined }), true);
+  assert.equal(truncationAsDeclared({ op: 'tree', scene: 'gedit', truncated: { nodes: 0, depth: 0, failed: 1 } }), false, 'no field on gedit');
+});
+
+test("the rendered line agrees with the read's truncated: its count the sum, and no line for a read that cut nothing", () => {
+  assert.equal(lineAsReported(4202, { nodes: 4200, depth: 2, failed: 0 }), true);
+  assert.equal(lineAsReported(4200, { nodes: 4200, depth: 2, failed: 0 }), false);
+  assert.equal(lineAsReported(null, { nodes: 4200, depth: 2, failed: 0 }), false, 'a read that cut must show the line');
+  assert.equal(lineAsReported(null, null), true);
+  assert.equal(lineAsReported(null, { nodes: 0, depth: 0, failed: 0 }), true);
+  assert.equal(lineAsReported(3, null), false, 'no line without the field');
 });

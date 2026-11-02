@@ -38,6 +38,9 @@ const previousUnconfirmed = (op) => ({
   section: 'Decision Log, M2.1 (serving generations across pastes); M2 whole-branch review (the display-wide window)',
 });
 
+/** The counts of cua's `truncated` (Interfaces: `{nodes: u32, depth: u32, failed: u32}`). */
+const TRUNCATION_KEYS = ['nodes', 'depth', 'failed'];
+
 export const DEVIATIONS = [
   appliedWhereNoVendorDoes('type_text', 'gnome-text-editor', 'GTK 4 ignores the background route, where both builds send their text, and cua takes the foreground route in dedicated mode (M0.4 matrix; Decision Log, M2 pre-flight)'),
   appliedWhereNoVendorDoes('clipboard_write', 'gedit', "both builds paste a snapshot with EditableText.PasteText after taking CLIPBOARD themselves; GTK 3's text-view PasteText hands its clipboard request a stack pointer, so whenever another process owns CLIPBOARD its callback reads freed stack and inserts nothing (gedit's criticals; arm64 crashed), and the builds fail after 10 s (R/F §7; #268); cua pastes it with the family's chord"),
@@ -60,6 +63,16 @@ export const DEVIATIONS = [
   },
   ...['type_text', 'clipboard_write', 'clipboard_read'].map(previousUnconfirmed),
   {
+    // the over-budget page (pages/over-budget.html) nests a branch past depth 63 before far more than 5,000 elements
+    op: 'tree',
+    scene: 'over-budget',
+    field: 'truncated',
+    answer: (c) => c.ok === true && TRUNCATION_KEYS.every((k) => Number.isSafeInteger(c.output?.truncated?.[k])) && c.output.truncated.nodes > 0 && c.output.truncated.depth > 0,
+    reason:
+      "cua's get_window_state adds `truncated: {nodes, depth, failed}` beside the tree, the points where its read left out a node it had listed (the element limit, the depth limit, a failed GetRoleName), each hiding a subtree never read, so the facade can say the tree is cut; the vendor drops those nodes silently and its JavaScript ignores the field. The tree itself is still the vendor's exactly. Declared on the over-budget page alone, which is built with both limits' cuts: a read of gedit or Chrome is whole and carries no field",
+    section: 'Design, Observation (The tree read: truncated); Decision Log, M3.2 (the line says "at least") and M4 pre-flight (Observation)',
+  },
+  {
     op: 'interrupted_hold',
     scene: 'events',
     field: 'answer',
@@ -75,6 +88,38 @@ export const DEVIATIONS = [
  */
 export function declaredDeviation({ op, scene, field, candidate }, list = DEVIATIONS) {
   return list.find((d) => d.op === op && (d.scene === undefined || d.scene === scene) && d.field === field && d.answer(candidate)) ?? null;
+}
+
+/**
+ * A state answer as compared: its `truncated` set aside, with the deviation that declares it, where one does for this
+ * operation and scene; otherwise the answer as it came, so an undeclared `truncated` stays in the state and differs
+ * from every vendor build's (normalize.mjs).
+ */
+export function setAsideTruncation({ op, scene, response }, list = DEVIATIONS) {
+  if (!response.ok || response.output?.truncated === undefined) return { response, deviation: null };
+  const deviation = declaredDeviation({ op, scene, field: 'truncated', candidate: response }, list);
+  if (!deviation) return { response, deviation: null };
+  const { truncated, ...output } = response.output;
+  return { response: { ...response, output }, deviation };
+}
+
+/**
+ * Whether a cua read's `truncated` is what its operation and scene call for: the declared answer where a deviation
+ * declares the field (the over-budget page must be cut), and none anywhere else.
+ */
+export function truncationAsDeclared({ op, scene, truncated }, list = DEVIATIONS) {
+  const declares = list.some((d) => d.field === 'truncated' && d.op === op && (d.scene === undefined || d.scene === scene));
+  if (truncated == null) return !declares;
+  return declaredDeviation({ op, scene, field: 'truncated', candidate: { ok: true, output: { truncated } } }, list) !== null;
+}
+
+/**
+ * Whether the count a rendered state's truncation line shows (`splitTruncationLine`, null for no line) is the one its
+ * read's `truncated` calls for: the sum of the counts, and no line when the read reported none or cut nothing.
+ */
+export function lineAsReported(shown, truncated) {
+  const total = truncated ? TRUNCATION_KEYS.reduce((sum, k) => sum + truncated[k], 0) : 0;
+  return total > 0 ? shown === total : shown === null;
 }
 
 /**

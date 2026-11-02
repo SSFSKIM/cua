@@ -87,10 +87,61 @@ The sitting at f41653f6 (prepared from that commit, `parity-run.sh`):
 An earlier sitting at 2f79b760 recorded the same two results. Its cua lane was refused by the engine check, because
 the engine's file name was not `cua-engine`, and it was not kept.
 
+## The task review's fix round
+
+The review found two controls passing falsely: the state predicates never compared the answer's window with the
+requested one (and `screenshots: [{}]` passed the restored control), and the release case never established that a
+release happened, or that only a release happened. The fix round's candidate is a musl build made the workflow's way
+(paths remapped, stripped): `cua-engine 0.3.0 (f4db168a5e0a)`, sha256 `850296c9d9dabc6373488a01ac109e7e1abe87ce91d5086d7791385d677100b4`,
+static-pie. Its only engine change is f4db168a, the activation's retry made a pure, unit-tested step (no behaviour
+change).
+
+### The wire run (`diff-fix/`, `t4-fix-minimized`, exit 0)
+
+The 27 minimized cases on `minimized`, `minimized-xterm` and the new `minimized-recorder`, 9 samples each: "run valid;
+development run, not a release gate: every verdict PASS". The negative check failed the activating stub on both the
+witness and the audit.
+- The reads are bound to the requested window and gedit's file name: 9 of 9 for each read case.
+- The restored capture is a real image of the window, 9 of 9: the file decodes at 910×756, the window's size, and
+  differs from an independent capture of the window (`xprobe snap`) in 12 pixels, mean 0.35, against a limit of 688.
+- The background release, on a harness recorder window the window manager manages and minimizes, 9 of 9: the
+  window received `FocusIn` and the synthetic `KeyPress` 50 at the hold, then exactly the synthetic `KeyRelease` 50
+  and the route's `FocusOut` at the release.
+- The foreground release (xterm, dedicated), 9 of 9: the keymap showed nothing down before the hold, key 50 down after
+  it, and nothing down after the release.
+- The `held-release` audits, split at the case's marks in the trace, are clean on both routes: each of the two audited
+  samples held key 50, and its release span carried exactly that key's release and nothing else.
+- Every minimize left a harness window active (234 of 234).
+
+### The release proof's live negative controls (`release-controls/`)
+
+`run.sh` runs `probe.mjs` on a private Xvfb with its own Openbox and session bus. Each lane holds Shift on a
+window, minimizes it, releases its own way, and is judged by the harness's judges (`controls.jsonl`):
+
+| Route | Lane | Window or keymap | Audit | Verdict |
+|---|---|---|---|---|
+| background (recorder) | the real key_up | exactly KeyRelease 50 | clean | PASS |
+| background | no-op (no key_up) | "never received KeyRelease 50" | "the release never sent KeyRelease 50" | FAIL |
+| background | an extra synthetic `x` press and release, then the key_up | "received synthetic KeyPress 53" | "the release sent KeyPress 53" | FAIL |
+| foreground (xterm, dedicated) | the real key_up | key 50 up | clean | PASS |
+| foreground | no-op | "keys still down: 50" | "the release never sent KeyRelease 50" | FAIL |
+| foreground | an extra XTEST `x` press and release, then the key_up | keys up (the press was released) | "the release sent XTEST KeyPress 53" | FAIL |
+
+The last row is why the audit is part of the proof: an extra press that is also released leaves the keymap clean.
+
+### Through the real facade (`parity-fix/`, head 48b828ac)
+
+The minimized check is now its own case, `native/target-app-decorated-tab/getaxstate/minimized`, a named variant the
+inventory admits because a declared vendor defect names it. The plain getAXState case is positive again.
+- vendor lane `RECORDED_VENDOR_DEFECT`: 34 cases, 31 covered, 3 declared defects (M2's two text cases and the
+  minimized variant); the plain getAXState case passes.
+- cua lane `PASS`, 34 of 34.
+- The engine-lane diff is ok: no difference, the three declarations applied.
+
 ## Limits
 
 - A button held across requests is released on a minimized window only in the engine's live test on Xvfb
   (`tests/live_minimized.rs`, a `drag_handle` over a window that is then minimized). The only cross-request button
   hold is `drag_handle`'s, and it is desktop-route XTEST, which the harness does not send on the person's display.
-- The background release's "only the release" rests on the background audit (no XTEST, no focus, no activation) and
-  the witness. xtrace prints SendEvent's event type, but the audit does not count KeyRelease events.
+- (Closed by the fix round below.) The background release's "only the release" rested on the background audit and the
+  witness, and the reads' predicates were not bound to the requested window.

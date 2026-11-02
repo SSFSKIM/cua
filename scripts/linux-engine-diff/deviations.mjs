@@ -40,7 +40,7 @@ const previousUnconfirmed = (op) => ({
 
 export const DEVIATIONS = [
   appliedWhereNoVendorDoes('type_text', 'gnome-text-editor', 'GTK 4 ignores the background route, where both builds send their text, and cua takes the foreground route in dedicated mode (M0.4 matrix; Decision Log, M2 pre-flight)'),
-  appliedWhereNoVendorDoes('clipboard_write', 'gedit', "both builds paste a snapshot with EditableText.PasteText, which inserts nothing in gedit and fails after 10 s (R/F §7); cua pastes it with the family's chord"),
+  appliedWhereNoVendorDoes('clipboard_write', 'gedit', "both builds paste a snapshot with EditableText.PasteText after taking CLIPBOARD themselves; GTK 3's text-view PasteText hands its clipboard request a stack pointer, so whenever another process owns CLIPBOARD its callback reads freed stack and inserts nothing (gedit's criticals; arm64 crashed), and the builds fail after 10 s (R/F §7; #268); cua pastes it with the family's chord"),
   {
     op: 'clipboard_write',
     field: 'clipboard',

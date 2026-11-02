@@ -29,3 +29,7 @@ commit 7b2077e4's. The harness ran from the working tree that became the next co
 - `fix1/`: the fix round (task 31). `truncated` is declared once for any read that was cut, not per scene. Every
   count is a u32. A query's read is judged too. The wire run covers every state-read scene, and both negative
   controls ran on the released 0.3.0 (`fix1/README.md`).
+- `fix2/`: the second fix round (task 32). The field is judged against the engine's own record of each read's cut
+  points (the `--stats` tree record), exactly and both ways; a read without the record fails. The two-services path,
+  which has no record, keeps fixture facts. The same runs and controls as fix1, and the Calc fixture's `javaldx`
+  warning explained (`fix2/README.md`).

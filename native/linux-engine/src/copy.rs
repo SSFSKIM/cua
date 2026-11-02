@@ -175,15 +175,25 @@ impl From<String> for Refused {
     }
 }
 
-/// Copies from the focused element by the vendor's route choice; why not when it cannot.
-pub fn copy(bus: &mut Bus, element: &ObjRef) -> Result<std::result::Result<(), Refused>> {
+/// Asked just before each of the Copy's effects (`CopyText`, the context menu's `DoAction`, its item's `DoAction`):
+/// whether the window's association still names the frame the element was found in (`atspi::Associated::confirm`).
+pub type Confirm<'a> = dyn FnMut(&mut Bus) -> Result<bool> + 'a;
+
+/// Copies from the focused element of X11 window `window` by the vendor's route choice; why not when it cannot,
+/// `confirm` refusing it just before any effect once the association has changed.
+pub fn copy(
+    bus: &mut Bus,
+    element: &ObjRef,
+    window: u32,
+    confirm: &mut Confirm,
+) -> Result<std::result::Result<(), Refused>> {
     let interfaces = tree::with_call(element, Field::Interfaces, |c| bus.call(c))?;
     let interfaces: Vec<String> = match interfaces.as_ref().ok().and_then(|v| v.first()) {
         Some(Value::Array(items)) => items.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
         _ => Vec::new(),
     };
     if interfaces.iter().any(|i| i == EDITABLE_TEXT) {
-        return Ok(editable_copy(bus, element)?.map_err(Refused::from));
+        return Ok(editable_copy(bus, element, window, confirm)?.map_err(Refused::from));
     }
     if interfaces.iter().any(|i| i == tree::ACTION)
         && let Ok(names) = crate::atspi::action_names(bus, element)?
@@ -195,7 +205,7 @@ pub fn copy(bus: &mut Bus, element: &ObjRef) -> Result<std::result::Result<(), R
             .map(|(i, _)| i)
             .collect();
         if let [index] = menus.as_slice() {
-            return context_menu_item(bus, element, *index as u32, "Copy");
+            return context_menu_item(bus, element, *index as u32, "Copy", window, confirm);
         }
     }
     Ok(Err(Refused::from(
@@ -204,7 +214,12 @@ pub fn copy(bus: &mut Bus, element: &ObjRef) -> Result<std::result::Result<(), R
 }
 
 /// `EditableText.CopyText` of the element's one selected range.
-fn editable_copy(bus: &mut Bus, element: &ObjRef) -> Result<std::result::Result<(), String>> {
+fn editable_copy(
+    bus: &mut Bus,
+    element: &ObjRef,
+    window: u32,
+    confirm: &mut Confirm,
+) -> Result<std::result::Result<(), String>> {
     let count = call(
         bus,
         element,
@@ -239,6 +254,11 @@ fn editable_copy(bus: &mut Bus, element: &ObjRef) -> Result<std::result::Result<
             "editable element returned selection offsets outside its text".into()
         ));
     }
+    #[cfg(test)]
+    crate::fault::identity(crate::fault::Identity::CopyText);
+    if !confirm(bus)? {
+        return Ok(Err(crate::atspi::changed_before_acting(window)));
+    }
     Ok(call(
         bus,
         element,
@@ -256,6 +276,8 @@ fn context_menu_item(
     element: &ObjRef,
     action: u32,
     label: &str,
+    window: u32,
+    confirm: &mut Confirm,
 ) -> Result<std::result::Result<(), Refused>> {
     let app = ObjRef {
         bus: element.bus.clone(),
@@ -265,6 +287,9 @@ fn context_menu_item(
         Ok(children_of(&tree::with_call(&app, Field::Children, |c| bus.call(c))?))
     };
     let before: HashSet<ObjRef> = app_children(bus)?.into_iter().collect();
+    if !confirm(bus)? {
+        return Ok(Err(crate::atspi::changed_before_acting(window).into()));
+    }
     if let Err(e) = crate::atspi::do_action(bus, element, action)? {
         return Ok(Err(e.into()));
     }
@@ -275,6 +300,17 @@ fn context_menu_item(
             let (item, items) = find_menu_item(bus, &frame, label)?;
             opened |= items > 0;
             if let Some(item) = item {
+                // the menu is open: a refusal now says so, and the caller closes it
+                if !confirm(bus)? {
+                    return Ok(Err(Refused {
+                        sentence: crate::atspi::changed_after_input(
+                            window,
+                            "nothing was copied, but the Copy had already opened the element's context menu, which \
+                             is closed again with Escape",
+                        ),
+                        menu_open: true,
+                    }));
+                }
                 return Ok(crate::atspi::do_action(bus, &item, 0)?.map_err(|sentence| Refused {
                     sentence,
                     menu_open: true,

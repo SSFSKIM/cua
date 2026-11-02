@@ -166,6 +166,24 @@ fn catch_up(twins: &Twins) -> impl FnOnce() + 'static {
     }
 }
 
+/// The stale state the other way round, for the Copy: `_NET_ACTIVE_WINDOW` names A while the X focus and GTK's
+/// `active` frame are B's. Only B's entry holds a selection (GTK clears an entry's selection when another takes
+/// PRIMARY, and B's took it last), so a Copy through the stale association has something to copy.
+fn stale_towards_b(twins: &Twins) {
+    desktop(Some(twins.b), twins.b);
+    settled_on(&twins.log, 2);
+    desktop(None, twins.a);
+}
+
+/// `catch_up` the other way round: the X focus moves to A.
+fn catch_up_to_a(twins: &Twins) -> impl FnOnce() + 'static {
+    let (a, log) = (twins.a, twins.log.clone());
+    move || {
+        desktop(Some(a), a);
+        settled_on(&log, 1);
+    }
+}
+
 /// The window manager's part: window `n` (its X11 id `window`) moved to `at`, once GTK has seen it there.
 fn moved(window: u32, log: &Log, n: u64, (x, y): (i32, i32)) {
     let (conn, _) = x11rb::connect(None).unwrap();
@@ -313,27 +331,6 @@ fn a_read_whose_active_frame_is_corrected_once_read_is_the_retry_sentence() {
     not(feature = "live"),
     ignore = "needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)"
 )]
-fn a_copy_whose_active_frame_is_corrected_before_it_copies_nothing() {
-    let _serial = serial();
-    let Some((mut engine, twins)) = setup("copy") else {
-        return;
-    };
-    stale(&twins);
-    fault::arm_identity(Identity::Confirm, 1, catch_up(&twins));
-    let answer = request(&mut engine, "clipboard_read", json!({"window": {"id": twins.b}}));
-    assert!(fault::identity_hook_ran(), "the hook ran: {answer:?}");
-    assert_eq!(answer, Err(changed_before_acting(twins.b)));
-    assert_eq!(clipboard_text(), "before", "no Copy reached the clipboard");
-    // the control: the same request now copies B's own selection
-    assert!(request(&mut engine, "clipboard_read", json!({"window": {"id": twins.b}})).is_ok());
-    assert_eq!(clipboard_text(), "twin-2");
-}
-
-#[test]
-#[cfg_attr(
-    not(feature = "live"),
-    ignore = "needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)"
-)]
 fn an_action_whose_active_frame_is_corrected_before_it_presses_nothing() {
     let _serial = serial();
     let Some((mut engine, twins)) = setup("action") else {
@@ -474,4 +471,93 @@ fn a_paste_whose_active_frame_is_corrected_before_its_focusing_click_clicks_noth
         .collect();
     assert!(focused.is_empty(), "no click focused a second entry: {focused:?}");
     assert_eq!(clipboard_text(), "before");
+}
+
+#[test]
+#[cfg_attr(
+    not(feature = "live"),
+    ignore = "needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)"
+)]
+fn a_copy_whose_active_frame_is_corrected_after_its_selection_is_read_copies_nothing() {
+    // The Copy's editable route reads the selection over several calls before CopyText: GTK catches up in between, so
+    // only a confirmation at CopyText itself refuses
+    let _serial = serial();
+    let Some((mut engine, twins)) = setup("copy-late") else {
+        return;
+    };
+    stale_towards_b(&twins);
+    fault::arm_identity(Identity::CopyText, 1, catch_up_to_a(&twins));
+    let answer = request(&mut engine, "clipboard_read", json!({"window": {"id": twins.a}}));
+    assert!(fault::identity_hook_ran(), "the hook ran: {answer:?}");
+    assert_eq!(answer, Err(changed_before_acting(twins.a)));
+    assert_eq!(clipboard_text(), "before", "B's selection never reached the clipboard");
+    // the control: B active and focused, its own Copy is confirmed at CopyText and goes out
+    desktop(Some(twins.b), twins.b);
+    settled_on(&twins.log, 2);
+    assert!(request(&mut engine, "clipboard_read", json!({"window": {"id": twins.b}})).is_ok());
+    assert_eq!(clipboard_text(), "twin-2");
+}
+
+#[test]
+#[cfg_attr(
+    not(feature = "live"),
+    ignore = "needs an X display, AT-SPI and python3-gi with GTK 3 (--features live)"
+)]
+fn a_paste_whose_frame_changes_after_its_focusing_click_says_the_click_was_sent_and_restores_nothing() {
+    let _serial = serial();
+    let Some((mut engine, twins)) = setup("restore") else {
+        return;
+    };
+    // B apart from A, told apart by its position; its second entry has no focus, so the paste clicks it first
+    place(&twins, 2, (450, 0));
+    let state = read(&mut engine, twins.b).unwrap();
+    let field = find(&state["ax_tree"], &|n| n["value"] == json!("other-2")).expect("B's second entry")["id"].clone();
+    // the click lands and focuses the field; at the selection restore B is back on A's place, inactive
+    let (b, log) = (twins.b, twins.log.clone());
+    fault::arm(Faults::default());
+    fault::arm_identity(Identity::Restore, 1, move || moved(b, &log, 2, (0, 0)));
+    let answer = request(
+        &mut engine,
+        "type_text",
+        json!({"window": {"id": twins.b}, "element_id": field, "text": "PASTED"}),
+    );
+    let sent = fault::sent();
+    assert!(fault::identity_hook_ran(), "the hook ran at the restore: {answer:?}");
+    assert_eq!(
+        answer,
+        Err(format!(
+            "window identity changed during the request for X11 window {}; no paste was dispatched, but a focusing \
+             click already reached the window, so read the window before retrying",
+            twins.b
+        ))
+    );
+    sleep(Duration::from_millis(300));
+    let of = |key: &str| -> Vec<Value> {
+        twins
+            .log
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|r| r.get(key).is_some())
+            .cloned()
+            .collect()
+    };
+    assert_eq!(
+        of("button"),
+        [json!({"button": 1, "window": 2})],
+        "the one focusing press, and nothing after"
+    );
+    assert_eq!(
+        of("focus"),
+        [json!({"focus": "other", "window": 2})],
+        "it focused B's field"
+    );
+    assert!(sent.is_empty(), "no key was sent: {sent:?}");
+    assert_eq!(clipboard_text(), "before", "the clipboard holds what it held");
+    place(&twins, 2, (450, 0));
+    let state = read(&mut engine, twins.b).unwrap();
+    assert!(
+        find(&state["ax_tree"], &|n| n["value"] == json!("other-2")).is_some(),
+        "the field's text is as it was"
+    );
 }

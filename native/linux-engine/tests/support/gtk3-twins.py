@@ -4,8 +4,9 @@ one size at one place, so neither X11 nor an AT-SPI frame's extents tell them ap
 `twin-n` is selected and has the focus, a second entry `other-n`, and a button `press-n`; the process owns CLIPBOARD,
 holding `before`. It prints, one JSON line each, flushed at once: `{"marker": n, "xid": id}` once window n is mapped,
 `{"active": n, "is": bool}` when its active state changes, `{"configured": n, "x": x, "y": y}` when it is placed,
-`{"focus": "other", "window": n}` when its second entry takes the focus, and `{"pressed": n}` when its button is
-pressed, so the test reads what each window did. Killed by the test.
+`{"focus": "other", "window": n}` when its second entry takes the focus, `{"button": b, "window": n}` for each mouse
+button press on that entry, and `{"pressed": n}` when its button is pressed, so the test reads what each window did.
+Killed by the test.
 
 usage: gtk3-twins.py <title> <count> <width> <height>
 """
@@ -36,6 +37,7 @@ for n in range(1, count + 1):
     entry = Gtk.Entry(text=f'twin-{n}')
     other = Gtk.Entry(text=f'other-{n}')
     other.connect('focus-in-event', lambda _w, _e, n=n: say({'focus': 'other', 'window': n}) or False)
+    other.connect('button-press-event', lambda _w, e, n=n: say({'button': e.button, 'window': n}) or False)
     button = Gtk.Button(label=f'press-{n}')
     button.connect('clicked', lambda _b, n=n: say({'pressed': n}))
     for widget in (entry, other, button):

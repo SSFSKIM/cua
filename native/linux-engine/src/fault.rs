@@ -103,12 +103,17 @@ pub fn key(keycode: u8, press: bool, send: impl FnOnce() -> Result<()>) -> Resul
     Ok(())
 }
 
-/// Where an identity hook runs (`atspi.rs`): as an association's re-verification begins (between choosing the frame
-/// and accepting it), or as an accepted association is confirmed again (just before an effect, or after a read).
+/// Where an identity hook runs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Identity {
+    /// As an association's re-verification begins, between choosing the frame and accepting it (`atspi.rs`).
     Verify,
+    /// As an accepted association is confirmed again, just before an effect or after a read (`atspi.rs`).
     Confirm,
+    /// The Copy's editable route, once it has read the selection and just before `CopyText` (`copy.rs`).
+    CopyText,
+    /// A paste's selection restore, once the focusing click has focused the field (`engine/paste.rs`).
+    Restore,
 }
 
 /// A hook armed for the `nth` time (from 1) its point is reached since arming.

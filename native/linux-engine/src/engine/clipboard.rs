@@ -44,11 +44,8 @@ impl Engine {
                     format!("window {} has no focused element to Copy from", info.id).into()
                 ));
             };
-            // the walk read the frame association chose: confirmed again before the Copy, its one effect
-            if !associated.confirm(bus, x)? {
-                return Ok(Err(atspi::changed_before_acting(info.id).into()));
-            }
-            copy::copy(bus, &focused)
+            // the walk read the frame association chose: the Copy confirms it again just before each of its effects
+            copy::copy(bus, &focused, info.id, &mut |bus| associated.confirm(bus, x))
         });
         if let Err(refused) = copied? {
             if refused.menu_open {

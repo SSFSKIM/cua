@@ -262,8 +262,9 @@ impl Associated {
     }
 
     /// Whether the window's association still names this frame, on what the server and the bus say now. Run just
-    /// before each effect of a request (an element action, the right click, the element scroll, the Copy, a paste's
-    /// focusing click, its selection restore and its chord) and after a read, so a frame chosen on evidence that has
+    /// before each effect of a request (an element action, the right click, the element scroll, the Copy's `CopyText`
+    /// and each of its context-menu `DoAction`s, a paste's focusing clicks, its selection restore and its chord) and
+    /// after a read, so a frame chosen on evidence that has
     /// since changed (an `active` state the toolkit corrected) neither receives the effect nor answers the read. The
     /// whole association is run again and must name the same frame. The vendor's own match is confirmed by nothing:
     /// it is the only frame of the title, with no sibling of it, and the vendor's path stays as it is. What is left
@@ -293,7 +294,15 @@ impl Associated {
     }
 }
 
-/// The sentence for a request refused because its window's association changed before an effect was sent.
+/// The sentence for a request refused because its window's association changed after some of its input was sent
+/// (`sent` says what it was and what was not): not safe to repeat blind, so the window is to be read first.
+pub fn changed_after_input(window: u32, sent: &str) -> String {
+    format!(
+        "window identity changed during the request for X11 window {window}; {sent}, so read the window before retrying"
+    )
+}
+
+/// The sentence for a request refused because its window's association changed before any of its input was sent.
 pub fn changed_before_acting(window: u32) -> String {
     format!(
         "window identity changed during the request for X11 window {window}; nothing was sent, so it is safe to retry"

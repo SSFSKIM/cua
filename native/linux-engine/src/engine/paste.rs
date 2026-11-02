@@ -243,9 +243,11 @@ impl Engine {
                 report.clicked = true;
                 let clicked_at = Instant::now();
                 let shared = std::cell::RefCell::new(&mut *bus);
+                let mut clicked = false;
                 let (after, clicks) = click_for_focus(
                     || {
-                        element.associated.confirm_before_acting(&mut shared.borrow_mut(), x)?;
+                        confirmed(&element, &mut shared.borrow_mut(), x, clicked)?;
+                        clicked = true;
                         route.place(x, rx, ry)?;
                         route.button(x, 1, true)?;
                         std::thread::sleep(CLICK_HOLD);
@@ -261,7 +263,9 @@ impl Engine {
                     bail!("element did not take the focus when clicked; nothing was sent");
                 }
                 if let Some(before) = &seen.text {
-                    element.associated.confirm_before_acting(bus, x)?;
+                    #[cfg(test)]
+                    crate::fault::identity(crate::fault::Identity::Restore);
+                    confirmed(&element, bus, x, true)?;
                     report.restored = Some(field::restore(bus, &element.target, before)?);
                 }
                 seen = observe(bus, &element.target)?;
@@ -333,6 +337,28 @@ fn click_for_focus(
         if after.focused || clicks == FOCUS_CLICKS {
             return Ok((after, clicks));
         }
+    }
+}
+
+/// The window's association confirmed again just before one of a paste's effects (a focusing click, the selection
+/// restore). A change refuses, saying whether a focusing click had already been sent (`identity_refusal`).
+fn confirmed(element: &Element, bus: &mut crate::dbus::Bus, x: &mut X11, clicked: bool) -> Result<()> {
+    if !element.associated.confirm(bus, x)? {
+        bail!(identity_refusal(element.info.id, clicked));
+    }
+    Ok(())
+}
+
+/// A paste refused because its window's association changed: safe to retry only when no focusing click preceded it,
+/// since a click that reached the window may have moved its focus or its caret.
+fn identity_refusal(window: Window, clicked: bool) -> String {
+    if clicked {
+        atspi::changed_after_input(
+            window,
+            "no paste was dispatched, but a focusing click already reached the window",
+        )
+    } else {
+        atspi::changed_before_acting(window)
     }
 }
 
@@ -413,7 +439,7 @@ fn dispatch_and_confirm(
     // The field was observed in the frame association chose: confirmed again just before the chord.
     if !element.associated.confirm(bus, x)? {
         pasted.settled();
-        bail!(atspi::changed_before_acting(window));
+        bail!(identity_refusal(window, report.clicked));
     }
     let time = match route.session() {
         Some(session) => session.now(),
@@ -596,6 +622,20 @@ mod tests {
             showing: true,
             text: None,
         }
+    }
+
+    #[test]
+    fn an_identity_refusal_says_safe_to_retry_only_before_any_focusing_click() {
+        assert_eq!(
+            identity_refusal(7, false),
+            "window identity changed during the request for X11 window 7; nothing was sent, so it is safe to retry"
+        );
+        // before a second focusing click, the selection restore or the chord: the first click reached the window
+        assert_eq!(
+            identity_refusal(7, true),
+            "window identity changed during the request for X11 window 7; no paste was dispatched, but a focusing \
+             click already reached the window, so read the window before retrying"
+        );
     }
 
     #[test]

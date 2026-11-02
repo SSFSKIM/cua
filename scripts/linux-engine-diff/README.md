@@ -43,9 +43,11 @@ node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "
   --scene "$SCENES" --ops all --run "$RUN" --out "$OUT"
 ```
 
-`candidate.mjs` stores the file as `cua-engine`, mode 0700, in a directory of its own under the temporary directory
-(a downloaded artifact has lost its executable bit; the copy is removed when the run ends or is stopped), and checks that copy, so
-the bytes checked are the bytes every cua lane starts. In order, a gate refuses:
+`candidate.mjs` stores the file as `cua-engine`, mode 0700, in a directory the run makes first under the temporary
+directory (a downloaded artifact has lost its executable bit), and checks that copy, so the bytes checked are the bytes
+every cua lane starts. The directory is removed on a refusal, an error and the run's end, and by a stop (SIGINT or
+SIGTERM) at any point, during the checks too, where the stop also kills the command they wait on. A gate runs the
+candidate only once it is attested; in order, it refuses:
 
 - a file that is not an ELF file, a gnu build (a glibc interpreter or glibc's ABI tag: the host's default
   `x86_64-unknown-linux-gnu`, which `m2-final` and `m3-gate-t25` judged), a dynamic one, or one for another
@@ -56,9 +58,15 @@ the bytes checked are the bytes every cua lane starts. In order, a gate refuses:
   SSFSKIM/cua/.github/workflows/linux-engine.yml --deny-self-hosted-runners --format json` fails, with gh's reason;
 - a digest mismatch: no verified attestation names the copy's sha256;
 - a commit mismatch: the verified attestations name another source commit than the checkout's HEAD;
-- a `--version` that does not name the checkout's commit (`cua-engine <version> (<12 hex>)`).
+- then, the candidate's first run, a `--version` that does not name the checkout's commit (`cua-engine <version>
+  (<12 hex>)`).
 
-A refusal prints `candidate refused: <reason>` and exits 2 before anything runs. An accepted gate prints `release
+A refusal prints `candidate refused: <reason>` and exits 2 before anything runs.
+
+Each execution takes a `--run` name of its own (the default is the start time): a name the out directory's
+`results.jsonl` already has rows of is refused (`run refused: …`, exit 2) before the candidate is stored. `summary.md`
+does not judge a run name whose rows mix a gate and a dev run (or a run from before #267): its heading says so and no
+verdict line is drawn, so no row's label ever stands for another execution's. An accepted gate prints `release
 gate; candidate: …` first.
 
 The run records the candidate in its `meta` row (`gate`, and `candidate`: `sha256`, `target`, `linkage`, `version`, the
@@ -68,7 +76,7 @@ attestation's subjects, predicate, source commit and ref, the workflow run and t
 is not on a terminal.
 
 `--dev` runs any build, from any checkout, and asks gh nothing; the copy and the record are made the same way, with
-`attestation` null. Its summary heading, its verdict line in `summary.md` and on stdout all say `development run, not a
+`attestation` null, and the candidate's `--version` is run unchecked. Its summary heading, its verdict line in `summary.md` and on stdout all say `development run, not a
 release gate`. Iterate on dev builds; a speed claim or an adoption run takes a musl build made the workflow's way
 (`--target x86_64-unknown-linux-musl`, the workflow's `RUSTFLAGS` path remaps, `CUA_ENGINE_GIT_SHA`, and its `strip`),
 still a dev run, or better the workflow's own artifact.

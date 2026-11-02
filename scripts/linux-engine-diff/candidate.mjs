@@ -4,16 +4,15 @@
 // same bytes (its build is reproducible), so the same attestation verifies it. Anything else is refused, with the
 // reason; `--dev` takes any build, and its verdict says it is not a release gate.
 //
-// The harness stores the candidate itself, as `cua-engine` with mode 0700 in a directory of its own (a downloaded
+// The harness stores the candidate itself, as `cua-engine` with mode 0700 in a directory its caller owns (a downloaded
 // artifact has lost its executable bit), and every check reads that copy: the bytes checked are the bytes the run
-// starts. The record (the run's `meta.candidate`): the copy's sha256, its target and linkage read from the ELF file,
+// starts. A gate runs the candidate (its `--version`) only once it is attested; a dev run runs it unchecked. The record (the run's `meta.candidate`): the copy's sha256, its target and linkage read from the ELF file,
 // its `--version`, the checkout's commit and whether it is clean, and what `gh attestation verify --format json`
 // verified (gh's plain output prints nothing when it is not on a terminal).
 
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
-import { chmodSync, copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { spawn } from 'node:child_process';
+import { chmodSync, copyFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,12 +22,11 @@ export const SIGNER_WORKFLOW = `${REPO}/${WORKFLOW}`;
 /** The checkout the harness runs from: the commit a gate's candidate must be built from. */
 export const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
-/** A candidate a gate does not take; `dir` is the stored copy's directory, already removed. */
+/** A candidate a gate does not take. */
 export class CandidateRefused extends Error {
-  constructor(message, dir) {
+  constructor(message) {
     super(message);
     this.name = 'CandidateRefused';
-    this.dir = dir;
   }
 }
 
@@ -100,8 +98,8 @@ function attestationRecord(entry) {
 }
 
 /** The release workflow's attestations of `path` that gh verified, read from its JSON; a refusal reason when none. */
-function verifyAttestation(path, run) {
-  const verified = run('gh', ['attestation', 'verify', path, '--repo', REPO, '--signer-workflow', SIGNER_WORKFLOW, '--deny-self-hosted-runners', '--format', 'json']);
+async function verifyAttestation(path, run) {
+  const verified = await run('gh', ['attestation', 'verify', path, '--repo', REPO, '--signer-workflow', SIGNER_WORKFLOW, '--deny-self-hosted-runners', '--format', 'json']);
   if (verified.status !== 0) {
     const why = (verified.stderr || verified.stdout || '').trim().split('\n').filter(Boolean).slice(-2).join(' ');
     return { refused: `unattested: gh found no attestation of ${WORKFLOW} (on a GitHub-hosted runner) that verifies it (${why || `exit ${verified.status}`})` };
@@ -118,18 +116,21 @@ function verifyAttestation(path, run) {
 const first = (result) => (result.status === 0 ? result.stdout.trim() : null);
 
 /**
- * Stores `source` as `<a fresh directory>/cua-engine`, mode 0700, and checks it: `{path, dir, record}`. A gate (`gate`
- * true) refuses, with a `CandidateRefused` naming the reason, a checkout at no commit or not clean, a file that is not
- * a static musl ELF for this host, one that no attestation of the release workflow verifies, one whose sha256 the
- * verified attestations do not name, one built from another commit than the checkout's, and one whose `--version` does
- * not name that commit. A dev run refuses nothing and asks gh nothing. `run(command, args)` returns `{status, stdout,
- * stderr}`; the tests pass a fake git, gh and engine.
+ * Stores `source` as `<dir>/cua-engine`, mode 0700, and checks it: `{path, record}`. `dir` is the caller's, made empty
+ * before and removed by it whatever happens, so a stop during the checks (which run git, gh and the candidate) leaves
+ * nothing behind. A gate (`gate` true) refuses, with a `CandidateRefused` naming the reason, in this order: a file that
+ * is not a static musl ELF for this host; a checkout at no commit or not clean; a file no attestation of the release
+ * workflow verifies; one whose sha256 the verified attestations do not name; one built from another commit than the
+ * checkout's; and only then, the candidate run for the first time, one whose `--version` does not name that commit. A
+ * dev run refuses nothing, asks gh nothing, and runs the candidate's `--version` unchecked. `run(command, args)`
+ * answers `{status, stdout, stderr}` (or a promise of it); the tests pass a fake git, gh and engine. `signal`, an
+ * AbortSignal, kills the command in flight.
  */
-export function prepareCandidate({ source, gate, root = REPO_ROOT, hostArch = process.arch, run = runCommand }) {
-  const dir = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
+export async function prepareCandidate({ source, gate, dir, signal, root = REPO_ROOT, hostArch = process.arch, run: runWith = runCommand }) {
+  // `signal` aborts the command in flight (the run's stop)
+  const run = (command, args) => runWith(command, args, { signal });
   const refuse = (why) => {
-    rmSync(dir, { recursive: true, force: true });
-    throw new CandidateRefused(`${why}${gate ? '. A gate takes the release workflow\'s attested artifact of the checked-out commit (scripts/linux-engine-diff/README.md, "The candidate"); --dev runs any build, not as a release gate' : ''}`, dir);
+    throw new CandidateRefused(`${why}${gate ? '. A gate takes the release workflow\'s attested artifact of the checked-out commit (scripts/linux-engine-diff/README.md, "The candidate"); --dev runs any build, not as a release gate' : ''}`);
   };
   const path = join(dir, 'cua-engine');
   try {
@@ -140,20 +141,23 @@ export function prepareCandidate({ source, gate, root = REPO_ROOT, hostArch = pr
   }
   const bytes = readFileSync(path);
   const elf = elfTarget(bytes);
-  const commit = first(run('git', ['-C', root, 'rev-parse', 'HEAD']));
-  const status = run('git', ['-C', root, 'status', '--porcelain']);
+  const commit = first(await run('git', ['-C', root, 'rev-parse', 'HEAD']));
+  const status = await run('git', ['-C', root, 'status', '--porcelain']);
   const changes = status.status === 0 ? status.stdout.split('\n').filter(Boolean) : null;
   const record = {
     gate,
     sha256: createHash('sha256').update(bytes).digest('hex'),
     target: elf?.target ?? null,
     linkage: elf?.linkage ?? null,
-    version: first(run(path, ['--version'])),
+    version: null,
     commit,
     clean: changes ? changes.length === 0 : null,
     attestation: null,
   };
-  if (!gate) return { path, dir, record };
+  if (!gate) {
+    record.version = first(await run(path, ['--version']));
+    return { path, record };
+  }
 
   const host = HOST_ARCHES[hostArch] ?? hostArch;
   if (!elf) refuse('the candidate is not an ELF file');
@@ -167,7 +171,7 @@ export function prepareCandidate({ source, gate, root = REPO_ROOT, hostArch = pr
     const named = changes.slice(0, 5).map((l) => l.slice(3)).join(', ');
     refuse(`the checkout is not clean (${changes.length} changes: ${named}${changes.length > 5 ? ', …' : ''}): a gate judges a committed checkout`);
   }
-  const verified = verifyAttestation(path, run);
+  const verified = await verifyAttestation(path, run);
   if (verified.refused) refuse(verified.refused);
   const mine = verified.attestations.filter((a) => a.subjects.some((s) => s.sha256 === record.sha256));
   if (mine.length === 0) {
@@ -177,10 +181,12 @@ export function prepareCandidate({ source, gate, root = REPO_ROOT, hostArch = pr
   if (!mine.some((a) => a.source_commit === commit)) {
     refuse(`commit mismatch: the candidate was built from ${[...new Set(mine.map((a) => a.source_commit))].join(', ')}, and the checkout is at ${commit}`);
   }
+  // attested: the release workflow built these bytes from this commit, so the candidate may now be run
+  record.version = first(await run(path, ['--version']));
   const named = /^cua-engine \S+ \(([0-9a-f]{12})\)$/.exec(record.version ?? '')?.[1];
   if (!named || !commit.startsWith(named)) refuse(`the candidate's --version answers ${JSON.stringify(record.version)}, which does not name the checkout's commit ${commit.slice(0, 12)}`);
   record.attestation = { verified: true, signer_workflow: SIGNER_WORKFLOW, attestations: mine };
-  return { path, dir, record };
+  return { path, record };
 }
 
 /** How a run's verdict is labelled: a dev run's says it is not a release gate; a gate's, and a run from before #267's, nothing. */
@@ -194,8 +200,15 @@ export function candidateLine(c) {
   return `candidate: ${built}; attestation verified: ${proofs.join('; ')}`;
 }
 
-function runCommand(command, args) {
-  const result = spawnSync(command, args, { encoding: 'utf8', timeout: 60000 });
-  if (result.error) return { status: -1, stdout: '', stderr: result.error.message };
-  return result;
+/** A command's `{status, stdout, stderr}`, without blocking the event loop: a stop (stop.mjs) is handled while it runs. */
+function runCommand(command, args, { signal } = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000, signal });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8').on('data', (d) => (stdout += d));
+    child.stderr.setEncoding('utf8').on('data', (d) => (stderr += d));
+    child.once('error', (error) => resolve({ status: -1, stdout: '', stderr: error.message }));
+    child.once('close', (code, signal) => resolve({ status: code ?? -1, stdout, stderr: signal ? `${stderr}killed by ${signal}` : stderr }));
+  });
 }

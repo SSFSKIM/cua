@@ -11,7 +11,8 @@
 
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -33,6 +34,7 @@ import { writeSummary } from './report.mjs';
 import { routeWitness, runCases } from './safety.mjs';
 import { Desktop, XPROBE, a11yBusAddress } from './scenes.mjs';
 import { MIN_NOISE_SAMPLES, auditVerdict, blockOrder, judgeCalls, judgeOperation, runOutcome, verdictLine } from './stats.mjs';
+import { cleanupOnStop } from './stop.mjs';
 import { CandidateTextLost, resolveField, sceneTextBefore } from './text.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
 import { judgeForegroundSpan, judgeInFrontSpan, startWitness } from './witness.mjs';
@@ -762,19 +764,62 @@ export function judgeWithDecisions(rows, options, decided = new Map()) {
   return { ...speed, engines: all.engines, reasons, verdict, pass: verdict === 'pass', decisions: [...frozen.values()].map(({ keys, ...d }) => d) };
 }
 
+/** A verdict run that cannot start: its name already has rows in the out directory. */
+export class RunRefused extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'RunRefused';
+  }
+}
+
+/** Whether `results.jsonl` already has rows of the run `run`. */
+function runHasRows(results, run) {
+  if (!existsSync(results)) return false;
+  return readFileSync(results, 'utf8').split('\n').some((line) => {
+    try {
+      return JSON.parse(line).run === run;
+    } catch {
+      return false;
+    }
+  });
+}
+
 /**
- * A verdict run on its candidate (candidate.mjs): a release gate unless `args.dev`. The candidate `--cua` names is
- * stored as `cua-engine` (mode 0700) and checked before anything runs; a gate's refusal is thrown as a
- * `CandidateRefused`. Every engine lane of cua runs the stored copy, which is removed when the run ends.
+ * A verdict run on its candidate (candidate.mjs): a release gate unless `args.dev`. Each execution has a run name of its
+ * own: a name the out directory already has rows of is refused (`RunRefused`), so one execution's rows never label
+ * another's. The candidate `--cua` names is stored as `cua-engine` (mode 0700) and checked before anything runs; a gate's
+ * refusal is thrown as a `CandidateRefused`. The stored copy's directory is the run's from before the copy is made: it
+ * is removed on a refusal, an error, the run's end, and a stop (SIGINT or SIGTERM) during the checks, which also kills
+ * the command they wait on, or during the run (stop.mjs, at the exit). Every engine lane of cua runs the stored copy.
  */
 export async function runDiff(args) {
-  const candidate = prepareCandidate({ source: args.cua, gate: !args.dev });
-  process.stdout.write(`${gateLabel(candidate.record.gate) ?? 'release gate'}; ${candidateLine(candidate.record)}\n`);
-  // removed when the run ends, and at the exit of a run stopped by a signal (stop.mjs), once nothing can start it
-  const remove = () => rmSync(candidate.dir, { recursive: true, force: true });
+  const run = args.run ?? `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
+  const results = join(args.out, 'results.jsonl');
+  if (runHasRows(results, run)) throw new RunRefused(`the run name ${run} already has rows in ${results}: give each execution a --run name of its own`);
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-candidate-'));
+  const remove = () => rmSync(dir, { recursive: true, force: true });
   process.once('exit', remove);
   try {
-    return await diffRun({ ...args, cua: candidate.path }, candidate.record);
+    // the checks' own stop: the run's (Desktop's) is installed once they are over, with no wait between the two
+    const stopping = new AbortController();
+    const unhook = cleanupOnStop(() => {
+      stopping.abort();
+      remove();
+    });
+    let candidate;
+    try {
+      candidate = await prepareCandidate({ source: args.cua, gate: !args.dev, dir, signal: stopping.signal });
+    } catch (error) {
+      if (!stopping.signal.aborted) {
+        unhook();
+        throw error;
+      }
+    }
+    // stopped during the checks: the stop exits the process (stop.mjs), and nothing more starts or is reported
+    if (stopping.signal.aborted) await new Promise(() => {});
+    unhook();
+    process.stdout.write(`${gateLabel(candidate.record.gate) ?? 'release gate'}; ${candidateLine(candidate.record)}\n`);
+    return await diffRun({ ...args, run, cua: candidate.path }, candidate.record);
   } finally {
     process.off('exit', remove);
     remove();
@@ -782,7 +827,7 @@ export async function runDiff(args) {
 }
 
 async function diffRun(args, candidate) {
-  const run = args.run ?? `run-${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}`;
+  const { run } = args;
   mkdirSync(args.out, { recursive: true });
   const results = join(args.out, 'results.jsonl');
   const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);

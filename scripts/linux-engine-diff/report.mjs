@@ -28,6 +28,14 @@ export function renderSummary(lines) {
       else for (const r of rows.filter((x) => x.kind === 'experiment-summary')) out.push(...r.markdown, '');
       continue;
     }
+    // one execution's rows only: a run name whose rows come from a gate and a dev run (or a run from before #267) is not
+    // judged, so no row's label stands for another execution's
+    const kinds = new Set(rows.filter((r) => r.kind === 'meta' || r.kind === 'end').map((r) => r.gate));
+    if (kinds.size > 1) {
+      const mix = kinds.has(true) && kinds.has(false) ? 'a release gate and a development run' : 'executions of different kinds';
+      out.push(`## ${run} (not judged: its rows mix ${mix})`, '', 'Each execution needs a run name of its own; these rows are no verdict.', '');
+      continue;
+    }
     const label = gateLabel(meta?.gate);
     out.push(`## ${run}${label ? ` (${label})` : ''}`, '');
     if (meta) {
@@ -167,7 +175,8 @@ export function renderSummary(lines) {
     out.push(...prepareFaultsMarkdown(rows));
     out.push(...textRestoresMarkdown(rows));
     const end = rows.find((r) => r.kind === 'end');
-    const ending = !end || end.pass === undefined ? '' : `; ${label ? `${label}: ` : ''}${verdictLine(end, (s) => `**${s}**`)}`;
+    const endLabel = gateLabel(end?.gate);
+    const ending = !end || end.pass === undefined ? '' : `; ${endLabel ? `${endLabel}: ` : ''}${verdictLine(end, (s) => `**${s}**`)}`;
     out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
   }
   return out.join('\n');

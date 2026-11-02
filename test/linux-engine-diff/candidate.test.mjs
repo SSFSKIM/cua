@@ -3,11 +3,13 @@
 // the ELF files are built here, and git, gh and the candidate's `--version` are a fake `run`.
 
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { after, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { CandidateRefused, elfTarget, prepareCandidate } from '../../scripts/linux-engine-diff/candidate.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
@@ -75,6 +77,8 @@ const sha = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const scratch = mkdtempSync(join(tmpdir(), 'cua171-candidate-test-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 let n = 0;
+/** A fresh, empty directory for a stored copy, the caller's as runDiff's is. */
+const fresh = () => mkdtempSync(join(scratch, 'store-'));
 /** The candidate as a download leaves it, in a directory of its own: a file without its executable bit. */
 function file(bytes) {
   const dir = join(scratch, `download-${n++}`);
@@ -129,18 +133,17 @@ function fake({ head = HEAD, status = '', gh = null, version = `cua-engine 0.3.0
 /** gh verifying `bytes`'s own digest, built from `commit`. */
 const attested = (bytes, commit = HEAD) => ({ status: 0, stdout: attestationJson([['cua-engine-0.3.0-linux-x64', sha(bytes)], ['cua-engine-0.3.0-linux-arm64', '57e699b4'.padEnd(64, '0')]], commit), stderr: '' });
 
-const refusal = (fn, pattern) => {
-  assert.throws(fn, (error) => {
+const refusal = (fn, pattern) =>
+  assert.rejects(fn, (error) => {
     assert.ok(error instanceof CandidateRefused, `a refusal, not ${error}`);
     assert.match(error.message, pattern);
     return true;
   });
-};
 
 // ---------------------------------------------------------------------------------------------------------------
 // the ELF reader
 
-test('the ELF reader names the target and linkage: musl static-pie, gnu dynamic, gnu static', () => {
+test('the ELF reader names the target and linkage: musl static-pie, gnu dynamic, gnu static', async () => {
   assert.deepEqual(elfTarget(MUSL), { arch: 'x86_64', libc: 'musl', linkage: 'static-pie', interpreter: null, target: 'x86_64-unknown-linux-musl' });
   assert.deepEqual(elfTarget(GNU), { arch: 'x86_64', libc: 'gnu', linkage: 'dynamic', interpreter: '/lib64/ld-linux-x86-64.so.2', target: 'x86_64-unknown-linux-gnu' });
   assert.equal(elfTarget(GNU_STATIC).target, 'x86_64-unknown-linux-gnu');
@@ -152,23 +155,23 @@ test('the ELF reader names the target and linkage: musl static-pie, gnu dynamic,
 // ---------------------------------------------------------------------------------------------------------------
 // a gate's candidate
 
-test('a gate refuses a gnu build, saying it is not the shipped musl static-pie, before asking gh', () => {
+test('a gate refuses a gnu build, saying it is not the shipped musl static-pie, before asking gh', async () => {
   const { run, calls } = fake({ gh: attested(GNU) });
-  refusal(() => prepareCandidate({ source: file(GNU), gate: true, root: '/repo', run, hostArch: 'x64' }), /x86_64-unknown-linux-gnu.*dynamic.*the release ships the workflow's x86_64-unknown-linux-musl static-pie/s);
+  await refusal(() => prepareCandidate({ dir: fresh(), source: file(GNU), gate: true, root: '/repo', run, hostArch: 'x64' }), /x86_64-unknown-linux-gnu.*dynamic.*the release ships the workflow's x86_64-unknown-linux-musl static-pie/s);
   assert.equal(calls.filter(([c]) => c === 'gh').length, 0);
   const statics = fake({ gh: attested(GNU_STATIC) });
-  refusal(() => prepareCandidate({ source: file(GNU_STATIC), gate: true, root: '/repo', run: statics.run, hostArch: 'x64' }), /x86_64-unknown-linux-gnu/);
+  await refusal(() => prepareCandidate({ dir: fresh(), source: file(GNU_STATIC), gate: true, root: '/repo', run: statics.run, hostArch: 'x64' }), /x86_64-unknown-linux-gnu/);
 });
 
-test('a gate refuses a file that is not an ELF, and a build for another architecture', () => {
-  refusal(() => prepareCandidate({ source: file(Buffer.from('#!/bin/sh\necho hi\n')), gate: true, root: '/repo', run: fake().run, hostArch: 'x64' }), /not an ELF/);
+test('a gate refuses a file that is not an ELF, and a build for another architecture', async () => {
+  await refusal(() => prepareCandidate({ dir: fresh(), source: file(Buffer.from('#!/bin/sh\necho hi\n')), gate: true, root: '/repo', run: fake().run, hostArch: 'x64' }), /not an ELF/);
   const arm = elf({ machine: 183, segments: [{ type: PT_DYNAMIC, data: Buffer.alloc(8) }] });
-  refusal(() => prepareCandidate({ source: file(arm), gate: true, root: '/repo', run: fake({ gh: attested(arm) }).run, hostArch: 'x64' }), /aarch64-unknown-linux-musl.*this host runs x86_64/);
+  await refusal(() => prepareCandidate({ dir: fresh(), source: file(arm), gate: true, root: '/repo', run: fake({ gh: attested(arm) }).run, hostArch: 'x64' }), /aarch64-unknown-linux-musl.*this host runs x86_64/);
 });
 
-test('a gate refuses an unattested file, with gh\'s reason', () => {
+test('a gate refuses an unattested file, with gh\'s reason', async () => {
   const { run, calls } = fake({ gh: { status: 1, stdout: '', stderr: 'Error: failed to fetch attestations: HTTP 404: Not Found\n' } });
-  refusal(() => prepareCandidate({ source: file(MUSL), gate: true, root: '/repo', run, hostArch: 'x64' }), /unattested.*no attestation of \.github\/workflows\/linux-engine\.yml.*HTTP 404/s);
+  await refusal(() => prepareCandidate({ dir: fresh(), source: file(MUSL), gate: true, root: '/repo', run, hostArch: 'x64' }), /unattested.*no attestation of \.github\/workflows\/linux-engine\.yml.*HTTP 404/s);
   const verify = calls.find(([c]) => c === 'gh');
   assert.deepEqual(verify.slice(1, 3), ['attestation', 'verify']);
   for (const flag of ['--repo', '--signer-workflow', '--deny-self-hosted-runners', '--format']) assert.ok(verify.includes(flag), `gh is asked with ${flag}`);
@@ -177,47 +180,51 @@ test('a gate refuses an unattested file, with gh\'s reason', () => {
   assert.equal(basename(verify[3]), 'cua-engine', 'gh verifies the stored copy, the bytes the run starts');
 });
 
-test('a gate refuses a candidate whose digest no verified attestation names', () => {
+test('a gate refuses a candidate whose digest no verified attestation names', async () => {
   const other = elf({ segments: [{ type: PT_DYNAMIC, data: Buffer.alloc(40) }] });
   const { run } = fake({ gh: attested(other) });
-  refusal(() => prepareCandidate({ source: file(MUSL), gate: true, root: '/repo', run, hostArch: 'x64' }), new RegExp(`digest mismatch.*${sha(MUSL)}.*${sha(other)}`, 's'));
+  await refusal(() => prepareCandidate({ dir: fresh(), source: file(MUSL), gate: true, root: '/repo', run, hostArch: 'x64' }), new RegExp(`digest mismatch.*${sha(MUSL)}.*${sha(other)}`, 's'));
   // gh's answer unreadable is no verification either
-  refusal(() => prepareCandidate({ source: file(MUSL), gate: true, root: '/repo', run: fake({ gh: { status: 0, stdout: 'not json', stderr: '' } }).run, hostArch: 'x64' }), /unreadable/);
+  await refusal(() => prepareCandidate({ dir: fresh(), source: file(MUSL), gate: true, root: '/repo', run: fake({ gh: { status: 0, stdout: 'not json', stderr: '' } }).run, hostArch: 'x64' }), /unreadable/);
 });
 
-test('a gate refuses a candidate built from another commit than the checkout\'s', () => {
+test('a gate refuses a candidate built from another commit than the checkout\'s', async () => {
   const { run } = fake({ head: OTHER, gh: attested(MUSL, HEAD), version: `cua-engine 0.3.0 (${HEAD.slice(0, 12)})` });
-  refusal(() => prepareCandidate({ source: file(MUSL), gate: true, root: '/repo', run, hostArch: 'x64' }), new RegExp(`commit mismatch.*built from ${HEAD}.*checkout is at ${OTHER}`, 's'));
+  await refusal(() => prepareCandidate({ dir: fresh(), source: file(MUSL), gate: true, root: '/repo', run, hostArch: 'x64' }), new RegExp(`commit mismatch.*built from ${HEAD}.*checkout is at ${OTHER}`, 's'));
 });
 
-test('a gate refuses a candidate whose --version names another commit', () => {
+test('a gate refuses a candidate whose --version names another commit', async () => {
   const { run } = fake({ gh: attested(MUSL), version: `cua-engine 0.3.0 (${OTHER.slice(0, 12)})` });
-  refusal(() => prepareCandidate({ source: file(MUSL), gate: true, root: '/repo', run, hostArch: 'x64' }), /--version.*9d3fdce6b10f/s);
+  await refusal(() => prepareCandidate({ dir: fresh(), source: file(MUSL), gate: true, root: '/repo', run, hostArch: 'x64' }), /--version.*9d3fdce6b10f/s);
 });
 
-test('a gate refuses a checkout that is not clean, naming what changed', () => {
+test('a gate refuses a checkout that is not clean, naming what changed', async () => {
   const { run, calls } = fake({ status: ' M scripts/linux-engine-diff/run.mjs\n?? notes.txt\n', gh: attested(MUSL) });
-  refusal(() => prepareCandidate({ source: file(MUSL), gate: true, root: '/repo', run, hostArch: 'x64' }), /not clean.*2 changes.*run\.mjs.*notes\.txt/s);
+  await refusal(() => prepareCandidate({ dir: fresh(), source: file(MUSL), gate: true, root: '/repo', run, hostArch: 'x64' }), /not clean.*2 changes.*run\.mjs.*notes\.txt/s);
   assert.equal(calls.filter(([c]) => c === 'gh').length, 0);
 });
 
-test('a refused candidate leaves no stored copy behind', () => {
-  const { run } = fake();
-  let dir;
+test('a refused candidate leaves no stored copy behind: the run owns and removes its directory', async () => {
+  const { runDiff } = await import('../../scripts/linux-engine-diff/run.mjs');
+  const tmp = join(scratch, `tmp-${n++}`);
+  mkdirSync(tmp);
+  const before = process.env.TMPDIR;
+  process.env.TMPDIR = tmp;
   try {
-    prepareCandidate({ source: file(MUSL), gate: true, root: '/repo', run, hostArch: 'x64' });
-  } catch (error) {
-    dir = error.dir;
+    const args = parseArgs(['--vendor', '/v', '--newest', '/n', '--cua', file(Buffer.from('#!/bin/sh\n')), '--scene', 'desktop', '--ops', 'list_windows', '--out', join(scratch, `out-${n++}`)]);
+    await assert.rejects(runDiff(args), (error) => error instanceof CandidateRefused && /not an ELF/.test(error.message));
+  } finally {
+    if (before === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = before;
   }
-  assert.ok(dir, 'the refusal names the directory it made');
-  assert.equal(existsSync(dir), false);
+  assert.deepEqual(readdirSync(tmp), []);
 });
 
-test('a gate accepts the attested artifact of the checkout\'s commit: stored as cua-engine, mode 0700, every fact recorded', () => {
+test('a gate accepts the attested artifact of the checkout\'s commit: stored as cua-engine, mode 0700, every fact recorded', async () => {
   const source = file(MUSL);
   assert.equal(statSync(source).mode & 0o111, 0, 'a download has lost its executable bit');
   const { run } = fake({ gh: attested(MUSL) });
-  const candidate = prepareCandidate({ source, gate: true, root: '/repo', run, hostArch: 'x64' });
+  const candidate = await prepareCandidate({ dir: fresh(), source, gate: true, root: '/repo', run, hostArch: 'x64' });
   try {
     assert.equal(basename(candidate.path), 'cua-engine');
     assert.equal(statSync(candidate.path).mode & 0o777, 0o700);
@@ -249,16 +256,16 @@ test('a gate accepts the attested artifact of the checkout\'s commit: stored as 
       ],
     });
   } finally {
-    rmSync(candidate.dir, { recursive: true, force: true });
+    rmSync(dirname(candidate.path), { recursive: true, force: true });
   }
 });
 
 // ---------------------------------------------------------------------------------------------------------------
 // a development run
 
-test('a dev run takes a gnu build from a dirty checkout, records it, and asks gh nothing', () => {
+test('a dev run takes a gnu build from a dirty checkout, records it, and asks gh nothing', async () => {
   const { run, calls } = fake({ status: ' M x\n', version: 'cua-engine 0.3.0 (9d3fdce6b10f)', head: OTHER });
-  const candidate = prepareCandidate({ source: file(GNU), gate: false, root: '/repo', run, hostArch: 'x64' });
+  const candidate = await prepareCandidate({ dir: fresh(), source: file(GNU), gate: false, root: '/repo', run, hostArch: 'x64' });
   try {
     assert.equal(statSync(candidate.path).mode & 0o777, 0o700);
     const r = candidate.record;
@@ -270,18 +277,18 @@ test('a dev run takes a gnu build from a dirty checkout, records it, and asks gh
     assert.equal(r.attestation, null);
     assert.equal(calls.filter(([c]) => c === 'gh').length, 0);
   } finally {
-    rmSync(candidate.dir, { recursive: true, force: true });
+    rmSync(dirname(candidate.path), { recursive: true, force: true });
   }
 });
 
-test('--dev is the verdict run\'s flag; experiments take no gate', () => {
+test('--dev is the verdict run\'s flag; experiments take no gate', async () => {
   const run = ['--vendor', '/v', '--newest', '/n', '--cua', '/c', '--scene', 'gedit', '--ops', 'all', '--out', 'o'];
   assert.equal(parseArgs(run).dev, undefined);
   assert.equal(parseArgs([...run, '--dev']).dev, true);
   assert.throws(() => parseArgs(['--experiment', 'drag', '--vendor', '/v', '--cua', '/c', '--out', 'o', '--dev']), /--dev/);
 });
 
-test('a dev run\'s summary and verdict say it is not a release gate; a gate run\'s name its verified candidate', () => {
+test('a dev run\'s summary and verdict say it is not a release gate; a gate run\'s name its verified candidate', async () => {
   const candidate = { gate: false, sha256: sha(GNU), target: 'x86_64-unknown-linux-gnu', linkage: 'dynamic', version: 'cua-engine 0.3.0 (9d3fdce6b10f)', commit: OTHER, clean: false, attestation: null };
   const meta = { kind: 'meta', commit: OTHER, cua_version: candidate.version, occlusion: 'covered', blocks: 1, samples_tree: 1, samples_input: 1, engines: [] };
   const end = { kind: 'end', valid: true, pass: true, failed: [], parity: [], refused: [], finished: 'now' };
@@ -297,4 +304,87 @@ test('a dev run\'s summary and verdict say it is not a release gate; a gate run\
   assert.doesNotMatch(gate, /not a release gate/);
   assert.match(gate, /attestation verified: \.github\/workflows\/linux-engine\.yml run https:\/\/github\.com\/SSFSKIM\/cua\/actions\/runs\/41350086196\/attempts\/1, built from cd4c929758caf90329fd5cfb0d5028f1ec1c92c2 \(refs\/heads\/feat\/171-m3\) on a github-hosted runner/);
   assert.match(gate, /run valid; every verdict PASS/);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// the task review's findings (PR #273)
+
+test('a candidate a gate refuses is never run: a script that would leave a marker leaves none', async () => {
+  const marker = join(scratch, `ran-${n++}`);
+  const script = file(Buffer.from(`#!/bin/sh\ntouch '${marker}'\necho 'cua-engine 0.3.0 (${HEAD.slice(0, 12)})'\n`));
+  await refusal(() => prepareCandidate({ dir: fresh(), source: script, gate: true, hostArch: 'x64' }), /not an ELF/);
+  assert.equal(existsSync(marker), false, 'the refused candidate was run');
+});
+
+test('a gate runs the candidate only once it is attested: no refusal invokes it, an acceptance asks gh first', async () => {
+  const ran = (calls) => calls.filter(([c]) => basename(c) === 'cua-engine');
+  const other = elf({ segments: [{ type: PT_DYNAMIC, data: Buffer.alloc(40) }] });
+  const cases = [
+    [GNU, fake({ gh: attested(GNU) }), /gnu/],
+    [Buffer.from('#!/bin/sh\n'), fake(), /not an ELF/],
+    [MUSL, fake({ status: ' M x\n', gh: attested(MUSL) }), /not clean/],
+    [MUSL, fake(), /unattested/],
+    [MUSL, fake({ gh: attested(other) }), /digest mismatch/],
+    [MUSL, fake({ head: OTHER, gh: attested(MUSL) }), /commit mismatch/],
+  ];
+  for (const [bytes, { run, calls }, pattern] of cases) {
+    await refusal(() => prepareCandidate({ dir: fresh(), source: file(bytes), gate: true, root: '/repo', run, hostArch: 'x64' }), pattern);
+    assert.deepEqual(ran(calls), [], `refused (${pattern}) after running the candidate`);
+  }
+  const { run, calls } = fake({ gh: attested(MUSL) });
+  await prepareCandidate({ dir: fresh(), source: file(MUSL), gate: true, root: '/repo', run, hostArch: 'x64' });
+  const order = calls.map(([c]) => (basename(c) === 'cua-engine' ? 'candidate' : c));
+  assert.ok(order.indexOf('gh') >= 0 && order.indexOf('gh') < order.indexOf('candidate'), `gh before the candidate: ${order.join(', ')}`);
+});
+
+test('a summary never labels one execution by another\'s row: gate and dev rows under one name are not judged', async () => {
+  const candidate = { gate: false, sha256: sha(GNU), target: 'x86_64-unknown-linux-gnu', linkage: 'dynamic', version: 'v', commit: OTHER, clean: true, attestation: null };
+  const meta = { kind: 'meta', commit: OTHER, cua_version: 'v', occlusion: 'covered', blocks: 1, samples_tree: 1, samples_input: 1, engines: [] };
+  const end = { kind: 'end', valid: true, pass: true, failed: [], parity: [], refused: [], finished: 'now' };
+  // the reviewer's probe: an unfinished gate, then a dev retry under the same name that passed
+  const text = renderSummary([
+    { run: 'r', ...meta, gate: true, candidate: { ...candidate, gate: true } },
+    { run: 'r', ...meta, gate: false, candidate },
+    { run: 'r', ...end, gate: false },
+  ]);
+  assert.doesNotMatch(text, /every verdict PASS/);
+  assert.match(text, /^## r \(not judged: its rows mix a release gate and a development run\)$/m);
+  // the end line takes its label from the end row itself
+  const devEnd = renderSummary([{ run: 'd', ...meta, gate: false, candidate }, { run: 'd', ...end, gate: false }]);
+  assert.match(devEnd, /run valid; development run, not a release gate: every verdict PASS/);
+});
+
+test('a verdict run refuses a run name the out directory already has rows of, before storing a candidate', async () => {
+  const { runDiff, RunRefused } = await import('../../scripts/linux-engine-diff/run.mjs');
+  const out = join(scratch, `out-${n++}`);
+  mkdirSync(out);
+  writeFileSync(join(out, 'results.jsonl'), `${JSON.stringify({ run: 'taken', kind: 'meta', gate: true })}\n`);
+  const args = parseArgs(['--vendor', '/v', '--newest', '/n', '--cua', join(scratch, 'missing'), '--scene', 'desktop', '--ops', 'list_windows', '--out', out, '--run', 'taken', '--dev']);
+  await assert.rejects(runDiff(args), (error) => {
+    assert.ok(RunRefused && error instanceof RunRefused, `a run refusal, not ${error}`);
+    assert.match(error.message, /taken.*already has rows/s);
+    return true;
+  });
+});
+
+test('a run stopped while its candidate is being prepared leaves no stored copy behind', async () => {
+  const tmp = join(scratch, `tmp-${n++}`);
+  mkdirSync(tmp);
+  const marker = join(scratch, `started-${n++}`);
+  // a dev candidate whose --version blocks, as a slow `--version` or gh does
+  const script = file(Buffer.from(`#!/bin/sh\ntouch '${marker}'\nexec sleep 20\n`));
+  const entry = fileURLToPath(new URL('../../scripts/linux-engine-diff.mjs', import.meta.url));
+  const out = join(scratch, `out-${n++}`);
+  const child = spawn(process.execPath, [entry, '--vendor', '/v', '--newest', '/n', '--cua', script, '--dev', '--scene', 'desktop', '--ops', 'list_windows', '--out', out, '--run', 'stopped'], { env: { ...process.env, TMPDIR: tmp }, stdio: 'ignore' });
+  const exited = new Promise((resolve) => child.once('exit', (code, signal) => resolve({ code, signal })));
+  const started = Date.now();
+  while (!existsSync(marker) && Date.now() - started < 10000) await new Promise((r) => setTimeout(r, 20));
+  assert.ok(existsSync(marker), "the candidate's --version started");
+  assert.equal(readdirSync(tmp).filter((d) => d.startsWith('cua171-candidate-')).length, 1, 'the copy is stored');
+  child.kill('SIGTERM');
+  const killer = setTimeout(() => child.kill('SIGKILL'), 10000);
+  const { code, signal } = await exited;
+  clearTimeout(killer);
+  assert.deepEqual({ code, signal }, { code: 143, signal: null }, 'the harness handled the stop and exited as SIGTERM would');
+  assert.deepEqual(readdirSync(tmp).filter((d) => d.startsWith('cua171-candidate-')), [], 'the stored copy was removed');
 });

@@ -103,6 +103,30 @@ export function auditNothingSent({ requests, extensions }) {
   return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
 }
 
+/**
+ * The audit of a key held through the foreground route and released once its window was minimized (M4's T4), over
+ * `holds` samples each of which made one hold: the hold activates its window (the `_NET_ACTIVE_WINDOW` ClientMessage,
+ * the stacking `ConfigureWindow` and `SetInputFocus`, each naming the target) and presses through XTEST; the release
+ * sends XTEST and activates nothing. So XTEST FakeInput is allowed, each activation request exactly once a hold, and
+ * anything else the background route forbids (one naming another window, WarpPointer) is not. A trace with no
+ * requests is not clean. Returns `{clean, traced, requests, activations, forbidden}`.
+ */
+export function auditHeldRelease({ requests, extensions }, target, { holds }) {
+  const found = [];
+  const activations = { '_NET_ACTIVE_WINDOW ClientMessage': 0, 'ConfigureWindow stack-mode': 0, SetInputFocus: 0 };
+  for (const r of requests) {
+    const what = forbidden(r, extensions);
+    if (!what || what === 'XTEST FakeInput') continue;
+    if (what in activations && namedWindow(r) === target) activations[what]++;
+    else found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+  }
+  for (const [what, n] of Object.entries(activations)) {
+    if (n !== holds) found.push({ what: `${what}: ${n} activations for ${holds} hold${holds === 1 ? '' : 's'}` });
+  }
+  const traced = requests.length > 0;
+  return { clean: traced && found.length === 0, traced, requests: requests.length, activations, forbidden: found };
+}
+
 function freeDisplay() {
   for (let n = 40; n < 100; n++) {
     if (!existsSync(`/tmp/.X11-unix/X${n}`) && !existsSync(`/tmp/.X${n}-lock`)) return n;

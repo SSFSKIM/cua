@@ -501,6 +501,18 @@ variants included; their evidence is written either way. The run's `end` row kee
   before the request, and the witness allows the pointer field alone, `pointerMoves`). In dedicated mode the pointer
   parked outside takes the foreground route and the short drop lands. A parked pointer goes back where the case found
   it in the sample's cleanup.
+- **Minimized windows** (M4's T4, `minimized.mjs`, the scenes `minimized` (gedit) and `minimized-xterm`): cua alone,
+  each sample's window minimized with `xprobe minimize` (the harness's front window takes the focus first, so the
+  window manager's focus fallback lands on a harness window; the active window afterwards is recorded, and one the
+  harness did not open stops the run) and restored with `xprobe restore` after it, both outside the spans. Every
+  window-targeted input answers `Window <id> is minimized; activate it first` with nothing sent (the `nothing-sent`
+  audit), in both modes and before the device refusal; `list_windows` lists the window with `minimized: true` and no
+  other; its tree is read and its screenshot is none; the same window restored is captured and loses the field. A key
+  held before the minimize is released after it: on the background route under the background audit, on xterm's
+  foreground route in dedicated mode under the `held-release` audit (the hold's own activation once a sample, and
+  nothing more), the server's key state read with `xprobe keys-down`. `activate_window` restores the window and
+  answers success; a withdrawn window answers the first focus error at the engine's 1 s bound. Elsewhere in the run, a
+  listing's minimized windows are set aside where the deviation declares them (`setAsideMinimized`).
 - **The witness's allowances** (`witness.mjs`):
   - **Foreground.** Override-redirect windows of the target's own X client (its resource-id base) may map, restack
     and unmap; one may stay mapped at the end only where the input opens it, as a right click's menu. Every other

@@ -130,6 +130,24 @@ export const DEVIATIONS = [
       "cua's get_window_state adds `truncated: {nodes, depth, failed}` beside the tree wherever its read was cut, the points where it left out a node it had listed (the element limit, the depth limit, a failed GetRoleName), each hiding a subtree never read, so the facade can say the tree is cut; the vendor drops those nodes silently and its JavaScript ignores the field. The tree itself is still the vendor's exactly. Each count is a u32, one of them above 0, and each agrees with the limits its tree shows; a read that was not cut carries no field",
     section: 'Design, Observation (The tree read: truncated); Decision Log, M3.2 (the line says "at least") and M4 pre-flight (Observation)',
   },
+  // M4's T4: minimized windows (Design, Minimized windows)
+  ...['list_windows', 'list_apps'].map((op) => ({
+    op,
+    field: 'minimized',
+    answer: (c) => c.ok === true && minimizedListed(op, c.output) > 0,
+    reason:
+      "cua lists an iconified window (WM_STATE Iconic, not viewable) with the additive field `minimized: true`, which the vendor leaves out, so a bound window the person minimizes stays readable through the policy and the facade instead of becoming `Window <id> is unavailable.`; with those windows set aside the list is the vendor's",
+    section: 'Design, Observation (Minimized windows); Decision Log, review round 1 (minimized listing)',
+  })),
+  {
+    op: 'activate_window',
+    scene: 'minimized',
+    field: 'answer',
+    answer: (c) => c.ok === true,
+    reason:
+      "activate_window on a minimized window succeeds once the window manager has mapped it: the vendor builds, like cua 0.3.0, send SetInputFocus behind the activation request while the window is still unmapped and answer BadMatch for an activation that happened (Openbox maps and activates it within 50 ms). cua waits for the map, at most 1 s, and sets the focus again; a window still unmapped then answers the same error",
+    section: 'Decision Log, M4 pre-flight (C22); M4 T4',
+  },
   {
     op: 'interrupted_hold',
     scene: 'events',
@@ -158,6 +176,30 @@ export function setAsideTruncation({ op, scene, response }, list = DEVIATIONS) {
   const deviation = declaredDeviation({ op, scene, field: 'truncated', candidate: response }, list);
   if (!deviation) return { response, deviation: null };
   const { truncated, ...output } = response.output;
+  return { response: { ...response, output }, deviation };
+}
+
+/** The windows of a `list_windows` answer, or every application's windows of a `list_apps` answer. */
+const windowsOf = (op, output) => (op === 'list_apps' ? output.flatMap((app) => app.windows ?? []) : output);
+
+/** How many windows an answer lists as minimized (`minimized: true`). */
+function minimizedListed(op, output) {
+  if (!Array.isArray(output)) return 0;
+  return windowsOf(op, output).filter((w) => w?.minimized === true).length;
+}
+
+/**
+ * A listing as compared: its minimized windows (`minimized: true`) set aside, with the deviation that declares them,
+ * where one does; otherwise the answer as it came. Only windows whose field is exactly `true` are set aside, so a
+ * malformed field stays in the answer and differs from the vendor's; with them set aside the rest must equal the
+ * vendor's list, which leaves minimized windows out (M4's T4).
+ */
+export function setAsideMinimized({ op, scene, response }, list = DEVIATIONS) {
+  if (!['list_windows', 'list_apps'].includes(op) || !response.ok || minimizedListed(op, response.output) === 0) return { response, deviation: null };
+  const deviation = declaredDeviation({ op, scene, field: 'minimized', candidate: response }, list);
+  if (!deviation) return { response, deviation: null };
+  const shown = (w) => w?.minimized !== true;
+  const output = op === 'list_apps' ? response.output.map((app) => ({ ...app, windows: (app.windows ?? []).filter(shown) })) : response.output.filter(shown);
   return { response: { ...response, output }, deviation };
 }
 

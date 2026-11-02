@@ -16,13 +16,14 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { auditForeground, auditNothingSent, auditRequests, parseXtrace, startProxy } from './audit.mjs';
+import { auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { startMonitor } from './busmon.mjs';
 import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
 import { desktopEntry } from './desktop-entry.mjs';
-import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe, setAsideTruncation, truncationMismatch } from './deviations.mjs';
+import { DEVICE_REFUSAL, declaredDeviation, declaredParity, declaredRefusal, describe, setAsideMinimized, setAsideTruncation, truncationMismatch } from './deviations.mjs';
 import { judgeDevice } from './device.mjs';
+import { MINIMIZED_OPS, minimizedAuditKind } from './minimized.mjs';
 import { Engine } from './engine.mjs';
 import { medianDifferenceInterval, normalizeAnswer } from './events.mjs';
 import { compareShots, xprobeDiff } from './images.mjs';
@@ -580,6 +581,9 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
   // and its size (a case moves it and puts it back)
   if (scene === 'device-gtk4') return withApp(desktop, await desktop.openFamilyScene('gtk4-input', role));
   if (scene === 'device-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role));
+  // M4's T4: the minimized cases' windows (minimized.mjs), each restored to its size after a case withdraws it
+  if (scene === 'minimized') return withApp(desktop, await desktop.openGedit(role, GEDIT_TEXT));
+  if (scene === 'minimized-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role));
   if (scene === 'device-qt') {
     const { openFamily } = await import('./families.mjs');
     const { DRAG_DOC, verticalScrollBar } = await import('./drag.mjs');
@@ -965,8 +969,15 @@ async function diffRun(args, candidate, { handoff }) {
           if (stateRead && via === 'wire' && !VENDORS.includes(label)) {
             row.truncation = truncationMismatch({ scene: sceneName, state: answered.output, stats: row.stats }) ?? 'as recorded';
           }
-          const { response, deviation: truncation } = stateRead ? setAsideTruncation({ op, scene: sceneName, response: answered }) : { response: answered, deviation: null };
+          const { response: kept, deviation: truncation } = stateRead ? setAsideTruncation({ op, scene: sceneName, response: answered }) : { response: answered, deviation: null };
           if (truncation) row.deviation = truncation.op ?? op;
+          // cua's minimized windows in a listing (M4's T4): recorded, and set aside where the deviation declares them,
+          // so the rest of the list still equals the vendor's
+          const { response, deviation: minimized } = setAsideMinimized({ op, scene: sceneName, response: kept });
+          if (minimized) {
+            row.deviation = minimized.op;
+            row.minimized_listed = true;
+          }
           if (row.ok && (OPS[op].kind === 'read' || OPS[op].kind === 'shot' || OPS[op].kind === 'retention')) {
             row.nodes = retainedIds(response.output).length;
             row.source = response.output.ax_tree_source;
@@ -1111,11 +1122,18 @@ async function diffRun(args, candidate, { handoff }) {
           // a cua request that must take the foreground route is audited against that route: only its target's activation,
           // raise and focus and XTEST input (M2 whole-branch review)
           const foregroundAudit = !VENDORS.includes(spec.label) && routeOf(op, sceneName) === 'foreground';
-          // a refused device case sends nothing at all (device.mjs)
+          // a refused device case sends nothing at all (device.mjs); a minimized case is audited as its kind says
+          // (minimized.mjs: nothing sent for a refusal, the target's activation alone for an activation, a held key's
+          // own activation once a sample for its release on the foreground route)
           const nothingAudit = OPS[op].device === 'refusal';
           const trace = parseXtrace(await proxy.stop());
-          const audited = foregroundAudit ? auditForeground(trace, target.id) : nothingAudit ? auditNothingSent(trace) : auditRequests(trace);
-          const auditKind = foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
+          const auditKind = op in MINIMIZED_OPS ? minimizedAuditKind(op) : foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
+          const audited = {
+            foreground: () => auditForeground(trace, target.id),
+            'nothing-sent': () => auditNothingSent(trace),
+            background: () => auditRequests(trace),
+            'held-release': () => auditHeldRelease(trace, target.id, { holds: oks.length }),
+          }[auditKind]();
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
           audits[`${sceneName}|${op}|${spec.label}`] = { clean: audited.clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set(audited.forbidden.map((f) => f.what))] };
           emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean: audited.clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), forbidden: audited.forbidden.slice(0, 10) });

@@ -44,6 +44,7 @@ import { readFileSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 
 import { readGtk4Status } from './families.mjs';
+import { MINIMIZED_OPS, MINIMIZED_SCENE_OPS, judgeMinimized } from './minimized.mjs';
 import { stacking, startOverlay } from './clip.mjs';
 import { activeWindow, configure, xdotool } from './scenes.mjs';
 
@@ -457,6 +458,8 @@ export const DEVICE_OPS = {
     request: () => ['capabilities', {}],
     check: (ctx, response) => ({ answer_ok: capabilitiesAnswer(response.output, ctx.cuaVersion) }),
   },
+  // M4's T4: minimized windows (minimized.mjs), cua's cases on gedit and xterm
+  ...MINIMIZED_OPS,
 };
 
 // the device cases' effect functions take (before, after); run.mjs calls effect(ctx, input, before, after)
@@ -477,6 +480,7 @@ export const DEVICE_SCENE_OPS = {
   'device-xterm': ['xterm_key_shared', 'xterm_key_dedicated', 'xterm_click_shared'],
   'gnome-text-editor': ['gte_type_text_shared'],
   desktop: ['capabilities'],
+  ...MINIMIZED_SCENE_OPS,
 };
 
 /** Whether `capabilities` answered the X11 backend's report in shared mode, for this engine's version. */
@@ -504,6 +508,8 @@ export function capabilitiesAnswer(output, version) {
  * success), so a trace of requests that never did what the case measures proves nothing. Returns `{pass, reasons}`.
  */
 export function judgeDevice(op, rows, audit) {
+  // the minimized cases have expectations of their own (minimized.mjs)
+  if (op in MINIMIZED_OPS) return judgeMinimized(op, rows, audit);
   const expect = DEVICE_OPS[op].device;
   const reasons = [];
   if (!rows.length) return { pass: false, reasons: ['no samples'] };

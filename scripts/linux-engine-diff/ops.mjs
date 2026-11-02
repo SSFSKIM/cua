@@ -51,6 +51,9 @@ export const SCENE_OPS = {
   'device-qt': DEVICE_SCENE_OPS['device-qt'],
   'device-chrome': DEVICE_SCENE_OPS['device-chrome'],
   'device-chrome-dnd': DEVICE_SCENE_OPS['device-chrome-dnd'],
+  // M4's T4: minimized windows (minimized.mjs), cua alone
+  minimized: DEVICE_SCENE_OPS.minimized,
+  'minimized-xterm': DEVICE_SCENE_OPS['minimized-xterm'],
 };
 
 const GEDIT = [910, 756];

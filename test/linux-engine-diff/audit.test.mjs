@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { auditRequests, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
+import { auditHeldRelease, auditRequests, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 
 // Lines in the shape the VM's xtrace prints them (R/F §0, §4.1; the vendor traces under W/traces/).
 const XTEST_QUERY = [
@@ -93,4 +93,28 @@ test('the verdict needs a clean audit wherever a vendor build keeps its witness 
   assert.equal(judgeOperation(activate, { ...opts, audits: { pinned: a(false), newest: a(false), cua: a(false) } }).pass, true);
   // no audit pass at all (a run without the audit) leaves the verdict to the witness
   assert.equal(judgeOperation(base, { ...opts, audits: null }).pass, true);
+});
+
+// M4's T4: a key held through the foreground route, the window minimized, then released. The hold's own activation
+// (its _NET_ACTIVE_WINDOW request, raise and focus, naming the target) comes once a sample, and the release is XTEST;
+// anything more is an activation the release made, or a request naming another window.
+test('a held key released on a minimized window: the hold activated the window once a sample, the release nothing', () => {
+  const TARGET = 0x012000f8;
+  const sample = [ACTIVATE, RAISE, FOCUS, FAKE_INPUT, FAKE_INPUT];
+  const clean = auditHeldRelease(parseXtrace([...XTEST_QUERY, ...sample, ...sample].join('\n')), TARGET, { holds: 2 });
+  assert.equal(clean.clean, true);
+  assert.deepEqual(clean.forbidden, []);
+  assert.deepEqual(clean.activations, { '_NET_ACTIVE_WINDOW ClientMessage': 2, 'ConfigureWindow stack-mode': 2, SetInputFocus: 2 });
+  // the release activated the window again
+  const again = auditHeldRelease(parseXtrace([...XTEST_QUERY, ...sample, ACTIVATE, RAISE, FOCUS].join('\n')), TARGET, { holds: 1 });
+  assert.equal(again.clean, false);
+  assert.match(again.forbidden.map((f) => f.what).join(), /2 activations for 1 hold/);
+  // a hold that never activated is not the case this audit judges
+  assert.equal(auditHeldRelease(parseXtrace([...XTEST_QUERY, FAKE_INPUT, FAKE_INPUT].join('\n')), TARGET, { holds: 1 }).clean, false);
+  // another window activated, or the pointer warped
+  const other = ACTIVATE.replace('window=0x012000f8', 'window=0x01400001');
+  assert.equal(auditHeldRelease(parseXtrace([...XTEST_QUERY, ...sample, other].join('\n')), TARGET, { holds: 1 }).clean, false);
+  assert.equal(auditHeldRelease(parseXtrace([...XTEST_QUERY, ...sample, WARP].join('\n')), TARGET, { holds: 1 }).clean, false);
+  // no trace at all is never clean
+  assert.equal(auditHeldRelease(parseXtrace(''), TARGET, { holds: 1 }).clean, false);
 });

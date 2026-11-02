@@ -14,8 +14,9 @@
 //! - `xprobe imgdiff <a.jpg> <b.jpg> [mask-top-rows]`: sizes, mean absolute difference and differing pixels of two
 //!   JPEGs below their top rows.
 //! - `xprobe close <window>`: asks the window's client to close it (`WM_DELETE_WINDOW`), for harness-owned windows.
-//! - `xprobe minimize <window>`: asks the window manager to iconify it (`WM_CHANGE_STATE`) and waits until it is,
-//!   for harness-owned windows.
+//! - `xprobe minimize <window>`, `restore <window>`: asks the window manager to iconify it (`WM_CHANGE_STATE`), or maps
+//!   it again, and waits until it is, for harness-owned windows.
+//! - `xprobe keys-down`: the keycodes the X server holds down (`QueryKeymap`), as a JSON array.
 //! - `xprobe record <x> <y> <width> <height> [focus]`: a recorder window that prints the input events it receives
 //!   (`record.rs`).
 //! - `xprobe clip-own <text>`, `clip-read`, `grabs`, `within <window> <ancestor>`: the clipboard owner and reader and
@@ -68,6 +69,8 @@ fn main() {
         Some("imgdiff") if (3..=4).contains(&args.len()) => imgdiff(&args[1], &args[2], args.get(3)),
         Some("close") if args.len() == 2 => close(&args[1]),
         Some("minimize") if args.len() == 2 => minimize(&args[1]),
+        Some("restore") if args.len() == 2 => restore(&args[1]),
+        Some("keys-down") if args.len() == 1 => keys_down(),
         Some("record") => record::record(&args[1..]),
         Some("clip-own") => clip::own(&args[1..]),
         Some("clip-read") if args.len() == 1 => clip::read(),
@@ -541,38 +544,71 @@ fn close(window: &str) -> Result<()> {
     Ok(())
 }
 
-/// ICCCM's `WM_STATE` value for an iconified window.
+/// ICCCM's `WM_STATE` values for a normal and an iconified window.
+const NORMAL_STATE: u32 = 1;
 const ICONIC_STATE: u32 = 3;
-/// How long `minimize` waits for the window manager to iconify the window.
-const MINIMIZE_WAIT: Duration = Duration::from_secs(2);
+/// How long `minimize` and `restore` wait for the window manager.
+const WM_WAIT: Duration = Duration::from_secs(2);
 
 /// Asks the window manager to iconify `window` (ICCCM 4.1.4: `WM_CHANGE_STATE` with `IconicState` to the root), then
-/// waits until the window's `WM_STATE` says Iconic and it is no longer viewable, and prints how long that took. A
-/// harness tool for harness-owned windows: xdotool's `windowminimize` blocked for about 13 s on the #171 VM.
+/// waits until its `WM_STATE` says Iconic and it is no longer viewable, and prints how long that took. For
+/// harness-owned windows.
 fn minimize(window: &str) -> Result<()> {
     let window = parse_window(window)?;
     let (conn, screen) = x11rb::connect(None)?;
     let root = conn.setup().roots[screen].root;
     let change_state = atom(&conn, "WM_CHANGE_STATE")?;
-    let wm_state = atom(&conn, "WM_STATE")?;
     let event = ClientMessageEvent::new(32, window, change_state, [ICONIC_STATE, 0, 0, 0, 0]);
     let mask = EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY;
     let started = Instant::now();
     conn.send_event(false, root, mask, event)?.check()?;
+    wait_for_state(&conn, window, started, ICONIC_STATE, false, "iconified")
+}
+
+/// Maps an iconified `window` again (ICCCM 4.1.4: the window manager deiconifies a client that maps itself), then waits
+/// until its `WM_STATE` says Normal and it is viewable, and prints how long that took. For harness-owned windows.
+fn restore(window: &str) -> Result<()> {
+    let window = parse_window(window)?;
+    let (conn, _) = x11rb::connect(None)?;
+    let started = Instant::now();
+    conn.map_window(window)?.check()?;
+    wait_for_state(&conn, window, started, NORMAL_STATE, true, "restored")
+}
+
+fn keys_down() -> Result<()> {
+    let (conn, _) = x11rb::connect(None)?;
+    let keys = conn.query_keymap()?.reply()?.keys;
+    let down: Vec<String> = (0..256usize)
+        .filter(|&k| keys[k / 8] & (1 << (k % 8)) != 0)
+        .map(|k| k.to_string())
+        .collect();
+    println!("[{}]", down.join(","));
+    Ok(())
+}
+
+fn wait_for_state(
+    conn: &RustConnection,
+    window: Window,
+    started: Instant,
+    state: u32,
+    viewable: bool,
+    what: &str,
+) -> Result<()> {
+    let wm_state = atom(conn, "WM_STATE")?;
     loop {
-        let state = conn.get_property(false, window, wm_state, wm_state, 0, 2)?.reply()?;
-        let iconic = state.value32().and_then(|mut v| v.next()) == Some(ICONIC_STATE);
-        let viewable =
+        let reply = conn.get_property(false, window, wm_state, wm_state, 0, 2)?.reply()?;
+        let now_state = reply.value32().and_then(|mut v| v.next());
+        let now_viewable =
             conn.get_window_attributes(window)?.reply()?.map_state == x11rb::protocol::xproto::MapState::VIEWABLE;
-        if iconic && !viewable {
+        if now_state == Some(state) && now_viewable == viewable {
             println!(
-                r#"{{"window":{window},"iconic":true,"ms":{:.1}}}"#,
+                r#"{{"window":{window},"{what}":true,"ms":{:.1}}}"#,
                 started.elapsed().as_secs_f64() * 1000.0
             );
             return Ok(());
         }
-        if started.elapsed() >= MINIMIZE_WAIT {
-            return Err(format!("window {window} was not iconified within {MINIMIZE_WAIT:?}").into());
+        if started.elapsed() >= WM_WAIT {
+            return Err(format!("window {window} was not {what} within {WM_WAIT:?}").into());
         }
         std::thread::sleep(SAMPLE);
     }

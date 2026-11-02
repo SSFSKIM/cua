@@ -810,7 +810,7 @@ export async function runDiff(args) {
     started: new Date().toISOString(),
   });
 
-  const desktop = new Desktop({ cua: args.cua, run });
+  const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   if (plan.some((p) => isText(p.op) || isCase(p.op))) desktop.oracle ??= new Oracle();
   // Every scene label of this run: equivalent windows differ in their own label and list each other's (gedit's
   // recent files), so comparisons across windows replace them all.

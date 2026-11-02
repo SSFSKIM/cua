@@ -316,7 +316,7 @@ export async function runExperiment(args) {
     writeSummary(args.out);
     return pass;
   }
-  const desktop = new Desktop({ cua: args.cua, run });
+  const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   const load = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
   let md;
   // a matrix run that could not judge a family it was asked for is incomplete, and the run exits nonzero

@@ -122,7 +122,7 @@ const EXPECT = {
   'unknown-action': o => /^AT-SPI action "cua171-no-such-action" is unavailable/.test(o.error ?? ''),
 };
 
-const desktop = new Desktop({cua: values.engine, run: `services-${process.pid}`});
+const desktop = new Desktop({cua: values.engine, run: `services-${process.pid}`, logs: values.out});
 const rows = [];
 const setup = [];
 try {

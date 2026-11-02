@@ -5,7 +5,7 @@
 // never an engine under measurement. Nothing here logs the text or titles of windows the harness did not open.
 
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -56,10 +56,14 @@ export function configure(id, x, y, w, h) {
 export const GEOMETRY = { gedit: [910, 756], chrome: [1050, 780] };
 
 export class Desktop {
-  /** `reader` and `previousActive`: the display-free tests' own (stop.test.mjs); a run's are the defaults. */
-  constructor({ cua, run, reader, previousActive }) {
+  /**
+   * `reader` and `previousActive`: the display-free tests' own (stop.test.mjs); a run's are the defaults. `logs`: the
+   * run's output directory, where the scene applications' stderr is kept (`spawnApp`); without it, it is discarded.
+   */
+  constructor({ cua, run, reader, previousActive, logs }) {
     this.run = run;
     this.dir = mkdtempSync(join(tmpdir(), `cua171-diff-${run}-`));
+    this.logs = logs ? join(logs, 'apps') : null;
     this.reader = reader ?? new Engine({ label: 'reader', bin: cua }).start();
     // every window the harness asked for, registered before it is asked for (so a stop finds it), its id once found
     this.windows = [];
@@ -93,6 +97,42 @@ export class Desktop {
       }
     }
     await this.closeAll();
+  }
+
+  /**
+   * A scene application the harness starts as its own detached process, its stderr appended to
+   * `<logs>/apps/<label>.stderr` (a window reopened under its label appends), so a toolkit's own complaints are
+   * evidence: GTK 3's criticals were the only trace of the stack bug behind both vendor builds' gedit `clipboard_write`
+   * failure (#268). stdin and stdout are discarded; without a log directory, everything is, as before.
+   */
+  spawnApp(label, cmd, args, options = {}) {
+    let fd = null;
+    if (this.logs) {
+      mkdirSync(this.logs, { recursive: true });
+      fd = openSync(join(this.logs, `${label}.stderr`), 'a');
+    }
+    try {
+      const child = spawn(cmd, args, { ...options, stdio: fd === null ? 'ignore' : ['ignore', 'ignore', fd], detached: true });
+      child.unref();
+      return child;
+    } finally {
+      // the child holds its own copy
+      if (fd !== null) closeSync(fd);
+    }
+  }
+
+  /** The logs of applications that printed nothing removed, and the directory too when none is left. */
+  pruneLogs() {
+    if (!this.logs) return;
+    try {
+      for (const name of readdirSync(this.logs)) {
+        const path = join(this.logs, name);
+        if (statSync(path).size === 0) unlinkSync(path);
+      }
+      if (readdirSync(this.logs).length === 0) rmdirSync(this.logs);
+    } catch {
+      // never created
+    }
   }
 
   /** Refuses a new window once the run is stopping. */
@@ -163,8 +203,7 @@ export class Desktop {
       const label = this.label('gedit', role);
       const file = join(this.dir, `${label}.txt`);
       writeFileSync(file, content);
-      const child = spawn('gedit', ['--standalone', file], { stdio: 'ignore', detached: true });
-      child.unref();
+      const child = this.spawnApp(label, 'gedit', ['--standalone', file]);
       // registered with its process at once: a stop or a window that never comes ends the process
       const scene = { kind: 'gedit', role, label, file, content, pid: child.pid, id: null };
       this.windows.push(scene);
@@ -190,6 +229,7 @@ export class Desktop {
       // registered before Chrome is asked for it, by its title: a stop meanwhile closes it by that title
       const scene = { kind: 'chrome', role, label, page, title, id: null };
       this.windows.push(scene);
+      // not `spawnApp`: the window belongs to the person's running Chrome, and this launcher only hands it the URL
       const child = spawn('google-chrome', ['--new-window', url], { stdio: 'ignore', detached: true });
       child.unref();
       let info;
@@ -231,8 +271,7 @@ export class Desktop {
     this.assertOpen();
     return this.track(async () => {
       const label = this.label('front');
-      const child = spawn('xterm', ['-T', label, '-e', 'sleep', '86400'], { stdio: 'ignore', detached: true });
-      child.unref();
+      const child = this.spawnApp(label, 'xterm', ['-T', label, '-e', 'sleep', '86400']);
       const front = { kind: 'xterm', role: 'front', label, pid: child.pid, id: null };
       this.windows.push(front);
       const info = await this.waitForWindow((w) => w.title === label, label);
@@ -391,6 +430,7 @@ export class Desktop {
     await this.close(this.windows);
     await this.reader.close();
     rmSync(this.dir, { recursive: true, force: true });
+    this.pruneLogs();
     if (this.previousActive) {
       try {
         xdotool('windowactivate', this.previousActive);

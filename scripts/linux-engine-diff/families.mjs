@@ -10,7 +10,7 @@
 // clicks), `electron` (cua's Electron fixture: its field and its "Pressed N times" status), `terminal` (xterm
 // running a recorder of what it receives, with mouse reporting on).
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -370,8 +370,7 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
     const ctx = { label, dir: join(desktop.dir, label), geometry, page, doc, motion };
     mkdirSync(ctx.dir, { recursive: true });
     const spec = family.launch(ctx);
-    const child = spawn(spec.cmd, spec.args, { stdio: 'ignore', detached: true, env: { ...process.env, ...(spec.env ?? {}), ...env } });
-    child.unref();
+    const child = desktop.spawnApp(label, spec.cmd, spec.args, { env: { ...process.env, ...(spec.env ?? {}), ...env } });
     scene = { kind: 'family', family: name, kindOf: family.kind, role, label, pid: child.pid, group: true, record: spec.record ?? null, pidfile: spec.pidfile ?? null, dir: ctx.dir, pixels: Boolean(family.pixels) };
     desktop.windows.push(scene);
     const match = spec.byPid ? byPid(child.pid) : spec.match;

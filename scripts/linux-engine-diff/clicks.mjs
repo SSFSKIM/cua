@@ -99,6 +99,8 @@ async function gtk4Probe(desktop, oracle, emit, args) {
     await sleep(500);
     const point = buttonPoint(button);
     let count = await readCounter(desktop, oracle, button);
+    // only onto the run's own window (scenes.mjs `pointerSafeAt`)
+    if (!desktop.pointerSafeAt({ x: button.window.x + point.x, y: button.window.y + point.y })) throw new Error("the GTK 4 button's centre is under a window the run did not open");
     xdotool('mousemove', '--window', button.id, point.x, point.y, 'click', '1');
     await sleep(700);
     let now = await readCounter(desktop, oracle, button);
@@ -116,7 +118,9 @@ async function gtk4Probe(desktop, oracle, emit, args) {
     record('GTK 4 button (focused, on top)', 'element click', 'DoAction 0 (AT-SPI)', count, now, counterArrived(count, now));
   } finally {
     await spike.close();
-    xdotool('mousemove', pointer.X, pointer.Y);
+    const back = { x: Number(pointer.X), y: Number(pointer.Y) };
+    if (desktop.pointerSafeAt(back)) xdotool('mousemove', back.x, back.y);
+    else desktop.skip('pointer restore', `(${back.x}, ${back.y})`, 'that place is under a window the run did not open');
     desktop.focusFront();
     await desktop.close([editor, button]);
   }

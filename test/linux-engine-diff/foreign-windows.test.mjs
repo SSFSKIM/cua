@@ -143,7 +143,7 @@ function fakeTools({ active = 0, geometry = [200, 150], search = '' } = {}) {
     writeFileSync(join(dir, name), `#!/bin/sh\necho "${name} $*" >> ${JSON.stringify(log)}\n${body}\n`);
     chmodSync(join(dir, name), 0o755);
   };
-  tool('xdotool', `case "$1" in getwindowgeometry) printf 'WINDOW=%s\\nX=0\\nY=0\\nWIDTH=${geometry[0]}\\nHEIGHT=${geometry[1]}\\n' "$3";; search) echo '${search}';; esac`);
+  tool('xdotool', `case "$1" in getwindowgeometry) printf 'WINDOW=%s\\nX=0\\nY=0\\nWIDTH=${geometry[0]}\\nHEIGHT=${geometry[1]}\\n' "$3";; search) echo '${search}';; getwindowname) cat "${dir}/title-$2" 2>/dev/null || { echo "X Error: BadWindow" >&2; exit 1; };; esac`);
   tool('xprop', `echo "_NET_ACTIVE_WINDOW(WINDOW): window id # $(cat ${JSON.stringify(join(dir, 'active'))})"`);
   tool('xwininfo', `case "$*" in *-root*) echo "xwininfo: Window id: ${hex(ROOT)} (the root window) (has no name)";; *) echo "X Error: BadWindow" >&2; exit 1;; esac`);
   // the holder's terminal: a process that lives until it is signalled
@@ -155,6 +155,8 @@ function fakeTools({ active = 0, geometry = [200, 150], search = '' } = {}) {
     dir,
     calls: () => readFileSync(log, 'utf8').trim().split('\n').filter(Boolean),
     setActive: (id) => writeFileSync(join(dir, 'active'), hex(id)),
+    // the window's current title, as xdotool getwindowname reads it; null: the window is gone
+    setTitle: (id, title) => (title === null ? rmSync(join(dir, `title-${id}`), { force: true }) : writeFileSync(join(dir, `title-${id}`), title)),
     done: () => {
       process.env.PATH = saved;
       rmSync(dir, { recursive: true, force: true });
@@ -331,12 +333,169 @@ test('the harness runs xdotool and its acting xprobe commands only through the d
   assert.deepEqual(found, []);
 });
 
+test("cleanup closes a Chrome window only while it is still the run's, and never registers its id again (an id Chrome reused for the person's window)", async () => {
+  const CHROME = 0x600009;
+  const tools = fakeTools({ active: 0 });
+  let listed = [];
+  const reader = { request: async () => ({ response: { ok: true, output: listed } }), close: async () => {} };
+  const desktop = new Desktop({ cua: 'unused', run: 'foreign6', reader, startActive: 0 });
+  const closed = [];
+  desktop.closeWindow = (id) => closed.push(id);
+  try {
+    await begin(desktop, HARNESS_ONLY.join('\n'));
+    const label = desktop.label('scene', 'r');
+    const title = `${label} - Google Chrome`;
+    // the scene's window, found once
+    const scene = { kind: 'chrome', role: 'r', label, title, id: null };
+    desktop.windows.push(scene);
+    listed = [{ id: CHROME, title, app: 'Google-chrome' }];
+    scene.id = (await desktop.waitForWindow((w) => w.title === title, label, 600)).id;
+    assert.equal(desktop.found.get(CHROME).length, 1);
+    // the person closed it, and Chrome gave its id to a window of the person's
+    tools.setTitle(CHROME, 'a page of the person - Google Chrome');
+    await desktop.close([scene]);
+    assert.deepEqual(closed, [], "the person's window is not closed");
+    assert.equal(desktop.found.get(CHROME).length, 1, 'cleanup found nothing: the id is not registered again');
+    assert.equal(desktop.adopted.has(CHROME), false);
+    assert.equal(desktop.liveOwned(CHROME), false, 'no longer the window the run opened');
+    assert.deepEqual(desktop.skips.map(({ what, window }) => [what, window]), [['close', hex(CHROME)]]);
+    // still the run's window: closed, and still not registered again
+    const again = { kind: 'chrome', role: 'r2', label: desktop.label('scene', 'r2'), title: `${desktop.label('scene', 'r2')} - Google Chrome`, id: 0x60000a };
+    desktop.windows.push(again);
+    desktop.foundNow(again.id);
+    tools.setTitle(again.id, again.title);
+    await desktop.close([again]);
+    assert.deepEqual(closed, [again.id]);
+    assert.equal(desktop.found.get(again.id).length, 1);
+    // a scene never found is closed by its exact title, which carries the run's nonce: found then, once
+    const lost = { kind: 'chrome', role: 'r3', label: desktop.label('scene', 'r3'), title: `${desktop.label('scene', 'r3')} - Google Chrome`, id: null };
+    desktop.findByTitle = (t) => (t === lost.title ? [0x60000b] : []);
+    await desktop.close([lost]);
+    assert.deepEqual(closed, [again.id, 0x60000b]);
+    assert.equal(desktop.found.get(0x60000b).length, 1);
+  } finally {
+    desktop.unhookStop();
+    await desktop.closeAll();
+    tools.done();
+  }
+});
+
+test("only a live window of the run's, still titled as the run titled it, is the run's to act on; a closed one is not", async () => {
+  const tools = fakeTools({ active: 0 });
+  const desktop = new Desktop({ cua: 'unused', run: 'foreign7', reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0 });
+  try {
+    const live = { kind: 'xterm', role: 'front', label: desktop.label('front'), id: MINE };
+    const gone = { kind: 'xterm', role: 'old', label: desktop.label('old'), id: 0x40000d };
+    const renamed = { kind: 'xterm', role: 'other', label: desktop.label('other'), id: 0x40000e };
+    desktop.windows.push(live, renamed);
+    desktop.closed.push(gone);
+    tools.setTitle(live.id, live.label);
+    tools.setTitle(gone.id, gone.label);
+    tools.setTitle(renamed.id, 'another window');
+    assert.equal(desktop.liveOwned(MINE), true);
+    assert.equal(desktop.liveOwned(gone.id), false, 'closed: its id may be another window now');
+    assert.equal(desktop.liveOwned(renamed.id), false);
+    assert.equal(desktop.liveOwned(PERSON), false);
+    tools.setTitle(MINE, null);
+    assert.equal(desktop.liveOwned(MINE), false, 'gone from the display');
+    // the retention fence asks the same question
+    const { retentionTrials } = await import('../../scripts/linux-engine-diff/xtools.mjs');
+    assert.throws(() => retentionTrials(desktop, gone.id, 1, 400, 0, '/tmp/x', () => assert.fail('ran')), /only a window the harness opened/);
+  } finally {
+    desktop.unhookStop();
+    rmSync(desktop.dir, { recursive: true, force: true });
+    tools.done();
+  }
+});
+
+test("the pointer goes only onto the root or a live window of the run's: the top window at the point is read first", () => {
+  const tools = fakeTools({ active: 0 });
+  const desktop = new Desktop({ cua: 'unused', run: 'foreign8', reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0 });
+  try {
+    const live = { kind: 'chrome', role: 'r', label: desktop.label('scene', 'r'), id: MINE };
+    desktop.windows.push(live);
+    tools.setTitle(MINE, `${live.label} - Google Chrome`);
+    const asked = [];
+    let top = { top: 0, holds: null };
+    desktop.topAt = (point, ids) => (asked.push([point, ids]), top);
+    assert.equal(desktop.pointerSafeAt({ x: 5, y: 6 }), true, 'nothing over the root there');
+    assert.deepEqual(asked, [[{ x: 5, y: 6 }, [MINE]]], 'asked with the live windows of the run');
+    top = { top: 0x200139, holds: MINE };
+    assert.equal(desktop.pointerSafeAt({ x: 5, y: 6 }), true, "the frame of the run's window");
+    // a popup of the person's, over the point: Chrome serves it from the client of the run's window
+    top = { top: 0x707acb, holds: null };
+    assert.equal(desktop.pointerSafeAt({ x: 5, y: 6 }), false);
+    top = { top: 0x200139, holds: MINE };
+    tools.setTitle(MINE, 'a page of the person - Google Chrome');
+    assert.equal(desktop.pointerSafeAt({ x: 5, y: 6 }), false, 'its id is not the window the run opened any more');
+  } finally {
+    desktop.unhookStop();
+    rmSync(desktop.dir, { recursive: true, force: true });
+    tools.done();
+  }
+});
+
+test("an engine's operation on a window is a span the record judges popups by; the reader's reads are not", async () => {
+  const { Engine } = await import('../../scripts/linux-engine-diff/engine.mjs');
+  const { auditRecord } = await import('../../scripts/linux-engine-diff/foreign.mjs');
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-ops-'));
+  const bin = join(dir, 'engine');
+  writeFileSync(bin, `#!${process.execPath}\nrequire('readline').createInterface({ input: process.stdin }).on('line', (l) => console.log(JSON.stringify({ id: JSON.parse(l).id, ok: true, output: [] })));\n`);
+  chmodSync(bin, 0o755);
+  const tools = fakeTools({ active: 0 });
+  const reader = new Engine({ label: 'reader', bin }).start();
+  const desktop = new Desktop({ cua: 'unused', run: 'foreign9', reader, startActive: 0 });
+  const engine = new Engine({ label: 'cua', bin }).start();
+  const DRAG = 0x707acb;
+  const CHROME_CLIENT = 0x600000;
+  const SCENE_ID = 0x600050;
+  // Chrome's drag image created at `at`, and the engine's motion onto it
+  const lines = (at, bornMs) => [
+    JSON.stringify({ kind: 'client', ms: 1, client: CHROME_CLIENT, pid: 1, exe: 'chrome', ours: false }),
+    JSON.stringify({ kind: 'client', ms: 1, client: 0x1600000, pid: 2, exe: 'cua-engine', ours: true }),
+    JSON.stringify({ kind: 'req', ms: bornMs, client: CHROME_CLIENT, seq: 1, t: 1, op: 'CreateWindow', window: SCENE_ID, parent: ROOT }),
+    JSON.stringify({ kind: 'req', ms: at, client: CHROME_CLIENT, seq: 2, t: 2, op: 'CreateWindow', window: DRAG, parent: ROOT, or: true }),
+    JSON.stringify({ kind: 'req', ms: at + 1, client: 0x1600000, seq: 3, t: 3, op: 'FakeInput', type: 'MotionNotify', detail: 0, focus: SCENE_ID, pointer: DRAG }),
+  ];
+  const wrap = (body) => [JSON.stringify({ kind: 'ready', ms: 1 }), ...body, JSON.stringify({ kind: 'end', ms: 2 })].join('\n');
+  let recorded = () => [];
+  try {
+    await desktop.begin({ startTrace: fakeTrace(HARNESS_ONLY.join('\n')), startRecord: async () => ({ stop: async () => wrap(recorded()) }), existing: () => [] });
+    desktop.root = ROOT;
+    const born = Date.now() - 5000;
+    desktop.closed.push({ kind: 'chrome', role: 'r', label: desktop.label('scene', 'r'), id: SCENE_ID });
+    desktop.foundNow(SCENE_ID);
+    await reader.request('get_window_state', { window: { id: SCENE_ID } });
+    const before = Date.now();
+    await engine.request('drag', { window: { id: SCENE_ID } });
+    const after = Date.now();
+    assert.equal(desktop.operations.length, 1, "the reader's read is not an operation");
+    const [op] = desktop.operations;
+    assert.equal(op.window, SCENE_ID);
+    assert.ok(op.start >= before && op.end <= after && op.start <= op.end);
+    const judge = (at) => auditRecord(wrap(lines(at, born)), { registered: desktop.registry(), root: ROOT, spans: desktop.operations });
+    assert.equal(judge(op.start).clean, true, JSON.stringify(judge(op.start).foreign));
+    // the same popup an hour later: the person's
+    assert.deepEqual(judge(op.end + 3600000).foreign.map((f) => f.window), [DRAG]);
+    // the run's own end judges its record with its spans
+    recorded = () => lines(op.start, born);
+    await desktop.closeAll();
+    assert.equal(desktop.ending.record.clean, true, JSON.stringify(desktop.ending.record));
+  } finally {
+    desktop.unhookStop();
+    await engine.close();
+    await reader.close();
+    tools.done();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("xprobe retention redirects only a window the run opened: another's is refused before anything runs", async () => {
   const { retentionTrials } = await import('../../scripts/linux-engine-diff/xtools.mjs');
-  const owner = { ownerOf: (id) => (id === MINE ? 'harness' : 'foreign') };
+  const owner = { liveOwned: (id) => id === MINE };
   const ran = [];
   const run = (cmd, args) => (ran.push(args), '{"trial":0}\n');
-  assert.throws(() => retentionTrials(owner, PERSON, 1, 400, 0, '/tmp/x', run), /only a window the harness opened; 0x00600002/);
+  assert.throws(() => retentionTrials(owner, PERSON, 1, 400, 0, '/tmp/x', run), /only a window the harness opened and still has open; 0x00600002/);
   assert.deepEqual(ran, []);
   assert.deepEqual(retentionTrials(owner, MINE, 1, 400, 0, '/tmp/x', run), [{ trial: 0 }]);
   assert.deepEqual(ran, [['retention', String(MINE), '1', '400', '0', '/tmp/x']]);
@@ -429,6 +588,9 @@ test("the summary names the run's start and end active windows, its holder and i
   );
   const foreignRecord = { ...record, record: { clean: false, requests: 5000, mutating: 301, foreign: ['SendEvent KeyPress on 0x00600002 (cua-engine pid 7)'], unplaced: 0, unattributed: { clients: 0, mutating: 0 } } };
   assert.match(desktopLine(foreignRecord), /the run's record: .*\*\*1 change of a window it did not open: SendEvent KeyPress on 0x00600002 \(cua-engine pid 7\)\*\*/);
+  // what the harness left undone because the window was not the run's then
+  const skipped = { ...record, skipped: [{ what: 'close', window: '0x00600009', reason: 'no longer the window the run opened' }] };
+  assert.equal(desktopLine(skipped), `${desktopLine(record)}; left undone, the window not the run's then: close on 0x00600009`);
   const cut = { ...record, record: { clean: false, requests: 10, mutating: 0, foreign: [], unplaced: 0, unattributed: null, error: 'the record did not end cleanly, so it may be incomplete' } };
   assert.match(desktopLine(cut), /the run's record: \*\*the record did not end cleanly, so it may be incomplete\*\*/);
 });

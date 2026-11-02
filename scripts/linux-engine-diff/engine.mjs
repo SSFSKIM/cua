@@ -8,6 +8,26 @@ import { createInterface } from 'node:readline';
 
 const now = () => Number(process.hrtime.bigint()) / 1e6;
 
+const operationWatchers = new Set();
+
+/**
+ * Every request an engine makes on a window, reported when it is answered to `watch({engine, window, command, start,
+ * end})` (wall-clock ms): the spans during which that window's client may open popups of the operation's own (scenes.mjs
+ * `Desktop.operations`, foreign.mjs `judgeForeign`). Returns the function that stops the watch.
+ */
+export function watchOperations(watch) {
+  operationWatchers.add(watch);
+  return () => operationWatchers.delete(watch);
+}
+
+/** A request's span to every watch, when it names a window. */
+function reportOperation(engine, command, input, start) {
+  const window = input?.window?.id;
+  if (!window || operationWatchers.size === 0) return;
+  const op = { engine, window, command, start, end: Date.now() };
+  for (const watch of operationWatchers) watch(op);
+}
+
 export class Engine {
   constructor({ label, bin, args = [], stats = false, env }) {
     this.label = label;
@@ -76,6 +96,7 @@ export class Engine {
     const first = id === 1;
     const answered = new Promise((resolve) => this.pending.set(id, resolve));
     const sentAt = now();
+    const wallStart = Date.now();
     this.child.stdin.write(`${JSON.stringify({ id, command, input })}\n`);
     let timer;
     const timeout = new Promise((resolve) => {
@@ -83,6 +104,7 @@ export class Engine {
     });
     const { response, at } = await Promise.race([answered, timeout]);
     clearTimeout(timer);
+    reportOperation(this, command, input, wallStart);
     let stats = null;
     if (this.statsWanted) {
       // the engine writes a request's line just after its answer; a check that needs it fails without it, so a busy
@@ -98,6 +120,7 @@ export class Engine {
   /** Writes several requests at once (pipelined) and waits for every answer. */
   async pipeline(requests, { timeoutMs = 120000 } = {}) {
     const started = now();
+    const wallStart = Date.now();
     const waits = requests.map(({ command, input }) => {
       const id = this.nextId++;
       const answered = new Promise((resolve) => this.pending.set(id, resolve));
@@ -110,6 +133,7 @@ export class Engine {
     });
     const answers = await Promise.race([Promise.all(waits), timeout]);
     clearTimeout(timer);
+    for (const { command, input } of requests) reportOperation(this, command, input, wallStart);
     return { responses: answers.map((a) => a.response), ms: answers.at(-1).at - started };
   }
 

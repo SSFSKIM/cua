@@ -32,7 +32,9 @@ export function desktopLine(record) {
       ? 'every one of its own'
       : '**it recorded no request, so its requests went unaudited**';
   const line = `desktop: started with ${activeText(record.active_start)}, ended with ${activeText(record.active_end)}, neither acted on; holder ${record.holder ? windowId(record.holder) : 'none'}; the harness's own trace: ${trace.requests} requests, ${changes}, ${audit}`;
-  return record.record ? `${line}; ${recordText(record.record)}` : line;
+  const parts = [line, ...(record.record ? [recordText(record.record)] : [])];
+  if (record.skipped?.length) parts.push(`left undone, the window not the run's then: ${record.skipped.map((s) => `${s.what} on ${s.window}`).join('; ')}`);
+  return parts.join('; ');
 }
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;

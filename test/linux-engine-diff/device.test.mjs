@@ -254,23 +254,40 @@ test("the pointer allowance lifts the pointer field alone, and only for a case w
   assert.equal(allowPointer(clean, true), clean, 'nothing to lift');
 });
 
-test("a case's parked pointer goes back where it was only over a window the run opened, never onto another's", async () => {
+test("a case's pointer goes only onto the root or a live window of the run's, read at the point just before each move", async () => {
   const { parkPointer } = await import('../../scripts/linux-engine-diff/device.mjs');
-  const MINE = 0x40000c;
-  const PERSON = 0x600002;
-  const run = (under) => {
+  // `unsafe`: the points where the top window is not the run's (a popup of the person's, say); `later`: those that
+  // become so by the time the sample's cleanup runs
+  const run = ({ unsafe = [], later = [] } = {}) => {
     const calls = [];
     const disposals = [];
+    const skips = [];
     const tool = (...args) => {
       calls.push(args.join(' '));
-      return args[0] === 'getmouselocation' ? `X=300\nY=200\nSCREEN=0\nWINDOW=${under}\n` : '';
+      return args[0] === 'getmouselocation' ? 'X=300\nY=200\nSCREEN=0\nWINDOW=7\n' : '';
     };
-    const ctx = { desktop: { ownerOf: (id) => (id === MINE ? 'harness' : 'foreign') }, dispose: (fn) => disposals.push(fn) };
-    parkPointer(ctx, { x: 600, y: 600 }, { tool });
+    let blocked = unsafe;
+    const desktop = { pointerSafeAt: (p) => !blocked.some((b) => b.x === p.x && b.y === p.y), skip: (what, window, reason) => skips.push(what) };
+    const ctx = { desktop, dispose: (fn) => disposals.push(fn) };
+    let error = null;
+    try {
+      parkPointer(ctx, { x: 600, y: 600 }, { tool });
+    } catch (e) {
+      error = e;
+    }
+    blocked = [...unsafe, ...later];
     for (const fn of disposals) fn();
-    return calls.filter((c) => c.startsWith('mousemove'));
+    return { moves: calls.filter((c) => c.startsWith('mousemove')), skips, error };
   };
-  assert.deepEqual(run(MINE), ['mousemove 600 600', 'mousemove 300 200'], 'back over the harness window it was found on');
-  // found over the person's window: parked on the front window's middle instead, a window of the run's
-  assert.deepEqual(run(PERSON), ['mousemove 600 600', 'mousemove 1170 715']);
+  assert.deepEqual(run().moves, ['mousemove 600 600', 'mousemove 300 200'], 'back where it was found');
+  // found over another's window: parked on the front window's middle instead, a window of the run's
+  assert.deepEqual(run({ unsafe: [{ x: 300, y: 200 }] }).moves, ['mousemove 600 600', 'mousemove 1170 715']);
+  // the park point itself under another's window (the person's menu over the scene): no move, and the case fails
+  const blocked = run({ unsafe: [{ x: 600, y: 600 }] });
+  assert.deepEqual(blocked.moves, []);
+  assert.match(blocked.error?.message ?? '', /over a window the run did not open/);
+  // both places another's by the cleanup: the pointer stays, and the skip is recorded
+  const stays = run({ later: [{ x: 300, y: 200 }, { x: 1170, y: 715 }] });
+  assert.deepEqual(stays.moves, ['mousemove 600 600']);
+  assert.deepEqual(stays.skips, ['pointer restore']);
 });

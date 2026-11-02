@@ -51,6 +51,8 @@ const reader = ${readerSource(chrome.asked, title, 300)};
 const desktop = new Desktop({ cua: 'unused', run: 'stoptest', reader, startActive: 0, nonce: 'n0' });
 // nothing listed by its title yet when the signal comes: only the discovery can find it
 desktop.findByTitle = () => [];
+// the window that came up is still the run's when it is closed
+desktop.windowTitle = () => ${JSON.stringify(title)};
 desktop.closeWindow = (id) => appendFileSync(${JSON.stringify(log)}, 'close ' + id + '\\n');
 desktop.openChrome('r', 'scene.html').catch((e) => appendFileSync(${JSON.stringify(log)}, 'open failed ' + e.message + '\\n'));
 const asked = setInterval(() => {

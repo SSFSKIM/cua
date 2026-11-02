@@ -237,15 +237,20 @@ const OUTSIDE = { x: 1170, y: 715 };
 
 /**
  * The real pointer parked at a screen point for the sample, and put back by the sample's cleanup (outside every span)
- * where the case found it, so the cases after it find it where they did before; but only onto a window the run opened.
- * Found over another's (the person's, at the run's first case), it is parked on the front window instead: moving it
- * back would be a motion into a window the harness did not open (T4b's audit round, as the design session ruled for
- * the active window found at the start).
+ * where the case found it, so the cases after it find it where they did before. Every move goes only onto the root or
+ * a live window of the run's, read at its point just before the move (scenes.mjs `pointerSafeAt`): a motion into
+ * another's window, a popup of the person's Chrome over the scene included, is a change of it (T4b's audit round). A
+ * park point under another's window fails the case unmoved; a place to go back to under another's falls back to the
+ * front window's middle, and with that under another's too, the pointer stays and the skip is recorded.
  */
 export function parkPointer(ctx, point, { tool = xdotool } = {}) {
   const found = pointerAt(tool);
-  const back = ctx.desktop.ownerOf(found.window) === 'harness' ? found : OUTSIDE;
-  ctx.dispose(() => tool('mousemove', back.x, back.y));
+  if (!ctx.desktop.pointerSafeAt(point)) throw new Error(`the pointer's park point (${point.x}, ${point.y}) is over a window the run did not open: the case is not run`);
+  ctx.dispose(() => {
+    const back = [found, OUTSIDE].find((p) => ctx.desktop.pointerSafeAt(p));
+    if (back) tool('mousemove', back.x, back.y);
+    else ctx.desktop.skip('pointer restore', `(${found.x}, ${found.y})`, 'that place and the front window\'s middle are under a window the run did not open');
+  });
   tool('mousemove', point.x, point.y);
 }
 /**

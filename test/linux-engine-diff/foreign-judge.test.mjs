@@ -193,7 +193,9 @@ const req = (c, seq, op, fields) => rec('req', { client: c, seq, t: seq, op, ...
 const START = [rec('ready', { root: ROOT, xtest: 132, composite: 142 }), client(OURS, true, 'xtrace'), client(ENGINE, true, 'cua-engine'), client(CHROME, false, 'chrome'), client(WM, false, 'openbox')];
 const SCENE = 0x600050;
 const END = rec('end', {});
-const raudit = (lines, reg = new Map([[SCENE, 1000]])) => auditRecord([...lines, END].join('\n'), { registered: reg, root: ROOT });
+const raudit = (lines, reg = new Map([[SCENE, 1000]]), spans = []) => auditRecord([...lines, END].join('\n'), { registered: reg, root: ROOT, spans });
+/** A recorded request at a wall time of its own (ms since the epoch; no `t0`, so `ms` is its time). */
+const reqAt = (ms, c, seq, op, fields) => JSON.stringify({ kind: 'req', ms, client: c, seq, t: seq, op, ...fields });
 
 test('the whole-run record judges every request of the harness and the engines, sampled or not', () => {
   // Chrome opens the harness's page window, the harness registers it; an engine sends it keys, and later, on a request
@@ -265,28 +267,56 @@ test("the record: a frame that holds the harness window through its own inner wi
   assert.deepEqual(windowsOf(raudit(lines)), [TITLE]);
 });
 
-test("the record: a popup the client of a harness window opens during the run (a drag image) is that window's; not another client's, nor a managed window", () => {
+test("the record: a popup is a harness window's only when its client opens it during a harness operation on that window (a drag image during the drag)", () => {
   const DRAG = 0x707acb;
+  // the drag: an engine's request on the scene window from 2900 to 3200, Chrome's drag image created at 3000, under the
+  // pointer for the whole drop
+  const drag = [{ window: SCENE, start: 2900, end: 3200 }];
   const lines = [
     ...START,
-    req(CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }),
-    // Chrome's drag image, override-redirect on the root, under the pointer for the whole drop
-    req(CHROME, 30, 'CreateWindow', { window: DRAG, parent: ROOT, or: true }),
-    req(ENGINE, 40, 'FakeInput', { type: 'MotionNotify', detail: 0, focus: SCENE, pointer: DRAG }),
-    req(ENGINE, 41, 'FakeInput', { type: 'ButtonRelease', detail: 1, focus: SCENE, pointer: DRAG }),
+    reqAt(1000, CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }),
+    reqAt(3000, CHROME, 30, 'CreateWindow', { window: DRAG, parent: ROOT, or: true }),
+    reqAt(3100, ENGINE, 40, 'FakeInput', { type: 'MotionNotify', detail: 0, focus: SCENE, pointer: DRAG }),
+    reqAt(3150, ENGINE, 41, 'FakeInput', { type: 'ButtonRelease', detail: 1, focus: SCENE, pointer: DRAG }),
   ];
-  assert.equal(raudit(lines).clean, true, JSON.stringify(raudit(lines).foreign));
-  // a new managed window of the same client (a browser window the person opens) is not
-  const managed = [...START, req(CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), req(CHROME, 30, 'CreateWindow', { window: DRAG, parent: ROOT }), req(ENGINE, 40, 'FakeInput', { type: 'MotionNotify', detail: 0, focus: SCENE, pointer: DRAG })];
-  assert.deepEqual(windowsOf(raudit(managed)), [DRAG]);
-  // a popup of a client with no harness window of its own is not, nor one opened after its harness window closed
-  const other = [...START, req(CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), req(WM, 30, 'CreateWindow', { window: 0x200099, parent: ROOT, or: true }), req(ENGINE, 40, 'FakeInput', { type: 'MotionNotify', detail: 0, focus: SCENE, pointer: 0x200099 })];
-  assert.deepEqual(windowsOf(raudit(other)), [0x200099]);
-  const after = [...START, req(CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), rec('destroyed', { window: SCENE }), req(CHROME, 30, 'CreateWindow', { window: DRAG, parent: ROOT, or: true }), req(ENGINE, 40, 'SendEvent', { destination: DRAG, event: 'KeyPress' })];
-  assert.deepEqual(windowsOf(raudit(after)), [DRAG]);
+  assert.equal(raudit(lines, undefined, drag).clean, true, JSON.stringify(raudit(lines, undefined, drag).foreign));
+  // the same popup with no harness operation on the window: the person's menu in their own Chrome, which serves the
+  // harness's window from the same client, and the harness's warp into it
+  const warp = [...lines.slice(0, -2), reqAt(3100, OURS, 41, 'WarpPointer', { dst: ROOT, pointer: DRAG })];
+  assert.deepEqual(windowsOf(raudit(warp)), [DRAG]);
+  // opened outside the operation's span, or during an operation on another window, it is not the harness's either
+  assert.deepEqual(windowsOf(raudit(warp, undefined, [{ window: SCENE, start: 6000, end: 7000 }])), [DRAG]);
+  assert.deepEqual(windowsOf(raudit(warp, undefined, [{ window: PERSON, start: 2900, end: 3200 }])), [DRAG]);
+  // nor another client's popup during the scene's operation, nor a managed window of the same client
+  const other = [...START, reqAt(1000, CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), reqAt(3000, WM, 30, 'CreateWindow', { window: 0x200099, parent: ROOT, or: true }), reqAt(3100, ENGINE, 40, 'FakeInput', { type: 'MotionNotify', detail: 0, focus: SCENE, pointer: 0x200099 })];
+  assert.deepEqual(windowsOf(raudit(other, undefined, drag)), [0x200099]);
+  const managed = [...START, reqAt(1000, CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), reqAt(3000, CHROME, 30, 'CreateWindow', { window: DRAG, parent: ROOT }), reqAt(3100, ENGINE, 40, 'FakeInput', { type: 'MotionNotify', detail: 0, focus: SCENE, pointer: DRAG })];
+  assert.deepEqual(windowsOf(raudit(managed, undefined, drag)), [DRAG]);
+  // nor one opened after its harness window closed
+  const after = [...START, reqAt(1000, CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), rec('destroyed', { window: SCENE }), reqAt(3000, CHROME, 30, 'CreateWindow', { window: DRAG, parent: ROOT, or: true }), reqAt(3100, ENGINE, 40, 'SendEvent', { destination: DRAG, event: 'KeyPress' })];
+  assert.deepEqual(windowsOf(raudit(after, undefined, drag)), [DRAG]);
   // override-redirect set after the creation counts the same
-  const later = [...START, req(CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), req(CHROME, 30, 'CreateWindow', { window: DRAG, parent: ROOT }), req(CHROME, 31, 'ChangeWindowAttributes', { window: DRAG, mask: 0x200, or: true }), req(ENGINE, 40, 'SendEvent', { destination: DRAG, event: 'KeyPress' })];
-  assert.equal(raudit(later).clean, true);
+  const later = [...START, reqAt(1000, CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), reqAt(3000, CHROME, 30, 'CreateWindow', { window: DRAG, parent: ROOT }), reqAt(3010, CHROME, 31, 'ChangeWindowAttributes', { window: DRAG, mask: 0x200, or: true }), reqAt(3100, ENGINE, 40, 'SendEvent', { destination: DRAG, event: 'KeyPress' })];
+  assert.equal(raudit(later, undefined, drag).clean, true);
+  assert.deepEqual(windowsOf(raudit(later)), [DRAG]);
+});
+
+test('the record: a finding binds the one life of its id alive then; a life born after that one ended is not it, however soon', () => {
+  // the harness found its Chrome window at 1050; the person closed it at about 1100 and Chrome gave the id to a window
+  // of theirs at 1500, inside the clocks' slack of that finding
+  const lines = [
+    ...START,
+    reqAt(1000, CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }),
+    reqAt(1100, OURS, 40, 'ConfigureWindow', { window: SCENE }),
+    rec('destroyed', { window: SCENE }),
+    reqAt(1500, CHROME, 11, 'CreateWindow', { window: SCENE, parent: ROOT }),
+    reqAt(1600, OURS, 41, 'SendEvent', { destination: SCENE, event: 'ClientMessage', cm_window: SCENE, cm_type: 'WM_PROTOCOLS' }),
+  ];
+  const result = raudit(lines, new Map([[SCENE, [1050]]]));
+  assert.deepEqual(windowsOf(result), [SCENE]);
+  assert.equal(result.foreign[0].seq, 41, 'the first life was the harness\'s; only the second is foreign');
+  // registered without a finding time: only the first life the record saw is the harness's
+  assert.deepEqual(windowsOf(raudit(lines, new Map([[SCENE, null]]))), [SCENE]);
 });
 
 test('the record: a registered window existing before the record began is never the harness’s', () => {

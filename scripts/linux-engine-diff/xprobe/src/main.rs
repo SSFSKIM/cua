@@ -86,6 +86,7 @@ fn main() {
         Some("grabs") if args.len() == 1 => clip::grabs(),
         Some("within") => clip::within(&args[1..]),
         Some("toplevel") => restack::toplevel(&args[1..]),
+        Some("top-at") => restack::top_at_cmd(&args[1..]),
         Some("restack-grabbed") => restack::restack_grabbed(&args[1..]),
         Some("popup") => restack::popup(&args[1..]),
         Some("overlay") => restack::overlay(&args[1..]),

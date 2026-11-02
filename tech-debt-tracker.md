@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-11-02 — The private-display negative controls hold on any failure of the right source (minor, #171 M4, T4b's final review).** `docs/evidence/2026-10-28-own-linux-engine/m4/harness-windows/t4b/controls.mjs` (around line 65) counts a control as held when any of the run's failure lines starts with `the harness:` or `the run's record:`. It does not check that the line names the control's own operation and the person's window. A control that failed for an unrelated reason, such as a stray change of another window or a record that did not end cleanly, would still read as caught. Every control's `foreign` lines were checked by hand for this round's evidence (`private/controls.json`), so the cost is only that a rerun needs the same reading. Fix: give each control the operation and window it must produce (for example `ChangeProperty` on the person's window) and hold only when a failure line matches both, with nothing else failing. Check: `grep -n "startsWith('the harness:')" docs/evidence/2026-10-28-own-linux-engine/m4/harness-windows/t4b/controls.mjs` still matches.
+
 - **2026-11-01 — A capped route-3 action can answer up to 1 s late (accepted limit, #200).** When the delivery guard
   reaches the 100 ms screen-hold cap with the click's raise not yet settled, it keeps repairing synchronously inside the
   action until the raise settles or 1 s after the events (`FakeActivation.deliver`, the past-cap branch), so that action's

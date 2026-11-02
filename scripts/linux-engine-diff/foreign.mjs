@@ -18,9 +18,10 @@
 // of a client message to the window manager; anything else on it is foreign.
 //
 // Whose a window is, in trace order (`harness`): a window the harness registered (opened, adopted by its run-unique
-// title, closed since), for the life it had when the harness found it; a window our connection created once the server
+// title, closed since), for the one life it had when the harness found it; a window our connection created once the server
 // accepted the creation, under the root or one of ours; a window another client created inside one of ours; a window
-// manager frame while it holds one of ours. A window's life ends at its DestroyNotify (or DestroyWindow, or when its
+// manager frame while it holds one of ours; an override-redirect window on the root that the client of one of ours
+// opened during a harness operation on that window (its drag image during the drag). A window's life ends at its DestroyNotify (or DestroyWindow, or when its
 // creating client is gone), so a reused id is foreign again. A window reparented into one of ours keeps the owner it
 // had. One exemption: the property a foreign client named in its own SelectionRequest, written while that request is
 // served (the selection owner's answer, ICCCM), and the SelectionNotify that completes it.
@@ -44,22 +45,33 @@ const WINDOW_OPS = new Set(['DestroyWindow', 'DestroySubwindows', 'MapWindow', '
  * clocks' drift and the reader's own polling, never the record's lag.
  */
 const FOUND_SLACK_MS = 1000;
+/**
+ * How far outside a harness operation's span a popup's creation may seem to come: both are wall-clock times (the
+ * record's by the server's clock, set against the wall clock once), so this covers only the clocks' drift.
+ */
+const SPAN_SLACK_MS = 250;
 
 /**
  * The judge. `elements`: the stream (`xtraceElements`, `recordElements`). `registered`: the harness's windows, a Set,
- * or a Map from id to when it was found (ms since the epoch; the record matches the window's life to it). `strictBirth`:
- * a registered window is the harness's only in a life the stream saw begin (the record sees every client; xtrace sees
- * only ours, so there a registered window's first life counts). Returns `{clean, traced, requests, mutating, foreign,
- * unplaced, unattributed}`.
+ * or a Map from id to when it was found (ms since the epoch, or a list of them; the record binds each finding to the
+ * one life of the id alive then). `strictBirth`: a registered window is the harness's only in a life the stream saw
+ * begin (the record sees every client; xtrace sees only ours, so there a registered window's first life counts).
+ * `spans`: the harness's operations on its windows, `{window, start, end}` (ms since the epoch), during which the
+ * window's client's popups are the window's (the record times both). Returns `{clean, traced, requests, mutating,
+ * foreign, unplaced, unattributed}`.
  */
-export function judgeForeign(elements, { registered, root, strictBirth = false }) {
+export function judgeForeign(elements, { registered, root, strictBirth = false, spans = [] }) {
   const found = registered instanceof Map ? registered : new Map([...(registered ?? [])].map((id) => [id, null]));
   const clients = new Map();
   const lives = new Map();
   // each window's children as the stream last showed them: by a creation, a reparent, or (xtrace) a reply
   const children = new Map();
-  // the clients that have a registered window alive, by client: whose popups are the harness's
-  const harnessClients = new Map();
+  // the stream's clock: the latest request's time (ms since the epoch, the record's server time on the wall clock)
+  let clock = -Infinity;
+  // by id, the time its last life ended: no finding until then can be of a later life
+  const endedAt = new Map();
+  // the ids the stream saw created
+  const created = new Set();
   const open = new Map();
   const foreign = [];
   let requests = 0;
@@ -85,26 +97,30 @@ export function judgeForeign(elements, { registered, root, strictBirth = false }
     children.get(parent).add(w);
   };
   const born = (el, extra) => {
-    const life = { n: (lives.get(el.window)?.n ?? -1) + 1, born: true, bornMs: el.ms ?? null, alive: true, creator: el.c, ...extra };
     const old = lives.get(el.window);
+    const life = { n: (old?.n ?? -1) + 1, born: true, bornMs: el.ms ?? null, alive: true, creator: el.c, first: !created.has(el.window), after: endedAt.get(el.window) ?? -Infinity, ...extra };
+    created.add(el.window);
     if (old?.parent !== undefined) children.get(old.parent)?.delete(el.window);
     lives.set(el.window, life);
     setParent(el.window, el.parent);
-    if (isRegistered(el.window, life)) {
-      if (!harnessClients.has(el.c)) harnessClients.set(el.c, new Set());
-      harnessClients.get(el.c).add(el.window);
-    }
     return life;
   };
-  // an override-redirect window on the root, opened during the run by the client of a live harness window (its menu,
-  // its tooltip, its drag image): that window's own, as the witness's foreground allowance takes the target client's
-  // override-redirect windows
-  const popup = (life) => life.or === true && life.parent === root && life.born && (harnessClients.get(life.creator)?.size ?? 0) > 0;
+  // an override-redirect window on the root that the client of a live harness window opened during a harness
+  // operation on that window (its drag image during the drag, its menu during a click): that window's own. Chrome
+  // serves the person's windows from the same client, so a popup opened at any other time is foreign.
+  const popup = (life) => {
+    if (life.or !== true || life.parent !== root || !life.born || typeof life.bornMs !== 'number') return false;
+    return spans.some((s) => {
+      if (life.bornMs < s.start - SPAN_SLACK_MS || life.bornMs > s.end + SPAN_SLACK_MS || !live(s.window)) return false;
+      const owner = lifeOf(s.window);
+      return owner.creator === life.creator && isRegistered(s.window, owner);
+    });
+  };
   // a window's end ends its subtree too
   const end = (w, depth = 0) => {
     const life = lifeOf(w);
     life.alive = false;
-    if (life.creator !== undefined) harnessClients.get(life.creator)?.delete(w);
+    endedAt.set(w, clock);
     if (life.parent !== undefined) children.get(life.parent)?.delete(w);
     if (depth < 64) for (const c of [...(children.get(w) ?? [])]) end(c, depth + 1);
     children.delete(w);
@@ -112,10 +128,14 @@ export function judgeForeign(elements, { registered, root, strictBirth = false }
   const isRegistered = (w, life) => {
     if (!found.has(w)) return false;
     if (!strictBirth) return life.n === 0;
-    // each time the harness found it: a life born at most the slack after one of those times is the one it found (the
-    // same id found again, a window reopened under it by the backstop, is that new life)
     const at = found.get(w);
-    return life.born && (at === null || [at].flat().some((t) => life.bornMs <= t + FOUND_SLACK_MS));
+    if (!life.born) return false;
+    // registered without being found: the first life the stream saw
+    if (at === null) return life.first;
+    // each time the harness found it binds the one life alive then: born at most the slack after the finding, and
+    // after the life before it ended (the same id found again, a window reopened under it by the backstop, is that
+    // new life; a window another client created under the id soon after the found one closed is not)
+    return [at].flat().some((t) => life.bornMs <= t + FOUND_SLACK_MS && t > life.after);
   };
   const live = (w) => typeof w === 'number' && w !== root && w !== 0 && lifeOf(w).alive;
   // ours by itself, or lying inside one of ours: registered, created by us, created inside one of ours; with xtrace, a
@@ -165,6 +185,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false }
       continue;
     }
     if (el.k !== 'req') continue;
+    if (typeof el.ms === 'number' && el.ms > clock) clock = el.ms;
 
     const ours = clients.has(el.c) ? clients.get(el.c).ours : el.ours;
     const rejected = refused.has(el);
@@ -622,25 +643,25 @@ const describe = (r) => {
 
 /**
  * The audit of the whole run's record (`xprobe record-run`'s lines, as text): `registered`, the harness's windows, a
- * Map from id to when it was found. A record that never began, ended in a failure or never said it ended (cut short)
- * is not clean.
+ * Map from id to when it was found; `spans`, the harness's operations on its windows (`judgeForeign`). A record that
+ * never began, ended in a failure or never said it ended (cut short) is not clean.
  */
-export function auditRecord(text, { registered, root }) {
+export function auditRecord(text, { registered, root, spans = [] }) {
   const { elements, meta } = recordElements(text.split('\n').filter(Boolean), root);
-  return recordVerdict(elements, meta, { registered, root });
+  return recordVerdict(elements, meta, { registered, root, spans });
 }
 
 /** The same audit of the record's file, read line by line: a whole run's record is too large for one string. */
-export async function auditRecordFile(path, { registered, root }) {
+export async function auditRecordFile(path, { registered, root, spans = [] }) {
   const out = [];
   const meta = { ready: false, ended: false, error: null };
   const lines = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity });
   for await (const line of lines) if (line) recordLine(line, out, meta, root);
-  return recordVerdict(out, meta, { registered, root });
+  return recordVerdict(out, meta, { registered, root, spans });
 }
 
-function recordVerdict(elements, meta, { registered, root }) {
-  const judged = judgeForeign(elements, { registered, root, strictBirth: true });
+function recordVerdict(elements, meta, { registered, root, spans }) {
+  const judged = judgeForeign(elements, { registered, root, strictBirth: true, spans });
   const error = meta.error ?? (!meta.ready ? 'the record never began' : !meta.ended ? 'the record did not end cleanly, so it may be incomplete' : null);
   const traced = meta.ready && meta.ended && !meta.error;
   return { ...judged, clean: traced && judged.foreign.length === 0, traced, ...(error ? { error } : {}) };

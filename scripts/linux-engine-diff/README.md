@@ -220,14 +220,15 @@ variants included; their evidence is written either way. The run's `end` row kee
     event selections on it stay out, and it is the neutral destination of a client message to the window manager.
     One exemption: the property a foreign client named in its own SelectionRequest, written while that request is
     served (INCR until its zero-length end), and the SelectionNotify that answers it.
-  - *Whose a window is*, judged in trace order: a window the harness registered, for the life it had when the harness
-    found it (`Desktop.registry`, each id with when it was found); a window our connection created, once the server
-    accepted the creation (no error for its sequence number), under the root or one of ours; a window another client
-    created inside one of ours; a window manager frame while it holds one of ours; and an override-redirect window on
-    the root that the client of a live harness window opens during the run (its menu, tooltip or drag image: Chrome's
-    drag image sits under the pointer for a whole drop), as the witness's foreground allowance takes the target
-    client's override-redirect windows. A life ends at its DestroyNotify, a
-    DestroyWindow, or its creating client's end, so a reused id is foreign again. A window reparented into one of ours
+  - *Whose a window is*, judged in trace order: a window the harness registered, for the one life it had when the
+    harness found it (`Desktop.registry`, each id with every time it was found; a finding binds the life born before it
+    and after the id's previous life ended); a window our connection created, once the server accepted the creation
+    (no error for its sequence number), under the root or one of ours; a window another client created inside one of
+    ours; a window manager frame while it holds one of ours; and an override-redirect window on the root that the
+    client of a live harness window opens during an engine's operation on that window (`Desktop.operations`, from
+    `engine.mjs` `watchOperations`: Chrome's drag image during the drag, a select's list during the click). Chrome
+    serves the person's windows from the same client, so a popup opened at any other time is foreign. A life ends at
+    its DestroyNotify, a DestroyWindow, or its creating client's end, so a reused id is foreign again. A window reparented into one of ours
     keeps the owner it had. Parentage is the trace's own, at request time: no window is resolved on the display after
     the run.
   - *Two sources.* The run's own xtrace proxy (`Desktop.begin`), through which every `xdotool` and every acting xprobe
@@ -246,12 +247,17 @@ variants included; their evidence is written either way. The run's `end` row kee
   - *No window of the person's can be taken for the run's*: every title carries the run's label and a random nonce of
     the run's own (`Desktop.label`), and a window already on the display when the run began is never found or adopted
     (`Desktop.preexisting`), whatever its title.
-  - *Observers that act are fenced* (`xtools.mjs`): xprobe `retention` redirects only a window the run opened, and
+  - *The harness acts only on a window that is still the run's*: cleanup closes a Chrome window it found only while
+    that id is alive and titled with the scene's label (`Desktop.stillOurs`; the person may have closed it and Chrome
+    given its id to a window of theirs), and never registers it again; a window not closed so is recorded in the end
+    row (`skipped`). Every pointer move of the harness's (`parkPointer`, the dnd experiment's `--park-pointer`, the
+    GTK 4 probe) reads the top window at its point first (xprobe `top-at`, `Desktop.pointerSafeAt`) and goes only onto
+    the root or a live window of the run's.
+  - *Observers that act are fenced* (`xtools.mjs`): xprobe `retention` redirects only a live window of the run's, and
     xprobe `grabs`, which takes the root's pointer and keyboard, runs only on a private display marked
     `CUA171_PRIVATE_DISPLAY` (xprobe refuses any other; `events.mjs` marks its Xvfb). The post-request check that no
     grab is left reads the server's record of every client's grabs (`clip.mjs` `watchGrabs`, `grabsIn`) instead of
-    grabbing; so does the dnd experiment, whose momentary foreign grab (`--grab-at-ms`) is gone. A case's parked
-    pointer goes back where it was found only over a window of the run's (`device.mjs` `parkPointer`).
+    grabbing; so does the dnd experiment, whose momentary foreign grab (`--grab-at-ms`) is gone.
   - The window found active at the start is recorded and never activated again. A run that starts with a foreign
     window active first opens and activates a holder (an xterm in the front window's corner), closed after every other
     window of the run's; what the window manager activates then is its own doing. The `meta` row records the start's

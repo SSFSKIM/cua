@@ -28,7 +28,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { parseXtrace, parseXtraceFile, startProxy } from './audit.mjs';
-import { Engine } from './engine.mjs';
+import { Engine, watchOperations } from './engine.mjs';
 import { auditForeign, auditRecord, auditRecordFile, foreignKeep, foreignLine } from './foreign.mjs';
 import { preorder } from './normalize.mjs';
 import { cleanupOnStop } from './stop.mjs';
@@ -115,6 +115,7 @@ export function desktopEnding(ending) {
       active_start: ending.start,
       active_end: ending.end,
       holder: ending.holder,
+      skipped: ending.skipped ?? [],
       trace: { clean: audit.clean, requests: audit.requests, mutating: audit.mutating, foreign: audit.foreign.slice(0, 10).map(foreignLine), unplaced: audit.unplaced ?? 0 },
       record: { clean: record.clean, requests: record.requests, mutating: record.mutating, foreign: record.foreign.slice(0, 10).map(foreignLine), ...(record.foreign.length ? { first_foreign: record.foreign.slice(0, 5).map(({ client, what, window, text }) => ({ client, what, window, request: text })) } : {}), unplaced: record.unplaced ?? 0, unattributed: record.unattributed ?? null, ...(record.error ? { error: record.error } : {}) },
     },
@@ -145,6 +146,12 @@ export class Desktop {
     this.closed = [];
     // windows the harness found by their run-unique title and closed before it had registered their id
     this.adopted = new Set();
+    // the engines' operations on windows (engine.mjs `watchOperations`), the reader's reads aside: the spans during
+    // which a window's client's popups are that window's (foreign.mjs `judgeForeign`)
+    this.operations = [];
+    // what the harness left undone because the window it would have acted on was not the run's then: `{what, window,
+    // reason}`, recorded in the run's end row
+    this.skips = [];
     // the window active before the run opened anything; it is recorded, never activated again
     this.startActive = startActive ?? activeWindow();
     this.holder = null;
@@ -168,6 +175,9 @@ export class Desktop {
   async begin({ startTrace = startProxy, startRecord = startRunRecord, existing = allWindows } = {}) {
     this.root = rootWindow();
     this.preexisting = new Set(existing());
+    this.unwatchOperations = watchOperations(({ engine, window, start, end }) => {
+      if (engine !== this.reader) this.operations.push({ window, start, end });
+    });
     this.record = await startRecord();
     try {
       this.trace = await startTrace();
@@ -205,6 +215,54 @@ export class Desktop {
   ownerOf(id) {
     if (!id) return 'none';
     return this.harnessIds().has(id) ? 'harness' : 'foreign';
+  }
+
+  /** A window's title now (`xdotool getwindowname`), or null when there is no such window. */
+  windowTitle(id) {
+    try {
+      return xdotool('getwindowname', id);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Whether a scene's window is still the one the run opened: alive, and titled with the scene's label, which carries
+   * the run's nonce. A window closed by another (the person) may have given its id to a window of theirs.
+   */
+  stillOurs(scene) {
+    const title = scene.id ? this.windowTitle(scene.id) : null;
+    return typeof title === 'string' && title.includes(scene.label);
+  }
+
+  /** Whether `id` is a window of the run's open now, and still the one it opened (`stillOurs`): the run's to act on. */
+  liveOwned(id) {
+    const scene = this.windows.find((w) => w.id === id);
+    return Boolean(scene) && this.stillOurs(scene);
+  }
+
+  /** Something the harness did not do, and why: the run's end row records it. */
+  skip(what, window, reason) {
+    this.skips.push({ what, window: typeof window === 'number' ? `0x${window.toString(16).padStart(8, '0')}` : window, reason });
+  }
+
+  /**
+   * The top window at a screen point and, among `ids`, the window it holds (`xprobe top-at`): `{top, holds}`, top 0 for
+   * none (the root).
+   */
+  topAt(point, ids) {
+    return JSON.parse(xprobe(['top-at', point.x, point.y, ...ids]));
+  }
+
+  /**
+   * Whether the pointer may go to a screen point: nothing there but the root, or a live window of the run's (its window
+   * manager's frame included) on top there. Read just before the move: another's popup over the point says no.
+   */
+  pointerSafeAt(point) {
+    const ids = this.windows.map((w) => w.id).filter((id) => Number.isSafeInteger(id) && id > 0);
+    const { top, holds } = this.topAt(point, ids);
+    if (!top) return true;
+    return typeof holds === 'number' && this.liveOwned(holds);
   }
 
   activeRecord(id) {
@@ -612,13 +670,18 @@ export class Desktop {
         }
       }
       try {
-        // a Chrome window not found yet: whatever came up with its title
         if (scene.kind === 'chrome') {
-          for (const id of scene.id ? [scene.id] : this.findByTitle(scene.title)) {
-            // found by its title, unique to the run: the harness's own, though its id was never registered
-            this.adopted.add(id);
-            this.foundNow(id);
-            this.closeWindow(id);
+          if (scene.id) {
+            // the window it found, closed only while it is still that window: never registered again here
+            if (this.stillOurs(scene)) this.closeWindow(scene.id);
+            else this.skip('close', scene.id, 'no longer the window the run opened: closed by another, its id perhaps given to a window of theirs');
+          } else {
+            // a Chrome window not found yet: whatever came up with its exact title, unique to the run, found now
+            for (const id of this.findByTitle(scene.title)) {
+              this.adopted.add(id);
+              this.foundNow(id);
+              this.closeWindow(id);
+            }
           }
         }
         else if (scene.group) process.kill(-scene.pid, 'SIGTERM');
@@ -658,6 +721,7 @@ export class Desktop {
     rmSync(this.dir, { recursive: true, force: true });
     this.pruneLogs();
     if (this.trace) this.ending = await this.finishTrace();
+    this.unwatchOperations?.();
     // only once everything is closed: a signal meanwhile still waits for this cleanup
     this.unhookStop();
   }
@@ -674,6 +738,7 @@ export class Desktop {
       // unreadable: recorded as unknown
     }
     const registered = this.registry();
+    const spans = this.operations;
     let audit;
     try {
       // read from its file line by line, keeping what the judge reads: a whole run's trace is too large for one string
@@ -688,16 +753,16 @@ export class Desktop {
     try {
       const judged = await this.record.stop({
         parse: async (file) => {
-          const audit = await auditRecordFile(file, { registered, root: this.root });
+          const audit = await auditRecordFile(file, { registered, root: this.root, spans });
           // a record that failed is kept as the run's evidence, compressed (window ids, atoms and processes, no text)
           if (!audit.clean && this.logs) await pipeline(createReadStream(file), createGzip(), createWriteStream(join(dirname(this.logs), 'record.jsonl.gz')));
           return audit;
         },
       });
-      record = typeof judged === 'string' ? auditRecord(judged, { registered, root: this.root }) : judged;
+      record = typeof judged === 'string' ? auditRecord(judged, { registered, root: this.root, spans }) : judged;
     } catch (error) {
       record = { clean: false, traced: false, requests: 0, mutating: 0, foreign: [], error: error.message };
     }
-    return { start: this.activeRecord(this.startActive), end: end === null ? null : this.activeRecord(end), holder: this.holder?.id ?? null, audit, record };
+    return { start: this.activeRecord(this.startActive), end: end === null ? null : this.activeRecord(end), holder: this.holder?.id ?? null, audit, record, skipped: this.skips };
   }
 }

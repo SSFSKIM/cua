@@ -177,7 +177,11 @@ async function coldSeries(ctx, lanes, scenes, family, n, { coverMs = 0, prelude 
         desktop.arrangeFront('covered');
         await sleep(coverMs);
       }
-      if (ctx.parkPointer) xdotool('mousemove', '--sync', ctx.parkPointer.x, ctx.parkPointer.y);
+      if (ctx.parkPointer) {
+        // only onto the root or a live window of the run's (scenes.mjs `pointerSafeAt`)
+        if (!desktop.pointerSafeAt(ctx.parkPointer)) throw new Error(`--park-pointer ${ctx.parkPointer.x},${ctx.parkPointer.y} is over a window the run did not open`);
+        xdotool('mousemove', '--sync', ctx.parkPointer.x, ctx.parkPointer.y);
+      }
       // the device case's `alreadyInFront`: the front window back in its corner, the window raised, then activated
       desktop.arrangeFront('visible');
       desktop.raise(scene);

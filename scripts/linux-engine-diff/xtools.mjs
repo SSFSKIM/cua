@@ -7,8 +7,8 @@
 // connects directly is still in the run's whole RECORD (`startRunRecord`), which judges every client of the harness's.
 //
 // Two of xprobe's observers act on the display and are fenced here (T4b's audit round): `retention` redirects its
-// window through Composite, which can stop a window from being drawn, so it takes only a window the run opened
-// (`retentionTrials`); `grabs` takes the root's pointer and keyboard, so it runs only on a private display the harness
+// window through Composite, which can stop a window from being drawn, so it takes only a window the run opened and
+// still has open (`retentionTrials`); `grabs` takes the root's pointer and keyboard, so it runs only on a private display the harness
 // marked (xprobe refuses any other), and nothing here runs it on the session's.
 
 import { appendFileSync, closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
@@ -60,7 +60,8 @@ const hex = (id) => `0x${Number(id).toString(16).padStart(8, '0')}`;
  * Returns the trials' JSON lines.
  */
 export function retentionTrials(owner, window, trials, spanMs, gapMs, dump, run = execFileSync) {
-  if (owner.ownerOf(window) !== 'harness') throw new Error(`xprobe retention redirects only a window the harness opened; ${hex(window)} is not one of the run's`);
+  // a window of the run's open now and still the one it opened (scenes.mjs `liveOwned`): a closed one's id may be another's
+  if (!owner.liveOwned(window)) throw new Error(`xprobe retention redirects only a window the harness opened and still has open; ${hex(window)} is not one of the run's now`);
   const text = run(XPROBE, ['retention', String(window), String(trials), String(spanMs), String(gapMs), dump], { encoding: 'utf8', timeout: 600000 });
   return text.trim().split('\n').map((l) => JSON.parse(l));
 }

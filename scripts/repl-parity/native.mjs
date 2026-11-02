@@ -15,7 +15,7 @@ export function nativeCommand({device,checkout,home,host,engine,engineBin,fixtur
  if(declaredDevice(device).platform!=='linux'||facts.platform!=='linux'||!['vendor','cua'].includes(host))throw Error('Native parity requires a prepared declared Linux device');
  if(!['vendor','cua'].includes(engine))throw Error('The native lane names its engine: vendor or cua');
  if(engineBin!==undefined&&(engine!=='cua'||!/^\/[^\0\n]*$/.test(engineBin)))throw Error('--engine-bin names an absolute cua-engine path on the device, with --engine cua only');
- if(!['blank','drag','scroll'].includes(fixtureMode))throw Error('Unknown native fixture mode');
+ if(!['blank','drag','scroll','minimized'].includes(fixtureMode))throw Error('Unknown native fixture mode');
  const expectedFacts={device,checkout,home,...facts},nativeFilename=`cua-m4-${randomUUID()}.txt`;
  const engineEnv=`CUA_NATIVE_ENGINE=${quote(engine)} CUA_LINUX_ENGINE_BIN=${quote(engineBin??'')} `;
  return {expectedFacts,nativeFilename,closeTimeoutMs:20000,...remoteCommand(device,`${linuxSession}\ncd ${quote(checkout)} && exec env ${ownNodeEnv(facts)}${preparedHomeEnv(facts)}CUA_PARITY_EXPECTED=${quote(JSON.stringify(expectedFacts))} CUA_PARITY_REMOTE=1 CUA_PARITY_NATIVE_FILENAME=${quote(nativeFilename)} CUA_PARITY_NATIVE_MODE=${quote(fixtureMode)} CUA_HOME=${quote(home)} CUA_REPL_HOST=${quote(host)} ${engineEnv}node test/repl-parity/serve-native.mjs`)};

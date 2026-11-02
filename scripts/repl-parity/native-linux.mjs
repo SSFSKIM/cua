@@ -7,6 +7,9 @@ import {laneEngineProblem} from './engine-answered.mjs';
 
 export const NATIVE_LINUX_EXPECTED_FILE = new URL('./expected/native-linux.json', import.meta.url);
 export const TEXT_CASES = Object.freeze(['native/app/typetext', 'native/app/paste']);
+// The cases a declaration may name: M2's text cases, and getAXState on a minimized window (M4's T4), which the vendor
+// engine fails because it leaves a minimized window out of list_windows and cannot read it.
+export const DECLARED_CASES = Object.freeze([...TEXT_CASES, 'native/target-app-decorated-tab/getaxstate']);
 // Read as JSON, not through ./vendor-defects.mjs, which is consumed with this module by the comparison.
 const vendorDefects = () => JSON.parse(readFileSync(new URL('../../test/repl-parity/vendor-defects.json', import.meta.url), 'utf8'));
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -18,11 +21,11 @@ export function validateNativeLinuxExpected(file) {
   for (const d of file.declarations) {
     const defect = defects.find(v => v.id === d?.vendorDefect && v.host === 'cua' && v.engine === 'vendor' && v.platform === 'linux' && v.case === d?.case);
     const ok = plain(d) && Object.keys(d).every(k => DECLARATION_KEYS.includes(k)) && typeof d.id === 'string' && d.id && !ids.has(d.id)
-      && TEXT_CASES.includes(d.case) && !cases.has(d.case) && typeof d.reason === 'string' && d.reason.trim() && isDeepStrictEqual(d.cells, ['exercise'])
+      && DECLARED_CASES.includes(d.case) && !cases.has(d.case) && typeof d.reason === 'string' && d.reason.trim() && isDeepStrictEqual(d.cells, ['exercise'])
       && defect && plain(d.cua) && isDeepStrictEqual(Object.keys(d.cua).sort(), ['assertion', 'result']) && isDeepStrictEqual(d.cua.assertion, {ok: true})
       && plain(d.cua.result) && isDeepStrictEqual(Object.keys(d.cua.result).sort(), ['cell', 'content', 'isError'])
       && d.cua.result.cell === 'exercise' && d.cua.result.isError === false && Array.isArray(d.cua.result.content);
-    if (!ok) throw new Error(`invalid engine declaration ${JSON.stringify(d)}: it names a unique id and text case, its reason, the exercise cell, a vendor-engine defect on the same case and the exact passing cua assertion and exercise result`);
+    if (!ok) throw new Error(`invalid engine declaration ${JSON.stringify(d)}: it names a unique id and declared case, its reason, the exercise cell, a vendor-engine defect on the same case and the exact passing cua assertion and exercise result`);
     ids.add(d.id); cases.add(d.case);
   }
   return file;

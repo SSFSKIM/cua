@@ -1,0 +1,30 @@
+{
+  "run": "control-worktree",
+  "front": 10485772,
+  "holder": 8388620,
+  "record": {
+    "active_start": {
+      "id": 4194316,
+      "owner": "foreign"
+    },
+    "active_end": {
+      "id": 4194316,
+      "owner": "foreign"
+    },
+    "holder": 8388620,
+    "trace": {
+      "clean": true,
+      "requests": 2520,
+      "mutating": 8,
+      "foreign": []
+    }
+  },
+  "foreign": [],
+  "audit": {
+    "clean": true,
+    "traced": true,
+    "requests": 2520,
+    "mutating": 8,
+    "foreign": []
+  }
+}

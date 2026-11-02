@@ -1,0 +1,68 @@
+# base: 4d6b33a76d899e2801382a46113d47d8f530b62a (#171 spec: T2 (#268) and T3 folded (the vendor's PasteText bug and cua's send boundary; the truncation counts and their three-layer check))
+# node v24.22.1, Linux 6.8.0-138-generic x86_64
+
+## test/repl-parity/selection-cache.test.mjs: ordinary selection calls record a complete cold handshake and reuse it on the next call
+✖ ordinary selection calls record a complete cold handshake and reuse it on the next call (110.200421ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 247.641672
+
+✖ failing tests:
+
+test at test/repl-parity/selection-cache.test.mjs:15:1
+✖ ordinary selection calls record a complete cold handshake and reuse it on the next call (110.200421ms)
+  Error: serve refused before launch (repl_host_refused): CUA_REPL_HOST=vendor is not supported on Linux: the vendor host there is retired (#115), because its node_repl ran JavaScript cells unconfined when its sandbox launcher failed (#135), and cua's own sandbox does not serve it. Unset CUA_REPL_HOST (or use CUA_REPL_HOST=cua) for cua's own host
+      at Interface.<anonymous> (file:///Users/new/.local/share/cua-171/task34/base-checkout/scripts/browser-parity/mcp.mjs:51:47)
+      at Interface.emit (node:events:514:28)
+      at [_onLine] [as _onLine] (node:internal/readline/interface:474:12)
+      at [_normalWrite] [as _normalWrite] (node:internal/readline/interface:669:18)
+      at Socket.ondata (node:internal/readline/interface:268:23)
+      at Socket.emit (node:events:514:28)
+      at addChunk (node:internal/streams/readable:569:12)
+      at readableAddChunkPushByteMode (node:internal/streams/readable:520:3)
+      at Readable.push (node:internal/streams/readable:400:5)
+      at Pipe.onStreamRead (node:internal/stream_base_commons:194:23) {
+    code: -32000
+  }
+## exit 1
+
+## test/repl-parity/socket-error-peer.test.mjs: owned peer stays open before input and aborts mid-stream with a real transport error
+✖ owned peer stays open before input and aborts mid-stream with a real transport error (192.257165ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 272.340645
+
+✖ failing tests:
+
+test at test/repl-parity/socket-error-peer.test.mjs:3:1
+✖ owned peer stays open before input and aborts mid-stream with a real transport error (192.257165ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  +   'ECONNRESET',
+  -   'EPIPE',
+      'close'
+    ]
+  
+      at TestContext.<anonymous> (file:///Users/new/.local/share/cua-171/task34/base-checkout/test/repl-parity/socket-error-peer.test.mjs:10:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'ECONNRESET', 'close' ],
+    expected: [ 'EPIPE', 'close' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+## exit 1

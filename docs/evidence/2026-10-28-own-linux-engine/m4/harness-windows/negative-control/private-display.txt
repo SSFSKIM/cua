@@ -1,0 +1,3 @@
+person's window: 4194316 (0x0040000c); active: 4194316
+worktree: exit 0; active after: 4194316
+restoring: exit 1; active after: 4194316

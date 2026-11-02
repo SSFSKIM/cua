@@ -325,11 +325,16 @@ export class Desktop {
     configure(id, x, y, w, h);
   }
 
-  /** gedit on a scratch file the harness writes; `content` is the file's text. */
-  openGedit(role, content) {
+  /**
+   * gedit on a scratch file the harness writes; `content` is the file's text. `stem`: the scene's name where two scenes
+   * open gedit windows for one engine, so each window has a document of its own: with one file for the gedit and the
+   * minimized scenes, the second open rewrote the first window's file, and cua's gedit `press_key` lost its effect on
+   * every sample of a sitting with both scenes (task 35).
+   */
+  openGedit(role, content, { stem = 'gedit' } = {}) {
     this.assertOpen();
     return this.track(async () => {
-      const label = this.label('gedit', role);
+      const label = this.label(stem, role);
       const file = join(this.dir, `${label}.txt`);
       writeFileSync(file, content);
       const child = this.spawnApp(label, 'gedit', ['--standalone', file]);

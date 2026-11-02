@@ -11,7 +11,7 @@ import { delimiter, join } from 'node:path';
 import test from 'node:test';
 
 import { auditForeign, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
-import { harnessPair } from '../../scripts/linux-engine-diff/run.mjs';
+import { harnessPair, openScene } from '../../scripts/linux-engine-diff/run.mjs';
 import { desktopLine } from '../../scripts/linux-engine-diff/report.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 import { runOutcome } from '../../scripts/linux-engine-diff/stats.mjs';
@@ -278,6 +278,27 @@ test('the harness runs xdotool and its acting xprobe commands only through the d
     }
   }
   assert.deepEqual(found, []);
+});
+
+test("the gedit and minimized scenes' windows of one engine are different documents, so neither rewrites the other's file", async () => {
+  // a desktop that records what it was asked to open (openScene's only calls for these two scenes)
+  const asked = [];
+  const fake = {
+    async openGedit(role, content, options = {}) {
+      const label = ['cua171-diff', 'r', options.stem ?? 'gedit', role].join('-');
+      asked.push(label);
+      return { id: asked.length, label };
+    },
+    async geditText() {
+      return 'text';
+    },
+    async listWindows() {
+      return asked.map((label, i) => ({ id: i + 1, app: 'org.gnome.gedit', width: 910, height: 756 }));
+    },
+  };
+  await openScene(fake, 'gedit', 'cua');
+  await openScene(fake, 'minimized', 'cua');
+  assert.equal(new Set(asked).size, 2, `labels: ${asked.join(', ')}`);
 });
 
 test("the summary names the run's start and end active windows, its holder and its own trace's audit", () => {

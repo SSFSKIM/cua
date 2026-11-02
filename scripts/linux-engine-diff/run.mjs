@@ -597,7 +597,7 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
   if (scene === 'device-gtk4') return withApp(desktop, await desktop.openFamilyScene('gtk4-input', role));
   if (scene === 'device-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role));
   // M4's T4: the minimized cases' windows (minimized.mjs), each restored to its size after a case withdraws it
-  if (scene === 'minimized') return withApp(desktop, await desktop.openGedit(role, GEDIT_TEXT));
+  if (scene === 'minimized') return withApp(desktop, await desktop.openGedit(role, GEDIT_TEXT, { stem: 'minimized' }));
   if (scene === 'minimized-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role));
   if (scene === 'minimized-recorder') return withApp(desktop, await desktop.openRecorder(role));
   if (scene === 'device-qt') {

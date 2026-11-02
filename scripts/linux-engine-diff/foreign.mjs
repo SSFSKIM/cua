@@ -23,8 +23,10 @@
 // manager frame while it holds one of ours; an override-redirect window on the root that the client of one of ours
 // opened during a harness operation on that window (its drag image during the drag). A window's life ends at its DestroyNotify (or DestroyWindow, or when its
 // creating client is gone), so a reused id is foreign again. A window reparented into one of ours keeps the owner it
-// had. One exemption: the property a foreign client named in its own SelectionRequest, written while that request is
-// served (the selection owner's answer, ICCCM), and the SelectionNotify that completes it.
+// had. One exemption: the selection owner's answer (ICCCM), paired with the SelectionRequest our connection received
+// and written by that connection: the property the request named, written while the request is served (an INCR
+// transfer's announcement and every chunk up to its zero-length end), and the SelectionNotify for the request's
+// selection and target that completes it.
 
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -174,7 +176,8 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
       continue;
     }
     if (el.k === 'selreq') {
-      open.set(`${el.requestor}|${el.property}`, { incr: false });
+      // a SelectionRequest the connection `c` received: its answer is that connection's to write
+      open.set(`${el.c}|${el.requestor}|${el.property}`, { selection: el.selection, target: el.target, incr: false });
       continue;
     }
     if (el.k === 'parent') {
@@ -249,22 +252,38 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
   return { clean: traced && foreign.length === 0, traced, requests, mutating, foreign, unplaced, unattributed: { clients: unattributed.clients.size, mutating: unattributed.mutating } };
 }
 
+/** An extension request's minor opcode, by the name the judge gives it (core requests have none). */
+const MINOR_OF = { FakeInput: 2, RedirectWindow: 1, RedirectSubwindows: 2, UnredirectWindow: 3, UnredirectSubwindows: 4 };
+
 /**
- * The request elements the server refused, as a Set: an error names its request's opcode and the low 16 bits of its
+ * The request elements the server refused, as a Set: an error names its request's opcodes and the low 16 bits of its
  * sequence number. xtrace shows every request of its connections, and a reply may come after later requests, so there
- * the error is its connection's latest request with those 16 bits (`exact`). The record holds only some of a client's
- * requests, but it reads a request's error before that client's next request: there the error is the client's latest
- * recorded request, if its opcode and 16 bits match, and refuses nothing otherwise (an error for a request the record
- * does not read, perhaps 65,536 requests after a recorded one with the same 16 bits).
+ * the error is its connection's latest request with those 16 bits (`exact`). The record reads its errors on a context
+ * of their own (xprobe `contexts`), so an error may be read before or after later requests of its client; but it
+ * records every request of the opcodes it reads, so the refused one is the client's latest recorded request with the
+ * error's 16 bits and opcodes at or before the error's server time (`t`). An error for an opcode the record does not
+ * read refuses nothing. An error without a time (a record of one context) refuses the client's latest recorded request
+ * if its opcode and 16 bits match.
  */
 function refusedRequests(elements) {
   const refused = new Set();
   const bySeq = new Map();
   const last = new Map();
+  const timed = new Map();
+  const timedKey = (c, seq, major, minor) => `${c}|${seq & 0xffff}|${major}|${minor ?? 0}`;
+  for (const el of elements) {
+    if (el.k !== 'req' || typeof el.t !== 'number') continue;
+    const key = timedKey(el.c, el.seq, el.major, MINOR_OF[el.op]);
+    if (!timed.has(key)) timed.set(key, []);
+    timed.get(key).push(el);
+  }
   for (const el of elements) {
     if (el.k === 'req') {
       bySeq.set(`${el.c}|${el.seq & 0xffff}`, el);
       last.set(el.c, el);
+    } else if (el.k === 'error' && typeof el.t === 'number') {
+      const candidates = (timed.get(timedKey(el.c, el.seq, el.major, el.minor)) ?? []).filter((r) => r.t <= el.t);
+      if (candidates.length) refused.add(candidates.at(-1));
     } else if (el.k === 'error') {
       const request = el.exact ? bySeq.get(`${el.c}|${el.seq & 0xffff}`) : last.get(el.c);
       if (request && (request.seq & 0xffff) === (el.seq & 0xffff) && (request.major === undefined || request.major === el.major)) refused.add(request);
@@ -274,19 +293,22 @@ function refusedRequests(elements) {
 }
 
 /**
- * A selection owner's write or notify, judged against the requestor's open requests: a write of the property the
- * request named, or the SelectionNotify that answers it. An INCR transfer stays served until its zero-length end.
- * Returns whether it was served.
+ * A selection owner's write or notify, judged against the open requests the writing connection received: a write of
+ * the property a request named, or the SelectionNotify for that request's selection and target. An INCR transfer stays
+ * served from its announcement until its zero-length final chunk. Returns whether it was served.
  */
-function serveSelection(open, el, { requestor, property, notify }) {
+function serveSelection(open, el, { requestor, property, notify, selection, target }) {
+  const mine = `${el.c}|${requestor}|`;
   if (notify) {
-    const keys = [...open.keys()].filter((k) => k.startsWith(`${requestor}|`));
+    const named = (r) => r.selection === selection && r.target === target;
+    // a refusal (property None) answers a request of the requestor's for that selection and target; an answer, the
+    // request for its property, which it closes unless the transfer is INCR
+    const keys = [...open.keys()].filter((k) => k.startsWith(mine) && named(open.get(k)) && (property === 0 || k === `${mine}${property}`));
     if (!keys.length) return false;
-    // a refusal (property None) closes every request of the requestor; an answer closes its property unless INCR
-    for (const k of keys) if (property === 0 || (k === `${requestor}|${property}` && !open.get(k).incr)) open.delete(k);
+    for (const k of keys) if (property === 0 || !open.get(k).incr) open.delete(k);
     return true;
   }
-  const key = `${requestor}|${property}`;
+  const key = `${mine}${property}`;
   const request = open.get(key);
   if (!request) return false;
   if (el.incr) request.incr = true;
@@ -316,7 +338,7 @@ export function changeOf(el, root) {
     case 'ReparentWindow':
       return { what: op, windows: [el.window, el.parent] };
     case 'SendEvent': {
-      if (el.event === 'SelectionNotify') return { what: 'SendEvent SelectionNotify', windows: [el.destination], selection: { requestor: el.requestor ?? el.destination, property: el.property ?? 0, notify: true } };
+      if (el.event === 'SelectionNotify') return { what: 'SendEvent SelectionNotify', windows: [el.destination], selection: { requestor: el.requestor ?? el.destination, property: el.property ?? 0, notify: true, selection: el.selection, target: el.target } };
       // the root is the desktop's own channel: a message to the window manager names no window of the root's
       const windows = el.destination === root ? [] : [el.destination];
       if (el.event === 'ClientMessage') {
@@ -410,6 +432,8 @@ function xtraceRequest(r, extensions) {
           out.requestor = field(text, 'requestor');
           const p = field(text, 'property');
           out.property = typeof p === 'number' ? p : 0;
+          out.selection = atom(text, 'selection');
+          out.target = atom(text, 'target');
         }
         return out;
       }
@@ -495,7 +519,7 @@ export function xtraceElements({ elements, extensions }, root) {
       const requestor = field(text, 'requestor');
       const p = field(text, 'property');
       const property = typeof p === 'number' && p !== 0 ? p : atom(text, 'target');
-      out.push({ k: 'selreq', c: conn, requestor, property });
+      out.push({ k: 'selreq', c: conn, requestor, property, selection: atom(text, 'selection'), target: atom(text, 'target') });
     } else {
       const request = bySeq.get(`${conn}|${seq}`);
       if (what === 'QueryTree' && request) {
@@ -585,10 +609,10 @@ function recordLine(line, out, meta, root) {
       out.push({ k: 'destroyed', w: r.window });
       break;
     case 'selreq':
-      out.push({ k: 'selreq', c: r.client, requestor: r.requestor, property: r.property || r.target });
+      out.push({ k: 'selreq', c: r.client, requestor: r.requestor, property: r.property || r.target, selection: r.selection, target: r.target });
       break;
     case 'error':
-      out.push({ k: 'error', c: r.client, seq: r.seq, major: r.major });
+      out.push({ k: 'error', c: r.client, seq: r.seq, major: r.major, ...(typeof r.t === 'number' ? { minor: r.minor ?? 0, t: r.t } : {}) });
       break;
     case 'req': {
       const el = { k: 'req', c: r.client, text: null, ...r, ms: meta.offset !== undefined && typeof r.t === 'number' ? r.t + meta.offset : r.ms };

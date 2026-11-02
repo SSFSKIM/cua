@@ -218,8 +218,12 @@ variants included; their evidence is written either way. The run's `end` row kee
     window created inside it; and input that lands in it: XTEST and a warp, a key by the input focus, a button by the
     window under the pointer, a motion or warp by where it ends. The root is the desktop: writes to its properties and
     event selections on it stay out, and it is the neutral destination of a client message to the window manager.
-    One exemption: the property a foreign client named in its own SelectionRequest, written while that request is
-    served (INCR until its zero-length end), and the SelectionNotify that answers it.
+    One exemption, the selection owner's answer, paired with the SelectionRequest our connection received and written
+    by that connection: the property the request named, written while it is served (an INCR transfer's announcement
+    and every chunk up to its zero-length end), and the SelectionNotify for the request's selection and target. A
+    write no request asked for, a write after its transfer ended, or a notify for another target is foreign. The
+    record reads its delivered events (SelectionRequest, DestroyNotify) on a context without errors, and its errors on
+    a second one: X.Org's RECORD drops every delivered event of a client whose ranges include errors.
   - *Whose a window is*, judged in trace order: a window the harness registered, for the one life it had when the
     harness found it (`Desktop.registry`, each id with every time it was found; a finding binds the life born before it
     and after the id's previous life ended); a window our connection created, once the server accepted the creation

@@ -388,6 +388,71 @@ test("the record: a window's birth is timed by the server's clock, however late 
   assert.deepEqual(windowsOf(raudit(late, new Map([[SCENE, [1200]]]))), [SCENE]);
 });
 
+// The selection protocol in the record (T4c; the design session's ruling): the owner's answer to a SelectionRequest one
+// of our connections received, written by that connection, is exempt, and nothing else is.
+const CLIPBOARD = 0x1e9;
+const UTF8 = 0x1f1;
+const TARGETS = 0x1f2;
+const PROP = 0x1f0;
+const GEDIT = 0x2e00002;
+const GEDIT_CLIENT = 0x2e00000;
+const OWNER = 0x400000;
+const selreq = (fields = {}) => rec('selreq', { client: OWNER, requestor: GEDIT, selection: CLIPBOARD, target: UTF8, property: PROP, ...fields });
+const answer = (seq, fields = {}) => req(OWNER, seq, 'ChangeProperty', { window: GEDIT, property: PROP, type: UTF8, type_name: 'UTF8_STRING', length: 5, ...fields });
+const notify = (seq, fields = {}) => req(OWNER, seq, 'SendEvent', { destination: GEDIT, event: 'SelectionNotify', requestor: GEDIT, selection: CLIPBOARD, target: UTF8, property: PROP, ...fields });
+const PASTE = [...START, client(GEDIT_CLIENT, false, 'gedit'), req(GEDIT_CLIENT, 3, 'CreateWindow', { window: GEDIT, parent: ROOT })];
+
+test("the record: the owner's answer to a SelectionRequest our connection received is exempt, the write and the SelectionNotify both", () => {
+  assert.equal(raudit([...PASTE, selreq(), answer(20), notify(21)]).clean, true, JSON.stringify(raudit([...PASTE, selreq(), answer(20), notify(21)]).foreign));
+  // a refusal: the SelectionNotify with property None
+  assert.equal(raudit([...PASTE, selreq(), notify(21, { property: 0 })]).clean, true);
+  // a requestor that named no property (an obsolete client): the target is the property
+  assert.equal(raudit([...PASTE, selreq({ property: 0 }), answer(20, { property: UTF8 }), notify(21, { property: UTF8 })]).clean, true);
+});
+
+test('the record: INCR pairs the announcement and every chunk with its request, up to the zero-length final chunk', () => {
+  const incr = [...PASTE, selreq(), answer(20, { type_name: 'INCR', length: 1 }), notify(21), answer(22, { length: 4096 }), answer(23, { length: 900 }), answer(24, { length: 0 })];
+  assert.equal(raudit(incr).clean, true, JSON.stringify(raudit(incr).foreign));
+  // a write after the final chunk: the transfer has ended
+  assert.deepEqual(windowsOf(raudit([...incr, answer(25, { length: 10 })])), [GEDIT]);
+});
+
+test('the record: no exemption without the request, after its transfer ended, for another target, selection or connection', () => {
+  // a property write into a requestor's window with no request (the negative control)
+  assert.deepEqual(windowsOf(raudit([...PASTE, answer(20)])), [GEDIT]);
+  assert.deepEqual(windowsOf(raudit([...PASTE, notify(21)])), [GEDIT]);
+  // a write after the transfer ended (the negative control): the SelectionNotify closed it
+  assert.deepEqual(windowsOf(raudit([...PASTE, selreq(), answer(20), notify(21), answer(22)])), [GEDIT]);
+  // another property of the requestor's window (the SelectionNotify still answers the request it names)
+  const stray = raudit([...PASTE, selreq(), answer(20, { property: 0x1f9 }), notify(21)]);
+  assert.deepEqual(stray.foreign.map((f) => [f.what, f.seq]), [['ChangeProperty', 20]]);
+  // a SelectionNotify for a target or a selection the request did not name
+  assert.deepEqual(windowsOf(raudit([...PASTE, selreq(), answer(20), notify(21, { target: TARGETS })])), [GEDIT]);
+  assert.deepEqual(windowsOf(raudit([...PASTE, selreq(), answer(20), notify(21, { selection: 0x1 })])), [GEDIT]);
+  // the request went to another connection than the one that answers it (another of ours, or the person's)
+  assert.deepEqual(windowsOf(raudit([...PASTE, selreq({ client: ENGINE }), answer(20), notify(21)])), [GEDIT, GEDIT]);
+  assert.deepEqual(windowsOf(raudit([...PASTE, selreq({ client: CHROME }), answer(20), notify(21)])), [GEDIT, GEDIT]);
+});
+
+test("the record: an error on the record's own stream of errors refuses the request it answers, by the server's time", () => {
+  // errors come on a second context, so an error may be read after later requests of its client: it refuses the latest
+  // recorded request of that client with its 16 bits and opcode at or before its time, not the latest one read
+  const X = 0x1600005;
+  const lines = [
+    ...START,
+    req(ENGINE, 7, 'CreateWindow', { window: X, parent: ROOT }),
+    req(ENGINE, 8, 'ConfigureWindow', { window: X }),
+    rec('error', { client: ENGINE, seq: 7, major: 1, minor: 0, code: 14, t: 7 }),
+  ];
+  assert.deepEqual(windowsOf(raudit(lines)), [X], 'the creation was refused: the window was never ours');
+  // an error read before the request it answers (another stream) refuses nothing earlier
+  const early = [...START, rec('error', { client: ENGINE, seq: 7, major: 1, minor: 0, code: 14, t: 7 }), req(ENGINE, 7, 'CreateWindow', { window: X, parent: ROOT }), req(ENGINE, 8, 'ConfigureWindow', { window: X })];
+  assert.deepEqual(windowsOf(raudit(early)), [X]);
+  // an error for an extension's other minor opcode does not refuse a recorded one of the same major
+  const xtest = [...START, req(CHROME, 10, 'CreateWindow', { window: SCENE, parent: ROOT }), req(ENGINE, 9, 'FakeInput', { type: 'ButtonPress', detail: 1, focus: SCENE, pointer: PERSON }), rec('error', { client: ENGINE, seq: 9, major: 132, minor: 1, code: 2, t: 9 })];
+  assert.deepEqual(windowsOf(raudit(xtest)), [PERSON]);
+});
+
 test('the record: a record that never started, failed or was cut short is not clean', () => {
   assert.equal(raudit([]).clean, false);
   assert.equal(raudit([]).traced, false);

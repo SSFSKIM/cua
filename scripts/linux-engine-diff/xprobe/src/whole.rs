@@ -14,12 +14,16 @@
 //!   `ChangeWindowAttributes` {window, mask}, the map, unmap, configure and circulate requests {window},
 //!   `ChangeProperty` {window, property, name, type, type_name?, length}, `DeleteProperty` and `RotateProperties`
 //!   {window, property?}, a deleting `GetProperty` {window, property, delete}, `SendEvent` {destination, event,
-//!   cm_window?, cm_type?, requestor?, property?}, `WarpPointer` {dst, pointer}, `SetInputFocus` {focus}, `KillClient`
+//!   cm_window?, cm_type?, requestor?, selection?, target?, property?}, `WarpPointer` {dst, pointer}, `SetInputFocus` {focus}, `KillClient`
 //!   {resource}, Composite's redirects {window}, and XTEST `FakeInput` {type, detail, focus, pointer}: the input focus
 //!   and the root child under the pointer read right after the server handled it (null when they could not be read);
-//! - `error` {client, seq, major, code} for a refused request of those kinds;
+//! - `error` {client, seq, major, minor, code, t} for a refused request of those kinds, `t` the server's time;
 //! - `destroyed` {window}: a DestroyNotify any client received;
-//! - `selreq` {client, requestor, property, target}: a SelectionRequest one of our clients received.
+//! - `selreq` {client, requestor, selection, property, target}: a SelectionRequest one of our clients received.
+//!
+//! Two contexts (`contexts`): the requests, the clients and the delivered events on one, in the server's order; the
+//! errors on their own, so an error may be read before or after its client's later requests (the judge finds its
+//! request by the server's time).
 
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -399,8 +403,10 @@ impl Watch {
                         ));
                     } else if code == 31 {
                         f.push_str(&format!(
-                            ",\"requestor\":{},\"property\":{}",
+                            ",\"requestor\":{},\"selection\":{},\"target\":{},\"property\":{}",
                             u32_at(e, 8),
+                            u32_at(e, 12),
+                            u32_at(e, 16),
                             u32_at(e, 20)
                         ));
                     }
@@ -440,27 +446,14 @@ impl Watch {
         None
     }
 
-    /// The events and errors of one `FromServer` element (each preceded by its server time): a DestroyNotify any
-    /// client received, a SelectionRequest one of ours received, an error refusing a request the watch reads.
+    /// The delivered events of one `FromServer` element (each preceded by its server time): a DestroyNotify any
+    /// client received, a SelectionRequest one of ours received. Errors come on their own context (`error_lines`).
     pub fn served(&mut self, base: u32, data: &[u8]) -> Vec<String> {
         let mut out = Vec::new();
         let mut i = 0;
         while i + 4 + 32 <= data.len() {
             let p = &data[i + 4..i + 36];
             match p[0] {
-                0 => {
-                    let major = p[10];
-                    if core_op(major).is_some() || Some(major) == self.composite || Some(major) == self.xtest {
-                        out.push(Self::line(
-                            "error",
-                            &format!(
-                                "\"client\":{base},\"seq\":{},\"major\":{major},\"code\":{}",
-                                u16_at(p, 2),
-                                p[1]
-                            ),
-                        ));
-                    }
-                }
                 code if code & 0x7f == DESTROY_NOTIFY => {
                     let w = u32_at(p, 8);
                     if self.announced.insert(w) {
@@ -470,8 +463,9 @@ impl Watch {
                 code if code & 0x7f == SELECTION_REQUEST && self.ours(base) != Some(false) => out.push(Self::line(
                     "selreq",
                     &format!(
-                        "\"client\":{base},\"requestor\":{},\"property\":{},\"target\":{}",
+                        "\"client\":{base},\"requestor\":{},\"selection\":{},\"property\":{},\"target\":{}",
                         u32_at(p, 12),
+                        u32_at(p, 16),
                         u32_at(p, 24),
                         u32_at(p, 20)
                     ),
@@ -482,6 +476,97 @@ impl Watch {
         }
         out
     }
+}
+
+/// The errors of one `FromServer` element of the errors' context (each preceded by its server time), for the requests
+/// the watch reads: each with its request's sequence number's 16 bits, its major and minor opcodes, and the server's
+/// time, by which the judge finds the request it refused (the requests come on the other context).
+pub fn error_lines(base: u32, data: &[u8], xtest: Option<u8>, composite: Option<u8>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + 4 + 32 <= data.len() {
+        let t = u32_at(data, i);
+        let p = &data[i + 4..i + 36];
+        let major = p[10];
+        if p[0] == 0 && (core_op(major).is_some() || Some(major) == composite || Some(major) == xtest) {
+            out.push(Watch::line(
+                "error",
+                &format!(
+                    "\"client\":{base},\"seq\":{},\"major\":{major},\"minor\":{},\"code\":{},\"t\":{t}",
+                    u16_at(p, 2),
+                    u16_at(p, 8),
+                    p[1]
+                ),
+            ));
+        }
+        i += 36;
+    }
+    out
+}
+
+/// The record's two contexts' ranges: the requests the watch reads, the clients' starts and ends and the delivered
+/// events (DestroyNotify, SelectionRequest) on one, so each event stays in order with the requests; the errors on
+/// the other. X.Org's RECORD tests every delivered event of a client whose ranges include errors as an error, by its
+/// second byte (record.c `RecordADeliveredEventOrError`), so with both on one context no event ever arrived.
+pub fn contexts(xtest: Option<u8>, composite: Option<u8>) -> (Vec<record::Range>, Vec<record::Range>) {
+    let none8 = record::Range8 { first: 0, last: 0 };
+    let no_ext = record::ExtRange {
+        major: none8,
+        minor: record::Range16 { first: 0, last: 0 },
+    };
+    let empty = record::Range {
+        core_requests: none8,
+        core_replies: none8,
+        ext_requests: no_ext,
+        ext_replies: no_ext,
+        delivered_events: none8,
+        device_events: none8,
+        errors: none8,
+        client_started: false,
+        client_died: false,
+    };
+    let core = |first: u8, last: u8| record::Range {
+        core_requests: record::Range8 { first, last },
+        ..empty
+    };
+    let delivered = |code: u8| record::Range {
+        delivered_events: record::Range8 { first: code, last: code },
+        ..empty
+    };
+    let mut events = vec![
+        core(CREATE_WINDOW, CHANGE_WINDOW_ATTRIBUTES),
+        core(DESTROY_WINDOW, DESTROY_SUBWINDOWS),
+        core(REPARENT_WINDOW, CIRCULATE_WINDOW),
+        core(CHANGE_PROPERTY, GET_PROPERTY),
+        core(SEND_EVENT, SEND_EVENT),
+        core(WARP_POINTER, SET_INPUT_FOCUS),
+        core(KILL_CLIENT, ROTATE_PROPERTIES),
+        delivered(DESTROY_NOTIFY),
+        delivered(SELECTION_REQUEST),
+        record::Range {
+            client_started: true,
+            client_died: true,
+            ..empty
+        },
+    ];
+    let ext = |m: u8, a: u16, b: u16| record::Range {
+        ext_requests: record::ExtRange {
+            major: record::Range8 { first: m, last: m },
+            minor: record::Range16 { first: a, last: b },
+        },
+        ..empty
+    };
+    if let Some(m) = xtest {
+        events.push(ext(m, u16::from(FAKE_INPUT), u16::from(FAKE_INPUT)));
+    }
+    if let Some(m) = composite {
+        events.push(ext(m, 1, 4));
+    }
+    let errors = vec![record::Range {
+        errors: record::Range8 { first: 1, last: 255 },
+        ..empty
+    }];
+    (events, errors)
 }
 
 fn parse_args(args: &[String]) -> Result<(u32, Vec<String>)> {
@@ -521,6 +606,7 @@ fn run(args: &[String]) -> Result<()> {
     let (harness, allowed) = parse_args(args)?;
     let (control, screen) = x11rb::connect(None)?;
     let (data, _) = x11rb::connect(None)?;
+    let (error_data, _) = x11rb::connect(None)?;
     let (query, _) = x11rb::connect(None)?;
     let root = control.setup().roots[screen].root;
     control.record_query_version(1, 13)?.reply()?;
@@ -534,68 +620,7 @@ fn run(args: &[String]) -> Result<()> {
     let incr = control.intern_atom(false, b"INCR")?.reply()?.atom;
     let mut watch = Watch::new(root, xtest, composite, incr, harness, allowed);
 
-    let none8 = record::Range8 { first: 0, last: 0 };
-    let no_ext = record::ExtRange {
-        major: none8,
-        minor: record::Range16 { first: 0, last: 0 },
-    };
-    let empty = record::Range {
-        core_requests: none8,
-        core_replies: none8,
-        ext_requests: no_ext,
-        ext_replies: no_ext,
-        delivered_events: none8,
-        device_events: none8,
-        errors: none8,
-        client_started: false,
-        client_died: false,
-    };
-    let core = |first: u8, last: u8| record::Range {
-        core_requests: record::Range8 { first, last },
-        ..empty
-    };
-    let mut ranges = vec![
-        core(CREATE_WINDOW, CHANGE_WINDOW_ATTRIBUTES),
-        core(DESTROY_WINDOW, DESTROY_SUBWINDOWS),
-        core(REPARENT_WINDOW, CIRCULATE_WINDOW),
-        core(CHANGE_PROPERTY, GET_PROPERTY),
-        core(SEND_EVENT, SEND_EVENT),
-        core(WARP_POINTER, SET_INPUT_FOCUS),
-        core(KILL_CLIENT, ROTATE_PROPERTIES),
-        record::Range {
-            delivered_events: record::Range8 {
-                first: DESTROY_NOTIFY,
-                last: DESTROY_NOTIFY,
-            },
-            ..empty
-        },
-        record::Range {
-            delivered_events: record::Range8 {
-                first: SELECTION_REQUEST,
-                last: SELECTION_REQUEST,
-            },
-            ..empty
-        },
-        record::Range {
-            errors: record::Range8 { first: 1, last: 255 },
-            client_started: true,
-            client_died: true,
-            ..empty
-        },
-    ];
-    let ext = |m: u8, a: u16, b: u16| record::Range {
-        ext_requests: record::ExtRange {
-            major: record::Range8 { first: m, last: m },
-            minor: record::Range16 { first: a, last: b },
-        },
-        ..empty
-    };
-    if let Some(m) = xtest {
-        ranges.push(ext(m, u16::from(FAKE_INPUT), u16::from(FAKE_INPUT)));
-    }
-    if let Some(m) = composite {
-        ranges.push(ext(m, 1, 4));
-    }
+    let (ranges, error_ranges) = contexts(xtest, composite);
     let header = u8::from(record::HType::FROM_SERVER_TIME)
         | u8::from(record::HType::FROM_CLIENT_TIME)
         | u8::from(record::HType::FROM_CLIENT_SEQUENCE);
@@ -603,6 +628,34 @@ fn run(args: &[String]) -> Result<()> {
     control
         .record_create_context(context, header, &[u32::from(record::CS::ALL_CLIENTS)], &ranges)?
         .check()?;
+    let error_context = control.generate_id()?;
+    control
+        .record_create_context(error_context, header, &[u32::from(record::CS::ALL_CLIENTS)], &error_ranges)?
+        .check()?;
+    // the errors' context recording before the requests' begins, so no request's refusal goes unread
+    let (started_tx, started) = std::sync::mpsc::channel();
+    let mut error_collector = Collector::spawn(move || {
+        for reply in error_data.record_enable_context(error_context).map_err(|e| e.to_string())? {
+            let reply = reply.map_err(|e| e.to_string())?;
+            if reply.client_swapped {
+                return Err("a recorded client's byte order differs from ours".into());
+            }
+            let lines = match reply.category {
+                0 => error_lines(reply.xid_base, &reply.data, xtest, composite),
+                4 => {
+                    let _ = started_tx.send(());
+                    Vec::new()
+                }
+                _ => Vec::new(),
+            };
+            print_lines(&lines).map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    });
+    if started.recv_timeout(Duration::from_secs(10)).is_err() {
+        error_collector.check_running()?;
+        return Err("the record's errors context did not begin".into());
+    }
     // the clients already connected, attributed before recording begins
     let existing = query.res_query_clients()?.reply()?.clients;
     let mut lines = Vec::new();
@@ -653,15 +706,20 @@ fn run(args: &[String]) -> Result<()> {
     let closed = stdin_closed();
     loop {
         collector.check_running()?;
+        error_collector.check_running()?;
         if closed.recv_timeout(Duration::from_millis(10)).is_ok() {
             break;
         }
     }
     collector.check_running()?;
+    error_collector.check_running()?;
     control.record_disable_context(context)?;
+    control.record_disable_context(error_context)?;
     control.get_input_focus()?.reply()?;
     collector.finish(COLLECTOR_END)?;
+    error_collector.finish(COLLECTOR_END)?;
     control.record_free_context(context)?;
+    control.record_free_context(error_context)?;
     control.flush()?;
     print_lines(&[Watch::line("end", "")])?;
     Ok(())
@@ -850,6 +908,36 @@ mod tests {
     }
 
     #[test]
+    fn delivered_events_have_a_context_without_errors_which_have_their_own() {
+        // X.Org's RECORD tests every delivered event of a client whose ranges include errors as an error, by its second
+        // byte, and drops it (record.c `RecordADeliveredEventOrError`): a SelectionRequest or a DestroyNotify never
+        // arrived (T4c's probe on Xvfb, 2026-11-02)
+        let (events, errors) = contexts(Some(132), Some(142));
+        assert!(events.iter().all(|r| r.errors.first == 0 && r.errors.last == 0), "no errors beside the delivered events");
+        let delivered: Vec<(u8, u8)> = events.iter().map(|r| (r.delivered_events.first, r.delivered_events.last)).filter(|&(a, _)| a != 0).collect();
+        assert_eq!(delivered, [(DESTROY_NOTIFY, DESTROY_NOTIFY), (SELECTION_REQUEST, SELECTION_REQUEST)]);
+        assert!(events.iter().any(|r| r.client_started && r.client_died));
+        assert!(events.iter().any(|r| r.core_requests.first == SEND_EVENT));
+        assert_eq!(errors.len(), 1);
+        assert_eq!((errors[0].errors.first, errors[0].errors.last), (1, 255));
+        assert_eq!(errors[0].delivered_events.first, 0);
+        assert!(errors[0].core_requests.first == 0 && !errors[0].client_started);
+    }
+
+    #[test]
+    fn a_selection_notify_sent_names_its_requestor_selection_target_and_property() {
+        let mut w = watch();
+        // SendEvent: destination, event-mask, then the event: code 31, time, requestor, selection, target, property
+        let words = [0x600002u32, 0, 31, 0, 0x600002, 0x1e9, 0x1f1, 0x1f0, 0, 0, 0];
+        let data = element(3, 50, &request(25, 0, &words));
+        let lines: Vec<String> = w.requests(0x400000, &data, None).iter().map(|l| json(l)).collect();
+        assert_eq!(
+            lines,
+            ["{\"kind\":\"req\",\"client\":4194304,\"seq\":50,\"t\":3,\"op\":\"SendEvent\",\"destination\":6291458,\"event\":\"SelectionNotify\",\"requestor\":6291458,\"selection\":489,\"target\":497,\"property\":496}"]
+        );
+    }
+
+    #[test]
     fn a_destroy_notify_is_read_once_an_error_with_its_request_and_a_selection_request_to_ours() {
         let mut w = watch();
         let packet = |p: [u8; 32]| {
@@ -867,6 +955,7 @@ mod tests {
         let mut select = [0u8; 32];
         select[0] = 30;
         select[12..16].copy_from_slice(&0x600010u32.to_le_bytes());
+        select[16..20].copy_from_slice(&0x1e9u32.to_le_bytes());
         select[20..24].copy_from_slice(&0x1f1u32.to_le_bytes());
         select[24..28].copy_from_slice(&0x1f0u32.to_le_bytes());
         let mut data = packet(destroy);
@@ -878,10 +967,18 @@ mod tests {
             lines,
             [
                 "{\"kind\":\"destroyed\",\"window\":6291458}",
-                "{\"kind\":\"error\",\"client\":4194304,\"seq\":7,\"major\":1,\"code\":14}",
-                "{\"kind\":\"selreq\",\"client\":4194304,\"requestor\":6291472,\"property\":496,\"target\":497}",
+                "{\"kind\":\"selreq\",\"client\":4194304,\"requestor\":6291472,\"selection\":489,\"property\":496,\"target\":497}",
             ]
         );
+        // the errors' own context: each error with its request's opcodes and the server's time
+        let lines: Vec<String> = error_lines(0x400000, &packet(error), Some(132), Some(142)).iter().map(|l| json(l)).collect();
+        assert_eq!(
+            lines,
+            ["{\"kind\":\"error\",\"client\":4194304,\"seq\":7,\"major\":1,\"minor\":0,\"code\":14,\"t\":9}"]
+        );
+        let mut unread = error;
+        unread[10] = 14;
+        assert!(error_lines(0x400000, &packet(unread), Some(132), Some(142)).is_empty(), "GetGeometry's error: a request the record does not read");
         // a selection request to the person's own client is theirs
         assert!(w.served(0x600000, &packet(select)).is_empty());
     }

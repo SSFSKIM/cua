@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { DEVIATIONS, declaredDeviation } from '../../scripts/linux-engine-diff/deviations.mjs';
-import { IDENTITY_OPS, IDENTITY_SCENE_OPS, arranged, duplicatesSentence, expectedRead, identityAuditKind, judgeIdentity, keyRecord, ownState, targetOf } from '../../scripts/linux-engine-diff/identity.mjs';
+import { IDENTITY_OPS, IDENTITY_SCENE_OPS, arranged, duplicatesSentence, expectedRead, identityAuditKind, judgeIdentity, keyRecord, ownState, parseKeys, targetOf } from '../../scripts/linux-engine-diff/identity.mjs';
 import { OPS, SCENE_OPS } from '../../scripts/linux-engine-diff/ops.mjs';
 import { planOps } from '../../scripts/linux-engine-diff/run.mjs';
 
@@ -72,6 +72,8 @@ test("the identity page's key line", () => {
   assert.deepEqual(read('held Shift ups 2'), { held: ['Shift'], ups: 2 });
   assert.deepEqual(read('held Control,Shift ups 1'), { held: ['Control', 'Shift'], ups: 1 });
   assert.equal(read('nothing here'), null);
+  assert.deepEqual(parseKeys('held Shift ups 7'), { held: ['Shift'], ups: 7 }, 'the line as the harness reads it off the bus');
+  assert.equal(parseKeys('held Shift'), null);
 });
 
 test("a case's check binds its answer to the window it read, and to the scene's declaration", () => {

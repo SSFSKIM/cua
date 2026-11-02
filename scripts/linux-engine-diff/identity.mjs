@@ -179,12 +179,61 @@ function read(arrangement, { screenshot = false } = {}) {
   };
 }
 
-/** An element of the window with an action, read while the windows are apart (so it resolves), before they are stacked. */
+/** A window's `_NET_WM_PID`. */
+function pidOf(id) {
+  return Number(execFileSync('xprop', ['-id', String(id), '_NET_WM_PID'], { encoding: 'utf8' }).match(/(\d+)\s*$/)?.[1]);
+}
+
+/**
+ * A scene window's frame, through the harness's own reader of the bus (oracle.mjs), independent of the engine under
+ * test: the one frame of the scene's title whose extents are at the window's origin, the windows apart. Found once.
+ */
+async function frameOf(ctx, win) {
+  if (win.frame) return win.frame;
+  const oracle = await ctx.desktop.ensureOracle();
+  ctx.scene.pid ??= pidOf(win.id);
+  const [x, y] = origin(win.id);
+  const frames = oracle.appsOf(ctx.scene.pid).flatMap((app) => oracle.children(app)).filter((f) => oracle.name(f) === ctx.scene.title);
+  const here = frames.filter((f) => {
+    const e = oracle.extents(f);
+    return e.x === x && e.y === y;
+  });
+  if (here.length !== 1) throw new Error(`${win.marker}: ${here.length} frames at its place, of ${frames.length} of its title`);
+  win.frame = here[0];
+  return win.frame;
+}
+
+/**
+ * The first node under `root` of one of `roles` whose Name passes `test` (and the node itself `also`), walked with the
+ * harness's reader.
+ */
+function findNode(oracle, root, roles, test, also = () => true) {
+  const stack = [root];
+  let visited = 0;
+  while (stack.length && visited++ < 2000) {
+    const node = stack.pop();
+    try {
+      if (roles.includes(oracle.role(node)) && test(String(oracle.name(node))) && also(node)) return node;
+      stack.push(...oracle.children(node).reverse());
+    } catch {
+      // gone meanwhile, or no children
+    }
+  }
+  return null;
+}
+
+/**
+ * The page's button (pages/identity.html), its native id read with the harness's own reader while the windows are
+ * apart, so an engine that does not tell the windows apart still gets a real element to refuse; found once a window.
+ */
 async function actionElement(ctx, win) {
-  const state = await ctx.desktop.state({ id: win.id, label: win.label });
-  const node = preorder(state.ax_tree).find((n) => Array.isArray(n.actions) && n.actions.length > 0 && n.id !== undefined);
-  if (!node) throw new Error(`${win.label} shows no element with an action`);
-  return { id: String(node.id), action: node.actions[0] };
+  if (!win.button) {
+    const oracle = await ctx.desktop.ensureOracle();
+    const node = findNode(oracle, await frameOf(ctx, win), ['push button'], (name) => name === 'noop');
+    if (!node) throw new Error(`${win.marker} shows no noop button`);
+    win.button = node;
+  }
+  return { id: win.button, action: 'click' };
 }
 
 /** A request that associates before it acts, on a stacked duplicate, the front window active: refused, nothing sent. */
@@ -204,19 +253,42 @@ function refused(request, { element = false } = {}) {
   };
 }
 
-/** The identity page's key record (pages/identity.html): the keys held now and how many times Shift went up. */
-export function keyRecord(state) {
-  const names = preorder(state.ax_tree).map((n) => n.name).filter((n) => typeof n === 'string');
-  const line = names.find((n) => /^held .* ups \d+$/.test(n));
-  if (!line) return null;
-  const [, held, ups] = line.match(/^held (.*) ups (\d+)$/);
-  return { held: held === 'none' ? [] : held.split(','), ups: Number(ups) };
+/** The identity page's key line (pages/identity.html): the keys held now and how many times Shift went up. */
+const KEY_LINE = /^held .* ups \d+$/;
+
+/** A key line parsed: `{held, ups}`, or null for a line that is not one. */
+export function parseKeys(line) {
+  const match = KEY_LINE.test(line) && line.match(/^held (.*) ups (\d+)$/);
+  if (!match) return null;
+  return { held: match[1] === 'none' ? [] : match[1].split(','), ups: Number(match[2]) };
 }
 
-/** The key record of a window, read with the windows apart (so it resolves), the front window active. */
+/** The key line of a state's tree, parsed (`parseKeys`), or null. */
+export function keyRecord(state) {
+  const names = preorder(state.ax_tree).map((n) => n.name).filter((n) => typeof n === 'string');
+  const line = names.find((n) => KEY_LINE.test(n));
+  return line ? parseKeys(line) : null;
+}
+
+/**
+ * The key record of a window (`keyRecord`'s line), read with the harness's own reader, the windows apart; the line's
+ * node found once a window.
+ */
 async function keysOf(ctx, win) {
   await arrange(ctx, 'apart');
-  return keyRecord(await ctx.desktop.state({ id: win.id, label: win.label }));
+  return keysNow(ctx, win);
+}
+
+/**
+ * The key record as the page shows it now (no arrangement): the paragraph that holds the key line, found once a
+ * window, and the line read from its children each time, since Chrome replaces the text node when the line changes.
+ */
+async function keysNow(ctx, win) {
+  const oracle = await ctx.desktop.ensureOracle();
+  win.keyParagraph ??= findNode(oracle, await frameOf(ctx, win), ['paragraph'], () => true, (p) => oracle.children(p).some((c) => KEY_LINE.test(String(oracle.name(c)))));
+  if (!win.keyParagraph) return null;
+  const line = oracle.children(win.keyParagraph).map((c) => String(oracle.name(c))).find((name) => KEY_LINE.test(name));
+  return line ? parseKeys(line) : null;
 }
 
 /**
@@ -234,7 +306,7 @@ const release = {
     // Chrome takes the synthetic key a moment after the request answers
     const deadline = Date.now() + 2000;
     do {
-      ctx.keysHeld = keyRecord(await ctx.desktop.state({ id: win.id, label: win.label }));
+      ctx.keysHeld = await keysNow(ctx, win);
       if (ctx.keysHeld?.held.includes('Shift')) break;
       await sleep(100);
     } while (Date.now() < deadline);

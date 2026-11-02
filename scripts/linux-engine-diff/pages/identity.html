@@ -15,6 +15,8 @@
      times Shift went up, so a release reads back. -->
 <h1 id="marker">marker none</h1>
 <p id="keys">held none ups 0</p>
+<!-- an element with an action for the refused element requests: clicking it changes nothing but its own count -->
+<button id="noop" type="button" onclick="this.dataset.n = Number(this.dataset.n ?? 0) + 1">noop</button>
 <script>
   document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
   const marker = new URLSearchParams(location.search).get('marker');

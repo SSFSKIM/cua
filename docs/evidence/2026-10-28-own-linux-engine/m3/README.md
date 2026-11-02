@@ -10,7 +10,7 @@ The vendor builds are the pinned 26.928.40906 and the newest 26.1023.51421. M3 r
 | M3.2, cua's own Linux service | `services/` | the two services render the same states and numbers on one engine; no vendor module with cua's engine ([its README](services/README.md)) |
 | the drop-miss follow-up | `drop-misses/`, `drop-misses/task18/` | the mechanism of M3.1's Chrome drop misses and the 350 ms release floor ([its README](drop-misses/task18/README.md)) |
 | M3's gate | `gate-musl/` (the verdict); `gate/`, `gate-final/`, `gate-verdict/`, `gate-t25/` (earlier runs) | **M3's verdict is `m3-gate-musl`: it exits 0**, on the release workflow's attested x64 musl build of cd4c9297 ([below](#m3s-gate-the-verdict-gate-musl-run-m3-gate-musl-it-passes)). The earlier fresh full verdict runs did not pass: `m3-gate` on the M3.3 engine and `m3-gate-final` on the merged head after task 20 **both exit 1**. `m3-gate-verdict`, after tasks 22 and 23, was **stopped by ruling** once the harness-fault caps were exceeded. `m3-gate-t25`, after task 24, was **stopped by ruling** 9 minutes in, because its cua engine was a VM build, not the bytes that ship |
-| M3's release and the pinned engine | `release/` | `linux-engine-v0.3.0`, whose x64 asset is the gated bytes, pinned and installed: Acceptance 9 in a fresh home, Acceptance 1 and the device-mode fixture on the installed engine, the release build's feature graph ([below](#m3s-release-and-the-pinned-engine-release)) |
+| M3's release and the pinned engine | `release/` | `linux-engine-v0.3.0`, whose x64 asset is the gated bytes, pinned and installed: Acceptance 9 in a fresh home, Acceptance 1, the device-mode fixture and Acceptance 10's facade suites on the installed engine, the release build's feature graph ([below](#m3s-release-and-the-pinned-engine-release)) |
 | M3.3, doctor, provisioning and the facade proof | `doctor/`, `provision/`, `facade/`, `accept/`, `parity/`, `baseline/` | below |
 
 The engine of every M3.3 run and of `m3-gate` is one frozen release build of the head's engine sources: the engine
@@ -99,6 +99,62 @@ On the #171 VM (x86-64), on the pinned asset, at 9bf9d3a9:
     window on `:0`.
 - **Not run here:** the arm64 install, which is M5's on the arm64 VM. The release run tested the arm64 asset natively
   on GitHub's `ubuntu-24.04-arm` runner.
+
+### Acceptance 10 on the installed engine (`release/parity/`, `release/baseline/`)
+
+M3.3 ran the facade suites at 5e439324 on a VM build passed with `--engine-bin` (below). Tasks 20, 22 and 23 changed
+the engine after that: the atomic press, the hold and `preflight`. So both suites ran again on the bytes that ship.
+
+- **Head:** 23d0b7c9, clean. Both repl-parity lanes ran from that one controller commit, and so did every
+  native-baseline run.
+- **Engine:** the installed, pinned `cua-engine 0.3.0 (cd4c929758ca)` from `linux-engine-v0.3.0`, SHA-256 `5f4a1600…`.
+  Neither lane named `--engine-bin` or `CUA_LINUX_ENGINE_BIN`, and `CUA_NATIVE_ENGINE` was set per lane.
+- **How the engine got into each home:**
+  - Each suite serves from its own scratch home, and the checkout's `cua install` installs the pinned engine there.
+  - `src/runtime/install.mjs` accepts an installed engine only when its SHA-256 equals the pin's; otherwise it
+    downloads the asset and verifies it against the pin.
+  - The parity preparation's home held `5f4a1600…` (`sha256sum` during the run, and its `install.json` names
+    `linux-engine-v0.3.0`).
+  - The harness command was M3.3's (`task19/facade.sh`'s parity and baseline parts) without `--engine-bin`.
+
+**repl-parity, the native suite** (2026-11-02, from 00:13:27Z):
+
+| Lane | Result |
+|---|---|
+| vendor (`--engine vendor`) | complete, `RECORDED_VENDOR_DEFECT`: 31 covered, the 2 declared vendor defects (the x64 vendor text failure) |
+| cua (`--engine cua`, no `--engine-bin`) | complete, **`PASS`**: 33 covered |
+| `diff … --expected scripts/repl-parity/expected/native-linux.json` (`release/parity/diff.json`) | **`ok: true`**, 0 differences, the 2 declared (`linux-text-typetext-m2`, `linux-text-paste-m2`) |
+
+Each lane's engine observation was recorded on all 19 native cases:
+- The requested engine ran as the trusted worker's child, at the expected path, behind its own service. In the vendor
+  lane that is `sky_linux_x64` behind `@oai/sky` (`service: vendor`); in the cua lane it is the home's installed
+  `engine/linux/cua-engine` behind cua's service (`service: cua`).
+- `engineBin` is null in both lanes' `meta.json`, and no observation carries an error.
+
+**The native baseline and `compare --engines`** (experiment `171-m3-release-20261102`):
+- Three runs a lane, interleaved, with the default plan (5 cold, 30 warm, 10 tasks).
+- `compare --engines cv cc` (`release/baseline/engines.md`): **VERDICT: PASS**.
+- "Problems: none: both sides are complete, attested and comparable."
+- The attested differences are exactly the engine and the service. Each run's `nativeEngine` names the requested engine
+  with `bin` null, observed as the trusted worker's child at the expected path: `sky_linux_x64` with `service: vendor`
+  in every `cv` run, and the home's installed `cua-engine` with `service: cua` in every `cc` run.
+
+| Operation (engine-answered) | vendor median, ms | cua median, ms |
+|---|---:|---:|
+| warm.getAXState | 488.0 | 95.3 |
+| warm.getScreenshot | 611.5 | 113.4 |
+| bind.getApp | 566.1 | 123.6 |
+| task.total (the pressKey task) | 18891.3 | 9555.9 |
+| warm.getState / warm.listApps | 24.3 / 23.8 | 16.8 / 17.8 |
+| method.typeText | 10238.1, every sample `editable Paste did not insert text` | 166.6, every sample returned, gedit alive, the text read back |
+| method.paste | 10234.6, the same failure | 162.6, the same success |
+
+No cua median is above the vendor's on an operation the engine answers. Four operations no engine answers
+(`warm.noop`, the binder's paste-format and selectText refusals, `end_task`) have cua medians 0.5 to 3.1 ms above the
+vendor lane's, inside the tolerance rule. `engines.md` lists them.
+
+The suites closed what they opened. A stray check afterwards found no harness process or gedit, and only the owner's
+window on `:0`.
 
 ## M3's gate, the verdict (`gate-musl/`, run `m3-gate-musl`): it passes
 

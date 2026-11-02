@@ -1,0 +1,11 @@
+head: fb967e3ada87c4b619290f0fdb34a7538df7ef1c; harness changes not committed: 0
+engine: cua-engine 0.3.0 (ac4a5367cac9), sha256 8a7f2af94eda5cdacd51ebc2bbbb8517f2bf9d40e0882f105878084264cf2e1f
+active window before: 0x600002
+development run, not a release gate; candidate: sha256 8a7f2af94eda5cdacd51ebc2bbbb8517f2bf9d40e0882f105878084264cf2e1f, x86_64-unknown-linux-musl static-pie, cua-engine 0.3.0 (ac4a5367cac9); attestation not checked (a development run)
+negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+foreground checks: held (another raised and the top raised back: stacking; the same under one server grab: stacking; the target raised: clean; the focus and the active window switched away and back under one server grab: focus, active; the target activated: clean; another client's override-redirect window mapped: stacking; order restored)
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+run valid; development run, not a release gate: every verdict PASS; text restores (the first word put back before a sample): pinned 0, newest 0, cua 0
+results: /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/docs/evidence/2026-10-28-own-linux-engine/m4/harness-windows/t4b/run-4/results.jsonl
+exit 0
+active window after: 0x600002

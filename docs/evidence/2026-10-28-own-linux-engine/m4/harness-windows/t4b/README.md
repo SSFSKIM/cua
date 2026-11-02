@@ -63,6 +63,7 @@ judged by the grab watch.
 | `run-1` | ac4a5367 | exit 1 | the harness's trace passed Node's 512 MB string limit about 40 minutes in, so the run was unaudited (the bulk: every xdotool call's connection setup, XKB keymap and keyboard mapping, about 60 KB of list output a call); and the record failed each foreground Chrome drop on Chrome's drag image, an override-redirect window it opens per drag under the pointer |
 | `run-2` | 12eaebae | exit 1 | the record did not take the harness's own Chrome drop window (`0x00708e99`) for the window the harness found; its trace did |
 | `run-3` | 39b4d1bb | exit 0 | every verdict PASS |
+| `run-4` | fb967e3a | exit 0 | every verdict PASS, under the final review's fixes (below) |
 
 Fixed between them: lists capped at 256 entries in xtrace and both files read line by line (12eaebae); a harness
 window's client's override-redirect popups taken as that window's (12eaebae); an error matched only to its own request,
@@ -85,6 +86,43 @@ clean is now kept with its run (`record.jsonl.gz`, 39b4d1bb).
   ran throughout, and the active window was `0x600002` before and after. No harness process was left, and no scratch
   directory held.
 
+## The final review's two foreign paths, closed (fb967e3a), and `run-4`
+
+The bounded final review of 84a64b3e..668252fd found two paths by which ordinary harness actions could change a window
+of the person's, each replayed clean by the audit:
+
+- **Cleanup could close a reused Chrome id, and the record bless it.** Cleanup recorded a new finding for a known
+  Chrome id and sent it WM_DELETE_WINDOW. If the person had closed the harness's window and Chrome given its id to a
+  window of theirs, that was their window, and the new finding made it the harness's in the record. Now:
+  - cleanup closes a found window only while it is alive and titled with the scene's label, and never registers it
+    again (a close not done is in the end row's `skipped`);
+  - the retention fence takes only a live window of the run's;
+  - in the record, a finding binds the one life of its id alive then.
+- **The shared-Chrome popup allowance blessed the person's popups, and parkPointer warped without looking.** Every
+  override-redirect window that the client of a harness window opened was the harness's, and Chrome serves the
+  person's windows from that same client. Now:
+  - a popup is the harness's only when it is opened during an engine's operation on that window;
+  - every pointer move of the harness's reads the top window at its point first (xprobe `top-at`) and goes only onto
+    the root or a live window of the run's.
+
+Each finding has a regression that replays the reviewer's scenario and fails on 668252fd:
+- `foreign-windows.test.mjs`, "cleanup closes a Chrome window only while it is still the run's…": 668252fd closes
+  `0x00600009`, the person's window;
+- `foreign-judge.test.mjs`, "a popup is a harness window's only when its client opens it during a harness operation…":
+  668252fd passes a warp into the person's popup;
+- the same file's "a finding binds the one life of its id alive then…": 668252fd blesses a reuse inside the slack.
+
+`run-4` (fb967e3a, the same musl build, the same scenes and operations), on :0 with the owner's Chrome active:
+- exit 0, all 37 verdicts PASS: the device scenes pass under the fail-closed popup rule, with no input of ours
+  landing on a popup opened outside an engine's operation;
+- the active window at start and end is `0x00600002`, foreign, neither acted on; the holder is `0x0220000e`;
+- the harness's own trace: 20,685 requests and 6,100 changes of a window, every one of its own;
+- the whole-run record: 23,747 requests and 18,474 changes, every one of its own; none unplaced, no client
+  unattributed;
+- the 43 route audits are clean, and nothing was skipped;
+- `display-after-4.txt`, the stray check: the only client window on `:0` is the owner's `0x600002`, Chrome pid 9910
+  ran throughout, no harness process was left and no scratch directory is held.
+
 ## RECORD's overhead (`record-overhead.mjs`, `record-overhead.json`)
 
 One timed operation, cua's background `press_key` on a harness gedit window (its SendEvents are requests the record
@@ -94,21 +132,43 @@ the bound of 5.05 ms: **same (within noise)**. Each "on" block's record was clea
 
 ## What the audit does not cover (for the pull request)
 
-- The record attributes a client by its process when RECORD reports it: a client that ends before that read, or whose
-  slot is reused meanwhile, is counted as unattributed (0 in `run-3`), or taken for its successor. The harness's own
-  tools connect through its xtrace proxy, one long-lived client.
-- XTEST and warps are placed by where they land as read right after the server handled them: the input focus, or the
-  root child under the pointer. A read that lags reads a later pointer. Under another client's active pointer grab the
-  events go to that client, which placement does not model. The route audits place only what their trace shows.
-- An override-redirect root window the client of a live harness window opens during the run counts as the harness's.
-  Chrome serves the person's windows and the harness's from one client, so a popup of the person's Chrome opened
-  during a run counts so too.
-- In xtrace, a window's end is seen only by a DestroyWindow of ours, a DestroyNotify our connections received, or its
-  client's resource-id base handed to a new connection; a registered window's later lives count as foreign there (so
-  the backstop reopening a window under the same id, with its end seen, would fail the trace's audit), and a reply
-  cannot tell a window created inside a harness window from one another client reparented in. The record sees both.
-- Not counted as changes of a window: ChangeSaveSet, a ConvertSelection naming another's window, MULTIPLE selection
-  targets' properties (they fail closed), and desktop-wide state (keyboard and pointer mappings, the bell, GrabServer).
-- The post-request grab check counts a grab released with its client or its window as still held (it fails closed);
-  a passive grab a held button activated shows no request.
-- Only the session's display is recorded; a private display's traffic is not.
+The review's disposition: the two foreign paths above are closed. What follows are coverage limits, one accident
+guard, and one evidence limit.
+
+1. *Coverage.* The record attributes a client by its process when it first reads the client. A client that has
+   already ended is counted as unattributed and not judged (0 in runs 3 and 4). A successor that reuses its
+   resource-id base before the read is taken for it.
+2. *Coverage.* The record places XTEST input and pointer warps by reading the input focus, or the root child under
+   the pointer, just after the server handled the request; under load that read can lag and see a later state.
+   Another client's active pointer grab, which would receive our motion, is not modelled: detecting it would need a
+   grab on `:0`, which the observers' fence forbids.
+3. *Coverage.* An override-redirect root window is the harness's only when the client of a live harness window opens
+   it during an engine's operation on that window (±250 ms). A popup of the person's Chrome opened inside such a span,
+   by the same Chrome client, would count as the harness's.
+4. *Coverage.* The harness checks a window's identity (its title, and the top window at a pointer target) a few
+   milliseconds before it acts. An id reused in that gap, or a window mapped over the point, is not prevented. The
+   whole-run record still judges the action that follows and fails the run: the close lands on a life no finding
+   binds, and the warp lands on a window not the run's. The identity check trusts the title, so a window of another's
+   that carried the run's label and nonce would pass it.
+5. *Coverage.* xtrace's own audits (the harness's trace and the route audits) have four gaps the record does not:
+   - XTEST input is placed only by what the trace shows; the rest is counted as unplaced.
+   - A window's end is seen only through our DestroyWindow, a DestroyNotify our connections received, or its client's
+     resource-id base handed to a new connection.
+   - A registered window's later lives count as foreign there, so a backstop reopen under the same id, with its end
+     seen, would fail that audit.
+   - A reply cannot tell a window created inside a harness window from one another client reparented in.
+6. *Coverage.* These are not counted as changes of a window: ChangeSaveSet; a ConvertSelection naming another's
+   window; the sub-properties of MULTIPLE selection targets (they fail closed); and desktop-wide state (keyboard and
+   pointer mappings, GrabServer, the bell, the screensaver).
+7. *Coverage, fails closed.* The grab-left check counts a grab released implicitly, with its client or its window, as
+   still held. A passive grab that a held button activated shows no request.
+8. *Coverage.* Only the session's display is recorded. A private display's traffic is judged by xtrace alone.
+9. *Coverage, fails closed.* xtrace prints lists to 256 entries (`-m 256`). A QueryTree reply with more children
+   loses their parentage, which leaves them foreign.
+10. *Accident guard.* The private-display marker, a root property `CUA171_PRIVATE_DISPLAY`, guards against running
+    `grabs` on `:0` by accident. It is not authentication: a forged property on `:0` would let `grabs` run.
+11. *Evidence.* Which of e1c6d400's two defects caused run-2's miss is not shown, because its record was not kept.
+    Both are fixed and tested, runs 3 and 4 are clean, and a record that is not clean is now kept with its run.
+
+The controls runner (`controls.mjs`) holds a control on any failure line from the right source, not only on the
+control's own operation and window: logged in `tech-debt-tracker.md`.

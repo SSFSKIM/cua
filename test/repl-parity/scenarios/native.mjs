@@ -4,6 +4,7 @@ import {isFullNativeTree} from '../fixtures/native-state-oracle.mjs';
 // targets/linux/{create_client,element_ids,launch_app,perform_secondary_action}.js. M2's text oracle deliberately departs
 // from the vendor's GTK3 failure: successful return, the marker once, window alive (the #171 design's Acceptance 6).
 import assert from 'node:assert/strict';
+import {isDeepStrictEqual} from 'node:util';
 import {caseSchedule} from '../../../scripts/repl-parity/registry.mjs';
 const plan=new Map(caseSchedule().map(c=>[c.id,c])),scenarios=[];
 const report=result=>{assert.equal(result.isError,false);const text=result.content.filter(c=>c.type==='text').map(c=>c.text).join('');assert.ok(text.startsWith('NATIVE:'));return JSON.parse(text.slice(7));};
@@ -41,7 +42,19 @@ add('target-app-decorated-tab/getaxstate',minimizedNorm+take(minimizedListed)
  +take(`cua.computer.activate_window({window:nativeWindow}).then(()=>'undefined',minimizedNorm)`)
  +take(minimizedRestored)
  +take(`app.getScreenshot({emit:false}).then(b=>({bytes:b.length>100}),minimizedNorm)`),
- [{listed:true,others:true,focusedFront:true},{full:true,source:true,owned:true},{error:'Screenshot unavailable for window <id>.'},{error:'Window <id> is minimized; activate it first'},'undefined',{restored:true},{bytes:true}],
+ // each step's own message and nothing more, so a failing lane's recorded reason names the first fact that failed and
+ // a declared vendor defect matches it exactly
+ values=>{
+  const fact=(actual,expected,message)=>assert.ok(isDeepStrictEqual(actual,expected),message);
+  fact(values.length,7,'the case must record its seven steps');
+  fact(values[0],{listed:true,others:true,focusedFront:true},'the minimized window must be listed with minimized: true, no other window with the field, and the focus on the fixture\'s own window');
+  fact(values[1],{full:true,source:true,owned:true},'getAXState must return the minimized window\'s full tree');
+  fact(values[2],{error:'Screenshot unavailable for window <id>.'},'the minimized window\'s screenshot must be unavailable');
+  fact(values[3],{error:'Window <id> is minimized; activate it first'},'input to the minimized window must be refused as minimized');
+  fact(values[4],'undefined','activate_window must restore the minimized window without an error');
+  fact(values[5],{restored:true},'the restored window must lose the minimized field');
+  fact(values[6],{bytes:true},'the restored window must give a screenshot');
+ },
  {fixtureMode:'minimized'});
 add('target-app-decorated-tab/getscreenshot',take(`(async()=>{const b=await app.getScreenshot({emit:false});await nodeRepl.emitImage({bytes:b,mimeType:'image/png'});return {bytes:b instanceof Uint8Array,nonempty:b.length>100};})()`),[{bytes:true,nonempty:true}],{image:true});
 add('target-app-decorated-tab/getaxstateandscreenshot',take(`(async()=>{const b=await app.getAXStateAndScreenshot({emit:false,disableDiffing:true});await nodeRepl.emitImage({bytes:b.screenshot,mimeType:'image/png'});return {state:(${isFullNativeTree.toString()})(b.state,nativeFilename),bytes:b.screenshot instanceof Uint8Array,nonempty:b.screenshot.length>100};})()`),[{state:true,bytes:true,nonempty:true}],{image:true});

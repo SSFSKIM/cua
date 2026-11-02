@@ -109,3 +109,20 @@ test('checkEnginePair: one sitting, the vendor lane first and the cua lane secon
   assert.throws(() => checkEnginePair(v, {...c, engine: undefined}, {}), /names no engine/);
   assert.throws(() => checkEnginePair(v, {...c, engineAnswered: []}, {}), /did not answer.*records no engine observation/);
 });
+
+// M4's T4: getAXState on a minimized window. The declared vendor result fails the real scenario assertion with exactly
+// the defect's reason, and the declared cua result passes it, so the declaration tracks the case as it is asserted.
+test('the minimized getAXState declaration: the vendor result fails as its defect records, the cua result passes', () => {
+  const GETAX = 'native/target-app-decorated-tab/getaxstate';
+  const scenario = scenarios.find(s => s.id === GETAX);
+  const declaration = NATIVE_LINUX_EXPECTED.declarations.find(d => d.case === GETAX);
+  const defect = vendorDefects.find(d => d.id === declaration.vendorDefect);
+  assert.equal(defect.engine, 'vendor');
+  assert.equal(defect.runtimeRelease, RELEASE);
+  const assess = result => {
+    try {return scenario.assert({results: [result, {isError: false, structuredContent: {status: 'ended'}}]});}
+    catch (e) {return {ok: false, reason: e.message};}
+  };
+  assert.deepEqual(assess({isError: false, content: defect.result.content}), defect.assertion);
+  assert.deepEqual(assess({isError: false, content: declaration.cua.result.content}), declaration.cua.assertion);
+});

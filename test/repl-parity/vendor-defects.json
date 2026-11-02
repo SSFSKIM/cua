@@ -31,5 +31,16 @@
     "reason": "On the #171 x86-64 VM the pinned vendor engine (sky_linux_x64, under cua's own host, the only one Linux serves) answers paste with `editable Paste did not insert text` after its 10 s EditableText.PasteText attempt; gedit (GTK 3) survives and the marker never reaches the text. Plan of Work M2's positive oracle requires success, exactly one marker and a surviving window, so this is recorded vendor behaviour, not passing coverage. This declaration names x64 only; arm64's distinct crash outcome will be measured and declared with M5's native-suite run.",
     "assertion": {"ok": false, "reason": "native text input must return without an error"},
     "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"editable Paste did not insert text\"},0,false]"}]}
+  },
+  {
+    "id": "linux-x64-vendor-engine-minimized-window-unavailable",
+    "host": "cua",
+    "engine": "vendor",
+    "platform": "linux",
+    "runtimeRelease": "26.928.40906-linux-x64",
+    "case": "native/target-app-decorated-tab/getaxstate",
+    "reason": "On the #171 x86-64 VM the pinned vendor engine (sky_linux_x64, under cua's own host) leaves an iconified window out of list_windows, so once the bound gedit is minimized cua's policy and facade find it nowhere: getAXState, getScreenshot, pressKey and activate_window each answer `Window <id> is unavailable.` and the window stays minimized. The #171 design (Observation, Minimized windows; M4's T4) lists it with `minimized: true`, reads its tree and refuses its input as minimized, so this is recorded vendor behaviour, not passing coverage. The fixture's own second window took the focus (focusedFront true), as on the cua lane.",
+    "assertion": {"ok": false, "reason": "the minimized window must be listed with minimized: true, no other window with the field, and the focus on the fixture's own window"},
+    "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"listed\":false,\"others\":true,\"focusedFront\":true},{\"error\":\"Window <id> is unavailable.\"},{\"error\":\"Window <id> is unavailable.\"},{\"error\":\"Window <id> is unavailable.\"},{\"error\":\"Window <id> is unavailable.\"},{\"restored\":false},{\"error\":\"Window <id> is unavailable.\"}]"}]}
   }
 ]

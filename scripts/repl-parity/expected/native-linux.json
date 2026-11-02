@@ -22,6 +22,17 @@
         "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"error\":\"Linux paste supports only text format.\"},{\"error\":\"Linux paste supports only text format.\"},\"undefined\",1,false]"}]}
       },
       "reason": "Plan of Work M2 makes paste positive: cua returns successfully, inserts the marker exactly once and leaves gedit alive. The pinned x64 vendor engine still answers `editable Paste did not insert text`, inserts nothing and leaves gedit alive, the declared vendor defect named above. The two leading errors are the case's intentional html and md format-refusal probes, which the facade rejects before either engine is called."
+    },
+    {
+      "id": "linux-getaxstate-minimized-m4",
+      "case": "native/target-app-decorated-tab/getaxstate",
+      "cells": ["exercise"],
+      "vendorDefect": "linux-x64-vendor-engine-minimized-window-unavailable",
+      "cua": {
+        "assertion": {"ok": true},
+        "result": {"cell": "exercise", "isError": false, "content": [{"type": "text", "text": "NATIVE:[{\"listed\":true,\"others\":true,\"focusedFront\":true},{\"full\":true,\"source\":true,\"owned\":true},{\"error\":\"Screenshot unavailable for window <id>.\"},{\"error\":\"Window <id> is minimized; activate it first\"},\"undefined\",{\"restored\":true},{\"bytes\":true}]"}]}
+      },
+      "reason": "#171 M4's T4 runs getAXState on a minimized window: cua lists it with `minimized: true` (no other window carries the field), reads its full tree, answers its screenshot as unavailable, refuses input with `Window <id> is minimized; activate it first`, and activate_window restores it, after which the field is gone and the screenshot returns. The pinned x64 vendor engine leaves the minimized window out of list_windows, so every request answers `Window <id> is unavailable.`, the declared vendor defect named above."
     }
   ]
 }

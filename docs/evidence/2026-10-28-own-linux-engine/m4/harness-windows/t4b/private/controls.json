@@ -1,0 +1,290 @@
+{
+  "person": "0x00400000",
+  "controls": [
+    {
+      "control": "clean",
+      "expect": "pass",
+      "held": true,
+      "own": "0x01200000",
+      "acted": {
+        "key_to_own": "ok"
+      },
+      "foreign": [],
+      "desktop": {
+        "active_start": {
+          "id": 4194304,
+          "owner": "foreign"
+        },
+        "active_end": {
+          "id": 4194304,
+          "owner": "foreign"
+        },
+        "holder": 16777228,
+        "trace": {
+          "clean": true,
+          "requests": 77,
+          "mutating": 13,
+          "foreign": [],
+          "unplaced": 0
+        },
+        "record": {
+          "clean": true,
+          "requests": 21,
+          "mutating": 19,
+          "foreign": [],
+          "unplaced": 0,
+          "unattributed": {
+            "clients": 0,
+            "mutating": 0
+          }
+        }
+      }
+    },
+    {
+      "control": "engine-key-to-foreign",
+      "expect": "record",
+      "held": true,
+      "own": "0x01200000",
+      "acted": {
+        "key_to_own": "ok",
+        "key_to_person": "ok"
+      },
+      "foreign": [
+        "the run's record: RedirectWindow on 0x00400000 (cua-engine pid 1332873)",
+        "the run's record: SendEvent FocusIn on 0x00400000 (cua-engine pid 1332873)",
+        "the run's record: SendEvent KeyPress on 0x00400000 (cua-engine pid 1332873)",
+        "the run's record: SendEvent KeyRelease on 0x00400000 (cua-engine pid 1332873)",
+        "the run's record: SendEvent FocusOut on 0x00400000 (cua-engine pid 1332873)"
+      ],
+      "desktop": {
+        "active_start": {
+          "id": 4194304,
+          "owner": "foreign"
+        },
+        "active_end": {
+          "id": 4194304,
+          "owner": "foreign"
+        },
+        "holder": 16777228,
+        "trace": {
+          "clean": true,
+          "requests": 77,
+          "mutating": 13,
+          "foreign": [],
+          "unplaced": 0
+        },
+        "record": {
+          "clean": false,
+          "requests": 31,
+          "mutating": 27,
+          "foreign": [
+            "RedirectWindow on 0x00400000 (cua-engine pid 1332873)",
+            "SendEvent FocusIn on 0x00400000 (cua-engine pid 1332873)",
+            "SendEvent KeyPress on 0x00400000 (cua-engine pid 1332873)",
+            "SendEvent KeyRelease on 0x00400000 (cua-engine pid 1332873)",
+            "SendEvent FocusOut on 0x00400000 (cua-engine pid 1332873)"
+          ],
+          "unplaced": 0,
+          "unattributed": {
+            "clients": 0,
+            "mutating": 0
+          }
+        }
+      }
+    },
+    {
+      "control": "xtest-at-foreign",
+      "expect": "both",
+      "held": true,
+      "own": "0x01200000",
+      "acted": {
+        "at": [
+          641,
+          427
+        ],
+        "ran": ""
+      },
+      "foreign": [
+        "the harness: WarpPointer on 0x00200139",
+        "the harness: XTEST ButtonPress on 0x00200139",
+        "the harness: XTEST ButtonRelease on 0x00200139",
+        "the run's record: WarpPointer on 0x00200139 (xtrace pid 1332909)",
+        "the run's record: XTEST ButtonPress on 0x00200139 (xtrace pid 1332909)",
+        "the run's record: XTEST ButtonRelease on 0x00200139 (xtrace pid 1332909)"
+      ],
+      "desktop": {
+        "active_start": {
+          "id": 4194304,
+          "owner": "foreign"
+        },
+        "active_end": {
+          "id": 4194304,
+          "owner": "foreign"
+        },
+        "holder": 16777228,
+        "trace": {
+          "clean": false,
+          "requests": 83,
+          "mutating": 16,
+          "foreign": [
+            "WarpPointer on 0x00200139",
+            "XTEST ButtonPress on 0x00200139",
+            "XTEST ButtonRelease on 0x00200139"
+          ],
+          "unplaced": 0
+        },
+        "record": {
+          "clean": false,
+          "requests": 16,
+          "mutating": 16,
+          "foreign": [
+            "WarpPointer on 0x00200139 (xtrace pid 1332909)",
+            "XTEST ButtonPress on 0x00200139 (xtrace pid 1332909)",
+            "XTEST ButtonRelease on 0x00200139 (xtrace pid 1332909)"
+          ],
+          "unplaced": 0,
+          "unattributed": {
+            "clients": 0,
+            "mutating": 0
+          }
+        }
+      }
+    },
+    {
+      "control": "foreign-property-write",
+      "expect": "both",
+      "held": true,
+      "own": "0x01200000",
+      "acted": {
+        "ran": ""
+      },
+      "foreign": [
+        "the harness: ChangeProperty on 0x00400000",
+        "the harness: ChangeProperty on 0x00400000",
+        "the run's record: ChangeProperty on 0x00400000 (xtrace pid 1333132)",
+        "the run's record: ChangeProperty on 0x00400000 (xtrace pid 1333132)"
+      ],
+      "desktop": {
+        "active_start": {
+          "id": 4194304,
+          "owner": "foreign"
+        },
+        "active_end": {
+          "id": 4194304,
+          "owner": "foreign"
+        },
+        "holder": 16777228,
+        "trace": {
+          "clean": false,
+          "requests": 80,
+          "mutating": 15,
+          "foreign": [
+            "ChangeProperty on 0x00400000",
+            "ChangeProperty on 0x00400000"
+          ],
+          "unplaced": 0
+        },
+        "record": {
+          "clean": false,
+          "requests": 15,
+          "mutating": 15,
+          "foreign": [
+            "ChangeProperty on 0x00400000 (xtrace pid 1333132)",
+            "ChangeProperty on 0x00400000 (xtrace pid 1333132)"
+          ],
+          "unplaced": 0,
+          "unattributed": {
+            "clients": 0,
+            "mutating": 0
+          }
+        }
+      }
+    },
+    {
+      "control": "foreign-override-redirect",
+      "expect": "both",
+      "held": true,
+      "own": "0x01200000",
+      "acted": {
+        "ran": ""
+      },
+      "foreign": [
+        "the harness: ChangeWindowAttributes override-redirect on 0x00400000",
+        "the run's record: ChangeWindowAttributes override-redirect on 0x00400000 (xtrace pid 1333288)"
+      ],
+      "desktop": {
+        "active_start": {
+          "id": 4194304,
+          "owner": "foreign"
+        },
+        "active_end": {
+          "id": 4194304,
+          "owner": "foreign"
+        },
+        "holder": 16777228,
+        "trace": {
+          "clean": false,
+          "requests": 77,
+          "mutating": 14,
+          "foreign": [
+            "ChangeWindowAttributes override-redirect on 0x00400000"
+          ],
+          "unplaced": 0
+        },
+        "record": {
+          "clean": false,
+          "requests": 14,
+          "mutating": 14,
+          "foreign": [
+            "ChangeWindowAttributes override-redirect on 0x00400000 (xtrace pid 1333288)"
+          ],
+          "unplaced": 0,
+          "unattributed": {
+            "clients": 0,
+            "mutating": 0
+          }
+        }
+      }
+    },
+    {
+      "control": "preexisting-exact-title",
+      "expect": "pass, and the run found its own window",
+      "held": true,
+      "title": "cua171-diff-precreated-fixednonce-recorder-r",
+      "own": "0x01200000",
+      "precreated": "0x00600000",
+      "precreated_owner": "foreign",
+      "error": null,
+      "foreign": [],
+      "desktop": {
+        "active_start": {
+          "id": 4194304,
+          "owner": "foreign"
+        },
+        "active_end": {
+          "id": 4194304,
+          "owner": "foreign"
+        },
+        "holder": 16777228,
+        "trace": {
+          "clean": true,
+          "requests": 77,
+          "mutating": 13,
+          "foreign": [],
+          "unplaced": 0
+        },
+        "record": {
+          "clean": true,
+          "requests": 13,
+          "mutating": 13,
+          "foreign": [],
+          "unplaced": 0,
+          "unattributed": {
+            "clients": 0,
+            "mutating": 0
+          }
+        }
+      }
+    }
+  ]
+}

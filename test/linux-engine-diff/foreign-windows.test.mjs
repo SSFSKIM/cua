@@ -307,6 +307,7 @@ test("every title of the run's carries a nonce of its own, so two runs of one na
   } finally {
     a.unhookStop();
     b.unhookStop();
+    for (const d of [a, b]) rmSync(d.dir, { recursive: true, force: true });
   }
 });
 

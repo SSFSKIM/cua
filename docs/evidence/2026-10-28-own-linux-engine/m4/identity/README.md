@@ -2,8 +2,9 @@
 
 Development runs on the #171 VM's `:0`, not a release gate. The candidate is a musl build made as the release
 workflow makes it (`cargo build --release --locked --target x86_64-unknown-linux-musl`, paths remapped, stripped):
-the identity run (`diff/`, `t5-fix2-identity`) is on `cua-engine 0.3.0 (31be58bed631)`, sha256
-`fd82f6c2b033025c43fe5ce5f179ac11226974b2b0feb621070f6f670f94bba3`, static-pie, the second fix round's engine; the two
+the identity run (`diff/`, `t5-fix3-identity`) and the paste run (`paste/`, `t5-fix3-paste`) are on `cua-engine
+0.3.0 (2a125bb8c9d7)`, sha256 `5b9b5a9bd4db2a19dae781e21e6aa6276437846f05856692fa512fad7be7e0ed`, static-pie, the
+third fix round's engine (the cost runs, `cost/` and `cost-2/`, are on the second's, 31be58be); the two
 controls (`control-noactive/`, `control-030/`) are from the first fix round (7fe5f226, sha256 `8ab6bb1e…4a4e`, the
 no-active control built from its sources), which the second round changed only in the Copy and in a paste's refusal
 sentence, neither of which the controls' cases reach. The harness is cbc86eba's, unchanged. The summaries say
@@ -34,7 +35,7 @@ What the rounds built:
 - **The association is confirmed just before each effect.** A frame found by one of cua's own routes (position, the
   active state, the caption) is carried with the request, and the whole association is run again, and must name the
   same frame, just before DoAction, the right click, the element scroll, the Copy's `CopyText` (after its selection
-  reads) and each of its context-menu `DoAction`s, each focusing click, the selection restore and the paste chord, and
+  reads; its context menu was guarded too until round three refused it on these routes), each focusing click, the selection restore and the paste chord, and
   after a state read. A change before any input refuses with `window identity changed during the request for X11
   window <id>; nothing was sent, so it is safe to retry` (a read: the retry sentence). After a paste's focusing click
   it says instead that no paste was dispatched but a focusing click already reached the window, so the window is to
@@ -45,8 +46,7 @@ What the rounds built:
   focusing click each refuse, with no key or button sent, no button pressed, no field focused and the clipboard as it
   was; a window moved back onto its twin just before the chord refuses likewise; and one moved back at the selection
   restore, after its focusing click focused the field, refuses with the click named, the fixture having seen exactly
-  that one press, no key and the clipboard unchanged. Not tested live: the context-menu `DoAction` guards (the GTK 3
-  fixture has no context-menu action to copy through). What remains is the gap between the last confirmation and the
+  that one press, no key and the clipboard unchanged. What remains is the gap between the last confirmation and the
   effect itself, and a toolkit still stale when the effect is sent: the control test shows a window's association
   taking its twin's frame for as long as nothing corrects GTK.
 - **What is not confirmed.** The vendor's own matches (`Told::Title`) are confirmed by nothing, so request-wide
@@ -63,6 +63,40 @@ What the rounds built:
   or a leave the read could fall back on; and the source assertion pins the one public constructor to the state read's
   arm for a bus error, with negative controls. A focus change between choosing a frame and verifying it, which T5
   answered with the X11 tree, now answers the retry sentence.
+
+### Round three (2a125bb8): the context menu, and every refusal after a click
+
+The bounded re-review found one wrong-association path left: the Copy's context-menu route found the menu it opened
+as a new child of the application, so a duplicate's menu opened meanwhile was taken for the window's own, and the
+confirmation (which checks the window's frame, not the menu) could not tell. Every test of this round was written
+first and failed on cfc7497f for its reason (`probes/fix-round/r3-red-*.txt`), then passed (`r3-green.txt`); the gate's
+engine suite under a private Xvfb is `engine-tests-3.txt` (294 in-crate tests, 12 of them this round's live tests and
+4 its unit tests; every live suite passing).
+
+- **No ownership signal exists, so the route is refused on cua's own routes.** Time-boxed probe
+  (`probes/menu-ownership/`, about 15 minutes): a fresh Chrome on a private Xvfb, a web paragraph's `showContextMenu`.
+  The menu is a `frame` (`MenuHostRootView`) whose parent is the application root, with an empty relation set, as are
+  its descendants, the paragraph's and the browser frame's (the frame's one relation names its own document); its X11
+  window is override-redirect, `_NET_WM_WINDOW_TYPE_MENU`, with no `WM_TRANSIENT_FOR`. Only geometry would tie it to
+  a window, which is not proof. So a window told apart by position, active state or caption answers `the focused
+  element of X11 window <id> copies only through a context menu, and a context menu cannot be shown to belong to this
+  window, whose accessibility frame was found by <how>; nothing was sent`, before any menu opens. The counterexample
+  (`a_context_menu_copy_on_a_window_told_apart_by_position_opens_no_menu_and_copies_nothing`): the fixture gains a
+  focusable widget whose one action is `showContextMenu`; B, apart and focused, asks for its Copy, and a hook at the
+  menu lookup closes B's menu and opens A's. On cfc7497f the request answered success with `menu-copy-1`, A's text, on
+  the clipboard; now it refuses, no menu opens and the clipboard keeps `before`. The control: a window whose title is
+  its own still copies through its menu. **Limit:** the same race on the vendor's own match, two windows of one process
+  with different titles, one opening a context menu during the other's Copy (up to 1 s), is not closed.
+- **"Nothing was sent" only when nothing was.** Every refusal a paste reaches after its focusing click now ends `no
+  paste was dispatched, but a focusing click already reached the window, so read the window before retrying`, and any
+  other error between the click and the chord gets the same ending. One live test per site, each brought about at the
+  step before it on a window of its own title: the field never taking the focus, the field losing it at the restore,
+  the desktop focus changing, a held clipboard lock, an unconfirmed paste's window opened by another engine, a silent
+  clipboard owner, a copy between the snapshot and the take, the field changing before the revalidation, and CLIPBOARD
+  taken from the paste; each sees one focusing press, no key, and the clipboard as the case leaves it.
+- **The Copy's Escape.** A context menu left open (the vendor's match, no Copy item) is answered with `an Escape was
+  sent to close the menu the Copy opened`, or that the Escape could not be sent; whether the menu closed is not
+  observed, so it is never claimed. Live on a menu with only Paste; the failure branch by unit test.
 
 ### What the confirmation costs (`cost/`, `cost-2/`)
 
@@ -94,6 +128,10 @@ What this shows, and what it does not:
 - **The duplicates' cost is not there.** No series moved by anything near 20 ms: the largest median difference is
   +2.9 ms (Chrome's tree, sitting 2), within the spread the T4 build shows against itself (up to 4.6 ms between its two
   lanes). Each tree read made the same accessibility-bus calls in both builds (gedit 3,186, Chrome 2,229 and 2,220 warm).
+  The 9 Chrome calls lie between the sittings, not between the builds: within each sitting all three lanes (T4 twice,
+  the candidate) made identical counts member by member (2,229 warm in sitting 1, 2,220 in sitting 2, on the same 243
+  nodes), and all 9 are `Properties.Get` (754 against 745), so they are the scene page's own state in each sitting
+  (each opens its own Chrome windows), and T4 against itself moved by the same 9 (`results.jsonl`, `counts` rows).
 - **"Match within noise" is shown for the element click, `type_text` (sitting 2) and gedit's tree (sitting 1, faster),
   not for the rest.** Chrome's tree and `clipboard_read` stay undetermined at 84 samples a side, and gedit's tree in
   sitting 2 is a loss against one T4 lane and undetermined against the other lane of the same binary. The A/A control
@@ -139,7 +177,7 @@ engine:
 ## The identity run (`diff/`, `t5-identity-final`, exit 0)
 
 `scripts/linux-engine-diff.mjs --dev … --scene identity,identity-gtk3,identity-gtk4,identity-kate` (run
-`t5-fix2-identity`) with the eleven identity operations; cua alone (`identity.mjs`), 3 blocks of a cold sample and 2 warm ones (12 samples a case, 9 for
+`t5-fix3-identity`; the trace's 11,835 requests and the record's 3,390 with no foreign change) with the eleven identity operations; cua alone (`identity.mjs`), 3 blocks of a cold sample and 2 warm ones (12 samples a case, 9 for
 kate), each sample on the next window of its scene. Verdict line: "run valid; development run, not a release gate:
 every verdict PASS". The activating stub failed both the witness and the audit.
 
@@ -159,6 +197,22 @@ every verdict PASS". The activating stub failed both the witness and the audit.
 
 Every sample's witness was clean, every audit clean over requests that answered as the case expects, and every read
 answered as `deviations.mjs` declares for its scene.
+
+## The paste run (`paste/`, `t5-fix3-paste`, exit 1 on the whole-run record only)
+
+Round three changed what a paste says after its click, so M2's text scenes ran again against both vendor builds:
+`--scene gedit,chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target` with the seven text operations and
+the twelve paste safety cases, `--dev`. Every one of the 23 verdicts passes and all 20 case trials pass; the safety
+phase's bus trace has 0 `PasteText`, `InsertText` and `SetTextContents`; text restores pinned 43, newest 0, cua 0 (the
+pinned build's own failed pastes, as in M3); the harness's trace is clean (32,834 requests, no foreign change). The
+run exits 1 because the whole-run record (T4b) flags, in every lane alike, the selection protocol's own writes: each
+engine answering a conversion with `ChangeProperty` of the requestor's `GDK_SELECTION_…` property and `SelectionNotify`
+into requestor windows of gedit and of the person's Chrome (which reads `TARGETS` from every new CLIPBOARD owner,
+M2.3), and the vendor builds' `SKY_CLIPBOARD_STOP` messages to their own clipboard windows on other connections. The
+record's exemption for a property the requestor named while it is served does not match them. That is the harness
+attribution edge round two saw in its cost runs, now on every paste lane: harness work before M4's gate sitting, not
+an engine change, since the vendor lanes trip it the same way. The owner's Chrome was active at the start and the end
+and untouched, and the stray and display checks before and after match.
 
 ## The controls
 
@@ -203,4 +257,6 @@ The probes and the runs are `~/.local/share/cua-171/task37/` on the VM: `open-th
 `family-reads.{sh,mjs}`, `diff-run.sh`, `final-runs.sh`, with the stray and display checks before and after. The fix
 round's are `~/.local/share/cua-171/task38/`: `musl-build.sh` (the candidate, and the no-active control from a copy
 of its sources with `if target_active && false`), `final-runs.sh` (these three runs, through task37's `diff-run.sh`
-and checks) and `engine-tests.sh` (the gate's engine command).
+and checks) and `engine-tests.sh` (the gate's engine command). Round three's are `~/.local/share/cua-171/task39/`:
+`menu-probe{,-inner}.sh` (also under `probes/menu-ownership/`), `focused.sh`, `engine-tests.sh` and
+`evidence-runs.sh` (the identity and paste runs, through task37's `diff-run.sh` and checks).

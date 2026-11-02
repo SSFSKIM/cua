@@ -10,7 +10,8 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import test from 'node:test';
 
-import { auditForeign, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
+import { parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
+import { auditForeign } from '../../scripts/linux-engine-diff/foreign.mjs';
 import { harnessPair, openScene } from '../../scripts/linux-engine-diff/run.mjs';
 import { desktopLine } from '../../scripts/linux-engine-diff/report.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
@@ -20,7 +21,7 @@ const ROOT = 0x1ff;
 const MINE = 0x40000c;
 const PERSON = 0x600002;
 const hex = (id) => `0x${id.toString(16).padStart(8, '0')}`;
-const audit = (lines, isHarness = (id) => id === MINE) => auditForeign(parseXtrace(lines.join('\n')), { isHarness, root: ROOT });
+const audit = (lines, registered = new Set([MINE])) => auditForeign(parseXtrace(lines.join('\n')), { registered, root: ROOT });
 
 // What xdotool windowactivate sends (the probe on a private display): the desktop switch to the root, then the activation.
 const activate = (id, seq = '001f') => [
@@ -79,20 +80,21 @@ test('every kind of mutating request naming a foreign window fails', () => {
   }
 });
 
-test('reads, event selections, property writes and a selection reply to a foreign requestor are not changes of its window', () => {
+test('reads, event selections, and the answer to a foreign requestor\'s own SelectionRequest are not changes of its window', () => {
   const result = audit([
     `000:<:0001:  8: Request(20): GetProperty delete=false(0x00) window=${hex(PERSON)} property=0x27("WM_NAME")`,
     `000:<:0002:  8: Request(15): QueryTree window=${hex(PERSON)}`,
     `000:<:0003: 12: Request(2): ChangeWindowAttributes window=${hex(PERSON)} value-list={event-mask=PropertyChange}`,
     // the CLIPBOARD owner answering the person's application's own request (ICCCM): its reply and the property it wrote
-    `000:<:0004: 24: Request(18): ChangeProperty mode=Replace(0x00) window=${hex(PERSON)} property=0x1f0("CUA_SEL") type=0x1f1("UTF8_STRING")`,
-    `000:<:0005: 44: Request(25): SendEvent propagate=false(0x00) destination=${hex(PERSON)} event-mask=0 SelectionNotify(31) time=0x00001234 requestor=${hex(PERSON)} selection=0x1e9("CLIPBOARD")`,
+    `000:>:0003: Event SelectionRequest(30) time=0x00001234 owner=${hex(MINE)} requestor=${hex(PERSON)} selection=0x1e9("CLIPBOARD") target=0x1f1("UTF8_STRING") property=0x1f0("CUA_SEL")`,
+    `000:<:0004: 24: Request(18): ChangeProperty mode=Replace(0x00) window=${hex(PERSON)} property=0x1f0("CUA_SEL") type=0x1f1("UTF8_STRING") data='x'`,
+    `000:<:0005: 44: Request(25): SendEvent propagate=false(0x00) destination=${hex(PERSON)} event-mask=0 SelectionNotify(31) time=0x00001234 requestor=${hex(PERSON)} selection=0x1e9("CLIPBOARD") target=0x1f1("UTF8_STRING") property=0x1f0("CUA_SEL")`,
   ]);
-  assert.equal(result.clean, true);
-  assert.equal(result.mutating, 1, 'the selection reply is counted as a request it judged');
+  assert.equal(result.clean, true, JSON.stringify(result.foreign));
+  assert.equal(result.mutating, 2, 'the property write and the selection reply are judged, and exempt');
 });
 
-test('a window the traced client created itself is its own, and a child of a harness window is resolved by the predicate', () => {
+test("a window the traced client created itself is its own, and a child the trace's own reply found in a harness window is the harness's", () => {
   const POPUP = 0x800000;
   const CHILD = 0x40001a;
   const result = audit(
@@ -101,9 +103,10 @@ test('a window the traced client created itself is its own, and a child of a har
       `012:<:0002:  8: Request(8): MapWindow window=${hex(POPUP)}`,
       `012:<:0003: 16: Request(12): ConfigureWindow window=${hex(POPUP)} values={sibling=${hex(PERSON)} stack-mode=Above(0x00)}`,
       `012:<:0004:  8: Request(4): DestroyWindow window=${hex(POPUP)}`,
-      `013:<:0001: 44: Request(25): SendEvent propagate=false(0x00) destination=${hex(CHILD)} event-mask=0 KeyPress(2) keycode=0x26`,
+      `013:<:0001:  8: Request(15): QueryTree window=${hex(MINE)}`,
+      `013:>:0001:36: Reply to QueryTree: root=${hex(ROOT)} parent=${hex(ROOT)} children=${hex(CHILD)};`,
+      `013:<:0002: 44: Request(25): SendEvent propagate=false(0x00) destination=${hex(CHILD)} event-mask=0 KeyPress(2) keycode=0x26`,
     ],
-    (id) => id === MINE || id === CHILD,
   );
   assert.equal(result.clean, true, JSON.stringify(result.foreign));
 });
@@ -132,7 +135,7 @@ test("the negative checks' two windows are the top two of the harness's own, nev
 // The Desktop: no restore, the holder, the run's start and end, and the audit of its own trace
 
 /** Fake X tools on a fresh PATH directory, each appending its argv to `log`. */
-function fakeTools({ active = 0, geometry = [200, 150] } = {}) {
+function fakeTools({ active = 0, geometry = [200, 150], search = '' } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cua171-foreign-'));
   const log = join(dir, 'log');
   writeFileSync(log, '');
@@ -140,7 +143,7 @@ function fakeTools({ active = 0, geometry = [200, 150] } = {}) {
     writeFileSync(join(dir, name), `#!/bin/sh\necho "${name} $*" >> ${JSON.stringify(log)}\n${body}\n`);
     chmodSync(join(dir, name), 0o755);
   };
-  tool('xdotool', `case "$1" in getwindowgeometry) printf 'WINDOW=%s\\nX=0\\nY=0\\nWIDTH=${geometry[0]}\\nHEIGHT=${geometry[1]}\\n' "$3";; esac`);
+  tool('xdotool', `case "$1" in getwindowgeometry) printf 'WINDOW=%s\\nX=0\\nY=0\\nWIDTH=${geometry[0]}\\nHEIGHT=${geometry[1]}\\n' "$3";; search) echo '${search}';; esac`);
   tool('xprop', `echo "_NET_ACTIVE_WINDOW(WINDOW): window id # $(cat ${JSON.stringify(join(dir, 'active'))})"`);
   tool('xwininfo', `case "$*" in *-root*) echo "xwininfo: Window id: ${hex(ROOT)} (the root window) (has no name)";; *) echo "X Error: BadWindow" >&2; exit 1;; esac`);
   // the holder's terminal: a process that lives until it is signalled
@@ -172,13 +175,16 @@ function fakeReader(desktop, ids) {
 
 /** A trace that hands back `text` when it stops, and says where its clients connect. */
 const fakeTrace = (text) => () => ({ env: { ...process.env, DISPLAY: ':77' }, stop: async () => text });
+/** The whole run's record (xprobe record-run), begun and ended with `lines` between. */
+const fakeRecord = (lines = []) => async () => ({ stop: async () => [JSON.stringify({ kind: 'ready', ms: 1 }), ...lines, JSON.stringify({ kind: 'end', ms: 2 })].join('\n') });
+const begin = (desktop, traceText, { record = [], existing = [] } = {}) => desktop.begin({ startTrace: fakeTrace(traceText), startRecord: fakeRecord(record), existing: () => existing });
 
 test('closing never activates the window found active at the start', async () => {
   const tools = fakeTools({ active: PERSON });
   const HOLDER = 0x1a00002;
   const desktop = new Desktop({ cua: 'unused', run: 'foreign1', reader: fakeReader(() => desktop, { holder: HOLDER }), startActive: PERSON });
   try {
-    await desktop.begin({ startTrace: fakeTrace(activate(HOLDER).join('\n')) });
+    await begin(desktop, activate(HOLDER).join('\n'));
     const opening = tools.calls().length;
     await desktop.closeAll();
     assert.deepEqual(tools.calls().slice(opening).filter((c) => c.includes('windowactivate')), [], 'nothing was activated at the end');
@@ -199,7 +205,7 @@ test('a run that starts with a foreign window active opens and activates a holde
   const desktop = new Desktop({ cua: 'unused', run: 'foreign2', reader: fakeReader(() => desktop, { holder: HOLDER, scene: SCENE }), startActive: PERSON });
   const scene = spawn('sleep', ['30'], { stdio: 'ignore' });
   try {
-    await desktop.begin({ startTrace: fakeTrace([...activate(HOLDER), `001:<:0012: 16: Request(12): ConfigureWindow window=${hex(SCENE)} values={x=0 y=0}`].join('\n')) });
+    await begin(desktop, [...activate(HOLDER), `001:<:0012: 16: Request(12): ConfigureWindow window=${hex(SCENE)} values={x=0 y=0}`].join('\n'));
     assert.equal(desktop.holder.id, HOLDER);
     // the holder activated before anything else of the run's was asked for
     const activations = tools.calls().filter((c) => c.startsWith('xdotool windowactivate'));
@@ -232,7 +238,7 @@ test('a run that starts with no window active opens no holder', async () => {
   const tools = fakeTools({ active: 0 });
   const desktop = new Desktop({ cua: 'unused', run: 'foreign3', reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0 });
   try {
-    await desktop.begin({ startTrace: fakeTrace(HARNESS_ONLY.join('\n')) });
+    await begin(desktop, HARNESS_ONLY.join('\n'));
     assert.equal(desktop.holder, null);
     assert.deepEqual(tools.calls().filter((c) => c.startsWith('xterm')), []);
     await desktop.closeAll();
@@ -249,7 +255,7 @@ test("the run's own trace is audited against the windows it registered, closed o
   try {
     // a window of the run's, already closed when the trace is audited
     desktop.closed.push({ kind: 'xterm', role: 'front', label: desktop.label('front'), id: MINE });
-    await desktop.begin({ startTrace: fakeTrace([...HARNESS_ONLY, ...activate(PERSON, '0020')].join('\n')) });
+    await begin(desktop, [...HARNESS_ONLY, ...activate(PERSON, '0020')].join('\n'));
     await desktop.closeAll();
     const { audit: result } = desktop.ending;
     assert.equal(result.clean, false);
@@ -263,12 +269,54 @@ test("the run's own trace is audited against the windows it registered, closed o
   }
 });
 
+test("a window already on the display when the run began is never found or adopted, even under the run's exact title", async () => {
+  const CHROME = 0x600009;
+  const tools = fakeTools({ active: 0, search: String(CHROME) });
+  let title = null;
+  // the reader lists a Chrome window whose title is exactly the one the run is about to give its scene's window
+  const reader = { request: async () => ({ response: { ok: true, output: [{ id: CHROME, title, app: 'Google-chrome' }] } }), close: async () => {} };
+  const desktop = new Desktop({ cua: 'unused', run: 'foreign5', reader, startActive: 0 });
+  try {
+    await begin(desktop, HARNESS_ONLY.join('\n'), { existing: [ROOT, CHROME] });
+    title = `${desktop.label('scene', 'r')} - Google Chrome`;
+    await assert.rejects(desktop.waitForWindow((w) => w.title === title, 'the scene', 600), /did not appear/);
+    assert.deepEqual(desktop.findByTitle(title), [], 'xdotool finds it by its title; the run does not take it');
+    // a Chrome scene that never came up is closed by its title: the window that was already there is left alone
+    await desktop.close([{ kind: 'chrome', role: 'r', label: desktop.label('scene', 'r'), title, id: null }]);
+    assert.equal(desktop.ownerOf(CHROME), 'foreign');
+    assert.deepEqual(tools.calls().filter((c) => c.startsWith('xprobe') || c.includes(`close ${CHROME}`)), []);
+    // a window the run did not find at its start is found, with when it was found
+    desktop.preexisting.delete(CHROME);
+    const found = await desktop.waitForWindow((w) => w.title === title, 'the scene', 600);
+    assert.equal(found.id, CHROME);
+    assert.equal(desktop.found.get(CHROME).length, 1);
+  } finally {
+    desktop.unhookStop();
+    await desktop.closeAll();
+    tools.done();
+  }
+});
+
+test("every title of the run's carries a nonce of its own, so two runs of one name never share a title", () => {
+  const reader = { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} };
+  const a = new Desktop({ cua: 'unused', run: 'same', reader, startActive: 0 });
+  const b = new Desktop({ cua: 'unused', run: 'same', reader, startActive: 0 });
+  try {
+    assert.match(a.label('scene', 'r'), /^cua171-diff-same-[0-9a-f]{8}-scene-r$/);
+    assert.notEqual(a.label('scene', 'r'), b.label('scene', 'r'));
+  } finally {
+    a.unhookStop();
+    b.unhookStop();
+  }
+});
+
 test('the harness runs xdotool and its acting xprobe commands only through the display the run traces', () => {
   const dir = join(import.meta.dirname, '../../scripts/linux-engine-diff');
   // the private-display experiment names its own server; the stub is an engine, audited by its own pass
   const exempt = new Set(['xtools.mjs', 'events.mjs', 'stub-activating.mjs']);
-  // the observers, kept off the proxy for their timing or their volume: they read, or probe the grab state on the root
-  const observers = ['witness', 'request-watch', 'crossing-watch', 'cursor-watch', 'selection-watch', 'retention', 'imgdiff', 'snap', 'grabs'];
+  // the observers, kept off the proxy for their timing or their volume: they read (xprobe's `retention`, which redirects
+  // its window, and `grabs`, which takes the pointer and the keyboard, are fenced in xtools.mjs, so neither is here)
+  const observers = ['witness', 'request-watch', 'crossing-watch', 'cursor-watch', 'selection-watch', 'imgdiff', 'snap'];
   const found = [];
   for (const name of readdirSync(dir).filter((n) => n.endsWith('.mjs') && !exempt.has(n))) {
     const text = readFileSync(join(dir, name), 'utf8');
@@ -276,29 +324,74 @@ test('the harness runs xdotool and its acting xprobe commands only through the d
     for (const m of text.matchAll(/\b(?:execFileSync|execFile|spawnSync|spawn)\(\s*XPROBE\s*,\s*\[\s*'([a-z-]+)'/g)) {
       if (!observers.includes(m[1])) found.push(`${name}: xprobe ${m[1]}`);
     }
+    // the fenced observers by any route: an argument list that starts with one, a wrapper's or a variable's included
+    for (const m of text.matchAll(/\[\s*'(grabs|retention|record-run)'/g)) found.push(`${name}: '${m[1]}'`);
   }
   assert.deepEqual(found, []);
 });
 
-test("the gedit and minimized scenes' windows of one engine are different documents, so neither rewrites the other's file", async () => {
-  // a desktop that records what it was asked to open (openScene's only calls for these two scenes)
-  const asked = [];
+test("xprobe retention redirects only a window the run opened: another's is refused before anything runs", async () => {
+  const { retentionTrials } = await import('../../scripts/linux-engine-diff/xtools.mjs');
+  const owner = { ownerOf: (id) => (id === MINE ? 'harness' : 'foreign') };
+  const ran = [];
+  const run = (cmd, args) => (ran.push(args), '{"trial":0}\n');
+  assert.throws(() => retentionTrials(owner, PERSON, 1, 400, 0, '/tmp/x', run), /only a window the harness opened; 0x00600002/);
+  assert.deepEqual(ran, []);
+  assert.deepEqual(retentionTrials(owner, MINE, 1, 400, 0, '/tmp/x', run), [{ trial: 0 }]);
+  assert.deepEqual(ran, [['retention', String(MINE), '1', '400', '0', '/tmp/x']]);
+});
+
+test("no two scenes' windows resolve to one label, so none shares another's title or scratch path (7fbe9e1c, generalized)", async () => {
+  // every scene a run can open, each with every role a run gives a scene window (run.mjs diffRun: the shared reading
+  // window, each engine's own, each engine's text window), through openScene's real choices; each opener records the
+  // label it would give its window (its title, and the name of its scratch file or directory) and stops there
+  const { SCENE_OPS } = await import('../../scripts/linux-engine-diff/ops.mjs');
+  const scenes = Object.keys(SCENE_OPS).filter((s) => s !== 'desktop' && s !== 'paste-target');
+  const roles = ['read', 'pinned', 'newest', 'cua', 'text_pinned', 'text_newest', 'text_cua'];
+  class Recorded extends Error {}
+  const named = new Map();
   const fake = {
-    async openGedit(role, content, options = {}) {
-      const label = ['cua171-diff', 'r', options.stem ?? 'gedit', role].join('-');
-      asked.push(label);
-      return { id: asked.length, label };
+    run: 'r',
+    nonce: 'n',
+    dir: '/scratch',
+    // the accessibility reader openScene makes for some scenes: not needed to name a window
+    oracle: {},
+    labels: [],
+    label(...parts) {
+      const label = Desktop.prototype.label.call(this, ...parts);
+      this.labels.push(label);
+      return label;
     },
-    async geditText() {
-      return 'text';
+    openGedit(role, content, { stem = 'gedit' } = {}) {
+      this.label(stem, role);
+      throw new Recorded();
     },
-    async listWindows() {
-      return asked.map((label, i) => ({ id: i + 1, app: 'org.gnome.gedit', width: 910, height: 756 }));
+    openChrome(role, page, { stem = page.replace(/\.html$/, '') } = {}) {
+      this.label(stem, role);
+      throw new Recorded();
+    },
+    openRecorder(role) {
+      this.label('recorder', role);
+      throw new Recorded();
+    },
+    // the Desktop's own, on to families.mjs openFamily, which names the window and stops at `assertOpen`
+    openFamilyScene: Desktop.prototype.openFamilyScene,
+    assertOpen() {
+      throw new Recorded();
     },
   };
-  await openScene(fake, 'gedit', 'cua');
-  await openScene(fake, 'minimized', 'cua');
-  assert.equal(new Set(asked).size, 2, `labels: ${asked.join(', ')}`);
+  for (const scene of scenes) {
+    for (const role of roles) {
+      fake.labels = [];
+      await assert.rejects(openScene(fake, scene, role, { text: role.startsWith('text_') }), Recorded, `${scene} ${role} opened something the test does not know`);
+      const label = fake.labels.at(-1);
+      const other = named.get(label);
+      assert.equal(other, undefined, `${scene} (${role}) and ${other} both open ${label}`);
+      named.set(label, `${scene} (${role})`);
+    }
+  }
+  // and the run's own windows
+  for (const own of [fake.label('front'), fake.label('holder'), fake.label('scene', 'stub')]) assert.equal(named.get(own), undefined, `${own} is also a scene's`);
 });
 
 test("the summary names the run's start and end active windows, its holder and its own trace's audit", () => {
@@ -310,4 +403,14 @@ test("the summary names the run's start and end active windows, its holder and i
   const bad = { ...record, trace: { clean: false, requests: 121, mutating: 15, foreign: ['_NET_ACTIVE_WINDOW ClientMessage on 0x00600002'] } };
   assert.match(desktopLine(bad), /\*\*1 change of a window it did not open: _NET_ACTIVE_WINDOW ClientMessage on 0x00600002\*\*/);
   assert.match(desktopLine(null), /\*\*the harness's own trace did not run\*\*/);
+  // the whole run's record, beside the trace
+  const recorded = { ...record, record: { clean: true, requests: 5000, mutating: 300, foreign: [], unplaced: 2, unattributed: { clients: 1, mutating: 0 } } };
+  assert.equal(
+    desktopLine(recorded),
+    `${desktopLine(record)}; the run's record: 5000 requests of the harness's and the engines' clients, 300 changes of a window, every one of its own; 2 XTEST inputs it could not place; 1 client it could not attribute (0 of its requests change a window)`,
+  );
+  const foreignRecord = { ...record, record: { clean: false, requests: 5000, mutating: 301, foreign: ['SendEvent KeyPress on 0x00600002 (cua-engine pid 7)'], unplaced: 0, unattributed: { clients: 0, mutating: 0 } } };
+  assert.match(desktopLine(foreignRecord), /the run's record: .*\*\*1 change of a window it did not open: SendEvent KeyPress on 0x00600002 \(cua-engine pid 7\)\*\*/);
+  const cut = { ...record, record: { clean: false, requests: 10, mutating: 0, foreign: [], unplaced: 0, unattributed: null, error: 'the record did not end cleanly, so it may be incomplete' } };
+  assert.match(desktopLine(cut), /the run's record: \*\*the record did not end cleanly, so it may be incomplete\*\*/);
 });

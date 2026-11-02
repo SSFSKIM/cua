@@ -16,7 +16,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { auditForeground, auditForeign, auditHeldRelease, auditNothingSent, auditRequests, foreignLine, parseXtrace, startProxy } from './audit.mjs';
+import { auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace, startProxy } from './audit.mjs';
+import { auditForeign, foreignLine } from './foreign.mjs';
 import { startMonitor } from './busmon.mjs';
 import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
 import { stacking, startOverlay, toplevel, waitQuarantineOver, within } from './clip.mjs';
@@ -382,9 +383,11 @@ async function measureSample(s, ctx) {
 
 /**
  * The negative check: the activate-and-restore stub engine, through the audit's proxy display, must fail both the
- * witness and the audit. Returns whether it did.
+ * witness and the audit. Its trace is judged for foreign windows too, like every engine's: the stub activates the
+ * harness's scene and restores the harness's front window, so a change of any other window is pushed to `foreign`.
+ * Returns whether it failed both.
  */
-export async function negativeCheck(desktop, witness, stubScene, emit, { audit = false } = {}) {
+export async function negativeCheck(desktop, witness, stubScene, emit, { audit = false, foreign = [] } = {}) {
   const proxy = audit ? await startProxy() : null;
   const stub = new Engine({ label: 'stub-activating', bin: join(here, 'stub-activating.mjs'), env: proxy?.env }).start();
   const { value, witness: w } = await witness.span('stub', () => stub.request('press_key', { window: { id: stubScene.id }, key: 'x' }));
@@ -392,9 +395,15 @@ export async function negativeCheck(desktop, witness, stubScene, emit, { audit =
   desktop.focusFront();
   const witnessFailed = !w.clean;
   let audited = null;
-  if (proxy) audited = auditRequests(parseXtrace(await proxy.stop()));
+  let stubForeign = [];
+  if (proxy) {
+    const trace = parseXtrace(await proxy.stop());
+    audited = auditRequests(trace);
+    stubForeign = auditForeign(trace, { registered: desktop.registry(), root: desktop.root }).foreign;
+    foreign.push(...stubForeign.map((f) => `stub-activating: ${foreignLine(f)}`));
+  }
   const auditFailed = audited ? !audited.clean && audited.traced : null;
-  emit({ kind: 'stub-check', ok: value.response.ok, witness: w, witness_failed_it: witnessFailed, audit: audited ? { traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.map((f) => f.what) } : null, audit_failed_it: auditFailed });
+  emit({ kind: 'stub-check', ok: value.response.ok, witness: w, witness_failed_it: witnessFailed, audit: audited ? { traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.map((f) => f.what), foreign: stubForeign.slice(0, 10).map(foreignLine) } : null, audit_failed_it: auditFailed });
   process.stdout.write(`negative check: the witness ${witnessFailed ? 'failed' : 'PASSED'} the activating stub (${w.fields.join(', ') || 'no change'})${audited ? `; the audit ${auditFailed ? 'failed' : 'PASSED'} it (${[...new Set(audited.forbidden.map((f) => f.what))].join(', ') || 'nothing forbidden'})` : ''}\n`);
   return witnessFailed && (auditFailed ?? true);
 }
@@ -598,7 +607,7 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
   if (scene === 'device-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role));
   // M4's T4: the minimized cases' windows (minimized.mjs), each restored to its size after a case withdraws it
   if (scene === 'minimized') return withApp(desktop, await desktop.openGedit(role, GEDIT_TEXT, { stem: 'minimized' }));
-  if (scene === 'minimized-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role));
+  if (scene === 'minimized-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role, { stem: 'minimized-xterm' }));
   if (scene === 'minimized-recorder') return withApp(desktop, await desktop.openRecorder(role));
   if (scene === 'device-qt') {
     const { openFamily } = await import('./families.mjs');
@@ -940,7 +949,7 @@ async function diffRun(args, candidate, { handoff }) {
     desktop.onStop(() => witness.stop());
     const busAddress = a11yBusAddress();
 
-    if (stubScene && !(await negativeCheck(desktop, witness, stubScene, emit, { audit: args.audit }))) valid = false;
+    if (stubScene && !(await negativeCheck(desktop, witness, stubScene, emit, { audit: args.audit, foreign: engineForeign }))) valid = false;
     // the foreground route's allowance, wherever a request is expected to take that route
     const foregroundPlanned = plan.some((p) => routeOf(p.op, p.scene) === 'foreground' || p.op === 'restore_refused');
     const isHarness = (w) => desktop.ownerOf(w) === 'harness';
@@ -1158,12 +1167,13 @@ async function diffRun(args, candidate, { handoff }) {
             'held-release': () => auditHeldRelease(trace, target.id, { route: OPS[op].holdRoute, marks: proxy.marks }),
           }[auditKind]();
           // whatever the operation's route, no request of the engine's may change a window the harness did not open
-          const foreign = auditForeign(trace, { isHarness: desktop.harnessPredicate(), root: desktop.root }).foreign;
+          const judgedForeign = auditForeign(trace, { registered: desktop.registry(), root: desktop.root });
+          const { foreign } = judgedForeign;
           engineForeign.push(...foreign.map((f) => `${spec.label} on ${sceneName} ${op}: ${foreignLine(f)}`));
           const clean = audited.clean && foreign.length === 0;
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
           audits[`${sceneName}|${op}|${spec.label}`] = { clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set([...audited.forbidden.map((f) => f.what), ...foreign.map(foreignLine)])] };
-          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine) });
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine), ...(judgedForeign.unplaced ? { xtest_unplaced: judgedForeign.unplaced } : {}) });
           desktop.focusFront();
         }
       }

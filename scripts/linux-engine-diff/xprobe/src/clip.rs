@@ -324,9 +324,27 @@ fn status(s: GrabStatus) -> &'static str {
     }
 }
 
+/// The root property that marks a private display the harness started (events.mjs `startPrivateX`): `grabs` runs only
+/// there, since it takes the root's pointer and keyboard for a moment, which on a person's display (`:0`) would take
+/// their input.
+pub const PRIVATE_MARK: &str = "CUA171_PRIVATE_DISPLAY";
+
+/// Whether the display is a private one the harness started: its root carries [`PRIVATE_MARK`] (a read).
+fn private_display(conn: &RustConnection, root: Window) -> Result<bool> {
+    let mark = conn.intern_atom(true, PRIVATE_MARK.as_bytes())?.reply()?.atom;
+    if mark == x11rb::NONE {
+        return Ok(false);
+    }
+    let value = conn.get_property(false, root, mark, AtomEnum::ANY, 0, 1)?.reply()?;
+    Ok(value.type_ != x11rb::NONE)
+}
+
 pub fn grabs() -> Result<()> {
     let (conn, screen) = x11rb::connect(None)?;
     let root = conn.setup().roots[screen].root;
+    if !private_display(&conn, root)? {
+        return Err(format!("grabs takes the pointer and the keyboard, so it runs only on a private display marked {PRIVATE_MARK}, never on a person's").into());
+    }
     let pointer = conn
         .grab_pointer(
             false,

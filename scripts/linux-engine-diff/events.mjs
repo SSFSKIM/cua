@@ -21,6 +21,7 @@ import { Engine } from './engine.mjs';
 import { XPROBE } from './scenes.mjs';
 import { median, noiseVerdict, speedLabel } from './stats.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
+import { PRIVATE_MARK } from './xtools.mjs';
 
 /** The verdicts of a passing group (stats.mjs `speedLabel`). */
 const PASSING = ['faster', 'same (within noise)', 'within the bound'];
@@ -271,6 +272,8 @@ async function startServer() {
     });
     child.once('exit', (code) => reject(new Error(`Xvfb exited (${code})`)));
   });
+  // marked private: the one kind of display where xprobe's `grabs` may take the pointer and the keyboard
+  execFileSync('xprop', ['-root', '-f', PRIVATE_MARK, '8s', '-set', PRIVATE_MARK, '1'], { env: { ...process.env, DISPLAY: display } });
   return { display, stop: () => child.kill('SIGTERM') };
 }
 

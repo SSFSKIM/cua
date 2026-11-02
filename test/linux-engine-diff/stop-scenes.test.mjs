@@ -41,14 +41,14 @@ test('a SIGTERM while a Chrome window is being discovered waits for it, closes t
   const chrome = fakeChrome();
   const log = join(chrome.dir, 'log');
   writeFileSync(log, '');
-  const title = 'cua171-diff-stoptest-scene-r - Google Chrome';
+  const title = 'cua171-diff-stoptest-n0-scene-r - Google Chrome';
   const script = join(chrome.dir, 'child.mjs');
   writeFileSync(
     script,
     `import { appendFileSync, existsSync } from 'node:fs';
 import { Desktop } from ${JSON.stringify(SCENES)};
 const reader = ${readerSource(chrome.asked, title, 300)};
-const desktop = new Desktop({ cua: 'unused', run: 'stoptest', reader, startActive: 0 });
+const desktop = new Desktop({ cua: 'unused', run: 'stoptest', reader, startActive: 0, nonce: 'n0' });
 // nothing listed by its title yet when the signal comes: only the discovery can find it
 desktop.findByTitle = () => [];
 desktop.closeWindow = (id) => appendFileSync(${JSON.stringify(log)}, 'close ' + id + '\\n');
@@ -101,8 +101,8 @@ test('a Chrome window whose discovery failed is closed by its title', async () =
   const saved = process.env.PATH;
   process.env.PATH = chrome.env.PATH;
   const closed = [];
-  const desktop = new Desktop({ cua: 'unused', run: 'stoptest3', reader: { request: async () => ({ response: { ok: false, error: 'reader gone' } }), close: async () => {} }, startActive: 0 });
-  desktop.findByTitle = (title) => (title === 'cua171-diff-stoptest3-scene-r - Google Chrome' ? [77] : []);
+  const desktop = new Desktop({ cua: 'unused', run: 'stoptest3', nonce: 'n0', reader: { request: async () => ({ response: { ok: false, error: 'reader gone' } }), close: async () => {} }, startActive: 0 });
+  desktop.findByTitle = (title) => (title === 'cua171-diff-stoptest3-n0-scene-r - Google Chrome' ? [77] : []);
   desktop.closeWindow = (id) => closed.push(id);
   try {
     await assert.rejects(desktop.openChrome('r', 'scene.html'), /list_windows failed: reader gone/);

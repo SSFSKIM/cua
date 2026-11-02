@@ -32,8 +32,9 @@ import { qtBridge } from './qt-bridge.mjs';
 import { engineReadiness } from './readiness-check.mjs';
 import { analyzeTrial } from './readiness.mjs';
 import { writeSummary } from './report.mjs';
-import { Desktop, GEOMETRY, XPROBE, desktopEnding } from './scenes.mjs';
+import { Desktop, GEOMETRY, desktopEnding } from './scenes.mjs';
 import { median } from './stats.mjs';
+import { retentionTrials } from './xtools.mjs';
 
 /** The fixed wait before a window's first capture (Decision Log, M0.3), and the margin M0.4 holds it to. */
 export const CAPTURE_WAIT_MS = 40;
@@ -47,10 +48,6 @@ const pct = (xs, p) => {
   return s.length ? s[Math.min(s.length - 1, Math.ceil((p / 100) * s.length) - 1)] : null;
 };
 
-function retentionTrials(window, trials, spanMs, gapMs, dump) {
-  const text = execFileSync(XPROBE, ['retention', String(window), String(trials), String(spanMs), String(gapMs), dump], { encoding: 'utf8', timeout: 600000 });
-  return text.trim().split('\n').map((l) => JSON.parse(l));
-}
 
 /** How many interim (pre-ready) captures were mostly black, of all interim captures. */
 function interim(analyzed) {
@@ -94,7 +91,7 @@ async function captureReadiness(desktop, emit, { families, trials = 20, spanMs =
       desktop.arrangeFront(condition);
       if (condition === 'visible') desktop.raise(scene);
       await sleep(800);
-      const raw = retentionTrials(scene.id, trials, spanMs, gapMs, join(desktop.dir, `${scene.name}-${condition}`));
+      const raw = retentionTrials(desktop, scene.id, trials, spanMs, gapMs, join(desktop.dir, `${scene.name}-${condition}`));
       const analyzed = raw.map((t) => analyzeTrial(t, { pollMs: POLLS }));
       // the window's real contents: what it shows visible and redirected, at the end of every visible trial
       if (condition === 'visible') truth.hash = analyzed.every((a) => a.final === analyzed[0].final) ? analyzed[0].final : null;

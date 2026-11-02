@@ -35,7 +35,7 @@ function setup(run, windows, { logs = true } = {}) {
   const out = join(dir, 'out');
   const saved = process.env.PATH;
   process.env.PATH = `${dir}${delimiter}${saved}`;
-  const desktop = new Desktop({ cua: 'unused', run, reader: reader(windows), startActive: 0, ...(logs ? { logs: out } : {}) });
+  const desktop = new Desktop({ cua: 'unused', run, reader: reader(windows), startActive: 0, nonce: 'n0', ...(logs ? { logs: out } : {}) });
   desktop.place = () => {};
   desktop.waitForTree = async () => {};
   desktop.arrangeFront = () => {};
@@ -49,7 +49,7 @@ function setup(run, windows, { logs = true } = {}) {
 }
 
 test("gedit's stderr lands in the run's output directory and outlives the run's own scratch directory", async () => {
-  const s = setup('applogs1', () => [{ id: 9, app: 'org.gnome.gedit', title: 'cua171-diff-applogs1-gedit-r.txt - gedit' }]);
+  const s = setup('applogs1', () => [{ id: 9, app: 'org.gnome.gedit', title: 'cua171-diff-applogs1-n0-gedit-r.txt - gedit' }]);
   try {
     fakeApp(s.dir, 'gedit', '(gedit:1): Gtk-CRITICAL **: gtk_text_buffer_insert: assertion failed');
     const scene = await s.desktop.openGedit('r', 'cua171 text');
@@ -64,7 +64,7 @@ test("gedit's stderr lands in the run's output directory and outlives the run's 
 });
 
 test('a window reopened under the same label (the backstop) appends to its log', async () => {
-  const s = setup('applogs2', () => [{ id: 9, app: 'org.gnome.gedit', title: 'cua171-diff-applogs2-gedit-r.txt - gedit' }]);
+  const s = setup('applogs2', () => [{ id: 9, app: 'org.gnome.gedit', title: 'cua171-diff-applogs2-n0-gedit-r.txt - gedit' }]);
   try {
     fakeApp(s.dir, 'gedit', 'first window');
     const scene = await s.desktop.openGedit('r', 'cua171 text');
@@ -92,7 +92,7 @@ test("the front window's stderr is kept, and an application that said nothing le
     writeFileSync(join(s.dir, 'gedit'), '#!/bin/sh\nexit 0\n');
     chmodSync(join(s.dir, 'gedit'), 0o755);
     label = null;
-    const windows = [{ id: 9, app: 'org.gnome.gedit', title: 'cua171-diff-applogs3-gedit-q.txt - gedit' }];
+    const windows = [{ id: 9, app: 'org.gnome.gedit', title: 'cua171-diff-applogs3-n0-gedit-q.txt - gedit' }];
     s.desktop.reader = reader(() => windows);
     const quiet = await s.desktop.openGedit('q', 'cua171 text');
     await sleep(100);
@@ -105,7 +105,7 @@ test("the front window's stderr is kept, and an application that said nothing le
 });
 
 test('without a log directory nothing is written (the applications are discarded as before)', async () => {
-  const s = setup('applogs4', () => [{ id: 9, app: 'org.gnome.gedit', title: 'cua171-diff-applogs4-gedit-r.txt - gedit' }], { logs: false });
+  const s = setup('applogs4', () => [{ id: 9, app: 'org.gnome.gedit', title: 'cua171-diff-applogs4-n0-gedit-r.txt - gedit' }], { logs: false });
   try {
     fakeApp(s.dir, 'gedit', 'nowhere');
     await s.desktop.openGedit('r', 'cua171 text');

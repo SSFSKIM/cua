@@ -31,7 +31,20 @@ export function desktopLine(record) {
     : trace.clean
       ? 'every one of its own'
       : '**it recorded no request, so its requests went unaudited**';
-  return `desktop: started with ${activeText(record.active_start)}, ended with ${activeText(record.active_end)}, neither acted on; holder ${record.holder ? windowId(record.holder) : 'none'}; the harness's own trace: ${trace.requests} requests, ${changes}, ${audit}`;
+  const line = `desktop: started with ${activeText(record.active_start)}, ended with ${activeText(record.active_end)}, neither acted on; holder ${record.holder ? windowId(record.holder) : 'none'}; the harness's own trace: ${trace.requests} requests, ${changes}, ${audit}`;
+  return record.record ? `${line}; ${recordText(record.record)}` : line;
+}
+
+const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/** The whole run's record (foreign.mjs `auditRecord`) in the desktop line. */
+function recordText(r) {
+  if (r.error) return `the run's record: **${r.error}**`;
+  const verdict = r.foreign.length ? `**${plural(r.foreign.length, 'change')} of a window it did not open: ${r.foreign.join('; ')}**` : 'every one of its own';
+  const notes = [];
+  if (r.unplaced) notes.push(`${plural(r.unplaced, 'XTEST input')} it could not place`);
+  if (r.unattributed?.clients) notes.push(`${plural(r.unattributed.clients, 'client')} it could not attribute (${r.unattributed.mutating} of ${r.unattributed.clients === 1 ? 'its' : 'their'} requests change a window)`);
+  return [`the run's record: ${r.requests} requests of the harness's and the engines' clients, ${plural(r.mutating, 'change')} of a window, ${verdict}`, ...notes].join('; ');
 }
 const frac = (rows, key) => {
   const known = rows.filter((r) => typeof r[key] === 'boolean');

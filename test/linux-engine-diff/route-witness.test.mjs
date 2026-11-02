@@ -29,8 +29,19 @@ function fakeWitness(reports) {
     },
   };
 }
-const probes = (held = { pointer: 'free', keyboard: 'free' }) => ({ toplevel: () => FRAME, grabs: () => held });
-const run = (witness, held) => routeWitness(witness, 'case', TARGET, 'background', async () => inFrontStats, { inFront: true, probes: probes(held) });
+// the grab watch's record (clip.mjs `watchGrabs`, RECORD): a keyboard grab granted and never released
+const KEYBOARD_HELD = [
+  { kind: 'grab_keyboard', client: 0x600000, window: ROOT },
+  { kind: 'grab_keyboard_reply', client: 0x600000, status: 0 },
+];
+const probes = (lines = [], log = []) => ({
+  toplevel: () => FRAME,
+  watchGrabs: async () => {
+    log.push('watch');
+    return { stop: async () => (log.push('stop'), lines), kill: () => log.push('kill') };
+  },
+});
+const run = (witness, lines, log) => routeWitness(witness, 'case', TARGET, 'background', async () => inFrontStats, { inFront: true, probes: probes(lines, log) });
 
 test('an in-front request is followed by the post-request check: a quiet span and no grab left', async () => {
   const witness = fakeWitness([quietReport(), quietReport()]);
@@ -40,7 +51,7 @@ test('an in-front request is followed by the post-request check: a quiet span an
 });
 
 test('an in-front request that leaves a keyboard grab held fails, and so does its device verdict', async () => {
-  const result = await run(fakeWitness([quietReport(), quietReport()]), { pointer: 'free', keyboard: 'grabbed' });
+  const result = await run(fakeWitness([quietReport(), quietReport()]), KEYBOARD_HELD);
   assert.equal(result.judged.clean, false);
   assert.ok(result.judged.fields.some((f) => f.startsWith('grab left')), JSON.stringify(result.judged.fields));
   const row = { block: 1, i: 0, ok: true, effect: true, dnd: { in_front: true }, desktop_same: true, witness: result.judged.clean };
@@ -68,4 +79,40 @@ test('a request not recorded as in front gets no allowance and no post-request s
   const result = await routeWitness(witness, 'case', TARGET, 'background', async () => ({ stats: { route: 'background', dnd: { in_front: false } } }), { inFront: true, probes: probes() });
   assert.equal(result.judged.clean, true);
   assert.deepEqual(witness.tags, ['case']);
+});
+
+test("the grab check reads the server's record of grabs and never takes the pointer or the keyboard itself", async () => {
+  const log = [];
+  // granted then released, and one refused: nothing left
+  const released = [...KEYBOARD_HELD, { kind: 'ungrab_keyboard', client: 0x600000 }, { kind: 'grab_pointer', client: 0x800000, window: ROOT }, { kind: 'grab_pointer_reply', client: 0x800000, status: 1 }];
+  assert.equal((await run(fakeWitness([quietReport(), quietReport()]), released, log)).judged.clean, true);
+  assert.deepEqual(log, ['watch', 'stop'], 'the watch began before the request and ended after the quiet span');
+  // an XInput 2 grab of the master pointer, never released
+  const xi = [{ kind: 'xi_grab_device', client: 0x600000, window: ROOT, device: 2 }, { kind: 'xi_grab_device_reply', client: 0x600000, status: 0 }];
+  assert.ok((await run(fakeWitness([quietReport(), quietReport()]), xi)).judged.fields.some((f) => f.startsWith('grab left')));
+});
+
+test('the grab watch is ended even when the request throws, and only a request with an allowance starts one', async () => {
+  const log = [];
+  const failing = async () => {
+    throw new Error('the engine failed');
+  };
+  await assert.rejects(routeWitness(fakeWitness([]), 'case', TARGET, 'background', failing, { inFront: true, probes: probes([], log) }), /the engine failed/);
+  assert.deepEqual(log, ['watch', 'kill']);
+  const none = [];
+  await routeWitness(fakeWitness([quietReport()]), 'case', TARGET, 'background', async () => inFrontStats, { probes: probes([], none) });
+  assert.deepEqual(none, [], 'a plain background request watches no grabs');
+});
+
+test('grabsIn: a grab is in force from its granted reply to its own ungrab, per client and kind', async () => {
+  const { grabsIn } = await import('../../scripts/linux-engine-diff/clip.mjs');
+  assert.deepEqual(grabsIn([]), { pointer: 'free', keyboard: 'free', held: [], granted: [] });
+  const held = grabsIn(KEYBOARD_HELD);
+  assert.equal(held.keyboard, 'grabbed');
+  assert.equal(held.pointer, 'free');
+  // another client's ungrab does not release it
+  assert.equal(grabsIn([...KEYBOARD_HELD, { kind: 'ungrab_keyboard', client: 0x800000 }]).keyboard, 'grabbed');
+  // an XInput 2 grab of a device the watch cannot name counts as both
+  const other = grabsIn([{ kind: 'xi_grab_device', client: 1, device: 9 }, { kind: 'xi_grab_device_reply', client: 1, status: 0 }]);
+  assert.deepEqual([other.pointer, other.keyboard], ['grabbed', 'grabbed']);
 });

@@ -9,21 +9,28 @@
 // the harness's, and acts on neither. A run that begins with a foreign window active first opens and activates a holder
 // window of its own, kept until every other window of the run's is closed, so the window manager's focus fallback lands
 // on the harness's windows throughout; when the holder closes, what the window manager activates is its own doing. The
-// harness's X tools reach the display through the run's own trace (xtools.mjs), whose audit (audit.mjs `auditForeign`)
-// the run's end judges against the windows the harness registered.
+// harness's X tools reach the display through the run's own trace (xtools.mjs), and the whole run is recorded
+// server-side through RECORD (`startRunRecord`); the run's end judges both (foreign.mjs `auditForeign`, `auditRecord`)
+// against the windows the harness registered, each with when it was found.
+//
+// Whose a window is starts here: every title the harness gives a window carries the run's label and a random nonce of
+// its own (`label`), and a window that existed before the run began is never found or adopted, whatever its title
+// (`preexisting`), so a window of the person's can never be taken for one of the run's (T4b's audit round).
 
 import { execFileSync, spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { auditForeign, foreignLine, parseXtrace, startProxy } from './audit.mjs';
+import { parseXtrace, startProxy } from './audit.mjs';
 import { Engine } from './engine.mjs';
+import { auditForeign, auditRecord, foreignLine } from './foreign.mjs';
 import { preorder } from './normalize.mjs';
 import { cleanupOnStop } from './stop.mjs';
-import { spawnXprobe, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
+import { spawnXprobe, startRunRecord, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
 
 export { XPROBE, xdotool };
 
@@ -44,15 +51,10 @@ export function rootWindow() {
   return Number.parseInt(text.match(/Window id: (0x[0-9a-f]+)/i)[1], 16);
 }
 
-/** A window's parent, or null when it no longer exists (`xwininfo`, a read). */
-function parentOf(id) {
-  try {
-    const text = execFileSync('xwininfo', ['-id', String(id), '-children'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    const match = text.match(/Parent window id: (0x[0-9a-f]+)/i);
-    return match ? Number.parseInt(match[1], 16) : null;
-  } catch {
-    return null;
-  }
+/** Every window on the display, top-levels and their descendants (`xwininfo -root -tree`, a read). */
+export function allWindows() {
+  const text = execFileSync('xwininfo', ['-root', '-tree'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  return [...text.matchAll(/^\s+(0x[0-9a-f]+)/gim)].map((m) => Number.parseInt(m[1], 16));
 }
 
 /**
@@ -93,26 +95,41 @@ export const GEOMETRY = { gedit: [910, 756], chrome: [1050, 780], recorder: [600
  */
 export function desktopEnding(ending) {
   if (!ending) return { record: null, foreign: ["the harness: its trace did not run, so its requests went unaudited"] };
-  const { audit } = ending;
+  const { audit, record } = ending;
   const foreign = audit.foreign.map((f) => `the harness: ${foreignLine(f)}`);
   if (!audit.traced) foreign.push(`the harness: its trace recorded no request${audit.error ? ` (${audit.error})` : ''}, so its requests went unaudited`);
+  // the whole run's record: every request of the harness's and the engines' clients, sampled by an audit pass or not
+  foreign.push(...record.foreign.map((f) => `the run's record: ${foreignLine(f)}`));
+  if (!record.traced) foreign.push(`the run's record: ${record.error ?? 'it did not run'}, so the run's requests went unjudged`);
   return {
-    record: { active_start: ending.start, active_end: ending.end, holder: ending.holder, trace: { clean: audit.clean, requests: audit.requests, mutating: audit.mutating, foreign: audit.foreign.slice(0, 10).map(foreignLine) } },
+    record: {
+      active_start: ending.start,
+      active_end: ending.end,
+      holder: ending.holder,
+      trace: { clean: audit.clean, requests: audit.requests, mutating: audit.mutating, foreign: audit.foreign.slice(0, 10).map(foreignLine), unplaced: audit.unplaced ?? 0 },
+      record: { clean: record.clean, requests: record.requests, mutating: record.mutating, foreign: record.foreign.slice(0, 10).map(foreignLine), unplaced: record.unplaced ?? 0, unattributed: record.unattributed ?? null, ...(record.error ? { error: record.error } : {}) },
+    },
     foreign,
   };
 }
 
 export class Desktop {
   /**
-   * `reader` and `startActive`: the display-free tests' own (stop.test.mjs); a run's are the defaults. `logs`: the
+   * `reader`, `startActive` and `nonce`: the display-free tests' own (stop.test.mjs); a run's are the defaults. `logs`: the
    * run's output directory, where the scene applications' stderr is kept (`spawnApp`); without it, it is discarded.
    * A run calls `begin` before it opens anything.
    */
-  constructor({ cua, run, reader, startActive, logs }) {
+  constructor({ cua, run, reader, startActive, logs, nonce }) {
     this.run = run;
     this.dir = mkdtempSync(join(tmpdir(), `cua171-diff-${run}-`));
     this.logs = logs ? join(logs, 'apps') : null;
     this.reader = reader ?? new Engine({ label: 'reader', bin: cua }).start();
+    // in every title the harness gives a window: a window of another's can never carry it, whatever its run label
+    this.nonce = nonce ?? randomBytes(4).toString('hex');
+    // the windows on the display before the run began (`begin`): never found and never adopted, whatever their title
+    this.preexisting = new Set();
+    // when each window of the run's was found, every time (ms since the epoch): the record judges the life it had then
+    this.found = new Map();
     // every window the harness asked for, registered before it is asked for (so a stop finds it), its id once found
     this.windows = [];
     // the windows closed since: still the harness's own for the audit of its trace
@@ -134,22 +151,45 @@ export class Desktop {
   }
 
   /**
-   * The run's start: its own trace, through which every X tool of the harness's then connects (xtools.mjs), and, when
-   * the window found active is foreign, the holder opened and activated before anything else. `startTrace` is the
+   * The run's start: the windows already on the display (never the run's), the whole run's record, its own trace,
+   * through which every X tool of the harness's then connects (xtools.mjs), and, when the window found active is
+   * foreign, the holder opened and activated before anything else. `startTrace`, `startRecord` and `existing` are the
    * display-free tests' own. Returns the window found active, marked.
    */
-  async begin({ startTrace = startProxy } = {}) {
+  async begin({ startTrace = startProxy, startRecord = startRunRecord, existing = allWindows } = {}) {
     this.root = rootWindow();
-    this.trace = await startTrace();
+    this.preexisting = new Set(existing());
+    this.record = await startRecord();
+    try {
+      this.trace = await startTrace();
+    } catch (error) {
+      await this.record.stop();
+      this.record = null;
+      throw error;
+    }
     useHarnessDisplay(this.trace.env);
     if (this.ownerOf(this.startActive) === 'foreign') await this.openHolder();
     return this.activeRecord(this.startActive);
   }
 
-  /** Every window id the harness opened in this run: the windows it registered, closed ones included. */
-  harnessIds() {
+  /**
+   * Every window the harness opened in this run, closed ones included, with each time it was found (ms since the epoch, or
+   * null where it was registered without being found): the windows it registered and those it adopted by title.
+   */
+  registry() {
     const ids = [...this.windows, ...this.closed].map((w) => w.id).filter((id) => Number.isSafeInteger(id) && id > 0);
-    return new Set([...ids, ...this.adopted]);
+    return new Map([...ids, ...this.adopted].map((id) => [id, this.found.get(id) ?? null]));
+  }
+
+  /** A window of the run's found now: each finding is kept, since a window reopened may get the id of the one it replaced. */
+  foundNow(id) {
+    if (!this.found.has(id)) this.found.set(id, []);
+    this.found.get(id).push(Date.now());
+  }
+
+  /** Every window id the harness opened in this run. */
+  harnessIds() {
+    return new Set(this.registry().keys());
   }
 
   /** `harness` for a window the run opened, `foreign` for any other, `none` for no window. */
@@ -160,31 +200,6 @@ export class Desktop {
 
   activeRecord(id) {
     return { id, owner: this.ownerOf(id) };
-  }
-
-  /**
-   * Whether a window an X request names is the harness's: one it registered (its own windows and the scene
-   * applications'), or a window inside one of them (the child an engine's background event is addressed to), found
-   * by walking its parents on the display. A window gone by then is not found, so it counts as foreign: the judgement
-   * fails closed. One predicate per audit, its walks cached.
-   */
-  harnessPredicate() {
-    const ids = this.harnessIds();
-    const known = new Map();
-    return (id) => {
-      if (ids.has(id)) return true;
-      if (!known.has(id)) {
-        let found = false;
-        for (let at = parentOf(id), depth = 0; at && at !== this.root && depth < 64; at = parentOf(at), depth++) {
-          if (ids.has(at)) {
-            found = true;
-            break;
-          }
-        }
-        known.set(id, found);
-      }
-      return known.get(id);
-    };
   }
 
   /** The holder: a terminal of the harness's own, placed in the front window's corner and activated. */
@@ -280,11 +295,11 @@ export class Desktop {
     return opened;
   }
 
-  /** The harness's Chrome windows titled `title` (`xdotool`, no reader needed). */
+  /** The harness's Chrome windows titled `title` (`xdotool`, no reader needed), never one that was there before the run. */
   findByTitle(title) {
     try {
       const pattern = `^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`;
-      return xdotool('search', '--name', pattern).split('\n').filter(Boolean).map(Number);
+      return xdotool('search', '--name', pattern).split('\n').filter(Boolean).map(Number).filter((id) => !this.preexisting.has(id));
     } catch {
       // none
       return [];
@@ -300,8 +315,9 @@ export class Desktop {
     }
   }
 
+  /** A title of the run's own: its run label and its nonce, then the parts. */
   label(...parts) {
-    return ['cua171-diff', this.run, ...parts].join('-');
+    return ['cua171-diff', this.run, this.nonce, ...parts].join('-');
   }
 
   async listWindows() {
@@ -310,11 +326,17 @@ export class Desktop {
     return response.output;
   }
 
+  /**
+   * The one window `match` finds among those the run did not find on the display at its start, recorded as found now.
+   */
   async waitForWindow(match, what, timeoutMs = 20000) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const found = (await this.listWindows()).filter(match);
-      if (found.length === 1) return found[0];
+      const found = (await this.listWindows()).filter((w) => !this.preexisting.has(w.id) && match(w));
+      if (found.length === 1) {
+        this.foundNow(found[0].id);
+        return found[0];
+      }
       await sleep(250);
     }
     throw new Error(`${what} did not appear as exactly one window`);
@@ -550,11 +572,11 @@ export class Desktop {
   }
 
   /** A family's window (families.mjs) as a scene: its application started, sized and settled. */
-  async openFamilyScene(name, role) {
+  async openFamilyScene(name, role, { stem } = {}) {
     const { openFamily } = await import('./families.mjs');
     const { Oracle } = await import('./oracle.mjs');
     this.oracle ??= new Oracle();
-    return openFamily(this, this.oracle, name, role);
+    return openFamily(this, this.oracle, name, role, stem ? { stem } : {});
   }
 
   /** The scene page's counters: clicks, keys, the last key and the typed sequence. */
@@ -586,6 +608,7 @@ export class Desktop {
           for (const id of scene.id ? [scene.id] : this.findByTitle(scene.title)) {
             // found by its title, unique to the run: the harness's own, though its id was never registered
             this.adopted.add(id);
+            this.foundNow(id);
             this.closeWindow(id);
           }
         }
@@ -630,7 +653,10 @@ export class Desktop {
     this.unhookStop();
   }
 
-  /** The trace stopped and audited, the harness's tools back on the session's display, and the run's end recorded. */
+  /**
+   * The trace and the record stopped and audited, the harness's tools back on the session's display, and the run's end
+   * recorded.
+   */
   async finishTrace() {
     let end = null;
     try {
@@ -638,15 +664,22 @@ export class Desktop {
     } catch {
       // unreadable: recorded as unknown
     }
+    const registered = this.registry();
     let audit;
     try {
       const text = await this.trace.stop();
-      audit = auditForeign(parseXtrace(text), { isHarness: this.harnessPredicate(), root: this.root });
+      audit = auditForeign(parseXtrace(text), { registered, root: this.root });
     } catch (error) {
       audit = { clean: false, traced: false, requests: 0, mutating: 0, foreign: [], error: error.message };
     } finally {
       useHarnessDisplay(null);
     }
-    return { start: this.activeRecord(this.startActive), end: end === null ? null : this.activeRecord(end), holder: this.holder?.id ?? null, audit };
+    let record;
+    try {
+      record = auditRecord(await this.record.stop(), { registered, root: this.root });
+    } catch (error) {
+      record = { clean: false, traced: false, requests: 0, mutating: 0, foreign: [], error: error.message };
+    }
+    return { start: this.activeRecord(this.startActive), end: end === null ? null : this.activeRecord(end), holder: this.holder?.id ?? null, audit, record };
   }
 }

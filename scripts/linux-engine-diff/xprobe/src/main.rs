@@ -8,7 +8,8 @@
 //!   line with every change seen in the span, the root's children when it began (`tree`) and those events
 //!   (`restacks`); with `FocusChange` on the root and every root child it records every focus transition and every
 //!   `_NET_ACTIVE_WINDOW` activation request (`focus.rs`, `focus`).
-//! - `xprobe retention <window> [trials] [span-ms] [gap-ms] [dump-prefix]`: redirects the window through Composite, captures it
+//! - `xprobe retention <window> [trials] [span-ms] [gap-ms] [dump-prefix]`: redirects the window (one the harness opened:
+//!   xtools.mjs `retentionTrials` refuses any other) through Composite, captures it
 //!   with `GetImage` as fast as it can for the span, unredirects, and prints one JSON line per trial with the
 //!   moments the captured contents changed (a hash of the colour bytes and the black fraction, never pixels).
 //! - `xprobe imgdiff <a.jpg> <b.jpg> [mask-top-rows]`: sizes, mean absolute difference and differing pixels of two
@@ -23,7 +24,8 @@
 //! - `xprobe record <x> <y> <width> <height> [focus] [managed <title>]`: a recorder window that prints the input events
 //!   it receives (`record.rs`).
 //! - `xprobe clip-own <text>`, `clip-read`, `grabs`, `within <window> <ancestor>`: the clipboard owner and reader and
-//!   the desktop checks of M2's text cases (`clip.rs`).
+//!   the desktop checks of M2's text cases (`clip.rs`); `grabs` takes the root's pointer and keyboard to ask, so it
+//!   runs only on a private display marked `CUA171_PRIVATE_DISPLAY`, never on a person's.
 //! - `xprobe toplevel <window>`, `restack-grabbed <window>...`, `popup …`, `overlay …`: a window's top-level, the coalesced
 //!   negative check's raises under one server grab, another client's popup, and a lasting overlay (`restack.rs`).
 //! - `xprobe focus-grabbed <window>...`: the focus and `_NET_ACTIVE_WINDOW` set to each window in turn under one
@@ -37,6 +39,8 @@
 //!   pointer, until stdin closes (`crossing.rs`).
 //! - `xprobe cursor-watch`: every change of the displayed cursor with its theme name, through XFixes, until stdin
 //!   closes (`cursor.rs`).
+//! - `xprobe record-run --ours <pid>`: every client's requests that can change a window, for a whole harness run,
+//!   each client attributed to the harness or not, through RECORD, until stdin closes (`whole.rs`).
 
 mod clip;
 mod collector;
@@ -47,6 +51,7 @@ mod focus;
 mod record;
 mod requests;
 mod restack;
+mod whole;
 
 use std::io::{BufRead, Write};
 use std::sync::mpsc;
@@ -90,7 +95,8 @@ fn main() {
         Some("request-watch") if args.len() == 1 => requests::request_watch(),
         Some("crossing-watch") if args.len() == 1 => crossing::crossing_watch(),
         Some("cursor-watch") if args.len() == 1 => cursor::cursor_watch(),
-        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | snap <window> <out.jpg> | close <window> | record <x> <y> <w> <h> [focus] [managed <title>] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | overlay <x> <y> <w> <h> [below <window>] | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch | crossing-watch | cursor-watch".into()),
+        Some("record-run") => whole::record_run(&args[1..]),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | snap <window> <out.jpg> | close <window> | record <x> <y> <w> <h> [focus] [managed <title>] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | overlay <x> <y> <w> <h> [below <window>] | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch | crossing-watch | cursor-watch | record-run --ours <pid> [--exe <name>,...]".into()),
     };
     if let Err(error) = result {
         eprintln!("xprobe: {error}");

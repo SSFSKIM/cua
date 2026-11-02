@@ -12,7 +12,7 @@ export const USAGE = `usage:
       [--dev] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
   linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd --cua <bin> --out <dir> [--run <name>]
-      [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--grab-at-ms N] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
+      [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
@@ -77,12 +77,6 @@ export function parseArgs(argv) {
       a.prelude = 'dedicated';
     }
     // measurement only: another client's momentary pointer and keyboard grab, that long after each cold drag is sent
-    else if (flag === '--grab-at-ms') {
-      const n = Number(need());
-      if (!Number.isInteger(n) || n < 0) throw new Error('--grab-at-ms needs a whole number of ms, 0 or more');
-      a.grabAtMs = n;
-    }
-    // measurement only: a pointer event that is not the drag's, `<nudge|popup>:<ms>` after each cold drag is sent
     else if (flag === '--stray') {
       const m = need().match(/^(nudge|popup):(\d+)$/);
       if (!m) throw new Error('--stray needs nudge:<ms> or popup:<ms>');
@@ -132,7 +126,7 @@ export function parseArgs(argv) {
     } else throw new Error(`unknown argument ${flag}\n${USAGE}`);
   }
   if (a.experiment) a.mode = 'experiment';
-  for (const [key, flag] of [['coverMs', '--cover-ms'], ['prelude', '--prelude'], ['ballast', '--ballast'], ['grabAtMs', '--grab-at-ms'], ['stray', '--stray'], ['parkPointer', '--park-pointer']]) {
+  for (const [key, flag] of [['coverMs', '--cover-ms'], ['prelude', '--prelude'], ['ballast', '--ballast'], ['stray', '--stray'], ['parkPointer', '--park-pointer']]) {
     if (a[key] !== undefined && !a.dndCold) throw new Error(`${flag} is the cold drag-and-drop run's (--dnd-cold)`);
   }
   if (a.dndCold) a.coverMs ??= 0;

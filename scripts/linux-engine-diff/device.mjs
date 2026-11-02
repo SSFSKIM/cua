@@ -225,25 +225,29 @@ export async function cornerOverlay(ctx, g, start = startOverlay) {
 /** The corner overlay's side, px. */
 const CORNER = 40;
 
-/** The real pointer's place on the screen. */
-function pointerAt() {
-  const out = xdotool('getmouselocation', '--shell');
+/** The real pointer's place on the screen, and the window under it (`xdotool getmouselocation`: the client window). */
+function pointerAt(tool = xdotool) {
+  const out = tool('getmouselocation', '--shell');
   const get = (k) => Number(out.match(new RegExp(`^${k}=(-?\\d+)`, 'm'))?.[1]);
-  return { x: get('X'), y: get('Y') };
-}
-
-/**
- * The real pointer parked at a screen point for the sample, and put back where the case found it by the sample's cleanup
- * (outside every span), so the cases after it find it where they did before.
- */
-function parkPointer(ctx, point) {
-  const found = pointerAt();
-  ctx.dispose(() => xdotool('mousemove', found.x, found.y));
-  xdotool('mousemove', point.x, point.y);
+  return { x: get('X'), y: get('Y'), window: get('WINDOW') };
 }
 
 /** The front window's middle, in its corner in the visible arrangement (scenes.mjs `arrangeFront`): outside Chrome. */
 const OUTSIDE = { x: 1170, y: 715 };
+
+/**
+ * The real pointer parked at a screen point for the sample, and put back by the sample's cleanup (outside every span)
+ * where the case found it, so the cases after it find it where they did before; but only onto a window the run opened.
+ * Found over another's (the person's, at the run's first case), it is parked on the front window instead: moving it
+ * back would be a motion into a window the harness did not open (T4b's audit round, as the design session ruled for
+ * the active window found at the start).
+ */
+export function parkPointer(ctx, point, { tool = xdotool } = {}) {
+  const found = pointerAt(tool);
+  const back = ctx.desktop.ownerOf(found.window) === 'harness' ? found : OUTSIDE;
+  ctx.dispose(() => tool('mousemove', back.x, back.y));
+  tool('mousemove', point.x, point.y);
+}
 /**
  * Where a Chromium case that takes the background route parks the real pointer, window-relative, away from every path
  * and every cover: a Chromium drag needs the pointer in its window (task 20: Chrome's capture grab crosses in from a

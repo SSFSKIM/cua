@@ -208,23 +208,50 @@ variants included; their evidence is written either way. The run's `end` row kee
   by the opcode the server reported for XTEST, minor 2). The verdict needs cua's audit clean wherever a vendor
   build's witness or audit is. The negative check drives the stub through a proxy too, and the run is valid only when
   the witness and the audit both fail it. `--no-audit` leaves the pass out.
-- **Windows the harness did not open** (the design session, 2026-11-02; `scenes.mjs`, `xtools.mjs`, `audit.mjs`
-  `auditForeign`): no request of the harness's, or of an engine it drives, may change a window the harness did not
-  open (activate, focus, configure, map or unmap, destroy, reparent, kill, warp into, or any SendEvent or client
-  message to it; a `SelectionNotify` answering the window's own clipboard request is no change of it). The window
-  found active at the start is recorded and never activated again. A run that starts with a foreign window active
-  first opens and activates a holder (an xterm in the front window's corner), closed after every other window of the
-  run's; what the window manager activates then is its own doing. `Desktop.begin` starts the run's own xtrace proxy,
-  and every `xdotool` and every xprobe command but the observers (the witness, the RECORD and selection watches,
-  `retention`, `snap`, `imgdiff`, `grabs`) connects through it (`xtools.mjs`; a test keeps it so). The harness's
-  windows are the ones it registered (its own and the scene applications', closed ones included, and Chrome windows
-  it found by their run-unique title), the windows the traced clients created, and any window whose parents lead to
-  one of them (`harnessPredicate`, walked on the display while the window exists; a window it can no longer resolve
-  counts as foreign). The trace is audited at the run's end, the cleanup included, and every audit pass's engine trace
-  the same way, whatever the operation's route; any foreign change, or a harness trace that recorded nothing, fails
-  the run. The `meta` row records the start's active window, and the `end` row (`desktop`) both active windows, each
-  marked `foreign` or `harness`, the holder and the trace's audit. The negative checks raise and activate only the top
-  two of the harness's own windows.
+- **Windows the harness did not open** (the design session, 2026-11-02, and T4b's audit round; `scenes.mjs`,
+  `xtools.mjs`, `foreign.mjs`, xprobe `record-run`): no request of the harness's, or of an engine it drives, may change
+  a window the harness did not open. It catches accidental changes; it is no proof against an adversarial engine.
+  - *What changes a window* (`foreign.mjs` `changeOf`): destroying, reparenting, mapping, unmapping, configuring or
+    circulating it; any SendEvent to it (a client message names its window too); warping the pointer into it; focusing
+    it; killing its client; writing, deleting or rotating its properties (a deleting GetProperty too); changing its
+    attributes other than our own event selection (an override-redirect change included); a Composite redirect; a
+    window created inside it; and input that lands in it: XTEST and a warp, a key by the input focus, a button by the
+    window under the pointer, a motion or warp by where it ends. The root is the desktop: writes to its properties and
+    event selections on it stay out, and it is the neutral destination of a client message to the window manager.
+    One exemption: the property a foreign client named in its own SelectionRequest, written while that request is
+    served (INCR until its zero-length end), and the SelectionNotify that answers it.
+  - *Whose a window is*, judged in trace order: a window the harness registered, for the life it had when the harness
+    found it (`Desktop.registry`, each id with when it was found); a window our connection created, once the server
+    accepted the creation (no error for its sequence number), under the root or one of ours; a window another client
+    created inside one of ours; a window manager frame while it holds one of ours. A life ends at its DestroyNotify, a
+    DestroyWindow, or its creating client's end, so a reused id is foreign again. A window reparented into one of ours
+    keeps the owner it had. Parentage is the trace's own, at request time: no window is resolved on the display after
+    the run.
+  - *Two sources.* The run's own xtrace proxy (`Desktop.begin`), through which every `xdotool` and every acting xprobe
+    command connects (`xtools.mjs`; a test keeps it so), and every audit pass's engine trace, the activating stub's
+    included, are judged by `auditForeign`; there every connection is ours, and XTEST is placed only by what the trace
+    shows (the focus a request set or a reply read, the pointer a reply read), the rest counted as unplaced. The whole
+    run is also recorded server-side through RECORD (`xprobe record-run`, `startRunRecord`), every client's requests
+    of those kinds, each client attributed by its process (X-Resource and `/proc`): ours when it descends from the
+    harness's process and is one of its X tools or engines. `auditRecord` judges every request of ours, sampled by an
+    audit pass or not; the record places XTEST by reading the focus and the pointer right after the server handled it.
+    A client it could not attribute is counted, not judged. Any foreign change, a harness trace that recorded nothing,
+    or a record that did not begin and end cleanly fails the run.
+  - *No window of the person's can be taken for the run's*: every title carries the run's label and a random nonce of
+    the run's own (`Desktop.label`), and a window already on the display when the run began is never found or adopted
+    (`Desktop.preexisting`), whatever its title.
+  - *Observers that act are fenced* (`xtools.mjs`): xprobe `retention` redirects only a window the run opened, and
+    xprobe `grabs`, which takes the root's pointer and keyboard, runs only on a private display marked
+    `CUA171_PRIVATE_DISPLAY` (xprobe refuses any other; `events.mjs` marks its Xvfb). The post-request check that no
+    grab is left reads the server's record of every client's grabs (`clip.mjs` `watchGrabs`, `grabsIn`) instead of
+    grabbing; so does the dnd experiment, whose momentary foreign grab (`--grab-at-ms`) is gone. A case's parked
+    pointer goes back where it was found only over a window of the run's (`device.mjs` `parkPointer`).
+  - The window found active at the start is recorded and never activated again. A run that starts with a foreign
+    window active first opens and activates a holder (an xterm in the front window's corner), closed after every other
+    window of the run's; what the window manager activates then is its own doing. The `meta` row records the start's
+    active window, and the `end` row (`desktop`) both active windows, each marked `foreign` or `harness`, the holder,
+    the trace's audit and the record's. The negative checks raise and activate only the top two of the harness's own
+    windows.
 - **Deviations** (`deviations.mjs`): a difference from the pinned build passes only when a declared deviation names
   its operation, its field and cua's exact answer. (In M1a the text and clipboard commands were checked apart, cua
   alone, each refused with `<command> is not available in this engine build`; M2 replaced that with its text
@@ -349,7 +376,7 @@ variants included; their evidence is written either way. The run's `end` row kee
   `judgeRouteSpan`). Where both are `foreground`, the request may activate its target and move the pointer and nothing
   else (`judgeForegroundSpan`: the active window and the focus end in the target; the stacking is judged on the
   restack events, `judgeRestacks`, and only the target's top-level, its window manager frame from `xprobe toplevel`,
-  may move, and only to the top; then a quiet 300 ms span and no grab left, `xprobe grabs`); every other request must
+  may move, and only to the top; then a quiet 300 ms span and no grab left, read from the server's record of grabs since T4b); every other request must
   leave the witness unchanged. The restack events come from `SubstructureNotify` on the root: the witness records the
   root's children when a span begins and every `ConfigureNotify`, `CirculateNotify`, map, unmap, creation, destruction
   and reparenting of one in order (`xprobe/src/restack.rs`). They are never coalesced, unlike
@@ -486,7 +513,8 @@ variants included; their evidence is written either way. The run's `end` row kee
   Chrome windows a full verdict run has open. Each row carries the page's counters and its pointer log. Measurement
   only, for the mechanism: `--stray nudge|popup:<ms>` puts a pointer event that is not the drag's into it (the real
   pointer nudged a pixel and back through XTEST, or another client's window mapped under the real pointer for 5 ms),
-  `--park-pointer X,Y` parks the real pointer first, and `--grab-at-ms` fires another client's momentary grab.
+  `--park-pointer X,Y` parks the real pointer first. (`--grab-at-ms`, another client's momentary grab, is gone: it took
+  the person's pointer and keyboard on `:0`.)
 - **The drop-miss instruments** (task 18, run beside any run; none is started by the harness): `xprobe request-watch`
   records through RECORD every client's `SetSelectionOwner`, core and XInput 2 pointer and keyboard grabs with their
   replies, server grabs, XDND client messages sent over the wire (Chrome short-circuits its own), and synthetic

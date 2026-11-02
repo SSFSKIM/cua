@@ -253,3 +253,24 @@ test("the pointer allowance lifts the pointer field alone, and only for a case w
   const clean = { clean: true, fields: [], allowed: [] };
   assert.equal(allowPointer(clean, true), clean, 'nothing to lift');
 });
+
+test("a case's parked pointer goes back where it was only over a window the run opened, never onto another's", async () => {
+  const { parkPointer } = await import('../../scripts/linux-engine-diff/device.mjs');
+  const MINE = 0x40000c;
+  const PERSON = 0x600002;
+  const run = (under) => {
+    const calls = [];
+    const disposals = [];
+    const tool = (...args) => {
+      calls.push(args.join(' '));
+      return args[0] === 'getmouselocation' ? `X=300\nY=200\nSCREEN=0\nWINDOW=${under}\n` : '';
+    };
+    const ctx = { desktop: { ownerOf: (id) => (id === MINE ? 'harness' : 'foreign') }, dispose: (fn) => disposals.push(fn) };
+    parkPointer(ctx, { x: 600, y: 600 }, { tool });
+    for (const fn of disposals) fn();
+    return calls.filter((c) => c.startsWith('mousemove'));
+  };
+  assert.deepEqual(run(MINE), ['mousemove 600 600', 'mousemove 300 200'], 'back over the harness window it was found on');
+  // found over the person's window: parked on the front window's middle instead, a window of the run's
+  assert.deepEqual(run(PERSON), ['mousemove 600 600', 'mousemove 1170 715']);
+});

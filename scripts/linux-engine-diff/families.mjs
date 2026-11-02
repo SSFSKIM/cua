@@ -354,12 +354,14 @@ export function vteLaunch(ctx) {
 
 /**
  * Opens a family's window on the harness's desktop: launched, found, sized and placed, its objects resolved.
- * Returns the scene: `{kind: 'family', family, id, pid, group, ...targets}`.
+ * `stem`: the name in its window's label, where two scenes open one family for one engine (minimized-xterm beside
+ * device-xterm), so each window has its own title and scratch directory. Returns the scene: `{kind: 'family', family,
+ * id, pid, group, ...targets}`.
  */
-export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null, motion = false } = {}) {
+export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null, motion = false, stem = name } = {}) {
   const family = FAMILIES[name];
   if (!family) throw new Error(`unknown family ${name}`);
-  const label = desktop.label(name.replace(/[^a-z0-9]+/gi, ''), role);
+  const label = desktop.label(stem.replace(/[^a-z0-9]+/gi, ''), role);
   let scene;
   if (family.chrome) {
     const opened = await desktop.openChrome(role, page ?? 'matrix.html');

@@ -413,8 +413,8 @@ test('the Interfaces command line parses, with M0 variants', async () => {
   assert.throws(() => parseArgs([...dnd, '--dnd-cold', '--prelude', 'shared']), /--prelude/);
   assert.throws(() => parseArgs([...dnd, '--prelude', 'dedicated']), /--dnd-cold/);
   // and, measurement only, another client's momentary grab that long after each drag is sent
-  assert.equal(parseArgs([...dnd, '--dnd-cold', '--grab-at-ms', '20']).grabAtMs, 20);
-  assert.throws(() => parseArgs([...dnd, '--grab-at-ms', '20']), /--dnd-cold/);
+  // the momentary foreign grab is gone (T4b's audit round): it took the person's pointer and keyboard on :0
+  assert.throws(() => parseArgs([...dnd, '--dnd-cold', '--grab-at-ms', '20']), /--grab-at-ms/);
   // and a pointer event that is not the drag's: the real pointer nudged, or a window mapped under it
   assert.deepEqual(parseArgs([...dnd, '--dnd-cold', '--stray', 'nudge:5']).stray, { kind: 'nudge', ms: 5 });
   assert.deepEqual(parseArgs([...dnd, '--dnd-cold', '--stray', 'popup:0']).stray, { kind: 'popup', ms: 0 });

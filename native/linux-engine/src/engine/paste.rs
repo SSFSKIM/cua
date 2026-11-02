@@ -20,7 +20,7 @@ use super::Engine;
 use super::elements::{Element, visible_point};
 use super::pointer::CLICK_HOLD;
 use super::way::Way;
-use crate::atspi::{self, Association};
+use crate::atspi;
 use crate::clipboard::{Clipboard, Payload, TRANSFER_WAIT};
 use crate::copy;
 use crate::families::{DEFAULT_PASTE, Kind, PasteRoute};
@@ -184,14 +184,7 @@ impl Engine {
         let named = match &request.element_id {
             Some(id) => Ok(self.resolve_element(window, id)?),
             None => Err(self
-                .with_bus(|bus, x| {
-                    Ok(match atspi::associate(bus, x, &info)? {
-                        Association::Frame(frame, _) => Ok(frame),
-                        Association::NoMatch => Err("window has no AT-SPI accessibility tree".to_string()),
-                        Association::Refused(sentence) => Err(sentence),
-                        Association::Duplicates => Err(crate::identity::duplicates_sentence(info.id)),
-                    })
-                })?
+                .with_bus(|bus, x| atspi::associated(bus, x, &info))?
                 .map_err(anyhow::Error::msg)?),
         };
         // on the foreground route the named element must be editable before the window is activated; the observation
@@ -225,14 +218,15 @@ impl Engine {
         inputs.with_route(x, target, |x, route, _| {
             let (element, named) = match &named {
                 Ok(element) => (element.clone(), true),
-                Err(frame) => {
-                    let focused = copy::focused(bus, frame)?.ok_or_else(|| {
+                Err(associated) => {
+                    let focused = copy::focused(bus, &associated.frame)?.ok_or_else(|| {
                         anyhow!("window {window} has no focused element to paste into; nothing was sent")
                     })?;
                     let element = Element {
                         info: info.clone(),
                         target: focused,
                         ancestors: Vec::new(),
+                        associated: associated.clone(),
                     };
                     (element, false)
                 }
@@ -242,19 +236,22 @@ impl Engine {
             if named && !seen.editable {
                 bail!(NOT_EDITABLE);
             }
-            // 2. Focus only if needed, then put back the caret or selection the click moved.
+            // 2. Focus only if needed, then put back the caret or selection the click moved. Each click and the restore
+            // is an effect on what association chose, so the association is confirmed again just before each.
             if named && !seen.focused {
                 let (rx, ry) = visible_point(bus, &element, "typing")?;
                 report.clicked = true;
                 let clicked_at = Instant::now();
+                let shared = std::cell::RefCell::new(&mut *bus);
                 let (after, clicks) = click_for_focus(
                     || {
+                        element.associated.confirm_before_acting(&mut shared.borrow_mut(), x)?;
                         route.place(x, rx, ry)?;
                         route.button(x, 1, true)?;
                         std::thread::sleep(CLICK_HOLD);
                         route.button(x, 1, false)
                     },
-                    || observe(bus, &element.target),
+                    || observe(&mut shared.borrow_mut(), &element.target),
                     FOCUS_WAIT,
                     FOCUS_POLL,
                 )?;
@@ -264,6 +261,7 @@ impl Engine {
                     bail!("element did not take the focus when clicked; nothing was sent");
                 }
                 if let Some(before) = &seen.text {
+                    element.associated.confirm_before_acting(bus, x)?;
                     report.restored = Some(field::restore(bus, &element.target, before)?);
                 }
                 seen = observe(bus, &element.target)?;
@@ -411,6 +409,11 @@ fn dispatch_and_confirm(
     if pasted.lost() {
         pasted.settled();
         bail!(LOST);
+    }
+    // The field was observed in the frame association chose: confirmed again just before the chord.
+    if !element.associated.confirm(bus, x)? {
+        pasted.settled();
+        bail!(atspi::changed_before_acting(window));
     }
     let time = match route.session() {
         Some(session) => session.now(),

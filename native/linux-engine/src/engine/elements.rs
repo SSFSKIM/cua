@@ -9,7 +9,7 @@ use serde_json::Value;
 use super::Engine;
 use super::pointer::{CLICK_HOLD, check_wheel, wheel};
 use super::way::Way;
-use crate::atspi::{self, Association};
+use crate::atspi::{self, Associated};
 use crate::dbus::Bus;
 use crate::families::Kind;
 use crate::resolve;
@@ -18,12 +18,14 @@ use crate::tree::ObjRef;
 use crate::wire::{MouseButton, ScrollInput, SecondaryActionInput, parse_input};
 use crate::x11::{WindowInfo, X11};
 
-/// A resolved element: its window, the element and its ancestors nearest first, ending with the frame.
+/// A resolved element: its window, the element and its ancestors nearest first, ending with the frame, and the
+/// window's association, confirmed again just before each effect on the element (`atspi::Associated::confirm`).
 #[derive(Clone)]
 pub(super) struct Element {
     pub(super) info: WindowInfo,
     pub(super) target: ObjRef,
     pub(super) ancestors: Vec<ObjRef>,
+    pub(super) associated: Associated,
 }
 
 enum RightClick {
@@ -42,21 +44,20 @@ impl Engine {
         }
         let info = self.x.get_window(window)?;
         let resolved = self.with_bus(|bus, x| {
-            let frame = match atspi::associate(bus, x, &info)? {
-                Association::Frame(frame, _) => frame,
-                Association::NoMatch => return Ok(Err("window has no AT-SPI accessibility tree".to_string())),
-                Association::Refused(sentence) => return Ok(Err(sentence)),
-                Association::Duplicates => return Ok(Err(crate::identity::duplicates_sentence(info.id))),
+            let associated = match atspi::associated(bus, x, &info)? {
+                Ok(associated) => associated,
+                Err(refused) => return Ok(Err(refused)),
             };
-            resolve::element(bus, &frame, element)
+            Ok(resolve::element(bus, &associated.frame, element)?.map(|found| (found, associated)))
         });
         // No address is `AT-SPI accessibility bus is unavailable` (from `bus_address`); a connection's own errors
         // propagate, as the vendor's do (behaviour §6.2 step 3).
-        let (target, ancestors) = resolved?.map_err(anyhow::Error::msg)?;
+        let ((target, ancestors), associated) = resolved?.map_err(anyhow::Error::msg)?;
         Ok(Element {
             info,
             target,
             ancestors,
+            associated,
         })
     }
 
@@ -140,6 +141,7 @@ impl Engine {
         inputs.with_route(x, target, |x, route, _| {
             let bounds = atspi::extents(bus, &element.target)?.map_err(anyhow::Error::msg)?;
             let at = centre(clip_to_window(bounds, &element.info))?;
+            element.associated.confirm_before_acting(bus, x)?;
             wheel(x, route, Some(at), input)
         })?;
         Ok(Value::Null)
@@ -167,9 +169,10 @@ pub fn choose_action(names: &[String], action: &str) -> std::result::Result<usiz
     }
 }
 
-/// `DoAction(index)` inside the window's input session.
+/// `DoAction(index)` inside the window's input session, once the window's association is confirmed again.
 fn do_action(x: &mut X11, bus: &mut Bus, inputs: &mut Inputs, element: &Element, index: usize) -> Result<()> {
-    inputs.with_route(x, Target::Window(element.info.id), |_, _, _| {
+    inputs.with_route(x, Target::Window(element.info.id), |x, _, _| {
+        element.associated.confirm_before_acting(bus, x)?;
         atspi::do_action(bus, &element.target, index as u32)?.map_err(anyhow::Error::msg)
     })
 }
@@ -187,6 +190,7 @@ fn right_click(
     let mut point_failed = false;
     let result = inputs.with_route(x, target, |x, route, _| {
         let (rx, ry) = visible_point(bus, element, "right-clicking").inspect_err(|_| point_failed = true)?;
+        element.associated.confirm_before_acting(bus, x)?;
         route.place(x, rx, ry)?;
         route.button(x, 3, true)?;
         std::thread::sleep(CLICK_HOLD);

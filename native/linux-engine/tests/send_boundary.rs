@@ -64,11 +64,16 @@ const EGRESS: [(&str, &str); 25] = [
 /// Process spawning, a route to the bus through a child (`busctl`, `dbus-send`): allowed only where named.
 const SPAWN: &str = "Command";
 /// Explicit allowances: (file, identifier, why it cannot carry a call to the bus).
-const ALLOWED: [(&str, &str, &str); 3] = [
+const ALLOWED: [(&str, &str, &str); 4] = [
     (
         "apps.rs",
         SPAWN,
         "launch_app runs the argv of an installed desktop entry the agent chose, never an argv the engine writes",
+    ),
+    (
+        "engine/identity_faults.rs",
+        SPAWN,
+        "test-only identity hooks: starts python3 with the GTK 3 twins fixture (tests/support/gtk3-twins.py)",
     ),
     (
         "engine/paste_faults.rs",

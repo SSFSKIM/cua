@@ -88,7 +88,7 @@ fn clear_clipboard() {
 // A requestor
 
 #[derive(Default, Clone, Copy)]
-struct Asking {
+pub(crate) struct Asking {
     /// The request's timestamp; 0 is `CurrentTime`.
     time: u32,
     /// Stop acknowledging INCR chunks after the first.
@@ -97,7 +97,7 @@ struct Asking {
 
 /// What a conversion came back with.
 #[derive(Debug, PartialEq)]
-enum Answer {
+pub(crate) enum Answer {
     Refused,
     Data {
         kind: String,
@@ -110,7 +110,7 @@ enum Answer {
 }
 
 /// A requestor converting CLIPBOARD to `target` on its own connection, reading INCR when offered.
-fn convert(target: &str, asking: Asking) -> Answer {
+pub(crate) fn convert(target: &str, asking: Asking) -> Answer {
     let (conn, _) = x11rb::connect(None).unwrap();
     let clipboard = intern(&conn, "CLIPBOARD");
     let target = intern(&conn, target);
@@ -192,7 +192,7 @@ fn convert(target: &str, asking: Asking) -> Answer {
     }
 }
 
-fn text_of(answer: Answer) -> String {
+pub(crate) fn text_of(answer: Answer) -> String {
     match answer {
         Answer::Data { bytes, .. } => String::from_utf8(bytes).unwrap(),
         other => panic!("expected data, got {other:?}"),

@@ -5,6 +5,8 @@
 //! `duplicates_sentence` on every request. A wrong association is worse than the sentence: it would read another
 //! window's tree, or send its input there. The decisions here are pure; `atspi::associate` reads what they decide on.
 
+use crate::families::Toolkit;
+
 /// The sentence for an X11 window whose accessibility frame cannot be told apart from its duplicates'.
 pub fn duplicates_sentence(window: u32) -> String {
     format!("Window {window} matches several accessibility windows; close or retitle the duplicates")
@@ -60,6 +62,28 @@ impl Placement {
     pub fn holds(&self, extents: Rect) -> bool {
         extents == self.client || Some(extents) == self.frame
     }
+}
+
+/// Whether a toolkit's frames report their extents in screen coordinates, as measured on the #171 VM (M4's T5 probes):
+/// Chromium, GTK 3, Qt 5 and Qt 6 do, and GTK 4 reports (0, 0) wherever its window is. A frame's extents are evidence
+/// of whose it is only where they are known to say where the window is, so an unmeasured toolkit, or one whose name or
+/// version cannot be read, counts as not: its duplicates answer the sentence, and the caption rule leaves it unmatched.
+pub fn screen_extents(toolkit: Option<&Toolkit>) -> bool {
+    let Some(toolkit) = toolkit else { return false };
+    let named = |name: &str| toolkit.name.eq_ignore_ascii_case(name);
+    match toolkit.major() {
+        _ if named("Chromium") => true,
+        Some(3) => named("GTK"),
+        Some(5 | 6) => named("Qt"),
+        _ => false,
+    }
+}
+
+/// The caption rule's last check (kate, M0.4): the one frame named for the title's caption is the window's only when
+/// its provider reports screen extents (`screen_extents`) and they put it at the window. Window-relative extents put a
+/// frame at the origin wherever its window is, so they would match a window there that is not its own.
+pub fn caption_holds(target: &Placement, screen: bool, extents: Option<Rect>) -> bool {
+    screen && extents.is_some_and(|at| target.holds(at))
 }
 
 /// A candidate frame as the tie-break sees it: its screen extents (None when they could not be read) and whether its
@@ -283,6 +307,49 @@ mod tests {
             tie_break(&frames, &bare(640, 0), &[bare(0, 0)], false),
             TieBreak::Several
         );
+    }
+
+    fn toolkit(name: &str, version: Option<&str>) -> Toolkit {
+        Toolkit {
+            name: name.into(),
+            version: version.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn extents_are_screen_coordinates_only_for_the_toolkits_measured_to_report_them() {
+        for (name, version) in [
+            ("Chromium", Some("142.0.7444.59")),
+            ("GTK", Some("3.24.41")),
+            ("gtk", Some("3.24.41")),
+            ("Qt", Some("5.15.13")),
+            ("Qt", Some("6.4.2")),
+        ] {
+            assert!(screen_extents(Some(&toolkit(name, version))), "{name} {version:?}");
+        }
+        // GTK 4 reports (0, 0) wherever its window is; the rest were never measured, or cannot be read
+        for (name, version) in [
+            ("GTK", Some("4.14.5")),
+            ("GTK", None),
+            ("Qt", Some("4.8.7")),
+            ("Gecko", Some("128.0")),
+            ("VCL", Some("24.2")),
+        ] {
+            assert!(!screen_extents(Some(&toolkit(name, version))), "{name} {version:?}");
+        }
+        assert!(!screen_extents(None), "no toolkit read");
+    }
+
+    #[test]
+    fn a_caption_frame_is_the_windows_only_by_screen_extents_at_its_place() {
+        // kate (Qt 5): the frame's screen extents are its window's client rectangle
+        let kate = bare(0, 0);
+        assert!(caption_holds(&kate, true, Some(rect(0, 0, 600, 380))));
+        assert!(!caption_holds(&kate, true, Some(rect(640, 0, 600, 380))), "elsewhere");
+        assert!(!caption_holds(&kate, true, None), "no extents read");
+        // the counterexample: a GTK 4 frame named for the caption belongs to a window displaced to (300, 200), yet
+        // reports (0, 0, w, h), which is exactly where the target is; window-relative extents prove nothing
+        assert!(!caption_holds(&bare(0, 0), false, Some(rect(0, 0, 600, 380))));
     }
 
     #[test]

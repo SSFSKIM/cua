@@ -1,7 +1,8 @@
 //! Test builds only: faults injected into the key events the engine sends, on either route, to prove how the paste
 //! route answers when the X server's acknowledgement of a delivered key is lost, when the server rejects a key before
-//! delivering it, and when a release fails. Armed per thread (the engine's requests run on the test's thread), and
-//! every key event sent is logged.
+//! delivering it, and when a release fails; and hooks at the steps of a window's association, where a test changes the
+//! desktop between two of the engine's own steps. Armed per thread (the engine's requests run on the test's thread),
+//! and every key event sent is logged.
 
 use std::cell::RefCell;
 
@@ -100,4 +101,56 @@ pub fn key(keycode: u8, press: bool, send: impl FnOnce() -> Result<()>) -> Resul
         return Err(ReplyError::from(ConnectionError::UnknownError).into());
     }
     Ok(())
+}
+
+/// Where an identity hook runs (`atspi.rs`): as an association's re-verification begins (between choosing the frame
+/// and accepting it), or as an accepted association is confirmed again (just before an effect, or after a read).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Identity {
+    Verify,
+    Confirm,
+}
+
+/// A hook armed for the `nth` time (from 1) its point is reached since arming.
+struct Hook {
+    point: Identity,
+    nth: usize,
+    reached: usize,
+    run: Box<dyn FnOnce()>,
+}
+
+thread_local! {
+    static HOOK: RefCell<Option<Hook>> = const { RefCell::new(None) };
+}
+
+/// Arms `run` to happen once, the `nth` time the engine reaches `point`: the test changes the desktop there, between
+/// two of the engine's own steps. Arming again replaces it.
+pub fn arm_identity(point: Identity, nth: usize, run: impl FnOnce() + 'static) {
+    HOOK.with(|h| {
+        *h.borrow_mut() = Some(Hook {
+            point,
+            nth,
+            reached: 0,
+            run: Box::new(run),
+        })
+    });
+}
+
+/// Whether no hook is left armed: it ran, or none was armed. A hook left armed disarms here.
+pub fn identity_hook_ran() -> bool {
+    HOOK.with(|h| h.borrow_mut().take().is_none())
+}
+
+/// The engine reaches `point`: the armed hook runs if this is its time.
+pub fn identity(point: Identity) {
+    let due = HOOK.with(|h| {
+        let mut slot = h.borrow_mut();
+        let hook = slot.as_mut().filter(|hook| hook.point == point)?;
+        hook.reached += 1;
+        let due = hook.reached == hook.nth;
+        due.then(|| slot.take().expect("armed").run)
+    });
+    if let Some(run) = due {
+        run();
+    }
 }

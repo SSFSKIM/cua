@@ -6,7 +6,7 @@ use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 
 use super::Engine;
-use crate::atspi::{self, Association};
+use crate::atspi;
 use crate::clipboard::{COPY_WAIT, Clipboard};
 use crate::copy;
 use crate::input::chord_keycodes;
@@ -35,19 +35,19 @@ impl Engine {
         }
         let before = clipboard.generation()?;
         let copied = self.with_bus(|bus, x| {
-            let frame = match atspi::associate(bus, x, &info)? {
-                Association::Frame(frame, _) => frame,
-                Association::NoMatch => {
-                    return Ok(Err("window has no AT-SPI accessibility tree".to_string().into()));
-                }
-                Association::Refused(sentence) => return Ok(Err(sentence.into())),
-                Association::Duplicates => return Ok(Err(crate::identity::duplicates_sentence(info.id).into())),
+            let associated = match atspi::associated(bus, x, &info)? {
+                Ok(associated) => associated,
+                Err(refused) => return Ok(Err(refused.into())),
             };
-            let Some(focused) = copy::focused(bus, &frame)? else {
+            let Some(focused) = copy::focused(bus, &associated.frame)? else {
                 return Ok(Err(
                     format!("window {} has no focused element to Copy from", info.id).into()
                 ));
             };
+            // the walk read the frame association chose: confirmed again before the Copy, its one effect
+            if !associated.confirm(bus, x)? {
+                return Ok(Err(atspi::changed_before_acting(info.id).into()));
+            }
             copy::copy(bus, &focused)
         });
         if let Err(refused) = copied? {

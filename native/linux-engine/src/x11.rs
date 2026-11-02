@@ -876,7 +876,9 @@ impl X11 {
     // -----------------------------------------------------------------------------------------------------------
     // The X11 fallback tree (behaviour §5.7)
 
-    pub fn fallback_tree(&self, window: Window) -> Result<AxNode> {
+    /// The vendor's X11 tree for a window whose association failed. It takes the leave only the vendor's own failures
+    /// give (`atspi::Fallback`), so a window whose association met duplicates never answers it.
+    pub fn fallback_tree(&self, window: Window, _leave: crate::atspi::Fallback) -> Result<AxNode> {
         let mut count = 0u32;
         self.fallback_node(window, 0, &mut count)
     }

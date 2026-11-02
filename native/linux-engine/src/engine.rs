@@ -4,6 +4,8 @@
 
 mod clipboard;
 mod elements;
+#[cfg(test)]
+mod identity_faults;
 mod keyboard;
 mod paste;
 #[cfg(test)]
@@ -16,7 +18,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 
 use crate::apps;
@@ -161,14 +163,38 @@ fn reported_truncation(source: &str, truncated: tree::Truncated) -> Option<tree:
     (source == "at_spi" && !truncated.is_empty()).then_some(truncated)
 }
 
-/// What a state read found on the accessibility bus: the tree and how its frame was told, duplicates nothing tells
-/// apart, a frame told by its active state that was no longer the active window's once read, or nothing usable (the
-/// X11 fallback).
+/// What a state read found on the accessibility bus.
+#[derive(Debug)]
 enum Observed {
+    /// The tree, and how its frame was told.
     Tree(tree::AxNode, atspi::Told),
-    Duplicates,
-    Changed,
-    Fallback,
+    /// One of cua's own association routes found no frame it can stand behind, or its frame's read or confirmation
+    /// failed: the sentence or the error, never the X11 tree.
+    Refused(atspi::Unassociated),
+    /// One of the vendor's own failures: its X11 tree.
+    Fallback(atspi::Fallback),
+}
+
+/// The read of a frame one of cua's own routes found (`atspi::Associated::fallback` gives no leave for it): its tree,
+/// once the association is confirmed again after the read, else the refusal. No path here holds leave for the X11
+/// fallback, so neither a failed read, a root that does not answer, nor a changed association can end in a tree that
+/// looks like an empty window (F5).
+fn own_route_read(
+    window: u32,
+    told: atspi::Told,
+    read: Result<Option<tree::AxNode>>,
+    confirm: impl FnOnce() -> Result<bool>,
+) -> Observed {
+    use atspi::Unassociated::{Changed, Failed};
+    match read {
+        Err(error) => Observed::Refused(Failed(error)),
+        Ok(None) => Observed::Refused(Changed(window)),
+        Ok(Some(tree)) => match confirm() {
+            Ok(true) => Observed::Tree(tree, told),
+            Ok(false) => Observed::Refused(Changed(window)),
+            Err(error) => Observed::Refused(Failed(error)),
+        },
+    }
 }
 
 /// The `--stats` line's record of a reported after-release watch.
@@ -433,36 +459,41 @@ impl Engine {
         let window = self.cfg.window;
         let mut read_stats = tree::ReadStats::default();
         let at_spi = self.with_bus(|bus, x| {
-            let (frame, told) = match atspi::associate(bus, x, &info)? {
-                Association::Frame(frame, told) => (frame, told),
-                Association::Duplicates => return Ok(Observed::Duplicates),
-                Association::NoMatch | Association::Refused(_) => return Ok(Observed::Fallback),
+            let associated = match atspi::associate(bus, x, &info)? {
+                Association::Frame(associated) => associated,
+                Association::Identity(unassociated) => return Ok(Observed::Refused(unassociated)),
+                Association::NoMatch(leave) | Association::Refused(_, leave) => return Ok(Observed::Fallback(leave)),
             };
-            let (tree, stats) = tree::read(bus, &frame, window)?;
-            read_stats = stats;
-            // a frame told apart by its active state, checked again once its tree is read: a toolkit marks the frame a
-            // moment after the activation, so a read that began on the previous active window's frame is refused, not
-            // answered with that window's tree
-            if told == atspi::Told::Active
-                && !(atspi::frame_active(bus, &frame)? && x.get_window(info.id).is_ok_and(|w| w.focused))
-            {
-                return Ok(Observed::Changed);
+            let read = tree::read(bus, &associated.frame, window).map(|(tree, stats)| {
+                read_stats = stats;
+                tree
+            });
+            match associated.fallback() {
+                // the vendor's own match: an error is its fallback, and so is a root that fails to read (behaviour §4)
+                Some(leave) => {
+                    Ok(read?.map_or(Observed::Fallback(leave), |tree| Observed::Tree(tree, associated.told)))
+                }
+                // one of cua's own routes: the association is confirmed again once its tree is read, since a toolkit
+                // may correct the `active` state a moment after an activation, and a read that began on the previous
+                // active window's frame is refused, not answered with that window's tree
+                None => Ok(own_route_read(id, associated.told, read, || associated.confirm(bus, x))),
             }
-            // a root that fails to read is the vendor's fallback (behaviour §4)
-            Ok(tree.map_or(Observed::Fallback, |tree| Observed::Tree(tree, told)))
         });
         let (tree, source, told) = match at_spi {
             Ok(Observed::Tree(tree, told)) => (tree, "at_spi", Some(told)),
-            // duplicates are never the X11 fallback, which would look like an empty window (Design, Window association)
-            Ok(Observed::Duplicates) => {
-                self.extra.insert("tree".into(), json!({ "identity": "duplicates" }));
-                bail!(crate::identity::duplicates_sentence(id));
+            // never the X11 fallback, which would look like an empty window (Design, Window association)
+            Ok(Observed::Refused(unassociated)) => {
+                self.extra
+                    .insert("tree".into(), json!({ "identity": unassociated.name() }));
+                return Err(unassociated.into_error());
             }
-            Ok(Observed::Changed) => {
-                self.extra.insert("tree".into(), json!({ "identity": "changed" }));
-                bail!(atspi::identity_changed(id));
-            }
-            _ => (self.x.fallback_tree(id)?, "x11", None),
+            Ok(Observed::Fallback(leave)) => (self.x.fallback_tree(id, leave)?, "x11", None),
+            // cua's own routes answer no error here (`atspi::associate`, `own_route_read`): this is the vendor's
+            Err(_) => (
+                self.x.fallback_tree(id, atspi::Fallback::after_vendor_error())?,
+                "x11",
+                None,
+            ),
         };
         self.extra.insert(
             "tree".into(),
@@ -575,9 +606,68 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{acts, input_window, minimized_sentence, reported_truncation};
-    use crate::tree::Truncated;
+    use super::{Observed, acts, input_window, minimized_sentence, own_route_read, reported_truncation};
+    use crate::atspi::{Told, Unassociated};
+    use crate::tree::{AxNode, Truncated};
     use serde_json::json;
+
+    fn node() -> AxNode {
+        AxNode {
+            actions: None,
+            children: Vec::new(),
+            description: None,
+            id: ":1.2:/frame".into(),
+            name: None,
+            role: "frame".into(),
+            states: None,
+            value: None,
+        }
+    }
+
+    #[test]
+    fn a_frame_found_by_cuas_own_routes_answers_its_tree_only_once_confirmed() {
+        let refused = |observed: Observed| match observed {
+            Observed::Refused(Unassociated::Changed(7)) => "changed",
+            Observed::Refused(Unassociated::Failed(_)) => "failed",
+            other => panic!("refused, not {other:?}"),
+        };
+        let confirmed = || Ok(true);
+        assert!(matches!(
+            own_route_read(7, Told::Active, Ok(Some(node())), confirmed),
+            Observed::Tree(_, Told::Active)
+        ));
+        // whatever the read or the confirmation does, a sentence or an error, never the X11 tree
+        assert_eq!(
+            refused(own_route_read(7, Told::Position, Ok(Some(node())), || Ok(false))),
+            "changed"
+        );
+        assert_eq!(
+            refused(own_route_read(7, Told::Active, Ok(Some(node())), || anyhow::bail!(
+                "bus timeout"
+            ))),
+            "failed"
+        );
+        assert_eq!(
+            refused(own_route_read(7, Told::Caption, Ok(None), confirmed)),
+            "changed",
+            "a root that fails"
+        );
+        assert_eq!(
+            refused(own_route_read(
+                7,
+                Told::Position,
+                Err(anyhow::anyhow!("bus timeout")),
+                confirmed
+            )),
+            "failed"
+        );
+        let mut asked = false;
+        own_route_read(7, Told::Position, Ok(None), || {
+            asked = true;
+            Ok(true)
+        });
+        assert!(!asked, "no tree, nothing to confirm");
+    }
 
     #[test]
     fn truncation_is_reported_only_for_an_accessibility_read_that_cut_something() {

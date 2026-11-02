@@ -197,7 +197,8 @@ export function differingField(reference, candidate) {
  * step returns its record instead, no request sent, with `fault` set (prepare.mjs).
  */
 export async function runSample(s) {
-  const ctx = { desktop: s.desktop, scene: s.target, sceneName: s.sceneName, engine: s.engine, i: s.i, witness: s.witness, cuaVersion: s.cuaVersion };
+  // `traceMark(tag)`: the audit pass's mark in its trace, so a case can attribute requests to its steps (M4's T4)
+  const ctx = { desktop: s.desktop, scene: s.target, sceneName: s.sceneName, engine: s.engine, i: s.i, witness: s.witness, cuaVersion: s.cuaVersion, traceMark: s.traceMark };
   return withSampleCleanup(ctx, () => measureSample(s, ctx));
 }
 
@@ -586,6 +587,7 @@ export async function openScene(desktop, scene, role, { text = false } = {}) {
   // M4's T4: the minimized cases' windows (minimized.mjs), each restored to its size after a case withdraws it
   if (scene === 'minimized') return withApp(desktop, await desktop.openGedit(role, GEDIT_TEXT));
   if (scene === 'minimized-xterm') return withApp(desktop, await desktop.openFamilyScene('xterm', role));
+  if (scene === 'minimized-recorder') return withApp(desktop, await desktop.openRecorder(role));
   if (scene === 'device-qt') {
     const { openFamily } = await import('./families.mjs');
     const { DRAG_DOC, verticalScrollBar } = await import('./drag.mjs');
@@ -1111,7 +1113,7 @@ async function diffRun(args, candidate, { handoff }) {
           const restoredText = [];
           try {
             for (let i = 0; i < 2; i++) {
-              const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion });
+              const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion, traceMark: (tag) => proxy.mark(`${tag}:${i}`) });
               if (row.text_restored) restoredText.push({ i, ...row.text_restored });
               oks.push(row.ok);
               answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null });
@@ -1125,8 +1127,8 @@ async function diffRun(args, candidate, { handoff }) {
           // raise and focus and XTEST input (M2 whole-branch review)
           const foregroundAudit = !VENDORS.includes(spec.label) && routeOf(op, sceneName) === 'foreground';
           // a refused device case sends nothing at all (device.mjs); a minimized case is audited as its kind says
-          // (minimized.mjs: nothing sent for a refusal, the target's activation alone for an activation, a held key's
-          // own activation once a sample for its release on the foreground route)
+          // (minimized.mjs: nothing sent for a refusal, the target's activation alone for an activation, and for a
+          // release the hold proven and then exactly its release, attributed by the case's marks in the trace)
           const nothingAudit = OPS[op].device === 'refusal';
           const trace = parseXtrace(await proxy.stop());
           const auditKind = op in MINIMIZED_OPS ? minimizedAuditKind(op) : foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
@@ -1134,11 +1136,11 @@ async function diffRun(args, candidate, { handoff }) {
             foreground: () => auditForeground(trace, target.id),
             'nothing-sent': () => auditNothingSent(trace),
             background: () => auditRequests(trace),
-            'held-release': () => auditHeldRelease(trace, target.id, { holds: oks.length }),
+            'held-release': () => auditHeldRelease(trace, target.id, { route: OPS[op].holdRoute, marks: proxy.marks }),
           }[auditKind]();
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
           audits[`${sceneName}|${op}|${spec.label}`] = { clean: audited.clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set(audited.forbidden.map((f) => f.what))] };
-          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean: audited.clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), forbidden: audited.forbidden.slice(0, 10) });
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean: audited.clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10) });
           desktop.focusFront();
         }
       }

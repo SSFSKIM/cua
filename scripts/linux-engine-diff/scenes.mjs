@@ -8,6 +8,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { Engine } from './engine.mjs';
@@ -53,7 +54,7 @@ export function configure(id, x, y, w, h) {
 }
 
 /** The geometry every scene window of a kind is given, so equivalent windows are the same size and place. */
-export const GEOMETRY = { gedit: [910, 756], chrome: [1050, 780] };
+export const GEOMETRY = { gedit: [910, 756], chrome: [1050, 780], recorder: [600, 400] };
 
 export class Desktop {
   /**
@@ -367,6 +368,52 @@ export class Desktop {
       out[key] = node.id;
     }
     return out;
+  }
+
+  /**
+   * A recorder window as a scene (M4's T4): `xprobe record … managed`, an ordinary top-level the window manager
+   * manages (so it can be minimized), titled with the scene's label, whose client is the harness, so a synthetic event
+   * sent to it with an empty mask reaches the harness. `scene.recorder.mark(tag)` returns the events it received since
+   * the last mark (a round trip first, so every event the server queued before it is read).
+   */
+  openRecorder(role) {
+    this.assertOpen();
+    return this.track(async () => {
+      const label = this.label('recorder', role);
+      const [w, h] = GEOMETRY.recorder;
+      const child = spawn(XPROBE, ['record', '0', '0', String(w), String(h), 'managed', label], { stdio: ['pipe', 'pipe', 'ignore'] });
+      const scene = { kind: 'recorder', role, label, pid: child.pid, id: null, size: [w, h] };
+      this.windows.push(scene);
+      const lines = [];
+      const waiters = [];
+      createInterface({ input: child.stdout }).on('line', (line) => {
+        lines.push(JSON.parse(line));
+        for (const waiter of waiters.splice(0)) waiter();
+      });
+      const next = async (match) => {
+        for (;;) {
+          const index = lines.findIndex(match);
+          if (index >= 0) return lines.splice(0, index + 1);
+          if (child.exitCode !== null) throw new Error(`${label}'s recorder exited`);
+          await new Promise((resolve) => waiters.push(resolve));
+        }
+      };
+      child.once('exit', () => {
+        for (const waiter of waiters.splice(0)) waiter();
+      });
+      scene.recorder = {
+        async mark(tag) {
+          child.stdin.write(`mark ${tag}\n`);
+          const got = await next((m) => m.mark === tag);
+          return got.filter((m) => m.type).map(({ time, ...event }) => event);
+        },
+      };
+      const info = await this.waitForWindow((w) => w.title === label, label);
+      scene.id = info.id;
+      if (this.stopping) return scene;
+      configure(scene.id, 0, 0, w, h);
+      return scene;
+    });
   }
 
   /** A family's window (families.mjs) as a scene: its application started, sized and settled. */

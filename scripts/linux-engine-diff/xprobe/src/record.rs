@@ -1,4 +1,4 @@
-//! `xprobe record <x> <y> <width> <height> [focus] [fragile] [fragile-key]`: a harness-owned recorder window that prints every input event
+//! `xprobe record <x> <y> <width> <height> [focus] [fragile] [fragile-key] [managed <title>]`: a harness-owned recorder window that prints every input event
 //! it receives, for comparing the X events two engines send (Design, Input, Keys: "the same `press_key`, `key_down`
 //! and `key_up` sequences produce the same X key events in both engines").
 //!
@@ -7,7 +7,9 @@
 //! and with `focus` gives the top-level the input focus (for the desktop route on a private X server, where XTEST
 //! input goes to the focus). With `fragile` the child destroys itself on its first ButtonPress (an application window
 //! that goes away under a drag); with `fragile-key` the top-level destroys itself, child and all, on its first
-//! KeyPress (an application window that closes while a key is held). A background-route event (`SendEvent` with mask 0) reaches the client that created the
+//! KeyPress (an application window that closes while a key is held). With `managed <title>` the top-level is an ordinary
+//! one, titled and classed (`cua171-recorder`), so the window manager manages it and can minimize it (M4's T4: a
+//! window whose received events show what a release on a minimized window delivered). A background-route event (`SendEvent` with mask 0) reaches the client that created the
 //! window, which is this one; a desktop-route event reaches it as the selected real event.
 //!
 //! It prints `{"ready":…,"window":…,"child":…}`, then one JSON line per event. A stdin line `mark <tag>` makes a
@@ -20,7 +22,9 @@ use std::time::Duration;
 
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
-use x11rb::protocol::xproto::{ConnectionExt as _, CreateWindowAux, EventMask, InputFocus, Window, WindowClass};
+use x11rb::protocol::xproto::{
+    AtomEnum, ConnectionExt as _, CreateWindowAux, EventMask, InputFocus, PropMode, Window, WindowClass,
+};
 use x11rb::wrapper::ConnectionExt as _;
 
 use crate::{Result, json_str};
@@ -35,6 +39,10 @@ pub fn record(args: &[String]) -> Result<()> {
     let (x, y, width, height) = (number(0)?, number(1)?, number(2)?, number(3)?);
     let flag = |name: &str| args.iter().skip(4).any(|a| a == name);
     let (focus, fragile, fragile_key) = (flag("focus"), flag("fragile"), flag("fragile-key"));
+    let managed = match args.iter().skip(4).position(|a| a == "managed") {
+        Some(at) => Some(args.get(4 + at + 1).ok_or("managed needs a title")?.clone()),
+        None => None,
+    };
     let (conn, screen) = x11rb::connect(None)?;
     let root = conn.setup().roots[screen].root;
     let mask = EventMask::KEY_PRESS
@@ -47,7 +55,7 @@ pub fn record(args: &[String]) -> Result<()> {
         | EventMask::FOCUS_CHANGE;
     let window = conn.generate_id()?;
     let aux = CreateWindowAux::new()
-        .override_redirect(1)
+        .override_redirect(u32::from(managed.is_none()))
         .background_pixel(0x00ffffff)
         .event_mask(mask);
     conn.create_window(
@@ -79,6 +87,25 @@ pub fn record(args: &[String]) -> Result<()> {
         0,
         &aux,
     )?;
+    if let Some(title) = &managed {
+        let utf8 = conn.intern_atom(false, b"UTF8_STRING")?.reply()?.atom;
+        let net_name = conn.intern_atom(false, b"_NET_WM_NAME")?.reply()?.atom;
+        conn.change_property8(
+            PropMode::REPLACE,
+            window,
+            AtomEnum::WM_NAME,
+            AtomEnum::STRING,
+            title.as_bytes(),
+        )?;
+        conn.change_property8(PropMode::REPLACE, window, net_name, utf8, title.as_bytes())?;
+        conn.change_property8(
+            PropMode::REPLACE,
+            window,
+            AtomEnum::WM_CLASS,
+            AtomEnum::STRING,
+            b"cua171-recorder\0Cua171-recorder\0",
+        )?;
+    }
     conn.map_window(child)?;
     conn.map_window(window)?;
     conn.sync()?;

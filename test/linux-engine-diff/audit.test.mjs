@@ -95,26 +95,80 @@ test('the verdict needs a clean audit wherever a vendor build keeps its witness 
   assert.equal(judgeOperation(base, { ...opts, audits: null }).pass, true);
 });
 
-// M4's T4: a key held through the foreground route, the window minimized, then released. The hold's own activation
-// (its _NET_ACTIVE_WINDOW request, raise and focus, naming the target) comes once a sample, and the release is XTEST;
-// anything more is an activation the release made, or a request naming another window.
-test('a held key released on a minimized window: the hold activated the window once a sample, the release nothing', () => {
-  const TARGET = 0x012000f8;
-  const sample = [ACTIVATE, RAISE, FOCUS, FAKE_INPUT, FAKE_INPUT];
-  const clean = auditHeldRelease(parseXtrace([...XTEST_QUERY, ...sample, ...sample].join('\n')), TARGET, { holds: 2 });
-  assert.equal(clean.clean, true);
-  assert.deepEqual(clean.forbidden, []);
-  assert.deepEqual(clean.activations, { '_NET_ACTIVE_WINDOW ClientMessage': 2, 'ConfigureWindow stack-mode': 2, SetInputFocus: 2 });
-  // the release activated the window again
-  const again = auditHeldRelease(parseXtrace([...XTEST_QUERY, ...sample, ACTIVATE, RAISE, FOCUS].join('\n')), TARGET, { holds: 1 });
-  assert.equal(again.clean, false);
-  assert.match(again.forbidden.map((f) => f.what).join(), /2 activations for 1 hold/);
-  // a hold that never activated is not the case this audit judges
-  assert.equal(auditHeldRelease(parseXtrace([...XTEST_QUERY, FAKE_INPUT, FAKE_INPUT].join('\n')), TARGET, { holds: 1 }).clean, false);
-  // another window activated, or the pointer warped
+// M4's T4: a key held, the window minimized, then released. The trace is split at the harness's marks (the proxy's log
+// offsets: `hold:<i>` and `held:<i>` around the hold, `release:<i>` and `released:<i>` around the release and its quiet),
+// so each request is attributed to the request that sent it.
+const TARGET = 0x012000f8;
+const send = (seq, event, extra = '') => `000:<:${seq}: 44: Request(25): SendEvent propagate=false(0x00) destination=0x012000f8 event-mask=0 ${event}${extra}`;
+const KEY_PRESS = (seq) => send(seq, 'KeyPress(2) keycode=0x32', ' time=0x00000000 root=0x000003c5 event=0x012000f8 child=None(0x00000000) root-x=1 root-y=1 event-x=1 event-y=1 state=0 same-screen=true(0x01)');
+const KEY_RELEASE = (seq, code = '0x32') => send(seq, `KeyRelease(3) keycode=${code}`, ' time=0x00000000 root=0x000003c5 event=0x012000f8 child=None(0x00000000) root-x=1 root-y=1 event-x=1 event-y=1 state=Shift same-screen=true(0x01)');
+const FOCUS_IN = (seq) => send(seq, 'FocusIn(9) detail=Nonlinear(0x03) event=0x012000f8 mode=Normal(0x00)');
+const FOCUS_OUT = (seq) => send(seq, 'FocusOut(10) detail=Nonlinear(0x03) event=0x012000f8 mode=Normal(0x00)');
+const MOTION = (seq) => send(seq, 'MotionNotify(6) detail=Normal(0x00)');
+const fake = (seq, type, detail) => `000:<:${seq}: 36: XTEST-Request(132,2): UNKNOWN opcode=0x84 opcode2=0x02 unparsed-data=${type},${detail},0x00,0x00,0x00,0x00,0x00,0x00`;
+const XTEST_PRESS = (seq) => fake(seq, '0x02', '0x32');
+const XTEST_RELEASE = (seq) => fake(seq, '0x03', '0x32');
+
+/** A trace's text and its marks, from lines and `{mark}` entries, the marks at the byte offsets the proxy records. */
+function traced(parts) {
+  let text = '';
+  const marks = [];
+  for (const part of parts) {
+    if (typeof part === 'string') text += `${part}\n`;
+    else marks.push({ tag: part.mark, at: Buffer.byteLength(text) });
+  }
+  return { trace: parseXtrace(text), marks };
+}
+const held = (route, parts) => {
+  const { trace, marks } = traced([...XTEST_QUERY, ...parts]);
+  return auditHeldRelease(trace, TARGET, { route, marks });
+};
+const m = (tag) => ({ mark: tag });
+
+test('parseXtrace records where each request starts in the trace, in bytes, for the marks', () => {
+  const { trace, marks } = traced([KEY_PRESS('0010'), m('held:0'), 'garbage é', KEY_RELEASE('0011')]);
+  const [press, release] = trace.requests;
+  assert.equal(press.at, 0);
+  assert.ok(marks[0].at > press.at && marks[0].at <= release.at);
+  assert.equal(release.at, Buffer.byteLength(`${KEY_PRESS('0010')}\ngarbage é\n`));
+});
+
+test('a background hold released on its minimized window: the hold proven, then exactly its release, the teardown allowed', () => {
+  const sample = (i, release) => [m(`hold:${i}`), FOCUS_IN('0010'), KEY_PRESS('0011'), m(`held:${i}`), m(`release:${i}`), ...release, m(`released:${i}`)];
+  const clean = held('background', [...sample(0, [KEY_RELEASE('0012'), FOCUS_OUT('0013')]), ...sample(1, [KEY_RELEASE('0022')])]);
+  assert.deepEqual([clean.clean, clean.forbidden], [true, []]);
+  assert.deepEqual(clean.samples.map((s) => s.held), [['key 50'], ['key 50']]);
+  // the negative controls: a no-op release, and one that sends an extra press
+  assert.equal(held('background', sample(0, [])).clean, false, 'a no-op key_up');
+  assert.equal(held('background', sample(0, [FOCUS_OUT('0013')])).clean, false, 'only the teardown');
+  assert.equal(held('background', sample(0, [KEY_PRESS('0012'), KEY_RELEASE('0013')])).clean, false, 'an extra press');
+  assert.equal(held('background', sample(0, [KEY_RELEASE('0012'), KEY_RELEASE('0013')])).clean, false, 'released twice');
+  assert.equal(held('background', sample(0, [KEY_RELEASE('0012', '0x25')])).clean, false, 'another key released');
+  assert.equal(held('background', sample(0, [KEY_RELEASE('0012'), MOTION('0013')])).clean, false, 'motion');
+  assert.equal(held('background', sample(0, [XTEST_RELEASE('0012')])).clean, false, 'released through XTEST');
+  for (const line of [ACTIVATE, RAISE, FOCUS, WARP]) assert.equal(held('background', sample(0, [KEY_RELEASE('0012'), line])).clean, false, line);
+  // the hold must be proven first: a release with no press before it proves nothing
+  assert.equal(held('background', [m('hold:0'), FOCUS_IN('0010'), m('held:0'), m('release:0'), KEY_RELEASE('0012'), m('released:0')]).clean, false, 'no hold');
+  // input outside the attributed spans, and a sample whose marks are missing
+  assert.equal(held('background', [KEY_PRESS('0009'), ...sample(0, [KEY_RELEASE('0012')])]).clean, false, 'a press outside the spans');
+  assert.equal(held('background', [m('hold:0'), KEY_PRESS('0011'), m('held:0'), KEY_RELEASE('0012')]).clean, false, 'the release unmarked');
+  assert.equal(held('background', []).clean, false, 'no sample');
+});
+
+test('a foreground hold released on its minimized window: XTEST releases exactly the held keys, and nothing activates', () => {
+  const sample = (i, release) => [m(`hold:${i}`), ACTIVATE, RAISE, FOCUS, XTEST_PRESS('0011'), m(`held:${i}`), m(`release:${i}`), ...release, m(`released:${i}`)];
+  const clean = held('foreground', [...sample(0, [XTEST_RELEASE('0012')]), ...sample(1, [XTEST_RELEASE('0022')])]);
+  assert.deepEqual([clean.clean, clean.forbidden], [true, []]);
+  assert.deepEqual(clean.samples.map((s) => s.held), [['key 50'], ['key 50']]);
+  assert.equal(held('foreground', sample(0, [])).clean, false, 'a no-op key_up');
+  assert.equal(held('foreground', sample(0, [XTEST_PRESS('0012'), XTEST_RELEASE('0013')])).clean, false, 'an extra press');
+  assert.equal(held('foreground', sample(0, [fake('0012', '0x06', '0x00'), XTEST_RELEASE('0013')])).clean, false, 'motion');
+  assert.equal(held('foreground', sample(0, [fake('0012', '0x04', '0x01'), XTEST_RELEASE('0013')])).clean, false, 'a button press');
+  for (const line of [ACTIVATE, RAISE, FOCUS, WARP]) assert.equal(held('foreground', sample(0, [line, XTEST_RELEASE('0012')])).clean, false, `the release sent ${line}`);
+  assert.equal(held('foreground', sample(0, [KEY_RELEASE('0012')])).clean, false, 'released by SendEvent instead');
+  // the hold's activation names the target; another window's is forbidden even there
   const other = ACTIVATE.replace('window=0x012000f8', 'window=0x01400001');
-  assert.equal(auditHeldRelease(parseXtrace([...XTEST_QUERY, ...sample, other].join('\n')), TARGET, { holds: 1 }).clean, false);
-  assert.equal(auditHeldRelease(parseXtrace([...XTEST_QUERY, ...sample, WARP].join('\n')), TARGET, { holds: 1 }).clean, false);
-  // no trace at all is never clean
-  assert.equal(auditHeldRelease(parseXtrace(''), TARGET, { holds: 1 }).clean, false);
+  assert.equal(held('foreground', [m('hold:0'), other, XTEST_PRESS('0011'), m('held:0'), m('release:0'), XTEST_RELEASE('0012'), m('released:0')]).clean, false, 'another window activated');
+  assert.equal(held('foreground', [m('hold:0'), ACTIVATE, m('held:0'), m('release:0'), XTEST_RELEASE('0012'), m('released:0')]).clean, false, 'no hold');
+  assert.equal(auditHeldRelease(parseXtrace(''), TARGET, { route: 'foreground', marks: [] }).clean, false, 'no trace');
 });

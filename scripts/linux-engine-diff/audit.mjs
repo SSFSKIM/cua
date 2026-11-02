@@ -5,7 +5,7 @@
 // XTEST's major opcode as the server reported it to the traced client, with minor 2.
 
 import { spawn } from 'node:child_process';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,12 +13,18 @@ const REQUEST = /^(\d+):<:([0-9a-f]+):\s*\d+:\s*(?:([A-Za-z0-9-]+)-)?Request\((\
 const QUERY = /^(\d+):<:([0-9a-f]+):.*Request\(98\): QueryExtension name='([^']+)'/;
 const QUERY_REPLY = /^(\d+):>:([0-9a-f]+):.*Reply to QueryExtension: present=true\S* major-opcode=(\d+)/;
 
-/** A trace's requests `{conn, seq, major, minor, name, text}` and the extensions' major opcodes the server reported. */
+/**
+ * A trace's requests `{conn, seq, major, minor, name, text, at}` and the extensions' major opcodes the server reported.
+ * `at` is where the request's line starts in the trace, in bytes, which the proxy's marks are measured in.
+ */
 export function parseXtrace(text) {
   const requests = [];
   const extensions = {};
   const asked = new Map();
+  let offset = 0;
   for (const line of text.split('\n')) {
+    const at = offset;
+    offset += Buffer.byteLength(line) + 1;
     const q = line.match(QUERY);
     if (q) asked.set(`${q[1]}|${q[2]}`, q[3]);
     const r = line.match(QUERY_REPLY);
@@ -32,6 +38,7 @@ export function parseXtrace(text) {
       minor: m[5] === undefined ? null : Number(m[5]),
       name: m[6]?.replace(/:$/, '') ?? null,
       text: line.slice(0, 400),
+      at,
     });
   }
   return { requests, extensions };
@@ -103,28 +110,106 @@ export function auditNothingSent({ requests, extensions }) {
   return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
 }
 
+/** The X event types an input request can carry: XTEST FakeInput's `type` byte, SendEvent's event code. */
+const EVENT_TYPES = { 2: 'KeyPress', 3: 'KeyRelease', 4: 'ButtonPress', 5: 'ButtonRelease', 6: 'MotionNotify', 7: 'EnterNotify', 8: 'LeaveNotify', 9: 'FocusIn', 10: 'FocusOut' };
+const SENT_EVENT = /\b(KeyPress|KeyRelease|ButtonPress|ButtonRelease|MotionNotify|EnterNotify|LeaveNotify|FocusIn|FocusOut)\((\d+)\)(?:\s+(?:keycode|button|detail)=0x([0-9a-f]+))?/;
+
 /**
- * The audit of a key held through the foreground route and released once its window was minimized (M4's T4), over
- * `holds` samples each of which made one hold: the hold activates its window (the `_NET_ACTIVE_WINDOW` ClientMessage,
- * the stacking `ConfigureWindow` and `SetInputFocus`, each naming the target) and presses through XTEST; the release
- * sends XTEST and activates nothing. So XTEST FakeInput is allowed, each activation request exactly once a hold, and
- * anything else the background route forbids (one naming another window, WarpPointer) is not. A trace with no
- * requests is not clean. Returns `{clean, traced, requests, activations, forbidden}`.
+ * The input event a request carries, or null: `{via: 'xtest', type, detail}` for XTEST FakeInput (whose body xtrace
+ * leaves unparsed: its first byte is the event type, its second the keycode or button), `{via: 'send', type, detail,
+ * destination}` for a SendEvent of an input or focus event.
  */
-export function auditHeldRelease({ requests, extensions }, target, { holds }) {
-  const found = [];
-  const activations = { '_NET_ACTIVE_WINDOW ClientMessage': 0, 'ConfigureWindow stack-mode': 0, SetInputFocus: 0 };
-  for (const r of requests) {
-    const what = forbidden(r, extensions);
-    if (!what || what === 'XTEST FakeInput') continue;
-    if (what in activations && namedWindow(r) === target) activations[what]++;
-    else found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+export function inputEvent(request, extensions) {
+  if (extensions.XTEST !== undefined && request.major === extensions.XTEST && request.minor === 2) {
+    const bytes = request.text.match(/unparsed-data=(0x[0-9a-f]{2}),(0x[0-9a-f]{2})/);
+    if (!bytes) return { via: 'xtest', type: 'unreadable', detail: null };
+    return { via: 'xtest', type: EVENT_TYPES[Number(bytes[1])] ?? `type ${Number(bytes[1])}`, detail: Number(bytes[2]) };
   }
-  for (const [what, n] of Object.entries(activations)) {
-    if (n !== holds) found.push({ what: `${what}: ${n} activations for ${holds} hold${holds === 1 ? '' : 's'}` });
+  if (request.major !== 25) return null;
+  const sent = request.text.match(SENT_EVENT);
+  if (!sent) return null;
+  const destination = request.text.match(/\bdestination=0x([0-9a-f]+)/);
+  return { via: 'send', type: sent[1], detail: sent[3] === undefined ? null : Number.parseInt(sent[3], 16), destination: destination ? Number.parseInt(destination[1], 16) : null };
+}
+
+/** A pressed key or button and the release that answers it. */
+const RELEASE_OF = { KeyPress: 'KeyRelease', ButtonPress: 'ButtonRelease' };
+const heldName = ({ type, detail }) => `${type === 'KeyPress' ? 'key' : 'button'} ${detail}`;
+
+/**
+ * The audit of a key or button held, its window then minimized, then released (M4's T4; the design session's proof):
+ * each sample's requests are attributed by the harness's marks in the trace (`hold:<i>` and `held:<i>` around the hold,
+ * `release:<i>` and `released:<i>` around the release and the quiet after it). On the hold's route (`background`: a
+ * SendEvent to the target; `foreground`: XTEST):
+ * - the hold is proven first: it pressed at least one key or button, and released none;
+ * - the release holds exactly one release of each held key or button, and no press, no motion, no crossing, no
+ *   activation and no focus request; the background route's own teardown, a synthetic FocusOut to the target, is
+ *   allowed;
+ * - the foreground hold may activate its target (the route's own activation); nothing else the background route
+ *   forbids, anywhere;
+ * - outside the samples' spans the engine sends no input and nothing the background route forbids.
+ * A trace with no requests, or a sample whose marks are missing or out of order, is not clean. Returns `{clean,
+ * traced, requests, samples: [{i, held}], forbidden}`.
+ */
+export function auditHeldRelease({ requests, extensions }, target, { route, marks }) {
+  const found = [];
+  const flag = (what, r) => found.push({ conn: r?.conn, seq: r?.seq, what, text: r?.text });
+  const at = new Map(marks.map((m) => [m.tag, m.at]));
+  const indices = [...new Set(marks.map((m) => m.tag.split(':')[1]))].sort((a, b) => Number(a) - Number(b));
+  const samples = [];
+  const attributed = new Set();
+  const viaRoute = route === 'foreground' ? (e) => e.via === 'xtest' : (e) => e.via === 'send' && e.destination === target;
+  for (const i of indices) {
+    const edges = ['hold', 'held', 'release', 'released'].map((t) => at.get(`${t}:${i}`));
+    if (edges.some((e) => e === undefined) || edges.some((e, k) => k > 0 && e < edges[k - 1])) {
+      flag(`sample ${i}: its marks are missing or out of order`);
+      continue;
+    }
+    const within = (from, to) => requests.filter((r) => r.at >= from && r.at < to);
+    const hold = within(edges[0], edges[1]);
+    const release = within(edges[2], edges[3]);
+    for (const r of [...hold, ...release]) attributed.add(r);
+    // the hold: its presses on its route, its own activation on the foreground route, nothing else forbidden
+    const pressed = [];
+    for (const r of hold) {
+      const e = inputEvent(r, extensions);
+      const what = forbidden(r, extensions);
+      if (e && viaRoute(e) && RELEASE_OF[e.type]) pressed.push({ type: e.type, detail: e.detail });
+      else if (e && ['KeyRelease', 'ButtonRelease'].includes(e.type)) flag(`sample ${i}: the hold released ${e.type} ${e.detail}`, r);
+      else if (e && e.via === 'send' && e.type === 'FocusIn' && route === 'background' && e.destination === target) continue;
+      else if (e && e.via !== 'xtest') flag(`sample ${i}: the hold sent ${e.type}`, r);
+      if (what && what !== 'XTEST FakeInput' && !(route === 'foreground' && what !== 'WarpPointer' && namedWindow(r) === target)) flag(`sample ${i}: the hold sent ${what}`, r);
+      if (what === 'XTEST FakeInput' && route !== 'foreground') flag(`sample ${i}: the hold sent ${what}`, r);
+      if (e?.via === 'xtest' && route === 'foreground' && !RELEASE_OF[e.type]) flag(`sample ${i}: the hold sent XTEST ${e.type}`, r);
+    }
+    if (!pressed.length) flag(`sample ${i}: the hold pressed nothing on the ${route} route`);
+    // the release: exactly one release of each held key or button, the background teardown allowed, nothing else
+    const owed = pressed.map((p) => `${RELEASE_OF[p.type]} ${p.detail}`);
+    for (const r of release) {
+      const e = inputEvent(r, extensions);
+      const what = forbidden(r, extensions);
+      if (e && viaRoute(e) && ['KeyRelease', 'ButtonRelease'].includes(e.type)) {
+        const k = owed.indexOf(`${e.type} ${e.detail}`);
+        if (k >= 0) owed.splice(k, 1);
+        else flag(`sample ${i}: the release sent ${e.type} ${e.detail}, which was not held or was released already`, r);
+        continue;
+      }
+      if (e && e.via === 'send' && e.type === 'FocusOut' && route === 'background' && e.destination === target) continue;
+      if (e) flag(`sample ${i}: the release sent ${e.via === 'xtest' ? 'XTEST ' : ''}${e.type}${e.detail === null ? '' : ` ${e.detail}`}`, r);
+      else if (what) flag(`sample ${i}: the release sent ${what}`, r);
+    }
+    for (const missing of owed) flag(`sample ${i}: the release never sent ${missing}`);
+    samples.push({ i: Number(i), held: pressed.map(heldName) });
+  }
+  if (!samples.length) flag('no sample was marked in the trace');
+  for (const r of requests) {
+    if (attributed.has(r)) continue;
+    const e = inputEvent(r, extensions);
+    const what = forbidden(r, extensions);
+    if (e || what) flag(`outside the hold and the release: ${e ? `${e.via === 'xtest' ? 'XTEST ' : ''}${e.type}` : what}`, r);
   }
   const traced = requests.length > 0;
-  return { clean: traced && found.length === 0, traced, requests: requests.length, activations, forbidden: found };
+  return { clean: traced && found.length === 0, traced, requests: requests.length, samples, forbidden: found };
 }
 
 function freeDisplay() {
@@ -158,10 +243,34 @@ export async function startProxy({ display = process.env.DISPLAY ?? ':0' } = {})
     if (Date.now() > deadline || child.exitCode !== null) throw new Error(`xtrace did not start: ${stderr.trim()}`);
     await new Promise((r) => setTimeout(r, 20));
   }
+  const marks = [];
   return {
     display: `:${n}`,
     env: { ...process.env, DISPLAY: `:${n}`, XAUTHORITY: auth },
     log,
+    marks,
+    /**
+     * A mark at the trace's end, for attributing requests to the harness's steps: once the log has stopped growing for
+     * 100 ms (xtrace writes each line as it forwards it), its length in bytes, recorded as `{tag, at}`. A request still
+     * in flight when the mark is taken lands after it, in the next step's span, where the audits count it against
+     * that step: a late request is never excused.
+     */
+    async mark(tag) {
+      const size = () => (existsSync(log) ? statSync(log).size : 0);
+      const deadline = Date.now() + 3000;
+      let last = size();
+      let quiet = Date.now();
+      while (Date.now() - quiet < 100 && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 20));
+        const now = size();
+        if (now !== last) {
+          last = now;
+          quiet = Date.now();
+        }
+      }
+      marks.push({ tag, at: last });
+      return last;
+    },
     async stop() {
       child.kill('SIGTERM');
       await exited;

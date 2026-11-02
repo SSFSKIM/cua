@@ -54,6 +54,7 @@ export const SCENE_OPS = {
   // M4's T4: minimized windows (minimized.mjs), cua alone
   minimized: DEVICE_SCENE_OPS.minimized,
   'minimized-xterm': DEVICE_SCENE_OPS['minimized-xterm'],
+  'minimized-recorder': DEVICE_SCENE_OPS['minimized-recorder'],
 };
 
 const GEDIT = [910, 756];

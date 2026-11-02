@@ -501,17 +501,27 @@ variants included; their evidence is written either way. The run's `end` row kee
   before the request, and the witness allows the pointer field alone, `pointerMoves`). In dedicated mode the pointer
   parked outside takes the foreground route and the short drop lands. A parked pointer goes back where the case found
   it in the sample's cleanup.
-- **Minimized windows** (M4's T4, `minimized.mjs`, the scenes `minimized` (gedit) and `minimized-xterm`): cua alone,
-  each sample's window minimized with `xprobe minimize` (the harness's front window takes the focus first, so the
-  window manager's focus fallback lands on a harness window; the active window afterwards is recorded, and one the
-  harness did not open stops the run) and restored with `xprobe restore` after it, both outside the spans. Every
-  window-targeted input answers `Window <id> is minimized; activate it first` with nothing sent (the `nothing-sent`
-  audit), in both modes and before the device refusal; `list_windows` lists the window with `minimized: true` and no
-  other; its tree is read and its screenshot is none; the same window restored is captured and loses the field. A key
-  held before the minimize is released after it: on the background route under the background audit, on xterm's
-  foreground route in dedicated mode under the `held-release` audit (the hold's own activation once a sample, and
-  nothing more), the server's key state read with `xprobe keys-down`. `activate_window` restores the window and
-  answers success; a withdrawn window answers the first focus error at the engine's 1 s bound. Elsewhere in the run, a
+- **Minimized windows** (M4's T4, `minimized.mjs`, the scenes `minimized` (gedit), `minimized-xterm` and
+  `minimized-recorder`): cua alone, each sample's window minimized with `xprobe minimize` (the harness's front window
+  takes the focus first, so the window manager's focus fallback lands on a harness window; the active window afterwards
+  is recorded, and one the harness did not open stops the run) and restored with `xprobe restore` after it, both
+  outside the spans. Every window-targeted input answers `Window <id> is minimized; activate it first` with nothing
+  sent (the `nothing-sent` audit), in both modes and before the device refusal. `list_windows` lists the window with
+  `minimized: true` and no other. A state read answers for the requested window (its id, the field on it, a tree
+  showing the fixture's marker, gedit's file name) with no screenshot. The same window restored loses the field and
+  gives one screenshot that is a real image of it: the file exists and decodes at the window's size, and matches the
+  window's own contents (`xprobe snap`, then `xprobe imgdiff` with no rows masked). A key held before the minimize is
+  released after it, the hold proven first and then the release, on each route's own evidence:
+  - on the background route, on `minimized-recorder`, a window `xprobe record … managed` holds (the window manager
+    manages it, and its client is the harness, so a synthetic event reaches the harness): it received the hold's
+    synthetic press, then exactly the release of the held key, with nothing beside it but the route's FocusOut;
+  - on xterm's foreground route in dedicated mode, the server's keymap (`xprobe keys-down`): the key down after the
+    hold and up after the release.
+
+  Either way the `held-release` audit splits the trace at the case's marks (`ctx.traceMark`, the proxy's log offsets
+  once the log is quiet) and requires the hold's press on its route, then release events for exactly the held set,
+  with no press, no motion, no activation and no focus request. `activate_window` restores the window and answers
+  success; a withdrawn window answers the first focus error at the engine's 1 s bound. Elsewhere in the run, a
   listing's minimized windows are set aside where the deviation declares them (`setAsideMinimized`).
 - **The witness's allowances** (`witness.mjs`):
   - **Foreground.** Override-redirect windows of the target's own X client (its resource-id base) may map, restack

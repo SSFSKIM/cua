@@ -13,12 +13,15 @@
 //!   moments the captured contents changed (a hash of the colour bytes and the black fraction, never pixels).
 //! - `xprobe imgdiff <a.jpg> <b.jpg> [mask-top-rows]`: sizes, mean absolute difference and differing pixels of two
 //!   JPEGs below their top rows.
+//! - `xprobe snap <window> <out.jpg>`: the window's own contents (`GetImage` of its drawable, so a retained window
+//!   reads as itself under cover) once two reads 100 ms apart agree, as a JPEG: an independent reference for an
+//!   engine's capture of a harness window.
 //! - `xprobe close <window>`: asks the window's client to close it (`WM_DELETE_WINDOW`), for harness-owned windows.
 //! - `xprobe minimize <window>`, `restore <window>`: asks the window manager to iconify it (`WM_CHANGE_STATE`), or maps
 //!   it again, and waits until it is, for harness-owned windows.
 //! - `xprobe keys-down`: the keycodes the X server holds down (`QueryKeymap`), as a JSON array.
-//! - `xprobe record <x> <y> <width> <height> [focus]`: a recorder window that prints the input events it receives
-//!   (`record.rs`).
+//! - `xprobe record <x> <y> <width> <height> [focus] [managed <title>]`: a recorder window that prints the input events
+//!   it receives (`record.rs`).
 //! - `xprobe clip-own <text>`, `clip-read`, `grabs`, `within <window> <ancestor>`: the clipboard owner and reader and
 //!   the desktop checks of M2's text cases (`clip.rs`).
 //! - `xprobe toplevel <window>`, `restack-grabbed <window>...`, `popup …`, `overlay …`: a window's top-level, the coalesced
@@ -67,6 +70,7 @@ fn main() {
         Some("witness") => witness(),
         Some("retention") => retention(&args[1..]),
         Some("imgdiff") if (3..=4).contains(&args.len()) => imgdiff(&args[1], &args[2], args.get(3)),
+        Some("snap") if args.len() == 3 => snap(&args[1], &args[2]),
         Some("close") if args.len() == 2 => close(&args[1]),
         Some("minimize") if args.len() == 2 => minimize(&args[1]),
         Some("restore") if args.len() == 2 => restore(&args[1]),
@@ -86,7 +90,7 @@ fn main() {
         Some("request-watch") if args.len() == 1 => requests::request_watch(),
         Some("crossing-watch") if args.len() == 1 => crossing::crossing_watch(),
         Some("cursor-watch") if args.len() == 1 => cursor::cursor_watch(),
-        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | close <window> | record <x> <y> <w> <h> [focus] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | overlay <x> <y> <w> <h> [below <window>] | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch | crossing-watch | cursor-watch".into()),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | snap <window> <out.jpg> | close <window> | record <x> <y> <w> <h> [focus] [managed <title>] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | overlay <x> <y> <w> <h> [below <window>] | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch | crossing-watch | cursor-watch".into()),
     };
     if let Err(error) = result {
         eprintln!("xprobe: {error}");
@@ -530,6 +534,44 @@ fn imgdiff(a: &str, b: &str, mask_top: Option<&String>) -> Result<()> {
         b.width(),
         b.height()
     );
+    Ok(())
+}
+
+/// How long `snap` waits for a window's contents to hold still, and the gap between its two reads.
+const SNAP_WAIT: Duration = Duration::from_secs(3);
+const SNAP_GAP: Duration = Duration::from_millis(100);
+
+/// `window`'s own contents as a JPEG at `out` once two reads `SNAP_GAP` apart agree (at most `SNAP_WAIT`, then the
+/// last read, marked unsettled); prints `{"width":…,"height":…,"settled":…}`. The read is `GetImage` of the window's
+/// drawable, which is the window's own contents while it is retained (redirected), whatever covers it.
+fn snap(window: &str, out: &str) -> Result<()> {
+    let window = parse_window(window)?;
+    let (conn, _) = x11rb::connect(None)?;
+    let geometry = conn.get_geometry(window)?.reply()?;
+    let (width, height) = (geometry.width, geometry.height);
+    let started = Instant::now();
+    let mut last = grab(&conn, window, width, height)?;
+    let settled = loop {
+        std::thread::sleep(SNAP_GAP);
+        let now = grab(&conn, window, width, height)?;
+        if now == last {
+            break true;
+        }
+        last = now;
+        if started.elapsed() >= SNAP_WAIT {
+            break false;
+        }
+    };
+    // ZPixmap at depth 24/32 on a little-endian server: blue, green, red, pad
+    let rgb: Vec<u8> = last.chunks_exact(4).flat_map(|px| [px[2], px[1], px[0]]).collect();
+    let file = std::fs::File::create(out)?;
+    image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::BufWriter::new(file), 90).encode(
+        &rgb,
+        u32::from(width),
+        u32::from(height),
+        image::ExtendedColorType::Rgb8,
+    )?;
+    println!("{{\"width\":{width},\"height\":{height},\"settled\":{settled}}}");
     Ok(())
 }
 

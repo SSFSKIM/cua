@@ -7,13 +7,20 @@
 //   minimized; activate it first`, exactly, with the witness unchanged, the window still minimized and its contents
 //   unchanged, and an X request audit that finds nothing sent at all (the minimized refusal comes before the device
 //   refusal, so a family the device mode refuses or sends through the foreground route answers it too);
-// - `minimized-read`: `list_windows` lists the window with `minimized: true` and no other window with the field; its
-//   tree is read; its screenshot is none; and the same window restored gives one screenshot and loses the field (the
-//   control, so an engine that answered no screenshot for every window, or the field for every window, fails);
-// - `release` (a key held before the window was minimized, released after): the release answers success, activates
-//   nothing (the witness unchanged, the window still minimized), and the audit shows only the release: on the
-//   background route nothing the route forbids, on the foreground route the hold's own activation once a sample and
-//   nothing more;
+// - `minimized-read`: `list_windows` lists the window with `minimized: true` and no other window with the field; a
+//   state read answers for the requested window (its id, the field on it, a tree showing the fixture's marker) with no
+//   screenshot; and the same window restored gives one screenshot, a real image of that window (its file decodes, at
+//   the window's size, and matches an independent capture by content), and loses the field (the control, so an engine
+//   that answered no screenshot for every window, the field for every window, or another window's state or image,
+//   fails);
+// - `release` (a key held before the window was minimized, released after; the design session's proof, per route):
+//   the hold is proven first, then the release: on the background route the window is a harness recorder
+//   (`minimized-recorder`, `xprobe record … managed`), which received the hold's synthetic press and then exactly its
+//   release, with nothing but the route's own FocusOut beside it; on the foreground route the server's keymap shows the
+//   key down after the hold and up after the release. Either way the release answers success, activates nothing (the
+//   witness unchanged, the window still minimized), and the audit, split at the harness's marks in the trace, holds
+//   release events for exactly the held set, with no press, no motion, no activation and no focus request
+//   (audit.mjs `auditHeldRelease`);
 // - `activate`: `activate_window` restores the window and gives it the focus, answering success, where every vendor
 //   build answers BadMatch for the same activation (M4, C22); the wait for the window manager's map is recorded;
 // - `activate-unmapped` (the control of that wait): a window no window manager maps (withdrawn) answers the first
@@ -24,7 +31,11 @@
 // sample; one the harness did not open stops the run.
 
 import { execFileSync } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, join } from 'node:path';
 
+import { imageVerdict } from './images.mjs';
 import { preorder } from './normalize.mjs';
 import { activeWindow, configure, xdotool, XPROBE } from './scenes.mjs';
 
@@ -106,6 +117,7 @@ export async function restore(ctx) {
 
 /** What a minimized case's window shows: its state and its contents (gedit's text, or xterm's received bytes). */
 async function contents(ctx) {
+  if (ctx.scene.recorder) return { minimized: isMinimized(windowState(ctx.scene.id)) };
   const { readFileSync } = await import('node:fs');
   const state = windowState(ctx.scene.id);
   const text = ctx.scene.record ? readFileSync(ctx.scene.record, 'latin1') : await ctx.desktop.geditText(ctx.scene);
@@ -156,8 +168,10 @@ function refused(request, { mode = 'shared', element = false } = {}) {
 }
 
 const win = (ctx) => ({ id: ctx.scene.id });
+/** What a state read of the case's window must be bound to: the requested window and the fixture's marker. */
+const expected = (ctx) => ({ id: ctx.scene.id, marker: markerOf(ctx.scene) });
 
-/** A read of the minimized window, checked by `judge(ctx, response)`. */
+/** A read of the minimized window, checked by `judge(ctx, output, listed)` (which may be asynchronous). */
 function read(request, judge, { minimized = true } = {}) {
   return {
     ...base({ expect: 'minimized-read' }),
@@ -172,7 +186,8 @@ function read(request, judge, { minimized = true } = {}) {
     request,
     check: async (ctx, response) => {
       const listed = await ctx.desktop.listWindows();
-      return { answer_ok: response.ok === true && judge(ctx, response.output, listed), minimized_by: ctx.minimized, still: windowState(ctx.scene.id) };
+      const facts = { minimized_by: ctx.minimized, still: windowState(ctx.scene.id) };
+      return { answer_ok: response.ok === true && (await judge(ctx, response.output, listed, facts)) === true, ...facts };
     },
   };
 }
@@ -184,43 +199,152 @@ export function listedAsMinimized(windows, id, minimized = true) {
   return mine.length === 1 && (minimized ? mine[0].minimized === true : !('minimized' in mine[0])) && others.every((w) => !('minimized' in w));
 }
 
-/**
- * A state read of the minimized window, with or without a screenshot asked for: its tree read through the accessibility
- * bus (more than the X11 fallback's one node), no screenshot, and the field in its window.
- */
-export function minimizedState(state) {
+/** The fixture's marker a state read must show: gedit's scratch file name (in its title), else the scene's label. */
+export const markerOf = (scene) => (scene.file ? basename(scene.file) : scene.label);
+
+/** The state read's tree is the fixture's own: read through the accessibility bus, more than one node, its marker shown. */
+function ownTree(state, marker) {
   const nodes = preorder(state.ax_tree);
-  return state.ax_tree_source === 'at_spi' && nodes.length > 1 && state.window?.minimized === true && Array.isArray(state.screenshots) && state.screenshots.length === 0;
+  return state.ax_tree_source === 'at_spi' && nodes.length > 1 && nodes.some((n) => typeof n.name === 'string' && n.name.includes(marker));
 }
 
-/** The restored window's state: one screenshot, and no field. */
-export function restoredState(state) {
-  return state.ax_tree_source === 'at_spi' && Array.isArray(state.screenshots) && state.screenshots.length === 1 && !('minimized' in (state.window ?? {}));
+/**
+ * A state read of the minimized window `{id, marker}`, with or without a screenshot asked for: the answer is for that
+ * window (its id, the field on it), its tree is the fixture's own, and it has no screenshot.
+ */
+export function minimizedState(state, { id, marker }) {
+  return state.window?.id === id && state.window.minimized === true && ownTree(state, marker) && Array.isArray(state.screenshots) && state.screenshots.length === 0;
+}
+
+/**
+ * The restored window's state: the answer is for that window, without the field, its tree the fixture's own, with
+ * exactly one screenshot, which `shot` (`shotVerdict`) judged a real image of the window.
+ */
+export function restoredState(state, { id, marker }, shot) {
+  return state.window?.id === id && !('minimized' in state.window) && ownTree(state, marker) && Array.isArray(state.screenshots) && state.screenshots.length === 1 && shot?.ok === true;
+}
+
+/** The same window captured twice: no rows masked, at most 0.1% of the pixels off by more than 32 in a channel. */
+const SAME_WINDOW = { maskTopRows: 0, maxOverFraction: 0.001 };
+
+/**
+ * Whether a screenshot entry is a real image of `window`: it names a file, which exists and decodes (`diff`, the
+ * `xprobe imgdiff` of an independent capture of the window against it, is null otherwise), at the window's size, with
+ * the window's contents. Returns `{ok, reason}`.
+ */
+export function shotVerdict(entry, window, diff) {
+  if (typeof entry?.filepath !== 'string' || !entry.filepath) return { ok: false, reason: 'the entry names no file' };
+  if (!diff) return { ok: false, reason: 'the file is missing or does not decode as a JPEG' };
+  const [w, h] = diff.b;
+  if (w !== window?.width || h !== window?.height) return { ok: false, reason: `the image is ${w}×${h}, the window ${window?.width}×${window?.height}` };
+  return imageVerdict(diff, SAME_WINDOW);
+}
+
+/**
+ * A screenshot entry judged against the window itself: an independent capture (`xprobe snap`, the window's own drawable
+ * once it holds still, which the engine's retention keeps readable under cover) compared with the entry's file.
+ */
+function inspectShot(entry, window) {
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-snap-'));
+  try {
+    let diff = null;
+    if (typeof entry?.filepath === 'string' && existsSync(entry.filepath)) {
+      const reference = join(dir, 'reference.jpg');
+      execFileSync(XPROBE, ['snap', String(window.id), reference], { encoding: 'utf8' });
+      try {
+        diff = JSON.parse(execFileSync(XPROBE, ['imgdiff', reference, entry.filepath, '0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+      } catch {
+        // it does not decode
+      }
+    }
+    return { ...shotVerdict(entry, window, diff), ...(diff ? { mad: diff.mad, over: diff.over, size: diff.b } : {}) };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** The events a background hold put into its window: the synthetic presses, a synthetic FocusIn allowed beside them. */
+export function syntheticHold(events) {
+  const held = [];
+  const extra = [];
+  for (const e of events ?? []) {
+    if (e.send === true && ['KeyPress', 'ButtonPress'].includes(e.type)) held.push({ type: e.type, detail: e.detail });
+    else if (!(e.send === true && e.type === 'FocusIn')) extra.push(e);
+  }
+  return { held, extra };
+}
+
+/**
+ * Whether the events a background release put into its window are exactly one synthetic release of each held key or
+ * button, with nothing beside them but the route's own synthetic FocusOut. Returns `{ok, reasons}`.
+ */
+export function syntheticRelease(events, held) {
+  const reasons = [];
+  if (!held?.length) reasons.push('no hold was proven');
+  const owed = (held ?? []).map((h) => `${h.type === 'KeyPress' ? 'KeyRelease' : 'ButtonRelease'} ${h.detail}`);
+  for (const e of events ?? []) {
+    if (e.send === true && e.type === 'FocusOut') continue;
+    const k = e.send === true ? owed.indexOf(`${e.type} ${e.detail}`) : -1;
+    if (k >= 0) owed.splice(k, 1);
+    else reasons.push(`the window received ${e.send ? 'synthetic' : 'real'} ${e.type} ${e.detail}`);
+  }
+  for (const missing of owed) reasons.push(`the window never received ${missing}`);
+  return { ok: reasons.length === 0, reasons };
+}
+
+/** The keys a foreground (XTEST) hold put down at the server: down after it and not before. */
+export function xtestHold(before, after) {
+  return (after ?? []).filter((k) => !(before ?? []).includes(k));
+}
+
+/** Whether a foreground release left the held keys up, and no key down at all. Returns `{ok, reasons}`. */
+export function xtestRelease(after, held) {
+  const reasons = [];
+  if (!held?.length) reasons.push('no hold was proven');
+  if (!Array.isArray(after)) reasons.push('the keymap was not read');
+  else if (after.length) reasons.push(`keys still down: ${after.join(', ')}`);
+  return { ok: reasons.length === 0, reasons };
 }
 
 /**
  * A key held before the window was minimized and released after: `key_down` on the window, then the minimize, then
- * the timed `key_up`. Shift, so the hold types nothing. On the background route the hold is a witnessed companion; on
- * the foreground route it activates the window, which is that route's doing, so it runs outside the spans, and the
- * audit counts its activation (`held-release`).
+ * the timed `key_up`. Shift, so the hold types nothing. The hold is proven before the minimize and the release after
+ * the quiet, on the route's own evidence (module header), and the trace is marked around each for the audit
+ * (`ctx.traceMark`, the audit pass's). On the background route the hold is a witnessed companion; on the foreground
+ * route it activates the window, which is that route's doing, so it runs outside the spans, and the audit allows its
+ * activation.
  */
-function release({ mode, audit }) {
+function release({ mode, holdRoute }) {
+  const background = holdRoute === 'background';
   return {
     ...base({ expect: 'release', mode }),
-    audit,
+    audit: 'held-release',
+    holdRoute,
     prepare: async (ctx) => {
       ctx.desktop.focusFront();
       const hold = () => ctx.engine.request('key_down', { window: win(ctx), key: 'shift' });
-      const down = mode === 'dedicated' ? await hold() : await ctx.witnessed(hold);
+      if (background) await ctx.scene.recorder.mark('before-hold');
+      else ctx.keysBefore = keysDown();
+      await ctx.traceMark?.('hold');
+      const down = background ? await ctx.witnessed(hold) : await hold();
+      await ctx.traceMark?.('held');
+      if (background) ctx.holdEvents = await ctx.scene.recorder.mark('hold');
+      else ctx.keysHeld = keysDown();
       if (!down.response.ok) throw new Error(`the hold before the minimize failed: ${down.response.error}`);
       await minimize(ctx);
+      // what the minimize itself caused at the window is the minimize's, not the release's
+      if (background) await ctx.scene.recorder.mark('minimized');
+      await ctx.traceMark?.('release');
     },
     read: contents,
     request: (ctx) => ['key_up', { window: win(ctx), key: 'shift' }],
     check: async (ctx) => {
       await sleep(QUIET_MS);
+      await ctx.traceMark?.('released');
       const after = await contents(ctx);
-      return { still_minimized: after.minimized === true, active_window: activeWindow(), keys_down: keysDown(), minimized_by: ctx.minimized };
+      const facts = { still_minimized: after.minimized === true, active_window: activeWindow(), minimized_by: ctx.minimized };
+      if (background) return { ...facts, hold_events: ctx.holdEvents ?? null, release_events: await ctx.scene.recorder.mark('release') };
+      return { ...facts, keys_before: ctx.keysBefore ?? null, keys_held: ctx.keysHeld ?? null, keys_down: keysDown() };
     },
   };
 }
@@ -254,16 +378,20 @@ export const MINIMIZED_OPS = {
   minimized_type_text_dedicated: refused((ctx) => ['type_text', { window: win(ctx), text: 'cua171 refused' }], { mode: 'dedicated' }),
   // the reads, and the restored window as their control
   minimized_list: read(() => ['list_windows', {}], (ctx, output) => listedAsMinimized(output, ctx.scene.id)),
-  minimized_tree: read((ctx) => ['get_window_state', { window: win(ctx), include_screenshot: false }], (ctx, output) => minimizedState(output)),
-  minimized_shot: read((ctx) => ['get_window_state', { window: win(ctx), include_screenshot: true }], (ctx, output) => minimizedState(output)),
+  minimized_tree: read((ctx) => ['get_window_state', { window: win(ctx), include_screenshot: false }], (ctx, output) => minimizedState(output, expected(ctx))),
+  minimized_shot: read((ctx) => ['get_window_state', { window: win(ctx), include_screenshot: true }], (ctx, output) => minimizedState(output, expected(ctx))),
   minimized_restored_shot: read(
     (ctx) => ['get_window_state', { window: win(ctx), include_screenshot: true }],
-    (ctx, output, listed) => restoredState(output) && listedAsMinimized(listed, ctx.scene.id, false),
+    (ctx, output, listed, facts) => {
+      facts.shot = inspectShot(output?.screenshots?.[0], { id: ctx.scene.id, width: output?.window?.width, height: output?.window?.height });
+      return restoredState(output, expected(ctx), facts.shot) && listedAsMinimized(listed, ctx.scene.id, false);
+    },
     { minimized: false },
   ),
   minimized_restored_list: read(() => ['list_windows', {}], (ctx, output) => listedAsMinimized(output, ctx.scene.id, false), { minimized: false }),
-  // a held key released on the minimized window, on the background route
-  minimized_key_up_background: release({ mode: 'shared' }),
+  // a held key released on the minimized window, on the background route: a recorder window (`minimized-recorder`),
+  // which shows what the release delivered
+  minimized_key_up_background: release({ mode: 'shared', holdRoute: 'background' }),
   // the activation that restores it, and the control of its wait: a window no window manager maps
   minimized_activate: {
     ...base({ expect: 'activate' }),
@@ -298,7 +426,7 @@ export const MINIMIZED_OPS = {
   // foreground route in dedicated mode released on the minimized window without activating it
   minimized_xterm_key_shared: refused((ctx) => ['press_key', { window: win(ctx), key: 'x' }]),
   minimized_xterm_key_dedicated: refused((ctx) => ['press_key', { window: win(ctx), key: 'x' }], { mode: 'dedicated' }),
-  minimized_xterm_key_up_foreground: release({ mode: 'dedicated', audit: 'held-release' }),
+  minimized_xterm_key_up_foreground: release({ mode: 'dedicated', holdRoute: 'foreground' }),
 };
 
 export const MINIMIZED_SCENE_OPS = {
@@ -324,11 +452,11 @@ export const MINIMIZED_SCENE_OPS = {
     'minimized_shot',
     'minimized_restored_shot',
     'minimized_restored_list',
-    'minimized_key_up_background',
     'minimized_activate',
     'minimized_activate_withdrawn',
   ],
   'minimized-xterm': ['minimized_xterm_key_shared', 'minimized_xterm_key_dedicated', 'minimized_xterm_key_up_foreground'],
+  'minimized-recorder': ['minimized_key_up_background'],
 };
 
 /**
@@ -354,7 +482,16 @@ export function judgeMinimized(op, rows, audit) {
   if (expect === 'release') {
     bad('the release did not run', (r) => r.ok);
     bad('the window is no longer minimized', (r) => r.still_minimized === true);
-    bad('a key is still held at the server', (r) => Array.isArray(r.keys_down) && r.keys_down.length === 0);
+    if (MINIMIZED_OPS[op].holdRoute === 'background') {
+      bad('the hold was not proven (the window received no synthetic press, or more)', (r) => {
+        const hold = syntheticHold(r.hold_events);
+        return hold.held.length > 0 && hold.extra.length === 0;
+      });
+      bad('the window did not receive exactly the release of the held set', (r) => syntheticRelease(r.release_events, syntheticHold(r.hold_events).held).ok);
+    } else {
+      bad('the hold was not proven (no key went down at the server)', (r) => xtestHold(r.keys_before, r.keys_held).length > 0);
+      bad('a key is still held at the server', (r) => xtestRelease(r.keys_down, xtestHold(r.keys_before, r.keys_held)).ok);
+    }
   }
   if (expect === 'activate') {
     bad('the activation did not answer success', (r) => r.ok);

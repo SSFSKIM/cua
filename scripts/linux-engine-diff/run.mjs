@@ -327,6 +327,8 @@ async function measureSample(s, ctx) {
     if (stats.after_take) row.after_take = stats.after_take;
     // a Chromium drag's atomic press and what its watch saw (task 20: stray.rs)
     if (stats.press) row.press = stats.press;
+    // an activation that set the focus again once its window was mapped (M4 T4: how long it waited for the map)
+    if (stats.activation) row.activation = stats.activation;
   }
   if (def.after) await def.after(ctx, response);
   if (def.effect && row.ok && def.read && !def.follow) {

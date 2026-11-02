@@ -5,6 +5,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { candidateLine, gateLabel } from './candidate.mjs';
 import { matrixMarkdown } from './matrix-judge.mjs';
 import { summarizeEngine, verdictLine } from './stats.mjs';
 
@@ -27,9 +28,11 @@ export function renderSummary(lines) {
       else for (const r of rows.filter((x) => x.kind === 'experiment-summary')) out.push(...r.markdown, '');
       continue;
     }
-    out.push(`## ${run}`, '');
+    const label = gateLabel(meta?.gate);
+    out.push(`## ${run}${label ? ` (${label})` : ''}`, '');
     if (meta) {
       out.push(`commit ${fmt(meta.commit)}; ${fmt(meta.cua_version)}; occlusion ${meta.occlusion}; ${meta.blocks} blocks; ${meta.samples_tree} warm tree reads and ${meta.samples_input} warm inputs per block`);
+      if (meta.candidate) out.push('', candidateLine(meta.candidate));
       const variants = meta.engines.filter((e) => e.args.length).map((e) => `\`${e.label}\` = \`${e.args.join(' ')}\``);
       if (variants.length) out.push('', `variants: ${variants.join('; ')}`);
       out.push('');
@@ -164,7 +167,7 @@ export function renderSummary(lines) {
     out.push(...prepareFaultsMarkdown(rows));
     out.push(...textRestoresMarkdown(rows));
     const end = rows.find((r) => r.kind === 'end');
-    const ending = !end || end.pass === undefined ? '' : `; ${verdictLine(end, (s) => `**${s}**`)}`;
+    const ending = !end || end.pass === undefined ? '' : `; ${label ? `${label}: ` : ''}${verdictLine(end, (s) => `**${s}**`)}`;
     out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
   }
   return out.join('\n');

@@ -16,9 +16,61 @@ is logged of windows it did not open, beyond `list_windows` digests and counts.
 ```bash
 cargo build --release --offline --manifest-path scripts/linux-engine-diff/xprobe/Cargo.toml   # the witness and probes
 node scripts/linux-engine-diff.mjs --check-wire --vendor-js "$SKY"
-node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$BUILT" \
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$ARTIFACT" \
   --scene gedit,chrome,chrome-input,over-budget,big-text,gtk-table,calc,retention --ops all --out "$OUT"
 ```
+
+`$ARTIFACT` is the release workflow's attested artifact of the checked-out commit, or the run is `--dev` (below).
+
+## The candidate: a gate judges the bytes that ship (#267)
+
+A verdict run is a release gate unless it is given `--dev`. A gate takes as cua's candidate only the bytes a release
+ships: the release workflow's (`.github/workflows/linux-engine.yml`) attested static musl artifact of the commit this
+checkout is at (Decision Log 2026-11-01, "the gate judges the bytes that ship"). A musl build made the way the workflow
+makes it is the same bytes, so the same attestation verifies it; any build that is not is refused like any other
+unattested file. `--cua` names the file:
+
+```bash
+# the build-only run of the release workflow on the commit to gate (the head of the ref it is dispatched on)
+gh workflow run linux-engine.yml --repo SSFSKIM/cua --ref "$BRANCH" -f commit="$(git rev-parse HEAD)" -f publish=false
+gh run download "$RUN_ID" --repo SSFSKIM/cua -n "cua-engine-$VERSION-linux-x64" -D "$(mktemp -d)"   # a fresh, empty directory
+# or a released engine, with the checkout at the release's commit
+gh release download "linux-engine-v$VERSION" --repo SSFSKIM/cua -p "cua-engine-$VERSION-linux-x64" -D "$(mktemp -d)"
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$DIR/cua-engine-$VERSION-linux-x64" \
+  --scene "$SCENES" --ops all --run "$RUN" --out "$OUT"
+```
+
+`candidate.mjs` stores the file as `cua-engine`, mode 0700, in a directory of its own under the temporary directory
+(a downloaded artifact has lost its executable bit; the copy is removed when the run ends), and checks that copy, so
+the bytes checked are the bytes every cua lane starts. In order, a gate refuses:
+
+- a file that is not an ELF file, a gnu build (a glibc interpreter or glibc's ABI tag: the host's default
+  `x86_64-unknown-linux-gnu`, which `m2-final` and `m3-gate-t25` judged), a dynamic one, or one for another
+  architecture than the host's;
+- a checkout whose commit or state cannot be read, or that is not clean (`git status --porcelain` lists anything:
+  commit the evidence of an earlier run, or write it outside the checkout);
+- an unattested file: `gh attestation verify <copy> --repo SSFSKIM/cua --signer-workflow
+  SSFSKIM/cua/.github/workflows/linux-engine.yml --deny-self-hosted-runners --format json` fails, with gh's reason;
+- a digest mismatch: no verified attestation names the copy's sha256;
+- a commit mismatch: the verified attestations name another source commit than the checkout's HEAD;
+- a `--version` that does not name the checkout's commit (`cua-engine <version> (<12 hex>)`).
+
+A refusal prints `candidate refused: <reason>` and exits 2 before anything runs. An accepted gate prints `release
+gate; candidate: …` first.
+
+The run records the candidate in its `meta` row (`gate`, and `candidate`: `sha256`, `target`, `linkage`, `version`, the
+checkout's `commit` and whether it was `clean`, and `attestation`: the signer workflow and, from gh's JSON, each verified
+attestation's subjects, predicate, source commit and ref, the workflow run and the runner) and `gate` in its `end` row.
+`summary.md` shows it under the run's heading. gh's JSON is the record because its plain output prints nothing when it
+is not on a terminal.
+
+`--dev` runs any build, from any checkout, and asks gh nothing; the copy and the record are made the same way, with
+`attestation` null. Its summary heading, its verdict line in `summary.md` and on stdout all say `development run, not a
+release gate`. Iterate on dev builds; a speed claim or an adoption run takes a musl build made the workflow's way
+(`--target x86_64-unknown-linux-musl`, the workflow's `RUSTFLAGS` path remaps, `CUA_ENGINE_GIT_SHA`, and its `strip`),
+still a dev run unless its bytes are the attested artifact's.
+
+The experiments (`--experiment`) take `--cua` as before and are not gates.
 
 ## What a run does
 
@@ -482,6 +534,7 @@ variants included; their evidence is written either way. The run's `end` row kee
 |---|---|
 | `../linux-engine-diff.mjs` | the entry point |
 | `cli.mjs` | the command line |
+| `candidate.mjs` | a verdict run's cua candidate: stored, its target read, its attestation verified; a gate's refusals |
 | `engine.mjs` | an engine process over the wire |
 | `run.mjs`, `ops.mjs` | the differential run and its operations |
 | `audit.mjs` | the X request audit through `xtrace` |

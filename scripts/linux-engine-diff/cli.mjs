@@ -3,12 +3,13 @@
 // `--experiment` (the capture-readiness and key-pace measurements), `--record-wire` (the spike's wire fixtures) and
 // `--summarize` (rewrite summary.md from results.jsonl); and M0.4's: `--experiment matrix` (the application-family
 // matrix), `--family` (the families an experiment runs on, by name, families.mjs) and `--load` (every core busy
-// during the experiment).
+// during the experiment); and #267's: a verdict run is a release gate on the attested candidate `--cua` names
+// (candidate.mjs), or `--dev`, a run on any build that is not one.
 
 export const USAGE = `usage:
   linux-engine-diff.mjs --check-wire --vendor-js <@oai/sky directory>
-  linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <bin> --scene <list> --ops <list|all> --out <dir>
-      [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
+  linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
+      [--dev] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
   linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd --cua <bin> --out <dir> [--run <name>]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--grab-at-ms N] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
@@ -59,6 +60,8 @@ export function parseArgs(argv) {
     if (flag === '--check-wire') a.mode = 'check-wire';
     else if (flag === '--record-wire') a.mode = 'record-wire';
     else if (flag === '--summarize') a.mode = 'summarize';
+    // a verdict run on any build, its verdict labelled not a release gate (candidate.mjs); without it the run is a gate
+    else if (flag === '--dev') a.dev = true;
     else if (flag === '--no-counts') a.counts = false;
     else if (flag === '--no-audit') a.audit = false;
     // the dnd experiment without its 100 ms grab sampler, whose own grabs can fail Chrome's drag-start grab (M3.1)
@@ -133,6 +136,7 @@ export function parseArgs(argv) {
     if (a[key] !== undefined && !a.dndCold) throw new Error(`${flag} is the cold drag-and-drop run's (--dnd-cold)`);
   }
   if (a.dndCold) a.coverMs ??= 0;
+  if (a.dev && a.mode !== 'run') throw new Error('--dev is the verdict run\'s: only a verdict run is a release gate');
   const require = (...keys) => {
     for (const key of keys) {
       const flag = Object.entries({ ...VALUE_FLAGS }).find(([, k]) => k === key)?.[0] ?? `--${key}`;

@@ -1,0 +1,10 @@
+== after-run3 2026-11-03T05:23:42.341Z
+chrome pid 2546101 alive; starttime_ticks 51157914; exe /opt/google/chrome/chrome
+_NET_CLIENT_LIST count 1
+      1 "google-chrome", "Google-chrome"
+chrome-named processes: 12
+== after-qt6 2026-11-03T05:25:56.307Z
+chrome pid 2546101 alive; starttime_ticks 51157914; exe /opt/google/chrome/chrome
+_NET_CLIENT_LIST count 1
+      1 "google-chrome", "Google-chrome"
+chrome-named processes: 12

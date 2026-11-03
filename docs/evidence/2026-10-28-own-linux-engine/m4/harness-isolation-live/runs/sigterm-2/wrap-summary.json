@@ -1,0 +1,144 @@
+{
+ "exit": 0,
+ "samples": 68,
+ "ss_samples": 14,
+ "sample_gap_ms": {
+  "median": 106.7,
+  "max": 121.1
+ },
+ "flags": [],
+ "decoy_connections": [],
+ "leftovers": [],
+ "processes": [
+  {
+   "pid": 2625299,
+   "start": 51542715,
+   "comm": "MainThread",
+   "ppid": 2625290,
+   "pgid": 2625289,
+   "first": 0.212,
+   "argv": "node session.mjs runs/sigterm-2 sigterm",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/a11y.sock"
+   },
+   "paths": [],
+   "last": 4.37
+  },
+  {
+   "pid": 2625313,
+   "start": 51542725,
+   "comm": "xprobe",
+   "ppid": 2625299,
+   "pgid": 2625313,
+   "first": 0.332,
+   "argv": "/Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff/xprobe/target/release/xprobe watchdog --display :1 --interval-ms 2000 --bound-ms 5000 --grace-ms 20000 --stop 2625299",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/a11y.sock"
+   },
+   "paths": [],
+   "last": 4.37
+  },
+  {
+   "pid": 2625310,
+   "start": 51542719,
+   "comm": "Xvfb",
+   "ppid": 2625299,
+   "pgid": 2625289,
+   "first": 0.332,
+   "argv": "Xvfb -displayfd 3 -noreset -screen 0 1280x800x24 -nolisten tcp",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/a11y.sock"
+   },
+   "paths": [],
+   "last": 4.37
+  },
+  {
+   "pid": 2625323,
+   "start": 51542729,
+   "comm": "openbox",
+   "ppid": 2625299,
+   "pgid": 2625289,
+   "first": 0.44,
+   "argv": "openbox",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/a11y.sock",
+    "DISPLAY": ":1"
+   },
+   "paths": [
+    "/Users/new/.cache/openbox/openbox.log"
+   ],
+   "last": 3.829
+  },
+  {
+   "pid": 2625334,
+   "start": 51542740,
+   "comm": "xterm",
+   "ppid": 2625299,
+   "pgid": 2625289,
+   "first": 0.548,
+   "argv": "xterm -T person -e sleep 100000",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/a11y.sock",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "last": 3.829
+  },
+  {
+   "pid": 2625351,
+   "start": 51542745,
+   "comm": "sleep",
+   "ppid": 2625334,
+   "pgid": 2625351,
+   "first": 0.548,
+   "argv": "sleep 100000",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/a11y.sock",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "last": 3.829
+  },
+  {
+   "pid": 2625355,
+   "start": 51542767,
+   "comm": "MainThread",
+   "ppid": 2625299,
+   "pgid": 2625289,
+   "first": 0.762,
+   "argv": "/usr/bin/node /Users/new/.local/share/cua-171/task46/driver.mjs sigterm runs/sigterm-2 :1",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=runs/sigterm-2/decoy/a11y.sock",
+    "DISPLAY": ":1"
+   },
+   "paths": [],
+   "last": 1.756
+  }
+ ],
+ "home_paths_by_comm": {
+  "openbox": [
+   "/Users/new/.cache/openbox/openbox.log"
+  ]
+ }
+}

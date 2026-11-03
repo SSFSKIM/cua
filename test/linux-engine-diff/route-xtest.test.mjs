@@ -96,15 +96,37 @@ test("negative controls: another client's window, the frame of a foreign window,
   assert.deepEqual(shown(route([...watcher(), ...move])), ['XTEST MotionNotify on 0x005a6d2f']);
 });
 
+test("a frame or a window inside counts only through a harness window whose end the trace would see", () => {
+  // no watcher: the engine's own read places the scene window in its frame, and a motion lands on the frame. Nothing in
+  // the trace would show the scene window end, so it is not a live harness window and the frame holds nothing of ours
+  const moveUnwatched = [...tree('007', '0009', SCENE, FRAME), ...moveCase()];
+  assert.deepEqual(shown(route(moveUnwatched)), ['XTEST MotionNotify on 0x005a6d2f']);
+  // so too a key on a window the engine's own read placed inside the unwatched scene window
+  const keyUnwatched = [...tree('007', '0009', FOCUS, SCENE), ...XTEST, ...focusRead('0002', FOCUS), fake('0003', 3)];
+  assert.deepEqual(shown(route(keyUnwatched)), ['XTEST KeyRelease on 0x03a00005']);
+  // and a key on the unwatched scene window itself
+  assert.deepEqual(shown(route([...XTEST, ...focusRead('0002', SCENE), fake('0003', 3)])), ['XTEST KeyRelease on 0x03a00004']);
+  // watched, the same traces are clean, the frame a reparent moved it to included
+  assert.equal(route([...watcher(), ...moveUnwatched]).clean, true);
+  assert.equal(route([...watcher(), ...keyUnwatched]).clean, true);
+  const NEW_FRAME = 0x005a7000;
+  assert.equal(route([...watcher(), reparented(SCENE, NEW_FRAME), ...tree('007', '0009', SCENE, NEW_FRAME), ...moveCase(NEW_FRAME)]).clean, true);
+  // the engine's own requests naming the scene window are judged as they were: only XTEST's target is placed
+  assert.deepEqual(shown(route(moveUnwatched)).filter((l) => !l.startsWith('XTEST')), []);
+  // outside a route audit, the frame clause is what it was
+  assert.equal(plain(moveUnwatched).clean, true);
+});
+
 test('the client range counts only where the trace can see the harness window end, and only for XTEST in a route audit', () => {
   const LATER = 0x03a00007;
   const keyOn = (w) => [...XTEST, ...activate('0002'), fake('0003', 2), ...focusRead('0004', w), fake('0005', 3)];
   assert.equal(route([...watcher(), ...keyOn(LATER)]).clean, true, 'a window of the scene client the trace never placed');
-  // the scene window not watched: its end would not reach the trace, so its range is not taken as alive
-  assert.deepEqual(shown(route([SETUP, ...keyOn(LATER)])), ['XTEST KeyRelease on 0x03a00007']);
+  // the scene window not watched: its end would not reach the trace, so its range is not taken as alive, nor the
+  // scene window itself as the press's target
+  assert.deepEqual(shown(route([SETUP, ...keyOn(LATER)])), ['XTEST KeyPress on 0x03a00004', 'XTEST KeyRelease on 0x03a00007']);
   // a selection the server refused watches nothing
   const refused = [SETUP, select('0001', SCENE), '005:>:0001:Error 3=Window: major=2, minor=0, bad=0x03a00004, seq=0001'];
-  assert.deepEqual(shown(route([...refused, ...keyOn(LATER)])), ['XTEST KeyRelease on 0x03a00007']);
+  assert.deepEqual(shown(route([...refused, ...keyOn(LATER)])), ['XTEST KeyPress on 0x03a00004', 'XTEST KeyRelease on 0x03a00007']);
   // no mask in the trace: no range at all
   assert.deepEqual(shown(route([select('0001', SCENE), ...keyOn(LATER)])), ['XTEST KeyRelease on 0x03a00007']);
   // a window not registered by the harness lends its range to nothing

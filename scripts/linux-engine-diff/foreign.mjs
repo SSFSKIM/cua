@@ -43,10 +43,13 @@
 // (task 53; the design session's ruling, sminos 338). Its target is the harness's when, at the event, it is a window in a
 // live harness window's client range (GTK 4's focus window inside its toplevel), or the window manager's frame whose
 // client child is a live harness window, with parentage from the trace's own QueryTree replies or ReparentNotify (the
-// audit's watcher, xprobe ancestry, puts both into the trace), never read afterwards. A harness window lends its client's
-// range only while the trace would see it end: one of our connections selected its structure, so its DestroyNotify
-// reaches the trace; otherwise a window whose end the trace missed would lend a range the server may since have handed
-// to another client. A ReparentNotify another client sent (SendEvent) proves nothing and is not read.
+// audit's watcher, xprobe ancestry, puts both into the trace), never read afterwards. A harness window is live there
+// only while the trace would see it end: one of our connections selected its structure, so its DestroyNotify reaches
+// the trace; otherwise a window whose end the trace missed would lend a range the server may since have handed to
+// another client, or a frame or a window inside it that now holds another's. So XTEST input there counts as the
+// harness's only through a watched harness window: on it, inside it, on its frame or in its client's range; a request
+// naming its window is judged as everywhere. A ReparentNotify another client sent (SendEvent) proves nothing and is not
+// read.
 
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -80,9 +83,9 @@ const SPAN_SLACK_MS = 250;
  * begin (the record sees every client; xtrace sees only ours, so there a registered window's first life counts).
  * `spans`: the harness's operations on its windows, `{window, start, end}` (ms since the epoch), during which the
  * window's client's popups are the window's (the record times both). `routeAudit`: an engine's route audit (xtrace),
- * where XTEST input on a window of a live, watched harness window's client is that window's. Returns `{clean, traced,
- * requests, mutating, foreign, unplaced, unattributed}`; an XTEST finding carries its window's `parent` as the stream
- * last showed it.
+ * where XTEST input is the harness's only through a live, watched harness window (on it, inside it, on its frame, in its
+ * client's range). Returns `{clean, traced, requests, mutating, foreign, unplaced, unattributed}`; an XTEST finding
+ * carries its window's `parent` as the stream last showed it.
  */
 export function judgeForeign(elements, { registered, root, strictBirth = false, spans = [], routeAudit = false }) {
   const found = registered instanceof Map ? registered : new Map([...(registered ?? [])].map((id) => [id, null]));
@@ -180,20 +183,21 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
   };
   const live = (w) => typeof w === 'number' && w !== root && w !== 0 && lifeOf(w).alive;
   // ours by itself, or lying inside one of ours: registered, created by us, created inside one of ours; with xtrace, a
-  // reply placed it inside one of ours and no request of ours put it there
-  const within = (w, depth = 0) => {
+  // reply placed it inside one of ours and no request of ours put it there. `watched`: a registered window counts only
+  // in a life whose end the trace would see (a route audit's XTEST target, task 53)
+  const within = (w, watched = false, depth = 0) => {
     if (!live(w) || depth > 64) return false;
     const life = lifeOf(w);
-    if (life.owned || life.inside || life.popup || isRegistered(w, life)) return true;
-    return life.replyParent !== undefined && !life.reparentedByUs && within(life.replyParent, depth + 1);
+    if (life.owned || life.inside || life.popup || (isRegistered(w, life) && (!watched || life.watched === true))) return true;
+    return life.replyParent !== undefined && !life.reparentedByUs && within(life.replyParent, watched, depth + 1);
   };
   // holding one of ours: a window manager's frame, through as many of its own windows as it puts around the client
-  const holds = (w, depth = 0) => {
+  const holds = (w, watched = false, depth = 0) => {
     if (!live(w) || depth > 64) return false;
-    for (const c of children.get(w) ?? []) if (within(c) || holds(c, depth + 1)) return true;
+    for (const c of children.get(w) ?? []) if (within(c, watched) || holds(c, watched, depth + 1)) return true;
     return false;
   };
-  const harness = (w) => within(w) || holds(w);
+  const harness = (w, watched = false) => within(w, watched) || holds(w, watched);
   // a route audit's XTEST input on a window of a live harness window's client (GTK 4's focus window inside its toplevel,
   // task 50): that client's range is its own while the window lives, and the trace sees the window end only where one
   // of our connections selected its structure (xprobe ancestry, the engine's retention), so only such a window, alive
@@ -317,8 +321,11 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
       unplaced++;
       continue;
     }
+    // a route audit's XTEST input lands where the trace places it: the harness's only through a live, watched harness
+    // window (its frame, a window inside it, its client's range); a request naming its window is judged as ever
+    const placed = routeAudit && el.op === 'FakeInput';
     for (const w of new Set(change.windows)) {
-      if (typeof w === 'number' && w !== root && (harness(w) || own(el.c, w) || (el.op === 'FakeInput' && inLiveRange(w)))) continue;
+      if (typeof w === 'number' && w !== root && (harness(w, placed) || own(el.c, w) || (placed && inLiveRange(w)))) continue;
       flag(el, change.what, w);
     }
     if (rejected) continue;

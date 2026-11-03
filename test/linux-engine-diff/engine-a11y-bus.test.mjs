@@ -25,6 +25,7 @@ import { Engine } from '../../scripts/linux-engine-diff/engine.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 import { VendorJsEngine } from '../../scripts/linux-engine-diff/vendor-js.mjs';
 import { XPROBE, startPrivateServer } from '../../scripts/linux-engine-diff/xtools.mjs';
+import { NO_AUTHORITY } from '../../scripts/linux-engine-diff/xspawn.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const ARCH = process.arch;
@@ -69,7 +70,7 @@ async function endByPath(path) {
 
 test('on a private display every engine, however the harness starts it, reads the run\'s accessibility bus, never an inherited AT_SPI_BUS_ADDRESS', { skip: !LIVE && 'needs Linux, Xvfb, xprop and a built xprobe' }, async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'cua171-a11y-engines-'));
-  const saved = Object.fromEntries(['DISPLAY', 'DBUS_SESSION_BUS_ADDRESS', 'AT_SPI_BUS_ADDRESS', 'OAI_SKY_LINUX_BIN'].map((n) => [n, process.env[n]]));
+  const saved = Object.fromEntries(['DISPLAY', 'XAUTHORITY', 'DBUS_SESSION_BUS_ADDRESS', 'AT_SPI_BUS_ADDRESS', 'OAI_SKY_LINUX_BIN'].map((n) => [n, process.env[n]]));
   const buses = {};
   let server = null;
   let window = null;
@@ -80,6 +81,9 @@ test('on a private display every engine, however the harness starts it, reads th
     server = await startPrivateServer({ out: dir });
     // the harness as the person's session starts it: their session bus and their accessibility bus inherited
     process.env.DISPLAY = server.display;
+    // the server keeps no authority: this test's own clients (its xprop and xprobe, the vendor service's engine) name
+    // the run's path that does not exist, as the spawner gives the harness's, never the person's ~/.Xauthority
+    process.env.XAUTHORITY = NO_AUTHORITY;
     process.env.DBUS_SESSION_BUS_ADDRESS = address('person-session');
     process.env.AT_SPI_BUS_ADDRESS = address('person-a11y');
     // what the run's launcher sets on the display (session-bus.mjs `wireAccessibility` checks it)

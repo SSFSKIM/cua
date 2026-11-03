@@ -8,7 +8,8 @@
 //   XDG_STATE_HOME under one home of the run's (`<scratch>/home`), which the run creates and removes with its scratch;
 // - the display, its authority and the runtime directory are handed on explicitly and unchanged: DISPLAY and
 //   XDG_RUNTIME_DIR exactly as the harness has them, and XAUTHORITY too, which Xlib would otherwise look for under the
-//   new HOME, so it is named where the person's HOME puts it when the harness has none;
+//   new HOME, so it is named where the person's HOME puts it when the harness has none, on a display a person uses; on
+//   a private display, whose server keeps no authority, a path in the run's home that holds none (task 51's review);
 // - the session bus is the run's own, on every display (the design session's ruling B2, task 47): on a private display
 //   the run's session (session-bus.mjs `startPrivateSession`), on a display a person uses a bus of the run's that can
 //   activate nothing (`startAppSession`), since on the person's session bus an application D-Bus-activates the person's
@@ -129,8 +130,11 @@ export function launchEnvironment({ scratch, base = process.env, privateDisplay 
     if (name === 'HOME' && home === 'xdg') continue;
     env[name] = homes[name];
   }
-  // Xlib's default is $HOME/.Xauthority: the harness's HOME, named, since the application's HOME is the run's
-  if (env.XAUTHORITY === undefined && base.HOME) env.XAUTHORITY = join(base.HOME, '.Xauthority');
+  // Xlib's default is $HOME/.Xauthority. On a display a person uses that is the harness's HOME, the person's file, named
+  // since the application's HOME is the run's; a private display's server keeps no authority, so there it is a path of
+  // the run's home, which holds none (the spawner gives a display this process created its own, xspawn.mjs)
+  if (env.XAUTHORITY === undefined && privateDisplay) env.XAUTHORITY = join(homes.HOME, '.Xauthority');
+  else if (env.XAUTHORITY === undefined && base.HOME) env.XAUTHORITY = join(base.HOME, '.Xauthority');
   if (settings === 'memory') env.GSETTINGS_BACKEND = 'memory';
   env.TMPDIR = runTmp(scratch);
   for (const name of DROPPED_VARS) delete env[name];

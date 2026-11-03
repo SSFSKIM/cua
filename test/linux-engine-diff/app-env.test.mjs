@@ -100,6 +100,12 @@ test("XAUTHORITY is named where the person's HOME puts it when the harness has n
   assert.equal('AT_SPI_BUS_ADDRESS' in env, false, 'unchanged: still unset');
   // an unknown display counts as a person's
   assert.equal(env.GSETTINGS_BACKEND, 'memory');
+  // a private display's server keeps no authority (task 51's review): never the person's file by default, in either
+  // home, but a path of the run's home, which holds none
+  for (const home of ['run', 'xdg']) {
+    const own = launchEnvironment({ scratch: '/tmp/s', base: bare, privateDisplay: true, home, sessionBus: RUN_BUS });
+    assert.equal(own.XAUTHORITY, join(runHome('/tmp/s').HOME, '.Xauthority'), `home ${home}`);
+  }
 });
 
 test("an application's own variables apply last, but never place a file outside the scratch or change what is handed on", () => {
@@ -229,7 +235,7 @@ for (const [display, isPrivate] of [["a person's display", false], ['a display n
       for (const name of HANDED_ON.filter((n) => n !== 'XAUTHORITY')) assert.equal(env[name], process.env[name], name);
       assert.equal(env.DBUS_SESSION_BUS_ADDRESS, RUN_BUS, "the run's session bus");
       assert.equal(env.AT_SPI_BUS_ADDRESS, undefined, `the inherited ${process.env.AT_SPI_BUS_ADDRESS} never reaches the application`);
-      assert.equal(env.XAUTHORITY, process.env.XAUTHORITY ?? join(apps.home, '.Xauthority'));
+      assert.equal(env.XAUTHORITY, process.env.XAUTHORITY ?? (isPrivate ? join(homes.HOME, '.Xauthority') : join(apps.home, '.Xauthority')));
       assert.equal(env.GSETTINGS_BACKEND, isPrivate ? process.env.GSETTINGS_BACKEND : 'memory');
       assert.equal(env.GTK_OVERLAY_SCROLLING, '0', "the application's own variable");
       assert.deepEqual(readdirSync(apps.home), [], "nothing under the person's HOME");

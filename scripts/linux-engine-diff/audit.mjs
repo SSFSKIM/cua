@@ -318,8 +318,9 @@ export async function startProxy({ display = process.env.DISPLAY, privateDisplay
     }
     await new Promise((r) => setTimeout(r, 20));
   }
-  // in front of a display the run created, the proxy is the run's own display too (a live run's needs no entry)
-  const release = isCreatedDisplay(display) ? registerDisplay(`:${n}`, `the run's trace proxy in front of ${display}`) : () => {};
+  // in front of a display the run created, the proxy is the run's own display too (a live run's needs no entry), and its
+  // clients read the proxy's own authority file (xspawn.mjs `authorityFor`)
+  const release = isCreatedDisplay(display) ? registerDisplay(`:${n}`, `the run's trace proxy in front of ${display}`, { authority: auth }) : () => {};
   const marks = [];
   return {
     display: `:${n}`,

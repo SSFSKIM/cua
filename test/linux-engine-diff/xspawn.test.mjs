@@ -4,15 +4,16 @@
 // Display-free: every launcher is a stand-in, and the private server a fake Xvfb on a PATH of the test's own.
 
 import assert from 'node:assert/strict';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import test from 'node:test';
 
 import { startProxy } from '../../scripts/linux-engine-diff/audit.mjs';
 import { TEST_DISPLAY } from '../../scripts/linux-engine-diff/hermetic.mjs';
-import { startPrivateServer } from '../../scripts/linux-engine-diff/xtools.mjs';
-import { DisplayRefused, LIVE_RUN, assertReachable, declareLiveRun, displaySockets, displaysReached, guard, isCreatedDisplay, isLiveRun, localDisplay, registerDisplay } from '../../scripts/linux-engine-diff/xspawn.mjs';
+import { VendorJsEngine } from '../../scripts/linux-engine-diff/vendor-js.mjs';
+import { startPrivateServer, startRunRecord, startRunWatchdog } from '../../scripts/linux-engine-diff/xtools.mjs';
+import { DisplayRefused, LIVE_RUN, NO_AUTHORITY, assertReachable, authorityFor, declareLiveRun, displaySockets, displaysReached, guard, isCreatedDisplay, isLiveRun, localDisplay, registerDisplay } from '../../scripts/linux-engine-diff/xspawn.mjs';
 import { enclosingText, envWrites, harnessModules, harnessStarts, processStarts } from './source-scan.mjs';
 
 const refused = (display, args = []) => {
@@ -156,6 +157,138 @@ test('a server that names a display whose socket was there before is another ser
   } finally {
     server.done();
   }
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// the display's authority (task 51's review, finding 1): an X client with XAUTHORITY unset looks for its cookie in
+// $HOME/.Xauthority, the person's file, so every client of a display the run created gets that server's own authority,
+// or a path of the run's that does not exist when the server has none (Xvfb without -auth admits the local user),
+// whatever the caller's environment held. A display the run did not create keeps the caller's environment as it is.
+
+const PERSON_AUTHORITY = '/home/person/.Xauthority';
+
+/** A launcher that records the environment each start would get (the process's, when the start names none). */
+function recorder() {
+  const envs = [];
+  const launch = guard((cmd, args, options) => {
+    envs.push(options.env ?? process.env);
+    return 'started';
+  });
+  return { launch, envs };
+}
+
+/** Runs `fn` with this process's XAUTHORITY set to `value` (undefined: unset), and puts it back. */
+async function withAuthority(value, fn) {
+  const saved = process.env.XAUTHORITY;
+  if (value === undefined) delete process.env.XAUTHORITY;
+  else process.env.XAUTHORITY = value;
+  try {
+    return await fn();
+  } finally {
+    if (saved === undefined) delete process.env.XAUTHORITY;
+    else process.env.XAUTHORITY = saved;
+  }
+}
+
+test("a client of a display the run created gets that server's authority, or a path of the run's that does not exist: never the person's file, inherited or by default", async () => {
+  const release = registerDisplay(':4751', 'a test server without an authority file');
+  const proxyAuthority = join(tmpdir(), 'cua171-xspawn-proxy-x', 'Xauthority');
+  const releaseProxy = registerDisplay(':4752', "a test proxy with its own authority file", { authority: proxyAuthority });
+  try {
+    assert.equal(NO_AUTHORITY.startsWith(tmpdir()), true, "a path of the run's");
+    assert.equal(existsSync(NO_AUTHORITY), false, 'that does not exist');
+    for (const inherited of [PERSON_AUTHORITY, undefined]) {
+      await withAuthority(inherited, () => {
+        const { launch, envs } = recorder();
+        launch('xprop', ['-root'], { env: { DISPLAY: ':4751', XAUTHORITY: PERSON_AUTHORITY } });
+        launch('xprop', ['-root'], { env: { DISPLAY: ':4751' } });
+        launch('xprop', ['-root'], { env: { ...process.env, DISPLAY: ':4751' } });
+        // by a display flag: the watchdog's and xtrace's form, the harness's own DISPLAY elsewhere
+        launch('xprobe', ['watchdog', '--display', ':4751'], { env: { DISPLAY: TEST_DISPLAY, XAUTHORITY: PERSON_AUTHORITY } });
+        launch('xtrace', ['-d', ':4751.0', '-D', ':41'], {});
+        assert.deepEqual(envs.map((e) => e.XAUTHORITY), Array(5).fill(NO_AUTHORITY), `with the harness's XAUTHORITY ${inherited ?? 'unset'}`);
+        // a server with an authority file of its own: that file
+        launch('xprop', ['-root'], { env: { DISPLAY: ':4752', XAUTHORITY: PERSON_AUTHORITY } });
+        assert.equal(envs.at(-1).XAUTHORITY, proxyAuthority);
+        // what else the start's environment holds is kept
+        launch('xprop', ['-root'], { env: { DISPLAY: ':4751', HOME: '/home/person', LANG: 'C' } });
+        assert.deepEqual(envs.at(-1), { DISPLAY: ':4751', HOME: '/home/person', LANG: 'C', XAUTHORITY: NO_AUTHORITY });
+      });
+    }
+    // two created displays with different authorities in one start: no single XAUTHORITY serves both
+    assert.throws(() => recorder().launch('xprobe', ['--display', ':4752'], { env: { DISPLAY: ':4751' } }), /authorit/);
+    // a display the run did not create keeps the start's environment as it is: on a person's display (a declared live
+    // run's) the person's file where it is, by design; here, a name that is no display
+    const { launch, envs } = recorder();
+    const env = { DISPLAY: TEST_DISPLAY, XAUTHORITY: PERSON_AUTHORITY };
+    launch('xprop', ['-root'], { env });
+    assert.equal(envs[0], env, 'the same environment, untouched');
+    assert.equal(authorityFor([], env), undefined);
+  } finally {
+    release();
+    releaseProxy();
+  }
+  // released: no longer the run's, and no longer given an authority
+  assert.equal(authorityFor([], { DISPLAY: ':4751' }), undefined);
+});
+
+test("the private server's own clients, its watchdog, its mark and the run's record, never read the person's file; its trace proxy's clients get the proxy's", async () => {
+  const server = fakeServer(4761);
+  const sockets = mkdtempSync(join(tmpdir(), 'cua171-xspawn-sockets-'));
+  await withAuthority(PERSON_AUTHORITY, async () => {
+    try {
+      const seen = {};
+      // the real watchdog's start, its spawn a stand-in that records what it was given and fails
+      const startWatchdog = (options) => startRunWatchdog({ ...options, spawnWatchdog: (cmd, args, opts) => {
+        seen.watchdog = { args, env: opts.env };
+        return { pid: 1, once: (event, fn) => event === 'exit' && setImmediate(() => fn(1, null)), kill: () => {}, stdin: { on: () => {}, write: () => {}, end: () => {} } };
+      }, readyMs: 500 });
+      await assert.rejects(startPrivateServer({ out: server.dir, startWatchdog, sockets: () => new Set() }), /watchdog/);
+      assert.deepEqual(seen.watchdog.args.slice(0, 3), ['watchdog', '--display', ':4761']);
+      assert.equal(seen.watchdog.env.XAUTHORITY, NO_AUTHORITY, "the watchdog's");
+      // the mark, and the record on a started server
+      const marks = [];
+      const started = await startPrivateServer({ out: server.dir, startWatchdog: fakeWatchdog, sockets: () => new Set(), run: (cmd, args, opts) => marks.push(opts.env.XAUTHORITY) });
+      try {
+        assert.deepEqual(marks, [NO_AUTHORITY], "the private mark's xprop");
+        await assert.rejects(startRunRecord({ env: { ...process.env, DISPLAY: started.display }, isPrivate: () => true, spawnRecord: (cmd, args, opts) => {
+          seen.record = opts.env;
+          throw new Error('a stand-in record');
+        } }), /stand-in record/);
+        assert.equal(seen.record.XAUTHORITY, NO_AUTHORITY, "the record's");
+        // the trace proxy in front of it: xtrace itself a client of the server, the proxy's clients the proxy's
+        const spawn = (cmd, args, opts) => {
+          seen.xtrace = opts.env ?? process.env;
+          const n = args[args.indexOf('-D') + 1].slice(1);
+          setImmediate(() => writeFileSync(join(sockets, `X${n}`), ''));
+          return { pid: 1, exitCode: null, on: () => {}, once: (event, fn) => event === 'exit' && (spawn.exit = fn), kill: () => setImmediate(() => spawn.exit?.(0, null)), stderr: null };
+        };
+        const proxy = await startProxy({ display: started.display, privateDisplay: true, spawn, socketDir: sockets });
+        try {
+          assert.equal(seen.xtrace.XAUTHORITY, NO_AUTHORITY, "xtrace's");
+          const { launch, envs } = recorder();
+          launch('xdotool', ['getactivewindow'], { env: { ...proxy.env, XAUTHORITY: PERSON_AUTHORITY } });
+          assert.equal(envs[0].XAUTHORITY, proxy.env.XAUTHORITY, "a client of the proxy gets the proxy's own file");
+          assert.notEqual(proxy.env.XAUTHORITY, PERSON_AUTHORITY);
+          // the vendor-JavaScript lane, whose client starts the engine with this process's environment
+          const saved = process.env.DISPLAY;
+          process.env.DISPLAY = started.display;
+          try {
+            assert.equal(new VendorJsEngine({ label: 'pinned', bin: '/nonexistent/sky_linux', skyDir: '/nonexistent' }).overrides().XAUTHORITY, NO_AUTHORITY, "the vendor client's engine's");
+          } finally {
+            process.env.DISPLAY = saved;
+          }
+        } finally {
+          await proxy.stop();
+        }
+      } finally {
+        await started.stop();
+      }
+    } finally {
+      server.done();
+      rmSync(sockets, { recursive: true, force: true });
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------------------------------------------

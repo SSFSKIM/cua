@@ -39,6 +39,12 @@ node rejudge.mjs ../runs/attempt-2/record-judge/record.jsonl.gz <foreign.mjs at 
 and one `xprop` client. The ready line reads `"mask":2097151` (0x1fffff), and every client line's id is a base of
 it: Xvfb's own, the watchdog's and the record's connections, and the `xprop` that started during the record.
 
+The run that wrote `record-mask-probe.json` gave its X clients no XAUTHORITY, so they may have looked for a cookie in
+the person's `~/.Xauthority` (task 51's report, Concerns). The probe now names a path of its own that does not exist,
+and the harness's spawner gives every client of a display its process created that display's own authority, or such a
+path, whatever the caller passes (`xspawn.mjs`, task 51's review). Its result does not depend on the authority: Xvfb
+without `-auth` admits the local user either way.
+
 The hermetic tests are in `test/linux-engine-diff/foreign-judge.test.mjs`:
 - task 49's record lines are clean with the mask, and judged as before without it;
 - an id in another live client's range is still foreign;

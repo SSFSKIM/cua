@@ -146,8 +146,10 @@ killed it.
   `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` and `XDG_STATE_HOME` under `<scratch>/home`, made by
   the run (mode 0700) and removed with its scratch: settings, recent files (`recently-used.xbel`), KConfig files,
   Firefox's `~/.mozilla`, the Chrome wrapper's `mimeapps.list` and Chrome's NSS database (`~/.pki`) are the run's.
-  `DISPLAY`, `XAUTHORITY` (named where the harness's HOME puts it when unset, since Xlib would look under the new
-  HOME) and `XDG_RUNTIME_DIR` are handed on unchanged; the session bus is the run's own on every display (above), and
+  `DISPLAY`, `XAUTHORITY` (when unset, named where the harness's HOME puts it on a display a person uses, since Xlib
+  would look under the new HOME, and a path in the run's home that holds none on a private display, whose server
+  keeps none; the spawner, below, gives a display the run created its own) and `XDG_RUNTIME_DIR` are handed on
+  unchanged; the session bus is the run's own on every display (above), and
   no application starts before the run has one; `AT_SPI_BUS_ADDRESS`, `SESSION_MANAGER` and the bus's starter
   variables are not handed on. On a display a person uses, `GSETTINGS_BACKEND=memory`: a GSettings write would
   otherwise reach the person's dconf. A family's own variables (`env`) are applied last; one that names a variable the
@@ -375,7 +377,11 @@ variants included; their evidence is written either way. The run's `end` row kee
     engine with the process's environment (`--via vendor-js`: OpenAI's client), is checked the same way before the
     client is loaded, made or called, on that environment with the lane's variables over it (`VendorJsEngine`, task
     48); a source test fails any other write into `process.env` that is not listed as handing on no display, or behind
-    the check. The harness's suite runs as `npm run
+    the check. Every start the spawner makes on a display the run created, and the vendor-JavaScript lane's, gets
+    XAUTHORITY naming that display's own authority: a trace proxy's own file, or for the harness's Xvfb, which keeps
+    none, a path of the run's that does not exist (`NO_AUTHORITY`), whatever the caller's environment held, since an
+    unset XAUTHORITY sends a client to the person's `~/.Xauthority` (task 51's review). On a display the run did not
+    create, a person's, the environment is left as it is. The harness's suite runs as `npm run
     test:linux-engine-diff`, through a wrapper (`test/linux-engine-diff/suite-check.mjs`, task 45; a wrapper since task
     47, so it runs on the whole declared Node range, and ci-kit's `test` gate runs it) that gives the suite a
     temporary directory of its own and fails it, naming each, on any process it started that still names a run's

@@ -22,7 +22,7 @@ import { join } from 'node:path';
 import { engineEnvironment } from './app-env.mjs';
 import { runningScratch } from './engine.mjs';
 import { loadVendorClient } from './wire-check.mjs';
-import { assertReachable } from './xspawn.mjs';
+import { assertReachable, authorityFor } from './xspawn.mjs';
 
 const now = () => Number(process.hrtime.bigint()) / 1e6;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -84,11 +84,14 @@ export class VendorJsEngine {
   }
 
   /**
-   * The variables the lane installs for the client: its own, the block's path to the engine, and the open run's TMPDIR
-   * (engine.mjs `runEngines`), which the client's engine writes its screenshots in.
+   * The variables the lane installs for the client: its own, the block's path to the engine, the open run's TMPDIR
+   * (engine.mjs `runEngines`), which the client's engine writes its screenshots in, and on a display this process
+   * created that display's authority (xspawn.mjs `authorityFor`), which the spawner gives every start it sees.
    */
   overrides() {
-    return engineEnvironment({ ...(this.env ?? {}), OAI_SKY_LINUX_BIN: this.link }, runningScratch());
+    const lane = engineEnvironment({ ...(this.env ?? {}), OAI_SKY_LINUX_BIN: this.link }, runningScratch());
+    const authority = authorityFor([], { ...process.env, ...lane });
+    return authority === undefined ? lane : { ...lane, XAUTHORITY: authority };
   }
 
   /**

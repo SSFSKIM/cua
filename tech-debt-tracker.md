@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-11-03 — The events experiment leaves its private Xvfb running after a stop (minor, #171 M4, task 43's fix).** `scripts/linux-engine-diff/events.mjs` starts its own Xvfb through `startPrivateServer` under the watchdog, but nothing on the stop path (a signal, or a lost watchdog's SIGTERM) ends that server, so it outlives the run. It is a private display, so the person's is untouched; it holds memory and a display number until killed. Fix: register the server with the run's stop handler. Check: after `kill -TERM` of an events run, `pgrep -a Xvfb` still lists its display.
+
 - **2026-11-03 — The RECORD-hang repro's flood crate has three clippy warnings (minor, #171 M4, task 44's re-review).** `docs/evidence/2026-10-28-own-linux-engine/m4/xserver-record-hang/repro/flood/` (task 41's code) draws `manual_is_multiple_of` and a collapsible `if` under `cargo clippy --all-targets`; its tests pass and the fence task 44 added is clean. Fix: apply clippy's suggestions. Check: `cargo clippy --all-targets` in that directory prints warnings.
 
 - **2026-11-03 — Every harness run failure reads as a foreign-window change (minor, #171 M4, task 44).** `runOutcome` in `scripts/linux-engine-diff/` prefixes each failure in the ending's `foreign` list with "a window the harness did not open was changed:", so a lost or stalled watchdog, a record failure or a trace failure all read as one. The failure itself is named after the prefix and the run still fails. Fix: give each failure kind its own lead sentence. Check: `grep -n "a window the harness did not open was changed" scripts/linux-engine-diff/*.mjs`.

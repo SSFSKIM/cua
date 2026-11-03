@@ -38,7 +38,7 @@ function fakeWatchdog() {
   return { start, seen };
 }
 
-const fakeTrace = () => () => ({ env: { ...process.env, DISPLAY: ':77' }, stop: async () => '' });
+const fakeTrace = () => () => ({ env: { ...process.env, DISPLAY: ':cua171-test-trace' }, stop: async () => '' });
 const reader = { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} };
 
 /**
@@ -168,12 +168,12 @@ async function readyWatchdog(file, options = {}) {
   const { child, written } = fakeChild(options.child);
   const lost = [];
   const watchdog = await startRunWatchdog({
-    display: ':93',
+    display: ':cua171-test-93',
     file,
     readyMs: 2000,
     onLost: (reason) => lost.push(reason),
     spawnWatchdog: () => {
-      setTimeout(() => append(file, { kind: 'ready', display: ':93', pid: 777 }), 10);
+      setTimeout(() => append(file, { kind: 'ready', display: ':cua171-test-93', pid: 777 }), 10);
       return child;
     },
     ...options.start,
@@ -192,7 +192,7 @@ test('the watchdog runs xprobe watchdog on the named display, guards pids, and s
   let call;
   try {
     const watching = startRunWatchdog({
-      display: ':0',
+      display: ':cua171-test-display',
       stopPid: 4321,
       file,
       readyMs: 2000,
@@ -200,13 +200,13 @@ test('the watchdog runs xprobe watchdog on the named display, guards pids, and s
       spawnWatchdog: (bin, args, options) => {
         call = { bin, args, options };
         // the ready line, once it answered its first round trip
-        setTimeout(() => append(file, { kind: 'ready', display: ':0', pid: 777 }), 20);
+        setTimeout(() => append(file, { kind: 'ready', display: ':cua171-test-display', pid: 777 }), 20);
         return child;
       },
     });
     const watchdog = await watching;
     assert.equal(call.bin, XPROBE);
-    assert.deepEqual(call.args.slice(0, 3), ['watchdog', '--display', ':0']);
+    assert.deepEqual(call.args.slice(0, 3), ['watchdog', '--display', ':cua171-test-display']);
     assert.ok(call.args.join(' ').includes('--stop 4321'), call.args.join(' '));
     // a process group of its own: a ^C, or a signal to the run's group, never ends the guardian of the run's cleanup
     assert.equal(call.options.detached, true);
@@ -233,13 +233,13 @@ test('a watchdog that exits on a stall reports it, with its stall line, and is n
   const { file, done } = scratch();
   try {
     const { watchdog, child, lost } = await readyWatchdog(file);
-    append(file, { kind: 'stall', display: ':93', killed: [12] });
+    append(file, { kind: 'stall', display: ':cua171-test-93', killed: [12] });
     child.exit(3);
     const result = await watchdog.stop();
     assert.equal(result.stalled, true);
     assert.equal(result.clean, false);
     assert.equal(result.state, 'stalled');
-    assert.deepEqual(result.lines.at(-1), { kind: 'stall', display: ':93', killed: [12] });
+    assert.deepEqual(result.lines.at(-1), { kind: 'stall', display: ':cua171-test-93', killed: [12] });
     assert.deepEqual(lost, [], 'a stall already stopped the run itself');
   } finally {
     done();
@@ -250,7 +250,7 @@ test('a watchdog that never reports ready fails the start, and is ended', async 
   const { file, done } = scratch();
   const { child } = fakeChild({ dieOnKill: true });
   try {
-    await assert.rejects(startRunWatchdog({ display: ':93', file, readyMs: 100, onLost: () => assert.fail('never ready, never lost'), spawnWatchdog: () => child }), /the run's display .*:93.* did not answer the watchdog/);
+    await assert.rejects(startRunWatchdog({ display: ':cua171-test-93', file, readyMs: 100, onLost: () => assert.fail('never ready, never lost'), spawnWatchdog: () => child }), /the run's display .*:cua171-test-93.* did not answer the watchdog/);
     assert.deepEqual(child.signals, ['SIGKILL']);
   } finally {
     done();
@@ -262,13 +262,13 @@ test("a display already hung fails the start: the watchdog's stall before its fi
   const { child } = fakeChild();
   try {
     const start = startRunWatchdog({
-      display: ':93',
+      display: ':cua171-test-93',
       file,
       readyMs: 5000,
       onLost: () => assert.fail('never ready, never lost'),
       spawnWatchdog: () => {
         setTimeout(() => {
-          append(file, { kind: 'stall', display: ':93', round_trips: 0, reason: 'cannot connect: no setup reply in 5000 ms', stopped: null });
+          append(file, { kind: 'stall', display: ':cua171-test-93', round_trips: 0, reason: 'cannot connect: no setup reply in 5000 ms', stopped: null });
           child.exit(3);
         }, 20);
         return child;
@@ -285,10 +285,10 @@ test("a display already hung fails the start: the watchdog's stall before its fi
 
 test("a spawn that fails fails the start, whatever ready line the file already holds", async () => {
   const { file, done } = scratch();
-  writeFileSync(file, `${JSON.stringify({ kind: 'ready', display: ':93', pid: 4242 })}\n${JSON.stringify({ kind: 'end', round_trips: 3 })}\n`);
+  writeFileSync(file, `${JSON.stringify({ kind: 'ready', display: ':cua171-test-93', pid: 4242 })}\n${JSON.stringify({ kind: 'end', round_trips: 3 })}\n`);
   try {
     await assert.rejects(
-      startRunWatchdog({ display: ':93', file, readyMs: 2000, onLost: () => assert.fail('never ready'), spawnWatchdog: (bin, args, options) => spawn('/nonexistent/cua171-no-xprobe', args, options) }),
+      startRunWatchdog({ display: ':cua171-test-93', file, readyMs: 2000, onLost: () => assert.fail('never ready'), spawnWatchdog: (bin, args, options) => spawn('/nonexistent/cua171-no-xprobe', args, options) }),
       /ENOENT/,
     );
   } finally {
@@ -299,17 +299,17 @@ test("a spawn that fails fails the start, whatever ready line the file already h
 test("an earlier watchdog's ready line is not this one's: only a line of this process, written after its spawn, is", async () => {
   const { file, done } = scratch();
   // the same pid as the fake's, from before this start: only what is written after the spawn counts
-  writeFileSync(file, `${JSON.stringify({ kind: 'ready', display: ':93', pid: 777 })}\n`);
+  writeFileSync(file, `${JSON.stringify({ kind: 'ready', display: ':cua171-test-93', pid: 777 })}\n`);
   const { child } = fakeChild({ dieOnKill: true });
   try {
     const start = startRunWatchdog({
-      display: ':93',
+      display: ':cua171-test-93',
       file,
       readyMs: 300,
       onLost: () => assert.fail('never ready'),
       spawnWatchdog: () => {
         // a ready line of another process, written after the spawn
-        setTimeout(() => append(file, { kind: 'ready', display: ':93', pid: 555 }), 10);
+        setTimeout(() => append(file, { kind: 'ready', display: ':cua171-test-93', pid: 555 }), 10);
         return child;
       },
     });
@@ -329,19 +329,19 @@ test('a watchdog that writes its ready line and ends before the start takes it u
   const lost = [];
   try {
     const start = startRunWatchdog({
-      display: ':93',
+      display: ':cua171-test-93',
       file,
       readyMs: 2000,
       onLost: (reason) => lost.push(reason),
       spawnWatchdog: () => {
         setTimeout(() => {
-          append(file, { kind: 'ready', display: ':93', pid: 777 });
+          append(file, { kind: 'ready', display: ':cua171-test-93', pid: 777 });
           child.exit(1);
         }, 5);
         return child;
       },
     });
-    await assert.rejects(start, /the run's watchdog of the X display :93 ended \(exit code 1\) before the run took it up, so nothing is run on it/);
+    await assert.rejects(start, /the run's watchdog of the X display :cua171-test-93 ended \(exit code 1\) before the run took it up, so nothing is run on it/);
     assert.deepEqual(lost, [], 'a start that failed stops nothing: nothing of the run had begun');
   } finally {
     done();
@@ -372,12 +372,12 @@ test("a lost watchdog stops the run by default: SIGTERM to the run's pid, as a s
   const { child } = fakeChild();
   try {
     const watchdog = await startRunWatchdog({
-      display: ':93',
+      display: ':cua171-test-93',
       file,
       stopPid: run.pid,
       readyMs: 2000,
       spawnWatchdog: () => {
-        setTimeout(() => append(file, { kind: 'ready', display: ':93', pid: 777 }), 10);
+        setTimeout(() => append(file, { kind: 'ready', display: ':cua171-test-93', pid: 777 }), 10);
         return child;
       },
     });
@@ -392,7 +392,7 @@ test("a lost watchdog stops the run by default: SIGTERM to the run's pid, as a s
       process.stderr.write = write;
     }
     assert.equal(await ended, 'SIGTERM');
-    assert.match(written.join(''), /^cua171 WATCHDOG: the watchdog of the X display :93 is gone \(it ended before the run did \(signal SIGKILL\)\)/);
+    assert.match(written.join(''), /^cua171 WATCHDOG: the watchdog of the X display :cua171-test-93 is gone \(it ended before the run did \(signal SIGKILL\)\)/);
     assert.equal((await watchdog.stop()).state, 'lost');
   } finally {
     run.kill('SIGKILL');
@@ -428,8 +428,8 @@ const child = new EventEmitter();
 child.stdin = new PassThrough();
 child.pid = 777;
 child.kill = () => {};
-await startRunWatchdog({ display: ':93', file, readyMs: 2000, spawnWatchdog: () => {
-  setTimeout(() => appendFileSync(file, JSON.stringify({ kind: 'ready', display: ':93', pid: 777 }) + '\\n'), 5);
+await startRunWatchdog({ display: ':cua171-test-93', file, readyMs: 2000, spawnWatchdog: () => {
+  setTimeout(() => appendFileSync(file, JSON.stringify({ kind: 'ready', display: ':cua171-test-93', pid: 777 }) + '\\n'), 5);
   return child;
 } });
 setInterval(() => {}, 1000);
@@ -458,7 +458,7 @@ for (const [cleanup, outcome] of [
     if (cleanup === 'none') assert.deepEqual(exit, { code: null, signal: 'SIGTERM' }, "no cleanup's exit: the signal's own");
     else assert.deepEqual(exit, { code: 143, signal: null });
     const last = lines.at(-1) ?? '';
-    assert.match(last, /^cua171 STOPPED: the run lost the watchdog of the X display :93 \(it ended before the run did \(exit code 1\)\), so the display went unwatched; /, last);
+    assert.match(last, /^cua171 STOPPED: the run lost the watchdog of the X display :cua171-test-93 \(it ended before the run did \(exit code 1\)\), so the display went unwatched; /, last);
     assert.match(last, outcome, last);
   });
 }
@@ -503,7 +503,7 @@ test('a stop never kills a watchdog that is escalating a stall: it answers stall
   try {
     const { watchdog, child } = await readyWatchdog(file, { child: { dieOnKill: true }, start: { intervalMs: 10, boundMs: 10 } });
     // stalled: the line is out, the run's processes are being ended, and the process has not exited
-    append(file, { kind: 'stall', display: ':93', round_trips: 4, killed: [], stopped: process.pid });
+    append(file, { kind: 'stall', display: ':cua171-test-93', round_trips: 4, killed: [], stopped: process.pid });
     const started = Date.now();
     const result = await watchdog.stop();
     assert.equal(result.state, 'stalled');
@@ -520,7 +520,7 @@ test('a stall that comes while the run is stopping is not cut short either', asy
   try {
     const { watchdog, child } = await readyWatchdog(file, { child: { dieOnKill: true }, start: { intervalMs: 10, boundMs: 10 } });
     const stopping = watchdog.stop();
-    setTimeout(() => append(file, { kind: 'stall', display: ':93', round_trips: 4, killed: [], stopped: process.pid }), 100);
+    setTimeout(() => append(file, { kind: 'stall', display: ':cua171-test-93', round_trips: 4, killed: [], stopped: process.pid }), 100);
     const result = await stopping;
     assert.equal(result.state, 'stalled');
     await sleep(5200);
@@ -589,7 +589,7 @@ test('a display that does not answer the watchdog fails the start before anythin
         privateDisplay: () => assert.fail('no read of the private mark'),
         existing: () => assert.fail('no read of the windows there'),
         startWatchdog: async () => {
-          throw new Error("the run's display :93 did not answer the watchdog's first round trip in 15000 ms, so nothing is run on it");
+          throw new Error("the run's display :cua171-test-93 did not answer the watchdog's first round trip in 15000 ms, so nothing is run on it");
         },
       }),
       /nothing is run on it/,

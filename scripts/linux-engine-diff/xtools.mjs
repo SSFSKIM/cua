@@ -20,6 +20,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { stopBecause } from './stop.mjs';
+import { displaySockets, guard as guardDisplay, registerDisplay, xExecFileSync, xSpawn } from './xspawn.mjs';
 
 const here = dirname(fileURLToPath(import.meta.url));
 export const XPROBE = join(here, 'xprobe', 'target', 'release', 'xprobe');
@@ -35,22 +36,22 @@ export function useHarnessDisplay(env) {
 export const harnessEnv = () => traced ?? process.env;
 
 export function xdotool(...args) {
-  return execFileSync('xdotool', args.map(String), { encoding: 'utf8', timeout: 15000, env: harnessEnv() }).trim();
+  return xExecFileSync('xdotool', args.map(String), { encoding: 'utf8', timeout: 15000, env: harnessEnv() }).trim();
 }
 
 /** `xdotool` as a process of its own (a chain that runs beside a request). */
 export function spawnXdotool(args, options = {}) {
-  return spawn('xdotool', args.map(String), { ...options, env: harnessEnv() });
+  return xSpawn('xdotool', args.map(String), { ...options, env: harnessEnv() });
 }
 
 /** One xprobe command, its stdout as text. */
 export function xprobe(args, options = {}) {
-  return execFileSync(XPROBE, args.map(String), { encoding: 'utf8', timeout: 15000, ...options, env: harnessEnv() });
+  return xExecFileSync(XPROBE, args.map(String), { encoding: 'utf8', timeout: 15000, ...options, env: harnessEnv() });
 }
 
 /** An xprobe command that keeps running (a recorder, the clipboard owner, an overlay). */
 export function spawnXprobe(args, options = {}) {
-  return spawn(XPROBE, args.map(String), { ...options, env: harnessEnv() });
+  return xSpawn(XPROBE, args.map(String), { ...options, env: harnessEnv() });
 }
 
 /** The root property that marks a private display the harness started (xprobe clip.rs `PRIVATE_MARK`). */
@@ -66,7 +67,7 @@ const hex = (id) => `0x${Number(id).toString(16).padStart(8, '0')}`;
 export function retentionTrials(owner, window, trials, spanMs, gapMs, dump, run = execFileSync) {
   // a window of the run's open now and still the one it opened (scenes.mjs `liveOwned`): a closed one's id may be another's
   if (!owner.liveOwned(window)) throw new Error(`xprobe retention redirects only a window the harness opened and still has open; ${hex(window)} is not one of the run's now`);
-  const text = run(XPROBE, ['retention', String(window), String(trials), String(spanMs), String(gapMs), dump], { encoding: 'utf8', timeout: 600000 });
+  const text = guardDisplay(run)(XPROBE, ['retention', String(window), String(trials), String(spanMs), String(gapMs), dump], { encoding: 'utf8', timeout: 600000 });
   return text.trim().split('\n').map((l) => JSON.parse(l));
 }
 
@@ -76,7 +77,8 @@ export function retentionTrials(owner, window, trials, spanMs, gapMs, dump, run 
  */
 export function isPrivateDisplay({ env = process.env, run = execFileSync } = {}) {
   try {
-    const text = run('xprop', ['-root', PRIVATE_MARK], { encoding: 'utf8', timeout: 5000, env });
+    // a display the run may not reach is not one it marked: refused (`guardDisplay`), and so not private
+    const text = guardDisplay(run)('xprop', ['-root', PRIVATE_MARK], { encoding: 'utf8', timeout: 5000, env });
     return new RegExp(`^${PRIVATE_MARK}\\([A-Z_]+\\) = `, 'm').test(text);
   } catch {
     return false;
@@ -105,7 +107,10 @@ export async function startRunRecord({ ours = process.pid, env = process.env, re
   const fd = openSync(file, 'w');
   let child;
   try {
-    child = spawnRecord(XPROBE, ['record-run', '--ours', String(ours)], { stdio: ['pipe', fd, 'pipe'], env });
+    child = guardDisplay(spawnRecord)(XPROBE, ['record-run', '--ours', String(ours)], { stdio: ['pipe', fd, 'pipe'], env });
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
   } finally {
     closeSync(fd);
   }
@@ -228,7 +233,7 @@ export async function startRunWatchdog({ display = process.env.DISPLAY, env = pr
   let child;
   try {
     const args = ['watchdog', '--display', display, '--interval-ms', intervalMs, '--bound-ms', boundMs, '--grace-ms', graceMs, '--stop', stopPid].map(String);
-    child = spawnWatchdog(XPROBE, args, { stdio: ['pipe', fd, 'inherit'], env, detached: true });
+    child = guardDisplay(spawnWatchdog)(XPROBE, args, { stdio: ['pipe', fd, 'inherit'], env, detached: true });
   } finally {
     closeSync(fd);
   }
@@ -311,8 +316,10 @@ export async function startRunWatchdog({ display = process.env.DISPLAY, env = pr
  * stop()}`: `stop()` ends the watchdog first (a server ending under it would read as a stall), then the server, and
  * answers the watchdog's verdict (`startRunWatchdog`).
  */
-export async function startPrivateServer({ out, startWatchdog = startRunWatchdog, run = execFileSync } = {}) {
-  const child = spawn('Xvfb', ['-displayfd', '3', '-noreset', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });
+export async function startPrivateServer({ out, startWatchdog = startRunWatchdog, run = execFileSync, sockets = displaySockets } = {}) {
+  // the displays that exist before the server: the one it names must be new, or it is another server's (xspawn.mjs)
+  const before = sockets();
+  const child = xSpawn('Xvfb', ['-displayfd', '3', '-noreset', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });
   const ended = new Promise((resolve) => child.once('exit', resolve));
   const end = async () => {
     if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
@@ -335,14 +342,18 @@ export async function startPrivateServer({ out, startWatchdog = startRunWatchdog
     throw error;
   });
   let watchdog = null;
+  let release = null;
   try {
+    // the run's own display from now on: its tools may reach it (xspawn.mjs)
+    release = registerDisplay(display, 'a private X server of the run', { before });
     watchdog = await startWatchdog({ display, file: join(out, 'watchdog.jsonl') });
     watchdog.guard(child.pid);
     // marked private: the one kind of display where xprobe's `grabs` may take the pointer and the keyboard
-    run('xprop', ['-root', '-f', PRIVATE_MARK, '8s', '-set', PRIVATE_MARK, '1'], { env: { ...process.env, DISPLAY: display }, timeout: 15000 });
+    guardDisplay(run)('xprop', ['-root', '-f', PRIVATE_MARK, '8s', '-set', PRIVATE_MARK, '1'], { env: { ...process.env, DISPLAY: display }, timeout: 15000 });
   } catch (error) {
     await watchdog?.stop();
     await end();
+    release?.();
     throw error;
   }
   return {
@@ -351,6 +362,7 @@ export async function startPrivateServer({ out, startWatchdog = startRunWatchdog
     async stop() {
       const verdict = await watchdog.stop();
       await end();
+      release();
       return verdict;
     },
   };

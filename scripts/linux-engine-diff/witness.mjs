@@ -3,7 +3,7 @@
 // sampled every 5 ms — from before the request is sent until after its answer; any change in that span fails the
 // operation, whatever the state at its end.
 
-import { spawn } from 'node:child_process';
+import { xSpawn } from './xspawn.mjs';
 import { createInterface } from 'node:readline';
 
 /**
@@ -19,7 +19,7 @@ export function judgeSpan(report) {
 
 /** A running witness; `span(tag, fn)` runs fn inside a watched span and returns `{value, witness}`. */
 export async function startWitness(xprobe, { tailMs = 20 } = {}) {
-  const child = spawn(xprobe, ['witness'], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const child = xSpawn(xprobe, ['witness'], { stdio: ['pipe', 'pipe', 'inherit'] });
   const lines = createInterface({ input: child.stdout });
   const waiting = [];
   const queued = [];

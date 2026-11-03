@@ -10,7 +10,7 @@
 // The newest vendor build presses a chord's keys back to back where the pinned one paces them (behaviour §11.3),
 // and cua paces them not at all; the events and their order are the same, which is what this checks.
 
-import { spawn, execFileSync } from 'node:child_process';
+import { xExecFileSync, xSpawn } from './xspawn.mjs';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -198,7 +198,7 @@ export function judgeScenarioEffects(steps, records, candidates) {
 }
 
 function pointerOn(env) {
-  const text = execFileSync('xdotool', ['getmouselocation', '--shell'], { env, encoding: 'utf8' });
+  const text = xExecFileSync('xdotool', ['getmouselocation', '--shell'], { env, encoding: 'utf8' });
   const value = (key) => Number(text.match(new RegExp(`^${key}=(-?\\d+)`, 'm'))?.[1]);
   return [value('X'), value('Y')];
 }
@@ -262,7 +262,7 @@ class Recorder {
   constructor(env, { focus = false, fragile = false, fragileKey = false } = {}) {
     const { x, y, width, height } = RECORDER;
     const flags = [...(focus ? ['focus'] : []), ...(fragile ? ['fragile'] : []), ...(fragileKey ? ['fragile-key'] : [])];
-    this.child = spawn(XPROBE, ['record', String(x), String(y), String(width), String(height), ...flags], { env, stdio: ['pipe', 'pipe', 'inherit'] });
+    this.child = xSpawn(XPROBE, ['record', String(x), String(y), String(width), String(height), ...flags], { env, stdio: ['pipe', 'pipe', 'inherit'] });
     this.lines = [];
     this.waiters = [];
     createInterface({ input: this.child.stdout }).on('line', (line) => {
@@ -304,7 +304,7 @@ class Recorder {
  * and after it and the events the recorder received.
  */
 async function runScenario(scenario, engine, env, { via = 'wire', skyDir } = {}) {
-  execFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
+  xExecFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
   const recorder = new Recorder(env, { focus: scenario.route === 'desktop', fragile: scenario.fragile, fragileKey: scenario.fragileKey });
   const window = await recorder.ready();
   const engineEnv = scenario.apps ? { ...env, XDG_DATA_HOME: env.EVENTS_APPS, XDG_DATA_DIRS: '' } : env;
@@ -518,7 +518,7 @@ async function desktopBlocks(engines, env, emit, { rounds = FIRST_ROUNDS, firstR
     for (const sequence of sequences) {
       const order = [...engines.slice(r % engines.length), ...engines.slice(0, r % engines.length)];
       for (const engine of order) {
-        execFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
+        xExecFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
         const process_ = new Engine({ label: engine.label, bin: engine.bin, args: engine.args ?? [], env }).start();
         try {
           await new Promise((resolve) => setTimeout(resolve, ENGINE_SETTLE_MS));

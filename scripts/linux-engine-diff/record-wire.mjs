@@ -9,12 +9,13 @@ import { join } from 'node:path';
 import { Engine } from './engine.mjs';
 import { Desktop, desktopEnding } from './scenes.mjs';
 import { FIXTURE_DIR } from './wire-check.mjs';
+import { xExecFileSync } from './xspawn.mjs';
 
 export async function recordWire(args) {
   const desktop = new Desktop({ cua: args.cua, run: 'wire' });
   // started once the run's watchdog answered (scenes.mjs `begin`): nothing reaches the display before it
   let engine = null;
-  const version = (await import('node:child_process')).execFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim();
+  const version = xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim();
   const write = (kind, request, response, note) => {
     const fixture = { kind, engine: version, source: `recorded by scripts/linux-engine-diff.mjs --record-wire on a harness-owned gedit window${note ? `; ${note}` : ''}`, request, response };
     writeFileSync(join(FIXTURE_DIR, `cua-${kind}.json`), `${JSON.stringify(fixture)}\n`);

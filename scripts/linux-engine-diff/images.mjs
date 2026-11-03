@@ -3,7 +3,7 @@
 // equivalent window, in the same state within a block), below the rows that carry the window's own label (gedit's
 // title, Chrome's tab strip: the top 40 rows, measured on equivalent windows, where they differ and nowhere below).
 
-import { execFileSync } from 'node:child_process';
+import { xExecFileSync } from './xspawn.mjs';
 
 export const IMAGE_TOLERANCE = {
   /** Rows at the top left out of the comparison: where an equivalent window's own label is drawn. */
@@ -25,7 +25,7 @@ export function imageVerdict(diff, tolerance = IMAGE_TOLERANCE) {
 
 /** `xprobe imgdiff` of two JPEG files below the masked rows. */
 export function xprobeDiff(xprobe, tolerance = IMAGE_TOLERANCE) {
-  return (reference, image) => JSON.parse(execFileSync(xprobe, ['imgdiff', reference, image, String(tolerance.maskTopRows)], { encoding: 'utf8' }));
+  return (reference, image) => JSON.parse(xExecFileSync(xprobe, ['imgdiff', reference, image, String(tolerance.maskTopRows)], { encoding: 'utf8' }));
 }
 
 /**

@@ -20,7 +20,7 @@
 // clicks), `electron` (cua's Electron fixture: its field and its "Pressed N times" status), `terminal` (xterm
 // running a recorder of what it receives, with mouse reporting on).
 
-import { execFileSync } from 'node:child_process';
+import { xExecFileSync } from './xspawn.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -80,7 +80,7 @@ const byPid = (pid) => (w) => windowPid(w.id) === pid;
 
 export function windowPid(id) {
   try {
-    const text = execFileSync('xprop', ['-id', String(id), '_NET_WM_PID'], { encoding: 'utf8', timeout: 5000 });
+    const text = xExecFileSync('xprop', ['-id', String(id), '_NET_WM_PID'], { encoding: 'utf8', timeout: 5000 });
     const m = text.match(/= (\d+)/);
     return m ? Number(m[1]) : null;
   } catch {
@@ -89,7 +89,7 @@ export function windowPid(id) {
 }
 
 export function wmClass(id) {
-  const text = execFileSync('xprop', ['-id', String(id), 'WM_CLASS'], { encoding: 'utf8', timeout: 5000 });
+  const text = xExecFileSync('xprop', ['-id', String(id), 'WM_CLASS'], { encoding: 'utf8', timeout: 5000 });
   const parts = [...text.matchAll(/"([^"]*)"/g)].map((m) => m[1]);
   return parts.join(' / ');
 }

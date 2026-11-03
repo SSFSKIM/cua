@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
 import { isPrivateDisplay } from './xtools.mjs';
+import { assertReachable, guard, isCreatedDisplay, registerDisplay } from './xspawn.mjs';
 
 const REQUEST = /^(\d+):<:([0-9a-f]+):\s*\d+:\s*(?:([A-Za-z0-9-]+)-)?Request\((\d+)(?:,(\d+))?\):\s*(\S+)?(.*)$/;
 const QUERY = /^(\d+):<:([0-9a-f]+):.*Request\(98\): QueryExtension name='([^']+)'/;
@@ -273,9 +274,13 @@ function freeDisplay(socketDir) {
  *   copied, and writes the proxy's credentials into the proxy's own file. xtrace 1.4.0 reads from the file given as
  *   `-F` (`xauth -f <F> list <display>`) and writes into the one given as `-f` (`xauth -f <f> remove|add <proxy>`), the
  *   reverse of its --help (traced, task 45), so the person's file is the `-F` and is only read.
+ * The display it forwards to must be one the run may reach (xspawn.mjs: one it created, or any in a declared live run),
+ * checked before anything is made or started, whatever `spawn` is; the proxy in front of a display the run created is
+ * then the run's too, until its stop.
  * `spawn` and `socketDir` (where the proxy's socket appears) are the display-free tests' own.
  */
-export async function startProxy({ display = process.env.DISPLAY ?? ':0', privateDisplay, env = process.env, spawn = spawnProcess, socketDir = '/tmp/.X11-unix' } = {}) {
+export async function startProxy({ display = process.env.DISPLAY, privateDisplay, env = process.env, spawn = spawnProcess, socketDir = '/tmp/.X11-unix' } = {}) {
+  assertReachable('xtrace', [], { DISPLAY: display });
   privateDisplay ??= isPrivateDisplay({ env: { ...process.env, DISPLAY: display } });
   const n = freeDisplay(socketDir);
   const socket = `${socketDir}/X${n}`;
@@ -286,7 +291,13 @@ export async function startProxy({ display = process.env.DISPLAY ?? ':0', privat
   const credentials = privateDisplay ? ['-n'] : ['-c', '-f', auth, '-F', env.XAUTHORITY ?? join(env.HOME ?? homedir(), '.Xauthority')];
   // lists shown to 256 entries: every client's connection setup, XKB keymap and keyboard mapping are tens of KB of
   // lists, the bulk of a whole run's trace (T4b's audit round), and no audit reads that far into a list
-  const child = spawn('xtrace', ['-k', '-m', '256', '-d', display, '-D', `:${n}`, ...credentials, '-o', log], { stdio: ['ignore', 'ignore', 'pipe'] });
+  let child;
+  try {
+    child = guard(spawn)('xtrace', ['-k', '-m', '256', '-d', display, '-D', `:${n}`, ...credentials, '-o', log], { stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch (error) {
+    rmSync(dir, { recursive: true, force: true });
+    throw error;
+  }
   let stderr = '';
   let failed = null;
   child.on?.('error', (error) => {
@@ -307,6 +318,8 @@ export async function startProxy({ display = process.env.DISPLAY ?? ':0', privat
     }
     await new Promise((r) => setTimeout(r, 20));
   }
+  // in front of a display the run created, the proxy is the run's own display too (a live run's needs no entry)
+  const release = isCreatedDisplay(display) ? registerDisplay(`:${n}`, `the run's trace proxy in front of ${display}`) : () => {};
   const marks = [];
   return {
     display: `:${n}`,
@@ -340,6 +353,7 @@ export async function startProxy({ display = process.env.DISPLAY ?? ':0', privat
      * answers, read from the file before it is removed.
      */
     async stop({ parse = null } = {}) {
+      release();
       child.kill('SIGTERM');
       await exited;
       try {

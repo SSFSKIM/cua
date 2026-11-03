@@ -18,7 +18,7 @@
 // lanes taking turns, optionally after the gate's preceding case (`--prelude dedicated`), a full cover (`--cover-ms`) and
 // with the gate's other Chrome windows open (`--ballast gate`); each row carries the page's counters and pointer log.
 
-import { spawn } from 'node:child_process';
+import { xSpawn } from './xspawn.mjs';
 import { createInterface } from 'node:readline';
 
 import { grabsIn, watchGrabs } from './clip.mjs';
@@ -45,7 +45,7 @@ export function changedFields(a, b) {
 
 /** A running `xprobe selection-watch XdndSelection`: `stop()` answers its owner changes. */
 async function watchXdnd() {
-  const child = spawn(XPROBE, ['selection-watch', 'XdndSelection'], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const child = xSpawn(XPROBE, ['selection-watch', 'XdndSelection'], { stdio: ['pipe', 'pipe', 'inherit'] });
   const exited = new Promise((resolve) => {
     child.once('exit', resolve);
     child.once('error', resolve);

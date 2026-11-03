@@ -18,7 +18,7 @@
 // corner for `canvas`. A cell's verdict for each cua lane: every run position the pinned build took, the lane takes
 // too (the M1a.3 review's per-sample rule); a cell the pinned build never takes is recorded, not judged.
 
-import { execFileSync, spawn } from 'node:child_process';
+import { xExecFileSync, xSpawn } from './xspawn.mjs';
 
 import { Engine } from './engine.mjs';
 import { FAMILIES, familyNames, openFamily, readGtk4Status } from './families.mjs';
@@ -127,7 +127,7 @@ export const xtermCell = (offset) => [2 + 6 * offset + 3, 2 + 6];
  * cell), from the first cell's corner `origin` (window-relative), as a character's centre on the first line.
  */
 export function terminalCell(id, origin) {
-  const hints = execFileSync('xprop', ['-id', String(id), 'WM_NORMAL_HINTS'], { encoding: 'utf8', timeout: 5000 });
+  const hints = xExecFileSync('xprop', ['-id', String(id), 'WM_NORMAL_HINTS'], { encoding: 'utf8', timeout: 5000 });
   const pair = (label) => hints.match(new RegExp(`${label}: (\\d+) by (\\d+)`))?.slice(1).map(Number) ?? null;
   const [cw, ch] = pair('program specified resize increment') ?? [0, 0];
   if (!cw || !ch) throw new Error(`window ${id} names no resize increment`);
@@ -311,7 +311,7 @@ export function parsePointerLog(text) {
 
 function primary() {
   try {
-    return execFileSync('xclip', ['-o', '-selection', 'primary'], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
+    return xExecFileSync('xclip', ['-o', '-selection', 'primary'], { encoding: 'utf8', timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
   } catch {
     return '';
   }
@@ -319,7 +319,7 @@ function primary() {
 
 /** PRIMARY taken by the harness with a marker before a terminal's run, so a run that selects nothing reads as nothing. */
 function claimPrimary() {
-  const child = spawn('xclip', ['-i', '-selection', 'primary', '-loops', '1'], { stdio: ['pipe', 'ignore', 'ignore'], detached: true });
+  const child = xSpawn('xclip', ['-i', '-selection', 'primary', '-loops', '1'], { stdio: ['pipe', 'ignore', 'ignore'], detached: true });
   child.stdin.end('cua171-none');
   child.unref();
 }

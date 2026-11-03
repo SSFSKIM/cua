@@ -34,6 +34,8 @@
 // the scenes' windows are closed either way.
 import {createHash} from 'node:crypto';
 import {execFileSync} from 'node:child_process';
+
+import {declareLiveRun, xExecFileSync} from './xspawn.mjs';
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {parseArgs} from 'node:util';
@@ -42,6 +44,8 @@ import {splitTruncationLine} from './normalize.mjs';
 import {Desktop, desktopEnding} from './scenes.mjs';
 import {judgeTruncation} from './services-judge.mjs';
 
+// the two-services instrument reaches the session's display by design (xspawn.mjs)
+declareLiveRun('the two-services instrument (scripts/linux-engine-diff/services.mjs)');
 const {values} = parseArgs({options: {'vendor-js': {type: 'string'}, engine: {type: 'string'}, out: {type: 'string'}, scenes: {type: 'string', default: 'gedit,chrome,over-budget'}}});
 if (!values['vendor-js'] || !values.engine || !values.out) {
   console.error('usage: services.mjs --vendor-js <@oai/sky directory> --engine <cua-engine> --out <dir> [--scenes gedit,chrome,over-budget]');
@@ -207,7 +211,7 @@ try {
 const ending = desktopEnding(desktop.ending);
 rows.push({scene: '-', step: 'harness-windows', ok: ending.foreign.length === 0, equal: true, expected: {vendor: true, cua: true}, desktop: ending.record, ...(ending.foreign.length ? {vendorError: ending.foreign.join('; ')} : {})});
 
-const engineVersion = execFileSync(values.engine, ['--version'], {encoding: 'utf8'}).trim();
+const engineVersion = xExecFileSync(values.engine, ['--version'], {encoding: 'utf8'}).trim();
 const commit = execFileSync('git', ['rev-parse', 'HEAD'], {encoding: 'utf8'}).trim();
 mkdirSync(values.out, {recursive: true});
 writeFileSync(join(values.out, 'results.jsonl'), `${rows.map(row => JSON.stringify(row)).join('\n')}\n`);

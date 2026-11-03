@@ -117,7 +117,7 @@ test('a server that fails to start fails at once, and nothing is watched or prob
 test("the harness starts an X server only through startPrivateServer: no other module spawns Xvfb", () => {
   const spawning = readdirSync(HARNESS)
     .filter((name) => name.endsWith('.mjs'))
-    .filter((name) => /\bspawn(?:Sync)?\(\s*['"]Xvfb['"]|execFile(?:Sync)?\(\s*['"]Xvfb['"]|xvfb-run/.test(readFileSync(join(HARNESS, name), 'utf8')));
+    .filter((name) => /(?:\bspawn|\bxSpawn)(?:Sync)?\(\s*['"]Xvfb['"]|[eE]xecFile(?:Sync)?\(\s*['"]Xvfb['"]|xvfb-run/.test(readFileSync(join(HARNESS, name), 'utf8')));
   assert.deepEqual(spawning, ['xtools.mjs']);
   const events = readFileSync(join(HARNESS, 'events.mjs'), 'utf8');
   assert.match(events, /startPrivateServer\(/, "the events experiment's display is the watched one");

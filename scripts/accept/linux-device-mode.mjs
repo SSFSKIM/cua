@@ -33,8 +33,12 @@ import {toplevel, within} from '../linux-engine-diff/clip.mjs';
 import {Oracle} from '../linux-engine-diff/oracle.mjs';
 import {XPROBE, configure} from '../linux-engine-diff/scenes.mjs';
 import {judgeForegroundSpan, judgeSpan, startWitness} from '../linux-engine-diff/witness.mjs';
+import {declareLiveRun} from '../linux-engine-diff/xspawn.mjs';
 import {pinnedApprovals} from './lib.mjs';
 import {openSession, resultText} from './mcp-session.mjs';
+
+// the fixture drives the session's display by design, through the harness's X tools too (xspawn.mjs)
+declareLiveRun('the device-mode acceptance fixture (scripts/accept/linux-device-mode.mjs)');
 
 const CLI = fileURLToPath(new URL('../../bin/cua.mjs', import.meta.url));
 // Acceptance 6's text: Hangul, a combining acute after e, an emoji beyond the BMP, a newline.

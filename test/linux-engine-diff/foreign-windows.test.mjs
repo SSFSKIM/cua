@@ -176,7 +176,7 @@ function fakeReader(desktop, ids) {
 }
 
 /** A trace that hands back `text` when it stops, and says where its clients connect. */
-const fakeTrace = (text) => () => ({ env: { ...process.env, DISPLAY: ':77' }, stop: async () => text });
+const fakeTrace = (text) => () => ({ env: { ...process.env, DISPLAY: ':cua171-test-trace' }, stop: async () => text });
 /** The whole run's record (xprobe record-run), begun and ended with `lines` between. */
 const fakeRecord = (lines = []) => async () => ({ stop: async () => [JSON.stringify({ kind: 'ready', ms: 1 }), ...lines, JSON.stringify({ kind: 'end', ms: 2 })].join('\n') });
 /** The run's watchdog (xprobe watchdog), started and stopped with nothing seen. */

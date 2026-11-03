@@ -3,7 +3,9 @@
 // private display too, and a start that failed left the copy behind. Now on a private display it reads no authority
 // file at all (the harness's own X server has none), and on a person's display xtrace reads the person's file in place
 // and writes the proxy's credentials into the proxy's own directory, which goes on every end, a failed start included.
-// Display-free: xtrace is a stand-in, and the proxy's socket directory is the test's own.
+// Display-free: xtrace is a stand-in, the proxy's socket directory is the test's own, and the displays it is pointed at
+// are hermetic names (`:cua171-…`, which no X library parses), since the spawner refuses any other in a test (xspawn.mjs;
+// a trace of `:0` itself is display-reach.test.mjs's).
 
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -59,7 +61,7 @@ test("on a private display the trace reads no authority file, the person's above
   const xtrace = fakeXtrace({ starts: true, socketDir: s.socketDir });
   try {
     for (const env of [{ HOME: s.home }, { HOME: s.home, XAUTHORITY: join(s.home, '.Xauthority') }]) {
-      const proxy = await startProxy({ display: ':91', privateDisplay: true, env, spawn: xtrace.spawn, socketDir: s.socketDir });
+      const proxy = await startProxy({ display: ':cua171-test-91', privateDisplay: true, env, spawn: xtrace.spawn, socketDir: s.socketDir });
       const { args } = xtrace.calls.at(-1);
       assert.ok(args.includes('-n'), 'no credentials copied');
       assert.equal(args.includes('-c'), false);
@@ -83,7 +85,7 @@ test("on a person's display xtrace reads the person's authority file in place an
   try {
     for (const [env, source] of [[{ HOME: s.home }, join(s.home, '.Xauthority')], [{ HOME: '/nonexistent', XAUTHORITY: join(s.home, '.Xauthority') }, join(s.home, '.Xauthority')]]) {
       const before = statSync(source).mtimeMs;
-      const proxy = await startProxy({ display: ':0', privateDisplay: false, env, spawn: xtrace.spawn, socketDir: s.socketDir });
+      const proxy = await startProxy({ display: ':cua171-test-person', privateDisplay: false, env, spawn: xtrace.spawn, socketDir: s.socketDir });
       const { args } = xtrace.calls.at(-1);
       const dir = dirname(flagValue(args, '-o'));
       // xtrace 1.4.0 reads the display's credentials from the file it is given as -F (`xauth -f <F> list <display>`)
@@ -108,7 +110,7 @@ test('a trace that fails to start leaves nothing behind: its directory, with the
   const xtrace = fakeXtrace({ starts: false, socketDir: s.socketDir });
   try {
     for (const privateDisplay of [false, true]) {
-      await assert.rejects(startProxy({ display: ':0', privateDisplay, env: { HOME: s.home }, spawn: xtrace.spawn, socketDir: s.socketDir }), /xtrace did not start: Error parsing xauth list data/);
+      await assert.rejects(startProxy({ display: ':cua171-test-person', privateDisplay, env: { HOME: s.home }, spawn: xtrace.spawn, socketDir: s.socketDir }), /xtrace did not start: Error parsing xauth list data/);
       const dir = dirname(flagValue(xtrace.calls.at(-1).args, '-o'));
       assert.equal(existsSync(dir), false, `the failed start's directory is removed (${privateDisplay ? 'private' : "a person's"} display)`);
     }

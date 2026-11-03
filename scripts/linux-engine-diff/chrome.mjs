@@ -18,6 +18,7 @@ import { lstatSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:f
 import { basename, isAbsolute, join, relative, sep } from 'node:path';
 
 import { launchEnvironment } from './app-env.mjs';
+import { guard } from './xspawn.mjs';
 
 /** What the harness runs to start Chrome: the distribution's wrapper on the PATH, as a person starts it. */
 export const CHROME_COMMAND = 'google-chrome';
@@ -134,7 +135,8 @@ export class ChromeInstance {
     const args = this.args(url);
     const env = this.environment();
     assertOwnChrome(CHROME_COMMAND, args, this.scratch);
-    const child = this.spawnProcess(CHROME_COMMAND, args, { env, stdio: 'ignore', detached: true });
+    // on a display the run may reach only (xspawn.mjs), whatever launcher it was given
+    const child = guard(this.spawnProcess)(CHROME_COMMAND, args, { env, stdio: 'ignore', detached: true });
     // a Chrome that cannot start shows as a window that never comes, which the open's wait reports
     child.on?.('error', () => {});
     child.unref?.();

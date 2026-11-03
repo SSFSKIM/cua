@@ -4,7 +4,7 @@
 // a reader that reads CLIPBOARD with a real timestamp; whether a grab is left in force; whether a window lies inside
 // another; and the window manager's stacking order.
 
-import { execFileSync, spawn } from 'node:child_process';
+import { xExecFileSync, xSpawn } from './xspawn.mjs';
 import { createInterface } from 'node:readline';
 
 import { XPROBE, spawnXprobe, xprobe } from './xtools.mjs';
@@ -21,7 +21,7 @@ export function clipRead() {
  * lines, and `kill()` for a cleanup that does not wait.
  */
 export async function watchGrabs({ readyMs = 5000 } = {}) {
-  const child = spawn(XPROBE, ['request-watch'], { stdio: ['pipe', 'pipe', 'ignore'] });
+  const child = xSpawn(XPROBE, ['request-watch'], { stdio: ['pipe', 'pipe', 'ignore'] });
   const lines = [];
   let ready;
   const began = new Promise((resolve, reject) => {
@@ -132,7 +132,7 @@ export async function waitQuarantineOver({ read = quarantine, sleep = (ms) => ne
 
 /** The window manager's stacking order, bottom first (`_NET_CLIENT_LIST_STACKING`). */
 export function stacking() {
-  const text = execFileSync('xprop', ['-root', '_NET_CLIENT_LIST_STACKING'], { encoding: 'utf8' });
+  const text = xExecFileSync('xprop', ['-root', '_NET_CLIENT_LIST_STACKING'], { encoding: 'utf8' });
   return [...text.matchAll(/0x[0-9a-f]+/gi)].map((m) => Number.parseInt(m[0], 16));
 }
 

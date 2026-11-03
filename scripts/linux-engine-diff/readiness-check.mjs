@@ -13,7 +13,7 @@
 // (the front window over the whole screen). The engine reports which way it judged the window (`--stats`), so a
 // trial the engine did not judge unobscured is never counted as the shortcut's.
 
-import { execFileSync } from 'node:child_process';
+import { xExecFileSync } from './xspawn.mjs';
 import { copyFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -84,7 +84,7 @@ export function judgeReadinessRun(trials, vendorTrials) {
 }
 
 function imgdiff(a, b) {
-  return JSON.parse(execFileSync(XPROBE, ['imgdiff', a, b, '0'], { encoding: 'utf8' }));
+  return JSON.parse(xExecFileSync(XPROBE, ['imgdiff', a, b, '0'], { encoding: 'utf8' }));
 }
 
 /** Arranges the front window for a condition, the scene raised beneath it; returns the front's real geometry. */

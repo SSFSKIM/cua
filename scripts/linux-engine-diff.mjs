@@ -6,6 +6,10 @@
 // input operation. M0's first cut; the library lives in scripts/linux-engine-diff/.
 
 import { parseArgs } from './linux-engine-diff/cli.mjs';
+import { declareLiveRun } from './linux-engine-diff/xspawn.mjs';
+
+// the harness reaches the session's display by design: its X tools, engines and applications may (xspawn.mjs)
+declareLiveRun('the differential harness (scripts/linux-engine-diff.mjs)');
 
 const args = (() => {
   try {

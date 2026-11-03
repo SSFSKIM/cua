@@ -26,7 +26,7 @@
 // its own (`label`), and a window that existed before the run began is never found or adopted, whatever its title
 // (`preexisting`), so a window of the person's can never be taken for one of the run's (T4b's audit round).
 
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { closeSync, createReadStream, createWriteStream, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { pipeline } from 'node:stream/promises';
@@ -45,6 +45,7 @@ import { auditForeign, auditRecord, auditRecordFile, foreignKeep, foreignLine } 
 import { preorder } from './normalize.mjs';
 import { startPrivateSession } from './session-bus.mjs';
 import { cleanupOnStop } from './stop.mjs';
+import { xExecFileSync, xSpawn } from './xspawn.mjs';
 import { RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
 
 export { XPROBE, xdotool };
@@ -64,20 +65,20 @@ const READ_TIMEOUT_MS = 15000;
 const SESSION_ENV = ['DBUS_SESSION_BUS_ADDRESS', 'AT_SPI_BUS_ADDRESS'];
 
 export function activeWindow() {
-  const text = execFileSync('xprop', ['-root', '_NET_ACTIVE_WINDOW'], { encoding: 'utf8', timeout: READ_TIMEOUT_MS });
+  const text = xExecFileSync('xprop', ['-root', '_NET_ACTIVE_WINDOW'], { encoding: 'utf8', timeout: READ_TIMEOUT_MS });
   const match = text.match(/0x[0-9a-f]+/i);
   return match ? Number.parseInt(match[0], 16) : 0;
 }
 
 /** The screen's root window. */
 export function rootWindow() {
-  const text = execFileSync('xwininfo', ['-root'], { encoding: 'utf8', timeout: READ_TIMEOUT_MS });
+  const text = xExecFileSync('xwininfo', ['-root'], { encoding: 'utf8', timeout: READ_TIMEOUT_MS });
   return Number.parseInt(text.match(/Window id: (0x[0-9a-f]+)/i)[1], 16);
 }
 
 /** Every window on the display, top-levels and their descendants (`xwininfo -root -tree`, a read). */
 export function allWindows() {
-  const text = execFileSync('xwininfo', ['-root', '-tree'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: READ_TIMEOUT_MS });
+  const text = xExecFileSync('xwininfo', ['-root', '-tree'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: READ_TIMEOUT_MS });
   return [...text.matchAll(/^\s+(0x[0-9a-f]+)/gim)].map((m) => Number.parseInt(m[1], 16));
 }
 
@@ -88,7 +89,7 @@ export function allWindows() {
 const HOLDER_PLACE = [1070, 640, 200, 150];
 
 export function a11yBusAddress() {
-  const text = execFileSync('xprop', ['-root', 'AT_SPI_BUS'], { encoding: 'utf8', timeout: READ_TIMEOUT_MS });
+  const text = xExecFileSync('xprop', ['-root', 'AT_SPI_BUS'], { encoding: 'utf8', timeout: READ_TIMEOUT_MS });
   const match = text.match(/"(.*)"/);
   if (!match) throw new Error('the root window has no AT_SPI_BUS property');
   return match[1];
@@ -505,7 +506,7 @@ export class Desktop {
     }
     try {
       // `stdout: 'pipe'` for a scene program that reports on it (pages/identity-windows.py)
-      const child = spawn(cmd, args, { ...options, env, stdio: ['ignore', stdout, fd === null ? 'ignore' : fd], detached: true });
+      const child = xSpawn(cmd, args, { ...options, env, stdio: ['ignore', stdout, fd === null ? 'ignore' : fd], detached: true });
       child.unref();
       return child;
     } finally {
@@ -777,7 +778,7 @@ export class Desktop {
    */
   async waitForFrames(scene) {
     const oracle = await this.ensureOracle();
-    const pid = scene.pid ?? Number(execFileSync('xprop', ['-id', String(scene.id), '_NET_WM_PID'], { encoding: 'utf8' }).match(/(\d+)\s*$/)?.[1]);
+    const pid = scene.pid ?? Number(xExecFileSync('xprop', ['-id', String(scene.id), '_NET_WM_PID'], { encoding: 'utf8' }).match(/(\d+)\s*$/)?.[1]);
     const deadline = Date.now() + 30000;
     scene.frames_ready = false;
     while (Date.now() < deadline && !this.stopping) {

@@ -30,7 +30,7 @@
 // manager's focus fallback lands on a harness window, and the active window after each minimize is recorded on the
 // sample; one the harness did not open stops the run.
 
-import { execFileSync } from 'node:child_process';
+import { xExecFileSync } from './xspawn.mjs';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -54,8 +54,8 @@ const DEDICATED = ['--desktop', 'dedicated'];
 
 /** A window's ICCCM state and whether it is viewable, read with the X tools (independent of any engine). */
 export function windowState(id) {
-  const wm = execFileSync('xprop', ['-id', String(id), 'WM_STATE'], { encoding: 'utf8' });
-  const map = execFileSync('xwininfo', ['-id', String(id)], { encoding: 'utf8' });
+  const wm = xExecFileSync('xprop', ['-id', String(id), 'WM_STATE'], { encoding: 'utf8' });
+  const map = xExecFileSync('xwininfo', ['-id', String(id)], { encoding: 'utf8' });
   return { state: wm.match(/window state: (\w+)/)?.[1] ?? null, viewable: /Map State: IsViewable/.test(map) };
 }
 
@@ -89,7 +89,7 @@ export async function minimize(ctx) {
 
 /** A window's place on the screen (xwininfo's absolute upper-left corner and size). */
 function placement(id) {
-  const info = execFileSync('xwininfo', ['-id', String(id)], { encoding: 'utf8' });
+  const info = xExecFileSync('xwininfo', ['-id', String(id)], { encoding: 'utf8' });
   return ['Absolute upper-left X', 'Absolute upper-left Y', 'Width', 'Height'].map((k) => info.match(new RegExp(`${k}:\\s+(-?\\d+)`))?.[1]).join(',');
 }
 
@@ -251,9 +251,9 @@ function inspectShot(entry, window) {
     let diff = null;
     if (typeof entry?.filepath === 'string' && existsSync(entry.filepath)) {
       const reference = join(dir, 'reference.jpg');
-      execFileSync(XPROBE, ['snap', String(window.id), reference], { encoding: 'utf8' });
+      xExecFileSync(XPROBE, ['snap', String(window.id), reference], { encoding: 'utf8' });
       try {
-        diff = JSON.parse(execFileSync(XPROBE, ['imgdiff', reference, entry.filepath, '0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
+        diff = JSON.parse(xExecFileSync(XPROBE, ['imgdiff', reference, entry.filepath, '0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }));
       } catch {
         // it does not decode
       }

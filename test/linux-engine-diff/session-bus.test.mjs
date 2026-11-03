@@ -69,20 +69,20 @@ test('the bus starts as its own process group, offers only the launcher, and nam
   const s = scratch();
   try {
     const daemon = fakeDaemon('unix:path=/tmp/run/bus/dbus-abc,guid=1234');
-    const bus = await startSessionBus({ dir: s.dir, display: ':88', env: { PATH: '/usr/bin', DISPLAY: ':0', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/501/bus', AT_SPI_BUS_ADDRESS: 'unix:path=/run/user/501/at-spi/bus_0' }, serviceFile: s.serviceFile, ...daemon });
+    const bus = await startSessionBus({ dir: s.dir, display: ':cua171-test-88', env: { PATH: '/usr/bin', DISPLAY: ':0', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/501/bus', AT_SPI_BUS_ADDRESS: 'unix:path=/run/user/501/at-spi/bus_0' }, serviceFile: s.serviceFile, ...daemon });
     assert.equal(bus.address, 'unix:path=/tmp/run/bus/dbus-abc,guid=1234');
     const [{ cmd, args, options }] = daemon.calls.spawn;
     assert.equal(cmd, 'dbus-daemon');
     assert.deepEqual(args, [`--config-file=${join(s.dir, 'session.conf')}`, '--nofork', '--nopidfile', '--print-address=3']);
     assert.equal(options.detached, true, 'its own process group, which the services it starts inherit');
-    assert.deepEqual(options.env, { PATH: '/usr/bin', DISPLAY: ':88' });
+    assert.deepEqual(options.env, { PATH: '/usr/bin', DISPLAY: ':cua171-test-88' });
     assert.deepEqual(readdirSync(join(s.dir, 'services')), ['org.a11y.Bus.service'], 'the only service it can start');
     assert.equal(readFileSync(join(s.dir, 'services', 'org.a11y.Bus.service'), 'utf8'), SERVICE);
     assert.match(readFileSync(join(s.dir, 'session.conf'), 'utf8'), new RegExp(`<servicedir>${join(s.dir, 'services')}</servicedir>`));
     const [update] = daemon.calls.run;
     assert.equal(update.cmd, 'busctl');
-    assert.deepEqual(update.args, [`--address=${bus.address}`, 'call', 'org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'UpdateActivationEnvironment', 'a{ss}', '2', 'DBUS_SESSION_BUS_ADDRESS', bus.address, 'DISPLAY', ':88']);
-    assert.deepEqual(update.options.env, { PATH: '/usr/bin', DISPLAY: ':88' }, "busctl too reaches the run's bus only");
+    assert.deepEqual(update.args, [`--address=${bus.address}`, 'call', 'org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'UpdateActivationEnvironment', 'a{ss}', '2', 'DBUS_SESSION_BUS_ADDRESS', bus.address, 'DISPLAY', ':cua171-test-88']);
+    assert.deepEqual(update.options.env, { PATH: '/usr/bin', DISPLAY: ':cua171-test-88' }, "busctl too reaches the run's bus only");
     assert.deepEqual(await bus.stop({ graceMs: 1000 }), { terminated: true, killed: false });
     assert.deepEqual(daemon.calls.kill, [[-7771, 'SIGTERM'], [-7771, 'SIGKILL']], 'the group, then whatever it left');
   } finally {
@@ -94,7 +94,7 @@ test('a bus without the launcher service is refused before anything starts', asy
   const s = scratch();
   try {
     const daemon = fakeDaemon('unix:path=/x');
-    await assert.rejects(startSessionBus({ dir: s.dir, display: ':88', serviceFile: join(s.dir, 'missing.service'), ...daemon }), /needs the accessibility bus launcher's service/);
+    await assert.rejects(startSessionBus({ dir: s.dir, display: ':cua171-test-88', serviceFile: join(s.dir, 'missing.service'), ...daemon }), /needs the accessibility bus launcher's service/);
     assert.deepEqual(daemon.calls.spawn, []);
   } finally {
     s.done();
@@ -134,18 +134,18 @@ test("the accessibility wiring: the launcher's bus must be the display's AT_SPI_
     assert.equal(args[0], '--address=unix:path=/tmp/run/bus/dbus-1');
     return JSON.stringify({ type: 's', data: [answer] });
   };
-  assert.equal(await wireAccessibility({ address: 'unix:path=/tmp/run/bus/dbus-1', display: ':88', run, rootBus: () => answer }), answer);
+  assert.equal(await wireAccessibility({ address: 'unix:path=/tmp/run/bus/dbus-1', display: ':cua171-test-88', run, rootBus: () => answer }), answer);
   // the property is set a moment after the answer
   let reads = 0;
-  assert.equal(await wireAccessibility({ address: 'unix:path=/tmp/run/bus/dbus-1', display: ':88', run, rootBus: () => (++reads > 3 ? answer : null) }), answer);
+  assert.equal(await wireAccessibility({ address: 'unix:path=/tmp/run/bus/dbus-1', display: ':cua171-test-88', run, rootBus: () => (++reads > 3 ? answer : null) }), answer);
   // a display that names another bus (the person's, or a stale one): applications and engines would split
-  await assert.rejects(wireAccessibility({ address: 'unix:path=/tmp/run/bus/dbus-1', display: ':88', run, rootBus: () => 'unix:path=/run/user/501/at-spi/bus_0', timeoutMs: 300 }), /is not the run's accessibility bus/);
-  await assert.rejects(wireAccessibility({ address: 'unix:path=/tmp/run/bus/dbus-1', display: ':88', run: () => JSON.stringify({ type: 's', data: [''] }), rootBus: () => '' }), /answered no bus address/);
-  await assert.rejects(wireAccessibility({ address: 'unix:path=/tmp/run/bus/dbus-1', display: ':88', run: () => {
+  await assert.rejects(wireAccessibility({ address: 'unix:path=/tmp/run/bus/dbus-1', display: ':cua171-test-88', run, rootBus: () => 'unix:path=/run/user/501/at-spi/bus_0', timeoutMs: 300 }), /is not the run's accessibility bus/);
+  await assert.rejects(wireAccessibility({ address: 'unix:path=/tmp/run/bus/dbus-1', display: ':cua171-test-88', run: () => JSON.stringify({ type: 's', data: [''] }), rootBus: () => '' }), /answered no bus address/);
+  await assert.rejects(wireAccessibility({ address: 'unix:path=/tmp/run/bus/dbus-1', display: ':cua171-test-88', run: () => {
     throw new Error('ServiceUnknown');
   } }), /started no accessibility bus: ServiceUnknown/);
   // with the real tools a test refuses before anything is asked
-  await assert.rejects(wireAccessibility({ address: 'unix:path=/tmp/run/bus/dbus-1', display: ':88' }), /a test never starts the accessibility bus launcher/);
+  await assert.rejects(wireAccessibility({ address: 'unix:path=/tmp/run/bus/dbus-1', display: ':cua171-test-88' }), /a test never starts the accessibility bus launcher/);
 });
 
 test('a private session whose wiring fails stops its bus before the error', async () => {
@@ -153,17 +153,17 @@ test('a private session whose wiring fails stops its bus before the error', asyn
   const start = async () => ({ address: 'unix:path=/tmp/b', pid: 1, stop: async () => ({ terminated: true, killed: false, n: ++stopped }) });
   const enabled = [];
   const enable = async (options) => enabled.push(options);
-  await assert.rejects(startPrivateSession({ dir: '/tmp/x', display: ':88', start, wire: async () => {
+  await assert.rejects(startPrivateSession({ dir: '/tmp/x', display: ':cua171-test-88', start, wire: async () => {
     throw new Error('split buses');
   }, enable }), /split buses/);
   assert.equal(stopped, 1);
   assert.deepEqual(enabled, [], 'no switch is set on a bus that is not wired');
-  const session = await startPrivateSession({ dir: '/tmp/x', display: ':88', start, wire: async () => 'unix:path=/a11y', enable });
+  const session = await startPrivateSession({ dir: '/tmp/x', display: ':cua171-test-88', start, wire: async () => 'unix:path=/a11y', enable });
   assert.equal(session.a11y, 'unix:path=/a11y');
   assert.equal(session.address, 'unix:path=/tmp/b');
   assert.deepEqual(enabled, [{ address: 'unix:path=/tmp/b' }], "the run's switch is turned on, on the run's own bus");
   // a switch that cannot be turned on stops the bus too
-  await assert.rejects(startPrivateSession({ dir: '/tmp/x', display: ':88', start, wire: async () => 'unix:path=/a11y', enable: async () => {
+  await assert.rejects(startPrivateSession({ dir: '/tmp/x', display: ':cua171-test-88', start, wire: async () => 'unix:path=/a11y', enable: async () => {
     throw new Error('it reads back off');
   } }), /it reads back off/);
   assert.equal(stopped, 2);
@@ -176,8 +176,8 @@ test("the session's bus is started with the run's launch environment it is given
     return { address: 'unix:path=/tmp/b', pid: 1, stop: async () => ({}) };
   };
   const env = { HOME: '/tmp/cua171-diff-r-x/home', GSETTINGS_BACKEND: 'memory' };
-  await startPrivateSession({ dir: '/tmp/x', display: ':88', env, start, wire: async () => 'unix:path=/a11y', enable: async () => {} });
-  assert.deepEqual(seen, [{ dir: '/tmp/x', display: ':88', env }]);
+  await startPrivateSession({ dir: '/tmp/x', display: ':cua171-test-88', env, start, wire: async () => 'unix:path=/a11y', enable: async () => {} });
+  assert.deepEqual(seen, [{ dir: '/tmp/x', display: ':cua171-test-88', env }]);
 });
 
 test("the run's accessibility switch: set on the run's own bus, read back, and a test never sets it with the real tools", async () => {
@@ -221,7 +221,7 @@ function fakeTools() {
   } };
 }
 
-const fakeTrace = () => () => ({ env: { ...process.env, DISPLAY: ':77' }, stop: async () => '' });
+const fakeTrace = () => () => ({ env: { ...process.env, DISPLAY: ':cua171-test-trace' }, stop: async () => '' });
 const fakeRecord = async () => ({ pid: 1, stop: async () => [JSON.stringify({ kind: 'ready', ms: 1 }), JSON.stringify({ kind: 'end', ms: 2 })].join('\n') });
 const fakeWatchdog = async () => ({ guard: () => {}, stop: async () => ({ state: 'ended', clean: true, stalled: false, reason: null, round_trips: 1, lines: [] }) });
 
@@ -354,9 +354,9 @@ test("a dbus-daemon that cannot be started (missing, or not executable) rejects 
   const s = scratch();
   const bin = mkdtempSync(join(tmpdir(), 'cua171-bus-bin-'));
   try {
-    await assert.rejects(startSessionBus({ dir: s.dir, display: ':88', env: { PATH: bin }, serviceFile: s.serviceFile }), /the run's session bus did not start: dbus-daemon: .*ENOENT/);
+    await assert.rejects(startSessionBus({ dir: s.dir, display: ':cua171-test-88', env: { PATH: bin }, serviceFile: s.serviceFile }), /the run's session bus did not start: dbus-daemon: .*ENOENT/);
     writeFileSync(join(bin, 'dbus-daemon'), '#!/bin/sh\nexit 0\n', { mode: 0o644 });
-    await assert.rejects(startSessionBus({ dir: s.dir, display: ':88', env: { PATH: bin }, serviceFile: s.serviceFile }), /the run's session bus did not start: dbus-daemon: .*EACCES/);
+    await assert.rejects(startSessionBus({ dir: s.dir, display: ':cua171-test-88', env: { PATH: bin }, serviceFile: s.serviceFile }), /the run's session bus did not start: dbus-daemon: .*EACCES/);
   } finally {
     s.done();
     rmSync(bin, { recursive: true, force: true });
@@ -410,7 +410,7 @@ for (const stage of STAGES) {
       watchdog: stopping('watchdog', { guard: () => {} }),
       session: stopping('session', { address: 'unix:path=/tmp/late-bus', a11y: 'unix:path=/late-a11y', pid: 1 }),
       record: stopping('record', { pid: 1 }),
-      trace: stopping('trace', { env: { ...process.env, DISPLAY: ':77' } }),
+      trace: stopping('trace', { env: { ...process.env, DISPLAY: ':cua171-test-trace' } }),
     };
     // each stage logs its start; the one under test answers only once the test releases it
     const start = (name) => () => {
@@ -461,7 +461,7 @@ for (const stage of ['watchdog', 'session', 'record']) {
       watchdog: stopping('watchdog', { guard: () => {} }),
       session: stopping('session', { address: 'unix:path=/tmp/late-bus', a11y: 'unix:path=/late-a11y', pid: 1 }),
       record: stopping('record', { pid: 1 }),
-      trace: stopping('trace', { env: { ...process.env, DISPLAY: ':77' } }),
+      trace: stopping('trace', { env: { ...process.env, DISPLAY: ':cua171-test-trace' } }),
     };
     const desktop = new Desktop({ cua: 'unused', run: `bus-signal-${stage}`, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
     let stopped = null;
@@ -511,7 +511,7 @@ for (const point of ['before begin', ...PREFLIGHT]) {
       watchdog: stopping('watchdog', { guard: () => {} }),
       session: stopping('session', { address: 'unix:path=/tmp/late-bus', a11y: 'unix:path=/late-a11y', pid: 1 }),
       record: stopping('record', { pid: 1 }),
-      trace: stopping('trace', { env: { ...process.env, DISPLAY: ':77' } }),
+      trace: stopping('trace', { env: { ...process.env, DISPLAY: ':cua171-test-trace' } }),
     };
     const desktop = new Desktop({ cua: 'unused', run: `bus-preflight-${point.replace(/ /g, '')}`, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
     let stopped = null;

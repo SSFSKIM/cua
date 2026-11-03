@@ -4,10 +4,10 @@
 // desktop route (XTEST, via xdotool), then restores the previously active window. Its end state looks undisturbed,
 // so only a witness that watches the whole operation fails it; a run whose witness passes this stub is invalid.
 
-import { execFileSync } from 'node:child_process';
+import { xExecFileSync } from './xspawn.mjs';
 import { createInterface } from 'node:readline';
 
-const run = (...args) => execFileSync('xdotool', args.map(String), { encoding: 'utf8' }).trim();
+const run = (...args) => xExecFileSync('xdotool', args.map(String), { encoding: 'utf8' }).trim();
 
 createInterface({ input: process.stdin }).on('line', (line) => {
   if (line.trim() === '') return;

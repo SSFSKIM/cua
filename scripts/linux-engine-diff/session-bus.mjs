@@ -30,6 +30,7 @@ import { join } from 'node:path';
 
 import { readSwitch, setSwitch } from './a11y-status.mjs';
 import { inTest } from './hermetic.mjs';
+import { guard } from './xspawn.mjs';
 
 /** The accessibility bus launcher's service file: the one service the run's bus can start. */
 export const A11Y_SERVICE_FILE = '/usr/share/dbus-1/services/org.a11y.Bus.service';
@@ -89,7 +90,9 @@ export async function startSessionBus({ dir, display, env = process.env, service
   writeFileSync(join(serviceDir, 'org.a11y.Bus.service'), service);
   const config = join(dir, 'session.conf');
   writeFileSync(config, sessionBusConfig({ socketDir, serviceDir }));
-  const child = spawn('dbus-daemon', [`--config-file=${config}`, '--nofork', '--nopidfile', '--print-address=3'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe'], env: busEnvironment(env, display), detached: true });
+  // the daemon reaches the display through the launcher it activates, which marks the display's root: a display the run
+  // may reach only (xspawn.mjs), whatever `spawn` is
+  const child = guard(spawn)('dbus-daemon', [`--config-file=${config}`, '--nofork', '--nopidfile', '--print-address=3'], { stdio: ['ignore', 'ignore', 'pipe', 'pipe'], env: busEnvironment(env, display), detached: true });
   child.unref?.();
   let stderr = '';
   child.stderr?.on('data', (d) => {
@@ -166,7 +169,7 @@ export async function startSessionBus({ dir, display, env = process.env, service
 /** The display's root property `AT_SPI_BUS` (an `xprop` read), or null when it has none. */
 export function rootAccessibilityBus(display, run = execFileSync) {
   try {
-    const text = run('xprop', ['-root', 'AT_SPI_BUS'], { encoding: 'utf8', timeout: 5000, env: { ...process.env, DISPLAY: display } });
+    const text = guard(run)('xprop', ['-root', 'AT_SPI_BUS'], { encoding: 'utf8', timeout: 5000, env: { ...process.env, DISPLAY: display } });
     return text.match(/"(.*)"/)?.[1] ?? null;
   } catch {
     return null;

@@ -3,7 +3,7 @@
 // from the process's spawn (the cold sample a service pays on first use). cua-engine's `--stats` lines on stderr are
 // matched to their requests by id.
 
-import { spawn } from 'node:child_process';
+import { xSpawn } from './xspawn.mjs';
 import { createInterface } from 'node:readline';
 
 const now = () => Number(process.hrtime.bigint()) / 1e6;
@@ -49,7 +49,7 @@ export class Engine {
   start() {
     this.spawnedAt = now();
     const args = ['server', ...this.args, ...(this.statsWanted ? ['--stats'] : [])];
-    this.child = spawn(this.bin, args, { stdio: ['pipe', 'pipe', 'pipe'], ...(this.env ? { env: this.env } : {}) });
+    this.child = xSpawn(this.bin, args, { stdio: ['pipe', 'pipe', 'pipe'], ...(this.env ? { env: this.env } : {}) });
     this.pid = this.child.pid;
     this.exited = new Promise((resolve) => this.child.once('exit', (code, signal) => resolve({ code, signal })));
     createInterface({ input: this.child.stdout }).on('line', (line) => {

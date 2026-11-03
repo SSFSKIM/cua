@@ -12,8 +12,8 @@ import test from 'node:test';
 
 import { HOME_VARS, launchEnvironment, runHome } from '../../scripts/linux-engine-diff/app-env.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
+import { harnessModules, harnessStarts, processStarts } from './source-scan.mjs';
 
-const HARNESS = join(import.meta.dirname, '../../scripts/linux-engine-diff');
 
 /** What an application gets exactly as the harness has it: the display, its authority, the runtime directory, the session bus. */
 const HANDED_ON = ['DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'];
@@ -230,53 +230,6 @@ test('an application whose own variables the environment refuses is never starte
 // ---------------------------------------------------------------------------------------------------------------
 // the source: one place builds the environment, and no application start bypasses it
 
-/** Every JavaScript module of the harness, as `{file, text}`, comments blanked (lines kept). */
-function harnessModules() {
-  const out = [];
-  const walk = (dir) => {
-    for (const name of readdirSync(dir)) {
-      const path = join(dir, name);
-      if (['target', 'node_modules'].includes(name)) continue;
-      if (statSync(path).isDirectory()) walk(path);
-      else if (/\.(mjs|js)$/.test(name)) out.push({ file: relative(HARNESS, path), text: readFileSync(path, 'utf8') });
-    }
-  };
-  walk(HARNESS);
-  out.push({ file: '../linux-engine-diff.mjs', text: readFileSync(join(HARNESS, '..', 'linux-engine-diff.mjs'), 'utf8') });
-  const blank = (text) => text.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' ')).replace(/(^|[^:'"`])\/\/.*$/gm, '$1');
-  return out.map(({ file, text }) => ({ file, text: blank(text) }));
-}
-
-/** The names a module calls child_process's process starts by: its imports (aliases too) and parameters defaulting to one. */
-function processStarters(text) {
-  const names = new Set();
-  for (const m of text.matchAll(/import\s*\{([^}]*)\}\s*from\s*['"]node:child_process['"]/g)) {
-    for (const part of m[1].split(',')) {
-      const [orig, alias] = part.trim().split(/\s+as\s+/);
-      if (['spawn', 'spawnSync', 'execFile', 'execFileSync', 'exec', 'execSync', 'fork'].includes(orig)) names.add(alias ?? orig);
-    }
-  }
-  for (const m of text.matchAll(/(\w+)\s*=\s*(\w+)\s*(?=[,)}])/g)) if (names.has(m[2])) names.add(m[1]);
-  return names;
-}
-
-/** `text` with every string literal's contents blanked, lengths kept, so a search finds code only. */
-const blankStrings = (text) => text.replace(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g, (s) => s[0] + ' '.repeat(s.length - 2) + s.at(-1));
-
-/** A call's first argument: the text up to the first comma at its own depth. */
-function firstArgument(text, open, code = blankStrings(text)) {
-  let depth = 0;
-  for (let i = open; i < text.length; i++) {
-    const c = code[i];
-    if ('([{'.includes(c)) depth++;
-    else if (')]}'.includes(c)) {
-      if (depth === 0) return text.slice(open, i).trim();
-      depth--;
-    } else if (c === ',' && depth === 0) return text.slice(open, i).trim();
-  }
-  return text.slice(open).trim();
-}
-
 /**
  * The commands the harness starts that are not applications: its X and bus tools, its own programs, the engines
  * (engines are not applications, task 45), the candidate's preparation commands, git.
@@ -286,22 +239,8 @@ const TOOLS = new Set(["'xdotool'", "'xprop'", "'xwininfo'", "'xclip'", "'busctl
 test('no application start bypasses the launch environment: every process start is a tool, an engine, or one of the two application launchers', () => {
   const modules = harnessModules();
   assert.ok(['scenes.mjs', 'chrome.mjs', 'families.mjs', 'safety.mjs', 'xtools.mjs'].every((f) => modules.some(({ file }) => file === f)), 'the walk reaches the harness');
-  const starts = [];
-  for (const { file, text } of modules) {
-    const names = processStarters(text);
-    if (file === 'chrome.mjs') names.add('this.spawnProcess');
-    // calls are found in the code, not in its strings ("it could not run (…)"); their arguments are read from the text
-    const code = blankStrings(text);
-    for (const name of names) {
-      const pattern = new RegExp(`(?<![\\w.$])${name.replace(/[.$]/g, '\\$&')}\\s*\\(`, 'g');
-      for (const m of code.matchAll(pattern)) {
-        const line = text.slice(0, m.index).split('\n').length;
-        starts.push({ file, line, name, command: firstArgument(text, m.index + m[0].length, code), at: m.index });
-      }
-    }
-    // child_process reached without an import of its names
-    for (const m of text.matchAll(/import\(\s*['"]node:child_process['"]\s*\)\)\s*\.\s*(\w+)\s*\(/g)) starts.push({ file, line: text.slice(0, m.index).split('\n').length, name: m[1], command: firstArgument(text, m.index + m[0].length), at: m.index });
-  }
+  // calls are found in the code, not in its strings ("it could not run (…)"); their arguments are read from the text
+  const starts = harnessStarts(modules);
   const stray = starts.filter(({ command }) => !TOOLS.has(command) && command !== 'CHROME_COMMAND');
   assert.deepEqual(stray.map(({ file, line, command }) => `${file}:${line}: ${command}`), [], 'a process started with a command that is neither a tool nor an engine: an application must start through Desktop.spawnApp or the run\'s Chrome');
   // `cmd`, a command given by the caller, is the application launcher's alone, and so is Chrome's
@@ -311,9 +250,9 @@ test('no application start bypasses the launch environment: every process start 
   const scenes = modules.find(({ file }) => file === 'scenes.mjs').text;
   const spawnApp = scenes.slice(scenes.indexOf('  spawnApp(label, cmd, args'), scenes.indexOf('  /**', scenes.indexOf('  spawnApp(label, cmd, args')));
   assert.match(spawnApp, /const env = this\.appEnvironment\(extra, \{ home, app \}\);/);
-  assert.match(spawnApp, /spawn\(cmd, args, \{ \.\.\.options, env, stdio:/, 'the start takes the built environment, after the caller\'s options');
+  assert.match(spawnApp, /xSpawn\(cmd, args, \{ \.\.\.options, env, stdio:/, 'the start takes the built environment, after the caller\'s options');
   const chrome = modules.find(({ file }) => file === 'chrome.mjs').text;
-  assert.match(chrome, /const env = this\.environment\(\);[\s\S]*this\.spawnProcess\(CHROME_COMMAND, args, \{ env, stdio: 'ignore', detached: true \}\)/);
+  assert.match(chrome, /const env = this\.environment\(\);[\s\S]*guard\(this\.spawnProcess\)\(CHROME_COMMAND, args, \{ env, stdio: 'ignore', detached: true \}\)/);
   assert.match(scenes, /new ChromeInstance\(\{ scratch: this\.dir, environment: \(\) => this\.appEnvironment\(\) \}\)/, "the run's Chrome takes the run's environment");
   // the one place: only app-env.mjs sets the variables that place an application's files
   for (const { file, text } of modules.filter(({ file }) => file !== 'app-env.mjs')) {
@@ -323,8 +262,6 @@ test('no application start bypasses the launch environment: every process start 
 
 test('the source check sees a bypass: an application started with its own spawn fails it', () => {
   const text = "import { spawn as start } from 'node:child_process';\nconst run = (x, spawnIt = start) => spawnIt('python3', ['-I', 'scene.py']);\nstart('gedit', ['--standalone']);\n";
-  const names = processStarters(text);
-  assert.deepEqual([...names].sort(), ['spawnIt', 'start']);
-  const commands = [...names].flatMap((name) => [...text.matchAll(new RegExp(`(?<![\\w.$])${name}\\s*\\(`, 'g'))].map((m) => firstArgument(text, m.index + m[0].length)));
+  const commands = processStarts({ file: 'bypass.mjs', text }).map(({ command }) => command);
   assert.deepEqual(commands.filter((c) => !TOOLS.has(c)).sort(), ["'gedit'", "'python3'"]);
 });

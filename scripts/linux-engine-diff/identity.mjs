@@ -29,7 +29,7 @@
 // The person's windows are never touched: every window acted on is one the run opened (scenes.mjs), and the
 // activations are the harness's own windows'.
 
-import { execFileSync } from 'node:child_process';
+import { xExecFileSync } from './xspawn.mjs';
 
 import { declaredDeviation } from './deviations.mjs';
 import { preorder } from './normalize.mjs';
@@ -57,7 +57,7 @@ const ARRANGE_MS = 3000;
 
 /** A window's client origin as the X server has it (xwininfo's absolute upper-left corner). */
 function origin(id) {
-  const info = execFileSync('xwininfo', ['-id', String(id)], { encoding: 'utf8' });
+  const info = xExecFileSync('xwininfo', ['-id', String(id)], { encoding: 'utf8' });
   return ['Absolute upper-left X', 'Absolute upper-left Y'].map((k) => Number(info.match(new RegExp(`${k}:\\s+(-?\\d+)`))?.[1]));
 }
 
@@ -181,7 +181,7 @@ function read(arrangement, { screenshot = false } = {}) {
 
 /** A window's `_NET_WM_PID`. */
 function pidOf(id) {
-  return Number(execFileSync('xprop', ['-id', String(id), '_NET_WM_PID'], { encoding: 'utf8' }).match(/(\d+)\s*$/)?.[1]);
+  return Number(xExecFileSync('xprop', ['-id', String(id), '_NET_WM_PID'], { encoding: 'utf8' }).match(/(\d+)\s*$/)?.[1]);
 }
 
 /**

@@ -387,9 +387,11 @@ test('no Chrome start bypasses the launcher: no Chrome command named, and none r
 
 test("the launcher's one process start comes after its guard", () => {
   const text = readFileSync(join(HARNESS, 'chrome.mjs'), 'utf8');
-  const starts = [...text.matchAll(/this\.spawnProcess\(/g)];
+  // the start goes through the spawner's display check (xspawn.mjs `guard`), whatever launcher the instance was given
+  const starts = [...text.matchAll(/this\.spawnProcess\b(?! =)/g)];
   assert.equal(starts.length, 1, 'one place starts Chrome');
+  assert.equal(text.slice(starts[0].index - 6, starts[0].index + 'this.spawnProcess)('.length), 'guard(this.spawnProcess)(');
   const open = text.slice(text.indexOf('  open(url) {'), starts[0].index);
-  assert.match(open, /assertOwnChrome\(CHROME_COMMAND, args, this\.scratch\);\n\s*const child = $/, "the guard checks the very command line the start runs");
+  assert.match(open, /assertOwnChrome\(CHROME_COMMAND, args, this\.scratch\);\n(?:\s*\/\/.*\n)*\s*const child = guard\($/, "the guard checks the very command line the start runs");
   assert.doesNotMatch(text.replace(/^\s*(\/\/|\*).*$/gm, ''), /(?<![.\w])(execFile|execFileSync|spawnSync|exec|execSync|fork)\(/, 'no other process API');
 });

@@ -14,6 +14,8 @@
 // readiness once more with every core busy (`--load`), and adds the matrix (`--experiment matrix`, matrix.mjs).
 
 import { execFileSync, spawn } from 'node:child_process';
+
+import { xExecFileSync } from './xspawn.mjs';
 import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
 import { availableParallelism, loadavg } from 'node:os';
 import { join } from 'node:path';
@@ -304,7 +306,7 @@ export async function runExperiment(args) {
   mkdirSync(args.out, { recursive: true });
   const results = join(args.out, 'results.jsonl');
   const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);
-  emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: execFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), started: new Date().toISOString() });
+  emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), started: new Date().toISOString() });
   if (args.experiment === 'events') {
     // on a private X server of its own, watched as a Desktop's display is (events.mjs): no scene windows, no desktop
     const { md, pass } = await runEvents(args, emit);

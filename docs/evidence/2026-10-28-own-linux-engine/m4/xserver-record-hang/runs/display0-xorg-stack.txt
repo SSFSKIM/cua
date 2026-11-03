@@ -1,0 +1,36 @@
+#0  0x00007542f6d29b2b in __GI___writev (iovcnt=0, iov=0x7ffc5bc79480, fd=39) at ../sysdeps/unix/sysv/linux/writev.c:26
+#0  0x00007542f6d29b2b in __GI___writev (iovcnt=0, iov=0x7ffc5bc79480, fd=39) at ../sysdeps/unix/sysv/linux/writev.c:26
+#1  __GI___writev (fd=39, iov=0x7ffc5bc79480, iovcnt=0) at ../sysdeps/unix/sysv/linux/writev.c:24
+#2  0x00005f8bb8b42ca0 in ?? ()
+#3  0x00005f8bb8b3d42f in ?? ()
+#4  0x00005f8bb8b3d84c in FlushAllOutput ()
+#5  0x00005f8bb89beb85 in ?? ()
+#6  0x00005f8bb89c2efa in ?? ()
+#7  0x00007542f6c2a1ca in __libc_start_call_main (main=main@entry=0x5f8bb89ab380, argc=argc@entry=11, argv=argv@entry=0x7ffc5bc79708) at ../sysdeps/nptl/libc_start_call_main.h:58
+#8  0x00007542f6c2a28b in __libc_start_main_impl (main=0x5f8bb89ab380, argc=11, argv=0x7ffc5bc79708, init=<optimized out>, fini=<optimized out>, rtld_fini=<optimized out>, stack_end=0x7ffc5bc796f8) at ../csu/libc-start.c:360
+#9  0x00005f8bb89ab3b5 in _start ()
+---
+#0  0x00007542f6d29b2b in __GI___writev (iovcnt=0, iov=0x7ffc5bc79480, fd=39) at ../sysdeps/unix/sysv/linux/writev.c:26
+#0  0x00007542f6d29b2b in __GI___writev (iovcnt=0, iov=0x7ffc5bc79480, fd=39) at ../sysdeps/unix/sysv/linux/writev.c:26
+#1  __GI___writev (fd=39, iov=0x7ffc5bc79480, iovcnt=0) at ../sysdeps/unix/sysv/linux/writev.c:24
+#2  0x00005f8bb8b42ca0 in ?? ()
+#3  0x00005f8bb8b3d42f in ?? ()
+#4  0x00005f8bb8b3d84c in FlushAllOutput ()
+#5  0x00005f8bb89beb85 in ?? ()
+#6  0x00005f8bb89c2efa in ?? ()
+#7  0x00007542f6c2a1ca in __libc_start_call_main (main=main@entry=0x5f8bb89ab380, argc=argc@entry=11, argv=argv@entry=0x7ffc5bc79708) at ../sysdeps/nptl/libc_start_call_main.h:58
+#8  0x00007542f6c2a28b in __libc_start_main_impl (main=0x5f8bb89ab380, argc=11, argv=0x7ffc5bc79708, init=<optimized out>, fini=<optimized out>, rtld_fini=<optimized out>, stack_end=0x7ffc5bc796f8) at ../csu/libc-start.c:360
+#9  0x00005f8bb89ab3b5 in _start ()
+---
+#0  0x00007542f6d29b2b in __GI___writev (iovcnt=0, iov=0x7ffc5bc79480, fd=39) at ../sysdeps/unix/sysv/linux/writev.c:26
+#0  0x00007542f6d29b2b in __GI___writev (iovcnt=0, iov=0x7ffc5bc79480, fd=39) at ../sysdeps/unix/sysv/linux/writev.c:26
+#1  __GI___writev (fd=39, iov=0x7ffc5bc79480, iovcnt=0) at ../sysdeps/unix/sysv/linux/writev.c:24
+#2  0x00005f8bb8b42ca0 in ?? ()
+#3  0x00005f8bb8b3d42f in ?? ()
+#4  0x00005f8bb8b3d84c in FlushAllOutput ()
+#5  0x00005f8bb89beb85 in ?? ()
+#6  0x00005f8bb89c2efa in ?? ()
+#7  0x00007542f6c2a1ca in __libc_start_call_main (main=main@entry=0x5f8bb89ab380, argc=argc@entry=11, argv=argv@entry=0x7ffc5bc79708) at ../sysdeps/nptl/libc_start_call_main.h:58
+#8  0x00007542f6c2a28b in __libc_start_main_impl (main=0x5f8bb89ab380, argc=11, argv=0x7ffc5bc79708, init=<optimized out>, fini=<optimized out>, rtld_fini=<optimized out>, stack_end=0x7ffc5bc796f8) at ../csu/libc-start.c:360
+#9  0x00005f8bb89ab3b5 in _start ()
+---

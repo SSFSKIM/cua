@@ -778,6 +778,8 @@ export class Desktop {
         // a Qt fixture's tree needs the session's accessibility switch on: the run's launcher's, or the run's stand-in's on
         // a person's display
         if (toolkit === 'qt5' || toolkit === 'qt6') this.assertQtBridge(label);
+        // GTK 4's windows come after the run's warm-up, as every GTK 4 scene's do
+        if (toolkit === 'gtk4') await this.warmGtk4();
         const child = this.spawnApp(label, 'python3', ['-I', join(PAGES, 'identity-windows.py'), toolkit, label, label, count, w, h], { stdout: 'pipe' });
         pid = child.pid;
         // one entry per window, the process's: a stop or a window that never comes ends the process
@@ -1020,6 +1022,15 @@ export class Desktop {
       configure(scene.id, 0, 0, w, h);
       return scene;
     });
+  }
+
+  /**
+   * The run's GTK 4 warm-up (families.mjs `warmGtk4`): once a run, before its first GTK 4 window, a window of the run's
+   * own opened in the run's home until its AT-SPI frame registers, then closed. Resolves once it is closed.
+   */
+  async warmGtk4() {
+    const { warmGtk4 } = await import('./families.mjs');
+    return warmGtk4(this);
   }
 
   /** A family's window (families.mjs) as a scene: its application started, sized and settled. */

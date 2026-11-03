@@ -545,6 +545,8 @@ test("no two scenes' windows resolve to one label, so none shares another's titl
     },
     // the Desktop's own, on to families.mjs openFamily, which names the window and stops at `assertOpen`
     openFamilyScene: Desktop.prototype.openFamilyScene,
+    // the run's GTK 4 warm-up opens a window of its own, checked below with the run's others
+    async warmGtk4() {},
     assertOpen() {
       throw new Recorded();
     },
@@ -560,7 +562,7 @@ test("no two scenes' windows resolve to one label, so none shares another's titl
     }
   }
   // and the run's own windows
-  for (const own of [fake.label('front'), fake.label('holder'), fake.label('scene', 'stub')]) assert.equal(named.get(own), undefined, `${own} is also a scene's`);
+  for (const own of [fake.label('front'), fake.label('holder'), fake.label('scene', 'stub'), fake.label('gnometexteditor', 'gtk4warmup')]) assert.equal(named.get(own), undefined, `${own} is also a scene's`);
 });
 
 test("the run's failures list each distinct foreign change once, with how many times it came", async () => {

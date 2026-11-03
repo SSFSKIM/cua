@@ -247,6 +247,14 @@ variants included; their evidence is written either way. The run's `end` row kee
   `xterm` and `xterm-allow` (`allowSendEvents` on). Each is started as its own process group with scratch settings
   (a scratch Firefox profile and Writer profile, gnome-text-editor's session directories, qtcreator's settings), on
   a document or page the harness writes (`pages/matrix.html` for the browsers), and ended with its group.
+- **GTK 4** (`gtk4` families: gnome-text-editor, the GTK 4 button and input scenes; and the identity scene's GTK 4
+  windows, task 51): a run's fresh home starts with a cold GPU shader cache, and GTK 4's GL renderer compiles before
+  the window's tree reaches the bus, so the run's first GTK 4 window read as X11 for seconds (task 49). Before it, the
+  run opens a warm-up window of its own (`warmGtk4`: gnome-text-editor on a document of its own, through the one
+  launcher in the run's home), waits for its AT-SPI frame and closes it, once a run; the cache is the run's home's,
+  and a shader cache the harness's environment names (`MESA_SHADER_CACHE_DIR` and its kin) never reaches an
+  application. A GTK 4 window settles only on its AT-SPI tree: a frame not registered within 45 s fails its case,
+  and a warm-up that fails fails each GTK 4 scene of the run.
 - **Effects** are read by the harness itself (`oracle.mjs`, `busctl` on the accessibility bus), not through an
   engine's tree, where the tree does not carry them: an editor's text and caret (`Text.GetText`, `CaretOffset`), a
   Writer document's paragraphs, a page's field and its button's label, the Electron fixture's status, what xterm's

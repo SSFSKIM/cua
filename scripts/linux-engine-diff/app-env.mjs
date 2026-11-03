@@ -49,9 +49,11 @@ export const BUS_VARS = ['DBUS_SESSION_BUS_ADDRESS', 'DBUS_STARTER_ADDRESS', 'DB
 
 /**
  * The variables no application inherits: an accessibility bus named outright (the display and the session bus name the
- * right one), and the person's session manager.
+ * right one), the person's session manager, and a GPU shader cache placed outside the run's home (Mesa's, NVIDIA's):
+ * the run's applications share the cache of the run's home, which the run's GTK 4 warm-up fills (task 51), and never
+ * read or write one the harness's environment names, a person's.
  */
-export const DROPPED_VARS = ['AT_SPI_BUS_ADDRESS', 'SESSION_MANAGER'];
+export const DROPPED_VARS = ['AT_SPI_BUS_ADDRESS', 'SESSION_MANAGER', 'MESA_SHADER_CACHE_DIR', 'MESA_GLSL_CACHE_DIR', '__GL_SHADER_DISK_CACHE_PATH'];
 
 /**
  * What the run decides for every application, and why: a family's own variables (`extra`) never name one, not even with
@@ -70,6 +72,9 @@ export const PROTECTED_VARS = {
   DBUS_SESSION_BUS_WINDOWID: "never named: the run's own session bus is the application's",
   AT_SPI_BUS_ADDRESS: "never named: the display's AT_SPI_BUS names the run's accessibility bus",
   SESSION_MANAGER: "never named: an application that registers with it joins the person's session",
+  MESA_SHADER_CACHE_DIR: "never named: the GPU shader cache is the run's home's",
+  MESA_GLSL_CACHE_DIR: "never named: the GPU shader cache is the run's home's",
+  __GL_SHADER_DISK_CACHE_PATH: "never named: the GPU shader cache is the run's home's",
   GSETTINGS_BACKEND: "the run's choice: in memory on a display a person uses",
   TMPDIR: "the run's temporary directory, under its scratch, shared by every application and engine of the run",
 };

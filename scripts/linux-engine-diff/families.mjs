@@ -99,7 +99,18 @@ export function wmClass(id) {
 }
 
 /**
- * Each family: its title in the matrix, its kind, its window's size, and how it is launched. Every launch runs with the
+ * How long a GTK 4 window may take to register its AT-SPI frame before its case fails (task 51): a cold shader cache
+ * held the tree back about 15 s after the map in task 49's probes.
+ */
+export const GTK4_REGISTRATION_MS = 45000;
+
+/** The family of the run's GTK 4 warm-up window (`warmGtk4`): the GTK 4 application whose cold start task 49 measured. */
+export const GTK4_WARM_UP = 'gnome-text-editor';
+
+/**
+ * Each family: its title in the matrix, its kind, its window's size, and how it is launched. `gtk4`: a GTK 4
+ * application, which always registers its tree: its window settles only on its AT-SPI tree, and the run's first one
+ * waits for the run's warm-up (`warmGtk4`). Every launch runs with the
  * run's environment (scenes.mjs `appEnvironment`: a home of the run's on every display, settings in memory on a
  * person's), its `env` holding only the family's own variables. `qt`: a Qt application, refused before it starts when it
  * would put no tree on the bus (`assertQtBridge`): on a display a person uses when the run's stand-in for org.a11y.Bus,
@@ -116,6 +127,7 @@ export const FAMILIES = {
   },
   'gnome-text-editor': {
     title: 'GTK4 gnome-text-editor',
+    gtk4: true,
     kind: 'editor',
     geometry: [900, 700],
     // GTK 4.14 reports its objects' extents relative to the window, not the screen (the text box at 0,0 and the
@@ -131,6 +143,7 @@ export const FAMILIES = {
   },
   'gtk4-button': {
     title: 'GTK 4 button (harness scene)',
+    gtk4: true,
     kind: 'button',
     geometry: [600, 400],
     // pages/gtk4-button.py: one button whose label counts its presses
@@ -140,6 +153,7 @@ export const FAMILIES = {
   // presses and keys, for the device mode's scroll, drag, move and click measurements and cases
   'gtk4-input': {
     title: 'GTK 4 input (harness scene)',
+    gtk4: true,
     kind: 'gtk4-input',
     geometry: [600, 400],
     // window-relative, as the scene lays itself out (pages/gtk4-input.py): GTK 4.14's extents are not window coordinates
@@ -407,12 +421,15 @@ export function vteLaunch(ctx, { client = terminalClient() } = {}) {
  * `stem`: the name in its window's label, where two scenes open one family for one engine (minimized-xterm beside
  * device-xterm), so each window has its own title and scratch directory. `env`: the application's own variables.
  * `bridge: false` skips a Qt family's check of the session's accessibility switches (`assertQtBridge`), for the one
- * experiment that opens Qt with them off on purpose (qt-bridge.mjs). Returns the scene: `{kind: 'family', family, id,
- * pid, group, ...targets}`.
+ * experiment that opens Qt with them off on purpose (qt-bridge.mjs). `warmUp`: the run's GTK 4 warm-up window itself
+ * (`warmGtk4`), opened and settled with no targets resolved. Returns the scene: `{kind: 'family', family, id, pid,
+ * group, ...targets}`.
  */
-export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null, motion = false, stem = name, bridge = true } = {}) {
+export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null, motion = false, stem = name, bridge = true, warmUp = false } = {}) {
   const family = FAMILIES[name];
   if (!family) throw new Error(`unknown family ${name}`);
+  // the run's first GTK 4 window comes after the run's own warm-up has filled the shader cache of the run's home
+  if (family.gtk4 && !warmUp) await desktop.warmGtk4();
   const label = desktop.label(stem.replace(/[^a-z0-9]+/gi, ''), role);
   let scene;
   if (family.chrome) {
@@ -437,26 +454,59 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
   }
   const [w, h] = geometry ?? family.geometry;
   configure(scene.id, 0, 0, w, h);
-  await settle(desktop, scene);
-  await resolveTargets(desktop, oracle, scene);
+  await settle(desktop, scene, { registers: Boolean(family.gtk4) });
+  if (!warmUp) await resolveTargets(desktop, oracle, scene);
   return scene;
 }
 
 /**
- * Waits until the window's tree (when it has one) reads the same twice. An application whose tree keeps changing
- * (qtcreator's) is taken as it is after 20 s, and the scene says so.
+ * The run's GTK 4 warm-up (task 51; the design session's ruling, sminos 336), once a run, before its first GTK 4
+ * window: a gnome-text-editor window of the run's own, on a document of its own, through the one launcher in the run's
+ * home, settled on its AT-SPI frame (`settle`) and closed. A run's fresh home starts with a cold GPU shader cache, and
+ * GTK 4's GL renderer compiles its shaders before the window's tree reaches the bus, for seconds (task 49's finding 1);
+ * the warm-up fills the cache of the run's home, which every later GTK 4 window of the run shares. Nothing of the
+ * person's cache is copied or read. A warm-up that fails fails each GTK 4 scene of the run that waits for it.
  */
-async function settle(desktop, scene) {
+export function warmGtk4(desktop) {
+  desktop.gtk4Warm ??= (async () => {
+    const started = Date.now();
+    let scene;
+    try {
+      scene = await openFamily(desktop, null, GTK4_WARM_UP, 'gtk4warmup', { warmUp: true });
+    } catch (error) {
+      throw new Error(`the run's GTK 4 warm-up failed: ${error.message}`);
+    } finally {
+      // closed whatever came of it, as every window of the run's is
+      const opened = desktop.windows.filter((w) => w.role === 'gtk4warmup');
+      if (opened.length) await desktop.close(opened);
+    }
+    return { family: GTK4_WARM_UP, label: scene.label, ms: Date.now() - started };
+  })();
+  return desktop.gtk4Warm;
+}
+
+/**
+ * Waits until the window's tree (when it has one) reads the same twice. An application whose tree keeps changing
+ * (qtcreator's) is taken as it is after 20 s, and the scene says so. A family that always registers (`registers`, GTK
+ * 4) counts only its AT-SPI reads: its wait ends on its frame's registration, and a window not registered within
+ * `GTK4_REGISTRATION_MS` (the Desktop's `registrationMs`, the tests') fails the case rather than settle as X11.
+ */
+async function settle(desktop, scene, { registers = false } = {}) {
   const started = Date.now();
+  const bound = desktop.registrationMs ?? GTK4_REGISTRATION_MS;
+  // when the reads that count began: at once, or at the frame's registration
+  let from = registers ? null : started;
   let previous = null;
   let last = null;
-  while (Date.now() - started < 30000) {
+  while (from === null || Date.now() - from < 30000) {
+    if (from === null && Date.now() - started > bound) throw new Error(`${scene.label ?? scene.id}: its AT-SPI frame did not register within ${bound / 1000} s, and a GTK 4 window always registers its tree; the case fails rather than read the window as X11`);
     const { response } = await desktop.reader.request('get_window_state', { window: { id: scene.id }, include_screenshot: false });
-    if (response.ok) {
+    if (response.ok && (!registers || response.output.ax_tree_source === 'at_spi')) {
+      from ??= Date.now();
       const text = JSON.stringify(response.output.ax_tree);
       last = response.output;
       const steady = text === previous;
-      if (steady || Date.now() - started > 20000) {
+      if (steady || Date.now() - from > 20000) {
         scene.window = last.window;
         scene.source = last.ax_tree_source;
         if (!steady) scene.unsettled = true;

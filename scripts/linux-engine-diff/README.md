@@ -330,7 +330,8 @@ variants included; their evidence is written either way. The run's `end` row kee
     last line, `cua171 STOPPED: …`, names the loss and whether the cleanup completed (`stop.mjs` `stopBecause`). Every X server the harness starts itself is watched the same
     way from its first client on (`startPrivateServer`, the events experiment's). A test process reaches no real
     display (`hermetic.mjs`; xprobe's test build connects to none). The harness's suite runs as `npm run
-    test:linux-engine-diff`, whose global setup (`test/linux-engine-diff/suite-setup.mjs`, task 45) gives the suite a
+    test:linux-engine-diff`, through a wrapper (`test/linux-engine-diff/suite-check.mjs`, task 45; a wrapper since task
+    47, so it runs on the whole declared Node range, and ci-kit's `test` gate runs it) that gives the suite a
     temporary directory of its own and fails it, naming each, on any process it started that still names a run's
     scratch directory or profile when it ends, and on any scratch directory it left; each is then ended or removed.
   - *No window of the person's can be taken for the run's*: every title carries the run's label and a random nonce of

@@ -1,7 +1,7 @@
 // A test file for the suite's cleanup check's own test (leak-check.test.mjs), never part of the suite (its name is no
-// `*.test.mjs`): run by a nested `node --test` with the suite's global setup. `LEAK` says what it leaves behind: `process`
+// `*.test.mjs`): run by a nested suite through the check (suite-check.mjs). `LEAK` says what it leaves behind: `process`
 // (a detached stand-in that waits forever, naming a scratch directory of the suite's, its pid written to `LEAK_PID`),
-// `directory` (a scratch directory left in the suite's), or nothing.
+// `directory` (a scratch directory left in the suite's), or nothing; `fail` leaves nothing and fails.
 
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -17,4 +17,5 @@ test('a test that leaves something of a run behind, or not', () => {
     writeFileSync(process.env.LEAK_PID, String(child.pid));
   }
   if (process.env.LEAK !== 'directory') rmSync(dir, { recursive: true, force: true });
+  if (process.env.LEAK === 'fail') throw new Error('the fixture fails, as asked');
 });

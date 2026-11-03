@@ -1,7 +1,10 @@
-// The suite's cleanup check (#171 M4, task 45; suite-setup.mjs): a process the suite started that still runs naming a
+// The suite's cleanup check (#171 M4, task 45; suite-check.mjs): a process the suite started that still runs naming a
 // run's scratch directory or profile, or a scratch directory it left, fails the suite. Its own proof: a nested suite whose
 // one test leaves a stand-in, or a directory, behind fails, naming it, and ends or removes it; one that leaves nothing
-// passes. Display-free: the stand-ins are node processes that only wait, each ended by this test whatever happens.
+// passes. The check is a wrapper that runs `node --test` and then looks at what remains (task 45's review: the global
+// setup it replaced needed Node 24's --test-global-setup, where package.json declares ^22.14 and >=23.7), so the nested
+// suites run it as `npm run test:linux-engine-diff` does. Display-free: the stand-ins are node processes that only
+// wait, each ended by this test whatever happens.
 
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
@@ -10,10 +13,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { SUITE_MARK, findLeaks, leftDirectories, listProcesses, scratchPrefixes } from './suite-setup.mjs';
+import { SUITE_MARK, findLeaks, leftDirectories, listProcesses, scratchPrefixes } from './suite-check.mjs';
 
 const HAS_PROC = existsSync('/proc/self/cmdline');
-const SETUP = join(import.meta.dirname, 'suite-setup.mjs');
+const CHECK = join(import.meta.dirname, 'suite-check.mjs');
+const REPO = join(import.meta.dirname, '..', '..');
 const FIXTURE = join(import.meta.dirname, 'leak-fixture', 'leaks.mjs');
 const alive = (pid) => {
   try {
@@ -63,13 +67,13 @@ test('a live stand-in of the suite is seen with its pid and command line', { ski
   }
 });
 
-/** A nested suite of the fixture alone, with the suite's global setup: `{status, stderr}`. */
+/** A nested suite of the fixture alone, run through the suite's cleanup check as npm runs the harness suite: `{status, stderr}`. */
 function nestedSuite(leak, pidFile) {
   const env = { ...process.env, LEAK: leak, LEAK_PID: pidFile };
   // a child `node --test` must not see this runner's context, or it reports to this runner instead
   delete env.NODE_TEST_CONTEXT;
   delete env[SUITE_MARK];
-  return spawnSync(process.execPath, ['--test', `--test-global-setup=${SETUP}`, FIXTURE], { env, encoding: 'utf8', timeout: 60000 });
+  return spawnSync(process.execPath, [CHECK, FIXTURE], { env, encoding: 'utf8', timeout: 60000 });
 }
 
 test('a suite that leaves a stand-in behind fails, naming its pid and command line, and the stand-in is ended', { skip: !HAS_PROC && 'no /proc here' }, async () => {
@@ -103,4 +107,31 @@ test('a suite that leaves nothing behind passes, and its own directory is gone',
   assert.equal(run.status, 0, run.stderr);
   assert.doesNotMatch(run.stderr, /SUITE LEAK/);
   assert.deepEqual(suites(), before);
+});
+
+test("a suite whose tests fail fails the check too, whatever it left", () => {
+  const run = nestedSuite('fail', '/nonexistent');
+  assert.equal(run.status, 1, run.stderr);
+  assert.doesNotMatch(run.stderr, /SUITE LEAK/);
+});
+
+// The declared Node range (package.json `engines`) is what every test npm runs must work on: no flag of a later Node in
+// the scripts that run the suites, or in a command line a test starts.
+test("no test npm runs needs a flag the declared Node range lacks: the cleanup check is a wrapper, not Node 24's global setup", () => {
+  const pkg = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8'));
+  assert.equal(pkg.engines.node, '^22.14 || >=23.7', 'the range this test guards');
+  assert.equal(pkg.scripts['test:linux-engine-diff'], 'node test/linux-engine-diff/suite-check.mjs "test/linux-engine-diff/*.test.mjs"');
+  const NODE_24_ONLY = ['--test-global-setup'];
+  for (const [name, script] of Object.entries(pkg.scripts).filter(([n]) => n.startsWith('test'))) {
+    for (const flag of NODE_24_ONLY) assert.ok(!script.includes(flag), `npm's ${name} uses ${flag}`);
+  }
+  const files = readdirSync(join(REPO, 'test'), { recursive: true }).filter((f) => /\.(mjs|js)$/.test(f));
+  for (const file of files) {
+    const text = readFileSync(join(REPO, 'test', file), 'utf8');
+    for (const flag of NODE_24_ONLY) {
+      // this file names the flag only in its own check
+      if (file === join('linux-engine-diff', 'leak-check.test.mjs')) continue;
+      assert.ok(!text.includes(flag), `test/${file} uses ${flag}`);
+    }
+  }
 });

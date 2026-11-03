@@ -320,6 +320,34 @@ test("an earlier watchdog's ready line is not this one's: only a line of this pr
   }
 });
 
+// A watchdog that ends between writing its ready line and the start's next look at the file (its 20 ms poll) must not
+// be taken up: its exit came while nothing was ready yet, so no loss was raised either, and the run would go on
+// unwatched (task 44's re-review)
+test('a watchdog that writes its ready line and ends before the start takes it up fails the start, never handed back dead', async () => {
+  const { file, done } = scratch();
+  const { child } = fakeChild();
+  const lost = [];
+  try {
+    const start = startRunWatchdog({
+      display: ':93',
+      file,
+      readyMs: 2000,
+      onLost: (reason) => lost.push(reason),
+      spawnWatchdog: () => {
+        setTimeout(() => {
+          append(file, { kind: 'ready', display: ':93', pid: 777 });
+          child.exit(1);
+        }, 5);
+        return child;
+      },
+    });
+    await assert.rejects(start, /the run's watchdog of the X display :93 ended \(exit code 1\) before the run took it up, so nothing is run on it/);
+    assert.deepEqual(lost, [], 'a start that failed stops nothing: nothing of the run had begun');
+  } finally {
+    done();
+  }
+});
+
 // A guardian that ends before the run did leaves the display unwatched (task 44): the run is stopped, and its stop says so.
 
 test('a watchdog that ends after it was ready, before the run asked it to, stops the run', async () => {
@@ -371,6 +399,69 @@ test("a lost watchdog stops the run by default: SIGTERM to the run's pid, as a s
     done();
   }
 });
+
+// The cleanup after a lost watchdog runs unwatched (the design session: a stated limit), so such a run can never read as
+// a clean one: it exits nonzero, and its last line names the loss and whether its cleanup completed.
+
+const HARNESS = join(fileURLToPath(new URL('.', import.meta.url)), '..', '..', 'scripts', 'linux-engine-diff');
+
+/**
+ * A run in a process of its own whose watchdog (a stand-in child) is ready and then ends mid-run, with the default
+ * loss handling. `cleanup`: `completes`, `fails`, or `none` (no cleanup hooked). Answers its exit and its stderr lines.
+ */
+async function runLosingItsWatchdog(cleanup) {
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-lost-'));
+  const script = join(dir, 'run.mjs');
+  const url = (name) => JSON.stringify(new URL(`file://${join(HARNESS, name)}`).href);
+  writeFileSync(script, `import { appendFileSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+import { cleanupOnStop } from ${url('stop.mjs')};
+import { startRunWatchdog } from ${url('xtools.mjs')};
+const mode = ${JSON.stringify(cleanup)};
+if (mode !== 'none') cleanupOnStop(async () => {
+  await new Promise((r) => setTimeout(r, 100));
+  if (mode === 'fails') throw new Error('a window of the run would not close');
+});
+const file = ${JSON.stringify(join(dir, 'watchdog.jsonl'))};
+const child = new EventEmitter();
+child.stdin = new PassThrough();
+child.pid = 777;
+child.kill = () => {};
+await startRunWatchdog({ display: ':93', file, readyMs: 2000, spawnWatchdog: () => {
+  setTimeout(() => appendFileSync(file, JSON.stringify({ kind: 'ready', display: ':93', pid: 777 }) + '\\n'), 5);
+  return child;
+} });
+setInterval(() => {}, 1000);
+// the guardian ends mid-run
+setTimeout(() => child.emit('exit', 1, null), 50);
+`);
+  try {
+    const proc = spawn(process.execPath, [script], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    proc.stderr.on('data', (d) => (stderr += d));
+    const exit = await new Promise((resolve) => proc.once('close', (code, signal) => resolve({ code, signal })));
+    return { exit, lines: stderr.split('\n').filter(Boolean) };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+for (const [cleanup, outcome] of [
+  ['completes', /its cleanup completed/],
+  ['fails', /its cleanup did not complete \(a window of the run would not close\)/],
+  ['none', /no cleanup was in place, so none ran/],
+]) {
+  test(`a run that loses its watchdog mid-run exits nonzero, its last line naming the loss and its cleanup's outcome (cleanup ${cleanup})`, async () => {
+    const { exit, lines } = await runLosingItsWatchdog(cleanup);
+    assert.ok(exit.code !== 0, `nonzero: ${JSON.stringify(exit)}`);
+    if (cleanup === 'none') assert.deepEqual(exit, { code: null, signal: 'SIGTERM' }, "no cleanup's exit: the signal's own");
+    else assert.deepEqual(exit, { code: 143, signal: null });
+    const last = lines.at(-1) ?? '';
+    assert.match(last, /^cua171 STOPPED: the run lost the watchdog of the X display :93 \(it ended before the run did \(exit code 1\)\), so the display went unwatched; /, last);
+    assert.match(last, outcome, last);
+  });
+}
 
 test('stop tells a clean shutdown from a failed one: exit 0 after an end line of its own, and nothing else', async () => {
   for (const [name, finish, state] of [

@@ -297,8 +297,10 @@ variants included; their evidence is written either way. The run's `end` row kee
     the guarded processes (the record client, guarded from its spawn), stops the run (SIGTERM), writes a `stall` line
     to the run's `watchdog.jsonl` and an alert naming the display, then SIGKILLs the run if it still lives after 20 s;
     the run's own stop never cuts that short. Readiness is the watchdog's own (a `ready` line with its pid, written
-    after its spawn), and a watchdog that ends before the run asked it to stops the run (SIGTERM) and fails it, as any
-    end other than a clean one does (`desktopEnding`). Every X server the harness starts itself is watched the same
+    after its spawn; one that ends before the start takes that line up fails the start), and a watchdog that ends
+    before the run asked it to stops the run (SIGTERM) and fails it, as any end other than a clean one does
+    (`desktopEnding`). The cleanup after that loss runs unwatched (a stated limit), so the run exits nonzero and its
+    last line, `cua171 STOPPED: …`, names the loss and whether the cleanup completed (`stop.mjs` `stopBecause`). Every X server the harness starts itself is watched the same
     way from its first client on (`startPrivateServer`, the events experiment's). A test process reaches no real
     display (`hermetic.mjs`; xprobe's test build connects to none).
   - *No window of the person's can be taken for the run's*: every title carries the run's label and a random nonce of

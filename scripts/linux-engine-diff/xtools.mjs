@@ -19,6 +19,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { stopBecause } from './stop.mjs';
+
 const here = dirname(fileURLToPath(import.meta.url));
 export const XPROBE = join(here, 'xprobe', 'target', 'release', 'xprobe');
 
@@ -170,9 +172,17 @@ function readLinesFrom(file, from) {
 
 const how = (exit) => (exit.signal ? `signal ${exit.signal}` : `exit code ${exit.code}`);
 
-/** A lost watchdog's default: the alert, then the run stopped as a stall stops it (SIGTERM, which its stop hooks clean up after). */
+/**
+ * A lost watchdog's default: the alert, then the run stopped as a stall stops it (SIGTERM, which its stop hooks clean
+ * up after). Its cleanup then runs unwatched (the design session: a stated limit), so a run of this process ends
+ * nonzero with a last line naming the loss and whether the cleanup completed (stop.mjs `stopBecause`).
+ */
 function lostWatchdog(display, stopPid, reason) {
   process.stderr.write(`cua171 WATCHDOG: the watchdog of the X display ${display} is gone (${reason}), so the display is no longer watched; the run is stopped.\n`);
+  if (stopPid === process.pid) {
+    stopBecause(`the run lost the watchdog of the X display ${display} (${reason}), so the display went unwatched`);
+    return;
+  }
   try {
     process.kill(stopPid, 'SIGTERM');
   } catch {
@@ -246,14 +256,19 @@ export async function startRunWatchdog({ display = process.env.DISPLAY, env = pr
   // a watchdog that has ended takes no more lines; its stall already killed what it guarded
   child.stdin.on('error', () => {});
   const deadline = Date.now() + readyMs;
+  // the ended checks come before the ready line is read, and the ready line is taken up in the same turn as `ready` is
+  // set: a watchdog that ends before then is rejected here (its exit raised no loss, nothing being ready), one that
+  // ends after is lost (`onLost`)
   for (;;) {
     if (exit.error) throw new Error(`the run's watchdog did not start (${exit.error.message}), so nothing is run on ${display}`);
-    if (Number.isSafeInteger(child.pid) && lines().some((l) => l.kind === 'ready' && l.pid === child.pid)) break;
+    const answered = Number.isSafeInteger(child.pid) && lines().some((l) => l.kind === 'ready' && l.pid === child.pid);
+    if (exit.done && answered && !stalled()) throw new Error(`the run's watchdog of the X display ${display} ended (${how(exit)}) before the run took it up, so nothing is run on it`);
     if (exit.done || Date.now() > deadline) {
       child.kill('SIGKILL');
       const last = lines().at(-1);
       throw new Error(`the run's display ${display} did not answer the watchdog's first round trip in ${readyMs} ms${last ? ` (${JSON.stringify(last)})` : exit.done ? ` (the watchdog ended with ${how(exit)})` : ''}, so nothing is run on it`);
     }
+    if (answered) break;
     await sleep(20);
   }
   ready = true;

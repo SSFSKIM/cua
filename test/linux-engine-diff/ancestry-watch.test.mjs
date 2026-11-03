@@ -18,7 +18,11 @@ import { XPROBE } from '../../scripts/linux-engine-diff/xtools.mjs';
 
 const proxy = { display: ':cua171-test-ancestry', env: { PATH: process.env.PATH, DISPLAY: ':cua171-test-ancestry', XAUTHORITY: '/nonexistent/cua171-proxy-auth' } };
 
-/** An xprobe stand-in: `mode` says what it does once started (ready and stay; ready, then end early; fail at once). */
+/**
+ * An xprobe stand-in: `mode` says what it does once started (ready and stay, then its end line and a clean exit when
+ * stdin closes; ready, then end early; fail at once; ready, then die with an X error when stdin closes; ready, then a
+ * clean exit with no end line).
+ */
 function fakeXprobe(mode) {
   const calls = [];
   const spawn = (cmd, args, options) => {
@@ -30,14 +34,26 @@ function fakeXprobe(mode) {
     const exit = (code) => {
       if (child.exitCode !== null) return;
       child.exitCode = code;
-      setImmediate(() => child.emit('exit', code, null));
+      setImmediate(() => {
+        child.emit('exit', code, null);
+        child.stdout.end();
+        child.emit('close', code, null);
+      });
     };
     child.kill = () => {
       exit(143);
       return true;
     };
     calls.push({ cmd, args, env: options.env, stdinEnded: () => child.stdin.readableEnded || child.stdin.writableEnded });
-    child.stdin.on('finish', () => exit(0));
+    child.stdin.on('finish', () => {
+      if (mode === 'dies at stop') {
+        child.stderr.write('xprobe: X11 error: connection reset\n');
+        exit(1);
+        return;
+      }
+      if (mode !== 'no end line') child.stdout.write('{"watched":true}\n');
+      setImmediate(() => exit(0));
+    });
     setImmediate(() => {
       if (mode === 'fails') {
         child.stderr.write('xprobe: X11 error: Window\n');
@@ -77,6 +93,16 @@ test('a watcher that ends before the audit, or never starts, did not watch: the 
   const never = await failed.stop();
   assert.equal(never.watched, false);
   assert.match(never.error, /did not start.*X11 error: Window/);
+});
+
+test('a watcher that dies as the audit stops it, or ends with no end line, did not watch to the end', async () => {
+  // the X connection lost in the instant stdin closed: the trace may have missed the window's end
+  const died = await (await watchAncestry(proxy, 60817412, { spawn: fakeXprobe('dies at stop').spawn })).stop();
+  assert.equal(died.watched, false);
+  assert.match(died.error, /did not watch to the audit's end \(exit 1: xprobe: X11 error: connection reset\)/);
+  const silent = await (await watchAncestry(proxy, 60817412, { spawn: fakeXprobe('no end line').spawn })).stop();
+  assert.equal(silent.watched, false);
+  assert.match(silent.error, /did not watch to the audit's end \(exit 0, no end line\)/);
 });
 
 test("the route audit watches its window's ancestry before the engine starts, and a watch that failed leaves it unclean", () => {

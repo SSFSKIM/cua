@@ -348,9 +348,10 @@ variants included; their evidence is written either way. The run's `end` row kee
     engine's route audit (task 53) the audited window's ancestry is in the trace itself: `xprobe ancestry`, connected
     through the same proxy before the engine (`watchAncestry`), selects the window's structure and reads its parents,
     so the trace's QueryTree replies say which frame holds it and its ReparentNotify and DestroyNotify say when that
-    changes; a watcher that ends before the audit leaves it unclean. There XTEST input counts as the harness's only
-    through a live harness window whose end the trace would see (one of our connections selected its structure): on
-    it, inside it, on the frame holding it, or in its client's range (GTK 4's focus window inside its toplevel). On a
+    changes; a watcher that does not end cleanly at the audit's end, its end line written, leaves it unclean. There
+    XTEST input counts as the harness's only through a live harness window whose end the trace would see (one of our
+    connections selected its structure): on it, inside it, on the frame holding it, or in its client's range (GTK 4's
+    focus window inside its toplevel). On a
     private display only (marked `CUA171_PRIVATE_DISPLAY`; `startRunRecord` and xprobe both refuse any other), the whole
     run is also recorded server-side through RECORD (`xprobe record-run`, `startRunRecord`), every client's requests
     of those kinds, each client attributed by its process (X-Resource and `/proc`): ours when it descends from the

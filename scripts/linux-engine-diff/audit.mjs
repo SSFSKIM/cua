@@ -293,8 +293,9 @@ export function auditHeldRelease({ requests, extensions }, target, { route, mark
  * parents up to the root, so the trace's own QueryTree replies say which frame holds it, and its ReparentNotify and
  * DestroyNotify say when that changes (foreign.mjs: an XTEST target's frame, and the client range a live harness window
  * lends). Resolves once those reads are in the trace, with `chain` (the window first, the root's child last; null when
- * it did not start). `stop()` ends it and answers `{watched: true}`, or `{watched: false, error}` when it did not start
- * or ended before the audit did: the judge trusts a window's end to reach the trace only while this connection lives.
+ * it did not start). `stop()` ends it and answers `{watched: true}` only once it exited cleanly after its end line (its
+ * connection still there when stdin closed), else `{watched: false, error}`: it did not start, ended before the audit
+ * did, or died as it was stopped. The judge trusts a window's end to reach the trace only while this connection lives.
  * `spawn` is the display-free tests' own.
  */
 export async function watchAncestry(proxy, window, { spawn = spawnProcess, readyMs = 10000 } = {}) {
@@ -304,30 +305,39 @@ export async function watchAncestry(proxy, window, { spawn = spawnProcess, ready
     stderr += d;
   });
   let ended = null;
+  let clean = false;
   const exited = new Promise((resolve) => {
     child.once('error', (error) => {
       ended ??= error.message;
       resolve();
     });
-    child.once('exit', (code, signal) => {
+    // its end once its output is all read (`close`, not `exit`), so an end line it wrote before exiting is in `lines`
+    child.once('close', (code, signal) => {
       ended ??= `exit ${code ?? signal}`;
+      clean = code === 0;
       resolve();
     });
   });
+  // its lines: the ready line, then at its stop the end line, written once its connection was still there to the end
+  const lines = [];
+  let heard = () => {};
+  createInterface({ input: child.stdout }).on('line', (line) => {
+    try {
+      lines.push(JSON.parse(line));
+    } catch {
+      lines.push(null);
+    }
+    heard();
+  });
   const ready = await new Promise((resolve) => {
-    const lines = createInterface({ input: child.stdout });
     const timer = setTimeout(() => resolve(null), readyMs);
-    lines.once('line', (line) => {
+    heard = () => {
       clearTimeout(timer);
-      try {
-        resolve(JSON.parse(line));
-      } catch {
-        resolve(null);
-      }
-    });
+      resolve(lines[0]);
+    };
     exited.then(() => {
       clearTimeout(timer);
-      resolve(null);
+      resolve(lines[0] ?? null);
     });
   });
   const why = () => `${ended ?? 'no ready line'}${stderr.trim() ? `: ${stderr.trim().split('\n').at(-1)}` : ''}`;
@@ -343,7 +353,10 @@ export async function watchAncestry(proxy, window, { spawn = spawnProcess, ready
       if (ended !== null) return { watched: false, error: `the ancestry watcher ended before the audit did (${why()})` };
       child.stdin.end();
       await exited;
-      return { watched: true };
+      // watched to the end only by a clean exit after its end line: one that died as stdin closed (its X connection
+      // lost) may have missed the window's end
+      if (clean && lines.some((l) => l?.watched === true)) return { watched: true };
+      return { watched: false, error: `the ancestry watcher did not watch to the audit's end (${clean ? 'exit 0, no end line' : why()})` };
     },
   };
 }

@@ -6,8 +6,8 @@
 //! It selects `StructureNotify` on the window, then reads its parent with `QueryTree`, and so on up to the root: each
 //! window's selection comes before the read of its parent, so a reparent after the read reaches the trace as a
 //! `ReparentNotify`, and each window's end as a `DestroyNotify`. It prints `{"ready":true,"chain":[…]}` (the window
-//! first, the root's child last), then reads and drops its events until stdin closes. It only reads and selects
-//! events: it changes no window.
+//! first, the root's child last), then reads and drops its events until stdin closes, and then, its connection still
+//! answering, prints `{"watched":true}` and exits cleanly. It only reads and selects events: it changes no window.
 
 use std::io::BufRead;
 use std::sync::mpsc;
@@ -53,6 +53,9 @@ pub fn ancestry(args: &[String]) -> Result<()> {
     loop {
         while conn.poll_for_event()?.is_some() {}
         if closed.recv_timeout(Duration::from_millis(20)).is_ok() {
+            // a round trip proves the connection lived to the end: only then the end line the harness requires
+            conn.sync()?;
+            println!("{{\"watched\":true}}");
             return Ok(());
         }
     }

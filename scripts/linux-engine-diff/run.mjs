@@ -383,6 +383,8 @@ async function measureSample(s, ctx) {
       row.witness_changes = (answered.report.changes ?? []).slice(0, 20);
       row.witness_restacks = (answered.report.restacks ?? []).slice(0, 20);
       row.witness_focus = (answered.report.focus ?? []).slice(0, 20);
+      // and in the quiet span after the request, where an allowance has one (task 53)
+      if (answered.after) row.witness_after_changes = (answered.after.changes ?? []).slice(0, 20);
     }
     if (answered.judged?.allowed?.length) row.witness_allowed = answered.judged.allowed;
   }

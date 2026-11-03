@@ -36,7 +36,7 @@ import {
   judgeUnconfirmed,
 } from './safety-judge.mjs';
 import { occurrences, pasted } from './text.mjs';
-import { judgeRouteSpan } from './witness.mjs';
+import { judgeAfterForeground, judgeRouteSpan } from './witness.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -48,13 +48,15 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * applies), judged by `judgeRouteSpan` against the route the engine reports it took (Decision Log, M2.2): the foreground
  * route's allowance only where both are the foreground route, and the in-front allowance only for a request the engine
  * recorded as made to a window already in front; after either, nothing may change once the request ends (a quiet span)
- * or stay grabbed, since what each allowance excuses is temporary. A route other than the expected one fails. Where
+ * or stay grabbed, since what each allowance excuses is temporary, except that after the foreground route the focus may
+ * still move within the target toplevel (witness.mjs `judgeAfterForeground`; task 53). The quiet span's report is
+ * answered as `after`. A route other than the expected one fails. Where
  * either allowance may apply, the target's top-level (its window manager frame) is read before the span, for the
  * restack judge, and a watch of every client's grabs is begun, so that what is still grabbed after the quiet span is
  * read from the server's record rather than asked by grabbing (T4b's audit round). `probes` are the X reads,
- * `toplevel` and `watchGrabs` (clip.mjs), replaced in the display-free tests.
+ * `toplevel`, `watchGrabs` and `within` (clip.mjs), replaced in the display-free tests.
  */
-export async function routeWitness(witness, tag, target, expected, fn, { inFront = false, opensWindows = false, pointerMoves = false, probes = { toplevel, watchGrabs } } = {}) {
+export async function routeWitness(witness, tag, target, expected, fn, { inFront = false, opensWindows = false, pointerMoves = false, probes = { toplevel, watchGrabs, within } } = {}) {
   const allowance = expected === 'foreground' || inFront;
   const frame = allowance ? probes.toplevel(target) : null;
   const grabWatch = allowance ? await probes.watchGrabs() : null;
@@ -65,7 +67,8 @@ export async function routeWitness(witness, tag, target, expected, fn, { inFront
     // the in-front allowance (witness.mjs): only for a case that declares it, and a request the engine recorded as made
     // to a window already in front
     const front = inFront && result.value?.stats?.dnd?.in_front === true;
-    const judged = allowPointer(judgeRouteSpan(result.report, { expected, reported: route, target, frame, focusWithin: (w) => within(w, target), inFront: front, opensWindows }), pointerMoves);
+    const focusWithin = (w) => probes.within(w, target);
+    const judged = allowPointer(judgeRouteSpan(result.report, { expected, reported: route, target, frame, focusWithin, inFront: front, opensWindows }), pointerMoves);
     if (!judged.foreground && !judged.inFront) {
       stopped = true;
       if (grabWatch) await grabWatch.stop();
@@ -75,9 +78,11 @@ export async function routeWitness(witness, tag, target, expected, fn, { inFront
     stopped = true;
     const held = grabsIn(await grabWatch.stop());
     const fields = [...judged.fields];
-    if (!quiet.witness.clean) fields.push(...quiet.witness.fields.map((f) => `${f} after the request`));
+    const after = judged.foreground ? judgeAfterForeground(quiet.report, { focusWithin }) : { ...quiet.witness, allowed: [] };
+    if (!after.clean) fields.push(...after.fields.map((f) => `${f} after the request`));
     if (held.pointer !== 'free' || held.keyboard !== 'free') fields.push(`grab left (${JSON.stringify(held.held)})`);
-    return { ...result, route, judged: { clean: fields.length === 0, fields, allowed: judged.allowed } };
+    const allowed = [...(judged.allowed ?? []), ...after.allowed.map((f) => `${f} after the request`)];
+    return { ...result, route, after: quiet.report, judged: { clean: fields.length === 0, fields, allowed } };
   } finally {
     // a request that threw: the watch is disposed of all the same (Decision Log, M2.3)
     if (grabWatch && !stopped) grabWatch.kill();

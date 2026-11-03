@@ -116,3 +116,41 @@ test('grabsIn: a grab is in force from its granted reply to its own ungrab, per 
   const other = grabsIn([{ kind: 'xi_grab_device', client: 1, device: 9 }, { kind: 'xi_grab_device_reply', client: 1, status: 0 }]);
   assert.deepEqual([other.pointer, other.keyboard], ['grabbed', 'grabbed']);
 });
+
+// task 53 (the design session's ruling, sminos 338): after a foreground request the focus may still move within the
+// target toplevel, as GTK 4 moves it into the focus window it keeps inside its toplevel (task 50's one cold
+// `gtk4_click_dedicated` sample: the quiet span after the request saw the focus move, and failed it). The allowance takes
+// a focus window only as a descendant of the target toplevel, read through the window tree: the same client alone is
+// not enough, since one client owns several toplevels.
+const FOCUS_WINDOW = TARGET + 1;
+const SECOND = TARGET + 5;
+const SECOND_FOCUS = TARGET + 6;
+const SECOND_FRAME = 0x400030;
+const PARENT = { [FOCUS_WINDOW]: TARGET, [TARGET]: FRAME, [SECOND_FOCUS]: SECOND, [SECOND]: SECOND_FRAME, [FRAME]: ROOT, [SECOND_FRAME]: ROOT };
+const within = (w, ancestor) => {
+  for (let at = w, depth = 0; at !== undefined && depth < 8; at = PARENT[at], depth++) if (at === ancestor) return true;
+  return false;
+};
+const foreground = { stats: { route: 'foreground' } };
+const runForeground = (reports) => routeWitness(fakeWitness(reports), 'case', TARGET, 'foreground', async () => foreground, { probes: { ...probes(), within } });
+const focusAfter = (...moves) => ({ ...quietReport(), changes: moves.map(([from, to], i) => ({ field: 'focus', t_ms: 10 * (i + 1), from, to })) });
+
+test('after a foreground request the focus may move within the target toplevel, into its own focus window', async () => {
+  const result = await runForeground([quietReport(), focusAfter([TARGET, FOCUS_WINDOW])]);
+  assert.equal(result.judged.clean, true, JSON.stringify(result.judged));
+  assert.ok(result.judged.allowed.includes('focus after the request'));
+  // what the quiet span saw is kept with the result, for the sample's row
+  assert.deepEqual(result.after.changes.map((c) => c.to), [FOCUS_WINDOW]);
+  assert.equal((await runForeground([quietReport(), focusAfter([TARGET, FOCUS_WINDOW], [FOCUS_WINDOW, TARGET])])).judged.clean, true, 'and back');
+});
+
+test('negative controls: a second toplevel of the same application, its focus window, no window, another field', async () => {
+  // the same client (one resource-id range) owns the second toplevel: not a descendant of the target
+  assert.deepEqual((await runForeground([quietReport(), focusAfter([TARGET, SECOND])])).judged.fields, ['focus after the request']);
+  assert.deepEqual((await runForeground([quietReport(), focusAfter([TARGET, SECOND_FOCUS])])).judged.fields, ['focus after the request']);
+  // a move from outside the target into it: the focus had left it after the request
+  assert.deepEqual((await runForeground([quietReport(), focusAfter([SECOND, FOCUS_WINDOW])])).judged.fields, ['focus after the request']);
+  assert.deepEqual((await runForeground([quietReport(), focusAfter([TARGET, 0])])).judged.fields, ['focus after the request']);
+  const stacked = { ...focusAfter([TARGET, FOCUS_WINDOW]), notifies: { stacking: 1 } };
+  assert.deepEqual((await runForeground([quietReport(), stacked])).judged.fields, ['stacking after the request']);
+});

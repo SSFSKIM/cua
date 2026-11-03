@@ -314,6 +314,24 @@ export function judgeForegroundSpan(report, { target, frame, focusWithin, opensW
 }
 
 /**
+ * The quiet span after a request the foreground route's allowance judged (safety.mjs `routeWitness`): nothing may
+ * change, except that the input focus may still move within the target toplevel, every move from and to the target or
+ * a window inside it. GTK 4 keeps a focus window of its own inside each toplevel and moves the focus into it some
+ * milliseconds after the toplevel takes it (task 50: one cold sample's quiet span saw that move). Whether a window lies
+ * inside the target is `focusWithin`'s, read through the window tree (`xprobe within`): a window of the same client
+ * alone is not enough, since one client can own several toplevels. Returns `{clean, fields, allowed}`.
+ */
+export function judgeAfterForeground(report, { focusWithin }) {
+  const strict = judgeSpan(report);
+  if (strict.clean || !report || report.error) return { ...strict, allowed: [] };
+  const inside = (w) => typeof w === 'number' && w > 1 && focusWithin(w);
+  const moves = report.changes.filter((c) => c.field === 'focus');
+  if (!moves.length || !moves.every((c) => inside(c.from) && inside(c.to))) return { ...strict, allowed: [] };
+  const fields = strict.fields.filter((f) => f !== 'focus');
+  return { ...strict, clean: fields.length === 0, fields, allowed: ['focus'] };
+}
+
+/**
  * The witness of a request whose route is known beforehand (`expected`, text.mjs `expectedRoute`) against the route
  * the engine reports it took (`reported`): the foreground route's allowance (`judgeForegroundSpan`) only where both are
  * the foreground route; anything else is judged strictly (`judgeSpan`), and a reported route other than the expected

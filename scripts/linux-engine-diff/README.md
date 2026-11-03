@@ -384,7 +384,10 @@ variants included; their evidence is written either way. The run's `end` row kee
     XAUTHORITY naming that display's own authority: a trace proxy's own file, or for the harness's Xvfb, which keeps
     none, a path of the run's that does not exist (`NO_AUTHORITY`), whatever the caller's environment held, since an
     unset XAUTHORITY sends a client to the person's `~/.Xauthority` (task 51's review). On a display the run did not
-    create, a person's, the environment is left as it is. The harness's suite runs as `npm run
+    create, the environment is left as it is: for a person's display that is as it should be (the harness is the
+    person's client there), and for a display a parent process created (for example a session script's own Xvfb) the
+    harness's own X tools inherit the parent's XAUTHORITY, so the parent sets XAUTHORITY to that display's own file or
+    to a nonexistent path; applications on any private display get a nonexistent path regardless (`app-env.mjs`). The harness's suite runs as `npm run
     test:linux-engine-diff`, through a wrapper (`test/linux-engine-diff/suite-check.mjs`, task 45; a wrapper since task
     47, so it runs on the whole declared Node range, and ci-kit's `test` gate runs it) that gives the suite a
     temporary directory of its own and fails it, naming each, on any process it started that still names a run's

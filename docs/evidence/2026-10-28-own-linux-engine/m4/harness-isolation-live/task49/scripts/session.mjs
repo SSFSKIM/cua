@@ -88,7 +88,8 @@ const server = await startPrivateServer({ out });
 const display = server.display;
 const N = display.slice(1);
 const env = { ...process.env, DISPLAY: display };
-delete env.XAUTHORITY;
+// changed after the recorded runs (was `delete env.XAUTHORITY`, which sends a client to the person's ~/.Xauthority); it does not alter what they recorded
+env.XAUTHORITY = join(out, 'no-xauthority'); // a path that is never created
 log({ kind: 'server', display, pid: server.pid, mark: x(env, 'xprop', ['-root', PRIVATE_MARK]), at_spi_bus_root: x(env, 'xprop', ['-root', 'AT_SPI_BUS']), bus_0: socketStat('/run/user/501/at-spi/bus_0'), bus_N: socketStat(`/run/user/501/at-spi/bus_${N}`), tmpdir: tmpdir(), scratch: scratchNow() });
 const side = [];
 const wm = spawn('openbox', [], { env, stdio: 'ignore' });

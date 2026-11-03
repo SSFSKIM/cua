@@ -64,7 +64,7 @@ export const DROPPED_VARS = ['AT_SPI_BUS_ADDRESS', 'SESSION_MANAGER', 'MESA_SHAD
  */
 export const PROTECTED_VARS = {
   DISPLAY: 'the display the harness reaches, handed on unchanged',
-  XAUTHORITY: "the display's authority, handed on unchanged",
+  XAUTHORITY: "the display's authority: the harness's own when it has one, else (unset) the run's home's `.Xauthority`, which holds none, on a private display, or the person's file where its HOME puts it on a display a person uses; and on a display this process created the spawner replaces it with that display's own authority (xspawn.mjs `authorityFor`)",
   XDG_RUNTIME_DIR: 'the runtime directory, handed on unchanged',
   DBUS_SESSION_BUS_ADDRESS: "the run's own session bus",
   DBUS_STARTER_ADDRESS: "never named: the run's own session bus is the application's",

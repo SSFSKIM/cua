@@ -194,3 +194,27 @@ test("the identity scene's GTK 4 windows fail when their AT-SPI frames do not al
     tools.done();
   }
 });
+
+test("a warm-up that fails keeps its own error when closing its window fails too, the close's failure attached", async () => {
+  const tools = standIns();
+  const { desktop } = gtk4Desktop({ x11Reads: (label) => (label.includes('warmup') ? Infinity : 0), registrationMs: 1500 });
+  const close = desktop.close;
+  let refused = 0;
+  desktop.close = async (scenes) => {
+    if (scenes.some((s) => s.role === 'gtk4warmup') && refused++ === 0) {
+      await close(scenes);
+      throw new Error('the warm-up window would not close');
+    }
+    return close(scenes);
+  };
+  try {
+    const error = await openFamily(desktop, null, 'gtk4-button', 'r').then(() => assert.fail('the warm-up failed'), (e) => e);
+    assert.match(error.message, /^the run's GTK 4 warm-up failed: .*gtk4warmup: its AT-SPI frame did not register within 1\.5 s/, "the warm-up's own error, not the close's");
+    assert.deepEqual(error.cleanup?.map((e) => e.message), ['the warm-up window would not close']);
+    assert.equal(refused, 1);
+  } finally {
+    await desktop.close(desktop.windows);
+    ended(desktop);
+    tools.done();
+  }
+});

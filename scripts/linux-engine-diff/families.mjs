@@ -471,15 +471,24 @@ export function warmGtk4(desktop) {
   desktop.gtk4Warm ??= (async () => {
     const started = Date.now();
     let scene;
+    let failure = null;
     try {
       scene = await openFamily(desktop, null, GTK4_WARM_UP, 'gtk4warmup', { warmUp: true });
     } catch (error) {
-      throw new Error(`the run's GTK 4 warm-up failed: ${error.message}`);
-    } finally {
-      // closed whatever came of it, as every window of the run's is
-      const opened = desktop.windows.filter((w) => w.role === 'gtk4warmup');
-      if (opened.length) await desktop.close(opened);
+      failure = new Error(`the run's GTK 4 warm-up failed: ${error.message}`);
     }
+    // closed whatever came of it, as every window of the run's is; a warm-up that failed keeps its own error, a close
+    // that fails too attached to it (`cleanup`)
+    const opened = desktop.windows.filter((w) => w.role === 'gtk4warmup');
+    if (opened.length) {
+      try {
+        await desktop.close(opened);
+      } catch (error) {
+        if (!failure) throw error;
+        failure.cleanup = [error];
+      }
+    }
+    if (failure) throw failure;
     return { family: GTK4_WARM_UP, label: scene.label, ms: Date.now() - started };
   })();
   return desktop.gtk4Warm;

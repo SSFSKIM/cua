@@ -108,7 +108,7 @@ test('a watcher that dies as the audit stops it, or ends with no end line, did n
 test("the route audit watches its window's ancestry before the engine starts, and a watch that failed leaves it unclean", () => {
   const run = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'scripts', 'linux-engine-diff', 'run.mjs'), 'utf8');
   const pass = run.slice(run.indexOf('// The X request audit, in its own untimed pass'));
-  const watched = pass.indexOf('watchAncestry(proxy, ');
+  const watched = pass.indexOf('watchAncestry(p, ');
   assert.ok(watched > 0, 'the audit pass starts the watcher on its proxy');
   assert.ok(watched < pass.indexOf('makeEngine('), 'before the engine connects');
   assert.match(pass, /const clean = audited\.clean && foreign\.length === 0 && ancestry\.watched;/);

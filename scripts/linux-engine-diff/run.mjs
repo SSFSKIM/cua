@@ -245,6 +245,54 @@ export async function withSampleCleanup(ctx, body) {
   return result;
 }
 
+/**
+ * One route audit's own resources, each ended however the audit goes (task 53's review): the xtrace proxy
+ * (`openProxy()`), the audited window's watcher on it (`watch(proxy)`, null for none) and the engine through it
+ * (`startEngine(proxy)`). `body(engine, proxy)` runs the audited samples; then, whatever threw, the engine is closed,
+ * the watcher stopped, `after()` run once the engine had started (the scene put back) and the proxy stopped, each tried
+ * on its own. Answers `{trace, ancestry, watcher, proxy}`: the proxy's trace text and the watcher's answer
+ * (`{watched: true}` with none). A body or start that threw keeps its error with the cleanup failures attached
+ * (`cleanup`); a cleanup that fails after a body that did not fails the audit.
+ */
+export async function withRouteAudit({ openProxy, watch, startEngine, after = async () => {} }, body) {
+  const proxy = await openProxy();
+  let watcher = null;
+  let engine = null;
+  let failure = null;
+  try {
+    watcher = await watch(proxy);
+    engine = startEngine(proxy);
+    await body(engine, proxy);
+  } catch (error) {
+    failure = error;
+  }
+  let ancestry = { watched: true };
+  let trace = '';
+  const cleanup = [];
+  const attempt = async (fn) => {
+    try {
+      await fn();
+    } catch (error) {
+      cleanup.push(error);
+    }
+  };
+  if (engine) await attempt(() => engine.close());
+  if (watcher)
+    await attempt(async () => {
+      ancestry = await watcher.stop();
+    });
+  if (engine) await attempt(after);
+  await attempt(async () => {
+    trace = await proxy.stop();
+  });
+  if (failure) {
+    if (cleanup.length) failure.cleanup = cleanup;
+    throw failure;
+  }
+  if (cleanup.length) throw new AggregateError(cleanup, `the route audit's cleanup failed: ${cleanup.map((e) => e.message).join('; ')}`);
+  return { trace, ancestry, watcher, proxy };
+}
+
 async function measureSample(s, ctx) {
   const { witness, engine, target, op, i } = s;
   const def = OPS[op];
@@ -1155,31 +1203,34 @@ async function diffRun(args, candidate, { handoff }) {
       for (const { scene: sceneName, op } of auditPlan(plan)) {
         for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
           const target = measuredTarget(windows, sceneName, op, spec.label);
-          const proxy = await startProxy();
-          // the audited window's ancestry in the trace's own replies and events, read before the engine connects, so the
-          // foreign-window judge knows which frame holds it and when it ends (task 53)
-          const watch = Number.isSafeInteger(target?.id) && target.id > 0 ? await watchAncestry(proxy, target.id) : null;
-          let ancestry = { watched: true };
-          const engine = makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY });
           const oks = [];
           // each audited request's answer, for the device cases' judge: the expected outcome, not only a clean trace
           const answered = [];
           // each audited sample's scene-text restore, counted in the lane's total (prepare.mjs judgeTextRestores) and
           // never a timed sample
           const restoredText = [];
-          try {
-            for (let i = 0; i < 2; i++) {
-              const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion, traceMark: (tag) => proxy.mark(`${tag}:${i}`) });
-              if (row.text_restored) restoredText.push({ i, ...row.text_restored });
-              oks.push(row.ok);
-              answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null });
-            }
-          } finally {
-            await engine.close();
-            if (watch) ancestry = await watch.stop();
-            if (ownWindow(op)) target.retainedBy = null;
-            if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
-          }
+          // the proxy, the watcher and the engine, each ended however the samples go
+          const { trace: traceText, ancestry, watcher: watch, proxy } = await withRouteAudit(
+            {
+              openProxy: () => startProxy(),
+              // the audited window's ancestry in the trace's own replies and events, read before the engine connects, so
+              // the foreign-window judge knows which frame holds it and when it ends (task 53)
+              watch: (p) => (Number.isSafeInteger(target?.id) && target.id > 0 ? watchAncestry(p, target.id) : null),
+              startEngine: (p) => makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: p.env.DISPLAY, XAUTHORITY: p.env.XAUTHORITY }),
+              after: async () => {
+                if (ownWindow(op)) target.retainedBy = null;
+                if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
+              },
+            },
+            async (engine, p) => {
+              for (let i = 0; i < 2; i++) {
+                const { row } = await runSample({ desktop, witness: null, engine, target, op, i, block: 'audit', label: spec.label, sceneName, cuaVersion, traceMark: (tag) => p.mark(`${tag}:${i}`) });
+                if (row.text_restored) restoredText.push({ i, ...row.text_restored });
+                oks.push(row.ok);
+                answered.push({ ok: row.ok, error: row.error ?? null, expected_error: row.expected_error ?? null, late_error: row.late_error ?? null });
+              }
+            },
+          );
           // a cua request that must take the foreground route is audited against that route: only its target's activation,
           // raise and focus and XTEST input (M2 whole-branch review)
           const foregroundAudit = !VENDORS.includes(spec.label) && routeOf(op, sceneName) === 'foreground';
@@ -1187,7 +1238,7 @@ async function diffRun(args, candidate, { handoff }) {
           // (minimized.mjs: nothing sent for a refusal, the target's activation alone for an activation, and for a
           // release the hold proven and then exactly its release, attributed by the case's marks in the trace)
           const nothingAudit = OPS[op].device === 'refusal';
-          const trace = parseXtrace(await proxy.stop());
+          const trace = parseXtrace(traceText);
           const auditKind = op in MINIMIZED_OPS ? minimizedAuditKind(op) : op in IDENTITY_OPS ? identityAuditKind(op) : foregroundAudit ? 'foreground' : nothingAudit ? 'nothing-sent' : 'background';
           const audited = {
             foreground: () => auditForeground(trace, target.id),

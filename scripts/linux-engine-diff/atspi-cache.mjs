@@ -225,7 +225,10 @@ export function straddles(changes, span) {
 /**
  * libatspi's role names by number, `atspi_role_get_name` of at-spi2-core 2.52 (Ubuntu 24.04's libatspi2.0-0t64
  * 2.52.0-1build1, read through ctypes on the #171 VM, 2026-11-03): the fixed table the Observation rule's "maps numeric
- * roles to names" would use. 130 is `ATSPI_ROLE_LAST_DEFINED`, a count and no role, so it is left out.
+ * roles to names" would use. 130 is `ATSPI_ROLE_LAST_DEFINED`, a count and no role, so it is left out. Regenerated
+ * against another libatspi (give `range` its `ATSPI_ROLE_LAST_DEFINED`) by: `python3 -I -c 'import ctypes, json; f =
+ * ctypes.CDLL("libatspi.so.0").atspi_role_get_name; f.restype = ctypes.c_char_p; print(json.dumps([f(i).decode() for
+ * i in range(130)]))'`.
  */
 export const ATSPI_ROLE_NAMES = [
   'invalid', 'accelerator label', 'alert', 'animation', 'arrow', 'calendar', 'canvas', 'check box', 'check menu item', 'color chooser',
@@ -279,12 +282,15 @@ export function editableFindings(steps, insert) {
   const typedText = typed.text ?? null;
   // null where the widget records nothing (an application's own): unknown, not absent
   const insertEvents = inserted.events ?? null;
+  const shown = typeof inserted.text === 'string' && inserted.text.includes(insert) && !String(typedText).includes(insert);
+  // an undo takes back only an insert that showed: with none, the typed text left after it says nothing
+  const undoRemovesInsert = shown && at('undo 1').text === typedText;
   return {
     typed: typeof typedText === 'string' && typedText !== before,
-    inserted: typeof inserted.text === 'string' && inserted.text.includes(insert) && !String(typedText).includes(insert),
+    inserted: shown,
     answer: inserted.answer ?? null,
-    undoRemovesInsert: at('undo 1').text === typedText,
-    historyKept: at('undo 1').text === typedText && at('undo 2').text === before,
+    undoRemovesInsert,
+    historyKept: undoRemovesInsert && at('undo 2').text === before,
     insertEvents,
     typedEvents: typed.events ?? null,
     userAction: insertEvents ? insertEvents.includes('buffer begin-user-action') : null,

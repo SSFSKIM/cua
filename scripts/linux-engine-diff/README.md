@@ -802,7 +802,11 @@ node scripts/linux-engine-diff.mjs --experiment atspi --cua "$INSTALLED" --out "
 
 - **Its display.** It starts its own private X server (`startPrivateServer`, under its watchdog, marked private) and
   Openbox there, and runs the harness's own Desktop on it: every application through the one spawner, in the run's
-  homes, under the run's session bus and its own accessibility bus launcher. Before anything starts it withdraws the
+  homes, under the run's session bus. That bus starts the run's own accessibility bus launcher, whose socket is
+  `$XDG_RUNTIME_DIR/at-spi/bus_<n>` under the person's runtime directory, `<n>` the probe's private display number
+  (the person's display's launcher's is `bus_0`). That number is never one of the person's displays: Xvfb takes a
+  number no running X server has (`-displayfd`), and the harness refuses `:0` and any number whose socket was there
+  before the server started (xspawn.mjs `registerDisplay`). Before anything starts it withdraws the
   entry point's live-run declaration, so the spawner refuses every display the process did not create, `:0` included;
   the shell's DISPLAY is never read. Its accessibility bus is its own display's, so the probe never appears in another
   run's bus trace, and a bus-traced verdict run never sees it. No whole-run RECORD runs (only the probe's own windows

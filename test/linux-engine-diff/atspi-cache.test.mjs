@@ -11,9 +11,9 @@ import {
   adoptionReasons,
   atspiRoleName,
   cacheSubtree,
-  editableFindings,
   compareWithTree,
   decodeStateWords,
+  editableFindings,
   parseItems,
   roleCollisions,
   signatureKind,
@@ -247,6 +247,11 @@ test("GTK 4's EditableText findings: the insert shown, undone by the first undo 
   const lost = editableFindings([...steps.slice(0, 3), { step: 'undo 1', text: 'line INS' }, { step: 'undo 2', text: 'line INS' }], ' INS');
   assert.equal(lost.undoRemovesInsert, false);
   assert.equal(lost.historyKept, false);
+  // an insert that never showed: the first undo leaving the typed text is no undo of it
+  const absent = editableFindings([...steps.slice(0, 2), { step: 'inserted', text: 'qline', answer: true }, { step: 'undo 1', text: 'qline' }, { step: 'undo 2', text: 'line' }], ' INS');
+  assert.equal(absent.inserted, false);
+  assert.equal(absent.undoRemovesInsert, false);
+  assert.equal(absent.historyKept, false);
   // an insert inside a user action, as typed input is
   const bracketed = editableFindings(steps.map((s) => (s.step === 'inserted' ? { ...s, events: ['buffer begin-user-action', 'buffer insert-text', 'buffer end-user-action'] } : s)), ' INS');
   assert.equal(bracketed.userAction, true);

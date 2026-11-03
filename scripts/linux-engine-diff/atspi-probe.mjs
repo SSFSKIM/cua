@@ -86,7 +86,7 @@ function askCache(address, bus) {
   try {
     const { type, data } = busctl(address, ['call', bus, CACHE_PATH, CACHE_INTERFACE, 'GetItems']);
     const ms = Math.round(performance.now() - started);
-    if (!signatureKind(type)) return { type, kind: null, items: null, ms, error: `an answer under the signature ${type}, which is neither known one` };
+    if (!signatureKind(type)) return { type, kind: null, items: null, ms, error: `an answer under the signature ${type}, which is neither of the two it knows` };
     return { type, ...parseItems(type, data), ms };
   } catch (error) {
     return { type: null, kind: null, items: null, ms: Math.round(performance.now() - started), error: firstLine(error.stderr || error.message) };
@@ -169,6 +169,13 @@ function busFor(oracle, scene, tree) {
   return apps[0] ? busOf(apps[0]) : null;
 }
 
+/** `busFor`, for a scene whose cache is asked: a scene with no application on the bus fails by name. */
+export function requiredBus(oracle, scene, tree) {
+  const bus = busFor(oracle, scene, tree);
+  if (!bus) throw new Error(`${scene.label}: no application of its process (pid ${scene.pid}) is on the run's accessibility bus, so it has no cache to ask`);
+  return bus;
+}
+
 /** Who answers: one window of a family, its provider asked for its cache, and the answer rebuilt against the read. */
 async function whoAnswers(ctx, family) {
   const { desktop, oracle, emit, address } = ctx;
@@ -211,7 +218,7 @@ async function openMenus(ctx, family, mode) {
     scene = await openFamily(desktop, oracle, family, 'menus', { mode });
     row.menu_opened = await waitForEvent(scene, 'menu-opened');
     await sleep(1000);
-    const answer = askCache(address, busFor(oracle, scene, null) ?? '');
+    const answer = askCache(address, requiredBus(oracle, scene, null));
     const state = await desktop.state(scene);
     row.source = state.ax_tree_source;
     const menuRoles = (roles) => roles.filter((r) => /menu/.test(r)).length;
@@ -242,11 +249,11 @@ async function changingTree(ctx, family, mode) {
     scene = await openFamily(desktop, oracle, family, 'changing', { mode });
     row.started = await waitForEvent(scene, 'changing-started');
     await sleep(600);
-    const bus = busFor(oracle, scene, null);
+    const bus = requiredBus(oracle, scene, null);
     const pairs = [];
     for (let k = 0; k < PAIRS; k++) {
       const start = Date.now();
-      const answer = askCache(address, bus ?? '');
+      const answer = askCache(address, bus);
       const state = await desktop.state(scene);
       const end = Date.now();
       pairs.push({ start, end, answer, state });
@@ -262,7 +269,8 @@ async function changingTree(ctx, family, mode) {
       const tracked = answer.items && read ? { cache: trackedNames(cacheSubtree(answer.items, read.id).tree, MOVING), read: trackedNames(read, MOVING) } : null;
       return { straddled, ms: end - start, signature: answer.kind, items: answer.items?.length ?? null, error: answer.error, equal: compared?.equal ?? null, structural: compared?.structural ?? null, fields: compared?.fields ?? null, only: compared ? { cache: compared.only.cache, tree: compared.only.tree } : null, tracked, moving_same: tracked ? JSON.stringify(tracked.cache) === JSON.stringify(tracked.read) : null, examples: compared && !compared.equal ? compared.examples.filter((e) => e.field !== 'role').slice(0, 4) : undefined };
     });
-    const tally = (list) => ({ pairs: list.length, equal: list.filter((p) => p.equal === true).length, structural: list.filter((p) => p.structural === true).length, moving_same: list.filter((p) => p.moving_same === true).length });
+    // `compared`: the pairs whose answer and read were both there to compare
+    const tally = (list) => ({ pairs: list.length, compared: list.filter((p) => p.equal !== null).length, equal: list.filter((p) => p.equal === true).length, structural: list.filter((p) => p.structural === true).length, moving_same: list.filter((p) => p.moving_same === true).length });
     row.quiet = tally(row.pairs.filter((p) => !p.straddled));
     row.straddled = tally(row.pairs.filter((p) => p.straddled));
   } catch (error) {
@@ -284,18 +292,18 @@ async function qtScene(ctx, family) {
     const state = await desktop.state(scene);
     row.source = state.ax_tree_source;
     const tree = row.source === 'at_spi' ? state.ax_tree : null;
-    const bus = busFor(oracle, scene, tree);
-    row.toolkit = bus ? oracle.toolkit(`${bus}:${ROOT}`) : null;
-    row.advertised = bus ? advertised(address, bus) : null;
+    const bus = requiredBus(oracle, scene, tree);
+    row.toolkit = oracle.toolkit(`${bus}:${ROOT}`);
+    row.advertised = advertised(address, bus);
     row.menu_opened = await waitForEvent(scene, 'menu-opened');
     await sleep(500);
-    const menu = askCache(address, bus ?? '');
+    const menu = askCache(address, bus);
     const menuState = await desktop.state(scene);
     row.at_menu = { signature: menu.kind, type: menu.type, items: menu.items?.length ?? null, error: menu.error, tree_nodes: menuState.ax_tree ? preorder(menuState.ax_tree).length : null, tree_menu_nodes: menuState.ax_tree ? preorder(menuState.ax_tree).filter((n) => /menu/.test(n.role)).length : null };
     row.changing_started = await waitForEvent(scene, 'changing-started');
     const polls = [];
     for (let k = 0; k < 10; k++) {
-      const answer = askCache(address, bus ?? '');
+      const answer = askCache(address, bus);
       polls.push(answer.items?.length ?? null);
       await sleep(180);
     }
@@ -451,8 +459,10 @@ export function atspiMarkdown({ answers, menus, changing, qt, editable, display 
   for (const q of qt) md.push(`| ${q.family} | ${q.toolkit ? `${q.toolkit.toolkit} ${q.toolkit.toolkit_version}` : '–'} | ${q.failure ? `failed: ${q.failure}` : `${q.at_menu?.signature ?? q.at_menu?.error ?? '–'}${q.advertised ? ` (advertised \`${q.advertised}\`)` : ''}`} | ${q.at_menu?.items ?? '–'} | ${q.at_menu?.tree_nodes ?? '–'} (${q.at_menu?.tree_menu_nodes ?? '–'}) | ${(q.while_changing ?? []).join(', ') || '–'} |`);
   const comparisons = [
     ...answers.filter((a) => a.compare).map((a) => ({ what: `${a.family}'s window`, equal: a.compare.equal })),
-    ...menus.map((m) => ({ what: `${m.family} with its menu open`, equal: m.compare?.equal === true })),
-    ...changing.map((c) => ({ what: `${c.family} changing, quiet pairs${c.quiet?.pairs ? '' : ' (none was quiet)'}`, equal: Boolean(c.quiet?.pairs) && c.quiet.equal === c.quiet.pairs })),
+    // a row that compared nothing (its scene failed, or no answer and read came together) shows nothing either way;
+    // its failure leaves the pass incomplete
+    ...menus.filter((m) => m.compare).map((m) => ({ what: `${m.family} with its menu open`, equal: m.compare.equal })),
+    ...changing.filter((c) => c.quiet?.compared || c.straddled?.compared).map((c) => ({ what: `${c.family} changing, quiet pairs${c.quiet?.pairs ? '' : ' (none was quiet)'}`, equal: Boolean(c.quiet?.pairs) && c.quiet.equal === c.quiet.pairs })),
   ];
   // the Qt scenes are answers too: a window with its menu open and its tree changing
   const qtAnswers = qt.map((q) => ({ family: `${q.family} (its menu open)`, provider: true, kind: q.at_menu?.signature ?? null, items: q.at_menu?.items ?? null, error: q.at_menu?.error ?? q.failure }));

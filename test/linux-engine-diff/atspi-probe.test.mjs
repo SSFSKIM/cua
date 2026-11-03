@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { atspiMarkdown } from '../../scripts/linux-engine-diff/atspi-probe.mjs';
+import { atspiMarkdown, requiredBus } from '../../scripts/linux-engine-diff/atspi-probe.mjs';
 
 const compare = (over = {}) => ({
   equal: false,
@@ -29,7 +29,7 @@ const rows = () => ({
     { kind: 'atspi-answer', family: 'xterm', source: 'x11', provider: false },
   ],
   menus: [{ kind: 'atspi-menus', family: 'atspi-gtk4', menu_opened: true, signature: 'current', items: 30, compare: compare() }],
-  changing: [{ kind: 'atspi-changing', family: 'atspi-gtk4', changes: 12, quiet: { pairs: 17, equal: 0, structural: 0, moving_same: 17 }, straddled: { pairs: 13, equal: 0, structural: 0, moving_same: 12 } }],
+  changing: [{ kind: 'atspi-changing', family: 'atspi-gtk4', changes: 12, quiet: { pairs: 17, compared: 17, equal: 0, structural: 0, moving_same: 17 }, straddled: { pairs: 13, compared: 13, equal: 0, structural: 0, moving_same: 12 } }],
   qt: [{ kind: 'atspi-qt', family: 'atspi-qt6', toolkit: { toolkit: 'Qt', toolkit_version: '6.4.2' }, at_menu: { signature: 'legacy', items: 0, tree_nodes: 13, tree_menu_nodes: 10 }, while_changing: [0, 0] }],
   editable: [{ kind: 'atspi-editable', family: 'atspi-gtk4', mode: 'entry', control: true, control_undone: true }, { kind: 'atspi-editable', family: 'atspi-gtk4', mode: 'entry', control: false, role: 'text box', methods: ['.InsertText method isi b'], caret_set: true, steps: [{ step: 'before', text: 'a', whole_by_minus_one: '' }], findings: { answer: true, inserted: true, undoRemovesInsert: true, historyKept: true, insertEvents: ['entry changed'], typedEvents: null } }],
 });
@@ -53,4 +53,27 @@ test('the summary shows the advertised signature where the answer differs, what 
   assert.match(text, /\| atspi-gtk4 entry \| text box \| InsertText \| no \| yes \| yes \| yes \|/);
   assert.match(text, /entry changed \| not recorded \|$/m);
   assert.match(text, /\| 39 \| panel \| generic \(2\) \|/);
+});
+
+test('a menus or changing-tree row with no comparison (its scene failed, or no read was compared) is held neither for nor against the cache', () => {
+  const base = rows();
+  const { reasons } = atspiMarkdown({
+    ...base,
+    menus: [{ kind: 'atspi-menus', family: 'atspi-gtk4', failure: 'its window did not appear' }],
+    changing: [
+      { kind: 'atspi-changing', family: 'atspi-gtk4', failure: 'its window did not appear' },
+      { kind: 'atspi-changing', family: 'atspi-gtk4-uncompared', changes: 3, quiet: { pairs: 20, compared: 0, equal: 0, structural: 0, moving_same: 0 }, straddled: { pairs: 10, compared: 0, equal: 0, structural: 0, moving_same: 0 } },
+    ],
+  });
+  assert.ok(!reasons.some((r) => /with its menu open: the tree rebuilt/.test(r)), reasons.join('\n'));
+  assert.ok(!reasons.some((r) => /changing, quiet pairs/.test(r)), reasons.join('\n'));
+  // a compared row still counts: the fixture's own is not exact
+  assert.ok(atspiMarkdown(base).reasons.some((r) => /atspi-gtk4 with its menu open: the tree rebuilt/.test(r)));
+});
+
+test("a scene whose process has no application on the run's accessibility bus fails by name: no cache is asked of an empty bus name", () => {
+  assert.throws(() => requiredBus({ appsOf: () => [] }, { label: 'cua171-diff-t-n0-atspigtk4-menus', pid: 42 }, null), /^Error: cua171-diff-t-n0-atspigtk4-menus: no application of its process \(pid 42\) is on the run's accessibility bus/);
+  assert.equal(requiredBus({ appsOf: () => [':1.7:/org/a11y/atspi/accessible/root'] }, { label: 'x', pid: 42 }, null), ':1.7');
+  // a window's own AT-SPI tree names its bus
+  assert.equal(requiredBus({ appsOf: () => [] }, { label: 'x', pid: 42 }, { id: ':1.9:/org/a11y/atspi/accessible/3' }), ':1.9');
 });

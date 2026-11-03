@@ -11,8 +11,11 @@ setup:
   install: npm ci
   fetch_depth: 0      # browser-parity and repl-parity tests read committed evidence revisions
 gates:
+  # npm test, then the Linux engine harness's suite again through its cleanup check (test/linux-engine-diff/
+  # suite-check.mjs: no process or scratch directory of a run left behind; #171 task 47). npm test keeps its plain
+  # form, which scripts/repl-parity/coverage.mjs reads.
   - name: test
-    run: npm test
+    run: npm test && npm run test:linux-engine-diff
     lane: hosted-macos
     timeout: 20
   - name: plugin

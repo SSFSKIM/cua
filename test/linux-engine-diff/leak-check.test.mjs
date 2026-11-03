@@ -115,6 +115,18 @@ test("a suite whose tests fail fails the check too, whatever it left", () => {
   assert.doesNotMatch(run.stderr, /SUITE LEAK/);
 });
 
+// The design session's ruling (task 47, B3): the cleanup check gates CI. ci-kit's `test` gate runs the harness suite
+// through it, after `npm test`, whose plain `node --test "<pattern>"` form repl-parity's coverage check reads.
+test("ci-kit's test gate runs the harness suite through its cleanup check, and npm test keeps the form coverage.mjs reads", () => {
+  const config = readFileSync(join(REPO, '.github', 'ci-kit.yml'), 'utf8');
+  const gate = config.match(/^ {2}- name: test\n((?: {4}.*\n)+)/m)?.[1];
+  assert.ok(gate, 'the test gate');
+  assert.match(gate, /^ {4}run: npm test && npm run test:linux-engine-diff$/m);
+  const pkg = JSON.parse(readFileSync(join(REPO, 'package.json'), 'utf8'));
+  // scripts/repl-parity/coverage.mjs's own reading of npm test
+  assert.match(pkg.scripts.test, /^node --test ["']?([^"'\s]+)["']?$/);
+});
+
 // The declared Node range (package.json `engines`) is what every test npm runs must work on: no flag of a later Node in
 // the scripts that run the suites, or in a command line a test starts.
 test("no test npm runs needs a flag the declared Node range lacks: the cleanup check is a wrapper, not Node 24's global setup", () => {

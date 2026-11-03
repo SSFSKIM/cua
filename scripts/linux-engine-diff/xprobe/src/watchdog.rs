@@ -7,8 +7,10 @@
 //! display, and exits 3. A connection whose setup is never answered counts as a stall too: that is how the frozen
 //! server looked to new clients on `:0`.
 //!
-//! Lines: `ready` {display, interval_ms, bound_ms} once its first round trip answered; `end` {round_trips} once stdin
-//! closed; `stall` {display, bound_ms, round_trips, killed, stopped}.
+//! Lines: `ready` {display, interval_ms, bound_ms, pid} once its first round trip answered; `end` {round_trips} once
+//! stdin closed; `stall` {display, bound_ms, round_trips, reason, killed, stopped}, written and flushed before the grace
+//! is waited out. A stall before the first answer stops no run (`stopped` null): the run waits for `ready` before it
+//! touches the display, and fails its own start.
 
 use std::io::BufRead;
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
@@ -150,30 +152,25 @@ fn alive(pid: u32) -> bool {
     signal(pid, 0)
 }
 
-/// What a stall does: every guarded process killed first, then `stop` asked to end (SIGTERM) and killed once the
-/// grace has passed. Returns the stall line and the alert.
+/// What a stall does, in this order: every guarded process killed; `stop` (the run) asked to end with SIGTERM, but
+/// only once the display had answered (a run waits for the first answer before it touches the display, so a stall
+/// before it fails the run's own start, task 44); `report` given the stall line and the alert, which the caller writes
+/// out before anything waits; then the run killed once the grace has passed, if it still lives. Returns the line and
+/// the alert too.
 pub fn act_on_stall(
     display: &str,
     settings: &Settings,
     outcome: &Outcome,
     guarded: &[u32],
     stop: Option<u32>,
+    report: impl FnOnce(&str, &str),
 ) -> (String, String) {
     let (round_trips, reason) = match outcome {
         Outcome::Stalled { round_trips, reason } => (*round_trips, reason.as_str()),
         Outcome::Ended { round_trips } => (*round_trips, "ended"),
     };
     let killed: Vec<u32> = guarded.iter().copied().filter(|&p| signal(p, SIGKILL)).collect();
-    let stopped = stop.filter(|&p| signal(p, SIGTERM));
-    if let Some(p) = stopped {
-        let deadline = Instant::now() + settings.grace;
-        while alive(p) && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        if alive(p) {
-            signal(p, SIGKILL);
-        }
-    }
+    let stopped = stop.filter(|_| round_trips > 0).filter(|&p| signal(p, SIGTERM));
     let ids: Vec<String> = killed.iter().map(u32::to_string).collect();
     let line = crate::whole::Watch::line(
         "stall",
@@ -186,17 +183,50 @@ pub fn act_on_stall(
             stopped.map_or("null".to_string(), |p| p.to_string())
         ),
     );
-    let alert = format!(
-        "cua171 WATCHDOG: the X display {display} stopped answering ({reason}); killed {} and stopped the run{}. \
-         Do not run anything more against {display} until it answers again.",
-        if killed.is_empty() {
-            "nothing guarded".to_string()
-        } else {
-            format!("the guarded processes {}", ids.join(", "))
-        },
-        stopped.map_or(String::new(), |p| format!(" (pid {p})"))
-    );
+    let guarded_text = if killed.is_empty() {
+        "nothing guarded".to_string()
+    } else {
+        format!("the guarded processes {}", ids.join(", "))
+    };
+    let alert = if round_trips == 0 {
+        format!(
+            "cua171 WATCHDOG: the X display {display} did not answer ({reason}) before its first answer; killed \
+             {guarded_text}, and the run, which had not begun on it, fails its start. Do not run anything against \
+             {display} until it answers."
+        )
+    } else {
+        format!(
+            "cua171 WATCHDOG: the X display {display} stopped answering ({reason}); killed {guarded_text} and stopped \
+             the run{}. Do not run anything more against {display} until it answers again.",
+            stopped.map_or(String::new(), |p| format!(" (pid {p})"))
+        )
+    };
+    report(&line, &alert);
+    if let Some(p) = stopped {
+        let deadline = Instant::now() + settings.grace;
+        while alive(p) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        if alive(p) {
+            signal(p, SIGKILL);
+        }
+    }
     (line, alert)
+}
+
+/// The line the watchdog prints once its first round trip answered, with its own pid, so the run that started it can
+/// tell its own readiness from an earlier watchdog's line in the same file (task 44).
+pub fn ready_line(display: &str, settings: &Settings) -> String {
+    crate::whole::Watch::line(
+        "ready",
+        &format!(
+            "\"display\":{},\"interval_ms\":{},\"bound_ms\":{},\"pid\":{}",
+            crate::json_str(display),
+            settings.interval.as_millis(),
+            settings.bound.as_millis(),
+            std::process::id()
+        ),
+    )
 }
 
 struct Args {
@@ -264,15 +294,7 @@ pub fn watchdog(args: &[String]) -> Result<()> {
         });
     }
     let outcome = watch(display_connector(&shown), &settings, &stop_rx, || {
-        let _ = print_lines(&[crate::whole::Watch::line(
-            "ready",
-            &format!(
-                "\"display\":{},\"interval_ms\":{},\"bound_ms\":{}",
-                crate::json_str(&shown),
-                settings.interval.as_millis(),
-                settings.bound.as_millis()
-            ),
-        )]);
+        let _ = print_lines(&[ready_line(&shown, &settings)]);
     });
     match outcome {
         Outcome::Ended { round_trips } => {
@@ -284,9 +306,10 @@ pub fn watchdog(args: &[String]) -> Result<()> {
         }
         Outcome::Stalled { .. } => {
             let pids = guarded.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            let (line, alert) = act_on_stall(&shown, &settings, &outcome, &pids, stop);
-            let _ = print_lines(&[line]);
-            eprintln!("{alert}");
+            act_on_stall(&shown, &settings, &outcome, &pids, stop, |line, alert| {
+                let _ = print_lines(&[line.to_string()]);
+                eprintln!("{alert}");
+            });
             std::process::exit(STALLED);
         }
     }
@@ -487,7 +510,7 @@ mod tests {
             round_trips: 7,
             reason: "no GetInputFocus reply in 5000 ms".into(),
         };
-        let (line, alert) = act_on_stall(":0", &quick(), &outcome, &[record.id()], Some(run.id()));
+        let (line, alert) = act_on_stall(":0", &quick(), &outcome, &[record.id()], Some(run.id()), |_, _| {});
         use std::os::unix::process::ExitStatusExt;
         assert_eq!(record.wait().unwrap().signal(), Some(SIGKILL));
         assert_eq!(run.wait().unwrap().signal(), Some(SIGTERM));
@@ -515,14 +538,85 @@ mod tests {
             .unwrap();
         std::thread::sleep(Duration::from_millis(100));
         let outcome = Outcome::Stalled {
-            round_trips: 0,
+            round_trips: 2,
             reason: "x".into(),
         };
         let started = Instant::now();
-        act_on_stall(":5", &quick(), &outcome, &[], Some(run.id()));
+        act_on_stall(":5", &quick(), &outcome, &[], Some(run.id()), |_, _| {});
         use std::os::unix::process::ExitStatusExt;
         assert_eq!(run.wait().unwrap().signal(), Some(SIGKILL));
         assert!(started.elapsed() >= Duration::from_millis(500));
+    }
+
+    #[test]
+    fn the_stall_line_and_alert_are_out_before_the_grace_is_waited_out() {
+        // a run that ignores SIGTERM: the escalation waits the whole grace before it kills it
+        let mut run = Command::new("sh")
+            .args(["-c", "trap '' TERM; sleep 30"])
+            .spawn()
+            .unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        let outcome = Outcome::Stalled {
+            round_trips: 3,
+            reason: "no GetInputFocus reply in 400 ms".into(),
+        };
+        let started = Instant::now();
+        let mut reported = None;
+        act_on_stall(":5", &quick(), &outcome, &[], Some(run.id()), |line, alert| {
+            reported = Some((started.elapsed(), line.to_string(), alert.to_string()));
+        });
+        let (at, line, alert) = reported.expect("reported");
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(run.wait().unwrap().signal(), Some(SIGKILL));
+        assert!(
+            at < Duration::from_millis(200),
+            "the stall was reported {at:?} after it was found, not before the grace"
+        );
+        assert!(
+            started.elapsed() >= Duration::from_millis(500),
+            "the grace was still waited out"
+        );
+        assert!(
+            line.contains("\"kind\":\"stall\"") && alert.starts_with("cua171 WATCHDOG"),
+            "{line} {alert}"
+        );
+    }
+
+    #[test]
+    fn a_stall_before_the_first_answer_stops_no_run_since_none_has_touched_the_display() {
+        let mut record = sleeper();
+        let mut run = sleeper();
+        let outcome = Outcome::Stalled {
+            round_trips: 0,
+            reason: "cannot connect: no setup reply".into(),
+        };
+        let started = Instant::now();
+        let (line, alert) = act_on_stall(":5", &quick(), &outcome, &[record.id()], Some(run.id()), |_, _| {});
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(
+            record.wait().unwrap().signal(),
+            Some(SIGKILL),
+            "a guarded process is still killed"
+        );
+        assert!(
+            run.try_wait().unwrap().is_none(),
+            "the run was not signalled: it fails its own start"
+        );
+        assert!(
+            started.elapsed() < Duration::from_millis(400),
+            "no grace is waited for a run not stopped"
+        );
+        assert!(line.contains("\"stopped\":null"), "{line}");
+        assert!(alert.contains("before its first answer"), "{alert}");
+        let _ = run.kill();
+        let _ = run.wait();
+    }
+
+    #[test]
+    fn the_ready_line_names_the_watchdogs_own_process() {
+        let line = ready_line(":7", &quick());
+        assert!(line.contains("\"kind\":\"ready\""), "{line}");
+        assert!(line.contains(&format!("\"pid\":{}", std::process::id())), "{line}");
     }
 
     #[test]

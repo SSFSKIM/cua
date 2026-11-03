@@ -209,8 +209,8 @@ variants included; their evidence is written either way. The run's `end` row kee
 
 - `--experiment events --vendor <bin> --newest <bin> --cua <bin> --out <dir>` (`events.mjs`): every engine gets the
   same request sequences against `xprobe record`, a harness-owned recorder window that prints every input event it
-  receives, on a private X server the experiment starts itself (Xvfb, so the desktop route's XTEST input reaches
-  nobody's desktop). The scenarios: mixed-case shortcuts and the chord grammar, held chords (`key_down`, `key_up`,
+  receives, on a private X server the experiment starts itself (Xvfb through `startPrivateServer`, watched from its
+  first client on, so the desktop route's XTEST input reaches nobody's desktop). The scenarios: mixed-case shortcuts and the chord grammar, held chords (`key_down`, `key_up`,
   shared keys, holds left at exit), clicks, moves, scrolls and drags on both routes, `drag_handle`,
   `move_relative`, `activate_window` and `launch_app` (against an entry of its own). Each request's answer and its
   events (type, sent or real, keycode or button, state, window, coordinates; not timestamps) are compared with the
@@ -289,10 +289,16 @@ variants included; their evidence is written either way. The run's `end` row kee
     zero-length `writev`; that froze `:0` (evidence: `docs/evidence/2026-10-28-own-linux-engine/m4/xserver-record-hang/`).
     So on a display not marked private the run has no record client, and the engines' requests are judged by the
     sampled route audits; the harness's own trace stays whole-run everywhere. `Desktop.begin` first starts the run's
-    watchdog (`startRunWatchdog`, `xprobe watchdog`), on every display: a GetInputFocus round trip every 2 s from its
-    own connection. One unanswered for 5 s kills the record client, stops the run (SIGTERM, then SIGKILL after 20 s),
-    writes a `stall` line to the run's `watchdog.jsonl` and prints an alert naming the display. A test process reaches
-    no real display (`hermetic.mjs`; xprobe's test build connects to none).
+    watchdog (`startRunWatchdog`, `xprobe watchdog`), on every display, before anything of the run's reads the display
+    (task 44; the constructor reads nothing): a GetInputFocus round trip every 2 s from its own connection, in a process
+    group of its own. A display that does not answer the first fails the start. One unanswered later for 5 s kills
+    the guarded processes (the record client, guarded from its spawn), stops the run (SIGTERM), writes a `stall` line
+    to the run's `watchdog.jsonl` and an alert naming the display, then SIGKILLs the run if it still lives after 20 s;
+    the run's own stop never cuts that short. Readiness is the watchdog's own (a `ready` line with its pid, written
+    after its spawn), and a watchdog that ends before the run asked it to stops the run (SIGTERM) and fails it, as any
+    end other than a clean one does (`desktopEnding`). Every X server the harness starts itself is watched the same
+    way from its first client on (`startPrivateServer`, the events experiment's). A test process reaches no real
+    display (`hermetic.mjs`; xprobe's test build connects to none).
   - *No window of the person's can be taken for the run's*: every title carries the run's label and a random nonce of
     the run's own (`Desktop.label`), and a window already on the display when the run began is never found or adopted
     (`Desktop.preexisting`), whatever its title.
@@ -304,7 +310,7 @@ variants included; their evidence is written either way. The run's `end` row kee
     the root or a live window of the run's.
   - *Observers that act are fenced* (`xtools.mjs`): xprobe `retention` redirects only a live window of the run's, and
     xprobe `grabs`, which takes the root's pointer and keyboard, runs only on a private display marked
-    `CUA171_PRIVATE_DISPLAY` (xprobe refuses any other; `events.mjs` marks its Xvfb). The post-request check that no
+    `CUA171_PRIVATE_DISPLAY` (xprobe refuses any other; `startPrivateServer` marks the harness's own Xvfb). The post-request check that no
     grab is left reads the server's record of every client's grabs (`clip.mjs` `watchGrabs`, `grabsIn`) instead of
     grabbing; so does the dnd experiment, whose momentary foreign grab (`--grab-at-ms`) is gone.
   - The window found active at the start is recorded and never activated again. A run that starts with a foreign

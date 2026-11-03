@@ -49,21 +49,27 @@ export const PAGES = join(here, 'pages');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * How long one of the harness's reads of the display may take (`xprop`, `xwininfo`): a display that stops answering
+ * fails the read instead of holding the run in it, so its stop hooks can run (the watchdog stops the run, task 44).
+ */
+const READ_TIMEOUT_MS = 15000;
+
 export function activeWindow() {
-  const text = execFileSync('xprop', ['-root', '_NET_ACTIVE_WINDOW'], { encoding: 'utf8' });
+  const text = execFileSync('xprop', ['-root', '_NET_ACTIVE_WINDOW'], { encoding: 'utf8', timeout: READ_TIMEOUT_MS });
   const match = text.match(/0x[0-9a-f]+/i);
   return match ? Number.parseInt(match[0], 16) : 0;
 }
 
 /** The screen's root window. */
 export function rootWindow() {
-  const text = execFileSync('xwininfo', ['-root'], { encoding: 'utf8' });
+  const text = execFileSync('xwininfo', ['-root'], { encoding: 'utf8', timeout: READ_TIMEOUT_MS });
   return Number.parseInt(text.match(/Window id: (0x[0-9a-f]+)/i)[1], 16);
 }
 
 /** Every window on the display, top-levels and their descendants (`xwininfo -root -tree`, a read). */
 export function allWindows() {
-  const text = execFileSync('xwininfo', ['-root', '-tree'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  const text = execFileSync('xwininfo', ['-root', '-tree'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: READ_TIMEOUT_MS });
   return [...text.matchAll(/^\s+(0x[0-9a-f]+)/gim)].map((m) => Number.parseInt(m[1], 16));
 }
 
@@ -74,7 +80,7 @@ export function allWindows() {
 const HOLDER_PLACE = [1070, 640, 200, 150];
 
 export function a11yBusAddress() {
-  const text = execFileSync('xprop', ['-root', 'AT_SPI_BUS'], { encoding: 'utf8' });
+  const text = execFileSync('xprop', ['-root', 'AT_SPI_BUS'], { encoding: 'utf8', timeout: READ_TIMEOUT_MS });
   const match = text.match(/"(.*)"/);
   if (!match) throw new Error('the root window has no AT_SPI_BUS property');
   return match[1];
@@ -119,6 +125,9 @@ export function desktopEnding(ending) {
   foreign.push(...tally(record.foreign.map((f) => `the run's record: ${foreignLine(f)}`)));
   // a record not run on purpose (a person's display, task 41) fails nothing: the sampled route audits judge the engines
   if (!record.traced && !record.skipped) foreign.push(`the run's record: ${record.error ?? 'it did not run'}, so the run's requests went unjudged`);
+  // a run whose watchdog did not end cleanly (stalled, lost before the run ended, failed, or none) ran unwatched
+  const { watchdog } = ending;
+  if (!watchdog?.clean) foreign.push(`the run's watchdog: ${watchdog ? watchdog.reason : 'there was none'}, so the display went unwatched`);
   return {
     record: {
       active_start: ending.start,
@@ -126,7 +135,7 @@ export function desktopEnding(ending) {
       holder: ending.holder,
       skipped: ending.skipped ?? [],
       trace: { clean: audit.clean, requests: audit.requests, mutating: audit.mutating, foreign: audit.foreign.slice(0, 10).map(foreignLine), unplaced: audit.unplaced ?? 0 },
-      ...(ending.watchdog ? { watchdog: { stalled: ending.watchdog.stalled, round_trips: ending.watchdog.lines.find((l) => l.kind === 'end')?.round_trips ?? null } } : {}),
+      watchdog: watchdog ? { state: watchdog.state, round_trips: watchdog.round_trips ?? null, ...(watchdog.clean ? {} : { reason: watchdog.reason }) } : null,
       // the run's Chrome as its end stopped it (pids it spawned: terminated, killed, still running), and its session bus
       ...(ending.chrome ? { chrome: { spawned: ending.chrome.spawned.length, terminated: ending.chrome.terminated, killed: ending.chrome.killed, left: ending.chrome.left } } : {}),
       ...(ending.session ? { session: ending.session } : {}),
@@ -170,8 +179,9 @@ export class Desktop {
     // what the harness left undone because the window it would have acted on was not the run's then: `{what, window,
     // reason}`, recorded in the run's end row
     this.skips = [];
-    // the window active before the run opened anything; it is recorded, never activated again
-    this.startActive = startActive ?? activeWindow();
+    // the window active before the run opened anything (read by `begin`, once its watchdog answered); it is recorded,
+    // never activated again
+    this.startActive = startActive ?? null;
     this.holder = null;
     this.trace = null;
     // what the run's end records (`closeEverything`): the start and end active windows, the holder, the trace's audit
@@ -195,38 +205,31 @@ export class Desktop {
   }
 
   /**
-   * The run's start: the windows already on the display (never the run's), on a private display the run's own session
+   * The run's start. First the watchdog, on every display, before anything of the run's reads or touches the display
+   * (task 44): a display that does not answer its first round trip fails the start here. Then the windows already on
+   * the display (never the run's) and the window active (never acted on), on a private display the run's own session
    * bus (every process the run starts from then on inherits it) and the whole run's record, its own trace, through
    * which every X tool of the harness's then connects (xtools.mjs), and, when the window found active is foreign, the
-   * holder opened and activated before anything else. `startTrace`, `startRecord`, `startSession` and `existing` are
-   * the display-free tests' own. Returns the window found active, marked.
+   * holder opened and activated before anything else. A start that fails ends what it began, the watchdog last.
+   * `startTrace`, `startRecord`, `startSession`, `startWatchdog`, `privateDisplay` and `existing` are the display-free
+   * tests' own. Returns the window found active, marked.
    */
   async begin({ startTrace = startProxy, startRecord = startRunRecord, existing = allWindows, privateDisplay = () => isPrivateDisplay(), startWatchdog = startRunWatchdog, startSession = startPrivateSession } = {}) {
-    this.root = rootWindow();
-    this.preexisting = new Set(existing());
     this.unwatchOperations = watchOperations(({ engine, window, start, end }) => {
       if (engine !== this.ownReader) this.operations.push({ window, start, end });
     });
-    // the watchdog first, on every display: a stall stops the run, killing the record client first (task 41)
+    // a stall stops the run, killing the record client first (task 41)
     this.watchdog = await startWatchdog({ display: process.env.DISPLAY, file: this.watchdogFile() });
-    const isPrivate = privateDisplay();
     try {
+      this.root = rootWindow();
+      this.preexisting = new Set(existing());
+      this.startActive ??= activeWindow();
+      const isPrivate = privateDisplay();
       // a private display's run under a session bus of its own, before anything of the run's starts (task 43)
       if (isPrivate) this.useSession(await startSession({ dir: join(this.dir, 'session'), display: process.env.DISPLAY }));
-    } catch (error) {
-      await this.watchdog.stop();
-      throw error;
-    }
-    // the whole-run record only on a private display: on a person's, the sampled route audits judge the engines
-    try {
-      this.record = isPrivate ? await startRecord() : null;
-    } catch (error) {
-      await this.endSession();
-      await this.watchdog.stop();
-      throw error;
-    }
-    if (this.record) this.watchdog.guard(this.record.pid);
-    try {
+      // the whole-run record only on a private display: on a person's, the sampled route audits judge the engines;
+      // its client guarded from its spawn
+      this.record = isPrivate ? await startRecord({ guard: (pid) => this.watchdog.guard(pid) }) : null;
       this.trace = await startTrace();
     } catch (error) {
       await this.record?.stop();

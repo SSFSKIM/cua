@@ -180,7 +180,7 @@ const fakeTrace = (text) => () => ({ env: { ...process.env, DISPLAY: ':77' }, st
 /** The whole run's record (xprobe record-run), begun and ended with `lines` between. */
 const fakeRecord = (lines = []) => async () => ({ stop: async () => [JSON.stringify({ kind: 'ready', ms: 1 }), ...lines, JSON.stringify({ kind: 'end', ms: 2 })].join('\n') });
 /** The run's watchdog (xprobe watchdog), started and stopped with nothing seen. */
-const fakeWatchdog = async () => ({ guard: () => {}, stop: async () => ({ stalled: false, lines: [] }) });
+const fakeWatchdog = async () => ({ guard: () => {}, stop: async () => ({ state: 'ended', clean: true, stalled: false, reason: null, round_trips: 1, lines: [] }) });
 // the run's session bus on a private display (session-bus.mjs), started and stopped with nothing on it
 const fakeSession = async () => ({ address: 'unix:path=/nonexistent/cua171-test-bus', a11y: null, stop: async () => ({ terminated: true, killed: false }) });
 // these runs stand on a private display: the whole-run record runs (task 41: only there)
@@ -572,6 +572,7 @@ test("the run's failures list each distinct foreign change once, with how many t
     holder: null,
     audit: { clean: false, traced: true, requests: 10, mutating: 3, foreign: [f('ChangeProperty', PERSON), f('ChangeProperty', PERSON)] },
     record: { clean: false, traced: true, requests: 900, mutating: 800, foreign: [...Array(230)].map(() => f('XTEST MotionNotify', PERSON, 'cua-engine pid 7')).concat([f('XTEST ButtonRelease', PERSON, 'cua-engine pid 7')]) },
+    watchdog: { state: 'ended', clean: true, stalled: false, reason: null, round_trips: 9, lines: [] },
   };
   assert.deepEqual(desktopEnding(ending).foreign, [
     'the harness: ChangeProperty on 0x00600002 (2 times)',

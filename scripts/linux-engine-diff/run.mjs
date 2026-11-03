@@ -898,7 +898,7 @@ async function diffRun(args, candidate, { handoff }) {
   const blockPlan = plan.filter((p) => !isCase(p.op));
   const samplesFor = (op) => OPS[op].warmSamples ?? (inputOp(op) ? args.samplesInput : args.samplesTree);
 
-  // the window active before the run opens anything: recorded, marked, and never activated again (scenes.mjs)
+  // the run's desktop; the window active before the run opens anything is recorded, marked, and never activated again
   const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   // the Desktop's stop handler is in place (stop.mjs): the checks' handler hands over to it, with no moment between
   handoff();
@@ -918,7 +918,6 @@ async function diffRun(args, candidate, { handoff }) {
     samples_tree: args.samplesTree,
     samples_input: args.samplesInput,
     occlusion: args.occlusion,
-    active_start: desktop.activeRecord(desktop.startActive),
     started: new Date().toISOString(),
   });
   // Every scene label of this run: equivalent windows differ in their own label and list each other's (gedit's
@@ -934,8 +933,9 @@ async function diffRun(args, candidate, { handoff }) {
   // the changes of a window the harness did not open, by an engine it drove (the X request audit's pass)
   const engineForeign = [];
   try {
-    // the run's own trace, and the holder when a foreign window is active (scenes.mjs `begin`)
-    await desktop.begin();
+    // the run's watchdog, its own trace, and the holder when a foreign window is active (scenes.mjs `begin`); the
+    // window found active is read only once the watchdog answered (task 44)
+    emit({ kind: 'begin', active_start: await desktop.begin() });
     // the harness's own bus reader, once the run's start has settled which accessibility bus the display names
     if (plan.some((p) => isText(p.op) || isCase(p.op))) desktop.oracle ??= new Oracle();
     const launch = plan.some((p) => OPS[p.op].apps) ? launchEntry(desktop.dir) : null;

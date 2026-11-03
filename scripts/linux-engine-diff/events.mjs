@@ -1,7 +1,8 @@
 // The input events experiment (Design, Input: "the same press_key, key_down and key_up sequences produce the same X
 // key events in both engines"; Clicks, scroll, drag, move: "kept exactly"): every engine gets the same request
-// sequences against a recorder window (`xprobe record`) on a private X server the experiment starts itself (Xvfb),
-// so the desktop route's XTEST input reaches nobody's desktop. Per scenario and engine it records each request's
+// sequences against a recorder window (`xprobe record`) on a private X server the experiment starts itself (Xvfb,
+// through xtools.mjs `startPrivateServer`, under the watchdog from its first client on), so the desktop route's XTEST
+// input reaches nobody's desktop. Per scenario and engine it records each request's
 // answer and every event the recorder received, and compares them with the pinned build's, event by event: type,
 // whether it was sent (SendEvent) or real, detail (keycode or button), state, the window it went to and its
 // coordinates. Timestamps are not compared (each engine anchors its own).
@@ -21,7 +22,7 @@ import { Engine } from './engine.mjs';
 import { XPROBE } from './scenes.mjs';
 import { median, noiseVerdict, speedLabel } from './stats.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
-import { PRIVATE_MARK } from './xtools.mjs';
+import { startPrivateServer } from './xtools.mjs';
 
 /** The verdicts of a passing group (stats.mjs `speedLabel`). */
 const PASSING = ['faster', 'same (within noise)', 'within the bound'];
@@ -255,26 +256,6 @@ export function firstDifference(reference, candidate) {
     }
   }
   return null;
-}
-
-/**
- * A private X server: `Xvfb -displayfd`, so the display number is the server's choice; `-noreset`, so it does not
- * reset (and recompile its keymap) each time its last client leaves; its output not piped, since a full pipe would
- * stall the keymap compiler and with it the server.
- */
-async function startServer() {
-  const child = spawn('Xvfb', ['-displayfd', '3', '-noreset', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });
-  const display = await new Promise((resolve, reject) => {
-    let text = '';
-    child.stdio[3].on('data', (chunk) => {
-      text += chunk;
-      if (text.includes('\n')) resolve(`:${text.trim()}`);
-    });
-    child.once('exit', (code) => reject(new Error(`Xvfb exited (${code})`)));
-  });
-  // marked private: the one kind of display where xprobe's `grabs` may take the pointer and the keyboard
-  execFileSync('xprop', ['-root', '-f', PRIVATE_MARK, '8s', '-set', PRIVATE_MARK, '1'], { env: { ...process.env, DISPLAY: display } });
-  return { display, stop: () => child.kill('SIGTERM') };
 }
 
 class Recorder {
@@ -630,7 +611,8 @@ export function eventEngines(args) {
 
 /** `--experiment events`: every scenario on every engine; whether cua matched the pinned build everywhere, and its speed. */
 export async function runEvents(args, emit) {
-  const server = await startServer();
+  // the harness's own private server, watched from its first client on, before anything probes or drives it (task 44)
+  const server = await startPrivateServer({ out: args.out });
   const home = mkdtempSync(join(tmpdir(), 'cua171-events-'));
   const env = { ...process.env, DISPLAY: server.display, XAUTHORITY: join(home, 'no-auth'), EVENTS_APPS: join(home, 'data') };
   mkdirSync(join(home, 'data', 'applications'), { recursive: true });
@@ -643,6 +625,7 @@ export async function runEvents(args, emit) {
   // each desktop group's verdict from the stage of the schedule that decided it (eventStage)
   let frozen = new Map();
   let pass = true;
+  let watched = null;
   try {
     for (const scenario of via === 'vendor-js' ? VENDOR_JS_SCENARIOS : scenarios()) {
       const records = {};
@@ -699,8 +682,13 @@ export async function runEvents(args, emit) {
       }
     }
   } finally {
-    server.stop();
+    watched = await server.stop();
     rmSync(home, { recursive: true, force: true });
+  }
+  // a display that went unwatched (its watchdog stalled, was lost or failed) judges nothing
+  if (!watched.clean) {
+    pass = false;
+    md.push('', `**The private display's watchdog: ${watched.reason}, so the display went unwatched and the run is incomplete.**`);
   }
   md.push('', pass ? 'cua sent the pinned build\'s events and answers in every scenario.' : 'cua differs from the pinned build; results.jsonl has each first difference.');
   const mismatches = (blocks ?? []).flatMap((b) => b.mismatches ?? []);

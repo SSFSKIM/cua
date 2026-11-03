@@ -180,7 +180,7 @@ function fakeTools() {
 
 const fakeTrace = () => () => ({ env: { ...process.env, DISPLAY: ':77' }, stop: async () => '' });
 const fakeRecord = async () => ({ pid: 1, stop: async () => [JSON.stringify({ kind: 'ready', ms: 1 }), JSON.stringify({ kind: 'end', ms: 2 })].join('\n') });
-const fakeWatchdog = async () => ({ guard: () => {}, stop: async () => ({ stalled: false, lines: [] }) });
+const fakeWatchdog = async () => ({ guard: () => {}, stop: async () => ({ state: 'ended', clean: true, stalled: false, reason: null, round_trips: 1, lines: [] }) });
 
 async function runOn({ privateDisplay }) {
   const tools = fakeTools();

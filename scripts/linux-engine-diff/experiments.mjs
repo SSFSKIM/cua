@@ -306,7 +306,7 @@ export async function runExperiment(args) {
   const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);
   emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: execFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), started: new Date().toISOString() });
   if (args.experiment === 'events') {
-    // on a private X server of its own: no scene windows, no desktop
+    // on a private X server of its own, watched as a Desktop's display is (events.mjs): no scene windows, no desktop
     const { md, pass } = await runEvents(args, emit);
     emit({ kind: 'experiment-summary', markdown: md, complete: pass, failed: [], finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);

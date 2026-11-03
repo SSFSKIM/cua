@@ -12,7 +12,8 @@ import { FIXTURE_DIR } from './wire-check.mjs';
 
 export async function recordWire(args) {
   const desktop = new Desktop({ cua: args.cua, run: 'wire' });
-  const engine = new Engine({ label: 'cua', bin: args.cua }).start();
+  // started once the run's watchdog answered (scenes.mjs `begin`): nothing reaches the display before it
+  let engine = null;
   const version = (await import('node:child_process')).execFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim();
   const write = (kind, request, response, note) => {
     const fixture = { kind, engine: version, source: `recorded by scripts/linux-engine-diff.mjs --record-wire on a harness-owned gedit window${note ? `; ${note}` : ''}`, request, response };
@@ -21,6 +22,7 @@ export async function recordWire(args) {
   };
   try {
     await desktop.begin();
+    engine = new Engine({ label: 'cua', bin: args.cua }).start();
     const scene = await desktop.openGedit('fixture', 'cua171 wire fixture\nline two\n');
     const ask = async (id, command, input) => {
       const { response } = await engine.request(command, input);
@@ -36,7 +38,7 @@ export async function recordWire(args) {
     const click = await ask(3, 'click', { window: { id: scene.id }, x: 455, y: 600 });
     write('null', click.request, click.response);
   } finally {
-    await engine.close();
+    await engine?.close();
     await desktop.closeAll();
   }
   // the harness's own trace: a change of a window it did not open fails the recording

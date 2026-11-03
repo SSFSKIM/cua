@@ -13,7 +13,7 @@
 
 import './hermetic.mjs';
 
-import { appendFileSync, closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -92,10 +92,11 @@ export const RECORD_REFUSAL = `the whole-run RECORD runs only on a private displ
  * The whole run's RECORD (`xprobe record-run`, foreign.mjs `auditRecord`): every client's requests that can change a
  * window, server-side, each client attributed to the harness (`ours`, its process) or not, on the display directly
  * (it only reads). Only on a private display (`RECORD_REFUSAL` on any other, before anything is spawned). Its lines go
- * to a file of its own. Resolves once recording has begun, with its `pid` and `stop()`, which ends it and answers its
- * text.
+ * to a file of its own. `guard(pid)` is handed its client as soon as it is spawned (the run's watchdog, which kills it
+ * first on a stall: a display that freezes while the record begins is the record's to let go of, task 44). Resolves
+ * once recording has begun, with its `pid` and `stop()`, which ends it and answers its text.
  */
-export async function startRunRecord({ ours = process.pid, env = process.env, readyMs = 10000, isPrivate = () => isPrivateDisplay({ env }), spawnRecord = spawn } = {}) {
+export async function startRunRecord({ ours = process.pid, env = process.env, readyMs = 10000, isPrivate = () => isPrivateDisplay({ env }), spawnRecord = spawn, guard = () => {} } = {}) {
   if (!isPrivate()) throw new Error(RECORD_REFUSAL);
   const dir = mkdtempSync(join(tmpdir(), 'cua171-record-'));
   const file = join(dir, 'record.jsonl');
@@ -106,6 +107,7 @@ export async function startRunRecord({ ours = process.pid, env = process.env, re
   } finally {
     closeSync(fd);
   }
+  guard(child.pid);
   let stderr = '';
   child.stderr.on('data', (d) => {
     stderr += d;
@@ -147,69 +149,195 @@ export async function startRunRecord({ ours = process.pid, env = process.env, re
   };
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** A file's JSON lines from byte `from` on (an unreadable line kept as such). */
+function readLinesFrom(file, from) {
+  if (!existsSync(file)) return [];
+  return readFileSync(file)
+    .subarray(from)
+    .toString('utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return { kind: 'unreadable', text: line };
+      }
+    });
+}
+
+const how = (exit) => (exit.signal ? `signal ${exit.signal}` : `exit code ${exit.code}`);
+
+/** A lost watchdog's default: the alert, then the run stopped as a stall stops it (SIGTERM, which its stop hooks clean up after). */
+function lostWatchdog(display, stopPid, reason) {
+  process.stderr.write(`cua171 WATCHDOG: the watchdog of the X display ${display} is gone (${reason}), so the display is no longer watched; the run is stopped.\n`);
+  try {
+    process.kill(stopPid, 'SIGTERM');
+  } catch {
+    // already ended
+  }
+}
+
+/** The watchdog's verdict at the run's end: `ended` (clean) only for an exit 0 after its own end line, once asked. */
+function watchdogVerdict({ lines, exit, lost, unresponsive }) {
+  const end = lines.find((l) => l.kind === 'end');
+  const stall = lines.find((l) => l.kind === 'stall');
+  const verdict = (state, reason) => ({ state, clean: state === 'ended', stalled: state === 'stalled', reason, round_trips: (end ?? stall)?.round_trips ?? null, lines });
+  if (stall) return verdict('stalled', `the display stopped answering${stall.reason ? ` (${stall.reason})` : ''}`);
+  if (lost) return verdict('lost', lost);
+  if (unresponsive) return verdict('failed', 'it did not end when asked, and was killed');
+  if (exit.error) return verdict('failed', `it could not run (${exit.error.message})`);
+  if (exit.code !== 0) return verdict('failed', `it ended with ${how(exit)}`);
+  if (!end) return verdict('failed', 'it ended without its end line');
+  return verdict('ended', null);
+}
+
 /**
  * The run's watchdog (`xprobe watchdog`, task 41), on every display, the person's `:0` included: a GetInputFocus
  * round trip every `intervalMs` from a connection of its own. When one goes unanswered for `boundMs` it kills every
- * guarded process first (`guard(pid)`: the whole-run record client), sends SIGTERM to `stopPid` (this run) and SIGKILL
- * after `graceMs`, writes a `stall` line to `file`, prints an alert naming the display on stderr, and exits 3. It
- * runs apart from this process, so a run blocked in a synchronous X call is stopped all the same. Resolves once its
- * first round trip answered, with `guard(pid)` and `stop()`, which ends it and answers `{stalled, lines}`.
+ * guarded process first (`guard(pid)`: the whole-run record client, a private server), sends SIGTERM to `stopPid` (this
+ * run), writes a `stall` line to `file` and an alert naming the display on stderr, then sends SIGKILL to the run once
+ * `graceMs` has passed, and exits 3. It runs apart from this process, in a process group of its own, so a run blocked
+ * in a synchronous X call is stopped all the same, and a ^C to the run's group leaves it guarding the run's cleanup.
+ *
+ * Resolves once its own first round trip answered (task 44: a `ready` line with its pid, written after its spawn,
+ * since `file` may hold an earlier run's lines); fails, the watchdog ended, on a spawn that fails, a display that does
+ * not answer (its stall before the first answer) or no answer within `readyMs`. A watchdog that ends after that, before
+ * the run asked it to, leaves the display unwatched: `onLost(reason)` runs, by default an alert and SIGTERM to
+ * `stopPid`, as a stall stops the run. Answers `{guard(pid), stop()}`. `stop()` ends it and answers its verdict,
+ * `{state, clean, stalled, reason, round_trips, lines}`: `ended` (clean: exit 0 after its end line), `stalled`, `lost`
+ * or `failed`. A stall's escalation is never cut short: once a stall line is out, `stop()` answers at once and leaves
+ * the watchdog to end the run's processes.
  */
-export async function startRunWatchdog({ display = process.env.DISPLAY, env = process.env, stopPid = process.pid, intervalMs = 2000, boundMs = 5000, graceMs = 20000, file, readyMs = 15000, spawnWatchdog = spawn } = {}) {
+export async function startRunWatchdog({ display = process.env.DISPLAY, env = process.env, stopPid = process.pid, intervalMs = 2000, boundMs = 5000, graceMs = 20000, file, readyMs = 15000, spawnWatchdog = spawn, onLost = (reason) => lostWatchdog(display, stopPid, reason) } = {}) {
+  // this invocation's lines only: what the file held before the spawn is an earlier run's
+  const from = existsSync(file) ? statSync(file).size : 0;
   const fd = openSync(file, 'a');
   let child;
   try {
     const args = ['watchdog', '--display', display, '--interval-ms', intervalMs, '--bound-ms', boundMs, '--grace-ms', graceMs, '--stop', stopPid].map(String);
-    child = spawnWatchdog(XPROBE, args, { stdio: ['pipe', fd, 'inherit'], env });
+    child = spawnWatchdog(XPROBE, args, { stdio: ['pipe', fd, 'inherit'], env, detached: true });
   } finally {
     closeSync(fd);
   }
-  let failed = null;
+  const lines = () => readLinesFrom(file, from);
+  const stalled = () => lines().some((l) => l.kind === 'stall');
+  let ready = false;
+  let asked = false;
+  let lost = null;
+  const exit = { done: false, code: null, signal: null, error: null };
   const exited = new Promise((resolve) => {
-    child.once('exit', resolve);
+    child.once('exit', (code, signal) => {
+      Object.assign(exit, { done: true, code, signal });
+      resolve();
+      // a stall stopped the run itself; any other end before the run asked for it leaves the display unwatched
+      if (ready && !asked && !stalled()) {
+        lost = `it ended before the run did (${how(exit)})`;
+        onLost(lost);
+      }
+    });
     child.once('error', (error) => {
-      failed = error;
-      resolve(null);
+      Object.assign(exit, { done: true, error });
+      resolve();
     });
   });
   // a watchdog that has ended takes no more lines; its stall already killed what it guarded
   child.stdin.on('error', () => {});
-  const lines = () =>
-    (existsSync(file) ? readFileSync(file, 'utf8') : '')
-      .split('\n')
-      .filter(Boolean)
-      .map((line) => {
-        try {
-          return JSON.parse(line);
-        } catch {
-          return { kind: 'unreadable', text: line };
-        }
-      });
   const deadline = Date.now() + readyMs;
-  while (!lines().some((l) => l.kind === 'ready')) {
-    if (failed || child.exitCode !== null || Date.now() > deadline) {
+  for (;;) {
+    if (exit.error) throw new Error(`the run's watchdog did not start (${exit.error.message}), so nothing is run on ${display}`);
+    if (Number.isSafeInteger(child.pid) && lines().some((l) => l.kind === 'ready' && l.pid === child.pid)) break;
+    if (exit.done || Date.now() > deadline) {
       child.kill('SIGKILL');
       const last = lines().at(-1);
-      throw new Error(`the run's display ${display} did not answer the watchdog's first round trip in ${readyMs} ms${failed ? ` (${failed.message})` : last ? ` (${JSON.stringify(last)})` : ''}, so nothing is run on it`);
+      throw new Error(`the run's display ${display} did not answer the watchdog's first round trip in ${readyMs} ms${last ? ` (${JSON.stringify(last)})` : exit.done ? ` (the watchdog ended with ${how(exit)})` : ''}, so nothing is run on it`);
     }
-    await new Promise((r) => setTimeout(r, 20));
+    await sleep(20);
   }
+  ready = true;
   let stopping = null;
   return {
     file,
     guard(pid) {
-      if (Number.isSafeInteger(pid) && pid > 0 && child.exitCode === null) child.stdin.write(`guard ${pid}\n`);
+      if (Number.isSafeInteger(pid) && pid > 0 && !exit.done) child.stdin.write(`guard ${pid}\n`);
     },
     stop() {
       stopping ??= (async () => {
-        if (child.exitCode === null) child.stdin.end();
-        const timer = setTimeout(() => child.kill('SIGTERM'), intervalMs + boundMs + 5000);
-        await exited;
-        clearTimeout(timer);
-        const all = lines();
-        return { stalled: all.some((l) => l.kind === 'stall'), lines: all };
+        asked = true;
+        if (!exit.done) child.stdin.end();
+        // it ends within a round trip and its bound; one escalating a stall is left to end the run's processes
+        const until = Date.now() + intervalMs + boundMs + 5000;
+        let unresponsive = false;
+        while (!exit.done && !stalled()) {
+          if (Date.now() > until) {
+            unresponsive = true;
+            child.kill('SIGKILL');
+            await exited;
+            break;
+          }
+          await Promise.race([exited, sleep(50)]);
+        }
+        return watchdogVerdict({ lines: lines(), exit, lost, unresponsive });
       })();
       return stopping;
     },
   };
 }
+
+/**
+ * A private X server of the harness's own, and the harness's one way to start one (task 44): `Xvfb -displayfd`, so the
+ * display is the server's choice and never one another server has; `-noreset`, so it keeps its mark and its keymap
+ * when its last client leaves; its output not piped, since a full pipe would stall the keymap compiler and with it the
+ * server. It is watched from its first client on: the watchdog answers before anything probes or drives it, and
+ * guards the server itself, so a stall kills it with the run. Then it is marked private (`PRIVATE_MARK`). A server
+ * that fails to start, or whose watchdog does not answer, is ended, and nothing runs on it. Answers `{display, pid,
+ * stop()}`: `stop()` ends the watchdog first (a server ending under it would read as a stall), then the server, and
+ * answers the watchdog's verdict (`startRunWatchdog`).
+ */
+export async function startPrivateServer({ out, startWatchdog = startRunWatchdog, run = execFileSync } = {}) {
+  const child = spawn('Xvfb', ['-displayfd', '3', '-noreset', '-screen', '0', '1280x800x24', '-nolisten', 'tcp'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe'] });
+  const ended = new Promise((resolve) => child.once('exit', resolve));
+  const end = async () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+    await ended;
+  };
+  const display = await new Promise((resolve, reject) => {
+    let text = '';
+    child.stdio[3].on('data', (chunk) => {
+      text += chunk;
+      const [first, ...rest] = text.split('\n');
+      if (!rest.length) return;
+      if (/^\d+$/.test(first.trim())) resolve(`:${first.trim()}`);
+      else reject(new Error(`Xvfb named no display (${JSON.stringify(first)})`));
+    });
+    child.once('exit', (code, signal) => reject(new Error(`Xvfb exited (${signal ?? code}) before it named its display`)));
+    child.once('error', (error) => reject(new Error(`Xvfb did not start (${error.message})`)));
+  }).catch(async (error) => {
+    if (!child.pid) throw error;
+    await end();
+    throw error;
+  });
+  let watchdog = null;
+  try {
+    watchdog = await startWatchdog({ display, file: join(out, 'watchdog.jsonl') });
+    watchdog.guard(child.pid);
+    // marked private: the one kind of display where xprobe's `grabs` may take the pointer and the keyboard
+    run('xprop', ['-root', '-f', PRIVATE_MARK, '8s', '-set', PRIVATE_MARK, '1'], { env: { ...process.env, DISPLAY: display }, timeout: 15000 });
+  } catch (error) {
+    await watchdog?.stop();
+    await end();
+    throw error;
+  }
+  return {
+    display,
+    pid: child.pid,
+    async stop() {
+      const verdict = await watchdog.stop();
+      await end();
+      return verdict;
+    },
+  };
+}
+

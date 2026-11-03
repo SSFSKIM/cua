@@ -238,7 +238,13 @@ export class Desktop {
 
   /** `begin`'s work, which `stop` waits for. */
   async runStart({ startTrace = startProxy, startRecord = startRunRecord, existing = allWindows, privateDisplay = () => isPrivateDisplay(), startWatchdog = startRunWatchdog, startSession = startPrivateSession }) {
-    const unlessStopped = () => {
+    // A signal's stop (stop.mjs) runs only once node reads the signal, in an event loop turn's I/O poll, and a stage
+    // whose start ends synchronously (the session bus's `busctl` calls) gives it no turn: checked straight away, a
+    // stop landing there was seen only after the next stage had started (task 46). So the check first lets two turns
+    // pass: the first may be finishing the very turn whose poll came before the signal; the second polls after it.
+    const unlessStopped = async () => {
+      await new Promise(setImmediate);
+      await new Promise(setImmediate);
       if (this.stopping) throw new Error('the harness was stopped while the run was starting: nothing more of it starts');
     };
     this.unwatchOperations = watchOperations(({ engine, window, start, end }) => {
@@ -252,7 +258,7 @@ export class Desktop {
       throw error;
     }
     try {
-      unlessStopped();
+      await unlessStopped();
       this.root = rootWindow();
       this.preexisting = new Set(existing());
       this.startActive ??= activeWindow();
@@ -264,16 +270,20 @@ export class Desktop {
       if (isPrivate) {
         const session = await startSession({ dir: join(this.dir, 'session'), display: process.env.DISPLAY, env: this.appEnvironment({}, { settings: 'memory' }) });
         // never installed on a stopped run: ended here, the environment untouched
-        if (this.stopping) await session.stop();
-        unlessStopped();
+        try {
+          await unlessStopped();
+        } catch (error) {
+          await session.stop();
+          throw error;
+        }
         this.useSession(session);
       }
       // the whole-run record only on a private display: on a person's, the sampled route audits judge the engines;
       // its client guarded from its spawn
       this.record = isPrivate ? await startRecord({ guard: (pid) => this.watchdog.guard(pid) }) : null;
-      unlessStopped();
+      await unlessStopped();
       this.trace = await startTrace();
-      unlessStopped();
+      await unlessStopped();
     } catch (error) {
       try {
         await this.trace?.stop();

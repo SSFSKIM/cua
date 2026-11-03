@@ -5,7 +5,7 @@
 // directory, is offered a service file that is never activated, and is stopped by the test.
 
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -433,6 +433,55 @@ for (const stage of STAGES) {
       assert.equal(desktop.session, null);
     } finally {
       release?.();
+      desktop.unhookStop();
+      tools.done();
+      rmSync(desktop.dir, { recursive: true, force: true });
+    }
+  }));
+}
+
+// Task 46's finding 2: a signal is handled only on a later turn of the event loop, and the session's start ends
+// synchronously (its `busctl` calls), so a stop that lands there was seen only after the next stage had started (on a
+// real private run, the RECORD client). A real signal here, its handler the stop, sent inside each stage's last
+// synchronous step: SIGWINCH, whose default is to be ignored (SIGUSR2 makes the test runner's node write a diagnostic
+// report).
+for (const stage of ['watchdog', 'session', 'record']) {
+  test(`a signal that lands in the synchronous end of the run's ${stage} start is seen before anything after it starts`, () => withA11yVar(PERSON_A11Y, async () => {
+    const tools = fakeTools();
+    const log = [];
+    const stopping = (name, value) => ({ ...value, stop: async () => (log.push(`${name} stopped`), { state: 'ended', clean: true }) });
+    const parts = {
+      watchdog: stopping('watchdog', { guard: () => {} }),
+      session: stopping('session', { address: 'unix:path=/tmp/late-bus', a11y: 'unix:path=/late-a11y', pid: 1 }),
+      record: stopping('record', { pid: 1 }),
+      trace: stopping('trace', { env: { ...process.env, DISPLAY: ':77' } }),
+    };
+    const desktop = new Desktop({ cua: 'unused', run: `bus-signal-${stage}`, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
+    let stopped = null;
+    // stop.mjs's handler does the same for SIGINT and SIGTERM: the Desktop's stop
+    const onSignal = () => {
+      stopped = desktop.stop();
+    };
+    process.on('SIGWINCH', onSignal);
+    const start = (name) => async () => {
+      log.push(name);
+      if (name === stage) {
+        process.kill(process.pid, 'SIGWINCH');
+        // the rest of the stage's synchronous work: node reads the signal only after it
+        execFileSync('sleep', ['0.05']);
+      }
+      return parts[name];
+    };
+    const before = busVars();
+    try {
+      await assert.rejects(desktop.begin({ startWatchdog: start('watchdog'), startSession: start('session'), startRecord: start('record'), startTrace: start('trace'), existing: () => [], privateDisplay: () => true }), /stopped while the run was starting/);
+      await stopped;
+      const upTo = STAGES.slice(0, STAGES.indexOf(stage) + 1);
+      assert.deepEqual(log.filter((l) => !l.endsWith(' stopped')), upTo, `nothing starts after the ${stage}`);
+      assert.deepEqual(log.filter((l) => l.endsWith(' stopped')), upTo.toReversed().map((n) => `${n} stopped`));
+      assert.deepEqual(busVars(), before);
+    } finally {
+      process.off('SIGWINCH', onSignal);
       desktop.unhookStop();
       tools.done();
       rmSync(desktop.dir, { recursive: true, force: true });

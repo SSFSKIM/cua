@@ -4,4 +4,4 @@
 
 What they showed, for the record: the owner's terminal covered the fixture region in all six. The cursor overlay (circle and `cursor235` badge) showed at the fixture's position in 04–08 and not in 03. Frames 00–02 and 09–19 show the fixture alone and are kept. `probe.jsonl` and `log` are unchanged.
 
-Later sittings capture a window by its window ID (`screencapture -l <id>`), which leaves other windows out.
+Rule for later sittings: capture a window by its window ID (for example `screencapture -l <id>`), which leaves other windows out, never the screen region at its bounds.

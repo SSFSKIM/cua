@@ -1,0 +1,28 @@
+rows 819 kinds ['audit', 'begin', 'end', 'equality', 'image', 'meta', 'prepare-faults', 'sample', 'speed-decision', 'stub-check', 'stub-check-foreground', 'stub-check-in-front', 'text-restores', 'top-up', 'verdict']
+== audits
+cua device-gtk4 gtk4_click_shared audit nothing-sent route None clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 49 unplaced None ok False
+cua device-gtk4 gtk4_click_dedicated audit foreground route foreground clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 77 unplaced 18 ok True
+cua device-gtk4 gtk4_key_shared audit nothing-sent route None clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 49 unplaced None ok False
+cua device-gtk4 gtk4_key_dedicated audit foreground route foreground clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 47 unplaced None ok True
+cua device-gtk4 gtk4_key_down_shared audit nothing-sent route None clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 49 unplaced None ok False
+cua device-gtk4 gtk4_right_click_shared audit nothing-sent route None clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 4657 unplaced None ok False
+cua device-gtk4 gtk4_element_click audit background route None clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 4731 unplaced None ok True
+cua device-gtk4 gtk4_scroll_shared audit nothing-sent route None clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 49 unplaced None ok False
+cua device-gtk4 gtk4_scroll_dedicated audit foreground route foreground clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 89 unplaced 24 ok True
+cua device-gtk4 gtk4_move_shared audit nothing-sent route None clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 49 unplaced None ok False
+cua device-gtk4 gtk4_move_dedicated audit foreground route foreground clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 79 unplaced 18 ok True
+cua device-gtk4 gtk4_drag_shared audit nothing-sent route None clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 53 unplaced None ok False
+cua device-gtk4 gtk4_drag_dedicated audit foreground route foreground clean True foreign [] parents None ancestry [25165828, 5980901] forbidden [] requests 1160 unplaced 556 ok True
+== gtk4_click_dedicated cua samples
+block 0 series cold i 0 cold None ok True effect True witness True fields None allowed ['stacking', 'focus', 'active', 'pointer'] after []
+block 0 series warm i 1 cold None ok True effect True witness True fields None allowed ['stacking', 'active', 'focus'] after []
+block 0 series warm i 2 cold None ok True effect True witness True fields None allowed ['stacking', 'active', 'focus'] after []
+block 1 series cold i 0 cold None ok True effect True witness True fields None allowed ['stacking', 'active', 'focus', 'pointer'] after []
+block 1 series warm i 1 cold None ok True effect True witness True fields None allowed ['stacking', 'active', 'focus'] after []
+block 1 series warm i 2 cold None ok True effect True witness True fields None allowed ['stacking', 'focus', 'active'] after []
+block 2 series cold i 0 cold None ok True effect True witness True fields None allowed ['stacking', 'focus', 'active', 'pointer'] after []
+block 2 series warm i 1 cold None ok True effect True witness True fields None allowed ['stacking', 'active', 'focus'] after []
+block 2 series warm i 2 cold None ok True effect True witness True fields None allowed ['stacking', 'active', 'focus'] after []
+== every sample whose allowance lists focus after the request
+count 0
+== samples with witness false

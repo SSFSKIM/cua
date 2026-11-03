@@ -1,0 +1,47 @@
+exit 0 samples 2395 maps 799 ss 480 processes 421 browsers 30
+flags []
+decoys []
+leftovers []
+xauthority {"person ~/.Xauthority": ["Chroot Helper", "MainThread", "RDD Process", "Socket Process", "Utility Process", "Web Content", "WebExtensions", "cat", "chrome_crashpad", "crashhelper", "crashreporter", "cua-engine", "dbus-daemon", "file:// Content", "firefox-bin", "forkserver", "gdbus", "gedit", "gfxtest", "gnome-terminal-", "gnome-terminal.", "gnome-text-edit", "sh", "sky_linux_x64", "sleep", "tee", "xprobe", "xterm", "xtrace"], "trace proxy (cua171-audit-*/Xauthority)": ["MainThread", "cua-engine", "sky_linux_x64", "xdotool"], "unset": ["MainThread", "chrome"]}
+outside peers {
+"MainThread -> unnamed (peer ended or pid not shown)": 18,
+"None -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 1,
+"None -> @/tmp/.X11-unix/X0 (pid not shown)": 3,
+"RDD Process -> unnamed (peer ended or pid not shown)": 3,
+"Socket Process -> unnamed (peer ended or pid not shown)": 1,
+"Web Content -> unnamed (peer ended or pid not shown)": 4,
+"chrome -> /run/dbus/system_bus_socket (pid not shown)": 463,
+"chrome -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 463,
+"chrome -> @/tmp/.X11-unix/X0 (pid not shown)": 2315,
+"chrome -> unnamed (peer ended or pid not shown)": 1,
+"crashhelper -> unnamed (peer ended or pid not shown)": 29,
+"cua-engine -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 509,
+"cua-engine -> /run/user/501/at-spi/bus_0 (pid not shown)": 1,
+"cua-engine -> @/tmp/.X11-unix/X0 (pid not shown)": 587,
+"dbus-daemon -> unnamed (peer ended or pid not shown)": 2,
+"firefox-bin -> /run/dbus/system_bus_socket (pid not shown)": 470,
+"firefox-bin -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 466,
+"firefox-bin -> @/tmp/.X11-unix/X0 (pid not shown)": 471,
+"firefox-bin -> unnamed (peer ended or pid not shown)": 37,
+"forkserver -> unnamed (peer ended or pid not shown)": 1,
+"gedit -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 404,
+"gedit -> @/tmp/.X11-unix/X0 (pid not shown)": 404,
+"gfxtest -> @/tmp/.X11-unix/X0 (pid not shown)": 1,
+"gnome-terminal- -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 314,
+"gnome-terminal- -> @/tmp/.X11-unix/X0 (pid not shown)": 314,
+"gnome-terminal. -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 313,
+"gnome-terminal. -> @/tmp/.X11-unix/X0 (pid not shown)": 313,
+"gnome-text-edit -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 470,
+"gnome-text-edit -> @/tmp/.X11-unix/X0 (pid not shown)": 473,
+"sky_linux_x64 -> /run/user/501/at-spi/bus_0 (dbus-daemon)": 70,
+"sky_linux_x64 -> @/tmp/.X11-unix/X0 (pid not shown)": 364,
+"xprobe -> @/tmp/.X11-unix/X0 (pid not shown)": 929,
+"xterm -> @/tmp/.X11-unix/X0 (pid not shown)": 932,
+"xtrace -> /tmp/.X11-unix/X0 (pid not shown)": 64,
+"xtrace -> unnamed (peer ended or pid not shown)": 1
+}
+home paths {}
+browser nss {"<run scratch>/home/.local/share/pki/nssdb/cert9.db": ["chrome (fd/cwd)"], "<run scratch>/home/.local/share/pki/nssdb/key4.db": ["chrome (fd/cwd)"]} {"/tmp/c50-C9Jqie/cua171-run-Z2z6rX/home/.local/share/pki/nssdb": {"first": 4.297, "entries": ["cert9.db", "key4.db", "pkcs11.txt"]}}
+browser kinds ["('chrome', 'gpu-process', False, True)", "('chrome', 'renderer', False, True)", "('chrome', 'utility', False, True)", "('chrome', 'zygote', False, True)", "('chrome', None, False, False)", "('chrome', None, True, True)"]
+browser homes (readable) ['/tmp/c50-C9Jqie/cua171-run-Z2z6rX/home']
+meta {"run": "task54-run-bus", "kind": "meta", "experiment": "matrix", "commit": "1525e2beee2bcd81864ef951bf73487cfde4562a", "cua_version": "cua-engine 0.3.0 (7ad6f03d2966)", "families": ["gnome-text-editor", "firefox", "gedit", "gnome-terminal"], "load": false, "audit": true, "occlusion": "covered", "started": "2026-11-03T19:21:40.084Z"}

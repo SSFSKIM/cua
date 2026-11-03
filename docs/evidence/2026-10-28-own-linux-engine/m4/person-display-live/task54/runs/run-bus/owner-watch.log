@@ -1,0 +1,9 @@
+2026-11-03T19:21:38.824Z baseline (owner):
+start 51157914
+windows-any 2
+windows-viewable 1
+client 0x600002 "google-chrome", "Google-chrome" window state: Normal   Position: 0,0 (screen: 0)  Geometry: 1050x780 
+baseline (bus): 27 lines, digest 953eb266a3bf
+2026-11-03T19:21:38.892Z check 1 same
+2026-11-03T19:26:45.825Z check 31 same
+2026-11-03T19:26:55.829Z done after 31 checks; changed=0

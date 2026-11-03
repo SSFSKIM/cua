@@ -1,0 +1,9 @@
+total {'PASS': 18, '–': 5}
+  desktop: {'PASS': 5}
+  device-gtk4: {'PASS': 13, '–': 5}
+not PASS:
+   device-gtk4 gtk4_click_dedicated cua: –
+   device-gtk4 gtk4_key_dedicated cua: –
+   device-gtk4 gtk4_scroll_dedicated cua: –
+   device-gtk4 gtk4_move_dedicated cua: –
+   device-gtk4 gtk4_drag_dedicated cua: –

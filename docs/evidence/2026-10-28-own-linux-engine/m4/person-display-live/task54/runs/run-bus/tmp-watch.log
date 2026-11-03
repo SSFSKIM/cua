@@ -1,0 +1,131 @@
+== 2026-11-03T19:21:38.738Z sample 1
+/tmp entries newer than the start (not the tmproot):
+== 2026-11-03T19:22:08.769Z sample 2
+run tmp /tmp/c50-C9Jqie/cua171-run-Z2z6rX/tmp:
+      1   com.google.Chrome.etshyI
+      1   com.google.Chrome.etshyI/SingletonCookie
+      1   com.google.Chrome.etshyI/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-03T19:22:38.791Z sample 3
+run tmp /tmp/c50-C9Jqie/cua171-run-Z2z6rX/tmp:
+      1   com.google.Chrome.etshyI
+      1   com.google.Chrome.etshyI/SingletonCookie
+      1   com.google.Chrome.etshyI/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-03T19:23:08.814Z sample 4
+run tmp /tmp/c50-C9Jqie/cua171-run-Z2z6rX/tmp:
+      1   com.google.Chrome.etshyI
+      1   com.google.Chrome.etshyI/SingletonCookie
+      1   com.google.Chrome.etshyI/SingletonSocket
+      1   firefox
+      1   firefox/.parentlock
+      1   firefox/lock
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  systemd-private-3e886c1935f34c2ea2950a8fffe1042d-systemd-timedated.service-rL0Zk6
+== 2026-11-03T19:23:38.837Z sample 5
+run tmp /tmp/c50-C9Jqie/cua171-run-Z2z6rX/tmp:
+      1   2f9a1933-1e57-4463-9ee5-4878eNf.zip
+      1   35d214f5-3702-4a3a-b2b8-7e0c3e3827ee.zip
+      1   com.google.Chrome.etshyI
+      1   com.google.Chrome.etshyI/SingletonCookie
+      1   com.google.Chrome.etshyI/SingletonSocket
+      1   tmp-8fo.xpi
+      1   tmp-n9b.xpi
+      1   tmp-vhd.xpi
+      1   tmp-yw0.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+  systemd-private-3e886c1935f34c2ea2950a8fffe1042d-systemd-timedated.service-rL0Zk6
+== 2026-11-03T19:24:08.865Z sample 6
+run tmp /tmp/c50-C9Jqie/cua171-run-Z2z6rX/tmp:
+      1   2f9a1933-1e57-4463-9ee5-4878eNf.zip
+      1   35d214f5-3702-4a3a-b2b8-7e0c3e3827ee.zip
+      1   7fdfc8e9-04b6-4590-bdef-b47e53a20c36.zip
+      1   com.google.Chrome.etshyI
+      1   com.google.Chrome.etshyI/SingletonCookie
+      1   com.google.Chrome.etshyI/SingletonSocket
+      1   e1fcdae0-195e-471c-a20c-3dafaf9a99d2.zip
+      1   tmp-8fo.xpi
+      1   tmp-n9b.xpi
+      1   tmp-vhd.xpi
+      1   tmp-yw0.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-03T19:24:38.891Z sample 7
+run tmp /tmp/c50-C9Jqie/cua171-run-Z2z6rX/tmp:
+      1   2f9a1933-1e57-4463-9ee5-4878eNf.zip
+      1   35d214f5-3702-4a3a-b2b8-7e0c3e3827ee.zip
+      1   7fdfc8e9-04b6-4590-bdef-b47e53a20c36.zip
+      1   com.google.Chrome.etshyI
+      1   com.google.Chrome.etshyI/SingletonCookie
+      1   com.google.Chrome.etshyI/SingletonSocket
+      1   e1fcdae0-195e-471c-a20c-3dafaf9a99d2.zip
+      1   tmp-8fo.xpi
+      1   tmp-n9b.xpi
+      1   tmp-vhd.xpi
+      1   tmp-yw0.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-03T19:25:08.915Z sample 8
+run tmp /tmp/c50-C9Jqie/cua171-run-Z2z6rX/tmp:
+      1   2f9a1933-1e57-4463-9ee5-4878eNf.zip
+      1   35d214f5-3702-4a3a-b2b8-7e0c3e3827ee.zip
+      1   7fdfc8e9-04b6-4590-bdef-b47e53a20c36.zip
+      1   com.google.Chrome.etshyI
+      1   com.google.Chrome.etshyI/SingletonCookie
+      1   com.google.Chrome.etshyI/SingletonSocket
+      1   e1fcdae0-195e-471c-a20c-3dafaf9a99d2.zip
+      1   tmp-8fo.xpi
+      1   tmp-n9b.xpi
+      1   tmp-vhd.xpi
+      1   tmp-yw0.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-03T19:25:38.938Z sample 9
+run tmp /tmp/c50-C9Jqie/cua171-run-Z2z6rX/tmp:
+      1   2f9a1933-1e57-4463-9ee5-4878eNf.zip
+      1   35d214f5-3702-4a3a-b2b8-7e0c3e3827ee.zip
+      1   7fdfc8e9-04b6-4590-bdef-b47e53a20c36.zip
+      1   com.google.Chrome.etshyI
+      1   com.google.Chrome.etshyI/SingletonCookie
+      1   com.google.Chrome.etshyI/SingletonSocket
+      1   e1fcdae0-195e-471c-a20c-3dafaf9a99d2.zip
+      1   tmp-8fo.xpi
+      1   tmp-n9b.xpi
+      1   tmp-vhd.xpi
+      1   tmp-yw0.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-03T19:26:08.961Z sample 10
+run tmp /tmp/c50-C9Jqie/cua171-run-Z2z6rX/tmp:
+      1   2f9a1933-1e57-4463-9ee5-4878eNf.zip
+      1   35d214f5-3702-4a3a-b2b8-7e0c3e3827ee.zip
+      1   7fdfc8e9-04b6-4590-bdef-b47e53a20c36.zip
+      1   com.google.Chrome.etshyI
+      1   com.google.Chrome.etshyI/SingletonCookie
+      1   com.google.Chrome.etshyI/SingletonSocket
+      1   e1fcdae0-195e-471c-a20c-3dafaf9a99d2.zip
+      1   tmp-8fo.xpi
+      1   tmp-n9b.xpi
+      1   tmp-vhd.xpi
+      1   tmp-yw0.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-03T19:26:38.991Z sample 11
+run tmp /tmp/c50-C9Jqie/cua171-run-Z2z6rX/tmp:
+      1   2f9a1933-1e57-4463-9ee5-4878eNf.zip
+      1   35d214f5-3702-4a3a-b2b8-7e0c3e3827ee.zip
+      1   7fdfc8e9-04b6-4590-bdef-b47e53a20c36.zip
+      1   com.google.Chrome.etshyI
+      1   com.google.Chrome.etshyI/SingletonCookie
+      1   com.google.Chrome.etshyI/SingletonSocket
+      1   e1fcdae0-195e-471c-a20c-3dafaf9a99d2.zip
+      1   tmp-8fo.xpi
+      1   tmp-n9b.xpi
+      1   tmp-vhd.xpi
+      1   tmp-yw0.xpi
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix

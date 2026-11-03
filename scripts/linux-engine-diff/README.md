@@ -256,7 +256,8 @@ variants included; their evidence is written either way. The run's `end` row kee
   launcher in the run's home), waits for its AT-SPI frame and closes it, once a run; the cache is the run's home's,
   and a shader cache the harness's environment names (`MESA_SHADER_CACHE_DIR` and its kin) never reaches an
   application. A GTK 4 window settles only on its AT-SPI tree: a frame not registered within 45 s fails its case,
-  and a warm-up that fails fails each GTK 4 scene of the run.
+  the identity scene's GTK 4 windows too when not all of their frames registered within that bound, and a warm-up
+  that fails fails each GTK 4 scene of the run.
 - **Effects** are read by the harness itself (`oracle.mjs`, `busctl` on the accessibility bus), not through an
   engine's tree, where the tree does not carry them: an editor's text and caret (`Text.GetText`, `CaretOffset`), a
   Writer document's paragraphs, a page's field and its button's label, the Electron fixture's status, what xterm's

@@ -16,15 +16,20 @@ import { runHome } from '../../scripts/linux-engine-diff/app-env.mjs';
 import { FAMILIES, openFamily } from '../../scripts/linux-engine-diff/families.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 
-/** Stand-ins on a PATH of the test's own: the applications log their start and environment, xdotool sizes nothing. */
-function standIns() {
+/**
+ * Stand-ins on a PATH of the test's own: the applications log their start and environment, xdotool sizes nothing.
+ * With `identity`, python3 is the identity scene's fixture too: it reports that many windows (pages/identity-windows.py's
+ * lines, each window's marker and X11 id) and ends.
+ */
+function standIns({ identity = 0 } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'cua171-gtk4-tools-'));
   const tool = (name, body) => {
     writeFileSync(join(dir, name), `#!/bin/sh\n${body}\n`);
     chmodSync(join(dir, name), 0o755);
   };
   for (const app of ['gnome-text-editor', 'python3', 'xterm']) {
-    tool(app, `printf '%s %s %s %s\\n' "$HOME" "\${XDG_CACHE_HOME-unset}" "\${MESA_SHADER_CACHE_DIR-unset}" "$*" >> ${JSON.stringify(join(dir, `${app}.log`))}`);
+    const report = app === 'python3' ? Array.from({ length: identity }, (_, i) => `\necho '{"marker":${i + 1},"xid":${0x4700001 + i}}'`).join('') : '';
+    tool(app, `printf '%s %s %s %s\\n' "$HOME" "\${XDG_CACHE_HOME-unset}" "\${MESA_SHADER_CACHE_DIR-unset}" "$*" >> ${JSON.stringify(join(dir, `${app}.log`))}${report}`);
   }
   // configure's size check: the size last asked for
   tool('xdotool', `case "$1" in windowsize) echo "$3 $4" > ${JSON.stringify(join(dir, 'size'))};; getwindowgeometry) set -- $(cat ${JSON.stringify(join(dir, 'size'))}); printf 'WIDTH=%s\\nHEIGHT=%s\\nSCREEN=0\\n' "$1" "$2";; esac`);
@@ -158,6 +163,31 @@ test("a warm-up that never registers fails the run's GTK 4 scenes, each with its
     // the identity scene's GTK 4 fixture asks for the warm-up before it starts
     await assert.rejects(desktop.openDuplicates('r', 'gtk4'), /the run's GTK 4 warm-up failed/);
     assert.equal(tools.started('python3').length, 0);
+  } finally {
+    await desktop.close(desktop.windows);
+    ended(desktop);
+    tools.done();
+  }
+});
+
+test("the identity scene's GTK 4 windows fail when their AT-SPI frames do not all register within the bound, in settle's words; registered, the scene is returned", async () => {
+  const tools = standIns({ identity: 3 });
+  const { desktop } = gtk4Desktop({ registrationMs: 1500 });
+  // the harness's own reader of the bus (oracle.mjs): the fixture's process shows `frames` frames of the scene's title
+  let frames = 2;
+  let title = desktop.label('identity', 'gtk4', 'r');
+  desktop.oracle = { appsOf: () => ['app'], children: () => Array.from({ length: frames }, () => 'frame'), name: () => title };
+  try {
+    const started = Date.now();
+    await assert.rejects(desktop.openDuplicates('r', 'gtk4'), new RegExp(`^Error: ${title}: its AT-SPI frames did not register within 1\\.5 s \\(2 of 3 did\\), and a GTK 4 window always registers its tree; the case fails rather than read the windows as X11$`));
+    assert.ok(Date.now() - started < 10000, 'within the bound, not the 30 s wait for other toolkits');
+    assert.equal(desktop.windows.filter((w) => w.kind === 'fixture').length, 3, "its windows stay the run's, closed with it");
+    // every frame registered: the scene, ready
+    frames = 3;
+    title = desktop.label('identity', 'gtk4', 's');
+    const scene = await desktop.openDuplicates('s', 'gtk4');
+    assert.equal(scene.frames_ready, true);
+    assert.equal(scene.windows.length, 3);
   } finally {
     await desktop.close(desktop.windows);
     ended(desktop);

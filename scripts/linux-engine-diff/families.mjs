@@ -486,6 +486,15 @@ export function warmGtk4(desktop) {
 }
 
 /**
+ * Why a GTK 4 scene fails when its AT-SPI frame did not register within `boundMs` (`settle`'s words), or, with `frames`
+ * (`{found, of}`), when not every frame of the scene's several windows did (scenes.mjs `waitForFrames`).
+ */
+export function unregistered(label, boundMs, frames = null) {
+  const what = frames ? `its AT-SPI frames did not register within ${boundMs / 1000} s (${frames.found} of ${frames.of} did)` : `its AT-SPI frame did not register within ${boundMs / 1000} s`;
+  return `${label}: ${what}, and a GTK 4 window always registers its tree; the case fails rather than read the window${frames ? 's' : ''} as X11`;
+}
+
+/**
  * Waits until the window's tree (when it has one) reads the same twice. An application whose tree keeps changing
  * (qtcreator's) is taken as it is after 20 s, and the scene says so. A family that always registers (`registers`, GTK
  * 4) counts only its AT-SPI reads: its wait ends on its frame's registration, and a window not registered within
@@ -499,7 +508,7 @@ async function settle(desktop, scene, { registers = false } = {}) {
   let previous = null;
   let last = null;
   while (from === null || Date.now() - from < 30000) {
-    if (from === null && Date.now() - started > bound) throw new Error(`${scene.label ?? scene.id}: its AT-SPI frame did not register within ${bound / 1000} s, and a GTK 4 window always registers its tree; the case fails rather than read the window as X11`);
+    if (from === null && Date.now() - started > bound) throw new Error(unregistered(scene.label ?? scene.id, bound));
     const { response } = await desktop.reader.request('get_window_state', { window: { id: scene.id }, include_screenshot: false });
     if (response.ok && (!registers || response.output.ax_tree_source === 'at_spi')) {
       from ??= Date.now();

@@ -821,15 +821,23 @@ export class Desktop {
    * frame a moment later, while the reader's read of a window answers its tree without the window's marker yet. A
    * reader that does not tell the windows apart (an engine under test as a control) ends that wait at once. Not
    * finding them is the cases' to fail, not the scene's: the scene is returned all the same, with `frames_ready`.
+   * GTK 4's windows are the exception (task 51's review): a GTK 4 window always registers its tree, so frames not all
+   * registered within the run's GTK 4 bound (families.mjs `GTK4_REGISTRATION_MS`, the Desktop's `registrationMs`)
+   * fail the scene, as `settle` fails a GTK 4 family's, rather than leave its cases to read the windows as X11.
    */
   async waitForFrames(scene) {
     const oracle = await this.ensureOracle();
+    const { GTK4_REGISTRATION_MS, unregistered } = await import('./families.mjs');
     const pid = scene.pid ?? Number(xExecFileSync('xprop', ['-id', String(scene.id), '_NET_WM_PID'], { encoding: 'utf8' }).match(/(\d+)\s*$/)?.[1]);
-    const deadline = Date.now() + 30000;
+    const gtk4 = scene.toolkit === 'gtk4';
+    const bound = gtk4 ? (this.registrationMs ?? GTK4_REGISTRATION_MS) : 30000;
+    const deadline = Date.now() + bound;
     scene.frames_ready = false;
+    let found = 0;
     while (Date.now() < deadline && !this.stopping) {
       try {
         const frames = oracle.appsOf(pid).flatMap((app) => oracle.children(app)).filter((f) => oracle.name(f) === scene.title);
+        found = frames.length;
         if (frames.length >= scene.windows.length) {
           scene.frames_ready = true;
           break;
@@ -839,6 +847,7 @@ export class Desktop {
       }
       await sleep(500);
     }
+    if (gtk4 && !scene.frames_ready && !this.stopping) throw new Error(unregistered(scene.label, bound, { found, of: scene.windows.length }));
     if (scene.toolkit !== 'chrome') return;
     for (const win of scene.windows) {
       while (Date.now() < deadline && !this.stopping) {

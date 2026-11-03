@@ -12,7 +12,7 @@ import { delimiter, dirname, join } from 'node:path';
 import test from 'node:test';
 
 import { GEDIT_TITLE_MAX, geditTitle } from '../../scripts/linux-engine-diff/gedit-title.mjs';
-import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
+import { Desktop, scratchRoot } from '../../scripts/linux-engine-diff/scenes.mjs';
 
 // task 49's scratch (its session's TMPDIR, `/tmp/cua171-task49-WqJ6?`, the last character not shown by the titles)
 const TASK49_DIR = '/tmp/cua171-task49-WqJ6Jx/cua171-diff-t49-recordjudge-oVS5JT';
@@ -89,8 +89,13 @@ test("no gedit window the scenes build gets a shortened title, under the plain T
 });
 
 test("the scratch root is the harness's TMPDIR when the run's longest gedit title fits under it, else /tmp", () => {
-  const short = withDesktop('a11y', tmpdir(), (desktop) => dirname(desktop.dir));
-  assert.equal(short, tmpdir(), "a test's scratch stays inside the suite's directory");
+  // the suite's own directory (suite-check.mjs) fits a short run's titles; macOS's per-user TMPDIR
+  // (/var/folders/…/T, which plain `npm test` there runs under) does not
+  assert.equal(scratchRoot('a11y', '/tmp/cua171-suite-AbC123'), '/tmp/cua171-suite-AbC123');
+  assert.equal(scratchRoot('a11y', '/var/folders/n6/hn37q6pj7sj_9dmqqc2113800000gn/T'), '/tmp');
+  assert.equal(scratchRoot('t49-recordjudge', '/tmp/cua171-task49-WqJ6Jx'), '/tmp', "task 49's session TMPDIR");
+  // the Desktop takes its scratch where the rule says, under this test's TMPDIR and under a long one
+  assert.equal(withDesktop('a11y', tmpdir(), (desktop) => dirname(desktop.dir)), scratchRoot('a11y'));
   const long = join(tmpdir(), `cua171-${'t'.repeat(40)}`);
   mkdirSync(long, { recursive: true });
   try {

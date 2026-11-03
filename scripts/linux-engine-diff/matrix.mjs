@@ -10,7 +10,8 @@
 // audit on (the default; M1a.4), each engine but `cua:none` then sends two keys and two clicks again through an
 // xtrace proxy, and the run judges Acceptance 5 per family (`backgroundAlone`).
 
-import { auditRequests, parseXtrace, startProxy } from './audit.mjs';
+import { auditAnswered, parseXtrace, startProxy } from './audit.mjs';
+import { DEVICE_REFUSAL } from './deviations.mjs';
 import { Engine } from './engine.mjs';
 import { FAMILIES, familyNames, openFamily, readCaret, readCounter, readText, textArea, wmClass } from './families.mjs';
 import { caretArrived, clickPoints, counterArrived, keyArrived, terminalClickArrived, typedArrived } from './matrix-judge.mjs';
@@ -148,24 +149,37 @@ async function clickSeries(ctx, engine, scene, n) {
 /**
  * The X request audit (Acceptance 5): in an untimed pass after the series, a fresh engine process with its X
  * connections through an xtrace proxy sends two keys (`x`, then `BackSpace` where it would grow a document) and two
- * clicks to its own window, and the trace is searched for the forbidden requests (audit.mjs).
+ * clicks to its own window, and the trace is searched for the forbidden requests (audit.mjs). Each request is marked
+ * in the trace and judged by its answer (`auditAnswered`, task 53): one refused in shared mode (a kind the family
+ * ignores; Design, Device mode) must have sent nothing at all, and then it exercised the audit as a refusal, never as
+ * a request that failed (task 49's finding 6).
  */
 async function auditPass(ctx, spec, scene) {
   const { oracle, emit, family } = ctx;
   const proxy = await startProxy();
   const engine = new Engine({ ...spec, stats: false, env: proxy.env }).start();
-  let ok = true;
+  const answers = [];
+  const ask = async (command, input) => {
+    const i = answers.length;
+    await proxy.mark(`request:${i}`);
+    const { response } = await engine.request(command, input);
+    await proxy.mark(`answered:${i}`);
+    const error = response.ok === true ? null : String(response.error);
+    answers.push({ command, ok: response.ok === true, ...(error === null ? {} : { error: error.slice(0, 300), refused: DEVICE_REFUSAL.test(error) }) });
+  };
   try {
-    for (const key of scene.kindOf === 'terminal' ? ['x', 'x'] : ['x', 'BackSpace']) ok = (await engine.request('press_key', { window: { id: scene.id }, key })).response.ok === true && ok;
+    for (const key of scene.kindOf === 'terminal' ? ['x', 'x'] : ['x', 'BackSpace']) await ask('press_key', { window: { id: scene.id }, key });
     for (let i = 0; i < 2; i++) {
-      ok = (await engine.request('click', { window: { id: scene.id }, ...clickTarget(oracle, scene, i).point })).response.ok === true && ok;
+      await ask('click', { window: { id: scene.id }, ...clickTarget(oracle, scene, i).point });
       await sleep(600);
     }
   } finally {
     await engine.close();
   }
-  const audited = auditRequests(parseXtrace(await proxy.stop()));
-  emit({ kind: 'matrix-audit', family, engine: spec.label, ok, clean: audited.clean, traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.slice(0, 10) });
+  const audited = auditAnswered(parseXtrace(await proxy.stop()), proxy.marks, answers);
+  const ok = answers.every((a) => a.ok);
+  const exercised = answers.length > 0 && answers.every((a) => a.ok || a.refused);
+  emit({ kind: 'matrix-audit', family, engine: spec.label, ok, exercised, refused: answers.filter((a) => a.refused).length, answers, clean: audited.clean, traced: audited.traced, requests: audited.requests, forbidden: audited.forbidden.slice(0, 10) });
 }
 
 const targetsOf = (scene) => ({ field: Boolean(scene.field), button: Boolean(scene.button), document: Boolean(scene.document) });

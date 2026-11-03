@@ -92,9 +92,9 @@ const row = (engine, op, effect, witness = true, ok = true) => ({ kind: 'matrix-
 test('a family summary counts effects, clean witnesses and answers per engine and operation', () => {
   const rows = [row('pinned', 'key', true), row('pinned', 'key', false), row('cua', 'key', true, false), row('cua', 'click', null)];
   const s = summarizeFamily(rows);
-  assert.deepEqual(s.key.pinned, { n: 2, ok: 2, effect: 1, effect_known: 2, witness_clean: 2 });
-  assert.deepEqual(s.key.cua, { n: 1, ok: 1, effect: 1, effect_known: 1, witness_clean: 0 });
-  assert.deepEqual(s.click.cua, { n: 1, ok: 1, effect: 0, effect_known: 0, witness_clean: 1 });
+  assert.deepEqual(s.key.pinned, { n: 2, ok: 2, refused: 0, effect: 1, effect_known: 2, witness_clean: 2 });
+  assert.deepEqual(s.key.cua, { n: 1, ok: 1, refused: 0, effect: 1, effect_known: 1, witness_clean: 0 });
+  assert.deepEqual(s.click.cua, { n: 1, ok: 1, refused: 0, effect: 0, effect_known: 0, witness_clean: 1 });
 });
 
 test('a family that takes no background click or key on any engine ignores background input', () => {
@@ -233,4 +233,80 @@ test("Acceptance 5 per family: cua's witness clean wherever a vendor build's is,
   assert.equal(backgroundAlone([...clean, sample('cua:none', false), ...audits], 'f').pass, true);
   // a family with no cua sample at all cannot pass
   assert.equal(backgroundAlone([sample('pinned', true), ...audits], 'f').pass, false);
+});
+
+// task 53 (the design session's ruling, sminos 338; task 49's finding 6): the matrix judges a shared-mode refusal as a
+// refusal, not as an audited request that failed: a refused request must send nothing, and then it exercised the
+// audit. And a family of a kind the matrix has no reader for (the table scenes, the one-node Qt input scenes, the GTK 4
+// and scale scenes, all the kinds experiment's) has no effect it was meant to read.
+const REFUSAL = 'org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first';
+
+test('a cua audit pass whose requests were refused in shared mode, and sent nothing, exercised the audit', async () => {
+  const { backgroundAlone } = await import('../../scripts/linux-engine-diff/matrix-judge.mjs');
+  const sample = (engine, op = 'key', extra = {}) => ({ kind: 'matrix-sample', family: 'gte', engine, op, ok: true, witness: true, ...extra });
+  const audit = (engine, extra) => ({ kind: 'matrix-audit', family: 'gte', engine, ok: true, clean: true, traced: true, ...extra });
+  const samples = [sample('pinned'), sample('newest'), sample('cua', 'key', { ok: false, error: REFUSAL }), sample('cua', 'click', { ok: false, error: REFUSAL })];
+  const refusals = Array.from({ length: 4 }, () => ({ ok: false, error: REFUSAL, refused: true }));
+  const refused = audit('cua', { ok: false, exercised: true, answers: refusals });
+  assert.equal(backgroundAlone([...samples, audit('pinned'), audit('newest'), refused], 'gte').pass, true);
+  // a refusal whose span sent something is not clean, and fails as a forbidden request
+  const sent = backgroundAlone([...samples, audit('pinned'), audit('newest'), { ...refused, clean: false }], 'gte');
+  assert.match(sent.reasons.join(), /forbidden/);
+  // any other failure still exercised nothing
+  const other = backgroundAlone([...samples, audit('pinned'), audit('newest'), audit('cua', { ok: false, exercised: false })], 'gte');
+  assert.match(other.reasons.join(), /did not exercise/);
+});
+
+test("an audit pass's trace judged per answer: a refusal's span sends nothing at all, an answered request's nothing forbidden", async () => {
+  const { auditAnswered, parseXtrace } = await import('../../scripts/linux-engine-diff/audit.mjs');
+  const key = '000:<:0005: 44: Request(25): SendEvent propagate=false(0x00) destination=0x00600007 event-mask=0 KeyPress(2) keycode=0x35';
+  const focus = '000:<:0006: 12: Request(42): SetInputFocus revert-to=PointerRoot(0x01) focus=0x00600007 time=CurrentTime(0x00000000)';
+  const read = '000:<:0004:  4: Request(43): GetInputFocus ';
+  const trace = parseXtrace([read, key, focus].join('\n'));
+  const [r, k, f] = trace.requests.map((x) => x.at);
+  const marks = (spans) => spans.flatMap(([from, to], i) => [{ tag: `request:${i}`, at: from }, { tag: `answered:${i}`, at: to }]);
+  const end = f + 1000;
+  // one request answered, its synthetic key in its span: clean; the same span answered by a refusal sent something
+  assert.equal(auditAnswered(parseXtrace([read, key].join('\n')), marks([[r, end]]), [{ ok: true }]).clean, true);
+  const refusedKey = auditAnswered(parseXtrace([read, key].join('\n')), marks([[r, end]]), [{ ok: false, refused: true }]);
+  assert.equal(refusedKey.clean, false);
+  assert.match(refusedKey.forbidden[0].what, /SendEvent with request 0's refusal/);
+  // a refusal span with only reads is clean; a forbidden request is forbidden in any span, or outside every span
+  assert.equal(auditAnswered(trace, marks([[r, k]]), [{ ok: false, refused: true }]).clean, false, 'the key outside the spans is judged as background input is, the focus request is forbidden');
+  assert.deepEqual(auditAnswered(parseXtrace(read), marks([[r, end]]), [{ ok: false, refused: true }]).forbidden, []);
+  assert.deepEqual(auditAnswered(trace, marks([[r, k], [k, end]]), [{ ok: false, refused: true }, { ok: true }]).forbidden.map((x) => x.what), ['SetInputFocus']);
+  // missing marks, or none traced, are not clean
+  assert.equal(auditAnswered(trace, [], [{ ok: true }]).clean, false);
+  assert.equal(auditAnswered(parseXtrace(''), marks([[0, 1]]), [{ ok: true }]).clean, false);
+});
+
+test('a family of a kind the matrix reads no effect for is complete without its effects; a missing target still is not', () => {
+  const identity = (family, kindOf, targets = {}) => ({ kind: 'matrix-identity', family, kindOf, targets });
+  const unread = (family, op) => ({ kind: 'matrix-sample', family, engine: 'cua', op, ok: true, effect: null });
+  assert.deepEqual(matrixOutcome([identity('gtk-table', 'table'), unread('gtk-table', 'key'), unread('gtk-table', 'click'), unread('gtk-table', 'type_text')], ['gtk-table']), { complete: true, failed: [] });
+  assert.deepEqual(matrixOutcome([identity('qt5-input', 'qt-input'), unread('qt5-input', 'key')], ['qt5-input']), { complete: true, failed: [] });
+  // a kind the matrix reads, its target missing (an editor read as one X11 node): incomplete, as before
+  const missing = matrixOutcome([identity('qtcreator', 'editor', { field: false }), unread('qtcreator', 'key')], ['qtcreator']);
+  assert.equal(missing.complete, false);
+  assert.match(missing.failed.join(), /field was not found/);
+  // the pixel reader reads keys only, as before
+  assert.equal(matrixOutcome([identity('writer-gen', 'pixels'), unread('writer-gen', 'key')], ['writer-gen']).complete, false);
+});
+
+test('the matrix table counts refusals apart from failures', () => {
+  const refused = { kind: 'matrix-sample', family: 'f', engine: 'cua', op: 'key', ok: false, error: REFUSAL, effect: null, witness: true };
+  const failed = { kind: 'matrix-sample', family: 'f', engine: 'cua', op: 'key', ok: false, error: 'Window 5 is unavailable.', effect: null, witness: true };
+  const s = summarizeFamily([refused, refused, failed]);
+  assert.equal(s.key.cua.refused, 2);
+  const md = renderMatrix([{ family: 'f', title: 'F', identity: {}, summary: s, run: 'r' }], { engines: ['cua'] }).join('\n');
+  assert.match(md, /\?\/3 \(2 refused, 1 failed\)/);
+});
+
+test("the matrix's audit pass marks each request in its trace and judges it by its answer", async () => {
+  const { readFileSync } = await import('node:fs');
+  const source = readFileSync(new URL('../../scripts/linux-engine-diff/matrix.mjs', import.meta.url), 'utf8');
+  const pass = source.slice(source.indexOf('async function auditPass'), source.indexOf('const targetsOf'));
+  assert.match(pass, /await proxy\.mark\(`request:\$\{i\}`\);\n\s*const \{ response \} = await engine\.request\(command, input\);\n\s*await proxy\.mark\(`answered:\$\{i\}`\);/);
+  assert.match(pass, /auditAnswered\(parseXtrace\(await proxy\.stop\(\)\), proxy\.marks, answers\)/);
+  assert.match(pass, /exercised,/);
 });

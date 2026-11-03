@@ -150,6 +150,39 @@ export function auditNothingSent({ requests, extensions }) {
   return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
 }
 
+/**
+ * The audit of a pass whose requests are marked one by one (the matrix's, task 53: `request:<i>` before each and
+ * `answered:<i>` after its answer), judged by each one's answer (`answers[i]`): a request refused before anything was
+ * sent (`refused`, a shared-mode refusal) sends nothing at all in its span, as `auditNothingSent` judges; any other
+ * span, and every request outside the spans, nothing the background route forbids, as `auditRequests` judges. A trace
+ * with no requests, or a request whose marks are missing or out of order, is not clean. Returns `{clean, traced,
+ * requests, forbidden}`.
+ */
+export function auditAnswered({ requests, extensions }, marks, answers) {
+  const found = [];
+  const at = new Map(marks.map((m) => [m.tag, m.at]));
+  const attributed = new Set();
+  answers.forEach((answer, i) => {
+    const [from, to] = [at.get(`request:${i}`), at.get(`answered:${i}`)];
+    if (from === undefined || to === undefined || to < from) {
+      found.push({ what: `request ${i}: its marks are missing or out of order` });
+      return;
+    }
+    for (const r of requests.filter((x) => x.at >= from && x.at < to)) {
+      attributed.add(r);
+      const what = answer.refused ? (r.major === 25 ? 'SendEvent' : forbidden(r, extensions)) : forbidden(r, extensions);
+      if (what) found.push({ conn: r.conn, seq: r.seq, what: answer.refused ? `${what} with request ${i}'s refusal` : what, text: r.text });
+    }
+  });
+  for (const r of requests) {
+    if (attributed.has(r)) continue;
+    const what = forbidden(r, extensions);
+    if (what) found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+  }
+  const traced = requests.length > 0;
+  return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
+}
+
 /** The X event types an input request can carry: XTEST FakeInput's `type` byte, SendEvent's event code. */
 const EVENT_TYPES = { 2: 'KeyPress', 3: 'KeyRelease', 4: 'ButtonPress', 5: 'ButtonRelease', 6: 'MotionNotify', 7: 'EnterNotify', 8: 'LeaveNotify', 9: 'FocusIn', 10: 'FocusOut' };
 const SENT_EVENT = /\b(KeyPress|KeyRelease|ButtonPress|ButtonRelease|MotionNotify|EnterNotify|LeaveNotify|FocusIn|FocusOut)\((\d+)\)(?:\s+(?:keycode|button|detail)=0x([0-9a-f]+))?/;

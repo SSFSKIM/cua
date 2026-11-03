@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
-import { SCENARIOS, expectedSessions, focusTimerVerdict, insertedAt, keysOf, scenario, seriesVerdict } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, runPasses, scenario, seriesVerdict } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
 // background session's SendEvents (audit.test.mjs has the same shapes).
@@ -193,4 +193,13 @@ test("the verdict passes only when every family's lanes, audits and stops did wh
   assert.match(failing((r) => ({ ...r, stops: [stopRow('SIGTERM', true), stopRow('SIGKILL', false)] })), /chrome SIGKILL: .*the drain check is blind/);
   assert.match(failing((r) => ({ ...r, skipped: [{ family: 'gedit', why: 'no window' }], series: r.series.filter((s) => s.family !== 'gedit') })), /gedit could not be opened/);
   assert.match(focusTimerVerdict(results(), { families: [...families, 'kate'] }).failed.join('\n'), /kate was not measured/);
+});
+
+test("a run passes on its text and its answers; only a Qt paste's unconfirmed answer is excused, its text still exact", () => {
+  assert.equal(runPasses({ family: 'chrome', errors: [], exact: { a: true } }), true);
+  assert.equal(runPasses({ family: 'chrome', errors: [UNCONFIRMED], exact: { a: true } }), false, 'Chromium confirms its pastes');
+  assert.equal(runPasses({ family: 'kate', errors: [UNCONFIRMED], exact: { a: true } }), true);
+  assert.equal(runPasses({ family: 'kate', errors: [UNCONFIRMED], exact: { a: false } }), false, 'the text decides');
+  assert.equal(runPasses({ family: 'qtcreator', errors: ['requested field or selection changed before dispatch; nothing was sent'], exact: { a: true } }), false);
+  assert.equal(runPasses({ family: 'gedit', errors: [], exact: { a: true, b: false } }), false);
 });

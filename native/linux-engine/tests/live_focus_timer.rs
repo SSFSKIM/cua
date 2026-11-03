@@ -274,10 +274,13 @@ fn a_paste_waits_out_its_own_window_s_delay_and_ends_its_session_before_it_obser
         .expect("the key's FocusOut");
     assert_eq!(kinds(&seen[..=focus_out]), burst(1));
     assert!(after_last_key(&seen, focus_out) >= DELAY - SLACK);
-    // the bare window has no accessible field, so the paste itself fails; its flush came first
+    // the bare window has no accessible field, so the paste itself fails; its flush came first: the paste's answer waited
+    // out the key's delay (the probe's own read times lag arrival by up to a poll, so they cannot order it against an
+    // answer read on another thread)
+    let waited = answers[1].1 - answers[0].1;
     assert!(
-        seen[focus_out].at < answers[1].1,
-        "the FocusOut before the paste's answer"
+        waited >= DELAY - SLACK,
+        "the paste answered {waited:?} after the key: it did not wait for the key's FocusOut"
     );
 }
 
@@ -355,7 +358,8 @@ fn sigterm_inside_the_delay_drains_the_focus_out_then_exits() {
     assert_eq!(kinds(&seen), burst(10), "every key, in order, then the FocusOut");
     let focus_out = seen.len() - 1;
     assert!(after_last_key(&seen, focus_out) >= DELAY - SLACK);
-    assert!(seen[focus_out].at <= at, "the FocusOut before the exit");
+    // the engine's exit waits for the server to handle its FocusOut; the probe's read time lags arrival by up to a poll
+    assert!(seen[focus_out].at <= at + SLACK, "the FocusOut before the exit");
     assert!(
         at - stopped < DELAY * 3,
         "the drain is bounded by the delay: {:?}",

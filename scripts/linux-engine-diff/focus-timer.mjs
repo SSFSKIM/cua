@@ -39,8 +39,18 @@ import { median } from './stats.mjs';
 import { startPrivateServer } from './xtools.mjs';
 import { LIVE_RUN, assertReachable, xExecFileSync } from './xspawn.mjs';
 
-/** The families of the matrix whose background keys cua sends (GTK 4 and xterm refuse keys in shared mode). */
-export const FAMILIES = ['chrome', 'electron', 'gedit', 'kate', 'qtcreator', 'firefox', 'writer', 'writer-gen', 'gnome-terminal'];
+/**
+ * The families of the matrix whose background keys cua sends and whose text the harness reads (GTK 4 and xterm refuse
+ * keys in shared mode; Writer on `gen` exposes no text, M0.4's matrix).
+ */
+export const FAMILIES = ['chrome', 'electron', 'gedit', 'kate', 'qtcreator', 'firefox', 'writer', 'gnome-terminal'];
+/**
+ * The families where cua's paste never confirms, in every engine release (Qt 5 and 6: the text lands once and the
+ * answer is the unconfirmed sentence; the released 0.3.0 answers so too, task 56): their paste runs are judged by the
+ * text, the unconfirmed answer allowed.
+ */
+export const PASTE_UNCONFIRMED = ['kate', 'qtcreator'];
+export const UNCONFIRMED = 'Paste was sent once and could not be confirmed; read the field before retrying';
 /** The families whose control lane must show the reorder: Chromium, where M0.4 saw a sooner FocusOut cut keys. */
 export const CHROMIUM = ['chrome', 'electron'];
 /** Chromium's scene page: a field whose page spends a few milliseconds on each key (pages/keys.html). */
@@ -180,7 +190,16 @@ async function oneRun(ctx, engine, name, windows) {
   const texts = Object.fromEntries(keys.map((k) => [k, insertedAt(before[k].text, before[k].caret, expected[k], after[k].text)]));
   const errors = responses.filter((r) => r.ok !== true).map((r) => String(r.error).slice(0, 300));
   const got = Object.fromEntries(keys.map((k) => [k, typeof after[k].text === 'string' && typeof before[k].text === 'string' ? after[k].text.slice(before[k].caret ?? 0, (before[k].caret ?? 0) + after[k].text.length - before[k].text.length) : null]));
-  return { ok: errors.length === 0 && keys.every((k) => texts[k]), answered_ok: errors.length === 0, errors, expected, got, exact: texts, caret_read: keys.every((k) => before[k].caret !== null), burst_ms: Math.round(ms * 10) / 10, answered_ms: Math.round(answered * 10) / 10 };
+  return { ok: runPasses({ family: windows.a.family, errors, exact: texts }), answered_ok: errors.length === 0, errors, expected, got, exact: texts, caret_read: keys.every((k) => before[k].caret !== null), burst_ms: Math.round(ms * 10) / 10, answered_ms: Math.round(answered * 10) / 10 };
+}
+
+/**
+ * Whether a run passes: every window's text exact, and every answer a success, except, on a family whose paste never
+ * confirms (`PASTE_UNCONFIRMED`), the unconfirmed paste's own answer, its text still judged exactly.
+ */
+export function runPasses({ family, errors, exact }) {
+  const excused = (e) => PASTE_UNCONFIRMED.includes(family) && e === UNCONFIRMED;
+  return Object.values(exact).every(Boolean) && errors.every(excused);
 }
 
 /**
@@ -362,11 +381,11 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
         // fail whatever ran after them
         for (const name of SCENARIOS) results.series.push(await series(ctx, family, 'timer', name, windows));
         results.audits.push(await auditPass(ctx, family, 'timer', windows));
-        const chromium = CHROMIUM.includes(family);
-        if (chromium) for (let i = 0; i < SIGTERM_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i));
+        const cutsKeys = CHROMIUM.includes(family);
+        if (cutsKeys) for (let i = 0; i < SIGTERM_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i));
         for (const name of SCENARIOS) results.series.push(await series(ctx, family, 'control', name, windows));
         results.audits.push(await auditPass(ctx, family, 'control', windows));
-        if (chromium) for (let i = 0; i < SIGKILL_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGKILL', windows, i));
+        if (cutsKeys) for (let i = 0; i < SIGKILL_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGKILL', windows, i));
       } finally {
         await desktop.close([windows.a, windows.b]);
       }

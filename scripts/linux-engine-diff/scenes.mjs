@@ -44,6 +44,7 @@ import { parseXtrace, parseXtraceFile, startProxy } from './audit.mjs';
 import { CHROME_ENV, ChromeInstance, isChromeCommand } from './chrome.mjs';
 import { Engine, runEngines, watchOperations } from './engine.mjs';
 import { auditForeign, auditRecord, auditRecordFile, foreignKeep, foreignLine } from './foreign.mjs';
+import { geditTitle } from './gedit-title.mjs';
 import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
 import { cleanupOnStop } from './stop.mjs';
@@ -156,6 +157,26 @@ export function desktopEnding(ending) {
   };
 }
 
+/** The run's scratch directory's name, before mkdtemp's six characters: short, since gedit's titles show the path. */
+export const SCRATCH_PREFIX = 'cua171-run-';
+
+/**
+ * The longest label tail the scenes give a gedit window (`openGedit`): the minimized scene's text window of a vendor
+ * lane (run.mjs `openScene`; gedit-title.test.mjs lists every one).
+ */
+const LONGEST_GEDIT_TAIL = ['minimized', 'text_pinned'];
+
+/**
+ * Where the run's scratch directory goes (task 51; the design session's ruling, sminos 336): the harness's TMPDIR when
+ * the longest gedit title the scenes build for `run` stays whole under it, else /tmp. gedit middle-truncates a title's
+ * directory to what is left of 100 characters (gedit-title.mjs), and each lane's window is on a file of its own label,
+ * so a shortened title differs between lanes: task 49's session TMPDIR failed `gedit tree_shot` on the title alone.
+ */
+export function scratchRoot(run, tmp = tmpdir()) {
+  const longest = `${['cua171-diff', run, 'n'.repeat(8), ...LONGEST_GEDIT_TAIL].join('-')}.txt`;
+  return geditTitle(join(tmp, `${SCRATCH_PREFIX}XXXXXX`, longest)).ellipsized ? '/tmp' : tmp;
+}
+
 export class Desktop {
   /**
    * `reader`, `startActive` and `nonce`: the display-free tests' own (stop.test.mjs); a run's are the defaults. `logs`: the
@@ -164,7 +185,8 @@ export class Desktop {
    */
   constructor({ cua, run, reader, startActive, logs, nonce }) {
     this.run = run;
-    this.dir = mkdtempSync(join(tmpdir(), `cua171-diff-${run}-`));
+    // short enough that no gedit title the run compares is shortened (`scratchRoot`)
+    this.dir = mkdtempSync(join(scratchRoot(run), SCRATCH_PREFIX));
     this.logs = logs ? join(logs, 'apps') : null;
     // started at its first use, after `begin`: on a private display it then runs under the run's session bus
     this.readerBin = cua;
@@ -662,6 +684,9 @@ export class Desktop {
     return this.track(async () => {
       const label = this.label(stem, role);
       const file = join(this.dir, `${label}.txt`);
+      // every lane's window is on a file of its own label: a title gedit shortens differs between lanes (`scratchRoot`)
+      const { title, ellipsized } = geditTitle(file);
+      if (ellipsized) throw new Error(`refusing to open ${label}: gedit would shorten its title (${title}), which then differs between the lanes' windows; give the run a shorter run name (--run) or lane label`);
       writeFileSync(file, content);
       const child = this.spawnApp(label, 'gedit', ['--standalone', file]);
       // registered with its process at once: a stop or a window that never comes ends the process

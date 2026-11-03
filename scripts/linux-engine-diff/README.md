@@ -136,6 +136,11 @@ killed it.
   a stand-in that cannot start (a root value that is not a plain address, the name taken) leaves the run going and
   every Qt scene refused, with the reason (`QT_ON_PERSONS_DISPLAY`, and why the stand-in is missing). Its tests run on
   a dbus-daemon each starts itself, in ci-kit's `harness-dbus` gate on Ubuntu, where dbus is required.
+- **The run's scratch directory** (`scenes.mjs` `scratchRoot`, task 51): `cua171-run-XXXXXX`, in the harness's
+  TMPDIR when the longest gedit title the scenes build for the run's name stays whole there, else in `/tmp`. gedit
+  middle-truncates a title's directory to what is left of 100 characters (`gedit-title.mjs`), and each lane's window is
+  on a file of its own label, so a shortened title differs between lanes (task 49's `gedit tree_shot`). A gedit
+  window whose title would still be shortened, under a run name too long for it, is refused before it opens.
 - **The run's home** (`app-env.mjs`, task 45): every application the run launches, on every display, through the one
   place that builds its environment (`Desktop.appEnvironment`, which `spawnApp` and the run's Chrome take), runs with
   `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` and `XDG_STATE_HOME` under `<scratch>/home`, made by

@@ -13,7 +13,7 @@ import { startProxy } from '../../scripts/linux-engine-diff/audit.mjs';
 import { TEST_DISPLAY } from '../../scripts/linux-engine-diff/hermetic.mjs';
 import { startPrivateServer } from '../../scripts/linux-engine-diff/xtools.mjs';
 import { DisplayRefused, LIVE_RUN, assertReachable, declareLiveRun, displaySockets, displaysReached, guard, isCreatedDisplay, isLiveRun, localDisplay, registerDisplay } from '../../scripts/linux-engine-diff/xspawn.mjs';
-import { harnessStarts, processStarts } from './source-scan.mjs';
+import { enclosingText, envWrites, harnessModules, harnessStarts, processStarts } from './source-scan.mjs';
 
 const refused = (display, args = []) => {
   try {
@@ -193,4 +193,82 @@ test('the source check sees an old-code start of an X tool, plain, aliased or by
   }
   const guarded = "import { guard, xSpawn } from './xspawn.mjs';\nxSpawn('xprop', []);\nconst go = (launch) => guard(launch)('xtrace', ['-d', d]);\n";
   assert.deepEqual(processStarts({ file: 'new.mjs', text: guarded }).map(({ command, guarded: g }) => [command, g]), [["'xprop'", true], ["'xtrace'", true]]);
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// the source: no handoff through the process's environment goes around the spawner's check (task 48, from task 47's
+// re-review: the vendor-JavaScript lane installed DISPLAY into process.env and OpenAI's client started the engine with it)
+
+/** The writes into the process's environment that hand no display on, each with why: any other needs the check. */
+const ENV_WRITES = {
+  'hermetic.mjs DISPLAY': "a test's DISPLAY becomes the hermetic name, which no X library parses",
+  'xspawn.mjs [LIVE_RUN]': "the live run's declaration, the spawner's own variable",
+  'scenes.mjs DBUS_SESSION_BUS_ADDRESS': "a private display's run's session bus",
+  'scenes.mjs AT_SPI_BUS_ADDRESS': "a private display's run's accessibility bus",
+  'scenes.mjs [name]': "the session's bus variables (SESSION_ENV) put back as they were found",
+  'services.mjs OAI_SKY_LINUX_BIN': "the two-services instrument's engine path, in a declared live run",
+  'wire-check.mjs OAI_SKY_LINUX_BIN': "the wire check's stub engine (stub-replay.mjs), which reaches no display",
+  'wire-check.mjs LINUX_ENGINE_DIFF_REPLAY': "the stub engine's replay file",
+  'wire-check.mjs LINUX_ENGINE_DIFF_REPLAY_LOG': "the stub engine's request log",
+};
+
+test("every write into the process's environment is a known one that hands on no display, or sits behind the reachability check", () => {
+  const writes = harnessModules().flatMap(envWrites);
+  assert.ok(writes.some((w) => w.file === 'hermetic.mjs' && w.key === 'DISPLAY'), 'the walk sees writes');
+  const unknown = writes.filter((w) => !w.checked && !ENV_WRITES[`${w.file} ${w.key}`]);
+  assert.deepEqual(unknown.map(({ file, line, key }) => `${file}:${line}: process.env ${key}`), [], 'a handoff through process.env outside the spawner\'s check');
+  // the lane that hands its environment to OpenAI's client: every write of it behind the check
+  const lane = writes.filter((w) => w.file === 'vendor-js.mjs');
+  assert.ok(lane.length >= 2 && lane.every((w) => w.checked && w.key === '[k]'), JSON.stringify(lane));
+  // what the listed dynamic writes can write: the bus variables and the live run's mark, never a display's
+  const scenes = readFileSync(join(import.meta.dirname, '../../scripts/linux-engine-diff/scenes.mjs'), 'utf8');
+  assert.equal(scenes.match(/^const SESSION_ENV = (\[.*\]);$/m)?.[1], "['DBUS_SESSION_BUS_ADDRESS', 'AT_SPI_BUS_ADDRESS']");
+  assert.equal(LIVE_RUN, 'CUA171_LIVE_RUN');
+});
+
+test("the source check sees an old-code handoff through the environment, and a checked one", () => {
+  // the vendor-JavaScript lane as it was before task 48
+  const old = `export class VendorJsEngine {
+  async withEnv(fn) {
+    const saved = {};
+    const overrides = { ...(this.env ?? {}), OAI_SKY_LINUX_BIN: this.link };
+    for (const [k, v] of Object.entries(overrides)) {
+      saved[k] = process.env[k];
+      process.env[k] = v;
+    }
+    return fn();
+  }
+}
+`;
+  assert.deepEqual(envWrites({ file: 'old.mjs', text: old }).map(({ key, checked }) => [key, checked]), [['[k]', false]]);
+  const others = "function a(d) {\n  process.env.DISPLAY = d;\n}\nconst b = (e) => {\n  Object.assign(process.env, e);\n};\nprocess.env = {};\nif (process.env.DISPLAY === ':0') x();\n";
+  assert.deepEqual(envWrites({ file: 'old.mjs', text: others }).map(({ key, checked }) => [key, checked]), [['DISPLAY', false], ['*', false], ['*', false]]);
+  const checked = "class E {\n  async withEnv(fn) {\n    this.assertReachable();\n    for (const [k, v] of list) {\n      if (v) {\n        process.env[k] = v;\n      }\n    }\n  }\n}\n";
+  assert.deepEqual(envWrites({ file: 'new.mjs', text: checked }).map(({ key, checked: c }) => [key, c]), [['[k]', true]]);
+  // a block that is no function does not end the reading: the check above it still counts, and one below never does
+  assert.match(enclosingText(checked, checked.indexOf('process.env')), /^ {2}async withEnv/);
+  const late = "function c(v) {\n  process.env[k] = v;\n  assertReachable('x', [], process.env);\n}\n";
+  assert.deepEqual(envWrites({ file: 'late.mjs', text: late }).map((w) => w.checked), [false]);
+});
+
+/** Where the harness hands an engine start to code of another's, which spawns with the process's environment. */
+const HANDOFFS = /\bloadVendorClient\s*\(|\bcreateService\s*\(|sky_js\/src\/service\.js/g;
+
+/** The handoffs that reach no display of a person's by construction, each with why. */
+const KNOWN_HANDOFFS = {
+  'wire-check.mjs': "the wire check's client starts only the stub engine (stub-replay.mjs), which reaches no display",
+};
+
+test("every handoff of an engine start to OpenAI's client or a service sits behind the reachability check, in a declared live run, or is the wire check's stub", () => {
+  const sites = [];
+  for (const { file, text } of harnessModules()) {
+    const live = /^declareLiveRun\(/m.test(text);
+    for (const m of text.matchAll(HANDOFFS)) {
+      if (/function\s+$/.test(text.slice(Math.max(0, m.index - 12), m.index))) continue;
+      const checked = /\bassertReachable\s*\(/.test(enclosingText(text, m.index));
+      sites.push({ file, line: text.slice(0, m.index).split('\n').length, ok: checked || live || Boolean(KNOWN_HANDOFFS[file]), checked });
+    }
+  }
+  assert.ok(sites.some((s) => s.file === 'vendor-js.mjs' && s.checked), 'the vendor-JavaScript lane loads its client behind the check');
+  assert.deepEqual(sites.filter((s) => !s.ok).map(({ file, line }) => `${file}:${line}`), [], 'a handoff to code that starts an engine, outside the check');
 });

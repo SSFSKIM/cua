@@ -344,7 +344,11 @@ variants included; their evidence is written either way. The run's `end` row kee
     (`xspawn.mjs`, task 47), which refuses a display the run did not create (a private server it started, or a trace
     proxy in front of one) unless the process is a declared live run (`declareLiveRun`, made by the CLI,
     `services.mjs` and `scripts/accept/linux-device-mode.mjs`, never honored in a test); the hermetic names
-    (`:cua171-…`) reach no display and pass. The harness's suite runs as `npm run
+    (`:cua171-…`) reach no display and pass. A start the harness hands to code of another's, which starts the
+    engine with the process's environment (`--via vendor-js`: OpenAI's client), is checked the same way before the
+    client is loaded, made or called, on that environment with the lane's variables over it (`VendorJsEngine`, task
+    48); a source test fails any other write into `process.env` that is not listed as handing on no display, or behind
+    the check. The harness's suite runs as `npm run
     test:linux-engine-diff`, through a wrapper (`test/linux-engine-diff/suite-check.mjs`, task 45; a wrapper since task
     47, so it runs on the whole declared Node range, and ci-kit's `test` gate runs it) that gives the suite a
     temporary directory of its own and fails it, naming each, on any process it started that still names a run's

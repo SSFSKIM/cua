@@ -108,3 +108,51 @@ export function processStarts({ file, text }) {
 
 /** Every process start of the harness's modules. */
 export const harnessStarts = (modules = harnessModules()) => modules.flatMap(processStarts);
+
+/**
+ * The text of the function enclosing `index`, up to it: from the nearest line above that is less indented than the
+ * line at `index` and opens a function or method (`function`, an arrow with a block, or `name(…) {`), or from the
+ * module's start when there is none. A source reading, not a parse: it relies on the harness's formatting (one statement
+ * a line, prettier's indentation).
+ */
+export function enclosingText(text, index) {
+  const lines = text.slice(0, index).split('\n');
+  const indent = (line) => line.match(/^\s*/)[0].length;
+  const at = indent(lines.at(-1));
+  for (let i = lines.length - 2; i >= 0; i--) {
+    const line = lines[i];
+    if (line.trim() === '' || indent(line) >= at) continue;
+    if (/\bfunction\b|=>\s*\{\s*$|^\s*(?:static\s+)?(?:async\s+)?(?!(?:if|for|while|switch|catch|with)\b)[\w$]+\s*\([^)]*\)\s*\{\s*$/.test(line)) return lines.slice(i).join('\n');
+  }
+  return text.slice(0, index);
+}
+
+/**
+ * A module's writes into the process's environment, `{file, line, key, checked}`: an assignment to `process.env.NAME`
+ * (`key` NAME) or to `process.env[expr]` (`key` `[expr]`), an `Object.assign(process.env, …)` or a `process.env = …`
+ * (`key` `*`). Each is a handoff to whatever the process starts next, a launcher of another's included (OpenAI's client
+ * starts its engine with process.env), which the spawner's check of a start never sees. `checked`: the enclosing
+ * function calls a reachability check (`assertReachable(`, the spawner's own or a method of that name) before the write.
+ */
+export function envWrites({ file, text }) {
+  const code = blankStrings(text);
+  const writes = [];
+  const lineOf = (index) => text.slice(0, index).split('\n').length;
+  const push = (index, key) => writes.push({ file, line: lineOf(index), key, checked: /\bassertReachable\s*\(/.test(enclosingText(code, index)) });
+  for (const m of code.matchAll(/(?<![\w.$])process\.env\.([A-Za-z_$][\w$]*)\s*=(?!=)/g)) push(m.index, m[1]);
+  for (const m of code.matchAll(/(?<![\w.$])process\.env\s*\[/g)) {
+    const open = m.index + m[0].length;
+    let depth = 0;
+    let end = open;
+    for (; end < code.length; end++) {
+      if (code[end] === '[') depth++;
+      else if (code[end] === ']') {
+        if (depth === 0) break;
+        depth--;
+      }
+    }
+    if (/^\]\s*=(?!=)/.test(code.slice(end))) push(m.index, `[${text.slice(open, end).trim()}]`);
+  }
+  for (const m of code.matchAll(/Object\.assign\s*\(\s*process\.env\b|(?<![\w.$])process\.env\s*=(?!=)/g)) push(m.index, '*');
+  return writes;
+}

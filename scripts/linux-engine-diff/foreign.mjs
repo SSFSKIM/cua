@@ -26,7 +26,9 @@
 // had. One exemption: the selection owner's answer (ICCCM), paired with the SelectionRequest our connection received
 // and written by that connection: the property the request named, written while the request is served (an INCR
 // transfer's announcement and every chunk up to its zero-length end), and the SelectionNotify for the request's
-// selection and target that completes it.
+// selection and target that completes it, sent to the requestor itself. The pairing ends with the connection's life
+// (its death, or another client under its id or its resource-id base) and the requestor window's (its end, or a new
+// window under its id), so a successor of either inherits nothing (task 44).
 
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -74,7 +76,13 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
   const endedAt = new Map();
   // the ids the stream saw created
   const created = new Set();
+  // the selection requests our connections received and have not finished answering (`serveSelection`)
   const open = new Map();
+  const revoke = (ended) => {
+    for (const [key, grant] of open) if (ended(grant)) open.delete(key);
+  };
+  // each connection's resource-id base, as xtrace showed it at its setup
+  const bases = new Map();
   const foreign = [];
   let requests = 0;
   let mutating = 0;
@@ -99,6 +107,8 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     children.get(parent).add(w);
   };
   const born = (el, extra) => {
+    // a new life under the id: whatever the old one was asked to receive, the new one never was
+    revoke((g) => g.requestor === el.window);
     const old = lives.get(el.window);
     const life = { n: (old?.n ?? -1) + 1, born: true, bornMs: el.ms ?? null, alive: true, creator: el.c, first: !created.has(el.window), after: endedAt.get(el.window) ?? -Infinity, ...extra };
     created.add(el.window);
@@ -123,6 +133,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     const life = lifeOf(w);
     life.alive = false;
     endedAt.set(w, clock);
+    revoke((g) => g.requestor === w);
     if (life.parent !== undefined) children.get(life.parent)?.delete(w);
     if (depth < 64) for (const c of [...(children.get(w) ?? [])]) end(c, depth + 1);
     children.delete(w);
@@ -160,15 +171,22 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
   for (const el of elements) {
     if (el.k === 'client') {
       clients.set(el.c, { ours: el.ours, name: el.name ?? null });
+      // a client under this id now (the record's id is its resource-id base): a predecessor's grants are not its
+      revoke((g) => g.c === el.c);
       continue;
     }
     if (el.k === 'died') {
+      revoke((g) => g.c === el.c);
       for (const [w, life] of lives) if (life.alive && life.creator === el.c) end(w);
       continue;
     }
     if (el.k === 'base') {
       // a resource-id base handed to a new connection: the client that had it is gone, and its windows with it
-      for (const [w, life] of lives) if (life.alive && life.creator !== undefined && life.creator !== el.c && (w & ~el.mask) === el.base) end(w);
+      const inBase = (id) => typeof id === 'number' && (id & ~el.mask) === el.base;
+      for (const [w, life] of lives) if (life.alive && life.creator !== undefined && life.creator !== el.c && inBase(w)) end(w);
+      // and whatever it was asked for: a grant of a connection that had the base, or to a window of that client's
+      revoke((g) => g.c === el.c || (bases.get(g.c) === el.base && g.c !== el.c) || inBase(g.requestor));
+      bases.set(el.c, el.base);
       continue;
     }
     if (el.k === 'destroyed') {
@@ -176,8 +194,9 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
       continue;
     }
     if (el.k === 'selreq') {
-      // a SelectionRequest the connection `c` received: its answer is that connection's to write
-      open.set(`${el.c}|${el.requestor}|${el.property}`, { selection: el.selection, target: el.target, incr: false });
+      // a SelectionRequest the connection `c` received: its answer is that connection's to write, to that window,
+      // while both are the ones that were there (a grant ends with the connection's life and the window's)
+      open.set(`${el.c}|${el.requestor}|${el.property}`, { c: el.c, requestor: el.requestor, selection: el.selection, target: el.target, incr: false });
       continue;
     }
     if (el.k === 'parent') {
@@ -338,7 +357,12 @@ export function changeOf(el, root) {
     case 'ReparentWindow':
       return { what: op, windows: [el.window, el.parent] };
     case 'SendEvent': {
-      if (el.event === 'SelectionNotify') return { what: 'SendEvent SelectionNotify', windows: [el.destination], selection: { requestor: el.requestor ?? el.destination, property: el.property ?? 0, notify: true, selection: el.selection, target: el.target } };
+      if (el.event === 'SelectionNotify') {
+        const requestor = el.requestor ?? el.destination;
+        // an answer goes to the requestor it answers; a notify sent anywhere else is judged as any SendEvent is
+        if (el.destination !== requestor) return { what: 'SendEvent SelectionNotify', windows: [el.destination] };
+        return { what: 'SendEvent SelectionNotify', windows: [el.destination], selection: { requestor, property: el.property ?? 0, notify: true, selection: el.selection, target: el.target } };
+      }
       // the root is the desktop's own channel: a message to the window manager names no window of the root's
       const windows = el.destination === root ? [] : [el.destination];
       if (el.event === 'ClientMessage') {

@@ -434,6 +434,53 @@ test('the record: no exemption without the request, after its transfer ended, fo
   assert.deepEqual(windowsOf(raudit([...PASTE, selreq({ client: CHROME }), answer(20), notify(21)])), [GEDIT, GEDIT]);
 });
 
+// The exemption answers the requestor itself, and only while the connection that received the request and the window
+// that asked are the ones that were there (task 44): a SelectionNotify judged by the window it goes to, and the grant
+// ended with the connection's life and the window's.
+
+test('the record: a SelectionNotify naming the requestor but sent to another window is judged as any SendEvent', () => {
+  const OTHER = 0x600060;
+  const base = [...PASTE, req(CHROME, 4, 'CreateWindow', { window: OTHER, parent: ROOT }), selreq(), answer(20)];
+  assert.deepEqual(raudit([...base, notify(21, { destination: OTHER })]).foreign.map((f) => [f.what, f.window]), [['SendEvent SelectionNotify', OTHER]]);
+  // the control: the same notify to the requestor is the answer
+  assert.equal(raudit([...base, notify(21)]).clean, true);
+});
+
+test("the record: the grant ends with the answering connection's life: a successor under its id inherits nothing", () => {
+  const died = rec('died', { client: OWNER });
+  // the owner died; a later client under its resource-id base writes the property the dead one was asked for
+  assert.deepEqual(windowsOf(raudit([...PASTE, selreq(), died, client(OWNER, true, 'xprobe'), answer(20), notify(21)])), [GEDIT, GEDIT]);
+  // its death alone ends it
+  assert.deepEqual(windowsOf(raudit([...PASTE, selreq(), died, answer(20)])), [GEDIT]);
+  // a new client under the id, its predecessor's death unrecorded (the record drops under lag)
+  assert.deepEqual(windowsOf(raudit([...PASTE, selreq(), client(OWNER, true, 'cua-engine'), answer(20)])), [GEDIT]);
+  // the control: the same connection, alive
+  assert.equal(raudit([...PASTE, selreq(), answer(20), notify(21)]).clean, true);
+});
+
+test("the record: the grant ends with the requestor window's life: a window under its id later inherits nothing", () => {
+  // destroyed: a write to its id is no answer any more
+  assert.deepEqual(windowsOf(raudit([...PASTE, selreq(), rec('destroyed', { window: GEDIT }), answer(20)])), [GEDIT]);
+  // its client gone and its base handed to another, which makes a window under the id
+  const successor = [rec('died', { client: GEDIT_CLIENT }), client(GEDIT_CLIENT, false, 'evince'), req(GEDIT_CLIENT, 2, 'CreateWindow', { window: GEDIT, parent: ROOT })];
+  assert.deepEqual(windowsOf(raudit([...PASTE, selreq(), ...successor, answer(20), notify(21)])), [GEDIT, GEDIT]);
+  // a new creation under the id, the end of the old one unseen
+  assert.deepEqual(windowsOf(raudit([...PASTE, selreq(), req(GEDIT_CLIENT, 9, 'CreateWindow', { window: GEDIT, parent: ROOT }), answer(20)])), [GEDIT]);
+});
+
+test("xtrace: a SelectionNotify sent elsewhere than its requestor, and a grant past the requestor's end, are judged", () => {
+  const OTHER = 0x600044;
+  const request = `000:>:0003: Event SelectionRequest(30) time=CurrentTime(0x00000000) owner=${hex(MINE)} requestor=${hex(PERSON)} selection=0xe6("CLIPBOARD") target=0x1f1("UTF8_STRING") property=0x1f0("CUA_SEL")`;
+  const write = `000:<:0004: 24: Request(18): ChangeProperty mode=Replace(0x00) window=${hex(PERSON)} property=0x1f0("CUA_SEL") type=0x1f1("UTF8_STRING") data='x'`;
+  const notifyTo = (w) => `000:<:0005: 44: Request(25): SendEvent propagate=false(0x00) destination=${hex(w)} event-mask=0 SelectionNotify(31) time=CurrentTime(0x00000000) requestor=${hex(PERSON)} selection=0xe6("CLIPBOARD") target=0x1f1("UTF8_STRING") property=0x1f0("CUA_SEL")`;
+  assert.deepEqual(windowsOf(xaudit([request, write, notifyTo(OTHER)])), [OTHER]);
+  assert.equal(xaudit([request, write, notifyTo(PERSON)]).clean, true, 'the control');
+  // the requestor's DestroyNotify, received by our connection, ends the grant
+  assert.deepEqual(windowsOf(xaudit([request, `000:>:0003: Event DestroyNotify(17) event=${hex(PERSON)} window=${hex(PERSON)}`, write])), [PERSON]);
+  // the requestor's resource-id base handed to a new connection of ours: its client, and its window, are gone
+  assert.deepEqual(windowsOf(xaudit([request, "001:>: Success, version is 11:0 vendor='The X.Org Foundation' release=12101011 resource-id=0x00600000 resource-mask=0x001fffff motion-buffer-size=256", write])), [PERSON]);
+});
+
 test("the record: an error on the record's own stream of errors refuses the request it answers, by the server's time", () => {
   // errors come on a second context, so an error may be read after later requests of its client: it refuses the latest
   // recorded request of that client with its 16 bits and opcode at or before its time, not the latest one read

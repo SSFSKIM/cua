@@ -1,0 +1,8 @@
+owner pid=2546101 start=51157914 :0 count=1 digest=5afa07ffbf55
+tmproot /tmp/cua171-task49-p878C4
+wrap exit 1; tmproot left: []
+owner side DIFFERS:
+32c32
+< mtime ~/.config/google-chrome 1793693780.984924186
+---
+> mtime ~/.config/google-chrome 1793695580.988237836

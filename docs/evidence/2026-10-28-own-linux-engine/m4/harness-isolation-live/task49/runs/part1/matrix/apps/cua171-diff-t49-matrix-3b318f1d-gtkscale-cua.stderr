@@ -1,0 +1,12 @@
+
+** (gtk-scale.py:2931780): CRITICAL **: 01:04:55.218: impl_get_CharacterCount: assertion 'ATK_IS_TEXT (user_data)' failed
+
+** (gtk-scale.py:2931780): CRITICAL **: 01:04:55.218: impl_get_CaretOffset: assertion 'ATK_IS_TEXT (user_data)' failed
+
+** (gtk-scale.py:2931780): CRITICAL **: 01:04:55.218: impl_GetNSelections: assertion 'ATK_IS_TEXT (user_data)' failed
+
+** (gtk-scale.py:2931780): CRITICAL **: 01:04:55.223: impl_get_CharacterCount: assertion 'ATK_IS_TEXT (user_data)' failed
+
+** (gtk-scale.py:2931780): CRITICAL **: 01:04:55.223: impl_get_CaretOffset: assertion 'ATK_IS_TEXT (user_data)' failed
+
+** (gtk-scale.py:2931780): CRITICAL **: 01:04:55.223: impl_GetNSelections: assertion 'ATK_IS_TEXT (user_data)' failed

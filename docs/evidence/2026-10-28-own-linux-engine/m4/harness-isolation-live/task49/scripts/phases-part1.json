@@ -1,0 +1,73 @@
+[
+ {
+  "name": "run-chrome",
+  "kind": "cli",
+  "entry": "norecord",
+  "expect": "any",
+  "args": [
+   "--dev",
+   "--vendor",
+   "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+   "--newest",
+   "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+   "--cua",
+   "/Users/new/.local/share/cua-171/task42/engine/cua-engine",
+   "--scene",
+   "chrome,chrome-textarea,identity",
+   "--ops",
+   "all",
+   "--blocks",
+   "1",
+   "--samples-tree",
+   "3",
+   "--samples-input",
+   "2",
+   "--run",
+   "t49-chrome"
+  ]
+ },
+ {
+  "name": "matrix",
+  "kind": "cli",
+  "entry": "norecord",
+  "expect": "any",
+  "args": [
+   "--experiment",
+   "matrix",
+   "--vendor",
+   "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+   "--newest",
+   "/Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+   "--cua",
+   "/Users/new/.local/share/cua-171/task42/engine/cua-engine",
+   "--samples-input",
+   "1",
+   "--samples-text",
+   "1",
+   "--run",
+   "t49-matrix"
+  ]
+ },
+ {
+  "name": "qt-bridge",
+  "kind": "cli",
+  "entry": "norecord",
+  "expect": "any",
+  "args": [
+   "--experiment",
+   "qt-bridge",
+   "--vendor",
+   "/Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64",
+   "--cua",
+   "/Users/new/.local/share/cua-171/task42/engine/cua-engine",
+   "--run",
+   "t49-qtbridge"
+  ]
+ },
+ {
+  "name": "appbus",
+  "kind": "driver",
+  "script": "appbus.mjs",
+  "expect": "any"
+ }
+]

@@ -168,3 +168,8 @@ Node counts equal M0.4's and T5's reads on `:0` for every family but the two Qt 
     - `startProxy`'s failure path removes its directory.
 - **`sigterm-1` ran with relative decoy paths** (fixed for every later run). It and `sigterm-2` were runs of the
   tooling; `families-1` and `qt6-1` are the evidence.
+
+## Part 2: task 49, with Chrome
+
+Task 49 (2026-11-03) ran the rest of this check, with the run's own Chrome, Electron and every family through the
+harness itself, on 297f8c20: `task49/README.md`. Its record-judge acceptance is `../record-judge-acceptance/`.

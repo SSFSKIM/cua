@@ -1,0 +1,12 @@
+file:///Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff/xspawn.mjs:113
+    if (why) throw new DisplayRefused(`refusing to start ${basename(String(cmd))} on the X display ${display || '(none)'}: ${why}. A hermetic run reaches only the displays it started (xspawn.mjs)`);
+                   ^
+
+DisplayRefused [Error]: refusing to start Xvfb on the X display (none): DISPLAY is unset, and a tool may then take a default display. A hermetic run reaches only the displays it started (xspawn.mjs)
+    at assertReachable (file:///Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff/xspawn.mjs:113:20)
+    at file:///Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff/xspawn.mjs:120:5
+    at startPrivateServer (file:///Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff/xtools.mjs:322:17)
+    at file:///Users/new/.local/share/cua-171/task49/scripts/session.mjs:84:22
+
+Node.js v24.22.1
+{"exit": 1, "samples": 30, "maps_samples": 11, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 1, "browsers": 0}

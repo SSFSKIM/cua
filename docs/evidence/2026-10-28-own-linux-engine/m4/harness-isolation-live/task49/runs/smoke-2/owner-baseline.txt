@@ -1,0 +1,4 @@
+owner pid=2546101 start=51157914 :0 count=1 digest=5afa07ffbf55
+tmproot /tmp/cua171-task49-wINluY
+wrap exit 0; tmproot left: []
+owner side: no difference

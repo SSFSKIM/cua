@@ -13,13 +13,15 @@
 // - no AT_SPI_BUS_ADDRESS (task 46's live check): an application finds its accessibility bus through the display's
 //   `AT_SPI_BUS` and the session bus's launcher, which on a private display both name the run's own, so an inherited
 //   value, the person's, can never reach it; and with the variable set Qt 6 (6.4) registers no tree at all, where with
-//   it unset qt6-input and qtcreator registered on the run's bus. A family that needs it names it in its own `env`;
+//   it unset qt6-input and qtcreator registered on the run's bus;
 // - on a display a person uses, GSETTINGS_BACKEND=memory: a GSettings write there goes through the person's session
 //   bus to their dconf service, which writes the person's database whatever HOME the application has; in memory, a
 //   setting lives and dies with the application;
 // - no SESSION_MANAGER: an application that registers with the person's session manager joins the person's session;
 // - a family a separate HOME breaks may keep the harness's HOME and take the run's XDG directories alone (`home:
-//   'xdg'`); what it still writes under that HOME is then its family's to state (families.mjs).
+//   'xdg'`); what it still writes under that HOME is then its family's to state (families.mjs);
+// - a family's own variables never name what the run decides (`PROTECTED_VARS`): such a family is refused at its launch,
+//   by name, rather than quietly overridden, so a family that would need one shows (task 45's review).
 // Engines are not applications: they keep the harness's own environment (engine.mjs).
 
 import { isAbsolute, join, relative, sep } from 'node:path';
@@ -35,6 +37,22 @@ export const KEPT_VARS = ['DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESS
  * right one), and the person's session manager.
  */
 export const DROPPED_VARS = ['AT_SPI_BUS_ADDRESS', 'SESSION_MANAGER'];
+
+/**
+ * What the run decides for every application, and why: a family's own variables (`extra`) never name one, not even with
+ * the run's own value, or an extra could undo the isolation (task 45's review: an AT_SPI_BUS_ADDRESS, a SESSION_MANAGER or
+ * GSETTINGS_BACKEND=dconf in a family's `env` would have reached the person's accessibility bus, session or settings).
+ * The homes are not here: a family may place them, inside the scratch, and the check after the merge holds them there.
+ */
+export const PROTECTED_VARS = {
+  DISPLAY: 'the display the harness reaches, handed on unchanged',
+  XAUTHORITY: "the display's authority, handed on unchanged",
+  XDG_RUNTIME_DIR: 'the runtime directory, handed on unchanged',
+  DBUS_SESSION_BUS_ADDRESS: 'the session bus the harness hands on',
+  AT_SPI_BUS_ADDRESS: "never named: the display's AT_SPI_BUS names the run's accessibility bus",
+  SESSION_MANAGER: "never named: an application that registers with it joins the person's session",
+  GSETTINGS_BACKEND: "the run's choice: in memory on a display a person uses",
+};
 
 /** The run's home under its scratch directory, and the XDG base directories inside it, as their defaults lie. */
 export function runHome(scratch) {
@@ -59,10 +77,10 @@ const inside = (dir, path) => {
  * home in `scratch` (`home: 'run'`), or only its XDG directories there (`home: 'xdg'`), the display and the session bus
  * handed on unchanged, no accessibility bus or session manager named (`DROPPED_VARS`), and GSETTINGS_BACKEND=memory unless `privateDisplay` (a display the harness started and marked; anything
  * else counts as a person's), or as `settings` says (`'memory'`, or `'inherit'`: the harness's own backend). `extra`: the application's own variables (its toolkit's switches, a directory of its scene
- * inside the scratch), applied last. Throws when `extra` would place a file outside the scratch or change a variable
- * that is handed on.
+ * inside the scratch), applied last. Throws, naming `app` (the family or the scene) and the variable, when `extra` names
+ * a variable the run decides (`PROTECTED_VARS`), set or removed, or would place a file outside the scratch.
  */
-export function launchEnvironment({ scratch, base = process.env, privateDisplay = false, home = 'run', settings = privateDisplay ? 'inherit' : 'memory', extra = {} }) {
+export function launchEnvironment({ scratch, base = process.env, privateDisplay = false, home = 'run', settings = privateDisplay ? 'inherit' : 'memory', app = 'an application', extra = {} }) {
   if (!scratch || !isAbsolute(scratch)) throw new Error("an application's environment needs the run's scratch directory, as an absolute path");
   if (!['run', 'xdg'].includes(home)) throw new Error(`unknown home ${home}: 'run' or 'xdg'`);
   if (!['memory', 'inherit'].includes(settings)) throw new Error(`unknown settings ${settings}: 'memory' or 'inherit'`);
@@ -77,7 +95,7 @@ export function launchEnvironment({ scratch, base = process.env, privateDisplay 
   if (settings === 'memory') env.GSETTINGS_BACKEND = 'memory';
   for (const name of DROPPED_VARS) delete env[name];
   for (const [name, value] of Object.entries(extra)) {
-    if (KEPT_VARS.includes(name) && value !== env[name]) throw new Error(`an application's ${name} is the harness's, handed on unchanged: ${name}=${value} is refused`);
+    if (Object.hasOwn(PROTECTED_VARS, name)) throw new Error(`refusing to start ${app}: its own environment sets ${name}${value === undefined ? ' (removing it)' : `=${value}`}, which the run decides for every application (${PROTECTED_VARS[name]}), so no family can undo it`);
     if (value === undefined) delete env[name];
     else env[name] = String(value);
   }

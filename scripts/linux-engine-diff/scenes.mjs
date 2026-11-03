@@ -483,12 +483,12 @@ export class Desktop {
    * failure (#268). stdin and stdout are discarded; without a log directory, everything is, as before. Never Chrome:
    * Chrome starts only as the run's own instance (`openChrome`, chrome.mjs). Its environment is the run's
    * (`appEnvironment`): `env` holds only the application's own variables, and `home: 'xdg'` keeps the harness's HOME
-   * for a family a separate HOME breaks.
+   * for a family a separate HOME breaks. `app`: the family a refusal names (the label when none is given).
    */
-  spawnApp(label, cmd, args, { stdout = 'ignore', env: extra = {}, home = 'run', ...options } = {}) {
+  spawnApp(label, cmd, args, { stdout = 'ignore', env: extra = {}, home = 'run', app = label, ...options } = {}) {
     if (isChromeCommand(cmd)) throw new Error(`refusing to start ${cmd} as a scene application: Chrome starts only as the run's own instance, on the run's profile (chrome.mjs), so it never hands a window to, starts on, or takes over a person's Chrome or profile`);
     // built before anything is opened: an environment it refuses starts nothing
-    const env = this.appEnvironment(extra, { home });
+    const env = this.appEnvironment(extra, { home, app });
     let fd = null;
     if (this.logs) {
       mkdirSync(this.logs, { recursive: true });
@@ -510,12 +510,13 @@ export class Desktop {
    * the run's home, made here at its first use, under the run's scratch directory, which goes at the run's end; the
    * display and buses as the harness has them now (a private display's session sets the buses, `useSession`); settings
    * in memory unless the display is a private one (`settings: 'memory'` for the run's own session bus, whose launcher
-   * keeps the run's accessibility switch). `extra`: the application's own variables.
+   * keeps the run's accessibility switch). `extra`: the application's own variables, never one the run decides (`app`
+   * names it in the refusal).
    */
-  appEnvironment(extra = {}, { home = 'run', settings } = {}) {
+  appEnvironment(extra = {}, { home = 'run', settings, app } = {}) {
     const homes = runHome(this.dir);
     for (const name of HOME_VARS) mkdirSync(homes[name], { recursive: true, mode: 0o700 });
-    return launchEnvironment({ scratch: this.dir, base: process.env, privateDisplay: this.isPrivate === true, home, ...(settings ? { settings } : {}), extra });
+    return launchEnvironment({ scratch: this.dir, base: process.env, privateDisplay: this.isPrivate === true, home, ...(settings ? { settings } : {}), ...(app ? { app } : {}), extra });
   }
 
   /**

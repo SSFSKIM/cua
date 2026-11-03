@@ -415,7 +415,7 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
     const own = { ...(spec.env ?? {}), ...env };
     // a Qt family puts no tree on the bus with the session's switches off, and on a person's display they stay as found
     if (family.qt && bridge) desktop.assertQtBridge(label, own);
-    const child = desktop.spawnApp(label, spec.cmd, spec.args, { env: own, home: family.home ?? 'run' });
+    const child = desktop.spawnApp(label, spec.cmd, spec.args, { env: own, home: family.home ?? 'run', app: name });
     scene = { kind: 'family', family: name, kindOf: family.kind, role, label, pid: child.pid, group: true, record: spec.record ?? null, pidfile: spec.pidfile ?? null, dir: ctx.dir, pixels: Boolean(family.pixels) };
     desktop.windows.push(scene);
     const match = spec.byPid ? byPid(child.pid) : spec.match;

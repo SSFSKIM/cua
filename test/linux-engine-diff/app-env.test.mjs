@@ -90,11 +90,54 @@ test("an application's own variables apply last, but never place a file outside 
   assert.throws(() => launchEnvironment({ scratch, base: PERSON, extra: { XDG_CONFIG_HOME: '/tmp/cua171-diff-r-x/../elsewhere' } }), /XDG_CONFIG_HOME lies under/);
   assert.throws(() => launchEnvironment({ scratch, base: PERSON, extra: { XDG_CACHE_HOME: scratch } }), /XDG_CACHE_HOME lies under/);
   assert.throws(() => launchEnvironment({ scratch, base: PERSON, extra: { XDG_STATE_HOME: undefined } }), /XDG_STATE_HOME lies under/);
-  assert.throws(() => launchEnvironment({ scratch, base: PERSON, extra: { DISPLAY: ':1' } }), /DISPLAY is the harness's, handed on unchanged/);
-  assert.throws(() => launchEnvironment({ scratch, base: PERSON, extra: { DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' } }), /handed on unchanged/);
-  // a family that needs the accessibility bus named sets it itself, and says why (none does)
-  assert.equal(launchEnvironment({ scratch, base: PERSON, extra: { AT_SPI_BUS_ADDRESS: 'unix:path=/a11y' } }).AT_SPI_BUS_ADDRESS, 'unix:path=/a11y');
   assert.throws(() => launchEnvironment({ scratch: 'relative', base: PERSON }), /absolute path/);
+});
+
+// Task 45's review: a family's own variables were applied after the isolation and unrestricted, so an extra could hand an
+// application the person's accessibility bus or session manager back, or GSettings' dconf on the person's display. The
+// design session's ruling: such an extra fails the launch, naming the family and the variable.
+const PROTECTED = {
+  AT_SPI_BUS_ADDRESS: 'unix:path=/run/user/501/at-spi/bus_0',
+  SESSION_MANAGER: PERSON.SESSION_MANAGER,
+  GSETTINGS_BACKEND: 'dconf',
+  DBUS_SESSION_BUS_ADDRESS: PERSON.DBUS_SESSION_BUS_ADDRESS,
+  DISPLAY: ':1',
+  XAUTHORITY: '/home/person/.Xauthority',
+  XDG_RUNTIME_DIR: '/run/user/501',
+};
+
+for (const privateDisplay of [false, true]) {
+  test(`a family's own variable that sets what the run decides for every application is refused, naming the family and the variable (${privateDisplay ? 'a private display' : "a person's display"})`, () => {
+    const scratch = '/tmp/cua171-diff-r-x';
+    for (const [name, value] of Object.entries(PROTECTED)) {
+      for (const extra of [{ [name]: value }, { [name]: undefined }]) {
+        assert.throws(
+          () => launchEnvironment({ scratch, base: PERSON, privateDisplay, app: 'kate', extra }),
+          (error) => error.message.startsWith(`refusing to start kate: its own environment sets ${name}`),
+          `${name}${extra[name] === undefined ? ' removed' : `=${value}`} is refused`,
+        );
+      }
+    }
+    // the same value as the run's counts too: a family never names what the run decides
+    assert.throws(() => launchEnvironment({ scratch, base: PERSON, privateDisplay, app: 'gedit', extra: { DISPLAY: PERSON.DISPLAY } }), /refusing to start gedit: its own environment sets DISPLAY/);
+    // a home inside the scratch stays the family's to choose (gnome-text-editor's per-scene data and state)
+    assert.equal(launchEnvironment({ scratch, base: PERSON, privateDisplay, app: 'gnome-text-editor', extra: { XDG_STATE_HOME: join(scratch, 'scene', 'state') } }).XDG_STATE_HOME, join(scratch, 'scene', 'state'));
+  });
+}
+
+test('a scene application whose family names a protected variable is never started, and the refusal names the family', async () => {
+  const apps = standIns(['kate-standin']);
+  const desktop = quietDesktop('appenv3');
+  try {
+    assert.throws(() => desktop.spawnApp(desktop.label('a'), 'kate-standin', [], { app: 'kate', env: { AT_SPI_BUS_ADDRESS: 'unix:path=/run/user/501/at-spi/bus_0' } }), /refusing to start kate: its own environment sets AT_SPI_BUS_ADDRESS/);
+    assert.throws(() => desktop.spawnApp(desktop.label('b'), 'kate-standin', [], { env: { SESSION_MANAGER: PERSON.SESSION_MANAGER } }), /refusing to start cua171-diff-appenv3-n0-b: its own environment sets SESSION_MANAGER/);
+    await sleep(300);
+    assert.equal(existsSync(join(process.env.PATH.split(delimiter)[0], 'kate-standin.env')), false, 'nothing started');
+  } finally {
+    desktop.unhookStop();
+    rmSync(desktop.dir, { recursive: true, force: true });
+    apps.done();
+  }
 });
 
 test("home 'xdg', for a family a separate HOME breaks: the harness's HOME kept, the XDG directories still the run's", () => {
@@ -267,7 +310,7 @@ test('no application start bypasses the launch environment: every process start 
   // each passes the environment the one place builds, and nothing else
   const scenes = modules.find(({ file }) => file === 'scenes.mjs').text;
   const spawnApp = scenes.slice(scenes.indexOf('  spawnApp(label, cmd, args'), scenes.indexOf('  /**', scenes.indexOf('  spawnApp(label, cmd, args')));
-  assert.match(spawnApp, /const env = this\.appEnvironment\(extra, \{ home \}\);/);
+  assert.match(spawnApp, /const env = this\.appEnvironment\(extra, \{ home, app \}\);/);
   assert.match(spawnApp, /spawn\(cmd, args, \{ \.\.\.options, env, stdio:/, 'the start takes the built environment, after the caller\'s options');
   const chrome = modules.find(({ file }) => file === 'chrome.mjs').text;
   assert.match(chrome, /const env = this\.environment\(\);[\s\S]*this\.spawnProcess\(CHROME_COMMAND, args, \{ env, stdio: 'ignore', detached: true \}\)/);

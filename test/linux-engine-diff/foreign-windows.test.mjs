@@ -11,6 +11,7 @@ import { delimiter, join } from 'node:path';
 import test from 'node:test';
 
 import { parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
+import { openFamily } from '../../scripts/linux-engine-diff/families.mjs';
 import { auditForeign } from '../../scripts/linux-engine-diff/foreign.mjs';
 import { harnessPair, openScene } from '../../scripts/linux-engine-diff/run.mjs';
 import { desktopLine } from '../../scripts/linux-engine-diff/report.mjs';
@@ -378,6 +379,47 @@ test("cleanup closes a Chrome window only while it is still the run's, and never
     await desktop.close([lost]);
     assert.deepEqual(closed, [again.id, 0x60000b]);
     assert.equal(desktop.found.get(0x60000b).length, 1);
+  } finally {
+    desktop.unhookStop();
+    await desktop.closeAll();
+    tools.done();
+  }
+});
+
+// The AT-SPI probe's end row (task 55) recorded a skipped close of its Chrome window, with an X BadWindow: the Chrome
+// family's scene was a copy of the window the run registered, so closing it left the registered one behind, and the
+// run's end asked for that gone window's title again.
+test("a Chrome family's scene is the window the run registered: closing it ends the run's hold on it, and the run's end closes nothing twice", async () => {
+  const CHROME = 0x600009;
+  const tools = fakeTools({ active: 0, geometry: [1050, 780] });
+  const tree = { id: ':1.5/0', role: 'frame', name: 'matrix', children: [] };
+  const reader = { request: async () => ({ response: { ok: true, output: { ax_tree: tree, ax_tree_source: 'at_spi', window: { id: CHROME, x: 0, y: 0, width: 1050, height: 780 } } } }), close: async () => {} };
+  const desktop = new Desktop({ cua: 'unused', run: 'foreign9', reader, startActive: 0 });
+  const closed = [];
+  desktop.closeWindow = (id) => {
+    closed.push(id);
+    tools.setTitle(id, null);
+  };
+  // the run's Chrome window, registered and found as `openChrome` does, with no Chrome started
+  desktop.openChrome = async (role, page) => {
+    const label = desktop.label(page.replace(/\.html$/, ''), role);
+    const scene = { kind: 'chrome', role, label, page, title: `${label} - Google Chrome`, id: CHROME };
+    desktop.windows.push(scene);
+    desktop.foundNow(CHROME);
+    tools.setTitle(CHROME, scene.title);
+    return scene;
+  };
+  try {
+    await begin(desktop, HARNESS_ONLY.join('\n'));
+    const scene = await openFamily(desktop, null, 'chrome', 'answer');
+    assert.ok(desktop.windows.includes(scene), 'the scene is the window the run registered');
+    assert.equal(scene.family, 'chrome');
+    await desktop.close([scene]);
+    assert.deepEqual(closed, [CHROME]);
+    assert.deepEqual(desktop.windows, [], 'nothing of it is left to close');
+    await desktop.closeAll();
+    assert.deepEqual(closed, [CHROME], 'closed once');
+    assert.deepEqual(desktop.skips, [], 'nothing left undone at the end');
   } finally {
     desktop.unhookStop();
     await desktop.closeAll();

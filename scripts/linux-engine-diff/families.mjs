@@ -458,8 +458,9 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
   const label = desktop.label(stem.replace(/[^a-z0-9]+/gi, ''), role);
   let scene;
   if (family.chrome) {
-    const opened = await desktop.openChrome(role, page ?? 'matrix.html');
-    scene = { ...opened, family: name, kindOf: family.kind };
+    // the window the run registered itself, not a copy: a copy closed (`Desktop.close`) leaves the registered window
+    // behind, and the run's end then asks for the gone window again and records its close as left undone (task 55)
+    scene = Object.assign(await desktop.openChrome(role, page ?? 'matrix.html'), { family: name, kindOf: family.kind });
   } else {
     // a stopping run opens nothing more (scenes.mjs `stop`); the process is registered as soon as it is started
     desktop.assertOpen();

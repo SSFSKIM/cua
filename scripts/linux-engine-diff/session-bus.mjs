@@ -9,11 +9,13 @@
 //   written through it, and none of those services' runtime sockets are taken a second time;
 // - its activation environment names the private display and the private bus itself, so the launcher it starts serves
 //   that display: the launcher binds `$XDG_RUNTIME_DIR/at-spi/bus_<display number>` (the person's is `bus_0`) and sets
-//   the display's root property `AT_SPI_BUS`, which is where the engines, the harness's oracle and the applications'
-//   AT-SPI bridges all look first for the accessibility bus;
+//   the display's root property `AT_SPI_BUS`, which is where the engines and the harness's oracle look first for the
+//   accessibility bus;
 // - `wireAccessibility` starts the launcher at the run's start (`org.a11y.Bus.GetAddress`) and refuses the run unless
 //   the display's `AT_SPI_BUS` then names the bus the launcher answered: applications, engines and oracle on one
-//   accessibility bus, the private session's, or no run;
+//   accessibility bus, the private session's, or no run. The applications' AT-SPI bridges (libatspi, Qt) take
+//   `AT_SPI_BUS_ADDRESS` before that property, so for the run the harness names that bus there too (scenes.mjs
+//   `useSession`), and the daemon inherits no such variable of the person's (`busEnvironment`);
 // - its stop ends its process group (the daemon was started as its own group, and the services it starts inherit it).
 // The person's display keeps the person's session bus: there the per-application isolation (families.mjs) carries it.
 
@@ -26,8 +28,11 @@ import { inTest } from './hermetic.mjs';
 /** The accessibility bus launcher's service file: the one service the run's bus can start. */
 export const A11Y_SERVICE_FILE = '/usr/share/dbus-1/services/org.a11y.Bus.service';
 
-/** The variables of a session bus the run's daemon and its services must not inherit from the person's session. */
-const SESSION_VARS = ['DBUS_SESSION_BUS_ADDRESS', 'DBUS_SESSION_BUS_PID', 'DBUS_SESSION_BUS_WINDOWID', 'DBUS_STARTER_ADDRESS', 'DBUS_STARTER_BUS_TYPE'];
+/**
+ * The variables of a session bus and of an accessibility bus that the run's daemon and its services must not inherit
+ * from the person's session. `AT_SPI_BUS_ADDRESS` is one: libatspi and Qt take it before the display's `AT_SPI_BUS`.
+ */
+const PERSON_BUS_VARS = ['DBUS_SESSION_BUS_ADDRESS', 'DBUS_SESSION_BUS_PID', 'DBUS_SESSION_BUS_WINDOWID', 'DBUS_STARTER_ADDRESS', 'DBUS_STARTER_BUS_TYPE', 'AT_SPI_BUS_ADDRESS'];
 
 const xml = (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -51,10 +56,10 @@ export function sessionBusConfig({ socketDir, serviceDir }) {
 `;
 }
 
-/** The daemon's environment: the harness's, on `display`, with no session bus of the person's in it. */
+/** The daemon's environment: the harness's, on `display`, with no session or accessibility bus of the person's in it. */
 export function busEnvironment(env, display) {
   const out = { ...env, DISPLAY: display };
-  for (const name of SESSION_VARS) delete out[name];
+  for (const name of PERSON_BUS_VARS) delete out[name];
   return out;
 }
 
@@ -96,13 +101,17 @@ export async function startSessionBus({ dir, display, env = process.env, service
       clearTimeout(timer);
       if (error) {
         try {
-          kill(-child.pid, 'SIGKILL');
+          // a daemon that never started has no pid, and no group to end
+          if (child.pid) kill(-child.pid, 'SIGKILL');
         } catch {
           // already gone
         }
         reject(error);
       } else resolve(value);
     };
+    // a dbus-daemon that cannot be started (missing, not executable) fails the start: without a listener its 'error'
+    // event would end the harness's process, past its cleanup and its watchdog's stop
+    child.on('error', (error) => done(new Error(`the run's session bus did not start: dbus-daemon: ${error.message}`)));
     child.stdio[3].on('data', (d) => {
       text += d;
       const line = text.split('\n')[0];

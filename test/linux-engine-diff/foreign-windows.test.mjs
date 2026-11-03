@@ -143,7 +143,7 @@ function fakeTools({ active = 0, geometry = [200, 150], search = '' } = {}) {
     writeFileSync(join(dir, name), `#!/bin/sh\necho "${name} $*" >> ${JSON.stringify(log)}\n${body}\n`);
     chmodSync(join(dir, name), 0o755);
   };
-  tool('xdotool', `case "$1" in getwindowgeometry) printf 'WINDOW=%s\\nX=0\\nY=0\\nWIDTH=${geometry[0]}\\nHEIGHT=${geometry[1]}\\n' "$3";; search) echo '${search}';; getwindowname) cat "${dir}/title-$2" 2>/dev/null || { echo "X Error: BadWindow" >&2; exit 1; };; esac`);
+  tool('xdotool', `case "$1" in getwindowgeometry) printf 'WINDOW=%s\\nX=0\\nY=0\\nWIDTH=${geometry[0]}\\nHEIGHT=${geometry[1]}\\n' "$3";; search) echo '${search}';; getwindowname) cat "${dir}/title-$2" 2>/dev/null || exit 1;; esac`);
   tool('xprop', `echo "_NET_ACTIVE_WINDOW(WINDOW): window id # $(cat ${JSON.stringify(join(dir, 'active'))})"`);
   tool('xwininfo', `case "$*" in *-root*) echo "xwininfo: Window id: ${hex(ROOT)} (the root window) (has no name)";; *) echo "X Error: BadWindow" >&2; exit 1;; esac`);
   // the holder's terminal: a process that lives until it is signalled

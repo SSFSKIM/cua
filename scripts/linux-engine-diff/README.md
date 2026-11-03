@@ -115,9 +115,11 @@ killed it.
   exactly one service, the accessibility bus launcher (`org.a11y.Bus`): anything else a scene application asks for
   (dconf's writer, a portal, gvfs, the keyring, a terminal server) is unknown at once, so nothing of the person's
   session is reached or started. The run begins only once the launcher's bus is the display's `AT_SPI_BUS`, where
-  the engines, the oracle and the applications look first; the end stops the daemon's group and puts the harness's
-  own `DBUS_SESSION_BUS_ADDRESS` back. A person's display keeps the person's bus: there the families' isolation
-  carries it.
+  the engines and the oracle look first; the applications' AT-SPI bridges (libatspi, Qt) take `AT_SPI_BUS_ADDRESS`
+  first, so for the run that variable names the run's accessibility bus too, and the daemon inherits none of the
+  person's. The end stops the daemon's group and puts the harness's own `DBUS_SESSION_BUS_ADDRESS` and
+  `AT_SPI_BUS_ADDRESS` back. A dbus-daemon that cannot be started fails the run's start, which ends what it began. A
+  person's display keeps the person's buses: there the families' isolation carries it.
 
 ## What a run does
 
@@ -508,7 +510,8 @@ variants included; their evidence is written either way. The run's `end` row kee
   - Every restore counts in its lane's total: the samples', the failed preparations', the warm-ups', the audit's
     (`text_restores` on its row) and the bus pass's. None of them adds a timed sample.
 - **A stopped run** (`stop.mjs`): SIGINT or SIGTERM stops the witness, closes every window the harness opened, and
-  stops the run's Chrome and its session bus before the process exits 130 or 143.
+  stops the run's Chrome and its session bus before the process exits 130 or 143. A stop during the run's start
+  waits for it: the start ends what it acquired (its trace, record, session bus and watchdog) and starts nothing more.
 - **Every cleanup a case owes runs when it ends** (`Cases.guarded`): the engines, clipboard owners and target windows
   a case starts, whether it ends by its verdict or by an exception half-way through its setup; a sample's clipboard
   owner ends with the sample the same way (`runSample`). Each disposal establishes that what it ends is gone (an

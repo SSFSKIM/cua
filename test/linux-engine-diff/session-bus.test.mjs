@@ -37,8 +37,8 @@ test("the bus's configuration: it listens in the run's directory and its one ser
   for (const shared of ['standard_session_servicedirs', '<include', 'systemd', 'servicehelper']) assert.equal(config.includes(shared), false, shared);
 });
 
-test("the daemon's environment names the private display and no session bus of the person's", () => {
-  const env = busEnvironment({ HOME: '/home/p', DISPLAY: ':0', XAUTHORITY: '/x', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/501/bus', DBUS_STARTER_ADDRESS: 'a', DBUS_STARTER_BUS_TYPE: 'session', DBUS_SESSION_BUS_PID: '1' }, ':88');
+test("the daemon's environment names the private display and no session or accessibility bus of the person's", () => {
+  const env = busEnvironment({ HOME: '/home/p', DISPLAY: ':0', XAUTHORITY: '/x', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/501/bus', DBUS_STARTER_ADDRESS: 'a', DBUS_STARTER_BUS_TYPE: 'session', DBUS_SESSION_BUS_PID: '1', AT_SPI_BUS_ADDRESS: 'unix:path=/run/user/501/at-spi/bus_0' }, ':88');
   assert.deepEqual(env, { HOME: '/home/p', DISPLAY: ':88', XAUTHORITY: '/x' });
 });
 
@@ -69,7 +69,7 @@ test('the bus starts as its own process group, offers only the launcher, and nam
   const s = scratch();
   try {
     const daemon = fakeDaemon('unix:path=/tmp/run/bus/dbus-abc,guid=1234');
-    const bus = await startSessionBus({ dir: s.dir, display: ':88', env: { PATH: '/usr/bin', DISPLAY: ':0', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/501/bus' }, serviceFile: s.serviceFile, ...daemon });
+    const bus = await startSessionBus({ dir: s.dir, display: ':88', env: { PATH: '/usr/bin', DISPLAY: ':0', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/501/bus', AT_SPI_BUS_ADDRESS: 'unix:path=/run/user/501/at-spi/bus_0' }, serviceFile: s.serviceFile, ...daemon });
     assert.equal(bus.address, 'unix:path=/tmp/run/bus/dbus-abc,guid=1234');
     const [{ cmd, args, options }] = daemon.calls.spawn;
     assert.equal(cmd, 'dbus-daemon');
@@ -82,6 +82,7 @@ test('the bus starts as its own process group, offers only the launcher, and nam
     const [update] = daemon.calls.run;
     assert.equal(update.cmd, 'busctl');
     assert.deepEqual(update.args, [`--address=${bus.address}`, 'call', 'org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'UpdateActivationEnvironment', 'a{ss}', '2', 'DBUS_SESSION_BUS_ADDRESS', bus.address, 'DISPLAY', ':88']);
+    assert.deepEqual(update.options.env, { PATH: '/usr/bin', DISPLAY: ':88' }, "busctl too reaches the run's bus only");
     assert.deepEqual(await bus.stop({ graceMs: 1000 }), { terminated: true, killed: false });
     assert.deepEqual(daemon.calls.kill, [[-7771, 'SIGTERM'], [-7771, 'SIGKILL']], 'the group, then whatever it left');
   } finally {
@@ -159,7 +160,10 @@ test('a private session whose wiring fails stops its bus before the error', asyn
   assert.equal(session.address, 'unix:path=/tmp/b');
 });
 
-/** The X tools the Desktop reads the root and the active window with, and an `xterm` that writes its session bus. */
+/**
+ * The X tools the Desktop reads the root and the active window with, and an `xterm` that writes the session bus and the
+ * accessibility bus it was started with, one a line.
+ */
 function fakeTools() {
   const dir = mkdtempSync(join(tmpdir(), 'cua171-bus-tools-'));
   const tool = (name, body) => {
@@ -169,7 +173,8 @@ function fakeTools() {
   tool('xwininfo', 'echo "xwininfo: Window id: 0x293 (the root window) (has no name)"');
   tool('xprop', 'echo "_NET_ACTIVE_WINDOW(WINDOW): window id # 0x0"');
   tool('xdotool', 'exit 0');
-  tool('xterm', `printf '%s' "\${DBUS_SESSION_BUS_ADDRESS-unset}" > ${JSON.stringify(join(dir, 'xterm-bus'))}; exec sleep 30`);
+  const written = JSON.stringify(join(dir, 'xterm-bus'));
+  tool('xterm', `printf '%s\\n%s' "\${DBUS_SESSION_BUS_ADDRESS-unset}" "\${AT_SPI_BUS_ADDRESS-unset}" > ${written}.tmp; mv ${written}.tmp ${written}; exec sleep 30`);
   const saved = process.env.PATH;
   process.env.PATH = `${dir}${delimiter}${saved}`;
   return { dir, done: () => {
@@ -182,30 +187,58 @@ const fakeTrace = () => () => ({ env: { ...process.env, DISPLAY: ':77' }, stop: 
 const fakeRecord = async () => ({ pid: 1, stop: async () => [JSON.stringify({ kind: 'ready', ms: 1 }), JSON.stringify({ kind: 'end', ms: 2 })].join('\n') });
 const fakeWatchdog = async () => ({ guard: () => {}, stop: async () => ({ state: 'ended', clean: true, stalled: false, reason: null, round_trips: 1, lines: [] }) });
 
-async function runOn({ privateDisplay }) {
-  const tools = fakeTools();
-  const seen = { started: [], stopped: 0, during: null, app: null };
-  const startSession = async (options) => {
-    seen.started.push(options);
-    return { address: 'unix:path=/tmp/run-bus', a11y: 'unix:path=/a11y-88', pid: 1, stop: async () => ({ terminated: true, killed: false, n: ++seen.stopped }) };
-  };
-  const desktop = new Desktop({ cua: 'unused', run: 'bus1', reader: { request: async () => ({ response: { ok: true, output: [{ id: 0x400001, title: desktop.label('front'), app: 'xterm' }] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
-  const before = { had: 'DBUS_SESSION_BUS_ADDRESS' in process.env, value: process.env.DBUS_SESSION_BUS_ADDRESS };
+/** The person's accessibility bus, as a harness started from their session inherits it. */
+const PERSON_A11Y = 'unix:path=/run/user/501/at-spi/bus_0,guid=person';
+
+/** This process's two bus variables now: `{bus, a11y}`, `unset` for one that is not set. */
+const busVars = () => ({ bus: process.env.DBUS_SESSION_BUS_ADDRESS ?? 'unset', a11y: process.env.AT_SPI_BUS_ADDRESS ?? 'unset' });
+
+/** Runs `fn` with `AT_SPI_BUS_ADDRESS` as `value` (null: unset), then puts the variable back as it was. */
+async function withA11yVar(value, fn) {
+  const had = 'AT_SPI_BUS_ADDRESS' in process.env;
+  const saved = process.env.AT_SPI_BUS_ADDRESS;
+  if (value === null) delete process.env.AT_SPI_BUS_ADDRESS;
+  else process.env.AT_SPI_BUS_ADDRESS = value;
   try {
-    await desktop.begin({ startTrace: fakeTrace(), startRecord: fakeRecord, existing: () => [], privateDisplay: () => privateDisplay, startWatchdog: fakeWatchdog, startSession });
-    seen.during = process.env.DBUS_SESSION_BUS_ADDRESS;
-    desktop.arrangeFront = () => {};
-    await desktop.openFront('visible');
-    const file = join(tools.dir, 'xterm-bus');
-    for (let i = 0; i < 100 && !existsSync(file); i++) await sleep(20);
-    seen.app = readFileSync(file, 'utf8');
-    await desktop.closeAll();
-    seen.after = { had: 'DBUS_SESSION_BUS_ADDRESS' in process.env, value: process.env.DBUS_SESSION_BUS_ADDRESS };
+    return await fn();
   } finally {
-    desktop.unhookStop();
-    tools.done();
+    if (had) process.env.AT_SPI_BUS_ADDRESS = saved;
+    else delete process.env.AT_SPI_BUS_ADDRESS;
   }
-  return { desktop, seen, before };
+}
+
+/**
+ * A run that begins, opens its front window (a scene application: the fake `xterm`) and ends. `inherited`: the
+ * `AT_SPI_BUS_ADDRESS` the harness was started with (null: none); `a11y`: the accessibility bus the run's session
+ * reports.
+ */
+function runOn({ privateDisplay, inherited = PERSON_A11Y, a11y = 'unix:path=/a11y-88' }) {
+  return withA11yVar(inherited, async () => {
+    const tools = fakeTools();
+    const seen = { started: [], stopped: 0, during: null, app: null };
+    const startSession = async (options) => {
+      seen.started.push(options);
+      return { address: 'unix:path=/tmp/run-bus', a11y, pid: 1, stop: async () => ({ terminated: true, killed: false, n: ++seen.stopped }) };
+    };
+    const desktop = new Desktop({ cua: 'unused', run: 'bus1', reader: { request: async () => ({ response: { ok: true, output: [{ id: 0x400001, title: desktop.label('front'), app: 'xterm' }] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
+    const before = busVars();
+    try {
+      await desktop.begin({ startTrace: fakeTrace(), startRecord: fakeRecord, existing: () => [], privateDisplay: () => privateDisplay, startWatchdog: fakeWatchdog, startSession });
+      seen.during = busVars();
+      desktop.arrangeFront = () => {};
+      await desktop.openFront('visible');
+      const file = join(tools.dir, 'xterm-bus');
+      for (let i = 0; i < 100 && !existsSync(file); i++) await sleep(20);
+      const [bus, appA11y] = readFileSync(file, 'utf8').split('\n');
+      seen.app = { bus, a11y: appA11y };
+      await desktop.closeAll();
+      seen.after = busVars();
+    } finally {
+      desktop.unhookStop();
+      tools.done();
+    }
+    return { desktop, seen, before };
+  });
 }
 
 test("a private display's run: its session bus first, every process of the run's on it, and the harness's own variable put back", async () => {
@@ -213,18 +246,36 @@ test("a private display's run: its session bus first, every process of the run's
   assert.equal(seen.started.length, 1);
   assert.equal(seen.started[0].display, process.env.DISPLAY);
   assert.equal(seen.started[0].dir, join(desktop.dir, 'session'), "in the run's scratch directory");
-  assert.equal(seen.during, 'unix:path=/tmp/run-bus');
-  assert.equal(seen.app, 'unix:path=/tmp/run-bus', 'a scene application inherits the run\'s bus');
+  assert.equal(seen.during.bus, 'unix:path=/tmp/run-bus');
+  assert.equal(seen.app.bus, 'unix:path=/tmp/run-bus', 'a scene application inherits the run\'s bus');
   assert.equal(seen.stopped, 1, 'stopped once, at the end');
-  assert.deepEqual(seen.after, before, "the harness's own variable as it was found");
+  assert.deepEqual(seen.after, before, "the harness's own variables as they were found");
   assert.deepEqual(desktopEnding(desktop.ending).record.session, { address: 'unix:path=/tmp/run-bus', a11y: 'unix:path=/a11y-88', terminated: true, killed: false, n: 1 });
+});
+
+// libatspi (GTK's atk-bridge, Chromium) and Qt take AT_SPI_BUS_ADDRESS before the display's AT_SPI_BUS: an inherited
+// one, the person's, would put the run's applications on the person's accessibility bus while the root check passed
+test("a private display's run names the run's own accessibility bus to its applications, whatever AT_SPI_BUS_ADDRESS it inherited, and puts it back", async () => {
+  const { seen, before } = await runOn({ privateDisplay: true });
+  assert.equal(before.a11y, PERSON_A11Y);
+  assert.equal(seen.during.a11y, 'unix:path=/a11y-88', "the run's, for every process the run starts");
+  assert.equal(seen.app.a11y, 'unix:path=/a11y-88', "a scene application gets the run's accessibility bus, never the person's");
+  assert.equal(seen.after.a11y, PERSON_A11Y, "the harness's own variable as it was found");
+  // a harness started with none: none again after the run
+  const unset = await runOn({ privateDisplay: true, inherited: null });
+  assert.equal(unset.seen.app.a11y, 'unix:path=/a11y-88');
+  assert.equal(unset.seen.after.a11y, 'unset');
+  // a session that names no accessibility bus of its own: the inherited one is still not handed on
+  const none = await runOn({ privateDisplay: true, a11y: null });
+  assert.equal(none.seen.app.a11y, 'unset', "the person's accessibility bus is never handed on");
+  assert.equal(none.seen.after.a11y, PERSON_A11Y);
 });
 
 test("the person's display keeps the person's session bus: no bus is started", async () => {
   const { desktop, seen, before } = await runOn({ privateDisplay: false });
   assert.equal(seen.started.length, 0);
-  assert.equal(seen.during, before.value);
-  assert.equal(seen.app, before.had ? before.value : 'unset');
+  assert.deepEqual(seen.during, before);
+  assert.deepEqual(seen.app, before, "the person's session and accessibility buses, as they were");
   assert.equal(desktopEnding(desktop.ending).record.session, undefined);
 });
 
@@ -241,6 +292,116 @@ test("a private display whose session cannot start runs nothing, and its watchdo
   } finally {
     desktop.unhookStop();
     tools.done();
+    rmSync(desktop.dir, { recursive: true, force: true });
+  }
+});
+
+// A dbus-daemon that cannot be started at all emits its spawn failure as the child's 'error' event: without a listener
+// that event ends the harness's process, past Desktop's cleanup and its watchdog's stop
+test("a dbus-daemon that cannot be started (missing, or not executable) rejects the bus's start instead of ending the process", async () => {
+  const s = scratch();
+  const bin = mkdtempSync(join(tmpdir(), 'cua171-bus-bin-'));
+  try {
+    await assert.rejects(startSessionBus({ dir: s.dir, display: ':88', env: { PATH: bin }, serviceFile: s.serviceFile }), /the run's session bus did not start: dbus-daemon: .*ENOENT/);
+    writeFileSync(join(bin, 'dbus-daemon'), '#!/bin/sh\nexit 0\n', { mode: 0o644 });
+    await assert.rejects(startSessionBus({ dir: s.dir, display: ':88', env: { PATH: bin }, serviceFile: s.serviceFile }), /the run's session bus did not start: dbus-daemon: .*EACCES/);
+  } finally {
+    s.done();
+    rmSync(bin, { recursive: true, force: true });
+  }
+});
+
+test('a private display whose dbus-daemon cannot be started: the start fails, its watchdog is stopped, nothing else starts', async () => {
+  const s = scratch();
+  const bin = mkdtempSync(join(tmpdir(), 'cua171-bus-bin-'));
+  const tools = fakeTools();
+  let watchdogStopped = 0;
+  const desktop = new Desktop({ cua: 'unused', run: 'bus4', reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
+  const before = busVars();
+  try {
+    await assert.rejects(desktop.begin({
+      startTrace: () => assert.fail('no trace'),
+      startRecord: () => assert.fail('no record'),
+      existing: () => [],
+      privateDisplay: () => true,
+      startWatchdog: async () => ({ guard: () => {}, stop: async () => ({ n: ++watchdogStopped }) }),
+      // the real session start, its daemon spawned from a PATH without dbus-daemon
+      startSession: (options) => startPrivateSession({ ...options, start: (o) => startSessionBus({ ...o, env: { PATH: bin }, serviceFile: s.serviceFile }), wire: () => assert.fail('no wiring') }),
+    }), /the run's session bus did not start: dbus-daemon/);
+    assert.equal(watchdogStopped, 1, "Desktop's cleanup ran: its watchdog stopped");
+    assert.equal(desktop.session, null);
+    assert.deepEqual(busVars(), before);
+  } finally {
+    desktop.unhookStop();
+    tools.done();
+    s.done();
+    rmSync(bin, { recursive: true, force: true });
+    rmSync(desktop.dir, { recursive: true, force: true });
+  }
+});
+
+/** What a run's start acquires, in order: each a stand-in that logs its start and its stop. */
+const STAGES = ['watchdog', 'session', 'record', 'trace'];
+
+// A signal's stop (stop.mjs) that finishes while `begin` is still awaiting one of its stages finds nothing to end: the
+// stage then resolves on a stopped Desktop, installs the run's session bus in the environment and goes on starting, and
+// the process exits after the stop with the run's dbus-daemon (its own process group) still running
+for (const stage of STAGES) {
+  test(`a stop while the run's ${stage} is starting waits for it, ends everything the start acquired, and starts nothing after it`, () => withA11yVar(PERSON_A11Y, async () => {
+    const tools = fakeTools();
+    const log = [];
+    let release = null;
+    let reached;
+    const atStage = new Promise((r) => (reached = r));
+    const stopping = (name, value) => ({ ...value, stop: async () => (log.push(`${name} stopped`), { state: 'ended', clean: true }) });
+    const parts = {
+      watchdog: stopping('watchdog', { guard: () => {} }),
+      session: stopping('session', { address: 'unix:path=/tmp/late-bus', a11y: 'unix:path=/late-a11y', pid: 1 }),
+      record: stopping('record', { pid: 1 }),
+      trace: stopping('trace', { env: { ...process.env, DISPLAY: ':77' } }),
+    };
+    // each stage logs its start; the one under test answers only once the test releases it
+    const start = (name) => () => {
+      log.push(name);
+      if (name !== stage) return Promise.resolve(parts[name]);
+      reached();
+      return new Promise((r) => (release = () => r(parts[name])));
+    };
+    const desktop = new Desktop({ cua: 'unused', run: `bus-stop-${stage}`, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
+    const before = busVars();
+    try {
+      const begun = desktop.begin({ startWatchdog: start('watchdog'), startSession: start('session'), startRecord: start('record'), startTrace: start('trace'), existing: () => [], privateDisplay: () => true });
+      begun.catch(() => {});
+      await atStage;
+      let stopDone = false;
+      const stopped = desktop.stop().then(() => (stopDone = true));
+      // longer than a stop that waits for nothing takes (its windows' close, 1 s)
+      await sleep(1500);
+      assert.equal(stopDone, false, `the stop waits for the ${stage} it interrupted`);
+      release();
+      await stopped;
+      await assert.rejects(begun, /stopped while the run was starting/);
+      const upTo = STAGES.slice(0, STAGES.indexOf(stage) + 1);
+      assert.deepEqual(log.filter((l) => !l.endsWith(' stopped')), upTo, `nothing starts after the ${stage}`);
+      assert.deepEqual(log.filter((l) => l.endsWith(' stopped')), upTo.toReversed().map((n) => `${n} stopped`), 'everything the start acquired ends before the stop returns, the watchdog last');
+      assert.deepEqual(busVars(), before, "the harness's own bus variables as they were");
+      assert.equal(desktop.session, null);
+    } finally {
+      release?.();
+      desktop.unhookStop();
+      tools.done();
+      rmSync(desktop.dir, { recursive: true, force: true });
+    }
+  }));
+}
+
+test('a run stopped before it begins starts nothing', async () => {
+  const desktop = new Desktop({ cua: 'unused', run: 'bus-stopped', reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
+  try {
+    await desktop.stop();
+    await assert.rejects(desktop.begin({ startWatchdog: () => assert.fail('no watchdog'), startSession: () => assert.fail('no session'), startRecord: () => assert.fail('no record'), startTrace: () => assert.fail('no trace'), existing: () => assert.fail('no read'), privateDisplay: () => true }), /stopped/);
+  } finally {
+    desktop.unhookStop();
     rmSync(desktop.dir, { recursive: true, force: true });
   }
 });

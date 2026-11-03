@@ -55,6 +55,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  */
 const READ_TIMEOUT_MS = 15000;
 
+/** The harness's own variables a private display's run sets for its processes (`useSession`), and puts back. */
+const SESSION_ENV = ['DBUS_SESSION_BUS_ADDRESS', 'AT_SPI_BUS_ADDRESS'];
+
 export function activeWindow() {
   const text = execFileSync('xprop', ['-root', '_NET_ACTIVE_WINDOW'], { encoding: 'utf8', timeout: READ_TIMEOUT_MS });
   const match = text.match(/0x[0-9a-f]+/i);
@@ -189,6 +192,8 @@ export class Desktop {
     // the opens in flight, and whether the run is stopping: then no window is asked for any more
     this.opening = new Set();
     this.stopping = false;
+    // the run's start while it is in flight (`begin`): a stop waits for it
+    this.starting = null;
     // a run stopped by SIGINT or SIGTERM closes what it opened, as one that ends does (stop.mjs)
     this.stopHooks = [];
     this.unhookStop = cleanupOnStop(() => this.stop());
@@ -211,27 +216,54 @@ export class Desktop {
    * bus (every process the run starts from then on inherits it) and the whole run's record, its own trace, through
    * which every X tool of the harness's then connects (xtools.mjs), and, when the window found active is foreign, the
    * holder opened and activated before anything else. A start that fails ends what it began, the watchdog last.
-   * `startTrace`, `startRecord`, `startSession`, `startWatchdog`, `privateDisplay` and `existing` are the display-free
-   * tests' own. Returns the window found active, marked.
+   * A stop during the start (a signal's, stop.mjs) waits for it: the start sees the stop after each step it awaited,
+   * ends what it acquired the same way, starts nothing more and fails, so nothing of the run's outlives the stop; a
+   * run stopped before it begins starts nothing. `startTrace`, `startRecord`, `startSession`, `startWatchdog`,
+   * `privateDisplay` and `existing` are the display-free tests' own. Returns the window found active, marked.
    */
-  async begin({ startTrace = startProxy, startRecord = startRunRecord, existing = allWindows, privateDisplay = () => isPrivateDisplay(), startWatchdog = startRunWatchdog, startSession = startPrivateSession } = {}) {
+  begin(options = {}) {
+    if (this.stopping) return Promise.reject(new Error('the harness was stopped before the run began: nothing of it starts'));
+    this.starting = this.runStart(options);
+    return this.starting;
+  }
+
+  /** `begin`'s work, which `stop` waits for. */
+  async runStart({ startTrace = startProxy, startRecord = startRunRecord, existing = allWindows, privateDisplay = () => isPrivateDisplay(), startWatchdog = startRunWatchdog, startSession = startPrivateSession }) {
+    const unlessStopped = () => {
+      if (this.stopping) throw new Error('the harness was stopped while the run was starting: nothing more of it starts');
+    };
     this.unwatchOperations = watchOperations(({ engine, window, start, end }) => {
       if (engine !== this.ownReader) this.operations.push({ window, start, end });
     });
     // a stall stops the run, killing the record client first (task 41)
     this.watchdog = await startWatchdog({ display: process.env.DISPLAY, file: this.watchdogFile() });
     try {
+      unlessStopped();
       this.root = rootWindow();
       this.preexisting = new Set(existing());
       this.startActive ??= activeWindow();
       const isPrivate = privateDisplay();
       // a private display's run under a session bus of its own, before anything of the run's starts (task 43)
-      if (isPrivate) this.useSession(await startSession({ dir: join(this.dir, 'session'), display: process.env.DISPLAY }));
+      if (isPrivate) {
+        const session = await startSession({ dir: join(this.dir, 'session'), display: process.env.DISPLAY });
+        // never installed on a stopped run: ended here, the environment untouched
+        if (this.stopping) await session.stop();
+        unlessStopped();
+        this.useSession(session);
+      }
       // the whole-run record only on a private display: on a person's, the sampled route audits judge the engines;
       // its client guarded from its spawn
       this.record = isPrivate ? await startRecord({ guard: (pid) => this.watchdog.guard(pid) }) : null;
+      unlessStopped();
       this.trace = await startTrace();
+      unlessStopped();
     } catch (error) {
+      try {
+        await this.trace?.stop();
+      } catch {
+        // its proxy already gone: nothing of it is judged for a run that did not begin
+      }
+      this.trace = null;
       await this.record?.stop();
       this.record = null;
       await this.endSession();
@@ -245,20 +277,26 @@ export class Desktop {
 
   /**
    * The run's session bus in use: every process the run starts from now on (the scene applications, Chrome, the
-   * engines, the reader, `busctl`) inherits its address in place of the person's.
+   * engines, the reader, `busctl`) inherits its address in place of the person's, and the run's accessibility bus as
+   * `AT_SPI_BUS_ADDRESS`, which the applications' AT-SPI bridges (libatspi, Qt) take before the display's `AT_SPI_BUS`:
+   * an inherited one, the person's, would put them on the person's accessibility bus. With no accessibility bus of the
+   * session's own, the variable is removed, so the display's property decides.
    */
   useSession(session) {
     this.session = session;
-    this.sessionSaved = { had: 'DBUS_SESSION_BUS_ADDRESS' in process.env, value: process.env.DBUS_SESSION_BUS_ADDRESS };
+    this.sessionSaved = Object.fromEntries(SESSION_ENV.map((name) => [name, { had: name in process.env, value: process.env[name] }]));
     process.env.DBUS_SESSION_BUS_ADDRESS = session.address;
+    if (session.a11y) process.env.AT_SPI_BUS_ADDRESS = session.a11y;
+    else delete process.env.AT_SPI_BUS_ADDRESS;
   }
 
-  /** The run's session bus ended, and the harness's own variable as it was found. Answers what the stop did. */
+  /** The run's session bus ended, and the harness's own variables as they were found. Answers what the stop did. */
   async endSession() {
     if (!this.session) return null;
-    const { had, value } = this.sessionSaved;
-    if (had) process.env.DBUS_SESSION_BUS_ADDRESS = value;
-    else delete process.env.DBUS_SESSION_BUS_ADDRESS;
+    for (const [name, { had, value }] of Object.entries(this.sessionSaved)) {
+      if (had) process.env[name] = value;
+      else delete process.env[name];
+    }
     const session = this.session;
     this.session = null;
     return { address: session.address, a11y: session.a11y ?? null, ...(await session.stop()) };
@@ -377,7 +415,8 @@ export class Desktop {
    */
   async stop() {
     this.stopping = true;
-    await Promise.allSettled([...this.opening]);
+    // a start in flight first: it ends what it acquired once it sees the stop (`begin`)
+    await Promise.allSettled([this.starting, ...this.opening]);
     for (const hook of this.stopHooks) {
       try {
         await hook();

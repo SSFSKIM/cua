@@ -545,6 +545,20 @@ test("the record: a vendor build's SKY_CLIPBOARD_STOP to its own just-destroyed 
   assert.deepEqual(maudit([readyWith(), ...SKY_STOP]).foreign.map((f) => [f.what, f.window]), [['SKY_CLIPBOARD_STOP ClientMessage', SKY]]);
 });
 
+test("the record: a client already connected when the record began, whose line comes before the ready line's mask, holds its range too", () => {
+  // xprobe attributes the clients already connected before RECORD reports its start, so their lines precede `ready`
+  const existing = SKY_STOP[0].replace('"at":"started"', '"at":"existing"');
+  const judged = maudit([existing, readyWith({ mask: MASK }), ...SKY_STOP.slice(1)]);
+  assert.equal(judged.clean, true, JSON.stringify(judged.foreign));
+  // still bound to its own range: another live client's window is foreign to it
+  const OTHER = 0x2e00002;
+  const gedit = client(0x2e00000, false, 'gedit');
+  const lines = [existing, gedit, readyWith({ mask: MASK }), req(0x2e00000, 3, 'CreateWindow', { window: OTHER, parent: ROOT }), SKY_STOP[1]];
+  assert.deepEqual(windowsOf(maudit([...lines, stopTo(SKY, 9, OTHER)])), [OTHER]);
+  // and a ready line with no mask (xprobe before task 51) gives the early clients none either: fail-closed
+  assert.deepEqual(maudit([existing, readyWith(), ...SKY_STOP.slice(1)]).foreign.map((f) => f.window), [SKY]);
+});
+
 test("the record: a window in another live client's range is still foreign, whatever its sender's range", () => {
   const OTHER = 0x2e00002;
   const lines = [readyWith({ mask: MASK }), client(0x2e00000, false, 'gedit'), req(0x2e00000, 3, 'CreateWindow', { window: OTHER, parent: ROOT }), ...SKY_STOP.slice(0, 2)];

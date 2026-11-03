@@ -35,8 +35,9 @@
 // to another connection only once its client has disconnected, so while the connection lives such an id names its own
 // window or nothing (the vendor builds' SKY_CLIPBOARD_STOP to their own just-destroyed window, refused with BadWindow,
 // was 214 false reds in task 49's record). The range is the connection's for its life: from xtrace's setup reply, or the
-// record's client line (its id is the range's base, the mask the record's `ready` line names), until its death, a new
-// client line under its id, or its base handed to another connection. Without a known mask nothing is exempt.
+// record's client line (its id is the range's base, the mask the record's `ready` line names, for the client lines
+// before it as well), until its death, a new client line under its id, or its base handed to another connection.
+// Without a known mask nothing is exempt.
 
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -636,8 +637,13 @@ function recordLine(line, out, meta, root) {
       if (typeof r.t0 === 'number') meta.offset = r.ms - r.t0;
       meta.xtest = r.xtest;
       meta.composite = r.composite;
-      // the server's resource-id mask (every client's; xprobe from task 51): with a client's base, its own range
-      if (typeof r.mask === 'number') meta.mask = r.mask;
+      // the server's resource-id mask (every client's; xprobe from task 51): with a client's base, its own range. The
+      // clients already connected when the record began are attributed before it reports its start, so their lines
+      // come before this one: theirs too (task 51's review)
+      if (typeof r.mask === 'number') {
+        meta.mask = r.mask;
+        for (const el of out) if (el.k === 'client' && el.mask === undefined) el.mask = r.mask;
+      }
       out.push({ k: 'ready' });
       break;
     case 'failed':

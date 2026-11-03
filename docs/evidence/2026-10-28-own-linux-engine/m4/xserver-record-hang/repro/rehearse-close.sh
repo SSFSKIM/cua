@@ -4,9 +4,15 @@
 # killed, its peer closed), then closes the spinning descriptor inside the server through gdb, and reports: the
 # server's CPU, whether the display answers, whether the other clients are still connected and answering, and whether
 # the server stays up for 2 minutes. $1: run directory; $2: the server's pid; $3: the record client's pid.
-# DISPLAY and XAUTHORITY are the private display's.
+# DISPLAY is the private display's. It refuses a display not marked private, and a server process that is not an
+# Xvfb (task 44: gdb never attaches to a person's Xorg).
 set -u
 OUT="$1"; XVFB="$2"; REC="$3"
+HERE=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=private-x.sh
+. "$HERE/private-x.sh"
+require_private
+[ "$(cat "/proc/$XVFB/comm" 2>/dev/null)" = Xvfb ] || { echo "refusing pid $XVFB: not an Xvfb" >&2; exit 2; }
 R="$OUT/rehearsal.txt"
 cpu() { # the server's CPU over 3 s, in percent of one core
   local a b; a=$(awk '{print $14 + $15}' "/proc/$XVFB/stat"); sleep 3; b=$(awk '{print $14 + $15}' "/proc/$XVFB/stat")

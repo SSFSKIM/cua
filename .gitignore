@@ -37,3 +37,6 @@ native/linux-engine/target/
 
 # The differential harness's X client build (scripts/linux-engine-diff/xprobe)
 scripts/linux-engine-diff/xprobe/target/
+
+# The RECORD hang repro's load client build (#171 task 41)
+docs/evidence/2026-10-28-own-linux-engine/m4/xserver-record-hang/repro/flood/target/

@@ -1,17 +1,27 @@
 #!/usr/bin/env bash
-# #171 task 41: try to make a private Xvfb spin under the whole-run RECORD, never :0. A private Xvfb, a RECORD client
-# (xprobe record-run, $REC, default the e54658b8 build), flood clients and connection churn as load, and the record
-# client paused (SIGSTOP) and resumed at random so its socket fills and the server buffers its output, as a lagging
-# reader does. A GetInputFocus prober on its own connection; when a round trip goes unanswered for 5 s the server's
-# stack is sampled with gdb and everything stops.
-# $1: out directory; $2: seconds; env: D (display, default :93), REC, FLOODS (4), BATCH (50), CHURN (20/s),
-# KEEP (1: on a spin, rehearse-close.sh before stopping), SHORT (1: pauses and runs of 10-90 ms, else 200-900 ms runs and 0-490 ms pauses), PAUSE (1 = pause the record client; 0 = leave it running), FLOODARGS ("pause_ms big_every big_bytes", "0 0 0").
+# #171 task 41: try to make a private Xvfb spin under the whole-run RECORD, never :0. A private Xvfb of the script's
+# own (private-x.sh: -displayfd, so its display is the server's choice; marked CUA171_PRIVATE_DISPLAY, and the script
+# stops if the server does not start or the mark does not read back), a RECORD client ($REC, default the harness's
+# xprobe record-run, which itself refuses an unmarked display), flood clients and connection churn as load (flood
+# refuses an unmarked display too), and the record client paused (SIGSTOP) and resumed at random so its socket fills
+# and the server buffers its output, as a lagging reader does. A GetInputFocus prober on its own connection; when a
+# round trip goes unanswered for 5 s the server's stack is sampled with gdb and everything stops.
+# $1: out directory; $2: seconds; env: REC, FLOOD (the flood build, default repro/flood's), FLOODS (4), BATCH (50),
+# CHURN (20/s), KEEP (1: on a spin, rehearse-close.sh before stopping), SHORT (1: pauses and runs of 10-90 ms, else
+# 200-900 ms runs and 0-490 ms pauses), PAUSE (1 = pause the record client; 0 = leave it running), FLOODARGS
+# ("pause_ms big_every big_bytes", "0 0 0"), GDBX (1: gdb attached from the start, with $T/gdb-abort.cmd).
 set -u
+HERE=$(cd "$(dirname "$0")" && pwd)
+ROOT=$(cd "$HERE/../../../../../.." && pwd)
 T=/Users/new/.local/share/cua-171/task41
+# shellcheck source=private-x.sh
+. "$HERE/private-x.sh"
 OUT="${1:?out}"; SECS="${2:?seconds}"
-D="${D:-:93}"; REC="${REC:-$T/xprobe-e54658b8}"; FLOODS="${FLOODS:-4}"; BATCH="${BATCH:-50}"; CHURN="${CHURN:-20}"
+REC="${REC:-$ROOT/scripts/linux-engine-diff/xprobe/target/release/xprobe}"; FLOODS="${FLOODS:-4}"; BATCH="${BATCH:-50}"; CHURN="${CHURN:-20}"
 PAUSE="${PAUSE:-1}"; FLOODARGS="${FLOODARGS:-0 0 0}"
-FLOOD="$T/flood/target/release/task41-flood"
+FLOOD="${FLOOD:-$HERE/flood/target/release/task41-flood}"
+[ -x "$FLOOD" ] || { echo "build the load first: cargo build --release --offline --manifest-path $HERE/flood/Cargo.toml" >&2; exit 2; }
+[ -x "$REC" ] || { echo "no record client at $REC" >&2; exit 2; }
 mkdir -p "$OUT"
 pids=()
 cleanup() {
@@ -19,22 +29,19 @@ cleanup() {
   kill "${pids[@]}" 2>/dev/null; pkill -P $$ sleep 2>/dev/null
   [ -n "${xvfb:-}" ] && kill -KILL "$xvfb" 2>/dev/null
   wait 2>/dev/null
-  rm -rf "$(dirname "$AUTH")"
 }
 trap cleanup EXIT
-AUTH=$(mktemp -d)/Xauthority
-xauth -q -f "$AUTH" add "$D" . "$(mcookie)"
-export XAUTHORITY="$AUTH" DISPLAY="$D"
-Xvfb "$D" -screen 0 1280x800x24 -nolisten tcp -auth "$AUTH" >"$OUT/xvfb.log" 2>&1 & xvfb=$!
-for _ in $(seq 50); do "$FLOOD" ping 10 1000 >/dev/null 2>&1 & p=$!; sleep 0.1; kill $p 2>/dev/null && break; done
+# the script's own server, or nothing: DISPLAY is set only once it named its display, and marked before any load
+start_own_x "$OUT/xvfb.log"; xvfb=$OWN_XVFB
+mark_private
 if [ "${GDBX:-0}" = 1 ]; then
   sudo -n env DEBUGINFOD_URLS=https://debuginfod.ubuntu.com timeout $((SECS + 120)) gdb -iex "set debuginfod enabled on" -p "$xvfb" -batch -nx -x "$T/gdb-abort.cmd" >"$OUT/gdb.log" 2>&1 & pids+=($!)
   for _ in $(seq 600); do grep -q "Continuing" "$OUT/gdb.log" 2>/dev/null && break; sleep 0.2; done
 fi
-echo "xvfb $xvfb on $D; rec $REC ($(sha256sum "$REC" | cut -c1-12)); floods $FLOODS batch $BATCH churn $CHURN pause $PAUSE flood-args $FLOODARGS; secs $SECS" | tee "$OUT/run.txt"
+echo "xvfb $xvfb on $DISPLAY (its own, marked private); rec $REC ($(sha256sum "$REC" | cut -c1-12)); floods $FLOODS batch $BATCH churn $CHURN pause $PAUSE flood-args $FLOODARGS; secs $SECS" | tee "$OUT/run.txt"
 (exec sleep 1000000) | "$REC" record-run --ours $$ --exe task41-flood >"$OUT/record.jsonl" 2>"$OUT/record.err" & rec=$!; pids+=($rec)
 for _ in $(seq 100); do grep -q '"kind":"ready"' "$OUT/record.jsonl" && break; sleep 0.1; done
-grep -q '"kind":"ready"' "$OUT/record.jsonl" || { echo "record did not begin"; exit 2; }
+grep -q '"kind":"ready"' "$OUT/record.jsonl" || { echo "record did not begin: $(cat "$OUT/record.err")"; exit 2; }
 "$FLOOD" ping 1000 5000 >"$OUT/ping.log" 2>&1 & ping=$!; pids+=($ping)
 for i in $(seq "$FLOODS"); do "$FLOOD" flood "$((SECS - 5))" "$i" "$BATCH" $FLOODARGS >"$OUT/flood-$i.json" 2>&1 & pids+=($!); echo $! >>"$OUT/load.pids"; done
 "$FLOOD" churn "$((SECS - 5))" "$CHURN" >"$OUT/churn.json" 2>&1 & pids+=($!); echo $! >>"$OUT/load.pids"
@@ -78,6 +85,6 @@ if [ "$result" = stall ]; then
   done
   head -40 "$OUT/xvfb-stack.txt"
   # KEEP=1: rehearse the owner's recovery (close the spinning descriptor inside the server) before anything stops
-  [ "${KEEP:-0}" = 1 ] && "$T/rehearse-close.sh" "$OUT" "$xvfb" "$rec"
+  [ "${KEEP:-0}" = 1 ] && "$HERE/rehearse-close.sh" "$OUT" "$xvfb" "$rec"
 fi
 kill -CONT "$rec" 2>/dev/null

@@ -71,8 +71,17 @@ The harness's `startRunWatchdog` did the same through the real xprobe (`runs/wat
 
 ## To reproduce (a private display only)
 
-`repro/repro-stall.sh <out> <seconds>` with `SHORT=1 FLOODS=2 BATCH=30 FLOODARGS="5 5 200000"` and `REC` an xprobe
-from before the refusal (e54658b8) or `repro/slowrec-as-rec.sh` with `CONTEXTS=1|2`; `KEEP=1` runs
-`repro/rehearse-close.sh` once it spins. `repro/flood/` is the load and prober (`cargo build --release --offline`
-against xprobe's Cargo.lock); `repro/check-loss.py` counts lost requests and `repro/record-lag.py` a record's read lag.
-The scripts carry the task's absolute paths.
+`repro/repro-stall.sh <out> <seconds>` with `SHORT=1 FLOODS=2 BATCH=30 FLOODARGS="5 5 200000"`; `REC` defaults to
+the harness's xprobe record-run (the runs above used e54658b8's, from before the refusal) and may be
+`repro/slowrec-as-rec.sh` with `CONTEXTS=1|2`; `KEEP=1` runs `repro/rehearse-close.sh` once it spins.
+`repro/flood/` is the load and prober (`cargo build --release --offline`); `repro/check-loss.py` counts lost requests
+and `repro/record-lag.py` a record's read lag.
+
+Every script reaches only an X server it started itself (task 44, `repro/private-x.sh`): `Xvfb -displayfd`, so the
+display is the server's choice, set as `DISPLAY` only once that server named it and is alive, and marked
+`CUA171_PRIVATE_DISPLAY` and read back before any load or record; a server that does not start stops the script
+before anything reaches a display. Every flood mode refuses a display that is not a local `:<n>` or not marked
+(`repro/flood/tests/fence.rs`, `cargo test --release --offline`), and `rehearse-close.sh` attaches gdb only to an Xvfb
+on a marked display. `repro/fence-test.sh` checks the scripts' side on servers of its own. The servers run without an
+authority file (`-displayfd` names the display only once the server runs) and listen on their Unix socket only. The
+runs above came from the scripts before this fence, which took the display from `D` (`:93` by default).

@@ -10,6 +10,11 @@
 //! - `slowrec <contexts> <chunk> <gap_us>`: a RECORD client that reads raw bytes at a bounded rate (see the function).
 //! - `ping <interval_ms> <bound_ms>`: a GetInputFocus round trip on its own connection every interval; one line per
 //!   round trip over 50 ms, and `STALL` with exit 3 when one does not answer within the bound.
+//!
+//! Every mode reaches only a private display (task 44): `DISPLAY` must name a local display as `:<n>` or `:<n>.<s>`
+//! (x11rb 0.13 takes other forms, `unix:<path>` among them, to `/tmp/.X11-unix/X0`), and its root must carry
+//! `CUA171_PRIVATE_DISPLAY`, the mark the harness and `repro-stall.sh` set on a server they started. Any other display
+//! is refused before anything is sent on it but that one read.
 
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -18,8 +23,44 @@ use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     AtomEnum, ConnectionExt as _, CreateWindowAux, EventMask, PropMode, WindowClass,
 };
+use x11rb::rust_connection::RustConnection;
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+/// The root property that marks a private display (xprobe clip.rs `PRIVATE_MARK`).
+const PRIVATE_MARK: &str = "CUA171_PRIVATE_DISPLAY";
+
+/// Whether `display` names a local display by number (`:<n>` or `:<n>.<s>`), the one form x11rb 0.13 takes where it
+/// says.
+fn local_display(display: &str) -> bool {
+    let Some(rest) = display.strip_prefix(':') else {
+        return false;
+    };
+    let (number, screen) = rest.split_once('.').unwrap_or((rest, "0"));
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    digits(number) && digits(screen)
+}
+
+/// The one way this crate reaches a display: `DISPLAY`'s, only if it is a local display marked private.
+fn connect() -> Result<(RustConnection, usize)> {
+    let display = std::env::var("DISPLAY").unwrap_or_default();
+    connect_private(&display)
+}
+
+fn connect_private(display: &str) -> Result<(RustConnection, usize)> {
+    if !local_display(display) {
+        return Err(format!("refusing the display {display:?}: this repro reaches only a local display named :<n>, one it started and marked {PRIVATE_MARK}").into());
+    }
+    let (conn, screen) = x11rb::connect(Some(display))?;
+    let root = conn.setup().roots[screen].root;
+    let mark = conn.intern_atom(true, PRIVATE_MARK.as_bytes())?.reply()?.atom;
+    let marked = mark != x11rb::NONE
+        && conn.get_property(false, root, mark, AtomEnum::ANY, 0, 1)?.reply()?.type_ != x11rb::NONE;
+    if !marked {
+        return Err(format!("refusing the display {display}: it is not marked {PRIVATE_MARK}, so it may be a person's; this repro loads and records only a private display").into());
+    }
+    Ok((conn, screen))
+}
 
 struct Lcg(u64);
 impl Lcg {
@@ -30,7 +71,7 @@ impl Lcg {
 }
 
 fn flood(secs: u64, seed: u64, batch: u32, pause_ms: u64, big_every: u32, big_bytes: usize, max_small: u32) -> Result<()> {
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = connect()?;
     let root = conn.setup().roots[screen].root;
     let win = conn.generate_id()?;
     conn.create_window(
@@ -88,7 +129,7 @@ fn churn(secs: u64, per_sec: u64) -> Result<()> {
     let gap = Duration::from_micros(1_000_000 / per_sec.max(1));
     let mut n = 0u64;
     while Instant::now() < deadline {
-        let (conn, _) = x11rb::connect(None)?;
+        let (conn, _) = connect()?;
         conn.get_input_focus()?.reply()?;
         drop(conn);
         n += 1;
@@ -102,7 +143,7 @@ fn ping(interval_ms: u64, bound_ms: u64) -> Result<()> {
     let (tx, rx) = mpsc::channel::<std::result::Result<(), String>>();
     let (go_tx, go) = mpsc::channel::<()>();
     std::thread::spawn(move || {
-        let conn = match x11rb::connect(None) {
+        let conn = match connect() {
             Ok((c, _)) => c,
             Err(e) => {
                 let _ = tx.send(Err(e.to_string()));
@@ -153,7 +194,7 @@ fn slowrec(contexts: u32, chunk: usize, gap_us: u64, hover_at: i32) -> Result<()
     use std::io::Read;
     use std::os::fd::AsFd;
     use x11rb::protocol::record::{self, ConnectionExt as _};
-    let (control, _) = x11rb::connect(None)?;
+    let (control, _) = connect()?;
     control.record_query_version(1, 13)?.reply()?;
     let none8 = record::Range8 { first: 0, last: 0 };
     let no_ext = record::ExtRange { major: none8, minor: record::Range16 { first: 0, last: 0 } };
@@ -187,7 +228,7 @@ fn slowrec(contexts: u32, chunk: usize, gap_us: u64, hover_at: i32) -> Result<()
     if contexts == 2 {
         let ectx = control.generate_id()?;
         control.record_create_context(ectx, header, &all, &[errors])?.check()?;
-        let (edata, _) = x11rb::connect(None)?;
+        let (edata, _) = connect()?;
         std::thread::spawn(move || {
             if let Ok(replies) = edata.record_enable_context(ectx) {
                 for r in replies {
@@ -199,7 +240,7 @@ fn slowrec(contexts: u32, chunk: usize, gap_us: u64, hover_at: i32) -> Result<()
         });
         extra.push(ectx);
     }
-    let (data, _) = x11rb::connect(None)?;
+    let (data, _) = connect()?;
     let _replies = data.record_enable_context(ctx)?;
     data.flush()?;
     let mut raw = std::fs::File::from(data.stream().as_fd().try_clone_to_owned()?);
@@ -275,5 +316,23 @@ fn main() -> Result<()> {
         Some("ping") => ping(num(1, 1000), num(2, 5000)),
         Some("slowrec") => slowrec(num(1, 2) as u32, num(2, 4096) as usize, num(3, 1000), num(4, 0) as i32),
         _ => Err("flood <secs> <seed> <batch> | churn <secs> <per_sec> | ping <interval_ms> <bound_ms>".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_local_display_by_number_is_ever_connected_to() {
+        for display in [":0", ":93", ":93.0", ":7.1"] {
+            assert!(local_display(display), "{display}");
+        }
+        // x11rb 0.13 takes `unix:<path>` and `/path` to /tmp/.X11-unix/X0; the rest are not ours to reach
+        for display in ["", "unix:/tmp/.X11-unix/X93", "/tmp/.X11-unix/X93", "localhost:93", ":", ":93.", ":x", "unix:93", " :93"] {
+            assert!(!local_display(display), "{display}");
+            let refused = connect_private(display).err().map(|e| e.to_string()).unwrap_or_default();
+            assert!(refused.contains("reaches only a local display"), "{display}: {refused}");
+        }
     }
 }

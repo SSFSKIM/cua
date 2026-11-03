@@ -186,6 +186,9 @@ test("the verdict passes only when every family's lanes, audits and stops did wh
     failing((r) => ({ ...r, series: r.series.map((s) => (s.family === 'chrome' && s.lane === 'control' && s.scenario === 'paste' ? { ...s, misses: 0 } : s)) })),
     /chrome paste: the control lane showed no reorder/,
   );
+  // the control's line says how its runs failed: a text cut or reordered, or only an answer (a paste racing the keys)
+  const lines = focusTimerVerdict(results((r) => ({ ...r, series: r.series.map((s) => (s.lane === 'control' ? { ...s, wrong_text: 1 } : s)) })), { families }).md;
+  assert.ok(lines.some((l) => l.startsWith('| chrome | control | burst |') && l.includes('fails without the delay (4/10; the text wrong in 1)')), lines.join('\n'));
   // a family where nothing reorders without the delay is reported, not failed
   assert.deepEqual(failing((r) => ({ ...r, series: r.series.map((s) => (s.family === 'gedit' && s.lane === 'control' ? { ...s, misses: 0 } : s)) })), '');
   assert.match(failing((r) => ({ ...r, audits: r.audits.map((a, i) => (i === 0 ? { ...a, clean: false } : a)) })), /chrome timer: the audit is not clean/);

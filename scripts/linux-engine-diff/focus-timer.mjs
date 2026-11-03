@@ -226,7 +226,9 @@ async function series(ctx, family, lane, name, windows) {
     if (lane === 'timer' && seriesVerdict(oks, need).reached) break;
   }
   const verdict = seriesVerdict(oks, lane === 'timer' ? need : Infinity);
-  const out = { family, lane, scenario: name, need, ...verdict, burst_ms_median: median(rows.map((r) => r.burst_ms)), first_miss: rows.find((r) => !r.ok) ?? null };
+  // a run can fail on its text (a key cut, or the order) or only on an answer (a paste that raced the keys)
+  const wrongText = rows.filter((r) => !Object.values(r.exact).every(Boolean)).length;
+  const out = { family, lane, scenario: name, need, ...verdict, wrong_text: wrongText, burst_ms_median: median(rows.map((r) => r.burst_ms)), first_miss: rows.find((r) => !r.ok) ?? null };
   emit({ kind: 'focus-timer-series', ...out });
   return out;
 }
@@ -428,7 +430,7 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped }, { fam
       if (need < CONSECUTIVE) failed.push(`${s.family} ${s.scenario}: a development series of ${need}, not the ${CONSECUTIVE} the proof needs`);
     } else {
       const required = CHROMIUM.includes(s.family);
-      verdict = s.misses > 0 ? `shows the reorder (${s.misses}/${s.runs})` : required ? '**shows nothing**' : 'no reorder (not required)';
+      verdict = s.misses > 0 ? `fails without the delay (${s.misses}/${s.runs}; the text wrong in ${s.wrong_text ?? '?'})` : required ? '**shows nothing**' : 'no reorder (not required)';
       if (required && s.misses === 0) failed.push(`${s.family} ${s.scenario}: the control lane showed no reorder in ${s.runs} runs, so the test cannot see one`);
     }
     md.push(`| ${s.family} | ${s.lane} | ${s.scenario} | ${s.runs} | ${s.misses} | ${s.streak} | ${verdict} | ${s.burst_ms_median ?? '–'} |`);

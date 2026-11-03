@@ -949,6 +949,13 @@ impl X11 {
         self.conn.flush()?;
         Ok(())
     }
+
+    /// A round trip: once it returns, the server has handled every request sent before it (the exit's last
+    /// `FocusOut` included, so the engine never exits with one still unread in its socket).
+    pub fn sync(&self) -> Result<()> {
+        self.conn.get_input_focus()?.reply()?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

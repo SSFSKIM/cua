@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cua171 keys scene</title>
+<style>
+  body { margin: 0; font: 16px sans-serif; }
+  #field { position: absolute; left: 12px; top: 12px; width: 80vw; height: 80vh; font: 16px monospace; }
+</style>
+</head>
+<body>
+<!-- The FocusOut timer's Chromium scene (focus-timer.mjs): a field that holds the focus, whose page spends a few
+     milliseconds on each key before the field takes it, as a page with its own key handling does. A burst then outruns
+     the renderer, so a FocusOut that follows the keys too soon finds keys still queued, which Chromium holds back until
+     the window's next FocusIn (M0.4, on the person's long-lived Chrome); a fresh, idle Chromium otherwise keeps up with
+     a burst and shows no reorder at all. The work per key is `SPIN_MS`; the title comes from the URL's fragment. -->
+<textarea id="field" aria-label="Field" autofocus autocomplete="off" spellcheck="false"></textarea>
+<script>
+  const SPIN_MS = 3;
+  document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
+  document.getElementById('field').addEventListener('keydown', () => {
+    const until = performance.now() + SPIN_MS;
+    while (performance.now() < until) {
+      // the page's own work on the key
+    }
+  });
+</script>
+</body>
+</html>

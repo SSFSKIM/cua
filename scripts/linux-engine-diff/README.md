@@ -829,6 +829,44 @@ node scripts/linux-engine-diff.mjs --experiment atspi --cua "$INSTALLED" --out "
   4.14's entry answers `GetText(0, -1)` with nothing); a control in a window of its own (the key, then one Ctrl+Z) shows
   each widget's undo working without `InsertText`. These are the probe's only writes, into windows it opened.
 
+## M4 T7's addition: the FocusOut timer (`--experiment focus-timer`)
+
+The proof of the engine's `FocusOut` timer (Plan of Work, M4, T7; the engine's `focus_timer.rs`): a background request
+answers as soon as its input is sent, and its window's synthetic `FocusOut` follows 100 ms after the window's last
+input, flushed before input to another window, before a paste's observation and at exit.
+
+```bash
+node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/focus-timer/idle" [--family <list>]
+node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/focus-timer/load2" --load-factor 2
+```
+
+- **Its display**, as the AT-SPI probe's: a private X server it starts itself, Openbox, the harness's own Desktop with
+  the run's applications, homes, session bus and own Chrome and Electron; the live-run declaration withdrawn first, so
+  nothing reaches `:0`. `--load-factor 2` runs it under twice the gate's load.
+- **The families**: every family of the matrix whose background keys cua sends (Chrome, Electron, gedit, kate,
+  qtcreator, Firefox, Writer on gtk3 and gen, gnome-terminal), two windows each, covered by the front window. Chromium's
+  windows show `pages/keys.html`, whose page spends 3 ms on each key, so a burst outruns the renderer.
+- **The lanes**: the engine as it is (`timer`) and a control with no delay (`control`, `--teardown-ms 0`). Each run is
+  a fresh engine's. The scenarios, pipelined: `burst` (20 keys, Shift chords among them), `aba` (8 keys to A, 8 to B,
+  8 to A again) and `paste` (8 keys, then a `type_text` to the same window). A run passes when every answer is a success
+  and each window's text is exactly its old text with the scenario's text put at the caret read before the run. The
+  timer lane needs 30 consecutive passing runs of each scenario (at most 60; a miss restarts the series and is reported;
+  `--trials` sets fewer for a development run, which the verdict then fails); the control lane runs 10 and must fail on
+  Chromium, which shows the run can see what the delay prevents.
+- **The audit**, a pass per family and lane: each scenario once with the engine's X connection through xtrace and its
+  `--stats` records of its `FocusOut`s. Nothing the background route forbids; the synthetic-focus sessions, by window and
+  in order, exactly the scenarios' (one per burst on the timer lane, one per request on the control lane); no two windows
+  under synthetic focus at once; every `FocusOut` in the trace attributed to the request whose input started its timer,
+  and on the timer lane none sooner than 100 ms after its window's last input (`audit.mjs` `attributeFocusOuts`).
+- **The exit drain** (Chromium): a burst to a fresh engine, then SIGTERM straight after its last answer, inside the
+  100 ms: every key in order, its session closed by its `FocusOut` in the trace, the engine's exit record (the full delay
+  waited) and an exit code of 143 within 1.5 s; SIGKILL, the documented limit, is the control that leaves the session
+  unclosed.
+
+The events experiment (`events.mjs`) reads each step's events once the synthetic focus it left open has closed, at most
+300 ms (`settleFocus`), since cua's `FocusOut` now follows the answer: each request is then compared with the pinned
+build's own events, `FocusOut` included, as before.
+
 ## Files
 
 | File | What it is |
@@ -857,6 +895,7 @@ node scripts/linux-engine-diff.mjs --experiment atspi --cua "$INSTALLED" --out "
 | `wire-check.mjs`, `stub-replay.mjs`, `record-wire.mjs`, `fixtures/wire/` | the wire fixtures |
 | `stub-activating.mjs` | the negative check's stub engine |
 | `events.mjs`, `xprobe/src/record.rs` | M1a.2's input events experiment and its recorder window |
+| `focus-timer.mjs`, `pages/keys.html` | M4 T7's FocusOut timer experiment and its Chromium page |
 | `pages/` | the Chrome scenes (`input.html` the pointer and key scene, `text.html` the text scene) and `gtk-table.py`, the large-table scene |
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |

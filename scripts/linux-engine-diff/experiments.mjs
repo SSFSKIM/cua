@@ -25,6 +25,7 @@ import { Engine } from './engine.mjs';
 import { runAtspi } from './atspi-probe.mjs';
 import { runDrag } from './drag.mjs';
 import { runEvents } from './events.mjs';
+import { runFocusTimer } from './focus-timer.mjs';
 import { runDnd } from './dnd.mjs';
 import { runKinds } from './kinds.mjs';
 import { familyNames, openFamily, readText } from './families.mjs';
@@ -307,6 +308,15 @@ export async function runExperiment(args) {
   mkdirSync(args.out, { recursive: true });
   const results = join(args.out, 'results.jsonl');
   const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);
+  if (args.experiment === 'focus-timer') {
+    // on a private X server of its own, like the AT-SPI probe (focus-timer.mjs), its load started there
+    emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
+    const { md, complete, failed, ending } = await runFocusTimer(args, { emit, run, startLoad });
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    process.stdout.write(`${md.join('\n')}\n`);
+    writeSummary(args.out);
+    return complete;
+  }
   if (args.experiment === 'atspi') {
     // on a private X server of its own, the only display it may reach (atspi-probe.mjs); nothing runs before it exists
     emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, started: new Date().toISOString() });

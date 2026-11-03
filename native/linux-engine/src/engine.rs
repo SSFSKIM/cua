@@ -652,7 +652,7 @@ impl Engine {
         self.collect_late_watch(false);
         self.inputs.release_everything(&mut self.x);
         self.report_sent();
-        let _ = self.x.flush();
+        let _ = self.x.sync();
         self.clipboard = None;
         if let Some(dir) = self.shot_dir.take() {
             let _ = std::fs::remove_dir_all(dir);

@@ -299,10 +299,36 @@ class Recorder {
   }
 }
 
+/** How long a step's events are read on for the `FocusOut` of a synthetic focus it left open (`settleFocus`). */
+export const FOCUS_SETTLE_MS = 300;
+
+/**
+ * A step's events once the synthetic focus left open over the scenario so far (`open`, plus the step's own `FocusIn`s
+ * less its `FocusOut`s) has closed, read on with `mark` every `pollMs`, or once `boundMs` has passed: `{events, open}`.
+ * cua's `FocusOut` follows a request's answer on its timer (M4's T7, the engine's `focus_timer.rs`), where the vendor
+ * builds send theirs before they answer, so each request's events are compared once its session has ended, as the
+ * vendor's has; the next step then starts on no open session in either engine, as it does in the vendor's. A hold keeps
+ * its session open in every engine until its release: such a step is read after the bound. The burst a timer serves
+ * (requests in a row to one window, one `FocusIn` and one `FocusOut`) is the focus-timer experiment's to judge.
+ */
+export async function settleFocus(events, { open = 0, mark, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), boundMs = FOCUS_SETTLE_MS, pollMs = 20 }) {
+  const count = (list) => list.reduce((n, e) => n + (e.send === true && e.type === 'FocusIn' ? 1 : e.send === true && e.type === 'FocusOut' ? -1 : 0), 0);
+  const all = [...events];
+  let left = open + count(events);
+  for (let waited = 0; left > 0 && waited < boundMs; waited += pollMs) {
+    await sleep(pollMs);
+    const more = await mark();
+    all.push(...more);
+    left += count(more);
+  }
+  return { events: all, open: left };
+}
+
 /**
  * Runs one scenario on one engine: a fresh recorder and engine process (or, through the vendor JavaScript, a fresh
  * client's engine), the pointer put at its start. A step with an `effect` has it judged from the pointer read before
- * and after it and the events the recorder received.
+ * and after it and the events the recorder received; its events are read once any synthetic focus it left open has
+ * closed (`settleFocus`).
  */
 async function runScenario(scenario, engine, env, { via = 'wire', skyDir } = {}) {
   xExecFileSync('xdotool', ['mousemove', String(POINTER_START[0]), String(POINTER_START[1])], { env });
@@ -311,12 +337,16 @@ async function runScenario(scenario, engine, env, { via = 'wire', skyDir } = {})
   const engineEnv = scenario.apps ? { ...env, XDG_DATA_HOME: env.EVENTS_APPS, XDG_DATA_DIRS: '' } : env;
   const process_ = (via === 'vendor-js' ? new VendorJsEngine({ label: engine.label, bin: engine.bin, skyDir, env: engineEnv }) : new Engine({ label: engine.label, bin: engine.bin, args: engine.args ?? [], env: engineEnv })).start();
   const steps = [];
+  let open = 0;
   try {
     for (const [i, step] of scenario.steps.entries()) {
       const { command, input } = bindStep(step, window);
       const before = step.effect ? pointerOn(env) : null;
       const { response, ms } = await process_.request(command, input, { timeoutMs: 30000 });
-      const events = await recorder.mark(`step-${i}`);
+      let polls = 0;
+      const settled = await settleFocus(await recorder.mark(`step-${i}`), { open, mark: () => recorder.mark(`step-${i}-focus-${polls++}`) });
+      ({ open } = settled);
+      const { events } = settled;
       const timed = { ms: Math.round(ms * 100) / 100, first: i === 0 };
       const effect = step.effect ? { effect: response.ok === true && step.effect({ before, after: pointerOn(env), events }) } : {};
       if (step.interrupted) steps.push({ command, interrupted: true, ...interruptedStep(response, events), raw: normalizeAnswer(response), ...timed });

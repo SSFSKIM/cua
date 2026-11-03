@@ -205,6 +205,70 @@ export function inputEvent(request, extensions) {
   return { via: 'send', type: sent[1], detail: sent[3] === undefined ? null : Number.parseInt(sent[3], 16), destination: destination ? Number.parseInt(destination[1], 16) : null };
 }
 
+const hexId = (w) => `0x${Number(w).toString(16)}`;
+const ordinal = (n) => `${n}${n % 100 >= 11 && n % 100 <= 13 ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th'}`;
+
+/**
+ * The background route's synthetic-focus sessions in a trace (M4's T7): per destination, a `FocusIn` opens one, its
+ * input events follow, its `FocusOut` closes it. `{sessions: [{destination, inputs, closed}], problems}`; a problem is a
+ * `FocusIn` while another window's session is open (input to another window that did not flush first) or while its own
+ * is, input to a window with no session open, a `FocusOut` with none open, and a session never closed.
+ */
+export function focusSessions({ requests, extensions }) {
+  const sessions = [];
+  const problems = [];
+  const open = new Map();
+  for (const r of requests) {
+    const e = inputEvent(r, extensions);
+    if (e?.via !== 'send' || e.destination === null) continue;
+    const w = e.destination;
+    if (e.type === 'FocusIn') {
+      if (open.has(w)) problems.push(`FocusIn to ${hexId(w)} while its session was open`);
+      const others = [...open.keys()].filter((v) => v !== w);
+      if (others.length) problems.push(`two windows under synthetic focus at once: FocusIn to ${hexId(w)} while ${others.map(hexId).join(', ')} held it`);
+      const session = { destination: w, inputs: 0, closed: false };
+      sessions.push(session);
+      open.set(w, session);
+    } else if (e.type === 'FocusOut') {
+      const session = open.get(w);
+      if (!session) problems.push(`FocusOut to ${hexId(w)} with no session open`);
+      else {
+        session.closed = true;
+        open.delete(w);
+      }
+    } else if (open.has(w)) open.get(w).inputs += 1;
+    else problems.push(`input to ${hexId(w)} outside a session (${e.type})`);
+  }
+  for (const session of open.values()) problems.push(`${hexId(session.destination)}'s session was never closed`);
+  return { sessions, problems };
+}
+
+/**
+ * The audit of each deferred `FocusOut` (M4's T7): the trace's `FocusOut`s, in the order they were sent, matched one by
+ * one to the engine's own `--stats` records of them (`records`: `{window, cause, after_input_ms, scheduled_by,
+ * reported_on}` in the order the engine wrote them, `reported_on` the id of the request whose line carried the record,
+ * null for a line of its own). Each is attributed to the request whose input last started its window's timer
+ * (`scheduled_by`), and is deferred when it went out after that request's answer (`reported_on` another request or
+ * none). Fails on a session problem (`focusSessions`), on counts or windows that differ between the trace and the
+ * records, and, with a `delayMs`, on a `FocusOut` sooner than it after its window's last input. A trace with no requests
+ * is not clean. Returns `{clean, traced, sessions, attributed, problems}`.
+ */
+export function attributeFocusOuts(trace, records, { delayMs }) {
+  const { sessions, problems } = focusSessions(trace);
+  const sent = trace.requests.map((r) => inputEvent(r, trace.extensions)).filter((e) => e?.via === 'send' && e.type === 'FocusOut');
+  if (sent.length !== records.length) problems.push(`${sent.length} FocusOut in the trace and ${records.length} reported by the engine`);
+  const attributed = [];
+  sent.forEach((e, i) => {
+    const rec = records[i];
+    if (!rec) return;
+    if (rec.window !== e.destination) problems.push(`the ${ordinal(i + 1)} FocusOut went to ${hexId(e.destination)}, reported for ${hexId(rec.window)}`);
+    if (delayMs > 0 && rec.after_input_ms < delayMs) problems.push(`the ${ordinal(i + 1)} FocusOut, to ${hexId(e.destination)}, went ${rec.after_input_ms} ms after its window's last input, sooner than ${delayMs} ms`);
+    attributed.push({ window: e.destination, scheduled_by: rec.scheduled_by, cause: rec.cause, after_input_ms: rec.after_input_ms, deferred: rec.reported_on !== rec.scheduled_by });
+  });
+  const traced = trace.requests.length > 0;
+  return { clean: traced && problems.length === 0, traced, sessions, attributed, problems };
+}
+
 /** A pressed key or button and the release that answers it. */
 const RELEASE_OF = { KeyPress: 'KeyRelease', ButtonPress: 'ButtonRelease' };
 const heldName = ({ type, detail }) => `${type === 'KeyPress' ? 'key' : 'button'} ${detail}`;

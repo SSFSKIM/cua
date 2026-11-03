@@ -147,10 +147,14 @@ killed it.
   variables are not handed on. On a display a person uses, `GSETTINGS_BACKEND=memory`: a GSettings write would
   otherwise reach the person's dconf. A family's own variables (`env`) are applied last; one that names a variable the
   run decides (`PROTECTED_VARS`: the display, its authority, the runtime directory, the buses, `SESSION_MANAGER`,
-  `GSETTINGS_BACKEND`) is refused at its launch, naming the family and the variable (task 47), and none may place a
-  file outside the scratch. A family a separate HOME breaks may declare `home: 'xdg'`
-  (the harness's HOME, the run's XDG directories); none does. Engines are not applications: they keep the harness's
-  environment. A private display's session bus (and so its accessibility bus launcher) starts with the run's home and
+  `GSETTINGS_BACKEND`, `TMPDIR`) is refused at its launch, naming the family and the variable (task 47), and none may
+  place a file outside the scratch. A family a separate HOME breaks may declare `home: 'xdg'`
+  (the harness's HOME, the run's XDG directories); none does. `TMPDIR` is the run's, `<scratch>/tmp` (task 51), for
+  every application and, while the run is open (`Desktop.begin` to its end, engine.mjs `runEngines`), every engine:
+  cua's, both vendor builds' (whose screenshots, `<pid>_<ns>.jpg`, the run removes once copied) and the
+  vendor-JavaScript lane's. Otherwise engines are not applications: they keep the harness's environment and their
+  own variables. Qt Creator's single-instance socket, lockfile and `qipc_*` files, which Qt names for the application
+  and the user, are then the run's alone. A private display's session bus (and so its accessibility bus launcher) starts with the run's home and
   its settings in memory, so the launcher reads nothing of the person's, and the run turns its accessibility switch
   on there at its start (below).
 - **The accessibility switches** (`a11y-status.mjs`, task 45): `org.a11y.Status` `IsEnabled` and

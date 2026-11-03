@@ -39,10 +39,10 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { QT_ON_PERSONS_DISPLAY, a11yAddress, qtBridgeRefusal, readStatus } from './a11y-status.mjs';
-import { HOME_VARS, launchEnvironment, runHome } from './app-env.mjs';
+import { HOME_VARS, launchEnvironment, runHome, runTmp } from './app-env.mjs';
 import { parseXtrace, parseXtraceFile, startProxy } from './audit.mjs';
 import { CHROME_ENV, ChromeInstance, isChromeCommand } from './chrome.mjs';
-import { Engine, watchOperations } from './engine.mjs';
+import { Engine, runEngines, watchOperations } from './engine.mjs';
 import { auditForeign, auditRecord, auditRecordFile, foreignKeep, foreignLine } from './foreign.mjs';
 import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
@@ -260,11 +260,16 @@ export class Desktop {
     this.unwatchOperations = watchOperations(({ engine, window, start, end }) => {
       if (engine !== this.ownReader) this.operations.push({ window, start, end });
     });
+    // every engine of the run, the reader's included, writes its temporary files in the run's TMPDIR, as its
+    // applications do (app-env.mjs `runTmp`, task 51): gone with the scratch at the run's end
+    mkdirSync(runTmp(this.dir), { recursive: true, mode: 0o700 });
+    this.endEngines = runEngines(this.dir);
     // a stall stops the run, killing the record client first (task 41)
     try {
       this.watchdog = await startWatchdog({ display: process.env.DISPLAY, file: this.watchdogFile() });
     } catch (error) {
       this.dropWatchdogDir();
+      this.endEngines();
       throw error;
     }
     try {
@@ -310,6 +315,7 @@ export class Desktop {
       this.record = null;
       await this.endSession();
       await this.stopWatchdog();
+      this.endEngines();
       throw error;
     }
     useHarnessDisplay(this.trace.env);
@@ -524,7 +530,8 @@ export class Desktop {
 
   /**
    * The environment of every application the run launches (app-env.mjs), scene applications and the run's Chrome alike:
-   * the run's home, made here at its first use, under the run's scratch directory, which goes at the run's end; the
+   * the run's home and its TMPDIR, made here at their first use, under the run's scratch directory, which goes at the
+   * run's end; the
    * display and buses as the harness has them now (a private display's session sets the buses, `useSession`); settings
    * in memory unless the display is a private one (`settings: 'memory'` for the run's own session bus, whose launcher
    * keeps the run's accessibility switch). `extra`: the application's own variables, never one the run decides (`app`
@@ -532,7 +539,7 @@ export class Desktop {
    */
   appEnvironment(extra = {}, { home = 'run', settings, app, sessionBus = this.session?.address } = {}) {
     const homes = runHome(this.dir);
-    for (const name of HOME_VARS) mkdirSync(homes[name], { recursive: true, mode: 0o700 });
+    for (const dir of [...HOME_VARS.map((name) => homes[name]), runTmp(this.dir)]) mkdirSync(dir, { recursive: true, mode: 0o700 });
     return launchEnvironment({ scratch: this.dir, base: process.env, privateDisplay: this.isPrivate === true, home, ...(settings ? { settings } : {}), ...(app ? { app } : {}), sessionBus, extra });
   }
 
@@ -1075,6 +1082,7 @@ export class Desktop {
     if (this.holder && this.windows.includes(this.holder)) await this.close([this.holder]);
     this.chromeEnding = this.chrome ? await this.chrome.stop() : null;
     this.sessionEnding = await this.endSession();
+    this.endEngines?.();
     rmSync(this.dir, { recursive: true, force: true });
     this.pruneLogs();
     if (this.trace) this.ending = await this.finishTrace();

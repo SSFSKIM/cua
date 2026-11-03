@@ -27,7 +27,14 @@
 //   'xdg'`); what it still writes under that HOME is then its family's to state (families.mjs);
 // - a family's own variables never name what the run decides (`PROTECTED_VARS`): such a family is refused at its launch,
 //   by name, rather than quietly overridden, so a family that would need one shows (task 45's review).
-// Engines are not applications: they keep the harness's own environment (engine.mjs).
+// - TMPDIR, on every display, is the run's (`runTmp`, `<scratch>/tmp`), for every application and every engine (task
+//   51; the design session's ruling, sminos 336): task 49 found applications and the vendor builds writing the
+//   harness's TMPDIR and never removing it, among them Qt Creator's single-instance socket, lockfile and `qipc_*` files,
+//   which are named for the application and the user, not HOME, so on `:0` they would be shared with a person's Qt
+//   Creator; the run's go with its scratch.
+// Engines are not applications: they keep the harness's own environment, their own variables as they are, but TMPDIR
+// the run's while a run is open (`engineEnvironment`, through engine.mjs's Engine and vendor-js.mjs's lane), the same
+// directory for cua's engine and both vendor builds, so the comparison stays fair.
 
 import { isAbsolute, join, relative, sep } from 'node:path';
 
@@ -64,7 +71,19 @@ export const PROTECTED_VARS = {
   AT_SPI_BUS_ADDRESS: "never named: the display's AT_SPI_BUS names the run's accessibility bus",
   SESSION_MANAGER: "never named: an application that registers with it joins the person's session",
   GSETTINGS_BACKEND: "the run's choice: in memory on a display a person uses",
+  TMPDIR: "the run's temporary directory, under its scratch, shared by every application and engine of the run",
 };
+
+/** The run's temporary directory, under its scratch: TMPDIR of every application and every engine of the run. */
+export const runTmp = (scratch) => join(scratch, 'tmp');
+
+/**
+ * An engine's environment: `base` (the harness's own, or a lane's), its variables as they are, with TMPDIR the run's
+ * when `scratch` names an open run (engine.mjs `runEngines`), and `base` itself when none does.
+ */
+export function engineEnvironment(base, scratch) {
+  return scratch ? { ...base, TMPDIR: runTmp(scratch) } : base;
+}
 
 /** The run's home under its scratch directory, and the XDG base directories inside it, as their defaults lie. */
 export function runHome(scratch) {
@@ -87,7 +106,7 @@ const inside = (dir, path) => {
 /**
  * The environment an application of the run's starts with: `base` (the harness's own), its files placed under the run's
  * home in `scratch` (`home: 'run'`), or only its XDG directories there (`home: 'xdg'`), the display handed on unchanged,
- * the run's own session bus `sessionBus` (its address; `false` only for the run's bus daemon itself, which is the bus;
+ * TMPDIR the run's (`runTmp`), the run's own session bus `sessionBus` (its address; `false` only for the run's bus daemon itself, which is the bus;
  * anything else, a missing one, is refused), no accessibility bus or session manager named (`DROPPED_VARS`), and
  * GSETTINGS_BACKEND=memory unless `privateDisplay` (a display the harness started and marked; anything
  * else counts as a person's), or as `settings` says (`'memory'`, or `'inherit'`: the harness's own backend). `extra`: the application's own variables (its toolkit's switches, a directory of its scene
@@ -108,6 +127,7 @@ export function launchEnvironment({ scratch, base = process.env, privateDisplay 
   // Xlib's default is $HOME/.Xauthority: the harness's HOME, named, since the application's HOME is the run's
   if (env.XAUTHORITY === undefined && base.HOME) env.XAUTHORITY = join(base.HOME, '.Xauthority');
   if (settings === 'memory') env.GSETTINGS_BACKEND = 'memory';
+  env.TMPDIR = runTmp(scratch);
   for (const name of DROPPED_VARS) delete env[name];
   for (const name of BUS_VARS) delete env[name];
   if (sessionBus) env.DBUS_SESSION_BUS_ADDRESS = sessionBus;

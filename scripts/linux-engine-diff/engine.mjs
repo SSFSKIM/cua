@@ -3,12 +3,31 @@
 // from the process's spawn (the cold sample a service pays on first use). cua-engine's `--stats` lines on stderr are
 // matched to their requests by id.
 
+import { engineEnvironment } from './app-env.mjs';
 import { xSpawn } from './xspawn.mjs';
 import { createInterface } from 'node:readline';
 
 const now = () => Number(process.hrtime.bigint()) / 1e6;
 
 const operationWatchers = new Set();
+
+// the scratch directory of the run open now (`runEngines`): every engine started meanwhile writes its temporary files
+// there, in the run's TMPDIR (app-env.mjs `engineEnvironment`, task 51)
+let openRun = null;
+
+/**
+ * The run whose engines start from now on (scenes.mjs `Desktop.begin`; one run at a time in a harness process): each
+ * one, cua's and the vendor builds' alike, gets the run's TMPDIR under `scratch`. Returns the function that ends it.
+ */
+export function runEngines(scratch) {
+  openRun = scratch;
+  return () => {
+    if (openRun === scratch) openRun = null;
+  };
+}
+
+/** The open run's scratch directory, or null between runs. */
+export const runningScratch = () => openRun;
 
 /**
  * Every request an engine makes on a window, reported when it is answered to `watch({engine, window, command, start,
@@ -49,7 +68,8 @@ export class Engine {
   start() {
     this.spawnedAt = now();
     const args = ['server', ...this.args, ...(this.statsWanted ? ['--stats'] : [])];
-    this.child = xSpawn(this.bin, args, { stdio: ['pipe', 'pipe', 'pipe'], ...(this.env ? { env: this.env } : {}) });
+    const env = engineEnvironment(this.env ?? process.env, openRun);
+    this.child = xSpawn(this.bin, args, { stdio: ['pipe', 'pipe', 'pipe'], env });
     this.pid = this.child.pid;
     this.exited = new Promise((resolve) => this.child.once('exit', (code, signal) => resolve({ code, signal })));
     createInterface({ input: this.child.stdout }).on('line', (line) => {

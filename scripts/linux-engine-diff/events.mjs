@@ -18,7 +18,8 @@ import { createInterface } from 'node:readline';
 
 import { desktopEntry } from './desktop-entry.mjs';
 import { SPEED_GAPS, declaredDeviation, declaredSpeedGap } from './deviations.mjs';
-import { Engine } from './engine.mjs';
+import { runTmp } from './app-env.mjs';
+import { Engine, runEngines } from './engine.mjs';
 import { XPROBE } from './scenes.mjs';
 import { median, noiseVerdict, speedLabel } from './stats.mjs';
 import { VendorJsEngine } from './vendor-js.mjs';
@@ -614,6 +615,9 @@ export async function runEvents(args, emit) {
   // the harness's own private server, watched from its first client on, before anything probes or drives it (task 44)
   const server = await startPrivateServer({ out: args.out });
   const home = mkdtempSync(join(tmpdir(), 'cua171-events-'));
+  // its engines' temporary files in a TMPDIR of the experiment's own, every engine alike, gone with it (task 51)
+  mkdirSync(runTmp(home), { mode: 0o700 });
+  const endEngines = runEngines(home);
   const env = { ...process.env, DISPLAY: server.display, XAUTHORITY: join(home, 'no-auth'), EVENTS_APPS: join(home, 'data') };
   mkdirSync(join(home, 'data', 'applications'), { recursive: true });
   writeFileSync(join(home, 'data', 'applications', 'events-probe.desktop'), desktopEntry('Events Probe', ['/usr/bin/touch', join(home, 'launched')]));
@@ -683,6 +687,7 @@ export async function runEvents(args, emit) {
     }
   } finally {
     watched = await server.stop();
+    endEngines();
     rmSync(home, { recursive: true, force: true });
   }
   // a display that went unwatched (its watchdog stalled, was lost or failed) judges nothing

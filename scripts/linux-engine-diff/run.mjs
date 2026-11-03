@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { runTmp } from './app-env.mjs';
 import { auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace, startProxy } from './audit.mjs';
 import { auditForeign, foreignLine } from './foreign.mjs';
 import { startMonitor } from './busmon.mjs';
@@ -156,6 +157,12 @@ export async function pollEffect(read, judge, { gapMs = 120, deadlineMs = 2500 }
     last = now;
   }
 }
+
+/**
+ * Whether a screenshot file is one a vendor build left in the run's TMPDIR (`<pid>_<ns>.jpg`, task 49: never removed),
+ * which the harness removes once it has its copy; cua-engine keeps its own in a private directory there, and removes it.
+ */
+export const leftByVendor = (filepath, scratch) => dirname(filepath) === runTmp(scratch);
 
 /** The answer a sample is compared by: its state, its screenshot, or its normalized answer. */
 function answerDigest(op, scene, response, labelPattern) {
@@ -1046,7 +1053,7 @@ async function diffRun(args, candidate, { handoff }) {
           if (row.ok) {
             const files = op === 'get_screenshot' ? response.output : (response.output?.screenshots ?? []);
             for (const shot of files) {
-              if (shot.filepath.startsWith('/tmp/') && !shot.filepath.startsWith('/tmp/cua-engine-')) rmSync(shot.filepath, { force: true });
+              if (leftByVendor(shot.filepath, desktop.dir)) rmSync(shot.filepath, { force: true });
             }
           }
           emit(row);

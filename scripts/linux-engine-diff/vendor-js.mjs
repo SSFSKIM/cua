@@ -19,6 +19,8 @@ import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { engineEnvironment } from './app-env.mjs';
+import { runningScratch } from './engine.mjs';
 import { loadVendorClient } from './wire-check.mjs';
 import { assertReachable } from './xspawn.mjs';
 
@@ -81,9 +83,12 @@ export class VendorJsEngine {
     return this;
   }
 
-  /** The variables the lane installs for the client: its own, and the block's path to the engine. */
+  /**
+   * The variables the lane installs for the client: its own, the block's path to the engine, and the open run's TMPDIR
+   * (engine.mjs `runEngines`), which the client's engine writes its screenshots in.
+   */
   overrides() {
-    return { ...(this.env ?? {}), OAI_SKY_LINUX_BIN: this.link };
+    return engineEnvironment({ ...(this.env ?? {}), OAI_SKY_LINUX_BIN: this.link }, runningScratch());
   }
 
   /**

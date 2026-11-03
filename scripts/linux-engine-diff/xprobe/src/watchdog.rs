@@ -190,8 +190,8 @@ pub fn act_on_stall(
     };
     let alert = if round_trips == 0 {
         format!(
-            "cua171 WATCHDOG: the X display {display} did not answer ({reason}) before its first answer; killed \
-             {guarded_text}, and the run, which had not begun on it, fails its start. Do not run anything against \
+            "cua171 WATCHDOG: the X display {display} never answered its first round trip ({reason}); killed \
+             {guarded_text}; the run, which had not begun on it, fails its start. Do not run anything against \
              {display} until it answers."
         )
     } else {
@@ -607,7 +607,7 @@ mod tests {
             "no grace is waited for a run not stopped"
         );
         assert!(line.contains("\"stopped\":null"), "{line}");
-        assert!(alert.contains("before its first answer"), "{alert}");
+        assert!(alert.contains("never answered its first round trip"), "{alert}");
         let _ = run.kill();
         let _ = run.wait();
     }

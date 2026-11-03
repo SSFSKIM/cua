@@ -10,10 +10,13 @@ import { tmpdir } from 'node:os';
 import { delimiter, join, relative } from 'node:path';
 import test from 'node:test';
 
-import { HOME_VARS, KEPT_VARS, launchEnvironment, runHome } from '../../scripts/linux-engine-diff/app-env.mjs';
+import { HOME_VARS, launchEnvironment, runHome } from '../../scripts/linux-engine-diff/app-env.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 
 const HARNESS = join(import.meta.dirname, '../../scripts/linux-engine-diff');
+
+/** What an application gets exactly as the harness has it: the display, its authority, the runtime directory, the session bus. */
+const HANDED_ON = ['DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** The harness's own environment, as a harness started from the person's session has it. */
@@ -42,7 +45,8 @@ test("on a display a person uses: the run's home and XDG directories, settings i
     XDG_STATE_HOME: '/tmp/cua171-diff-r-x/home/.local/state',
   });
   assert.deepEqual(runHome(scratch), Object.fromEntries(HOME_VARS.map((n) => [n, env[n]])));
-  for (const name of KEPT_VARS) assert.equal(env[name], PERSON[name], `${name} is handed on unchanged`);
+  for (const name of HANDED_ON) assert.equal(env[name], PERSON[name], `${name} is handed on unchanged`);
+  assert.equal('AT_SPI_BUS_ADDRESS' in env, false, "an inherited accessibility bus never reaches an application: the display's AT_SPI_BUS names its own");
   assert.equal(env.GSETTINGS_BACKEND, 'memory', "a GSettings write never reaches the person's dconf");
   assert.equal('SESSION_MANAGER' in env, false, "no application joins the person's session");
   assert.equal(env.PATH, PERSON.PATH);
@@ -54,7 +58,10 @@ test("on a private display: the run's home, no settings backend imposed, the run
   const env = launchEnvironment({ scratch: '/tmp/cua171-diff-r-x', base, privateDisplay: true });
   assert.equal(env.HOME, '/tmp/cua171-diff-r-x/home');
   assert.equal('GSETTINGS_BACKEND' in env, false);
-  for (const name of KEPT_VARS) assert.equal(env[name], base[name], name);
+  for (const name of HANDED_ON) assert.equal(env[name], base[name], name);
+  // the run's own accessibility bus is not named either (Qt 6 registers no tree with the variable set, task 46): the
+  // display's AT_SPI_BUS and the run's session bus both name it
+  assert.equal('AT_SPI_BUS_ADDRESS' in env, false);
   // a backend the harness itself was started with is the harness's to pass on
   assert.equal(launchEnvironment({ scratch: '/tmp/s', base: { ...base, GSETTINGS_BACKEND: 'keyfile' }, privateDisplay: true }).GSETTINGS_BACKEND, 'keyfile');
   // the run's own session bus, whose launcher keeps the run's accessibility switch, asks for memory explicitly
@@ -85,6 +92,8 @@ test("an application's own variables apply last, but never place a file outside 
   assert.throws(() => launchEnvironment({ scratch, base: PERSON, extra: { XDG_STATE_HOME: undefined } }), /XDG_STATE_HOME lies under/);
   assert.throws(() => launchEnvironment({ scratch, base: PERSON, extra: { DISPLAY: ':1' } }), /DISPLAY is the harness's, handed on unchanged/);
   assert.throws(() => launchEnvironment({ scratch, base: PERSON, extra: { DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x' } }), /handed on unchanged/);
+  // a family that needs the accessibility bus named sets it itself, and says why (none does)
+  assert.equal(launchEnvironment({ scratch, base: PERSON, extra: { AT_SPI_BUS_ADDRESS: 'unix:path=/a11y' } }).AT_SPI_BUS_ADDRESS, 'unix:path=/a11y');
   assert.throws(() => launchEnvironment({ scratch: 'relative', base: PERSON }), /absolute path/);
 });
 
@@ -132,6 +141,9 @@ for (const [display, isPrivate] of [["a person's display", false], ['a display n
     const apps = standIns(['gedit-standin']);
     const desktop = quietDesktop('appenv1');
     desktop.isPrivate = isPrivate;
+    // an accessibility bus the harness inherited, a foreign one
+    const savedA11y = process.env.AT_SPI_BUS_ADDRESS;
+    process.env.AT_SPI_BUS_ADDRESS = 'unix:path=/run/user/501/at-spi/bus_0,guid=foreign';
     try {
       desktop.spawnApp(desktop.label('a'), 'gedit-standin', [], { env: { GTK_OVERLAY_SCROLLING: '0' } });
       const env = await apps.envOf('gedit-standin');
@@ -142,12 +154,15 @@ for (const [display, isPrivate] of [["a person's display", false], ['a display n
         assert.equal(relative(desktop.dir, homes[name]).startsWith('..'), false);
       }
       assert.equal(statSync(homes.HOME).mode & 0o777, 0o700, "the run's home is the run's alone");
-      for (const name of KEPT_VARS.filter((n) => n !== 'XAUTHORITY')) assert.equal(env[name], process.env[name], name);
+      for (const name of HANDED_ON.filter((n) => n !== 'XAUTHORITY')) assert.equal(env[name], process.env[name], name);
+      assert.equal(env.AT_SPI_BUS_ADDRESS, undefined, `the inherited ${process.env.AT_SPI_BUS_ADDRESS} never reaches the application`);
       assert.equal(env.XAUTHORITY, process.env.XAUTHORITY ?? join(apps.home, '.Xauthority'));
       assert.equal(env.GSETTINGS_BACKEND, isPrivate ? process.env.GSETTINGS_BACKEND : 'memory');
       assert.equal(env.GTK_OVERLAY_SCROLLING, '0', "the application's own variable");
       assert.deepEqual(readdirSync(apps.home), [], "nothing under the person's HOME");
     } finally {
+      if (savedA11y === undefined) delete process.env.AT_SPI_BUS_ADDRESS;
+      else process.env.AT_SPI_BUS_ADDRESS = savedA11y;
       desktop.unhookStop();
       rmSync(desktop.dir, { recursive: true, force: true });
       apps.done();

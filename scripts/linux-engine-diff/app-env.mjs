@@ -6,10 +6,14 @@
 // `mimeapps.list` and Chrome's NSS database (`~/.pki`), whatever profile it is given (task 43's inventory). So:
 // - every application, on every display, gets HOME and XDG_CONFIG_HOME, XDG_DATA_HOME, XDG_CACHE_HOME and
 //   XDG_STATE_HOME under one home of the run's (`<scratch>/home`), which the run creates and removes with its scratch;
-// - the display, its authority, the runtime directory and the two buses are handed on explicitly and unchanged:
-//   DISPLAY, XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS and AT_SPI_BUS_ADDRESS exactly as the harness has them (task
-//   43's handling: on a private display its session sets the two buses), and XAUTHORITY too, which Xlib would otherwise
-//   look for under the new HOME, so it is named where the person's HOME puts it when the harness has none;
+// - the display, its authority, the runtime directory and the session bus are handed on explicitly and unchanged:
+//   DISPLAY, XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS exactly as the harness has them (on a private display the
+//   run's session sets the bus, scenes.mjs `useSession`), and XAUTHORITY too, which Xlib would otherwise look for under
+//   the new HOME, so it is named where the person's HOME puts it when the harness has none;
+// - no AT_SPI_BUS_ADDRESS (task 46's live check): an application finds its accessibility bus through the display's
+//   `AT_SPI_BUS` and the session bus's launcher, which on a private display both name the run's own, so an inherited
+//   value, the person's, can never reach it; and with the variable set Qt 6 (6.4) registers no tree at all, where with
+//   it unset qt6-input and qtcreator registered on the run's bus. A family that needs it names it in its own `env`;
 // - on a display a person uses, GSETTINGS_BACKEND=memory: a GSettings write there goes through the person's session
 //   bus to their dconf service, which writes the person's database whatever HOME the application has; in memory, a
 //   setting lives and dies with the application;
@@ -23,8 +27,14 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 /** The variables that place an application's own files: each under the run's home. */
 export const HOME_VARS = ['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME'];
 
-/** The variables handed on unchanged, so an application reaches the display and the buses the harness reaches. */
-export const KEPT_VARS = ['DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'AT_SPI_BUS_ADDRESS'];
+/** The variables handed on unchanged, so an application reaches the display and the session bus the harness reaches. */
+export const KEPT_VARS = ['DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'];
+
+/**
+ * The variables no application inherits: an accessibility bus named outright (the display and the session bus name the
+ * right one), and the person's session manager.
+ */
+export const DROPPED_VARS = ['AT_SPI_BUS_ADDRESS', 'SESSION_MANAGER'];
 
 /** The run's home under its scratch directory, and the XDG base directories inside it, as their defaults lie. */
 export function runHome(scratch) {
@@ -46,8 +56,8 @@ const inside = (dir, path) => {
 
 /**
  * The environment an application of the run's starts with: `base` (the harness's own), its files placed under the run's
- * home in `scratch` (`home: 'run'`), or only its XDG directories there (`home: 'xdg'`), the display and the buses handed
- * on unchanged, and GSETTINGS_BACKEND=memory unless `privateDisplay` (a display the harness started and marked; anything
+ * home in `scratch` (`home: 'run'`), or only its XDG directories there (`home: 'xdg'`), the display and the session bus
+ * handed on unchanged, no accessibility bus or session manager named (`DROPPED_VARS`), and GSETTINGS_BACKEND=memory unless `privateDisplay` (a display the harness started and marked; anything
  * else counts as a person's), or as `settings` says (`'memory'`, or `'inherit'`: the harness's own backend). `extra`: the application's own variables (its toolkit's switches, a directory of its scene
  * inside the scratch), applied last. Throws when `extra` would place a file outside the scratch or change a variable
  * that is handed on.
@@ -65,7 +75,7 @@ export function launchEnvironment({ scratch, base = process.env, privateDisplay 
   // Xlib's default is $HOME/.Xauthority: the harness's HOME, named, since the application's HOME is the run's
   if (env.XAUTHORITY === undefined && base.HOME) env.XAUTHORITY = join(base.HOME, '.Xauthority');
   if (settings === 'memory') env.GSETTINGS_BACKEND = 'memory';
-  delete env.SESSION_MANAGER;
+  for (const name of DROPPED_VARS) delete env[name];
   for (const [name, value] of Object.entries(extra)) {
     if (KEPT_VARS.includes(name) && value !== env[name]) throw new Error(`an application's ${name} is the harness's, handed on unchanged: ${name}=${value} is refused`);
     if (value === undefined) delete env[name];

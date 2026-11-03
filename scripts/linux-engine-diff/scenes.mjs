@@ -294,10 +294,11 @@ export class Desktop {
 
   /**
    * The run's session bus in use: every process the run starts from now on (the scene applications, Chrome, the
-   * engines, the reader, `busctl`) inherits its address in place of the person's, and the run's accessibility bus as
-   * `AT_SPI_BUS_ADDRESS`, which the applications' AT-SPI bridges (libatspi, Qt) take before the display's `AT_SPI_BUS`:
-   * an inherited one, the person's, would put them on the person's accessibility bus. With no accessibility bus of the
-   * session's own, the variable is removed, so the display's property decides.
+   * engines, the reader, `busctl`) inherits its address in place of the person's. The harness's own processes also get
+   * the run's accessibility bus as `AT_SPI_BUS_ADDRESS` in place of an inherited one, the person's (with no accessibility
+   * bus of the session's own, the variable is removed, so the display's property decides); applications are handed
+   * none at all (app-env.mjs: the display's `AT_SPI_BUS` names the run's, and with the variable set Qt 6 registers no
+   * tree).
    */
   useSession(session) {
     this.session = session;

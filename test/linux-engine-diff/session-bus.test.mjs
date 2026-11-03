@@ -298,15 +298,17 @@ test("a private display's run: its session bus first, every process of the run's
 
 // libatspi (GTK's atk-bridge, Chromium) and Qt take AT_SPI_BUS_ADDRESS before the display's AT_SPI_BUS: an inherited
 // one, the person's, would put the run's applications on the person's accessibility bus while the root check passed
-test("a private display's run names the run's own accessibility bus to its applications, whatever AT_SPI_BUS_ADDRESS it inherited, and puts it back", async () => {
+test("a private display's run hands no AT_SPI_BUS_ADDRESS to its applications, whatever it inherited, and puts the harness's own back", async () => {
   const { seen, before } = await runOn({ privateDisplay: true });
   assert.equal(before.a11y, PERSON_A11Y);
-  assert.equal(seen.during.a11y, 'unix:path=/a11y-88', "the run's, for every process the run starts");
-  assert.equal(seen.app.a11y, 'unix:path=/a11y-88', "a scene application gets the run's accessibility bus, never the person's");
+  assert.equal(seen.during.a11y, 'unix:path=/a11y-88', "the harness's own processes (engines, tools): the run's");
+  // an application finds the run's accessibility bus through the display's AT_SPI_BUS and the run's session bus; with
+  // the variable set, Qt 6 registers no tree at all (task 46), and an inherited one would be the person's
+  assert.equal(seen.app.a11y, 'unset', "a scene application is handed no accessibility bus, never the person's");
   assert.equal(seen.after.a11y, PERSON_A11Y, "the harness's own variable as it was found");
   // a harness started with none: none again after the run
   const unset = await runOn({ privateDisplay: true, inherited: null });
-  assert.equal(unset.seen.app.a11y, 'unix:path=/a11y-88');
+  assert.equal(unset.seen.app.a11y, 'unset');
   assert.equal(unset.seen.after.a11y, 'unset');
   // a session that names no accessibility bus of its own: the inherited one is still not handed on
   const none = await runOn({ privateDisplay: true, a11y: null });
@@ -318,7 +320,7 @@ test("the person's display keeps the person's session bus: no bus is started", a
   const { desktop, seen, before } = await runOn({ privateDisplay: false });
   assert.equal(seen.started.length, 0);
   assert.deepEqual(seen.during, before);
-  assert.deepEqual(seen.app, before, "the person's session and accessibility buses, as they were");
+  assert.deepEqual(seen.app, { bus: before.bus, a11y: 'unset' }, "the person's session bus as it was, and no accessibility bus named: the display's AT_SPI_BUS names it");
   assert.equal(desktopEnding(desktop.ending).record.session, undefined);
 });
 

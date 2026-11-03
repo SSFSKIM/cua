@@ -115,9 +115,10 @@ killed it.
   exactly one service, the accessibility bus launcher (`org.a11y.Bus`): anything else a scene application asks for
   (dconf's writer, a portal, gvfs, the keyring, a terminal server) is unknown at once, so nothing of the person's
   session is reached or started. The run begins only once the launcher's bus is the display's `AT_SPI_BUS`, where
-  the engines and the oracle look first; the applications' AT-SPI bridges (libatspi, Qt) take `AT_SPI_BUS_ADDRESS`
-  first, so for the run that variable names the run's accessibility bus too, and the daemon inherits none of the
-  person's. The end stops the daemon's group and puts the harness's own `DBUS_SESSION_BUS_ADDRESS` and
+  the engines and the oracle look first; the applications' AT-SPI bridges (libatspi, Qt) would take
+  `AT_SPI_BUS_ADDRESS` first, so no application is handed one (task 46 found that Qt 6 registers no tree with it set;
+  they find the run's bus through the display's property and the launcher on the run's session bus), the harness's
+  own processes get the run's, and the daemon inherits none of the person's. The end stops the daemon's group and puts the harness's own `DBUS_SESSION_BUS_ADDRESS` and
   `AT_SPI_BUS_ADDRESS` back. A dbus-daemon that cannot be started fails the run's start, which ends what it began. A
   person's display keeps the person's buses: there the families' isolation carries it.
 - **The run's home** (`app-env.mjs`, task 45): every application the run launches, on every display, through the one
@@ -126,7 +127,8 @@ killed it.
   the run (mode 0700) and removed with its scratch: settings, recent files (`recently-used.xbel`), KConfig files,
   Firefox's `~/.mozilla`, the Chrome wrapper's `mimeapps.list` and Chrome's NSS database (`~/.pki`) are the run's.
   `DISPLAY`, `XAUTHORITY` (named where the harness's HOME puts it when unset, since Xlib would look under the new
-  HOME), `XDG_RUNTIME_DIR` and the session bus are handed on unchanged; `SESSION_MANAGER` is not. On a display a
+  HOME), `XDG_RUNTIME_DIR` and the session bus are handed on unchanged; `AT_SPI_BUS_ADDRESS` and `SESSION_MANAGER`
+  are not. On a display a
   person uses, `GSETTINGS_BACKEND=memory`: there a GSettings write goes through the person's bus to their dconf
   service, whatever HOME the application has. A family's own variables (`env`) are applied last and may not place a
   file outside the scratch or change what is handed on. A family a separate HOME breaks may declare `home: 'xdg'`

@@ -13,9 +13,11 @@
 //   accessibility bus;
 // - `wireAccessibility` starts the launcher at the run's start (`org.a11y.Bus.GetAddress`) and refuses the run unless
 //   the display's `AT_SPI_BUS` then names the bus the launcher answered: applications, engines and oracle on one
-//   accessibility bus, the private session's, or no run. The applications' AT-SPI bridges (libatspi, Qt) take
-//   `AT_SPI_BUS_ADDRESS` before that property, so for the run the harness names that bus there too (scenes.mjs
-//   `useSession`), and the daemon inherits no such variable of the person's (`busEnvironment`);
+//   accessibility bus, the private session's, or no run. The applications' AT-SPI bridges (libatspi, Qt) would take
+//   `AT_SPI_BUS_ADDRESS` before that property, so no application is handed one (app-env.mjs; with it set, Qt 6
+//   registers no tree, task 46): they find the run's bus through the display's property and the launcher on the run's
+//   session bus; the harness's own processes get the run's (scenes.mjs `useSession`), and the daemon inherits no such
+//   variable of the person's (`busEnvironment`);
 // - the daemon, and so the launcher, runs with the run's own home and its settings in memory (task 45, app-env.mjs):
 //   the launcher reads no setting of the person's, and the run's accessibility switch, which Qt and Firefox read when
 //   they start, is the run's to turn on (`enableAccessibility`, at the run's start);

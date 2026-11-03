@@ -79,6 +79,7 @@ for (const display of PERSONS) {
     const fake = injected();
     const desktop = new Desktop({ cua: 'unused', run: 'reach', reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
     desktop.isPrivate = false;
+    desktop.session = { address: 'unix:path=/nonexistent/cua171-test-run-bus', stop: async () => ({}) };
     try {
       // a probe answers "not private" for a display it may not reach, and asks nothing
       assert.equal(isPrivateDisplay({ env: { ...process.env, DISPLAY: display } }), false);

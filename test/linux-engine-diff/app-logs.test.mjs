@@ -36,6 +36,8 @@ function setup(run, windows, { logs = true } = {}) {
   const saved = process.env.PATH;
   process.env.PATH = `${dir}${delimiter}${saved}`;
   const desktop = new Desktop({ cua: 'unused', run, reader: reader(windows), startActive: 0, nonce: 'n0', ...(logs ? { logs: out } : {}) });
+  // the run's own session bus, as its start gives it (a test's, never started)
+  desktop.session = { address: 'unix:path=/nonexistent/cua171-test-run-bus', stop: async () => ({}) };
   desktop.place = () => {};
   desktop.waitForTree = async () => {};
   desktop.arrangeFront = () => {};

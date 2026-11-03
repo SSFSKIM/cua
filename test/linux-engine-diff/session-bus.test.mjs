@@ -14,7 +14,9 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
 import { Desktop, desktopEnding } from '../../scripts/linux-engine-diff/scenes.mjs';
-import { busEnvironment, enableAccessibility, sessionBusConfig, startPrivateSession, startSessionBus, wireAccessibility } from '../../scripts/linux-engine-diff/session-bus.mjs';
+import * as sessionBus from '../../scripts/linux-engine-diff/session-bus.mjs';
+
+const { busEnvironment, enableAccessibility, sessionBusConfig, startPrivateSession, startSessionBus, wireAccessibility } = sessionBus;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const found = (cmd) => spawnSync('sh', ['-c', `command -v ${cmd}`]).status === 0;
@@ -120,6 +122,57 @@ test('a real dbus-daemon on the configuration: only the launcher is activatable,
     await bus.stop();
     bus = null;
     assert.equal(spawnSync('kill', ['-0', String(pid)]).status === 0, false, 'the daemon is gone');
+  } finally {
+    await bus?.stop();
+    s.done();
+  }
+});
+
+// B2 (task 47): on a display a person uses the run's applications get a session bus of the run's too, which can start
+// nothing at all; they find the person's accessibility bus through the display's AT_SPI_BUS, as the engines do
+test("the bus of a person's display's run offers no service at all", async () => {
+  const s = scratch();
+  try {
+    const daemon = fakeDaemon('unix:path=/tmp/run/bus/dbus-def,guid=5678');
+    const bus = await startSessionBus({ dir: s.dir, display: ':cua171-test-person', env: { PATH: '/usr/bin' }, serviceFile: null, ...daemon });
+    assert.equal(bus.address, 'unix:path=/tmp/run/bus/dbus-def,guid=5678');
+    assert.deepEqual(readdirSync(join(s.dir, 'services')), [], 'nothing it can start');
+    assert.match(readFileSync(join(s.dir, 'session.conf'), 'utf8'), new RegExp(`<servicedir>${join(s.dir, 'services')}</servicedir>`));
+    await bus.stop({ graceMs: 1000 });
+  } finally {
+    s.done();
+  }
+});
+
+test("a person's display's run: its applications' bus started, the display's own accessibility bus required, and the bus stopped when there is none", async () => {
+  assert.equal(typeof sessionBus.startAppSession, 'function', 'startAppSession');
+  const started = [];
+  const start = async (options) => {
+    started.push(options);
+    return { address: 'unix:path=/tmp/app-bus', pid: 1, stop: async () => ({ terminated: true, killed: false, stopped: started.push('stopped') }) };
+  };
+  const session = await sessionBus.startAppSession({ dir: '/tmp/d', display: ':cua171-test-person', env: { PATH: '/usr/bin' }, start, rootBus: () => 'unix:path=/run/user/501/at-spi/bus_0' });
+  assert.deepEqual(started, [{ dir: '/tmp/d', display: ':cua171-test-person', env: { PATH: '/usr/bin' }, serviceFile: null }], 'a bus that can start nothing');
+  assert.equal(session.address, 'unix:path=/tmp/app-bus');
+  assert.equal(session.a11y, 'unix:path=/run/user/501/at-spi/bus_0', "the display's accessibility bus, the person's launcher's");
+  started.length = 0;
+  await assert.rejects(sessionBus.startAppSession({ dir: '/tmp/d', display: ':cua171-test-person', start, rootBus: () => null }), /names no accessibility bus/);
+  assert.equal(started.at(-1), 'stopped', 'the bus is stopped before the error');
+});
+
+test('a real dbus-daemon with no service: nothing is activatable, the accessibility bus launcher included', { skip: !HAS_BUS && 'no dbus-daemon or busctl here' }, async () => {
+  const s = scratch();
+  let bus = null;
+  try {
+    bus = await startSessionBus({ dir: s.dir, display: process.env.DISPLAY, serviceFile: null });
+    const call = (...args) => spawnSync('busctl', [`--address=${bus.address}`, '--json=short', ...args], { encoding: 'utf8', timeout: 10000 });
+    const names = JSON.parse(call('call', 'org.freedesktop.DBus', '/org/freedesktop/DBus', 'org.freedesktop.DBus', 'ListActivatableNames').stdout).data[0].sort();
+    assert.deepEqual(names, ['org.freedesktop.DBus']);
+    for (const name of ['org.a11y.Bus', 'org.kde.ActivityManager', 'org.kde.kglobalaccel', 'ca.desrt.dconf', 'org.gtk.vfs.Daemon']) {
+      const answer = call('call', name, '/', 'org.freedesktop.DBus.Peer', 'Ping');
+      assert.notEqual(answer.status, 0, name);
+      assert.match(answer.stderr, /not provided by any \.service files|ServiceUnknown/, name);
+    }
   } finally {
     await bus?.stop();
     s.done();
@@ -322,13 +375,18 @@ test("a private display's run hands no AT_SPI_BUS_ADDRESS to its applications, w
   assert.equal(none.seen.after.a11y, PERSON_A11Y);
 });
 
-test("the person's display keeps the person's session bus: no bus is started", async () => {
-  const { desktop, seen, before } = await runOn({ privateDisplay: false });
-  assert.equal(seen.started.length, 0);
+test("a person's display's run: its applications on a session bus of the run's, the harness's own processes on the person's", async () => {
+  const { desktop, seen, before } = await runOn({ privateDisplay: false, a11y: 'unix:path=/run/user/501/at-spi/bus_0' });
+  assert.equal(seen.started.length, 1, "the applications' bus is started");
+  assert.equal(seen.started[0].privateDisplay, false, "a person's display's: one that can start nothing");
+  assert.equal(seen.started[0].dir, join(desktop.dir, 'session'));
+  assert.equal(seen.started[0].env.HOME, join(desktop.dir, 'home'));
   assert.deepEqual(seen.trace, { privateDisplay: false }, "the run's trace on a person's display");
-  assert.deepEqual(seen.during, before);
-  assert.deepEqual(seen.app, { bus: before.bus, a11y: 'unset' }, "the person's session bus as it was, and no accessibility bus named: the display's AT_SPI_BUS names it");
-  assert.equal(desktopEnding(desktop.ending).record.session, undefined);
+  assert.deepEqual(seen.during, before, "the harness's own variables untouched: its tools and engines keep the person's");
+  assert.deepEqual(seen.app, { bus: 'unix:path=/tmp/run-bus', a11y: 'unset' }, "a scene application on the run's bus, and no accessibility bus named: the display's AT_SPI_BUS names it");
+  assert.equal(seen.stopped, 1, 'stopped once, at the end');
+  assert.deepEqual(seen.after, before);
+  assert.deepEqual(desktopEnding(desktop.ending).record.session, { address: 'unix:path=/tmp/run-bus', a11y: 'unix:path=/run/user/501/at-spi/bus_0', terminated: true, killed: false, n: 1 });
 });
 
 test("a private display whose session cannot start runs nothing, and its watchdog is stopped", async () => {

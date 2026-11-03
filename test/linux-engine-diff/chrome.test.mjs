@@ -11,10 +11,14 @@ import { tmpdir } from 'node:os';
 import { basename, delimiter, join, relative } from 'node:path';
 import test from 'node:test';
 
-import { CHROME_COMMAND, CHROME_FLAGS, ChromeInstance, assertOwnChrome, isChromeCommand, procCmdline, profileSwitches } from '../../scripts/linux-engine-diff/chrome.mjs';
+import { launchEnvironment } from '../../scripts/linux-engine-diff/app-env.mjs';
+import { CHROME_COMMAND, CHROME_ENV, CHROME_FLAGS, ChromeInstance, assertOwnChrome, isChromeCommand, procCmdline, profileSwitches } from '../../scripts/linux-engine-diff/chrome.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 
 const HARNESS = join(import.meta.dirname, '../../scripts/linux-engine-diff');
+
+/** The launch environment a run gives its Chrome: its home under `scratch`, its own session bus (a test's, never started). */
+const runEnvironment = (scratch) => () => launchEnvironment({ scratch, sessionBus: 'unix:path=/nonexistent/cua171-test-run-bus', extra: CHROME_ENV });
 const HAS_PROC = existsSync('/proc/self/cmdline');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -39,7 +43,7 @@ test('an open runs google-chrome on the run\'s profile, a directory it makes ins
   const d = dirs();
   try {
     const { spawnFake, calls } = fakeSpawn();
-    const chrome = new ChromeInstance({ scratch: d.scratch, spawn: spawnFake });
+    const chrome = new ChromeInstance({ scratch: d.scratch, environment: runEnvironment(d.scratch), spawn: spawnFake });
     chrome.open('file:///page-1.html#one');
     chrome.open('file:///page-2.html#two');
     const profile = join(d.scratch, 'chrome-profile');
@@ -110,7 +114,7 @@ test('an open whose profile path is a link out of the scratch directory is refus
   try {
     symlinkSync(d.outside, join(d.scratch, 'chrome-profile'));
     const { spawnFake, calls } = fakeSpawn();
-    const chrome = new ChromeInstance({ scratch: d.scratch, spawn: spawnFake });
+    const chrome = new ChromeInstance({ scratch: d.scratch, environment: runEnvironment(d.scratch), spawn: spawnFake });
     assert.throws(() => chrome.open('file:///x'), /refusing to start google-chrome: its --user-data-dir .* is a symbolic link/);
     assert.deepEqual(calls, [], 'nothing was spawned');
   } finally {
@@ -139,6 +143,7 @@ test("the run's end stops only the pids it spawned whose command line carries th
     };
     const chrome = new ChromeInstance({
       scratch: d.scratch,
+      environment: runEnvironment(d.scratch),
       spawn: spawnFake,
       cmdline: (pid) => (alive.has(pid) ? cmdlines[pid] : null),
       kill: (pid, signal) => {
@@ -170,6 +175,7 @@ test('a browser that outlives SIGTERM is killed, checked again just before, and 
     let checks = 0;
     const chrome = new ChromeInstance({
       scratch: d.scratch,
+      environment: runEnvironment(d.scratch),
       spawn: fakeSpawn([301, 302]).spawnFake,
       cmdline: (pid) => {
         if (pid === 302 && ++checks > 2) return ['/usr/lib/firefox/firefox'];
@@ -204,7 +210,7 @@ test('real processes: the stop reads /proc, ends the process carrying the run\'s
   try {
     // the run's instance runs the stand-in in place of google-chrome, with exactly the arguments the launcher gives
     const asStandIn = (cmd, args, options) => spawn(process.execPath, [standIn, ...args], { ...options, stdio: 'ignore' });
-    const chrome = new ChromeInstance({ scratch: d.scratch, spawn: asStandIn });
+    const chrome = new ChromeInstance({ scratch: d.scratch, environment: runEnvironment(d.scratch), spawn: asStandIn });
     child = chrome.open('file:///a');
     const exited = new Promise((r) => child.once('exit', (code, signal) => r(signal)));
     // the decoy's pid among the spawned ones, as a reused pid would be
@@ -245,7 +251,7 @@ function fakeChromeOnPath() {
 const { appendFileSync, existsSync, mkdirSync, writeFileSync } = require('node:fs');
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
-const names = ${JSON.stringify(['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'GSETTINGS_BACKEND', 'DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'AT_SPI_BUS_ADDRESS'])};
+const names = ${JSON.stringify(['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'GSETTINGS_BACKEND', 'DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'AT_SPI_BUS_ADDRESS', 'ACCESSIBILITY_ENABLED'])};
 appendFileSync(${JSON.stringify(envLog)}, JSON.stringify(Object.fromEntries(names.map((n) => [n, process.env[n] ?? null]))) + '\\n');
 mkdirSync(process.env.HOME + '/.pki/nssdb', { recursive: true });
 const profile = args.find((a) => a.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length);
@@ -277,6 +283,8 @@ test("a run's Chrome windows: one instance on the run's profile and the run's ho
     async close() {},
   };
   const desktop = new Desktop({ cua: 'unused', run: 'chrome1', reader, startActive: 0, nonce: 'n0' });
+  // the run's own session bus, as its start gives it (a test's, never started)
+  desktop.session = { address: 'unix:path=/nonexistent/cua171-test-run-bus', stop: async () => ({}) };
   desktop.place = () => {};
   desktop.waitForTree = async () => {};
   const closed = [];
@@ -302,7 +310,8 @@ test("a run's Chrome windows: one instance on the run's profile and the run's ho
     browser = Number(readFileSync(join(profile, 'browser'), 'utf8'));
     assert.ok(procCmdline(browser).includes(`--user-data-dir=${profile}`), 'the first open is the browser');
     // every open runs in the run's launch environment (app-env.mjs): its home the run's, its settings in memory on a
-    // display a person uses (the run's display is not marked private here), the display and the buses the harness's
+    // display a person uses (the run's display is not marked private here), the display the harness's, the session bus
+    // the run's own (B2, task 47), and Chromium's accessibility switch on (chrome.mjs `CHROME_ENV`)
     const runHomeDir = join(desktop.dir, 'home');
     for (const env of fake.envs()) {
       assert.equal(env.HOME, runHomeDir, "Chrome's HOME is the run's, so its NSS database is the run's");
@@ -313,7 +322,8 @@ test("a run's Chrome windows: one instance on the run's profile and the run's ho
       assert.equal(env.GSETTINGS_BACKEND, 'memory');
       assert.equal(env.DISPLAY, process.env.DISPLAY ?? null);
       assert.equal(env.XDG_RUNTIME_DIR, process.env.XDG_RUNTIME_DIR ?? null);
-      assert.equal(env.DBUS_SESSION_BUS_ADDRESS, process.env.DBUS_SESSION_BUS_ADDRESS ?? null);
+      assert.equal(env.DBUS_SESSION_BUS_ADDRESS, 'unix:path=/nonexistent/cua171-test-run-bus', "the run's own session bus, never the person's");
+      assert.equal(env.ACCESSIBILITY_ENABLED, '1');
       assert.equal(env.XAUTHORITY, process.env.XAUTHORITY ?? join(home, '.Xauthority'), "the display's authority where the person's HOME puts it");
     }
     assert.ok(existsSync(join(runHomeDir, '.pki', 'nssdb')), "Chrome's NSS database is made in the run's home");

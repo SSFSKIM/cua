@@ -22,7 +22,12 @@
 //   the launcher reads no setting of the person's, and the run's accessibility switch, which Qt and Firefox read when
 //   they start, is the run's to turn on (`enableAccessibility`, at the run's start);
 // - its stop ends its process group (the daemon was started as its own group, and the services it starts inherit it).
-// The person's display keeps the person's session bus: there the per-application isolation (families.mjs) carries it.
+// On a display a person uses the run's applications get a session bus of the run's too (the design session's ruling B2,
+// task 47; `startAppSession`): the same daemon with no service at all, so it can activate nothing, where on the
+// person's session bus kate had D-Bus-activated the person's kactivitymanagerd and kglobalaccel. There the accessibility
+// bus is the person's launcher's, which the applications find through the display's `AT_SPI_BUS`, as the engines do; a
+// display that names none refuses the run. The harness's own processes (its tools, the engines, the reader) keep the
+// person's session bus there.
 
 import { execFileSync, spawn as spawnProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -72,8 +77,8 @@ export function busEnvironment(env, display) {
 
 /**
  * Starts the run's session bus in `dir` for `display`: its configuration, its one service file (copied from
- * `serviceFile`), and `dbus-daemon` as a process group of its own, whose activation environment then names the bus
- * itself. Resolves with `{address, pid, stop()}`; `stop` ends the daemon's group (SIGTERM, then SIGKILL after
+ * `serviceFile`; `null` for a bus that can activate nothing, a person's display's), and `dbus-daemon` as a process group
+ * of its own, whose activation environment then names the bus itself. Resolves with `{address, pid, stop()}`; `stop` ends the daemon's group (SIGTERM, then SIGKILL after
  * `graceMs`) and answers `{terminated, killed}`. `spawn`, `run` and `kill` are the display-free tests' own.
  */
 export async function startSessionBus({ dir, display, env = process.env, serviceFile = A11Y_SERVICE_FILE, spawn = spawnProcess, run = execFileSync, kill = (pid, signal) => process.kill(pid, signal), readyMs = 10000 }) {
@@ -81,13 +86,15 @@ export async function startSessionBus({ dir, display, env = process.env, service
   const serviceDir = join(dir, 'services');
   mkdirSync(socketDir, { recursive: true, mode: 0o700 });
   mkdirSync(serviceDir, { recursive: true, mode: 0o700 });
-  let service;
-  try {
-    service = readFileSync(serviceFile, 'utf8');
-  } catch {
-    throw new Error(`the run's session bus needs the accessibility bus launcher's service (${serviceFile}), which is missing`);
+  if (serviceFile !== null) {
+    let service;
+    try {
+      service = readFileSync(serviceFile, 'utf8');
+    } catch {
+      throw new Error(`the run's session bus needs the accessibility bus launcher's service (${serviceFile}), which is missing`);
+    }
+    writeFileSync(join(serviceDir, 'org.a11y.Bus.service'), service);
   }
-  writeFileSync(join(serviceDir, 'org.a11y.Bus.service'), service);
   const config = join(dir, 'session.conf');
   writeFileSync(config, sessionBusConfig({ socketDir, serviceDir }));
   // the daemon reaches the display through the launcher it activates, which marks the display's root: a display the run
@@ -217,6 +224,26 @@ export function enableAccessibility({ address, run = execFileSync }) {
     throw new Error(`the run's accessibility switch (org.a11y.Status IsEnabled) could not be turned on: ${error.message}`);
   }
 }
+
+/**
+ * The run's applications' session bus on a display a person uses: a bus of the run's that can activate nothing (no
+ * service file), and the display's own accessibility bus, which its root's `AT_SPI_BUS` names (the person's launcher's),
+ * required: without it the applications, whose session bus has no launcher, would find none. Resolves with `{address,
+ * a11y, pid, stop()}`; a display that names no accessibility bus stops the bus before it throws. `start` and `rootBus`
+ * are the display-free tests' own.
+ */
+export async function startAppSession({ dir, display, env = process.env, start = startSessionBus, rootBus = (d) => rootAccessibilityBus(d) }) {
+  const bus = await start({ dir, display, env, serviceFile: null });
+  const a11y = rootBus(display);
+  if (!a11y) {
+    await bus.stop();
+    throw new Error(`the display ${display} names no accessibility bus (its root has no AT_SPI_BUS): the run's applications, on a session bus of the run's that can start no launcher, would find none`);
+  }
+  return { ...bus, a11y };
+}
+
+/** The run's session for its applications: `startPrivateSession` on a private display, `startAppSession` on any other. */
+export const startRunSession = (options) => (options.privateDisplay ? startPrivateSession(options) : startAppSession(options));
 
 /**
  * The run's session on a private display: its bus started (with `env`, the run's own launch environment, so the

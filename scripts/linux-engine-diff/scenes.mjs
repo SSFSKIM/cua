@@ -7,11 +7,13 @@
 //
 // The harness never hands a window to, starts on, or takes over a person's application instance or profile (task 43):
 // every application starts as an instance of the run's own (families.mjs says how for each), Chrome only through the
-// run's `ChromeInstance`, and on a private display everything of the run's runs under a session bus of the run's own
-// (session-bus.mjs), so no single-instance handoff over D-Bus can reach the person's session. Every application, on
-// every display, runs with a home of the run's and the XDG directories inside it (task 45, app-env.mjs,
-// `appEnvironment`), so none writes the person's settings, recent files or certificate store; on a display a person
-// uses, the person's accessibility switches are only read (a11y-status.mjs, `assertQtBridge`).
+// run's `ChromeInstance`, and every application runs under a session bus of the run's own (session-bus.mjs): on a
+// private display everything of the run's, on a display a person uses the applications alone, on a bus that can
+// activate nothing (task 47), so no single-instance handoff or activation over D-Bus can reach the person's session.
+// Every application, on every display, runs with a home of the run's and the XDG directories inside it (task 45,
+// app-env.mjs, `appEnvironment`), so none writes the person's settings, recent files or certificate store; the
+// person's accessibility switches are never written, and Qt scenes run on a private display only (a11y-status.mjs,
+// `assertQtBridge`).
 //
 // The harness never changes a window it did not open (the design session, 2026-11-02). The window found active when a
 // run begins is never activated again: the run records it, and the active window it ends with, each marked foreign or
@@ -36,14 +38,14 @@ import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-import { a11yAddress, qtBridgeRefusal, readStatus } from './a11y-status.mjs';
+import { QT_ON_PERSONS_DISPLAY, a11yAddress, qtBridgeRefusal, readStatus } from './a11y-status.mjs';
 import { HOME_VARS, launchEnvironment, runHome } from './app-env.mjs';
 import { parseXtrace, parseXtraceFile, startProxy } from './audit.mjs';
-import { ChromeInstance, isChromeCommand } from './chrome.mjs';
+import { CHROME_ENV, ChromeInstance, isChromeCommand } from './chrome.mjs';
 import { Engine, watchOperations } from './engine.mjs';
 import { auditForeign, auditRecord, auditRecordFile, foreignKeep, foreignLine } from './foreign.mjs';
 import { preorder } from './normalize.mjs';
-import { startPrivateSession } from './session-bus.mjs';
+import { startRunSession } from './session-bus.mjs';
 import { cleanupOnStop } from './stop.mjs';
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
 import { RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
@@ -222,8 +224,9 @@ export class Desktop {
   /**
    * The run's start. First the watchdog, on every display, before anything of the run's reads or touches the display
    * (task 44): a display that does not answer its first round trip fails the start here. Then the windows already on
-   * the display (never the run's) and the window active (never acted on), on a private display the run's own session
-   * bus (every process the run starts from then on inherits it) and the whole run's record, its own trace, through
+   * the display (never the run's) and the window active (never acted on), the run's own session bus (on a private
+   * display every process the run starts from then on inherits it; on any other its applications alone get it), on a
+   * private display the whole run's record, its own trace, through
    * which every X tool of the harness's then connects (xtools.mjs), and, when the window found active is foreign, the
    * holder opened and activated before anything else. A start that fails ends what it began, the watchdog last.
    * A stop during the start (a signal's, stop.mjs) waits for it: the start sees the stop before each resource it
@@ -239,7 +242,7 @@ export class Desktop {
   }
 
   /** `begin`'s work, which `stop` waits for. */
-  async runStart({ startTrace = startProxy, startRecord = startRunRecord, existing = allWindows, privateDisplay = () => isPrivateDisplay(), startWatchdog = startRunWatchdog, startSession = startPrivateSession }) {
+  async runStart({ startTrace = startProxy, startRecord = startRunRecord, existing = allWindows, privateDisplay = () => isPrivateDisplay(), startWatchdog = startRunWatchdog, startSession = startRunSession }) {
     // A signal's stop (stop.mjs) runs only once node reads the signal, in an event loop turn's I/O poll, and a stage
     // whose start ends synchronously (the session bus's `busctl` calls) gives it no turn: checked straight away, a
     // stop landing there was seen only after the next stage had started (task 46). So the check first lets two turns
@@ -274,19 +277,20 @@ export class Desktop {
       this.isPrivate = isPrivate;
       // the preflight above is synchronous: a signal that landed in it is seen before the session bus starts
       await unlessStopped();
-      // a private display's run under a session bus of its own, before anything of the run's starts (task 43); its
-      // launcher with the run's home and its settings in memory, so its accessibility switch is the run's (task 45)
-      if (isPrivate) {
-        const session = await startSession({ dir: join(this.dir, 'session'), display: process.env.DISPLAY, env: this.appEnvironment({}, { settings: 'memory' }) });
-        // never installed on a stopped run: ended here, the environment untouched
-        try {
-          await unlessStopped();
-        } catch (error) {
-          await session.stop();
-          throw error;
-        }
-        this.useSession(session);
+      // the run's applications under a session bus of the run's, before anything of the run's starts: on a private
+      // display everything of the run's (task 43), its launcher with the run's home and its settings in memory, so its
+      // accessibility switch is the run's (task 45); on a person's display the applications alone, on a bus that can
+      // activate nothing (B2, task 47)
+      const session = await startSession({ dir: join(this.dir, 'session'), display: process.env.DISPLAY, env: this.appEnvironment({}, { settings: 'memory', sessionBus: false, app: "the run's session bus" }), privateDisplay: isPrivate });
+      // never installed on a stopped run: ended here, the environment untouched
+      try {
+        await unlessStopped();
+      } catch (error) {
+        await session.stop();
+        throw error;
       }
+      if (isPrivate) this.useSession(session);
+      else this.session = session;
       await unlessStopped();
       // the whole-run record only on a private display: on a person's, the sampled route audits judge the engines;
       // its client guarded from its spawn
@@ -314,8 +318,9 @@ export class Desktop {
   }
 
   /**
-   * The run's session bus in use: every process the run starts from now on (the scene applications, Chrome, the
-   * engines, the reader, `busctl`) inherits its address in place of the person's. The harness's own processes also get
+   * A private display's session bus in use: every process the run starts from now on (the scene applications, Chrome,
+   * the engines, the reader, `busctl`) inherits its address in place of the person's. (On a person's display the run's
+   * session bus is its applications' alone, through `appEnvironment`.) The harness's own processes also get
    * the run's accessibility bus as `AT_SPI_BUS_ADDRESS` in place of an inherited one, the person's (with no accessibility
    * bus of the session's own, the variable is removed, so the display's property decides); applications are handed
    * none at all (app-env.mjs: the display's `AT_SPI_BUS` names the run's, and with the variable set Qt 6 registers no
@@ -332,10 +337,12 @@ export class Desktop {
   /** The run's session bus ended, and the harness's own variables as they were found. Answers what the stop did. */
   async endSession() {
     if (!this.session) return null;
-    for (const [name, { had, value }] of Object.entries(this.sessionSaved)) {
+    // a person's display's session changed none of them
+    for (const [name, { had, value }] of Object.entries(this.sessionSaved ?? {})) {
       if (had) process.env[name] = value;
       else delete process.env[name];
     }
+    this.sessionSaved = null;
     const session = this.session;
     this.session = null;
     return { address: session.address, a11y: session.a11y ?? null, ...(await session.stop()) };
@@ -523,21 +530,23 @@ export class Desktop {
    * keeps the run's accessibility switch). `extra`: the application's own variables, never one the run decides (`app`
    * names it in the refusal).
    */
-  appEnvironment(extra = {}, { home = 'run', settings, app } = {}) {
+  appEnvironment(extra = {}, { home = 'run', settings, app, sessionBus = this.session?.address } = {}) {
     const homes = runHome(this.dir);
     for (const name of HOME_VARS) mkdirSync(homes[name], { recursive: true, mode: 0o700 });
-    return launchEnvironment({ scratch: this.dir, base: process.env, privateDisplay: this.isPrivate === true, home, ...(settings ? { settings } : {}), ...(app ? { app } : {}), extra });
+    return launchEnvironment({ scratch: this.dir, base: process.env, privateDisplay: this.isPrivate === true, home, ...(settings ? { settings } : {}), ...(app ? { app } : {}), sessionBus, extra });
   }
 
   /**
-   * Refuses a Qt application, before it starts, when it would put no tree on the accessibility bus: the session's
-   * `org.a11y.Status` switches both off (a11y-status.mjs), read from the run's own bus on a private display and from the
-   * person's on any other, where the harness only reads them, and no `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1` in `env`.
-   * `read` is the display-free tests' own.
+   * Refuses a Qt application, before it starts, when it would put no tree on the accessibility bus: on any display but
+   * a private one always (a11y-status.mjs `QT_ON_PERSONS_DISPLAY`: the run's applications' bus there has no launcher,
+   * and Qt turns its bridge on only through it), nothing read; on a private display when the run's own launcher has
+   * both `org.a11y.Status` switches off and `env` has no `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`. `read` is the
+   * display-free tests' own.
    */
   assertQtBridge(what, env = {}, read = readStatus) {
+    if (this.isPrivate !== true) throw new Error(`refusing to start ${what}: ${QT_ON_PERSONS_DISPLAY}`);
     const address = a11yAddress(this);
-    const where = address ? "the run's own session bus" : "the person's session bus";
+    const where = "the run's own session bus";
     let status;
     try {
       status = read({ address });
@@ -661,7 +670,7 @@ export class Desktop {
 
   /** The run's Chrome (chrome.mjs): one instance on a profile in the run's scratch directory, made at its first use. */
   chromeInstance() {
-    this.chrome ??= new ChromeInstance({ scratch: this.dir, environment: () => this.appEnvironment() });
+    this.chrome ??= new ChromeInstance({ scratch: this.dir, environment: () => this.appEnvironment(CHROME_ENV, { app: 'chrome' }) });
     return this.chrome;
   }
 

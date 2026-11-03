@@ -119,30 +119,40 @@ killed it.
   `AT_SPI_BUS_ADDRESS` first, so no application is handed one (task 46 found that Qt 6 registers no tree with it set;
   they find the run's bus through the display's property and the launcher on the run's session bus), the harness's
   own processes get the run's, and the daemon inherits none of the person's. The end stops the daemon's group and puts the harness's own `DBUS_SESSION_BUS_ADDRESS` and
-  `AT_SPI_BUS_ADDRESS` back. A dbus-daemon that cannot be started fails the run's start, which ends what it began. A
-  person's display keeps the person's buses: there the families' isolation carries it.
+  `AT_SPI_BUS_ADDRESS` back. A dbus-daemon that cannot be started fails the run's start, which ends what it began.
+- **A person's display's session bus** (`session-bus.mjs` `startAppSession`, task 47; the design session's ruling
+  B2): on any other display the run's applications get a session bus of the run's too, the same daemon with no
+  service at all, so it can activate nothing (kate on the person's bus had D-Bus-activated the person's
+  kactivitymanagerd and kglobalaccel). The applications find the person's accessibility bus through the display's
+  `AT_SPI_BUS`, as the engines do; a display that names none refuses the run. The harness's own processes (its tools,
+  the engines, the reader) keep the person's session bus. That bus has no `org.a11y.Status`, so Firefox gets
+  `GNOME_ACCESSIBILITY=1` and Chrome and Electron `ACCESSIBILITY_ENABLED=1` (the variables each reads first); Qt 5.15
+  and 6.4 turn their bridge on only through `org.a11y.Bus` on the session bus, so every Qt scene refuses there, with
+  the reason (`QT_ON_PERSONS_DISPLAY`): Qt scenes run on a private display.
 - **The run's home** (`app-env.mjs`, task 45): every application the run launches, on every display, through the one
   place that builds its environment (`Desktop.appEnvironment`, which `spawnApp` and the run's Chrome take), runs with
   `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` and `XDG_STATE_HOME` under `<scratch>/home`, made by
   the run (mode 0700) and removed with its scratch: settings, recent files (`recently-used.xbel`), KConfig files,
   Firefox's `~/.mozilla`, the Chrome wrapper's `mimeapps.list` and Chrome's NSS database (`~/.pki`) are the run's.
   `DISPLAY`, `XAUTHORITY` (named where the harness's HOME puts it when unset, since Xlib would look under the new
-  HOME), `XDG_RUNTIME_DIR` and the session bus are handed on unchanged; `AT_SPI_BUS_ADDRESS` and `SESSION_MANAGER`
-  are not. On a display a
-  person uses, `GSETTINGS_BACKEND=memory`: there a GSettings write goes through the person's bus to their dconf
-  service, whatever HOME the application has. A family's own variables (`env`) are applied last and may not place a
-  file outside the scratch or change what is handed on. A family a separate HOME breaks may declare `home: 'xdg'`
+  HOME) and `XDG_RUNTIME_DIR` are handed on unchanged; the session bus is the run's own on every display (above), and
+  no application starts before the run has one; `AT_SPI_BUS_ADDRESS`, `SESSION_MANAGER` and the bus's starter
+  variables are not handed on. On a display a person uses, `GSETTINGS_BACKEND=memory`: a GSettings write would
+  otherwise reach the person's dconf. A family's own variables (`env`) are applied last; one that names a variable the
+  run decides (`PROTECTED_VARS`: the display, its authority, the runtime directory, the buses, `SESSION_MANAGER`,
+  `GSETTINGS_BACKEND`) is refused at its launch, naming the family and the variable (task 47), and none may place a
+  file outside the scratch. A family a separate HOME breaks may declare `home: 'xdg'`
   (the harness's HOME, the run's XDG directories); none does. Engines are not applications: they keep the harness's
   environment. A private display's session bus (and so its accessibility bus launcher) starts with the run's home and
   its settings in memory, so the launcher reads nothing of the person's, and the run turns its accessibility switch
   on there at its start (below).
 - **The accessibility switches** (`a11y-status.mjs`, task 45): `org.a11y.Status` `IsEnabled` and
   `ScreenReaderEnabled`, which Qt and Firefox read when they start. On a display a person uses they are the person's
-  settings: the harness only reads them, and a Qt scene (the families marked `qt`, and a Qt `openDuplicates`) refuses
-  before it starts, with the reason, when both are off. On a private display they are the run's own launcher's: the
-  run's start sets `IsEnabled` on the run's bus and reads it back (a switch that does not take fails the start), and
-  qt-bridge sets its conditions there and puts them back; on a person's display qt-bridge runs only its "as found"
-  condition and records the others as not run.
+  settings, which the harness never writes, and its applications do not see them (their bus is the run's, above): a
+  Qt scene (the families marked `qt`, and a Qt `openDuplicates`) refuses there before it starts, and qt-bridge runs
+  no condition. On a private display they are the run's own launcher's: the run's start sets `IsEnabled` on the run's
+  bus and reads it back (a switch that does not take fails the start), a Qt scene refuses when both are off, and
+  qt-bridge sets its conditions there and puts them back.
 
 ## What a run does
 
@@ -745,7 +755,7 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `readiness-check.mjs` | the engine's capture readiness judged by content, per family |
 | `scenes.mjs`, `stop.mjs` | the harness's windows and the reader that reads effects back; their cleanup on SIGINT or SIGTERM |
 | `chrome.mjs` | the run's own Chrome: its one launcher, the guard on every Chrome command line, its stop by the pids it spawned |
-| `session-bus.mjs` | a private display's session bus of the run's own, and its accessibility bus wired to the display |
+| `session-bus.mjs` | the run's own session bus: a private display's, its accessibility bus wired to the display; a person's display's, for the applications, activating nothing |
 | `app-env.mjs` | the environment every application the run launches runs with: the run's home, the display and buses handed on |
 | `a11y-status.mjs` | the session's accessibility switches: read on a person's display, set only on the run's own bus |
 | `prepare.mjs` | the gate's rule for a sample whose harness-side preparation fails: one resample, the counts and caps |

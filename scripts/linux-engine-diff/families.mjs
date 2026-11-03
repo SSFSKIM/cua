@@ -25,6 +25,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { CHROME_ENV } from './chrome.mjs';
 import { preorder } from './normalize.mjs';
 import { PAGES, configure } from './scenes.mjs';
 
@@ -37,6 +38,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // The subtrees an effect never lands in, skipped when the harness walks an application's objects itself.
 const PRUNE = ['menu bar', 'menu', 'popup menu', 'tool bar', 'status bar', 'statusbar', 'page tab list', 'tree', 'list'];
+
+/** Firefox's own variable: accessibility on, whatever the session bus and the settings say (B2, task 47). */
+const A11Y_ON_GECKO = { GNOME_ACCESSIBILITY: '1' };
 
 const FIREFOX_PREFS = {
   'browser.shell.checkDefaultBrowser': false,
@@ -97,8 +101,9 @@ export function wmClass(id) {
 /**
  * Each family: its title in the matrix, its kind, its window's size, and how it is launched. Every launch runs with the
  * run's environment (scenes.mjs `appEnvironment`: a home of the run's on every display, settings in memory on a
- * person's), its `env` holding only the family's own variables. `qt`: a Qt application, refused before it starts when
- * the session's accessibility switches are off (`assertQtBridge`). `home: 'xdg'` would keep the harness's HOME for a
+ * person's), its `env` holding only the family's own variables. `qt`: a Qt application, refused before it starts on a
+ * display a person uses, where the run's session bus gives Qt no way to turn its bridge on, and on a private display
+ * when the run's accessibility switches are off (`assertQtBridge`). `home: 'xdg'` would keep the harness's HOME for a
  * family a separate HOME breaks (the run's XDG directories still apply); none needs it so far (task 45).
  */
 export const FAMILIES = {
@@ -211,7 +216,10 @@ export const FAMILIES = {
         writeFileSync(join(profile, 'xulstore.json'), JSON.stringify({ 'chrome://browser/content/browser.xhtml': { 'main-window': { sizemode: 'normal', screenX: '0', screenY: '0', width: String(width), height: String(height) } } }));
       }
       const url = `${pathToFileURL(join(PAGES, pageOf(ctx))).href}#${encodeURIComponent(ctx.label)}`;
-      return { cmd: 'firefox', args: ['--no-remote', '--new-instance', '--profile', profile, url], match: byTitle(ctx.label) };
+      // accessibility on: Gecko reads GNOME_ACCESSIBILITY first, then org.a11y.Status on the session bus, which the
+      // run's has no launcher for on a person's display, then GSettings, in memory there (accessible/atk/Platform.cpp
+      // `ShouldA11yBeEnabled`; B2, task 47)
+      return { cmd: 'firefox', args: ['--no-remote', '--new-instance', '--profile', profile, url], env: A11Y_ON_GECKO, match: byTitle(ctx.label) };
     },
   },
   chrome: {
@@ -227,17 +235,21 @@ export const FAMILIES = {
     kind: 'electron',
     geometry: [900, 700],
     // Chromium's web contents expose no tree on Linux without --force-renderer-accessibility (neither
-    // ACCESSIBILITY_ENABLED=1 nor the bus's ScreenReaderEnabled turned it on; M0.4 probe)
+    // ACCESSIBILITY_ENABLED=1 nor the bus's ScreenReaderEnabled turned it on; M0.4 probe), and its ATK bridge none without
+    // ACCESSIBILITY_ENABLED=1 on the run's session bus, which has no org.a11y.Status on a person's display (chrome.mjs
+    // `CHROME_ENV`; B2, task 47)
     launch: (ctx) =>
       ctx.page
         ? {
             cmd: ELECTRON,
             args: [ELECTRON_PAGE_APP, `--cua-page=${pathToFileURL(join(PAGES, ctx.page)).href}#${encodeURIComponent(ctx.label)}`, `--cua-user-data=${join(ctx.dir, 'electron')}`, '--force-renderer-accessibility'],
+            env: CHROME_ENV,
             match: byTitle(ctx.label),
           }
         : {
             cmd: ELECTRON,
             args: [ELECTRON_FIXTURE, `--cua-fixture-user-data=${join(ctx.dir, 'electron')}`, '--force-renderer-accessibility'],
+            env: CHROME_ENV,
             byPid: true,
           },
   },

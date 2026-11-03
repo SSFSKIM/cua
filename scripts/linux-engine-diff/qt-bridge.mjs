@@ -6,8 +6,9 @@
 //
 // The switches are the session's settings (a11y-status.mjs; task 45). On a private display they are the run's own
 // launcher's, on the run's session bus: each condition sets them there, and they are put back as they were found,
-// whatever happens. On a display a person uses they are the person's, which the harness only reads: only the
-// condition that sets nothing runs there, and each other is recorded as not run, with the reason.
+// whatever happens. On a display a person uses no condition runs: the run's Qt applications are on a session bus of the
+// run's there, where Qt turns no bridge on whatever the switches say (B2, task 47, a11y-status.mjs
+// `QT_ON_PERSONS_DISPLAY`), and the person's switches are never written; each is recorded as not run, with the reason.
 
 import { a11yAddress, readStatus, setSwitch } from './a11y-status.mjs';
 import { Engine } from './engine.mjs';
@@ -23,8 +24,8 @@ export const CONDITIONS = [
   { name: 'IsEnabled false, ScreenReaderEnabled true', status: { IsEnabled: false, ScreenReaderEnabled: true }, env: {} },
 ];
 
-/** Why a condition is not run on a display a person uses: it would set the person's switches. */
-export const NOT_ON_PERSONS_DISPLAY = "it sets org.a11y.Status, which on a display a person uses is the person's setting and is never written: run the experiment on a private display";
+/** Why no condition is run on a display a person uses. */
+export const NOT_ON_PERSONS_DISPLAY = "on a display a person uses the run's Qt applications are on a session bus of the run's, where Qt turns no bridge on whatever org.a11y.Status says, and the person's switches are never written: run the experiment on a private display";
 
 /**
  * The experiment. `open`, `oracle`, `pinned` (an engine for the pinned build), `read` and `set` (the switches) and
@@ -32,7 +33,12 @@ export const NOT_ON_PERSONS_DISPLAY = "it sets org.a11y.Status, which on a displ
  */
 export async function qtBridge(desktop, emit, { vendor, open = openFamily, oracle = null, pinned = () => new Engine({ label: 'pinned', bin: vendor }).start(), read = readStatus, set = setSwitch, wait = sleep }) {
   const privateDisplay = desktop.isPrivate === true;
-  // the run's own bus on a private display; the person's (the harness's own session bus) on any other, read only
+  if (!privateDisplay) {
+    emit({ kind: 'qt-bridge', display: "a person's" });
+    for (const condition of CONDITIONS) emit({ kind: 'qt-bridge', condition: condition.name, skipped: NOT_ON_PERSONS_DISPLAY });
+    return [`On a display a person uses, no condition was run: ${NOT_ON_PERSONS_DISPLAY}.`, '', ...CONDITIONS.map((c) => `- ${c.name}: not run`)];
+  }
+  // the run's own bus on a private display
   const address = a11yAddress(desktop);
   const statusOf = () => read({ address });
   const setTo = (status) => {
@@ -40,9 +46,9 @@ export async function qtBridge(desktop, emit, { vendor, open = openFamily, oracl
   };
   oracle ??= new Oracle();
   const found = statusOf();
-  emit({ kind: 'qt-bridge', found, display: privateDisplay ? 'private' : "a person's" });
+  emit({ kind: 'qt-bridge', found, display: 'private' });
   const md = [
-    `${privateDisplay ? "On the run's own session bus" : "On the person's session bus (read only)"}, as found: \`IsEnabled\` ${found.IsEnabled}, \`ScreenReaderEnabled\` ${found.ScreenReaderEnabled}.`,
+    `On the run's own session bus, as found: \`IsEnabled\` ${found.IsEnabled}, \`ScreenReaderEnabled\` ${found.ScreenReaderEnabled}.`,
     '',
     '| application | condition | registered with the registry | frame named for the document | cua-engine tree | pinned tree |',
     '|---|---|---|---|---|---|',
@@ -51,11 +57,6 @@ export async function qtBridge(desktop, emit, { vendor, open = openFamily, oracl
   let changed = false;
   try {
     for (const condition of CONDITIONS) {
-      if (condition.status && !privateDisplay) {
-        emit({ kind: 'qt-bridge', condition: condition.name, skipped: NOT_ON_PERSONS_DISPLAY });
-        md.push(`| kate, qtcreator | ${condition.name} | not run: ${NOT_ON_PERSONS_DISPLAY} | | | |`);
-        continue;
-      }
       if (condition.status) {
         changed = true;
         setTo(condition.status);

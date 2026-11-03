@@ -28,20 +28,20 @@ function bridgeStandIns() {
   return { desktop, open, oracle, pinned, opened };
 }
 
-test("qt-bridge on a person's display: only the condition that sets nothing runs, the others are recorded as not run, and nothing is written", async () => {
+// B2 (task 47): on a person's display the run's Qt applications are on a session bus of the run's, where Qt turns no bridge
+// on whatever the switches (a11y-status.test.mjs): no condition of the experiment means anything there
+test("qt-bridge on a person's display runs no condition, and reads or writes nothing", async () => {
   const bus = fakeBus({ IsEnabled: true, ScreenReaderEnabled: false });
   const s = bridgeStandIns();
   const rows = [];
   try {
     const md = await qtBridge(s.desktop(false, null), (r) => rows.push(r), { vendor: 'unused', open: s.open, oracle: s.oracle, pinned: s.pinned, wait: async () => {} });
-    assert.equal(bus.calls().some((c) => c.includes('set-property')), false, "the person's switches are never written");
-    assert.deepEqual(bus.state(), { IsEnabled: true, ScreenReaderEnabled: false });
-    assert.deepEqual(s.opened.map((o) => [o.family, o.role]), [['kate', 'qt0'], ['qtcreator', 'qt0']], "only 'as found'");
-    assert.equal(s.opened.every((o) => o.options.bridge === false), true);
+    assert.deepEqual(bus.calls(), [], "the person's switches are neither read nor written");
+    assert.deepEqual(s.opened, [], 'no Qt application opened');
     const skipped = rows.filter((r) => r.skipped);
-    assert.deepEqual(skipped.map((r) => r.condition), CONDITIONS.filter((c) => c.status).map((c) => c.name));
+    assert.deepEqual(skipped.map((r) => r.condition), CONDITIONS.map((c) => c.name));
     assert.ok(skipped.every((r) => r.skipped === NOT_ON_PERSONS_DISPLAY));
-    assert.equal(rows.some((r) => r.restored), false, 'nothing to put back');
+    assert.match(NOT_ON_PERSONS_DISPLAY, /private display/);
     assert.ok(md.some((line) => line.includes('not run')));
   } finally {
     bus.done();

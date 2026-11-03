@@ -564,6 +564,8 @@ test('the Desktop reads nothing of the display before its watchdog answered', as
         callsAtWatchdog = restore.calls().length;
         return watchdog.start(options);
       },
+      // the applications' session bus of a person's display's run (B2, task 47), a stand-in
+      startSession: async () => ({ address: 'unix:path=/nonexistent/cua171-test-bus', a11y: 'unix:path=/nonexistent/a11y', stop: async () => ({ terminated: true, killed: false }) }),
     });
     assert.equal(callsAtWatchdog, 0, 'no X tool ran before the watchdog answered');
     assert.ok(restore.calls().some((c) => c.startsWith('xprop -root _NET_ACTIVE_WINDOW')), 'the active window is read after it');

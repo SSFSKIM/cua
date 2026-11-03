@@ -49,6 +49,8 @@ test('a SIGTERM while a Chrome window is being discovered waits for it, closes t
 import { Desktop } from ${JSON.stringify(SCENES)};
 const reader = ${readerSource(chrome.asked, title, 300)};
 const desktop = new Desktop({ cua: 'unused', run: 'stoptest', reader, startActive: 0, nonce: 'n0' });
+// the run's own session bus, as its start gives it (a test's, never started)
+desktop.session = { address: 'unix:path=/nonexistent/cua171-test-run-bus', stop: async () => ({}) };
 // nothing listed by its title yet when the signal comes: only the discovery can find it
 desktop.findByTitle = () => [];
 // the window that came up is still the run's when it is closed
@@ -105,6 +107,7 @@ test('a Chrome window whose discovery failed is closed by its title', async () =
   const closed = [];
   const desktop = new Desktop({ cua: 'unused', run: 'stoptest3', nonce: 'n0', reader: { request: async () => ({ response: { ok: false, error: 'reader gone' } }), close: async () => {} }, startActive: 0 });
   desktop.findByTitle = (title) => (title === 'cua171-diff-stoptest3-n0-scene-r - Google Chrome' ? [77] : []);
+  desktop.session = { address: 'unix:path=/nonexistent/cua171-test-run-bus', stop: async () => ({}) };
   desktop.closeWindow = (id) => closed.push(id);
   try {
     await assert.rejects(desktop.openChrome('r', 'scene.html'), /list_windows failed: reader gone/);

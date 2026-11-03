@@ -11,12 +11,17 @@ import { delimiter, join, relative } from 'node:path';
 import test from 'node:test';
 
 import { HOME_VARS, launchEnvironment, runHome } from '../../scripts/linux-engine-diff/app-env.mjs';
+import * as chromeModule from '../../scripts/linux-engine-diff/chrome.mjs';
+import { FAMILIES } from '../../scripts/linux-engine-diff/families.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 import { harnessModules, harnessStarts, processStarts } from './source-scan.mjs';
 
 
-/** What an application gets exactly as the harness has it: the display, its authority, the runtime directory, the session bus. */
-const HANDED_ON = ['DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS'];
+/** What an application gets exactly as the harness has it: the display, its authority, the runtime directory. */
+const HANDED_ON = ['DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR'];
+
+/** The run's own session bus: every application's, on every display (the design session's ruling B2, task 47). */
+const RUN_BUS = 'unix:path=/tmp/cua171-diff-r-x/session/bus/x';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** The harness's own environment, as a harness started from the person's session has it. */
@@ -27,6 +32,8 @@ const PERSON = {
   XAUTHORITY: '/home/person/.Xauthority',
   XDG_RUNTIME_DIR: '/run/user/501',
   DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/501/bus',
+  DBUS_STARTER_ADDRESS: 'unix:path=/run/user/501/bus',
+  DBUS_STARTER_BUS_TYPE: 'session',
   AT_SPI_BUS_ADDRESS: 'unix:path=/run/user/501/at-spi/bus_0',
   XDG_CONFIG_HOME: '/home/person/.config',
   XDG_DATA_HOME: '/home/person/.local/share',
@@ -34,9 +41,9 @@ const PERSON = {
   LANG: 'C.UTF-8',
 };
 
-test("on a display a person uses: the run's home and XDG directories, settings in memory, the display and the buses as the harness has them", () => {
+test("on a display a person uses: the run's home and XDG directories, settings in memory, the display as the harness has it, the run's session bus", () => {
   const scratch = '/tmp/cua171-diff-r-x';
-  const env = launchEnvironment({ scratch, base: PERSON, privateDisplay: false });
+  const env = launchEnvironment({ scratch, base: PERSON, privateDisplay: false, sessionBus: RUN_BUS });
   assert.deepEqual(Object.fromEntries(HOME_VARS.map((n) => [n, env[n]])), {
     HOME: '/tmp/cua171-diff-r-x/home',
     XDG_CONFIG_HOME: '/tmp/cua171-diff-r-x/home/.config',
@@ -49,31 +56,47 @@ test("on a display a person uses: the run's home and XDG directories, settings i
   assert.equal('AT_SPI_BUS_ADDRESS' in env, false, "an inherited accessibility bus never reaches an application: the display's AT_SPI_BUS names its own");
   assert.equal(env.GSETTINGS_BACKEND, 'memory', "a GSettings write never reaches the person's dconf");
   assert.equal('SESSION_MANAGER' in env, false, "no application joins the person's session");
+  // B2: on the person's display too an application is on a session bus of the run's, which can activate nothing, never
+  // on the person's (kate on a shared display D-Bus-activated the person's kactivitymanagerd and kglobalaccel)
+  assert.equal(env.DBUS_SESSION_BUS_ADDRESS, RUN_BUS, "the run's session bus, never the person's");
+  assert.equal('DBUS_STARTER_ADDRESS' in env, false);
+  assert.equal('DBUS_STARTER_BUS_TYPE' in env, false);
   assert.equal(env.PATH, PERSON.PATH);
   assert.equal(env.LANG, PERSON.LANG);
 });
 
 test("on a private display: the run's home, no settings backend imposed, the run's buses as its session set them", () => {
   const base = { ...PERSON, DISPLAY: ':88', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/tmp/cua171-diff-r-x/session/bus/x', AT_SPI_BUS_ADDRESS: 'unix:path=/run/user/501/at-spi/bus_88' };
-  const env = launchEnvironment({ scratch: '/tmp/cua171-diff-r-x', base, privateDisplay: true });
+  const env = launchEnvironment({ scratch: '/tmp/cua171-diff-r-x', base, privateDisplay: true, sessionBus: RUN_BUS });
   assert.equal(env.HOME, '/tmp/cua171-diff-r-x/home');
+  assert.equal(env.DBUS_SESSION_BUS_ADDRESS, RUN_BUS);
   assert.equal('GSETTINGS_BACKEND' in env, false);
   for (const name of HANDED_ON) assert.equal(env[name], base[name], name);
   // the run's own accessibility bus is not named either (Qt 6 registers no tree with the variable set, task 46): the
   // display's AT_SPI_BUS and the run's session bus both name it
   assert.equal('AT_SPI_BUS_ADDRESS' in env, false);
   // a backend the harness itself was started with is the harness's to pass on
-  assert.equal(launchEnvironment({ scratch: '/tmp/s', base: { ...base, GSETTINGS_BACKEND: 'keyfile' }, privateDisplay: true }).GSETTINGS_BACKEND, 'keyfile');
+  assert.equal(launchEnvironment({ scratch: '/tmp/s', base: { ...base, GSETTINGS_BACKEND: 'keyfile' }, privateDisplay: true, sessionBus: RUN_BUS }).GSETTINGS_BACKEND, 'keyfile');
   // the run's own session bus, whose launcher keeps the run's accessibility switch, asks for memory explicitly
-  assert.equal(launchEnvironment({ scratch: '/tmp/s', base, privateDisplay: true, settings: 'memory' }).GSETTINGS_BACKEND, 'memory');
-  assert.throws(() => launchEnvironment({ scratch: '/tmp/s', base, settings: 'dconf' }), /unknown settings/);
+  assert.equal(launchEnvironment({ scratch: '/tmp/s', base, privateDisplay: true, settings: 'memory', sessionBus: RUN_BUS }).GSETTINGS_BACKEND, 'memory');
+  assert.throws(() => launchEnvironment({ scratch: '/tmp/s', base, settings: 'dconf', sessionBus: RUN_BUS }), /unknown settings/);
+});
+
+test("an application never starts without the run's own session bus: before the run has one, it is refused, on every display", () => {
+  for (const privateDisplay of [false, true]) {
+    assert.throws(() => launchEnvironment({ scratch: '/tmp/s', base: PERSON, privateDisplay, app: 'gedit' }), /refusing to start gedit: the run has no session bus of its own yet/);
+    assert.throws(() => launchEnvironment({ scratch: '/tmp/s', base: PERSON, privateDisplay, app: 'gedit', sessionBus: '' }), /no session bus of its own yet/);
+  }
+  // the run's own bus daemon alone starts with none: it is the bus
+  const daemon = launchEnvironment({ scratch: '/tmp/s', base: PERSON, sessionBus: false, app: "the run's session bus" });
+  assert.equal('DBUS_SESSION_BUS_ADDRESS' in daemon, false);
+  assert.equal('DBUS_STARTER_ADDRESS' in daemon, false);
 });
 
 test("XAUTHORITY is named where the person's HOME puts it when the harness has none, and absent variables stay absent", () => {
   const { XAUTHORITY, DBUS_SESSION_BUS_ADDRESS, AT_SPI_BUS_ADDRESS, ...bare } = PERSON;
-  const env = launchEnvironment({ scratch: '/tmp/s', base: bare });
+  const env = launchEnvironment({ scratch: '/tmp/s', base: bare, sessionBus: RUN_BUS });
   assert.equal(env.XAUTHORITY, '/home/person/.Xauthority', "Xlib's default under the harness's HOME, not the run's");
-  assert.equal('DBUS_SESSION_BUS_ADDRESS' in env, false, 'unchanged: still unset');
   assert.equal('AT_SPI_BUS_ADDRESS' in env, false, 'unchanged: still unset');
   // an unknown display counts as a person's
   assert.equal(env.GSETTINGS_BACKEND, 'memory');
@@ -82,15 +105,15 @@ test("XAUTHORITY is named where the person's HOME puts it when the harness has n
 test("an application's own variables apply last, but never place a file outside the scratch or change what is handed on", () => {
   const scratch = '/tmp/cua171-diff-r-x';
   const scene = join(scratch, 'cua171-diff-r-x-gnometexteditor-a');
-  const env = launchEnvironment({ scratch, base: PERSON, extra: { XDG_DATA_HOME: join(scene, 'data'), GTK_OVERLAY_SCROLLING: '0', LANG: undefined } });
+  const env = launchEnvironment({ scratch, base: PERSON, sessionBus: RUN_BUS, extra: { XDG_DATA_HOME: join(scene, 'data'), GTK_OVERLAY_SCROLLING: '0', LANG: undefined } });
   assert.equal(env.XDG_DATA_HOME, join(scene, 'data'), "a directory of the scene's, inside the scratch");
   assert.equal(env.GTK_OVERLAY_SCROLLING, '0');
   assert.equal('LANG' in env, false);
-  assert.throws(() => launchEnvironment({ scratch, base: PERSON, extra: { HOME: '/home/person' } }), /HOME lies under the run's scratch directory/);
-  assert.throws(() => launchEnvironment({ scratch, base: PERSON, extra: { XDG_CONFIG_HOME: '/tmp/cua171-diff-r-x/../elsewhere' } }), /XDG_CONFIG_HOME lies under/);
-  assert.throws(() => launchEnvironment({ scratch, base: PERSON, extra: { XDG_CACHE_HOME: scratch } }), /XDG_CACHE_HOME lies under/);
-  assert.throws(() => launchEnvironment({ scratch, base: PERSON, extra: { XDG_STATE_HOME: undefined } }), /XDG_STATE_HOME lies under/);
-  assert.throws(() => launchEnvironment({ scratch: 'relative', base: PERSON }), /absolute path/);
+  assert.throws(() => launchEnvironment({ scratch, base: PERSON, sessionBus: RUN_BUS, extra: { HOME: '/home/person' } }), /HOME lies under the run's scratch directory/);
+  assert.throws(() => launchEnvironment({ scratch, base: PERSON, sessionBus: RUN_BUS, extra: { XDG_CONFIG_HOME: '/tmp/cua171-diff-r-x/../elsewhere' } }), /XDG_CONFIG_HOME lies under/);
+  assert.throws(() => launchEnvironment({ scratch, base: PERSON, sessionBus: RUN_BUS, extra: { XDG_CACHE_HOME: scratch } }), /XDG_CACHE_HOME lies under/);
+  assert.throws(() => launchEnvironment({ scratch, base: PERSON, sessionBus: RUN_BUS, extra: { XDG_STATE_HOME: undefined } }), /XDG_STATE_HOME lies under/);
+  assert.throws(() => launchEnvironment({ scratch: 'relative', base: PERSON, sessionBus: RUN_BUS }), /absolute path/);
 });
 
 // Task 45's review: a family's own variables were applied after the isolation and unrestricted, so an extra could hand an
@@ -101,6 +124,7 @@ const PROTECTED = {
   SESSION_MANAGER: PERSON.SESSION_MANAGER,
   GSETTINGS_BACKEND: 'dconf',
   DBUS_SESSION_BUS_ADDRESS: PERSON.DBUS_SESSION_BUS_ADDRESS,
+  DBUS_STARTER_ADDRESS: PERSON.DBUS_SESSION_BUS_ADDRESS,
   DISPLAY: ':1',
   XAUTHORITY: '/home/person/.Xauthority',
   XDG_RUNTIME_DIR: '/run/user/501',
@@ -112,16 +136,16 @@ for (const privateDisplay of [false, true]) {
     for (const [name, value] of Object.entries(PROTECTED)) {
       for (const extra of [{ [name]: value }, { [name]: undefined }]) {
         assert.throws(
-          () => launchEnvironment({ scratch, base: PERSON, privateDisplay, app: 'kate', extra }),
+          () => launchEnvironment({ scratch, base: PERSON, privateDisplay, sessionBus: RUN_BUS, app: 'kate', extra }),
           (error) => error.message.startsWith(`refusing to start kate: its own environment sets ${name}`),
           `${name}${extra[name] === undefined ? ' removed' : `=${value}`} is refused`,
         );
       }
     }
     // the same value as the run's counts too: a family never names what the run decides
-    assert.throws(() => launchEnvironment({ scratch, base: PERSON, privateDisplay, app: 'gedit', extra: { DISPLAY: PERSON.DISPLAY } }), /refusing to start gedit: its own environment sets DISPLAY/);
+    assert.throws(() => launchEnvironment({ scratch, base: PERSON, privateDisplay, sessionBus: RUN_BUS, app: 'gedit', extra: { DISPLAY: PERSON.DISPLAY } }), /refusing to start gedit: its own environment sets DISPLAY/);
     // a home inside the scratch stays the family's to choose (gnome-text-editor's per-scene data and state)
-    assert.equal(launchEnvironment({ scratch, base: PERSON, privateDisplay, app: 'gnome-text-editor', extra: { XDG_STATE_HOME: join(scratch, 'scene', 'state') } }).XDG_STATE_HOME, join(scratch, 'scene', 'state'));
+    assert.equal(launchEnvironment({ scratch, base: PERSON, privateDisplay, sessionBus: RUN_BUS, app: 'gnome-text-editor', extra: { XDG_STATE_HOME: join(scratch, 'scene', 'state') } }).XDG_STATE_HOME, join(scratch, 'scene', 'state'));
   });
 }
 
@@ -141,13 +165,13 @@ test('a scene application whose family names a protected variable is never start
 });
 
 test("home 'xdg', for a family a separate HOME breaks: the harness's HOME kept, the XDG directories still the run's", () => {
-  const env = launchEnvironment({ scratch: '/tmp/s', base: PERSON, home: 'xdg' });
+  const env = launchEnvironment({ scratch: '/tmp/s', base: PERSON, home: 'xdg', sessionBus: RUN_BUS });
   assert.equal(env.HOME, PERSON.HOME);
   assert.equal(env.XDG_CONFIG_HOME, '/tmp/s/home/.config');
   assert.equal(env.XDG_DATA_HOME, '/tmp/s/home/.local/share');
   assert.equal(env.XDG_CACHE_HOME, '/tmp/s/home/.cache');
   assert.equal(env.XDG_STATE_HOME, '/tmp/s/home/.local/state');
-  assert.throws(() => launchEnvironment({ scratch: '/tmp/s', base: PERSON, home: 'none' }), /unknown home/);
+  assert.throws(() => launchEnvironment({ scratch: '/tmp/s', base: PERSON, home: 'none', sessionBus: RUN_BUS }), /unknown home/);
 });
 
 /** A PATH of the test's own holding `names`, each a stand-in that writes its environment to `<dir>/<name>.env` and exits. */
@@ -177,7 +201,12 @@ function standIns(names) {
   };
 }
 
-const quietDesktop = (run) => new Desktop({ cua: 'unused', run, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
+/** A Desktop whose run has begun as far as its applications are concerned: its own session bus (`RUN_BUS`). */
+const quietDesktop = (run) => {
+  const desktop = new Desktop({ cua: 'unused', run, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
+  desktop.session = { address: RUN_BUS, stop: async () => ({}) };
+  return desktop;
+};
 
 for (const [display, isPrivate] of [["a person's display", false], ['a display not yet known', null], ['a private display', true]]) {
   test(`a scene application on ${display} starts in the run's launch environment, its home made in the run's scratch`, async () => {
@@ -198,6 +227,7 @@ for (const [display, isPrivate] of [["a person's display", false], ['a display n
       }
       assert.equal(statSync(homes.HOME).mode & 0o777, 0o700, "the run's home is the run's alone");
       for (const name of HANDED_ON.filter((n) => n !== 'XAUTHORITY')) assert.equal(env[name], process.env[name], name);
+      assert.equal(env.DBUS_SESSION_BUS_ADDRESS, RUN_BUS, "the run's session bus");
       assert.equal(env.AT_SPI_BUS_ADDRESS, undefined, `the inherited ${process.env.AT_SPI_BUS_ADDRESS} never reaches the application`);
       assert.equal(env.XAUTHORITY, process.env.XAUTHORITY ?? join(apps.home, '.Xauthority'));
       assert.equal(env.GSETTINGS_BACKEND, isPrivate ? process.env.GSETTINGS_BACKEND : 'memory');
@@ -212,6 +242,37 @@ for (const [display, isPrivate] of [["a person's display", false], ['a display n
     }
   });
 }
+
+test('a scene application before the run has a session bus of its own is never started', async () => {
+  const apps = standIns(['gedit-standin']);
+  const desktop = quietDesktop('appenv4');
+  desktop.session = null;
+  try {
+    assert.throws(() => desktop.spawnApp(desktop.label('a'), 'gedit-standin', [], { app: 'gedit' }), /refusing to start gedit: the run has no session bus of its own yet/);
+    await sleep(300);
+    assert.equal(existsSync(join(process.env.PATH.split(delimiter)[0], 'gedit-standin.env')), false, 'nothing started');
+  } finally {
+    desktop.unhookStop();
+    rmSync(desktop.dir, { recursive: true, force: true });
+    apps.done();
+  }
+});
+
+// What a toolkit decides accessibility by when its session bus is the run's, which has no org.a11y.Status (task 47,
+// B2): Firefox reads GNOME_ACCESSIBILITY first (accessible/atk/Platform.cpp `ShouldA11yBeEnabled`), Chromium
+// ACCESSIBILITY_ENABLED (atk_util_auralinux.cc `ShouldEnableAccessibility`); both then find the bus through the display's
+// AT_SPI_BUS, as GTK's atk-bridge does whatever the switches say
+test("Firefox, Electron and the run's Chrome are told accessibility is on, since the run's session bus cannot say so", () => {
+  const ctx = { label: 'cua171-diff-r-n0-firefox-a', dir: mkdtempSync(join(tmpdir(), 'cua171-appenv-ctx-')), geometry: null };
+  try {
+    assert.equal(FAMILIES.firefox.launch(ctx).env?.GNOME_ACCESSIBILITY, '1');
+    assert.equal(FAMILIES.electron.launch(ctx).env?.ACCESSIBILITY_ENABLED, '1');
+    assert.equal(FAMILIES.electron.launch({ ...ctx, page: 'input.html' }).env?.ACCESSIBILITY_ENABLED, '1');
+    assert.deepEqual(chromeModule.CHROME_ENV, { ACCESSIBILITY_ENABLED: '1' });
+  } finally {
+    rmSync(ctx.dir, { recursive: true, force: true });
+  }
+});
 
 test('an application whose own variables the environment refuses is never started', async () => {
   const apps = standIns(['kate-standin']);
@@ -253,7 +314,7 @@ test('no application start bypasses the launch environment: every process start 
   assert.match(spawnApp, /xSpawn\(cmd, args, \{ \.\.\.options, env, stdio:/, 'the start takes the built environment, after the caller\'s options');
   const chrome = modules.find(({ file }) => file === 'chrome.mjs').text;
   assert.match(chrome, /const env = this\.environment\(\);[\s\S]*guard\(this\.spawnProcess\)\(CHROME_COMMAND, args, \{ env, stdio: 'ignore', detached: true \}\)/);
-  assert.match(scenes, /new ChromeInstance\(\{ scratch: this\.dir, environment: \(\) => this\.appEnvironment\(\) \}\)/, "the run's Chrome takes the run's environment");
+  assert.match(scenes, /new ChromeInstance\(\{ scratch: this\.dir, environment: \(\) => this\.appEnvironment\(CHROME_ENV, \{ app: 'chrome' \}\) \}\)/, "the run's Chrome takes the run's environment");
   // the one place: only app-env.mjs sets the variables that place an application's files
   for (const { file, text } of modules.filter(({ file }) => file !== 'app-env.mjs')) {
     assert.ok(!/\b(HOME|XDG_CONFIG_HOME|XDG_CACHE_HOME|GSETTINGS_BACKEND)\s*:/.test(text), `${file} sets an application's home or settings backend itself`);

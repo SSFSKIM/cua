@@ -11,17 +11,25 @@
 // - the run's end stops the instance by the pids it spawned, each only while its command line carries the run's
 //   --user-data-dir and names no child process type: never by name, never any other Chrome. The profile goes after;
 // - Chrome runs with the run's launch environment (app-env.mjs, task 45): a home of the run's, since outside its
-//   profile Chrome opens the NSS database under HOME (`~/.pki`), the person's while their own Chrome uses it.
+//   profile Chrome opens the NSS database under HOME (`~/.pki`), the person's while their own Chrome uses it, and the
+//   run's own session bus (B2, task 47), with `CHROME_ENV`.
 
 import { spawn as spawnProcess } from 'node:child_process';
 import { lstatSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, sep } from 'node:path';
 
-import { launchEnvironment } from './app-env.mjs';
 import { guard } from './xspawn.mjs';
 
 /** What the harness runs to start Chrome: the distribution's wrapper on the PATH, as a person starts it. */
 export const CHROME_COMMAND = 'google-chrome';
+
+/**
+ * Chrome's own variables: accessibility on. Chromium decides whether to start its ATK bridge by ACCESSIBILITY_ENABLED,
+ * else `org.a11y.Status` `IsEnabled` on the session bus, else GSettings (atk_util_auralinux.cc `ShouldEnableAccessibility`),
+ * and the run's session bus has no launcher and its settings are in memory (B2, task 47); --force-renderer-accessibility
+ * then gives the pages' trees (`CHROME_FLAGS`), and the bridge finds the bus through the display's AT_SPI_BUS.
+ */
+export const CHROME_ENV = { ACCESSIBILITY_ENABLED: '1' };
 
 /** Every command that starts a Chrome or Chromium browser, by its file name: only `ChromeInstance` runs one. */
 export const CHROME_COMMANDS = new Set(['google-chrome', 'google-chrome-stable', 'google-chrome-beta', 'google-chrome-unstable', 'chrome', 'chromium', 'chromium-browser']);
@@ -104,11 +112,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /**
  * The run's Chrome: its profile `<scratch>/chrome-profile`, made at the first open; every open one `google-chrome`
  * process with the same profile, the first becoming the browser and each later one handing its window to it and
- * exiting (or becoming the browser itself, if the run's browser had quit when its last window closed). `spawn`,
- * `cmdline` and `kill` are the display-free tests' own.
+ * exiting (or becoming the browser itself, if the run's browser had quit when its last window closed). `environment`:
+ * the run's launch environment for it (the run's Desktop gives its own, with `CHROME_ENV`). `spawn`, `cmdline` and
+ * `kill` are the display-free tests' own.
  */
 export class ChromeInstance {
-  constructor({ scratch, environment = () => launchEnvironment({ scratch }), spawn = spawnProcess, cmdline = procCmdline, kill = (pid, signal) => process.kill(pid, signal) }) {
+  constructor({ scratch, environment, spawn = spawnProcess, cmdline = procCmdline, kill = (pid, signal) => process.kill(pid, signal) }) {
+    if (typeof environment !== 'function') throw new Error("the run's Chrome needs the run's launch environment (its home, its session bus)");
     this.scratch = scratch;
     this.profile = join(scratch, 'chrome-profile');
     // the run's launch environment (app-env.mjs; the run's Desktop passes its own): a home of the run's, so Chrome's NSS

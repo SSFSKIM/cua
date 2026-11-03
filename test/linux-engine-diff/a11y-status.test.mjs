@@ -53,55 +53,52 @@ test("the switches are read from the harness's own session bus, or the run's by 
   assert.throws(() => readStatus({ run: () => JSON.stringify({ type: 's', data: 'x' }) }), /not a boolean/);
 });
 
-test("on a person's display a Qt scene with the person's switches off refuses before it starts, and nothing is written", async () => {
-  const bus = fakeBus({ IsEnabled: false, ScreenReaderEnabled: false });
-  const desktop = desktopOn(false);
-  // a scene that started anyway ends here, without waiting for a window
-  desktop.waitForWindow = async () => {
-    throw new Error('the test opens no window');
-  };
-  try {
-    for (const family of ['kate', 'qtcreator', 'qt5-input', 'qt6-input', 'qt5-breeze', 'qt5-fusion']) {
-      await assert.rejects(openFamily(desktop, null, family, 'r'), (error) => {
-        assert.match(error.message, /^refusing to start cua171-diff-a11y-n0-.*: org\.a11y\.Status IsEnabled and ScreenReaderEnabled are both off on the person's session bus/);
-        return true;
-      }, family);
-    }
-    assert.equal(bus.started('kate') || bus.started('qtcreator') || bus.started('python3'), false, 'no Qt application started');
-    assert.ok(bus.calls().length > 0 && bus.calls().every((c) => c.includes('get-property') && c.includes('--user')), "only reads, from the person's bus");
-    assert.deepEqual(bus.state(), { IsEnabled: false, ScreenReaderEnabled: false });
-    // a non-Qt family is never asked
-    const before = bus.calls().length;
-    desktop.spawnApp = () => {
-      throw new Error('the test ends the open here');
+// B2 (task 47): on a person's display the run's applications are on a session bus of the run's, which can start nothing,
+// so no org.a11y.Bus answers there. Qt 5.15 and 6.4 turn their bridge on only through that service (DBusConnection's
+// `serviceRegistered`, which alone reads QT_LINUX_ACCESSIBILITY_ALWAYS_ON); their other route, the display's AT_SPI_BUS
+// property, announces "enabled" from DBusConnection's constructor, before the bridge has connected to the signal, so it
+// is lost. A Qt scene there would put no tree on the bus, whatever the person's switches say: it is refused before it
+// starts, by its family, and nothing is read or written.
+test("on a person's display every Qt scene refuses before it starts, whatever the person's switches, and nothing is read or written", async () => {
+  for (const state of [{ IsEnabled: false, ScreenReaderEnabled: false }, { IsEnabled: true, ScreenReaderEnabled: true }]) {
+    const bus = fakeBus(state);
+    const desktop = desktopOn(false);
+    desktop.waitForWindow = async () => {
+      throw new Error('the test opens no window');
     };
-    await assert.rejects(openFamily(desktop, null, 'gedit', 'r'), /the test ends the open here/);
-    assert.equal(bus.calls().length, before);
-    // a switch the harness cannot read refuses too: whether the tree would come is unknown
-    assert.throws(() => desktop.assertQtBridge('kate', {}, () => {
-      throw new Error('ServiceUnknown');
-    }), /could not be read on the person's session bus \(ServiceUnknown\)/);
-  } finally {
-    ended(desktop);
-    bus.done();
+    try {
+      for (const family of ['kate', 'qtcreator', 'qt5-input', 'qt6-input', 'qt5-breeze', 'qt5-fusion']) {
+        await assert.rejects(openFamily(desktop, null, family, 'r'), (error) => {
+          assert.match(error.message, /^refusing to start cua171-diff-a11y-n0-.*: a Qt application on a display a person uses would put no tree on the accessibility bus/);
+          assert.match(error.message, /run Qt scenes on a private display/);
+          return true;
+        }, family);
+      }
+      assert.throws(() => desktop.assertQtBridge('kate', { [QT_ALWAYS_ON]: '1' }), /would put no tree/, "Qt's own switch does not help: only that service reads it");
+      assert.equal(bus.started('kate') || bus.started('qtcreator') || bus.started('python3'), false, 'no Qt application started');
+      assert.deepEqual(bus.calls(), [], "the person's switches are not even read");
+    } finally {
+      ended(desktop);
+      bus.done();
+    }
   }
 });
 
-test("a Qt scene starts when a switch is on, or Qt's own switch is set, on the person's bus or the run's", async () => {
+test("on a private display a Qt scene starts when a switch of the run's own bus is on, or Qt's own switch is set, and refuses otherwise", async () => {
   const bus = fakeBus({ IsEnabled: true, ScreenReaderEnabled: false });
-  const persons = desktopOn(false);
   const privateRun = desktopOn(true, 'unix:path=/tmp/run-bus');
   try {
-    persons.assertQtBridge('kate');
     privateRun.assertQtBridge('kate');
-    const [first, second] = bus.calls().filter((c) => c.includes('IsEnabled'));
-    assert.ok(first.includes('--user'), "the person's bus on a person's display");
-    assert.ok(second.includes('--address=unix:path=/tmp/run-bus'), "the run's own bus on a private display");
-    persons.assertQtBridge('kate', { [QT_ALWAYS_ON]: '1' }, () => ({ IsEnabled: false, ScreenReaderEnabled: false }));
+    const [first] = bus.calls().filter((c) => c.includes('IsEnabled'));
+    assert.ok(first.includes('--address=unix:path=/tmp/run-bus'), "the run's own bus on a private display");
+    privateRun.assertQtBridge('kate', { [QT_ALWAYS_ON]: '1' }, () => ({ IsEnabled: false, ScreenReaderEnabled: false }));
     assert.throws(() => privateRun.assertQtBridge('kate', {}, () => ({ IsEnabled: false, ScreenReaderEnabled: false })), /both off on the run's own session bus/);
+    // a switch the harness cannot read refuses too: whether the tree would come is unknown
+    assert.throws(() => privateRun.assertQtBridge('kate', {}, () => {
+      throw new Error('ServiceUnknown');
+    }), /could not be read on the run's own session bus \(ServiceUnknown\)/);
     assert.equal(bus.calls().some((c) => c.includes('set-property')), false);
   } finally {
-    ended(persons);
     ended(privateRun);
     bus.done();
   }

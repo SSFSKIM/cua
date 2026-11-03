@@ -151,13 +151,32 @@ test("a person's display's run: its applications' bus started, the display's own
     started.push(options);
     return { address: 'unix:path=/tmp/app-bus', pid: 1, stop: async () => ({ terminated: true, killed: false, stopped: started.push('stopped') }) };
   };
-  const session = await sessionBus.startAppSession({ dir: '/tmp/d', display: ':cua171-test-person', env: { PATH: '/usr/bin' }, start, rootBus: () => 'unix:path=/run/user/501/at-spi/bus_0' });
+  const stubs = [];
+  const startStub = async (options) => {
+    stubs.push(options);
+    return { pid: 77, unique: ':1.1', stop: async () => ({ terminated: true, killed: false, stopped: started.push('stub stopped') }) };
+  };
+  const session = await sessionBus.startAppSession({ dir: '/tmp/d', display: ':cua171-test-person', env: { PATH: '/usr/bin' }, start, rootBus: () => 'unix:path=/run/user/501/at-spi/bus_0', startStub });
   assert.deepEqual(started, [{ dir: '/tmp/d', display: ':cua171-test-person', env: { PATH: '/usr/bin' }, serviceFile: null }], 'a bus that can start nothing');
   assert.equal(session.address, 'unix:path=/tmp/app-bus');
   assert.equal(session.a11y, 'unix:path=/run/user/501/at-spi/bus_0', "the display's accessibility bus, the person's launcher's");
+  // the run's stand-in for org.a11y.Bus on that bus, answering the display's accessibility bus (task 48)
+  assert.deepEqual(stubs, [{ address: 'unix:path=/tmp/app-bus', a11y: 'unix:path=/run/user/501/at-spi/bus_0' }]);
+  assert.deepEqual(session.stub, { pid: 77, unique: ':1.1' });
+  await session.stop();
+  assert.deepEqual(started.slice(1), ['stub stopped', 'stopped'], 'the stand-in, then the bus');
   started.length = 0;
-  await assert.rejects(sessionBus.startAppSession({ dir: '/tmp/d', display: ':cua171-test-person', start, rootBus: () => null }), /names no accessibility bus/);
+  stubs.length = 0;
+  await assert.rejects(sessionBus.startAppSession({ dir: '/tmp/d', display: ':cua171-test-person', start, rootBus: () => null, startStub }), /names no accessibility bus/);
   assert.equal(started.at(-1), 'stopped', 'the bus is stopped before the error');
+  assert.deepEqual(stubs, [], 'and no stand-in is started for a display that names none');
+  // a stand-in that cannot start: the session stands, its refusal kept for the Qt scenes
+  const without = await sessionBus.startAppSession({ dir: '/tmp/d', display: ':cua171-test-person', start, rootBus: () => 'unix:path=/a11y', startStub: async () => {
+    throw new Error('the name is owned already');
+  } });
+  assert.equal(without.stub, null);
+  assert.equal(without.stubRefusal, 'the name is owned already');
+  assert.deepEqual((await without.stop()).stub, { refused: 'the name is owned already' });
 });
 
 test('a real dbus-daemon with no service: nothing is activatable, the accessibility bus launcher included', { skip: !HAS_BUS && 'no dbus-daemon or busctl here' }, async () => {

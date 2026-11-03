@@ -127,8 +127,15 @@ killed it.
   `AT_SPI_BUS`, as the engines do; a display that names none refuses the run. The harness's own processes (its tools,
   the engines, the reader) keep the person's session bus. That bus has no `org.a11y.Status`, so Firefox gets
   `GNOME_ACCESSIBILITY=1` and Chrome and Electron `ACCESSIBILITY_ENABLED=1` (the variables each reads first); Qt 5.15
-  and 6.4 turn their bridge on only through `org.a11y.Bus` on the session bus, so every Qt scene refuses there, with
-  the reason (`QT_ON_PERSONS_DISPLAY`): Qt scenes run on a private display.
+  and 6.4 turn their bridge on only through `org.a11y.Bus` on the session bus, so the run's stand-in for the launcher
+  (`a11y-stub.mjs`, task 48; the design session's ruling, sminos 334) owns that one name on that bus: `GetAddress`
+  answers exactly the display's root `AT_SPI_BUS`, `org.a11y.Status` reads `IsEnabled` and `ScreenReaderEnabled` true
+  through `Get` and `GetAll` and refuses every `Set` and any other call with a D-Bus error, and it forwards nothing,
+  owns no other name and activates nothing. It is a node process of its own with an empty environment (it reaches no
+  display), started with the bus, stopped with it and ending by itself when the bus does. With it Qt scenes run there;
+  a stand-in that cannot start (a root value that is not a plain address, the name taken) leaves the run going and
+  every Qt scene refused, with the reason (`QT_ON_PERSONS_DISPLAY`, and why the stand-in is missing). Its tests run on
+  a dbus-daemon each starts itself, in ci-kit's `harness-dbus` gate on Ubuntu, where dbus is required.
 - **The run's home** (`app-env.mjs`, task 45): every application the run launches, on every display, through the one
   place that builds its environment (`Desktop.appEnvironment`, which `spawnApp` and the run's Chrome take), runs with
   `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` and `XDG_STATE_HOME` under `<scratch>/home`, made by
@@ -148,9 +155,10 @@ killed it.
   on there at its start (below).
 - **The accessibility switches** (`a11y-status.mjs`, task 45): `org.a11y.Status` `IsEnabled` and
   `ScreenReaderEnabled`, which Qt and Firefox read when they start. On a display a person uses they are the person's
-  settings, which the harness never writes, and its applications do not see them (their bus is the run's, above): a
-  Qt scene (the families marked `qt`, and a Qt `openDuplicates`) refuses there before it starts, and qt-bridge runs
-  no condition. On a private display they are the run's own launcher's: the run's start sets `IsEnabled` on the run's
+  settings, which the harness never writes, and its applications do not see them (their bus is the run's, above): they
+  see the stand-in's, both on and read-only, which a Qt scene (the families marked `qt`, and a Qt `openDuplicates`)
+  reads before it starts, refusing when it does not answer; qt-bridge runs no condition there, since none can be set.
+  On a private display they are the run's own launcher's: the run's start sets `IsEnabled` on the run's
   bus and reads it back (a switch that does not take fails the start), a Qt scene refuses when both are off, and
   qt-bridge sets its conditions there and puts them back.
 
@@ -762,6 +770,7 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `session-bus.mjs` | the run's own session bus: a private display's, its accessibility bus wired to the display; a person's display's, for the applications, activating nothing |
 | `app-env.mjs` | the environment every application the run launches runs with: the run's home, the display and buses handed on |
 | `a11y-status.mjs` | the session's accessibility switches: read on a person's display, set only on the run's own bus |
+| `a11y-stub.mjs`, `dbus-wire.mjs` | the run's stand-in for org.a11y.Bus on a person's display's application bus, and the D-Bus wire it speaks |
 | `prepare.mjs` | the gate's rule for a sample whose harness-side preparation fails: one resample, the counts and caps |
 | `witness.mjs`, `xprobe/` | the witness; `xprobe` is the harness's own X client (witness, retention probe, image comparison, window close) |
 | `busmon.mjs` | accessibility-bus call counts |

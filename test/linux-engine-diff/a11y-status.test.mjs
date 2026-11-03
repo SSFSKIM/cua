@@ -54,15 +54,17 @@ test("the switches are read from the harness's own session bus, or the run's by 
 });
 
 // B2 (task 47): on a person's display the run's applications are on a session bus of the run's, which can start nothing,
-// so no org.a11y.Bus answers there. Qt 5.15 and 6.4 turn their bridge on only through that service (DBusConnection's
-// `serviceRegistered`, which alone reads QT_LINUX_ACCESSIBILITY_ALWAYS_ON); their other route, the display's AT_SPI_BUS
-// property, announces "enabled" from DBusConnection's constructor, before the bridge has connected to the signal, so it
-// is lost. A Qt scene there would put no tree on the bus, whatever the person's switches say: it is refused before it
-// starts, by its family, and nothing is read or written.
-test("on a person's display every Qt scene refuses before it starts, whatever the person's switches, and nothing is read or written", async () => {
-  for (const state of [{ IsEnabled: false, ScreenReaderEnabled: false }, { IsEnabled: true, ScreenReaderEnabled: true }]) {
+// so no org.a11y.Bus answers there unless the run's stand-in does (task 48, a11y-stub.mjs). Qt 5.15 and 6.4 turn their
+// bridge on only through that service (DBusConnection's `serviceRegistered`, which alone reads
+// QT_LINUX_ACCESSIBILITY_ALWAYS_ON); their other route, the display's AT_SPI_BUS property, announces "enabled" from
+// DBusConnection's constructor, before the bridge has connected to the signal, so it is lost. Without the stand-in a Qt
+// scene there would put no tree on the bus, whatever the person's switches say: it is refused before it starts, by its
+// family, and nothing is read or written.
+test("on a person's display without the run's stand-in every Qt scene refuses before it starts, whatever the person's switches, and nothing is read or written", async () => {
+  for (const [state, session] of [[{ IsEnabled: false, ScreenReaderEnabled: false }, null], [{ IsEnabled: true, ScreenReaderEnabled: true }, { address: 'unix:path=/tmp/run-bus', stub: null, stubRefusal: "the run's stand-in for org.a11y.Bus did not start: org.a11y.Bus is owned already on the run's session bus (RequestName answered 3)" }]]) {
     const bus = fakeBus(state);
     const desktop = desktopOn(false);
+    if (session) desktop.session = session;
     desktop.waitForWindow = async () => {
       throw new Error('the test opens no window');
     };
@@ -75,12 +77,44 @@ test("on a person's display every Qt scene refuses before it starts, whatever th
         }, family);
       }
       assert.throws(() => desktop.assertQtBridge('kate', { [QT_ALWAYS_ON]: '1' }), /would put no tree/, "Qt's own switch does not help: only that service reads it");
+      if (session) assert.throws(() => desktop.assertQtBridge('kate'), (error) => error.message.endsWith(`run Qt scenes on a private display (${session.stubRefusal})`), 'the reason the stand-in is missing');
       assert.equal(bus.started('kate') || bus.started('qtcreator') || bus.started('python3'), false, 'no Qt application started');
       assert.deepEqual(bus.calls(), [], "the person's switches are not even read");
     } finally {
       ended(desktop);
       bus.done();
     }
+  }
+});
+
+// Task 48 (the design session's ruling, sminos 334): with the run's stand-in owning org.a11y.Bus on the applications'
+// bus, Qt finds the service, reads its switches (both true, read-only) and asks it for the display's accessibility bus,
+// so Qt scenes run on a person's display again. Before a Qt application starts, its switches are read where Qt will read
+// them, on the run's bus, never the person's, and a stand-in that does not answer refuses the scene.
+test("on a person's display with the run's stand-in a Qt scene starts, its switches read on the run's bus, never the person's", async () => {
+  const bus = fakeBus({ IsEnabled: true, ScreenReaderEnabled: true });
+  const desktop = desktopOn(false);
+  desktop.session = { address: 'unix:path=/tmp/run-app-bus', stub: { pid: 4242, unique: ':1.1' }, stubRefusal: null };
+  desktop.waitForWindow = async () => {
+    throw new Error('the test opens no window');
+  };
+  try {
+    desktop.assertQtBridge('kate');
+    const reads = bus.calls();
+    assert.ok(reads.length > 0 && reads.every((c) => c.includes('--address=unix:path=/tmp/run-app-bus') && !c.includes('--user')), JSON.stringify(reads));
+    await assert.rejects(openFamily(desktop, null, 'kate', 'r'), /the test opens no window/);
+    for (let i = 0; i < 100 && !bus.started('kate'); i++) await new Promise((r) => setTimeout(r, 20));
+    assert.equal(bus.started('kate'), true, 'kate was started');
+    // the stand-in's answer is what decides: one that reads off, or does not answer, refuses
+    assert.throws(() => desktop.assertQtBridge('kate', {}, () => ({ IsEnabled: false, ScreenReaderEnabled: false })), /both off on the run's stand-in for org\.a11y\.Bus/);
+    assert.throws(() => desktop.assertQtBridge('kate', {}, () => {
+      throw new Error('NoReply');
+    }), /org\.a11y\.Status could not be read on the run's stand-in for org\.a11y\.Bus \(NoReply\)/);
+    assert.equal(bus.calls().some((c) => c.includes('set-property')), false, 'nothing is written');
+  } finally {
+    await desktop.close(desktop.windows).catch(() => {});
+    ended(desktop);
+    bus.done();
   }
 });
 

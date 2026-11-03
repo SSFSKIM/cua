@@ -5,7 +5,9 @@
 // So the harness only reads them there; on a private display the launcher is the run's own, on the run's session bus
 // (session-bus.mjs), and the harness may set them, and a Qt scene refuses with the reason when both are off. On a
 // display a person uses the run's applications are on a session bus of the run's that can activate nothing (B2, task
-// 47), where Qt turns no bridge on whatever the switches say (`QT_ON_PERSONS_DISPLAY`): a Qt scene refuses there.
+// 47), where Qt turns no bridge on whatever the switches say (`QT_ON_PERSONS_DISPLAY`) unless the run's stand-in for
+// org.a11y.Bus answers there (a11y-stub.mjs, task 48), its switches both on and read-only: a Qt scene refuses there
+// without it.
 
 import { execFileSync } from 'node:child_process';
 
@@ -48,7 +50,9 @@ export function setSwitch(name, value, { address, privateDisplay, run = execFile
  * their other routes, the display's `AT_SPI_BUS` property and AT_SPI_BUS_ADDRESS, set "enabled" inside DBusConnection's
  * constructor and announce it before the bridge has connected to the signal (qspiaccessiblebridge.cpp, bridge.cpp at
  * those versions), so the announcement is lost (task 46 saw Qt 6 register nothing with the variable set). The run's
- * applications' bus there has no `org.a11y.Bus`, so a Qt application would put no tree on the accessibility bus.
+ * applications' bus there has no `org.a11y.Bus` but the run's stand-in (a11y-stub.mjs, task 48), so without it a Qt
+ * application would put no tree on the accessibility bus: the reason a Qt scene refuses there when the stand-in did
+ * not start.
  */
 export const QT_ON_PERSONS_DISPLAY = "a Qt application on a display a person uses would put no tree on the accessibility bus: the run's applications are on a session bus of the run's, which can activate nothing, and Qt 5.15 and 6.4 turn their accessibility on only through that bus's org.a11y.Bus, whatever the person's switches or QT_LINUX_ACCESSIBILITY_ALWAYS_ON say; run Qt scenes on a private display";
 

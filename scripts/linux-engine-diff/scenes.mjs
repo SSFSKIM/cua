@@ -12,8 +12,8 @@
 // activate nothing (task 47), so no single-instance handoff or activation over D-Bus can reach the person's session.
 // Every application, on every display, runs with a home of the run's and the XDG directories inside it (task 45,
 // app-env.mjs, `appEnvironment`), so none writes the person's settings, recent files or certificate store; the
-// person's accessibility switches are never written, and Qt scenes run on a private display only (a11y-status.mjs,
-// `assertQtBridge`).
+// person's accessibility switches are never written, and on a person's display Qt scenes run only while the run's
+// stand-in for org.a11y.Bus answers on the applications' bus (a11y-stub.mjs, `assertQtBridge`).
 //
 // The harness never changes a window it did not open (the design session, 2026-11-02). The window found active when a
 // run begins is never activated again: the run records it, and the active window it ends with, each marked foreign or
@@ -537,16 +537,18 @@ export class Desktop {
   }
 
   /**
-   * Refuses a Qt application, before it starts, when it would put no tree on the accessibility bus: on any display but
-   * a private one always (a11y-status.mjs `QT_ON_PERSONS_DISPLAY`: the run's applications' bus there has no launcher,
-   * and Qt turns its bridge on only through it), nothing read; on a private display when the run's own launcher has
-   * both `org.a11y.Status` switches off and `env` has no `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`. `read` is the
-   * display-free tests' own.
+   * Refuses a Qt application, before it starts, when it would put no tree on the accessibility bus. On a display a
+   * person uses, Qt finds `org.a11y.Bus` on the run's applications' bus only through the run's stand-in (a11y-stub.mjs,
+   * task 48): without it, refused always (a11y-status.mjs `QT_ON_PERSONS_DISPLAY`, with why the stand-in is missing),
+   * nothing read; with it, its switches are read there, where Qt reads them, never the person's. On a private display
+   * the run's own launcher's switches are read. Either way refused when both `org.a11y.Status` switches are off, or
+   * cannot be read, and `env` has no `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1`. `read` is the display-free tests' own.
    */
   assertQtBridge(what, env = {}, read = readStatus) {
-    if (this.isPrivate !== true) throw new Error(`refusing to start ${what}: ${QT_ON_PERSONS_DISPLAY}`);
-    const address = a11yAddress(this);
-    const where = "the run's own session bus";
+    const stub = this.isPrivate !== true;
+    if (stub && !this.session?.stub) throw new Error(`refusing to start ${what}: ${QT_ON_PERSONS_DISPLAY}${this.session?.stubRefusal ? ` (${this.session.stubRefusal})` : ''}`);
+    const address = stub ? this.session.address : a11yAddress(this);
+    const where = stub ? "the run's stand-in for org.a11y.Bus" : "the run's own session bus";
     let status;
     try {
       status = read({ address });
@@ -741,7 +743,8 @@ export class Desktop {
           windows.push(win);
         }
       } else {
-        // a Qt fixture's tree needs the session's accessibility switch on, which the harness never sets on a person's display
+        // a Qt fixture's tree needs the session's accessibility switch on: the run's launcher's, or the run's stand-in's on
+        // a person's display
         if (toolkit === 'qt5' || toolkit === 'qt6') this.assertQtBridge(label);
         const child = this.spawnApp(label, 'python3', ['-I', join(PAGES, 'identity-windows.py'), toolkit, label, label, count, w, h], { stdout: 'pipe' });
         pid = child.pid;

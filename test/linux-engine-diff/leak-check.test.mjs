@@ -92,6 +92,28 @@ test('a suite that leaves a stand-in behind fails, naming its pid and command li
   }
 });
 
+// The run's org.a11y.Bus stand-in (a11y-stub.mjs, task 48) ends with its bus; one that outlives it (here held stopped, so
+// it cannot see the bus end) is a process of the run's left behind, which the check names and ends. It needs a
+// dbus-daemon: skipped where there is none, except under CUA171_DBUS_TESTS=required (ci-kit's harness-dbus gate).
+const DBUS_TOOLS = ['dbus-daemon', 'busctl'].filter((tool) => spawnSync('sh', ['-c', `command -v ${tool}`]).status !== 0);
+const onBus = { skip: (!HAS_PROC && 'no /proc here') || (DBUS_TOOLS.length > 0 && process.env.CUA171_DBUS_TESTS !== 'required' && `no ${DBUS_TOOLS.join(', ')} here (ci-kit's harness-dbus gate runs this on Linux, where it is required)`) };
+
+test("a suite that leaves the run's org.a11y.Bus stand-in behind its bus fails, naming it, and the stand-in is ended", onBus, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-leakcheck-stub-'));
+  const pidFile = join(dir, 'pid');
+  let pid = null;
+  try {
+    const run = nestedSuite('a11y-stub', pidFile);
+    pid = Number(readFileSync(pidFile, 'utf8'));
+    assert.equal(run.status, 1, `the suite fails: ${run.stderr}`);
+    assert.match(run.stderr, new RegExp(`cua171 SUITE LEAK: .*\\n  process ${pid}: \\S+ \\S+/scripts/linux-engine-diff/a11y-stub\\.mjs --bus unix:path=\\S*/cua171-suite-\\w+/cua171-leak-fixture-\\w+/bus/`));
+    assert.equal(alive(pid), false, 'and the stand-in is ended');
+  } finally {
+    if (pid && alive(pid)) process.kill(pid, 'SIGKILL');
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a suite that leaves a scratch directory behind fails, naming it, and the directory is removed', () => {
   const run = nestedSuite('directory', '/nonexistent');
   assert.equal(run.status, 1, `the suite fails: ${run.stderr}`);

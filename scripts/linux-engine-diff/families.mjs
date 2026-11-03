@@ -101,9 +101,10 @@ export function wmClass(id) {
 /**
  * Each family: its title in the matrix, its kind, its window's size, and how it is launched. Every launch runs with the
  * run's environment (scenes.mjs `appEnvironment`: a home of the run's on every display, settings in memory on a
- * person's), its `env` holding only the family's own variables. `qt`: a Qt application, refused before it starts on a
- * display a person uses, where the run's session bus gives Qt no way to turn its bridge on, and on a private display
- * when the run's accessibility switches are off (`assertQtBridge`). `home: 'xdg'` would keep the harness's HOME for a
+ * person's), its `env` holding only the family's own variables. `qt`: a Qt application, refused before it starts when it
+ * would put no tree on the bus (`assertQtBridge`): on a display a person uses when the run's stand-in for org.a11y.Bus,
+ * through which alone Qt turns its bridge on there, is not running (a11y-stub.mjs), and on a private display when the
+ * run's accessibility switches are off. `home: 'xdg'` would keep the harness's HOME for a
  * family a separate HOME breaks (the run's XDG directories still apply); none needs it so far (task 45).
  */
 export const FAMILIES = {

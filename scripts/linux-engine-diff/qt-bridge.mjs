@@ -7,8 +7,9 @@
 // The switches are the session's settings (a11y-status.mjs; task 45). On a private display they are the run's own
 // launcher's, on the run's session bus: each condition sets them there, and they are put back as they were found,
 // whatever happens. On a display a person uses no condition runs: the run's Qt applications are on a session bus of the
-// run's there, where Qt turns no bridge on whatever the switches say (B2, task 47, a11y-status.mjs
-// `QT_ON_PERSONS_DISPLAY`), and the person's switches are never written; each is recorded as not run, with the reason.
+// run's there (B2, task 47), whose org.a11y.Status is the run's stand-in (a11y-stub.mjs, task 48), both switches on and
+// read-only, and the person's switches are never written, so no condition can be set; each is recorded as not run, with
+// the reason.
 
 import { a11yAddress, readStatus, setSwitch } from './a11y-status.mjs';
 import { Engine } from './engine.mjs';
@@ -25,7 +26,7 @@ export const CONDITIONS = [
 ];
 
 /** Why no condition is run on a display a person uses. */
-export const NOT_ON_PERSONS_DISPLAY = "on a display a person uses the run's Qt applications are on a session bus of the run's, where Qt turns no bridge on whatever org.a11y.Status says, and the person's switches are never written: run the experiment on a private display";
+export const NOT_ON_PERSONS_DISPLAY = "on a display a person uses the run's Qt applications are on a session bus of the run's, whose org.a11y.Status is the run's stand-in with both switches on and read-only, and the person's switches are never written, so no condition can be set: run the experiment on a private display";
 
 /**
  * The experiment. `open`, `oracle`, `pinned` (an engine for the pinned build), `read` and `set` (the switches) and

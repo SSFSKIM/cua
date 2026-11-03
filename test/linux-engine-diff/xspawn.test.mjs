@@ -164,8 +164,19 @@ test('a server that names a display whose socket was there before is another ser
 /** What reaches an X display when the harness starts it: its X tools, the engines, the applications, the bus daemon. */
 const X_FACING = new Set(["'xtrace'", "'xprop'", "'xdotool'", "'xwininfo'", "'xclip'", "'xdpyinfo'", "'xauth'", "'Xvfb'", "'dbus-daemon'", 'XPROBE', 'xprobe', 'this.bin', 'values.engine', 'args.cua', 'cmd', 'CHROME_COMMAND']);
 
-/** What the harness starts that reaches no X display: the bus tools, its load and its build steps. */
-const NOT_X_FACING = new Set(["'busctl'", "'dbus-monitor'", "'stress-ng'", "'git'", "'pgrep'", "'sleep'", 'command']);
+/**
+ * What the harness starts that reaches no X display: the bus tools, its load and its build steps, and the run's
+ * org.a11y.Bus stand-in (`process.execPath`, a11y-stub.mjs: given the root's value, it starts with an empty environment;
+ * the test below holds it to that).
+ */
+const NOT_X_FACING = new Set(["'busctl'", "'dbus-monitor'", "'stress-ng'", "'git'", "'pgrep'", "'sleep'", 'command', 'process.execPath']);
+
+test("the harness starts node only as the run's org.a11y.Bus stand-in, with an empty environment", () => {
+  const nodes = harnessStarts().filter((s) => s.command === 'process.execPath');
+  assert.deepEqual(nodes.map((s) => s.file), ['a11y-stub.mjs']);
+  const { text } = harnessModules().find((m) => m.file === 'a11y-stub.mjs');
+  assert.match(text.slice(nodes[0].at), /^spawn\(process\.execPath, \[A11Y_STUB, [^\n]*\{ stdio: \[[^\]]*\], env: \{\}, detached: true \}\)/);
+});
 
 test('every start of an X-facing tool goes through the spawner, and nothing else starts one', () => {
   const starts = harnessStarts();

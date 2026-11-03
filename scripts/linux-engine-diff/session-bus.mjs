@@ -26,13 +26,16 @@
 // task 47; `startAppSession`): the same daemon with no service at all, so it can activate nothing, where on the
 // person's session bus kate had D-Bus-activated the person's kactivitymanagerd and kglobalaccel. There the accessibility
 // bus is the person's launcher's, which the applications find through the display's `AT_SPI_BUS`, as the engines do; a
-// display that names none refuses the run. The harness's own processes (its tools, the engines, the reader) keep the
+// display that names none refuses the run. Qt looks for it on its session bus instead (`org.a11y.Bus`), so the run's
+// stand-in for the launcher (a11y-stub.mjs, task 48) owns that name there and answers the root's address, with both
+// switches on and read-only, and nothing else. The harness's own processes (its tools, the engines, the reader) keep the
 // person's session bus there.
 
 import { execFileSync, spawn as spawnProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { startA11yStub } from './a11y-stub.mjs';
 import { readSwitch, setSwitch } from './a11y-status.mjs';
 import { inTest } from './hermetic.mjs';
 import { guard } from './xspawn.mjs';
@@ -228,18 +231,38 @@ export function enableAccessibility({ address, run = execFileSync }) {
 /**
  * The run's applications' session bus on a display a person uses: a bus of the run's that can activate nothing (no
  * service file), and the display's own accessibility bus, which its root's `AT_SPI_BUS` names (the person's launcher's),
- * required: without it the applications, whose session bus has no launcher, would find none. Resolves with `{address,
- * a11y, pid, stop()}`; a display that names no accessibility bus stops the bus before it throws. `start` and `rootBus`
- * are the display-free tests' own.
+ * required: without it the applications, whose session bus has no launcher, would find none. On that bus the run's
+ * stand-in for the launcher (a11y-stub.mjs, task 48) owns `org.a11y.Bus`, answering that address and both switches on,
+ * read-only, which is how Qt turns its bridge on; a stand-in that cannot start leaves the bus to the other families and
+ * Qt refused (`stubRefusal`, scenes.mjs `assertQtBridge`). Resolves with `{address, a11y, pid, stub: {pid, unique} |
+ * null, stubRefusal, stop()}`; `stop` ends the stand-in, then the bus, and answers the bus's `{terminated, killed}` with
+ * the stand-in's as `stub` (or `{refused}`). A display that names no accessibility bus stops the bus before it throws.
+ * `start`, `rootBus` and `startStub` are the display-free tests' own.
  */
-export async function startAppSession({ dir, display, env = process.env, start = startSessionBus, rootBus = (d) => rootAccessibilityBus(d) }) {
+export async function startAppSession({ dir, display, env = process.env, start = startSessionBus, rootBus = (d) => rootAccessibilityBus(d), startStub = startA11yStub }) {
   const bus = await start({ dir, display, env, serviceFile: null });
   const a11y = rootBus(display);
   if (!a11y) {
     await bus.stop();
     throw new Error(`the display ${display} names no accessibility bus (its root has no AT_SPI_BUS): the run's applications, on a session bus of the run's that can start no launcher, would find none`);
   }
-  return { ...bus, a11y };
+  let stub = null;
+  let stubRefusal = null;
+  try {
+    stub = await startStub({ address: bus.address, a11y });
+  } catch (error) {
+    stubRefusal = error.message;
+  }
+  return {
+    ...bus,
+    a11y,
+    stub: stub && { pid: stub.pid, unique: stub.unique },
+    stubRefusal,
+    async stop(options) {
+      const ended = stub ? await stub.stop(options) : { refused: stubRefusal };
+      return { ...(await bus.stop(options)), stub: ended };
+    },
+  };
 }
 
 /** The run's session for its applications: `startPrivateSession` on a private display, `startAppSession` on any other. */

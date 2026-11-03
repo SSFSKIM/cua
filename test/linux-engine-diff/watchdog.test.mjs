@@ -17,8 +17,9 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 import { TEST_DISPLAY } from '../../scripts/linux-engine-diff/hermetic.mjs';
+import { desktopLine } from '../../scripts/linux-engine-diff/report.mjs';
 import { Desktop, desktopEnding } from '../../scripts/linux-engine-diff/scenes.mjs';
-import { RECORD_REFUSAL, XPROBE, isPrivateDisplay, startRunRecord, startRunWatchdog } from '../../scripts/linux-engine-diff/xtools.mjs';
+import { RECORD_DECLINED, RECORD_REFUSAL, XPROBE, isPrivateDisplay, startRunRecord, startRunWatchdog } from '../../scripts/linux-engine-diff/xtools.mjs';
 
 const ROOT = 0x293;
 
@@ -96,9 +97,22 @@ test("a display not marked private (the person's :0) gets no record client, and 
   assert.deepEqual(watchdog.guarded, []);
   const ending = desktopEnding(desktop.ending);
   assert.deepEqual(ending.foreign.filter((l) => l.startsWith("the run's record")), [], 'a record not run on purpose fails nothing');
-  assert.match(ending.record.record.skipped, /only on a private display/);
+  assert.equal(ending.record.record.skipped, RECORD_REFUSAL);
+  assert.ok(desktopLine(ending.record).includes(`the run's record: not run (${RECORD_REFUSAL})`), 'the summary gives the reason the row records');
   assert.deepEqual(desktop.ending.watchdog, { state: 'ended', clean: true, stalled: false, round_trips: 3, lines: [{ kind: 'ready' }, { kind: 'end', round_trips: 3 }] });
   assert.deepEqual(ending.record.watchdog, { state: 'ended', round_trips: 3 });
+});
+
+// The reason a run has no record is the one that held: a private display whose caller declined the record (the AT-SPI
+// probe's, task 49's private runs) is never reported as a person's (task 55's review).
+test("a private display whose caller started no record says so: its end row never calls the display a person's", async () => {
+  const { desktop } = await runDesktop({ privateDisplay: () => true, startRecord: async () => null });
+  const ending = desktopEnding(desktop.ending);
+  assert.deepEqual(ending.foreign.filter((l) => l.startsWith("the run's record")), [], 'a record its caller declined fails nothing');
+  assert.equal(ending.record.record.skipped, RECORD_DECLINED);
+  const line = desktopLine(ending.record);
+  assert.doesNotMatch(line, /not a private one|only on a private display/);
+  assert.ok(line.includes(`the run's record: not run (${RECORD_DECLINED})`), line);
 });
 
 test('a private display gets the whole-run record, its client guarded by the watchdog from its spawn', async () => {

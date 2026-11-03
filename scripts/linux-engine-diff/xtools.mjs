@@ -91,6 +91,8 @@ export function isPrivateDisplay({ env = process.env, run = execFileSync } = {})
  * zero-length writev; a lagging record client also grows the server's buffer by gigabytes. It froze the person's `:0`.
  */
 export const RECORD_REFUSAL = `the whole-run RECORD runs only on a private display marked ${PRIVATE_MARK}: it can freeze X.Org 21.1 (task 41), so a person's display gets the sampled route audits instead`;
+/** Why a run on a private display has no record: its caller started none (`Desktop.begin`'s `startRecord` answered null). */
+export const RECORD_DECLINED = "the display is a private one, and the run's caller declined to start the whole-run RECORD on it";
 
 /**
  * The whole run's RECORD (`xprobe record-run`, foreign.mjs `auditRecord`): every client's requests that can change a

@@ -41,7 +41,8 @@ const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** The whole run's record (foreign.mjs `auditRecord`) in the desktop line. */
 function recordText(r) {
-  if (r.skipped) return "the run's record: not run, since the display is not a private one (the sampled route audits judge the engines' requests)";
+  // the reason the run's end recorded: a person's display refused (task 41), or a private display's caller declined
+  if (r.skipped) return `the run's record: not run (${r.skipped})`;
   if (r.error) return `the run's record: **${r.error}**`;
   const verdict = r.foreign.length ? `**${plural(r.foreign.length, 'change')} of a window it did not open: ${r.foreign.join('; ')}**` : 'every one of its own';
   const notes = [];

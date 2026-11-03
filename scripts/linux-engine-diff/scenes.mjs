@@ -49,7 +49,7 @@ import { preorder } from './normalize.mjs';
 import { startRunSession } from './session-bus.mjs';
 import { cleanupOnStop } from './stop.mjs';
 import { xExecFileSync, xSpawn } from './xspawn.mjs';
-import { RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
+import { RECORD_DECLINED, RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
 
 export { XPROBE, xdotool };
 
@@ -135,7 +135,8 @@ export function desktopEnding(ending) {
   if (!audit.traced) foreign.push(`the harness: its trace recorded no request${audit.error ? ` (${audit.error})` : ''}, so its requests went unaudited`);
   // the whole run's record: every request of the harness's and the engines' clients, sampled by an audit pass or not
   foreign.push(...tally(record.foreign.map((f) => `the run's record: ${foreignLine(f)}`)));
-  // a record not run on purpose (a person's display, task 41) fails nothing: the sampled route audits judge the engines
+  // a record not run on purpose (refused on a person's display, task 41, or declined by the caller of a private one's
+  // run) fails nothing; `skipped` says which
   if (!record.traced && !record.skipped) foreign.push(`the run's record: ${record.error ?? 'it did not run'}, so the run's requests went unjudged`);
   // a run whose watchdog did not end cleanly (stalled, lost before the run ended, failed, or none) ran unwatched
   const { watchdog } = ending;
@@ -1161,8 +1162,9 @@ export class Desktop {
     }
     let record;
     if (!this.record) {
-      // not run on purpose (task 41): a person's display gets the sampled route audits
-      record = { skipped: RECORD_REFUSAL, clean: true, traced: false, requests: 0, mutating: 0, foreign: [] };
+      // not run on purpose: refused on a person's display (task 41), which gets the sampled route audits, or declined
+      // by the run's caller on a private one (`startRecord` answered null)
+      record = { skipped: this.isPrivate === true ? RECORD_DECLINED : RECORD_REFUSAL, clean: true, traced: false, requests: 0, mutating: 0, foreign: [] };
     } else {
       try {
         const judged = await this.record.stop({

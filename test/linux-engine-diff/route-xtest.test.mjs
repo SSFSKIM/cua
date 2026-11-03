@@ -117,6 +117,17 @@ test("a frame or a window inside counts only through a harness window whose end 
   assert.equal(plain(moveUnwatched).clean, true);
 });
 
+test("a range handed on after a harness client's exit carries no exemption", () => {
+  // the scene client's exit as Openbox shows it to the watcher: the client window back on the root, the frame destroyed,
+  // the scene window destroyed; then XTEST input on a fresh id in the freed range, not the focus window
+  const FRESH = 0x03a00009;
+  const exit = [reparented(SCENE, ROOT), `005:>:0006: Event DestroyNotify(17) event=${hex(FRAME)} window=${hex(FRAME)}`, `005:>:0007: Event DestroyNotify(17) event=${hex(SCENE)} window=${hex(SCENE)}`];
+  const key = [...XTEST, ...focusRead('0002', FRESH), fake('0003', 2), fake('0004', 3)];
+  assert.deepEqual(shown(route([...watcher(), ...exit, ...key])), ['XTEST KeyPress on 0x03a00009', 'XTEST KeyRelease on 0x03a00009']);
+  // the same input before the exit is the harness's
+  assert.equal(route([...watcher(), ...key]).clean, true);
+});
+
 test('the client range counts only where the trace can see the harness window end, and only for XTEST in a route audit', () => {
   const LATER = 0x03a00007;
   const keyOn = (w) => [...XTEST, ...activate('0002'), fake('0003', 2), ...focusRead('0004', w), fake('0005', 3)];

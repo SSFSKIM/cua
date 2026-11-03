@@ -593,6 +593,8 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
   Evidence: `m4/xserver-record-hang/`; `.doperpowers/sde/…/task-41-report.md` (local).
 - Observation (M4, task 42): `google-chrome --new-window` with no `--user-data-dir`, run on another display, still hands its request to whichever Chrome holds the person's default profile, on whatever display that Chrome runs; when that Chrome does not answer the process-singleton handshake, the newcomer ends it about 20 s later and takes the profile (Decision Log, 2026-11-03).
   Evidence: the VM's journal (the owner's Chrome scope ending at 18:46:12) and the profile's file times; the task-42 report (local).
+- Observation (M4, task 49): with every application in a fresh home of the run's (task 45), gedit's scene tree reads 486 nodes and kate's 893, against 498 and 892 in T5's sittings, which ran in the person's home with its settings, recent files and sessions; the other 19 family trees are unchanged. From task 49 on, 486 and 893 are the baseline counts, and comparisons with earlier sittings use the counts of the home they ran in (the design session, 2026-11-03). Qt 5.15 (kate) registers its tree on a run bus without the org.a11y.Bus stand-in; Qt 6.4 (qtcreator) does not. The first GTK 4 window of a run settles as an X11 tree for seconds while its fresh GPU shader cache fills.
+  Evidence: `m4/harness-isolation-live/task49/`; `.doperpowers/sde/…/task-49-report.md` (local).
 
 ## Decision Log
 

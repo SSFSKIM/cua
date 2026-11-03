@@ -281,8 +281,10 @@ test('on the bus: the stand-in ends with the bus, on its own, and its stop ends 
 
 test("on the bus: a person's display's session starts the stand-in with its bus and stops it with it; one that cannot start leaves Qt's refusal, and the bus", onBus, async () => {
   const dir = mkdtempSync(join(tmpdir(), 'cua171-a11y-session-'));
+  const sessions = [];
   try {
     const session = await startAppSession({ dir, display: ':cua171-test-a11y-stub', env: { PATH: process.env.PATH }, rootBus: () => A11Y });
+    sessions.push(session);
     assert.equal(session.a11y, A11Y);
     assert.ok(session.stub?.pid > 0 && /^:1\.\d+$/.test(session.stub.unique), JSON.stringify(session.stub));
     assert.equal(daemonCall(session.address, 'GetNameOwner', 's', 'org.a11y.Bus'), session.stub.unique);
@@ -292,12 +294,37 @@ test("on the bus: a person's display's session starts the stand-in with its bus 
     for (const pid of pids) assert.equal(alive(pid), false, String(pid));
     // a root value the stand-in will not serve: the run goes on, its applications on the bus, and Qt is refused
     const without = await startAppSession({ dir, display: ':cua171-test-a11y-stub', env: { PATH: process.env.PATH }, rootBus: () => 'unix:path=/a b' });
+    sessions.push(without);
     assert.equal(without.stub, null);
     assert.match(without.stubRefusal, /not a plain D-Bus address/);
     assert.equal(daemonCall(without.address, 'NameHasOwner', 's', 'org.a11y.Bus'), false);
     assert.deepEqual((await without.stop()).stub, { refused: without.stubRefusal });
     assert.equal(alive(without.pid), false);
   } finally {
+    // whatever failed, nothing of the sessions outlives the test (their stops are idempotent)
+    for (const session of sessions) await session.stop();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("on the bus: a session's stand-in stopped for the qt-bridge control frees the name, and the session's stop still ends the bus", onBus, async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-a11y-control-'));
+  let session = null;
+  try {
+    session = await startAppSession({ dir, display: ':cua171-test-a11y-stub', env: { PATH: process.env.PATH }, rootBus: () => A11Y });
+    const pid = session.stub.pid;
+    assert.deepEqual(await session.stopStub('stopped for the control'), { terminated: true, killed: false });
+    assert.equal(alive(pid), false);
+    assert.equal(session.stub, null);
+    assert.equal(session.stubRefusal, 'stopped for the control', "Qt's refusal now names it");
+    assert.equal(daemonCall(session.address, 'NameHasOwner', 's', 'org.a11y.Bus'), false);
+    assert.deepEqual(await session.stopStub('again'), { refused: 'stopped for the control' }, 'a second stop finds none');
+    const ended = await session.stop();
+    assert.deepEqual(ended.stub, { terminated: true, killed: false }, 'the stand-in as its one stop ended it');
+    assert.equal(alive(session.pid), false);
+  } finally {
+    // whatever failed, nothing of the session outlives the test (its stop is idempotent)
+    await session?.stop();
     rmSync(dir, { recursive: true, force: true });
   }
 });

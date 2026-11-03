@@ -253,16 +253,29 @@ export async function startAppSession({ dir, display, env = process.env, start =
   } catch (error) {
     stubRefusal = error.message;
   }
-  return {
+  const session = {
     ...bus,
     a11y,
     stub: stub && { pid: stub.pid, unique: stub.unique },
     stubRefusal,
+    /**
+     * The stand-in ended before the bus, for qt-bridge's control (Qt with no stand-in): from then on `stub` is null and
+     * `stubRefusal` is `why`, so the Qt scenes refuse, naming it. Answers its stop, or `{refused}` when none runs.
+     */
+    async stopStub(why) {
+      if (!session.stub) return { refused: session.stubRefusal };
+      const ended = await stub.stop();
+      session.stub = null;
+      session.stubRefusal = why;
+      return ended;
+    },
+    // a stand-in stopped already answers its one stop again
     async stop(options) {
       const ended = stub ? await stub.stop(options) : { refused: stubRefusal };
       return { ...(await bus.stop(options)), stub: ended };
     },
   };
+  return session;
 }
 
 /** The run's session for its applications: `startPrivateSession` on a private display, `startAppSession` on any other. */

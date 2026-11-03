@@ -157,7 +157,9 @@ killed it.
   `ScreenReaderEnabled`, which Qt and Firefox read when they start. On a display a person uses they are the person's
   settings, which the harness never writes, and its applications do not see them (their bus is the run's, above): they
   see the stand-in's, both on and read-only, which a Qt scene (the families marked `qt`, and a Qt `openDuplicates`)
-  reads before it starts, refusing when it does not answer; qt-bridge runs no condition there, since none can be set.
+  reads before it starts, refusing when it does not answer. qt-bridge sets none of its conditions there; it runs kate
+  and qtcreator with the stand-in, then stops the stand-in (`stopStub`) and runs them again as the control, each row
+  with the registry's view, both engines' tree sources and cua's node count.
   On a private display they are the run's own launcher's: the run's start sets `IsEnabled` on the run's
   bus and reads it back (a switch that does not take fails the start), a Qt scene refuses when both are off, and
   qt-bridge sets its conditions there and puts them back.

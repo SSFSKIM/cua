@@ -20,7 +20,6 @@
 // Every case's requests run inside witness spans; the bus calls of the whole phase are checked for PasteText,
 // InsertText and SetTextContents (run.mjs).
 
-import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { join } from 'node:path';
 
@@ -101,8 +100,8 @@ export function allowPointer(judged, pointerMoves) {
 /** A paste-target window (pages/paste-target.py) and what it reports; `hold(scene)` as soon as its program runs. */
 async function openTarget(desktop, mode, hold) {
   const label = desktop.label('target', mode.replace(/[^a-z0-9]+/gi, ''));
-  const child = spawn('python3', ['-I', join(PAGES, 'paste-target.py'), label, mode], { stdio: ['ignore', 'pipe', 'ignore'], detached: true });
-  child.unref();
+  // a scene application like any other: the run's environment, its stderr kept with the run's (scenes.mjs `spawnApp`)
+  const child = desktop.spawnApp(label, 'python3', ['-I', join(PAGES, 'paste-target.py'), label, mode], { stdout: 'pipe' });
   const reports = [];
   createInterface({ input: child.stdout }).on('line', (line) => {
     try {

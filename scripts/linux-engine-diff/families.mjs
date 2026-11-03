@@ -12,7 +12,8 @@
 // LibreOffice on a scratch user installation (its single-instance pipe is named for it), Electron on a scratch user
 // data directory (neither app asks for the single-instance lock), Chrome as the run's own instance (chrome.mjs),
 // gnome-terminal on a terminal server of the scene's own (`vteLaunch`), and xterm and the harness's Python scenes as
-// plain processes (no single-instance mechanism at all).
+// plain processes (no single-instance mechanism at all). And none writes the person's files or settings (task 45):
+// every one runs with a home of the run's (app-env.mjs).
 //
 // Kinds: `editor` (one editable text object holds the document), `paragraphs` (a Writer document: one object per
 // paragraph), `page` (a browser on pages/matrix.html: a field that holds the focus and a button counting its
@@ -93,7 +94,13 @@ export function wmClass(id) {
   return parts.join(' / ');
 }
 
-/** Each family: its title in the matrix, its kind, its window's size, and how it is launched. */
+/**
+ * Each family: its title in the matrix, its kind, its window's size, and how it is launched. Every launch runs with the
+ * run's environment (scenes.mjs `appEnvironment`: a home of the run's on every display, settings in memory on a
+ * person's), its `env` holding only the family's own variables. `qt`: a Qt application, refused before it starts when
+ * the session's accessibility switches are off (`assertQtBridge`). `home: 'xdg'` would keep the harness's HOME for a
+ * family a separate HOME breaks (the run's XDG directories still apply); none needs it so far (task 45).
+ */
 export const FAMILIES = {
   gedit: {
     title: 'GTK3 gedit',
@@ -138,12 +145,14 @@ export const FAMILIES = {
   // difference is the version's or the applications'
   'qt5-input': {
     title: 'Qt 5 input (harness scene)',
+    qt: true,
     kind: 'qt-input',
     geometry: [600, 400],
     launch: (ctx) => qtLaunch(ctx, 'qt5'),
   },
   'qt6-input': {
     title: 'Qt 6 input (harness scene)',
+    qt: true,
     kind: 'qt-input',
     geometry: [600, 400],
     launch: (ctx) => qtLaunch(ctx, 'qt6'),
@@ -152,12 +161,14 @@ export const FAMILIES = {
   // Breeze and under Qt's own Fusion: whether a hover highlight that misses a background move is Breeze's
   'qt5-breeze': {
     title: 'Qt 5 Breeze (harness scene)',
+    qt: true,
     kind: 'qt-style',
     geometry: [600, 400],
     launch: (ctx) => qtLaunch(ctx, 'qt5', 'breeze'),
   },
   'qt5-fusion': {
     title: 'Qt 5 Fusion (harness scene)',
+    qt: true,
     kind: 'qt-style',
     geometry: [600, 400],
     launch: (ctx) => qtLaunch(ctx, 'qt5', 'fusion'),
@@ -171,6 +182,7 @@ export const FAMILIES = {
   },
   kate: {
     title: 'Qt 5 kate',
+    qt: true,
     kind: 'editor',
     geometry: [900, 700],
     // `-b` (block) as its desktop entry runs it: kate otherwise forks into the background
@@ -178,6 +190,7 @@ export const FAMILIES = {
   },
   qtcreator: {
     title: 'Qt 6 qtcreator',
+    qt: true,
     kind: 'editor',
     geometry: [1100, 760],
     launch: (ctx) => ({ cmd: 'qtcreator', args: ['-settingspath', join(ctx.dir, 'qtcreator'), scratchFile(ctx)], match: byTitle(ctx.label) }),
@@ -379,10 +392,12 @@ export function vteLaunch(ctx, { client = terminalClient() } = {}) {
 /**
  * Opens a family's window on the harness's desktop: launched, found, sized and placed, its objects resolved.
  * `stem`: the name in its window's label, where two scenes open one family for one engine (minimized-xterm beside
- * device-xterm), so each window has its own title and scratch directory. Returns the scene: `{kind: 'family', family,
- * id, pid, group, ...targets}`.
+ * device-xterm), so each window has its own title and scratch directory. `env`: the application's own variables.
+ * `bridge: false` skips a Qt family's check of the session's accessibility switches (`assertQtBridge`), for the one
+ * experiment that opens Qt with them off on purpose (qt-bridge.mjs). Returns the scene: `{kind: 'family', family, id,
+ * pid, group, ...targets}`.
  */
-export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null, motion = false, stem = name } = {}) {
+export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null, motion = false, stem = name, bridge = true } = {}) {
   const family = FAMILIES[name];
   if (!family) throw new Error(`unknown family ${name}`);
   const label = desktop.label(stem.replace(/[^a-z0-9]+/gi, ''), role);
@@ -396,7 +411,11 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
     const ctx = { label, dir: join(desktop.dir, label), geometry, page, doc, motion };
     mkdirSync(ctx.dir, { recursive: true });
     const spec = family.launch(ctx);
-    const child = desktop.spawnApp(label, spec.cmd, spec.args, { env: { ...process.env, ...(spec.env ?? {}), ...env } });
+    // the application's own variables only: the rest of its environment is the run's (scenes.mjs `appEnvironment`)
+    const own = { ...(spec.env ?? {}), ...env };
+    // a Qt family puts no tree on the bus with the session's switches off, and on a person's display they stay as found
+    if (family.qt && bridge) desktop.assertQtBridge(label, own);
+    const child = desktop.spawnApp(label, spec.cmd, spec.args, { env: own, home: family.home ?? 'run' });
     scene = { kind: 'family', family: name, kindOf: family.kind, role, label, pid: child.pid, group: true, record: spec.record ?? null, pidfile: spec.pidfile ?? null, dir: ctx.dir, pixels: Boolean(family.pixels) };
     desktop.windows.push(scene);
     const match = spec.byPid ? byPid(child.pid) : spec.match;

@@ -8,7 +8,10 @@
 // The harness never hands a window to, starts on, or takes over a person's application instance or profile (task 43):
 // every application starts as an instance of the run's own (families.mjs says how for each), Chrome only through the
 // run's `ChromeInstance`, and on a private display everything of the run's runs under a session bus of the run's own
-// (session-bus.mjs), so no single-instance handoff over D-Bus can reach the person's session.
+// (session-bus.mjs), so no single-instance handoff over D-Bus can reach the person's session. Every application, on
+// every display, runs with a home of the run's and the XDG directories inside it (task 45, app-env.mjs,
+// `appEnvironment`), so none writes the person's settings, recent files or certificate store; on a display a person
+// uses, the person's accessibility switches are only read (a11y-status.mjs, `assertQtBridge`).
 //
 // The harness never changes a window it did not open (the design session, 2026-11-02). The window found active when a
 // run begins is never activated again: the run records it, and the active window it ends with, each marked foreign or
@@ -33,6 +36,8 @@ import { basename, dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { a11yAddress, qtBridgeRefusal, readStatus } from './a11y-status.mjs';
+import { HOME_VARS, launchEnvironment, runHome } from './app-env.mjs';
 import { parseXtrace, parseXtraceFile, startProxy } from './audit.mjs';
 import { ChromeInstance, isChromeCommand } from './chrome.mjs';
 import { Engine, watchOperations } from './engine.mjs';
@@ -164,6 +169,10 @@ export class Desktop {
     // the run's Chrome (chrome.mjs), made at the first Chrome window; the run's session bus on a private display
     this.chrome = null;
     this.session = null;
+    // whether the run's display is a private one the harness marked (`begin`); until known, it counts as a person's
+    this.isPrivate = null;
+    // the watchdog's own directory, for a run that keeps no results (`watchdogFile`)
+    this.watchdogDir = null;
     // in every title the harness gives a window: a window of another's can never carry it, whatever its run label
     this.nonce = nonce ?? randomBytes(4).toString('hex');
     // the windows on the display before the run began (`begin`): never found and never adopted, whatever their title
@@ -236,16 +245,24 @@ export class Desktop {
       if (engine !== this.ownReader) this.operations.push({ window, start, end });
     });
     // a stall stops the run, killing the record client first (task 41)
-    this.watchdog = await startWatchdog({ display: process.env.DISPLAY, file: this.watchdogFile() });
+    try {
+      this.watchdog = await startWatchdog({ display: process.env.DISPLAY, file: this.watchdogFile() });
+    } catch (error) {
+      this.dropWatchdogDir();
+      throw error;
+    }
     try {
       unlessStopped();
       this.root = rootWindow();
       this.preexisting = new Set(existing());
       this.startActive ??= activeWindow();
       const isPrivate = privateDisplay();
-      // a private display's run under a session bus of its own, before anything of the run's starts (task 43)
+      // what the run's applications are launched for from now on (`appEnvironment`): a display a person uses, unless marked
+      this.isPrivate = isPrivate;
+      // a private display's run under a session bus of its own, before anything of the run's starts (task 43); its
+      // launcher with the run's home and its settings in memory, so its accessibility switch is the run's (task 45)
       if (isPrivate) {
-        const session = await startSession({ dir: join(this.dir, 'session'), display: process.env.DISPLAY });
+        const session = await startSession({ dir: join(this.dir, 'session'), display: process.env.DISPLAY, env: this.appEnvironment({}, { settings: 'memory' }) });
         // never installed on a stopped run: ended here, the environment untouched
         if (this.stopping) await session.stop();
         unlessStopped();
@@ -267,7 +284,7 @@ export class Desktop {
       await this.record?.stop();
       this.record = null;
       await this.endSession();
-      await this.watchdog.stop();
+      await this.stopWatchdog();
       throw error;
     }
     useHarnessDisplay(this.trace.env);
@@ -302,9 +319,29 @@ export class Desktop {
     return { address: session.address, a11y: session.a11y ?? null, ...(await session.stop()) };
   }
 
-  /** Where the run's watchdog writes its lines (its `stall` line included): beside the run's results, or a file of its own. */
+  /**
+   * Where the run's watchdog writes its lines (its `stall` line included): beside the run's results, or in a directory of
+   * its own, which goes once the watchdog has stopped (`stopWatchdog`; a run without results keeps no evidence).
+   */
   watchdogFile() {
-    return this.logs ? join(dirname(this.logs), 'watchdog.jsonl') : join(mkdtempSync(join(tmpdir(), 'cua171-watchdog-')), 'watchdog.jsonl');
+    if (this.logs) return join(dirname(this.logs), 'watchdog.jsonl');
+    this.watchdogDir = mkdtempSync(join(tmpdir(), 'cua171-watchdog-'));
+    return join(this.watchdogDir, 'watchdog.jsonl');
+  }
+
+  /** The run's watchdog's own directory removed, when it has one. */
+  dropWatchdogDir() {
+    if (this.watchdogDir) rmSync(this.watchdogDir, { recursive: true, force: true });
+    this.watchdogDir = null;
+  }
+
+  /** The run's watchdog stopped, then its own directory removed. Answers the watchdog's verdict. */
+  async stopWatchdog() {
+    try {
+      return await this.watchdog.stop();
+    } finally {
+      this.dropWatchdogDir();
+    }
   }
 
   /**
@@ -432,10 +469,14 @@ export class Desktop {
    * `<logs>/apps/<label>.stderr` (a window reopened under its label appends), so a toolkit's own complaints are
    * evidence: GTK 3's criticals were the only trace of the stack bug behind both vendor builds' gedit `clipboard_write`
    * failure (#268). stdin and stdout are discarded; without a log directory, everything is, as before. Never Chrome:
-   * Chrome starts only as the run's own instance (`openChrome`, chrome.mjs).
+   * Chrome starts only as the run's own instance (`openChrome`, chrome.mjs). Its environment is the run's
+   * (`appEnvironment`): `env` holds only the application's own variables, and `home: 'xdg'` keeps the harness's HOME
+   * for a family a separate HOME breaks.
    */
-  spawnApp(label, cmd, args, { stdout = 'ignore', ...options } = {}) {
+  spawnApp(label, cmd, args, { stdout = 'ignore', env: extra = {}, home = 'run', ...options } = {}) {
     if (isChromeCommand(cmd)) throw new Error(`refusing to start ${cmd} as a scene application: Chrome starts only as the run's own instance, on the run's profile (chrome.mjs), so it never hands a window to, starts on, or takes over a person's Chrome or profile`);
+    // built before anything is opened: an environment it refuses starts nothing
+    const env = this.appEnvironment(extra, { home });
     let fd = null;
     if (this.logs) {
       mkdirSync(this.logs, { recursive: true });
@@ -443,13 +484,45 @@ export class Desktop {
     }
     try {
       // `stdout: 'pipe'` for a scene program that reports on it (pages/identity-windows.py)
-      const child = spawn(cmd, args, { ...options, stdio: ['ignore', stdout, fd === null ? 'ignore' : fd], detached: true });
+      const child = spawn(cmd, args, { ...options, env, stdio: ['ignore', stdout, fd === null ? 'ignore' : fd], detached: true });
       child.unref();
       return child;
     } finally {
       // the child holds its own copy
       if (fd !== null) closeSync(fd);
     }
+  }
+
+  /**
+   * The environment of every application the run launches (app-env.mjs), scene applications and the run's Chrome alike:
+   * the run's home, made here at its first use, under the run's scratch directory, which goes at the run's end; the
+   * display and buses as the harness has them now (a private display's session sets the buses, `useSession`); settings
+   * in memory unless the display is a private one (`settings: 'memory'` for the run's own session bus, whose launcher
+   * keeps the run's accessibility switch). `extra`: the application's own variables.
+   */
+  appEnvironment(extra = {}, { home = 'run', settings } = {}) {
+    const homes = runHome(this.dir);
+    for (const name of HOME_VARS) mkdirSync(homes[name], { recursive: true, mode: 0o700 });
+    return launchEnvironment({ scratch: this.dir, base: process.env, privateDisplay: this.isPrivate === true, home, ...(settings ? { settings } : {}), extra });
+  }
+
+  /**
+   * Refuses a Qt application, before it starts, when it would put no tree on the accessibility bus: the session's
+   * `org.a11y.Status` switches both off (a11y-status.mjs), read from the run's own bus on a private display and from the
+   * person's on any other, where the harness only reads them, and no `QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1` in `env`.
+   * `read` is the display-free tests' own.
+   */
+  assertQtBridge(what, env = {}, read = readStatus) {
+    const address = a11yAddress(this);
+    const where = address ? "the run's own session bus" : "the person's session bus";
+    let status;
+    try {
+      status = read({ address });
+    } catch (error) {
+      throw new Error(`refusing to start ${what}: org.a11y.Status could not be read on ${where} (${error.message.split('\n')[0]}), so whether a Qt application would put its tree on the accessibility bus is unknown`);
+    }
+    const refusal = qtBridgeRefusal(status, env, where);
+    if (refusal) throw new Error(`refusing to start ${what}: ${refusal}`);
   }
 
   /** The logs of applications that printed nothing removed, and the directory too when none is left. */
@@ -565,7 +638,7 @@ export class Desktop {
 
   /** The run's Chrome (chrome.mjs): one instance on a profile in the run's scratch directory, made at its first use. */
   chromeInstance() {
-    this.chrome ??= new ChromeInstance({ scratch: this.dir });
+    this.chrome ??= new ChromeInstance({ scratch: this.dir, environment: () => this.appEnvironment() });
     return this.chrome;
   }
 
@@ -636,6 +709,8 @@ export class Desktop {
           windows.push(win);
         }
       } else {
+        // a Qt fixture's tree needs the session's accessibility switch on, which the harness never sets on a person's display
+        if (toolkit === 'qt5' || toolkit === 'qt6') this.assertQtBridge(label);
         const child = this.spawnApp(label, 'python3', ['-I', join(PAGES, 'identity-windows.py'), toolkit, label, label, count, w, h], { stdout: 'pipe' });
         pid = child.pid;
         // one entry per window, the process's: a stop or a window that never comes ends the process
@@ -1016,7 +1091,7 @@ export class Desktop {
       }
     }
     // the watchdog last: it guarded the cleanup too
-    const watchdog = this.watchdog ? await this.watchdog.stop() : null;
+    const watchdog = this.watchdog ? await this.stopWatchdog() : null;
     return { start: this.activeRecord(this.startActive), end: end === null ? null : this.activeRecord(end), holder: this.holder?.id ?? null, audit, record, watchdog, skipped: this.skips, chrome: this.chromeEnding ?? null, session: this.sessionEnding ?? null };
   }
 }

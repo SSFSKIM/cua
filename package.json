@@ -9,6 +9,7 @@
   },
   "scripts": {
     "test": "node --test \"test/**/*.test.mjs\"",
+    "test:linux-engine-diff": "node --test --test-global-setup=test/linux-engine-diff/suite-setup.mjs \"test/linux-engine-diff/*.test.mjs\"",
     "test:mods": "bash tests/mods/run-mods-tests.sh",
     "extension:pack": "node scripts/extension-pack.mjs"
   },

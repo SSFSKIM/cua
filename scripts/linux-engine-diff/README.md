@@ -120,6 +120,27 @@ killed it.
   person's. The end stops the daemon's group and puts the harness's own `DBUS_SESSION_BUS_ADDRESS` and
   `AT_SPI_BUS_ADDRESS` back. A dbus-daemon that cannot be started fails the run's start, which ends what it began. A
   person's display keeps the person's buses: there the families' isolation carries it.
+- **The run's home** (`app-env.mjs`, task 45): every application the run launches, on every display, through the one
+  place that builds its environment (`Desktop.appEnvironment`, which `spawnApp` and the run's Chrome take), runs with
+  `HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` and `XDG_STATE_HOME` under `<scratch>/home`, made by
+  the run (mode 0700) and removed with its scratch: settings, recent files (`recently-used.xbel`), KConfig files,
+  Firefox's `~/.mozilla`, the Chrome wrapper's `mimeapps.list` and Chrome's NSS database (`~/.pki`) are the run's.
+  `DISPLAY`, `XAUTHORITY` (named where the harness's HOME puts it when unset, since Xlib would look under the new
+  HOME), `XDG_RUNTIME_DIR` and the session bus are handed on unchanged; `SESSION_MANAGER` is not. On a display a
+  person uses, `GSETTINGS_BACKEND=memory`: there a GSettings write goes through the person's bus to their dconf
+  service, whatever HOME the application has. A family's own variables (`env`) are applied last and may not place a
+  file outside the scratch or change what is handed on. A family a separate HOME breaks may declare `home: 'xdg'`
+  (the harness's HOME, the run's XDG directories); none does. Engines are not applications: they keep the harness's
+  environment. A private display's session bus (and so its accessibility bus launcher) starts with the run's home and
+  its settings in memory, so the launcher reads nothing of the person's, and the run turns its accessibility switch
+  on there at its start (below).
+- **The accessibility switches** (`a11y-status.mjs`, task 45): `org.a11y.Status` `IsEnabled` and
+  `ScreenReaderEnabled`, which Qt and Firefox read when they start. On a display a person uses they are the person's
+  settings: the harness only reads them, and a Qt scene (the families marked `qt`, and a Qt `openDuplicates`) refuses
+  before it starts, with the reason, when both are off. On a private display they are the run's own launcher's: the
+  run's start sets `IsEnabled` on the run's bus and reads it back (a switch that does not take fails the start), and
+  qt-bridge sets its conditions there and puts them back; on a person's display qt-bridge runs only its "as found"
+  condition and records the others as not run.
 
 ## What a run does
 
@@ -302,7 +323,10 @@ variants included; their evidence is written either way. The run's `end` row kee
     (`desktopEnding`). The cleanup after that loss runs unwatched (a stated limit), so the run exits nonzero and its
     last line, `cua171 STOPPED: …`, names the loss and whether the cleanup completed (`stop.mjs` `stopBecause`). Every X server the harness starts itself is watched the same
     way from its first client on (`startPrivateServer`, the events experiment's). A test process reaches no real
-    display (`hermetic.mjs`; xprobe's test build connects to none).
+    display (`hermetic.mjs`; xprobe's test build connects to none). The harness's suite runs as `npm run
+    test:linux-engine-diff`, whose global setup (`test/linux-engine-diff/suite-setup.mjs`, task 45) gives the suite a
+    temporary directory of its own and fails it, naming each, on any process it started that still names a run's
+    scratch directory or profile when it ends, and on any scratch directory it left; each is then ended or removed.
   - *No window of the person's can be taken for the run's*: every title carries the run's label and a random nonce of
     the run's own (`Desktop.label`), and a window already on the display when the run began is never found or adopted
     (`Desktop.preexisting`), whatever its title.
@@ -710,6 +734,8 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `scenes.mjs`, `stop.mjs` | the harness's windows and the reader that reads effects back; their cleanup on SIGINT or SIGTERM |
 | `chrome.mjs` | the run's own Chrome: its one launcher, the guard on every Chrome command line, its stop by the pids it spawned |
 | `session-bus.mjs` | a private display's session bus of the run's own, and its accessibility bus wired to the display |
+| `app-env.mjs` | the environment every application the run launches runs with: the run's home, the display and buses handed on |
+| `a11y-status.mjs` | the session's accessibility switches: read on a person's display, set only on the run's own bus |
 | `prepare.mjs` | the gate's rule for a sample whose harness-side preparation fails: one resample, the counts and caps |
 | `witness.mjs`, `xprobe/` | the witness; `xprobe` is the harness's own X client (witness, retention probe, image comparison, window close) |
 | `busmon.mjs` | accessibility-bus call counts |

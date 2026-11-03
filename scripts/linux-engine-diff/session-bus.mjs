@@ -16,6 +16,9 @@
 //   accessibility bus, the private session's, or no run. The applications' AT-SPI bridges (libatspi, Qt) take
 //   `AT_SPI_BUS_ADDRESS` before that property, so for the run the harness names that bus there too (scenes.mjs
 //   `useSession`), and the daemon inherits no such variable of the person's (`busEnvironment`);
+// - the daemon, and so the launcher, runs with the run's own home and its settings in memory (task 45, app-env.mjs):
+//   the launcher reads no setting of the person's, and the run's accessibility switch, which Qt and Firefox read when
+//   they start, is the run's to turn on (`enableAccessibility`, at the run's start);
 // - its stop ends its process group (the daemon was started as its own group, and the services it starts inherit it).
 // The person's display keeps the person's session bus: there the per-application isolation (families.mjs) carries it.
 
@@ -23,6 +26,7 @@ import { execFileSync, spawn as spawnProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { readSwitch, setSwitch } from './a11y-status.mjs';
 import { inTest } from './hermetic.mjs';
 
 /** The accessibility bus launcher's service file: the one service the run's bus can start. */
@@ -194,13 +198,32 @@ export async function wireAccessibility({ address, display, run = execFileSync, 
 }
 
 /**
- * The run's session on a private display: its bus started and its accessibility bus wired. Resolves with `{address,
- * a11y, pid, stop()}`; a failed wiring stops the bus before it throws.
+ * The run's accessibility switch on: `org.a11y.Status` `IsEnabled` set true on the run's own launcher (a11y-status.mjs),
+ * then read back. The run's launcher keeps its settings in memory (`env` of `startPrivateSession`), so it starts with
+ * the switch off, whatever the person's is, and a Qt application, or Firefox, started on the run's display would put no
+ * tree on the bus. Throws when the switch does not read back on. Never in a test unless its tools are the test's own.
  */
-export async function startPrivateSession({ dir, display, start = startSessionBus, wire = wireAccessibility }) {
-  const bus = await start({ dir, display });
+export function enableAccessibility({ address, run = execFileSync }) {
+  if (inTest() && run === execFileSync) throw new Error("a test never sets the run's accessibility switch: it passes its own tools");
+  try {
+    setSwitch('IsEnabled', true, { address, privateDisplay: true, run });
+    if (readSwitch('IsEnabled', { address, run }) !== true) throw new Error('it reads back off');
+  } catch (error) {
+    throw new Error(`the run's accessibility switch (org.a11y.Status IsEnabled) could not be turned on: ${error.message}`);
+  }
+}
+
+/**
+ * The run's session on a private display: its bus started (with `env`, the run's own launch environment, so the
+ * launcher it starts reads and writes no setting or file of the person's), its accessibility bus wired, and the run's
+ * accessibility switch turned on. Resolves with `{address, a11y, pid, stop()}`; a failed wiring or switch stops the bus
+ * before it throws.
+ */
+export async function startPrivateSession({ dir, display, env = process.env, start = startSessionBus, wire = wireAccessibility, enable = enableAccessibility }) {
+  const bus = await start({ dir, display, env });
   try {
     const a11y = await wire({ address: bus.address, display });
+    await enable({ address: bus.address });
     return { ...bus, a11y };
   } catch (error) {
     await bus.stop();

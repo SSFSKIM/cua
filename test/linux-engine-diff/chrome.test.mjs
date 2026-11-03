@@ -198,11 +198,14 @@ test('real processes: the stop reads /proc, ends the process carrying the run\'s
   writeFileSync(standIn, 'setInterval(() => {}, 1000);\n');
   // a stand-in for a person's Chrome: the same program, another profile, never spawned by the run's instance
   const decoy = spawn(process.execPath, [standIn, `--user-data-dir=${join(d.outside, 'chrome-profile')}`], { stdio: 'ignore' });
+  // ended in the cleanup whatever happened, the instance's stand-in too: a test that fails before the instance's stop
+  // must not leave it running (it waits forever, and its command line names a run's profile)
+  let child = null;
   try {
     // the run's instance runs the stand-in in place of google-chrome, with exactly the arguments the launcher gives
     const asStandIn = (cmd, args, options) => spawn(process.execPath, [standIn, ...args], { ...options, stdio: 'ignore' });
     const chrome = new ChromeInstance({ scratch: d.scratch, spawn: asStandIn });
-    const child = chrome.open('file:///a');
+    child = chrome.open('file:///a');
     const exited = new Promise((r) => child.once('exit', (code, signal) => r(signal)));
     // the decoy's pid among the spawned ones, as a reused pid would be
     chrome.spawned.push(decoy.pid);
@@ -219,24 +222,32 @@ test('real processes: the stop reads /proc, ends the process carrying the run\'s
     assert.equal(existsSync(chrome.profile), false);
   } finally {
     decoy.kill('SIGKILL');
+    if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
     d.done();
   }
 });
 
 /**
- * A `google-chrome` stand-in on a fresh PATH: it logs its arguments; the first one with a profile stays up as the
- * browser (a marker in the profile says so), each later one with that profile exits at once, as a handoff does.
+ * A `google-chrome` stand-in on a fresh PATH: it logs its arguments and the variables that place its files; as Chrome
+ * does whatever its profile, it opens its NSS database under HOME (`~/.pki/nssdb`, made here); the first one with a
+ * profile stays up as the browser (a marker in the profile says so), each later one with that profile exits at once, as
+ * a handoff does.
  */
 function fakeChromeOnPath() {
   const dir = mkdtempSync(join(tmpdir(), 'cua171-chrome-path-'));
   const log = join(dir, 'argv.log');
+  const envLog = join(dir, 'env.log');
   writeFileSync(log, '');
+  writeFileSync(envLog, '');
   writeFileSync(
     join(dir, 'google-chrome'),
     `#!${process.execPath}
-const { appendFileSync, existsSync, writeFileSync } = require('node:fs');
+const { appendFileSync, existsSync, mkdirSync, writeFileSync } = require('node:fs');
 const args = process.argv.slice(2);
 appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');
+const names = ${JSON.stringify(['HOME', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'GSETTINGS_BACKEND', 'DISPLAY', 'XAUTHORITY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS', 'AT_SPI_BUS_ADDRESS'])};
+appendFileSync(${JSON.stringify(envLog)}, JSON.stringify(Object.fromEntries(names.map((n) => [n, process.env[n] ?? null]))) + '\\n');
+mkdirSync(process.env.HOME + '/.pki/nssdb', { recursive: true });
 const profile = args.find((a) => a.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length);
 if (!profile || existsSync(profile + '/browser')) process.exit(0);
 writeFileSync(profile + '/browser', String(process.pid));
@@ -244,11 +255,13 @@ setTimeout(() => process.exit(0), 20000);
 `,
   );
   chmodSync(join(dir, 'google-chrome'), 0o755);
-  return { dir, calls: () => readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) };
+  const lines = (file) => readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l));
+  return { dir, calls: () => lines(log), envs: () => lines(envLog) };
 }
 
-test("a run's Chrome windows: one instance on the run's profile, stopped and its profile removed at the run's end, HOME untouched", { skip: !HAS_PROC && 'no /proc here' }, async () => {
+test("a run's Chrome windows: one instance on the run's profile and the run's home, stopped and both removed at the run's end, the person's HOME untouched", { skip: !HAS_PROC && 'no /proc here' }, async () => {
   const fake = fakeChromeOnPath();
+  // the person's HOME, as the harness inherits it
   const home = mkdtempSync(join(tmpdir(), 'cua171-chrome-home-'));
   const saved = { PATH: process.env.PATH, HOME: process.env.HOME };
   process.env.PATH = `${fake.dir}${delimiter}${saved.PATH}`;
@@ -274,6 +287,8 @@ test("a run's Chrome windows: one instance on the run's profile, stopped and its
     titles.set(`${desktop.label('scene', role)} - Google Chrome`, ++id);
     return opening;
   };
+  // ended in the cleanup whatever happened: the stand-in browser waits 20 s, naming the run's profile
+  let browser = null;
   try {
     const a = await open('a');
     const b = await open('b');
@@ -284,19 +299,39 @@ test("a run's Chrome windows: one instance on the run's profile, stopped and its
       assert.deepEqual(profileSwitches(args), [profile], 'every open names the run\'s profile, and only it');
       assert.ok(args.includes('--new-window'));
     }
-    const browser = Number(readFileSync(join(profile, 'browser'), 'utf8'));
+    browser = Number(readFileSync(join(profile, 'browser'), 'utf8'));
     assert.ok(procCmdline(browser).includes(`--user-data-dir=${profile}`), 'the first open is the browser');
+    // every open runs in the run's launch environment (app-env.mjs): its home the run's, its settings in memory on a
+    // display a person uses (the run's display is not marked private here), the display and the buses the harness's
+    const runHomeDir = join(desktop.dir, 'home');
+    for (const env of fake.envs()) {
+      assert.equal(env.HOME, runHomeDir, "Chrome's HOME is the run's, so its NSS database is the run's");
+      assert.equal(env.XDG_CONFIG_HOME, join(runHomeDir, '.config'));
+      assert.equal(env.XDG_DATA_HOME, join(runHomeDir, '.local', 'share'));
+      assert.equal(env.XDG_CACHE_HOME, join(runHomeDir, '.cache'));
+      assert.equal(env.XDG_STATE_HOME, join(runHomeDir, '.local', 'state'));
+      assert.equal(env.GSETTINGS_BACKEND, 'memory');
+      assert.equal(env.DISPLAY, process.env.DISPLAY ?? null);
+      assert.equal(env.XDG_RUNTIME_DIR, process.env.XDG_RUNTIME_DIR ?? null);
+      assert.equal(env.DBUS_SESSION_BUS_ADDRESS, process.env.DBUS_SESSION_BUS_ADDRESS ?? null);
+      assert.equal(env.XAUTHORITY, process.env.XAUTHORITY ?? join(home, '.Xauthority'), "the display's authority where the person's HOME puts it");
+    }
+    assert.ok(existsSync(join(runHomeDir, '.pki', 'nssdb')), "Chrome's NSS database is made in the run's home");
+    assert.deepEqual(readdirSync(home), [], "nothing is made under the person's HOME while Chrome runs");
     await desktop.closeAll();
     assert.deepEqual(closed.sort(), [a.id, b.id].sort(), 'each window closed as Chrome closes one');
     // gone, or an exited child not yet reaped (an empty command line)
     assert.equal((procCmdline(browser) ?? []).length, 0, "the run's end stopped the browser");
     assert.deepEqual(desktop.chromeEnding.terminated, [browser]);
     assert.equal(existsSync(profile), false, 'the profile is gone with the scratch directory');
+    assert.equal(existsSync(runHomeDir), false, "the run's home is gone with it");
     assert.deepEqual(readdirSync(home), [], 'nothing was made under HOME');
   } finally {
     process.env.PATH = saved.PATH;
     process.env.HOME = saved.HOME;
     desktop.unhookStop();
+    if (browser && (procCmdline(browser) ?? []).length) process.kill(browser, 'SIGKILL');
+    rmSync(desktop.dir, { recursive: true, force: true });
     rmSync(fake.dir, { recursive: true, force: true });
     rmSync(home, { recursive: true, force: true });
   }

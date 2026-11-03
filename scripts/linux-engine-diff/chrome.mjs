@@ -9,11 +9,15 @@
 // - `assertOwnChrome` refuses any Chrome command line whose profile is not a directory inside the run's scratch,
 //   and `Desktop.spawnApp` refuses Chrome altogether (scenes.mjs), so no window reaches Chrome another way;
 // - the run's end stops the instance by the pids it spawned, each only while its command line carries the run's
-//   --user-data-dir and names no child process type: never by name, never any other Chrome. The profile goes after.
+//   --user-data-dir and names no child process type: never by name, never any other Chrome. The profile goes after;
+// - Chrome runs with the run's launch environment (app-env.mjs, task 45): a home of the run's, since outside its
+//   profile Chrome opens the NSS database under HOME (`~/.pki`), the person's while their own Chrome uses it.
 
 import { spawn as spawnProcess } from 'node:child_process';
 import { lstatSync, mkdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, sep } from 'node:path';
+
+import { launchEnvironment } from './app-env.mjs';
 
 /** What the harness runs to start Chrome: the distribution's wrapper on the PATH, as a person starts it. */
 export const CHROME_COMMAND = 'google-chrome';
@@ -103,9 +107,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * `cmdline` and `kill` are the display-free tests' own.
  */
 export class ChromeInstance {
-  constructor({ scratch, spawn = spawnProcess, cmdline = procCmdline, kill = (pid, signal) => process.kill(pid, signal) }) {
+  constructor({ scratch, environment = () => launchEnvironment({ scratch }), spawn = spawnProcess, cmdline = procCmdline, kill = (pid, signal) => process.kill(pid, signal) }) {
     this.scratch = scratch;
     this.profile = join(scratch, 'chrome-profile');
+    // the run's launch environment (app-env.mjs; the run's Desktop passes its own): a home of the run's, so Chrome's NSS
+    // database (`~/.pki`), the wrapper's `mimeapps.list` and every other file Chrome keeps outside its profile are the
+    // run's, never the person's
+    this.environment = environment;
     this.spawnProcess = spawn;
     this.cmdline = cmdline;
     this.kill = kill;
@@ -124,8 +132,9 @@ export class ChromeInstance {
     if (this.stopped) throw new Error("the run's Chrome is stopped: no window is opened now");
     mkdirSync(this.profile, { recursive: true, mode: 0o700 });
     const args = this.args(url);
+    const env = this.environment();
     assertOwnChrome(CHROME_COMMAND, args, this.scratch);
-    const child = this.spawnProcess(CHROME_COMMAND, args, { stdio: 'ignore', detached: true });
+    const child = this.spawnProcess(CHROME_COMMAND, args, { env, stdio: 'ignore', detached: true });
     // a Chrome that cannot start shows as a window that never comes, which the open's wait reports
     child.on?.('error', () => {});
     child.unref?.();

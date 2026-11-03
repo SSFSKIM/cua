@@ -14,7 +14,7 @@ import { PassThrough } from 'node:stream';
 import test from 'node:test';
 
 import { Desktop, desktopEnding } from '../../scripts/linux-engine-diff/scenes.mjs';
-import { busEnvironment, sessionBusConfig, startPrivateSession, startSessionBus, wireAccessibility } from '../../scripts/linux-engine-diff/session-bus.mjs';
+import { busEnvironment, enableAccessibility, sessionBusConfig, startPrivateSession, startSessionBus, wireAccessibility } from '../../scripts/linux-engine-diff/session-bus.mjs';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const found = (cmd) => spawnSync('sh', ['-c', `command -v ${cmd}`]).status === 0;
@@ -151,13 +151,51 @@ test("the accessibility wiring: the launcher's bus must be the display's AT_SPI_
 test('a private session whose wiring fails stops its bus before the error', async () => {
   let stopped = 0;
   const start = async () => ({ address: 'unix:path=/tmp/b', pid: 1, stop: async () => ({ terminated: true, killed: false, n: ++stopped }) });
+  const enabled = [];
+  const enable = async (options) => enabled.push(options);
   await assert.rejects(startPrivateSession({ dir: '/tmp/x', display: ':88', start, wire: async () => {
     throw new Error('split buses');
-  } }), /split buses/);
+  }, enable }), /split buses/);
   assert.equal(stopped, 1);
-  const session = await startPrivateSession({ dir: '/tmp/x', display: ':88', start, wire: async () => 'unix:path=/a11y' });
+  assert.deepEqual(enabled, [], 'no switch is set on a bus that is not wired');
+  const session = await startPrivateSession({ dir: '/tmp/x', display: ':88', start, wire: async () => 'unix:path=/a11y', enable });
   assert.equal(session.a11y, 'unix:path=/a11y');
   assert.equal(session.address, 'unix:path=/tmp/b');
+  assert.deepEqual(enabled, [{ address: 'unix:path=/tmp/b' }], "the run's switch is turned on, on the run's own bus");
+  // a switch that cannot be turned on stops the bus too
+  await assert.rejects(startPrivateSession({ dir: '/tmp/x', display: ':88', start, wire: async () => 'unix:path=/a11y', enable: async () => {
+    throw new Error('it reads back off');
+  } }), /it reads back off/);
+  assert.equal(stopped, 2);
+});
+
+test("the session's bus is started with the run's launch environment it is given", async () => {
+  const seen = [];
+  const start = async (options) => {
+    seen.push(options);
+    return { address: 'unix:path=/tmp/b', pid: 1, stop: async () => ({}) };
+  };
+  const env = { HOME: '/tmp/cua171-diff-r-x/home', GSETTINGS_BACKEND: 'memory' };
+  await startPrivateSession({ dir: '/tmp/x', display: ':88', env, start, wire: async () => 'unix:path=/a11y', enable: async () => {} });
+  assert.deepEqual(seen, [{ dir: '/tmp/x', display: ':88', env }]);
+});
+
+test("the run's accessibility switch: set on the run's own bus, read back, and a test never sets it with the real tools", async () => {
+  const calls = [];
+  let value = false;
+  const run = (cmd, args) => {
+    calls.push([cmd, ...args]);
+    if (args.includes('set-property')) value = args.at(-1) === 'true';
+    return JSON.stringify({ type: 'b', data: value });
+  };
+  enableAccessibility({ address: 'unix:path=/tmp/b', run });
+  assert.deepEqual(calls, [
+    ['busctl', '--address=unix:path=/tmp/b', 'set-property', 'org.a11y.Bus', '/org/a11y/bus', 'org.a11y.Status', 'IsEnabled', 'b', 'true'],
+    ['busctl', '--address=unix:path=/tmp/b', '--json=short', 'get-property', 'org.a11y.Bus', '/org/a11y/bus', 'org.a11y.Status', 'IsEnabled'],
+  ]);
+  // a launcher that does not keep it: refused
+  assert.throws(() => enableAccessibility({ address: 'unix:path=/tmp/b', run: (cmd, args) => JSON.stringify({ type: 'b', data: false }) }), /could not be turned on: it reads back off/);
+  assert.throws(() => enableAccessibility({ address: 'unix:path=/tmp/b' }), /a test never sets the run's accessibility switch/);
 });
 
 /**
@@ -246,6 +284,11 @@ test("a private display's run: its session bus first, every process of the run's
   assert.equal(seen.started.length, 1);
   assert.equal(seen.started[0].display, process.env.DISPLAY);
   assert.equal(seen.started[0].dir, join(desktop.dir, 'session'), "in the run's scratch directory");
+  // the bus, and the launcher it starts, with the run's home and its settings in memory (task 45): the launcher reads
+  // no setting or file of the person's, and the run's accessibility switch is the run's
+  assert.equal(seen.started[0].env.HOME, join(desktop.dir, 'home'));
+  assert.equal(seen.started[0].env.XDG_CONFIG_HOME, join(desktop.dir, 'home', '.config'));
+  assert.equal(seen.started[0].env.GSETTINGS_BACKEND, 'memory');
   assert.equal(seen.during.bus, 'unix:path=/tmp/run-bus');
   assert.equal(seen.app.bus, 'unix:path=/tmp/run-bus', 'a scene application inherits the run\'s bus');
   assert.equal(seen.stopped, 1, 'stopped once, at the end');

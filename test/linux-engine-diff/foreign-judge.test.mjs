@@ -511,3 +511,77 @@ test('the record: a record that never started, failed or was cut short is not cl
   assert.match(cut.error, /did not end/);
   assert.equal(raudit(START).clean, true);
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The sender's own resource-id range (task 51; the design session's ruling, sminos 336): the X server lets a client
+// create resources only inside the range it handed that connection, and hands the range to another connection only once
+// that one has disconnected, so an id in the sending connection's own range, while that connection lives, can name only
+// that connection's own window, or a stale id of its own. Such a request is never foreign. The binding is the
+// connection's life: its death, a new client line under its id or its base handed to another connection ends it.
+
+// task 49's record (`m4/record-judge-acceptance/runs/attempt-2/record-judge/record.jsonl.gz`, lines 3084-3178): a vendor
+// build's clipboard connection destroys its own window, then sends SKY_CLIPBOARD_STOP to it, which the server refuses
+// with BadWindow. Its ready line, written before xprobe recorded the mask, gets the server's here (Xvfb's 0x1fffff:
+// every client base in that record is a multiple of 0x200000).
+const MASK = 0x1fffff;
+const SKY = 69206016;
+const readyWith = (fields = {}) => JSON.stringify({ kind: 'ready', ms: 1793698358520, root: ROOT, xtest: 132, composite: 142, t0: 530566954, ...fields });
+const SKY_STOP = [
+  '{"kind":"client","ms":1793698446996,"client":69206016,"pid":2979812,"exe":"sky_linux_x64","ours":true,"at":"started"}',
+  '{"kind":"req","ms":1793698446996,"client":69206016,"seq":7,"t":530655431,"op":"CreateWindow","window":69206016,"parent":511}',
+  '{"kind":"req","ms":1793698456968,"client":69206016,"seq":66,"t":530665403,"op":"DestroyWindow","window":69206016}',
+  '{"kind":"destroyed","ms":1793698456968,"window":69206016}',
+  '{"kind":"error","ms":1793698456968,"client":69206016,"seq":68,"major":25,"minor":0,"code":3,"t":530665403}',
+  '{"kind":"req","ms":1793698456968,"client":69206016,"seq":68,"t":530665403,"op":"SendEvent","destination":69206016,"event":"ClientMessage","cm_window":69206016,"cm_type":"SKY_CLIPBOARD_STOP"}',
+  '{"kind":"died","ms":1793698456969,"client":69206016}',
+];
+const maudit = (lines, reg = new Map()) => auditRecord([...lines, END].join('\n'), { registered: reg, root: ROOT });
+const stopTo = (c, seq, w) => req(c, seq, 'SendEvent', { destination: w, event: 'ClientMessage', cm_window: w, cm_type: 'SKY_CLIPBOARD_STOP' });
+
+test("the record: a vendor build's SKY_CLIPBOARD_STOP to its own just-destroyed window is not foreign (task 49's record lines)", () => {
+  const judged = maudit([readyWith({ mask: MASK }), ...SKY_STOP]);
+  assert.equal(judged.clean, true, JSON.stringify(judged.foreign));
+  // a record that names no mask (xprobe before task 51) gives no range: judged as before, fail-closed
+  assert.deepEqual(maudit([readyWith(), ...SKY_STOP]).foreign.map((f) => [f.what, f.window]), [['SKY_CLIPBOARD_STOP ClientMessage', SKY]]);
+});
+
+test("the record: a window in another live client's range is still foreign, whatever its sender's range", () => {
+  const OTHER = 0x2e00002;
+  const lines = [readyWith({ mask: MASK }), client(0x2e00000, false, 'gedit'), req(0x2e00000, 3, 'CreateWindow', { window: OTHER, parent: ROOT }), ...SKY_STOP.slice(0, 2)];
+  assert.deepEqual(windowsOf(maudit([...lines, stopTo(SKY, 9, OTHER)])), [OTHER]);
+  // an id of the other range nobody created: no one's window yet, and still not the sender's
+  assert.deepEqual(windowsOf(maudit([...lines, req(SKY, 9, 'ConfigureWindow', { window: 0x2e00099 })])), [0x2e00099]);
+  // the control: its own range, a live window and an id it never created
+  assert.equal(maudit([...lines, stopTo(SKY, 9, SKY), req(SKY, 10, 'ConfigureWindow', { window: SKY + 5 })]).clean, true);
+});
+
+test("the record: the range binds only for its connection's life; handed to a new connection, it is not the old sender's", () => {
+  const B = 0x4200000;
+  const A_WIN = B + 1;
+  const D = 0x4400000;
+  // ours A has B and dies; the person's E gets B and makes its own window under the id A once used
+  const dead = [readyWith({ mask: MASK }), client(B, true, 'sky_linux_x64'), req(B, 7, 'CreateWindow', { window: A_WIN, parent: ROOT }), req(B, 8, 'DestroyWindow', { window: A_WIN }), rec('died', { client: B })];
+  const handed = [...dead, client(B, false, 'evince'), req(B, 3, 'CreateWindow', { window: A_WIN, parent: ROOT }), client(D, true, 'cua-engine')];
+  // ours D names it: E's window, outside D's range
+  assert.deepEqual(windowsOf(maudit([...handed, req(D, 5, 'SendEvent', { destination: A_WIN, event: 'KeyPress' })])), [A_WIN]);
+  // a request under B after A's death and before any new client line: no live connection holds the range
+  assert.deepEqual(windowsOf(maudit([...dead, req(B, 9, 'ConfigureWindow', { window: A_WIN })])), [A_WIN]);
+  // the control: a new connection of ours under B owns the range for its own life
+  assert.equal(maudit([...dead, client(B, true, 'cua-engine'), req(B, 2, 'ConfigureWindow', { window: A_WIN })]).clean, true);
+});
+
+test("xtrace: a connection's own range, from its setup reply, is never foreign; another's is, and a base handed on ends the binding", () => {
+  const setup = (conn, base) => `${conn}:>: Success, version is 11:0 vendor='The X.Org Foundation' release=12101011 resource-id=${hex(base)} resource-mask=0x001fffff motion-buffer-size=256`;
+  const stop = (conn, seq, w) => `${conn}:<:${seq}: 44: Request(25): SendEvent propagate=false(0x00) destination=${hex(w)} event-mask=0 ClientMessage(33) format=0x20 window=${hex(w)} type=0x1f5("SKY_CLIPBOARD_STOP") data=0x00,0x00,0x00,0x00,0x00`;
+  const destroy = (conn, seq, w) => `${conn}:<:${seq}:  8: Request(4): DestroyWindow window=${hex(w)}`;
+  const OWN = 0x4200000;
+  // the route audit's SKY_CLIPBOARD_STOP after the engine's own DestroyWindow
+  assert.equal(xaudit([setup('007', OWN), destroy('007', '0042', OWN), stop('007', '0044', OWN)]).clean, true);
+  // no setup reply seen: no range, judged as before
+  assert.deepEqual(windowsOf(xaudit([destroy('007', '0042', OWN), stop('007', '0044', OWN)])), [OWN, OWN]);
+  // another connection's range
+  assert.deepEqual(windowsOf(xaudit([setup('007', OWN), setup('008', 0x4400000), stop('008', '0003', OWN)])), [OWN]);
+  // the base handed to a new connection: the old one is gone, and its binding with it
+  assert.deepEqual(windowsOf(xaudit([setup('007', OWN), setup('009', OWN), stop('007', '0045', OWN)])), [OWN]);
+  assert.equal(xaudit([setup('007', OWN), setup('009', OWN), stop('009', '0002', OWN)]).clean, true, 'the new holder of the range');
+});

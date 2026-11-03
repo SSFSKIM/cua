@@ -7,8 +7,9 @@
 //! [`DEFAULT_EXE`]; a name ending in `*` is a prefix). The judge is `foreign.mjs` `auditRecord`; this only reads.
 //!
 //! One JSON line per element, each with `ms` (the wall clock when it was read):
-//! - `ready` {root, xtest, composite, t0} once recording has begun (`t0` the server's time then, against which each
-//!   request's server time `t` is read on the wall clock); `end` once it stopped cleanly; `failed` {error};
+//! - `ready` {root, xtest, composite, t0, mask} once recording has begun (`t0` the server's time then, against which
+//!   each request's server time `t` is read on the wall clock; `mask` the resource-id mask the server hands every
+//!   client, with which a client's base, its id here, is its own range); `end` once it stopped cleanly; `failed` {error};
 //! - `client` {client, pid, exe, ours} (`ours` null when no process could be found for it), `died` {client};
 //! - `req` {client, seq, t, op, …}: from every client, `CreateWindow` {window, parent}, `ReparentWindow` {window,
 //!   parent}, `DestroyWindow` and `DestroySubwindows` {window}; from ours and unattributed clients also
@@ -614,6 +615,8 @@ fn run(args: &[String]) -> Result<()> {
     let (harness, allowed) = parse_args(args)?;
     let (control, screen) = crate::xconnect(None)?;
     let root = control.setup().roots[screen].root;
+    // X.Org hands every client the same mask (its client bits are the server's), so this connection's is every client's
+    let mask = control.setup().resource_id_mask;
     // task 41: X.Org 21.1's FlushClient re-entered by RECORD's flush callback spins the server for good (or drops
     // recorded bytes) once a recording client falls behind, so the whole-run record is a private display's diagnostic
     if !crate::clip::private_display(&control, root)? {
@@ -712,7 +715,7 @@ fn run(args: &[String]) -> Result<()> {
                 4 => vec![Watch::line(
                     "ready",
                     &format!(
-                        "\"root\":{root},\"xtest\":{},\"composite\":{},\"t0\":{}",
+                        "\"root\":{root},\"xtest\":{},\"composite\":{},\"t0\":{},\"mask\":{mask}",
                         xtest.unwrap_or(0),
                         composite.unwrap_or(0),
                         reply.server_time

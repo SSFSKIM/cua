@@ -29,6 +29,14 @@
 // selection and target that completes it, sent to the requestor itself. The pairing ends with the connection's life
 // (its death, or another client under its id or its resource-id base) and the requestor window's (its end, or a new
 // window under its id), so a successor of either inherits nothing (task 44).
+//
+// A window in the sending connection's own resource-id range is never foreign (task 51; the design session's ruling,
+// sminos 336): the server lets a client create resources only in the range it handed that connection, and hands a range
+// to another connection only once its client has disconnected, so while the connection lives such an id names its own
+// window or nothing (the vendor builds' SKY_CLIPBOARD_STOP to their own just-destroyed window, refused with BadWindow,
+// was 214 false reds in task 49's record). The range is the connection's for its life: from xtrace's setup reply, or the
+// record's client line (its id is the range's base, the mask the record's `ready` line names), until its death, a new
+// client line under its id, or its base handed to another connection. Without a known mask nothing is exempt.
 
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -83,6 +91,12 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
   };
   // each connection's resource-id base, as xtrace showed it at its setup
   const bases = new Map();
+  // each live connection's own resource-id range, `{base, mask}`, for that connection's life
+  const ranges = new Map();
+  const own = (c, w) => {
+    const range = ranges.get(c);
+    return range !== undefined && typeof w === 'number' && ((w & ~range.mask) >>> 0) === range.base;
+  };
   const foreign = [];
   let requests = 0;
   let mutating = 0;
@@ -171,12 +185,16 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
   for (const el of elements) {
     if (el.k === 'client') {
       clients.set(el.c, { ours: el.ours, name: el.name ?? null });
-      // a client under this id now (the record's id is its resource-id base): a predecessor's grants are not its
+      // a client under this id now (the record's id is its resource-id base): a predecessor's grants are not its, and
+      // the range is this connection's from here
       revoke((g) => g.c === el.c);
+      if (typeof el.mask === 'number') ranges.set(el.c, { base: el.c >>> 0, mask: el.mask });
+      else ranges.delete(el.c);
       continue;
     }
     if (el.k === 'died') {
       revoke((g) => g.c === el.c);
+      ranges.delete(el.c);
       for (const [w, life] of lives) if (life.alive && life.creator === el.c) end(w);
       continue;
     }
@@ -187,6 +205,9 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
       // and whatever it was asked for: a grant of a connection that had the base, or to a window of that client's
       revoke((g) => g.c === el.c || (bases.get(g.c) === el.base && g.c !== el.c) || inBase(g.requestor));
       bases.set(el.c, el.base);
+      // the range is the new connection's; whichever connection had it before is gone
+      for (const [c, range] of ranges) if (c !== el.c && range.base === el.base >>> 0) ranges.delete(c);
+      ranges.set(el.c, { base: el.base >>> 0, mask: el.mask });
       continue;
     }
     if (el.k === 'destroyed') {
@@ -217,7 +238,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
         requests++;
         mutating++;
         const parentOk = el.parent === root || harness(el.parent);
-        if (!parentOk) flag(el, 'CreateWindow under', el.parent);
+        if (!parentOk && !own(el.c, el.parent)) flag(el, 'CreateWindow under', el.parent);
         if (!rejected) born(el, { owned: parentOk });
       } else if (!rejected) {
         const life = born(el, { inside: el.parent !== root && within(el.parent), or: el.or === true });
@@ -247,7 +268,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     const change = changeOf(el, root);
     if (!change) continue;
     mutating++;
-    if (change.selection && !harness(change.windows[0])) {
+    if (change.selection && !harness(change.windows[0]) && !own(el.c, change.windows[0])) {
       // a selection owner's answer to a foreign requestor's own request: exempt while that request is served
       if (!serveSelection(open, el, change.selection)) flag(el, change.what, change.windows[0]);
       continue;
@@ -257,7 +278,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
       continue;
     }
     for (const w of new Set(change.windows)) {
-      if (typeof w === 'number' && w !== root && harness(w)) continue;
+      if (typeof w === 'number' && w !== root && (harness(w) || own(el.c, w))) continue;
       flag(el, change.what, w);
     }
     if (rejected) continue;
@@ -615,6 +636,8 @@ function recordLine(line, out, meta, root) {
       if (typeof r.t0 === 'number') meta.offset = r.ms - r.t0;
       meta.xtest = r.xtest;
       meta.composite = r.composite;
+      // the server's resource-id mask (every client's; xprobe from task 51): with a client's base, its own range
+      if (typeof r.mask === 'number') meta.mask = r.mask;
       out.push({ k: 'ready' });
       break;
     case 'failed':
@@ -624,7 +647,7 @@ function recordLine(line, out, meta, root) {
       meta.ended = true;
       break;
     case 'client':
-      out.push({ k: 'client', c: r.client, ours: r.ours === true ? true : r.ours === false ? false : null, name: `${r.exe ?? 'unknown'}${r.pid ? ` pid ${r.pid}` : ''}` });
+      out.push({ k: 'client', c: r.client, ours: r.ours === true ? true : r.ours === false ? false : null, name: `${r.exe ?? 'unknown'}${r.pid ? ` pid ${r.pid}` : ''}`, ...(meta.mask !== undefined ? { mask: meta.mask } : {}) });
       break;
     case 'died':
       out.push({ k: 'died', c: r.client });

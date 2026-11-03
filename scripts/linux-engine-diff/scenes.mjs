@@ -225,8 +225,9 @@ export class Desktop {
    * bus (every process the run starts from then on inherits it) and the whole run's record, its own trace, through
    * which every X tool of the harness's then connects (xtools.mjs), and, when the window found active is foreign, the
    * holder opened and activated before anything else. A start that fails ends what it began, the watchdog last.
-   * A stop during the start (a signal's, stop.mjs) waits for it: the start sees the stop after each step it awaited,
-   * ends what it acquired the same way, starts nothing more and fails, so nothing of the run's outlives the stop; a
+   * A stop during the start (a signal's, stop.mjs) waits for it: the start sees the stop before each resource it
+   * acquires, a signal that landed in a synchronous step included, ends what it acquired the same way, starts nothing
+   * more and fails, so nothing of the run's outlives the stop; a
    * run stopped before it begins starts nothing. `startTrace`, `startRecord`, `startSession`, `startWatchdog`,
    * `privateDisplay` and `existing` are the display-free tests' own. Returns the window found active, marked.
    */
@@ -242,11 +243,16 @@ export class Desktop {
     // whose start ends synchronously (the session bus's `busctl` calls) gives it no turn: checked straight away, a
     // stop landing there was seen only after the next stage had started (task 46). So the check first lets two turns
     // pass: the first may be finishing the very turn whose poll came before the signal; the second polls after it.
+    // It is the barrier before every resource the start acquires (the watchdog, the session bus, the record, the
+    // trace, the holder), so a signal that lands in any synchronous step, the preflight's probes included, is seen
+    // before the next resource is acquired (task 45's review).
     const unlessStopped = async () => {
       await new Promise(setImmediate);
       await new Promise(setImmediate);
       if (this.stopping) throw new Error('the harness was stopped while the run was starting: nothing more of it starts');
     };
+    // a signal that landed just before the run began (in its caller's synchronous code): nothing is acquired
+    await unlessStopped();
     this.unwatchOperations = watchOperations(({ engine, window, start, end }) => {
       if (engine !== this.ownReader) this.operations.push({ window, start, end });
     });
@@ -265,6 +271,8 @@ export class Desktop {
       const isPrivate = privateDisplay();
       // what the run's applications are launched for from now on (`appEnvironment`): a display a person uses, unless marked
       this.isPrivate = isPrivate;
+      // the preflight above is synchronous: a signal that landed in it is seen before the session bus starts
+      await unlessStopped();
       // a private display's run under a session bus of its own, before anything of the run's starts (task 43); its
       // launcher with the run's home and its settings in memory, so its accessibility switch is the run's (task 45)
       if (isPrivate) {
@@ -278,6 +286,7 @@ export class Desktop {
         }
         this.useSession(session);
       }
+      await unlessStopped();
       // the whole-run record only on a private display: on a person's, the sampled route audits judge the engines;
       // its client guarded from its spawn
       this.record = isPrivate ? await startRecord({ guard: (pid) => this.watchdog.guard(pid) }) : null;

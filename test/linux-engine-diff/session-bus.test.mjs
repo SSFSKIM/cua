@@ -496,6 +496,65 @@ for (const stage of ['watchdog', 'session', 'record']) {
   }));
 }
 
+// Task 45's review: the start's synchronous preflight (the root, the windows already there, the window active, the
+// private-display probe) ran straight into the session bus's start with no turn of the event loop between them, so a
+// signal landing in the preflight was seen only once the session bus had started. Every resource of the start is
+// acquired behind a barrier that lets a pending signal's stop be seen first: the watchdog too, for a signal that lands
+// in the caller's synchronous code just before `begin`.
+const PREFLIGHT = ['existing', 'privacy'];
+for (const point of ['before begin', ...PREFLIGHT]) {
+  test(`a signal that lands ${point === 'before begin' ? 'just before the run begins' : `in the synchronous preflight (${point})`} is seen before the next resource is acquired`, () => withA11yVar(PERSON_A11Y, async () => {
+    const tools = fakeTools();
+    const log = [];
+    const stopping = (name, value) => ({ ...value, stop: async () => (log.push(`${name} stopped`), { state: 'ended', clean: true }) });
+    const parts = {
+      watchdog: stopping('watchdog', { guard: () => {} }),
+      session: stopping('session', { address: 'unix:path=/tmp/late-bus', a11y: 'unix:path=/late-a11y', pid: 1 }),
+      record: stopping('record', { pid: 1 }),
+      trace: stopping('trace', { env: { ...process.env, DISPLAY: ':77' } }),
+    };
+    const desktop = new Desktop({ cua: 'unused', run: `bus-preflight-${point.replace(/ /g, '')}`, reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
+    let stopped = null;
+    const onSignal = () => {
+      stopped = desktop.stop();
+    };
+    process.on('SIGWINCH', onSignal);
+    // the signal, then the rest of the step's synchronous work: node reads the signal only after it
+    const signal = () => {
+      process.kill(process.pid, 'SIGWINCH');
+      execFileSync('sleep', ['0.05']);
+    };
+    const start = (name) => async () => {
+      log.push(name);
+      return parts[name];
+    };
+    const probe = (name, value) => () => {
+      log.push(name);
+      if (name === point) signal();
+      return value;
+    };
+    const before = busVars();
+    try {
+      if (point === 'before begin') signal();
+      await assert.rejects(desktop.begin({ startWatchdog: start('watchdog'), startSession: start('session'), startRecord: start('record'), startTrace: start('trace'), existing: probe('existing', []), privateDisplay: probe('privacy', true) }), /stopped (while|before) the run/);
+      await stopped;
+      const acquired = point === 'before begin' ? [] : ['watchdog'];
+      // the preflight's reads run on to its end (they acquire nothing); the barrier after them sees the signal
+      const probed = point === 'before begin' ? [] : PREFLIGHT;
+      assert.deepEqual(log.filter((l) => !l.endsWith(' stopped') && !PREFLIGHT.includes(l)), acquired, 'no resource is acquired after the signal');
+      assert.deepEqual(log.filter((l) => PREFLIGHT.includes(l)), probed);
+      assert.deepEqual(log.filter((l) => l.endsWith(' stopped')), acquired.map((n) => `${n} stopped`), 'what was acquired is ended');
+      assert.deepEqual(busVars(), before);
+      assert.equal(desktop.session, null);
+    } finally {
+      process.off('SIGWINCH', onSignal);
+      desktop.unhookStop();
+      tools.done();
+      rmSync(desktop.dir, { recursive: true, force: true });
+    }
+  }));
+}
+
 test('a run stopped before it begins starts nothing', async () => {
   const desktop = new Desktop({ cua: 'unused', run: 'bus-stopped', reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
   try {

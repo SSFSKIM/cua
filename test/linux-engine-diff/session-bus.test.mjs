@@ -261,7 +261,11 @@ function runOn({ privateDisplay, inherited = PERSON_A11Y, a11y = 'unix:path=/a11
     const desktop = new Desktop({ cua: 'unused', run: 'bus1', reader: { request: async () => ({ response: { ok: true, output: [{ id: 0x400001, title: desktop.label('front'), app: 'xterm' }] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
     const before = busVars();
     try {
-      await desktop.begin({ startTrace: fakeTrace(), startRecord: fakeRecord, existing: () => [], privateDisplay: () => privateDisplay, startWatchdog: fakeWatchdog, startSession });
+      const startTrace = (options) => {
+        seen.trace = options;
+        return fakeTrace()();
+      };
+      await desktop.begin({ startTrace, startRecord: fakeRecord, existing: () => [], privateDisplay: () => privateDisplay, startWatchdog: fakeWatchdog, startSession });
       seen.during = busVars();
       desktop.arrangeFront = () => {};
       await desktop.openFront('visible');
@@ -292,6 +296,8 @@ test("a private display's run: its session bus first, every process of the run's
   assert.equal(seen.during.bus, 'unix:path=/tmp/run-bus');
   assert.equal(seen.app.bus, 'unix:path=/tmp/run-bus', 'a scene application inherits the run\'s bus');
   assert.equal(seen.stopped, 1, 'stopped once, at the end');
+  // the run's trace knows the display is the harness's own, so it reads no authority file (task 46's finding 3)
+  assert.deepEqual(seen.trace, { privateDisplay: true });
   assert.deepEqual(seen.after, before, "the harness's own variables as they were found");
   assert.deepEqual(desktopEnding(desktop.ending).record.session, { address: 'unix:path=/tmp/run-bus', a11y: 'unix:path=/a11y-88', terminated: true, killed: false, n: 1 });
 });
@@ -319,6 +325,7 @@ test("a private display's run hands no AT_SPI_BUS_ADDRESS to its applications, w
 test("the person's display keeps the person's session bus: no bus is started", async () => {
   const { desktop, seen, before } = await runOn({ privateDisplay: false });
   assert.equal(seen.started.length, 0);
+  assert.deepEqual(seen.trace, { privateDisplay: false }, "the run's trace on a person's display");
   assert.deepEqual(seen.during, before);
   assert.deepEqual(seen.app, { bus: before.bus, a11y: 'unset' }, "the person's session bus as it was, and no accessibility bus named: the display's AT_SPI_BUS names it");
   assert.equal(desktopEnding(desktop.ending).record.session, undefined);

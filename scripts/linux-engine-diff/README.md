@@ -267,7 +267,11 @@ variants included; their evidence is written either way. The run's `end` row kee
   ConfigureWindow with a stack mode, WarpPointer, a `_NET_ACTIVE_WINDOW` ClientMessage and XTEST FakeInput (matched
   by the opcode the server reported for XTEST, minor 2). The verdict needs cua's audit clean wherever a vendor
   build's witness or audit is. The negative check drives the stub through a proxy too, and the run is valid only when
-  the witness and the audit both fail it. `--no-audit` leaves the pass out.
+  the witness and the audit both fail it. `--no-audit` leaves the pass out. A proxy's credentials (task 46's finding
+  3): on a private display xtrace copies none and reads no authority file (the harness's X server has none); on a
+  person's display it reads the person's authority file where it is (xtrace 1.4.0 reads from its `-F` file and writes
+  into its `-f` file, the reverse of its help) and writes the proxy's credentials into the proxy's own directory,
+  which goes at the proxy's stop and when it fails to start.
 - **Windows the harness did not open** (the design session, 2026-11-02, and T4b's audit round; `scenes.mjs`,
   `xtools.mjs`, `foreign.mjs`, xprobe `record-run`): no request of the harness's, or of an engine it drives, may change
   a window the harness did not open. It catches accidental changes; it is no proof against an adversarial engine.

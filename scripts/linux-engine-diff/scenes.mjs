@@ -282,7 +282,8 @@ export class Desktop {
       // its client guarded from its spawn
       this.record = isPrivate ? await startRecord({ guard: (pid) => this.watchdog.guard(pid) }) : null;
       await unlessStopped();
-      this.trace = await startTrace();
+      // the trace reads no authority file on the harness's own display (audit.mjs, task 46's finding 3)
+      this.trace = await startTrace({ privateDisplay: isPrivate });
       await unlessStopped();
     } catch (error) {
       try {

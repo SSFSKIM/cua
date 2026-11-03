@@ -6,11 +6,13 @@
 
 import './hermetic.mjs';
 
-import { spawn } from 'node:child_process';
-import { copyFileSync, createReadStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { spawn as spawnProcess } from 'node:child_process';
+import { createReadStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+
+import { isPrivateDisplay } from './xtools.mjs';
 
 const REQUEST = /^(\d+):<:([0-9a-f]+):\s*\d+:\s*(?:([A-Za-z0-9-]+)-)?Request\((\d+)(?:,(\d+))?\):\s*(\S+)?(.*)$/;
 const QUERY = /^(\d+):<:([0-9a-f]+):.*Request\(98\): QueryExtension name='([^']+)'/;
@@ -249,37 +251,60 @@ export function auditHeldRelease({ requests, extensions }, target, { route, mark
 
 // The foreign-window judge (the harness never changes a window it did not open) is foreign.mjs's.
 
-function freeDisplay() {
+function freeDisplay(socketDir) {
   for (let n = 40; n < 100; n++) {
-    if (!existsSync(`/tmp/.X11-unix/X${n}`) && !existsSync(`/tmp/.X${n}-lock`)) return n;
+    if (!existsSync(`${socketDir}/X${n}`) && !existsSync(`/tmp/.X${n}-lock`)) return n;
   }
   throw new Error('no free X display number for the audit proxy');
 }
 
 /**
  * An xtrace proxy display forwarding to `display`: `{display, env, log, stop()}`. `env` is what a client needs to
- * reach it (DISPLAY and an XAUTHORITY holding the proxy's copy of the credentials); `stop()` ends the proxy and returns
- * the trace's text.
+ * reach it (DISPLAY, and XAUTHORITY naming the proxy's own authority file); `stop()` ends the proxy and returns the
+ * trace's text. The proxy's directory (its log, its authority file) goes at its stop, and when it fails to start.
+ *
+ * The display's authority (task 46's finding 3): it used to copy the person's ~/.Xauthority into its directory, on any
+ * display, and a failed start left the copy behind. Now:
+ * - on a private display (`privateDisplay`; by default read from the display's own mark) xtrace copies no credentials
+ *   (`-n`) and reads no authority file: the harness's own X server has none (`startPrivateServer`), and the person's is
+ *   never read; the proxy's clients get an empty authority file of the proxy's, so none of them reads the person's;
+ * - on a display a person uses, where the harness is the person's client by design, xtrace reads the display's
+ *   credentials from the person's authority file where it is (`env`'s XAUTHORITY, else `~/.Xauthority`), never
+ *   copied, and writes the proxy's credentials into the proxy's own file. xtrace 1.4.0 reads from the file given as
+ *   `-F` (`xauth -f <F> list <display>`) and writes into the one given as `-f` (`xauth -f <f> remove|add <proxy>`), the
+ *   reverse of its --help (traced, task 45), so the person's file is the `-F` and is only read.
+ * `spawn` and `socketDir` (where the proxy's socket appears) are the display-free tests' own.
  */
-export async function startProxy({ display = process.env.DISPLAY ?? ':0' } = {}) {
-  const n = freeDisplay();
+export async function startProxy({ display = process.env.DISPLAY ?? ':0', privateDisplay, env = process.env, spawn = spawnProcess, socketDir = '/tmp/.X11-unix' } = {}) {
+  privateDisplay ??= isPrivateDisplay({ env: { ...process.env, DISPLAY: display } });
+  const n = freeDisplay(socketDir);
+  const socket = `${socketDir}/X${n}`;
   const dir = mkdtempSync(join(tmpdir(), 'cua171-audit-'));
   const log = join(dir, 'x11.log');
-  // xtrace copies the display's credentials for the proxy into a copy of the authority file of the pass's own, so
-  // the person's ~/.Xauthority is never written
   const auth = join(dir, 'Xauthority');
-  copyFileSync(process.env.XAUTHORITY ?? join(homedir(), '.Xauthority'), auth);
+  writeFileSync(auth, '', { mode: 0o600 });
+  const credentials = privateDisplay ? ['-n'] : ['-c', '-f', auth, '-F', env.XAUTHORITY ?? join(env.HOME ?? homedir(), '.Xauthority')];
   // lists shown to 256 entries: every client's connection setup, XKB keymap and keyboard mapping are tens of KB of
   // lists, the bulk of a whole run's trace (T4b's audit round), and no audit reads that far into a list
-  const child = spawn('xtrace', ['-k', '-m', '256', '-d', display, '-D', `:${n}`, '-c', '-f', auth, '-F', auth, '-o', log], { stdio: ['ignore', 'ignore', 'pipe'] });
+  const child = spawn('xtrace', ['-k', '-m', '256', '-d', display, '-D', `:${n}`, ...credentials, '-o', log], { stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = '';
-  child.stderr.on('data', (d) => {
+  let failed = null;
+  child.on?.('error', (error) => {
+    failed = error;
+  });
+  child.stderr?.on('data', (d) => {
     stderr += d;
   });
   const exited = new Promise((resolve) => child.once('exit', resolve));
   const deadline = Date.now() + 5000;
-  while (!existsSync(`/tmp/.X11-unix/X${n}`)) {
-    if (Date.now() > deadline || child.exitCode !== null) throw new Error(`xtrace did not start: ${stderr.trim()}`);
+  while (!existsSync(socket)) {
+    if (Date.now() > deadline || child.exitCode !== null || failed) {
+      // nothing of a start that failed is left: the proxy, its directory with whatever xtrace wrote, its socket
+      if (child.exitCode === null && !failed) child.kill('SIGKILL');
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(socket, { force: true });
+      throw new Error(`xtrace did not start: ${failed ? failed.message : stderr.trim()}`);
+    }
     await new Promise((r) => setTimeout(r, 20));
   }
   const marks = [];
@@ -323,7 +348,7 @@ export async function startProxy({ display = process.env.DISPLAY ?? ':0' } = {})
       } finally {
         rmSync(dir, { recursive: true, force: true });
         // xtrace leaves its display's socket behind when it is ended; the next pass would find the number taken
-        rmSync(`/tmp/.X11-unix/X${n}`, { force: true });
+        rmSync(socket, { force: true });
       }
     },
   };

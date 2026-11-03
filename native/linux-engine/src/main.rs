@@ -17,6 +17,7 @@ mod families;
 #[cfg(test)]
 mod fault;
 mod field;
+mod focus_timer;
 mod identity;
 mod input;
 mod keys;
@@ -24,6 +25,7 @@ mod paste;
 mod readiness;
 mod resolve;
 mod route;
+mod serve;
 mod shm;
 mod stray;
 mod table;
@@ -31,8 +33,7 @@ mod tree;
 mod wire;
 mod x11;
 
-use std::io::{BufRead, Write};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use engine::{Config, Engine};
 use readiness::CaptureWait;
@@ -178,6 +179,13 @@ fn main() {
             std::process::exit(2);
         }
     };
+    // before the first thread starts, so that every thread blocks the stop signals and only their own thread takes them
+    if let Err(error) = serve::block_stop_signals() {
+        eprintln!("Error the stop signals could not be blocked: {error}");
+        std::process::exit(1);
+    }
+    let (inbox, next) = std::sync::mpsc::channel();
+    serve::watch_stop_signals(inbox.clone());
     let mut engine = match Engine::new(cfg) {
         Ok(engine) => engine,
         Err(error) => {
@@ -185,39 +193,34 @@ fn main() {
             std::process::exit(1);
         }
     };
-    let code = serve(&mut engine);
+    serve::read_stdin(inbox);
+    let code = serve::serve(&mut engine, &next, &mut std::io::stdout().lock());
     engine.shutdown();
     std::process::exit(code);
 }
 
-/// The server loop: one line in, one line out, strictly in order (behaviour §1).
-fn serve(engine: &mut Engine) -> i32 {
-    let stdin = std::io::stdin();
-    let mut stdin = stdin.lock();
-    let stdout = std::io::stdout();
-    let mut line = String::new();
-    loop {
-        line.clear();
-        match stdin.read_line(&mut line) {
-            Ok(0) => return 0,
-            Ok(_) => {}
-            Err(error) => {
-                eprintln!("Error failed to read server request: {error}");
-                return 1;
-            }
-        }
-        let response = match wire::parse_line(&line) {
-            wire::Line::Blank => continue,
+/// The engine as the server loop drives it (`serve.rs`): each line parsed and handled (behaviour §1), its `FocusOut`
+/// timers between requests.
+impl serve::Server for Engine {
+    fn respond(&mut self, line: &str) -> Option<String> {
+        let response = match wire::parse_line(line) {
+            wire::Line::Blank => return None,
             wire::Line::Malformed(message) => wire::Response::failure(serde_json::Value::Null, message),
-            wire::Line::Request(request) => engine.handle(request),
+            wire::Line::Request(request) => self.handle(request),
         };
-        let mut out = stdout.lock();
-        let written = writeln!(out, "{}", response.to_line()).and_then(|()| out.flush());
-        if let Err(error) = written {
-            eprintln!("Error failed to write server response: {error}");
-            return 1;
-        }
-        engine.after_response();
+        Some(response.to_line())
+    }
+
+    fn after_response(&mut self) {
+        Engine::after_response(self);
+    }
+
+    fn next_due(&self) -> Option<Instant> {
+        Engine::next_due(self)
+    }
+
+    fn tick(&mut self) {
+        Engine::tick(self);
     }
 }
 

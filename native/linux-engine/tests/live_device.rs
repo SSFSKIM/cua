@@ -944,6 +944,9 @@ fn a_late_drag_and_drop_lets_releases_and_reads_run_and_refuses_the_next_acting_
     deferred
         .request("click", json!({"window": {"id": window}, "x": 50, "y": 50}))
         .unwrap();
+    // the click answers as soon as its release is sent (its FocusOut follows on its timer, M4's T7): the recorder
+    // reads on until the release has arrived
+    sleep(SETTLE);
     stop.send(()).unwrap();
     assert_eq!(
         recorder.join().unwrap(),
@@ -1046,7 +1049,9 @@ fn keycode_of(conn: &RustConnection, keysym: u32) -> u8 {
 /// A watch that fails after the release (the live build's fault injection) never lets the next acting request run
 /// as though nothing happened. Its connection killed by the server: a read runs, the click is refused with the
 /// watch-failure sentence and sends nothing. Its thread panicked: the engine's release profile aborts on a panic, so
-/// the engine ends instead of answering, and nothing more is sent.
+/// the engine ends and nothing more is sent. The panic comes when the watch hears of the release, off the request path,
+/// so the drag's own answer, which goes as soon as its release is sent (its FocusOut follows on its timer, M4's T7), may
+/// or may not be out first; the next request is never answered.
 #[test]
 fn a_failed_after_release_watch_never_lets_the_next_acting_request_run() {
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
@@ -1083,10 +1088,14 @@ fn a_failed_after_release_watch_never_lets_the_next_acting_request_run() {
     let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
     let mut panicked = Engine::start_with_fault(&[], "late-watch-panic");
     let dragged = panicked.try_request("drag", json!({"window": {"id": window}, "path": path}));
-    assert_eq!(dragged, None, "the engine ended instead of answering");
+    assert!(
+        matches!(dragged, None | Some(Ok(Value::Null))),
+        "the drag answered as a drag, or the engine ended first: {dragged:?}"
+    );
     assert_eq!(
         panicked.try_request("click", json!({"window": {"id": window}, "x": 50, "y": 50})),
-        None
+        None,
+        "the engine ended instead of answering"
     );
     sleep(SETTLE);
     stop.send(()).unwrap();

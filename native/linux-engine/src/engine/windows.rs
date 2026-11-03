@@ -21,9 +21,11 @@ impl Engine {
     /// `_NET_ACTIVE_WINDOW` (source indication 1, the application), a raise, and the input focus, in that order;
     /// no prior validation, no wait (behaviour §14). The vendor checks each with a round trip of its own; here the
     /// three go out together and are checked in order, so the server sees the same requests in the same order and the
-    /// first failure is the answer, at the cost of one round trip.
+    /// first failure is the answer, at the cost of one round trip. The activation moves the real focus, so every
+    /// pending `FocusOut` timer is flushed first (M4's T7), as before input to another window.
     pub(super) fn activate_window(&mut self, input: Option<Value>) -> Result<Value> {
         let input: WindowInput = parse_input(input)?;
+        self.inputs.flush_all(&mut self.x);
         if let Some(waited) = activate(&self.x, input.window.id)? {
             self.extra.insert(
                 "activation".into(),

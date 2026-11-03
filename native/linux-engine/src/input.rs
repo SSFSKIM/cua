@@ -18,7 +18,8 @@ use crate::x11::X11;
 pub struct Pacing {
     /// After each new key edge (the pinned build's 33 ms).
     pub key: Duration,
-    /// Before the session's teardown (the vendor's 100 ms).
+    /// From a window's last input to its session's `FocusOut` (the vendor's 100 ms): the `FocusOut` timer's delay
+    /// (`focus_timer.rs`), off the request path; zero sends it as each request's input ends.
     pub teardown: Duration,
     /// A drag's waits fixed for every target by the measurement flags (`--drag-step-ms`, `--drag-step-us`,
     /// `--drag-press-dwell-ms`, `--drag-release-dwell-ms`); None, the default, paces each drag by its target's family
@@ -171,7 +172,8 @@ impl Keys {
     }
 }
 
-/// One request's input session for a window (behaviour §8.1).
+/// A window's input session (behaviour §8.1): one request's, kept open across requests while a hold names the window
+/// (`route.rs`), or while its `FocusOut` timer runs (`focus_timer.rs`).
 pub struct Session {
     pub target: Window,
     synthesized_focus: bool,
@@ -257,38 +259,64 @@ impl Session {
             pointer: None,
             pacing,
         };
-        if !within {
-            let focus_in = FocusInEvent {
-                response_type: FOCUS_IN_EVENT,
-                detail: NotifyDetail::NONLINEAR,
-                sequence: 0,
-                event: target,
-                mode: NotifyMode::NORMAL,
-            };
-            if let Err(error) = x
-                .conn
-                .send_event(false, target, EventMask::NO_EVENT, focus_in)
-                .map_err(anyhow::Error::from)
-                .and_then(|c| Ok(c.check()?))
-            {
-                session.synthesized_focus = true;
-                session.close(x);
-                return Err(error);
-            }
-            session.synthesized_focus = true;
+        if !within && let Err(error) = session.focus_in(x) {
+            session.finish(x);
+            session.end(x);
+            return Err(error);
         }
         Ok(session)
     }
 
-    /// Ends the session: keys and buttons still held released (best effort: the request has already answered
-    /// with any release error), the teardown wait, FocusOut unless the real focus has since entered the target,
-    /// and the per-request unredirect.
-    pub fn close(mut self, x: &mut X11) {
+    /// The session taken back from its `FocusOut` timer for more input (`focus_timer.rs`): its synthetic focus, redirect
+    /// and time anchor are reused with no X request, except where it holds no synthetic focus because the real focus was
+    /// within the target when it opened, and the real focus has left it since: then `FocusIn` is synthesized now, as a
+    /// session opened now would. A failure ends the session, as a failed open does.
+    pub fn resume(mut self, x: &mut X11) -> Result<Session> {
+        if self.synthesized_focus {
+            return Ok(self);
+        }
+        let synthesized = match focus_is_within(x, self.target) {
+            Ok(true) => return Ok(self),
+            Ok(false) => self.focus_in(x),
+            Err(error) => Err(error),
+        };
+        if let Err(error) = synthesized {
+            self.finish(x);
+            self.end(x);
+            return Err(error);
+        }
+        Ok(self)
+    }
+
+    /// The synthetic `FocusIn` (detail `Nonlinear`, mode `Normal`); the session counts it as held either way, so its end
+    /// sends the `FocusOut` that answers a `FocusIn` whose delivery the error leaves unknown.
+    fn focus_in(&mut self, x: &X11) -> Result<()> {
+        let focus_in = FocusInEvent {
+            response_type: FOCUS_IN_EVENT,
+            detail: NotifyDetail::NONLINEAR,
+            sequence: 0,
+            event: self.target,
+            mode: NotifyMode::NORMAL,
+        };
+        self.synthesized_focus = true;
+        x.conn
+            .send_event(false, self.target, EventMask::NO_EVENT, focus_in)
+            .map_err(anyhow::Error::from)
+            .and_then(|c| Ok(c.check()?))
+    }
+
+    /// The end of a request's input on this session: keys and buttons still held released (best effort: the request
+    /// has already answered with any release error). The session's `FocusOut` comes later (`end`), on its timer.
+    pub fn finish(&mut self, x: &X11) {
         let (target, buttons, time) = (self.target, self.buttons, self.clock());
         self.keys
             .release_all(|keycode, mask| send_key(x, target, time(), keycode, false, buttons | mask));
         self.release_buttons(x);
-        std::thread::sleep(self.pacing.teardown);
+    }
+
+    /// Ends the session, once its `FocusOut` timer has come due or a flush has waited it out (`focus_timer.rs`):
+    /// `FocusOut` unless the real focus has since entered the target, and the per-request unredirect.
+    pub fn end(self, x: &mut X11) {
         if self.synthesized_focus && !focus_is_within(x, self.target).unwrap_or(false) {
             let focus_out = FocusOutEvent {
                 response_type: FOCUS_OUT_EVENT,

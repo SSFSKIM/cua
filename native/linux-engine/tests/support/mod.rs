@@ -138,6 +138,59 @@ impl Engine {
         })
     }
 
+    /// Writes requests without waiting for their answers (pipelined, as a service may): `pipeline` then `answers`.
+    pub fn pipeline(&mut self, requests: &[(&str, Value)]) {
+        let stdin = self.stdin.as_mut().unwrap();
+        for (command, input) in requests {
+            let line = json!({"id": self.next_id, "command": command, "input": input}).to_string();
+            self.next_id += 1;
+            writeln!(stdin, "{line}").unwrap();
+        }
+        stdin.flush().unwrap();
+    }
+
+    /// The next `n` answers, in order, each with when it arrived.
+    pub fn answers(&mut self, n: usize) -> Vec<(Value, Instant)> {
+        (0..n)
+            .map(|_| {
+                let line = self
+                    .lines
+                    .recv_timeout(REQUEST_TIMEOUT)
+                    .unwrap_or_else(|_| panic!("no answer within {REQUEST_TIMEOUT:?}"));
+                let at = Instant::now();
+                (
+                    serde_json::from_str(&line).unwrap_or_else(|e| panic!("not JSON ({e}): {line}")),
+                    at,
+                )
+            })
+            .collect()
+    }
+
+    /// Sends the engine a signal (`rustix::process::Signal::TERM`, `KILL`).
+    pub fn signal(&self, signal: rustix::process::Signal) {
+        let pid = rustix::process::Pid::from_raw(self.child.id() as i32).expect("a process id");
+        rustix::process::kill_process(pid, signal).expect("the engine is signalled");
+    }
+
+    /// Closes the engine's stdin, its orderly exit.
+    pub fn close_stdin(&mut self) {
+        drop(self.stdin.take());
+    }
+
+    /// The engine's exit, waited for at most `bound`, with when it was seen: None if it is still running.
+    pub fn exit_within(&mut self, bound: Duration) -> Option<(std::process::ExitStatus, Instant)> {
+        let deadline = Instant::now() + bound;
+        loop {
+            if let Ok(Some(status)) = self.child.try_wait() {
+                return Some((status, Instant::now()));
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            sleep(Duration::from_millis(1));
+        }
+    }
+
     /// One request; the output on success, the error sentence otherwise.
     pub fn request(&mut self, command: &str, input: Value) -> Result<Value, String> {
         let id = self.next_id;

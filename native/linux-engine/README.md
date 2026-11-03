@@ -55,9 +55,28 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 
 - **Routes** (`route.rs`): a request naming a window goes through that window's background session (`input.rs`):
   synthetic `FocusIn` unless the focus is already within it, key and pointer events by `SendEvent` (pointer events
-  to the deepest child under the point), the vendor's 100 ms before `FocusOut`; nothing on it activates, raises,
-  focuses or moves the pointer. A request without a window uses the desktop route (`desktop.rs`, XTEST). The window
-  is redirected (retained) before its first targeted input, with no wait after it; keys are not paced.
+  to the deepest child under the point), and `FocusOut` the vendor's 100 ms after the window's last input; nothing on
+  it activates, raises, focuses or moves the pointer. A request without a window uses the desktop route (`desktop.rs`,
+  XTEST). The window is redirected (retained) before its first targeted input, with no wait after it; keys are not
+  paced.
+- **The `FocusOut` timer** (`focus_timer.rs`, M4): the 100 ms is not slept on the request path. A request answers as
+  soon as its input is sent, and its window's session waits, still open, for its `FocusOut`, due 100 ms after that
+  input; more background input to the same window takes the session back (no `FocusOut` and no new `FocusIn` between),
+  so a burst pays the 100 ms once. Any other input (to another window, through the desktop or the foreground route),
+  a paste's observation (its own window's timer included) and `activate_window` first flush every pending timer: each
+  is waited out to its full 100 ms since its window's last input, then its `FocusOut` sent, then the request goes on,
+  so no `FocusOut` ever comes sooner than 100 ms after a burst (Chromium cuts and reorders the last keys of a burst a
+  sooner `FocusOut` follows). A late drag-and-drop's Escape (`dnd.rs`) is not delayed by a timer; on its own window it
+  restarts the timer. With `--stats`, each `FocusOut` is reported (`focus_out`: window, cause `timer`, `flush` or
+  `exit`, the time since the window's last input, and the request whose input last started the timer): on the line of
+  the request it went out in, or on a line of its own (`"id": null`) when it went out between requests.
+- **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: held keys
+  released, then every pending `FocusOut` waited out (at most 100 ms) and sent, so a burst answered just before the
+  signal still arrives in order and its window gets its `FocusOut`. A request already running finishes first; requests
+  queued behind the signal are not run. The exit code is 0 for stdin closing and 128 plus the signal's number
+  otherwise. A second signal, or an exit still not done 2 s after the first, ends the process at once. SIGKILL cuts the
+  drain: the last burst's window keeps its synthetic focus until it next gets a `FocusOut`. The stop signals are
+  blocked in every thread and taken by one thread with `sigwait`; a program `launch_app` starts gets them unblocked.
 - **Keys** (`keys.rs`, `engine/keyboard.rs`): the vendor's chord grammar and Shift rule (`Z` is z without Shift, so
   `Ctrl+Z` stays undo), and its held-key bookkeeping: counts per target and keycode shared by `press_key`, `key_down`
   and every command's `key` chord; a window with held keys keeps its session across requests until the last hold is
@@ -259,7 +278,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--retention` | `session`, `per-request`, `none` | when the target window is redirected through Composite: once until destroyed, per request as the vendor does, or never |
 | `--settle-ms` | 0 | the wait after a window's redirect before input to it |
 | `--capture-wait` | `damage`, `fixed` | a capture of a fresh pixmap waits for the DAMAGE rule, or a fixed 100 ms once per pixmap (the fallback) |
-| `--teardown-ms` | 100 | the wait before a background session's teardown |
+| `--teardown-ms` | 100 | the delay from a window's last background input to its session's `FocusOut`, on the timer (above); 0 sends each request's `FocusOut` as its input ends, before its answer (the harness's control lane) |
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
@@ -267,7 +286,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--drag-dnd-hold-ms` | 250 | how long after the press a Chromium drag the engine lets drop keeps its button down for its source's take when none came by the path's end (measurement only; 0 turns the hold off; `--stats` `hold`) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
-| `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, and how a desktop screenshot was read (`shm` or `get_image`) |
+| `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, how a desktop screenshot was read (`shm` or `get_image`), and each `FocusOut` (`focus_out`, above), a `FocusOut` sent between requests on a line of its own |
 
 ## Dependencies
 

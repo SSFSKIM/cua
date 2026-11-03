@@ -27,6 +27,7 @@ use crate::apps;
 use crate::atspi::{self, Association};
 use crate::dbus::{Broken, Bus, BusStats};
 use crate::families::{self, DragPacing, Family};
+use crate::focus_timer::Sent;
 use crate::input::Pacing;
 use crate::readiness::CaptureWait;
 use crate::route::Inputs;
@@ -256,14 +257,11 @@ impl Engine {
         // the last watched drag's after-release watch: an acting request stops it (a round trip first, so every take
         // before now counts); any other request only collects it once it has ended by itself
         let acting = acts(&request.command, request.input.as_ref());
-        if self.late_watch.as_ref().is_some_and(|w| acting || w.finished()) {
-            let watch = self.late_watch.take().expect("checked");
-            let app = watch.app.clone();
-            match watch.stop() {
-                crate::dnd::WatchEnd::Quiet => {}
-                end => self.late_pending = Some((app, end)),
-            }
-        }
+        self.collect_late_watch(acting);
+        // a FocusOut that came due while the engine waited for this request goes first; the rest wait on their timers
+        // or on this request's flush (`route.rs`)
+        self.inputs.fire_due(&mut self.x);
+        self.inputs.request = request.id.clone();
         // a late drag and drop, or a watch that failed, is the first acting request's answer, the request not run;
         // reads and releases run meanwhile, and the report waits for the request that would act
         let refusal = if acting { self.late_pending.take() } else { None };
@@ -316,6 +314,11 @@ impl Engine {
         if let Some(bus) = self.bus.as_mut() {
             merge(&mut self.bus_stats, bus.take_stats());
         }
+        let sent = self.inputs.take_sent();
+        if !sent.is_empty() {
+            self.extra
+                .insert("focus_out".into(), sent.iter().map(Sent::record).collect());
+        }
         if self.cfg.stats {
             self.pending_stats = Some((
                 request.id.clone(),
@@ -327,6 +330,54 @@ impl Engine {
         match result {
             Ok(output) => Response::success(request.id, output),
             Err(error) => Response::failure(request.id, format!("{error:#}")),
+        }
+    }
+
+    /// Collects the after-release watch when `acting` (stopping it) or once it has ended by itself: what it saw waits in
+    /// `late_pending` for the first acting request. Its Escape, sent at once on the watch's own connection and never
+    /// waiting for a flush, joins the target window's burst: that window's pending `FocusOut` timer restarts from when
+    /// the Escape went out, and a timer pending on another window keeps its schedule (the design session, M4
+    /// pre-flight).
+    fn collect_late_watch(&mut self, acting: bool) {
+        if !self.late_watch.as_ref().is_some_and(|w| acting || w.finished()) {
+            return;
+        }
+        let watch = self.late_watch.take().expect("checked");
+        let (app, target) = (watch.app.clone(), watch.target);
+        match watch.stop() {
+            crate::dnd::WatchEnd::Quiet => {}
+            end => {
+                if let crate::dnd::WatchEnd::Late(late) = &end
+                    && let Some(at) = late.escaped_at
+                {
+                    self.inputs.restart(target, at);
+                }
+                self.late_pending = Some((app, end));
+            }
+        }
+    }
+
+    /// When the engine must next act with no request: the earliest pending `FocusOut` (`focus_timer.rs`).
+    pub fn next_due(&self) -> Option<Instant> {
+        self.inputs.next_due()
+    }
+
+    /// Between requests: an after-release watch that has ended is collected (its Escape restarting its window's
+    /// timer), then every `FocusOut` due is sent, each reported on a `--stats` line of its own.
+    pub fn tick(&mut self) {
+        self.collect_late_watch(false);
+        self.inputs.fire_due(&mut self.x);
+        self.report_sent();
+    }
+
+    /// The `FocusOut`s sent outside any request, each on a `--stats` line of its own: `{"stats": {"id": null, "focus_out":
+    /// …}}`.
+    fn report_sent(&mut self) {
+        let sent = self.inputs.take_sent();
+        if self.cfg.stats {
+            for record in sent.iter().map(Sent::record) {
+                eprintln!("{}", json!({ "stats": { "id": null, "focus_out": [record] } }));
+            }
         }
     }
 
@@ -594,10 +645,13 @@ impl Engine {
         Ok(dir)
     }
 
-    /// The orderly exit: every key still held released and every open input session closed, the clipboard's owner
-    /// stopped (CLIPBOARD goes with it, as the vendor's does), then the screenshot directory removed.
+    /// The orderly exit: every key still held released and every input session ended, each pending `FocusOut` waited
+    /// out (at most the delay; `route.rs`), the clipboard's owner stopped (CLIPBOARD goes with it, as the vendor's does),
+    /// then the screenshot directory removed.
     pub fn shutdown(&mut self) {
+        self.collect_late_watch(false);
         self.inputs.release_everything(&mut self.x);
+        self.report_sent();
         let _ = self.x.flush();
         self.clipboard = None;
         if let Some(dir) = self.shot_dir.take() {

@@ -255,9 +255,20 @@ pub fn find_launchable<'e>(entries: &'e [Entry], app: &str) -> Result<&'e Entry,
 
 /// Starts the entry's program with its arguments, its standard streams on `/dev/null`, in the engine's directory and
 /// environment; the answer does not wait for it. The caller reaps the child once it has exited (`Launched`).
+/// The engine blocks its stop signals in every thread (serve.rs), and a child keeps its parent's signal mask (the
+/// standard library's `Command` does not reset it; `a_launched_program_starts_with_the_stop_signals_unblocked`), so the
+/// program unblocks them before it runs: without that, it would ignore SIGTERM.
 pub fn launch(entry: &Entry) -> std::io::Result<std::process::Child> {
+    use std::os::unix::process::CommandExt;
     use std::process::{Command, Stdio};
-    Command::new(&entry.argv[0])
+    let stops = crate::serve::stop_set();
+    let mut command = Command::new(&entry.argv[0]);
+    // SAFETY: the hook runs in the child between fork and exec, where only async-signal-safe work may run: one system
+    // call on a set built before the fork (`serve::unblock_stop_signals`)
+    unsafe {
+        command.pre_exec(move || crate::serve::unblock_stop_signals(&stops));
+    }
+    command
         .args(&entry.argv[1..])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -340,6 +351,62 @@ mod launched_tests {
         std::thread::sleep(std::time::Duration::from_millis(300));
         launched.reap();
         assert_eq!(launched.len(), 1, "the sleeper runs on");
+    }
+
+    #[test]
+    fn a_launched_program_starts_with_the_stop_signals_unblocked() {
+        let blocked = |status: &str| {
+            let mask = status.lines().find_map(|l| l.strip_prefix("SigBlk:")).unwrap().trim();
+            u64::from_str_radix(mask, 16).unwrap()
+        };
+        let stops: u64 = [linux_signal::TERM, linux_signal::INT, linux_signal::HUP]
+            .iter()
+            .map(|s| 1u64 << (s - 1))
+            .sum();
+        let dir = std::env::temp_dir().join(format!("cua-engine-launch-mask-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let status_of = |name: &str, launch: &dyn Fn(&[&str]) -> std::process::Child| {
+            // the program itself copies its own status (a shell would reset the mask for what it runs)
+            let file = dir.join(name);
+            let target = file.display().to_string();
+            let mut child = launch(&["/bin/cp", "/proc/self/status", &target]);
+            child.wait().unwrap();
+            std::fs::read_to_string(file).unwrap()
+        };
+        let entry = |argv: &[&str]| Entry {
+            id: "probe.desktop".into(),
+            name: "probe".into(),
+            argv: argv.iter().map(|s| s.to_string()).collect(),
+            startup_wm_class: None,
+            path: PathBuf::new(),
+        };
+        // from a thread that blocks them, as every engine thread does
+        let (plain, launched) = std::thread::scope(|scope| {
+            scope
+                .spawn(|| {
+                    crate::serve::block_stop_signals().unwrap();
+                    let plain = status_of("plain", &|argv| {
+                        std::process::Command::new(argv[0]).args(&argv[1..]).spawn().unwrap()
+                    });
+                    (plain, status_of("launched", &|argv| launch(&entry(argv)).unwrap()))
+                })
+                .join()
+                .unwrap()
+        });
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert_eq!(
+            blocked(&plain) & stops,
+            stops,
+            "a plain Command keeps the mask: {plain}"
+        );
+        assert_eq!(blocked(&launched) & stops, 0, "{launched}");
+    }
+
+    /// The stop signals' numbers on Linux.
+    mod linux_signal {
+        pub const HUP: i32 = 1;
+        pub const INT: i32 = 2;
+        pub const TERM: i32 = 15;
     }
 }
 

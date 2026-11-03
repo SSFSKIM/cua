@@ -272,6 +272,9 @@ pub struct LateDrop {
     pub escape_after_release: Duration,
     /// Whether the cancel's Escape went out.
     pub escaped: bool,
+    /// When the Escape went out, if it did: input to the target that restarts its pending `FocusOut` timer
+    /// (`focus_timer.rs`).
+    pub escaped_at: Option<Instant>,
 }
 
 /// How the after-release watch ended.
@@ -306,6 +309,8 @@ pub struct LateWatch {
     thread: Option<std::thread::JoinHandle<WatchEnd>>,
     /// The application the reports name, set once the drag hands the watch over.
     pub app: String,
+    /// The window a late take's Escape goes to.
+    pub target: Window,
 }
 
 impl LateWatch {
@@ -319,6 +324,7 @@ impl LateWatch {
                 notes,
                 thread: Some(thread),
                 app: String::new(),
+                target,
             }),
             Ok(Err(error)) => Err(anyhow::anyhow!("the drag-and-drop watch could not start: {error}")),
             Err(_) => Err(anyhow::anyhow!("the drag-and-drop watch did not start")),
@@ -367,6 +373,7 @@ impl LateWatch {
             notes: std::sync::mpsc::channel().0,
             thread: Some(thread),
             app: "app".into(),
+            target: 0,
         }
     }
 }
@@ -421,10 +428,12 @@ fn watch_loop(
         if let Some(at) = released {
             if let Some((time, seen)) = taken {
                 let escaped = cancel(time);
+                let now = Instant::now();
                 return WatchEnd::Late(LateDrop {
                     after_release: seen.saturating_duration_since(at),
-                    escape_after_release: at.elapsed(),
+                    escape_after_release: now.saturating_duration_since(at),
                     escaped,
+                    escaped_at: escaped.then_some(now),
                 });
             }
             if at.elapsed() >= SETTLE {
@@ -761,6 +770,18 @@ mod tests {
             at - late.after_release < Duration::from_millis(10),
             "the Escape within a poll of the take: {late:?}, Escape at {at:?}"
         );
+        // when it went out, for the target's FocusOut timer, which the Escape restarts (focus_timer.rs)
+        let escaped_at = late.escaped_at.expect("an Escape that went out has its instant");
+        assert!(escaped_at >= released + late.after_release && escaped_at <= Instant::now());
+    }
+
+    #[test]
+    fn a_cancel_whose_escape_did_not_go_out_restarts_no_timer() {
+        let (notes, inbox) = std::sync::mpsc::channel();
+        notes.send(Note::Released { at: Instant::now() }).unwrap();
+        let end = watch_loop(&inbox, || {}, || Ok(Some(7)), || Ok(()), |_| false);
+        let WatchEnd::Late(late) = end else { panic!("{end:?}") };
+        assert!(!late.escaped && late.escaped_at.is_none());
     }
 
     #[test]

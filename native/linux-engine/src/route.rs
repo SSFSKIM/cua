@@ -6,13 +6,21 @@
 //! requests) until its last hold is released, and the held keys' counts are shared with every later request to the
 //! same target. The desktop's counts are one set, whichever window a foreground hold was made for: XTEST's keys are
 //! the server's.
+//!
+//! A session no hold keeps waits on its `FocusOut` timer once its request's input ends (`focus_timer.rs`; M4's T7):
+//! the next background input to the same window takes it back with no `FocusOut` between, and any other input (to
+//! another window, through the desktop or the foreground route) first flushes every pending timer, waiting out the rest
+//! of each window's delay.
 
 use std::collections::HashMap;
+use std::time::Instant;
 
 use anyhow::Result;
+use serde_json::Value;
 use x11rb::protocol::xproto::Window;
 
 use crate::desktop::Desktop;
+use crate::focus_timer::{Cause, Sent, Timers, Wall};
 use crate::input::{Pacing, Session};
 use crate::x11::X11;
 
@@ -57,13 +65,18 @@ impl Holds {
     }
 }
 
-/// The input state of the engine's life: the open sessions of windows with held keys, the desktop's held keys and
-/// the holds themselves.
+/// The input state of the engine's life: the open sessions of windows with held keys, the sessions waiting on their
+/// `FocusOut` timer, the desktop's held keys and the holds themselves.
 pub struct Inputs {
     pub pacing: Pacing,
     pub sessions: HashMap<Window, Session>,
+    timers: Timers<Session>,
     pub desktop: Desktop,
     pub holds: Holds,
+    /// The id of the request being handled, which a timer its input starts names (`Sent::scheduled_by`).
+    pub request: Value,
+    /// The `FocusOut`s sent and not yet reported (`take_sent`).
+    sent: Vec<Sent>,
 }
 
 /// A request's route while it runs: a window's session, or the desktop, with the window a foreground request's
@@ -78,14 +91,19 @@ impl Inputs {
         Inputs {
             pacing,
             sessions: HashMap::new(),
+            timers: Timers::new(pacing.teardown),
             desktop: Desktop::new(pacing.key),
             holds: Holds::default(),
+            request: Value::Null,
+            sent: Vec::new(),
         }
     }
 
-    /// Runs `body` on the target's route. A window's session is the held one if its keys are held, else opened for
-    /// this request; afterwards it stays open while the window has holds, with any button still down released and
-    /// its grab dropped, and is closed otherwise (whatever the body's outcome; the body's error wins).
+    /// Runs `body` on the target's route. Every other window's pending `FocusOut` timer is flushed first (a window's
+    /// own is kept for more background input to it). A window's session is the held one if its keys are held, else the
+    /// one waiting on its timer, else opened for this request; afterwards it stays open while the window has holds,
+    /// with any button still down released and its grab dropped, and otherwise ends its input and waits on its timer
+    /// (whatever the body's outcome; the body's error wins).
     pub fn with_route<T>(
         &mut self,
         x: &mut X11,
@@ -93,14 +111,22 @@ impl Inputs {
         body: impl FnOnce(&mut X11, &mut Route, &mut Holds) -> Result<T>,
     ) -> Result<T> {
         match target {
-            Target::Desktop => body(x, &mut Route::Desktop(&mut self.desktop, None), &mut self.holds),
+            Target::Desktop => {
+                self.flush(x, None, Cause::Flush);
+                body(x, &mut Route::Desktop(&mut self.desktop, None), &mut self.holds)
+            }
             Target::Foreground(window) => {
+                self.flush(x, None, Cause::Flush);
                 body(x, &mut Route::Desktop(&mut self.desktop, Some(window)), &mut self.holds)
             }
             Target::Window(window) => {
+                self.flush(x, Some(window), Cause::Flush);
                 let mut session = match self.sessions.remove(&window) {
                     Some(session) => session,
-                    None => Session::open(x, window, self.pacing)?,
+                    None => match self.timers.resume(window) {
+                        Some(session) => session.resume(x)?,
+                        None => Session::open(x, window, self.pacing)?,
+                    },
                 };
                 let result = body(x, &mut Route::Window(&mut session), &mut self.holds);
                 if self.holds.any_for(target) {
@@ -108,20 +134,67 @@ impl Inputs {
                     session.release_buttons(x);
                     self.sessions.insert(window, session);
                 } else {
-                    session.close(x);
+                    session.finish(x);
+                    self.defer(x, window, session);
                 }
                 result
             }
         }
     }
 
-    /// The engine's exit: every key still held is released in reverse press order, and every open session closed.
+    /// A session whose input has ended put on its `FocusOut` timer; with no delay (`--teardown-ms 0`) it ends at once.
+    fn defer(&mut self, x: &mut X11, window: Window, session: Session) {
+        self.timers.start(window, session, Instant::now(), self.request.clone());
+        if self.pacing.teardown.is_zero() {
+            self.fire_due(x);
+        }
+    }
+
+    /// Every pending timer but `keep`'s waited out and its session ended (`focus_timer.rs`), recorded as `cause`.
+    fn flush(&mut self, x: &mut X11, keep: Option<Window>, cause: Cause) {
+        let sent = self.timers.flush(keep, cause, &mut Wall, |_, session| session.end(x));
+        self.sent.extend(sent);
+    }
+
+    /// The ordinary flush before input that goes to no background session (a paste's observation, an activation):
+    /// every pending timer waited out, its window's own included.
+    pub fn flush_all(&mut self, x: &mut X11) {
+        self.flush(x, None, Cause::Flush);
+    }
+
+    /// Every timer due by now fired.
+    pub fn fire_due(&mut self, x: &mut X11) {
+        let sent = self.timers.fire_due(&Wall, |_, session| session.end(x));
+        self.sent.extend(sent);
+    }
+
+    /// When the next pending `FocusOut` is due.
+    pub fn next_due(&self) -> Option<Instant> {
+        self.timers.next_due()
+    }
+
+    /// Input that reached `window` by another route at `at` (the late-take Escape): its pending timer restarts.
+    pub fn restart(&mut self, window: Window, at: Instant) {
+        self.timers.restart(window, at);
+    }
+
+    /// The `FocusOut`s sent since the last call, for the `--stats` line.
+    pub fn take_sent(&mut self) -> Vec<Sent> {
+        std::mem::take(&mut self.sent)
+    }
+
+    /// The engine's exit: every key still held released in reverse press order (the desktop's first, so nothing real
+    /// stays down while the background drains), then every pending `FocusOut` timer drained: waited out, at most the
+    /// delay, the released holds' windows' timers starting at their release.
     pub fn release_everything(&mut self, x: &mut X11) {
         self.holds = Holds::default();
-        for (_, session) in self.sessions.drain() {
-            session.close(x);
-        }
         self.desktop.release_all(x);
+        let held: Vec<(Window, Session)> = self.sessions.drain().collect();
+        for (window, mut session) in held {
+            session.finish(x);
+            self.timers.start(window, session, Instant::now(), self.request.clone());
+        }
+        self.flush(x, None, Cause::Exit);
     }
 }
 

@@ -182,6 +182,9 @@ impl Engine {
             }),
         );
         let keycodes = chord_keycodes(&self.x, chord)?;
+        // A paste observes its field before it acts: every pending FocusOut timer is waited out first, its own window's
+        // included, so keys sent just before it have arrived and the paste opens a session of its own (M4's T7)
+        self.inputs.flush_all(&mut self.x);
         // The element: the one named, resolved with its ancestors for the focusing click's point; else the window's
         // focused element, looked for once the session's synthetic focus is in (a background Chrome reports its
         // address bar focused only then).

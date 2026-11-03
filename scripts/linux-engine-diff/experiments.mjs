@@ -22,6 +22,7 @@ import { join } from 'node:path';
 
 import { elementClick, partialCover } from './clicks.mjs';
 import { Engine } from './engine.mjs';
+import { runAtspi } from './atspi-probe.mjs';
 import { runDrag } from './drag.mjs';
 import { runEvents } from './events.mjs';
 import { runDnd } from './dnd.mjs';
@@ -306,6 +307,15 @@ export async function runExperiment(args) {
   mkdirSync(args.out, { recursive: true });
   const results = join(args.out, 'results.jsonl');
   const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);
+  if (args.experiment === 'atspi') {
+    // on a private X server of its own, the only display it may reach (atspi-probe.mjs); nothing runs before it exists
+    emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, started: new Date().toISOString() });
+    const { md, complete, failed, ending } = await runAtspi(args, { emit, run });
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    process.stdout.write(`${md.join('\n')}\n`);
+    writeSummary(args.out);
+    return complete;
+  }
   emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), started: new Date().toISOString() });
   if (args.experiment === 'events') {
     // on a private X server of its own, watched as a Desktop's display is (events.mjs): no scene windows, no desktop

@@ -193,6 +193,30 @@ export const FAMILIES = {
     geometry: [600, 400],
     launch: (ctx) => qtLaunch(ctx, 'qt5', 'fusion'),
   },
+  // M4 T6: the AT-SPI probe's scenes (atspi-probe.mjs): a GTK 4 window and a Qt 5 and Qt 6 one holding open menus, a
+  // tree that changes on a timer, and (GTK 4) text widgets recording the signals their edits raise, to a record file;
+  // `mode` (openFamily's) names the GTK 4 scene's (pages/atspi-gtk4.py)
+  'atspi-gtk4': {
+    title: 'GTK 4 AT-SPI probe (harness scene)',
+    gtk4: true,
+    kind: 'atspi',
+    geometry: [600, 400],
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'atspi-gtk4.py'), ctx.label, join(ctx.dir, 'record.jsonl'), ctx.mode ?? 'menus'], match: (w) => w.title === ctx.label, record: join(ctx.dir, 'record.jsonl') }),
+  },
+  'atspi-qt5': {
+    title: 'Qt 5 AT-SPI probe (harness scene)',
+    qt: true,
+    kind: 'atspi',
+    geometry: [600, 400],
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'atspi-qt.py'), ctx.label, join(ctx.dir, 'record.jsonl'), 'qt5'], match: (w) => w.title === ctx.label, record: join(ctx.dir, 'record.jsonl') }),
+  },
+  'atspi-qt6': {
+    title: 'Qt 6 AT-SPI probe (harness scene)',
+    qt: true,
+    kind: 'atspi',
+    geometry: [600, 400],
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'atspi-qt.py'), ctx.label, join(ctx.dir, 'record.jsonl'), 'qt6'], match: (w) => w.title === ctx.label, record: join(ctx.dir, 'record.jsonl') }),
+  },
   'gtk-scale': {
     title: 'GTK 3 scale (harness scene)',
     kind: 'scale',
@@ -422,10 +446,11 @@ export function vteLaunch(ctx, { client = terminalClient() } = {}) {
  * device-xterm), so each window has its own title and scratch directory. `env`: the application's own variables.
  * `bridge: false` skips a Qt family's check of the session's accessibility switches (`assertQtBridge`), for the one
  * experiment that opens Qt with them off on purpose (qt-bridge.mjs). `warmUp`: the run's GTK 4 warm-up window itself
- * (`warmGtk4`), opened and settled with no targets resolved. Returns the scene: `{kind: 'family', family, id, pid,
+ * (`warmGtk4`), opened and settled with no targets resolved. `mode`: a harness scene's own mode (the AT-SPI probe's
+ * GTK 4 scene, pages/atspi-gtk4.py). Returns the scene: `{kind: 'family', family, id, pid,
  * group, ...targets}`.
  */
-export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null, motion = false, stem = name, bridge = true, warmUp = false } = {}) {
+export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null, mode = null, motion = false, stem = name, bridge = true, warmUp = false } = {}) {
   const family = FAMILIES[name];
   if (!family) throw new Error(`unknown family ${name}`);
   // the run's first GTK 4 window comes after the run's own warm-up has filled the shader cache of the run's home
@@ -438,7 +463,7 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
   } else {
     // a stopping run opens nothing more (scenes.mjs `stop`); the process is registered as soon as it is started
     desktop.assertOpen();
-    const ctx = { label, dir: join(desktop.dir, label), geometry, page, doc, motion };
+    const ctx = { label, dir: join(desktop.dir, label), geometry, page, doc, mode, motion };
     mkdirSync(ctx.dir, { recursive: true });
     const spec = family.launch(ctx);
     // the application's own variables only: the rest of its environment is the run's (scenes.mjs `appEnvironment`)

@@ -790,6 +790,41 @@ variants included; their evidence is written either way. The run's `end` row kee
 - **The drag-and-drop experiment's probes** (`withDropProbes`): each drag's `XdndSelection` watcher and grab sampler
   are stopped whatever happens, each stop tried on its own.
 
+## M4 T6's addition: the AT-SPI probe (`--experiment atspi`)
+
+One probe pass for the spec's two AT-SPI questions (Plan of Work, M4, T6): whether `Cache.GetItems` could stand in for
+the per-element tree read, and what GTK 4's `EditableText` does. It is a read-only instrument, never a gate, and it
+changes no engine.
+
+```bash
+node scripts/linux-engine-diff.mjs --experiment atspi --cua "$INSTALLED" --out "$OUT/atspi" [--family <list>]
+```
+
+- **Its display.** It starts its own private X server (`startPrivateServer`, under its watchdog, marked private) and
+  Openbox there, and runs the harness's own Desktop on it: every application through the one spawner, in the run's
+  homes, under the run's session bus and its own accessibility bus launcher. Before anything starts it withdraws the
+  entry point's live-run declaration, so the spawner refuses every display the process did not create, `:0` included;
+  the shell's DISPLAY is never read. Its accessibility bus is its own display's, so the probe never appears in another
+  run's bus trace, and a bus-traced verdict run never sees it. No whole-run RECORD runs (only the probe's own windows
+  are on the display, and RECORD can freeze the server, task 41).
+- **`Cache.GetItems`** (`atspi-probe.mjs`, read by `atspi-cache.mjs`): each family of the matrix (or `--family`) opened
+  once; its application asked at `/org/a11y/atspi/cache`, the answer's signature taken from the answer (the current
+  `a((so)(so)(so)iiassusau)` or Qt's legacy `a((so)(so)(so)a(so)assusau)`; Qt's introspection data advertises a third
+  shape its answers do not have) beside the advertised one; the window's subtree rebuilt from the answer alone and
+  compared with cua-engine's read of the same window, node by node: the numbers through libatspi's role table
+  (`ATSPI_ROLE_NAMES`) against `GetRoleName`, Name, Description, the vendor's states and the children in order, with the
+  -1 sentinels and the answer's own inconsistencies counted, and each node only the cache holds asked about directly.
+  Then the adoption rule's cases: `pages/atspi-gtk4.py` and `pages/atspi-qt.py` open their own menus (the probe sends no
+  input) and change their trees every 250 ms, recording each change; the changing tree is read in 30 pairs (the answer,
+  then the per-element read), each pair quiet or straddling a change by that record, compared whole, by structure
+  (everything but the role names) and by its moving parts. The verdict (`adoptionReasons`) lists what stands against
+  adoption.
+- **GTK 4's `EditableText`**, in a text view and an entry of `pages/atspi-gtk4.py` (which record the signals their edits
+  raise) and in gnome-text-editor's document, each a window of the probe's: the interfaces and methods offered, then one
+  XTEST key, `InsertText` away from it, and two XTEST Ctrl+Z, each step's text read back up to `CharacterCount` (GTK
+  4.14's entry answers `GetText(0, -1)` with nothing); a control in a window of its own (the key, then one Ctrl+Z) shows
+  each widget's undo working without `InsertText`. These are the probe's only writes, into windows it opened.
+
 ## Files
 
 | File | What it is |
@@ -822,3 +857,4 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
 | `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |
+| `atspi-probe.mjs`, `atspi-cache.mjs`, `pages/atspi-gtk4.py`, `pages/atspi-qt.py` | M4 T6's AT-SPI probe on its own private display: `Cache.GetItems` over the matrix and GTK 4's `EditableText`, the answers' reading and comparison, and its GTK 4 and Qt scenes |

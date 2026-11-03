@@ -39,6 +39,9 @@ const ISOLATION = {
   'qt5-fusion': (l) => l.cmd === 'python3' && l.args[0] === '-I',
   'gtk-scale': (l) => l.cmd === 'python3' && l.args[0] === '-I',
   'gtk-table': (l) => l.cmd === 'python3' && l.args[0] === '-I',
+  'atspi-gtk4': (l) => l.cmd === 'python3' && l.args[0] === '-I',
+  'atspi-qt5': (l) => l.cmd === 'python3' && l.args[0] === '-I',
+  'atspi-qt6': (l) => l.cmd === 'python3' && l.args[0] === '-I',
 };
 
 test('every family launches an instance of its own, and every family is classified', () => {

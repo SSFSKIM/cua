@@ -38,6 +38,15 @@
 // record's client line (its id is the range's base, the mask the record's `ready` line names, for the client lines
 // before it as well), until its death, a new client line under its id, or its base handed to another connection.
 // Without a known mask nothing is exempt.
+//
+// In an engine's route audit, XTEST input lands where the focus or the pointer is, not on a window the request names
+// (task 53; the design session's ruling, sminos 338). Its target is the harness's when, at the event, it is a window in a
+// live harness window's client range (GTK 4's focus window inside its toplevel), or the window manager's frame whose
+// client child is a live harness window, with parentage from the trace's own QueryTree replies or ReparentNotify (the
+// audit's watcher, xprobe ancestry, puts both into the trace), never read afterwards. A harness window lends its client's
+// range only while the trace would see it end: one of our connections selected its structure, so its DestroyNotify
+// reaches the trace; otherwise a window whose end the trace missed would lend a range the server may since have handed
+// to another client. A ReparentNotify another client sent (SendEvent) proves nothing and is not read.
 
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -70,10 +79,12 @@ const SPAN_SLACK_MS = 250;
  * one life of the id alive then). `strictBirth`: a registered window is the harness's only in a life the stream saw
  * begin (the record sees every client; xtrace sees only ours, so there a registered window's first life counts).
  * `spans`: the harness's operations on its windows, `{window, start, end}` (ms since the epoch), during which the
- * window's client's popups are the window's (the record times both). Returns `{clean, traced, requests, mutating,
- * foreign, unplaced, unattributed}`.
+ * window's client's popups are the window's (the record times both). `routeAudit`: an engine's route audit (xtrace),
+ * where XTEST input on a window of a live, watched harness window's client is that window's. Returns `{clean, traced,
+ * requests, mutating, foreign, unplaced, unattributed}`; an XTEST finding carries its window's `parent` as the stream
+ * last showed it.
  */
-export function judgeForeign(elements, { registered, root, strictBirth = false, spans = [] }) {
+export function judgeForeign(elements, { registered, root, strictBirth = false, spans = [], routeAudit = false }) {
   const found = registered instanceof Map ? registered : new Map([...(registered ?? [])].map((id) => [id, null]));
   const clients = new Map();
   const lives = new Map();
@@ -94,6 +105,8 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
   const bases = new Map();
   // each live connection's own resource-id range, `{base, mask}`, for that connection's life
   const ranges = new Map();
+  // the server's resource-id mask, the same for every client, as a connection's setup showed it (xtrace)
+  let serverMask;
   const own = (c, w) => {
     const range = ranges.get(c);
     return range !== undefined && typeof w === 'number' && ((w & ~range.mask) >>> 0) === range.base;
@@ -181,7 +194,22 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     return false;
   };
   const harness = (w) => within(w) || holds(w);
-  const flag = (el, what, window) => foreign.push({ client: clients.get(el.c)?.name ?? null, conn: el.c, seq: el.seq, what, window, text: el.text ?? null });
+  // a route audit's XTEST input on a window of a live harness window's client (GTK 4's focus window inside its toplevel,
+  // task 50): that client's range is its own while the window lives, and the trace sees the window end only where one
+  // of our connections selected its structure (xprobe ancestry, the engine's retention), so only such a window, alive
+  // at the event, lends its client's range
+  const inLiveRange = (w) => {
+    if (!routeAudit || serverMask === undefined || typeof w !== 'number' || w === root) return false;
+    const base = (id) => (id & ~serverMask) >>> 0;
+    for (const h of found.keys()) {
+      if (typeof h !== 'number' || h === root || base(h) !== base(w)) continue;
+      const life = lives.get(h);
+      if (life?.alive && life.watched && isRegistered(h, life)) return true;
+    }
+    return false;
+  };
+  // XTEST input's finding says where the stream had its window then, so a red can be read without the trace
+  const flag = (el, what, window) => foreign.push({ client: clients.get(el.c)?.name ?? null, conn: el.c, seq: el.seq, what, window, text: el.text ?? null, ...(el.op === 'FakeInput' && typeof window === 'number' ? { parent: lives.get(window)?.parent ?? null } : {}) });
 
   for (const el of elements) {
     if (el.k === 'client') {
@@ -206,6 +234,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
       // and whatever it was asked for: a grant of a connection that had the base, or to a window of that client's
       revoke((g) => g.c === el.c || (bases.get(g.c) === el.base && g.c !== el.c) || inBase(g.requestor));
       bases.set(el.c, el.base);
+      serverMask = el.mask;
       // the range is the new connection's; whichever connection had it before is gone
       for (const [c, range] of ranges) if (c !== el.c && range.base === el.base >>> 0) ranges.delete(c);
       ranges.set(el.c, { base: el.base >>> 0, mask: el.mask });
@@ -225,6 +254,14 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
       // xtrace: a reply showed where a window lies
       if (typeof el.w !== 'number' || typeof el.parent !== 'number') continue;
       lifeOf(el.w).replyParent = el.parent;
+      setParent(el.w, el.parent);
+      continue;
+    }
+    if (el.k === 'reparent') {
+      // xtrace: the server moved a window to another parent (a ReparentNotify one of our connections selected). Its
+      // container is the new parent; a window moved in keeps the owner it had, so what an earlier reply placed it in
+      // no longer counts
+      lifeOf(el.w).replyParent = undefined;
       setParent(el.w, el.parent);
       continue;
     }
@@ -266,6 +303,8 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
     }
 
     requests++;
+    // our own selection of a window's structure: its end reaches the trace from here, for this life of it
+    if (el.op === 'ChangeWindowAttributes' && el.structure === true && !rejected && typeof el.window === 'number') lifeOf(el.window).watched = true;
     const change = changeOf(el, root);
     if (!change) continue;
     mutating++;
@@ -279,7 +318,7 @@ export function judgeForeign(elements, { registered, root, strictBirth = false, 
       continue;
     }
     for (const w of new Set(change.windows)) {
-      if (typeof w === 'number' && w !== root && (harness(w) || own(el.c, w))) continue;
+      if (typeof w === 'number' && w !== root && (harness(w) || own(el.c, w) || (el.op === 'FakeInput' && inLiveRange(w)))) continue;
       flag(el, change.what, w);
     }
     if (rejected) continue;
@@ -435,6 +474,11 @@ function attributeKeys(text) {
   return [...list.matchAll(/(?:^|\s)([a-z-]+)=/g)].map((m) => m[1]);
 }
 
+/** The events a ChangeWindowAttributes line selects, by xtrace's names (`event-mask=StructureNotify,PropertyChange`). */
+function selectedEvents(text) {
+  return text.match(/value-list=\{(?:.*\s)?event-mask=([A-Za-z,]+)/)?.[1]?.split(',') ?? [];
+}
+
 const CORE_OPS = { 1: 'CreateWindow', 2: 'ChangeWindowAttributes', 4: 'DestroyWindow', 5: 'DestroySubwindows', 7: 'ReparentWindow', 8: 'MapWindow', 9: 'MapSubwindows', 10: 'UnmapWindow', 11: 'UnmapSubwindows', 12: 'ConfigureWindow', 13: 'CirculateWindow', 15: 'QueryTree', 18: 'ChangeProperty', 19: 'DeleteProperty', 20: 'GetProperty', 25: 'SendEvent', 38: 'QueryPointer', 40: 'TranslateCoordinates', 41: 'WarpPointer', 42: 'SetInputFocus', 43: 'GetInputFocus', 113: 'KillClient', 114: 'RotateProperties' };
 const READS = new Set(['GetInputFocus', 'QueryPointer', 'QueryTree', 'TranslateCoordinates']);
 const COMPOSITE_OPS = { 1: 'RedirectWindow', 2: 'RedirectSubwindows', 3: 'UnredirectWindow', 4: 'UnredirectSubwindows' };
@@ -458,7 +502,7 @@ function xtraceRequest(r, extensions) {
       case 'ReparentWindow':
         return { ...base, op, window: field(text, 'window'), parent: field(text, 'parent') };
       case 'ChangeWindowAttributes':
-        return { ...base, op, window: field(text, 'window'), attributes: attributeKeys(text) };
+        return { ...base, op, window: field(text, 'window'), attributes: attributeKeys(text), structure: selectedEvents(text).includes('StructureNotify') };
       case 'ChangeProperty':
         return { ...base, op, window: field(text, 'window'), property: atom(text, 'property'), incr: atomName(text, 'type') === 'INCR', empty: /\bdata=(?:''|)$/.test(text) };
       case 'DeleteProperty':
@@ -561,6 +605,12 @@ export function xtraceElements({ elements, extensions }, root) {
     } else if (what === 'DestroyNotify') {
       const w = field(text, 'window');
       if (typeof w === 'number') out.push({ k: 'destroyed', w });
+    } else if (what === 'ReparentNotify') {
+      // a window moved to another parent, as the server reported it to a connection that selected its structure (xprobe
+      // ancestry, on a route audit's window); one another client sent says only what that client wrote
+      const w = field(text, 'window');
+      const parent = field(text, 'parent');
+      if (!item.generated && typeof w === 'number' && typeof parent === 'number') out.push({ k: 'reparent', w, parent });
     } else if (what === 'SelectionRequest') {
       const requestor = field(text, 'requestor');
       const p = field(text, 'property');
@@ -591,10 +641,12 @@ export function xtraceElements({ elements, extensions }, root) {
 
 /**
  * The audit of an xtrace trace (the harness's own, and each engine's route audit): `registered`, the harness's windows
- * (a Set or a Map, see `judgeForeign`). A trace with no requests is not clean: its clients did not go through the proxy.
+ * (a Set or a Map, see `judgeForeign`); `routeAudit` for an engine's route audit, where XTEST input on a window of a live
+ * harness window's client is that window's (`judgeForeign`). A trace with no requests is not clean: its clients did not
+ * go through the proxy.
  */
-export function auditForeign(trace, { registered, root }) {
-  return judgeForeign(xtraceElements(trace, root), { registered, root });
+export function auditForeign(trace, { registered, root, routeAudit = false }) {
+  return judgeForeign(xtraceElements(trace, root), { registered, root, routeAudit });
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

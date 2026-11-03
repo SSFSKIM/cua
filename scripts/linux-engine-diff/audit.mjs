@@ -20,10 +20,10 @@ const QUERY = /^(\d+):<:([0-9a-f]+):.*Request\(98\): QueryExtension name='([^']+
 const QUERY_REPLY = /^(\d+):>:([0-9a-f]+):.*Reply to QueryExtension: present=true\S* major-opcode=(\d+)/;
 /**
  * The server's lines the foreign-window judge reads (foreign.mjs): the replies that say where a window lies, where the
- * focus and the pointer are, the errors that refuse a request, the events that end a window or ask for a selection,
- * and each connection's resource-id base.
+ * focus and the pointer are, the errors that refuse a request, the events that end a window, move it to another parent
+ * or ask for a selection, and each connection's resource-id base.
  */
-const SERVER = /^(\d+):>:(?:([0-9a-f]+):(?:\d+: Reply to (QueryTree|TranslateCoordinates|GetInputFocus|QueryPointer): |(Error) \d+=\w+: | Event (?:\(generated\) )?(SelectionRequest|DestroyNotify)\(\d+\) )| (Success), )(.*)$/;
+const SERVER = /^(\d+):>:(?:([0-9a-f]+):(?:\d+: Reply to (QueryTree|TranslateCoordinates|GetInputFocus|QueryPointer): |(Error) \d+=\w+: | Event (?:\(generated\) )?(SelectionRequest|DestroyNotify|ReparentNotify)\(\d+\) )| (Success), )(.*)$/;
 
 /** A parse's state, and one trace line read into it (`parseXtrace`, `parseXtraceFile`). */
 const parseState = () => ({ requests: [], elements: [], extensions: {}, asked: new Map(), offset: 0 });
@@ -37,7 +37,9 @@ function readLine(state, line, keep) {
   if (r && state.asked.has(`${r[1]}|${r[2]}`)) state.extensions[state.asked.get(`${r[1]}|${r[2]}`)] = Number(r[3]);
   const s = line.match(SERVER);
   if (s) {
-    state.elements.push({ k: 'line', conn: Number(s[1]), seq: s[2] === undefined ? null : Number.parseInt(s[2], 16), what: s[3] ?? s[4] ?? s[5] ?? s[6], text: s[7].slice(0, 4000) });
+    // an event another client sent (SendEvent) is marked so: it reports what that client wrote, not what the server did
+    const generated = s[5] !== undefined && line.includes(' Event (generated) ');
+    state.elements.push({ k: 'line', conn: Number(s[1]), seq: s[2] === undefined ? null : Number.parseInt(s[2], 16), what: s[3] ?? s[4] ?? s[5] ?? s[6], text: s[7].slice(0, 4000), ...(generated ? { generated } : {}) });
     return;
   }
   const m = line.match(REQUEST);

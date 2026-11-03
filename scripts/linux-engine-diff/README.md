@@ -9,9 +9,9 @@ operation's X requests. M0 cut it; M1a.3 gave it the full operation set, the aud
 large-table scenes, `--via vendor-js` and the declared deviations.
 
 Run it on an X11 desktop with AT-SPI on (the #171 VM), in the X session's environment. The scenes are windows it
-opens, owns and closes: gedit on scratch files it writes, Chrome windows (in the running Chrome) on its pages under
-`pages/` with unique titles, and an xterm that holds the focus so every scene window is a background window. Nothing
-is logged of windows it did not open, beyond `list_windows` digests and counts.
+opens, owns and closes: gedit on scratch files it writes, Chrome windows (in the run's own Chrome, below) on its pages
+under `pages/` with unique titles, and an xterm that holds the focus so every scene window is a background window.
+Nothing is logged of windows it did not open, beyond `list_windows` digests and counts.
 
 ```bash
 cargo build --release --offline --manifest-path scripts/linux-engine-diff/xprobe/Cargo.toml   # the witness and probes
@@ -84,6 +84,41 @@ still a dev run, or better the workflow's own artifact.
 
 The experiments (`--experiment`) take `--cua` as before and are not gates.
 
+## Instances of the run's own (task 43)
+
+The harness never hands a window to, starts on, or takes over a person's application instance or profile, on any
+display. A Chrome started without `--user-data-dir` takes the person's profile: on 2026-11-02 a run on a private
+display did, and when the owner's Chrome (on a frozen `:0`) missed the profile's singleton handshake, the newcomer
+killed it.
+
+- **Chrome** (`chrome.mjs`): one instance per run, on `<scratch>/chrome-profile`, a directory the run makes (mode
+  0700). Every Chrome window is an open of it (`Desktop.openChrome`, `openDuplicates`): `google-chrome` with the
+  run's `--user-data-dir`, `--no-first-run`, `--no-default-browser-check`, `--disable-search-engine-choice-screen`,
+  `--password-store=basic` (no use of the person's keyring), `--force-renderer-accessibility` and `--new-window
+  <page>`. The first open starts the browser; a later one hands its window to it through the run's profile. No flag
+  changes how Chrome renders, schedules or takes input. `assertOwnChrome` refuses any Chrome command line (`google-chrome`
+  and its channels, `chrome`, `chromium`, `chromium-browser`, by file name) whose profile is not one existing
+  directory, not a link, inside the run's scratch directory; `Desktop.spawnApp` refuses Chrome altogether. Windows
+  close as Chrome closes one (WM_DELETE_WINDOW); the run's end then stops the instance by the pids it spawned, each
+  only while `/proc/<pid>/cmdline` carries the run's `--user-data-dir` and no `--type=` (SIGTERM, SIGKILL after 10 s),
+  and removes the profile. The end row's `desktop.chrome` says what it stopped and what was left. A harness killed by
+  SIGKILL leaves its Chrome running.
+- **The families** (`families.mjs`): each starts as an instance of its own: gedit and gnome-text-editor
+  `--standalone`, kate `-n`, qtcreator on its own settings path, Firefox `--no-remote --new-instance` on a scratch
+  profile, LibreOffice on a scratch user installation, Electron on a scratch user data directory, gnome-terminal on a
+  terminal server of the scene's own (`/usr/libexec/gnome-terminal-server --app-id <scene>`, then the client for that
+  name: a plain `gnome-terminal` asks the session's running server, the person's), xterm and the Python scenes plain.
+  `instances.test.mjs` fails a family added without saying how it keeps to itself.
+- **A private display's session bus** (`session-bus.mjs`): on a display marked `CUA171_PRIVATE_DISPLAY`,
+  `Desktop.begin` starts a `dbus-daemon` of the run's own (listening in the run's scratch directory, its own process
+  group) before anything else of the run's, and every process the run starts inherits its address. It can start
+  exactly one service, the accessibility bus launcher (`org.a11y.Bus`): anything else a scene application asks for
+  (dconf's writer, a portal, gvfs, the keyring, a terminal server) is unknown at once, so nothing of the person's
+  session is reached or started. The run begins only once the launcher's bus is the display's `AT_SPI_BUS`, where
+  the engines, the oracle and the applications look first; the end stops the daemon's group and puts the harness's
+  own `DBUS_SESSION_BUS_ADDRESS` back. A person's display keeps the person's bus: there the families' isolation
+  carries it.
+
 ## What a run does
 
 - **Blocks.** A block is one engine, its process started fresh, then the cold sample (the first request, timed from
@@ -153,7 +188,7 @@ variants included; their evidence is written either way. The run's `end` row kee
   for the differential run. It records each family's `Application.ToolkitName` and version, its X11 class, and the
   tree source both cua-engine and the pinned build answer.
 - **Families** (`families.mjs`): `gedit`, `gnome-text-editor`, `kate`, `qtcreator`, `firefox`, `chrome` (a window of
-  the running Chrome), `electron` (cua's fixture, `scripts/native-matrix/fixtures/electron/`, run by the `electron`
+  the run's own Chrome), `electron` (cua's fixture, `scripts/native-matrix/fixtures/electron/`, run by the `electron`
   dev dependency's Linux build with `--force-renderer-accessibility`), `writer` (gtk3), `writer-gen` (X11 only),
   `xterm` and `xterm-allow` (`allowSendEvents` on). Each is started as its own process group with scratch settings
   (a scratch Firefox profile and Writer profile, gnome-text-editor's session directories, qtcreator's settings), on
@@ -466,8 +501,8 @@ variants included; their evidence is written either way. The run's `end` row kee
     sample invalid. The caps count the resample as before.
   - Every restore counts in its lane's total: the samples', the failed preparations', the warm-ups', the audit's
     (`text_restores` on its row) and the bus pass's. None of them adds a timed sample.
-- **A stopped run** (`stop.mjs`): SIGINT or SIGTERM stops the witness and closes every window the harness opened (its
-  Chrome scenes live in the person's Chrome) before the process exits 130 or 143.
+- **A stopped run** (`stop.mjs`): SIGINT or SIGTERM stops the witness, closes every window the harness opened, and
+  stops the run's Chrome and its session bus before the process exits 130 or 143.
 - **Every cleanup a case owes runs when it ends** (`Cases.guarded`): the engines, clipboard owners and target windows
   a case starts, whether it ends by its verdict or by an exception half-way through its setup; a sample's clipboard
   owner ends with the sample the same way (`runSample`). Each disposal establishes that what it ends is gone (an
@@ -662,6 +697,8 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `vendor-js.mjs` | `--via vendor-js`: the engines behind OpenAI's JavaScript client |
 | `readiness-check.mjs` | the engine's capture readiness judged by content, per family |
 | `scenes.mjs`, `stop.mjs` | the harness's windows and the reader that reads effects back; their cleanup on SIGINT or SIGTERM |
+| `chrome.mjs` | the run's own Chrome: its one launcher, the guard on every Chrome command line, its stop by the pids it spawned |
+| `session-bus.mjs` | a private display's session bus of the run's own, and its accessibility bus wired to the display |
 | `prepare.mjs` | the gate's rule for a sample whose harness-side preparation fails: one resample, the counts and caps |
 | `witness.mjs`, `xprobe/` | the witness; `xprobe` is the harness's own X client (witness, retention probe, image comparison, window close) |
 | `busmon.mjs` | accessibility-bus call counts |

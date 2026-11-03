@@ -1,8 +1,14 @@
 // The harness's scenes: windows it opens, owns and closes. gedit on a scratch file it writes (its own
-// `--standalone` process), Chrome windows on its own pages with unique titles (in the running Chrome), and a front
-// window (xterm) that holds the desktop's focus so every scene window is a background window. A reader (one
-// cua-engine process the harness keeps for itself) lists windows and reads effects back through the tree; it is
-// never an engine under measurement. Nothing here logs the text or titles of windows the harness did not open.
+// `--standalone` process), Chrome windows on its own pages with unique titles (in the run's own Chrome, on a profile
+// under the run's scratch directory, chrome.mjs), and a front window (xterm) that holds the desktop's focus so every
+// scene window is a background window. A reader (one cua-engine process the harness keeps for itself) lists windows
+// and reads effects back through the tree; it is never an engine under measurement. Nothing here logs the text or
+// titles of windows the harness did not open.
+//
+// The harness never hands a window to, starts on, or takes over a person's application instance or profile (task 43):
+// every application starts as an instance of the run's own (families.mjs says how for each), Chrome only through the
+// run's `ChromeInstance`, and on a private display everything of the run's runs under a session bus of the run's own
+// (session-bus.mjs), so no single-instance handoff over D-Bus can reach the person's session.
 //
 // The harness never changes a window it did not open (the design session, 2026-11-02). The window found active when a
 // run begins is never activated again: the run records it, and the active window it ends with, each marked foreign or
@@ -28,9 +34,11 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { parseXtrace, parseXtraceFile, startProxy } from './audit.mjs';
+import { ChromeInstance, isChromeCommand } from './chrome.mjs';
 import { Engine, watchOperations } from './engine.mjs';
 import { auditForeign, auditRecord, auditRecordFile, foreignKeep, foreignLine } from './foreign.mjs';
 import { preorder } from './normalize.mjs';
+import { startPrivateSession } from './session-bus.mjs';
 import { cleanupOnStop } from './stop.mjs';
 import { RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
 
@@ -119,6 +127,9 @@ export function desktopEnding(ending) {
       skipped: ending.skipped ?? [],
       trace: { clean: audit.clean, requests: audit.requests, mutating: audit.mutating, foreign: audit.foreign.slice(0, 10).map(foreignLine), unplaced: audit.unplaced ?? 0 },
       ...(ending.watchdog ? { watchdog: { stalled: ending.watchdog.stalled, round_trips: ending.watchdog.lines.find((l) => l.kind === 'end')?.round_trips ?? null } } : {}),
+      // the run's Chrome as its end stopped it (pids it spawned: terminated, killed, still running), and its session bus
+      ...(ending.chrome ? { chrome: { spawned: ending.chrome.spawned.length, terminated: ending.chrome.terminated, killed: ending.chrome.killed, left: ending.chrome.left } } : {}),
+      ...(ending.session ? { session: ending.session } : {}),
       record: record.skipped ? { skipped: record.skipped } : { clean: record.clean, requests: record.requests, mutating: record.mutating, foreign: record.foreign.slice(0, 10).map(foreignLine), ...(record.foreign.length ? { first_foreign: record.foreign.slice(0, 5).map(({ client, what, window, text }) => ({ client, what, window, request: text })) } : {}), unplaced: record.unplaced ?? 0, unattributed: record.unattributed ?? null, ...(record.error ? { error: record.error } : {}) },
     },
     foreign,
@@ -135,7 +146,12 @@ export class Desktop {
     this.run = run;
     this.dir = mkdtempSync(join(tmpdir(), `cua171-diff-${run}-`));
     this.logs = logs ? join(logs, 'apps') : null;
-    this.reader = reader ?? new Engine({ label: 'reader', bin: cua }).start();
+    // started at its first use, after `begin`: on a private display it then runs under the run's session bus
+    this.readerBin = cua;
+    this.ownReader = reader ?? null;
+    // the run's Chrome (chrome.mjs), made at the first Chrome window; the run's session bus on a private display
+    this.chrome = null;
+    this.session = null;
     // in every title the harness gives a window: a window of another's can never carry it, whatever its run label
     this.nonce = nonce ?? randomBytes(4).toString('hex');
     // the windows on the display before the run began (`begin`): never found and never adopted, whatever their title
@@ -168,34 +184,81 @@ export class Desktop {
     this.unhookStop = cleanupOnStop(() => this.stop());
   }
 
+  /** The harness's own reader (one cua-engine process), started at its first use. */
+  get reader() {
+    this.ownReader ??= new Engine({ label: 'reader', bin: this.readerBin }).start();
+    return this.ownReader;
+  }
+
+  set reader(reader) {
+    this.ownReader = reader;
+  }
+
   /**
-   * The run's start: the windows already on the display (never the run's), the whole run's record, its own trace,
-   * through which every X tool of the harness's then connects (xtools.mjs), and, when the window found active is
-   * foreign, the holder opened and activated before anything else. `startTrace`, `startRecord` and `existing` are the
-   * display-free tests' own. Returns the window found active, marked.
+   * The run's start: the windows already on the display (never the run's), on a private display the run's own session
+   * bus (every process the run starts from then on inherits it) and the whole run's record, its own trace, through
+   * which every X tool of the harness's then connects (xtools.mjs), and, when the window found active is foreign, the
+   * holder opened and activated before anything else. `startTrace`, `startRecord`, `startSession` and `existing` are
+   * the display-free tests' own. Returns the window found active, marked.
    */
-  async begin({ startTrace = startProxy, startRecord = startRunRecord, existing = allWindows, privateDisplay = () => isPrivateDisplay(), startWatchdog = startRunWatchdog } = {}) {
+  async begin({ startTrace = startProxy, startRecord = startRunRecord, existing = allWindows, privateDisplay = () => isPrivateDisplay(), startWatchdog = startRunWatchdog, startSession = startPrivateSession } = {}) {
     this.root = rootWindow();
     this.preexisting = new Set(existing());
     this.unwatchOperations = watchOperations(({ engine, window, start, end }) => {
-      if (engine !== this.reader) this.operations.push({ window, start, end });
+      if (engine !== this.ownReader) this.operations.push({ window, start, end });
     });
     // the watchdog first, on every display: a stall stops the run, killing the record client first (task 41)
     this.watchdog = await startWatchdog({ display: process.env.DISPLAY, file: this.watchdogFile() });
+    const isPrivate = privateDisplay();
+    try {
+      // a private display's run under a session bus of its own, before anything of the run's starts (task 43)
+      if (isPrivate) this.useSession(await startSession({ dir: join(this.dir, 'session'), display: process.env.DISPLAY }));
+    } catch (error) {
+      await this.watchdog.stop();
+      throw error;
+    }
     // the whole-run record only on a private display: on a person's, the sampled route audits judge the engines
-    this.record = privateDisplay() ? await startRecord() : null;
+    try {
+      this.record = isPrivate ? await startRecord() : null;
+    } catch (error) {
+      await this.endSession();
+      await this.watchdog.stop();
+      throw error;
+    }
     if (this.record) this.watchdog.guard(this.record.pid);
     try {
       this.trace = await startTrace();
     } catch (error) {
       await this.record?.stop();
       this.record = null;
+      await this.endSession();
       await this.watchdog.stop();
       throw error;
     }
     useHarnessDisplay(this.trace.env);
     if (this.ownerOf(this.startActive) === 'foreign') await this.openHolder();
     return this.activeRecord(this.startActive);
+  }
+
+  /**
+   * The run's session bus in use: every process the run starts from now on (the scene applications, Chrome, the
+   * engines, the reader, `busctl`) inherits its address in place of the person's.
+   */
+  useSession(session) {
+    this.session = session;
+    this.sessionSaved = { had: 'DBUS_SESSION_BUS_ADDRESS' in process.env, value: process.env.DBUS_SESSION_BUS_ADDRESS };
+    process.env.DBUS_SESSION_BUS_ADDRESS = session.address;
+  }
+
+  /** The run's session bus ended, and the harness's own variable as it was found. Answers what the stop did. */
+  async endSession() {
+    if (!this.session) return null;
+    const { had, value } = this.sessionSaved;
+    if (had) process.env.DBUS_SESSION_BUS_ADDRESS = value;
+    else delete process.env.DBUS_SESSION_BUS_ADDRESS;
+    const session = this.session;
+    this.session = null;
+    return { address: session.address, a11y: session.a11y ?? null, ...(await session.stop()) };
   }
 
   /** Where the run's watchdog writes its lines (its `stall` line included): beside the run's results, or a file of its own. */
@@ -326,9 +389,11 @@ export class Desktop {
    * A scene application the harness starts as its own detached process, its stderr appended to
    * `<logs>/apps/<label>.stderr` (a window reopened under its label appends), so a toolkit's own complaints are
    * evidence: GTK 3's criticals were the only trace of the stack bug behind both vendor builds' gedit `clipboard_write`
-   * failure (#268). stdin and stdout are discarded; without a log directory, everything is, as before.
+   * failure (#268). stdin and stdout are discarded; without a log directory, everything is, as before. Never Chrome:
+   * Chrome starts only as the run's own instance (`openChrome`, chrome.mjs).
    */
   spawnApp(label, cmd, args, { stdout = 'ignore', ...options } = {}) {
+    if (isChromeCommand(cmd)) throw new Error(`refusing to start ${cmd} as a scene application: Chrome starts only as the run's own instance, on the run's profile (chrome.mjs), so it never hands a window to, starts on, or takes over a person's Chrome or profile`);
     let fd = null;
     if (this.logs) {
       mkdirSync(this.logs, { recursive: true });
@@ -386,7 +451,10 @@ export class Desktop {
     }
   }
 
-  /** A Chrome window closed as Chrome's own close does (WM_DELETE_WINDOW): the browser is the person's. */
+  /**
+   * A Chrome window closed as Chrome's own close does (WM_DELETE_WINDOW): one window of the run's Chrome, which itself is
+   * stopped at the run's end (`closeEverything`).
+   */
   closeWindow(id) {
     try {
       xprobe(['close', id]);
@@ -453,7 +521,13 @@ export class Desktop {
     });
   }
 
-  /** A Chrome window on one of the harness's pages, its title unique to this window. */
+  /** The run's Chrome (chrome.mjs): one instance on a profile in the run's scratch directory, made at its first use. */
+  chromeInstance() {
+    this.chrome ??= new ChromeInstance({ scratch: this.dir });
+    return this.chrome;
+  }
+
+  /** A window of the run's Chrome on one of the harness's pages, its title unique to this window. */
   openChrome(role, page, { stem = page.replace(/\.html$/, ''), query = '' } = {}) {
     this.assertOpen();
     return this.track(async () => {
@@ -465,9 +539,8 @@ export class Desktop {
       // registered before Chrome is asked for it, by its title: a stop meanwhile closes it by that title
       const scene = { kind: 'chrome', role, label, page, title, id: null };
       this.windows.push(scene);
-      // not `spawnApp`: the window belongs to the person's running Chrome, and this launcher only hands it the URL
-      const child = spawn('google-chrome', ['--new-window', url], { stdio: 'ignore', detached: true });
-      child.unref();
+      // the run's own Chrome: the first open starts it on the run's profile, later ones hand it the URL
+      this.chromeInstance().open(url);
       let info;
       try {
         info = await this.waitForWindow((w) => w.title === title, label, 30000);
@@ -487,7 +560,7 @@ export class Desktop {
   /**
    * The identity scene (M4's T5, identity.mjs; Acceptance 7): `count` windows with one title, unique to the run, and one
    * size, each showing its own marker (`<label>-<n>`), so a read shows which window it read while the X11 titles and
-   * sizes leave the windows indistinguishable. `toolkit`: `chrome`, windows of the running Chrome on
+   * sizes leave the windows indistinguishable. `toolkit`: `chrome`, windows of the run's Chrome on
    * pages/identity.html, opened one at a time, each found as the one window of the title not found before; or `gtk3`
    * or `gtk4`, one process of pages/identity-windows.py, which reports each window's marker and X11 id once it is
    * mapped. Every window is registered as the run's own as soon as it is known; the scene is `{kind: 'identity',
@@ -509,8 +582,8 @@ export class Desktop {
           const win = { kind: 'chrome', role: `${role}_${n}`, label, page: 'identity.html', title, id: null, marker: `${label}-${n}` };
           this.windows.push(win);
           const url = `${pathToFileURL(join(PAGES, 'identity.html')).href}?marker=${encodeURIComponent(win.marker)}#${encodeURIComponent(label)}`;
-          // not `spawnApp`: the window belongs to the person's running Chrome, and this launcher only hands it the URL
-          spawn('google-chrome', ['--new-window', url], { stdio: 'ignore', detached: true }).unref();
+          // the run's own Chrome, as `openChrome`'s windows are
+          this.chromeInstance().open(url);
           const known = new Set(windows.map((x) => x.id));
           try {
             win.id = (await this.waitForWindow((x) => x.title === title && !known.has(x.id), win.marker, 30000)).id;
@@ -783,8 +856,9 @@ export class Desktop {
   }
 
   /**
-   * Closes some of the harness's windows: Chrome's with WM_DELETE_WINDOW (the browser is the person's), an
-   * application the harness started as its own process group (`group`) by signalling the group, the rest by PID.
+   * Closes some of the harness's windows: Chrome's with WM_DELETE_WINDOW (the run's Chrome itself is stopped at the
+   * run's end), an application the harness started as its own process group (`group`) by signalling the group, the rest
+   * by PID.
    */
   async close(scenes) {
     for (const scene of [...scenes].reverse()) {
@@ -837,14 +911,18 @@ export class Desktop {
 
   /**
    * The run's end: every window of the run's closed, the holder last; the window found active at the start is not
-   * activated again (it is foreign: nothing of the run's was open then). A run that began records `ending`: the start
-   * and end active windows, each marked, the holder, and the audit of its trace, which covers this cleanup too.
+   * activated again (it is foreign: nothing of the run's was open then). Then the run's Chrome is stopped by the pids it
+   * spawned (chrome.mjs `stop`), and the run's session bus. A run that began records `ending`: the start and end active
+   * windows, each marked, the holder, the Chrome and the session bus it stopped, and the audit of its trace, which
+   * covers this cleanup too.
    */
   async closeEverything() {
     await this.close(this.windows.filter((w) => w !== this.holder));
-    await this.reader.close();
+    await this.ownReader?.close();
     // the holder last: until here the window manager's fallback lands on it; after it, the window manager chooses
     if (this.holder && this.windows.includes(this.holder)) await this.close([this.holder]);
+    this.chromeEnding = this.chrome ? await this.chrome.stop() : null;
+    this.sessionEnding = await this.endSession();
     rmSync(this.dir, { recursive: true, force: true });
     this.pruneLogs();
     if (this.trace) this.ending = await this.finishTrace();
@@ -897,6 +975,6 @@ export class Desktop {
     }
     // the watchdog last: it guarded the cleanup too
     const watchdog = this.watchdog ? await this.watchdog.stop() : null;
-    return { start: this.activeRecord(this.startActive), end: end === null ? null : this.activeRecord(end), holder: this.holder?.id ?? null, audit, record, watchdog, skipped: this.skips };
+    return { start: this.activeRecord(this.startActive), end: end === null ? null : this.activeRecord(end), holder: this.holder?.id ?? null, audit, record, watchdog, skipped: this.skips, chrome: this.chromeEnding ?? null, session: this.sessionEnding ?? null };
   }
 }

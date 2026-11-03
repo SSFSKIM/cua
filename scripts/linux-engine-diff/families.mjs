@@ -5,6 +5,15 @@
 // so nothing of the person's sessions or documents is opened, and its window is told apart by a label the harness
 // chose (the file name, the page title, the terminal title) or by its process.
 //
+// Every one starts as an instance of the run's own, never handing its window to a person's running instance or
+// taking over a person's profile (task 43): gedit and gnome-text-editor `--standalone` (no GApplication handoff), kate
+// `-n` (a new instance, never KDE's unique-instance handoff), qtcreator on its own settings path (it joins a running
+// instance only with `-client`, `-block` or `-pid`), Firefox `--no-remote --new-instance` on a scratch profile,
+// LibreOffice on a scratch user installation (its single-instance pipe is named for it), Electron on a scratch user
+// data directory (neither app asks for the single-instance lock), Chrome as the run's own instance (chrome.mjs),
+// gnome-terminal on a terminal server of the scene's own (`vteLaunch`), and xterm and the harness's Python scenes as
+// plain processes (no single-instance mechanism at all).
+//
 // Kinds: `editor` (one editable text object holds the document), `paragraphs` (a Writer document: one object per
 // paragraph), `page` (a browser on pages/matrix.html: a field that holds the focus and a button counting its
 // clicks), `electron` (cua's Electron fixture: its field and its "Pressed N times" status), `terminal` (xterm
@@ -196,8 +205,8 @@ export const FAMILIES = {
     title: 'Chrome',
     kind: 'page',
     geometry: [1050, 780],
-    // a window of the running Chrome (the person's browser, which keeps --force-renderer-accessibility), closed
-    // with WM_DELETE_WINDOW
+    // a window of the run's own Chrome (scenes.mjs `openChrome`, chrome.mjs, with --force-renderer-accessibility),
+    // closed with WM_DELETE_WINDOW
     chrome: true,
   },
   electron: {
@@ -272,8 +281,9 @@ export const FAMILIES = {
     launch: (ctx) => terminalLaunch(ctx, ['-xrm', 'XTerm*allowSendEvents: true']),
   },
   // M2: the VTE family, whose paste chord is Ctrl+Shift+V (Ctrl+V inserts the next key literally in a shell; Design,
-  // Device mode and the foreground route; Decision Log, M0.4). Its window belongs to the session's gnome-terminal
-  // server, not to the process the harness starts, so the recorder writes its own PID for the harness to end it
+  // Device mode and the foreground route; Decision Log, M0.4). Its window belongs to a terminal server of the scene's
+  // own, in the process group the harness starts (`vteLaunch`); the recorder still writes its own PID for the harness
+  // to end it first
   'gnome-terminal': {
     title: 'gnome-terminal (VTE)',
     kind: 'terminal',
@@ -332,24 +342,38 @@ export function terminalLaunch(ctx, extra) {
   return { cmd: 'xterm', args: ['-T', ctx.label, ...extra, '-e', 'sh', '-c', script, 'sh', record], match: (w) => w.title === ctx.label, record };
 }
 
+/** The D-Bus name of a scene's own gnome-terminal server: unique to the scene's label, a valid application id. */
+export const terminalAppId = (label) => `org.cua171.Terminal.${String(label).replace(/[^A-Za-z0-9_]/g, '_')}`;
+
+/** The terminal server, and the client that asks a server by its name (Ubuntu's `gnome-terminal` wrapper starts a server of its own for `--app-id`). */
+export const TERMINAL_SERVER = '/usr/libexec/gnome-terminal-server';
+export const terminalClient = (exists = existsSync) => (exists('/usr/bin/gnome-terminal.real') ? '/usr/bin/gnome-terminal.real' : 'gnome-terminal');
+
+// The scene's own terminal server started under its name, then, once the name is on the session bus, the client
+// asking that server, and only it, for the window. Server and client stay in the process group the harness started.
+// The server, the client, the name and the client's arguments are the script's arguments, never its text.
+const TERMINAL_SCRIPT = 'server="$1"; client="$2"; id="$3"; shift 3; "$server" --app-id "$id" & gdbus wait --session --timeout 20 "$id" || exit 1; exec "$client" --app-id "$id" "$@"';
+
 /**
- * gnome-terminal running the recorder: the title set by the program itself as well as asked for, its PID written to a
- * file (the window is the gnome-terminal server's, so ending the started process does not close it; ending the
- * recorder does, as the terminal exits with its command). The recorder also shows what it receives, so a paste's text
- * appears in the terminal's own text, where an engine can confirm it.
+ * gnome-terminal running the recorder, on a terminal server of the scene's own (`terminalAppId`): a plain
+ * `gnome-terminal` hands its window to the session's running server, the person's. The title is set by the program
+ * itself as well as asked for, and its PID written to a file (ending the recorder closes the window, as the terminal
+ * exits with its command). The recorder also shows what it receives, so a paste's text appears in the terminal's own
+ * text, where an engine can confirm it.
  */
-export function vteLaunch(ctx) {
+export function vteLaunch(ctx, { client = terminalClient() } = {}) {
+  const terminal = (args) => ({ cmd: 'sh', args: ['-c', TERMINAL_SCRIPT, 'sh', TERMINAL_SERVER, client, terminalAppId(ctx.label), '--wait', '--title', ctx.label, '--', ...args] });
   if (ctx.doc) {
     const file = scratchFile(ctx);
     const pidfile = join(ctx.dir, `${ctx.label}.pid`);
     const script = `echo $$ > "$2"; printf '\\033]0;%s\\007' "$3"; cat "$1"; exec sleep 86400`;
-    return { cmd: 'gnome-terminal', args: ['--wait', '--title', ctx.label, '--', 'sh', '-c', script, 'sh', file, pidfile, ctx.label], match: (w) => w.title === ctx.label, record: null, pidfile };
+    return { ...terminal(['sh', '-c', script, 'sh', file, pidfile, ctx.label]), match: (w) => w.title === ctx.label, record: null, pidfile };
   }
   const record = join(ctx.dir, `${ctx.label}.input`);
   const pidfile = join(ctx.dir, `${ctx.label}.pid`);
   writeFileSync(record, '');
   const script = `echo $$ > "$2"; printf '\\033]0;%s\\007\\033[?${ctx.motion ? 1003 : 1000}h' "$3"; stty raw -echo; exec tee -a "$1"`;
-  return { cmd: 'gnome-terminal', args: ['--wait', '--title', ctx.label, '--', 'sh', '-c', script, 'sh', record, pidfile, ctx.label], match: (w) => w.title === ctx.label, record, pidfile };
+  return { ...terminal(['sh', '-c', script, 'sh', record, pidfile, ctx.label]), match: (w) => w.title === ctx.label, record, pidfile };
 }
 
 /**

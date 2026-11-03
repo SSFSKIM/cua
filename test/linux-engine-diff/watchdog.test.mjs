@@ -62,7 +62,7 @@ async function runDesktop({ privateDisplay, startRecord }) {
   const restore = fakeTools();
   const desktop = new Desktop({ cua: 'unused', run: 'watchdog', reader, startActive: 0, nonce: 'n0' });
   try {
-    await desktop.begin({ startTrace: fakeTrace(), startRecord, existing: () => [], privateDisplay, startWatchdog: watchdog.start });
+    await desktop.begin({ startTrace: fakeTrace(), startRecord, existing: () => [], privateDisplay, startWatchdog: watchdog.start, startSession: async () => ({ address: 'unix:path=/nonexistent/cua171-test-bus', stop: async () => ({ terminated: true, killed: false }) }) });
     desktop.root = ROOT;
     await desktop.closeAll();
   } finally {

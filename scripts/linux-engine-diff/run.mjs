@@ -921,7 +921,6 @@ async function diffRun(args, candidate, { handoff }) {
     active_start: desktop.activeRecord(desktop.startActive),
     started: new Date().toISOString(),
   });
-  if (plan.some((p) => isText(p.op) || isCase(p.op))) desktop.oracle ??= new Oracle();
   // Every scene label of this run: equivalent windows differ in their own label and list each other's (gedit's
   // recent files), so comparisons across windows replace them all.
   const labelPattern = new RegExp(`cua171-diff-${run.replace(/[^A-Za-z0-9_-]/g, '\\$&')}-[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)*`, 'g');
@@ -937,6 +936,8 @@ async function diffRun(args, candidate, { handoff }) {
   try {
     // the run's own trace, and the holder when a foreign window is active (scenes.mjs `begin`)
     await desktop.begin();
+    // the harness's own bus reader, once the run's start has settled which accessibility bus the display names
+    if (plan.some((p) => isText(p.op) || isCase(p.op))) desktop.oracle ??= new Oracle();
     const launch = plan.some((p) => OPS[p.op].apps) ? launchEntry(desktop.dir) : null;
     if (launch) desktop.launchCount = launch.count;
     // Scenes: one shared window per scene for tree reads, one window per engine for screenshots and input.

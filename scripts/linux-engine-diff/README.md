@@ -238,7 +238,8 @@ variants included; their evidence is written either way. The run's `end` row kee
   - *Two sources.* The run's own xtrace proxy (`Desktop.begin`), through which every `xdotool` and every acting xprobe
     command connects (`xtools.mjs`; a test keeps it so), and every audit pass's engine trace, the activating stub's
     included, are judged by `auditForeign`; there every connection is ours, and XTEST is placed only by what the trace
-    shows (the focus a request set or a reply read, the pointer a reply read), the rest counted as unplaced. The whole
+    shows (the focus a request set or a reply read, the pointer a reply read), the rest counted as unplaced. On a
+    private display only (marked `CUA171_PRIVATE_DISPLAY`; `startRunRecord` and xprobe both refuse any other), the whole
     run is also recorded server-side through RECORD (`xprobe record-run`, `startRunRecord`), every client's requests
     of those kinds, each client attributed by its process (X-Resource and `/proc`): ours when it descends from the
     harness's process and is one of its X tools or engines. `auditRecord` judges every request of ours, sampled by an
@@ -248,6 +249,15 @@ variants included; their evidence is written either way. The run's `end` row kee
     trace keeping only the requests the judge reads (`parseXtraceFile`, `auditRecordFile`), and xtrace shows lists to
     256 entries (`-m 256`): each xdotool call's connection setup and keymaps were 60 KB, and a 40-minute run's trace
     passed Node's 512 MB string limit.
+  - *The record stays off a person's display, and every run is watched* (task 41). X.Org 21.1's `FlushClient`, re-entered by
+    RECORD's flush callback for a recording client that fell behind, drops recorded bytes or spins for good on a
+    zero-length `writev`; that froze `:0` (evidence: `docs/evidence/2026-10-28-own-linux-engine/m4/xserver-record-hang/`).
+    So on a display not marked private the run has no record client, and the engines' requests are judged by the
+    sampled route audits; the harness's own trace stays whole-run everywhere. `Desktop.begin` first starts the run's
+    watchdog (`startRunWatchdog`, `xprobe watchdog`), on every display: a GetInputFocus round trip every 2 s from its
+    own connection. One unanswered for 5 s kills the record client, stops the run (SIGTERM, then SIGKILL after 20 s),
+    writes a `stall` line to the run's `watchdog.jsonl` and prints an alert naming the display. A test process reaches
+    no real display (`hermetic.mjs`; xprobe's test build connects to none).
   - *No window of the person's can be taken for the run's*: every title carries the run's label and a random nonce of
     the run's own (`Desktop.label`), and a window already on the display when the run began is never found or adopted
     (`Desktop.preexisting`), whatever its title.

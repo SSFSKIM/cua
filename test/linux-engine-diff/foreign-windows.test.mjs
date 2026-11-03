@@ -179,7 +179,10 @@ function fakeReader(desktop, ids) {
 const fakeTrace = (text) => () => ({ env: { ...process.env, DISPLAY: ':77' }, stop: async () => text });
 /** The whole run's record (xprobe record-run), begun and ended with `lines` between. */
 const fakeRecord = (lines = []) => async () => ({ stop: async () => [JSON.stringify({ kind: 'ready', ms: 1 }), ...lines, JSON.stringify({ kind: 'end', ms: 2 })].join('\n') });
-const begin = (desktop, traceText, { record = [], existing = [] } = {}) => desktop.begin({ startTrace: fakeTrace(traceText), startRecord: fakeRecord(record), existing: () => existing });
+/** The run's watchdog (xprobe watchdog), started and stopped with nothing seen. */
+const fakeWatchdog = async () => ({ guard: () => {}, stop: async () => ({ stalled: false, lines: [] }) });
+// these runs stand on a private display: the whole-run record runs (task 41: only there)
+const begin = (desktop, traceText, { record = [], existing = [] } = {}) => desktop.begin({ startTrace: fakeTrace(traceText), startRecord: fakeRecord(record), existing: () => existing, privateDisplay: () => true, startWatchdog: fakeWatchdog });
 
 test('closing never activates the window found active at the start', async () => {
   const tools = fakeTools({ active: PERSON });
@@ -460,7 +463,7 @@ test("an engine's operation on a window is a span the record judges popups by; t
   const wrap = (body) => [JSON.stringify({ kind: 'ready', ms: 1 }), ...body, JSON.stringify({ kind: 'end', ms: 2 })].join('\n');
   let recorded = () => [];
   try {
-    await desktop.begin({ startTrace: fakeTrace(HARNESS_ONLY.join('\n')), startRecord: async () => ({ stop: async () => wrap(recorded()) }), existing: () => [] });
+    await desktop.begin({ startTrace: fakeTrace(HARNESS_ONLY.join('\n')), startRecord: async () => ({ stop: async () => wrap(recorded()) }), existing: () => [], privateDisplay: () => true, startWatchdog: fakeWatchdog });
     desktop.root = ROOT;
     const born = Date.now() - 5000;
     desktop.closed.push({ kind: 'chrome', role: 'r', label: desktop.label('scene', 'r'), id: SCENE_ID });

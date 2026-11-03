@@ -32,7 +32,7 @@ import { Engine, watchOperations } from './engine.mjs';
 import { auditForeign, auditRecord, auditRecordFile, foreignKeep, foreignLine } from './foreign.mjs';
 import { preorder } from './normalize.mjs';
 import { cleanupOnStop } from './stop.mjs';
-import { spawnXprobe, startRunRecord, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
+import { RECORD_REFUSAL, isPrivateDisplay, spawnXprobe, startRunRecord, startRunWatchdog, useHarnessDisplay, xdotool, xprobe, XPROBE } from './xtools.mjs';
 
 export { XPROBE, xdotool };
 
@@ -109,7 +109,8 @@ export function desktopEnding(ending) {
   if (!audit.traced) foreign.push(`the harness: its trace recorded no request${audit.error ? ` (${audit.error})` : ''}, so its requests went unaudited`);
   // the whole run's record: every request of the harness's and the engines' clients, sampled by an audit pass or not
   foreign.push(...tally(record.foreign.map((f) => `the run's record: ${foreignLine(f)}`)));
-  if (!record.traced) foreign.push(`the run's record: ${record.error ?? 'it did not run'}, so the run's requests went unjudged`);
+  // a record not run on purpose (a person's display, task 41) fails nothing: the sampled route audits judge the engines
+  if (!record.traced && !record.skipped) foreign.push(`the run's record: ${record.error ?? 'it did not run'}, so the run's requests went unjudged`);
   return {
     record: {
       active_start: ending.start,
@@ -117,7 +118,8 @@ export function desktopEnding(ending) {
       holder: ending.holder,
       skipped: ending.skipped ?? [],
       trace: { clean: audit.clean, requests: audit.requests, mutating: audit.mutating, foreign: audit.foreign.slice(0, 10).map(foreignLine), unplaced: audit.unplaced ?? 0 },
-      record: { clean: record.clean, requests: record.requests, mutating: record.mutating, foreign: record.foreign.slice(0, 10).map(foreignLine), ...(record.foreign.length ? { first_foreign: record.foreign.slice(0, 5).map(({ client, what, window, text }) => ({ client, what, window, request: text })) } : {}), unplaced: record.unplaced ?? 0, unattributed: record.unattributed ?? null, ...(record.error ? { error: record.error } : {}) },
+      ...(ending.watchdog ? { watchdog: { stalled: ending.watchdog.stalled, round_trips: ending.watchdog.lines.find((l) => l.kind === 'end')?.round_trips ?? null } } : {}),
+      record: record.skipped ? { skipped: record.skipped } : { clean: record.clean, requests: record.requests, mutating: record.mutating, foreign: record.foreign.slice(0, 10).map(foreignLine), ...(record.foreign.length ? { first_foreign: record.foreign.slice(0, 5).map(({ client, what, window, text }) => ({ client, what, window, request: text })) } : {}), unplaced: record.unplaced ?? 0, unattributed: record.unattributed ?? null, ...(record.error ? { error: record.error } : {}) },
     },
     foreign,
   };
@@ -172,23 +174,33 @@ export class Desktop {
    * foreign, the holder opened and activated before anything else. `startTrace`, `startRecord` and `existing` are the
    * display-free tests' own. Returns the window found active, marked.
    */
-  async begin({ startTrace = startProxy, startRecord = startRunRecord, existing = allWindows } = {}) {
+  async begin({ startTrace = startProxy, startRecord = startRunRecord, existing = allWindows, privateDisplay = () => isPrivateDisplay(), startWatchdog = startRunWatchdog } = {}) {
     this.root = rootWindow();
     this.preexisting = new Set(existing());
     this.unwatchOperations = watchOperations(({ engine, window, start, end }) => {
       if (engine !== this.reader) this.operations.push({ window, start, end });
     });
-    this.record = await startRecord();
+    // the watchdog first, on every display: a stall stops the run, killing the record client first (task 41)
+    this.watchdog = await startWatchdog({ display: process.env.DISPLAY, file: this.watchdogFile() });
+    // the whole-run record only on a private display: on a person's, the sampled route audits judge the engines
+    this.record = privateDisplay() ? await startRecord() : null;
+    if (this.record) this.watchdog.guard(this.record.pid);
     try {
       this.trace = await startTrace();
     } catch (error) {
-      await this.record.stop();
+      await this.record?.stop();
       this.record = null;
+      await this.watchdog.stop();
       throw error;
     }
     useHarnessDisplay(this.trace.env);
     if (this.ownerOf(this.startActive) === 'foreign') await this.openHolder();
     return this.activeRecord(this.startActive);
+  }
+
+  /** Where the run's watchdog writes its lines (its `stall` line included): beside the run's results, or a file of its own. */
+  watchdogFile() {
+    return this.logs ? join(dirname(this.logs), 'watchdog.jsonl') : join(mkdtempSync(join(tmpdir(), 'cua171-watchdog-')), 'watchdog.jsonl');
   }
 
   /**
@@ -865,19 +877,26 @@ export class Desktop {
       useHarnessDisplay(null);
     }
     let record;
-    try {
-      const judged = await this.record.stop({
-        parse: async (file) => {
-          const audit = await auditRecordFile(file, { registered, root: this.root, spans });
-          // a record that failed is kept as the run's evidence, compressed (window ids, atoms and processes, no text)
-          if (!audit.clean && this.logs) await pipeline(createReadStream(file), createGzip(), createWriteStream(join(dirname(this.logs), 'record.jsonl.gz')));
-          return audit;
-        },
-      });
-      record = typeof judged === 'string' ? auditRecord(judged, { registered, root: this.root, spans }) : judged;
-    } catch (error) {
-      record = { clean: false, traced: false, requests: 0, mutating: 0, foreign: [], error: error.message };
+    if (!this.record) {
+      // not run on purpose (task 41): a person's display gets the sampled route audits
+      record = { skipped: RECORD_REFUSAL, clean: true, traced: false, requests: 0, mutating: 0, foreign: [] };
+    } else {
+      try {
+        const judged = await this.record.stop({
+          parse: async (file) => {
+            const audit = await auditRecordFile(file, { registered, root: this.root, spans });
+            // a record that failed is kept as the run's evidence, compressed (window ids, atoms and processes, no text)
+            if (!audit.clean && this.logs) await pipeline(createReadStream(file), createGzip(), createWriteStream(join(dirname(this.logs), 'record.jsonl.gz')));
+            return audit;
+          },
+        });
+        record = typeof judged === 'string' ? auditRecord(judged, { registered, root: this.root, spans }) : judged;
+      } catch (error) {
+        record = { clean: false, traced: false, requests: 0, mutating: 0, foreign: [], error: error.message };
+      }
     }
-    return { start: this.activeRecord(this.startActive), end: end === null ? null : this.activeRecord(end), holder: this.holder?.id ?? null, audit, record, skipped: this.skips };
+    // the watchdog last: it guarded the cleanup too
+    const watchdog = this.watchdog ? await this.watchdog.stop() : null;
+    return { start: this.activeRecord(this.startActive), end: end === null ? null : this.activeRecord(end), holder: this.holder?.id ?? null, audit, record, watchdog, skipped: this.skips };
   }
 }

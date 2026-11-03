@@ -11,6 +11,8 @@
 // still has open (`retentionTrials`); `grabs` takes the root's pointer and keyboard, so it runs only on a private display the harness
 // marked (xprobe refuses any other), and nothing here runs it on the session's.
 
+import './hermetic.mjs';
+
 import { appendFileSync, closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync, spawn } from 'node:child_process';
 import { tmpdir } from 'node:os';
@@ -67,18 +69,40 @@ export function retentionTrials(owner, window, trials, spanMs, gapMs, dump, run 
 }
 
 /**
- * The whole run's RECORD (`xprobe record-run`, foreign.mjs `auditRecord`): every client's requests that can change a
- * window, server-side, each client attributed to the harness (`ours`, its process) or not, on the session's display
- * directly (it only reads). Its lines go to a file of its own. Resolves once recording has begun, with `stop()`, which
- * ends it and answers its text.
+ * Whether the display is a private one the harness started: its root carries `PRIVATE_MARK` (a read through
+ * `xprop`). Anything else, a failed read included, is not.
  */
-export async function startRunRecord({ ours = process.pid, env = process.env, readyMs = 10000 } = {}) {
+export function isPrivateDisplay({ env = process.env, run = execFileSync } = {}) {
+  try {
+    const text = run('xprop', ['-root', PRIVATE_MARK], { encoding: 'utf8', timeout: 5000, env });
+    return new RegExp(`^${PRIVATE_MARK}\\([A-Z_]+\\) = `, 'm').test(text);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Why the whole-run record runs only on a private display (task 41): X.Org 21.1's FlushClient, re-entered by RECORD's
+ * flush callback for a recording client that fell behind, either drops recorded bytes or spins for good on a
+ * zero-length writev; a lagging record client also grows the server's buffer by gigabytes. It froze the person's `:0`.
+ */
+export const RECORD_REFUSAL = `the whole-run RECORD runs only on a private display marked ${PRIVATE_MARK}: it can freeze X.Org 21.1 (task 41), so a person's display gets the sampled route audits instead`;
+
+/**
+ * The whole run's RECORD (`xprobe record-run`, foreign.mjs `auditRecord`): every client's requests that can change a
+ * window, server-side, each client attributed to the harness (`ours`, its process) or not, on the display directly
+ * (it only reads). Only on a private display (`RECORD_REFUSAL` on any other, before anything is spawned). Its lines go
+ * to a file of its own. Resolves once recording has begun, with its `pid` and `stop()`, which ends it and answers its
+ * text.
+ */
+export async function startRunRecord({ ours = process.pid, env = process.env, readyMs = 10000, isPrivate = () => isPrivateDisplay({ env }), spawnRecord = spawn } = {}) {
+  if (!isPrivate()) throw new Error(RECORD_REFUSAL);
   const dir = mkdtempSync(join(tmpdir(), 'cua171-record-'));
   const file = join(dir, 'record.jsonl');
   const fd = openSync(file, 'w');
   let child;
   try {
-    child = spawn(XPROBE, ['record-run', '--ours', String(ours)], { stdio: ['pipe', fd, 'pipe'], env });
+    child = spawnRecord(XPROBE, ['record-run', '--ours', String(ours)], { stdio: ['pipe', fd, 'pipe'], env });
   } finally {
     closeSync(fd);
   }
@@ -100,6 +124,7 @@ export async function startRunRecord({ ours = process.pid, env = process.env, re
   let stopped = null;
   return {
     file,
+    pid: child.pid,
     /**
      * Ends the record and answers it: its text, or with `parse` (foreign.mjs `auditRecordFile`'s kind), what
      * `parse(file)` answers, read before the file is removed. A record whose process failed says so in its last line.
@@ -118,6 +143,73 @@ export async function startRunRecord({ ours = process.pid, env = process.env, re
         }
       })();
       return stopped;
+    },
+  };
+}
+
+/**
+ * The run's watchdog (`xprobe watchdog`, task 41), on every display, the person's `:0` included: a GetInputFocus
+ * round trip every `intervalMs` from a connection of its own. When one goes unanswered for `boundMs` it kills every
+ * guarded process first (`guard(pid)`: the whole-run record client), sends SIGTERM to `stopPid` (this run) and SIGKILL
+ * after `graceMs`, writes a `stall` line to `file`, prints an alert naming the display on stderr, and exits 3. It
+ * runs apart from this process, so a run blocked in a synchronous X call is stopped all the same. Resolves once its
+ * first round trip answered, with `guard(pid)` and `stop()`, which ends it and answers `{stalled, lines}`.
+ */
+export async function startRunWatchdog({ display = process.env.DISPLAY, env = process.env, stopPid = process.pid, intervalMs = 2000, boundMs = 5000, graceMs = 20000, file, readyMs = 15000, spawnWatchdog = spawn } = {}) {
+  const fd = openSync(file, 'a');
+  let child;
+  try {
+    const args = ['watchdog', '--display', display, '--interval-ms', intervalMs, '--bound-ms', boundMs, '--grace-ms', graceMs, '--stop', stopPid].map(String);
+    child = spawnWatchdog(XPROBE, args, { stdio: ['pipe', fd, 'inherit'], env });
+  } finally {
+    closeSync(fd);
+  }
+  let failed = null;
+  const exited = new Promise((resolve) => {
+    child.once('exit', resolve);
+    child.once('error', (error) => {
+      failed = error;
+      resolve(null);
+    });
+  });
+  // a watchdog that has ended takes no more lines; its stall already killed what it guarded
+  child.stdin.on('error', () => {});
+  const lines = () =>
+    (existsSync(file) ? readFileSync(file, 'utf8') : '')
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return { kind: 'unreadable', text: line };
+        }
+      });
+  const deadline = Date.now() + readyMs;
+  while (!lines().some((l) => l.kind === 'ready')) {
+    if (failed || child.exitCode !== null || Date.now() > deadline) {
+      child.kill('SIGKILL');
+      const last = lines().at(-1);
+      throw new Error(`the run's display ${display} did not answer the watchdog's first round trip in ${readyMs} ms${failed ? ` (${failed.message})` : last ? ` (${JSON.stringify(last)})` : ''}, so nothing is run on it`);
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  let stopping = null;
+  return {
+    file,
+    guard(pid) {
+      if (Number.isSafeInteger(pid) && pid > 0 && child.exitCode === null) child.stdin.write(`guard ${pid}\n`);
+    },
+    stop() {
+      stopping ??= (async () => {
+        if (child.exitCode === null) child.stdin.end();
+        const timer = setTimeout(() => child.kill('SIGTERM'), intervalMs + boundMs + 5000);
+        await exited;
+        clearTimeout(timer);
+        const all = lines();
+        return { stalled: all.some((l) => l.kind === 'stall'), lines: all };
+      })();
+      return stopping;
     },
   };
 }

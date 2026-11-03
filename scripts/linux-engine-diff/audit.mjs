@@ -4,6 +4,8 @@
 // XTEST FakeInput. The VM's xtrace prints FakeInput as UNKNOWN opcode 132/2 (R/F §4.1), so FakeInput is matched by
 // XTEST's major opcode as the server reported it to the traced client, with minor 2.
 
+import './hermetic.mjs';
+
 import { spawn } from 'node:child_process';
 import { copyFileSync, createReadStream, existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';

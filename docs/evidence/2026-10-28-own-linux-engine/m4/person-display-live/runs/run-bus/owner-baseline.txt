@@ -1,0 +1,7 @@
+owner pid=2546101 start=51157914
+tmproot /tmp/c50-WgRw0X
+args: --experiment matrix --family gnome-text-editor,firefox,gedit,gnome-terminal --vendor /Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/task42/engine/cua-engine --run task50-run-bus
+started 2026-11-03T13:47:33Z finished 2026-11-03T13:52:36Z wrap exit 1
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side: no difference

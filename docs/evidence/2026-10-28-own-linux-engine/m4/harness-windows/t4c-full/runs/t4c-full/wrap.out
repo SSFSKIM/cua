@@ -1,0 +1,109 @@
+development run, not a release gate; candidate: sha256 5b7e38cf299e3e7f105321612de68919fcdd27ee93b52b6a298fcb58a37cd9cf, x86_64-unknown-linux-musl static-pie, cua-engine 0.3.0 (7ad6f03d2966); attestation not checked (a development run); checkout not clean
+negative check: the witness failed the activating stub (stacking, active, focus); the audit failed it (_NET_ACTIVE_WINDOW ClientMessage, XTEST FakeInput)
+foreground checks: held (another raised and the top raised back: stacking; the same under one server grab: stacking; the target raised: clean; the focus and the active window switched away and back under one server grab: focus, active; the target activated: clean; another client's override-redirect window mapped: stacking; order restored)
+in-front checks: held (the target activated again: clean; another window activated and the target again: stacking, active, focus; another raised and the target raised back under one server grab: stacking; another client's override-redirect window raised across the target's frame and back under one server grab: stacking)
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 274; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 10; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 302; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 21; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 10; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 264; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 32; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 310; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 22; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 34; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 12; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 299; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 21; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 22; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 8; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 21; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 307; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 10; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 31; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 33; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 2; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 301; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 2; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 272; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 317; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 35; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 21; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 32; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 32; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 3; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 307; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 21; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 32; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 20; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 21; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 21; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 32; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 21; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 11; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 21; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 307; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-cua: the scroll series ended at 360; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-pinned: the scroll series ended at 328; back to the top
+cua171-diff-task50-t4c-full-2-f1fd85ea-input-newest: the scroll series ended at 328; back to the top
+case chrome-textarea focus_change 0: PASS
+case chrome-textarea focus_change 1: PASS
+case chrome-textarea focus_change 2: PASS
+case chrome-textarea focus_change_takeover 0: PASS
+case chrome-textarea focus_change_takeover 1: PASS
+case chrome-textarea focus_change_takeover 2: PASS
+case chrome-textarea silent_owner 0: PASS
+case chrome-textarea concurrent 0: PASS
+case chrome-textarea concurrent 1: PASS
+case chrome-textarea concurrent 2: PASS
+case chrome-textarea contention 0: PASS
+case chrome-textarea late_page 0: PASS
+case chrome-textarea ignored_page 0: PASS
+case paste-target stalled_incr 0: PASS
+case paste-target late_convert 0: PASS
+case paste-target late_convert 1: PASS
+case paste-target late_convert 2: PASS
+case paste-target unreadable 0: PASS
+case gedit caret_placed 0: PASS
+case gnome-text-editor restore_refused 0: PASS
+run valid; development run, not a release gate: FAIL: device-gtk4 gtk4_click_dedicated cua, device-gtk4 gtk4_key_dedicated cua, device-gtk4 gtk4_move_dedicated cua, device-chrome-dnd chrome_dnd_shared cua, device-chrome-dnd chrome_dnd_short_in_front_shared cua, a window the harness did not open was changed: cua on device-gtk4 gtk4_key_dedicated: XTEST KeyRelease on 0x03a00005, a window the harness did not open was changed: cua on device-gtk4 gtk4_key_dedicated: XTEST KeyRelease on 0x03a00005, a window the harness did not open was changed: cua on device-gtk4 gtk4_move_dedicated: XTEST MotionNotify on 0x005a6d2f; declared refusal (a loss, not a pass): chrome-input drag cua; text restores (the first word put back before a sample): pinned 43, newest 0, cua 0
+results: /Users/new/.local/share/cua-171/task50/runs/t4c-full/run/results.jsonl
+{"exit": 1, "samples": 66867, "maps_samples": 22290, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 11849, "browsers": 198}

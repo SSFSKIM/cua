@@ -1,0 +1,4 @@
+libEGL warning: DRI3 error: Could not get DRI3 device
+libEGL warning: Ensure your X server supports DRI3 to get accelerated rendering
+
+(gnome-text-editor:3296810): Gtk-WARNING **: 08:31:29.857: Trying to snapshot GtkGizmo 0x561b3e0dc760 without a current allocation

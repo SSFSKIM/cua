@@ -1,0 +1,12 @@
+
+** (paste-target.py:3802101): CRITICAL **: 08:50:45.396: impl_get_CharacterCount: assertion 'ATK_IS_TEXT (user_data)' failed
+
+** (paste-target.py:3802101): CRITICAL **: 08:50:45.396: impl_get_CaretOffset: assertion 'ATK_IS_TEXT (user_data)' failed
+
+** (paste-target.py:3802101): CRITICAL **: 08:50:45.396: impl_GetNSelections: assertion 'ATK_IS_TEXT (user_data)' failed
+
+** (paste-target.py:3802101): CRITICAL **: 08:50:45.409: impl_get_CharacterCount: assertion 'ATK_IS_TEXT (user_data)' failed
+
+** (paste-target.py:3802101): CRITICAL **: 08:50:45.409: impl_get_CaretOffset: assertion 'ATK_IS_TEXT (user_data)' failed
+
+** (paste-target.py:3802101): CRITICAL **: 08:50:45.409: impl_GetNSelections: assertion 'ATK_IS_TEXT (user_data)' failed

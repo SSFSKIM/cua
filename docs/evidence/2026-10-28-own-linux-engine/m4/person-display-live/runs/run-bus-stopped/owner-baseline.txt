@@ -1,0 +1,11 @@
+owner pid=2546101 start=51157914
+tmproot /tmp/c50-pzp9PE
+args: --experiment matrix --family gnome-text-editor,firefox,gedit,gnome-terminal --vendor /Users/new/.local/share/cua/runtimes/26.928.40906-linux-x64/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --newest /Users/new/.local/share/cua-171/vendor/deb-26.1023/extracted/usr/lib/chatgpt/resources/cua_node/lib/node_modules/@oai/sky/bin/linux/sky_linux_x64 --cua /Users/new/.local/share/cua-171/task42/engine/cua-engine --run task50-run-bus
+started 2026-11-03T13:44:41Z finished 2026-11-03T13:46:22Z wrap exit 1
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1793713436.876620439
+---
+> mtime ~/.config/google-chrome 1793713580.991587842

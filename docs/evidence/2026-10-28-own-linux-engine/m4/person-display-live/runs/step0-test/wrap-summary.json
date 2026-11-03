@@ -1,0 +1,172 @@
+{
+ "exit": 0,
+ "samples": 48,
+ "maps_samples": 17,
+ "ss_samples": 11,
+ "maps_reads": 26,
+ "fd_reads": 77,
+ "sample_gap_ms": {
+  "median": 107.4,
+  "max": 130.7
+ },
+ "flags": [],
+ "decoy_connections": [],
+ "leftovers": [],
+ "browsers": [],
+ "browser_run_home_nss": {},
+ "browser_nss_libraries": {},
+ "run_home_nss_dirs": {},
+ "processes": [
+  {
+   "pid": 3243531,
+   "start": 54507757,
+   "comm": "MainThread",
+   "ppid": 3243527,
+   "pgid": 3243524,
+   "first": 0.209,
+   "argv": "node test/linux-engine-diff/suite-check.mjs test/linux-engine-diff/engine-a11y-bus.test.mjs",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task50/runs/step0-test/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task50/runs/step0-test/decoy/a11y.sock"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 2.24
+  },
+  {
+   "pid": 3243539,
+   "start": 54507762,
+   "comm": "MainThread",
+   "ppid": 3243531,
+   "pgid": 3243524,
+   "first": 0.329,
+   "argv": "/usr/bin/node --test test/linux-engine-diff/engine-a11y-bus.test.mjs",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task50/runs/step0-test/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task50/runs/step0-test/decoy/a11y.sock"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 1.892
+  },
+  {
+   "pid": 3243545,
+   "start": 54507766,
+   "comm": "MainThread",
+   "ppid": 3243539,
+   "pgid": 3243524,
+   "first": 0.329,
+   "argv": "/usr/bin/node --test-coverage-functions=0 --test-concurrency=0 --inspect-publish-uid=stderr,http --inspect-port=127.0.0.1:9229 --stack-trace-limit=10 --report-signal=SIGUSR2 --test-coverage-lines=0 --secure-heap-min=2 --test-isolation=process --heap-prof-interval=524288 --cpu-prof-interval=1000 --v8-pool-size=4 --trace-event-file-pattern=node_trace.${rotation}.log --test-coverage-branches=0 --watch-kill-signal=SIGTERM --tls-cipher-list=TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:TLS_AES_128_GCM_SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task50/runs/step0-test/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task50/runs/step0-test/decoy/a11y.sock"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 1.892
+  },
+  {
+   "pid": 3243554,
+   "start": 54507776,
+   "comm": "Xvfb",
+   "ppid": 3243545,
+   "pgid": 3243524,
+   "first": 0.437,
+   "argv": "Xvfb -displayfd 3 -noreset -screen 0 1280x800x24 -nolisten tcp",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task50/runs/step0-test/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task50/runs/step0-test/decoy/a11y.sock",
+    "DISPLAY": ":cua171-tests-reach-no-display"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 1.778
+  },
+  {
+   "pid": 3243566,
+   "start": 54507788,
+   "comm": "xprobe",
+   "ppid": 3243545,
+   "pgid": 3243524,
+   "first": 0.546,
+   "argv": "/Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff/xprobe/target/release/xprobe overlay 0 0 320 240",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/tmp/c50a-nfAnVx/cua171-suite-dRGEor/cua171-a11y-engines-Ruqmyk/run-session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/tmp/c50a-nfAnVx/cua171-suite-dRGEor/cua171-a11y-engines-Ruqmyk/run-a11y.sock",
+    "DISPLAY": ":1",
+    "XAUTHORITY": "/tmp/c50a-nfAnVx/cua171-suite-dRGEor/cua171-no-xauthority-3243545-9b1f7f380bc3"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 0.761
+  },
+  {
+   "pid": 3243557,
+   "start": 54507783,
+   "comm": "xprobe",
+   "ppid": 3243545,
+   "pgid": 3243557,
+   "first": 0.546,
+   "argv": "/Users/new/.local/share/cua-171/live-43/scripts/linux-engine-diff/xprobe/target/release/xprobe watchdog --display :1 --interval-ms 2000 --bound-ms 5000 --grace-ms 20000 --stop 3243545",
+   "env": {
+    "HOME": "/Users/new",
+    "XDG_RUNTIME_DIR": "/run/user/501",
+    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task50/runs/step0-test/decoy/session.sock",
+    "AT_SPI_BUS_ADDRESS": "unix:path=/Users/new/.local/share/cua-171/task50/runs/step0-test/decoy/a11y.sock",
+    "DISPLAY": ":cua171-tests-reach-no-display",
+    "XAUTHORITY": "/tmp/c50a-nfAnVx/cua171-suite-dRGEor/cua171-no-xauthority-3243545-9b1f7f380bc3"
+   },
+   "paths": [],
+   "browser": null,
+   "last": 1.778
+  },
+  {
+   "pid": 3243574,
+   "start": 54507800,
+   "comm": "sky_linux_x64",
+   "ppid": 3243545,
+   "pgid": 3243524,
+   "first": 0.653,
+   "argv": "",
+   "env": null,
+   "paths": [],
+   "browser": null,
+   "last": 0.653
+  },
+  {
+   "pid": 3243579,
+   "start": 54507805,
+   "comm": "sky_linux_x64",
+   "ppid": 3243545,
+   "pgid": 3243524,
+   "first": 0.761,
+   "argv": "",
+   "env": null,
+   "paths": [],
+   "browser": null,
+   "last": 0.761
+  }
+ ],
+ "home_paths_by_comm": {},
+ "mode": "private",
+ "outside_peers_allowed": {},
+ "xauthority_by_class": {
+  "no-authority (cua171-no-xauthority-*)": [
+   "xprobe"
+  ],
+  "unset": [
+   "MainThread",
+   "Xvfb"
+  ]
+ }
+}

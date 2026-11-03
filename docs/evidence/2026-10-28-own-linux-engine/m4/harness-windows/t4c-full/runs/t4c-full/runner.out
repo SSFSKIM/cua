@@ -1,0 +1,9 @@
+owner pid=2546101 start=51157914
+tmproot left: []
+/tmp/cua171-run-* left: []
+owner side DIFFERS:
+43c43
+< mtime ~/.config/google-chrome 1793713580.991587842
+---
+> mtime ~/.config/google-chrome 1793724682.583083867
+exit 1

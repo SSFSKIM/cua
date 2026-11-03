@@ -1,0 +1,30 @@
+{
+ "xauthority_inherited": null,
+ "no_authority": "/tmp/c50b-L9k17M/cua171-no-xauthority-3247484-4cc88ed69c66",
+ "display": ":1",
+ "person_window": 6291468,
+ "mark": "CUA171_PRIVATE_DISPLAY(STRING) = \"1\"",
+ "run_exit": 0,
+ "server_watchdog": {
+  "state": "ended",
+  "clean": true,
+  "stalled": false,
+  "reason": null,
+  "round_trips": 99,
+  "lines": [
+   {
+    "kind": "ready",
+    "ms": 1793713056711,
+    "display": ":1",
+    "interval_ms": 2000,
+    "bound_ms": 5000,
+    "pid": 3247495
+   },
+   {
+    "kind": "end",
+    "ms": 1793713253297,
+    "round_trips": 99
+   }
+  ]
+ }
+}

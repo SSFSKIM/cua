@@ -1,0 +1,80 @@
+== after 2026-11-03T13:53:02.539Z
+owner chrome pid 2546101 starttime_ticks 51157914
+chrome-named processes without a run profile: 12
+:0 active window 0x600002
+:0 _NET_CLIENT_LIST count 1
+:0 client 0x600002 class "google-chrome", "Google-chrome" pid 2546101 window state: Normal netstate   Position: 0,0 (screen: 0)  Geometry: 1050x780 
+owner 2546101 windows (any, by _NET_WM_PID) 2
+owner 2546101 windows (viewable) 1
+:0 root children 15
+:0 X client connections (Xorg's accepted sockets) 8
+:0 root AT_SPI_BUS names bus_0: 1
+-- person's session bus, well-known names (name pid process)
+bus ca.desrt.dconf 541553 dconf-service
+bus io.snapcraft.Launcher - -
+bus io.snapcraft.SessionAgent - -
+bus io.snapcraft.Settings - -
+bus org.a11y.Bus 9909 at-spi-bus-laun
+bus org.freedesktop.DBus 3486 systemd
+bus org.freedesktop.systemd1 3486 systemd
+bus org.gnome.Terminal - -
+bus org.gnome.TextEditor - -
+bus org.gnome.gedit - -
+bus org.kde.ActivityManager - -
+bus org.kde.kcookiejar5 - -
+bus org.kde.kded5 - -
+bus org.kde.kglobalaccel - -
+bus org.kde.kiod5 - -
+bus org.kde.kioexecd - -
+bus org.kde.kpasswdserver - -
+bus org.kde.kssld5 - -
+bus org.kde.kwalletd5 - -
+bus us.kirkland.terminals.byobu - -
+person org.a11y.Status IsEnabled b true
+person org.a11y.Status ScreenReaderEnabled b false
+-- person's running user units
+unit app-com.google.Chrome-2546101.scope
+unit dbus.service
+unit dbus.socket
+unit dconf.service
+unit init.scope
+unit mawsd.service
+unit sminos-daemon.service
+-- mtimes (metadata only)
+mtime ~/.config/google-chrome 1793713580.991587842
+mtime ~/.pki absent
+mtime ~/.local/share/pki 1793168093.690459650
+mtime ~/.config/dconf/user 1793606792.367445008
+mtime ~/.local/share/recently-used.xbel 1793683369.851455522
+mtime ~/.local/share/applications/mimeapps.list 1793168093.342465270
+mtime ~/.config/mozilla 1793199116.670695933
+mtime ~/.mozilla absent
+mtime ~/.config/katerc 1793683331.622245601
+mtime ~/.config/gedit 1793605837.993982140
+mtime ~/.local/share/gedit 1793606792.403445245
+mtime ~/.Xauthority 1793172622.789152205
+mtime ~/.config/kglobalshortcutsrc 1793182739.700593922
+mtime ~/.local/share/kactivitymanagerd 1793182739.166590352
+mtime ~/.local/share/gvfs-metadata absent
+mtime ~/.local/share/org.gnome.TextEditor 1793327689.868914743
+mtime ~/.local/share/kate 1793683331.596245459
+mtime ~/.config/QtProject absent
+mtime ~/.config/QtProject.conf absent
+mtime ~/.local/share/QtProject absent
+mtime ~/.cache/mesa_shader_cache 1793462274.020703589
+mtime ~/.config/gnome-terminal absent
+mtime ~/.config/libreoffice absent
+-- the person's a11y bus socket and runtime directory (names)
+bus_0 inode 58 mtime 1793168093.344465237
+at-spi dir: bus_0
+runtime dir: at-spi
+runtime dir: bus
+runtime dir: cc-socks
+runtime dir: dbus-1
+runtime dir: dconf
+runtime dir: gnupg
+runtime dir: pk-debconf-socket
+runtime dir: snapd-session-agent.socket
+runtime dir: systemd
+-- X sockets
+x socket: X0

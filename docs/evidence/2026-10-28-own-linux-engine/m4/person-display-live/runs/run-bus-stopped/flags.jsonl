@@ -1,0 +1,4 @@
+{"t": 94.254, "kind": "outside-peer-connection", "pids": [3257191], "comm": "MainThread", "peer_path": "*", "peer_pids": [3262139], "peer_comm": null, "peer_inode": "52586756"}
+{"t": 94.254, "kind": "stop-sent", "pid": 3257191, "why": "outside-peer-connection"}
+{"t": 94.254, "kind": "outside-peer-connection", "pids": [3257191], "comm": "MainThread", "peer_path": "*", "peer_pids": [3262139], "peer_comm": null, "peer_inode": "52586760"}
+{"t": 94.255, "kind": "outside-peer-connection", "pids": [3257191], "comm": "MainThread", "peer_path": "*", "peer_pids": [3262139], "peer_comm": null, "peer_inode": "52586758"}

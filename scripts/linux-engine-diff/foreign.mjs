@@ -610,6 +610,7 @@ export function xtraceElements({ elements, extensions }, root) {
       const s = text.match(/\bmajor=(\d+),.*\bseq=([0-9a-f]+)/);
       if (s) out.push({ k: 'error', c: conn, seq: Number.parseInt(s[2], 16), major: Number(s[1]), exact: true });
     } else if (what === 'DestroyNotify') {
+      // a generated one is read too, deliberately unlike ReparentNotify: an end only makes windows foreign (fails closed)
       const w = field(text, 'window');
       if (typeof w === 'number') out.push({ k: 'destroyed', w });
     } else if (what === 'ReparentNotify') {

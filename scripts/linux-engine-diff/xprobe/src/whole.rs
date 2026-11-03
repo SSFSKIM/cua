@@ -1,4 +1,5 @@
-//! `xprobe record-run --ours <pid> [--exe <name>,...]`: every client's requests that can change a window, as the server
+//! `xprobe record-run --ours <pid> [--exe <name>,...]`, on a private display only (marked `CUA171_PRIVATE_DISPLAY`;
+//! [`REFUSAL`] on any other, task 41): every client's requests that can change a window, as the server
 //! handled them, through RECORD, for the whole of a harness run, until stdin closes (#171 M4, T4b's audit round: the
 //! harness never changes a window it did not open, judged on every request of the run, not only the sampled audit
 //! passes). Each client is attributed when RECORD reports it, by the process X-Resource names for it: ours when that
@@ -247,7 +248,7 @@ impl Watch {
         }
     }
 
-    fn line(kind: &str, fields: &str) -> String {
+    pub(crate) fn line(kind: &str, fields: &str) -> String {
         let sep = if fields.is_empty() { "" } else { "," };
         format!("{{\"kind\":\"{kind}\",\"ms\":{}{sep}{fields}}}", wall_ms())
     }
@@ -530,7 +531,10 @@ pub fn contexts(xtest: Option<u8>, composite: Option<u8>) -> (Vec<record::Range>
         ..empty
     };
     let delivered = |code: u8| record::Range {
-        delivered_events: record::Range8 { first: code, last: code },
+        delivered_events: record::Range8 {
+            first: code,
+            last: code,
+        },
         ..empty
     };
     let mut events = vec![
@@ -590,6 +594,10 @@ fn parse_args(args: &[String]) -> Result<(u32, Vec<String>)> {
     Ok((harness.ok_or("record-run needs --ours <pid>")?, allowed))
 }
 
+/// What record-run answers on a display not marked private (the mark's name follows it); xtools.mjs refuses first.
+pub const REFUSAL: &str =
+    "the whole-run RECORD can freeze X.Org 21.1 (task 41), so it runs only on a private display marked";
+
 pub fn record_run(args: &[String]) -> Result<()> {
     let result = run(args);
     if let Err(e) = &result {
@@ -604,11 +612,16 @@ pub fn record_run(args: &[String]) -> Result<()> {
 
 fn run(args: &[String]) -> Result<()> {
     let (harness, allowed) = parse_args(args)?;
-    let (control, screen) = x11rb::connect(None)?;
-    let (data, _) = x11rb::connect(None)?;
-    let (error_data, _) = x11rb::connect(None)?;
-    let (query, _) = x11rb::connect(None)?;
+    let (control, screen) = crate::xconnect(None)?;
     let root = control.setup().roots[screen].root;
+    // task 41: X.Org 21.1's FlushClient re-entered by RECORD's flush callback spins the server for good (or drops
+    // recorded bytes) once a recording client falls behind, so the whole-run record is a private display's diagnostic
+    if !crate::clip::private_display(&control, root)? {
+        return Err(format!("{REFUSAL} {}", crate::clip::PRIVATE_MARK).into());
+    }
+    let (data, _) = crate::xconnect(None)?;
+    let (error_data, _) = crate::xconnect(None)?;
+    let (query, _) = crate::xconnect(None)?;
     control.record_query_version(1, 13)?.reply()?;
     query.res_query_version(1, 2)?.reply()?;
     let major = |name: &[u8]| -> Result<Option<u8>> {
@@ -630,12 +643,20 @@ fn run(args: &[String]) -> Result<()> {
         .check()?;
     let error_context = control.generate_id()?;
     control
-        .record_create_context(error_context, header, &[u32::from(record::CS::ALL_CLIENTS)], &error_ranges)?
+        .record_create_context(
+            error_context,
+            header,
+            &[u32::from(record::CS::ALL_CLIENTS)],
+            &error_ranges,
+        )?
         .check()?;
     // the errors' context recording before the requests' begins, so no request's refusal goes unread
     let (started_tx, started) = std::sync::mpsc::channel();
     let mut error_collector = Collector::spawn(move || {
-        for reply in error_data.record_enable_context(error_context).map_err(|e| e.to_string())? {
+        for reply in error_data
+            .record_enable_context(error_context)
+            .map_err(|e| e.to_string())?
+        {
             let reply = reply.map_err(|e| e.to_string())?;
             if reply.client_swapped {
                 return Err("a recorded client's byte order differs from ours".into());
@@ -913,9 +934,19 @@ mod tests {
         // byte, and drops it (record.c `RecordADeliveredEventOrError`): a SelectionRequest or a DestroyNotify never
         // arrived (T4c's probe on Xvfb, 2026-11-02)
         let (events, errors) = contexts(Some(132), Some(142));
-        assert!(events.iter().all(|r| r.errors.first == 0 && r.errors.last == 0), "no errors beside the delivered events");
-        let delivered: Vec<(u8, u8)> = events.iter().map(|r| (r.delivered_events.first, r.delivered_events.last)).filter(|&(a, _)| a != 0).collect();
-        assert_eq!(delivered, [(DESTROY_NOTIFY, DESTROY_NOTIFY), (SELECTION_REQUEST, SELECTION_REQUEST)]);
+        assert!(
+            events.iter().all(|r| r.errors.first == 0 && r.errors.last == 0),
+            "no errors beside the delivered events"
+        );
+        let delivered: Vec<(u8, u8)> = events
+            .iter()
+            .map(|r| (r.delivered_events.first, r.delivered_events.last))
+            .filter(|&(a, _)| a != 0)
+            .collect();
+        assert_eq!(
+            delivered,
+            [(DESTROY_NOTIFY, DESTROY_NOTIFY), (SELECTION_REQUEST, SELECTION_REQUEST)]
+        );
         assert!(events.iter().any(|r| r.client_started && r.client_died));
         assert!(events.iter().any(|r| r.core_requests.first == SEND_EVENT));
         assert_eq!(errors.len(), 1);
@@ -933,7 +964,9 @@ mod tests {
         let lines: Vec<String> = w.requests(0x400000, &data, None).iter().map(|l| json(l)).collect();
         assert_eq!(
             lines,
-            ["{\"kind\":\"req\",\"client\":4194304,\"seq\":50,\"t\":3,\"op\":\"SendEvent\",\"destination\":6291458,\"event\":\"SelectionNotify\",\"requestor\":6291458,\"selection\":489,\"target\":497,\"property\":496}"]
+            [
+                "{\"kind\":\"req\",\"client\":4194304,\"seq\":50,\"t\":3,\"op\":\"SendEvent\",\"destination\":6291458,\"event\":\"SelectionNotify\",\"requestor\":6291458,\"selection\":489,\"target\":497,\"property\":496}"
+            ]
         );
     }
 
@@ -971,14 +1004,20 @@ mod tests {
             ]
         );
         // the errors' own context: each error with its request's opcodes and the server's time
-        let lines: Vec<String> = error_lines(0x400000, &packet(error), Some(132), Some(142)).iter().map(|l| json(l)).collect();
+        let lines: Vec<String> = error_lines(0x400000, &packet(error), Some(132), Some(142))
+            .iter()
+            .map(|l| json(l))
+            .collect();
         assert_eq!(
             lines,
             ["{\"kind\":\"error\",\"client\":4194304,\"seq\":7,\"major\":1,\"minor\":0,\"code\":14,\"t\":9}"]
         );
         let mut unread = error;
         unread[10] = 14;
-        assert!(error_lines(0x400000, &packet(unread), Some(132), Some(142)).is_empty(), "GetGeometry's error: a request the record does not read");
+        assert!(
+            error_lines(0x400000, &packet(unread), Some(132), Some(142)).is_empty(),
+            "GetGeometry's error: a request the record does not read"
+        );
         // a selection request to the person's own client is theirs
         assert!(w.served(0x600000, &packet(select)).is_empty());
     }

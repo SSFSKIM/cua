@@ -129,7 +129,7 @@ pub fn top_at_cmd(args: &[String]) -> Result<()> {
         .iter()
         .map(|a| crate::parse_window(a))
         .collect::<Result<Vec<_>>>()?;
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     let children = conn.query_tree(root)?.reply()?.children;
     let attributes = children
@@ -173,7 +173,7 @@ pub fn toplevel(args: &[String]) -> Result<()> {
         return Err("toplevel <window>".into());
     };
     let window = crate::parse_window(window)?;
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     println!("{{\"toplevel\":{}}}", toplevel_of(&conn, root, window)?);
     Ok(())
@@ -189,7 +189,7 @@ pub fn restack_grabbed(args: &[String]) -> Result<()> {
         .iter()
         .map(|a| crate::parse_window(a))
         .collect::<Result<Vec<_>>>()?;
-    let (conn, _) = x11rb::connect(None)?;
+    let (conn, _) = crate::xconnect(None)?;
     conn.grab_server()?;
     for &w in &windows {
         conn.configure_window(w, &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE))?;
@@ -206,7 +206,7 @@ pub fn popup(args: &[String]) -> Result<()> {
     let [x, y, width, height, ms] = args else {
         return Err("popup <x> <y> <width> <height> <ms>".into());
     };
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let screen = &conn.setup().roots[screen];
     let id = conn.generate_id()?;
     let aux = CreateWindowAux::new()
@@ -246,7 +246,7 @@ pub fn overlay(args: &[String]) -> Result<()> {
         [x, y, w, h, word, window] if word == "below" => ([x, y, w, h], Some(crate::parse_window(window)?)),
         _ => return Err("overlay <x> <y> <width> <height> [below <window>]".into()),
     };
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let screen = &conn.setup().roots[screen];
     let id = conn.generate_id()?;
     let aux = CreateWindowAux::new()
@@ -303,7 +303,14 @@ mod tests {
 
     #[test]
     fn the_top_window_at_a_point_is_the_highest_viewable_root_child_covering_it() {
-        let placed = |id, viewable, x, y, w, h| Placed { id, viewable, x, y, w, h };
+        let placed = |id, viewable, x, y, w, h| Placed {
+            id,
+            viewable,
+            x,
+            y,
+            w,
+            h,
+        };
         // bottom first, as QueryTree lists them: a frame, a popup over part of it, an unmapped window over all
         let stack = [
             placed(1, true, 0, 0, 100, 100),

@@ -381,8 +381,8 @@ fn wall_ms() -> u128 {
 }
 
 pub fn request_watch() -> Result<()> {
-    let (control, _) = x11rb::connect(None)?;
-    let (data, _) = x11rb::connect(None)?;
+    let (control, _) = crate::xconnect(None)?;
+    let (data, _) = crate::xconnect(None)?;
     control.record_query_version(1, 13)?.reply()?;
     let major = |name: &[u8]| -> Result<Option<u8>> {
         let r = control.query_extension(name)?.reply()?;

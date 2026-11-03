@@ -230,7 +230,7 @@ impl Owner {
 
 pub fn own(args: &[String]) -> Result<()> {
     let text = args.first().ok_or("clip-own <text>")?.clone();
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let window = own_window(&conn, screen)?;
     let atoms = Atoms::new(&conn)?;
     let mut owner = Owner {
@@ -274,7 +274,7 @@ pub fn own(args: &[String]) -> Result<()> {
 }
 
 pub fn read() -> Result<()> {
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let window = own_window(&conn, screen)?;
     let atoms = Atoms::new(&conn)?;
     let owner = conn.get_selection_owner(atoms.clipboard)?.reply()?.owner;
@@ -330,7 +330,7 @@ fn status(s: GrabStatus) -> &'static str {
 pub const PRIVATE_MARK: &str = "CUA171_PRIVATE_DISPLAY";
 
 /// Whether the display is a private one the harness started: its root carries [`PRIVATE_MARK`] (a read).
-fn private_display(conn: &RustConnection, root: Window) -> Result<bool> {
+pub(crate) fn private_display(conn: &RustConnection, root: Window) -> Result<bool> {
     let mark = conn.intern_atom(true, PRIVATE_MARK.as_bytes())?.reply()?.atom;
     if mark == x11rb::NONE {
         return Ok(false);
@@ -340,7 +340,7 @@ fn private_display(conn: &RustConnection, root: Window) -> Result<bool> {
 }
 
 pub fn grabs() -> Result<()> {
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     if !private_display(&conn, root)? {
         return Err(format!("grabs takes the pointer and the keyboard, so it runs only on a private display marked {PRIVATE_MARK}, never on a person's").into());
@@ -381,7 +381,7 @@ pub fn within(args: &[String]) -> Result<()> {
         return Err("within <window> <ancestor>".into());
     };
     let (window, ancestor) = (crate::parse_window(window)?, crate::parse_window(ancestor)?);
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     let mut at = window;
     let mut inside = false;
@@ -408,7 +408,7 @@ pub fn quarantine_left(end: u32, now: u32) -> Option<u32> {
 
 /// `xprobe quarantine`: `{"open":…,"remaining_ms":…,"client":…}` for the display's unconfirmed-paste window.
 pub fn quarantine() -> Result<()> {
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     let window = own_window(&conn, screen)?;
     let property = atom(&conn, "XPROBE_CLIP")?;

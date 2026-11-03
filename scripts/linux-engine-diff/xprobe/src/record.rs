@@ -43,7 +43,7 @@ pub fn record(args: &[String]) -> Result<()> {
         Some(at) => Some(args.get(4 + at + 1).ok_or("managed needs a title")?.clone()),
         None => None,
     };
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     let mask = EventMask::KEY_PRESS
         | EventMask::KEY_RELEASE

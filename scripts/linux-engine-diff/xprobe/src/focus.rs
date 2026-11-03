@@ -91,7 +91,7 @@ pub fn focus_grabbed(args: &[String]) -> Result<()> {
         .iter()
         .map(|a| crate::parse_window(a))
         .collect::<Result<Vec<_>>>()?;
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     let active = crate::atom(&conn, "_NET_ACTIVE_WINDOW")?;
     conn.grab_server()?;

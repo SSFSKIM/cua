@@ -40,7 +40,11 @@
 //! - `xprobe cursor-watch`: every change of the displayed cursor with its theme name, through XFixes, until stdin
 //!   closes (`cursor.rs`).
 //! - `xprobe record-run --ours <pid>`: every client's requests that can change a window, for a whole harness run,
-//!   each client attributed to the harness or not, through RECORD, until stdin closes (`whole.rs`).
+//!   each client attributed to the harness or not, through RECORD, until stdin closes (`whole.rs`); only on a private
+//!   display marked `CUA171_PRIVATE_DISPLAY` (task 41: RECORD can freeze X.Org 21.1, so never on a person's display).
+//! - `xprobe watchdog …`: a GetInputFocus round trip every few seconds on a connection of its own; when one goes
+//!   unanswered for the bound it kills the guarded processes, stops the run and prints an alert naming the display
+//!   (`watchdog.rs`).
 
 mod clip;
 mod collector;
@@ -51,6 +55,7 @@ mod focus;
 mod record;
 mod requests;
 mod restack;
+mod watchdog;
 mod whole;
 
 use std::io::{BufRead, Write};
@@ -97,12 +102,32 @@ fn main() {
         Some("crossing-watch") if args.len() == 1 => crossing::crossing_watch(),
         Some("cursor-watch") if args.len() == 1 => cursor::cursor_watch(),
         Some("record-run") => whole::record_run(&args[1..]),
-        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | snap <window> <out.jpg> | close <window> | record <x> <y> <w> <h> [focus] [managed <title>] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | overlay <x> <y> <w> <h> [below <window>] | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch | crossing-watch | cursor-watch | record-run --ours <pid> [--exe <name>,...]".into()),
+        Some("watchdog") => watchdog::watchdog(&args[1..]),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | snap <window> <out.jpg> | close <window> | record <x> <y> <w> <h> [focus] [managed <title>] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | overlay <x> <y> <w> <h> [below <window>] | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch | crossing-watch | cursor-watch | record-run --ours <pid> [--exe <name>,...] | watchdog --display <d> [--interval-ms N] [--bound-ms N] [--grace-ms N] [--stop <pid>]".into()),
     };
     if let Err(error) = result {
         eprintln!("xprobe: {error}");
         std::process::exit(1);
     }
+}
+
+/// Every connection xprobe makes to an X server goes through here. A test build connects to none, whatever `DISPLAY`
+/// or `display` says: the hermetic tests reach only the fake displays they serve themselves, through a connector of
+/// their own to the socket they created (task 41: a `unix:<path>` display string once took a test to `:0`'s socket,
+/// since x11rb 0.13 connects to `/tmp/.X11-unix/X0` for it).
+pub(crate) fn xconnect(
+    display: Option<&str>,
+) -> std::result::Result<(RustConnection, usize), x11rb::errors::ConnectError> {
+    #[cfg(test)]
+    {
+        let named = display.map(str::to_string).or_else(|| std::env::var("DISPLAY").ok());
+        Err(x11rb::errors::ConnectError::IoError(std::io::Error::other(format!(
+            "a test build of xprobe connects to no X display ({}), only to a fake display a test serves",
+            named.as_deref().unwrap_or("DISPLAY unset")
+        ))))
+    }
+    #[cfg(not(test))]
+    x11rb::connect(display)
 }
 
 pub(crate) fn parse_window(text: &str) -> Result<Window> {
@@ -266,7 +291,7 @@ impl Span {
 }
 
 fn witness() -> Result<()> {
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     let desktop = Desktop {
         active_atom: atom(&conn, "_NET_ACTIVE_WINDOW")?,
@@ -454,7 +479,7 @@ fn retention(args: &[String]) -> Result<()> {
     let span = Duration::from_millis(args.get(2).map(|s| s.parse()).transpose()?.unwrap_or(400));
     let gap = Duration::from_millis(args.get(3).map(|s| s.parse()).transpose()?.unwrap_or(300));
     let dump = args.get(4);
-    let (conn, _) = x11rb::connect(None)?;
+    let (conn, _) = crate::xconnect(None)?;
     conn.composite_query_version(0, 4)?.reply()?;
     let geometry = conn.get_geometry(window)?.reply()?;
     let (width, height) = (geometry.width, geometry.height);
@@ -553,7 +578,7 @@ const SNAP_GAP: Duration = Duration::from_millis(100);
 /// drawable, which is the window's own contents while it is retained (redirected), whatever covers it.
 fn snap(window: &str, out: &str) -> Result<()> {
     let window = parse_window(window)?;
-    let (conn, _) = x11rb::connect(None)?;
+    let (conn, _) = crate::xconnect(None)?;
     let geometry = conn.get_geometry(window)?.reply()?;
     let (width, height) = (geometry.width, geometry.height);
     let started = Instant::now();
@@ -584,7 +609,7 @@ fn snap(window: &str, out: &str) -> Result<()> {
 
 fn close(window: &str) -> Result<()> {
     let window = parse_window(window)?;
-    let (conn, _) = x11rb::connect(None)?;
+    let (conn, _) = crate::xconnect(None)?;
     let protocols = atom(&conn, "WM_PROTOCOLS")?;
     let delete = atom(&conn, "WM_DELETE_WINDOW")?;
     let event = ClientMessageEvent::new(32, window, protocols, [delete, x11rb::CURRENT_TIME, 0, 0, 0]);
@@ -604,7 +629,7 @@ const WM_WAIT: Duration = Duration::from_secs(2);
 /// harness-owned windows.
 fn minimize(window: &str) -> Result<()> {
     let window = parse_window(window)?;
-    let (conn, screen) = x11rb::connect(None)?;
+    let (conn, screen) = crate::xconnect(None)?;
     let root = conn.setup().roots[screen].root;
     let change_state = atom(&conn, "WM_CHANGE_STATE")?;
     let event = ClientMessageEvent::new(32, window, change_state, [ICONIC_STATE, 0, 0, 0, 0]);
@@ -618,14 +643,14 @@ fn minimize(window: &str) -> Result<()> {
 /// until its `WM_STATE` says Normal and it is viewable, and prints how long that took. For harness-owned windows.
 fn restore(window: &str) -> Result<()> {
     let window = parse_window(window)?;
-    let (conn, _) = x11rb::connect(None)?;
+    let (conn, _) = crate::xconnect(None)?;
     let started = Instant::now();
     conn.map_window(window)?.check()?;
     wait_for_state(&conn, window, started, NORMAL_STATE, true, "restored")
 }
 
 fn keys_down() -> Result<()> {
-    let (conn, _) = x11rb::connect(None)?;
+    let (conn, _) = crate::xconnect(None)?;
     let keys = conn.query_keymap()?.reply()?.keys;
     let down: Vec<String> = (0..256usize)
         .filter(|&k| keys[k / 8] & (1 << (k % 8)) != 0)
@@ -666,6 +691,30 @@ fn wait_for_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_test_build_connects_to_no_real_display_whatever_it_is_given() {
+        // a real display in every form a DISPLAY takes, and the environment's own (None): each refused before any connect
+        for display in [
+            Some(":0"),
+            Some(":1.0"),
+            Some("unix:/tmp/.X11-unix/X0"),
+            Some("/tmp/.X11-unix/X0"),
+            Some("localhost:0"),
+            None,
+        ] {
+            let started = Instant::now();
+            let refused = xconnect(display).err().map(|e| e.to_string()).unwrap_or_default();
+            assert!(
+                refused.contains("a test build of xprobe connects to no X display"),
+                "{display:?}: {refused}"
+            );
+            assert!(
+                started.elapsed() < Duration::from_millis(100),
+                "{display:?} refused at once, not after a connect"
+            );
+        }
+    }
 
     fn state(active: u32) -> DesktopState {
         DesktopState {

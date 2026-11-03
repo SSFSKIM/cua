@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runTmp } from './app-env.mjs';
-import { auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace, startProxy } from './audit.mjs';
+import { auditForeground, auditHeldRelease, auditNothingSent, auditRequests, parseXtrace, startProxy, watchAncestry } from './audit.mjs';
 import { auditForeign, foreignLine } from './foreign.mjs';
 import { startMonitor } from './busmon.mjs';
 import { candidateLine, gateLabel, prepareCandidate } from './candidate.mjs';
@@ -1154,6 +1154,10 @@ async function diffRun(args, candidate, { handoff }) {
         for (const spec of engines.filter((e) => runsOp(e.label, op)).map((e) => engineSpecFor(e, op, sceneName))) {
           const target = measuredTarget(windows, sceneName, op, spec.label);
           const proxy = await startProxy();
+          // the audited window's ancestry in the trace's own replies and events, read before the engine connects, so the
+          // foreign-window judge knows which frame holds it and when it ends (task 53)
+          const watch = Number.isSafeInteger(target?.id) && target.id > 0 ? await watchAncestry(proxy, target.id) : null;
+          let ancestry = { watched: true };
           const engine = makeEngine({ ...spec, stats: false }, { ...(OPS[op].apps ? launch.env : {}), DISPLAY: proxy.env.DISPLAY, XAUTHORITY: proxy.env.XAUTHORITY });
           const oks = [];
           // each audited request's answer, for the device cases' judge: the expected outcome, not only a clean trace
@@ -1170,6 +1174,7 @@ async function diffRun(args, candidate, { handoff }) {
             }
           } finally {
             await engine.close();
+            if (watch) ancestry = await watch.stop();
             if (ownWindow(op)) target.retainedBy = null;
             if (OPS[op].reset) await OPS[op].reset({ desktop, scene: target, cua: args.cua });
           }
@@ -1193,10 +1198,11 @@ async function diffRun(args, candidate, { handoff }) {
           const judgedForeign = auditForeign(trace, { registered: desktop.registry(), root: desktop.root, routeAudit: true });
           const { foreign } = judgedForeign;
           engineForeign.push(...foreign.map((f) => `${spec.label} on ${sceneName} ${op}: ${foreignLine(f)}`));
-          const clean = audited.clean && foreign.length === 0;
+          // a watcher that did not watch to the end leaves the judge's knowledge of the window's end unproven
+          const clean = audited.clean && foreign.length === 0 && ancestry.watched;
           // the judge compares these answers with the timed pass's: an operation that failed early is not audited
-          audits[`${sceneName}|${op}|${spec.label}`] = { clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set([...audited.forbidden.map((f) => f.what), ...foreign.map(foreignLine)])] };
-          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine), ...(foreign.some((f) => 'parent' in f) ? { foreign_parents: foreign.slice(0, 10).map((f) => f.parent ?? null) } : {}), ...(judgedForeign.unplaced ? { xtest_unplaced: judgedForeign.unplaced } : {}) });
+          audits[`${sceneName}|${op}|${spec.label}`] = { clean, oks, answered, foreground: foregroundAudit, kind: auditKind, forbidden: [...new Set([...audited.forbidden.map((f) => f.what), ...foreign.map(foreignLine), ...(ancestry.error ? [ancestry.error] : [])])] };
+          emit({ kind: 'audit', engine: spec.label, scene: sceneName, op, ok: oks.every(Boolean), oks, answered, ...(restoredText.length ? { text_restores: restoredText } : {}), clean, traced: audited.traced, requests: audited.requests, audit: auditKind, ...(foregroundAudit ? { route: 'foreground', allowed: audited.allowed } : {}), ...(audited.samples ? { held: audited.samples } : {}), forbidden: audited.forbidden.slice(0, 10), foreign: foreign.slice(0, 10).map(foreignLine), ...(foreign.some((f) => 'parent' in f) ? { foreign_parents: foreign.slice(0, 10).map((f) => f.parent ?? null) } : {}), ...(watch ? { ancestry: ancestry.error ?? watch.chain } : {}), ...(judgedForeign.unplaced ? { xtest_unplaced: judgedForeign.unplaced } : {}) });
           desktop.focusFront();
         }
       }

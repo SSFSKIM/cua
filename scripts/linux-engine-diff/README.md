@@ -344,7 +344,13 @@ variants included; their evidence is written either way. The run's `end` row kee
   - *Two sources.* The run's own xtrace proxy (`Desktop.begin`), through which every `xdotool` and every acting xprobe
     command connects (`xtools.mjs`; a test keeps it so), and every audit pass's engine trace, the activating stub's
     included, are judged by `auditForeign`; there every connection is ours, and XTEST is placed only by what the trace
-    shows (the focus a request set or a reply read, the pointer a reply read), the rest counted as unplaced. On a
+    shows (the focus a request set or a reply read, the pointer a reply read), the rest counted as unplaced. In an
+    engine's route audit (task 53) the audited window's ancestry is in the trace itself: `xprobe ancestry`, connected
+    through the same proxy before the engine (`watchAncestry`), selects the window's structure and reads its parents,
+    so the trace's QueryTree replies say which frame holds it and its ReparentNotify and DestroyNotify say when that
+    changes; a watcher that ends before the audit leaves it unclean. There XTEST input on a window in the client range
+    of a live harness window whose end the trace would see (GTK 4's focus window inside its toplevel) is that
+    window's, as is input on the frame holding it. On a
     private display only (marked `CUA171_PRIVATE_DISPLAY`; `startRunRecord` and xprobe both refuse any other), the whole
     run is also recorded server-side through RECORD (`xprobe record-run`, `startRunRecord`), every client's requests
     of those kinds, each client attributed by its process (X-Resource and `/proc`): ours when it descends from the

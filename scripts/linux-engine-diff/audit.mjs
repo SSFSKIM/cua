@@ -12,7 +12,7 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
-import { isPrivateDisplay } from './xtools.mjs';
+import { XPROBE, isPrivateDisplay } from './xtools.mjs';
 import { assertReachable, guard, isCreatedDisplay, registerDisplay } from './xspawn.mjs';
 
 const REQUEST = /^(\d+):<:([0-9a-f]+):\s*\d+:\s*(?:([A-Za-z0-9-]+)-)?Request\((\d+)(?:,(\d+))?\):\s*(\S+)?(.*)$/;
@@ -253,6 +253,67 @@ export function auditHeldRelease({ requests, extensions }, target, { route, mark
 }
 
 // The foreign-window judge (the harness never changes a window it did not open) is foreign.mjs's.
+
+/**
+ * A route audit's window, its ancestry put into the audit's own trace (task 53): `xprobe ancestry <window>` connected
+ * through the proxy (`proxy.env`, its display and its own authority file) selects the window's structure and reads its
+ * parents up to the root, so the trace's own QueryTree replies say which frame holds it, and its ReparentNotify and
+ * DestroyNotify say when that changes (foreign.mjs: an XTEST target's frame, and the client range a live harness window
+ * lends). Resolves once those reads are in the trace, with `chain` (the window first, the root's child last; null when
+ * it did not start). `stop()` ends it and answers `{watched: true}`, or `{watched: false, error}` when it did not start
+ * or ended before the audit did: the judge trusts a window's end to reach the trace only while this connection lives.
+ * `spawn` is the display-free tests' own.
+ */
+export async function watchAncestry(proxy, window, { spawn = spawnProcess, readyMs = 10000 } = {}) {
+  const child = guard(spawn)(XPROBE, ['ancestry', String(window)], { env: proxy.env, stdio: ['pipe', 'pipe', 'pipe'] });
+  let stderr = '';
+  child.stderr?.on('data', (d) => {
+    stderr += d;
+  });
+  let ended = null;
+  const exited = new Promise((resolve) => {
+    child.once('error', (error) => {
+      ended ??= error.message;
+      resolve();
+    });
+    child.once('exit', (code, signal) => {
+      ended ??= `exit ${code ?? signal}`;
+      resolve();
+    });
+  });
+  const ready = await new Promise((resolve) => {
+    const lines = createInterface({ input: child.stdout });
+    const timer = setTimeout(() => resolve(null), readyMs);
+    lines.once('line', (line) => {
+      clearTimeout(timer);
+      try {
+        resolve(JSON.parse(line));
+      } catch {
+        resolve(null);
+      }
+    });
+    exited.then(() => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+  });
+  const why = () => `${ended ?? 'no ready line'}${stderr.trim() ? `: ${stderr.trim().split('\n').at(-1)}` : ''}`;
+  if (ready?.ready !== true) {
+    if (child.exitCode === null) child.kill('SIGKILL');
+    await exited;
+    const error = `the ancestry watcher did not start (${why()})`;
+    return { chain: null, stop: async () => ({ watched: false, error }) };
+  }
+  return {
+    chain: ready.chain ?? [],
+    async stop() {
+      if (ended !== null) return { watched: false, error: `the ancestry watcher ended before the audit did (${why()})` };
+      child.stdin.end();
+      await exited;
+      return { watched: true };
+    },
+  };
+}
 
 function freeDisplay(socketDir) {
   for (let n = 40; n < 100; n++) {

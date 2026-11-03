@@ -26,6 +26,8 @@
 //! - `xprobe clip-own <text>`, `clip-read`, `grabs`, `within <window> <ancestor>`: the clipboard owner and reader and
 //!   the desktop checks of M2's text cases (`clip.rs`); `grabs` takes the root's pointer and keyboard to ask, so it
 //!   runs only on a private display marked `CUA171_PRIVATE_DISPLAY`, never on a person's.
+//! - `xprobe ancestry <window>`: the window's parents up to the root read, and their reparents and ends selected, on a
+//!   connection that stays until stdin closes, so a route audit's trace shows where its window lies (`ancestry.rs`).
 //! - `xprobe toplevel <window>`, `restack-grabbed <window>...`, `popup …`, `overlay …`: a window's top-level, the coalesced
 //!   negative check's raises under one server grab, another client's popup, and a lasting overlay (`restack.rs`).
 //! - `xprobe focus-grabbed <window>...`: the focus and `_NET_ACTIVE_WINDOW` set to each window in turn under one
@@ -46,6 +48,7 @@
 //!   unanswered for the bound it kills the guarded processes, stops the run and prints an alert naming the display
 //!   (`watchdog.rs`).
 
+mod ancestry;
 mod clip;
 mod collector;
 mod crossing;
@@ -91,6 +94,7 @@ fn main() {
         Some("grabs") if args.len() == 1 => clip::grabs(),
         Some("within") => clip::within(&args[1..]),
         Some("toplevel") => restack::toplevel(&args[1..]),
+        Some("ancestry") => ancestry::ancestry(&args[1..]),
         Some("top-at") => restack::top_at_cmd(&args[1..]),
         Some("restack-grabbed") => restack::restack_grabbed(&args[1..]),
         Some("popup") => restack::popup(&args[1..]),
@@ -103,7 +107,7 @@ fn main() {
         Some("cursor-watch") if args.len() == 1 => cursor::cursor_watch(),
         Some("record-run") => whole::record_run(&args[1..]),
         Some("watchdog") => watchdog::watchdog(&args[1..]),
-        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | snap <window> <out.jpg> | close <window> | record <x> <y> <w> <h> [focus] [managed <title>] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | overlay <x> <y> <w> <h> [below <window>] | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch | crossing-watch | cursor-watch | record-run --ours <pid> [--exe <name>,...] | watchdog --display <d> [--interval-ms N] [--bound-ms N] [--grace-ms N] [--stop <pid>]".into()),
+        _ => Err("usage: xprobe witness | retention <window> [trials] [span-ms] [gap-ms] [dump-prefix] | imgdiff <a> <b> [mask-top-rows] | snap <window> <out.jpg> | close <window> | record <x> <y> <w> <h> [focus] [managed <title>] | clip-own <text> | clip-read | grabs | within <window> <ancestor> | toplevel <window> | ancestry <window> | restack-grabbed <window>... | popup <x> <y> <w> <h> <ms> | overlay <x> <y> <w> <h> [below <window>] | focus-grabbed <window>... | quarantine | selection-watch <selection>... | request-watch | crossing-watch | cursor-watch | record-run --ours <pid> [--exe <name>,...] | watchdog --display <d> [--interval-ms N] [--bound-ms N] [--grace-ms N] [--stop <pid>]".into()),
     };
     if let Err(error) = result {
         eprintln!("xprobe: {error}");

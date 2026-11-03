@@ -12,8 +12,13 @@ import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import test from 'node:test';
 
+import { spawn } from 'node:child_process';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { createService } from '../../src/services/engine/linux/service.mjs';
 import { launchEnvironment, runTmp } from '../../scripts/linux-engine-diff/app-env.mjs';
-import { Engine } from '../../scripts/linux-engine-diff/engine.mjs';
+import { Engine, runTmpdirInProcess } from '../../scripts/linux-engine-diff/engine.mjs';
 import { leftByVendor } from '../../scripts/linux-engine-diff/run.mjs';
 import { Desktop } from '../../scripts/linux-engine-diff/scenes.mjs';
 import { VendorJsEngine } from '../../scripts/linux-engine-diff/vendor-js.mjs';
@@ -131,4 +136,62 @@ test("a vendor build's screenshot, left in the run's TMPDIR, is the harness's to
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
+});
+
+// The two-services instrument (services.mjs, task 51's review): the vendor's @oai/sky service and cua's own service each
+// start their engine themselves, with this process's environment (the vendor's transport; cua's client, given none), so
+// the run's TMPDIR reaches them only through process.env, the same value for both lanes and every other engine's.
+test("the two services' engines, started with the process's environment, both get the run's TMPDIR while the run is open, and the harness's after", async () => {
+  const tools = standIns();
+  const dir = mkdtempSync(join(tmpdir(), 'cua171-runtmp-services-'));
+  // an engine either service starts: it writes the TMPDIR of each start (cua's client asks `--version`, then `server`)
+  const engine = join(dir, 'cua-engine');
+  writeFileSync(engine, `#!/bin/sh\nprintf '%s %s\\n' "$1" "\${TMPDIR-unset}" >> ${JSON.stringify(join(dir, 'starts'))}\n[ "$1" = --version ] && echo 'cua-engine 9.0.0 (test)'\nexit 0\n`);
+  chmodSync(engine, 0o755);
+  const starts = async (n) => {
+    for (let i = 0; i < 150 && (!existsSync(join(dir, 'starts')) || readFileSync(join(dir, 'starts'), 'utf8').trim().split('\n').length < n); i++) await sleep(20);
+    return readFileSync(join(dir, 'starts'), 'utf8').trim().split('\n');
+  };
+  const desktop = new Desktop({ cua: 'unused', run: 'runtmp', reader: { request: async () => ({ response: { ok: true, output: [] } }), close: async () => {} }, startActive: 0, nonce: 'n0' });
+  const harnessTmp = process.env.TMPDIR;
+  let restore = () => {};
+  try {
+    assert.throws(() => runTmpdirInProcess(), /no run is open/, 'only while a run is open');
+    await desktop.begin({ startTrace: fakeTrace(), startRecord: fakeRecord, existing: () => [], privateDisplay: () => false, startWatchdog: fakeWatchdog, startSession: fakeSession });
+    const tmp = runTmp(desktop.dir);
+    restore = runTmpdirInProcess();
+    // cua's own service, given no environment for its engine, as services.mjs makes it
+    const cua = createService({ env: { CUA_ENGINE_BIN: engine, CUA_DESKTOP_MODE: 'shared' } });
+    await cua.handleRpc({ type: 'setup' });
+    cua.close();
+    // the vendor's transport: the engine named by OAI_SKY_LINUX_BIN, started with the process's environment
+    const vendor = spawn(engine, ['server'], { stdio: 'ignore' });
+    await new Promise((resolve) => vendor.once('exit', resolve));
+    assert.deepEqual(await starts(3), [`--version ${tmp}`, `server ${tmp}`, `server ${tmp}`], "both lanes' engines in the run's TMPDIR");
+    restore();
+    restore = () => {};
+    assert.equal(process.env.TMPDIR, harnessTmp, "the harness's TMPDIR put back");
+    await desktop.closeAll();
+  } finally {
+    restore();
+    desktop.unhookStop();
+    rmSync(desktop.dir, { recursive: true, force: true });
+    rmSync(dir, { recursive: true, force: true });
+    tools.done();
+  }
+});
+
+test("services.mjs puts the run's TMPDIR in once the run is open, before either service is loaded or set up, and puts it back at the end", () => {
+  const text = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../scripts/linux-engine-diff/services.mjs'), 'utf8');
+  const at = (needle) => {
+    const i = text.indexOf(needle);
+    assert.notEqual(i, -1, needle);
+    return i;
+  };
+  const put = at('restoreTmpdir = runTmpdirInProcess();');
+  assert.ok(at('await desktop.begin();') < put, 'once the run is open');
+  assert.ok(put < at('sky_js/src/service.js'), "before the vendor's service is loaded");
+  assert.ok(put < at('await facade(lane, service, reads)'), 'before either facade sets its service up');
+  assert.match(text, /createService\(\{env: \{CUA_ENGINE_BIN: values\.engine, CUA_DESKTOP_MODE: 'shared'\}\}\)/, "cua's service names no environment for its engine: the process's");
+  assert.match(text.slice(at('} finally {')), /^\} finally \{\n(?: {2}\/\/.*\n)* {2}cuaService\.close\(\);\n {2}restoreTmpdir\(\);\n {2}await desktop\.closeAll\(\);/, "cua's engine ended and the harness's TMPDIR put back before the run's scratch goes");
 });

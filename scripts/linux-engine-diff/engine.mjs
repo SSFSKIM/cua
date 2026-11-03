@@ -30,6 +30,23 @@ export function runEngines(scratch) {
 export const runningScratch = () => openRun;
 
 /**
+ * For engines that code of another's starts with this process's environment (the two-services instrument: the vendor's
+ * service and cua's own service, given no environment, each spawn their engine with process.env): puts the open run's
+ * TMPDIR there, the value every other engine of the run gets (`engineEnvironment`), so both lanes share it. Only while a
+ * run is open; answers the function that puts the harness's own back. The harness's own temporary directories made
+ * meanwhile go there too, and with the run's scratch.
+ */
+export function runTmpdirInProcess() {
+  if (!openRun) throw new Error("no run is open: the run's TMPDIR exists from Desktop.begin to the run's end");
+  const saved = process.env.TMPDIR;
+  process.env.TMPDIR = engineEnvironment(process.env, openRun).TMPDIR;
+  return () => {
+    if (saved === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = saved;
+  };
+}
+
+/**
  * Every request an engine makes on a window, reported when it is answered to `watch({engine, window, command, start,
  * end})` (wall-clock ms): the spans during which that window's client may open popups of the operation's own (scenes.mjs
  * `Desktop.operations`, foreign.mjs `judgeForeign`). Returns the function that stops the watch.

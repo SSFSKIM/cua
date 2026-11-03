@@ -40,6 +40,7 @@ import {mkdirSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {parseArgs} from 'node:util';
 import {pathToFileURL} from 'node:url';
+import {runTmpdirInProcess} from './engine.mjs';
 import {splitTruncationLine} from './normalize.mjs';
 import {Desktop, desktopEnding} from './scenes.mjs';
 import {judgeTruncation} from './services-judge.mjs';
@@ -55,8 +56,11 @@ const SCENES = values.scenes.split(',');
 const sha = text => createHash('sha256').update(text).digest('hex');
 
 // The vendor's service reads its engine from OAI_SKY_LINUX_BIN when it first spawns it; cua's from its own settings.
+// Both start their engine with this process's environment (cua's client is given none), so the run's TMPDIR reaches
+// both engines only there: put in once the run is open, before the vendor's service is loaded or either service is set
+// up, and put back at the run's end (engine.mjs `runTmpdirInProcess`; task 51's review), the same value for both lanes
+// and for every other engine of a run.
 process.env.OAI_SKY_LINUX_BIN = values.engine;
-const vendorService = await import(pathToFileURL(join(values['vendor-js'], 'dist/project/cua/sky_js/src/service.js')).href);
 const {createService} = await import('../../src/services/engine/linux/service.mjs');
 const {bind_linux_app} = await import('../../src/cua-api/bind-linux-app.mjs');
 const cuaService = createService({env: {CUA_ENGINE_BIN: values.engine, CUA_DESKTOP_MODE: 'shared'}});
@@ -74,10 +78,6 @@ async function facade(lane, service, reads) {
   return sky;
 }
 const lanes = [];
-for (const [lane, service] of [['vendor', vendorService], ['cua', cuaService]]) {
-  const reads = [];
-  lanes.push({lane, reads, sky: await facade(lane, service, reads)});
-}
 
 const settled = async run => { try { return {value: await run()}; } catch (error) { return {error: String(error?.message ?? error)}; } };
 const numbered = node => ({id: node.id, native_id: node.native_id, children: node.children.map(numbered)});
@@ -158,9 +158,17 @@ function splitOutcome(step, outcome) {
 const desktop = new Desktop({cua: values.engine, run: `services-${process.pid}`, logs: values.out});
 const rows = [];
 const setup = [];
+let restoreTmpdir = () => {};
 try {
   // the run's own trace, and the holder when a foreign window is active (scenes.mjs `begin`)
   await desktop.begin();
+  // the services' engines' TMPDIR, the run's (above)
+  restoreTmpdir = runTmpdirInProcess();
+  const vendorService = await import(pathToFileURL(join(values['vendor-js'], 'dist/project/cua/sky_js/src/service.js')).href);
+  for (const [lane, service] of [['vendor', vendorService], ['cua', cuaService]]) {
+    const reads = [];
+    lanes.push({lane, reads, sky: await facade(lane, service, reads)});
+  }
   for (const {sky} of lanes) setup.push({target: sky.target, methods: Object.keys(sky).filter(key => key !== 'target')});
   const setupExpected = lane => lane.target === 'linux' && lane.methods.length === 20 && lane.methods.includes('get_window_state');
   const setupEqual = JSON.stringify(setup[0]) === JSON.stringify(setup[1]);
@@ -204,8 +212,10 @@ try {
     }
   }
 } finally {
-  await desktop.closeAll();
+  // cua's engine ends before the run's scratch, its TMPDIR, goes; the harness's TMPDIR back before the run's close
   cuaService.close();
+  restoreTmpdir();
+  await desktop.closeAll();
 }
 // the harness's own trace, judged once every window of the run's is closed
 const ending = desktopEnding(desktop.ending);

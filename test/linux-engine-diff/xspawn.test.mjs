@@ -351,6 +351,7 @@ const ENV_WRITES = {
   'scenes.mjs AT_SPI_BUS_ADDRESS': "a private display's run's accessibility bus",
   'scenes.mjs [name]': "the session's bus variables (SESSION_ENV) put back as they were found",
   'services.mjs OAI_SKY_LINUX_BIN': "the two-services instrument's engine path, in a declared live run",
+  'engine.mjs TMPDIR': "the open run's TMPDIR, for the engines the two services start with the process's environment",
   'wire-check.mjs OAI_SKY_LINUX_BIN': "the wire check's stub engine (stub-replay.mjs), which reaches no display",
   'wire-check.mjs LINUX_ENGINE_DIFF_REPLAY': "the stub engine's replay file",
   'wire-check.mjs LINUX_ENGINE_DIFF_REPLAY_LOG': "the stub engine's request log",

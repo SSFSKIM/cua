@@ -25,7 +25,7 @@ use x11rb::wrapper::ConnectionExt as _;
 /// The engine's delay from a window's last input to its `FocusOut` (`--teardown-ms`'s default).
 const DELAY: Duration = Duration::from_millis(100);
 /// The exit's settle after the last input to a window whose redirect it drops (`--exit-settle-ms`'s default).
-const EXIT_SETTLE: Duration = Duration::from_millis(250);
+const EXIT_SETTLE: Duration = Duration::from_millis(300);
 /// The slack a `FocusOut` measured at the probe may show below the delay: the last key's own trip to the probe.
 const SLACK: Duration = Duration::from_millis(10);
 /// How long the probes wait for events still on their way.
@@ -54,13 +54,28 @@ struct Probe {
     ids: Vec<Window>,
 }
 
+/// An X connection of the probe's own. xvfb-run's server resets once its last client leaves (no `-noreset`), and a
+/// connection made while it resets is refused (ECONNRESET, 1 of 11 suite runs here): such a refusal is retried.
+fn connect() -> (RustConnection, usize) {
+    for _ in 0..20 {
+        match x11rb::connect(None) {
+            Ok(connected) => return connected,
+            Err(x11rb::errors::ConnectError::IoError(e)) if e.kind() == std::io::ErrorKind::ConnectionReset => {
+                sleep(Duration::from_millis(50));
+            }
+            Err(error) => panic!("an X connection: {error:?}"),
+        }
+    }
+    panic!("an X connection: still reset after 1 s");
+}
+
 impl Probe {
     fn open(name: &str, x: i16) -> Probe {
         Probe::open_all(&[(name, x)])
     }
 
     fn open_all(windows: &[(&str, i16)]) -> Probe {
-        let (conn, screen) = x11rb::connect(None).expect("an X connection");
+        let (conn, screen) = connect();
         let screen = &conn.setup().roots[screen];
         let mut ids = Vec::new();
         for (name, x) in windows {

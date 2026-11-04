@@ -70,6 +70,8 @@ const HANDLE_START = [60, 60];
 const HANDLE_MOVE = [80, 30];
 /** The app an approval of desktop input names (cua's elicitation for a request with no window). */
 const DESKTOP_APPROVAL = '(desktop)';
+/** The engine binary's subcommand for the REPL host's launcher shim (native/linux-engine/src/shim.rs). */
+const LAUNCHER_SHIM = 'launcher-shim';
 /**
  * `held-back`: how long the cell admitted before the stream's end runs. cua serve waits for the task's completion at
  * most 5 s after the end (server.mjs `completionDeadlineMs`), then tears the runtime down (upstream.mjs, budget 5 s):
@@ -224,7 +226,10 @@ function windowAt(id) {
   return [Number(shell.X), Number(shell.Y)];
 }
 
-/** The pids of the processes under `root` (its descendants, from /proc) that run the executable at `bin`. */
+/**
+ * The pids of the processes under `root` (its descendants, from /proc) that run the executable at `bin` as the engine:
+ * not as the REPL host's launcher shim, the same binary run with that subcommand (native/linux-engine/src/shim.rs).
+ */
 export function enginesUnder(root, bin, { proc = '/proc' } = {}) {
   const parent = new Map();
   for (const name of readdirSync(proc)) {
@@ -244,7 +249,8 @@ export function enginesUnder(root, bin, { proc = '/proc' } = {}) {
   const names = new Set([bin, realpathSync(bin)]);
   return [...parent.keys()].filter((pid) => {
     try {
-      return names.has(readlinkSync(join(proc, String(pid), 'exe'))) && under(pid);
+      return names.has(readlinkSync(join(proc, String(pid), 'exe'))) && under(pid)
+        && readFileSync(join(proc, String(pid), 'cmdline'), 'utf8').split('\0')[1] !== LAUNCHER_SHIM;
     } catch {
       return false;
     }

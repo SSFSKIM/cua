@@ -145,19 +145,21 @@ test('the control is recorded by a label, never by its path under a home', () =>
   assert.equal(controlLabel(undefined), null);
 });
 
-test("a session's engine is the descendant running the engine's executable, never one elsewhere or one only named for it", (t) => {
+test("a session's engine is the descendant running the engine's executable, never one elsewhere, one only named for it or the launcher's shim", (t) => {
   const proc = mkdtempSync(join(tmpdir(), 'cua171-proc-'));
   t.after(() => rmSync(proc, { recursive: true, force: true }));
   const bin = join(proc, 'cua-engine');
   writeFileSync(bin, '');
   const other = join(proc, 'sleep');
   writeFileSync(other, '');
-  // pid, ppid, exe: 100 the session, 110 the supervisor, 120 the worker, 130 its engine, 140 a process of the worker's
-  // named cua-engine, 200 another session's engine (the harness's own reader)
-  const procs = [[100, 1, other], [110, 100, other], [120, 110, other], [130, 120, bin], [140, 120, other], [200, 1, bin]];
+  // pid, ppid, exe: 100 the session, 110 the supervisor, 115 the worker's launcher shim (the engine's executable too,
+  // M4 T7b fix 4), 116 its launcher, 120 the worker, 130 its engine, 140 a process of the worker's named cua-engine, 200
+  // another session's engine (the harness's own reader)
+  const procs = [[100, 1, other], [110, 100, other], [115, 110, bin], [116, 115, other], [120, 116, other], [130, 120, bin], [140, 120, other], [200, 1, bin]];
   for (const [pid, ppid, exe] of procs) {
     mkdirSync(join(proc, String(pid)));
     writeFileSync(join(proc, String(pid), 'stat'), `${pid} (${pid === 140 ? 'cua-engine' : 'x'}) S ${ppid} 0 0`);
+    writeFileSync(join(proc, String(pid), 'cmdline'), [...(pid === 115 ? [bin, 'launcher-shim', '110', '/sandbox/codex-linux-sandbox'] : pid === 130 ? [bin, 'server'] : ['x']), ''].join('\0'));
     symlinkSync(exe, join(proc, String(pid), 'exe'));
   }
   assert.deepEqual(enginesUnder(100, bin, { proc }), [130]);

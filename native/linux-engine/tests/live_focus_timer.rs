@@ -440,7 +440,7 @@ fn input_older_than_the_settle_holds_the_exit_back_for_nothing() {
 fn an_answer_stuck_in_a_full_pipe_does_not_hold_the_exit_s_drain_back() {
     // the REPL host freezes the trusted worker, the engine's reader, before it tells the engine to stop
     // (src/repl-host/kernel-child.mjs stopProcessTree): answers it can no longer read fill the pipe, and the burst's
-    // FocusOut must still follow from the drain, not be cut by the backstop that ends a wedged exit 2 s after the signal
+    // FocusOut must still follow from the drain, not be cut by the backstop that ends a wedged exit 1 s after the signal
     let probe = Probe::open("stuck", 0);
     let mut engine = Engine::start_unread();
     let target = probe.target();
@@ -529,15 +529,23 @@ fn held_at_the_server(conn: &RustConnection, keysym: u32) -> (bool, bool) {
 
 const SHIFT_L: u32 = 0xffe1;
 
-/// Shift held at the server (`key_down` on the desktop route, XTEST), then a desktop scroll that runs far longer than
-/// the backstop (655 wheel steps of 36 ms, each holding its button), stopped by `stop` inside it: the exit that ends the
-/// engine before its request does still releases what it holds, the key and the wheel's button.
+/// A `drag_handle` begun (its button 1 held at the server) and Shift held (`key_down` on the desktop route, XTEST),
+/// then a desktop scroll that runs far longer than the backstop (655 wheel steps of 36 ms, each holding its button),
+/// stopped by `stop` inside it: the exit that ends the engine before its request does still releases what it holds,
+/// the key, the drag's button and the wheel's.
 fn forced_inside_a_request(stop: impl FnOnce(&Engine)) -> (std::process::ExitStatus, Duration, (bool, bool)) {
     // the test's own connection, held through the test: xvfb-run's server resets its state once its last client leaves
     let (conn, _) = connect();
     let mut engine = Engine::start();
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 200, "y": 200}))
+        .unwrap();
     engine.request("key_down", json!({"key": "shift"})).unwrap();
-    assert!(held_at_the_server(&conn, SHIFT_L).0, "Shift down at the server");
+    assert_eq!(
+        held_at_the_server(&conn, SHIFT_L),
+        (true, true),
+        "Shift and the drag's button down at the server"
+    );
     engine.pipeline(&[("scroll", json!({"direction": "down", "pixels": 65535}))]);
     sleep(Duration::from_millis(300));
     let stopped = Instant::now();
@@ -549,7 +557,7 @@ fn forced_inside_a_request(stop: impl FnOnce(&Engine)) -> (std::process::ExitSta
     let root = conn.setup().roots[0].root;
     let shift = keycode_of(&conn, SHIFT_L);
     let _ = conn.xtest_fake_input(x11rb::protocol::xproto::KEY_RELEASE_EVENT, shift, 0, root, 0, 0, 0);
-    for button in [4, 5] {
+    for button in [1, 4, 5] {
         let _ = conn.xtest_fake_input(x11rb::protocol::xproto::BUTTON_RELEASE_EVENT, button, 0, root, 0, 0, 0);
     }
     conn.get_input_focus().unwrap().reply().unwrap();
@@ -560,12 +568,13 @@ fn forced_inside_a_request(stop: impl FnOnce(&Engine)) -> (std::process::ExitSta
 fn the_backstop_releases_what_the_engine_holds_before_it_ends_a_request_still_running() {
     let (status, took, (key, button)) = forced_inside_a_request(|engine| engine.signal(Signal::TERM));
     assert_eq!(status.code(), Some(143));
+    // the backstop (1 s), then the release, bounded at 200 ms
     assert!(
-        took >= Duration::from_millis(1900) && took < Duration::from_millis(3000),
+        took >= Duration::from_millis(950) && took < Duration::from_millis(1200 + 150),
         "ended by the backstop: {took:?}"
     );
     assert!(!key, "Shift released at the server");
-    assert!(!button, "the wheel's button released");
+    assert!(!button, "the drag's and the wheel's buttons released");
 }
 
 #[test]
@@ -576,9 +585,42 @@ fn a_second_sigint_releases_what_the_engine_holds_before_it_ends_a_request_still
         engine.signal(Signal::INT);
     });
     assert_eq!(status.code(), Some(130));
-    assert!(took < Duration::from_millis(1000), "at once: {took:?}");
+    assert!(took < Duration::from_millis(500), "at once: {took:?}");
     assert!(!key, "Shift released at the server");
-    assert!(!button, "the wheel's button released");
+    assert!(!button, "the drag's and the wheel's buttons released");
+}
+
+#[test]
+fn an_exit_ends_a_drag_handle_as_its_end_would_where_the_model_left_the_pointer() {
+    // a drag_handle between its start and its end: the orderly exit's first act is its end, button 1 up, the drop at
+    // the model's last point (the design session's ruling, M4 T7b)
+    let (conn, _) = connect();
+    let mut engine = Engine::start();
+    engine
+        .request("drag_handle", json!({"action": "start", "x": 200, "y": 200}))
+        .unwrap();
+    engine
+        .request("drag_handle", json!({"action": "move_to", "x": 320, "y": 260}))
+        .unwrap();
+    let root = conn.setup().roots[0].root;
+    let pointer = |conn: &RustConnection| conn.query_pointer(root).unwrap().reply().unwrap();
+    assert_ne!(u16::from(pointer(&conn).mask) & 0x100, 0, "button 1 down at the server");
+    let stopped = Instant::now();
+    engine.signal(Signal::TERM);
+    let (status, at) = engine.exit_within(Duration::from_secs(5)).expect("the engine exits");
+    let after = pointer(&conn);
+    // whatever an engine left down released here, so the tests after this one start clean
+    use x11rb::protocol::xtest::ConnectionExt as _;
+    let _ = conn.xtest_fake_input(x11rb::protocol::xproto::BUTTON_RELEASE_EVENT, 1, 0, root, 0, 0, 0);
+    conn.get_input_focus().unwrap().reply().unwrap();
+    assert_eq!(status.code(), Some(143));
+    assert_eq!(u16::from(after.mask) & 0x1f00, 0, "every button up at the server");
+    assert_eq!(
+        (after.root_x, after.root_y),
+        (320, 260),
+        "released where the model left the pointer"
+    );
+    assert!(at - stopped < Duration::from_millis(500), "at once: {:?}", at - stopped);
 }
 
 #[test]

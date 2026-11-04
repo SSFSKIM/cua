@@ -653,12 +653,17 @@ impl Engine {
         Ok(dir)
     }
 
-    /// The orderly exit: every key still held released, an armed after-release watch run out, every input session
-    /// ended, each pending `FocusOut` waited out (at most the delay; `route.rs`), the clipboard's owner stopped (CLIPBOARD goes with it, as the vendor's does),
-    /// then the screenshot directory removed.
+    /// The orderly exit: a `drag_handle` still held ended, every key still held released, an armed after-release watch
+    /// run out, every input session ended, each pending `FocusOut` waited out (at most the delay; `route.rs`), the
+    /// clipboard's owner stopped (CLIPBOARD goes with it, as the vendor's does), then the screenshot directory removed.
     pub fn shutdown(&mut self) {
-        // first, every key still held released, so no wait below keeps one down: the holds, then whatever the ledger
-        // still has down (pressed.rs; normally nothing). The design session's ruling, M4 T7b
+        // first, every key and button still held released, so no wait below keeps one down (the design session's
+        // rulings, M4 T7b): a drag_handle between its start and its end ends as its own end would, its drop where the
+        // pointer is, with no after-release watch since its end arms none; then the holds; then whatever the ledger
+        // still has down (pressed.rs; normally nothing)
+        if self.drag_handle_held() {
+            let _ = self.end_drag_handle();
+        }
         self.inputs.release_held(&mut self.x);
         crate::pressed::release_rest(&self.x.conn, self.x.root);
         // an armed after-release watch then runs out its lifetime (at most `dnd::SETTLE` after its drag's release), so

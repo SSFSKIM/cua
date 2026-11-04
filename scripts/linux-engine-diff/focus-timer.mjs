@@ -95,8 +95,11 @@ export const STOP_KINDS = ['keys', 'clicks'];
 export const LANES = { timer: [], unredirect: ['--retention', 'per-request'], control: ['--teardown-ms', '0', '--retention', 'per-request'] };
 /** Whether a lane runs with the delay, and so must pass its series. */
 export const timed = (lane) => lane !== 'control';
-/** A SIGTERM run's exit after the burst's last answer, at most: its drain (at most the delay), not the engine's 2 s backstop. */
-export const EXIT_WITHIN_MS = 1500;
+/**
+ * A SIGTERM run's exit after the burst's last answer, at most: its drain (at most the delay and the exit's settle), not
+ * the engine's 1 s backstop (serve.rs EXIT_BACKSTOP; T7's sittings measured at most 416 ms, at twice the load).
+ */
+export const EXIT_WITHIN_MS = 900;
 
 const NO_DISPLAY = ':cua171-focus-timer';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -530,7 +533,7 @@ async function stopRun(ctx, family, signal, windows, i, kind = 'keys') {
   const exitRecord = records.find((r) => r.cause === 'exit') ?? null;
   const inOrder = insertedAt(before.text, before.caret, expected.a, after.text);
   const closedSession = sessions.sessions.length === 1 && sessions.sessions[0].closed && sessions.problems.length === 0;
-  // drained by its own exit, well before the 2 s backstop that would end the process at once
+  // drained by its own exit, before the 1 s backstop that would end the process at once
   const ok =
     signal === 'SIGTERM'
       ? inOrder && closedSession && exit.code === 143 && exitRecord !== null && exitRecord.after_input_ms >= DELAY_MS && drained < EXIT_WITHIN_MS && !exit.answers

@@ -71,33 +71,34 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   hold whenever they end a session, its instant recorded first (`focus_timer::Gate`). With `--stats`, each `FocusOut` is reported (`focus_out`: window, cause `timer`, `flush` or
   `exit`, the time since the window's last input, and the request whose input last started the timer): on the line of
   the request it went out in, or on a line of its own (`"id": null`) when it went out between requests.
-- **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: held keys
-  are released first, so no wait of the exit keeps one down; then an armed
+- **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: a
+  `drag_handle` still between its start and its end ends first as its own end would (the family's release dwell, then
+  button 1 up where the pointer is), then held keys are released, so no wait of the exit keeps one down; then an armed
   after-release drag-and-drop watch runs out its lifetime (at most 300 ms after its drag's release), so a late
   take is still cancelled with its Escape before any of the exit's `FocusOut`s; then every
   pending `FocusOut` waited out (at most 100 ms, the Escape's window's counted from the Escape) and sent, then the
   exit's settle: the engine waits until `--exit-settle-ms` (300 ms) has passed since the last background key input to
   a window whose redirect it still holds, the watch's Escape included (keys only: the unredirect cut no click in the
   measured steps). At its longest, a stop right after a watched drag whose late take comes at the end of the watch,
-  that is about 300 + 300 ms after the drag's release, inside the 2 s backstop. Its exit drops those redirects (the X connection closes), and a covered Chromium window whose redirect goes
+  that is about 300 + 300 ms after the drag's release, inside the 1 s backstop. Its exit drops those redirects (the X connection closes), and a covered Chromium window whose redirect goes
   while it still has input queued cuts that input and delivers it only with its next `FocusIn`, which at twice the
   gate's load the 100 ms alone did not prevent. So a burst answered just before the signal still arrives in order, and
   its window gets its `FocusOut`; an exit with no such input in the last 300 ms waits for nothing. The declared limits
   are SIGKILL and load beyond twice the gate's. A request already running finishes first; requests
   queued behind the signal are not run. The exit code is 0 for stdin closing and 128 plus the signal's number
-  otherwise. A second SIGINT, or an exit still not done 2 s after the first signal (the backstop), ends the process at
-  once, a request still running included, but first releases every key still down and any wheel button over a
-  connection of its own (`pressed.rs`, the record kept beside the bookkeeping), and so does a panic; a second SIGTERM or
-  SIGHUP changes nothing, since a supervisor may send its own after another's. A drag's button (1 to 3) still down at
-  such an exit (a `drag` cut by the backstop, a `drag_handle` before its end) is not released: that release would drop
-  the drag where the pointer is. SIGKILL cuts the
+  otherwise. A second SIGINT, or an exit still not done 1 s after the first signal (the backstop), ends the process at
+  once, a request still running included, but first releases every key and button still down over a connection of its
+  own, waiting at most 200 ms for it (`pressed.rs`, the record kept beside the bookkeeping), and so does a panic, from
+  a copy the panicking thread keeps of that record, before its diagnostics are written; a second SIGTERM or SIGHUP
+  changes nothing, since a supervisor may send its own after another's. A drag's button released there (a `drag` cut
+  by the forced exit, a `drag_handle` before its end) ends the drag where the pointer is. SIGKILL cuts the
   drain and the release: the last burst's window keeps its synthetic focus until it next gets a `FocusOut`, and a key
   held at the server stays down. The stop signals are
   blocked in every thread and taken by one thread with `sigwait`; a program `launch_app` starts gets them unblocked.
   The drain reads nothing from stdin and writes nothing to stdout, and an answer that cannot go out does not hold it
   back: answers are written by a thread of their own, and the loop, waiting for each, also watches for the stop. That is
   how cua's REPL host stops the engine on Linux: it freezes the trusted worker's whole tree, which stops the engine's
-  reader, sends the engine alone SIGTERM and SIGCONT, waits for its exit (at most 2.25 s), then SIGKILLs everything it
+  reader, sends the engine alone SIGTERM and SIGCONT, waits for its exit (at most 1.25 s, the backstop and the forced release's 200 ms with 50 ms to spare), then SIGKILLs everything it
   froze (`src/repl-host/kernel-child.mjs` `stopProcessTree`), so an answer may sit in a full pipe for good.
 - **Keys** (`keys.rs`, `engine/keyboard.rs`): the vendor's chord grammar and Shift rule (`Z` is z without Shift, so
   `Ctrl+Z` stays undo), and its held-key bookkeeping: counts per target and keycode shared by `press_key`, `key_down`

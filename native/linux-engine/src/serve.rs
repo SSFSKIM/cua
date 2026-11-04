@@ -25,8 +25,13 @@ use std::time::{Duration, Instant};
 
 use rustix::runtime::{How, KernelSigSet, Signal};
 
-/// How long after a stop signal the process may still be running before it ends at once.
-pub const EXIT_BACKSTOP: Duration = Duration::from_secs(2);
+/// How long after a stop signal the process may still be running before it ends at once, its forced release first
+/// (`pressed::FORCED_RELEASE_BOUND`, 200 ms). Above the drain's longest, about 600 ms after a watched drag's release
+/// (the engine README, "Exit"); short enough that the release lands before the owned group's SIGKILL when admitted work
+/// holds cua serve's teardown past upstream's SIGTERM: by(0.4) + the REPL host's freeze + 1000 + 200 ms is under
+/// by(0.7), 1500 ms after by(0.4), for a freeze under 300 ms; and the REPL host's own kill waits 1250 ms
+/// (`src/repl-host/kernel-child.mjs` `ENGINE_EXIT_WAIT_MS`), after the engine's latest end (the design session, M4 T7b).
+pub const EXIT_BACKSTOP: Duration = Duration::from_millis(1000);
 
 /// The signals that stop the engine through its orderly exit.
 const STOP_SIGNALS: [Signal; 3] = [Signal::TERM, Signal::INT, Signal::HUP];
@@ -493,6 +498,37 @@ mod tests {
             "the REPL host's SIGTERM may follow the owned group's"
         );
         assert!(!ends_the_drain(Signal::HUP));
+    }
+
+    #[test]
+    fn the_forced_exit_ends_before_the_repl_host_s_kill_and_upstream_s() {
+        // the design session's arithmetic (M4 T7b): the engine's release is done by by(0.4) + F + B + R, under by(0.7)
+        // for a freeze F under 300 ms, and the REPL host's kill comes at W = B + R + 50, after the engine's worst exit
+        let source = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../src/repl-host/kernel-child.mjs"
+        ))
+        .expect("the REPL host's source beside the engine's");
+        let wait: u64 = source
+            .split_once("export const ENGINE_EXIT_WAIT_MS = ")
+            .and_then(|(_, rest)| rest.split(';').next())
+            .and_then(|n| n.trim().parse().ok())
+            .expect("ENGINE_EXIT_WAIT_MS is a number");
+        let (b, r) = (
+            EXIT_BACKSTOP.as_millis() as u64,
+            crate::pressed::FORCED_RELEASE_BOUND.as_millis() as u64,
+        );
+        // upstream's SIGTERM at by(0.4) and SIGKILL at by(0.7) of cua serve's 5000 ms teardown budget
+        // (src/mcp/upstream.mjs, src/mcp/server.mjs teardownBudgetMs)
+        let (by_04, by_07) = (2000, 3500);
+        let freeze = 300;
+        assert!(
+            by_04 + freeze + b + r <= by_07,
+            "the release lands before the group's SIGKILL"
+        );
+        assert_eq!(wait, b + r + 50, "the REPL host's kill follows the engine's latest end");
+        // T7's longest drain, a stop straight after a watched drag: its watch (300 ms) and its settle (300 ms)
+        assert!(b > 600 + 100, "the backstop leaves the drain its longest");
     }
 
     #[test]

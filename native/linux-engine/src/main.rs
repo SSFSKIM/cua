@@ -195,12 +195,8 @@ fn main() {
     }
     // every exit but SIGKILL lets go of the keys still down: the orderly one in `Engine::shutdown`, the forced ones (the
     // backstop, a second SIGINT, a panic, which aborts) here, over a connection of their own (pressed.rs)
-    let release = || pressed::release_all_within(pressed::FORCED_RELEASE_BOUND);
-    let default_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        default_hook(info);
-        release();
-    }));
+    let release = || pressed::release_all_within(pressed::FORCED_RELEASE_BOUND, pressed::over_own_connection);
+    pressed::release_first_at_panic(pressed::over_own_connection);
     let (inbox, next) = std::sync::mpsc::channel();
     serve::watch_stop_signals(inbox.clone(), release);
     let mut engine = match Engine::new(cfg) {

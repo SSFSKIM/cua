@@ -89,10 +89,12 @@ export function killProcessTree(root, {list = descendantsOf, signal = sendSignal
 }
 
 // How long a stop waits for cua's Linux engine to finish its orderly exit once told to: the engine's own backstop, which
-// ends it 2 s after the signal whatever its drain is doing (native/linux-engine/src/serve.rs EXIT_BACKSTOP), and a margin
-// for that exit to be seen. Its drain is far shorter: at most its 100 ms FocusOuts and the 300 ms settle after its last
-// key, about 600 ms after a watched drag's release (the engine README, "Exit"; the Decision Log, M4 T7b).
-export const ENGINE_EXIT_WAIT_MS = 2250;
+// ends it 1 s after the signal whatever its drain is doing (native/linux-engine/src/serve.rs EXIT_BACKSTOP), the forced
+// release it sends first, bounded at 200 ms (pressed.rs FORCED_RELEASE_BOUND), and 50 ms for that exit to be seen, so
+// the kill comes after the engine's latest end (the design session, M4 T7b; serve.rs checks the sum). Its drain is far
+// shorter: at most its 100 ms FocusOuts and the 300 ms settle after its last key, about 600 ms after a watched drag's
+// release (the engine README, "Exit").
+export const ENGINE_EXIT_WAIT_MS = 1250;
 const ENGINE_EXIT_POLL_MS = 10;
 
 // Whether process `pid` runs the executable at `path`: its /proc/<pid>/exe names that path (with the kernel's

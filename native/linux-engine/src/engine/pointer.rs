@@ -886,12 +886,21 @@ impl Engine {
                 };
                 Desktop::move_path_paced(&self.x, px, py, pacing.step)?;
             }
-            DragHandleInput::End => {
-                std::thread::sleep(self.handle_pacing.end().release);
-                Desktop::button(&self.x, 1, false)?;
-            }
+            DragHandleInput::End => self.end_drag_handle()?,
         }
         Ok(Value::Null)
+    }
+
+    /// `drag_handle`'s end: the release dwell its start found, then button 1 up where the pointer is. It arms no
+    /// after-release watch. The engine's exit ends a handle still held the same way (`Engine::shutdown`).
+    pub(super) fn end_drag_handle(&mut self) -> Result<()> {
+        std::thread::sleep(self.handle_pacing.end().release);
+        Desktop::button(&self.x, 1, false)
+    }
+
+    /// Whether a `drag_handle` has begun and not ended.
+    pub(super) fn drag_handle_held(&self) -> bool {
+        self.handle_pacing.current().is_some()
     }
 }
 

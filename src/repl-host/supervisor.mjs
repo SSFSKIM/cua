@@ -372,8 +372,9 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     self.attempts++;
     self.ready = false;
     let release = () => {};
-    // on Linux the engine is also the launcher's shim, when it serves as one (checked once): the worker's tree then dies
-    // with this process, however it ends, and only then may its launcher be held (holdLauncher)
+    // on Linux the engine is also the launcher's resident shim, when it serves as one (checked once): the shim SIGKILLs
+    // the worker's tree when this process dies, however it ends, then releases what the engine's record still holds, and
+    // only then may its launcher be held (holdLauncher)
     self.shimmed = Boolean(settings.engine) && (shimServed ??= shimProbe(settings.engine));
     const child = startKernel(self.launch, {exitSentence: TRUSTED_EXIT_SENTENCE, engine: settings.engine, shim: self.shimmed ? settings.engine : null,
       reap: () => { release(); return reap(); },
@@ -405,8 +406,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   // with nothing released (measured in M4 T7b's fix, task 57). Held only once the worker is ready, its sandbox started;
   // the worker itself runs on. With the sandbox disabled there is no launcher, and the engine takes that SIGTERM itself.
   // Held only when the launcher was started through the shim: a held launcher must never outlive this process (the
-  // design session, M4 T7b), and its parent-death signal is what takes it when nothing else can. An engine that does
-  // not serve as the shim (before T7b's fix 3) leaves the launcher unheld, as before T7b.
+  // design session, M4 T7b), and its shim is what takes it when nothing else can. An engine that does not serve as the
+  // shim (before T7b's fix 4) leaves the launcher unheld, as before T7b.
   function holdLauncher(self) {
     if (closing && settings.engine && self?.sandboxed && self.ready && self.shimmed) self.child.holdLauncher?.();
   }

@@ -161,7 +161,7 @@ test('once its input ends, the host holds the sandboxed trusted worker\'s launch
   assert.ok(h.events.includes('stop worker 1'), 'then the stop, which drains the engine');
 });
 
-test('an engine that does not serve as the launcher\'s shim (before T7b\'s fix 3) leaves the launcher unheld and unshimmed', linuxOnly, async t => {
+test('an engine that does not serve as the launcher\'s shim (before T7b\'s fix 4) leaves the launcher unheld and unshimmed', linuxOnly, async t => {
   const probed = [];
   const h = host({behaviour: () => ({ready: true}), env: sandboxedEnv(t), shimProbe: engine => { probed.push(engine); return false; }});
   await h.init();

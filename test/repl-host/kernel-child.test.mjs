@@ -7,7 +7,7 @@ import {chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, realpath
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {ENGINE_EXIT_WAIT_MS, PARENT_DEATH_SHIM, servesAsShim, exitDiagnostic, exitStatus, kernelPipes, killProcessTree, ownedGroupReaper, processExited, runsExecutable, startKernelChild, stderrTail, stopProcessTree} from '../../src/repl-host/kernel-child.mjs';
+import {ENGINE_EXIT_WAIT_MS, LAUNCHER_SHIM, servesAsShim, exitDiagnostic, exitStatus, kernelPipes, killProcessTree, ownedGroupReaper, processExited, runsExecutable, startKernelChild, stderrTail, stopProcessTree} from '../../src/repl-host/kernel-child.mjs';
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -116,6 +116,20 @@ test('a stop lets the engine alone drain: the tree frozen, then SIGTERM and SIGC
   assert.equal(t.exitPolls, 4, 'the kill waited for the engine\'s exit');
   assert.deepEqual(named('SIGKILL')[0], 12, 'the engine first, while its frozen parent still holds its pid');
   assert.deepEqual(named('SIGKILL').sort(), [10, 11, 12, 13, 14], 'what the engine started is killed too, though it was reparented when the engine exited');
+});
+
+test('a stop of a child started through the launcher\'s shim spares the shim, though it runs the engine\'s executable too: what it started is frozen, drained and killed', async () => {
+  // the shim (10) stays the launcher's parent and releases what the engine held once the launcher is gone: never frozen,
+  // never told to drain, never killed by the stop (the design session's ruling, M4 T7b fix 4)
+  const t = engineTree();
+  const killed = await stopProcessTree(10, {engine: '/opt/cua/engine/linux/cua-engine', shim: true, list: t.list, signal: t.signal,
+    isEngine: pid => pid === 10 || pid === 12, exited: t.exitedAfter(1), wait: async () => {}});
+  assert.deepEqual(t.signals.filter(([pid, n]) => pid === 10 && n !== 'list'), [], 'nothing sent to the shim');
+  assert.deepEqual(killed.sort(), [11, 12, 13, 14]);
+  const named = name => t.signals.filter(([, n]) => n === name).map(([pid]) => pid);
+  assert.deepEqual(named('SIGSTOP'), [11, 12, 14, 13], 'the launcher first, then what it runs, as listed');
+  assert.deepEqual(named('SIGTERM'), [12], 'the engine alone drains');
+  assert.deepEqual(named('SIGKILL').sort(), [11, 12, 13, 14]);
 });
 
 test('an engine that does not exit within the wait is killed with the rest', async () => {
@@ -396,7 +410,7 @@ test('with a shim (Linux, the trusted worker\'s engine) the child starts through
   startKernelChild({command: '/opt/sandbox/codex-linux-sandbox', args: ['--', 'node', 'kernel.mjs'], env: {}, cwd: '/'},
     {onMessage: () => {}, onEnd: e => ended.push(e), spawnProcess, pipes: null, lifelines: null});
   assert.deepEqual(spawned, [
-    ['/opt/cua/engine/linux/cua-engine', PARENT_DEATH_SHIM, String(process.pid), '/opt/sandbox/codex-linux-sandbox', '--', 'node', 'worker.mjs'],
+    ['/opt/cua/engine/linux/cua-engine', LAUNCHER_SHIM, String(process.pid), '/opt/sandbox/codex-linux-sandbox', '--', 'node', 'worker.mjs'],
     ['/opt/sandbox/codex-linux-sandbox', '--', 'node', 'kernel.mjs'],
   ]);
   await delay(10);
@@ -407,24 +421,72 @@ test('the engine serves as the shim only when its executable names the subcomman
   assert.equal(servesAsShim(builtEngine()), true, 'a built engine of this tree');
   const dir = mkdtempSync(join(tmpdir(), 'cua-shim-'));
   t.after(() => rmSync(dir, {recursive: true, force: true}));
-  // an engine before the subcommand (0.3.0), or a stand-in: never run, so nothing it would take for a server starts
+  // an engine before the subcommand (0.3.0, or fix 3's exec-under-parent), or a stand-in: never run, so nothing it
+  // would take for a server starts
   const old = join(dir, 'cua-engine');
-  writeFileSync(old, `#!/bin/sh\ntouch ${JSON.stringify(join(dir, 'ran'))}\n`);
+  writeFileSync(old, `#!/bin/sh\n# exec-under-parent\ntouch ${JSON.stringify(join(dir, 'ran'))}\n`);
   chmodSync(old, 0o755);
   assert.equal(servesAsShim(old), false);
   assert.equal(existsSync(join(dir, 'ran')), false, 'not run');
   assert.equal(servesAsShim(join(dir, 'missing')), false);
   // one that names it but does not run the program
-  writeFileSync(old, '#!/bin/sh\n# exec-under-parent\nexit 0\n');
+  writeFileSync(old, '#!/bin/sh\n# launcher-shim\nexit 0\n');
   assert.equal(servesAsShim(old), false);
+});
+
+// The children of `pid`, from /proc.
+const childrenOf = pid => { try { return readFileSync(`/proc/${pid}/task/${pid}/children`, 'utf8').trim().split(/\s+/).filter(Boolean).map(Number); } catch { return []; } };
+async function onlyChildOf(pid) {
+  for (let i = 0; i < 200; i++) {
+    const children = childrenOf(pid);
+    if (children.length === 1) return children[0];
+    await delay(10);
+  }
+  throw new Error(`process ${pid} started no child`);
+}
+
+test('holding a launcher started through the shim stops the launcher, the shim\'s child, never the shim', shimmed, async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-hold-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const pidFile = join(dir, 'engine');
+  const engine = builtEngine();
+  const child = startKernelChild({command: process.execPath, args: ['-e', LAUNCHER, pidFile], env: {PATH: process.env.PATH}, cwd: dir},
+    {onMessage: () => {}, onEnd: () => {}, lifelines: null, engine, shim: engine});
+  t.after(() => child.stop());
+  const worker = await pidIn(pidFile);
+  const launcher = await onlyChildOf(child.pid);
+  child.holdLauncher();
+  for (let i = 0; i < 100 && stateOf(launcher) !== 'T'; i++) await delay(10);
+  const running = pid => (['S', 'R'].includes(stateOf(pid)) ? 'running' : stateOf(pid));
+  assert.deepEqual([running(child.pid), stateOf(launcher), running(worker)], ['running', 'T', 'running'], 'the shim runs on, the launcher is held, what it runs goes on');
+  await child.stop();
+  assert.ok(processExited(child.pid) && processExited(launcher) && processExited(worker), 'the stop takes the launcher and its tree, and the shim ends after it');
+});
+
+test('a shim that outlives its stopped launcher past the stop\'s wait is SIGKILLed, so no reap ever meets it', linuxOnly, async t => {
+  // a stand-in shim: it runs its program, then lingers under the same pid after the program is gone
+  const dir = mkdtempSync(join(tmpdir(), 'cua-shim-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const shim = join(dir, 'shim');
+  writeFileSync(shim, '#!/bin/sh\nshift 2\n"$@"\nexec sleep 30\n');
+  chmodSync(shim, 0o755);
+  const reaps = [];
+  const child = startKernelChild({command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], env: {PATH: process.env.PATH}, cwd: dir},
+    {onMessage: () => {}, onEnd: () => {}, lifelines: null, engine: '/opt/cua/engine/linux/cua-engine', shim, reap: () => reaps.push(stateOf(child.pid))});
+  const launcher = await onlyChildOf(child.pid);
+  await child.stop();
+  assert.equal(processExited(launcher), true);
+  assert.equal(processExited(child.pid), true, `the shim is ended: state ${stateOf(child.pid)}`);
+  assert.deepEqual(reaps.length, 1);
+  assert.ok(['gone', 'Z'].includes(reaps[0]), `the reap came once the shim was gone: ${reaps[0]}`);
 });
 
 // A supervisor of its own process, running startKernelChild over the launcher double with the built engine as `engine`
 // (so through the shim); the double starts its "worker" through the shim too, as bwrap's --die-with-parent ties the
-// sandbox to the launcher. Writes the launcher's and the worker's pids; holds the launcher when `hold`.
+// sandbox to the launcher. Writes the shim's and the worker's pids; holds the launcher when `hold`.
 function supervisorOf(dir, engine, hold) {
   const pidFile = join(dir, 'engine');
-  const launcher = LAUNCHER.replace("spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']", `spawn(${JSON.stringify(engine)}, [${JSON.stringify(PARENT_DEATH_SHIM)}, String(process.pid), process.execPath, '-e', 'setInterval(() => {}, 1000)']`);
+  const launcher = LAUNCHER.replace("spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)']", `spawn(${JSON.stringify(engine)}, [${JSON.stringify(LAUNCHER_SHIM)}, String(process.pid), process.execPath, '-e', 'setInterval(() => {}, 1000)']`);
   assert.notEqual(launcher, LAUNCHER);
   const host = `import {startKernelChild} from ${JSON.stringify(new URL('../../src/repl-host/kernel-child.mjs', import.meta.url).href)};
 import {writeFileSync, existsSync} from 'node:fs';
@@ -432,30 +494,32 @@ const child = startKernelChild({command: process.execPath, args: ['-e', ${JSON.s
   {onMessage: () => {}, onEnd: () => {}, lifelines: null, engine: ${JSON.stringify(engine)}, shim: ${JSON.stringify(engine)}});
 while (!existsSync(${JSON.stringify(pidFile)})) await new Promise(resolve => setTimeout(resolve, 25));
 ${hold ? 'child.holdLauncher();' : ''}
-writeFileSync(${JSON.stringify(join(dir, 'launcher'))}, String(child.pid));
+writeFileSync(${JSON.stringify(join(dir, 'shim'))}, String(child.pid));
 setInterval(() => {}, 1000);`;
   return {pidFile, process: spawn(process.execPath, ['--input-type=module', '-e', host], {stdio: ['ignore', 'ignore', 'inherit']})};
 }
 
 for (const hold of [true, false]) {
-  test(`a supervisor SIGKILLed ${hold ? 'while it holds' : 'without holding'} its launcher leaves nothing behind: the launcher dies with it, and the sandbox with the launcher`, shimmed, async t => {
-    // SIGKILL runs no exit listener, and with cua serve already gone no group SIGKILL is coming: the launcher's
-    // parent-death signal, set by the shim, is what takes it (the design session's ruling, M4 T7b fix 3)
+  test(`a supervisor SIGKILLed ${hold ? 'while it holds' : 'without holding'} its launcher leaves nothing behind: the shim kills the launcher at once, the sandbox goes with the launcher, and the shim after them`, shimmed, async t => {
+    // SIGKILL runs no exit listener, and with cua serve already gone no group SIGKILL is coming: the shim, which
+    // watches its supervisor, is what takes the launcher, and never resumes it (the design session's ruling, M4 T7b fix 4)
     const dir = mkdtempSync(join(tmpdir(), 'cua-hold-'));
     t.after(() => rmSync(dir, {recursive: true, force: true}));
     const {pidFile, process: supervisor} = supervisorOf(dir, builtEngine(), hold);
     const gone = new Promise(resolve => supervisor.once('exit', resolve));
-    const launcher = await pidIn(join(dir, 'launcher'));
+    const shim = await pidIn(join(dir, 'shim'));
+    const launcher = await onlyChildOf(shim);
     const worker = Number(readFileSync(pidFile, 'utf8'));
-    t.after(() => { for (const pid of [launcher, worker, supervisor.pid]) try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } });
+    t.after(() => { for (const pid of [launcher, worker, shim, supervisor.pid]) try { process.kill(pid, 'SIGKILL'); } catch { /* gone */ } });
     for (let i = 0; hold && i < 100 && stateOf(launcher) !== 'T'; i++) await delay(10);
     assert.equal(stateOf(launcher), hold ? 'T' : 'S', hold ? 'held' : 'running');
-    assert.equal(readFileSync(`/proc/${launcher}/cmdline`, 'utf8').split('\0')[0], process.execPath, 'the shim became the launcher, under the same pid');
+    assert.equal(stateOf(shim), 'S', 'the shim is never held');
+    assert.equal(readFileSync(`/proc/${launcher}/cmdline`, 'utf8').split('\0')[0], process.execPath, 'the shim stays, the launcher its child');
     process.kill(supervisor.pid, 'SIGKILL');
     await gone;
-    for (let i = 0; i < 300 && !(processExited(launcher) && processExited(worker)); i++) await delay(10);
+    for (let i = 0; i < 300 && !(processExited(launcher) && processExited(worker) && processExited(shim)); i++) await delay(10);
     // gone, or a zombie its new parent has not reaped yet: nothing left stopped or running
-    assert.ok(processExited(launcher) && processExited(worker), `left: launcher ${stateOf(launcher)}, worker ${stateOf(worker)}`);
+    assert.ok(processExited(launcher) && processExited(worker) && processExited(shim), `left: launcher ${stateOf(launcher)}, worker ${stateOf(worker)}, shim ${stateOf(shim)}`);
   });
 }
 

@@ -397,8 +397,8 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   // Once the input has ended, the trusted worker's sandbox launcher is held (kernel-child.mjs holdLauncher; Linux, where
   // the engine drains at the worker's stop): the owned group's SIGTERM at upstream's by(0.4), sent while admitted work
   // still holds the drain, would otherwise make codex-linux-sandbox end the sandbox at once, the engine in it SIGKILLed
-  // with nothing released (measured, the Decision Log, M4 T7b fix). Held only once the worker is ready, its sandbox
-  // started; the worker itself, and with the sandbox disabled there is no launcher, runs on.
+  // with nothing released (measured in M4 T7b's fix, task 57). Held only once the worker is ready, its sandbox started;
+  // the worker itself runs on. With the sandbox disabled there is no launcher, and the engine takes that SIGTERM itself.
   function holdLauncher(self) {
     if (closing && settings.engine && self?.sandboxed && self.ready) self.child.holdLauncher?.();
   }

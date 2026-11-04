@@ -18,7 +18,7 @@
 //!
 //! It runs before the engine blocks its stop signals or starts any thread.
 
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write as _};
 use std::os::fd::OwnedFd;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::Path;
@@ -110,8 +110,9 @@ pub fn launcher_shim(parent: i32, program: &str, args: &[String]) -> (i32, Optio
         (!held.is_empty()).then(|| released_within(crate::pressed::FORCED_RELEASE_BOUND, held))
     });
     drop(record);
+    // a supervisor gone has closed the other end of stderr: the write fails, and the shim exits as it would have
     if let Some(sentence) = &sentence {
-        eprintln!("{sentence}");
+        let _ = writeln!(std::io::stderr(), "{sentence}");
     }
     (exit_as(status, &stops), None)
 }

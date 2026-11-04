@@ -211,7 +211,9 @@ fn main() {
             // before anything else: no stop signal blocked and no thread started by the engine's own start
             let (code, sentence) = shim::launcher_shim(parent, &program, &args);
             if let Some(sentence) = sentence {
-                eprintln!("{sentence}");
+                use std::io::Write as _;
+                // never a panic (an abort) for a stderr whose reader is gone
+                let _ = writeln!(std::io::stderr(), "{sentence}");
             }
             std::process::exit(code);
         }

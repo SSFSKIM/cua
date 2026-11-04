@@ -16,7 +16,10 @@ use std::time::{Duration, Instant};
 
 use rustix::process::{Pid, Signal, kill_process};
 
-const ENGINE: &str = env!("CARGO_BIN_EXE_cua-engine");
+/// The binary under test: `CUA_ENGINE_BIN` (the release workflow's shipped asset), or cargo's build.
+fn engine() -> String {
+    std::env::var("CUA_ENGINE_BIN").unwrap_or_else(|_| env!("CARGO_BIN_EXE_cua-engine").into())
+}
 const SHIM: &str = "launcher-shim";
 
 fn state(pid: u32) -> Option<char> {
@@ -92,7 +95,7 @@ impl Drop for Scratch {
 /// background, prints the shim's pid, and waits; returns the shell and that pid.
 fn supervisor_of(program: &str, tmpdir: &Path) -> (Child, u32) {
     let mut shell = Command::new("sh")
-        .args(["-c", &format!("\"$0\" {SHIM} $$ {program} & echo $!; wait"), ENGINE])
+        .args(["-c", &format!("\"$0\" {SHIM} $$ {program} & echo $!; wait"), &engine()])
         .env("TMPDIR", tmpdir)
         .stdout(Stdio::piped())
         .spawn()
@@ -153,7 +156,7 @@ fn without_the_shim_the_program_outlives_its_parent() {
 #[test]
 fn a_parent_already_gone_runs_nothing() {
     // the fork race: the parent named is not the shim's parent (it died before the shim watched it), so nothing runs
-    let out = Command::new(ENGINE)
+    let out = Command::new(engine())
         .args([SHIM, "1", "sh", "-c", "echo ran"])
         .output()
         .unwrap();
@@ -169,7 +172,7 @@ fn a_parent_already_gone_runs_nothing() {
 #[test]
 fn the_program_gets_its_arguments_and_stdio_as_given_and_the_shim_exits_as_it_did() {
     let parent = std::process::id().to_string();
-    let out = Command::new(ENGINE)
+    let out = Command::new(engine())
         .args([
             SHIM,
             &parent,
@@ -185,14 +188,14 @@ fn the_program_gets_its_arguments_and_stdio_as_given_and_the_shim_exits_as_it_di
         .unwrap();
     assert_eq!(String::from_utf8_lossy(&out.stdout), "a b|--version||");
     assert_eq!(out.status.code(), Some(7));
-    let killed = Command::new(ENGINE)
+    let killed = Command::new(engine())
         .args([SHIM, &parent, "sh", "-c", "kill -TERM $$"])
         .status()
         .unwrap();
     assert_eq!(killed.signal(), Some(15), "ended by the program's signal");
-    let missing = Command::new(ENGINE).args([SHIM, &parent]).output().unwrap();
+    let missing = Command::new(engine()).args([SHIM, &parent]).output().unwrap();
     assert_eq!(missing.status.code(), Some(2), "a program is required");
-    let absent = Command::new(ENGINE)
+    let absent = Command::new(engine())
         .args([SHIM, &parent, "/nonexistent/launcher"])
         .output()
         .unwrap();
@@ -205,7 +208,7 @@ fn the_shim_takes_no_stop_signal_and_its_program_starts_with_none_blocked() {
     // end its program with it; the program starts with the mask the REPL host gave the shim (a shell would hide a mask
     // it inherited: it sets its own, so the program read is the one the shim runs)
     let parent = std::process::id().to_string();
-    let mut shim = Command::new(ENGINE)
+    let mut shim = Command::new(engine())
         .args([SHIM, &parent, "sleep", "0.5"])
         .spawn()
         .unwrap();
@@ -215,7 +218,7 @@ fn the_shim_takes_no_stop_signal_and_its_program_starts_with_none_blocked() {
     }
     assert_eq!(shim.wait().unwrap().code(), Some(0), "the shim waited out its program");
     assert!(exited(program));
-    let out = Command::new(ENGINE)
+    let out = Command::new(engine())
         .args([SHIM, &parent, "grep", "-E", "^Sig(Blk|Ign)", "/proc/self/status"])
         .output()
         .unwrap();
@@ -227,7 +230,7 @@ fn the_shim_takes_no_stop_signal_and_its_program_starts_with_none_blocked() {
 #[test]
 fn the_record_is_a_fifo_under_tmpdir_named_to_the_program_and_goes_with_the_shim() {
     let tmp = Scratch::new("record");
-    let out = Command::new(ENGINE)
+    let out = Command::new(engine())
         .args([
             SHIM,
             &std::process::id().to_string(),
@@ -243,7 +246,7 @@ fn the_record_is_a_fifo_under_tmpdir_named_to_the_program_and_goes_with_the_shim
     assert!(Path::new(lines[0]).starts_with(&tmp.0), "{said}");
     assert_eq!(lines[1..], ["fifo", "700"], "{said}");
     assert!(tmp.entries().is_empty(), "removed with the shim: {:?}", tmp.entries());
-    let without = Command::new(ENGINE)
+    let without = Command::new(engine())
         .args([
             SHIM,
             &std::process::id().to_string(),
@@ -255,6 +258,26 @@ fn the_record_is_a_fifo_under_tmpdir_named_to_the_program_and_goes_with_the_shim
         .output()
         .unwrap();
     assert_eq!(String::from_utf8_lossy(&without.stdout), "[]\n", "no TMPDIR, no record");
+}
+
+#[test]
+fn a_stderr_nobody_reads_any_more_does_not_change_how_the_shim_exits() {
+    // a supervisor gone has closed the other end of the shim's stderr: what the shim says there after its release (here
+    // that it could not release, with no display) must not end it otherwise than as its program ended
+    let tmp = Scratch::new("stderr");
+    // one record holding key 50, written in two pieces, then the program's exit
+    let program =
+        "{ printf 'cuaH\\001\\001\\000\\000\\001\\062'; head -c 118 /dev/zero; } > \"$CUA_ENGINE_HELD_RECORD\"; exit 3";
+    let mut shim = Command::new(engine())
+        .args([SHIM, &std::process::id().to_string(), "sh", "-c", program])
+        .env("TMPDIR", &tmp.0)
+        .env_remove("DISPLAY")
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(shim.stderr.take());
+    let status = shim.wait().unwrap();
+    assert_eq!((status.code(), status.signal()), (Some(3), None));
 }
 
 /// Held input at a display: the engine under the shim, which a shell standing for the supervisor started.
@@ -321,7 +344,7 @@ mod live {
 
     impl Shimmed {
         fn start(tmp: &Scratch, shimmed: bool) -> Shimmed {
-            let engine = std::env::var("CUA_ENGINE_BIN").unwrap_or_else(|_| ENGINE.into());
+            let engine = engine();
             let stderr = tmp.0.join("stderr");
             // an asynchronous list's stdin is /dev/null before its own redirections: the engine gets the test's pipe
             // through a descriptor kept aside first

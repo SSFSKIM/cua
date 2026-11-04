@@ -1,0 +1,15 @@
+stress-ng: 0
+cell 1 true keys [50] buttons [1]
+tree [["anchor",1840476,"S"],["supervisor",1840482,"S"],["kernel-launcher",1840491,"S"],["bwrap",1840495,"S"],["kernel-launcher",1840496,"S"],["kernel",1840497,"S"],["shim",1840511,"S"],["worker-launcher",1840512,"S"],["bwrap",1840516,"S"],["worker-launcher",1840517,"S"],["worker",1840518,"S"],["engine",1840527,"S"]]
+worker SIGKILLed
+engine gone after 6 ms
++7 ms keys [] buttons []
++50 ms keys [] buttons []
++202 ms keys [] buttons []
++1001 ms keys [] buttons []
+left after 3 s: [["anchor",1840476,"S"],["supervisor",1840482,"S"],["kernel-launcher",1840491,"S"],["bwrap",1840495,"S"],["kernel-launcher",1840496,"S"],["kernel",1840497,"S"]]
+keys after [] buttons after []
+stopped after []
+shim said ["launcher-shim: released 0 of the 1 its engine held []\",\"reason\":\"stdout_eof\",\"stream_error\":null}"]
+{"summary":"head-worker-scoped","mode":"worker","left":[],"keys":[],"buttons":[]}
+exit 0

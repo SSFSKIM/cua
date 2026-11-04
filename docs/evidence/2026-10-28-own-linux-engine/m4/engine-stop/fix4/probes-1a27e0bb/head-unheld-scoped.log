@@ -1,0 +1,16 @@
+stress-ng: 0
+cell 1 true keys [50] buttons [1]
+tree [["anchor",1839866,"S"],["supervisor",1839872,"S"],["kernel-launcher",1839881,"S"],["bwrap",1839885,"S"],["kernel-launcher",1839886,"S"],["kernel",1839887,"S"],["shim",1839901,"S"],["worker-launcher",1839902,"S"],["bwrap",1839906,"S"],["worker-launcher",1839907,"S"],["worker",1839908,"S"],["engine",1839917,"S"]]
+cua serve stopped
+supervisor SIGKILLed
+engine gone after 6 ms
++6 ms keys [50] buttons []
++51 ms keys [] buttons []
++205 ms keys [] buttons []
++1001 ms keys [] buttons []
+left after 3 s: [["anchor",1839866,"S"]]
+keys after [] buttons after []
+stopped after [[1839851,"node"]]
+shim said []
+{"summary":"head-unheld-scoped","mode":"unheld","left":[],"keys":[],"buttons":[]}
+exit 0

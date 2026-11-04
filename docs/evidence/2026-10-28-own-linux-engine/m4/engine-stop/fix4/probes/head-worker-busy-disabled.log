@@ -1,0 +1,15 @@
+stress-ng: 0
+cell 1 true keys [50] buttons [1]
+tree [["anchor",1857843,"S"],["supervisor",1857850,"S"],["kernel",1857877,"S"],["shim",1857944,"S"],["worker",1857945,"S"],["engine",1858001,"S"]]
+worker SIGKILLed
+engine gone after 1556 ms
++1556 ms keys [] buttons [5]
++1561 ms keys [] buttons [5]
++1566 ms keys [] buttons [5]
++1571 ms keys [] buttons [5]
+left after 3 s: [["anchor",1857843,"S"],["supervisor",1857850,"S"],["kernel",1857877,"S"]]
+keys after [] buttons after []
+stopped after []
+shim said ["launcher-shim: released 3 of the 3 its engine held [button 5, button 1, key 50]\",\"reason\":\"stdout_eof\",\"stream_error\":null}"]
+{"summary":"head-worker-busy-disabled","mode":"worker-busy","left":[],"keys":[],"buttons":[]}
+exit 0

@@ -1,0 +1,16 @@
+stress-ng: 0
+cell 1 true keys [50] buttons [1]
+tree [["anchor",1840312,"S"],["supervisor",1840318,"S"],["kernel",1840327,"S"],["worker",1840339,"S"],["engine",1840348,"S"]]
+cua serve stopped
+supervisor SIGKILLed
+engine gone after 11 ms
++11 ms keys [] buttons []
++52 ms keys [] buttons []
++201 ms keys [] buttons []
++1004 ms keys [] buttons []
+left after 3 s: [["anchor",1840312,"S"]]
+keys after [] buttons after []
+stopped after [[1840298,"node"]]
+shim said []
+{"summary":"fix3-unheld-disabled","mode":"unheld","left":[],"keys":[],"buttons":[]}
+exit 0

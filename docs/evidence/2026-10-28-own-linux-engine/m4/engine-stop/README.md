@@ -30,6 +30,12 @@ Both candidates are made as the release workflow makes them (a hermetic Cargo ho
 6b84f21a's engine also carries T7 fix 3 (task 56's paste commits ec4c1deb and 69e3724b), which this experiment does not
 exercise.
 
+**Edited after the sittings** (T7b's fix, the review's item 8): the first two rows of each sitting's `results.jsonl`
+named the control's checkout by its absolute path under the owner's home; that value is replaced by the symbolic label
+`control-f59575fb` (key `control_label`, as the experiment records it from the fix on). Nothing else was changed.
+The fix's sittings and the budget as it stands after them are in `fix/README.md` and task 57's report; the budget
+below is T7b's first account.
+
 ## `idle/`
 
 | lane | path | case | runs | pass | engine after the stop began, median ms | after the last answer, median ms |

@@ -103,13 +103,17 @@ const ENGINE_EXIT_POLL_MS = 10;
 // design session's ruling, M4 T7b fix 4): `cua-engine launcher-shim <parent pid> <program> [args...]`. The trusted
 // worker's launcher is started through it on Linux. The shim watches this process, and when it dies, however it dies,
 // SIGKILLs the launcher at once, held or not, and resumes nothing; the launcher's parent-death signal is SIGKILL against
-// the shim. Once the launcher has exited, for whatever reason, the shim releases what the engine's held record still
-// shows down (an engine the sandbox's end SIGKILLed released nothing), then exits as the launcher did. The stop signals
-// never end it, and no stop here signals it: the tree below it is what is frozen, drained and killed.
+// the shim (should its watch fail, it SIGKILLs the launcher as for that death). Once the launcher has exited, for
+// whatever reason, the shim waits for the engine to close its held record, a pipe it hands down to the worker and no
+// path (fix 5: the worker gives it to its engines alone, ../services/engine/linux/held-record.mjs); should the engine
+// outlive the wait, the shim ends it first, so nothing is pressed after the release. Then it releases what the record
+// still shows down (an engine the sandbox's end SIGKILLed released nothing), and exits as the launcher did. The stop
+// signals never end it, and no stop here signals it: the tree below it is what is frozen, drained and killed.
 export const LAUNCHER_SHIM = 'launcher-shim';
 // How long the shim may outlive its launcher: its wait for the engine to close its record (the engine's latest exit,
-// ENGINE_EXIT_WAIT_MS) and its release, bounded like the engine's forced one (200 ms).
-const SHIM_AFTER_LAUNCHER_MS = ENGINE_EXIT_WAIT_MS + 200;
+// ENGINE_EXIT_WAIT_MS), the wait for an engine it ended (200 ms), and its release, bounded like the engine's forced one
+// (200 ms).
+const SHIM_AFTER_LAUNCHER_MS = ENGINE_EXIT_WAIT_MS + 200 + 200;
 
 // Whether the engine at `engine` serves as that shim: its executable names the subcommand (an engine before M4 T7b
 // fix 4, 0.3.0 and fix 3's `exec-under-parent` among them, does not, and is never run with arguments it would take for

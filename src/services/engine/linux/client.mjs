@@ -19,6 +19,7 @@
 // The vendor's SkyLinuxTransport (@oai/sky 0.7.5 targets/linux/sky_linux_transport.js) is the reference; its sentences
 // that name sky_linux name cua-engine here.
 import {execFile, spawn} from 'node:child_process';
+import {heldRecordStdio} from './held-record.mjs';
 
 export const MIN_ENGINE_VERSION = '0.3.0';
 const STDERR_TAIL = 8192;
@@ -53,8 +54,10 @@ function checkVersion(path, timeoutMs, env) {
   });
 }
 
-// `path` the engine; `desktop` the device mode it is started in; `env` its environment (this process's when absent).
-export function createEngineClient({path, desktop = 'shared', env, versionTimeoutMs = VERSION_TIMEOUT_MS}) {
+// `path` the engine; `desktop` the device mode it is started in; `env` its environment (this process's when absent);
+// `held` what its spawn adds for the launcher shim's held record (./held-record.mjs: the trusted worker's, when the
+// REPL host handed one down).
+export function createEngineClient({path, desktop = 'shared', env, versionTimeoutMs = VERSION_TIMEOUT_MS, held = heldRecordStdio()}) {
   let child = null;
   let starting = null;
   // Each process's capability report, so a request is judged by the report of the process it is sent to.
@@ -97,7 +100,9 @@ export function createEngineClient({path, desktop = 'shared', env, versionTimeou
   }
 
   function launch() {
-    const proc = spawn(path, ['server', '--desktop', desktop], {env, stdio: ['pipe', 'pipe', 'pipe']});
+    const proc = spawn(path, ['server', '--desktop', desktop], held
+      ? {env: {...(env ?? process.env), ...held.env}, stdio: ['pipe', 'pipe', 'pipe', ...held.stdio]}
+      : {env, stdio: ['pipe', 'pipe', 'pipe']});
     for (const stream of [proc.stdin, proc.stdout, proc.stderr]) stream.unref?.();
     proc.stdin.on('error', error => retire(proc, error));
     proc.stdout.setEncoding('utf8');

@@ -156,7 +156,10 @@ export function hostSettings(env, {cwd}) {
   }
   const pipeTimeout = Number(env.CUA_REPL_NATIVE_PIPE_CONNECT_TIMEOUT_MS);
   const workerEnv = Object.fromEntries(Object.entries(env).filter(([, value]) => typeof value === 'string'));
-  return {node, launcher, denyRead: parseDenyRead(env.CUA_SANDBOX_DENY_READ), workerNetwork: env.CUA_REPL_WORKER_NETWORK === 'enabled' ? 'enabled' : 'restricted', workingDir: cwd,
+  // On Linux, the cua-engine the worker's service runs (src/services/engine/linux/service.mjs reads the same name): a
+  // stop of the worker lets it drain first (kernel-child.mjs stopProcessTree). macOS stops as before.
+  const engine = process.platform === 'linux' ? absolute(env.CUA_ENGINE_BIN) : null;
+  return {node, launcher, engine, denyRead: parseDenyRead(env.CUA_SANDBOX_DENY_READ), workerNetwork: env.CUA_REPL_WORKER_NETWORK === 'enabled' ? 'enabled' : 'restricted', workingDir: cwd,
     kernelDir: absolute(env.CUA_REPL_KERNEL_DIR), kernelEnv, workerEnv,
     services: rpcEnabled && Object.keys(services).length > 0, toolOverrides: parseToolOverrides(env.CUA_REPL_TOOL_OVERRIDES),
     pipeConnectTimeoutMs: Number.isSafeInteger(pipeTimeout) && pipeTimeout > 0 ? pipeTimeout : DEFAULT_CONNECT_TIMEOUT_MS,
@@ -367,7 +370,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     self.attempts++;
     self.ready = false;
     let release = () => {};
-    const child = startKernel(self.launch, {exitSentence: TRUSTED_EXIT_SENTENCE,
+    const child = startKernel(self.launch, {exitSentence: TRUSTED_EXIT_SENTENCE, engine: settings.engine,
       reap: () => { release(); reap(); },
       onMessage: message => {
         if (worker !== self || self.child !== child) return;

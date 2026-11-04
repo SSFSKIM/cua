@@ -20,11 +20,11 @@ function host({behaviour, readyTimeoutMs = 100, env = {}}) {
   const counts = {kernel: 0, worker: 0};
   const children = [];
   const logs = [];
-  const startKernel = (launch, {onMessage, onEnd}) => {
+  const startKernel = (launch, {onMessage, onEnd, engine}) => {
     const kind = launch.args.includes(TRUSTED_WORKER) ? 'worker' : 'kernel';
     const n = ++counts[kind];
     const {ready} = behaviour(kind, n);
-    const child = {kind, n, received: [], stopped: false};
+    const child = {kind, n, received: [], stopped: false, engine};
     children.push(child);
     if (ready) setImmediate(() => onMessage({type: 'runtime_ready'}));
     return {
@@ -121,6 +121,24 @@ test('when no trusted worker starts, the cell\'s rpc fails, a turn end is acknow
 });
 
 const {node, skip} = kernelNode();
+test('on Linux the trusted worker\'s stop knows the engine its service runs, and a kernel\'s does not; elsewhere neither does', async () => {
+  const h = host({behaviour: () => ({ready: true}), env: {CUA_ENGINE_BIN: '/opt/cua/engine/linux/cua-engine'}});
+  await h.init();
+  assert.equal(text(await h.js('rpc')), 'service said worker 1');
+  const worker = h.children.find(c => c.kind === 'worker');
+  const kernel = h.children.find(c => c.kind === 'kernel');
+  assert.equal(worker.engine, process.platform === 'linux' ? '/opt/cua/engine/linux/cua-engine' : null);
+  assert.equal(kernel.engine, undefined);
+  h.input.end();
+  await h.supervisor.closed;
+  const relative = host({behaviour: () => ({ready: true}), env: {CUA_ENGINE_BIN: 'cua-engine'}});
+  await relative.init();
+  await relative.js('rpc');
+  assert.equal(relative.children.find(c => c.kind === 'worker').engine, null, 'only an absolute path names it');
+  relative.input.end();
+  await relative.supervisor.closed;
+});
+
 test('a real kernel announces runtime_ready once it has loaded, before it reads any work', {skip}, async t => {
   const kernel = startRealKernel(t, {node});
   assert.deepEqual(await kernel.ready, {type: 'runtime_ready'});

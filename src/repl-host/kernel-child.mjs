@@ -22,7 +22,7 @@
 // kernel ends, expectedly or not, `reap` (the supervisor's ownedGroupReaper) then removes what it left in the owned
 // group: a process a cell started is reparented when its kernel dies, so no tree leads to it any more.
 import {spawn, execFileSync} from 'node:child_process';
-import {closeSync, constants as fsConstants, fstatSync, mkdtempSync, openSync, rmSync} from 'node:fs';
+import {closeSync, constants as fsConstants, fstatSync, mkdtempSync, openSync, readFileSync, readlinkSync, rmSync, statSync} from 'node:fs';
 import {Socket} from 'node:net';
 import {constants, tmpdir} from 'node:os';
 import {isAbsolute, join} from 'node:path';
@@ -66,10 +66,10 @@ export function stderrTail() {
 export const exitDiagnostic = ({pid, status, tail, reason = 'stdout_eof', streamError = null, sentence = KERNEL_EXIT_SENTENCE}) =>
   `${sentence}\n\nnode_repl diagnostics: ${JSON.stringify({kernel_pid: pid ?? null, kernel_status: status, kernel_stderr_tail: tail, reason, stream_error: streamError})}`;
 
-// SIGKILLs `root` and every process descending from it. The tree is frozen first (SIGSTOP, root first, then each
-// newly listed descendant until a listing finds no new one), so nothing in it can fork or exit, and so leave the tree,
-// between a listing and the kill: a launcher killed first would orphan the kernel it had just started.
-export function killProcessTree(root, {list = descendantsOf, signal = sendSignal} = {}) {
+// Freezes `root` and every process descending from it (SIGSTOP, root first, then each newly listed descendant until a
+// listing finds no new one), so nothing in it can fork or exit, and so leave the tree, between a listing and the kill:
+// a launcher killed first would orphan the kernel it had just started. -> the frozen pids, in the order frozen.
+function freezeProcessTree(root, {list, signal}) {
   const frozen = new Set();
   if (signal(root, 'SIGSTOP')) frozen.add(root);
   for (let pass = 0; pass < 8; pass++) {
@@ -77,7 +77,61 @@ export function killProcessTree(root, {list = descendantsOf, signal = sendSignal
     if (!found.length) break;
     for (const pid of found) if (signal(pid, 'SIGSTOP')) frozen.add(pid);
   }
+  return frozen;
+}
+
+// SIGKILLs `root` and every process descending from it, frozen first (freezeProcessTree).
+export function killProcessTree(root, {list = descendantsOf, signal = sendSignal} = {}) {
+  const frozen = freezeProcessTree(root, {list, signal});
   for (const pid of frozen) signal(pid, 'SIGKILL');
+  return [...frozen];
+}
+
+// How long a stop waits for cua's Linux engine to finish its orderly exit once told to: the engine's own backstop, which
+// ends it 2 s after the signal whatever its drain is doing (native/linux-engine/src/serve.rs EXIT_BACKSTOP), and a margin
+// for that exit to be seen. Its drain is far shorter: at most its 100 ms FocusOuts and the 300 ms settle after its last
+// key, about 600 ms after a watched drag's release (the engine README, "Exit"; the Decision Log, M4 T7b).
+export const ENGINE_EXIT_WAIT_MS = 2250;
+const ENGINE_EXIT_POLL_MS = 10;
+
+// Whether process `pid` runs the executable at `path`: its /proc/<pid>/exe names that path (with the kernel's
+// " (deleted)" when the file was replaced since it started, as `cua install` replaces an engine with one rename), or is
+// that very file. Never its command name, which any process may set.
+export function runsExecutable(pid, path) {
+  const exe = `/proc/${pid}/exe`;
+  try {
+    const link = readlinkSync(exe);
+    if (link === path || link === `${path} (deleted)`) return true;
+  } catch { return false; }
+  try {
+    const running = statSync(exe), file = statSync(path);
+    return running.dev === file.dev && running.ino === file.ino;
+  } catch { return false; }
+}
+
+// Whether process `pid` has exited: gone, or a zombie its frozen parent has not reaped.
+export function processExited(pid) {
+  let stat;
+  try { stat = readFileSync(`/proc/${pid}/stat`, 'utf8'); } catch { return true; }
+  const state = stat.slice(stat.lastIndexOf(')') + 2, stat.lastIndexOf(')') + 3);
+  return state === 'Z' || state === 'X';
+}
+
+// Stops `root`'s tree as killProcessTree does, but lets cua's Linux engine in it run its orderly exit first (Linux only;
+// the Decision Log, M4 T7b): the whole tree is frozen as above; each frozen process running the engine at `engine` (by
+// its executable, runsExecutable) alone is sent SIGTERM, then SIGCONT, so it finishes the request it is in, sends its
+// pending FocusOuts, settles and releases what it holds, then exits; once every such engine has exited, or after
+// `waitMs`, every process frozen at the start is SIGKILLed, the engines first (their pids still held by their frozen
+// parents). Nothing is listed again and nothing else is thawed, so a process the engine started, reparented when it
+// exits, is still killed, and the worker the engine answers stays frozen: the engine's drain reads nothing from it and
+// needs nothing written to it. -> a promise of the frozen pids.
+export async function stopProcessTree(root, {engine, list = descendantsOf, signal = sendSignal, isEngine = runsExecutable, exited = processExited,
+  waitMs = ENGINE_EXIT_WAIT_MS, wait = ms => new Promise(resolve => setTimeout(resolve, ms))} = {}) {
+  const frozen = freezeProcessTree(root, {list, signal});
+  const engines = [...frozen].filter(pid => isEngine(pid, engine));
+  const draining = engines.filter(pid => signal(pid, 'SIGTERM') && signal(pid, 'SIGCONT'));
+  for (const deadline = Date.now() + waitMs; draining.some(pid => !exited(pid)) && Date.now() < deadline;) await wait(ENGINE_EXIT_POLL_MS);
+  for (const pid of [...engines, ...[...frozen].filter(pid => !engines.includes(pid))]) signal(pid, 'SIGKILL');
   return [...frozen];
 }
 
@@ -211,9 +265,11 @@ export function lifelinePipe(root = tmpdir()) {
 // Starts a kernel child (or the trusted worker, which the same wire and lifecycle serve; `exitSentence` opens its exit
 // diagnostic). `onMessage(message)` gets each JSON line it writes (other lines are dropped: a kernel can print plain
 // text outside any execution); `onEnd({diagnostic, expected})` is called once when it is gone: `expected` when `stop()`
-// ended it, else with the exit diagnostic (or, for a child that could not start, the launch failure).
+// ended it, else with the exit diagnostic (or, for a child that could not start, the launch failure). `engine` (Linux,
+// for the trusted worker: the cua-engine its service runs, CUA_ENGINE_BIN) makes every stop of the child's tree let that
+// engine drain first (stopProcessTree).
 export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, spawnProcess = spawn, pipes = process.platform === 'linux' ? kernelPipes : null, reap = () => {},
-  exitSentence = KERNEL_EXIT_SENTENCE, lifelines = lifelinePipe}) {
+  exitSentence = KERNEL_EXIT_SENTENCE, lifelines = lifelinePipe, engine = null, stopTree = stopProcessTree}) {
   const tail = stderrTail();
   let stopping = false;
   let ended = false;
@@ -256,14 +312,21 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     let timer;
     return Promise.race([promise, new Promise(resolve => { timer = setTimeout(resolve, ms); })]).finally(() => clearTimeout(timer));
   };
-  const killTree = () => { if (child?.pid) killProcessTree(child.pid); };
+  // Without an engine, at once. With one, the engine's drain comes first, and a stop asked for while one runs waits for
+  // that one rather than freezing and killing the tree a second time under it.
+  let treeStop = null;
+  const killTree = () => {
+    if (!child?.pid) return undefined;
+    if (!engine) return killProcessTree(child.pid);
+    return treeStop ??= stopTree(child.pid, {engine}).finally(() => { treeStop = null; });
+  };
 
   // Once, however it is reached: every caller (stdout's close, the exit, stop()) waits for the same cleanup.
   let ending = null;
   const end = () => (ending ??= finish());
   async function finish() {
     ended = true;
-    if (!exitInfo && !spawnError && !await within(exited, EXIT_GRACE_MS)) { killTree(); await within(exited, EXIT_GRACE_MS); }
+    if (!exitInfo && !spawnError && !await within(exited, EXIT_GRACE_MS)) { await killTree(); await within(exited, EXIT_GRACE_MS); }
     lifeline?.release();
     reap();
     await within(stderrClosed, EXIT_GRACE_MS);
@@ -283,12 +346,13 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
       stdin.write(`${JSON.stringify(message)}\n`);
       return true;
     },
-    // Ends the kernel on purpose: SIGKILL to it and its descendants, its input closed; resolves once its exit was seen
-    // (or a bounded wait passed).
+    // Ends the kernel on purpose: SIGKILL to it and its descendants (after its engine's drain, with `engine`), its input
+    // closed; resolves once its exit was seen (or a bounded wait passed).
     async stop() {
       stopping = true;
-      killTree();
+      const killed = killTree();
       stdin?.destroy();
+      await killed;
       await within(exited, 2 * EXIT_GRACE_MS);
       await end();
     },

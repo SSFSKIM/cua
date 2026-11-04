@@ -2,7 +2,16 @@
 // and exit status as the vendor's diagnostic words them (observed on the pinned node_repl, 2026-10-14).
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {exitDiagnostic, exitStatus, kernelPipes, killProcessTree, ownedGroupReaper, startKernelChild, stderrTail} from '../../src/repl-host/kernel-child.mjs';
+import {execFileSync, spawn} from 'node:child_process';
+import {chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {ENGINE_EXIT_WAIT_MS, exitDiagnostic, exitStatus, kernelPipes, killProcessTree, ownedGroupReaper, processExited, runsExecutable, startKernelChild, stderrTail, stopProcessTree} from '../../src/repl-host/kernel-child.mjs';
+
+// python3's real path, or null where there is none.
+function pythonPath() {
+  try { return realpathSync(execFileSync('sh', ['-c', 'command -v python3'], {encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']}).trim()); } catch { return null; }
+}
 
 test('the stderr tail keeps the last 20 non-empty lines, each cut to 512 characters, a trailing CR dropped', () => {
   const tail = stderrTail();
@@ -68,6 +77,154 @@ test('a process tree is frozen before it is killed, so a child started meanwhile
   const kills = signals.filter(([, name]) => name === 'SIGKILL').map(([pid]) => pid);
   assert.deepEqual(kills.sort(), [10, 11, 12, 13]);
   assert.ok(signals.findIndex(([, n]) => n === 'SIGKILL') > signals.findLastIndex(([, n]) => n === 'SIGSTOP'), 'nothing is killed until the whole tree is frozen');
+});
+
+// A tree for stopProcessTree: 10 the sandbox launcher, 11 the trusted worker, 12 cua-engine, 13 a process the worker named
+// cua-engine (another executable), 14 a program the engine started.
+function engineTree() {
+  const tree = {10: [11], 11: [12, 13], 12: [14]};
+  const signals = [];
+  let listings = 0;
+  let exitPolls = 0;
+  const list = root => {
+    listings++;
+    signals.push([root, 'list']);
+    const out = [];
+    const walk = pid => { for (const c of tree[pid] ?? []) { out.push(c); walk(c); } };
+    walk(root);
+    return out;
+  };
+  const signal = (pid, name) => { signals.push([pid, name]); return true; };
+  return {signals, list, signal, isEngine: (pid, path) => pid === 12 && path === '/opt/cua/engine/linux/cua-engine', get listings() { return listings; }, get exitPolls() { return exitPolls; },
+    exitedAfter: polls => pid => { assert.equal(pid, 12, 'only the engine is waited for'); return ++exitPolls > polls; }};
+}
+
+test('a stop lets the engine alone drain: the tree frozen, then SIGTERM and SIGCONT to the engine only, then SIGKILL to every process frozen at the start once it exited', async () => {
+  const t = engineTree();
+  const killed = await stopProcessTree(10, {engine: '/opt/cua/engine/linux/cua-engine', list: t.list, signal: t.signal, isEngine: t.isEngine, exited: t.exitedAfter(3), wait: async () => {}});
+  assert.deepEqual(killed.sort(), [10, 11, 12, 13, 14]);
+  const named = name => t.signals.filter(([, n]) => n === name).map(([pid]) => pid);
+  assert.deepEqual(named('SIGTERM'), [12], 'the engine, found by its executable, never the process merely named for it');
+  assert.deepEqual(named('SIGCONT'), [12], 'nothing else is thawed');
+  const at = (pid, name) => t.signals.findIndex(([p, n]) => p === pid && n === name);
+  assert.ok(at(12, 'SIGTERM') > t.signals.findLastIndex(([, n]) => n === 'SIGSTOP'), 'the engine is told only once the whole tree is frozen');
+  assert.ok(at(12, 'SIGTERM') < at(12, 'SIGCONT'), 'SIGTERM first, so it is pending when the engine runs again');
+  assert.ok(t.signals.findLastIndex(([, n]) => n === 'list') < at(12, 'SIGTERM'), 'nothing is listed after the freeze');
+  assert.equal(t.exitPolls, 4, 'the kill waited for the engine\'s exit');
+  assert.deepEqual(named('SIGKILL')[0], 12, 'the engine first, while its frozen parent still holds its pid');
+  assert.deepEqual(named('SIGKILL').sort(), [10, 11, 12, 13, 14], 'what the engine started is killed too, though it was reparented when the engine exited');
+});
+
+test('an engine that does not exit within the wait is killed with the rest', async () => {
+  const t = engineTree();
+  const started = Date.now();
+  const killed = await stopProcessTree(10, {engine: '/opt/cua/engine/linux/cua-engine', list: t.list, signal: t.signal, isEngine: t.isEngine, exited: () => false, waitMs: 60});
+  assert.ok(Date.now() - started >= 60);
+  assert.deepEqual(killed.sort(), [10, 11, 12, 13, 14]);
+  assert.deepEqual(t.signals.filter(([, n]) => n === 'SIGKILL').map(([pid]) => pid).sort(), [10, 11, 12, 13, 14]);
+});
+
+test('a tree with no engine in it is killed at once, with nothing thawed', async () => {
+  const t = engineTree();
+  const started = Date.now();
+  await stopProcessTree(10, {engine: '/opt/cua/engine/linux/cua-engine', list: t.list, signal: t.signal, isEngine: () => false, exited: () => assert.fail('nothing to wait for'), waitMs: 5000});
+  assert.ok(Date.now() - started < 1000);
+  assert.deepEqual(t.signals.filter(([, n]) => n === 'SIGTERM' || n === 'SIGCONT'), []);
+  assert.deepEqual(t.signals.filter(([, n]) => n === 'SIGKILL').map(([pid]) => pid).sort(), [10, 11, 12, 13, 14]);
+});
+
+const linuxOnly = {skip: process.platform !== 'linux' && 'reads /proc'};
+
+test('the engine is the process running its executable, not one that only carries its name', linuxOnly, async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-engine-exe-'));
+  const sleep = realpathSync(execFileSync('sh', ['-c', 'command -v sleep'], {encoding: 'utf8'}).trim());
+  const decoyPath = join(dir, 'cua-engine');
+  copyFileSync(sleep, decoyPath);
+  chmodSync(decoyPath, 0o755);
+  const linked = join(dir, 'linked');
+  symlinkSync(sleep, linked);
+  const real = spawn(linked, ['30'], {stdio: 'ignore'});
+  const decoy = spawn(decoyPath, ['30'], {stdio: 'ignore'});
+  t.after(() => { real.kill('SIGKILL'); decoy.kill('SIGKILL'); rmSync(dir, {recursive: true, force: true}); });
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(readFileSync(`/proc/${decoy.pid}/comm`, 'utf8').trim(), 'cua-engine');
+  assert.equal(runsExecutable(real.pid, sleep), true, 'started through a link, it runs the file itself');
+  assert.equal(runsExecutable(decoy.pid, sleep), false, 'a copy is another executable');
+  assert.equal(runsExecutable(decoy.pid, decoyPath), true);
+  assert.equal(runsExecutable(real.pid, decoyPath), false);
+  assert.equal(processExited(real.pid), false);
+  real.kill('SIGKILL');
+  await new Promise(resolve => real.once('exit', resolve));
+  assert.equal(processExited(real.pid), true, 'reaped');
+});
+
+// The worker double: starts the engine double (python3, which takes SIGTERM and drains for 300 ms before it exits),
+// never reads its output, and notes if it ever sees the engine's exit; beside it, a process named cua-engine.
+const WORKER = `import {spawn} from 'node:child_process';
+import {writeFileSync} from 'node:fs';
+import {join} from 'node:path';
+const [dir, python, decoy] = process.argv.slice(2);
+const engine = spawn(python, [join(dir, 'engine.py'), dir], {stdio: ['pipe', 'pipe', 'ignore']});
+engine.on('exit', () => writeFileSync(join(dir, 'worker-saw-exit'), ''));
+const named = spawn(decoy, ['30'], {stdio: 'ignore'});
+writeFileSync(join(dir, 'pids.json'), JSON.stringify({engine: engine.pid, decoy: named.pid}));
+setInterval(() => {}, 1000);
+`;
+const ENGINE = `import os, signal, subprocess, sys, time
+d = sys.argv[1]
+child = subprocess.Popen(['sleep', '30'])
+def stop(sig, frame):
+    time.sleep(0.3)
+    open(os.path.join(d, 'drained'), 'w').write('')
+    os._exit(143)
+signal.signal(signal.SIGTERM, stop)
+open(os.path.join(d, 'engine.json'), 'w').write(str(child.pid))
+while True:
+    signal.pause()
+`;
+
+test('a stop of a real tree lets its engine drain while the worker stays frozen, then kills everything it froze', {skip: linuxOnly.skip || (!pythonPath() && 'needs python3')}, async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-engine-stop-'));
+  writeFileSync(join(dir, 'worker.mjs'), WORKER);
+  writeFileSync(join(dir, 'engine.py'), ENGINE);
+  const decoy = join(dir, 'cua-engine');
+  copyFileSync(realpathSync(execFileSync('sh', ['-c', 'command -v sleep'], {encoding: 'utf8'}).trim()), decoy);
+  chmodSync(decoy, 0o755);
+  const python = pythonPath();
+  let ended = null;
+  const child = startKernelChild({command: process.execPath, args: [join(dir, 'worker.mjs'), dir, python, decoy], env: {PATH: process.env.PATH}, cwd: dir},
+    {onMessage: () => {}, onEnd: e => { ended = e; }, lifelines: null, engine: python});
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  for (let i = 0; i < 200 && !(existsSync(join(dir, 'pids.json')) && existsSync(join(dir, 'engine.json'))); i++) await new Promise(resolve => setTimeout(resolve, 25));
+  const {engine, decoy: named} = JSON.parse(readFileSync(join(dir, 'pids.json'), 'utf8'));
+  const engineChild = Number(readFileSync(join(dir, 'engine.json'), 'utf8'));
+  const started = Date.now();
+  await child.stop();
+  const took = Date.now() - started;
+  assert.ok(existsSync(join(dir, 'drained')), 'the engine ran its orderly exit');
+  assert.ok(took >= 300, `the stop waited for it: ${took} ms`);
+  assert.ok(took < ENGINE_EXIT_WAIT_MS, `and no longer than it took: ${took} ms`);
+  assert.ok(!existsSync(join(dir, 'worker-saw-exit')), 'the worker never ran again: frozen through the drain, then killed');
+  assert.equal(ended?.expected, true);
+  for (let i = 0; i < 100 && ![child.pid, engine, named, engineChild].every(processExited); i++) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.deepEqual([child.pid, engine, named, engineChild].map(processExited), [true, true, true, true], 'the worker, the engine, the process named for it and what the engine started');
+});
+
+test('a second stop while the engine drains waits for the first, and the tree is stopped once', linuxOnly, async () => {
+  let calls = 0;
+  let release;
+  const stopTree = root => { calls++; return new Promise(resolve => { release = () => resolve(killProcessTree(root)); }); };
+  const child = startKernelChild({command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], env: {}, cwd: process.cwd()},
+    {onMessage: () => {}, onEnd: () => {}, lifelines: null, engine: '/opt/cua/engine/linux/cua-engine', stopTree});
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const first = child.stop();
+  const second = child.stop();
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(calls, 1);
+  release();
+  await Promise.all([first, second]);
+  assert.equal(calls, 1);
+  assert.equal(child.ended, true);
 });
 
 test('a launcher that cannot start is reported as the vendor reports a Node runtime that cannot start', async () => {

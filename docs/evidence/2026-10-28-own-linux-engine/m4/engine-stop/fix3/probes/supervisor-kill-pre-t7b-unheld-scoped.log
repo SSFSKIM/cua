@@ -1,0 +1,10 @@
+stress-ng: 0
+cell 1 true keys [50]
+tree [["anchor",1727568,"S"],["supervisor",1727574,"S"],["kernel-launcher",1727583,"S"],["bwrap",1727587,"S"],["kernel-launcher",1727588,"S"],["kernel",1727589,"S"],["worker-launcher",1727600,"S"],["bwrap",1727604,"S"],["worker-launcher",1727605,"S"],["worker",1727606,"S"],["engine",1727617,"S"]]
+cua serve stopped
+supervisor SIGKILLed
+left after 3 s: [["anchor",1727568,"S"]]
+keys after []
+stopped after [[1727553,"node"]]
+{"summary":"pre-t7b-unheld-scoped","mode":"unheld","left":[]}
+exit 0

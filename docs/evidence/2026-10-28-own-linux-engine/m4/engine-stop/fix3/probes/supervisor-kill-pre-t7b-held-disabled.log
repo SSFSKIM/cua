@@ -1,0 +1,11 @@
+stress-ng: 0
+cell 1 true keys [50]
+tree [["anchor",1727263,"S"],["supervisor",1727269,"S"],["kernel",1727278,"S"],["worker",1727290,"S"],["engine",1727299,"S"]]
+cua serve SIGKILLed
+worker launcher before the kill: none (sandbox disabled)
+supervisor SIGKILLed
+left after 3 s: []
+keys after []
+stopped after []
+{"summary":"pre-t7b-held-disabled","mode":"held","left":[]}
+exit 0

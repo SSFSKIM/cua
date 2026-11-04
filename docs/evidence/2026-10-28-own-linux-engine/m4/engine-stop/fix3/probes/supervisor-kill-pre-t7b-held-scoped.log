@@ -1,0 +1,11 @@
+stress-ng: 0
+cell 1 true keys [50]
+tree [["anchor",1726929,"S"],["supervisor",1726936,"S"],["kernel-launcher",1726952,"S"],["bwrap",1726956,"S"],["kernel-launcher",1726957,"S"],["kernel",1726958,"S"],["worker-launcher",1726970,"S"],["bwrap",1726974,"S"],["worker-launcher",1726975,"S"],["worker",1726977,"S"],["engine",1726986,"S"]]
+cua serve SIGKILLed
+worker launcher before the kill: S
+supervisor SIGKILLed
+left after 3 s: []
+keys after []
+stopped after []
+{"summary":"pre-t7b-held-scoped","mode":"held","left":[]}
+exit 0

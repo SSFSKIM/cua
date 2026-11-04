@@ -1,0 +1,10 @@
+stress-ng: 0
+cell 1 true keys [50]
+tree [["anchor",1727683,"S"],["supervisor",1727689,"S"],["kernel",1727701,"S"],["worker",1727713,"S"],["engine",1727722,"S"]]
+cua serve stopped
+supervisor SIGKILLed
+left after 3 s: [["anchor",1727683,"S"]]
+keys after []
+stopped after [[1727663,"node"]]
+{"summary":"head-unheld-disabled","mode":"unheld","left":[]}
+exit 0

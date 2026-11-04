@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
 // background session's SendEvents (audit.test.mjs has the same shapes).
@@ -287,4 +287,12 @@ test("the exit settle's measured steps: the stop runs alone, the settle 0 includ
   assert.equal(args.exitSettleMs, 0);
   assert.equal(parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', '--exit-settle-ms', '250']).exitSettleMs, 250);
   assert.throws(() => parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', '--exit-settle-ms', '-1']), /--exit-settle-ms/);
+});
+
+test("a --stats line's FocusOuts are read apart from the exit's settle, which is no FocusOut", () => {
+  const out = { window: 7, cause: 'exit', after_input_ms: 100.1, scheduled_by: 20 };
+  assert.deepEqual(readStatsLine(JSON.stringify({ stats: { id: null, focus_out: [out] } })), { focusOuts: [{ ...out, reported_on: null }], settle: null });
+  assert.deepEqual(readStatsLine(JSON.stringify({ stats: { id: null, exit_settle: { waited_ms: 151.2 } } })), { focusOuts: [], settle: { waited_ms: 151.2 } });
+  assert.deepEqual(readStatsLine(JSON.stringify({ stats: { id: 3, command: 'press_key' } })), { focusOuts: [], settle: null });
+  assert.equal(readStatsLine('not stats'), null);
 });

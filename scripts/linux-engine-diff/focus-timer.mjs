@@ -189,18 +189,31 @@ const grown = (before, text) => (typeof before.text === 'string' ? before.text.l
  */
 function collectFocusOuts(engine) {
   const records = [];
+  const settles = [];
   const closed = new Promise((resolve) => engine.child.stderr.once('close', resolve));
   createInterface({ input: engine.child.stderr }).on('line', (line) => {
-    if (!line.startsWith('{"stats"')) return;
+    let read;
     try {
-      const { stats } = JSON.parse(line);
-      for (const out of stats.focus_out ?? []) records.push({ ...out, reported_on: stats.id ?? null });
-      if (stats.exit_settle) records.push({ exit_settle: stats.exit_settle });
+      read = readStatsLine(line);
     } catch {
       records.push({ unparsable: line.slice(0, 200) });
+      return;
     }
+    if (!read) return;
+    records.push(...read.focusOuts);
+    if (read.settle) settles.push(read.settle);
   });
-  return { records, closed };
+  return { records, settles, closed };
+}
+
+/**
+ * One stderr line of the engine's: null when it is no `--stats` line, else its FocusOuts (each with the id of the
+ * request whose line carried it, null for a line of its own) and the exit's settle, which is no FocusOut.
+ */
+export function readStatsLine(line) {
+  if (!line.startsWith('{"stats"')) return null;
+  const { stats } = JSON.parse(line);
+  return { focusOuts: (stats.focus_out ?? []).map((out) => ({ ...out, reported_on: stats.id ?? null })), settle: stats.exit_settle ?? null };
 }
 
 /** A value to a tenth, as each run's times are (null stays null). */
@@ -447,7 +460,7 @@ async function stopRun(ctx, family, signal, windows, i, kind = 'keys') {
   const before = await settledRead(read);
   const proxy = await startProxy();
   const engine = new Engine({ label: `cua-${signal}`, bin: cua, args: ctx.stopArgs, stats: true, env: proxy.env }).start();
-  const { records, closed } = collectFocusOuts(engine);
+  const { records, settles, closed } = collectFocusOuts(engine);
   let exit;
   let text;
   let gap;
@@ -478,8 +491,8 @@ async function stopRun(ctx, family, signal, windows, i, kind = 'keys') {
       ? inOrder && closedSession && exit.code === 143 && exitRecord !== null && exitRecord.after_input_ms >= DELAY_MS && drained < EXIT_WITHIN_MS && !exit.answers
       : !closedSession && sessions.sessions.length === 1;
   const got = typeof after.text === 'string' && typeof before.text === 'string' ? after.text.slice(before.caret ?? 0, (before.caret ?? 0) + after.text.length - before.text.length) : null;
-  const settle = records.find((r) => r.exit_settle) ?? null;
-  const row = { kind: 'focus-timer-stop', family, signal, input: kind, trial: i, ok, tail_at_start: tail, exit_settle_ms: settle?.exit_settle.waited_ms ?? null, in_order: inOrder, got, session_closed: closedSession, session_problems: sessions.problems, exit, exit_record: exitRecord, signalled_after_answer_ms: Math.round(gap * 10) / 10, exited_after_answer_ms: Math.round(drained * 10) / 10 };
+  const settle = settles[0] ?? null;
+  const row = { kind: 'focus-timer-stop', family, signal, input: kind, trial: i, ok, tail_at_start: tail, exit_settle_ms: settle?.waited_ms ?? null, in_order: inOrder, got, session_closed: closedSession, session_problems: sessions.problems, exit, exit_record: exitRecord, signalled_after_answer_ms: Math.round(gap * 10) / 10, exited_after_answer_ms: Math.round(drained * 10) / 10 };
   emit(row);
   return row;
 }

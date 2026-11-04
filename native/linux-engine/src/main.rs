@@ -43,7 +43,8 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
-       [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take] [--stats]
+       [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
+       [--targets-wait-ms <ms>] [--stats]
        cua-engine --version";
 
 fn version() -> String {
@@ -76,6 +77,7 @@ fn default_config() -> Config {
         dnd_defer_take: false,
         dnd_hold: crate::dnd::TAKE_HOLD_AFTER_PRESS,
         dnd_after_take: crate::dnd::RELEASE_AFTER_TAKE,
+        targets_wait: None,
     }
 }
 
@@ -86,7 +88,8 @@ fn fixed_drag(cfg: &mut Config) -> &mut families::DragPacing {
 
 enum Command {
     Version,
-    Server(Config),
+    /// Boxed: the configuration is far larger than the version's nothing.
+    Server(Box<Config>),
 }
 
 fn parse_args(args: &[String]) -> Result<Command, String> {
@@ -158,6 +161,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             "--drag-release-dwell-ms" => fixed_drag(&mut cfg).release = Duration::from_millis(number(value, arg)?),
             "--drag-dnd-hold-ms" => cfg.dnd_hold = Duration::from_millis(number(value, arg)?),
             "--drag-dnd-after-take-ms" => cfg.dnd_after_take = Duration::from_millis(number(value, arg)?),
+            "--targets-wait-ms" => cfg.targets_wait = Some(Duration::from_millis(number(value, arg)?)),
             other => return Err(format!("unknown argument {other}")),
         }
         i += if takes_value { 2 } else { 1 };
@@ -165,7 +169,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
     if !server {
         return Err("a command is required".into());
     }
-    Ok(Command::Server(cfg))
+    Ok(Command::Server(Box::new(cfg)))
 }
 
 fn main() {
@@ -175,7 +179,7 @@ fn main() {
             println!("{}", version());
             return;
         }
-        Ok(Command::Server(cfg)) => cfg,
+        Ok(Command::Server(cfg)) => *cfg,
         Err(message) => {
             eprintln!("{message}\n{USAGE}");
             std::process::exit(2);
@@ -274,6 +278,14 @@ mod tests {
             panic!()
         };
         assert_eq!(measured.pacing.exit_settle, Duration::from_millis(250));
+        assert_eq!(
+            cfg.targets_wait, None,
+            "a paste's TARGETS wait is its target's family's"
+        );
+        let Ok(Command::Server(measured)) = parse_args(&args(&["server", "--targets-wait-ms", "1000"])) else {
+            panic!()
+        };
+        assert_eq!(measured.targets_wait, Some(Duration::from_millis(1000)));
     }
 
     #[test]

@@ -40,6 +40,11 @@ pub static TAKE_PAUSE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atom
 pub static VERIFY_PAUSE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 #[cfg(test)]
 pub static PAUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// A pause before each `SelectionRequest` is handled, as an owner thread a loaded machine has not yet run.
+#[cfg(test)]
+pub static REQUEST_PAUSE_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+#[cfg(test)]
+pub static REQUEST_PAUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 #[cfg(test)]
 pub static VERIFY_PAUSED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -168,6 +173,10 @@ struct Shared {
     /// A request for the owner generation, by token, and its answer.
     sync: Option<u64>,
     synced: Option<(u64, u64)>,
+    /// A question about one X client's `TARGETS` request (`Paste::answered_targets`), by token: the client's window
+    /// and the resource-id mask; and its answer.
+    asked: Option<(u64, Window, u32)>,
+    answered: Option<(u64, bool)>,
     /// The thread ends at its next event.
     stop: bool,
     /// The thread has ended (stopped, or its connection broke).
@@ -234,6 +243,8 @@ impl Owner {
                 settling: false,
                 sync: None,
                 synced: None,
+                asked: None,
+                answered: None,
                 stop: false,
                 ended: false,
             }),
@@ -403,6 +414,9 @@ impl Owner {
         Ok(Paste {
             quarantine: self.quarantine.clone(),
             state: self.state.clone(),
+            conn: self.conn.clone(),
+            window: self.window,
+            atoms: self.atoms,
             id,
             done: false,
         })
@@ -424,6 +438,10 @@ impl Drop for Owner {
 pub struct Paste {
     quarantine: Arc<Quarantine>,
     state: Arc<State>,
+    /// The owner's connection, window and atoms, to wake its thread.
+    conn: Arc<RustConnection>,
+    window: Window,
+    atoms: Atoms,
     id: u64,
     /// The cleanup has run; it runs once.
     done: bool,
@@ -436,6 +454,47 @@ impl Paste {
         if let Some(active) = self.state.locked().active.as_mut().filter(|a| a.id == self.id) {
             active.dispatched = Some(time);
             active.client = Some(client);
+        }
+    }
+
+    /// Whether the X client of `client` (a window of it; by `resource_id_mask`) has asked for this paste's `TARGETS`
+    /// and been answered, delivered: once the owner thread has handled every request the server had given it by a
+    /// round trip made now, it makes another, so the server has sent every answer before this returns (task 56, fix
+    /// 3: an input sent after it reaches that client after its answer). Only requests since the take count.
+    pub fn answered_targets(&self, client: Window, resource_id_mask: u32) -> Result<bool> {
+        let token = {
+            let mut shared = self.state.locked();
+            if shared.ended {
+                bail!("clipboard owner stopped during paste");
+            }
+            let token = shared.next_token;
+            shared.next_token += 1;
+            shared.asked = Some((token, client, resource_id_mask));
+            token
+        };
+        wake(&self.conn, self.window, &self.atoms);
+        let deadline = Instant::now() + TAKE_WAIT;
+        let mut shared = self.state.locked();
+        loop {
+            if let Some((for_token, answered)) = shared.answered.take()
+                && for_token == token
+            {
+                return Ok(answered);
+            }
+            if shared.ended {
+                bail!("clipboard owner stopped during paste");
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                shared.asked = None;
+                bail!("clipboard owner did not answer");
+            }
+            shared = self
+                .state
+                .taken
+                .wait_timeout(shared, deadline - now)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
         }
     }
 
@@ -567,6 +626,7 @@ impl Serving {
                 None => sleep(POLL),
             }
             self.sync()?;
+            self.answer()?;
             self.take()?;
             self.expire(Instant::now());
             self.conn.flush()?;
@@ -616,6 +676,28 @@ impl Serving {
         };
         self.catch_up()?;
         self.state.locked().synced = Some((token, self.generation));
+        self.state.taken.notify_all();
+        Ok(())
+    }
+
+    /// A waiting question about one client's `TARGETS` request (`Paste::answered_targets`): every request queued
+    /// before a round trip made now handled, each answer sent on its handling; then a second round trip, whose reply
+    /// comes only once the server has processed those answers, so each is on its way to its requestor before any
+    /// input another connection sends from now on.
+    fn answer(&mut self) -> Result<()> {
+        let Some((token, client, resource_id_mask)) = self.state.locked().asked.take() else {
+            return Ok(());
+        };
+        self.catch_up()?;
+        self.conn.get_input_focus()?.reply()?;
+        let mut shared = self.state.locked();
+        let answered = shared.active.as_ref().is_some_and(|active| {
+            active.watch.log.iter().any(|seen| {
+                seen.target == self.atoms.targets && crate::paste::same_client(seen.requestor, client, resource_id_mask)
+            })
+        });
+        shared.answered = Some((token, answered));
+        drop(shared);
         self.state.taken.notify_all();
         Ok(())
     }
@@ -747,6 +829,8 @@ impl Serving {
     }
 
     fn request(&mut self, e: &SelectionRequestEvent) -> Result<()> {
+        #[cfg(test)]
+        test_pause(&REQUEST_PAUSE_MS, &REQUEST_PAUSED);
         if e.selection != self.atoms.clipboard || e.owner != self.window {
             return self.notify(e, x11rb::NONE);
         }

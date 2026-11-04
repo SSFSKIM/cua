@@ -1274,3 +1274,80 @@ fn an_unconfirmed_paste_s_window_holds_for_another_engine_and_outlives_the_engin
         .expect("the window outlives the engine that opened it");
     assert!(left > Duration::from_secs(8), "{left:?}");
 }
+
+/// Holds the owner thread before each request it handles, for as long as it lives.
+struct RequestPause;
+
+impl RequestPause {
+    fn ms(ms: u64) -> RequestPause {
+        owner::REQUEST_PAUSE_MS.store(ms, Ordering::SeqCst);
+        RequestPause
+    }
+}
+
+impl Drop for RequestPause {
+    fn drop(&mut self) {
+        owner::REQUEST_PAUSE_MS.store(0, Ordering::SeqCst);
+    }
+}
+
+/// Task 56, fix 3: the paste's chord goes only once the target's `TARGETS` request, if it has made one, has its answer
+/// on the way. Only the target's client's request counts; and an input another connection sends once
+/// `answered_targets` has said so reaches the target after its answer, even when the owner thread handled the request
+/// late.
+#[test]
+#[cfg_attr(not(feature = "live"), ignore = "needs an X display (--features live)")]
+fn the_target_s_targets_request_is_answered_and_delivered_before_answered_targets_says_so() {
+    let _serial = serial();
+    clear_clipboard();
+    let mut c = clipboard();
+    let paste = c.take_restoring(text(&c, "pasted"), Payload::default()).unwrap();
+    let ask = |conn: &RustConnection, window: Window| {
+        let (clipboard, targets) = (intern(conn, "CLIPBOARD"), intern(conn, "TARGETS"));
+        let property = intern(conn, "CUA_TEST_TARGETS");
+        conn.convert_selection(window, clipboard, targets, property, x11rb::CURRENT_TIME)
+            .unwrap();
+        conn.sync().unwrap();
+    };
+    let (target, _) = x11rb::connect(None).unwrap();
+    let mask = target.setup().resource_id_mask;
+    let window = input_only(&target, EventMask::NO_EVENT);
+    target.sync().unwrap();
+    assert!(!paste.answered_targets(window, mask).unwrap(), "nothing asked yet");
+    let (other, _) = x11rb::connect(None).unwrap();
+    let elsewhere = input_only(&other, EventMask::NO_EVENT);
+    ask(&other, elsewhere);
+    assert!(
+        !paste.answered_targets(window, mask).unwrap(),
+        "another client's request is not the target's"
+    );
+    {
+        let _held = RequestPause::ms(200);
+        ask(&target, window);
+        assert!(paste.answered_targets(window, mask).unwrap(), "the target's own");
+    }
+    // the chord's stand-in, from another connection
+    let (input, _) = x11rb::connect(None).unwrap();
+    let marker = intern(&input, "CUA_TEST_CHORD");
+    input
+        .send_event(
+            false,
+            window,
+            EventMask::NO_EVENT,
+            ClientMessageEvent::new(32, window, marker, [0u32; 5]),
+        )
+        .unwrap();
+    input.sync().unwrap();
+    let mut seen = Vec::new();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while seen.len() < 2 && Instant::now() < deadline {
+        match target.poll_for_event().unwrap() {
+            Some(Event::SelectionNotify(e)) => seen.push(format!("answer {}", atom_name(&target, e.target))),
+            Some(Event::ClientMessage(e)) if e.type_ == marker => seen.push("chord".to_string()),
+            Some(_) => {}
+            None => sleep(Duration::from_millis(1)),
+        }
+    }
+    assert_eq!(seen, ["answer TARGETS", "chord"]);
+    paste.confirmed();
+}

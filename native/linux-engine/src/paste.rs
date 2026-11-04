@@ -27,6 +27,12 @@ pub const MAX_TEXT_BYTES: usize = crate::clipboard::MAX_SNAPSHOT_BYTES;
 pub const CONFIRM_POLL: Duration = Duration::from_millis(20);
 pub const CONFIRM_WAIT: Duration = Duration::from_secs(2);
 
+/// How long a paste waits at most, between taking CLIPBOARD and its revalidation before the chord, for a target whose
+/// family asks for `TARGETS` at every owner change (`families.rs` `refreshes_targets`) to ask and be answered, and how
+/// often it looks (task 56, fix 3). A target that has not asked by then gets the chord as before.
+pub const TARGETS_REFRESH_WAIT: Duration = Duration::from_millis(200);
+pub const TARGETS_POLL: Duration = Duration::from_millis(2);
+
 /// While an earlier unconfirmed paste's `CurrentTime` refusal runs, `wait` long (Decision Log, M2.1); `clicked` when
 /// the request's focusing click had already gone to the window.
 pub fn previous_unconfirmed(wait: Duration, clicked: bool) -> String {

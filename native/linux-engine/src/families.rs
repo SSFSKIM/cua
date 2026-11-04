@@ -101,6 +101,12 @@ pub struct Family {
     /// Its text scrolls its beginning away as text arrives (a terminal's screen): a paste's confirmation observes the
     /// whole field first, so a paste the scroll moved can still be confirmed (`paste::Expected::confirmed_scrolled`).
     pub text_scrolls: bool,
+    /// Its X client asks CLIPBOARD for `TARGETS` whenever its owner changes, and pastes only once it has the answer
+    /// (gnome-terminal clears the targets it keeps at every owner change and takes no paste until they are back): a
+    /// paste waits after taking CLIPBOARD, at most `paste::TARGETS_REFRESH_WAIT`, until that request has come and been
+    /// answered, so its chord never reaches the client first (task 56, fix 3). Every family's chord waits for an answer
+    /// to a request that has already come.
+    pub refreshes_targets: bool,
     /// The runs that showed it (`docs/evidence/2026-10-28-own-linux-engine/`).
     pub evidence: &'static str,
 }
@@ -170,6 +176,7 @@ pub const FAMILIES: &[Family] = &[
         feff_after_astral: false,
         drop_changes_desktop: true,
         text_scrolls: false,
+        refreshes_targets: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible, m31-dnd-candidate, m31-dnd-candidate-stats",
     },
@@ -191,6 +198,7 @@ pub const FAMILIES: &[Family] = &[
         feff_after_astral: false,
         drop_changes_desktop: false,
         text_scrolls: false,
+        refreshes_targets: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible",
     },
@@ -232,6 +240,7 @@ pub const FAMILIES: &[Family] = &[
         feff_after_astral: true,
         drop_changes_desktop: false,
         text_scrolls: false,
+        refreshes_targets: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
                    m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600; m3/kinds/ \
                    runs m31-kinds-covered, m31-kinds-partial, m31-kinds-partial-deep, m31-move-covered, \
@@ -277,6 +286,7 @@ pub const FAMILIES: &[Family] = &[
         feff_after_astral: false,
         drop_changes_desktop: false,
         text_scrolls: false,
+        refreshes_targets: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible; m3/kinds/ runs m31-kinds-covered, \
                    m31-kinds-visible, m31-move-covered, m31-drag-covered, m31-drag-visible-new",
     },
@@ -296,6 +306,7 @@ pub const FAMILIES: &[Family] = &[
         feff_after_astral: false,
         drop_changes_desktop: false,
         text_scrolls: false,
+        refreshes_targets: false,
         evidence: "m3/kinds/ runs m31-kinds-covered, m31-kinds-visible, m31-qt-covered, m31-qt-visible",
     },
     // A VTE terminal pastes with Ctrl+Shift+V; Ctrl+V inserts the next key literally in a shell. Its text is its
@@ -311,6 +322,7 @@ pub const FAMILIES: &[Family] = &[
         feff_after_astral: false,
         drop_changes_desktop: false,
         text_scrolls: true,
+        refreshes_targets: true,
         evidence: "M2.2's terminal paste (task-14 report; m2/ from M2.3); the scroll: task 56's paste trace \
                    (m4/focus-timer/fix/terminal-trace-load2/)",
     },
@@ -330,6 +342,7 @@ pub const FAMILIES: &[Family] = &[
         feff_after_astral: false,
         drop_changes_desktop: false,
         text_scrolls: false,
+        refreshes_targets: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible",
     },
 ];
@@ -373,6 +386,7 @@ mod tests {
             feff_after_astral: false,
             drop_changes_desktop: false,
             text_scrolls: false,
+            refreshes_targets: false,
             evidence: "test",
         },
         Family {
@@ -386,6 +400,7 @@ mod tests {
             feff_after_astral: false,
             drop_changes_desktop: false,
             text_scrolls: false,
+            refreshes_targets: false,
             evidence: "test",
         },
     ];

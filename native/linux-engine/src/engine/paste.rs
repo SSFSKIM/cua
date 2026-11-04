@@ -23,7 +23,7 @@ use super::way::Way;
 use crate::atspi;
 use crate::clipboard::{Clipboard, Payload, TRANSFER_WAIT};
 use crate::copy;
-use crate::families::{DEFAULT_PASTE, Kind, PasteRoute};
+use crate::families::{DEFAULT_PASTE, Family, Kind, PasteRoute};
 use crate::field::{self, Observation};
 use crate::input::{chord_keycodes, focus_is_within};
 use crate::paste::{self, CHANGED_CAUSE, Expected, Transfer, UNCONFIRMED};
@@ -79,8 +79,12 @@ struct Report {
     /// The field's text state when observed, and the offsets the confirmation reads.
     observed: Option<String>,
     expected: Option<(i32, i32)>,
-    /// The requests the paste's owner saw: whose, which target atom, the outcome, the timestamp and when.
+    /// The requests the paste's owner saw: whose, which target atom, the outcome, the timestamp and when, in ms from
+    /// the chord's dispatch (negative before it).
     log: Vec<String>,
+    /// Before the chord: whether the target's `TARGETS` request since the take was answered, how long that took, and
+    /// the wait's bound (`await_targets`).
+    targets: Option<(bool, f64, u64)>,
     /// A press of the chord whose delivery is unknown.
     delivery: Option<String>,
     /// How long a clicked element took to report the focus (or the wait, when it did not), and the clicks it took.
@@ -175,6 +179,11 @@ impl Engine {
                 "observed": report.observed,
                 "expected": report.expected,
                 "log": report.log,
+                "targets": report.targets.map(|(answered, waited_ms, bound_ms)| json!({
+                    "answered": answered,
+                    "waited_ms": waited_ms,
+                    "bound_ms": bound_ms,
+                })),
                 "delivery": report.delivery,
                 "focus_ms": report.focus_ms,
                 "clicks": report.clicks,
@@ -246,6 +255,7 @@ impl Engine {
         self.enter_checked(way, request.window.map(|_| window), |_| Ok(()))?;
         let feff = family.is_some_and(|f| f.feff_after_astral);
         let scrolls = family.is_some_and(|f| f.text_scrolls);
+        let targets_wait = targets_wait(family, self.cfg.targets_wait);
         let target = way.target(window);
         let resource_id_mask = self.x.conn.setup().resource_id_mask;
         let Engine {
@@ -371,6 +381,7 @@ impl Engine {
                     resource_id_mask,
                     keycodes: &keycodes,
                     payload: &request.payload,
+                    targets_wait,
                 };
                 dispatch_and_confirm(x, route, bus, clipboard, field, delivery, report)
             })
@@ -489,6 +500,43 @@ struct Delivery<'a> {
     resource_id_mask: u32,
     keycodes: &'a [u8],
     payload: &'a Payload,
+    /// How long the target may take to ask for `TARGETS` after the take (`targets_wait`).
+    targets_wait: Duration,
+}
+
+/// How long a paste waits after the take for its target to ask for `TARGETS` (task 56, fix 3): the bound for a family
+/// that asks at every owner change, none for any other, whose request is answered before the chord only if it has
+/// already come; `measured` (`--targets-wait-ms`, measurement only) for every family.
+fn targets_wait(family: Option<&Family>, measured: Option<Duration>) -> Duration {
+    measured.unwrap_or(if family.is_some_and(|f| f.refreshes_targets) {
+        paste::TARGETS_REFRESH_WAIT
+    } else {
+        Duration::ZERO
+    })
+}
+
+/// The end of step 3 (task 56, fix 3): asks whether the target's `TARGETS` request since the take has been answered
+/// (`answered`, which syncs the owner so a yes means the answer has been delivered), once; while it has not and `wait`
+/// has not passed, again every `poll`, `waiting` running before each pause. Answers whether it was, and how long it
+/// took.
+fn await_targets(
+    mut answered: impl FnMut() -> Result<bool>,
+    mut waiting: impl FnMut(),
+    wait: Duration,
+    poll: Duration,
+) -> Result<(bool, Duration)> {
+    let started = Instant::now();
+    let deadline = started + wait;
+    loop {
+        if answered()? {
+            return Ok((true, started.elapsed()));
+        }
+        if Instant::now() >= deadline {
+            return Ok((false, started.elapsed()));
+        }
+        waiting();
+        std::thread::sleep(poll);
+    }
 }
 
 /// Steps 3 to 6: the lock, the snapshot and the ownership; the revalidation; the chord, once; the confirmation and
@@ -527,6 +575,25 @@ fn dispatch_and_confirm(
         .map_err(|e| refused(&format!("{e:#}"), clicked))?;
     #[cfg(test)]
     crate::fault::identity(crate::fault::Identity::Taken);
+    // The target's view of the new owner (task 56, fix 3): a client that keeps CLIPBOARD's targets learns the new
+    // owner's from its own TARGETS request, and gnome-terminal drops a paste chord that comes before that answer. A
+    // request the target has already made is answered and delivered before the chord, in every family; one a family
+    // makes at every owner change is waited for, bounded. Under the lock; the revalidation comes after it.
+    let (answered, waited) = await_targets(
+        || pasted.answered_targets(window, delivery.resource_id_mask),
+        || {
+            #[cfg(test)]
+            crate::fault::identity(crate::fault::Identity::TargetsWait);
+        },
+        delivery.targets_wait,
+        paste::TARGETS_POLL,
+    )
+    .map_err(|e| refused(&format!("{e:#}"), clicked))?;
+    report.targets = Some((
+        answered,
+        waited.as_secs_f64() * 1000.0,
+        delivery.targets_wait.as_millis() as u64,
+    ));
     // 4. Revalidate, then dispatch once.
     if observe(bus, &element.target)? != seen || !desktop_focus_holds(x, route, window)? {
         pasted.settled();
@@ -611,9 +678,12 @@ fn dispatch_and_confirm(
         .iter()
         .map(|s| {
             let whose = if is_target(s.requestor) { "target" } else { "other" };
-            let at = s.at.saturating_duration_since(dispatched_at).as_millis();
+            let at = match s.at.checked_duration_since(dispatched_at) {
+                Some(after) => after.as_millis() as i128,
+                None => -(dispatched_at.duration_since(s.at).as_millis() as i128),
+            };
             format!(
-                "{whose} {:#x} {} {:?} t{} +{at}ms",
+                "{whose} {:#x} {} {:?} t{} {at:+}ms",
                 s.requestor, s.target, s.outcome, s.time
             )
         })
@@ -755,6 +825,67 @@ fn confirmed_before<C>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_family_that_asks_at_every_owner_change_waits_for_its_targets() {
+        let vte = crate::families::family(crate::families::FAMILIES, Some("Gnome-terminal"), None);
+        let chrome = crate::families::family(crate::families::FAMILIES, Some("Google-chrome"), None);
+        assert_eq!(targets_wait(vte, None), paste::TARGETS_REFRESH_WAIT);
+        assert_eq!(targets_wait(chrome, None), Duration::ZERO);
+        assert_eq!(targets_wait(None, None), Duration::ZERO, "an unlisted family");
+        let measured = Some(Duration::from_millis(1000));
+        assert_eq!(
+            targets_wait(chrome, measured),
+            Duration::from_millis(1000),
+            "measurement: every family"
+        );
+        assert_eq!(targets_wait(vte, measured), Duration::from_millis(1000));
+    }
+
+    #[test]
+    fn with_no_wait_the_target_s_answer_is_asked_about_once() {
+        let mut asked = 0;
+        let mut waited = 0;
+        let (answered, _) = await_targets(
+            || {
+                asked += 1;
+                Ok(false)
+            },
+            || waited += 1,
+            Duration::ZERO,
+            Duration::from_millis(1),
+        )
+        .unwrap();
+        assert_eq!((answered, asked, waited), (false, 1, 0));
+    }
+
+    #[test]
+    fn a_wait_ends_at_the_target_s_answer_or_at_its_bound() {
+        let mut answers = [false, false, true].into_iter();
+        let mut waited = 0;
+        let (answered, took) = await_targets(
+            || Ok(answers.next().unwrap()),
+            || waited += 1,
+            Duration::from_secs(5),
+            Duration::from_millis(1),
+        )
+        .unwrap();
+        assert!(answered && took < Duration::from_secs(1), "{took:?}");
+        assert_eq!(waited, 2, "a pause between the asks, none after the answer");
+        let (answered, took) =
+            await_targets(|| Ok(false), || {}, Duration::from_millis(30), Duration::from_millis(2)).unwrap();
+        assert!(
+            !answered && took >= Duration::from_millis(30) && took < Duration::from_millis(500),
+            "{took:?}"
+        );
+        let failed = await_targets(
+            || Err(anyhow!("clipboard owner stopped during paste")),
+            || {},
+            Duration::from_secs(5),
+            Duration::from_millis(1),
+        );
+        assert!(failed.is_err());
+    }
 
     fn seen(focused: bool) -> Observation {
         Observation {

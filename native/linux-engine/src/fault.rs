@@ -116,8 +116,10 @@ pub enum Identity {
     Restore,
     /// A paste's clipboard snapshot taken, just before it takes CLIPBOARD (`engine/paste.rs`).
     Snapshot,
-    /// A paste's CLIPBOARD taken, just before step 4's revalidation (`engine/paste.rs`).
+    /// A paste's CLIPBOARD taken, just before it asks about the target's `TARGETS` request (`engine/paste.rs`).
     Taken,
+    /// A paste waiting for its target's `TARGETS` request, before each pause of the wait (`engine/paste.rs`).
+    TargetsWait,
     /// The Copy's context menu asked to open, just before the menu is looked for (`copy.rs`).
     MenuLookup,
 }

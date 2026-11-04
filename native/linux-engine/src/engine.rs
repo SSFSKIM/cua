@@ -13,6 +13,8 @@ mod paste_faults;
 mod pointer;
 #[cfg(test)]
 mod refusal_faults;
+#[cfg(test)]
+mod targets_faults;
 mod way;
 mod windows;
 
@@ -67,6 +69,9 @@ pub struct Config {
     /// How long after a Chromium drag source's take a drag the engine lets drop is released at the soonest
     /// (`dnd::RELEASE_AFTER_TAKE`; `--drag-dnd-after-take-ms`, measurement only, sets another, 0 none).
     pub dnd_after_take: std::time::Duration,
+    /// Measurement only (`--targets-wait-ms`): how long every paste waits after taking CLIPBOARD for its target to ask
+    /// for `TARGETS`, whatever its family (`engine/paste.rs` `targets_wait`).
+    pub targets_wait: Option<std::time::Duration>,
 }
 
 pub struct Engine {

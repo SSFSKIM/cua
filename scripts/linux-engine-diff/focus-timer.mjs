@@ -95,11 +95,12 @@ export function keysOf(text) {
 }
 
 /**
- * A scenario's requests on windows `a` and `b` (ids) and the text each window must gain at its caret. The texts are
- * the same every run, letters only (no space, so no autocorrection; a run's word typed again is completed by Writer to
- * exactly itself), capitals among them so Shift chords ride the burst.
+ * A scenario's requests on windows `a` and `b` (ids) and the text each window must gain at its caret. The typed texts
+ * are the same every run, letters only (no space, so no autocorrection; a run's word typed again is completed by Writer
+ * to exactly itself), capitals among them so Shift chords ride the burst; the paste's text is the caller's (`pasted`,
+ * each run's own in a sitting: `pasteTexts`).
  */
-export function scenario(name, { a, b }) {
+export function scenario(name, { a, b }, { pasted: pasteText = 'Pasted' } = {}) {
   const press = (window, text) => keysOf(text).map((key) => ({ command: 'press_key', input: { window: { id: window }, key } }));
   if (name === 'burst') {
     const text = 'abcDefgHijkLmnoPqrsT';
@@ -110,10 +111,24 @@ export function scenario(name, { a, b }) {
     return { requests: [...press(a, first), ...press(b, other), ...press(a, again)], expected: { a: first + again, b: other } };
   }
   if (name === 'paste') {
-    const [typed, pasted] = ['abcDefgH', 'Pasted'];
+    const [typed, pasted] = ['abcDefgH', pasteText];
     return { requests: [...press(a, typed), { command: 'type_text', input: { window: { id: a }, text: pasted } }], expected: { a: typed + pasted } };
   }
   throw new Error(`unknown scenario ${name}`);
+}
+
+/**
+ * The paste texts of a sitting, one per paste run, each its own: `Pasted` and three letters counting the runs. A
+ * terminal's screen holds many runs' text, and once it scrolls, a paste whose text the screen already shows cannot be
+ * confirmed (the engine's scrolled-field rule, task 56 fix 2), so a run's paste must not repeat an earlier run's.
+ */
+export function pasteTexts() {
+  let n = 0;
+  return () => {
+    const letters = [Math.floor(n / 676) % 26, Math.floor(n / 26) % 26, n % 26].map((i) => String.fromCharCode(97 + i)).join('');
+    n += 1;
+    return `Pasted${letters}`;
+  };
 }
 
 /** Whether `after` is `before` with `inserted` put at `caret`, exactly. */
@@ -316,7 +331,7 @@ async function pointerStop(ctx, windows) {
 /** One run of a scenario on the scene windows: the answers, each window's text and caret before and after. */
 async function oneRun(ctx, engine, name, windows) {
   const { desktop, oracle } = ctx;
-  const { requests, expected } = scenario(name, { a: windows.a.id, b: windows.b?.id });
+  const { requests, expected } = scenario(name, { a: windows.a.id, b: windows.b?.id }, name === 'paste' ? { pasted: ctx.pasteText() } : {});
   const keys = Object.keys(expected);
   let tail = false;
   if (CHROMIUM.includes(windows.a.family)) {
@@ -549,7 +564,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
     load = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
     // the stop runs' engine: as it ships, or with the exit settle a measurement step sets
     const stopArgs = args.exitSettleMs === undefined ? [] : ['--exit-settle-ms', String(args.exitSettleMs)];
-    const ctx = { desktop, oracle, emit, cua: args.cua, need: args.samplesTrials ?? CONSECUTIVE, stopArgs };
+    const ctx = { desktop, oracle, emit, cua: args.cua, need: args.samplesTrials ?? CONSECUTIVE, stopArgs, pasteText: pasteTexts() };
     for (const family of families) {
       let windows;
       try {

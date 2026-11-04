@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
 // background session's SendEvents (audit.test.mjs has the same shapes).
@@ -136,6 +136,19 @@ test("a scenario's keys type its text, capitals through Shift, and each window's
   const paste = scenario('paste', { a: 1 });
   assert.deepEqual(paste.requests.at(-1), { command: 'type_text', input: { window: { id: 1 }, text: 'Pasted' } });
   assert.equal(paste.expected.a, 'abcDefgHPasted');
+  const tagged = scenario('paste', { a: 1 }, { pasted: 'Pastedaab' });
+  assert.deepEqual(tagged.requests.at(-1).input.text, 'Pastedaab');
+  assert.equal(tagged.expected.a, 'abcDefgHPastedaab');
+});
+
+test("each run's paste text is its own in the sitting, letters only: a terminal's screen holds many runs' text, and a paste whose text the scrolled screen already shows cannot be confirmed", () => {
+  const next = pasteTexts();
+  const texts = Array.from({ length: 26 * 26 + 3 }, () => next());
+  assert.equal(new Set(texts).size, texts.length);
+  assert.equal(texts[0], 'Pastedaaa');
+  assert.ok(texts.every((t) => /^Pasted[a-z]{3}$/.test(t)), texts.find((t) => !/^Pasted[a-z]{3}$/.test(t)));
+  // no run's text holds another's
+  assert.ok(texts.every((t, i) => texts.every((u, j) => i === j || !t.includes(u))));
 });
 
 test('the text must be the expected one at the caret read before, exactly: a key out of order, one missing or one late fails', () => {

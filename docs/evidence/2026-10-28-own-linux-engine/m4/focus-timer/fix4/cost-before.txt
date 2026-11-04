@@ -1,0 +1,2 @@
+confirms: field 65536 chars in 512 lines, paste 65536 chars, read 65664 chars; one check true: wall median 20.6 ms (min 19.4, max 25.3), cpu median 21.0 ms; the polls: 1, Some(Scrolled), cpu 22.0 ms, wall 21.9 ms
+stays unconfirmed: field 65536 chars in 512 lines, paste 65536 chars, read 65664 chars; one check false: wall median 11.5 ms (min 11.3, max 12.1), cpu median 11.0 ms; the polls: 60, None, cpu 827.1 ms, wall 2011.6 ms

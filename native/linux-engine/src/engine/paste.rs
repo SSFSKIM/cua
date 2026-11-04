@@ -854,7 +854,7 @@ fn confirmed_before<C>(
 /// unconfirmed, and, for `--stats`, how many reads it judged, how many it did not judge again because they read the
 /// same, and the time its judging took. The rule's answer depends on the whole read's text alone, and a terminal left
 /// unconfirmed reads the same at each of the confirmation's looks, up to 100 in its 2 s. One judging at the route's
-/// limits (a field of `WHOLE_LIMIT` characters in `WHOLE_LINES` lines and a 64 KiB paste) takes 11 to 21 ms, and
+/// limits (a field of `WHOLE_LIMIT` characters in `WHOLE_LINES` lines and a 64 KiB paste) takes 11 to 24 ms, and
 /// judging every look of a paste left unconfirmed there took 0.83 s of CPU over the 2 s (task 56, fix 4).
 #[derive(Default)]
 struct Scrolled {

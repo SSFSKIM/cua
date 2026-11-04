@@ -159,3 +159,8 @@ Results on the final musl build:
 
 The scrolled rule now confirms a landed paste whose text shows elsewhere on the screen, unless a reading short of the
 whole paste gives the same text. This is trial 28 of `fix2/never-taken/direct-2/`.
+
+Its cost is bounded (`fix4/README.md`): at the route's limits one check takes 11 to 24 ms, and a paste left
+unconfirmed there used 827 ms of CPU over its 2 s confirmation, judging the same read at every look. The confirmation
+now judges a whole read once while it reads the same: 15.8 ms over the 2 s. A 64 KiB paste into a full gnome-terminal
+screen lands and is answered unconfirmed, with 10 to 30 ms of the engine's CPU over the request.

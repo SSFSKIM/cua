@@ -32,7 +32,7 @@ import { performance } from 'node:perf_hooks';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
-import { cleanStart, insertedAt, keysOf, KEYS_PAGE, settledRead, textAndCaret } from './focus-timer.mjs';
+import { cleanStart, insertedAt, keysOf, KEYS_PAGE, settledRead, tenth, textAndCaret } from './focus-timer.mjs';
 import { openFamily } from './families.mjs';
 import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
@@ -82,7 +82,8 @@ export function engineStopVerdict(rows, { paths = PATHS, cases = CASES, lanes = 
       for (const kind of cases) {
         const runs = rows.filter((r) => r.lane === lane && r.path === path && r.case === kind);
         const passed = runs.filter(runPasses).length;
-        md.push(`| ${lane} | ${path} | ${kind} | ${runs.length} | ${passed} | ${median(runs.map((r) => r.engine_after_stop_ms).filter(Number.isFinite)) ?? '-'} | ${median(runs.map((r) => r.engine_after_answer_ms).filter(Number.isFinite)) ?? '-'} |`);
+        const ms = (key) => tenth(median(runs.map((r) => r[key]).filter(Number.isFinite))) ?? '-';
+        md.push(`| ${lane} | ${path} | ${kind} | ${runs.length} | ${passed} | ${ms('engine_after_stop_ms')} | ${ms('engine_after_answer_ms')} |`);
         if (!runs.length) failed.push(`${lane} ${path} ${kind}: no run`);
         else if (lane === 'drain' && passed < runs.length) failed.push(`drain ${path} ${kind}: ${runs.length - passed} of ${runs.length} failed`);
         else if (lane === 'kill' && kind === 'hold' && passed > 0) failed.push(`the control's hold released the key on ${path} (${passed} of ${runs.length}): the check cannot see a missing release`);

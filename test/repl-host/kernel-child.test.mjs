@@ -227,6 +227,17 @@ test('a second stop while the engine drains waits for the first, and the tree is
   assert.equal(child.ended, true);
 });
 
+test('without an engine (a kernel, and every child on macOS) a stop kills the tree at once, as before', async () => {
+  const child = startKernelChild({command: process.execPath, args: ['-e', 'setInterval(() => {}, 1000)'], env: {}, cwd: process.cwd()},
+    {onMessage: () => {}, onEnd: () => {}, lifelines: null, stopTree: () => assert.fail('no engine: nothing waits for a drain')});
+  await new Promise(resolve => setTimeout(resolve, 100));
+  const started = Date.now();
+  await child.stop();
+  assert.ok(Date.now() - started < 1000, `${Date.now() - started} ms`);
+  assert.equal(child.ended, true);
+  assert.equal(processExited(child.pid), true);
+});
+
 test('a launcher that cannot start is reported as the vendor reports a Node runtime that cannot start', async () => {
   let ended;
   const done = new Promise(resolve => { ended = resolve; });

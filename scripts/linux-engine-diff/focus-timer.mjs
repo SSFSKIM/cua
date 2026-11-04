@@ -63,8 +63,15 @@ export const DELAY_MS = 100;
 export const CONSECUTIVE = 30;
 export const MAX_RUNS = 60;
 export const CONTROL_RUNS = 10;
-export const SIGTERM_RUNS = 10;
+/** SIGTERM straight after a burst: every run must pass (the exit settle's rule: 30 consecutive at twice the load). */
+export const SIGTERM_RUNS = 30;
 export const SIGKILL_RUNS = 3;
+/**
+ * SIGTERM straight after a pointer burst on the keys page's pad (`clicks`, ten clicks) or a drag's release (`drag`),
+ * whether the exit's unredirect cuts pointer input as it cuts keys.
+ */
+export const POINTER_STOP_RUNS = 10;
+export const STOP_KINDS = ['keys', 'clicks', 'drag'];
 /**
  * The lanes. `timer`: the engine as it ships (session retention: a window stays redirected until the engine exits).
  * `control`: no delay, and each request's redirect dropped with its FocusOut (`--retention per-request`): on the private
@@ -187,6 +194,7 @@ function collectFocusOuts(engine) {
     try {
       const { stats } = JSON.parse(line);
       for (const out of stats.focus_out ?? []) records.push({ ...out, reported_on: stats.id ?? null });
+      if (stats.exit_settle) records.push({ exit_settle: stats.exit_settle });
     } catch {
       records.push({ unparsable: line.slice(0, 200) });
     }
@@ -194,11 +202,115 @@ function collectFocusOuts(engine) {
   return { records, closed };
 }
 
+/** A value to a tenth, as each run's times are (null stays null). */
+export const tenth = (v) => (typeof v === 'number' ? Math.round(v * 10) / 10 : v);
+
+/**
+ * A run's row: `trial` its index in its series, since `emit` names the sitting itself as `run` (experiments.mjs) and a
+ * row's own `run` would overwrite it.
+ */
+export function trialRow(kind, labels, trial, row) {
+  const { run: _ignored, ...rest } = row;
+  return { kind, ...labels, trial, ...rest };
+}
+
+/**
+ * Input a Chromium window holds back since an earlier run's cut, delivered now: a fresh engine's Shift to the window
+ * (its FocusIn releases what was held; Shift adds no text), its session ended as the engine ships. Without it a cut's
+ * tail lands in the next run, which then fails too, and each cut would count twice.
+ */
+async function clearTail(ctx, scene) {
+  const engine = new Engine({ label: 'cua-clear', bin: ctx.cua }).start();
+  try {
+    const { response } = await engine.request('press_key', { window: { id: scene.id }, key: 'shift' });
+    if (response.ok !== true) throw new Error(`clearing ${scene.label}'s held input: ${response.error}`);
+  } finally {
+    await engine.close();
+  }
+}
+
+/** Chromium's field emptied by a fresh engine (Ctrl+A, then BackSpace), so a run starts on its own text. */
+async function resetField(ctx, scene) {
+  const engine = new Engine({ label: 'cua-reset', bin: ctx.cua }).start();
+  try {
+    for (const key of ['ctrl+a', 'BackSpace']) {
+      const { response } = await engine.request('press_key', { window: { id: scene.id }, key });
+      if (response.ok !== true) throw new Error(`resetting ${scene.label}'s field: ${response.error}`);
+    }
+  } finally {
+    await engine.close();
+  }
+}
+
+/**
+ * An independent start on Chromium (the design session's ruling on the review): input an earlier run's cut held back
+ * delivered now (`clearTail`), then, for a field, the field emptied. Returns whether such a tail arrived: the cascade the
+ * run would have met at its first FocusIn, which the raw count keeps (`rawOks`).
+ */
+async function cleanStart(ctx, scene, read, { reset = true } = {}) {
+  const before = await settledRead(read);
+  await clearTail(ctx, scene);
+  const after = await settledRead(read);
+  if (reset) await resetField(ctx, scene);
+  return { tail: JSON.stringify(before.text) !== JSON.stringify(after.text) };
+}
+
+/**
+ * Each run's pass as it would have been without independent starts: a run whose start met an earlier cut's tail fails,
+ * and so does the run after an unconfirmed paste, whose own paste the retry guard would have refused.
+ */
+export function rawOks(rows) {
+  return rows.map((r, i) => r.ok && !r.tail_at_start && !(i > 0 && ['unconfirmed', 'guard'].includes(rows[i - 1].miss)));
+}
+
+/** After an unconfirmed paste, how long the next run waits for the engine's retry guard to lift (its quarantine). */
+export const GUARD_WAIT_MS = 11000;
+
+/** The keys stop: the burst scenario to window A, read from its field at its caret. */
+function keysStop(ctx, windows) {
+  const { requests, expected } = scenario('burst', { a: windows.a.id });
+  return { requests, expected, read: () => textAndCaret(ctx.desktop, ctx.oracle, windows.a) };
+}
+
+/**
+ * A pointer stop on the keys page's pad (pages/keys.html): ten clicks (`clicks`), or one drag across it (`drag`), each
+ * press and release written to the page's log as `d` and `u`, read at the log's end.
+ */
+async function pointerStop(ctx, windows, kind) {
+  const { desktop, oracle } = ctx;
+  const scene = windows.a;
+  const { response } = await desktop.reader.request('get_window_state', { window: { id: scene.id }, include_screenshot: false });
+  if (!response.ok) throw new Error(`${scene.label}: no window state (${response.error})`);
+  const nodes = preorder(response.output.ax_tree);
+  const pad = nodes.find((n) => n.name === 'Pad');
+  const log = nodes.find((n) => n.name === 'Log');
+  if (!pad || !log) throw new Error(`${scene.label}: the keys page has no pad or log`);
+  const e = oracle.extents(pad.id);
+  const origin = response.output.window;
+  const y = Math.round(e.y - origin.y + e.h / 2);
+  const x = Math.round(e.x - origin.x + e.w / 4);
+  const window = { id: scene.id };
+  const requests =
+    kind === 'clicks'
+      ? Array.from({ length: 10 }, () => ({ command: 'click', input: { window, x, y } }))
+      : [{ command: 'drag', input: { window, path: [{ x, y }, { x: x + 40, y }, { x: x + 80, y }] } }];
+  const logScene = { ...scene, field: log.id, kindOf: 'field' };
+  const read = async () => {
+    const text = await readText(desktop, oracle, logScene);
+    return { text, caret: typeof text === 'string' ? text.length : null };
+  };
+  return { requests, expected: { a: kind === 'clicks' ? 'du'.repeat(10) : 'du' }, read };
+}
+
 /** One run of a scenario on the scene windows: the answers, each window's text and caret before and after. */
 async function oneRun(ctx, engine, name, windows) {
   const { desktop, oracle } = ctx;
   const { requests, expected } = scenario(name, { a: windows.a.id, b: windows.b?.id });
   const keys = Object.keys(expected);
+  let tail = false;
+  if (CHROMIUM.includes(windows.a.family)) {
+    for (const k of keys) tail = (await cleanStart(ctx, windows[k], () => textAndCaret(desktop, oracle, windows[k]))).tail || tail;
+  }
   const before = {};
   for (const k of keys) before[k] = await settledRead(() => textAndCaret(desktop, oracle, windows[k]));
   const started = performance.now();
@@ -209,7 +321,7 @@ async function oneRun(ctx, engine, name, windows) {
   const texts = Object.fromEntries(keys.map((k) => [k, insertedAt(before[k].text, before[k].caret, expected[k], after[k].text)]));
   const errors = responses.filter((r) => r.ok !== true).map((r) => String(r.error).slice(0, 300));
   const got = Object.fromEntries(keys.map((k) => [k, typeof after[k].text === 'string' && typeof before[k].text === 'string' ? after[k].text.slice(before[k].caret ?? 0, (before[k].caret ?? 0) + after[k].text.length - before[k].text.length) : null]));
-  return { ok: runPasses({ family: windows.a.family, errors, exact: texts }), answered_ok: errors.length === 0, errors, expected, got, exact: texts, caret_read: keys.every((k) => before[k].caret !== null), burst_ms: Math.round(ms * 10) / 10, answered_ms: Math.round(answered * 10) / 10 };
+  return { ok: runPasses({ family: windows.a.family, errors, exact: texts }), tail_at_start: tail, answered_ok: errors.length === 0, errors, expected, got, exact: texts, caret_read: keys.every((k) => before[k].caret !== null), burst_ms: Math.round(ms * 10) / 10, answered_ms: Math.round(answered * 10) / 10 };
 }
 
 /**
@@ -231,8 +343,8 @@ export function missCause(run) {
 function pasteRecord(engine) {
   const stats = [...engine.statsById.values()].find((s) => s?.paste);
   if (!stats) return null;
-  const { observed, expected, confirmed, confirm_ms: confirmMs, transfer, requests, attributed, settle } = stats.paste;
-  return { id: stats.id, elapsed_ms: stats.elapsed_ms, observed, expected, confirmed, confirm_ms: confirmMs, transfer, requests, attributed, settle: settle ?? null };
+  const { observed, expected, confirmed, confirm_ms: confirmMs, transfer, requests, attributed, settle, observed_around: observedAround, unconfirmed_around: unconfirmedAround } = stats.paste;
+  return { id: stats.id, elapsed_ms: stats.elapsed_ms, observed, expected, confirmed, confirm_ms: confirmMs, transfer, requests, attributed, settle: settle ?? null, observed_around: observedAround ?? null, unconfirmed_around: unconfirmedAround ?? null };
 }
 
 /**
@@ -269,15 +381,18 @@ async function series(ctx, family, lane, name, windows) {
     row.miss = missCause(row);
     oks.push(row.ok);
     rows.push(row);
-    emit({ kind: 'focus-timer-run', family, lane, scenario: name, run, ...row });
+    emit(trialRow('focus-timer-run', { family, lane, scenario: name }, run, row));
     if (timed(lane) && seriesVerdict(oks, need).reached) break;
+    // an independent start for the next run's paste: the retry guard an unconfirmed paste raises waited out
+    if (row.miss === 'unconfirmed') await sleep(GUARD_WAIT_MS);
   }
   const verdict = seriesVerdict(oks, timed(lane) ? need : Infinity);
+  const raw = seriesVerdict(rawOks(rows), timed(lane) ? need : Infinity);
   // a run can fail on its text (a key cut, or the order) or only on an answer (a paste that raced the keys)
   const wrongText = rows.filter((r) => !Object.values(r.exact).every(Boolean)).length;
   const missCauses = {};
   for (const r of rows) if (r.miss) missCauses[r.miss] = (missCauses[r.miss] ?? 0) + 1;
-  const out = { family, lane, scenario: name, need, ...verdict, wrong_text: wrongText, miss_causes: missCauses, burst_ms_median: median(rows.map((r) => r.burst_ms)), first_miss: rows.find((r) => !r.ok) ?? null };
+  const out = { family, lane, scenario: name, need, ...verdict, raw: { misses: raw.misses, streak: raw.streak, reached: raw.reached }, wrong_text: wrongText, miss_causes: missCauses, burst_ms_median: tenth(median(rows.map((r) => r.burst_ms))), first_miss: rows.find((r) => !r.ok) ?? null };
   emit({ kind: 'focus-timer-series', ...out });
   return out;
 }
@@ -326,12 +441,14 @@ async function auditPass(ctx, family, lane, windows) {
  * delay. SIGTERM must leave every key in order, the session closed by its FocusOut after the keys, the engine's exit
  * record (`cause` exit, the full delay waited) and exit code 143; SIGKILL leaves the session unclosed.
  */
-async function stopRun(ctx, family, signal, windows, i) {
+async function stopRun(ctx, family, signal, windows, i, kind = 'keys') {
   const { desktop, oracle, emit, cua } = ctx;
-  const { requests, expected } = scenario('burst', { a: windows.a.id });
-  const before = await settledRead(() => textAndCaret(desktop, oracle, windows.a));
+  const { requests, expected, read } = kind === 'keys' ? keysStop(ctx, windows) : await pointerStop(ctx, windows, kind);
+  // an independent start: the log of the pointer stops is read-only, so only the field is emptied
+  const { tail } = await cleanStart(ctx, windows.a, read, { reset: kind === 'keys' });
+  const before = await settledRead(read);
   const proxy = await startProxy();
-  const engine = new Engine({ label: `cua-${signal}`, bin: cua, stats: true, env: proxy.env }).start();
+  const engine = new Engine({ label: `cua-${signal}`, bin: cua, args: ctx.stopArgs, stats: true, env: proxy.env }).start();
   const { records, closed } = collectFocusOuts(engine);
   let exit;
   let text;
@@ -352,18 +469,19 @@ async function stopRun(ctx, family, signal, windows, i) {
     await proxy.mark('end');
     text = await proxy.stop();
   }
-  const after = await settledRead(() => textAndCaret(desktop, oracle, windows.a), { want: grown(before, expected.a) });
+  const after = await settledRead(read, { want: grown(before, expected.a) });
   const sessions = focusSessions(parseXtrace(text));
   const exitRecord = records.find((r) => r.cause === 'exit') ?? null;
-  const keysInOrder = insertedAt(before.text, before.caret, expected.a, after.text);
+  const inOrder = insertedAt(before.text, before.caret, expected.a, after.text);
   const closedSession = sessions.sessions.length === 1 && sessions.sessions[0].closed && sessions.problems.length === 0;
   // drained by its own exit, well before the 2 s backstop that would end the process at once
   const ok =
     signal === 'SIGTERM'
-      ? keysInOrder && closedSession && exit.code === 143 && exitRecord !== null && exitRecord.after_input_ms >= DELAY_MS && drained < EXIT_WITHIN_MS && !exit.answers
+      ? inOrder && closedSession && exit.code === 143 && exitRecord !== null && exitRecord.after_input_ms >= DELAY_MS && drained < EXIT_WITHIN_MS && !exit.answers
       : !closedSession && sessions.sessions.length === 1;
   const got = typeof after.text === 'string' && typeof before.text === 'string' ? after.text.slice(before.caret ?? 0, (before.caret ?? 0) + after.text.length - before.text.length) : null;
-  const row = { kind: 'focus-timer-stop', family, signal, run: i, ok, keys_in_order: keysInOrder, got, session_closed: closedSession, session_problems: sessions.problems, exit, exit_record: exitRecord, signalled_after_answer_ms: Math.round(gap * 10) / 10, exited_after_answer_ms: Math.round(drained * 10) / 10 };
+  const settle = records.find((r) => r.exit_settle) ?? null;
+  const row = { kind: 'focus-timer-stop', family, signal, input: kind, trial: i, ok, tail_at_start: tail, exit_settle_ms: settle?.exit_settle.waited_ms ?? null, in_order: inOrder, got, session_closed: closedSession, session_problems: sessions.problems, exit, exit_record: exitRecord, signalled_after_answer_ms: Math.round(gap * 10) / 10, exited_after_answer_ms: Math.round(drained * 10) / 10 };
   emit(row);
   return row;
 }
@@ -418,7 +536,9 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
     desktop.oracle = oracle;
     await desktop.openFront('covered');
     load = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
-    const ctx = { desktop, oracle, emit, cua: args.cua, need: args.samplesTrials ?? CONSECUTIVE };
+    // the stop runs' engine: as it ships, or with the exit settle a measurement step sets
+    const stopArgs = args.exitSettleMs === undefined ? [] : ['--exit-settle-ms', String(args.exitSettleMs)];
+    const ctx = { desktop, oracle, emit, cua: args.cua, need: args.samplesTrials ?? CONSECUTIVE, stopArgs };
     for (const family of families) {
       let windows;
       try {
@@ -431,13 +551,20 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
       try {
         // the control lane and SIGKILL last: the keys they cut reach the window only with a later FocusIn, which would
         // fail whatever ran after them
-        for (const name of SCENARIOS) results.series.push(await series(ctx, family, 'timer', name, windows));
-        results.audits.push(await auditPass(ctx, family, 'timer', windows));
-        for (const name of SCENARIOS) results.series.push(await series(ctx, family, 'unredirect', name, windows));
         const cutsKeys = CHROMIUM.includes(family);
-        if (cutsKeys) for (let i = 0; i < SIGTERM_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i));
-        for (const name of SCENARIOS) results.series.push(await series(ctx, family, 'control', name, windows));
-        results.audits.push(await auditPass(ctx, family, 'control', windows));
+        if (!args.stopsOnly) {
+          for (const name of SCENARIOS) results.series.push(await series(ctx, family, 'timer', name, windows));
+          results.audits.push(await auditPass(ctx, family, 'timer', windows));
+          for (const name of SCENARIOS) results.series.push(await series(ctx, family, 'unredirect', name, windows));
+        }
+        if (cutsKeys) {
+          for (let i = 0; i < SIGTERM_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i));
+          for (const kind of ['clicks', 'drag']) for (let i = 0; i < POINTER_STOP_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i, kind));
+        }
+        if (!args.stopsOnly) {
+          for (const name of SCENARIOS) results.series.push(await series(ctx, family, 'control', name, windows));
+          results.audits.push(await auditPass(ctx, family, 'control', windows));
+        }
         if (cutsKeys) for (let i = 0; i < SIGKILL_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGKILL', windows, i));
       } finally {
         await desktop.close([windows.a, windows.b]);
@@ -456,7 +583,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
     watched = await server.stop();
   }
   const ending = desktopEnding(desktop.ending);
-  const { md, failed } = focusTimerVerdict(results, { families });
+  const { md, failed } = focusTimerVerdict(results, { families, stopsOnly: Boolean(args.stopsOnly) });
   for (const f of ending.foreign) failed.push(`a window the experiment did not open was changed: ${f}`);
   if (!watched.clean) failed.push(`the private display's watchdog: ${watched.reason}`);
   if (failed.length) md.push('', `**Incomplete or failed:** ${failed.join('; ')}.`);
@@ -469,9 +596,9 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
  * series showed the reorder, every audit is clean, every SIGTERM run drained and every SIGKILL run did not; a family
  * that could not be opened fails it. Returns the summary's lines and the failures.
  */
-export function focusTimerVerdict({ series: all, audits, stops, skipped }, { families }) {
+export function focusTimerVerdict({ series: all, audits, stops, skipped }, { families, stopsOnly = false }) {
   const failed = [];
-  const md = ['| family | lane | scenario | runs | misses | longest passing streak at the end | verdict | median burst ms |', '|---|---|---|---:|---:|---:|---|---:|'];
+  const md = ['| family | lane | scenario | runs | misses | passing streak at the end | verdict | raw misses | raw streak | median burst ms |', '|---|---|---|---:|---:|---:|---|---:|---:|---:|'];
   for (const s of all) {
     let verdict;
     if (timed(s.lane)) {
@@ -487,7 +614,7 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped }, { fam
     }
     // a timed lane's misses by cause: the retry guard refusing after an earlier miss is not a miss of its own
     const causes = timed(s.lane) && s.misses ? ` (${Object.entries(s.miss_causes ?? {}).map(([c, n]) => `${c} ${n}`).join(', ')})` : '';
-    md.push(`| ${s.family} | ${s.lane} | ${s.scenario} | ${s.runs} | ${s.misses} | ${s.streak} | ${verdict}${causes} | ${s.burst_ms_median ?? '–'} |`);
+    md.push(`| ${s.family} | ${s.lane} | ${s.scenario} | ${s.runs} | ${s.misses} | ${s.streak} | ${verdict}${causes} | ${s.raw?.misses ?? '–'} | ${s.raw?.streak ?? '–'} | ${s.burst_ms_median ?? '–'} |`);
   }
   md.push('', '| family | lane | audit | FocusOuts attributed (deferred) | sessions as expected | problems |', '|---|---|---|---:|---|---|');
   for (const a of audits) {
@@ -495,20 +622,25 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped }, { fam
     if (!a.clean) failed.push(`${a.family} ${a.lane}: the audit is not clean`);
   }
   if (stops.length) {
-    md.push('', '| family | signal | runs | as required | exit ms after the last answer (median) |', '|---|---|---:|---|---:|');
+    md.push('', '| family | signal | input | runs | as required | raw (a tail met at the start fails) | exit ms after the last answer (median) |', '|---|---|---|---:|---|---|---:|');
     for (const family of new Set(stops.map((s) => s.family))) {
       for (const signal of ['SIGTERM', 'SIGKILL']) {
-        const rows = stops.filter((s) => s.family === family && s.signal === signal);
-        if (!rows.length) continue;
-        const good = rows.filter((r) => r.ok).length;
-        md.push(`| ${family} | ${signal} | ${rows.length} | ${good}/${rows.length} | ${median(rows.map((r) => r.exited_after_answer_ms))} |`);
-        if (good !== rows.length) failed.push(`${family} ${signal}: ${rows.length - good} of ${rows.length} runs ${signal === 'SIGTERM' ? 'did not drain the burst and its FocusOut' : 'closed the session, so the drain check is blind'}`);
+        for (const input of STOP_KINDS) {
+          const rows = stops.filter((s) => s.family === family && s.signal === signal && (s.input ?? 'keys') === input);
+          if (!rows.length) continue;
+          const good = rows.filter((r) => r.ok).length;
+          const rawGood = rows.filter((r) => r.ok && !r.tail_at_start).length;
+          md.push(`| ${family} | ${signal} | ${input} | ${rows.length} | ${good}/${rows.length} | ${rawGood}/${rows.length} | ${tenth(median(rows.map((r) => r.exited_after_answer_ms)))} |`);
+          const what = input === 'keys' ? 'the burst' : input === 'clicks' ? 'the clicks' : "the drag's release";
+          if (good !== rows.length) failed.push(`${family} ${signal}${input === 'keys' ? '' : ` (${input})`}: ${rows.length - good} of ${rows.length} runs ${signal === 'SIGTERM' ? `did not drain ${what} and its FocusOut` : 'closed the session, so the drain check is blind'}`);
+        }
       }
     }
   }
   for (const s of skipped) failed.push(`${s.family} could not be opened: ${s.why}`);
   for (const family of families) {
-    if (!all.some((s) => s.family === family) && !skipped.some((s) => s.family === family)) failed.push(`${family} was not measured`);
+    const measured = all.some((s) => s.family === family) || (stopsOnly && stops.some((s) => s.family === family));
+    if (!measured && !skipped.some((s) => s.family === family)) failed.push(`${family} was not measured`);
   }
   return { md, failed };
 }

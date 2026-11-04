@@ -12,7 +12,7 @@ export const USAGE = `usage:
       [--dev] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
   linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer --cua <bin> --out <dir> [--run <name>]
-      [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
+      [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--stops-only] [--exit-settle-ms <ms>] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
@@ -31,7 +31,7 @@ const VALUE_FLAGS = {
   '--experiment': 'experiment',
   '--occlusion': 'occlusion',
 };
-const NUMBER_FLAGS = { '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText', '--trials': 'samplesTrials', '--first-rounds': 'firstRounds' };
+const NUMBER_FLAGS = { '--exit-settle-ms': 'exitSettleMs', '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText', '--trials': 'samplesTrials', '--first-rounds': 'firstRounds' };
 
 export function parseArgs(argv) {
   const a = {
@@ -68,6 +68,8 @@ export function parseArgs(argv) {
     else if (flag === '--no-grabs') a.grabs = false;
     // the dnd experiment on the page's short drop (40 px from the near source), every lane's window activated first
     else if (flag === '--dnd-short') a.dndShort = true;
+    // the focus-timer experiment's stop runs alone (the exit settle's measured steps, with --exit-settle-ms)
+    else if (flag === '--stops-only') a.stopsOnly = true;
     // the dnd experiment cold (task 20): every drag the first request of a fresh engine, the lanes interleaved, each
     // window in front after the device case's settle; `--cover-ms` covers it fully first, as the gate's previous case did
     else if (flag === '--dnd-cold') a.dndCold = true;

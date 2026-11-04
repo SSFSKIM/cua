@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
-import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, runPasses, scenario, seriesVerdict, settledRead } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
 // background session's SendEvents (audit.test.mjs has the same shapes).
@@ -251,4 +251,31 @@ test("a miss's cause: the guard refusing after an earlier miss is told apart fro
   assert.equal(missCause(run(['requested field or selection changed before dispatch; nothing was sent'], false)), 'refused');
   assert.equal(missCause(run([], false)), 'text');
   assert.equal(missCause({ ok: true, errors: [], exact: { a: true } }), null);
+});
+
+test("a run's row names its index `trial`, so the sitting's own `run` name survives the emit", () => {
+  const row = trialRow('focus-timer-run', { family: 'chrome', lane: 'timer', scenario: 'burst' }, 7, { ok: true, run: 3 });
+  assert.deepEqual(row, { kind: 'focus-timer-run', family: 'chrome', lane: 'timer', scenario: 'burst', trial: 7, ok: true });
+  // the emit puts the sitting's name first and the row's fields after it: nothing in the row may overwrite it
+  assert.equal({ run: 't56-idle', ...row }.run, 't56-idle');
+});
+
+test('times are kept to a tenth of a millisecond, medians included', () => {
+  assert.equal(tenth(10.649999999999999), 10.6);
+  assert.equal(tenth(null), null);
+});
+
+test('the raw count adds what independent starts hide: a tail an earlier cut left, a paste the retry guard would refuse', () => {
+  const row = (ok, extra = {}) => ({ ok, miss: ok ? null : 'text', tail_at_start: false, ...extra });
+  // run 1 cut its keys; on an independent start run 2 is clean, but its start met run 1's tail: a raw miss
+  assert.deepEqual(rawOks([row(true), row(false), row(true, { tail_at_start: true }), row(true)]), [true, false, false, true]);
+  // an unconfirmed paste: the next run's paste would have met the retry guard, had its start not waited it out
+  assert.deepEqual(rawOks([row(false, { miss: 'unconfirmed' }), row(true), row(true)]), [false, false, true]);
+});
+
+test("the summary shows each series' independent and raw counts; the verdict judges the independent ones", () => {
+  const families = ['chrome', 'gedit'];
+  const lines = focusTimerVerdict(results((r) => ({ ...r, series: r.series.map((s) => (s.family === 'chrome' && s.lane === 'timer' && s.scenario === 'burst' ? { ...s, raw: { misses: 2, streak: 28, reached: false } } : s)) })), { families });
+  assert.ok(lines.md.some((l) => l.startsWith('| chrome | timer | burst |') && l.includes('| 2 | 28 |')), lines.md.join('\n'));
+  assert.deepEqual(lines.failed, [], 'raw misses are reported, not failed');
 });

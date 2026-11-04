@@ -5,7 +5,9 @@
 <title>cua171 keys scene</title>
 <style>
   body { margin: 0; font: 16px sans-serif; }
-  #field { position: absolute; left: 12px; top: 12px; width: 80vw; height: 80vh; font: 16px monospace; }
+  #field { position: absolute; left: 12px; top: 12px; width: 80vw; height: 55vh; font: 16px monospace; }
+  #pad { position: absolute; left: 12px; top: calc(55vh + 24px); width: 60vw; height: 30vh; background: #cde; }
+  #log { position: absolute; left: calc(60vw + 24px); top: calc(55vh + 24px); width: 18vw; font: 16px monospace; }
 </style>
 </head>
 <body>
@@ -13,16 +15,32 @@
      milliseconds on each key before the field takes it, as a page with its own key handling does. A burst then outruns
      the renderer, so a FocusOut that follows the keys too soon finds keys still queued, which Chromium holds back until
      the window's next FocusIn (M0.4, on the person's long-lived Chrome); a fresh, idle Chromium otherwise keeps up with
-     a burst and shows no reorder at all. The work per key is `SPIN_MS`; the title comes from the URL's fragment. -->
+     a burst and shows no reorder at all. The work per key is `SPIN_MS`; the title comes from the URL's fragment.
+     The pad takes pointer input the same way: each press and release costs `SPIN_MS` and is written to the log (`d`,
+     `u`), and a press never moves the focus off the field, so the exit's settle can be measured for clicks and drags. -->
 <textarea id="field" aria-label="Field" autofocus autocomplete="off" spellcheck="false"></textarea>
+<div id="pad" role="button" aria-label="Pad"></div>
+<input id="log" aria-label="Log" readonly value="">
 <script>
   const SPIN_MS = 3;
   document.title = decodeURIComponent(location.hash.slice(1)) || document.title;
-  document.getElementById('field').addEventListener('keydown', () => {
+  const spin = () => {
     const until = performance.now() + SPIN_MS;
     while (performance.now() < until) {
-      // the page's own work on the key
+      // the page's own work on the input
     }
+  };
+  document.getElementById('field').addEventListener('keydown', spin);
+  const pad = document.getElementById('pad');
+  const log = document.getElementById('log');
+  pad.addEventListener('mousedown', (event) => {
+    event.preventDefault();
+    spin();
+    log.value += 'd';
+  });
+  pad.addEventListener('mouseup', () => {
+    spin();
+    log.value += 'u';
   });
 </script>
 </body>

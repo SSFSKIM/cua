@@ -18,9 +18,16 @@
 //! A panic inside a send happens with the ledger's lock held by the panicking thread, which never gives it back (the
 //! engine aborts once the hook has run). So each send runs with a copy of the ledger kept by its own thread
 //! (`IN_SEND`), and the panic hook releases from that copy, touching no lock, before the diagnostics are written.
+//!
+//! SIGKILL runs none of these, and the end of the trusted worker's sandbox is one (its PID namespace's end SIGKILLs the
+//! engine). So the ledger's XTEST part is also written out, as the held record (`held.rs`), for the REPL host's launcher
+//! shim outside the sandbox to release once the engine is gone (the design session's ruling, M4 T7b fix 4): under the
+//! same lock, a press's record before the press is sent, a release's once it went out, and an empty one once an exit
+//! has sent its releases.
 
 use std::cell::RefCell;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::fs::File;
+use std::sync::{Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use x11rb::connection::Connection;
@@ -48,6 +55,15 @@ pub enum Pressed {
 }
 
 impl Pressed {
+    /// The key or button at the X server's own state, which the held record carries; None for a window's.
+    fn at_the_server(&self) -> Option<crate::held::Held> {
+        match *self {
+            Pressed::Desktop(keycode) => Some(crate::held::Held::Key(keycode)),
+            Pressed::Button(button) => Some(crate::held::Held::Button(button)),
+            Pressed::Window { .. } => None,
+        }
+    }
+
     /// Whether `other` is a press or release of the same key on the same target.
     fn same_key(&self, other: &Pressed) -> bool {
         match (self, other) {
@@ -65,12 +81,25 @@ impl Pressed {
     }
 }
 
-/// The keys and buttons down, in press order.
+/// The keys and buttons down, in press order, and where their XTEST part is recorded (the held record, once the engine
+/// has one).
 #[derive(Debug, Default)]
-pub struct Ledger(Mutex<Vec<Pressed>>);
+pub struct Ledger {
+    down: Mutex<Vec<Pressed>>,
+    record: OnceLock<File>,
+}
 
 /// The engine's own.
-static LEDGER: Ledger = Ledger(Mutex::new(Vec::new()));
+static LEDGER: Ledger = Ledger {
+    down: Mutex::new(Vec::new()),
+    record: OnceLock::new(),
+};
+
+/// Records the engine's XTEST holds to `record` from now on (`held.rs`): set once, at the engine's start, before any
+/// input.
+pub fn record_to(record: File) {
+    let _ = LEDGER.record.set(record);
+}
 
 thread_local! {
     /// While this thread sends an edge, the ledger's lock held: what was down as the send began, the key being pressed
@@ -96,21 +125,37 @@ impl Drop for Sending {
 
 impl Ledger {
     fn lock(&self) -> MutexGuard<'_, Vec<Pressed>> {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+        self.down.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Writes the held record of `down` (the lock held), if the engine has one.
+    fn write_record(&self, down: &[Pressed]) {
+        if let Some(record) = self.record.get() {
+            let held: Vec<_> = down.iter().filter_map(Pressed::at_the_server).collect();
+            crate::held::write(record, &held);
+        }
     }
 
     /// Sends one key edge through `send` under the lock: a press recorded first (its delivery is unknown if the send
-    /// fails), a release struck only once it went out.
+    /// fails), a release struck only once it went out; the held record follows each change of an XTEST key or button.
     pub fn edge<T, E>(&self, key: Pressed, press: bool, send: impl FnOnce() -> Result<T, E>) -> Result<T, E> {
         let mut down = self.lock();
+        let recorded = key.at_the_server().is_some();
         if press && !down.iter().any(|d| d.same_key(&key)) {
             down.push(key);
+            if recorded {
+                self.write_record(&down);
+            }
         }
         let sending = Sending::begin(&down);
         let sent = send();
         drop(sending);
         if !press && sent.is_ok() {
+            let before = down.len();
             down.retain(|d| !d.same_key(&key));
+            if recorded && down.len() != before {
+                self.write_record(&down);
+            }
         }
         sent
     }
@@ -121,6 +166,15 @@ impl Ledger {
         let mut down = self.lock();
         let keys = latest_first(std::mem::take(&mut *down));
         (down, keys)
+    }
+
+    /// An exit's release: what is down taken out ([`Ledger::take`]) and sent through `send`, latest first, then the held
+    /// record emptied, once the releases went out. -> the lock's guard: nothing is pressed or released until it goes.
+    fn release_all(&self, send: impl FnOnce(&[Pressed])) -> MutexGuard<'_, Vec<Pressed>> {
+        let (held, keys) = self.take();
+        send(&keys);
+        self.write_record(&held);
+        held
     }
 }
 
@@ -204,8 +258,7 @@ fn send_releases(conn: &impl Connection, root: Window, keys: &[Pressed]) {
 /// The orderly exit's release of what the input bookkeeping no longer holds (`Engine::shutdown`), on the engine's own
 /// connection: after it has released its holds, normally nothing.
 pub fn release_rest(conn: &impl Connection, root: Window) {
-    let (_held, keys) = LEDGER.take();
-    send_releases(conn, root, &keys);
+    let _held = LEDGER.release_all(|keys| send_releases(conn, root, keys));
 }
 
 /// Where a forced exit's releases go: [`over_own_connection`] in the engine, a record in the tests.
@@ -225,8 +278,7 @@ pub fn over_own_connection(keys: &[Pressed]) {
 /// holds it only for one send) and never given back.
 pub fn release_all_within(bound: Duration, send: Sender) {
     within(bound, move || {
-        let (held, keys) = LEDGER.take();
-        send(&keys);
+        let held = LEDGER.release_all(send);
         std::mem::forget(held);
     });
 }
@@ -367,5 +419,92 @@ mod tests {
             "the press waits for the lock"
         );
         std::mem::forget(held);
+    }
+
+    /// A ledger that records to a pipe, and the pipe's read end, which reads without blocking.
+    fn recorded() -> (Ledger, std::io::PipeReader) {
+        let (reader, writer) = std::io::pipe().unwrap();
+        rustix::fs::fcntl_setfl(&reader, rustix::fs::OFlags::NONBLOCK).unwrap();
+        let ledger = Ledger::default();
+        ledger
+            .record
+            .set(File::from(std::os::fd::OwnedFd::from(writer)))
+            .unwrap();
+        (ledger, reader)
+    }
+
+    /// Every record written since the last read, each as the set it carries.
+    fn records(reader: &mut std::io::PipeReader) -> Vec<Vec<crate::held::Held>> {
+        use std::io::Read;
+        let mut bytes = Vec::new();
+        let mut buf = [0u8; 4096];
+        while let Ok(n) = reader.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            bytes.extend_from_slice(&buf[..n]);
+        }
+        assert_eq!(bytes.len() % crate::held::RECORD_LEN, 0, "whole records only");
+        bytes
+            .chunks(crate::held::RECORD_LEN)
+            .map(|r| crate::held::decode(r).expect("a record"))
+            .collect()
+    }
+
+    #[test]
+    fn the_held_record_follows_the_xtest_keys_and_buttons_a_press_out_before_it_is_sent() {
+        use crate::held::Held;
+        let (ledger, mut reader) = recorded();
+        let mut inside = Vec::new();
+        let _ = ledger.edge(Pressed::Desktop(50), true, || {
+            inside = records(&mut reader);
+            Ok::<_, ()>(())
+        });
+        assert_eq!(
+            inside,
+            [vec![Held::Key(50)]],
+            "the press's record is out before the press is sent"
+        );
+        let _ = ledger.edge(Pressed::Button(1), true, || Ok::<_, ()>(()));
+        let _ = ledger.edge(Pressed::Desktop(50), true, || Ok::<_, ()>(()));
+        assert_eq!(
+            records(&mut reader),
+            [vec![Held::Key(50), Held::Button(1)]],
+            "a key down already is not recorded again"
+        );
+        let _ = ledger.edge(window(7, 38), true, || Ok::<_, ()>(()));
+        let _ = ledger.edge(Pressed::Desktop(50), false, || Err::<(), _>("lost"));
+        assert!(
+            records(&mut reader).is_empty(),
+            "a window's key, and a release that did not go out, change nothing"
+        );
+        let _ = ledger.edge(Pressed::Desktop(50), false, || {
+            inside = records(&mut reader);
+            Ok::<_, ()>(())
+        });
+        assert!(inside.is_empty(), "a release's record only once it went out");
+        assert_eq!(records(&mut reader), [vec![Held::Button(1)]]);
+        let _ = ledger.edge(window(7, 38), false, || Ok::<_, ()>(()));
+        assert!(records(&mut reader).is_empty());
+    }
+
+    #[test]
+    fn an_exit_s_release_empties_the_held_record_once_its_releases_went_out() {
+        use crate::held::Held;
+        let (ledger, mut reader) = recorded();
+        for key in [Pressed::Button(1), Pressed::Desktop(50), window(7, 38)] {
+            let _ = ledger.edge(key, true, || Ok::<_, ()>(()));
+        }
+        let _ = records(&mut reader);
+        let mut sent = Vec::new();
+        let mut during = Vec::new();
+        let held = ledger.release_all(|keys| {
+            sent = keys.to_vec();
+            during = records(&mut reader);
+        });
+        assert_eq!(sent.len(), 3, "every key, latest first");
+        assert!(during.is_empty(), "the record still holds them while they are released");
+        assert_eq!(records(&mut reader), [Vec::<Held>::new()]);
+        assert!(held.is_empty());
     }
 }

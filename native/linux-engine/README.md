@@ -93,7 +93,11 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   changes nothing, since a supervisor may send its own after another's. A drag's button released there (a `drag` cut
   by the forced exit, a `drag_handle` before its end) ends the drag where the pointer is. SIGKILL cuts the
   drain and the release: the last burst's window keeps its synthetic focus until it next gets a `FocusOut`, and a key
-  held at the server stays down. The stop signals are
+  held at the server stays down, unless the engine runs under cua's launcher shim (`cua-engine launcher-shim`,
+  `shim.rs`, the REPL host's on Linux): there the engine writes its XTEST-held keys and buttons to a held record
+  (`held.rs`, a FIFO the shim names in `CUA_ENGINE_HELD_RECORD`), a press's before it is sent, and the shim, outside
+  the sandbox, releases what that record still shows down on the XTEST devices once the engine is gone, whether the
+  sandbox's end or its supervisor's death took it. The stop signals are
   blocked in every thread and taken by one thread with `sigwait`; a program `launch_app` starts gets them unblocked.
   The drain reads nothing from stdin and writes nothing to stdout, and an answer that cannot go out does not hold it
   back: answers are written by a thread of their own, and the loop, waiting for each, also watches for the stop. That is

@@ -87,9 +87,9 @@ const ALLOWED: [(&str, &str, &str); 7] = [
          (tests/support/targets-refresh.py)",
     ),
     (
-        "exec.rs",
+        "shim.rs",
         SPAWN,
-        "the REPL host's launcher shim: execs the program its command line names (the trusted worker's sandbox \
+        "the REPL host's launcher shim: starts the program its command line names (the trusted worker's sandbox \
          launcher), with a parent-death signal, before any engine starts; never an argv the engine writes",
     ),
     (

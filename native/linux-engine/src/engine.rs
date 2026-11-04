@@ -648,11 +648,17 @@ impl Engine {
         Ok(dir)
     }
 
-    /// The orderly exit: every key still held released and every input session ended, each pending `FocusOut` waited
-    /// out (at most the delay; `route.rs`), the clipboard's owner stopped (CLIPBOARD goes with it, as the vendor's does),
+    /// The orderly exit: an armed after-release watch run out, every key still held released and every input session
+    /// ended, each pending `FocusOut` waited out (at most the delay; `route.rs`), the clipboard's owner stopped (CLIPBOARD goes with it, as the vendor's does),
     /// then the screenshot directory removed.
     pub fn shutdown(&mut self) {
-        self.collect_late_watch(false);
+        // an armed after-release watch first runs out its lifetime (at most `dnd::SETTLE` after its drag's release), so
+        // a late take inside it is still cancelled, its Escape sent before any FocusOut of the exit's and before the
+        // connection closes; collected then, the Escape restarts its window's timer for the drain below
+        if let Some(watch) = &self.late_watch {
+            watch.run_out();
+        }
+        self.collect_late_watch(true);
         self.inputs.release_everything(&mut self.x);
         self.report_sent();
         let _ = self.x.sync();

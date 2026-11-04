@@ -313,6 +313,8 @@ pub struct LateWatch {
     pub target: Window,
     /// The Escape's route past the engine's timers (`focus_timer::Gate`): sent under its lock, recorded first.
     gate: crate::focus_timer::Gate,
+    /// When the drag's button went up (`released`): the watch ends by itself `SETTLE` after it.
+    released_at: std::cell::Cell<Option<Instant>>,
 }
 
 impl LateWatch {
@@ -330,6 +332,7 @@ impl LateWatch {
                 app: String::new(),
                 target,
                 gate,
+                released_at: std::cell::Cell::new(None),
             }),
             Ok(Err(error)) => Err(anyhow::anyhow!("the drag-and-drop watch could not start: {error}")),
             Err(_) => Err(anyhow::anyhow!("the drag-and-drop watch did not start")),
@@ -338,7 +341,21 @@ impl LateWatch {
 
     /// The drag's button went up at `at` with no take seen: from now a take is cancelled at once.
     pub fn released(&self, at: Instant) {
+        self.released_at.set(Some(at));
         let _ = self.notes.send(Note::Released { at });
+    }
+
+    /// At the engine's exit: the watch left to run out its own lifetime, so a take inside it is still cancelled (its
+    /// Escape sent before the exit's flush and before the connection closes). It returns once the watch has ended by
+    /// itself, and at the latest a poll past `SETTLE` after the release; at once for a watch never told of one.
+    pub fn run_out(&self) {
+        let Some(released) = self.released_at.get() else {
+            return;
+        };
+        let until = released + SETTLE + LATE_POLL * 2;
+        while !self.finished() && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 
     /// Handed over to the engine once the drag's route is cleaned up, naming the application for its reports.
@@ -385,6 +402,7 @@ impl LateWatch {
             app: "app".into(),
             target: 0,
             gate: crate::focus_timer::Gate::new(0),
+            released_at: std::cell::Cell::new(None),
         }
     }
 }
@@ -796,6 +814,77 @@ mod tests {
         let end = watch_loop(&inbox, || {}, || Ok(Some(7)), || Ok(()), |_| false);
         let WatchEnd::Late(late) = end else { panic!("{end:?}") };
         assert!(!late.escaped && late.escaped_at.is_none());
+    }
+
+    #[test]
+    fn at_the_exit_a_watch_runs_out_its_lifetime_so_a_late_take_is_still_cancelled() {
+        // a take 200 ms after the release, past the exit's FocusOut drain (at most 100 ms): still cancelled
+        let (notes, inbox) = std::sync::mpsc::channel();
+        let released = Instant::now();
+        notes.send(Note::Released { at: released }).unwrap();
+        let thread = std::thread::spawn(move || {
+            watch_loop(
+                &inbox,
+                || {},
+                || Ok((released.elapsed() >= Duration::from_millis(200)).then_some(7)),
+                || Ok(()),
+                |_| true,
+            )
+        });
+        let watch = LateWatch::around(thread);
+        watch.released_at.set(Some(released));
+        watch.run_out();
+        assert!(watch.finished(), "returned only once the watch had ended");
+        let WatchEnd::Late(late) = watch.stop() else {
+            panic!("the late take was not cancelled")
+        };
+        assert!(
+            late.escaped && late.after_release >= Duration::from_millis(200),
+            "{late:?}"
+        );
+        // no take: the watch ends by itself at the settle, and the exit waits no longer
+        let (notes, inbox) = std::sync::mpsc::channel();
+        let released = Instant::now();
+        notes.send(Note::Released { at: released }).unwrap();
+        let thread = std::thread::spawn(move || watch_loop(&inbox, || {}, || Ok(None), || Ok(()), |_| true));
+        let watch = LateWatch::around(thread);
+        watch.released_at.set(Some(released));
+        watch.run_out();
+        assert!(watch.finished() && released.elapsed() >= SETTLE);
+        assert!(
+            released.elapsed() < SETTLE + Duration::from_millis(50),
+            "{:?}",
+            released.elapsed()
+        );
+        assert_eq!(watch.stop(), WatchEnd::Quiet);
+    }
+
+    #[test]
+    fn at_the_exit_a_watch_that_does_not_end_is_waited_for_no_longer_than_its_lifetime() {
+        let (wake, wedged) = std::sync::mpsc::channel::<()>();
+        let thread = std::thread::spawn(move || {
+            let _ = wedged.recv();
+            WatchEnd::Quiet
+        });
+        let watch = LateWatch::around(thread);
+        // released 200 ms ago: 100 ms of the settle remain
+        let released = Instant::now() - Duration::from_millis(200);
+        watch.released_at.set(Some(released));
+        let started = Instant::now();
+        watch.run_out();
+        assert!(!watch.finished());
+        assert!(released.elapsed() >= SETTLE, "{:?}", released.elapsed());
+        assert!(
+            started.elapsed() < Duration::from_millis(150),
+            "{:?}",
+            started.elapsed()
+        );
+        // never told of a release: no wait at all
+        let never = LateWatch::around(std::thread::spawn(|| WatchEnd::Quiet));
+        let started = Instant::now();
+        never.run_out();
+        assert!(started.elapsed() < Duration::from_millis(5));
+        wake.send(()).unwrap();
     }
 
     #[test]

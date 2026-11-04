@@ -71,10 +71,14 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   hold whenever they end a session, its instant recorded first (`focus_timer::Gate`). With `--stats`, each `FocusOut` is reported (`focus_out`: window, cause `timer`, `flush` or
   `exit`, the time since the window's last input, and the request whose input last started the timer): on the line of
   the request it went out in, or on a line of its own (`"id": null`) when it went out between requests.
-- **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: held keys
-  released, then every pending `FocusOut` waited out (at most 100 ms) and sent, then the exit's settle: the engine waits
-  until `--exit-settle-ms` (300 ms) has passed since the last background key input to a window whose redirect it
-  still holds (keys only: the unredirect cut no click in the measured steps). Its exit drops those redirects (the X connection closes), and a covered Chromium window whose redirect goes
+- **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: an armed
+  after-release drag-and-drop watch first runs out its lifetime (at most 300 ms after its drag's release), so a late
+  take is still cancelled with its Escape before any of the exit's `FocusOut`s; then held keys released, then every
+  pending `FocusOut` waited out (at most 100 ms, the Escape's window's counted from the Escape) and sent, then the
+  exit's settle: the engine waits until `--exit-settle-ms` (300 ms) has passed since the last background key input to
+  a window whose redirect it still holds, the watch's Escape included (keys only: the unredirect cut no click in the
+  measured steps). At its longest, a stop right after a watched drag whose late take comes at the end of the watch,
+  that is about 300 + 300 ms after the drag's release, inside the 2 s backstop. Its exit drops those redirects (the X connection closes), and a covered Chromium window whose redirect goes
   while it still has input queued cuts that input and delivers it only with its next `FocusIn`, which at twice the
   gate's load the 100 ms alone did not prevent. So a burst answered just before the signal still arrives in order, and
   its window gets its `FocusOut`; an exit with no such input in the last 300 ms waits for nothing. The declared limits
@@ -262,7 +266,13 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   every 20 ms for up to 2 s for the inserted segment where the caret or selection was (for Gecko, without the U+FEFF
   it adds after each character beyond the BMP), each read bounded by that deadline and counted only if it ends
   before it, while the target's selection transfer is followed, counting only requests from the target's X client
-  (its window's resource-id base); and the cleanup. The answer is success when the segment is read back, else
+  (its window's resource-id base); and the cleanup. In a family whose text scrolls away at its start (VTE: a full
+  screen's first row leaves as text wraps its last), the field is also observed whole, its text and its lines
+  (`GetTextAtOffset` at `LINE_START`, the terminal's rows, soft wraps included), and a field that has lost text since
+  confirms only when the whole of it reads as the observed text with the paste at the caret less a prefix ending where
+  an observed line starts, the paste whole after it, and the paste text occurs exactly once in that expected text;
+  anything else stays unconfirmed (`paste.confirm_rule` `segment` or `scrolled` on the `--stats` line). The answer is
+  success when the segment is read back, or the scrolled field confirms, else
   `Paste was sent once and could not be confirmed; read the field before retrying`. Only a refusal before dispatch, or
   a chord press the X server answered with an X error naming it (so the chord's last key never arrived), says that
   nothing was sent or pasted; a press whose acknowledgement never came may have arrived, and is answered as sent. The

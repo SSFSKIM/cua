@@ -414,7 +414,8 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
             | EventMask::KEY_RELEASE
             | EventMask::BUTTON_PRESS
             | EventMask::BUTTON_RELEASE
-            | EventMask::BUTTON1_MOTION;
+            | EventMask::BUTTON1_MOTION
+            | EventMask::FOCUS_CHANGE;
         probe
             .conn
             .change_window_attributes(
@@ -452,7 +453,7 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
         let mut seen = Vec::new();
         let mut taken = matches!(
             on_release,
-            OnRelease::TakesLate | OnRelease::NeverTakes | OnRelease::TakesAfter(_)
+            OnRelease::TakesLate | OnRelease::TakesLateAfter(_) | OnRelease::NeverTakes | OnRelease::TakesAfter(_)
         );
         let mut late_take: Option<Instant> = None;
         let mut took_at: Option<Instant> = None;
@@ -460,6 +461,7 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
         *TAKE_TO_RELEASE.lock().unwrap() = None;
         *PRESS_TO_RELEASE.lock().unwrap() = None;
         AFTER_TAKE_MOTIONS.lock().unwrap().clear();
+        ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clear();
         while stopped.try_recv().is_err() {
             if let (OnRelease::TakesAfter(after), Some(pressed), None) = (on_release, pressed_at, took_at)
                 && pressed.elapsed() >= after
@@ -479,7 +481,16 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
                     Event::MotionNotify(e) if took_at.is_some() => {
                         AFTER_TAKE_MOTIONS.lock().unwrap().push((e.event_x, e.event_y));
                     }
+                    Event::FocusOut(_) if sent => {
+                        ESCAPES_AND_FOCUS_OUTS
+                            .lock()
+                            .unwrap()
+                            .push(("focus-out", Instant::now()));
+                    }
                     Event::KeyPress(_) => {
+                        if sent {
+                            ESCAPES_AND_FOCUS_OUTS.lock().unwrap().push(("escape", Instant::now()));
+                        }
                         if let Some(took) = late_take.take() {
                             *TAKE_TO_ESCAPE.lock().unwrap() = Some(took.elapsed());
                         }
@@ -503,6 +514,11 @@ fn drag_source(on_release: OnRelease) -> (Window, mpsc::Sender<()>, std::thread:
                                 late_take = Some(Instant::now());
                                 focus(&probe);
                             }
+                            OnRelease::TakesLateAfter(after) => {
+                                sleep(after);
+                                take(&probe);
+                                late_take = Some(Instant::now());
+                            }
                             _ => {}
                         }
                     }
@@ -525,6 +541,9 @@ enum OnRelease {
     Nothing,
     Focuses,
     TakesLate,
+    /// `XdndSelection` taken this long after the release, the focus left alone: a drag and drop that begins after the
+    /// drag, late enough that an exit straight after the drag's answer would have drained its FocusOut by then.
+    TakesLateAfter(Duration),
     /// No take at all, during the drag or after it: an ordinary drag.
     NeverTakes,
     /// A take this long after the press, the button still down, whatever motion came.
@@ -536,6 +555,10 @@ static AFTER_TAKE_MOTIONS: std::sync::Mutex<Vec<(i16, i16)>> = std::sync::Mutex:
 
 /// How long the last late take (`OnRelease::TakesLate`) waited for the engine's Escape, as its source saw it.
 static TAKE_TO_ESCAPE: std::sync::Mutex<Option<Duration>> = std::sync::Mutex::new(None);
+
+/// The synthetic Escape presses and synthetic `FocusOut`s the last drag's source received, in order, each with when it
+/// arrived.
+static ESCAPES_AND_FOCUS_OUTS: std::sync::Mutex<Vec<(&'static str, Instant)>> = std::sync::Mutex::new(Vec::new());
 
 /// How long after its take of `XdndSelection` the last drag's source saw the button's release (None: no take), and how
 /// long after the press: what the release schedule after a take is measured by.
@@ -901,6 +924,69 @@ fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_acting_
     assert!(
         answered < unwatched + Duration::from_millis(150),
         "no settle on the request path: {answered:?} against {unwatched:?} unwatched"
+    );
+}
+
+/// How long after the release the exit test's late drag and drop begins: past the exit's `FocusOut` drain (the drag's
+/// timer is due 100 ms after its release), inside the watch's 300 ms.
+const EXIT_LATE_TAKE: Duration = Duration::from_millis(200);
+
+/// An engine stopped straight after a watched drag's answer, with the after-release watch still armed: a drag and drop
+/// that begins after the exit's `FocusOut` drain would have ended is still cancelled. The watch runs out its lifetime
+/// before the exit's flush, so its Escape reaches the source before the session's `FocusOut`, and the engine exits only
+/// after both (the re-review of T7's first fix: a safety Escape cut at exit lets a late drop land).
+#[test]
+fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_before_its_focus_out() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(EXIT_LATE_TAKE));
+    focus_nothing();
+    let mut shared = Engine::start();
+    *TAKE_TO_ESCAPE.lock().unwrap() = None;
+    assert_eq!(
+        shared.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null),
+        "no take by the release: a plain drag"
+    );
+    let answered = Instant::now();
+    shared.signal(rustix::process::Signal::TERM);
+    let (status, exited) = shared.exit_within(Duration::from_secs(5)).expect("the engine exits");
+    assert_eq!(status.code(), Some(143), "an orderly exit");
+    // the source reads on, so a late event would still be seen
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+            Input::KeyPress { sent: true },
+            Input::KeyRelease { sent: true },
+        ],
+        "the drag, then the watch's Escape"
+    );
+    let waited = TAKE_TO_ESCAPE
+        .lock()
+        .unwrap()
+        .expect("the watch's Escape reached the source");
+    assert!(
+        waited < Duration::from_millis(50),
+        "the Escape {waited:?} after the take"
+    );
+    let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+    assert_eq!(
+        order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
+        vec!["escape", "focus-out"],
+        "the Escape before the session's FocusOut"
+    );
+    // the probe reads each event at most a poll after it arrived
+    assert!(
+        order[1].1 <= exited + Duration::from_millis(5),
+        "the FocusOut before the exit"
+    );
+    assert!(
+        exited - answered >= EXIT_LATE_TAKE,
+        "the exit waited for the watch: {:?}",
+        exited - answered
     );
 }
 

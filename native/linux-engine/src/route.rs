@@ -186,9 +186,11 @@ impl Inputs {
         self.timers.next_due()
     }
 
-    /// Input that reached `window` by another route at `at` (the late-take Escape): its pending timer restarts.
+    /// Input that reached `window` by another route at `at` (the late-take Escape, a key): its pending timer restarts,
+    /// and the exit's settle follows it as it follows the engine's own keys, since the exit's unredirect could cut it.
     pub fn restart(&mut self, window: Window, at: Instant) {
         self.timers.restart(window, at);
+        self.last_input.insert(window, at);
     }
 
     /// The `FocusOut`s sent since the last call, for the `--stats` line.

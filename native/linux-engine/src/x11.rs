@@ -556,6 +556,11 @@ impl X11 {
         Ok(())
     }
 
+    /// Whether `window`'s redirect is held past its request (session retention), so the engine's exit drops it.
+    pub fn holds_redirect(&self, window: Window) -> bool {
+        self.retained.contains(&window)
+    }
+
     /// Drops retained windows that were destroyed (their redirection ended with them).
     pub fn drain_events(&mut self) {
         while let Ok(Some(event)) = self.conn.poll_for_event() {

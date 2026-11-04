@@ -76,6 +76,24 @@ struct Report {
     /// How long a clicked element took to report the focus (or the wait, when it did not), and the clicks it took.
     focus_ms: Option<f64>,
     clicks: u32,
+    /// Under `--stats`, what the confirmation is judged against: the field's count and the text around the insertion
+    /// point when observed, and again once an unconfirmed paste's confirmation has ended (`trace_around`).
+    trace: bool,
+    observed_around: Option<(i32, String)>,
+    unconfirmed_around: Option<(i32, String)>,
+}
+
+/// How much text around the insertion point a `--stats` trace reads, before it and after it.
+const TRACE_BEFORE: i32 = 24;
+const TRACE_AFTER: i32 = 24;
+
+/// The field's count and its text from `TRACE_BEFORE` before `at` to `TRACE_AFTER` past `at + len`, for the trace.
+fn trace_around(bus: &mut crate::dbus::Bus, element: &ObjRef, at: i32, len: i32) -> Option<(i32, String)> {
+    let from = (at - TRACE_BEFORE).max(0);
+    let until = Instant::now() + crate::dbus::IO_TIMEOUT;
+    field::read(bus, element, from, at - from + len + TRACE_AFTER, until)
+        .ok()
+        .flatten()
 }
 
 /// The text a snapshot holds, as a field would show it pasted: its UTF-8 formats first, then `STRING` (Latin-1).
@@ -126,7 +144,10 @@ impl Engine {
     }
 
     fn paste(&mut self, request: Request) -> Result<Value> {
-        let mut report = Report::default();
+        let mut report = Report {
+            trace: self.cfg.stats,
+            ..Report::default()
+        };
         let result = self.paste_with(&request, &mut report);
         self.extra.insert(
             "paste".into(),
@@ -144,6 +165,8 @@ impl Engine {
                 "delivery": report.delivery,
                 "focus_ms": report.focus_ms,
                 "clicks": report.clicks,
+                "observed_around": report.observed_around,
+                "unconfirmed_around": report.unconfirmed_around,
             }),
         );
         result
@@ -304,6 +327,11 @@ impl Engine {
                 };
                 report.observed = Some(format!("{:?}", seen.text));
                 report.expected = expected.as_ref().map(|e| (e.at, e.len));
+                if report.trace
+                    && let Some(e) = &expected
+                {
+                    report.observed_around = trace_around(bus, &element.target, e.at, e.len);
+                }
                 let field = Prepared {
                     element,
                     seen,
@@ -570,6 +598,11 @@ fn dispatch_and_confirm(
             Some(failure) => bail!("Paste was applied, but {failure}"),
             None => Ok(()),
         };
+    }
+    if report.trace
+        && let Some(e) = &expected
+    {
+        report.unconfirmed_around = trace_around(bus, &element.target, e.at, e.len);
     }
     if transfer == Transfer::Served {
         pasted.settled();

@@ -67,12 +67,18 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   is waited out to its full 100 ms since its window's last input, then its `FocusOut` sent, then the request goes on,
   so no `FocusOut` ever comes sooner than 100 ms after a burst (Chromium cuts and reorders the last keys of a burst a
   sooner `FocusOut` follows). A late drag-and-drop's Escape (`dnd.rs`) is not delayed by a timer; on its own window it
-  restarts the timer. With `--stats`, each `FocusOut` is reported (`focus_out`: window, cause `timer`, `flush` or
+  restarts the timer, and no `FocusOut` can fall between the two: the watch sends the Escape under a lock the timers
+  hold whenever they end a session, its instant recorded first (`focus_timer::Gate`). With `--stats`, each `FocusOut` is reported (`focus_out`: window, cause `timer`, `flush` or
   `exit`, the time since the window's last input, and the request whose input last started the timer): on the line of
   the request it went out in, or on a line of its own (`"id": null`) when it went out between requests.
 - **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: held keys
-  released, then every pending `FocusOut` waited out (at most 100 ms) and sent, so a burst answered just before the
-  signal still arrives in order and its window gets its `FocusOut`. A request already running finishes first; requests
+  released, then every pending `FocusOut` waited out (at most 100 ms) and sent, then the exit's settle: the engine waits
+  until `--exit-settle-ms` (400 ms) has passed since the last background input to a window whose redirect it still
+  holds. Its exit drops those redirects (the X connection closes), and a covered Chromium window whose redirect goes
+  while it still has input queued cuts that input and delivers it only with its next `FocusIn`, which at twice the
+  gate's load the 100 ms alone did not prevent. So a burst answered just before the signal still arrives in order, and
+  its window gets its `FocusOut`; an exit with no such input in the last 400 ms waits for nothing. The declared limits
+  are SIGKILL and load beyond twice the gate's. A request already running finishes first; requests
   queued behind the signal are not run. The exit code is 0 for stdin closing and 128 plus the signal's number
   otherwise. A second signal, or an exit still not done 2 s after the first, ends the process at once. SIGKILL cuts the
   drain: the last burst's window keeps its synthetic focus until it next gets a `FocusOut`. The stop signals are
@@ -278,6 +284,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--retention` | `session`, `per-request`, `none` | when the target window is redirected through Composite: once until destroyed, per request as the vendor does, or never |
 | `--settle-ms` | 0 | the wait after a window's redirect before input to it |
 | `--capture-wait` | `damage`, `fixed` | a capture of a fresh pixmap waits for the DAMAGE rule, or a fixed 100 ms once per pixmap (the fallback) |
+| `--exit-settle-ms` | 400 | the exit's wait after the last background input to a window whose redirect it still holds (Exit, above); the measured value, set lower or higher only to measure it |
 | `--teardown-ms` | 100 | the delay from a window's last background input to its session's `FocusOut`, on the timer (above); 0 sends each request's `FocusOut` as its input ends, before its answer (the harness's control lane) |
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |

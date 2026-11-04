@@ -42,7 +42,7 @@ use x11::Retention;
 const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop shared|dedicated]
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
-       [--teardown-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
+       [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
        [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take] [--stats]
        cua-engine --version";
 
@@ -66,6 +66,7 @@ fn default_config() -> Config {
         pacing: input::Pacing {
             key: Duration::ZERO,
             teardown: Duration::from_millis(100),
+            exit_settle: focus_timer::EXIT_SETTLE,
             drag: None,
         },
         stats: false,
@@ -149,6 +150,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
                 }
             }
             "--teardown-ms" => cfg.pacing.teardown = Duration::from_millis(number(value, arg)?),
+            "--exit-settle-ms" => cfg.pacing.exit_settle = Duration::from_millis(number(value, arg)?),
             "--key-pace-ms" => cfg.pacing.key = Duration::from_millis(number(value, arg)?),
             "--drag-step-ms" => fixed_drag(&mut cfg).step = Duration::from_millis(number(value, arg)?),
             "--drag-step-us" => fixed_drag(&mut cfg).step = Duration::from_micros(number(value, arg)?),
@@ -263,6 +265,15 @@ mod tests {
             (Duration::ZERO, Duration::ZERO, Duration::from_millis(100)),
             "no input settle and no key pacing; the 100 ms before FocusOut stays"
         );
+        assert_eq!(
+            cfg.pacing.exit_settle,
+            focus_timer::EXIT_SETTLE,
+            "the exit settles after recent input"
+        );
+        let Ok(Command::Server(measured)) = parse_args(&args(&["server", "--exit-settle-ms", "250"])) else {
+            panic!()
+        };
+        assert_eq!(measured.pacing.exit_settle, Duration::from_millis(250));
     }
 
     #[test]

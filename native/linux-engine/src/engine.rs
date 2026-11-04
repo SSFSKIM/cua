@@ -344,7 +344,10 @@ impl Engine {
         }
         let watch = self.late_watch.take().expect("checked");
         let (app, target) = (watch.app.clone(), watch.target);
-        match watch.stop() {
+        let end = watch.stop();
+        // the watch can send no more: the timers no longer hold its gate (an Escape it sent restarted its timer there)
+        self.inputs.set_gate(None);
+        match end {
             crate::dnd::WatchEnd::Quiet => {}
             end => {
                 if let crate::dnd::WatchEnd::Late(late) = &end
@@ -653,6 +656,18 @@ impl Engine {
         self.inputs.release_everything(&mut self.x);
         self.report_sent();
         let _ = self.x.sync();
+        // the exit drops every redirect it holds: input still queued in a covered Chromium window would be cut, so the
+        // last input to such a window is given the exit's settle first (`focus_timer::EXIT_SETTLE`)
+        let until = self.inputs.exit_settle_until(&self.x);
+        let started = Instant::now();
+        crate::focus_timer::settle_exit(&mut crate::focus_timer::Wall, until);
+        if self.cfg.stats && until.is_some() {
+            let waited = started.elapsed().as_secs_f64() * 1000.0;
+            eprintln!(
+                "{}",
+                json!({ "stats": { "id": null, "exit_settle": { "waited_ms": (waited * 1000.0).round() / 1000.0 } } })
+            );
+        }
         self.clipboard = None;
         if let Some(dir) = self.shot_dir.take() {
             let _ = std::fs::remove_dir_all(dir);

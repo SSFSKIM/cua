@@ -21,6 +21,9 @@ pub struct Pacing {
     /// From a window's last input to its session's `FocusOut` (the vendor's 100 ms): the `FocusOut` timer's delay
     /// (`focus_timer.rs`), off the request path; zero sends it as each request's input ends.
     pub teardown: Duration,
+    /// After the exit's `FocusOut` drain, from the last input to a window whose redirect the exit drops
+    /// (`focus_timer::EXIT_SETTLE`).
+    pub exit_settle: Duration,
     /// A drag's waits fixed for every target by the measurement flags (`--drag-step-ms`, `--drag-step-us`,
     /// `--drag-press-dwell-ms`, `--drag-release-dwell-ms`); None, the default, paces each drag by its target's family
     /// (`families.rs`).

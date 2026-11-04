@@ -180,12 +180,17 @@ mod tests {
         due: Option<Instant>,
         ticks: Vec<Instant>,
         after: usize,
+        /// Told of each tick as it happens (the timed test's sender waits for it).
+        ticked: Option<std::sync::mpsc::Sender<()>>,
+        /// How many ticks had happened when each line was answered.
+        ticks_at_line: Vec<usize>,
     }
 
     impl Server for Echo {
         fn respond(&mut self, line: &str) -> Option<String> {
             let line = line.trim();
             self.seen.push(line.to_string());
+            self.ticks_at_line.push(self.ticks.len());
             (!line.is_empty()).then(|| format!("ok {line}"))
         }
         fn after_response(&mut self) {
@@ -198,6 +203,9 @@ mod tests {
             if self.due.is_some_and(|d| d <= Instant::now()) {
                 self.ticks.push(Instant::now());
                 self.due = None;
+                if let Some(ticked) = &self.ticked {
+                    let _ = ticked.send(());
+                }
             }
         }
     }
@@ -257,14 +265,18 @@ mod tests {
 
     #[test]
     fn work_due_while_waiting_for_a_line_is_done_on_time() {
+        // ordered, not timed: the line is sent only once the tick has happened (or after 5 s, which fails), so a
+        // loaded machine cannot make a tick that waited for the line look on time
         let (tx, rx) = channel();
+        let (ticked, tick) = channel();
+        let started = Instant::now();
         let mut echo = Echo {
-            due: Some(Instant::now() + Duration::from_millis(40)),
+            due: Some(started + Duration::from_millis(40)),
+            ticked: Some(ticked),
             ..Echo::default()
         };
-        let started = Instant::now();
         let sender = std::thread::spawn(move || {
-            std::thread::sleep(Duration::from_millis(150));
+            let _ = tick.recv_timeout(Duration::from_secs(5));
             tx.send(Next::Line("late\n".into())).unwrap();
             tx.send(Next::End).unwrap();
         });
@@ -272,11 +284,11 @@ mod tests {
         sender.join().unwrap();
         assert_eq!(code, 0);
         assert_eq!(echo.ticks.len(), 1, "fired once, while idle");
-        let at = echo.ticks[0] - started;
         assert!(
-            at >= Duration::from_millis(40) && at < Duration::from_millis(140),
-            "on time, not at the next line: {at:?}"
+            echo.ticks[0] - started >= Duration::from_millis(40),
+            "not before it was due"
         );
+        assert_eq!(echo.ticks_at_line, [1], "before the next line, not at it");
         assert_eq!(echo.seen, ["late"]);
     }
 }

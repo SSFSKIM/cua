@@ -24,6 +24,8 @@ use x11rb::wrapper::ConnectionExt as _;
 
 /// The engine's delay from a window's last input to its `FocusOut` (`--teardown-ms`'s default).
 const DELAY: Duration = Duration::from_millis(100);
+/// The exit's settle after the last input to a window whose redirect it drops (`--exit-settle-ms`'s default).
+const EXIT_SETTLE: Duration = Duration::from_millis(400);
 /// The slack a `FocusOut` measured at the probe may show below the delay: the last key's own trip to the probe.
 const SLACK: Duration = Duration::from_millis(10);
 /// How long the probes wait for events still on their way.
@@ -361,10 +363,40 @@ fn sigterm_inside_the_delay_drains_the_focus_out_then_exits() {
     // the engine's exit waits for the server to handle its FocusOut; the probe's read time lags arrival by up to a poll
     assert!(seen[focus_out].at <= at + SLACK, "the FocusOut before the exit");
     assert!(
-        at - stopped < DELAY * 3,
-        "the drain is bounded by the delay: {:?}",
+        at - stopped < EXIT_SETTLE + DELAY,
+        "the drain is bounded by the exit's settle: {:?}",
         at - stopped
     );
+}
+
+#[test]
+fn the_exit_waits_the_settle_after_the_last_input_to_a_window_it_holds_redirected() {
+    let (seen, exited, stopped) = stopped_after_a_burst(|engine| engine.signal(Signal::TERM));
+    let (_, at) = exited.expect("the engine exits");
+    let last_key = seen[seen.len() - 2].at;
+    // the probe reads the last key at most a poll after it arrived, so the exit is measured from the stop as well
+    assert!(
+        at - last_key >= EXIT_SETTLE - SLACK * 2,
+        "the redirect stays until the settle has passed: {:?}",
+        at - last_key
+    );
+    assert!(at - stopped >= EXIT_SETTLE - DELAY / 2, "{:?}", at - stopped);
+}
+
+#[test]
+fn input_older_than_the_settle_holds_the_exit_back_for_nothing() {
+    let probe = Probe::open("settled", 0);
+    let mut engine = Engine::start();
+    let target = probe.target();
+    engine
+        .request("press_key", json!({"window": target, "key": "a"}))
+        .unwrap();
+    sleep(EXIT_SETTLE + DELAY);
+    let stopped = Instant::now();
+    engine.signal(Signal::TERM);
+    let (status, at) = engine.exit_within(Duration::from_secs(5)).expect("the engine exits");
+    assert_eq!(status.code(), Some(143));
+    assert!(at - stopped < DELAY, "at once: {:?}", at - stopped);
 }
 
 #[test]

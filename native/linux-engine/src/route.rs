@@ -20,7 +20,7 @@ use serde_json::Value;
 use x11rb::protocol::xproto::Window;
 
 use crate::desktop::Desktop;
-use crate::focus_timer::{Cause, Sent, Timers, Wall};
+use crate::focus_timer::{self, Cause, Sent, Timers, Wall};
 use crate::input::{Pacing, Session};
 use crate::x11::X11;
 
@@ -77,6 +77,8 @@ pub struct Inputs {
     pub request: Value,
     /// The `FocusOut`s sent and not yet reported (`take_sent`).
     sent: Vec<Sent>,
+    /// When each window's background input last ended, for the exit's settle (`exit_settle_until`).
+    last_input: HashMap<Window, Instant>,
 }
 
 /// A request's route while it runs: a window's session, or the desktop, with the window a foreground request's
@@ -96,6 +98,7 @@ impl Inputs {
             holds: Holds::default(),
             request: Value::Null,
             sent: Vec::new(),
+            last_input: HashMap::new(),
         }
     }
 
@@ -144,7 +147,9 @@ impl Inputs {
 
     /// A session whose input has ended put on its `FocusOut` timer; with no delay (`--teardown-ms 0`) it ends at once.
     fn defer(&mut self, x: &mut X11, window: Window, session: Session) {
-        self.timers.start(window, session, Instant::now(), self.request.clone());
+        let now = Instant::now();
+        self.last_input.insert(window, now);
+        self.timers.start(window, session, now, self.request.clone());
         if self.pacing.teardown.is_zero() {
             self.fire_due(x);
         }
@@ -166,6 +171,11 @@ impl Inputs {
     pub fn fire_due(&mut self, x: &mut X11) {
         let sent = self.timers.fire_due(&Wall, |_, session| session.end(x));
         self.sent.extend(sent);
+    }
+
+    /// The late-take watch's route to a window past the timers while it watches (`focus_timer::Gate`), None after.
+    pub fn set_gate(&mut self, gate: Option<crate::focus_timer::Gate>) {
+        self.timers.set_gate(gate);
     }
 
     /// When the next pending `FocusOut` is due.
@@ -192,9 +202,18 @@ impl Inputs {
         let held: Vec<(Window, Session)> = self.sessions.drain().collect();
         for (window, mut session) in held {
             session.finish(x);
-            self.timers.start(window, session, Instant::now(), self.request.clone());
+            let now = Instant::now();
+            self.last_input.insert(window, now);
+            self.timers.start(window, session, now, self.request.clone());
         }
         self.flush(x, None, Cause::Exit);
+    }
+
+    /// When the exit's settle ends (`focus_timer::EXIT_SETTLE`): the settle after the last input to a window whose
+    /// redirect the exit drops, None when no such window took input.
+    pub fn exit_settle_until(&self, x: &X11) -> Option<Instant> {
+        let held = self.last_input.iter().filter(|(window, _)| x.holds_redirect(**window));
+        focus_timer::exit_settle_until(held.map(|(_, at)| *at), self.pacing.exit_settle)
     }
 }
 

@@ -17,6 +17,7 @@
 //! without an X server.
 
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
@@ -64,6 +65,27 @@ impl Sent {
     }
 }
 
+/// The exit's settle (the design session's ruling on T7's escalation, 2026-11-04): the engine's exit drops every
+/// redirect it holds, since its X connection closes, and a covered Chromium window whose redirect goes while it still has
+/// input queued cuts that input and delivers it only with its next `FocusIn` (task 56: 8 of 10 SIGTERMs straight after a
+/// burst at twice the gate's load, with the 100 ms drain alone). So after the `FocusOut` drain the exit waits until this
+/// long has passed since the last input to a window whose redirect it still holds; the smallest value that held 30
+/// consecutive SIGTERM runs at twice the load on Chrome and on Electron (the evidence's exit-settle steps).
+pub const EXIT_SETTLE: Duration = Duration::from_millis(400);
+
+/// When the exit's settle ends: `settle` after the latest of `last_inputs` (the last input to each window whose redirect
+/// the exit will drop), None when there is none.
+pub fn exit_settle_until(last_inputs: impl IntoIterator<Item = Instant>, settle: Duration) -> Option<Instant> {
+    last_inputs.into_iter().max().map(|at| at + settle)
+}
+
+/// Waits out the exit's settle, if any (at once when it has already passed).
+pub fn settle_exit(clock: &mut impl Clock, until: Option<Instant>) {
+    if let Some(at) = until {
+        clock.sleep_until(at);
+    }
+}
+
 /// The time the timers read and wait on: the real clock in the engine, a fake one in the tests.
 pub trait Clock {
     fn now(&self) -> Instant;
@@ -93,10 +115,49 @@ struct Pending<S> {
     scheduled_by: Value,
 }
 
+/// Input another thread sends to one window by another route: the late-take watch's Escape, on the watch's own X
+/// connection (`dnd.rs`). The send is recorded under the gate's lock in the same critical section as the send itself,
+/// and the timers hold the same lock whenever they end a session, taking the record first, so no `FocusOut` can fall
+/// between that input and its window's timer restart (a `FocusOut` straight after the Escape is what makes Chromium cut
+/// it). The lock is held only around a send, never across a timer's wait, so the Escape is never held back by one.
+#[derive(Clone)]
+pub struct Gate {
+    window: u32,
+    sent: Arc<Mutex<Option<Instant>>>,
+}
+
+impl Gate {
+    pub fn new(window: u32) -> Gate {
+        Gate {
+            window,
+            sent: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Sends input by the other route now (`send` says whether it went out).
+    pub fn send(&self, send: impl FnOnce() -> bool) -> bool {
+        self.send_at(Instant::now, send)
+    }
+
+    /// Sends input by the other route, `at` giving its instant: recorded before `send` runs, under the lock, and
+    /// cleared if it did not go out.
+    pub fn send_at(&self, at: impl FnOnce() -> Instant, send: impl FnOnce() -> bool) -> bool {
+        let mut sent = self.sent.lock().unwrap_or_else(PoisonError::into_inner);
+        let previous = sent.replace(at());
+        let went = send();
+        if !went {
+            *sent = previous;
+        }
+        went
+    }
+}
+
 /// The windows whose sessions wait on their `FocusOut` timer.
 pub struct Timers<S> {
     delay: Duration,
     pending: HashMap<u32, Pending<S>>,
+    /// The other route's input to one window, while a late-take watch can send it (`Gate`).
+    gate: Option<Gate>,
 }
 
 impl<S> Timers<S> {
@@ -104,7 +165,13 @@ impl<S> Timers<S> {
         Timers {
             delay,
             pending: HashMap::new(),
+            gate: None,
         }
+    }
+
+    /// The other route a late-take watch may send by, while it watches; None once it is collected.
+    pub fn set_gate(&mut self, gate: Option<Gate>) {
+        self.gate = gate;
     }
 
     #[cfg(test)]
@@ -145,11 +212,24 @@ impl<S> Timers<S> {
         self.pending.values().map(|p| p.last_input + self.delay).min()
     }
 
-    /// Every timer due by now ended (`end` sends the `FocusOut`), the earliest first.
+    /// Every timer due by now ended (`end` sends the `FocusOut`), the earliest first, under the gate (`Gate`).
     pub fn fire_due(&mut self, clock: &impl Clock, end: impl FnMut(u32, S)) -> Vec<Sent> {
+        let gate = self.gate.clone();
+        let _held = self.hold(gate.as_ref());
         let now = clock.now();
         let due: Vec<u32> = self.in_due_order(|_, p| p.last_input + self.delay <= now);
         self.end_each(&due, Cause::Timer, |_| now, end)
+    }
+
+    /// The gate's lock, held while a session ends, its record of the other route's input applied first: that window's
+    /// pending timer restarts from it.
+    fn hold<'g>(&mut self, gate: Option<&'g Gate>) -> Option<std::sync::MutexGuard<'g, Option<Instant>>> {
+        let gate = gate?;
+        let mut sent = gate.sent.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(at) = sent.take() {
+            self.restart(gate.window, at);
+        }
+        Some(sent)
     }
 
     /// The flush: every pending timer but `keep`'s waited out to its due time, then ended, in due order, so each
@@ -161,21 +241,22 @@ impl<S> Timers<S> {
         clock: &mut impl Clock,
         end: impl FnMut(u32, S),
     ) -> Vec<Sent> {
-        let windows = self.in_due_order(|w, _| Some(w) != keep);
         let delay = self.delay;
-        let due: HashMap<u32, Instant> = windows
-            .iter()
-            .map(|w| (*w, self.pending[w].last_input + delay))
-            .collect();
-        self.end_each(
-            &windows,
-            cause,
-            |window| {
-                clock.sleep_until(due[&window]);
-                clock.now()
-            },
-            end,
-        )
+        let gate = self.gate.clone();
+        let mut end = end;
+        let mut sent = Vec::new();
+        // the earliest due first; each waited out without the gate's lock, then ended under it, so an Escape the
+        // other route sends meanwhile restarts its window's timer and that window is waited out again
+        while let Some(&window) = self.in_due_order(|w, _| Some(w) != keep).first() {
+            clock.sleep_until(self.pending[&window].last_input + delay);
+            let _held = self.hold(gate.as_ref());
+            let now = clock.now();
+            if self.pending[&window].last_input + delay > now {
+                continue;
+            }
+            sent.extend(self.end_each(&[window], cause, |_| now, &mut end));
+        }
+        sent
     }
 
     /// The pending windows that `pick` keeps, the earliest due first (by window to break ties, so the order is fixed).
@@ -417,5 +498,69 @@ mod tests {
             sent.record(),
             json!({"window": 0x1200007, "cause": "flush", "after_input_ms": 100.25, "scheduled_by": 12})
         );
+    }
+
+    #[test]
+    fn the_exit_settles_from_the_last_input_to_a_window_it_still_holds_redirected() {
+        let mut clock = Fake::new();
+        let start = clock.now();
+        let settle = Duration::from_millis(300);
+        // the latest input decides; the earlier window's settle has long passed
+        let until = exit_settle_until([start, start + 50 * MS], settle).expect("input to a redirected window");
+        assert_eq!(until, start + 50 * MS + settle);
+        clock.advance(120 * MS);
+        settle_exit(&mut clock, Some(until));
+        assert_eq!(clock.waits, vec![230 * MS], "only the rest of the settle is waited");
+        // no input to a window it holds redirected: the exit waits for nothing
+        assert_eq!(exit_settle_until(std::iter::empty(), settle), None);
+        let mut idle = Fake::new();
+        settle_exit(&mut idle, None);
+        assert!(idle.waits.is_empty());
+        // a settle long past waits for nothing either
+        let mut late = Fake::new();
+        let at = late.now();
+        late.advance(settle * 2);
+        settle_exit(&mut late, exit_settle_until([at], settle));
+        assert!(late.waits.is_empty());
+    }
+
+    #[test]
+    fn no_focus_out_falls_between_the_other_route_s_input_and_its_timer_s_restart() {
+        // the watch's Escape goes out 1 ms before the window's FocusOut is due, and the timer fires 1 ms after it was
+        // due, before the engine has collected the watch: the Escape restarted the timer, so nothing is due yet
+        let mut clock = Fake::new();
+        let mut timers: Timers<&str> = Timers::new(DELAY);
+        let gate = Gate::new(1);
+        timers.set_gate(Some(gate.clone()));
+        timers.start(1, "w1", clock.now(), json!(1));
+        timers.start(2, "w2", clock.now(), json!(2));
+        clock.advance(DELAY - MS);
+        let escaped = clock.now();
+        assert!(gate.send_at(|| escaped, || true));
+        clock.advance(2 * MS);
+        let mut ended = Vec::new();
+        let sent = timers.fire_due(&clock, |w, s| ended.push((w, s)));
+        assert_eq!(ended, vec![(2, "w2")], "the other window's timer keeps its schedule");
+        assert!(
+            timers.is_pending(1),
+            "the Escape's window waits the full delay from the Escape"
+        );
+        assert_eq!(sent.len(), 1);
+        // a flush waits it out from the Escape, not from the keys
+        let flushed = timers.flush(None, Cause::Flush, &mut clock, |_, _| {});
+        assert_eq!(flushed[0].after_input, DELAY);
+        assert_eq!(clock.now(), escaped + DELAY);
+        // an Escape that did not go out restarts nothing
+        let mut timers: Timers<&str> = Timers::new(DELAY);
+        let gate = Gate::new(1);
+        timers.set_gate(Some(gate.clone()));
+        let start = clock.now();
+        timers.start(1, "w1", start, json!(1));
+        clock.advance(DELAY - MS);
+        assert!(!gate.send_at(|| start + DELAY - MS, || false));
+        clock.advance(2 * MS);
+        let mut ended = Vec::new();
+        timers.fire_due(&clock, |w, _| ended.push(w));
+        assert_eq!(ended, vec![1]);
     }
 }

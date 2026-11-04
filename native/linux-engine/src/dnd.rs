@@ -311,6 +311,8 @@ pub struct LateWatch {
     pub app: String,
     /// The window a late take's Escape goes to.
     pub target: Window,
+    /// The Escape's route past the engine's timers (`focus_timer::Gate`): sent under its lock, recorded first.
+    gate: crate::focus_timer::Gate,
 }
 
 impl LateWatch {
@@ -318,13 +320,16 @@ impl LateWatch {
     pub fn start(target: Window, escape: u8) -> Result<LateWatch> {
         let (notes, inbox) = std::sync::mpsc::channel();
         let (ready, subscribed) = std::sync::mpsc::channel();
-        let thread = std::thread::spawn(move || watch_after_release(target, escape, inbox, ready));
+        let gate = crate::focus_timer::Gate::new(target);
+        let sends = gate.clone();
+        let thread = std::thread::spawn(move || watch_after_release(target, escape, sends, inbox, ready));
         match subscribed.recv_timeout(Duration::from_secs(2)) {
             Ok(Ok(())) => Ok(LateWatch {
                 notes,
                 thread: Some(thread),
                 app: String::new(),
                 target,
+                gate,
             }),
             Ok(Err(error)) => Err(anyhow::anyhow!("the drag-and-drop watch could not start: {error}")),
             Err(_) => Err(anyhow::anyhow!("the drag-and-drop watch did not start")),
@@ -348,6 +353,11 @@ impl LateWatch {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+    }
+
+    /// The route its Escape takes past the engine's timers, for them to hold while the watch can send it.
+    pub fn gate(&self) -> crate::focus_timer::Gate {
+        self.gate.clone()
     }
 
     /// Whether the watch has ended by itself (its settle over, a take cancelled, a failure).
@@ -374,6 +384,7 @@ impl LateWatch {
             thread: Some(thread),
             app: "app".into(),
             target: 0,
+            gate: crate::focus_timer::Gate::new(0),
         }
     }
 }
@@ -450,6 +461,7 @@ fn watch_loop(
 fn watch_after_release(
     target: Window,
     escape: u8,
+    gate: crate::focus_timer::Gate,
     inbox: std::sync::mpsc::Receiver<Note>,
     ready: std::sync::mpsc::Sender<std::result::Result<(), String>>,
 ) -> WatchEnd {
@@ -492,7 +504,7 @@ fn watch_after_release(
         conn.get_input_focus()?.reply()?;
         Ok(())
     };
-    let cancel = |time: u32| -> bool {
+    let escape_pair = |time: u32| -> bool {
         [KEY_PRESS_EVENT, KEY_RELEASE_EVENT].into_iter().all(|response_type| {
             let event = KeyPressEvent {
                 response_type,
@@ -513,6 +525,8 @@ fn watch_after_release(
                 .is_ok_and(|c| c.check().is_ok())
         })
     };
+    // under the gate: the engine's timers send no FocusOut between this Escape and its window's timer restart
+    let cancel = |time: u32| -> bool { gate.send(|| escape_pair(time)) };
     watch_loop(&inbox, || inject_fault(&conn, root), look, sync, cancel)
 }
 

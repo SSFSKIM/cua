@@ -34,7 +34,8 @@ exercise.
 named the control's checkout by its absolute path under the owner's home; that value is replaced by the symbolic label
 `control-f59575fb` (key `control_label`, as the experiment records it from the fix on). Nothing else was changed.
 The fix's sittings and the budget as it stands after them are in `fix/README.md` and task 57's report; the budget
-below is T7b's first account.
+below is T7b's first account. The second fix (B = 1000 ms, R = 200 ms, W = 1250 ms, a drag's button released, the
+`handle` case) is in `fix2/README.md`.
 
 ## `idle/`
 

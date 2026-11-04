@@ -1,0 +1,25 @@
+stress-ng before: 0
+loadavg: 1.52 1.46 1.33 18/539 1541298
+{"label":"load2","trial":0,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1020.1,"release_ms":20.1,"stderr":""}
+{"label":"load2","trial":1,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1003.5,"release_ms":3.5,"stderr":""}
+{"label":"load2","trial":2,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1005.2,"release_ms":5.2,"stderr":""}
+{"label":"load2","trial":3,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1005.7,"release_ms":5.7,"stderr":""}
+{"label":"load2","trial":4,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1014.4,"release_ms":14.4,"stderr":""}
+{"label":"load2","trial":5,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1008.4,"release_ms":8.4,"stderr":""}
+{"label":"load2","trial":6,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1020,"release_ms":20,"stderr":""}
+{"label":"load2","trial":7,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1012.4,"release_ms":12.4,"stderr":""}
+{"label":"load2","trial":8,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1006,"release_ms":6,"stderr":""}
+{"label":"load2","trial":9,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1007.4,"release_ms":7.4,"stderr":""}
+{"label":"load2","trial":10,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1008.9,"release_ms":8.9,"stderr":""}
+{"label":"load2","trial":11,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1004.1,"release_ms":4.1,"stderr":""}
+{"label":"load2","trial":12,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1007.3,"release_ms":7.3,"stderr":""}
+{"label":"load2","trial":13,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1010.4,"release_ms":10.4,"stderr":""}
+{"label":"load2","trial":14,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1010.9,"release_ms":10.9,"stderr":""}
+{"label":"load2","trial":15,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1011.4,"release_ms":11.4,"stderr":""}
+{"label":"load2","trial":16,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1009.6,"release_ms":9.6,"stderr":""}
+{"label":"load2","trial":17,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1007.9,"release_ms":7.9,"stderr":""}
+{"label":"load2","trial":18,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1003.1,"release_ms":3.1,"stderr":""}
+{"label":"load2","trial":19,"ok_before":true,"before":{"keys":[50],"buttons":[1]},"after":{"keys":[],"buttons":[]},"exit_code":143,"exit_ms":1011,"release_ms":11,"stderr":""}
+{"summary":"load2","trials":20,"loadavg":[7.57,2.94,1.82],"released_all":true,"held_before_all":true,"release_ms":{"min":3.1,"p50":8.9,"p90":20,"max":20.1}}
+exit 0
+stress-ng after: 0

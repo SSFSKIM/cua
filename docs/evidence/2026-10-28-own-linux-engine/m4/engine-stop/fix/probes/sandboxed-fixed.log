@@ -1,0 +1,74 @@
+init true
+cell 1  confirming.
+held
+keys before [50]
+tree [["anchor",1273785,1273720,1273785],["supervisor",1273791,1273785,1273785],["kernel",1273800,1273791,1273785],["kernel",1273807,1273800,1273807],["kernel",1273809,1273807,1273809],["kernel",1273813,1273809,1273809],["worker",1273824,1273791,1273785],["worker",1273828,1273824,1273828],["worker",1273829,1273828,1273829],["worker",1273830,1273829,1273829],["engine",1273839,1273830,1273829]]
+sig anchor 1273785 SigBlk 0000000000000200 SigIgn 0000000001001000 SigCgt 0000000100014403
+sig supervisor 1273791 SigBlk 0000000000000200 SigIgn 0000000001001000 SigCgt 0000000100014403
+sig kernel 1273800 SigBlk 0000000000000000 SigIgn 0000000000001000 SigCgt 0000000000004447
+sig kernel 1273807 SigBlk 0000000000010000 SigIgn 0000000000001000 SigCgt 0000000000000000
+sig kernel 1273809 SigBlk 0000000000000000 SigIgn 0000000000001000 SigCgt 0000000000004447
+sig kernel 1273813 SigBlk 0000000000000000 SigIgn 0000000001001000 SigCgt 0000000100004602
+sig worker 1273824 SigBlk 0000000000000000 SigIgn 0000000000001000 SigCgt 0000000000004447
+sig worker 1273828 SigBlk 0000000000010000 SigIgn 0000000000001000 SigCgt 0000000000000000
+sig worker 1273829 SigBlk 0000000000000000 SigIgn 0000000000001000 SigCgt 0000000000004447
+sig worker 1273830 SigBlk 0000000000000000 SigIgn 0000000001001000 SigCgt 0000000100014602
+sig engine 1273839 SigBlk 0000000000004003 SigIgn 0000000000001000 SigCgt 0000000000000440
+eof at 1283
++10 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker keys=[50]
+cell 2 answered 6319 cua: this connection is closing and accepts no more work
+{"status":"error","code":"connection_closing"}
++5048 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++5075 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++5101 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++5153 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++5179 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++5258 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++5285 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++5339 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++5366 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++5448 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++5476 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++5528 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++5555 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++5608 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++5640 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++5762 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++5789 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++5875 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++5905 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++5961 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++5988 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++6015 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++6043 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++6098 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++6125 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++6181 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++6209 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++6237 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++6264 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++6321 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++6351 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++6411 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++6440 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++6523 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++6551 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++6609 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++6638 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++6693 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++6751 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++6810 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++6840 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++6928 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++6955 ms anchor,engine,kernel,kernel,kernel,kernel,supervisor,worker,worker,worker,worker(T) keys=[50]
++7038 ms anchor,engine,kernel,kernel,kernel,kernel,pgrep,supervisor,worker,worker,worker,worker(T) keys=[50]
++7065 ms ?(Z),anchor,engine,ps,supervisor,worker,worker,worker,worker(T) keys=[50]
++7093 ms ?(Z),anchor,pgrep,supervisor,worker(T),worker(T),worker(T),worker(T) keys=[]
++7120 ms anchor,supervisor keys=[]
++7152 ms  keys=[]
+serve exit {"code":1,"signal":null} +7172 ms
+keys after []
+stderr tail
+cua serve: runtime teardown needed SIGTERM; every owned process is gone
+cua serve: task completion at close: completion_timeout; native cleanup unconfirmed
+exit 0

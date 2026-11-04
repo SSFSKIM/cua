@@ -1,0 +1,67 @@
+init true
+cell 1  confirming.
+held
+keys before [50]
+tree [["anchor",1274397,1274381,1274397],["supervisor",1274403,1274397,1274397],["kernel",1274412,1274403,1274397],["worker",1274423,1274403,1274397],["engine",1274432,1274423,1274397]]
+sig anchor 1274397 SigBlk 0000000000000200 SigIgn 0000000001001000 SigCgt 0000000100014403
+sig supervisor 1274403 SigBlk 0000000000000200 SigIgn 0000000001001000 SigCgt 0000000100014403
+sig kernel 1274412 SigBlk 0000000000000000 SigIgn 0000000001001000 SigCgt 0000000100004602
+sig worker 1274423 SigBlk 0000000000000000 SigIgn 0000000001001000 SigCgt 0000000100014602
+sig engine 1274432 SigBlk 0000000000004003 SigIgn 0000000000001000 SigCgt 0000000000000440
+eof at 1147
++10 ms anchor,engine,kernel,supervisor,worker keys=[50]
+cell 2 answered 6183 cua: this connection is closing and accepts no more work
+{"status":"error","code":"connection_closing"}
++5111 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++5141 ms anchor,engine,kernel,supervisor,worker keys=[50]
++5199 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++5228 ms anchor,engine,kernel,supervisor,worker keys=[50]
++5281 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++5307 ms anchor,engine,kernel,supervisor,worker keys=[50]
++5358 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++5385 ms anchor,engine,kernel,supervisor,worker keys=[50]
++5440 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++5469 ms anchor,engine,kernel,supervisor,worker keys=[50]
++5558 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++5586 ms anchor,engine,kernel,supervisor,worker keys=[50]
++5645 ms ?,anchor,engine,kernel,supervisor,worker keys=[50]
++5671 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++5699 ms anchor,engine,kernel,supervisor,worker keys=[50]
++5725 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++5752 ms anchor,engine,kernel,supervisor,worker keys=[50]
++5846 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++5878 ms anchor,engine,kernel,supervisor,worker keys=[50]
++5940 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++5972 ms anchor,engine,kernel,supervisor,worker keys=[50]
++6025 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++6053 ms anchor,engine,kernel,supervisor,worker keys=[50]
++6110 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++6138 ms anchor,engine,kernel,supervisor,worker keys=[50]
++6197 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++6224 ms anchor,engine,kernel,supervisor,worker keys=[50]
++6307 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++6334 ms anchor,engine,kernel,supervisor,worker keys=[50]
++6362 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++6390 ms anchor,engine,kernel,supervisor,worker keys=[50]
++6447 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++6480 ms anchor,engine,kernel,supervisor,worker keys=[50]
++6566 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++6597 ms anchor,engine,kernel,supervisor,worker keys=[50]
++6667 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++6695 ms anchor,engine,kernel,supervisor,worker keys=[50]
++6789 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++6819 ms anchor,engine,kernel,supervisor,worker keys=[50]
++6910 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++6942 ms anchor,engine,kernel,supervisor,worker keys=[50]
++7005 ms anchor,engine,kernel,pgrep,supervisor,worker keys=[50]
++7030 ms anchor,engine,kernel,supervisor,worker keys=[50]
++7058 ms ?(Z),?(Z),anchor,supervisor keys=[]
++7084 ms anchor,pgrep,supervisor keys=[]
++7112 ms anchor keys=[]
++7172 ms  keys=[]
+serve exit {"code":1,"signal":null} +7192 ms
+keys after []
+stderr tail
+cua serve: runtime teardown needed SIGTERM; every owned process is gone
+cua serve: task completion at close: completion_timeout; native cleanup unconfirmed
+exit 0

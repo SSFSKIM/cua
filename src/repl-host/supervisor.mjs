@@ -239,7 +239,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   function launchKernel(launch) {
     const self = {key: launch.key, release: () => {}, ready: false};
     self.readied = new Promise(resolve => { self.markReady = resolve; });
-    self.child = startKernel(launch, {reap: () => { self.release(); reap(); },
+    self.child = startKernel(launch, {reap: () => { self.release(); return reap(); },
       onMessage: message => {
         if (kernel !== self) return;
         if (message.type === 'runtime_ready') { self.ready = true; return self.markReady(true); }
@@ -352,7 +352,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
 
   function launchWorker(policy) {
     if (terminated) return null;
-    const self = {key: null, launch: workerLaunch(settings, policy), pending: new Map(), turns: new Map(), queue: [], attempts: 0, ready: false, failed: false,
+    const self = {key: null, launch: workerLaunch(settings, policy), sandboxed: !policy.disabled, pending: new Map(), turns: new Map(), queue: [], attempts: 0, ready: false, failed: false,
       deadlines: {afterCode: 0, turnEnded: 0}, bounds: new Map(), suspensions: new Map()};
     self.key = self.launch.key;
     // Work for the worker waits in `queue` until it announced it is ready (the header).
@@ -371,7 +371,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     self.ready = false;
     let release = () => {};
     const child = startKernel(self.launch, {exitSentence: TRUSTED_EXIT_SENTENCE, engine: settings.engine,
-      reap: () => { release(); reap(); },
+      reap: () => { release(); return reap(settings.engine ? {engine: settings.engine} : undefined); },
       onMessage: message => {
         if (worker !== self || self.child !== child) return;
         if (message.type === 'runtime_ready') return workerReady(self);
@@ -390,7 +390,17 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   function workerReady(self) {
     self.ready = true;
     self.cancelReady();
+    holdLauncher(self);
     for (const message of self.queue.splice(0)) self.child.send(message);
+  }
+
+  // Once the input has ended, the trusted worker's sandbox launcher is held (kernel-child.mjs holdLauncher; Linux, where
+  // the engine drains at the worker's stop): the owned group's SIGTERM at upstream's by(0.4), sent while admitted work
+  // still holds the drain, would otherwise make codex-linux-sandbox end the sandbox at once, the engine in it SIGKILLed
+  // with nothing released (measured, the Decision Log, M4 T7b fix). Held only once the worker is ready, its sandbox
+  // started; the worker itself, and with the sandbox disabled there is no launcher, runs on.
+  function holdLauncher(self) {
+    if (closing && settings.engine && self?.sandboxed && self.ready) self.child.holdLauncher?.();
   }
 
   // The worker stayed silent past its bound: another is started, or, after START_ATTEMPTS, the work it held fails.
@@ -748,6 +758,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     closing = true;
     if (drain) {
       if (!draining) {
+        holdLauncher(worker);
         cancelClientRequests();
         if (execution) drainExecution(execution);
       }

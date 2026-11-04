@@ -6,6 +6,10 @@
 // kernel-child seam); the real announcement is checked against a real kernel at the end.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {PassThrough} from 'node:stream';
 import {createSupervisor, TRUSTED_WORKER} from '../../src/repl-host/supervisor.mjs';
 import {kernelNode, startKernel as startRealKernel} from './kernel-harness.mjs';
@@ -16,23 +20,30 @@ const DISABLED = {'codex/sandbox-state-meta': {permissionProfile: {type: 'disabl
 // A supervisor over child doubles. `behaviour(kind, n)` says how the n-th child of `kind` ('kernel' | 'worker') acts:
 // {ready: boolean}. Ready kernels answer exec (and a cell's one rpc, through the worker); ready workers answer service,
 // run_hooks and turn_ended.
-function host({behaviour, readyTimeoutMs = 100, env = {}}) {
+function host({behaviour, readyTimeoutMs = 100, env = {}, reaper = undefined}) {
   const counts = {kernel: 0, worker: 0};
   const children = [];
   const logs = [];
-  const startKernel = (launch, {onMessage, onEnd, engine}) => {
+  const events = [];
+  const startKernel = (launch, {onMessage, onEnd, engine, reap}) => {
     const kind = launch.args.includes(TRUSTED_WORKER) ? 'worker' : 'kernel';
     const n = ++counts[kind];
     const {ready} = behaviour(kind, n);
-    const child = {kind, n, received: [], stopped: false, engine};
+    const child = {kind, n, received: [], stopped: false, engine, held: false, reap};
     children.push(child);
     if (ready) setImmediate(() => onMessage({type: 'runtime_ready'}));
     return {
       pid: undefined,
+      holdLauncher() { child.held = true; events.push(`hold ${kind} ${n}`); },
       send(message) {
         child.received.push(message);
         if (!ready || child.stopped) return true;
         setImmediate(() => {
+          if (kind === 'kernel' && message.type === 'exec' && message.code === 'hang') return;
+          if (kind === 'kernel' && message.type === 'exec' && message.code === 'late-rpc') {
+            setTimeout(() => onMessage({type: 'trusted_service_request', id: `${message.id}-trusted-rpc-0`, exec_id: message.id, service: 'svc', request: {}}), 100);
+            return;
+          }
           if (kind === 'kernel' && message.type === 'exec') {
             if (message.code === 'rpc') onMessage({type: 'trusted_service_request', id: `${message.id}-trusted-rpc-0`, exec_id: message.id, service: 'svc', request: {}});
             else onMessage({type: 'exec_result', id: message.id, ok: true, output: `ran on kernel ${n}`, named_outputs: []});
@@ -44,19 +55,19 @@ function host({behaviour, readyTimeoutMs = 100, env = {}}) {
         });
         return true;
       },
-      async stop() { child.stopped = true; onEnd({expected: true, diagnostic: ''}); },
+      async stop() { child.stopped = true; events.push(`stop ${kind} ${n}`); onEnd({expected: true, diagnostic: ''}); },
     };
   };
   const input = new PassThrough(), output = new PassThrough();
   const replies = new Map();
   output.setEncoding('utf8').on('data', chunk => { for (const line of chunk.split('\n').filter(Boolean)) { const msg = JSON.parse(line); replies.get(msg.id)?.(msg); } });
-  const supervisor = createSupervisor({input, output, cwd: '/fixture/run', startKernel, readyTimeoutMs, log: line => logs.push(line),
+  const supervisor = createSupervisor({input, output, cwd: '/fixture/run', startKernel, readyTimeoutMs, ...(reaper ? {reaper} : {}), log: line => logs.push(line),
     env: {CUA_REPL_NODE_PATH: '/fixture/node', PATH: '/usr/bin:/bin', CUA_REPL_TRUSTED_RPC_ENABLED: '1', CUA_REPL_TRUSTED_SERVICES: JSON.stringify({svc: '/fixture/svc.mjs'}), ...env}});
   let id = 0;
   const request = (method, params) => new Promise(resolve => { const n = ++id; replies.set(n, resolve); input.write(`${JSON.stringify({jsonrpc: '2.0', id: n, method, params})}\n`); });
-  const js = async (code, timeoutMs) => (await request('tools/call', {name: 'js', arguments: {code, ...(timeoutMs ? {timeout_ms: timeoutMs} : {})}, _meta: DISABLED})).result;
+  const js = async (code, timeoutMs, meta = DISABLED) => (await request('tools/call', {name: 'js', arguments: {code, ...(timeoutMs ? {timeout_ms: timeoutMs} : {})}, _meta: meta})).result;
   const turn = async () => (await request('tools/call', {name: 'turn_ended', arguments: {hook_event_name: 'Stop', session_id: 's', turn_id: 't'}, _meta: DISABLED})).result;
-  return {supervisor, input, children, logs, request, js, turn, init: () => request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 't', version: '0'}})};
+  return {supervisor, input, children, logs, events, request, js, turn, init: () => request('initialize', {protocolVersion: '2025-06-18', capabilities: {}, clientInfo: {name: 't', version: '0'}})};
 }
 const text = result => result.content.map(c => c.text).join('');
 
@@ -118,6 +129,68 @@ test('when no trusted worker starts, the cell\'s rpc fails, a turn end is acknow
   assert.equal(text(await h.turn()), '{}');
   h.input.end();
   assert.equal(await Promise.race([h.supervisor.closed, delay(2000).then(() => 'still open')]), 0);
+});
+
+// The Linux helper's settings for a sandboxed launch through the doubles: a helper file named with its own SHA-256 and a
+// deny list, and a call's scoped policy.
+function sandboxedEnv(t) {
+  const dir = mkdtempSync(join(tmpdir(), 'cua-readiness-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const helper = join(dir, 'codex-linux-sandbox');
+  writeFileSync(helper, '#!/bin/sh\n');
+  chmodSync(helper, 0o755);
+  return {CUA_REPL_SANDBOX_HELPER: helper, CUA_REPL_SANDBOX_HELPER_SHA256: createHash('sha256').update(readFileSync(helper)).digest('hex'),
+    CUA_SANDBOX_DENY_READ: JSON.stringify({deny: [join(dir, 'denied')], reexpose: [], metadataOnly: [], tiers: []}), CUA_ENGINE_BIN: '/opt/cua/engine/linux/cua-engine'};
+}
+const SCOPED_META = {'codex/sandbox-state-meta': {permissionProfile: {type: 'managed', file_system: {type: 'restricted', entries: [
+  {path: {type: 'special', value: {kind: 'root'}}, access: 'read'}, {path: {type: 'special', value: {kind: 'project_roots'}}, access: 'write'}]}, network: 'restricted'},
+sandboxCwd: 'file:///fixture/run'}};
+const linuxOnly = {skip: process.platform !== 'linux' && 'the engine\'s drain is Linux only'};
+
+test('once its input ends, the host holds the sandboxed trusted worker\'s launcher, so the owned group\'s SIGTERM cannot end the engine\'s sandbox under it; then the stop', linuxOnly, async t => {
+  const h = host({behaviour: () => ({ready: true}), env: sandboxedEnv(t)});
+  await h.init();
+  assert.equal(text(await h.js('rpc', undefined, SCOPED_META)), 'service said worker 1');
+  h.js('hang', 60000, SCOPED_META);   // admitted work the EOF drain waits for
+  await delay(50);
+  h.input.end();
+  await delay(50);
+  assert.deepEqual(h.events, ['hold worker 1'], 'held as the drain begins, the kernel\'s launcher left alone, nothing stopped yet');
+  await h.supervisor.shutdown();
+  assert.deepEqual(h.events.slice(0, 1), ['hold worker 1']);
+  assert.ok(h.events.includes('stop worker 1'), 'then the stop, which drains the engine');
+});
+
+test('with the sandbox disabled there is no launcher to hold: the worker itself runs the engine\'s service', linuxOnly, async t => {
+  const h = host({behaviour: () => ({ready: true}), env: sandboxedEnv(t)});
+  await h.init();
+  assert.equal(text(await h.js('rpc')), 'service said worker 1');
+  h.input.end();
+  await h.supervisor.closed;
+  assert.deepEqual(h.events.filter(e => e.startsWith('hold')), []);
+});
+
+test('a sandboxed worker first started while the host drains is held once it is ready', linuxOnly, async t => {
+  const h = host({behaviour: () => ({ready: true}), env: sandboxedEnv(t)});
+  await h.init();
+  const answered = h.js('late-rpc', 60000, SCOPED_META);   // its service request comes only after the input's end
+  await delay(20);
+  h.input.end();
+  assert.equal(text(await answered), 'service said worker 1');
+  await h.supervisor.closed;
+  assert.deepEqual(h.events.filter(e => e.endsWith('worker 1')), ['hold worker 1', 'stop worker 1']);
+});
+
+test('the trusted worker\'s reap names the engine, so a stray engine it left drains first; a kernel\'s names none', linuxOnly, async t => {
+  const reaps = [];
+  const h = host({behaviour: () => ({ready: true}), env: sandboxedEnv(t), reaper: () => ({reap: options => { reaps.push(options ?? {}); return Promise.resolve([]); }, own: () => () => {}})});
+  await h.init();
+  await h.js('rpc');
+  await h.children.find(c => c.kind === 'worker').reap();
+  await h.children.find(c => c.kind === 'kernel').reap();
+  assert.deepEqual(reaps, [{engine: '/opt/cua/engine/linux/cua-engine'}, {}]);
+  h.input.end();
+  await h.supervisor.closed;
 });
 
 const {node, skip} = kernelNode();

@@ -126,10 +126,16 @@ export function processExited(pid) {
 // parents). Nothing is listed again and nothing else is thawed, so a process the engine started, reparented when it
 // exits, is still killed, and the worker the engine answers stays frozen: the engine's drain reads nothing from it and
 // needs nothing written to it. -> a promise of the frozen pids.
-export async function stopProcessTree(root, {engine, list = descendantsOf, signal = sendSignal, isEngine = runsExecutable, exited = processExited,
-  waitMs = ENGINE_EXIT_WAIT_MS, wait = ms => new Promise(resolve => setTimeout(resolve, ms))} = {}) {
-  const frozen = freezeProcessTree(root, {list, signal});
-  const engines = [...frozen].filter(pid => isEngine(pid, engine));
+export async function stopProcessTree(root, {engine, list = descendantsOf, signal = sendSignal, ...drain} = {}) {
+  return drainThenKill(freezeProcessTree(root, {list, signal}), {engine, signal, ...drain});
+}
+
+// SIGKILLs every process in `frozen` (frozen already, nothing listed again), after each one running the engine at
+// `engine` (none without it) alone was sent SIGTERM, then SIGCONT, and has exited or `waitMs` passed; the engines first,
+// their pids still held by their frozen parents. -> a promise of the frozen pids.
+async function drainThenKill(frozen, {engine, signal, isEngine = runsExecutable, exited = processExited, waitMs = ENGINE_EXIT_WAIT_MS,
+  wait = ms => new Promise(resolve => setTimeout(resolve, ms))}) {
+  const engines = engine ? [...frozen].filter(pid => isEngine(pid, engine)) : [];
   const draining = engines.filter(pid => signal(pid, 'SIGTERM') && signal(pid, 'SIGCONT'));
   for (const deadline = Date.now() + waitMs; draining.some(pid => !exited(pid)) && Date.now() < deadline;) await wait(ENGINE_EXIT_POLL_MS);
   for (const pid of [...engines, ...[...frozen].filter(pid => !engines.includes(pid))]) signal(pid, 'SIGKILL');
@@ -176,7 +182,10 @@ function ancestorsUpTo(rows, self, leader) {
 // processes they start) and releases a child only in that child's own cleanup. reap() is called only when a child has
 // ended, so every unprotected member is what it left behind: processes it started, reparented when it died. (A process that leaves the group, as bwrap's --new-session sandbox does, is not found; that
 // sandbox dies with its parent.)
-export function ownedGroupReaper({self = process.pid, table = processTable, signal = sendSignal} = {}) {
+// reap({engine}) (the trusted worker's, on Linux) lets a stray running cua's engine drain first, as a stop of the
+// worker's tree does (drainThenKill): with the sandbox disabled the engine is in the owned group, and a worker that ended
+// on its own (its stdin closed, so the engine has begun its orderly exit) leaves it there as a stray. -> a promise.
+export function ownedGroupReaper({self = process.pid, table = processTable, signal = sendSignal, ...drain} = {}) {
   const rows = table();
   const row = rows.find(([pid]) => pid === self);
   const leader = row?.[2];
@@ -189,15 +198,14 @@ export function ownedGroupReaper({self = process.pid, table = processTable, sign
     return current.filter(([pid, ppid, pgid, comm]) => pgid === leader && pid !== self && !ancestors.has(pid) && !spared.has(pid)
       && !(ppid === self && /(^|\/)ps$/.test(comm ?? ''))).map(([pid]) => pid);
   };
-  const reap = () => {
+  const reap = ({engine = null} = {}) => {
     const frozen = new Set();
     for (let pass = 0; pass < 8; pass++) {
       const found = strays().filter(pid => !frozen.has(pid));
       if (!found.length) break;
       for (const pid of found) if (signal(pid, 'SIGSTOP')) frozen.add(pid);
     }
-    for (const pid of frozen) signal(pid, 'SIGKILL');
-    return [...frozen];
+    return drainThenKill(frozen, {engine, signal, ...drain});
   };
   const own = pid => { protectedRoots.add(pid); return () => protectedRoots.delete(pid); };
   return {reap, own};
@@ -329,7 +337,7 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     ended = true;
     if (!exitInfo && !spawnError && !await within(exited, EXIT_GRACE_MS)) { await killTree(); await within(exited, EXIT_GRACE_MS); }
     lifeline?.release();
-    reap();
+    await reap();
     await within(stderrClosed, EXIT_GRACE_MS);
     for (const stream of [stdin, stdout, stderr]) stream?.destroy();
     if (spawnError) return onEnd({expected: stopping, diagnostic: `failed to start Node runtime: ${spawnError.message}`});
@@ -346,6 +354,14 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
       if (ended || stopping || !stdin?.writable) return false;
       stdin.write(`${JSON.stringify(message)}\n`);
       return true;
+    },
+    // Stops the child itself, a sandbox launcher, and nothing below it: what it runs goes on, and a signal to the
+    // launcher waits there until the stop's SIGKILL (Linux, for the trusted worker: the supervisor holds it once its
+    // input has ended). codex-linux-sandbox takes a SIGTERM by ending its sandbox at once, and bwrap's
+    // --die-with-parent then ends the PID namespace, the engine in it with SIGKILL; held, the owned group's SIGTERM at
+    // upstream's by(0.4) reaches the engine only as the stop's own, after the freeze (stopProcessTree).
+    holdLauncher() {
+      if (child?.pid && !ended) sendSignal(child.pid, 'SIGSTOP');
     },
     // Ends the kernel on purpose: SIGKILL to it and its descendants (after its engine's drain, with `engine`), its input
     // closed; resolves once its exit was seen (or a bounded wait passed).

@@ -245,7 +245,7 @@ test('a launcher that cannot start is reported as the vendor reports a Node runt
   assert.match((await done).diagnostic, /^failed to start Node runtime: spawn \/nonexistent\/launcher ENOENT/);
 });
 
-test('the owned-group reaper works only in a group an ancestor leads, takes every stray there and spares the host, the anchor, its own listing and every protected subtree', () => {
+test('the owned-group reaper works only in a group an ancestor leads, takes every stray there and spares the host, the anchor, its own listing and every protected subtree', async () => {
   // [pid, ppid, pgid, comm]: 100 anchor (leader), 200 supervisor, 210 its `ps` listing, 300 a stopped kernel launcher,
   // 400 a stray a dead kernel left (reparented to 1), 500 its child, 600 another group's process, 700 a worker the host
   // owns, 710 a helper it started, 720 that helper's child.
@@ -258,19 +258,70 @@ test('the owned-group reaper works only in a group an ancestor leads, takes ever
   const signals = [];
   const {reap, own} = ownedGroupReaper({self: 200, table, signal: (pid, name) => { signals.push([pid, name]); return true; }});
   const release = own(700);
-  assert.deepEqual(reap().sort(), [300, 400, 500], 'the worker, its helper and the helper\'s child are spared');
+  assert.deepEqual((await reap()).sort(), [300, 400, 500], 'the worker, its helper and the helper\'s child are spared');
   assert.deepEqual(signals.map(([, n]) => n), ['SIGSTOP', 'SIGSTOP', 'SIGSTOP', 'SIGKILL', 'SIGKILL', 'SIGKILL'], 'frozen before killed');
   release();
-  assert.deepEqual(reap().sort(), [300, 400, 500, 700, 710, 720], 'released, the subtree is a stray like any other');
+  assert.deepEqual((await reap()).sort(), [300, 400, 500, 700, 710, 720], 'released, the subtree is a stray like any other');
 });
 
-test('the owned-group reaper spares every ancestor between the anchor and the host, so a wrapper in that chain is never a stray', () => {
+test('a reap after the trusted worker\'s own end lets the engine it left drain first, as a stop does, and thaws nothing else', async () => {
+  // [pid, ppid, pgid, comm]: 100 anchor, 200 supervisor, 400 the engine a worker that exited left (reparented to 1, with
+  // the sandbox disabled it stays in the owned group), 410 a program the engine started, 500 another stray
+  const rows = [[100, 1, 100, 'node'], [200, 100, 100, 'node'], [400, 1, 100, 'cua-engine'], [410, 400, 100, 'yad'], [500, 1, 100, 'sleep']];
+  const signals = [];
+  let polls = 0;
+  const reaper = ownedGroupReaper({self: 200, table: () => rows, signal: (pid, name) => { signals.push([pid, name]); return true; },
+    isEngine: (pid, path) => pid === 400 && path === '/opt/cua/engine/linux/cua-engine', exited: pid => { assert.equal(pid, 400); return ++polls > 2; }, wait: async () => {}});
+  assert.deepEqual((await reaper.reap({engine: '/opt/cua/engine/linux/cua-engine'})).sort(), [400, 410, 500]);
+  const named = name => signals.filter(([, n]) => n === name).map(([pid]) => pid);
+  assert.deepEqual(named('SIGTERM'), [400], 'only the engine, found by its executable, is told to stop');
+  assert.deepEqual(named('SIGCONT'), [400], 'and only it is thawed');
+  assert.ok(signals.findIndex(([, n]) => n === 'SIGTERM') > signals.findLastIndex(([, n]) => n === 'SIGSTOP'), 'once every stray is frozen');
+  assert.equal(polls, 3, 'the kill waited for its exit');
+  assert.deepEqual(named('SIGKILL').sort(), [400, 410, 500], 'then every stray it froze, what the engine started included');
+  signals.length = 0;
+  assert.deepEqual((await reaper.reap()).sort(), [400, 410, 500]);
+  assert.deepEqual(named('SIGTERM'), [], 'a kernel\'s reap names no engine: nothing waits');
+});
+
+test('holding a launcher stops it alone, so a signal to it waits there, while what it runs goes on', linuxOnly, async t => {
+  // the launcher double does what codex-linux-sandbox does with SIGTERM: it ends what it runs at once (bwrap's
+  // --die-with-parent ends the PID namespace) and exits by the signal; its child stands for the worker's engine
+  const launcher = `const {spawn} = require('node:child_process');
+const engine = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {stdio: 'ignore'});
+require('node:fs').writeFileSync(process.argv[1], String(engine.pid));
+process.on('SIGTERM', () => { engine.kill('SIGKILL'); process.kill(process.pid, 'SIGKILL'); });
+setInterval(() => {}, 1000);`;
+  const dir = mkdtempSync(join(tmpdir(), 'cua-hold-'));
+  t.after(() => rmSync(dir, {recursive: true, force: true}));
+  const run = async hold => {
+    const pidFile = join(dir, `engine-${hold}`);
+    const child = startKernelChild({command: process.execPath, args: ['-e', launcher, pidFile], env: {PATH: process.env.PATH}, cwd: dir},
+      {onMessage: () => {}, onEnd: () => {}, lifelines: null});
+    t.after(() => child.stop());
+    for (let i = 0; i < 200 && !existsSync(pidFile); i++) await new Promise(resolve => setTimeout(resolve, 25));
+    const engine = Number(readFileSync(pidFile, 'utf8'));
+    if (hold) child.holdLauncher();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    process.kill(child.pid, 'SIGTERM');   // the owned group's SIGTERM at upstream's by(0.4)
+    await new Promise(resolve => setTimeout(resolve, 200));
+    const state = () => { try { return readFileSync(`/proc/${child.pid}/stat`, 'utf8').replace(/^.*\) /, '')[0]; } catch { return 'gone'; } };
+    const outcome = {launcher: ['Z', 'gone'].includes(state()) ? 'exited' : state(), engineAlive: !processExited(engine)};
+    await child.stop();
+    assert.equal(processExited(engine), true);
+    return outcome;
+  };
+  assert.deepEqual(await run(false), {launcher: 'exited', engineAlive: false}, 'the control: unheld, the launcher takes the engine down at once');
+  assert.deepEqual(await run(true), {launcher: 'T', engineAlive: true}, 'held, the signal waits and the engine runs on for the stop');
+});
+
+test('the owned-group reaper spares every ancestor between the anchor and the host, so a wrapper in that chain is never a stray', async () => {
   // [pid, ppid, pgid, comm]: 100 anchor (leader), 150 a wrapper it started (a tap), 160 a second wrapper, 200 the
   // supervisor, 300 a stray a dead kernel left (reparented to 1), 400 the wrapper's unrelated child.
   const rows = [[100, 1, 100, 'node'], [150, 100, 100, 'node'], [160, 150, 100, 'sh'], [200, 160, 100, 'node'], [300, 1, 100, 'sleep'], [400, 150, 100, 'sleep']];
   const signals = [];
   const reaper = ownedGroupReaper({self: 200, table: () => rows, signal: (pid, name) => { signals.push([pid, name]); return true; }});
   assert.notEqual(reaper, null, 'a group led by a grandparent (through wrappers) is owned');
-  assert.deepEqual(reaper.reap().sort(), [300, 400], 'the anchor and both wrappers are spared; strays elsewhere in the group are not');
+  assert.deepEqual((await reaper.reap()).sort(), [300, 400], 'the anchor and both wrappers are spared; strays elsewhere in the group are not');
   assert.ok(!signals.some(([pid]) => [100, 150, 160, 200].includes(pid)), 'no ancestor is ever signalled');
 });

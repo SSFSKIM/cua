@@ -87,7 +87,7 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 import {REPL_HOST_META_KEY, REPL_HOST_VERSION} from './identity.mjs';
 import {InvalidParams, initializeResult, jsArguments, parseToolOverrides, resetArguments, toolsFor, turnEndedArguments} from './tools.mjs';
 import {assembleResult, imageFromDataUrl, sentenceResult} from './results.mjs';
-import {ownedGroupReaper, startKernelChild} from './kernel-child.mjs';
+import {ownedGroupReaper, servesAsShim, startKernelChild} from './kernel-child.mjs';
 import {executionBudget, timer} from './budget.mjs';
 import {DEFAULT_CONNECT_TIMEOUT_MS, nativePipeRelay} from './native-pipe.mjs';
 import {ELICITATION_CANCELLED_SENTENCE, elicitationOutcome, elicitationParams, formElicitationSupported} from './elicitation.mjs';
@@ -202,7 +202,8 @@ export function workerLaunch(settings, policy) {
 // Serves MCP on `input`/`output` -> {closed: Promise<exit code>, shutdown()}. `startKernel` is the child seam for both
 // children (tests); `launchServices` the LaunchServices boundary; `log` gets diagnostics (stderr).
 export function createSupervisor({input, output, env, cwd = process.cwd(), startKernel = startKernelChild, log = line => process.stderr.write(`cua-repl-host: ${line}\n`),
-  reaper = env.CUA_REPL_OWNED_GROUP === '1' ? ownedGroupReaper : () => null, launchServices = launchServicesAction, readyTimeoutMs = READY_TIMEOUT_MS}) {
+  reaper = env.CUA_REPL_OWNED_GROUP === '1' ? ownedGroupReaper : () => null, launchServices = launchServicesAction, readyTimeoutMs = READY_TIMEOUT_MS,
+  shimProbe = servesAsShim}) {
   const settings = hostSettings(env, {cwd});
   // In the proxy's owned group (src/runtime/launch.mjs sets CUA_REPL_OWNED_GROUP; the reaper checks the group itself),
   // whatever a finished child left in the group is removed with it. Every live child, kernel and trusted worker alike, is
@@ -366,11 +367,15 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     return self;
   }
 
+  let shimServed;  // whether settings.engine serves as the launcher's shim, checked at the first worker's start
   function startWorkerChild(self) {
     self.attempts++;
     self.ready = false;
     let release = () => {};
-    const child = startKernel(self.launch, {exitSentence: TRUSTED_EXIT_SENTENCE, engine: settings.engine,
+    // on Linux the engine is also the launcher's shim, when it serves as one (checked once): the worker's tree then dies
+    // with this process, however it ends, and only then may its launcher be held (holdLauncher)
+    self.shimmed = Boolean(settings.engine) && (shimServed ??= shimProbe(settings.engine));
+    const child = startKernel(self.launch, {exitSentence: TRUSTED_EXIT_SENTENCE, engine: settings.engine, shim: self.shimmed ? settings.engine : null,
       reap: () => { release(); return reap(); },
       onMessage: message => {
         if (worker !== self || self.child !== child) return;
@@ -399,8 +404,11 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   // still holds the drain, would otherwise make codex-linux-sandbox end the sandbox at once, the engine in it SIGKILLed
   // with nothing released (measured in M4 T7b's fix, task 57). Held only once the worker is ready, its sandbox started;
   // the worker itself runs on. With the sandbox disabled there is no launcher, and the engine takes that SIGTERM itself.
+  // Held only when the launcher was started through the shim: a held launcher must never outlive this process (the
+  // design session, M4 T7b), and its parent-death signal is what takes it when nothing else can. An engine that does
+  // not serve as the shim (before T7b's fix 3) leaves the launcher unheld, as before T7b.
   function holdLauncher(self) {
-    if (closing && settings.engine && self?.sandboxed && self.ready) self.child.holdLauncher?.();
+    if (closing && settings.engine && self?.sandboxed && self.ready && self.shimmed) self.child.holdLauncher?.();
   }
 
   // The worker stayed silent past its bound: another is started, or, after START_ATTEMPTS, the work it held fails.

@@ -20,16 +20,16 @@ const DISABLED = {'codex/sandbox-state-meta': {permissionProfile: {type: 'disabl
 // A supervisor over child doubles. `behaviour(kind, n)` says how the n-th child of `kind` ('kernel' | 'worker') acts:
 // {ready: boolean}. Ready kernels answer exec (and a cell's one rpc, through the worker); ready workers answer service,
 // run_hooks and turn_ended.
-function host({behaviour, readyTimeoutMs = 100, env = {}, reaper = undefined}) {
+function host({behaviour, readyTimeoutMs = 100, env = {}, reaper = undefined, shimProbe = () => true}) {
   const counts = {kernel: 0, worker: 0};
   const children = [];
   const logs = [];
   const events = [];
-  const startKernel = (launch, {onMessage, onEnd, engine, reap}) => {
+  const startKernel = (launch, {onMessage, onEnd, engine, shim, reap}) => {
     const kind = launch.args.includes(TRUSTED_WORKER) ? 'worker' : 'kernel';
     const n = ++counts[kind];
     const {ready} = behaviour(kind, n);
-    const child = {kind, n, received: [], stopped: false, engine, held: false, reap};
+    const child = {kind, n, received: [], stopped: false, engine, shim, held: false, reap};
     children.push(child);
     if (ready) setImmediate(() => onMessage({type: 'runtime_ready'}));
     return {
@@ -61,7 +61,7 @@ function host({behaviour, readyTimeoutMs = 100, env = {}, reaper = undefined}) {
   const input = new PassThrough(), output = new PassThrough();
   const replies = new Map();
   output.setEncoding('utf8').on('data', chunk => { for (const line of chunk.split('\n').filter(Boolean)) { const msg = JSON.parse(line); replies.get(msg.id)?.(msg); } });
-  const supervisor = createSupervisor({input, output, cwd: '/fixture/run', startKernel, readyTimeoutMs, ...(reaper ? {reaper} : {}), log: line => logs.push(line),
+  const supervisor = createSupervisor({input, output, cwd: '/fixture/run', startKernel, readyTimeoutMs, shimProbe, ...(reaper ? {reaper} : {}), log: line => logs.push(line),
     env: {CUA_REPL_NODE_PATH: '/fixture/node', PATH: '/usr/bin:/bin', CUA_REPL_TRUSTED_RPC_ENABLED: '1', CUA_REPL_TRUSTED_SERVICES: JSON.stringify({svc: '/fixture/svc.mjs'}), ...env}});
   let id = 0;
   const request = (method, params) => new Promise(resolve => { const n = ++id; replies.set(n, resolve); input.write(`${JSON.stringify({jsonrpc: '2.0', id: n, method, params})}\n`); });
@@ -161,6 +161,21 @@ test('once its input ends, the host holds the sandboxed trusted worker\'s launch
   assert.ok(h.events.includes('stop worker 1'), 'then the stop, which drains the engine');
 });
 
+test('an engine that does not serve as the launcher\'s shim (before T7b\'s fix 3) leaves the launcher unheld and unshimmed', linuxOnly, async t => {
+  const probed = [];
+  const h = host({behaviour: () => ({ready: true}), env: sandboxedEnv(t), shimProbe: engine => { probed.push(engine); return false; }});
+  await h.init();
+  assert.equal(text(await h.js('rpc', undefined, SCOPED_META)), 'service said worker 1');
+  h.js('hang', 60000, SCOPED_META);
+  await delay(50);
+  h.input.end();
+  await delay(50);
+  assert.deepEqual(h.events, [], 'a launcher that would not die with this process is never held');
+  assert.equal(h.children.find(c => c.kind === 'worker').shim, null);
+  assert.deepEqual(probed, ['/opt/cua/engine/linux/cua-engine'], 'checked once');
+  await h.supervisor.shutdown();
+});
+
 test('with the sandbox disabled there is no launcher to hold: the worker itself runs the engine\'s service', linuxOnly, async t => {
   const h = host({behaviour: () => ({ready: true}), env: sandboxedEnv(t)});
   await h.init();
@@ -205,6 +220,8 @@ test('on Linux the trusted worker\'s stop knows the engine its service runs, and
   const kernel = h.children.find(c => c.kind === 'kernel');
   assert.equal(worker.engine, process.platform === 'linux' ? '/opt/cua/engine/linux/cua-engine' : null);
   assert.equal(kernel.engine, undefined);
+  assert.equal(worker.shim, process.platform === 'linux' ? '/opt/cua/engine/linux/cua-engine' : null, 'the engine is the worker\'s launcher shim on Linux (its parent-death signal), and nothing elsewhere');
+  assert.equal(kernel.shim, undefined);
   h.input.end();
   await h.supervisor.closed;
   const relative = host({behaviour: () => ({ready: true}), env: {CUA_ENGINE_BIN: 'cua-engine'}});

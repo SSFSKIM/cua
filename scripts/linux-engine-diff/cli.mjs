@@ -11,9 +11,10 @@ export const USAGE = `usage:
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
       [--dev] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
-  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer --cua <bin> --out <dir> [--run <name>]
+  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop --cua <bin> --out <dir> [--run <name>]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
-      [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd)
+      [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd, engine-stop)
+      [--control-root <cua checkout> [--paths idle,eof,signal,remote]] (engine-stop)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
 
@@ -30,6 +31,8 @@ const VALUE_FLAGS = {
   '--run': 'run',
   '--experiment': 'experiment',
   '--occlusion': 'occlusion',
+  // the engine-stop experiment's control: a checkout whose REPL host stops the tree at once (engine-stop.mjs)
+  '--control-root': 'controlRoot',
 };
 const NUMBER_FLAGS = { '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText', '--trials': 'samplesTrials', '--first-rounds': 'firstRounds' };
 
@@ -116,6 +119,8 @@ export function parseArgs(argv) {
     }
     else if (flag === '--family') a.families = need().split(',').filter(Boolean);
     else if (flag === '--lanes') a.lanes = need().split(',').filter(Boolean);
+    // the engine-stop experiment's stop paths, by name (engine-stop.mjs PATHS)
+    else if (flag === '--paths') a.paths = need().split(',').filter(Boolean);
     else if (flag === '--geometry') {
       const m = need().match(/^(\d+)x(\d+)$/);
       if (!m) throw new Error('--geometry needs <width>x<height>');
@@ -152,7 +157,7 @@ export function parseArgs(argv) {
   else if (a.mode === 'summarize') require('out');
   else if (a.mode === 'experiment') {
     require('cua', 'out');
-    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag', 'kinds', 'dnd', 'atspi', 'focus-timer'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
+    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag', 'kinds', 'dnd', 'atspi', 'focus-timer', 'engine-stop'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
     if (['matrix', 'element-click', 'partial-cover', 'events'].includes(a.experiment)) require('vendor', 'newest');
     if (['qt-bridge', 'engine-readiness', 'drag', 'kinds', 'dnd'].includes(a.experiment)) require('vendor');
     // the drag and kinds experiments also measure a window with its bottom half covered (Gecko's cover condition)

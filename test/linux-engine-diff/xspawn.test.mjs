@@ -304,11 +304,15 @@ const X_FACING = new Set(["'xtrace'", "'xprop'", "'xdotool'", "'xwininfo'", "'xc
  */
 const NOT_X_FACING = new Set(["'busctl'", "'dbus-monitor'", "'stress-ng'", "'git'", "'pgrep'", "'sleep'", 'command', 'process.execPath']);
 
-test("the harness starts node only as the run's org.a11y.Bus stand-in, with an empty environment", () => {
+test("the harness starts node only as the run's org.a11y.Bus stand-in, with an empty environment, or as the cua serve the engine-stop experiment drives, through the spawner", () => {
   const nodes = harnessStarts().filter((s) => s.command === 'process.execPath');
-  assert.deepEqual(nodes.map((s) => s.file), ['a11y-stub.mjs']);
+  const stub = nodes.filter((s) => s.file === 'a11y-stub.mjs');
+  assert.equal(stub.length, 1);
   const { text } = harnessModules().find((m) => m.file === 'a11y-stub.mjs');
-  assert.match(text.slice(nodes[0].at), /^spawn\(process\.execPath, \[A11Y_STUB, [^\n]*\{ stdio: \[[^\]]*\], env: \{\}, detached: true \}\)/);
+  assert.match(text.slice(stub[0].at), /^spawn\(process\.execPath, \[A11Y_STUB, [^\n]*\{ stdio: \[[^\]]*\], env: \{\}, detached: true \}\)/);
+  // cua serve and the remote endpoint (engine-stop.mjs) reach the run's display through the engine, so the spawner checks them
+  const serves = nodes.filter((s) => s.file !== 'a11y-stub.mjs');
+  assert.deepEqual(serves.map((s) => [s.file, s.guarded]), [['engine-stop.mjs', true], ['engine-stop.mjs', true]]);
 });
 
 test('every start of an X-facing tool goes through the spawner, and nothing else starts one', () => {

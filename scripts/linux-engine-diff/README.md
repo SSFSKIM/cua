@@ -885,6 +885,31 @@ The events experiment (`events.mjs`) reads each step's events once the synthetic
 300 ms (`settleFocus`), since cua's `FocusOut` now follows the answer: each request is then compared with the pinned
 build's own events, `FocusOut` included, as before.
 
+## M4 T7b's addition: the REPL host's stop (`--experiment engine-stop`)
+
+The proof that the engine's orderly exit runs when cua's REPL host stops it on Linux (T7b; `src/repl-host/kernel-child.mjs`
+`stopProcessTree`: the trusted worker's tree frozen, the engine alone given SIGTERM and SIGCONT, its exit awaited, then
+everything frozen SIGKILLed), through `cua serve` itself on the engine under test.
+
+```bash
+node scripts/linux-engine-diff.mjs --experiment engine-stop --cua "$CANDIDATE" --out "$OUT/engine-stop/idle" --control-root <checkout before T7b> [--paths idle,eof,signal,remote] [--lanes drain,kill] [--trials 10]
+```
+
+- **Its display**, as the focus-timer experiment's: a private X server it starts itself, Openbox, the harness's Desktop
+  with the run's own xterm and Chrome (`pages/keys.html`), the live-run declaration withdrawn first. Each run starts a
+  fresh `cua serve` on that display and the run's bus, with `CUA_NATIVE_ENGINE=cua`, the candidate as
+  `CUA_LINUX_ENGINE_BIN`, `dedicated` mode, the computer surface alone and no secrets; it approves only its own scene's app.
+- **The stop paths**: `idle` (end_task, then the idle stop, `CUA_RUNTIME_IDLE_MS` 1), `eof` (the MCP stream's end),
+  `signal` (SIGTERM to the REPL host's supervisor) and `remote` (end_task, then DELETE on a Streamable HTTP session of
+  `remote-serve.mjs`, cua's own handler from the same checkout on a loopback listener and a bearer of the run's).
+- **The cases**: `hold`, key_down of Shift on the xterm, which only the foreground route delivers: the X server holds it
+  (read before the stop, the positive control) and must hold nothing after; `burst`, press_key one key after another
+  into the covered Chrome window, the stop straight after the last answer, every key at the field's caret in order.
+- **The lanes**: `drain`, this checkout's REPL host, must pass every run; `kill`, the REPL host of `--control-root`
+  (whose stop SIGKILLs the tree at once), must leave the key down on every hold run, so the check can see a missing
+  release (the harness releases it after); its burst runs are counted. The engine is the same in both lanes. Each row
+  records how long the engine lived after the stop began and after the last answer.
+
 ## Files
 
 | File | What it is |
@@ -914,6 +939,7 @@ build's own events, `FocusOut` included, as before.
 | `stub-activating.mjs` | the negative check's stub engine |
 | `events.mjs`, `xprobe/src/record.rs` | M1a.2's input events experiment and its recorder window |
 | `focus-timer.mjs`, `pages/keys.html` | M4 T7's FocusOut timer experiment and its Chromium page |
+| `engine-stop.mjs`, `remote-serve.mjs` | M4 T7b's REPL-host stop experiment through `cua serve`, and its remote session's endpoint |
 | `pages/` | the Chrome scenes (`input.html` the pointer and key scene, `text.html` the text scene) and `gtk-table.py`, the large-table scene |
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |

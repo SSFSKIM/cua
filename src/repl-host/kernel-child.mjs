@@ -18,7 +18,8 @@
 // The child stays in the supervisor's process group, the group cua's proxy owns (src/mcp/upstream.mjs). Stopping it
 // freezes and SIGKILLs the child and every process descending from it (killProcessTree), so a kernel under the Codex
 // CLI's launcher (which runs it as its own child), what a cell started, or a kernel busy in synchronous code is gone,
-// not orphaned. Whenever a
+// not orphaned. On Linux a stop of the trusted worker first lets cua's engine in its tree run its orderly exit while the
+// rest stays frozen (stopProcessTree). Whenever a
 // kernel ends, expectedly or not, `reap` (the supervisor's ownedGroupReaper) then removes what it left in the owned
 // group: a process a cell started is reparented when its kernel dies, so no tree leads to it any more.
 import {spawn, execFileSync} from 'node:child_process';

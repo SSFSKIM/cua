@@ -173,7 +173,7 @@ export function expectedSessions(name, lane, { a, b }) {
 }
 
 /** A scene's text and caret, as one offset into that text (`families.mjs` `readCaret`; a terminal's text grows at its end). */
-async function textAndCaret(desktop, oracle, scene) {
+export async function textAndCaret(desktop, oracle, scene) {
   const text = await readText(desktop, oracle, scene);
   if (text === null) return { text, caret: null };
   if (scene.kindOf === 'terminal') return { text, caret: text.length };
@@ -288,7 +288,7 @@ async function resetField(ctx, scene) {
  * delivered now (`clearTail`), then, for a field, the field emptied. Returns whether such a tail arrived: the cascade the
  * run would have met at its first FocusIn, which the raw count keeps (`rawOks`).
  */
-async function cleanStart(ctx, scene, read, { reset = true } = {}) {
+export async function cleanStart(ctx, scene, read, { reset = true } = {}) {
   const before = await settledRead(read);
   await clearTail(ctx, scene);
   const after = await settledRead(read);

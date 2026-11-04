@@ -540,7 +540,8 @@ mod tests {
             pids.display(),
             write_end.as_raw_fd()
         );
-        let mut child = launcher("sh", &["-c", &script], Some(write_end.as_fd()));
+        // bash, whose redirections take a descriptor of any number (dash takes one digit)
+        let mut child = launcher("bash", &["-c", &script], Some(write_end.as_fd()));
         drop(write_end);
         assert!(wait(&mut child).success());
         let read = |what: &str| -> u32 {

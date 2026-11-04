@@ -181,7 +181,7 @@ jobs:
         working-directory: native/linux-engine
         run: |
           set -euo pipefail
-          CUA_ENGINE_BIN="${GITHUB_WORKSPACE}/dist/${ASSET}" xvfb-run -a dbus-run-session -- \
+          CUA_ENGINE_BIN="${GITHUB_WORKSPACE}/dist/${ASSET}" xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- \
             cargo test --release --locked --target "$TARGET" --features live -- --test-threads 1
       - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:

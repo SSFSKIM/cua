@@ -4,7 +4,7 @@
 //! `activate_window`, maps a minimized window a little after the activation request, as Openbox does. Each window records
 //! the input events it receives, so "nothing was sent" is read from the window itself.
 //!
-//!   xvfb-run -a dbus-run-session -- cargo test --features live -- --test-threads 1
+//!   xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --features live -- --test-threads 1
 
 #![cfg(feature = "live")]
 

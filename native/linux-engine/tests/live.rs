@@ -3,7 +3,7 @@
 //! and reads its effect back through the tree, and captures a window screenshot, which it judges against the window as
 //! a second X client reads it (`judge_screenshot`).
 //!
-//!   xvfb-run -a dbus-run-session -- cargo test --features live -- --test-threads 1
+//!   xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --features live -- --test-threads 1
 //!
 //! The window is `yad --text-info --editable` (GTK 3). The spec names `zenity --text-info --editable`, but the
 //! zenity of Ubuntu 24.04 is 4.x, on GTK 4, which ignores background input (Design, Device mode). `CUA_ENGINE_BIN`

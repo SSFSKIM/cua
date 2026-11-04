@@ -1,0 +1,6 @@
+#!/bin/sh
+# The live tests' session bus (`dbus-run-session --dbus-daemon=tests/dbus-daemon-quiet`): dbus-daemon as it is, with its
+# own diagnostics (a service activated on request, the accessibility bus among them) sent to the system log instead of
+# standard error, where they would interleave with cargo's test results. A daemon that cannot start still says so on
+# standard error, and dbus-run-session then fails; a test that needed a service fails on its own answer.
+exec dbus-daemon --syslog-only "$@"

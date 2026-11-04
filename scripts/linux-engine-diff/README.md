@@ -892,7 +892,7 @@ The proof that the engine's orderly exit runs when cua's REPL host stops it on L
 everything frozen SIGKILLed), through `cua serve` itself on the engine under test.
 
 ```bash
-node scripts/linux-engine-diff.mjs --experiment engine-stop --cua "$CANDIDATE" --out "$OUT/engine-stop/idle" --control-root <checkout before T7b> [--paths idle,eof,signal,remote] [--lanes drain,kill] [--trials 10]
+node scripts/linux-engine-diff.mjs --experiment engine-stop --cua "$CANDIDATE" --out "$OUT/engine-stop/idle" --control-root <checkout before T7b> [--paths idle,eof,signal,remote,held-back] [--cases hold,burst] [--lanes drain,kill] [--sandbox scoped|disabled] [--load-factor 2] [--trials 10]
 ```
 
 - **Its display**, as the focus-timer experiment's: a private X server it starts itself, Openbox, the harness's Desktop
@@ -901,14 +901,22 @@ node scripts/linux-engine-diff.mjs --experiment engine-stop --cua "$CANDIDATE" -
   `CUA_LINUX_ENGINE_BIN`, `dedicated` mode, the computer surface alone and no secrets; it approves only its own scene's app.
 - **The stop paths**: `idle` (end_task, then the idle stop, `CUA_RUNTIME_IDLE_MS` 1), `eof` (the MCP stream's end),
   `signal` (SIGTERM to the REPL host's supervisor) and `remote` (end_task, then DELETE on a Streamable HTTP session of
-  `remote-serve.mjs`, cua's own handler from the same checkout on a loopback listener and a bearer of the run's).
+  `remote-serve.mjs`, cua's own handler from the same checkout on a loopback listener and a bearer of the run's), and
+  `held-back` (the stream's end while an admitted cell runs 12 s: cua serve waits 5 s for the task's completion, then
+  upstream's teardown sends the owned group SIGTERM at by(0.4), 7 s after the end, and SIGKILL at by(0.7); hold only).
+  `--sandbox disabled` runs the REPL host with `CUA_SHIM_SANDBOX=disabled`, where the engine is in the owned group.
 - **The cases**: `hold`, key_down of Shift on the xterm, which only the foreground route delivers: the X server holds it
   (read before the stop, the positive control) and must hold nothing after; `burst`, press_key one key after another
   into the covered Chrome window, the stop straight after the last answer, every key at the field's caret in order.
 - **The lanes**: `drain`, this checkout's REPL host, must pass every run; `kill`, the REPL host of `--control-root`
   (whose stop SIGKILLs the tree at once), must leave the key down on every hold run, so the check can see a missing
-  release (the harness releases it after); its burst runs are counted. The engine is the same in both lanes. Each row
-  records how long the engine lived after the stop began and after the last answer.
+  release (the harness releases it after), except `held-back` with the sandbox disabled, where the group's SIGTERM
+  reaches the engine first in either lane. A control run that failed on its way (no engine found, a cell refused) is
+  not the failure it stands for and fails the verdict. Its bursts are counted, and under `--load-factor` at least one
+  must be cut on each path, or the sitting showed no pending burst. The engine is the same in both lanes. Every run
+  first requires the session's one engine; its effect is read once that engine has gone and before the run's own
+  cleanup. Each row records how long the engine lived after the stop began and after the last answer; the control is
+  recorded by its directory's name (`control_label`), never its path.
 
 ## Files
 

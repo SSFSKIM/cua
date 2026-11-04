@@ -25,7 +25,7 @@ import { Engine } from './engine.mjs';
 import { runAtspi } from './atspi-probe.mjs';
 import { runDrag } from './drag.mjs';
 import { runEvents } from './events.mjs';
-import { runEngineStop } from './engine-stop.mjs';
+import { controlLabel, runEngineStop } from './engine-stop.mjs';
 import { runFocusTimer } from './focus-timer.mjs';
 import { runDnd } from './dnd.mjs';
 import { runKinds } from './kinds.mjs';
@@ -320,8 +320,8 @@ export async function runExperiment(args) {
   }
   if (args.experiment === 'engine-stop') {
     // on a private X server of its own, through cua serve on that display (engine-stop.mjs)
-    emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), control_root: args.controlRoot ?? null, started: new Date().toISOString() });
-    const { md, complete, failed, ending } = await runEngineStop(args, { emit, run });
+    emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), control_label: controlLabel(args.controlRoot), load: args.load ?? false, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
+    const { md, complete, failed, ending } = await runEngineStop(args, { emit, run, startLoad });
     emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);
     writeSummary(args.out);

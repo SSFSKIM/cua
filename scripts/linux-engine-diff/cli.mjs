@@ -14,7 +14,7 @@ export const USAGE = `usage:
   linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop --cua <bin> --out <dir> [--run <name>]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd, engine-stop)
-      [--control-root <cua checkout> [--paths idle,eof,signal,remote]] (engine-stop)
+      [--control-root <cua checkout> [--paths idle,eof,signal,remote,held-back] [--cases hold,burst] [--sandbox scoped|disabled]] (engine-stop)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
 
@@ -121,6 +121,13 @@ export function parseArgs(argv) {
     else if (flag === '--lanes') a.lanes = need().split(',').filter(Boolean);
     // the engine-stop experiment's stop paths, by name (engine-stop.mjs PATHS)
     else if (flag === '--paths') a.paths = need().split(',').filter(Boolean);
+    // and its cases (engine-stop.mjs CASES), and the sandbox its cua serve runs the REPL host under
+    else if (flag === '--cases') a.cases = need().split(',').filter(Boolean);
+    else if (flag === '--sandbox') {
+      const mode = need();
+      if (!['scoped', 'disabled'].includes(mode)) throw new Error('--sandbox is scoped or disabled');
+      a.sandbox = mode;
+    }
     else if (flag === '--geometry') {
       const m = need().match(/^(\d+)x(\d+)$/);
       if (!m) throw new Error('--geometry needs <width>x<height>');

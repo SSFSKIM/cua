@@ -8,7 +8,10 @@
 //   - eof: the MCP stream's end (the client closes cua serve's stdin);
 //   - signal: SIGTERM to the REPL host (its supervisor);
 //   - remote: a remote session's end, end_task then DELETE on a Streamable HTTP session (src/mcp/http.mjs, served by
-//     remote-serve.mjs from the same checkout).
+//     remote-serve.mjs from the same checkout);
+//   - held-back: the stream's end while admitted work runs past upstream's escalation (`HELD_BACK_MS`), so the owned
+//     group's SIGTERM comes before the REPL host's own stop (hold only).
+// `--sandbox disabled` runs each under CUA_SHIM_SANDBOX=disabled, the worker and the engine in the owned group.
 // Two cases on each, each run a fresh `cua serve` in `dedicated` mode:
 //   - hold: key_down of Shift on an xterm, whose keys only the foreground route delivers (XTEST): the X server holds the
 //     key across requests (read before the stop, the case's positive control); after the stop its keymap is empty;
@@ -27,7 +30,7 @@
 
 import { randomBytes } from 'node:crypto';
 import { readFileSync, readdirSync, readlinkSync, realpathSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -41,7 +44,7 @@ import { median } from './stats.mjs';
 import { startPrivateServer, xdotool, xprobe } from './xtools.mjs';
 import { LIVE_RUN, assertReachable, xExecFileSync, xSpawn } from './xspawn.mjs';
 
-export const PATHS = ['idle', 'eof', 'signal', 'remote'];
+export const PATHS = ['idle', 'eof', 'signal', 'remote', 'held-back'];
 export const CASES = ['hold', 'burst'];
 export const LANES = ['drain', 'kill'];
 /** Runs of each lane, path and case (`--trials` sets another count). */
@@ -56,37 +59,83 @@ export const BURST = 'abcDefgHijkLmnoP';
 /** The key the hold holds, and the keysym the control's leftover is released by. */
 export const HELD = 'shift';
 const RELEASE_KEYSYM = 'Shift_L';
-/** How long a stop may take before the run gives up on it: well past the engine's 2.25 s wait and the teardown's 5 s. */
+/**
+ * `held-back`: how long the cell admitted before the stream's end runs. cua serve waits for the task's completion at
+ * most 5 s after the end (server.mjs `completionDeadlineMs`), then tears the runtime down (upstream.mjs, budget 5 s):
+ * SIGTERM to the owned group at by(0.4), 7 s after the end, SIGKILL at by(0.7), 8.5 s. The cell outlasts both.
+ */
+export const HELD_BACK_MS = 12000;
+/** How long a stop may take before the run gives up on it: past the held-back teardown's SIGKILL and its 5 s budget. */
 const STOP_BOUND_MS = 15000;
 const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const REMOTE_SERVE = fileURLToPath(new URL('./remote-serve.mjs', import.meta.url));
 const NO_DISPLAY = ':cua171-engine-stop';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/** The cases a path runs: `held-back` proves the release under upstream's escalation, so a held key's alone. */
+export const casesOf = (path, cases) => (path === 'held-back' ? cases.filter((c) => c === 'hold') : cases);
+
+/** The control's record: its checkout's directory name, never its path (the evidence is public). */
+export const controlLabel = (root) => (root ? basename(root) : null);
+
+/** Whether the run stopped what it meant to: nothing failed on its way, and its session's one engine was found first. */
+const valid = (row) => !row.error && row.engines === 1;
+
 /** A run's verdict: the drain lane's runs must pass, the kill lane's are counted. */
 export function runPasses(row) {
-  if (row.error) return false;
+  if (!valid(row)) return false;
   if (row.case === 'hold') return row.held_before === true && Array.isArray(row.keys_after) && row.keys_after.length === 0;
   return row.in_order === true;
 }
 
 /**
- * The experiment's verdict from its rows: every drain run passes on every path and case; the kill lane, the control,
- * leaves the key down on every hold run (the check can see a missing release); its burst losses are reported.
+ * Whether a control run shows the failure it stands for: after a hold that was down before the stop, the key still
+ * down; after a burst whose every key was answered, a key lost or out of order. A run that failed on its way shows
+ * nothing.
  */
-export function engineStopVerdict(rows, { paths = PATHS, cases = CASES, lanes = LANES } = {}) {
+export function controlShows(row) {
+  if (!valid(row)) return false;
+  if (row.case === 'hold') return row.held_before === true && Array.isArray(row.keys_after) && row.keys_after.length > 0;
+  return row.in_order === false;
+}
+
+/**
+ * Whether the control's hold must leave the key down: everywhere but `held-back` with the sandbox disabled, where the
+ * owned group's SIGTERM reaches the engine itself first in either lane, before any stop of the REPL host's.
+ */
+const controlLeavesHold = (path, sandbox) => !(path === 'held-back' && sandbox === 'disabled');
+
+/**
+ * The experiment's verdict from its rows: every drain run passes on every path and case; the control (the kill lane)
+ * shows its failure on every hold run, so the check can see a missing release, and none of its runs failed on its way.
+ * Its bursts: with `burstControl` 'cut' (a sitting whose load leaves a burst pending at the stop), at least one cut on
+ * each path, else the sitting showed no pending burst; otherwise they are reported.
+ */
+export function engineStopVerdict(rows, { paths = PATHS, cases = CASES, lanes = LANES, sandbox = 'scoped', burstControl = 'report' } = {}) {
   const failed = [];
   const md = ['| lane | path | case | runs | pass | engine after the stop, median ms | after the last answer, median ms |', '|---|---|---|---:|---:|---:|---:|'];
   for (const lane of lanes) {
     for (const path of paths) {
-      for (const kind of cases) {
+      for (const kind of casesOf(path, cases)) {
         const runs = rows.filter((r) => r.lane === lane && r.path === path && r.case === kind);
         const passed = runs.filter(runPasses).length;
         const ms = (key) => tenth(median(runs.map((r) => r[key]).filter(Number.isFinite))) ?? '-';
         md.push(`| ${lane} | ${path} | ${kind} | ${runs.length} | ${passed} | ${ms('engine_after_stop_ms')} | ${ms('engine_after_answer_ms')} |`);
-        if (!runs.length) failed.push(`${lane} ${path} ${kind}: no run`);
-        else if (lane === 'drain' && passed < runs.length) failed.push(`drain ${path} ${kind}: ${runs.length - passed} of ${runs.length} failed`);
-        else if (lane === 'kill' && kind === 'hold' && passed > 0) failed.push(`the control's hold released the key on ${path} (${passed} of ${runs.length}): the check cannot see a missing release`);
+        const label = `${lane} ${path} ${kind}`;
+        if (!runs.length) {
+          failed.push(`${label}: no run`);
+          continue;
+        }
+        if (lane === 'drain') {
+          if (passed < runs.length) failed.push(`${label}: ${runs.length - passed} of ${runs.length} failed`);
+          continue;
+        }
+        const errored = runs.filter((r) => !valid(r)).length;
+        const shown = runs.filter(controlShows).length;
+        if (kind === 'hold' && controlLeavesHold(path, sandbox)) {
+          if (shown < runs.length) failed.push(`${label}: ${runs.length - shown} of ${runs.length} did not leave the key down (the control's failure)${errored ? `: ${errored} errored` : ''}`);
+        } else if (errored) failed.push(`${label}: ${errored} of ${runs.length} errored`);
+        else if (kind === 'burst' && burstControl === 'cut' && shown === 0) failed.push(`${label}: the control cut no burst (0 of ${runs.length}): no pending burst was shown`);
       }
     }
   }
@@ -190,6 +239,8 @@ function serveEnv(ctx, path, extra = {}) {
     CUA_SHIM_SURFACES: 'computer',
     CUA_SHIM_SECRETS: 'off',
     CUA_RUNTIME_IDLE_MS: path === 'idle' ? '1' : '0',
+    // the REPL host's sandbox, scoped (cua's default) unless the sitting asks for none
+    ...(ctx.sandbox === 'disabled' ? { CUA_SHIM_SANDBOX: 'disabled' } : {}),
     ...extra,
   };
 }
@@ -374,7 +425,7 @@ async function oneRun(ctx, lane, path, kind, scenes, trial) {
   const scene = kind === 'hold' ? scenes.xterm : scenes.chrome;
   const asked = [];
   const answer = approvals(scene.app, asked);
-  const row = { kind: 'engine-stop-run', lane, path, case: kind, trial };
+  const row = { kind: 'engine-stop-run', lane, path, case: kind, sandbox: ctx.sandbox, trial };
   let read = null;
   let before = null;
   if (kind === 'burst') {
@@ -402,9 +453,16 @@ async function oneRun(ctx, lane, path, kind, scenes, trial) {
     if (!/held|sent/.test(said.slice(-20))) throw new Error(`the case's cell: ${said.slice(-400)}`);
     const engines = enginesUnder(session.pid, ctx.cua);
     row.engines = engines.length;
+    // the session's one engine, or the stop below proves nothing: an empty list is gone at once
+    if (engines.length !== 1) throw new Error(`${engines.length} engines under the session before the stop, not 1`);
     if (kind === 'hold') row.held_before = (keysDown() ?? []).length > 0;
+    if (path === 'held-back') {
+      // admitted work the stream's end must wait for, past upstream's escalation; its answer is the closing refusal
+      session.js(`await new Promise((r) => setTimeout(r, ${HELD_BACK_MS})); nodeRepl.write('slept');`);
+      await sleep(300);
+    }
     const stopped = performance.now();
-    if (path === 'eof') session.endInput();
+    if (path === 'eof' || path === 'held-back') session.endInput();
     else if (path === 'signal') {
       const supervisors = processesRunning(session.pid, 'repl-host/supervisor.mjs');
       if (supervisors.length !== 1) throw new Error(`${supervisors.length} REPL host supervisors under the session`);
@@ -420,7 +478,14 @@ async function oneRun(ctx, lane, path, kind, scenes, trial) {
     const gone = await goneBy(engines);
     row.engine_after_stop_ms = gone === null ? null : Math.round((gone - stopped) * 10) / 10;
     row.engine_after_answer_ms = gone === null ? null : Math.round((gone - answered) * 10) / 10;
-    if (gone === null) row.error = `the engine still ran ${STOP_BOUND_MS} ms after the stop`;
+    if (gone === null) throw new Error(`the engine still ran ${STOP_BOUND_MS} ms after the stop`);
+    // the effect, read once the engine has gone and before the run's own cleanup, which could change it
+    if (kind === 'hold') row.keys_after = keysDown();
+    else {
+      const after = await settledRead(read, { want: (before.text?.length ?? 0) + BURST.length });
+      row.in_order = insertedAt(before.text, before.caret, BURST, after.text);
+      row.got = typeof after.text === 'string' && typeof before.text === 'string' ? after.text.slice(before.caret ?? 0, (before.caret ?? 0) + after.text.length - before.text.length) : null;
+    }
   } catch (error) {
     row.error = String(error.message).slice(0, 500);
     row.stderr = session.stderr.slice(-1500);
@@ -428,17 +493,10 @@ async function oneRun(ctx, lane, path, kind, scenes, trial) {
     await session.close();
   }
   row.approvals = asked;
-  if (kind === 'hold') {
-    row.keys_after = keysDown();
-    // the control's leftover released, so the next run starts with nothing held
-    if (row.keys_after?.length) {
-      xdotool('keyup', RELEASE_KEYSYM);
-      row.released_by_harness = keysDown()?.length === 0;
-    }
-  } else {
-    const after = await settledRead(read, { want: (before.text?.length ?? 0) + BURST.length });
-    row.in_order = insertedAt(before.text, before.caret, BURST, after.text);
-    row.got = typeof after.text === 'string' && typeof before.text === 'string' ? after.text.slice(before.caret ?? 0, (before.caret ?? 0) + after.text.length - before.text.length) : null;
+  // whatever a run left down released, so the next one starts with nothing held
+  if (kind === 'hold' && keysDown()?.length) {
+    xdotool('keyup', RELEASE_KEYSYM);
+    row.released_by_harness = keysDown()?.length === 0;
   }
   row.ok = runPasses(row);
   ctx.emit(row);
@@ -466,21 +524,31 @@ function useDisplay(display) {
 }
 
 /** `--experiment engine-stop`: every lane, path and case; `{md, complete, failed, ending}`. */
-export async function runEngineStop(args, { emit, run }) {
+export async function runEngineStop(args, { emit, run, startLoad }) {
   if (!args.controlRoot) throw new Error('--control-root names the checkout whose REPL host is the control (a stop that SIGKILLs at once)');
+  const paths = args.paths?.length ? args.paths : PATHS;
+  const cases = args.cases?.length ? args.cases : CASES;
+  const lanes = args.lanes?.length ? args.lanes : LANES;
+  for (const [named, known] of [[paths, PATHS], [cases, CASES], [lanes, LANES]]) {
+    const unknown = named.filter((n) => !known.includes(n));
+    if (unknown.length) throw new Error(`unknown ${unknown.join(', ')}: the experiment knows ${known.join(', ')}`);
+  }
+  const sandbox = args.sandbox ?? 'scoped';
+  // under load a burst is left pending at the stop, and there the control must show the cut (the review of T7b)
+  const burstControl = args.load ? 'cut' : 'report';
   // from here on the spawner refuses every display this process did not create, the person's included (xspawn.mjs)
   delete process.env[LIVE_RUN];
   useDisplay(NO_DISPLAY);
   const server = await startPrivateServer({ out: args.out });
   useDisplay(server.display);
-  emit({ kind: 'engine-stop-display', display: server.display, cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), control_root: args.controlRoot });
+  emit({ kind: 'engine-stop-display', display: server.display, cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), control_label: controlLabel(args.controlRoot),
+    sandbox, load_factor: args.load ? (args.loadFactor ?? 1) : 0, burst_control: burstControl });
   const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   const runs = args.samplesTrials ?? RUNS;
-  const paths = args.paths?.length ? args.paths : PATHS;
-  const lanes = args.lanes?.length ? args.lanes : LANES;
   const rows = [];
   let wm = null;
   let watched = null;
+  let load = null;
   try {
     await desktop.begin({ startRecord: async () => null });
     wm = desktop.spawnApp('openbox', 'openbox', [], { app: 'openbox' });
@@ -488,15 +556,17 @@ export async function runEngineStop(args, { emit, run }) {
     const oracle = new Oracle();
     desktop.oracle = oracle;
     await desktop.openFront('covered');
-    const ctx = { desktop, oracle, emit, cua: args.cua, controlRoot: args.controlRoot };
+    const ctx = { desktop, oracle, emit, cua: args.cua, controlRoot: args.controlRoot, sandbox };
     const scenes = await openScenes(ctx);
+    load = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
     // the control last: the keys a killed engine cuts reach the window only with a later FocusIn
     for (const lane of lanes) {
       for (const path of paths) {
-        for (const kind of CASES) for (let i = 0; i < runs; i++) rows.push(await oneRun(ctx, lane, path, kind, scenes, i));
+        for (const kind of casesOf(path, cases)) for (let i = 0; i < runs; i++) rows.push(await oneRun(ctx, lane, path, kind, scenes, i));
       }
     }
   } finally {
+    await load?.stop();
     await desktop.closeAll();
     if (wm) {
       try {
@@ -508,7 +578,7 @@ export async function runEngineStop(args, { emit, run }) {
     watched = await server.stop();
   }
   const ending = desktopEnding(desktop.ending);
-  const { md, failed } = engineStopVerdict(rows, { paths, lanes });
+  const { md, failed } = engineStopVerdict(rows, { paths, cases, lanes, sandbox, burstControl });
   for (const f of ending.foreign) failed.push(`a window the experiment did not open was changed: ${f}`);
   if (!watched.clean) failed.push(`the private display's watchdog: ${watched.reason}`);
   if (failed.length) md.push('', `**Incomplete or failed:** ${failed.join('; ')}.`);

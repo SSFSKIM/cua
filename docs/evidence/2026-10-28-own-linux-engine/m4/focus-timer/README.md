@@ -136,4 +136,6 @@ the release workflow's way (dev runs).
   text, and the rule cannot confirm a paste whose text the scrolled screen already shows.
 - **The never-taken paste** (the terminal asks `TARGETS` and never the data; transfer `ended`, nothing lands): the
   released 0.3.0 misses it the same way on today's harness (4 of 100 paste runs across its lanes), so it is a load
-  limit, not this fix's; the fresh sittings show it at about the same rate (4 of 92, 6 of 93).
+  limit, not this fix's; the fresh sittings show it at about the same rate (4 of 92, 6 of 93). The X trace in
+  `never-taken/` (task 56's probe) contradicts "load limit". The terminal's TARGETS is its owner-change refresh, not
+  a paste request. cua answers it, but after the chord has reached the terminal, which then drops the paste.

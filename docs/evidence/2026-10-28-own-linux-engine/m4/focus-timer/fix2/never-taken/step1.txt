@@ -1,0 +1,40 @@
+== terminal-030-load2/results.jsonl
+  ('gnome-terminal', 'timer') runs 30 {'ok': 30}
+  ('gnome-terminal', 'unredirect') runs 60 {'ok': 54, 'never-taken': 3, 'landed-unconfirmed(transfer=served)': 3}
+      (22, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+      (26, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+      (29, 'landed-unconfirmed(transfer=served)', 'served', 3, 2, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+      (31, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+      (54, 'landed-unconfirmed(transfer=served)', 'served', 3, 2, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+      (59, 'landed-unconfirmed(transfer=served)', 'served', 3, 2, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+  ('gnome-terminal', 'control') runs 10 {'ok': 7, 'landed-unconfirmed(transfer=served)': 2, 'never-taken': 1}
+      (3, 'landed-unconfirmed(transfer=served)', 'served', 3, 2, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+      (8, 'landed-unconfirmed(transfer=served)', 'served', 3, 2, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+      (9, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+  series gnome-terminal timer runs 30 misses 0 streak 30 reached True raw {'misses': 0, 'streak': 30, 'reached': True} causes {}
+  series gnome-terminal unredirect runs 60 misses 6 streak 0 reached False raw {'misses': 11, 'streak': 0, 'reached': False} causes {'unconfirmed': 6}
+  series gnome-terminal control runs 10 misses 3 streak 0 reached False raw {'misses': 4, 'streak': 0, 'reached': False} causes {'unconfirmed': 3}
+== fresh-terminal-load2/results.jsonl
+  ('gnome-terminal', 'timer') runs 34 {'ok': 33, 'never-taken': 1}
+      (3, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+  ('gnome-terminal', 'unredirect') runs 48 {'ok': 45, 'never-taken': 3}
+      (11, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+      (15, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+      (17, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+  ('gnome-terminal', 'control') runs 10 {'ok': 10}
+  series gnome-terminal timer runs 34 misses 1 streak 30 reached True raw {'misses': 2, 'streak': 29, 'reached': False} causes {'unconfirmed': 1}
+  series gnome-terminal unredirect runs 48 misses 3 streak 30 reached True raw {'misses': 6, 'streak': 29, 'reached': False} causes {'unconfirmed': 3}
+  series gnome-terminal control runs 10 misses 0 streak 10 reached False raw {'misses': 0, 'streak': 10, 'reached': False} causes {}
+== fresh-terminal-load2-b/results.jsonl
+  ('gnome-terminal', 'timer') runs 45 {'ok': 43, 'never-taken': 2}
+      (13, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+      (14, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+  ('gnome-terminal', 'unredirect') runs 38 {'ok': 36, 'never-taken': 2}
+      (3, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+      (7, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+  ('gnome-terminal', 'control') runs 10 {'ok': 8, 'never-taken': 2}
+      (3, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+      (8, 'never-taken', 'ended', 2, 1, ['Paste was sent once and could not be confirmed; read the field before retrying'])
+  series gnome-terminal timer runs 45 misses 2 streak 30 reached True raw {'misses': 3, 'streak': 29, 'reached': False} causes {'unconfirmed': 2}
+  series gnome-terminal unredirect runs 38 misses 2 streak 30 reached True raw {'misses': 4, 'streak': 29, 'reached': False} causes {'unconfirmed': 2}
+  series gnome-terminal control runs 10 misses 2 streak 1 reached False raw {'misses': 4, 'streak': 0, 'reached': False} causes {'unconfirmed': 2}

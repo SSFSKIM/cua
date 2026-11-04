@@ -1,0 +1,506 @@
+{
+ "summary": {
+  "a_conn": "000",
+  "a_conns_same_client": [
+   "000"
+  ],
+  "runs": 6,
+  "outcomes": {
+   "never-taken": 3,
+   "ok": 3
+  },
+  "a_requests_whole_trace": 7356,
+  "a_seq_gaps_whole_trace": []
+ },
+ "runs": [
+  {
+   "trial": 0,
+   "outcome": "never-taken",
+   "got_bytes": "abcDefgH",
+   "engine_log": [
+    "other 0x1200002 443 Targets t611190179 +2ms",
+    "target 0xc00002 443 Targets t611190179 +2ms"
+   ],
+   "transfer": "ended",
+   "owner_set_ms": 179.1,
+   "targets": [
+    {
+     "at": 23590.726,
+     "seq": 6344,
+     "target": "TARGETS",
+     "time": "0x246e05a3",
+     "answer": {
+      "at": 23590.735,
+      "line": 17518,
+      "ms": 0.009,
+      "property": "GDK_SELECTION",
+      "generated": true
+     },
+     "at_ms": 185.6,
+     "answer_ms": 0.009,
+     "answer_property": "GDK_SELECTION"
+    },
+    {
+     "at": 25902.412,
+     "seq": 6422,
+     "target": "TARGETS",
+     "time": "0x246e0eae",
+     "answer": {
+      "at": 25902.429,
+      "line": 17628,
+      "ms": 0.017,
+      "property": null,
+      "generated": false
+     },
+     "at_ms": 2497.3,
+     "answer_ms": 0.017,
+     "answer_property": null
+    }
+   ],
+   "chord_v_ms": 185.6,
+   "chord_window": "0x00c00006",
+   "chord_generated": true,
+   "chord_keys": [
+    "KeyPress 0x25 0 +185.6",
+    "KeyPress 0x32 Control +185.6",
+    "KeyPress 0x37 Shift,Control +185.6",
+    "KeyRelease 0x37 Shift,Control +185.6",
+    "KeyRelease 0x32 Shift,Control +185.6",
+    "KeyRelease 0x25 Control +185.6"
+   ],
+   "chord_before_targets_answer": true,
+   "targets_request_seq": 6344,
+   "chord_v_seq": 6344,
+   "targets_requested_before_chord_sent": true,
+   "targets_answer_after_chord_ms": 0.0,
+   "owner_to_targets_request_ms": 6.5,
+   "data": [],
+   "answered_ms": 2193.6,
+   "engine_closed_ms": 2496.3,
+   "owner_gone_ms": 2495.9,
+   "conversions_after_answer_all": [
+    {
+     "target": "TARGETS",
+     "at_ms": 2497.3,
+     "answer_property": null
+    }
+   ],
+   "conversions_after_answer": [],
+   "window_ms": 18816.9,
+   "a_requests": 197,
+   "a_seq_gaps": []
+  },
+  {
+   "trial": 1,
+   "outcome": "never-taken",
+   "got_bytes": "abcDefgH",
+   "engine_log": [
+    "other 0x1200002 443 Targets t611209028 +1ms",
+    "target 0xc00002 443 Targets t611209028 +1ms"
+   ],
+   "transfer": "ended",
+   "owner_set_ms": 216.9,
+   "targets": [
+    {
+     "at": 42438.888,
+     "seq": 6538,
+     "target": "TARGETS",
+     "time": "0x246e4f44",
+     "answer": {
+      "at": 42440.751,
+      "line": 17839,
+      "ms": 1.863,
+      "property": "GDK_SELECTION",
+      "generated": true
+     },
+     "at_ms": 216.9,
+     "answer_ms": 1.863,
+     "answer_property": "GDK_SELECTION"
+    },
+    {
+     "at": 44749.852,
+     "seq": 6614,
+     "target": "TARGETS",
+     "time": "0x246e584d",
+     "answer": {
+      "at": 44749.852,
+      "line": 17926,
+      "ms": 0.0,
+      "property": null,
+      "generated": false
+     },
+     "at_ms": 2527.9,
+     "answer_ms": 0.0,
+     "answer_property": null
+    }
+   ],
+   "chord_v_ms": 216.9,
+   "chord_window": "0x00c00006",
+   "chord_generated": true,
+   "chord_keys": [
+    "KeyPress 0x25 0 +216.9",
+    "KeyPress 0x32 Control +216.9",
+    "KeyPress 0x37 Shift,Control +216.9",
+    "KeyRelease 0x37 Shift,Control +216.9",
+    "KeyRelease 0x32 Shift,Control +216.9",
+    "KeyRelease 0x25 Control +216.9"
+   ],
+   "chord_before_targets_answer": true,
+   "targets_request_seq": 6538,
+   "chord_v_seq": 6539,
+   "targets_requested_before_chord_sent": true,
+   "targets_answer_after_chord_ms": 1.9,
+   "owner_to_targets_request_ms": 0.0,
+   "data": [],
+   "answered_ms": 2222.8,
+   "engine_closed_ms": 2526.8,
+   "owner_gone_ms": 2526.4,
+   "conversions_after_answer_all": [
+    {
+     "target": "TARGETS",
+     "at_ms": 2527.9,
+     "answer_property": null
+    }
+   ],
+   "conversions_after_answer": [],
+   "window_ms": 18856.7,
+   "a_requests": 192,
+   "a_seq_gaps": []
+  },
+  {
+   "trial": 2,
+   "outcome": "ok",
+   "got_bytes": "abcDefgHPastedaac",
+   "engine_log": [
+    "other 0x1200002 443 Targets t611227803 +0ms",
+    "target 0xc00002 443 Targets t611227803 +0ms",
+    "target 0xc00002 463 Served t611227805 +3ms"
+   ],
+   "transfer": "served",
+   "owner_set_ms": 132.0,
+   "targets": [
+    {
+     "at": 61210.987,
+     "seq": 6730,
+     "target": "TARGETS",
+     "time": "0x246e989b",
+     "answer": {
+      "at": 61211.068,
+      "line": 18111,
+      "ms": 0.081,
+      "property": "GDK_SELECTION",
+      "generated": true
+     },
+     "at_ms": 132.3,
+     "answer_ms": 0.081,
+     "answer_property": "GDK_SELECTION"
+    },
+    {
+     "at": 61545.819,
+     "seq": 6797,
+     "target": "TARGETS",
+     "time": "0x246e99e8",
+     "answer": {
+      "at": 61545.82,
+      "line": 18217,
+      "ms": 0.001,
+      "property": null,
+      "generated": false
+     },
+     "at_ms": 467.1,
+     "answer_ms": 0.001,
+     "answer_property": null
+    }
+   ],
+   "chord_v_ms": 135.4,
+   "chord_window": "0x00c00006",
+   "chord_generated": true,
+   "chord_keys": [
+    "KeyPress 0x25 0 +133.3",
+    "KeyPress 0x32 Control +135.4",
+    "KeyPress 0x37 Shift,Control +135.4",
+    "KeyRelease 0x37 Shift,Control +135.5",
+    "KeyRelease 0x32 Shift,Control +135.5",
+    "KeyRelease 0x25 Control +135.5"
+   ],
+   "chord_before_targets_answer": false,
+   "targets_request_seq": 6730,
+   "chord_v_seq": 6734,
+   "targets_requested_before_chord_sent": true,
+   "targets_answer_after_chord_ms": -3.1,
+   "owner_to_targets_request_ms": 0.3,
+   "data": [
+    {
+     "target": "text/plain;charset=utf-8",
+     "at_ms": 138.0,
+     "answer_ms": 0.011,
+     "answer_property": "GDK_SELECTION",
+     "after_answer": false
+    }
+   ],
+   "answered_ms": 156.3,
+   "engine_closed_ms": 460.3,
+   "owner_gone_ms": 465.1,
+   "conversions_after_answer_all": [
+    {
+     "target": "TARGETS",
+     "at_ms": 467.1,
+     "answer_property": null
+    }
+   ],
+   "conversions_after_answer": [],
+   "window_ms": 766.9,
+   "a_requests": 183,
+   "a_seq_gaps": []
+  },
+  {
+   "trial": 3,
+   "outcome": "ok",
+   "got_bytes": "abcDefgHPastedaad",
+   "engine_log": [
+    "target 0xc00002 443 Targets t611228581 +0ms",
+    "other 0x1200002 443 Targets t611228581 +0ms",
+    "target 0xc00002 463 Served t611228581 +1ms"
+   ],
+   "transfer": "served",
+   "owner_set_ms": 143.5,
+   "targets": [
+    {
+     "at": 61989.467,
+     "seq": 6913,
+     "target": "TARGETS",
+     "time": "0x246e9ba5",
+     "answer": {
+      "at": 61989.618,
+      "line": 18401,
+      "ms": 0.151,
+      "property": "GDK_SELECTION",
+      "generated": true
+     },
+     "at_ms": 143.8,
+     "answer_ms": 0.151,
+     "answer_property": "GDK_SELECTION"
+    },
+    {
+     "at": 62299.01,
+     "seq": 6981,
+     "target": "TARGETS",
+     "time": "0x246e9cda",
+     "answer": {
+      "at": 62299.011,
+      "line": 18510,
+      "ms": 0.001,
+      "property": null,
+      "generated": false
+     },
+     "at_ms": 453.4,
+     "answer_ms": 0.001,
+     "answer_property": null
+    }
+   ],
+   "chord_v_ms": 144.8,
+   "chord_window": "0x00c00006",
+   "chord_generated": true,
+   "chord_keys": [
+    "KeyPress 0x25 0 +144.8",
+    "KeyPress 0x32 Control +144.8",
+    "KeyPress 0x37 Shift,Control +144.8",
+    "KeyRelease 0x37 Shift,Control +144.8",
+    "KeyRelease 0x32 Shift,Control +144.8",
+    "KeyRelease 0x25 Control +144.8"
+   ],
+   "chord_before_targets_answer": false,
+   "targets_request_seq": 6913,
+   "chord_v_seq": 6915,
+   "targets_requested_before_chord_sent": true,
+   "targets_answer_after_chord_ms": -0.9,
+   "owner_to_targets_request_ms": 0.4,
+   "data": [
+    {
+     "target": "text/plain;charset=utf-8",
+     "at_ms": 145.7,
+     "answer_ms": 0.106,
+     "answer_property": "GDK_SELECTION",
+     "after_answer": false
+    }
+   ],
+   "answered_ms": 148.4,
+   "engine_closed_ms": 457.5,
+   "owner_gone_ms": 453.4,
+   "conversions_after_answer_all": [
+    {
+     "target": "TARGETS",
+     "at_ms": 453.4,
+     "answer_property": null
+    }
+   ],
+   "conversions_after_answer": [],
+   "window_ms": 764.9,
+   "a_requests": 184,
+   "a_seq_gaps": []
+  },
+  {
+   "trial": 4,
+   "outcome": "ok",
+   "got_bytes": "abcDefgHPastedaae",
+   "engine_log": [
+    "target 0xc00002 443 Targets t611229363 +0ms",
+    "other 0x1200002 443 Targets t611229363 +0ms",
+    "target 0xc00002 463 Served t611229364 +1ms"
+   ],
+   "transfer": "served",
+   "owner_set_ms": 160.7,
+   "targets": [
+    {
+     "at": 62771.325,
+     "seq": 7097,
+     "target": "TARGETS",
+     "time": "0x246e9eb3",
+     "answer": {
+      "at": 62771.336,
+      "line": 18690,
+      "ms": 0.011,
+      "property": "GDK_SELECTION",
+      "generated": true
+     },
+     "at_ms": 160.8,
+     "answer_ms": 0.011,
+     "answer_property": "GDK_SELECTION"
+    },
+    {
+     "at": 63108.825,
+     "seq": 7163,
+     "target": "TARGETS",
+     "time": "0x246ea003",
+     "answer": {
+      "at": 63108.826,
+      "line": 18801,
+      "ms": 0.001,
+      "property": null,
+      "generated": false
+     },
+     "at_ms": 498.3,
+     "answer_ms": 0.001,
+     "answer_property": null
+    }
+   ],
+   "chord_v_ms": 162.1,
+   "chord_window": "0x00c00006",
+   "chord_generated": true,
+   "chord_keys": [
+    "KeyPress 0x25 0 +162.1",
+    "KeyPress 0x32 Control +162.1",
+    "KeyPress 0x37 Shift,Control +162.1",
+    "KeyRelease 0x37 Shift,Control +162.1",
+    "KeyRelease 0x32 Shift,Control +162.1",
+    "KeyRelease 0x25 Control +162.1"
+   ],
+   "chord_before_targets_answer": false,
+   "targets_request_seq": 7097,
+   "chord_v_seq": 7099,
+   "targets_requested_before_chord_sent": true,
+   "targets_answer_after_chord_ms": -1.3,
+   "owner_to_targets_request_ms": 0.0,
+   "data": [
+    {
+     "target": "text/plain;charset=utf-8",
+     "at_ms": 170.4,
+     "answer_ms": 0.003,
+     "answer_property": "GDK_SELECTION",
+     "after_answer": false
+    }
+   ],
+   "answered_ms": 191.6,
+   "engine_closed_ms": 495.5,
+   "owner_gone_ms": 498.3,
+   "conversions_after_answer_all": [
+    {
+     "target": "TARGETS",
+     "at_ms": 498.3,
+     "answer_property": null
+    }
+   ],
+   "conversions_after_answer": [],
+   "window_ms": 803.4,
+   "a_requests": 182,
+   "a_seq_gaps": []
+  },
+  {
+   "trial": 5,
+   "outcome": "never-taken",
+   "got_bytes": "abcDefgH",
+   "engine_log": [
+    "other 0x1200002 443 Targets t611230142 +5ms",
+    "target 0xc00002 443 Targets t611230142 +5ms"
+   ],
+   "transfer": "ended",
+   "owner_set_ms": 136.1,
+   "targets": [
+    {
+     "at": 63550.533,
+     "seq": 7279,
+     "target": "TARGETS",
+     "time": "0x246ea1be",
+     "answer": {
+      "at": 63557.056,
+      "line": 19012,
+      "ms": 6.523,
+      "property": "GDK_SELECTION",
+      "generated": true
+     },
+     "at_ms": 136.6,
+     "answer_ms": 6.523,
+     "answer_property": "GDK_SELECTION"
+    },
+    {
+     "at": 65876.311,
+     "seq": 7355,
+     "target": "TARGETS",
+     "time": "0x246eaad4",
+     "answer": {
+      "at": 65876.313,
+      "line": 19097,
+      "ms": 0.002,
+      "property": null,
+      "generated": false
+     },
+     "at_ms": 2462.4,
+     "answer_ms": 0.002,
+     "answer_property": null
+    }
+   ],
+   "chord_v_ms": 137.9,
+   "chord_window": "0x00c00006",
+   "chord_generated": true,
+   "chord_keys": [
+    "KeyPress 0x25 0 +137.0",
+    "KeyPress 0x32 Control +137.8",
+    "KeyPress 0x37 Shift,Control +137.9",
+    "KeyRelease 0x37 Shift,Control +137.9",
+    "KeyRelease 0x32 Shift,Control +137.9",
+    "KeyRelease 0x25 Control +137.9"
+   ],
+   "chord_before_targets_answer": true,
+   "targets_request_seq": 7279,
+   "chord_v_seq": 7281,
+   "targets_requested_before_chord_sent": true,
+   "targets_answer_after_chord_ms": 5.2,
+   "owner_to_targets_request_ms": 0.5,
+   "data": [],
+   "answered_ms": 2157.6,
+   "engine_closed_ms": 2458.6,
+   "owner_gone_ms": 2459.4,
+   "conversions_after_answer_all": [
+    {
+     "target": "TARGETS",
+     "at_ms": 2462.4,
+     "answer_property": null
+    }
+   ],
+   "conversions_after_answer": [],
+   "window_ms": null,
+   "a_requests": 192,
+   "a_seq_gaps": []
+  }
+ ]
+}

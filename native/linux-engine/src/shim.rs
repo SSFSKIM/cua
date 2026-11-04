@@ -14,7 +14,9 @@
 //!   the stop), it waits for every writer of the engine's held record (`held.rs`) to be gone: the pipe's end means the
 //!   engines and the worker have exited. Should a writer outlive the bound, or the wait fail, it ends every process
 //!   that holds the record's pipe first (with the sandbox disabled the launcher's death does not end the engine, nor
-//!   does its stdin's end cut the request it runs), so no press can follow the release (fix 5). Then it releases
+//!   does its stdin's end cut the request it runs), so no press can follow the release (fix 5), and reads the pipe to
+//!   its end, so the release set is the last record written; a holder it cannot stop leaves nothing released, since
+//!   a release then could be followed by that holder's press (fix 6). Then it releases
 //!   exactly what the latest record holds, and only what the XInput devices still show down on the XTEST slave, and
 //!   exits as the launcher did. The sandbox's end SIGKILLs the engine with nothing released; after an orderly stop the
 //!   engine has released already and its record is empty, so the shim sends nothing.
@@ -27,7 +29,7 @@ use std::io::{ErrorKind, Write as _};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::process::{Child, ExitStatus};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use rustix::event::{PollFd, PollFlags, Timespec};
 use rustix::io::FdFlags;
@@ -258,77 +260,195 @@ fn exit_as(status: ExitStatus, stops: &KernelSigSet) -> i32 {
     128 + raw
 }
 
-/// Once the launcher is reaped: the wait for the record's writers, then, should any outlive it or the wait fail, the
-/// end of every process that holds the record's pipe, then the release of what the latest record holds. -> the
-/// sentence that says what was done, if anything was.
+/// Once the launcher is reaped: the wait for the record's writers; then, should any outlive it or the wait fail, the
+/// end of every process that holds the record's pipe, and the pipe read to its end; then the release of what the
+/// latest record holds. -> the sentence that says what was done, if anything was.
 fn released_after_writers(record: &mut Reader) -> Option<String> {
-    let ended = match record.wait_for_writers(WRITER_WAIT) {
-        Writers::Gone => None,
-        writers => Some(match record.link() {
-            Ok(link) => {
-                let (ended, exited) = end_holders(&link, ENDED_WAIT);
-                let why = if writers == Writers::Remain {
-                    format!("its record's writers outlived the launcher by {WRITER_WAIT:?}")
-                } else {
-                    "its record's writers could not be watched".into()
-                };
-                format!("{why}: ended {ended} holding it, {exited} gone")
-            }
-            Err(error) => format!("its record's writers could not be found: {error}"),
-        }),
-    };
-    let held = record.held().to_vec();
-    let released = (!held.is_empty()).then(|| released_within(crate::pressed::FORCED_RELEASE_BOUND, held));
-    match (ended, released) {
+    let (held, said) = after_the_launcher(record, &KILLS, &mut |_| {});
+    let released = held
+        .filter(|held| !held.is_empty())
+        .map(|held| released_within(crate::pressed::FORCED_RELEASE_BOUND, held));
+    match (said, released) {
         (None, None) => None,
-        (ended, released) => Some(format!(
+        (said, released) => Some(format!(
             "cua-engine {SUBCOMMAND}: {}",
-            [ended, released].into_iter().flatten().collect::<Vec<_>>().join("; ")
+            [said, released].into_iter().flatten().collect::<Vec<_>>().join("; ")
         )),
     }
 }
 
-/// SIGKILLs every process but this one that holds a descriptor of the pipe `/proc` names `link`, and waits up to
-/// `bound` for them to exit. Only the trusted chain the record's write end was handed down can hold it (the launcher,
-/// bwrap, the worker and its engines; the worker and the engine keep it close-on-exec), so nothing else is ever
-/// signalled, and each is signalled through a pidfd taken before its descriptors are read again, so a pid reused
-/// meanwhile is never signalled. -> how many were signalled, and how many of them have exited.
-fn end_holders(link: &str, bound: Duration) -> (usize, usize) {
+/// The decision [`released_after_writers`] acts on, its process calls given (`kills`, and `found`, called with each
+/// holder before it is signalled: the tests change the record there). -> the set to release (None: nothing may be
+/// released, since a writer that may still press was never stopped), and what to say about the writers' end, if
+/// anything happened to them.
+///
+/// The release set is chosen only once the record is known to be complete (fix 6): once the pipe has ended, every
+/// writer is gone and every record it wrote has been read, the one written while it was being ended included. Should
+/// the pipe not end within [`ENDED_WAIT`] of the SIGKILLs, the release still goes ahead when a SIGKILL was delivered to
+/// a holder whose exit is not yet seen (a process sent SIGKILL runs no more of its own code, so it can press nothing
+/// more), and only then: a holder that could not be signalled, or holders that could not be listed, leave the pipe's
+/// remaining writer unknown or running, and a release then could be followed by its press.
+fn after_the_launcher(
+    record: &mut Reader,
+    kills: &Kills,
+    found: &mut dyn FnMut(u32),
+) -> (Option<Vec<Held>>, Option<String>) {
+    let why = match record.wait_for_writers(WRITER_WAIT) {
+        Writers::Gone => return (Some(record.held().to_vec()), None),
+        Writers::Remain => format!("its record's writers outlived the launcher by {WRITER_WAIT:?}"),
+        Writers::Unknown => "its record's writers could not be watched".to_string(),
+    };
+    let ending = match record.link() {
+        Ok(link) => end_holders(&link, kills, found),
+        Err(error) => Ending {
+            unlisted: Some(format!("the record's pipe could not be named: {error}")),
+            ..Ending::default()
+        },
+    };
+    // every record a writer wrote before it died, read to the pipe's end
+    let complete = record.wait_for_writers(ENDED_WAIT) == Writers::Gone;
+    let exited = ending
+        .signalled
+        .iter()
+        .filter(|pidfd| pidfd.as_ref().is_some_and(exited_now))
+        .count();
+    let unseen = ending.signalled.len() - exited;
+    let stopped = ending.unstopped.is_empty() && ending.unlisted.is_none();
+    let release = complete || (stopped && unseen > 0);
+    let mut said = format!("{why}: ended {} holding it, {exited} gone", ending.signalled.len());
+    let by_pid = ending.signalled.iter().filter(|pidfd| pidfd.is_none()).count();
+    if by_pid > 0 {
+        said += &format!(" ({by_pid} by pid, its exit unseen)");
+    }
+    if complete && by_pid > 0 {
+        said += ", the record's pipe ended";
+    }
+    if ending.vanished > 0 {
+        said += &format!(", {} gone before the signal", ending.vanished);
+    }
+    for unstopped in &ending.unstopped {
+        said += &format!("; could not stop {unstopped}");
+    }
+    if let Some(unlisted) = &ending.unlisted {
+        said += &format!("; {unlisted}");
+    }
+    if !release {
+        said += "; nothing released: a writer of its record may still be pressing";
+    }
+    (release.then(|| record.held().to_vec()), Some(said))
+}
+
+/// The process calls [`end_holders`] makes, so the tests can make them fail.
+struct Kills {
+    /// A pidfd on the process.
+    open: fn(Pid) -> rustix::io::Result<OwnedFd>,
+    /// SIGKILL through a pidfd.
+    signal: fn(BorrowedFd<'_>) -> rustix::io::Result<()>,
+    /// SIGKILL by pid, once its start time was checked.
+    kill: fn(Pid) -> rustix::io::Result<()>,
+}
+
+/// The real ones.
+const KILLS: Kills = Kills {
+    open: |pid| rustix::process::pidfd_open(pid, PidfdFlags::empty()),
+    signal: |pidfd| rustix::process::pidfd_send_signal(pidfd, Signal::KILL),
+    kill: |pid| rustix::process::kill_process(pid, Signal::KILL),
+};
+
+/// What [`end_holders`] came to.
+#[derive(Default)]
+struct Ending {
+    /// The holders sent SIGKILL: through their pidfd, kept to see their exit, or (None) by pid.
+    signalled: Vec<Option<OwnedFd>>,
+    /// Holders found that were gone, or held the pipe no more, before they could be signalled.
+    vanished: usize,
+    /// Holders that could not be signalled, each with its pid and why.
+    unstopped: Vec<String>,
+    /// Why the holders could not be listed, if they could not.
+    unlisted: Option<String>,
+}
+
+/// SIGKILLs every process but this one that holds a descriptor of the pipe `/proc` names `link`. Only the trusted chain
+/// the record's write end was handed down can hold it (the launcher, bwrap, the worker and its engines; the worker and
+/// the engine keep it close-on-exec), so nothing else is ever signalled. Each holder is signalled through a pidfd taken
+/// before its descriptors are read again, so a pid reused meanwhile is never signalled; should the pidfd or its signal
+/// fail, by pid, if the process still has the start time it had when it was found and still holds the pipe. What could
+/// not be listed or signalled is said, never skipped.
+fn end_holders(link: &str, kills: &Kills, found: &mut dyn FnMut(u32)) -> Ending {
+    let mut ending = Ending::default();
     let me = std::process::id();
-    let mut ended = Vec::new();
-    for pid in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
-        let Some(pid) = pid.file_name().to_str().and_then(|p| p.parse::<u32>().ok()) else {
+    let pids = match std::fs::read_dir("/proc") {
+        Ok(pids) => pids,
+        Err(error) => {
+            ending.unlisted = Some(format!("the processes could not be listed: {error}"));
+            return ending;
+        }
+    };
+    for entry in pids {
+        let pid = match entry {
+            Ok(entry) => entry.file_name().to_str().and_then(|p| p.parse::<u32>().ok()),
+            Err(error) => {
+                ending.unlisted = Some(format!("the processes could not be listed: {error}"));
+                continue;
+            }
+        };
+        let Some(pid) = pid.filter(|&pid| pid != me) else {
             continue;
         };
-        if pid == me || !holds(pid, link) {
+        let started = start_time(pid);
+        if !holds(pid, link) {
             continue;
         }
         let Some(raw) = Pid::from_raw(pid as i32) else {
             continue;
         };
-        let Ok(pidfd) = rustix::process::pidfd_open(raw, PidfdFlags::empty()) else {
-            continue;
+        found(pid);
+        let failed = match (kills.open)(raw) {
+            Ok(pidfd) if !holds(pid, link) => {
+                drop(pidfd);
+                ending.vanished += 1;
+                continue;
+            }
+            Ok(pidfd) => match (kills.signal)(pidfd.as_fd()) {
+                Ok(()) => {
+                    ending.signalled.push(Some(pidfd));
+                    continue;
+                }
+                Err(error) => format!("SIGKILL through its pidfd: {error}"),
+            },
+            Err(rustix::io::Errno::SRCH) => {
+                ending.vanished += 1;
+                continue;
+            }
+            Err(error) => format!("no pidfd: {error}"),
         };
-        if holds(pid, link) && rustix::process::pidfd_send_signal(&pidfd, Signal::KILL).is_ok() {
-            ended.push(pidfd);
+        // by pid: the same process only if it started when the one found did, and holds the pipe still
+        if started.is_none() || start_time(pid) != started || !holds(pid, link) {
+            ending.vanished += 1;
+            continue;
+        }
+        match (kills.kill)(raw) {
+            Ok(()) => ending.signalled.push(None),
+            Err(rustix::io::Errno::SRCH) => ending.vanished += 1,
+            Err(error) => ending
+                .unstopped
+                .push(format!("{pid} ({failed}; SIGKILL by pid: {error})")),
         }
     }
-    let deadline = Instant::now() + bound;
-    let exited = ended
-        .iter()
-        .filter(|pidfd| {
-            let left = Timespec::try_from(deadline.saturating_duration_since(Instant::now())).ok();
-            let mut fds = [PollFd::new(*pidfd, PollFlags::IN)];
-            loop {
-                match rustix::event::poll(&mut fds, left.as_ref()) {
-                    Err(rustix::io::Errno::INTR) => continue,
-                    Ok(n) => return n > 0,
-                    Err(_) => return false,
-                }
-            }
-        })
-        .count();
-    (ended.len(), exited)
+    ending
+}
+
+/// Whether the process a pidfd refers to has exited, now.
+fn exited_now(pidfd: &OwnedFd) -> bool {
+    let zero = Timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut fds = [PollFd::new(pidfd, PollFlags::IN)];
+    rustix::event::poll(&mut fds, Some(&zero)).is_ok_and(|n| n > 0)
+}
+
+/// When process `pid` started, in clock ticks since boot (`/proc/<pid>/stat`'s 22nd field), or None when it is gone.
+fn start_time(pid: u32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    stat[stat.rfind(')')? + 2..].split(' ').nth(19)?.parse().ok()
 }
 
 /// Whether process `pid` holds a descriptor `/proc` names `link`.
@@ -431,6 +551,7 @@ fn release(held: &[Held]) -> anyhow::Result<Vec<Held>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Instant;
 
     fn bits(codes: &[u8]) -> [u8; 32] {
         let mut bits = [0u8; 32];
@@ -567,6 +688,119 @@ mod tests {
         assert!(alive(other), "what does not hold the record is left alone");
         let _ = rustix::process::kill_process(Pid::from_raw(other as i32).unwrap(), Signal::KILL);
         assert_eq!(record.wait_for_writers(Duration::from_secs(1)), Writers::Gone);
+    }
+
+    fn alive(pid: u32) -> bool {
+        std::fs::read_to_string(format!("/proc/{pid}/stat"))
+            .is_ok_and(|s| !matches!(s[s.rfind(')').unwrap() + 2..].chars().next(), Some('Z' | 'X')))
+    }
+
+    /// The record, the engine's stand-in (a sleep holding its write end, left behind by its launcher, a shell), and a
+    /// copy of the write end of the test's own, to write records as the engine does; the stand-in killed on drop.
+    struct Lingering {
+        record: Reader,
+        ours: Option<std::fs::File>,
+        engine: u32,
+    }
+
+    impl Lingering {
+        fn start(tag: &str) -> Lingering {
+            let (record, write_end) = Reader::make().unwrap();
+            let ours = std::fs::File::from(write_end.try_clone().unwrap());
+            let pidfile = std::env::temp_dir().join(format!("cua-shim-unit-{tag}-{}", std::process::id()));
+            let script = format!("sleep 30 & echo $! > {}", pidfile.display());
+            let mut child = launcher("sh", &["-c", &script], Some(write_end.as_fd()));
+            drop(write_end);
+            assert!(wait(&mut child).success());
+            let engine = std::fs::read_to_string(&pidfile).unwrap().trim().parse().unwrap();
+            std::fs::remove_file(pidfile).unwrap();
+            Lingering {
+                record,
+                ours: Some(ours),
+                engine,
+            }
+        }
+
+        /// Writes a record of `held` through the test's copy, then closes the copy.
+        fn last(&mut self, held: &[Held]) {
+            if let Some(ours) = self.ours.take() {
+                held::write(&ours, held);
+            }
+        }
+    }
+
+    impl Drop for Lingering {
+        fn drop(&mut self) {
+            let _ = rustix::process::kill_process(Pid::from_raw(self.engine as i32).unwrap(), Signal::KILL);
+        }
+    }
+
+    #[test]
+    fn a_record_written_while_its_writers_are_ended_is_read_before_the_release_set_is_chosen() {
+        // the engine's held set changes during its end: it records Shift (and presses it) after the wait has run out,
+        // between the shim's finding it and its SIGKILL
+        let mut run = Lingering::start("final");
+        let engine = run.engine;
+        if let Some(ours) = &run.ours {
+            held::write(ours, &[]);
+        }
+        let mut ours = run.ours.take();
+        let (held, said) = after_the_launcher(&mut run.record, &KILLS, &mut |pid| {
+            if pid == engine
+                && let Some(ours) = ours.take()
+            {
+                held::write(&ours, &[Held::Key(50)]);
+            }
+        });
+        assert_eq!(
+            held,
+            Some(vec![Held::Key(50)]),
+            "the last record is in the release: {said:?}"
+        );
+        assert!(!alive(engine));
+        assert!(said.unwrap().contains("ended 1 holding it, 1 gone"));
+    }
+
+    #[test]
+    fn a_holder_whose_pidfd_or_its_signal_fails_is_killed_by_pid_once_its_start_time_is_checked() {
+        let no_pidfd = Kills {
+            open: |_| Err(rustix::io::Errno::MFILE),
+            ..KILLS
+        };
+        let no_signal = Kills {
+            signal: |_| Err(rustix::io::Errno::PERM),
+            ..KILLS
+        };
+        for (fault, kills) in [("EMFILE", no_pidfd), ("EPERM", no_signal)] {
+            let mut run = Lingering::start(fault);
+            run.last(&[Held::Key(50)]);
+            let (held, said) = after_the_launcher(&mut run.record, &kills, &mut |_| {});
+            assert_eq!(held, Some(vec![Held::Key(50)]), "{fault}: {said:?}");
+            assert!(!alive(run.engine), "{fault}: killed by pid");
+            assert!(said.unwrap().contains("ended 1 holding it"), "{fault}");
+        }
+    }
+
+    #[test]
+    fn a_holder_that_cannot_be_stopped_leaves_nothing_released() {
+        // the pidfd and the kill by pid both refused: the writer may go on pressing, so a release now could be
+        // followed by its press
+        let kills = Kills {
+            open: |_| Err(rustix::io::Errno::MFILE),
+            kill: |_| Err(rustix::io::Errno::PERM),
+            ..KILLS
+        };
+        let mut run = Lingering::start("unstoppable");
+        run.last(&[Held::Key(50)]);
+        let (held, said) = after_the_launcher(&mut run.record, &kills, &mut |_| {});
+        let said = said.unwrap();
+        assert_eq!(held, None, "{said}");
+        assert!(alive(run.engine), "never stopped");
+        assert!(said.contains(&format!("could not stop {}", run.engine)), "{said}");
+        assert!(
+            said.contains("nothing released: a writer of its record may still be pressing"),
+            "{said}"
+        );
     }
 
     #[test]

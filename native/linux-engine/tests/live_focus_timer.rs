@@ -25,7 +25,7 @@ use x11rb::wrapper::ConnectionExt as _;
 /// The engine's delay from a window's last input to its `FocusOut` (`--teardown-ms`'s default).
 const DELAY: Duration = Duration::from_millis(100);
 /// The exit's settle after the last input to a window whose redirect it drops (`--exit-settle-ms`'s default).
-const EXIT_SETTLE: Duration = Duration::from_millis(400);
+const EXIT_SETTLE: Duration = Duration::from_millis(250);
 /// The slack a `FocusOut` measured at the probe may show below the delay: the last key's own trip to the probe.
 const SLACK: Duration = Duration::from_millis(10);
 /// How long the probes wait for events still on their way.
@@ -381,6 +381,28 @@ fn the_exit_waits_the_settle_after_the_last_input_to_a_window_it_holds_redirecte
         at - last_key
     );
     assert!(at - stopped >= EXIT_SETTLE - DELAY / 2, "{:?}", at - stopped);
+}
+
+#[test]
+fn clicks_alone_hold_the_exit_back_for_no_settle() {
+    // the exit's unredirect cut no click in 20 runs at twice the load (task 56's measured steps): the settle follows keys
+    let probe = Probe::open("clicks", 0);
+    let mut engine = Engine::start();
+    let target = probe.target();
+    for _ in 0..3 {
+        engine
+            .request("click", json!({"window": target, "x": 20, "y": 20}))
+            .unwrap();
+    }
+    let stopped = Instant::now();
+    engine.signal(Signal::TERM);
+    let (status, at) = engine.exit_within(Duration::from_secs(5)).expect("the engine exits");
+    assert_eq!(status.code(), Some(143));
+    assert!(
+        at - stopped < DELAY + EXIT_SETTLE / 4,
+        "the FocusOut drain alone: {:?}",
+        at - stopped
+    );
 }
 
 #[test]

@@ -77,7 +77,8 @@ pub struct Inputs {
     pub request: Value,
     /// The `FocusOut`s sent and not yet reported (`take_sent`).
     sent: Vec<Sent>,
-    /// When each window's background input last ended, for the exit's settle (`exit_settle_until`).
+    /// When each window's background key input last ended, for the exit's settle (`exit_settle_until`): the exit's
+    /// unredirect cut keys at twice the load and no click (task 56's measured steps), so the settle follows keys.
     last_input: HashMap<Window, Instant>,
 }
 
@@ -148,7 +149,9 @@ impl Inputs {
     /// A session whose input has ended put on its `FocusOut` timer; with no delay (`--teardown-ms 0`) it ends at once.
     fn defer(&mut self, x: &mut X11, window: Window, session: Session) {
         let now = Instant::now();
-        self.last_input.insert(window, now);
+        if session.took_keys() {
+            self.last_input.insert(window, now);
+        }
         self.timers.start(window, session, now, self.request.clone());
         if self.pacing.teardown.is_zero() {
             self.fire_due(x);
@@ -203,7 +206,9 @@ impl Inputs {
         for (window, mut session) in held {
             session.finish(x);
             let now = Instant::now();
-            self.last_input.insert(window, now);
+            if session.took_keys() {
+                self.last_input.insert(window, now);
+            }
             self.timers.start(window, session, now, self.request.clone());
         }
         self.flush(x, None, Cause::Exit);

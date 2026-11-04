@@ -69,9 +69,11 @@ impl Sent {
 /// redirect it holds, since its X connection closes, and a covered Chromium window whose redirect goes while it still has
 /// input queued cuts that input and delivers it only with its next `FocusIn` (task 56: 8 of 10 SIGTERMs straight after a
 /// burst at twice the gate's load, with the 100 ms drain alone). So after the `FocusOut` drain the exit waits until this
-/// long has passed since the last input to a window whose redirect it still holds; the smallest value that held 30
-/// consecutive SIGTERM runs at twice the load on Chrome and on Electron (the evidence's exit-settle steps).
-pub const EXIT_SETTLE: Duration = Duration::from_millis(400);
+/// long has passed since the last key input to a window whose redirect it still holds: the smallest value that held 30
+/// consecutive independent SIGTERM runs at twice the load on Chrome and on Electron, in 50 ms steps (0: 24/30 and
+/// 17/30; 200: 26/30 and 28/30; 250 and 300: 30/30 both; the evidence's exit-settle steps). The unredirect cut no click
+/// at any step (10/10 each), so the settle follows keys only.
+pub const EXIT_SETTLE: Duration = Duration::from_millis(250);
 
 /// When the exit's settle ends: `settle` after the latest of `last_inputs` (the last input to each window whose redirect
 /// the exit will drop), None when there is none.

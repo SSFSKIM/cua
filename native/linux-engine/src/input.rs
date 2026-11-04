@@ -188,6 +188,8 @@ pub struct Session {
     grab: Option<Window>,
     pointer: Option<Pointer>,
     pacing: Pacing,
+    /// Whether a key event went to the target in this session: the exit's settle follows keys (`focus_timer::EXIT_SETTLE`).
+    took_keys: bool,
 }
 
 /// The server time now: an InputOnly window's property change, whose `PropertyNotify` carries the time.
@@ -261,6 +263,7 @@ impl Session {
             grab: None,
             pointer: None,
             pacing,
+            took_keys: false,
         };
         if !within && let Err(error) = session.focus_in(x) {
             session.finish(x);
@@ -373,8 +376,15 @@ impl Session {
         self.buttons | self.keys.mask()
     }
 
+    /// Whether a key event went to the target in this session (a press or a release, the paste chord's included).
+    pub fn took_keys(&self) -> bool {
+        self.took_keys
+    }
+
     /// Presses each keycode not already held, in order, pacing after each new edge (behaviour §11.3).
     pub fn acquire(&mut self, x: &X11, keycodes: &[u8]) -> Result<Vec<u8>> {
+        // a click's empty modifier chord sends no key
+        self.took_keys |= !keycodes.is_empty();
         let (target, buttons, pace, time) = (self.target, self.buttons, self.pacing.key, self.clock());
         self.keys.acquire(
             keycodes,
@@ -399,6 +409,7 @@ impl Session {
 
     /// [`Session::release`], also answering the references still unreleased ([`Keys::release_tracked`]).
     pub fn release_tracked(&mut self, x: &X11, keycodes: &[u8]) -> (Result<()>, Vec<u8>) {
+        self.took_keys |= !keycodes.is_empty();
         let (target, buttons, pace, time) = (self.target, self.buttons, self.pacing.key, self.clock());
         self.keys.release_tracked(keycodes, |keycode, mask| {
             let sent = send_key(x, target, time(), keycode, false, buttons | mask);
@@ -410,6 +421,7 @@ impl Session {
     /// Releases a key the bookkeeping does not hold: one whose press may have been delivered though its acknowledgement
     /// never came. No press is sent.
     pub fn release_unheld(&mut self, x: &X11, keycode: u8) -> Result<()> {
+        self.took_keys = true;
         send_key(x, self.target, self.now(), keycode, false, self.state())
     }
 

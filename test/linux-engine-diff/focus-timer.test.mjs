@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
-import { SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, runPasses, scenario, seriesVerdict } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, runPasses, scenario, seriesVerdict } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
 // background session's SendEvents (audit.test.mjs has the same shapes).
@@ -163,12 +163,12 @@ test('the sessions a scenario must leave: one per burst on the timer lane, one p
   assert.deepEqual(expectedSessions('paste', 'control', ids), Array(9).fill(7));
 });
 
-const passingSeries = (family, lane, name) => ({ family, lane, scenario: name, runs: lane === 'timer' ? 30 : 10, misses: lane === 'timer' ? 0 : 4, streak: 30, reached: lane === 'timer', burst_ms_median: 3 });
+const passingSeries = (family, lane, name) => ({ family, lane, scenario: name, runs: lane === 'control' ? 10 : 30, misses: lane === 'control' ? 4 : 0, streak: 30, reached: lane !== 'control', burst_ms_median: 3 });
 const cleanAudit = (family, lane) => ({ family, lane, clean: true, attributed: [], deferred: 0, sessions: { expected: [1], seen: [1] }, problems: [], forbidden: [] });
 const stopRow = (signal, ok) => ({ family: 'chrome', signal, ok, exited_after_answer_ms: 110 });
 const results = (edit = (r) => r) =>
   edit({
-    series: ['chrome', 'gedit'].flatMap((f) => ['timer', 'control'].flatMap((lane) => SCENARIOS.map((name) => passingSeries(f, lane, name)))),
+    series: ['chrome', 'gedit'].flatMap((f) => ['timer', 'unredirect', 'control'].flatMap((lane) => SCENARIOS.map((name) => passingSeries(f, lane, name)))),
     audits: ['chrome', 'gedit'].flatMap((f) => ['timer', 'control'].map((lane) => cleanAudit(f, lane))),
     stops: [stopRow('SIGTERM', true), stopRow('SIGKILL', true)],
     skipped: [],
@@ -186,6 +186,11 @@ test("the verdict passes only when every family's lanes, audits and stops did wh
     failing((r) => ({ ...r, series: r.series.map((s) => (s.family === 'chrome' && s.lane === 'control' && s.scenario === 'paste' ? { ...s, misses: 0 } : s)) })),
     /chrome paste: the control lane showed no reorder/,
   );
+  // the delay alone, each request's redirect dropped with its FocusOut as the control's is, must pass as the timer does
+  assert.match(
+    failing((r) => ({ ...r, series: r.series.map((s) => (s.family === 'chrome' && s.lane === 'unredirect' && s.scenario === 'burst' ? { ...s, reached: false, misses: 1 } : s)) })),
+    /chrome burst \(unredirect\): no 30 consecutive passing runs/,
+  );
   // the control's line says how its runs failed: a text cut or reordered, or only an answer (a paste racing the keys)
   const lines = focusTimerVerdict(results((r) => ({ ...r, series: r.series.map((s) => (s.lane === 'control' ? { ...s, wrong_text: 1 } : s)) })), { families }).md;
   assert.ok(lines.some((l) => l.startsWith('| chrome | control | burst |') && l.includes('fails without the delay (4/10; the text wrong in 1)')), lines.join('\n'));
@@ -196,6 +201,12 @@ test("the verdict passes only when every family's lanes, audits and stops did wh
   assert.match(failing((r) => ({ ...r, stops: [stopRow('SIGTERM', true), stopRow('SIGKILL', false)] })), /chrome SIGKILL: .*the drain check is blind/);
   assert.match(failing((r) => ({ ...r, skipped: [{ family: 'gedit', why: 'no window' }], series: r.series.filter((s) => s.family !== 'gedit') })), /gedit could not be opened/);
   assert.match(focusTimerVerdict(results(), { families: [...families, 'kate'] }).failed.join('\n'), /kate was not measured/);
+});
+
+test('the lanes: the engine as it ships; the delay alone with each request unredirecting; the control, that without the delay', () => {
+  assert.deepEqual(LANES.timer, []);
+  assert.deepEqual(LANES.unredirect, ['--retention', 'per-request']);
+  assert.deepEqual(LANES.control, ['--teardown-ms', '0', '--retention', 'per-request']);
 });
 
 test("a run passes on its text and its answers; only a Qt paste's unconfirmed answer is excused, its text still exact", () => {

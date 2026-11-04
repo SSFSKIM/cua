@@ -844,15 +844,20 @@ node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" -
   the run's applications, homes, session bus and own Chrome and Electron; the live-run declaration withdrawn first, so
   nothing reaches `:0`. `--load-factor 2` runs it under twice the gate's load.
 - **The families**: every family of the matrix whose background keys cua sends (Chrome, Electron, gedit, kate,
-  qtcreator, Firefox, Writer on gtk3 and gen, gnome-terminal), two windows each, covered by the front window. Chromium's
+  qtcreator, Firefox, Writer on gtk3, gnome-terminal; Writer on gen exposes no text field), two windows each, covered by the front window. Chromium's
   windows show `pages/keys.html`, whose page spends 3 ms on each key, so a burst outruns the renderer.
-- **The lanes**: the engine as it is (`timer`) and a control with no delay (`control`, `--teardown-ms 0`). Each run is
-  a fresh engine's. The scenarios, pipelined: `burst` (20 keys, Shift chords among them), `aba` (8 keys to A, 8 to B,
+- **The lanes**: the engine as it is (`timer`); a control with no delay whose every request also drops its redirect
+  with its `FocusOut` (`control`, `--teardown-ms 0 --retention per-request`); and the delay with that same per-request
+  unredirect (`unredirect`, `--retention per-request`), so the control differs from a passing lane in the delay alone.
+  On the private Xvfb a `FocusOut` with the redirect kept cuts nothing in Chromium (task 56: `--teardown-ms 0` alone,
+  0 of 10 runs, idle and at twice the load), while the unredirect after it cuts keys and delivers them with the next
+  `FocusIn`, the reorder M0.4 saw on `:0` after a `FocusOut` alone. Each run is a fresh engine's. The scenarios, pipelined: `burst` (20 keys, Shift chords among them), `aba` (8 keys to A, 8 to B,
   8 to A again) and `paste` (8 keys, then a `type_text` to the same window). A run passes when every answer is a success
   and each window's text is exactly its old text with the scenario's text put at the caret read before the run. The
-  timer lane needs 30 consecutive passing runs of each scenario (at most 60; a miss restarts the series and is reported;
-  `--trials` sets fewer for a development run, which the verdict then fails); the control lane runs 10 and must fail on
-  Chromium, which shows the run can see what the delay prevents.
+  timer and unredirect lanes each need 30 consecutive passing runs of each scenario (at most 60; a miss restarts the
+  series and is reported; `--trials` sets fewer for a development run, which the verdict then fails); the control lane
+  runs 10 and must fail on Chromium, which shows the run can see what the delay prevents; its line counts the runs whose
+  text was wrong (a paste can fail on its answer alone, its observation racing keys still landing).
 - **The audit**, a pass per family and lane: each scenario once with the engine's X connection through xtrace and its
   `--stats` records of its `FocusOut`s. Nothing the background route forbids; the synthetic-focus sessions, by window and
   in order, exactly the scenarios' (one per burst on the timer lane, one per request on the control lane); no two windows

@@ -139,12 +139,16 @@ impl Expected {
     ///
     /// - `after` is the expected text (the text observed whole, with the paste at the caret) less a prefix that ends
     ///   where one of the observed lines starts, the paste still whole after it;
-    /// - the paste text occurs exactly once in the expected text, so exactly once in `after`, at the caret's distance
-    ///   from the end.
+    /// - nothing short of the whole paste reads the same: the observed text with none of the paste, or with only its
+    ///   first characters, at the caret, less a prefix that ends where an observed line starts, is not `after`.
     ///
-    /// The count is over the expected text, not `after` alone: when the text just before the caret is the paste text
-    /// itself, a field that scrolled by one line and took no paste reads exactly as the expected text less the next
-    /// line, with one copy in it. Anything else stays unconfirmed: a wrong confirm is worse than a false "unconfirmed".
+    /// The second is what makes a confirm safe. When the text just before the caret is the paste text itself, a
+    /// field that scrolled by one line and took no paste reads exactly as the expected text less the next line, and a
+    /// paste whose text repeats itself can read as its first characters alone with one line less scrolled. Copies of
+    /// the paste text elsewhere on the screen, which every other reading leaves apart, do not make it ambiguous (task
+    /// 56 fix 3: a screen full of an earlier run's text held the paste text 67 times, and the landed paste stayed
+    /// unconfirmed under a count of its occurrences). Anything else stays unconfirmed: a wrong confirm is worse than a
+    /// false "unconfirmed".
     pub fn confirmed_scrolled(&self, after: &str) -> bool {
         let Some(whole) = &self.whole else {
             return false;
@@ -167,12 +171,14 @@ impl Expected {
         let Some(prefix) = expected.len().checked_sub(after.len()).filter(|&k| k > 0 && k <= at) else {
             return false;
         };
-        whole
+        let starts: Vec<usize> = whole
             .line_starts
             .iter()
-            .any(|&start| usize::try_from(start) == Ok(prefix))
+            .filter_map(|&start| usize::try_from(start).ok())
+            .collect();
+        starts.contains(&prefix)
             && expected[prefix..] == after[..]
-            && occurrences(&expected, &paste) == 1
+            && !short_of_the_paste_reads_the_same(&before, at, &paste, &after, &starts)
     }
 
     /// Whether a read of the field's `count` and of its offsets `at..at + len` (`read`) shows the paste: the
@@ -190,12 +196,28 @@ impl Expected {
     }
 }
 
-/// How many times `needle` occurs in `hay`, overlapping occurrences included.
-fn occurrences(hay: &[char], needle: &[char]) -> usize {
-    if needle.is_empty() {
-        return 0;
-    }
-    hay.windows(needle.len()).filter(|w| *w == needle).count()
+/// Whether `after` is also the field observed (`before`) with only the first `i` characters of `paste` at the caret
+/// `at`, none at all included, less a prefix that ends where one of the observed lines (`starts`) starts: a reading a
+/// paste that did not land whole explains as well. The prefix's length fixes `i`, so each line start is one candidate.
+fn short_of_the_paste_reads_the_same(
+    before: &[char],
+    at: usize,
+    paste: &[char],
+    after: &[char],
+    starts: &[usize],
+) -> bool {
+    starts.iter().any(|&prefix| {
+        let Some(landed) = (after.len() + prefix).checked_sub(before.len()) else {
+            return false;
+        };
+        landed < paste.len()
+            && before[..at]
+                .iter()
+                .chain(&paste[..landed])
+                .chain(&before[at..])
+                .skip(prefix)
+                .eq(after.iter())
+    })
 }
 
 /// Whether X window `requestor` belongs to the X client that created `client` (Decision Log, M2.1: a request counts
@@ -405,16 +427,47 @@ mod tests {
     }
 
     #[test]
-    fn a_scrolled_field_where_the_paste_text_occurs_twice_stays_unconfirmed() {
-        // the paste landed, but an earlier copy of its text is still on the screen
+    fn a_scrolled_field_whose_paste_text_shows_elsewhere_confirms_when_nothing_short_of_the_paste_reads_the_same() {
+        // the paste landed, and an earlier copy of its text is still on the screen
         let e = screen(&["0123456789", "PastedXXXX", "KLMNOP"], "Pasted");
-        assert!(!e.confirmed_scrolled("PastedXXXXKLMNOPPasted\n"));
-        // and one in the rows that scrolled out counts too
+        assert!(e.confirmed_scrolled("PastedXXXXKLMNOPPasted\n"));
+        // or one in the rows that scrolled out
         let e = screen(&["Pasted6789", "abcdefghij", "KLMNOP"], "Pasted");
-        assert!(!e.confirmed_scrolled("abcdefghijKLMNOPPasted\n"));
-        // overlapping occurrences count
+        assert!(e.confirmed_scrolled("abcdefghijKLMNOPPasted\n"));
+        // or one that overlaps the paste
         let e = screen(&["0123456789", "abcdefghia", "KLMNOa"], "aa");
-        assert!(!e.confirmed_scrolled("abcdefghiaKLMNOaaa\n"));
+        assert!(e.confirmed_scrolled("abcdefghiaKLMNOaaa\n"));
+    }
+
+    #[test]
+    fn a_screen_full_of_the_paste_text_confirms_the_paste_that_landed() {
+        // task 56 fix 3, the probe's trial 28: an earlier fill (`abcDefgHPasted` again and again) left the paste's own
+        // text (`Pastedabc`) all over a screen of rows of 69; the paste wrapped the last row, and one row scrolled out
+        let stream: Vec<char> = ("abcDefgHPasted".repeat(97) + "abcDefgHabcDefgH").chars().collect();
+        let rows: Vec<String> = stream.chunks(69).map(|row| row.iter().collect()).collect();
+        let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+        assert_eq!(
+            (rows.len(), rows[19].len()),
+            (20, 63),
+            "nineteen full rows and one the paste wraps"
+        );
+        let e = screen(&rows, "Pastedabc");
+        let mut after: String = stream[69..].iter().collect();
+        after.push_str("Pastedabc\n");
+        assert!(e.confirmed_scrolled(&after));
+        let nothing: String = stream[69..].iter().collect::<String>() + "\n";
+        assert!(!e.confirmed_scrolled(&nothing), "one row out and nothing pasted");
+    }
+
+    #[test]
+    fn a_reading_the_paste_s_first_characters_alone_explain_stays_unconfirmed() {
+        // the paste `aba` landed whole and one row scrolled out, or only its first `a` landed and nothing scrolled:
+        // both read `ababa`
+        let e = screen(&["ab", "ab"], "aba");
+        assert!(!e.confirmed_scrolled("ababa\n"));
+        // with the first row a line of its own, only the whole paste reads so
+        let e = screen(&["xy", "ab"], "aba");
+        assert!(e.confirmed_scrolled("ababa\n"));
     }
 
     #[test]

@@ -2,6 +2,8 @@
 
 ## Open
 
+- **2026-11-04 — The scrolled paste rule's whole read is capped by the family, not by code (minor, #171 M4, task 56, fix 5's re-review).** `confirmed_before` in `native/linux-engine/src/engine/paste.rs` (around 819–837) reads the whole field with `read_whole` (`GetText(0, -1)`, `native/linux-engine/src/field.rs` around 156). The only gate before it is the segment read's count, so a field that could hold a huge paste whole would cost about 3.3 s per judged read on musl. That cannot happen today: only VTE is observed whole, and its screen is fixed in size, no larger than `WHOLE_LIMIT` at the observation. Fix: one line in `confirmed_before` that returns `None` when the count is above `WHOLE_LIMIT`, mirroring the observation's cap. It refuses nothing a terminal can confirm.
+
 - **2026-11-04 — Small debts from T7's third fix, the paste's `TARGETS` answer (minor, #171 M4, task 56).**
   - (1) `--stats` `paste.targets.answered` also counts a `TARGETS` request the owner answered `Refused`. The notify did go, but VTE then holds no text target and drops the chord for another reason, and only the paste log tells the two apart. Fix: report the outcome beside the count.
   - (2) The owner's `Watch` log is bounded (`WATCH_LOG` in `native/linux-engine/src/clipboard/owner.rs`). Once it is full, a `TARGETS` request goes unlogged, and a flagged family waits the full 25 ms bound. That is the safe direction, at a cost of 25 ms.

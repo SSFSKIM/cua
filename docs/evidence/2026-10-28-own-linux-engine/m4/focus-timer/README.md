@@ -25,7 +25,7 @@ burst's last answer and 3 SIGKILL controls.
 | `delay-200-load2/`, `delay-400-load2/` | 24a86030, the delay set to 200 / 400 ms (a probe copy) | candidate | 2x | Chromium only |
 | `terminal-030-load2/` | 24a86030 | released 0.3.0 | 2x | gnome-terminal only |
 | `control-probe/` (`t56-probe-perreq`) | 78053e2b, the control given `--retention per-request` | candidate (78053e2b) | idle | Chromium, `--trials 3` |
-| `qt-030/` | fd581052 | released 0.3.0 | idle | kate, qtcreator |
+| `qt-030/` | fd581052 | released 0.3.0 | idle | kate, qtcreator: 32 paste runs (16 per family), all unconfirmed, text exact |
 | `events/` (`t56-events`) | fd581052 | candidate (fd581052) | idle | events experiment: pass |
 
 ## Idle (`idle/`)
@@ -61,3 +61,50 @@ An earlier sitting at 2x (`t56-final-load2`, harness f6c2c91a, not kept) failed 
 no text at all: two reads 150 ms apart had agreed before the loaded renderer took the first key. The read now also
 waits, at most 5 s, for the text to reach the run's length (24a86030); keys cut until a later FocusIn still leave it
 short.
+
+**A mislabel in the rows above (the review of 9f3edff1).** Every `focus-timer-run` and `focus-timer-stop` row of the
+sittings above carries its series or stop index as `"run": 0…59`, overwriting the sitting's name that the harness
+writes first, so each of their `summary.md` files has about 43 empty "## N … run unfinished" sections after the real
+one. The rows are otherwise right. From 5b9d28ed the index is `trial` and `run` is the sitting's name.
+
+## The fix (`fix/`): the exit settle, independent starts, the paste trace
+
+The design session's rulings on T7's escalation and on its review (2026-11-04). The engine's exit now waits, after its
+FocusOut drain, until 300 ms have passed since the last key input to a window whose redirect it still holds (it drops
+those redirects as it exits, and a covered Chromium window whose redirect goes while it has keys queued cuts them). The
+harness starts every Chromium run independently (a fresh engine's Shift delivers any tail an earlier cut held back,
+Ctrl+A and BackSpace empty the field), waits out the retry guard after an unconfirmed paste, and reports for every
+series the independent count, which the verdict judges, and the raw count, in which a run that met a tail at its start
+or follows an unconfirmed paste fails too. Rows carry `trial` (their index) and `tail_at_start`; paste rows their
+`--stats` record. The candidate builds are musl builds made the release workflow's way, labelled dev runs.
+
+| Directory | Harness | Engine | What | Verdict |
+|---|---|---|---|---|
+| `fix/settle-0-load2/` | 80fcbf80 | musl 5b9d28ed, `--exit-settle-ms 0` | the stop runs alone, Chrome and Electron, 2x | keys cut: Chrome 24/30 (raw 19), Electron 17/30 (raw 9); clicks 10/10 both |
+| `fix/settle-200-load2/` | 80fcbf80 | the same, 200 | the same | Chrome 26/30 (raw 24), Electron 28/30 (raw 26); clicks 10/10 |
+| `fix/settle-200-load2-compiling/` | 80fcbf80 | the same, 200 | the same, a test build running beside it (load beyond 2x): kept apart | Chrome 26/30, Electron 29/30 |
+| `fix/settle-250-load2/` | 80fcbf80 | the same, 250 | the same | 30/30 both; clicks 10/10 |
+| `fix/settle-300-load2/` | 80fcbf80 | the same, 300 | the same | 30/30 both; clicks 10/10 |
+| `fix/load2-250/` (`t56-fix-load2-b`) | 82b92193 | musl 82b92193 (settle 250) | every lane of Chrome, Electron, gnome-terminal, 2x | Chrome SIGTERM 29/30 (one whole burst cut); see below |
+| `fix/load2-300/` (`t56-fix-load2-c`) | 67681a38 | musl 67681a38 (settle 300), sha256 `63cba88a…` | every lane of Chrome and Electron, 2x | SIGTERM 30/30 both; see below |
+| `fix/stops-smoke-idle/` | the working tree at 5b9d28ed with 80fcbf80's flag parse | musl 5b9d28ed, settle 0 | the stop runs, Chrome, idle | the drag stop refused: shared mode refuses Chromium's background drags |
+| `fix/terminal-trace-load2/` | the working tree at 93390053 plus the trace fields of 9e703903 | a VM build of 9e703903's sources | gnome-terminal, 2x: what the paste's confirmation saw | timer paste 30/30; unredirect paste 9/60 (7 own, 2 guard) |
+
+- **The settle's steps.** 250 ms was the smallest 50 ms step that held 30 consecutive independent SIGTERM runs on both,
+  but the full sitting on its bytes then cut Chrome once in 30, so the value is 300 ms, which held 30/30 in its step
+  and in the full sitting (`fix/load2-300/`). The unredirect cut no click at any step, the 100 ms drain alone included,
+  so the settle follows keys only; the clicks stop exits about 104 ms after its last answer.
+- **The final sitting (`fix/load2-300/`).** The timer lane, the engine as it ships, reached 30 consecutive in every
+  scenario on Chrome and Electron, independent and raw alike; the audits are clean (6 FocusOuts attributed per family,
+  all deferred); the control fails on every scenario; SIGTERM after a burst 30/30 on both (exit 303 ms after the last
+  answer), after clicks 10/10 (104 ms); SIGKILL 3/3 unclosed. The `unredirect` lane's bursts failed (Chrome 24 of 60,
+  Electron 18): that lane drops each request's redirect at its FocusOut, 100 ms after the keys, the mechanism the exit
+  settle exists for, and the settle does not apply to it (it is no shipped configuration).
+- **gnome-terminal at 2x (`fix/load2-250/`).** The timer lane's paste reached 30 consecutive in 59 runs (6 unconfirmed,
+  raw 11 misses); the unredirect lane's did not (12 unconfirmed in 60). The trace (`fix/terminal-trace-load2/`) shows
+  the keys had landed before every missed paste's observation; in most misses the paste landed but the terminal's
+  accessible text had scrolled under the confirmation (its count fell by about a row), and in the rest the paste never
+  landed. Not fixed here: it needs a ruling (task 56's report).
+- **Independent counts from the earlier rows** (a run's own burst arrived whole iff its text ends with the burst): in
+  `load2/` (the 100 ms drain) Chrome had 6 own cuts of 10 (raw 8), Electron 3 (raw 4); in `delay-200-load2/` Chrome 0,
+  Electron 4 (raw 5); in `delay-400-load2/` none.

@@ -223,8 +223,9 @@ fn main() {
             std::process::exit(2);
         }
     };
-    // the held record, for the REPL host's launcher shim (held.rs), before any input; its name is taken out of the
-    // environment, so no application the engine launches is given it
+    // the held record, for the REPL host's launcher shim (held.rs), before any input and before the engine opens
+    // anything: the descriptor its worker handed down, made close-on-exec, and its name taken out of the environment,
+    // so no application the engine launches is given either
     if let Some(record) = held::open_from_env() {
         pressed::record_to(record);
     }

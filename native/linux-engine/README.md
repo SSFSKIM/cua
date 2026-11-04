@@ -95,9 +95,11 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   drain and the release: the last burst's window keeps its synthetic focus until it next gets a `FocusOut`, and a key
   held at the server stays down, unless the engine runs under cua's launcher shim (`cua-engine launcher-shim`,
   `shim.rs`, the REPL host's on Linux): there the engine writes its XTEST-held keys and buttons to a held record
-  (`held.rs`, a FIFO the shim names in `CUA_ENGINE_HELD_RECORD`), a press's before it is sent, and the shim, outside
-  the sandbox, releases what that record still shows down on the XTEST devices once the engine is gone, whether the
-  sandbox's end or its supervisor's death took it. The stop signals are
+  (`held.rs`: a bitmap of every key and button, written on a pipe whose write end the shim hands down, named in
+  `CUA_ENGINE_HELD_FD`, to the trusted worker and from it to each engine, never through a path model code could
+  reach), a press's before it is sent, and the shim, outside the sandbox, releases what that record still shows down
+  on the XTEST devices once the engine is gone, whether the sandbox's end or its supervisor's death took it; an engine
+  that outlives the shim's wait for it is ended first, so nothing is pressed after the release. The stop signals are
   blocked in every thread and taken by one thread with `sigwait`; a program `launch_app` starts gets them unblocked.
   The drain reads nothing from stdin and writes nothing to stdout, and an answer that cannot go out does not hold it
   back: answers are written by a thread of their own, and the loop, waiting for each, also watches for the stop. That is

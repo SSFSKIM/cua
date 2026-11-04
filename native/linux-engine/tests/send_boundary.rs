@@ -64,7 +64,18 @@ const EGRESS: [(&str, &str); 25] = [
 /// Process spawning, a route to the bus through a child (`busctl`, `dbus-send`): allowed only where named.
 const SPAWN: &str = "Command";
 /// Explicit allowances: (file, identifier, why it cannot carry a call to the bus).
-const ALLOWED: [(&str, &str, &str); 7] = [
+const ALLOWED: [(&str, &str, &str); 9] = [
+    (
+        "held.rs",
+        "from_raw_fd",
+        "the held record: adopts the descriptor the REPL host's launcher shim hands down in CUA_ENGINE_HELD_FD, once, at \
+         the engine's start, only after fstat shows a pipe (never a socket, the bus's kind) open write-only",
+    ),
+    (
+        "held.rs",
+        "FromRawFd",
+        "the held record: the trait of the adoption above",
+    ),
     (
         "apps.rs",
         SPAWN,
@@ -223,6 +234,9 @@ fn leaks(files: &[(PathBuf, String)]) -> Vec<String> {
             continue;
         }
         for (ident, what) in EGRESS {
+            if ALLOWED.iter().any(|(f, i, _)| *f == file && *i == ident) {
+                continue;
+            }
             if let Some(&at) = idents(&code, ident).first() {
                 found.push(format!("{file}: uses {ident} ({what}): {}", line_at(&code, at)));
             }
@@ -439,6 +453,12 @@ fn every_way_out_of_another_module_is_caught() {
         main.push_str("\nfn f() { std::process::Command::new(\"busctl\"); }\n");
     });
     caught(&main, "main.rs: spawns a process", "a spawn in main.rs");
+    // an adoption allowed in one file is caught in any other
+    caught(
+        &side("use std::os::fd::FromRawFd;\nfn f() { let _ = unsafe { std::fs::File::from_raw_fd(3) }; }"),
+        "side.rs: uses from_raw_fd",
+        "an adoption outside held.rs",
+    );
     assert!(
         side("fn f() { let _ = x11rb::connect(None); }").is_empty(),
         "the DISPLAY's X connection is not a way to the bus"

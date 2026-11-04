@@ -30,7 +30,8 @@ const SCRIPT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/support/targets
 const PATIENCE: Duration = Duration::from_secs(20);
 /// VTE's X11 class (`families.rs`): a family that asks for `TARGETS` at every owner change.
 const TERMINAL: &str = "gnome-terminal";
-/// A class no family lists: one that waits for no request.
+/// A class no family lists (the fixture is still GTK 3 by its toolkit; the test that means a family that waits for no
+/// request sets no wait).
 const UNLISTED: &str = "cua-targets-fixture";
 
 type Log = Arc<Mutex<Vec<Value>>>;
@@ -80,8 +81,9 @@ fn wait_for(log: &Log, what: &str, ready: impl Fn(&[Value]) -> bool) {
 }
 
 /// The target with program name `prgname`, asking `delay` after each owner change, focused and read by a fresh
-/// engine; or None where python3-gi with GTK 3 is not installed.
-fn target(tag: &str, prgname: &str, delay: &str) -> Option<(Engine, Target)> {
+/// engine (`wait`: its `--targets-wait-ms`, None for the families'); or None where python3-gi with GTK 3 is not
+/// installed.
+fn target(tag: &str, prgname: &str, delay: &str, wait: Option<Duration>) -> Option<(Engine, Target)> {
     let gi = Command::new("python3")
         .args([
             "-c",
@@ -119,7 +121,11 @@ fn target(tag: &str, prgname: &str, delay: &str) -> Option<(Engine, Target)> {
     conn.set_input_focus(InputFocus::PARENT, window, x11rb::CURRENT_TIME)
         .unwrap();
     conn.sync().unwrap();
-    let mut engine = Engine::new(crate::default_config()).unwrap();
+    let mut engine = Engine::new(crate::engine::Config {
+        targets_wait: wait,
+        ..crate::default_config()
+    })
+    .unwrap();
     let deadline = Instant::now() + PATIENCE;
     while read(&mut engine, window)
         .ok()
@@ -189,7 +195,7 @@ impl Drop for RequestPause {
 fn a_terminal_that_asks_for_targets_late_still_has_its_answer_before_the_chord() {
     let _serial = serial();
     let delay = (TARGETS_REFRESH_WAIT.as_millis() / 2).to_string();
-    let Some((mut engine, target)) = target("late", TERMINAL, &delay) else {
+    let Some((mut engine, target)) = target("late", TERMINAL, &delay, None) else {
         return;
     };
     let answer = paste(&mut engine, &target);
@@ -204,7 +210,8 @@ fn a_terminal_that_asks_for_targets_late_still_has_its_answer_before_the_chord()
 )]
 fn a_request_the_owner_has_not_yet_answered_is_answered_before_the_chord_in_any_family() {
     let _serial = serial();
-    let Some((mut engine, target)) = target("held", UNLISTED, "0") else {
+    // no wait, as a family that does not ask at every owner change has: only the request that has come counts
+    let Some((mut engine, target)) = target("held", UNLISTED, "0", Some(Duration::ZERO)) else {
         return;
     };
     let _held = RequestPause;
@@ -231,7 +238,7 @@ fn a_request_the_owner_has_not_yet_answered_is_answered_before_the_chord_in_any_
 )]
 fn a_focus_change_during_the_wait_for_targets_refuses_with_nothing_sent() {
     let _serial = serial();
-    let Some((mut engine, target)) = target("focus", TERMINAL, "never") else {
+    let Some((mut engine, target)) = target("focus", TERMINAL, "never", None) else {
         return;
     };
     let (send, log) = (target.send(), target.log.clone());

@@ -249,7 +249,7 @@ pub const FAMILIES: &[Family] = &[
     // GTK 4 reads input only as XInput 2 events: a synthetic key, click, scroll, drag or pointer move never arrives,
     // covered or visible, in every engine (M0.4; M3.1), so these take the foreground route in dedicated mode and are
     // refused in shared mode, as its paste chord is. Its element actions through AT-SPI take effect (M0.4's
-    // element-click run).
+    // element-click run). It asks for CLIPBOARD's TARGETS at every owner change (task 56 fix 3's matrix pass).
     Family {
         name: "GTK 4",
         toolkit: Some("GTK"),
@@ -286,9 +286,27 @@ pub const FAMILIES: &[Family] = &[
         feff_after_astral: false,
         drop_changes_desktop: false,
         text_scrolls: false,
-        refreshes_targets: false,
+        refreshes_targets: true,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible; m3/kinds/ runs m31-kinds-covered, \
-                   m31-kinds-visible, m31-move-covered, m31-drag-covered, m31-drag-visible-new",
+                   m31-kinds-visible, m31-move-covered, m31-drag-covered, m31-drag-visible-new; the TARGETS: \
+                   m4/focus-timer/fix3/ (matrix-idle, matrix-load2)",
+    },
+    // GTK 3 (gedit, and Writer on its gtk3 plugin) takes everything on the background route with no wait, as an
+    // unlisted family does; it is listed because it asks for CLIPBOARD's TARGETS at every owner change, as GTK 4 and
+    // gnome-terminal do (task 56 fix 3's matrix pass), so its paste waits for that answer.
+    Family {
+        name: "GTK 3",
+        toolkit: Some("GTK"),
+        toolkit_major: Some(3),
+        classes: &[],
+        drag: DragPacing::NONE,
+        paste: DEFAULT_PASTE,
+        ignores: &[],
+        feff_after_astral: false,
+        drop_changes_desktop: false,
+        text_scrolls: false,
+        refreshes_targets: true,
+        evidence: "m4/focus-timer/fix3/ (matrix-idle, matrix-load2)",
     },
     // Qt (kate on Qt 5.15, qtcreator on Qt 6.4) takes synthetic clicks and keys (M0.4) but no synthetic wheel event,
     // covered or visible, in every engine (M3.1): probably because its xcb backend reads the wheel through XInput 2.
@@ -324,7 +342,8 @@ pub const FAMILIES: &[Family] = &[
         text_scrolls: true,
         refreshes_targets: true,
         evidence: "M2.2's terminal paste (task-14 report; m2/ from M2.3); the scroll: task 56's paste trace \
-                   (m4/focus-timer/fix/terminal-trace-load2/)",
+                   (m4/focus-timer/fix/terminal-trace-load2/); the TARGETS: m4/focus-timer/fix2/never-taken/, \
+                   m4/focus-timer/fix3/",
     },
     // xterm pastes PRIMARY, not CLIPBOARD, by default, and ignores synthetic keys (`allowSendEvents` false, M0.4): no
     // paste route is verified, so text is refused.
@@ -432,14 +451,16 @@ mod tests {
     }
 
     #[test]
-    fn gtk_4_is_its_toolkit_at_major_version_4_and_gtk_3_is_unlisted() {
+    fn gtk_4_and_gtk_3_are_their_toolkit_at_their_major_version() {
         let gtk = |version| family(FAMILIES, Some("gnome-text-editor"), Some(&toolkit("GTK", version)));
         assert_eq!(gtk(Some("4.14.2")).map(|f| f.name), Some("GTK 4"));
         assert_eq!(gtk(Some(" 4")).map(|f| f.name), Some("GTK 4"));
-        assert!(
-            gtk(Some("3.24.41")).is_none(),
-            "gedit's GTK 3 takes the background route"
-        );
+        let gtk3 = gtk(Some("3.24.41")).expect("GTK 3 is listed");
+        assert_eq!(gtk3.name, "GTK 3");
+        for kind in [Kind::Paste, Kind::Keys, Kind::Clicks, Kind::Scroll, Kind::Move, Kind::Drag] {
+            assert_eq!(gtk3.ignores(kind), None, "gedit's GTK 3 takes the background route: {kind:?}");
+        }
+        assert_eq!((gtk3.paste, gtk3.drag), (DEFAULT_PASTE, DragPacing::NONE), "as an unlisted family");
         assert!(gtk(Some("40.1")).is_none());
         assert!(gtk(None).is_none(), "no version: not known to be GTK 4");
         assert_eq!(
@@ -450,6 +471,26 @@ mod tests {
             gtk(Some("4.14.2")).and_then(|f| f.ignores(Kind::Keys)),
             Some(When::Always)
         );
+    }
+
+    #[test]
+    fn the_families_that_ask_for_targets_at_every_owner_change_are_gtk_and_vte() {
+        // task 56 fix 3's matrix pass: gedit and Writer (GTK 3), gnome-text-editor (GTK 4) and gnome-terminal asked;
+        // Chrome, Electron, Firefox, kate and qtcreator did not
+        let refreshing: Vec<&str> = FAMILIES.iter().filter(|f| f.refreshes_targets).map(|f| f.name).collect();
+        assert_eq!(refreshing, vec!["GTK 4", "GTK 3", "VTE"]);
+        let writer = family(FAMILIES, Some("libreoffice-writer"), Some(&toolkit("gtk", Some("3.24.41"))));
+        assert!(writer.is_some_and(|f| f.refreshes_targets), "Writer on its gtk3 plugin");
+        for (class, toolkit) in [
+            ("Google-chrome", None),
+            ("cua-electron-fixture", Some(toolkit("Chromium", Some("1.0")))),
+            ("firefox", None),
+            ("kate", Some(toolkit("Qt", Some("5.15.13")))),
+            ("qtcreator", Some(toolkit("Qt", Some("6.4.2")))),
+        ] {
+            let found = family(FAMILIES, Some(class), toolkit.as_ref());
+            assert!(!found.is_some_and(|f| f.refreshes_targets), "{class}");
+        }
     }
 
     #[test]

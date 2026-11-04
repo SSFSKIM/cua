@@ -74,6 +74,9 @@ struct Report {
     confirm_ms: Option<f64>,
     /// Which rule confirmed it: the inserted segment, or the whole field scrolled.
     confirm_rule: Option<&'static str>,
+    /// How many confirming looks the paste took, and the scrolled-field rule's part in them.
+    confirm_looks: u32,
+    scrolled: Scrolled,
     /// The field observed whole (a family whose text scrolls): its characters and its lines, and how long that took.
     observed_whole: Option<(usize, usize)>,
     observed_whole_ms: Option<f64>,
@@ -175,6 +178,12 @@ impl Engine {
                 "attributed": report.attributed,
                 "confirm_ms": report.confirm_ms,
                 "confirm_rule": report.confirm_rule,
+                "confirm_looks": report.confirm_looks,
+                "scrolled": {
+                    "checks": report.scrolled.checks,
+                    "unchanged": report.scrolled.unchanged,
+                    "check_ms": report.scrolled.check_time.as_secs_f64() * 1000.0,
+                },
                 "observed_whole": report.observed_whole,
                 "observed_whole_ms": report.observed_whole_ms,
                 "observed": report.observed,
@@ -646,13 +655,17 @@ fn dispatch_and_confirm(
         if !report.confirmed
             && now < confirm_deadline
             && let Some(e) = &expected
-            && let Some(rule) = confirmed_before(
-                |bus: &mut crate::dbus::Bus, until| field::read(bus, &element.target, e.at, e.len, until),
-                |bus: &mut crate::dbus::Bus, until| field::read_whole(bus, &element.target, until),
-                bus,
-                e,
-                confirm_deadline,
-            )
+            && let Some(rule) = {
+                report.confirm_looks += 1;
+                confirmed_before(
+                    |bus: &mut crate::dbus::Bus, until| field::read(bus, &element.target, e.at, e.len, until),
+                    |bus: &mut crate::dbus::Bus, until| field::read_whole(bus, &element.target, until),
+                    bus,
+                    e,
+                    &mut report.scrolled,
+                    confirm_deadline,
+                )
+            }
         {
             report.confirmed = true;
             report.confirm_rule = Some(rule.name());
@@ -801,12 +814,14 @@ impl Rule {
 /// field observed whole whose count shows that text has left it (a scroll takes text from the field's start, so it
 /// holds fewer characters than the paste alone would make), the whole field as it reads now (`read_whole`), under the
 /// scrolled-field rule. Each read waits no later than the deadline, and its result counts only if it came before it,
-/// so a reply that arrives late never confirms a paste that applied late.
+/// so a reply that arrives late never confirms a paste that applied late. A whole read that is the same text as the
+/// last one the scrolled-field rule left unconfirmed is not judged again (`Scrolled`).
 fn confirmed_before<C>(
     read: impl FnOnce(&mut C, Instant) -> Result<Option<(i32, String)>>,
     read_whole: impl FnOnce(&mut C, Instant) -> Result<Option<String>>,
     on: &mut C,
     expected: &Expected,
+    scrolled: &mut Scrolled,
     deadline: Instant,
 ) -> Option<Rule> {
     if Instant::now() >= deadline {
@@ -820,7 +835,33 @@ fn confirmed_before<C>(
         return None;
     }
     let after = read_whole(on, deadline).ok().flatten()?;
-    (expected.confirmed_scrolled(&after) && Instant::now() < deadline).then_some(Rule::Scrolled)
+    if scrolled.unconfirmed.as_deref() == Some(after.as_str()) {
+        scrolled.unchanged += 1;
+        return None;
+    }
+    let started = Instant::now();
+    let confirmed = expected.confirmed_scrolled(&after);
+    scrolled.checks += 1;
+    scrolled.check_time += started.elapsed();
+    if confirmed {
+        return (Instant::now() < deadline).then_some(Rule::Scrolled);
+    }
+    scrolled.unconfirmed = Some(after);
+    None
+}
+
+/// The scrolled-field rule over one paste's confirmation (`confirmed_before`): the last whole read it left
+/// unconfirmed, and, for `--stats`, how many reads it judged, how many it did not judge again because they read the
+/// same, and the time its judging took. The rule's answer depends on the whole read's text alone, and a terminal left
+/// unconfirmed reads the same at each of the confirmation's looks, up to 100 in its 2 s. One judging at the route's
+/// limits (a field of `WHOLE_LIMIT` characters in `WHOLE_LINES` lines and a 64 KiB paste) takes 11 to 21 ms, and
+/// judging every look of a paste left unconfirmed there took 0.83 s of CPU over the 2 s (task 56, fix 4).
+#[derive(Default)]
+struct Scrolled {
+    unconfirmed: Option<String>,
+    checks: u32,
+    unchanged: u32,
+    check_time: Duration,
 }
 
 #[cfg(test)]
@@ -1026,6 +1067,7 @@ mod tests {
             |_: &mut (), _| panic!("a field not observed whole is read whole"),
             &mut (),
             &expected(),
+            &mut Scrolled::default(),
             deadline,
         )
     }
@@ -1100,6 +1142,7 @@ mod tests {
                 },
                 wholes,
                 &screen(),
+                &mut Scrolled::default(),
                 deadline,
             )
         };
@@ -1130,6 +1173,7 @@ mod tests {
             |_: &mut (), _| Ok(None),
             &mut (),
             &screen(),
+            &mut Scrolled::default(),
             deadline,
         );
         assert_eq!(cut, None);
@@ -1142,8 +1186,159 @@ mod tests {
             },
             &mut (),
             &screen(),
+            &mut Scrolled::default(),
             soon,
         );
         assert_eq!(late, None);
+    }
+
+    /// The scrolled rule's largest input (task 56, fix 4): a field of `WHOLE_LIMIT` characters in `WHOLE_LINES` rows of
+    /// 128, the caret before VTE's closing newline, a 64 KiB paste, and the field read after it scrolled by all but
+    /// its last row, so that every other row's start is a reading short of the paste to compare. `field` and `paste`
+    /// give each position's character.
+    fn maximal(field: impl Fn(usize) -> char, paste: impl Fn(usize) -> char) -> (Expected, String) {
+        let count = WHOLE_LIMIT as usize;
+        let row = count / WHOLE_LINES;
+        let at = count - 1;
+        let text: String = (0..at).map(field).chain(['\n']).collect();
+        let pasted: String = (0..65_536).map(paste).collect();
+        let prefix = count - row;
+        let after: String = text[prefix..at].chars().chain(pasted.chars()).chain(['\n']).collect();
+        let expected = Expected {
+            len: paste::offsets(&pasted, false),
+            text: pasted,
+            at: at as i32,
+            feff_after_astral: false,
+            count_before: count as i32,
+            before: "\n".into(),
+            whole: Some(paste::Whole {
+                text,
+                line_starts: (0..count).step_by(row).map(|start| start as i32).collect(),
+            }),
+        };
+        (expected, after)
+    }
+
+    /// The thread's time on a CPU so far (`/proc/thread-self/schedstat`).
+    fn cpu_time() -> Duration {
+        let stat = std::fs::read_to_string("/proc/thread-self/schedstat").unwrap();
+        Duration::from_nanos(stat.split_whitespace().next().unwrap().parse().unwrap())
+    }
+
+    /// The confirmation's looks as the route makes them (`dispatch_and_confirm`), every read the same: how many, whether
+    /// one confirmed, the scrolled rule's part, and the thread's CPU time and the wall time they took.
+    fn polled(expected: &Expected, after: &str) -> (u32, Option<Rule>, Scrolled, Duration, Duration) {
+        let count = after.chars().count() as i32;
+        let started = Instant::now();
+        let deadline = started + paste::CONFIRM_WAIT;
+        let cpu = cpu_time();
+        let mut looks = 0;
+        let mut scrolled = Scrolled::default();
+        let rule = loop {
+            looks += 1;
+            let rule = confirmed_before(
+                |_: &mut (), _| Ok(Some((count, String::new()))),
+                |_: &mut (), _| Ok(Some(after.to_string())),
+                &mut (),
+                expected,
+                &mut scrolled,
+                deadline,
+            );
+            if rule.is_some() || Instant::now() >= deadline {
+                break rule;
+            }
+            std::thread::sleep(paste::CONFIRM_POLL);
+        };
+        (looks, rule, scrolled, cpu_time() - cpu, started.elapsed())
+    }
+
+    /// The maximal input that confirms: every reading short of the paste reads as the field does until the paste's last
+    /// character.
+    fn maximal_confirming() -> (Expected, String) {
+        maximal(|_| 'a', |i| if i == 65_535 { 'b' } else { 'a' })
+    }
+
+    /// The maximal input that stays unconfirmed: the row start before the screen's last is a reading short of the paste
+    /// that reads the same, and every earlier one meets the field's `b` first, later the earlier it starts.
+    fn maximal_ambiguous() -> (Expected, String) {
+        let b = WHOLE_LIMIT as usize - 2 * (WHOLE_LIMIT as usize / WHOLE_LINES) - 1;
+        maximal(|i| if i == b { 'b' } else { 'a' }, |_| 'a')
+    }
+
+    /// The scrolled rule's cost at the route's limits (`cargo test --release --bin cua-engine -- --ignored
+    /// --nocapture the_scrolled_rule_s_cost`): one check, and every look of a confirmation, on the input that confirms
+    /// after comparing every reading short of the paste almost to its end, and on one that stays unconfirmed.
+    #[test]
+    #[ignore = "a measurement"]
+    fn the_scrolled_rule_s_cost_at_the_route_s_limits() {
+        for (name, (expected, after)) in [
+            ("confirms", maximal_confirming()),
+            ("stays unconfirmed", maximal_ambiguous()),
+        ] {
+            let whole = expected.whole.as_ref().unwrap();
+            let mut wall = Vec::new();
+            let mut cpu = Vec::new();
+            let mut verdict = false;
+            for _ in 0..5 {
+                let (from, started) = (cpu_time(), Instant::now());
+                verdict = expected.confirmed_scrolled(&after);
+                wall.push(started.elapsed());
+                cpu.push(cpu_time() - from);
+            }
+            wall.sort();
+            cpu.sort();
+            let (looks, rule, scrolled, looks_cpu, looks_wall) = polled(&expected, &after);
+            let ms = |d: Duration| d.as_secs_f64() * 1e3;
+            println!(
+                "{name}: field {} chars in {} lines, paste {} chars, read {} chars; one check {verdict}: wall median \
+                 {:.1} ms (min {:.1}, max {:.1}), cpu median {:.1} ms (min {:.1}, max {:.1}); the confirmation: \
+                 {looks} looks, {rule:?}, {} checks ({:.1} ms), {} unchanged, cpu {:.1} ms, wall {:.1} ms",
+                whole.text.chars().count(),
+                whole.line_starts.len(),
+                expected.text.chars().count(),
+                after.chars().count(),
+                ms(wall[2]),
+                ms(wall[0]),
+                ms(wall[4]),
+                ms(cpu[2]),
+                ms(cpu[0]),
+                ms(cpu[4]),
+                scrolled.checks,
+                ms(scrolled.check_time),
+                scrolled.unchanged,
+                ms(looks_cpu),
+                ms(looks_wall),
+            );
+        }
+    }
+
+    #[test]
+    fn a_whole_read_the_scrolled_rule_left_unconfirmed_is_judged_once_while_it_reads_the_same() {
+        let (expected, after) = maximal_ambiguous();
+        let count = after.chars().count() as i32;
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let look = |scrolled: &mut Scrolled, whole: &str| {
+            confirmed_before(
+                |_: &mut (), _| Ok(Some((count, String::new()))),
+                |_: &mut (), _| Ok(Some(whole.to_string())),
+                &mut (),
+                &expected,
+                scrolled,
+                deadline,
+            )
+        };
+        let mut scrolled = Scrolled::default();
+        for _ in 0..10 {
+            assert_eq!(look(&mut scrolled, &after), None);
+        }
+        assert_eq!((scrolled.checks, scrolled.unchanged), (1, 9));
+        assert_eq!(scrolled.unconfirmed.as_deref(), Some(after.as_str()));
+        // a read that differs is judged: the field scrolled by one row less, which only the whole paste explains (every
+        // reading short of it still holds the field's `b`)
+        let whole = &expected.whole.as_ref().unwrap().text;
+        let row = WHOLE_LIMIT as usize / WHOLE_LINES;
+        let one_row_less = whole[whole.len() - 2 * row..whole.len() - 1].to_string() + &expected.text + "\n";
+        assert_eq!(look(&mut scrolled, &one_row_less), Some(Rule::Scrolled));
+        assert_eq!((scrolled.checks, scrolled.unchanged), (2, 9));
     }
 }

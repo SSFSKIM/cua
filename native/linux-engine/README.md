@@ -285,7 +285,10 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   confirms only when the whole of it reads as the observed text with the paste at the caret less a prefix ending where
   an observed line starts, the paste whole after it, and no reading short of the whole paste (none of it, or only its
   first characters, at the caret, less a prefix ending where an observed line starts) is the same; anything else
-  stays unconfirmed (`paste.confirm_rule` `segment` or `scrolled` on the `--stats` line). The answer is
+  stays unconfirmed (`paste.confirm_rule` `segment` or `scrolled` on the `--stats` line). A whole read that reads
+  the same as one the rule left unconfirmed is not judged again (`paste.scrolled` `checks`, `unchanged`, `check_ms`;
+  `paste.confirm_looks`): one judging at the limits, a field of 65,536 characters in 512 lines and a 64 KiB paste, takes
+  11 to 21 ms. The field is not observed whole past those limits, and then only the segment confirms. The answer is
   success when the segment is read back, or the scrolled field confirms, else
   `Paste was sent once and could not be confirmed; read the field before retrying`. Only a refusal before dispatch, or
   a chord press the X server answered with an X error naming it (so the chord's last key never arrived), says that

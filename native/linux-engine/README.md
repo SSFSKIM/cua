@@ -266,8 +266,16 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   focused one: its focus, editability, character count, caret and selection); a named element without the focus is
   clicked at its visible point (once more if the focus has not shown 500 ms later: background Chrome drops a first
   click in some states; `paste.clicks` and `paste.focus_ms` on the `--stats` line) and its caret or selection put back
-  (`AddSelection`, `SetCaretOffset`; a refusal is no failure). Then the lock, the snapshot and CLIPBOARD taken; the field and the desktop focus revalidated
-  (`requested field or selection changed before dispatch; nothing was sent`); the chord sent once; the field read
+  (`AddSelection`, `SetCaretOffset`; a refusal is no failure). Then the lock, the snapshot and CLIPBOARD taken; the
+  target's `TARGETS` answered before the chord (a client that keeps CLIPBOARD's targets, as gnome-terminal does,
+  drops a paste chord that comes before the new owner's: task 56, fix 3): the owner thread handles every request the
+  server has given it and makes a round trip, so an answer to a `TARGETS` request from the target's X client (its
+  window's resource range) since the take is delivered before the chord, in every family; a family that asks at every
+  owner change (`refreshes_targets`: GTK 3, GTK 4, VTE) is waited for, every 2 ms, at most 25 ms
+  (`paste::TARGETS_REFRESH_WAIT`; `paste.targets` on the `--stats` line: answered, waited, the bound;
+  `--targets-wait-ms` sets the wait for every family, measurement only); then the field and the desktop focus
+  revalidated, after the wait (`requested field or selection changed before dispatch; nothing was sent`); the chord
+  sent once; the field read
   every 20 ms for up to 2 s for the inserted segment where the caret or selection was (for Gecko, without the U+FEFF
   it adds after each character beyond the BMP), each read bounded by that deadline and counted only if it ends
   before it, while the target's selection transfer is followed, counting only requests from the target's X client
@@ -275,8 +283,9 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   screen's first row leaves as text wraps its last), the field is also observed whole, its text and its lines
   (`GetTextAtOffset` at `LINE_START`, the terminal's rows, soft wraps included), and a field that has lost text since
   confirms only when the whole of it reads as the observed text with the paste at the caret less a prefix ending where
-  an observed line starts, the paste whole after it, and the paste text occurs exactly once in that expected text;
-  anything else stays unconfirmed (`paste.confirm_rule` `segment` or `scrolled` on the `--stats` line). The answer is
+  an observed line starts, the paste whole after it, and no reading short of the whole paste (none of it, or only its
+  first characters, at the caret, less a prefix ending where an observed line starts) is the same; anything else
+  stays unconfirmed (`paste.confirm_rule` `segment` or `scrolled` on the `--stats` line). The answer is
   success when the segment is read back, or the scrolled field confirms, else
   `Paste was sent once and could not be confirmed; read the field before retrying`. Only a refusal before dispatch, or
   a chord press the X server answered with an X error naming it (so the chord's last key never arrived), says that

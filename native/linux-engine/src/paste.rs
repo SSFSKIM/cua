@@ -29,8 +29,11 @@ pub const CONFIRM_WAIT: Duration = Duration::from_secs(2);
 
 /// How long a paste waits at most, between taking CLIPBOARD and its revalidation before the chord, for a target whose
 /// family asks for `TARGETS` at every owner change (`families.rs` `refreshes_targets`) to ask and be answered, and how
-/// often it looks (task 56, fix 3). A target that has not asked by then gets the chord as before.
-pub const TARGETS_REFRESH_WAIT: Duration = Duration::from_millis(200);
+/// often it looks (task 56, fix 3). A target that has not asked by then gets the chord as before. The smallest step
+/// of 5, 10, 25, 50, 100 ms that no measured wait reached at twice the load, with no proxy, every paste waiting up to
+/// 1 s (`--targets-wait-ms 1000`): gnome-terminal 200 pastes, median 2.3 ms, p95 8.7, max 12.8; gedit and Writer 30
+/// each, max 12.7 and 12.5 (`m4/focus-timer/fix3/`).
+pub const TARGETS_REFRESH_WAIT: Duration = Duration::from_millis(25);
 pub const TARGETS_POLL: Duration = Duration::from_millis(2);
 
 /// While an earlier unconfirmed paste's `CurrentTime` refusal runs, `wait` long (Decision Log, M2.1); `clicked` when

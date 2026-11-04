@@ -184,10 +184,12 @@ function ancestorsUpTo(rows, self, leader) {
 // processes they start) and releases a child only in that child's own cleanup. reap() is called only when a child has
 // ended, so every unprotected member is what it left behind: processes it started, reparented when it died. (A process that leaves the group, as bwrap's --new-session sandbox does, is not found; that
 // sandbox dies with its parent.)
-// reap({engine}) (the trusted worker's, on Linux) lets a stray running cua's engine drain first, as a stop of the
-// worker's tree does (drainThenKill): with the sandbox disabled the engine is in the owned group, and a worker that ended
-// on its own (its stdin closed, so the engine has begun its orderly exit) leaves it there as a stray. -> a promise.
-export function ownedGroupReaper({self = process.pid, table = processTable, signal = sendSignal, ...drain} = {}) {
+// With `engine` (Linux: the cua-engine the trusted worker's service runs) every reap lets a stray running it drain
+// first, as a stop of the worker's tree does (drainThenKill): with the sandbox disabled the engine is in the owned
+// group, and a worker that ended on its own (its stdin closed, so the engine has begun its orderly exit) leaves it there
+// as a stray, which any child's cleanup may find first. Reaps run one at a time, each after the one before has ended,
+// so no reap freezes or kills an engine another one is draining. -> a promise.
+export function ownedGroupReaper({self = process.pid, table = processTable, signal = sendSignal, engine = null, ...drain} = {}) {
   const rows = table();
   const row = rows.find(([pid]) => pid === self);
   const leader = row?.[2];
@@ -200,7 +202,7 @@ export function ownedGroupReaper({self = process.pid, table = processTable, sign
     return current.filter(([pid, ppid, pgid, comm]) => pgid === leader && pid !== self && !ancestors.has(pid) && !spared.has(pid)
       && !(ppid === self && /(^|\/)ps$/.test(comm ?? ''))).map(([pid]) => pid);
   };
-  const reap = ({engine = null} = {}) => {
+  const reapOnce = () => {
     const frozen = new Set();
     for (let pass = 0; pass < 8; pass++) {
       const found = strays().filter(pid => !frozen.has(pid));
@@ -209,6 +211,8 @@ export function ownedGroupReaper({self = process.pid, table = processTable, sign
     }
     return drainThenKill(frozen, {engine, signal, ...drain});
   };
+  let last = Promise.resolve();
+  const reap = () => (last = last.then(reapOnce, reapOnce));
   const own = pid => { protectedRoots.add(pid); return () => protectedRoots.delete(pid); };
   return {reap, own};
 }
@@ -332,6 +336,10 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     return treeStop ??= stopTree(child.pid, {engine}).finally(() => { treeStop = null; });
   };
 
+  // The launcher held (holdLauncher), and its kill when this process exits first.
+  let held = false;
+  const killHeld = () => sendSignal(child.pid, 'SIGKILL');
+
   // Once, however it is reached: every caller (stdout's close, the exit, stop()) waits for the same cleanup.
   let ending = null;
   const end = () => (ending ??= finish());
@@ -339,6 +347,7 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     ended = true;
     if (!exitInfo && !spawnError && !await within(exited, EXIT_GRACE_MS)) { await killTree(); await within(exited, EXIT_GRACE_MS); }
     lifeline?.release();
+    if (held) process.removeListener('exit', killHeld);
     await reap();
     await within(stderrClosed, EXIT_GRACE_MS);
     for (const stream of [stdin, stdout, stderr]) stream?.destroy();
@@ -362,8 +371,15 @@ export function startKernelChild({command, args, env, cwd}, {onMessage, onEnd, s
     // input has ended). codex-linux-sandbox takes a SIGTERM by ending its sandbox at once, and bwrap's
     // --die-with-parent then ends the PID namespace, the engine in it with SIGKILL; held, the owned group's SIGTERM at
     // upstream's by(0.4) reaches the engine only as the stop's own, after the freeze (stopProcessTree).
+    // A held launcher never outlives the stop (the design session, M4 T7b): the stop's SIGKILL takes it (stop(), on
+    // every path the supervisor stops the worker by, its forced shutdown included), so does the owned group's at
+    // upstream's by(0.7), and this process's own exit, a crash included, SIGKILLs it here, since it would wait stopped
+    // for good once nobody is left to stop it.
     holdLauncher() {
-      if (child?.pid && !ended) sendSignal(child.pid, 'SIGSTOP');
+      if (!child?.pid || ended || held) return;
+      held = true;
+      process.once('exit', killHeld);
+      sendSignal(child.pid, 'SIGSTOP');
     },
     // Ends the kernel on purpose: SIGKILL to it and its descendants (after its engine's drain, with `engine`), its input
     // closed; resolves once its exit was seen (or a bounded wait passed).

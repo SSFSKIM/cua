@@ -207,7 +207,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
   // In the proxy's owned group (src/runtime/launch.mjs sets CUA_REPL_OWNED_GROUP; the reaper checks the group itself),
   // whatever a finished child left in the group is removed with it. Every live child, kernel and trusted worker alike, is
   // registered with `own` while it runs, so another child's end never takes it or what it started.
-  const groupReaper = reaper();
+  const groupReaper = reaper({engine: settings.engine});
   const reap = groupReaper?.reap ?? (() => {});
   const sandboxed = settings.launcher !== null;
   let initialized = false;
@@ -371,7 +371,7 @@ export function createSupervisor({input, output, env, cwd = process.cwd(), start
     self.ready = false;
     let release = () => {};
     const child = startKernel(self.launch, {exitSentence: TRUSTED_EXIT_SENTENCE, engine: settings.engine,
-      reap: () => { release(); return reap(settings.engine ? {engine: settings.engine} : undefined); },
+      reap: () => { release(); return reap(); },
       onMessage: message => {
         if (worker !== self || self.child !== child) return;
         if (message.type === 'runtime_ready') return workerReady(self);

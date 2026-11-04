@@ -181,14 +181,17 @@ test('a sandboxed worker first started while the host drains is held once it is 
   assert.deepEqual(h.events.filter(e => e.endsWith('worker 1')), ['hold worker 1', 'stop worker 1']);
 });
 
-test('the trusted worker\'s reap names the engine, so a stray engine it left drains first; a kernel\'s names none', linuxOnly, async t => {
+test('the owned-group reaper knows the engine itself, so any child\'s reap lets a stray engine drain first, and no caller names it', linuxOnly, async t => {
+  const made = [];
   const reaps = [];
-  const h = host({behaviour: () => ({ready: true}), env: sandboxedEnv(t), reaper: () => ({reap: options => { reaps.push(options ?? {}); return Promise.resolve([]); }, own: () => () => {}})});
+  const h = host({behaviour: () => ({ready: true}), env: sandboxedEnv(t),
+    reaper: options => { made.push(options); return {reap: (...args) => { reaps.push(args); return Promise.resolve([]); }, own: () => () => {}}; }});
   await h.init();
   await h.js('rpc');
   await h.children.find(c => c.kind === 'worker').reap();
   await h.children.find(c => c.kind === 'kernel').reap();
-  assert.deepEqual(reaps, [{engine: '/opt/cua/engine/linux/cua-engine'}, {}]);
+  assert.deepEqual(made, [{engine: '/opt/cua/engine/linux/cua-engine'}]);
+  assert.deepEqual(reaps, [[], []], 'the worker\'s reap and a kernel\'s alike');
   h.input.end();
   await h.supervisor.closed;
 });

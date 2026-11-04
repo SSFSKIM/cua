@@ -854,8 +854,9 @@ fn confirmed_before<C>(
 /// unconfirmed, and, for `--stats`, how many reads it judged, how many it did not judge again because they read the
 /// same, and the time its judging took. The rule's answer depends on the whole read's text alone, and a terminal left
 /// unconfirmed reads the same at each of the confirmation's looks, up to 100 in its 2 s. One judging at the route's
-/// limits (a field of `WHOLE_LIMIT` characters in `WHOLE_LINES` lines and a 64 KiB paste) takes 11 to 24 ms, and
-/// judging every look of a paste left unconfirmed there took 0.83 s of CPU over the 2 s (task 56, fix 4).
+/// limits (a field of `WHOLE_LIMIT` characters in `WHOLE_LINES` lines and a 64 KiB paste) took 11 to 24 ms, and
+/// judging every look of a paste left unconfirmed there took 0.83 s of CPU over the 2 s (task 56, fix 4); compared in
+/// place, one judging takes about 3 ms (fix 5).
 #[derive(Default)]
 struct Scrolled {
     unconfirmed: Option<String>,
@@ -1193,15 +1194,15 @@ mod tests {
     }
 
     /// The scrolled rule's largest input (task 56, fix 4): a field of `WHOLE_LIMIT` characters in `WHOLE_LINES` rows of
-    /// 128, the caret before VTE's closing newline, a 64 KiB paste, and the field read after it scrolled by all but
-    /// its last row, so that every other row's start is a reading short of the paste to compare. `field` and `paste`
-    /// give each position's character.
-    fn maximal(field: impl Fn(usize) -> char, paste: impl Fn(usize) -> char) -> (Expected, String) {
+    /// 128, the caret before VTE's closing newline, a paste of `pasted` characters, and the field read after it
+    /// scrolled by all but its last row, so that every other row's start is a reading short of the paste to compare.
+    /// `field` and `paste` give each position's character.
+    fn maximal(pasted: usize, field: impl Fn(usize) -> char, paste: impl Fn(usize) -> char) -> (Expected, String) {
         let count = WHOLE_LIMIT as usize;
         let row = count / WHOLE_LINES;
         let at = count - 1;
         let text: String = (0..at).map(field).chain(['\n']).collect();
-        let pasted: String = (0..65_536).map(paste).collect();
+        let pasted: String = (0..pasted).map(paste).collect();
         let prefix = count - row;
         let after: String = text[prefix..at].chars().chain(pasted.chars()).chain(['\n']).collect();
         let expected = Expected {
@@ -1252,62 +1253,93 @@ mod tests {
         (looks, rule, scrolled, cpu_time() - cpu, started.elapsed())
     }
 
-    /// The maximal input that confirms: every reading short of the paste reads as the field does until the paste's last
-    /// character.
-    fn maximal_confirming() -> (Expected, String) {
-        maximal(|_| 'a', |i| if i == 65_535 { 'b' } else { 'a' })
+    /// The maximal input that confirms, its paste `pasted` characters long: every reading short of the paste reads as
+    /// the field does until the paste's last character.
+    fn maximal_confirming(pasted: usize) -> (Expected, String) {
+        maximal(pasted, |_| 'a', |i| if i == pasted - 1 { 'b' } else { 'a' })
     }
 
     /// The maximal input that stays unconfirmed: the row start before the screen's last is a reading short of the paste
     /// that reads the same, and every earlier one meets the field's `b` first, later the earlier it starts.
     fn maximal_ambiguous() -> (Expected, String) {
         let b = WHOLE_LIMIT as usize - 2 * (WHOLE_LIMIT as usize / WHOLE_LINES) - 1;
-        maximal(|i| if i == b { 'b' } else { 'a' }, |_| 'a')
+        maximal(65_536, |i| if i == b { 'b' } else { 'a' }, |_| 'a')
+    }
+
+    /// The largest paste the route serves into the largest field observed whole, the read after it a field of the same
+    /// size again, which cannot hold the paste whole (a terminal's screen after a long paste).
+    fn maximal_field_largest_paste() -> (Expected, String) {
+        let (expected, _) = maximal(crate::paste::MAX_TEXT_BYTES, |_| 'a', |_| 'a');
+        (expected, "a".repeat(WHOLE_LIMIT as usize - 1) + "\n")
     }
 
     /// The scrolled rule's cost at the route's limits (`cargo test --release --bin cua-engine -- --ignored
-    /// --nocapture the_scrolled_rule_s_cost`): one check, and every look of a confirmation, on the input that confirms
-    /// after comparing every reading short of the paste almost to its end, and on one that stays unconfirmed.
+    /// --nocapture the_scrolled_rule_s_cost`): one check, its largest single allocation, and, for the 64 KiB pastes,
+    /// every look of a confirmation. The inputs: the 64 KiB paste that confirms after comparing every reading short of
+    /// it almost to its end, and the one that stays unconfirmed; the paste that confirms raised to 4 MiB and to 64 MiB
+    /// (`MAX_TEXT_BYTES`), its read holding it whole; and the 64 MiB paste whose read cannot hold it.
     #[test]
     #[ignore = "a measurement"]
     fn the_scrolled_rule_s_cost_at_the_route_s_limits() {
-        for (name, (expected, after)) in [
-            ("confirms", maximal_confirming()),
-            ("stays unconfirmed", maximal_ambiguous()),
-        ] {
+        let ms = |d: Duration| d.as_secs_f64() * 1e3;
+        // each input: its name, how to make it, how many checks to time, and whether to run the confirmation's looks
+        type Input = (&'static str, fn() -> (Expected, String), usize, bool);
+        let inputs: [Input; 5] = [
+            ("64 KiB, confirms", || maximal_confirming(65_536), 5, true),
+            ("64 KiB, stays unconfirmed", maximal_ambiguous, 5, true),
+            ("4 MiB, confirms", || maximal_confirming(4 << 20), 1, false),
+            (
+                "64 MiB, confirms",
+                || maximal_confirming(crate::paste::MAX_TEXT_BYTES),
+                1,
+                false,
+            ),
+            ("64 MiB, the read a field again", maximal_field_largest_paste, 5, true),
+        ];
+        for (name, input, checks, poll) in inputs {
+            let (expected, after) = input();
             let whole = expected.whole.as_ref().unwrap();
             let mut wall = Vec::new();
             let mut cpu = Vec::new();
+            let mut largest = 0;
             let mut verdict = false;
-            for _ in 0..5 {
+            for _ in 0..checks {
                 let (from, started) = (cpu_time(), Instant::now());
-                verdict = expected.confirmed_scrolled(&after);
+                let (answer, allocated) =
+                    crate::alloc_watch::largest_allocation(|| expected.confirmed_scrolled(&after));
                 wall.push(started.elapsed());
                 cpu.push(cpu_time() - from);
+                verdict = answer;
+                largest = largest.max(allocated);
             }
             wall.sort();
             cpu.sort();
-            let (looks, rule, scrolled, looks_cpu, looks_wall) = polled(&expected, &after);
-            let ms = |d: Duration| d.as_secs_f64() * 1e3;
+            let polls = if poll {
+                let (looks, rule, scrolled, looks_cpu, looks_wall) = polled(&expected, &after);
+                format!(
+                    "; the confirmation: {looks} looks, {rule:?}, {} checks ({:.1} ms), {} unchanged, cpu {:.1} ms, \
+                     wall {:.1} ms",
+                    scrolled.checks,
+                    ms(scrolled.check_time),
+                    scrolled.unchanged,
+                    ms(looks_cpu),
+                    ms(looks_wall),
+                )
+            } else {
+                String::new()
+            };
             println!(
-                "{name}: field {} chars in {} lines, paste {} chars, read {} chars; one check {verdict}: wall median \
-                 {:.1} ms (min {:.1}, max {:.1}), cpu median {:.1} ms (min {:.1}, max {:.1}); the confirmation: \
-                 {looks} looks, {rule:?}, {} checks ({:.1} ms), {} unchanged, cpu {:.1} ms, wall {:.1} ms",
+                "{name}: field {} chars in {} lines, paste {} chars, read {} chars; {checks} checks {verdict}: wall \
+                 median {:.1} ms (min {:.1}, max {:.1}), cpu median {:.1} ms; largest allocation {} bytes{polls}",
                 whole.text.chars().count(),
                 whole.line_starts.len(),
                 expected.text.chars().count(),
                 after.chars().count(),
-                ms(wall[2]),
+                ms(wall[checks / 2]),
                 ms(wall[0]),
-                ms(wall[4]),
-                ms(cpu[2]),
-                ms(cpu[0]),
-                ms(cpu[4]),
-                scrolled.checks,
-                ms(scrolled.check_time),
-                scrolled.unchanged,
-                ms(looks_cpu),
-                ms(looks_wall),
+                ms(wall[checks - 1]),
+                ms(cpu[checks / 2]),
+                largest,
             );
         }
     }

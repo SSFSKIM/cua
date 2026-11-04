@@ -288,7 +288,9 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   stays unconfirmed (`paste.confirm_rule` `segment` or `scrolled` on the `--stats` line). A whole read that reads
   the same as one the rule left unconfirmed is not judged again (`paste.scrolled` `checks`, `unchanged`, `check_ms`;
   `paste.confirm_looks`): one judging at the limits, a field of 65,536 characters in 512 lines and a 64 KiB paste, takes
-  11 to 24 ms. The field is not observed whole past those limits, and then only the segment confirms. The answer is
+  about 3 ms, the readings compared in place as bytes, with nothing of the paste's size allocated; a read too short to
+  hold the paste whole is refused from its length alone. The field is not observed whole past those limits, and then
+  only the segment confirms. The answer is
   success when the segment is read back, or the scrolled field confirms, else
   `Paste was sent once and could not be confirmed; read the field before retrying`. Only a refusal before dispatch, or
   a chord press the X server answered with an X error naming it (so the chord's last key never arrived), says that

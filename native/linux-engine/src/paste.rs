@@ -158,26 +158,39 @@ impl Expected {
     /// 56 fix 3: a screen full of an earlier run's text held the paste text 67 times, and the landed paste stayed
     /// unconfirmed under a count of its occurrences). Anything else stays unconfirmed: a wrong confirm is worse than a
     /// false "unconfirmed".
+    ///
+    /// The readings are compared as UTF-8 bytes, in place, so the check allocates nothing of the paste's size: two
+    /// texts are the same characters exactly when they are the same bytes. Where the scroll would have to end is known
+    /// from the lengths alone, so a read too short to hold the paste whole (a terminal's screen after a long paste) is
+    /// refused before any comparison (task 56 fix 5: a 64 MiB paste took 260 ms and 268 MB at each judged read).
     pub fn confirmed_scrolled(&self, after: &str) -> bool {
         let Some(whole) = &self.whole else {
             return false;
         };
-        let before: Vec<char> = whole.text.chars().collect();
-        let paste: Vec<char> = self.text.chars().collect();
         let Ok(at) = usize::try_from(self.at) else {
             return false;
         };
-        if self.feff_after_astral || paste.is_empty() || at > before.len() {
+        // outside Gecko a paste's offsets are its characters (`offsets`)
+        let Ok(pasted) = usize::try_from(self.len) else {
+            return false;
+        };
+        if self.feff_after_astral || self.text.is_empty() {
             return false;
         }
-        let expected: Vec<char> = before[..at]
-            .iter()
-            .chain(&paste)
-            .chain(&before[at..])
-            .copied()
+        debug_assert_eq!(pasted, self.text.chars().count());
+        // where each observed character starts, in bytes, and the text's end
+        let observed: Vec<usize> = whole
+            .text
+            .char_indices()
+            .map(|(i, _)| i)
+            .chain([whole.text.len()])
             .collect();
-        let after: Vec<char> = after.chars().collect();
-        let Some(prefix) = expected.len().checked_sub(after.len()).filter(|&k| k > 0 && k <= at) else {
+        let count = observed.len() - 1;
+        if at > count {
+            return false;
+        }
+        let read = after.chars().count();
+        let Some(prefix) = (count + pasted).checked_sub(read).filter(|&k| k > 0 && k <= at) else {
             return false;
         };
         let starts: Vec<usize> = whole
@@ -185,9 +198,37 @@ impl Expected {
             .iter()
             .filter_map(|&start| usize::try_from(start).ok())
             .collect();
-        starts.contains(&prefix)
-            && expected[prefix..] == after[..]
-            && !short_of_the_paste_reads_the_same(&before, at, &paste, &after, &starts)
+        if !starts.contains(&prefix) {
+            return false;
+        }
+        // where the paste's last `d` characters start, in bytes, for each `d` a reading can leave out: a reading short
+        // of the paste starts at a line before `prefix`, so it leaves out at most `prefix` characters
+        let cut: Vec<usize> = std::iter::once(self.text.len())
+            .chain(self.text.char_indices().rev().map(|(i, _)| i))
+            .take(prefix.min(pasted) + 1)
+            .collect();
+        // the observed text with the paste's first `landed` characters at the caret, less its first `start`
+        // characters (`start` ≤ `at`), is `after`
+        let reads = |start: usize, landed: usize| {
+            let text = whole.text.as_bytes();
+            let head = &text[observed[start]..observed[at]];
+            let paste = &self.text.as_bytes()[..cut[pasted - landed]];
+            let tail = &text[observed[at]..];
+            let after = after.as_bytes();
+            let (with_head, with_paste) = (head.len(), head.len() + paste.len());
+            after.len() == with_paste + tail.len()
+                && same_bytes(&after[..with_head], head)
+                && same_bytes(&after[with_head..with_paste], paste)
+                && same_bytes(&after[with_paste..], tail)
+        };
+        reads(prefix, pasted)
+            && !starts.iter().any(|&start| {
+                // the line start fixes how much of the paste such a reading holds: one candidate each
+                let Some(landed) = (read + start).checked_sub(count) else {
+                    return false;
+                };
+                landed < pasted && reads(start, landed)
+            })
     }
 
     /// Whether a read of the field's `count` and of its offsets `at..at + len` (`read`) shows the paste: the
@@ -205,28 +246,16 @@ impl Expected {
     }
 }
 
-/// Whether `after` is also the field observed (`before`) with only the first `i` characters of `paste` at the caret
-/// `at`, none at all included, less a prefix that ends where one of the observed lines (`starts`) starts: a reading a
-/// paste that did not land whole explains as well. The prefix's length fixes `i`, so each line start is one candidate.
-fn short_of_the_paste_reads_the_same(
-    before: &[char],
-    at: usize,
-    paste: &[char],
-    after: &[char],
-    starts: &[usize],
-) -> bool {
-    starts.iter().any(|&prefix| {
-        let Some(landed) = (after.len() + prefix).checked_sub(before.len()) else {
-            return false;
-        };
-        landed < paste.len()
-            && before[..at]
-                .iter()
-                .chain(&paste[..landed])
-                .chain(&before[at..])
-                .skip(prefix)
-                .eq(after.iter())
-    })
+/// Whether two byte strings are the same, compared a block at a time with no early exit inside a block, which the
+/// compiler vectorizes: a slice's `==` calls the C library's `memcmp`, and musl's, the shipped build's, compares a byte
+/// at a time (task 56 fix 5: the scrolled rule's check at the field limit took 12 ms on musl through it and takes 2.6
+/// ms with this; glibc's `memcmp` is faster still, 1.3 ms against 3.1).
+fn same_bytes(a: &[u8], b: &[u8]) -> bool {
+    const BLOCK: usize = 64;
+    a.len() == b.len()
+        && a.chunks(BLOCK)
+            .zip(b.chunks(BLOCK))
+            .all(|(x, y)| x.iter().zip(y).fold(0, |differ, (p, q)| differ | (p ^ q)) == 0)
 }
 
 /// Whether X window `requestor` belongs to the X client that created `client` (Decision Log, M2.1: a request counts
@@ -477,6 +506,118 @@ mod tests {
         // with the first row a line of its own, only the whole paste reads so
         let e = screen(&["xy", "ab"], "aba");
         assert!(e.confirmed_scrolled("ababa\n"));
+    }
+
+    #[test]
+    fn a_paste_longer_than_the_read_is_judged_without_an_allocation_of_its_size() {
+        // the largest paste the route serves, into the harness's terminal screen (20 rows of 69): the read after it is
+        // a screen again, which cannot hold the paste whole
+        let rows: Vec<String> = (0..20)
+            .map(|row| format!("{row:02}").repeat(35)[..69].to_string())
+            .collect();
+        let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+        let e = screen(&rows, &"a".repeat(MAX_TEXT_BYTES));
+        let after = "a".repeat(20 * 69) + "\n";
+        let (confirmed, largest) = crate::alloc_watch::largest_allocation(|| e.confirmed_scrolled(&after));
+        assert!(!confirmed);
+        assert!(largest < 64 << 10, "the check allocated {largest} bytes at once");
+    }
+
+    /// The scrolled rule as fix 3 wrote it, over vectors of characters: the meaning `confirmed_scrolled` keeps.
+    fn confirmed_scrolled_by_characters(e: &Expected, after: &str) -> bool {
+        let Some(whole) = &e.whole else {
+            return false;
+        };
+        let before: Vec<char> = whole.text.chars().collect();
+        let paste: Vec<char> = e.text.chars().collect();
+        let Ok(at) = usize::try_from(e.at) else {
+            return false;
+        };
+        if e.feff_after_astral || paste.is_empty() || at > before.len() {
+            return false;
+        }
+        let expected: Vec<char> = before[..at]
+            .iter()
+            .chain(&paste)
+            .chain(&before[at..])
+            .copied()
+            .collect();
+        let after: Vec<char> = after.chars().collect();
+        let Some(prefix) = expected.len().checked_sub(after.len()).filter(|&k| k > 0 && k <= at) else {
+            return false;
+        };
+        let starts: Vec<usize> = whole
+            .line_starts
+            .iter()
+            .filter_map(|&s| usize::try_from(s).ok())
+            .collect();
+        starts.contains(&prefix)
+            && expected[prefix..] == after[..]
+            && !starts.iter().any(|&s| {
+                let Some(landed) = (after.len() + s).checked_sub(before.len()) else {
+                    return false;
+                };
+                landed < paste.len()
+                    && before[..at]
+                        .iter()
+                        .chain(&paste[..landed])
+                        .chain(&before[at..])
+                        .skip(s)
+                        .eq(after.iter())
+            })
+    }
+
+    #[test]
+    fn the_scrolled_rule_answers_as_it_did_over_characters_on_every_screen_tried() {
+        // small screens over a few characters, two of them beyond one byte and one beyond the BMP, so that repeats,
+        // ambiguity and every scroll are common; each read is the expected text less some prefix, or that read with
+        // one character changed
+        let alphabet = ['a', 'b', 'é', '🙂'];
+        let mut seed = 0x9e37_79b9_7f4a_7c15_u64;
+        let mut next = |n: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % n as u64) as usize
+        };
+        let (mut confirmed, mut refused) = (0, 0);
+        for _ in 0..20_000 {
+            let rows: Vec<String> = (0..1 + next(4))
+                .map(|_| (0..1 + next(3)).map(|_| alphabet[next(4)]).collect())
+                .collect();
+            let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+            let paste: String = (0..1 + next(4)).map(|_| alphabet[next(4)]).collect();
+            let e = screen(&rows, &paste);
+            let whole = &e.whole.as_ref().unwrap().text;
+            let at = e.at as usize;
+            let expected: Vec<char> = whole
+                .chars()
+                .take(at)
+                .chain(paste.chars())
+                .chain(whole.chars().skip(at))
+                .collect();
+            let mut read: Vec<char> = expected[next(expected.len())..].to_vec();
+            if next(3) == 0 && !read.is_empty() {
+                let i = next(read.len());
+                read[i] = alphabet[next(4)];
+            }
+            let read: String = read.into_iter().collect();
+            let by_characters = confirmed_scrolled_by_characters(&e, &read);
+            assert_eq!(
+                e.confirmed_scrolled(&read),
+                by_characters,
+                "{rows:?} {paste:?} {read:?}"
+            );
+            if by_characters {
+                confirmed += 1;
+            } else {
+                refused += 1;
+            }
+        }
+        assert!(
+            confirmed > 1_000 && refused > 1_000,
+            "{confirmed} confirmed, {refused} refused"
+        );
     }
 
     #[test]

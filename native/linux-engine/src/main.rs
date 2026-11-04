@@ -2,6 +2,8 @@
 //!
 //! M1a's engine core (`README.md` says what it answers). See `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md`.
 
+#[cfg(test)]
+mod alloc_watch;
 mod apps;
 mod atspi;
 mod caps;

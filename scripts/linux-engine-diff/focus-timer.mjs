@@ -213,6 +213,29 @@ async function oneRun(ctx, engine, name, windows) {
 }
 
 /**
+ * Why a run missed, null when it passed: `guard` (the engine refused the paste because an earlier paste is still
+ * unconfirmed, which follows a miss and is not one of the run's own), `unconfirmed`, `refused` (the field changed between
+ * the paste's observation and its dispatch), `error` (another answer) or `text` (every answer a success, the text wrong).
+ */
+export function missCause(run) {
+  if (run.ok) return null;
+  const errors = run.errors ?? [];
+  if (errors.some((e) => e.startsWith('a previous paste could not be confirmed'))) return 'guard';
+  if (errors.some((e) => e === UNCONFIRMED)) return 'unconfirmed';
+  if (errors.some((e) => e.startsWith('requested field or selection changed before dispatch'))) return 'refused';
+  if (errors.length) return 'error';
+  return 'text';
+}
+
+/** The paste's own `--stats` record of a run, the parts that say what its observation and confirmation saw. */
+function pasteRecord(engine) {
+  const stats = [...engine.statsById.values()].find((s) => s?.paste);
+  if (!stats) return null;
+  const { observed, expected, confirmed, confirm_ms: confirmMs, transfer, requests, attributed, settle } = stats.paste;
+  return { id: stats.id, elapsed_ms: stats.elapsed_ms, observed, expected, confirmed, confirm_ms: confirmMs, transfer, requests, attributed, settle: settle ?? null };
+}
+
+/**
  * Whether a run passes: every window's text exact, and every answer a success, except, on a family whose paste never
  * confirms (`PASTE_UNCONFIRMED`), the unconfirmed paste's own answer, its text still judged exactly.
  */
@@ -232,13 +255,18 @@ async function series(ctx, family, lane, name, windows) {
   const oks = [];
   const rows = [];
   for (let run = 0; run < (timed(lane) ? need * (MAX_RUNS / CONSECUTIVE) : CONTROL_RUNS); run++) {
-    const engine = new Engine({ label: `cua-${lane}`, bin: cua, args: LANES[lane] }).start();
+    const engine = new Engine({ label: `cua-${lane}`, bin: cua, args: LANES[lane], stats: true }).start();
+    const stderrClosed = new Promise((resolve) => engine.child.stderr.once('close', resolve));
     let row;
     try {
       row = await oneRun(ctx, engine, name, windows);
     } finally {
       await engine.close();
     }
+    await stderrClosed;
+    // what the paste's observation and confirmation saw, from its --stats line
+    if (name === 'paste') row.paste = pasteRecord(engine);
+    row.miss = missCause(row);
     oks.push(row.ok);
     rows.push(row);
     emit({ kind: 'focus-timer-run', family, lane, scenario: name, run, ...row });
@@ -247,7 +275,9 @@ async function series(ctx, family, lane, name, windows) {
   const verdict = seriesVerdict(oks, timed(lane) ? need : Infinity);
   // a run can fail on its text (a key cut, or the order) or only on an answer (a paste that raced the keys)
   const wrongText = rows.filter((r) => !Object.values(r.exact).every(Boolean)).length;
-  const out = { family, lane, scenario: name, need, ...verdict, wrong_text: wrongText, burst_ms_median: median(rows.map((r) => r.burst_ms)), first_miss: rows.find((r) => !r.ok) ?? null };
+  const missCauses = {};
+  for (const r of rows) if (r.miss) missCauses[r.miss] = (missCauses[r.miss] ?? 0) + 1;
+  const out = { family, lane, scenario: name, need, ...verdict, wrong_text: wrongText, miss_causes: missCauses, burst_ms_median: median(rows.map((r) => r.burst_ms)), first_miss: rows.find((r) => !r.ok) ?? null };
   emit({ kind: 'focus-timer-series', ...out });
   return out;
 }
@@ -455,7 +485,9 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped }, { fam
       verdict = s.misses > 0 ? `fails without the delay (${s.misses}/${s.runs}; the text wrong in ${s.wrong_text ?? '?'})` : required ? '**shows nothing**' : 'no reorder (not required)';
       if (required && s.misses === 0) failed.push(`${s.family} ${s.scenario}: the control lane showed no reorder in ${s.runs} runs, so the test cannot see one`);
     }
-    md.push(`| ${s.family} | ${s.lane} | ${s.scenario} | ${s.runs} | ${s.misses} | ${s.streak} | ${verdict} | ${s.burst_ms_median ?? '–'} |`);
+    // a timed lane's misses by cause: the retry guard refusing after an earlier miss is not a miss of its own
+    const causes = timed(s.lane) && s.misses ? ` (${Object.entries(s.miss_causes ?? {}).map(([c, n]) => `${c} ${n}`).join(', ')})` : '';
+    md.push(`| ${s.family} | ${s.lane} | ${s.scenario} | ${s.runs} | ${s.misses} | ${s.streak} | ${verdict}${causes} | ${s.burst_ms_median ?? '–'} |`);
   }
   md.push('', '| family | lane | audit | FocusOuts attributed (deferred) | sessions as expected | problems |', '|---|---|---|---:|---|---|');
   for (const a of audits) {

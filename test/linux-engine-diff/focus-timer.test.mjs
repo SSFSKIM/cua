@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
-import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, runPasses, scenario, seriesVerdict, settledRead } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, runPasses, scenario, seriesVerdict, settledRead } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
 // background session's SendEvents (audit.test.mjs has the same shapes).
@@ -242,4 +242,13 @@ test('a read settles when two reads agree, once the text is as long as the run m
   const short = await settledRead(cut.read, { want: 4, ...cut.opts });
   assert.equal(short.text, 'ab');
   assert.equal(short.long_enough, false);
+});
+
+test("a miss's cause: the guard refusing after an earlier miss is told apart from a miss of the run's own", () => {
+  const run = (errors, exact = true) => ({ ok: false, errors, exact: { a: exact } });
+  assert.equal(missCause(run(['a previous paste could not be confirmed and may still be read; nothing was sent; retry after 5 s'], false)), 'guard');
+  assert.equal(missCause(run([UNCONFIRMED])), 'unconfirmed');
+  assert.equal(missCause(run(['requested field or selection changed before dispatch; nothing was sent'], false)), 'refused');
+  assert.equal(missCause(run([], false)), 'text');
+  assert.equal(missCause({ ok: true, errors: [], exact: { a: true } }), null);
 });

@@ -196,7 +196,7 @@ fn main() {
         }
     };
     serve::read_stdin(inbox);
-    let code = serve::serve(&mut engine, &next, &mut std::io::stdout().lock());
+    let code = serve::serve(&mut engine, &next, std::io::stdout());
     engine.shutdown();
     std::process::exit(code);
 }

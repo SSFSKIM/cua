@@ -87,6 +87,11 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   otherwise. A second signal, or an exit still not done 2 s after the first, ends the process at once. SIGKILL cuts the
   drain: the last burst's window keeps its synthetic focus until it next gets a `FocusOut`. The stop signals are
   blocked in every thread and taken by one thread with `sigwait`; a program `launch_app` starts gets them unblocked.
+  The drain reads nothing from stdin and writes nothing to stdout, and an answer that cannot go out does not hold it
+  back: answers are written by a thread of their own, and the loop, waiting for each, also watches for the stop. That is
+  how cua's REPL host stops the engine on Linux: it freezes the trusted worker's whole tree, which stops the engine's
+  reader, sends the engine alone SIGTERM and SIGCONT, waits for its exit (at most 2.25 s), then SIGKILLs everything it
+  froze (`src/repl-host/kernel-child.mjs` `stopProcessTree`), so an answer may sit in a full pipe for good.
 - **Keys** (`keys.rs`, `engine/keyboard.rs`): the vendor's chord grammar and Shift rule (`Z` is z without Shift, so
   `Ctrl+Z` stays undo), and its held-key bookkeeping: counts per target and keycode shared by `press_key`, `key_down`
   and every command's `key` chord; a window with held keys keeps its session across requests until the last hold is

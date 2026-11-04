@@ -437,6 +437,34 @@ fn input_older_than_the_settle_holds_the_exit_back_for_nothing() {
 }
 
 #[test]
+fn an_answer_stuck_in_a_full_pipe_does_not_hold_the_exit_s_drain_back() {
+    // the REPL host freezes the trusted worker, the engine's reader, before it tells the engine to stop
+    // (src/repl-host/kernel-child.mjs stopProcessTree): answers it can no longer read fill the pipe, and the burst's
+    // FocusOut must still follow from the drain, not be cut by the backstop that ends a wedged exit 2 s after the signal
+    let probe = Probe::open("stuck", 0);
+    let mut engine = Engine::start_unread();
+    let target = probe.target();
+    let mut requests = keys(&target, 10);
+    // each answer about 300 bytes, together far beyond what a pipe holds
+    requests.extend(std::iter::repeat_n(("capabilities", json!({})), 4000));
+    let ((stopped, exited), seen) = record(&probe, || {
+        engine.pipeline(&requests);
+        sleep(DELAY / 2);
+        engine.signal(Signal::TERM);
+        let stopped = Instant::now();
+        (stopped, engine.exit_within(Duration::from_secs(5)))
+    });
+    let (status, at) = exited.expect("the engine exits");
+    assert_eq!(status.code(), Some(143), "an orderly exit: 128 + SIGTERM");
+    assert_eq!(kinds(&seen), burst(10), "every key, then the FocusOut from the drain");
+    assert!(
+        at - stopped < DELAY + EXIT_SETTLE + Duration::from_millis(400),
+        "ended by its drain, not by the backstop: {:?}",
+        at - stopped
+    );
+}
+
+#[test]
 fn stdin_closing_inside_the_delay_drains_the_focus_out_too() {
     let (seen, exited, _) = stopped_after_a_burst(Engine::close_stdin);
     assert_eq!(exited.expect("the engine exits").0.code(), Some(0));

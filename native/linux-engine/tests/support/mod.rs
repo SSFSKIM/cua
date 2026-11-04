@@ -32,6 +32,8 @@ pub struct Engine {
     stdin: Option<ChildStdin>,
     lines: Receiver<String>,
     next_id: u64,
+    /// The engine's stdout, held open and never read ([`Engine::start_unread`]).
+    unread: Option<std::process::ChildStdout>,
 }
 
 /// Removes the display's record of an unconfirmed paste's window (the root window's `CUA_CLIPBOARD_QUARANTINE`), which
@@ -113,6 +115,30 @@ impl Engine {
             stdin,
             lines,
             next_id: 1,
+            unread: None,
+        }
+    }
+
+    /// An engine whose answers nobody reads: its stdout is held open and never read, as when the REPL host has frozen
+    /// the trusted worker that reads it, so once the pipe is full the engine's next answer cannot go out. Only
+    /// `pipeline`, `signal` and `exit_within` apply.
+    pub fn start_unread() -> Engine {
+        clear_display_record();
+        let mut child = Command::new(engine_bin())
+            .arg("server")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap_or_else(|e| panic!("cannot start {}: {e}", engine_bin().display()));
+        let stdin = child.stdin.take();
+        let unread = child.stdout.take();
+        Engine {
+            child,
+            stdin,
+            lines: channel().1,
+            next_id: 1,
+            unread,
         }
     }
 

@@ -13,7 +13,7 @@
 //        [--runs N] [--no-load]
 // `--direct`: no proxy (the control sitting for the proxy's cost); `--runs N`: exactly N runs.
 import { spawn } from 'node:child_process';
-import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createWriteStream, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { availableParallelism } from 'node:os';
 import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -93,6 +93,8 @@ async function startTrace() {
       child.kill('SIGTERM');
       await new Promise((r) => child.once('exit', r));
       await new Promise((r) => sink.end(r));
+      // xtrace leaves its display's socket behind when it is ended; a later run would find the number taken
+      rmSync(`/tmp/.X11-unix/X${n}`, { force: true });
     },
   };
 }

@@ -1,0 +1,19 @@
+== bound-terminal-load2/runs.jsonl
+  gnome-terminal: 200 pastes, outcomes {'ok': 200}; answered 200, never 0, no record 0; wait ms median 2.29, p95 8.69, max 12.77; past each step: 5 ms: 58, 10 ms: 4, 25 ms: 0, 50 ms: 0, 100 ms: 0, 200 ms: 0, 500 ms: 0, 1000 ms: 0
+    passing runs answered in ms: median 203.4, p95 262.6
+== bound-gtk3-load2/matrix.jsonl
+  gedit: 30 pastes, outcomes {'ok': 30}; answered 30, never 0, no record 0; wait ms median 2.18, p95 5.79, max 12.74; past each step: 5 ms: 5, 10 ms: 1, 25 ms: 0, 50 ms: 0, 100 ms: 0, 200 ms: 0, 500 ms: 0, 1000 ms: 0
+  writer: 30 pastes, outcomes {'ok': 30}; answered 30, never 0, no record 0; wait ms median 2.47, p95 9.91, max 12.47; past each step: 5 ms: 9, 10 ms: 1, 25 ms: 0, 50 ms: 0, 100 ms: 0, 200 ms: 0, 500 ms: 0, 1000 ms: 0
+== proof-terminal-load2/runs.jsonl
+  gnome-terminal: 200 pastes, outcomes {'ok': 200}; answered 200, never 0, no record 0; wait ms median 2.32, p95 8.71, max 13.42; past each step: 5 ms: 58, 10 ms: 9, 25 ms: 0, 50 ms: 0, 100 ms: 0, 200 ms: 0, 500 ms: 0, 1000 ms: 0
+    passing runs answered in ms: median 204.6, p95 268.3
+== cost-idle/matrix.jsonl
+  chrome: 30 pastes, outcomes {'ok': 30}; answered 0, never 30, no record 0
+  gedit: 30 pastes, outcomes {'ok': 30}; answered 30, never 0, no record 0; wait ms median 2.47, p95 2.73, max 2.88; past each step: 5 ms: 0, 10 ms: 0, 25 ms: 0, 50 ms: 0, 100 ms: 0, 200 ms: 0, 500 ms: 0, 1000 ms: 0
+  writer: 30 pastes, outcomes {'ok': 30}; answered 30, never 0, no record 0; wait ms median 2.47, p95 2.69, max 2.87; past each step: 5 ms: 0, 10 ms: 0, 25 ms: 0, 50 ms: 0, 100 ms: 0, 200 ms: 0, 500 ms: 0, 1000 ms: 0
+  gnome-terminal: 30 pastes, outcomes {'ok': 30}; answered 30, never 0, no record 0; wait ms median 2.52, p95 2.76, max 2.79; past each step: 5 ms: 0, 10 ms: 0, 25 ms: 0, 50 ms: 0, 100 ms: 0, 200 ms: 0, 500 ms: 0, 1000 ms: 0
+== cost-load2/matrix.jsonl
+  chrome: 30 pastes, outcomes {'ok': 30}; answered 0, never 30, no record 0
+  gedit: 30 pastes, outcomes {'ok': 30}; answered 30, never 0, no record 0; wait ms median 4.07, p95 7.57, max 7.88; past each step: 5 ms: 10, 10 ms: 0, 25 ms: 0, 50 ms: 0, 100 ms: 0, 200 ms: 0, 500 ms: 0, 1000 ms: 0
+  writer: 30 pastes, outcomes {'ok': 30}; answered 30, never 0, no record 0; wait ms median 2.40, p95 6.60, max 7.54; past each step: 5 ms: 5, 10 ms: 0, 25 ms: 0, 50 ms: 0, 100 ms: 0, 200 ms: 0, 500 ms: 0, 1000 ms: 0
+  gnome-terminal: 30 pastes, outcomes {'ok': 30}; answered 30, never 0, no record 0; wait ms median 2.49, p95 10.76, max 12.81; past each step: 5 ms: 9, 10 ms: 2, 25 ms: 0, 50 ms: 0, 100 ms: 0, 200 ms: 0, 500 ms: 0, 1000 ms: 0

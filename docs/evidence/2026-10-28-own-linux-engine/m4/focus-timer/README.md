@@ -139,3 +139,23 @@ the release workflow's way (dev runs).
   limit, not this fix's; the fresh sittings show it at about the same rate (4 of 92, 6 of 93). The X trace in
   `never-taken/` (task 56's probe) contradicts "load limit". The terminal's TARGETS is its owner-change refresh, not
   a paste request. cua answers it, but after the chord has reached the terminal, which then drops the paste.
+
+## Fix 3 (`fix3/`): the TARGETS answer before the chord
+
+The never-taken paste was cua's own race, so it is fixed in cua and not declared as a limit (`fix3/README.md`).
+After the take, the owner thread syncs, so that a `TARGETS` request the target's client has already made is answered
+and delivered before the chord. A family that asks at every owner change (GTK 3, GTK 4, VTE, from a matrix pass over
+every family) waits up to 25 ms for that request, a bound measured at twice the load. The revalidation runs after the
+wait.
+
+Results on the final musl build:
+
+- gnome-terminal's key-then-paste at twice the load, with no proxy: 200 of 200 runs pasted, against 21 of 200 never
+  taken before the fix.
+- Fresh focus-timer series: the timer and unredirect paste reach 30 consecutive from the first run, both idle and at
+  twice the load.
+- The other families are unchanged.
+- The wait adds about 2.5 ms idle to a flagged family's paste (p95 10.8 ms at twice the load).
+
+The scrolled rule now confirms a landed paste whose text shows elsewhere on the screen, unless a reading short of the
+whole paste gives the same text. This is trial 28 of `fix2/never-taken/direct-2/`.

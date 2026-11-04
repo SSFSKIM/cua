@@ -1,0 +1,35 @@
+cua-engine 0.3.0 (69e3724be5be), wait 1000 ms, 5 pastes per target, load True
+
+Who asked for TARGETS at an owner change: in pastes into another window (any time), and in its own pastes
+before the chord (ms < 0 from the dispatch; at 0 or after, the request is its paste's own):
+  chrome             into others: 0/35; own, before the chord: 0/5; own, at or after it: 5/5
+  electron           into others: 0/35; own, before the chord: 0/5; own, at or after it: 5/5
+  gedit              into others: 35/35; own, before the chord: 3/5; own, at or after it: 5/5
+  kate               into others: 0/35; own, before the chord: 0/5; own, at or after it: 5/5
+  qtcreator          into others: 0/35; own, before the chord: 0/5; own, at or after it: 5/5
+  firefox            into others: 0/35; own, before the chord: 0/5; own, at or after it: 5/5
+  writer             into others: 35/35; own, before the chord: 5/5; own, at or after it: 0/5
+  gnome-terminal     into others: 35/35; own, before the chord: 5/5; own, at or after it: 0/5
+  gnome-text-editor  into others: 40/40
+  writer-gen         into others: 0/40
+
+Other requests (not TARGETS), by client and outcome:
+   10 ('chrome', 'target', 'Served')
+    5 ('electron', 'target', 'Served')
+    5 ('firefox', 'target', 'Served')
+    5 ('gedit', 'target', 'Refused')
+    5 ('gedit', 'target', 'Served')
+    5 ('gnome-terminal', 'target', 'Served')
+    5 ('kate', 'target', 'Served')
+    5 ('qtcreator', 'target', 'Served')
+    5 ('writer', 'target', 'Served')
+
+Per target: answered before the chord / pastes; wait ms median (max); outcomes:
+  chrome             0/5; 1001.7 (1004.6); {'ok': 5}
+  electron           0/5; 1000.9 (1001.7); {'ok': 5}
+  gedit              5/5; 4.9 (6.8); {'ok': 5}
+  kate               0/5; 1001.0 (1001.6); {'Paste was sent once and could not be confirmed; read the fie': 5}
+  qtcreator          0/5; 1000.6 (1002.0); {'Paste was sent once and could not be confirmed; read the fie': 5}
+  firefox            0/5; 1001.2 (1002.0); {'ok': 5}
+  writer             5/5; 2.5 (9.4); {'ok': 5}
+  gnome-terminal     5/5; 1.3 (10.4); {'ok': 5}

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
+import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
@@ -278,4 +279,12 @@ test("the summary shows each series' independent and raw counts; the verdict jud
   const lines = focusTimerVerdict(results((r) => ({ ...r, series: r.series.map((s) => (s.family === 'chrome' && s.lane === 'timer' && s.scenario === 'burst' ? { ...s, raw: { misses: 2, streak: 28, reached: false } } : s)) })), { families });
   assert.ok(lines.md.some((l) => l.startsWith('| chrome | timer | burst |') && l.includes('| 2 | 28 |')), lines.md.join('\n'));
   assert.deepEqual(lines.failed, [], 'raw misses are reported, not failed');
+});
+
+test("the exit settle's measured steps: the stop runs alone, the settle 0 included (the 100 ms drain alone)", () => {
+  const args = parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', '--stops-only', '--exit-settle-ms', '0']);
+  assert.equal(args.stopsOnly, true);
+  assert.equal(args.exitSettleMs, 0);
+  assert.equal(parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', '--exit-settle-ms', '250']).exitSettleMs, 250);
+  assert.throws(() => parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', '--exit-settle-ms', '-1']), /--exit-settle-ms/);
 });

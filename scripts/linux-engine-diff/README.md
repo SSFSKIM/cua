@@ -874,8 +874,8 @@ node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" -
 - **The exit drain** (Chromium): a burst to a fresh engine, then SIGTERM straight after its last answer, inside the
   100 ms: every key in order, its session closed by its `FocusOut` in the trace, the engine's exit record (the full delay
   waited, and its exit settle's wait) and an exit code of 143 within 1.5 s, in all 30 runs; then ten clicks on the keys
-  page's pad, and one drag across it, each followed by SIGTERM the same way, their presses and releases read from the
-  page's log (`d`, `u`); SIGKILL, the documented limit, is the control that leaves the session unclosed.
+  page's pad followed by SIGTERM the same way, ten runs, their presses and releases read from the page's log (`d`, `u`;
+  a drag has no such case on Chromium, whose background drags shared mode refuses); SIGKILL, the documented limit, is the control that leaves the session unclosed.
   `--exit-settle-ms <ms>` runs the stop runs' engine with that settle, and `--stops-only` runs the stop runs alone (the
   settle's measured steps).
 

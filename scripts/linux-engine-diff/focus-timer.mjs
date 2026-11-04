@@ -67,11 +67,12 @@ export const CONTROL_RUNS = 10;
 export const SIGTERM_RUNS = 30;
 export const SIGKILL_RUNS = 3;
 /**
- * SIGTERM straight after a pointer burst on the keys page's pad (`clicks`, ten clicks) or a drag's release (`drag`),
- * whether the exit's unredirect cuts pointer input as it cuts keys.
+ * SIGTERM straight after ten clicks on the keys page's pad (`clicks`): whether the exit's unredirect cuts pointer input
+ * as it cuts keys. A drag has no such case on Chromium: shared mode refuses a background drag to it ("does not accept
+ * background input"), so no drag release to a Chromium window goes by the redirected route.
  */
 export const POINTER_STOP_RUNS = 10;
-export const STOP_KINDS = ['keys', 'clicks', 'drag'];
+export const STOP_KINDS = ['keys', 'clicks'];
 /**
  * The lanes. `timer`: the engine as it ships (session retention: a window stays redirected until the engine exits).
  * `control`: no delay, and each request's redirect dropped with its FocusOut (`--retention per-request`): on the private
@@ -273,10 +274,10 @@ function keysStop(ctx, windows) {
 }
 
 /**
- * A pointer stop on the keys page's pad (pages/keys.html): ten clicks (`clicks`), or one drag across it (`drag`), each
- * press and release written to the page's log as `d` and `u`, read at the log's end.
+ * The clicks stop on the keys page's pad (pages/keys.html): ten clicks, each press and release written to the page's
+ * log as `d` and `u`, read at the log's end.
  */
-async function pointerStop(ctx, windows, kind) {
+async function pointerStop(ctx, windows) {
   const { desktop, oracle } = ctx;
   const scene = windows.a;
   const { response } = await desktop.reader.request('get_window_state', { window: { id: scene.id }, include_screenshot: false });
@@ -290,16 +291,13 @@ async function pointerStop(ctx, windows, kind) {
   const y = Math.round(e.y - origin.y + e.h / 2);
   const x = Math.round(e.x - origin.x + e.w / 4);
   const window = { id: scene.id };
-  const requests =
-    kind === 'clicks'
-      ? Array.from({ length: 10 }, () => ({ command: 'click', input: { window, x, y } }))
-      : [{ command: 'drag', input: { window, path: [{ x, y }, { x: x + 40, y }, { x: x + 80, y }] } }];
+  const requests = Array.from({ length: 10 }, () => ({ command: 'click', input: { window, x, y } }));
   const logScene = { ...scene, field: log.id, kindOf: 'field' };
   const read = async () => {
     const text = await readText(desktop, oracle, logScene);
     return { text, caret: typeof text === 'string' ? text.length : null };
   };
-  return { requests, expected: { a: kind === 'clicks' ? 'du'.repeat(10) : 'du' }, read };
+  return { requests, expected: { a: 'du'.repeat(10) }, read };
 }
 
 /** One run of a scenario on the scene windows: the answers, each window's text and caret before and after. */
@@ -443,7 +441,7 @@ async function auditPass(ctx, family, lane, windows) {
  */
 async function stopRun(ctx, family, signal, windows, i, kind = 'keys') {
   const { desktop, oracle, emit, cua } = ctx;
-  const { requests, expected, read } = kind === 'keys' ? keysStop(ctx, windows) : await pointerStop(ctx, windows, kind);
+  const { requests, expected, read } = kind === 'keys' ? keysStop(ctx, windows) : await pointerStop(ctx, windows);
   // an independent start: the log of the pointer stops is read-only, so only the field is emptied
   const { tail } = await cleanStart(ctx, windows.a, read, { reset: kind === 'keys' });
   const before = await settledRead(read);
@@ -559,7 +557,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
         }
         if (cutsKeys) {
           for (let i = 0; i < SIGTERM_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i));
-          for (const kind of ['clicks', 'drag']) for (let i = 0; i < POINTER_STOP_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i, kind));
+          for (let i = 0; i < POINTER_STOP_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i, 'clicks'));
         }
         if (!args.stopsOnly) {
           for (const name of SCENARIOS) results.series.push(await series(ctx, family, 'control', name, windows));
@@ -631,7 +629,7 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped }, { fam
           const good = rows.filter((r) => r.ok).length;
           const rawGood = rows.filter((r) => r.ok && !r.tail_at_start).length;
           md.push(`| ${family} | ${signal} | ${input} | ${rows.length} | ${good}/${rows.length} | ${rawGood}/${rows.length} | ${tenth(median(rows.map((r) => r.exited_after_answer_ms)))} |`);
-          const what = input === 'keys' ? 'the burst' : input === 'clicks' ? 'the clicks' : "the drag's release";
+          const what = input === 'keys' ? 'the burst' : 'the clicks';
           if (good !== rows.length) failed.push(`${family} ${signal}${input === 'keys' ? '' : ` (${input})`}: ${rows.length - good} of ${rows.length} runs ${signal === 'SIGTERM' ? `did not drain ${what} and its FocusOut` : 'closed the session, so the drain check is blind'}`);
         }
       }

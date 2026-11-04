@@ -31,7 +31,7 @@ const VALUE_FLAGS = {
   '--experiment': 'experiment',
   '--occlusion': 'occlusion',
 };
-const NUMBER_FLAGS = { '--exit-settle-ms': 'exitSettleMs', '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText', '--trials': 'samplesTrials', '--first-rounds': 'firstRounds' };
+const NUMBER_FLAGS = { '--blocks': 'blocks', '--samples-tree': 'samplesTree', '--samples-input': 'samplesInput', '--samples-text': 'samplesText', '--trials': 'samplesTrials', '--first-rounds': 'firstRounds' };
 
 export function parseArgs(argv) {
   const a = {
@@ -70,6 +70,12 @@ export function parseArgs(argv) {
     else if (flag === '--dnd-short') a.dndShort = true;
     // the focus-timer experiment's stop runs alone (the exit settle's measured steps, with --exit-settle-ms)
     else if (flag === '--stops-only') a.stopsOnly = true;
+    // the stop runs' exit settle, 0 (the 100 ms drain alone) included
+    else if (flag === '--exit-settle-ms') {
+      const n = Number(need());
+      if (!Number.isInteger(n) || n < 0) throw new Error('--exit-settle-ms needs a whole number of milliseconds');
+      a.exitSettleMs = n;
+    }
     // the dnd experiment cold (task 20): every drag the first request of a fresh engine, the lanes interleaved, each
     // window in front after the device case's settle; `--cover-ms` covers it fully first, as the gate's previous case did
     else if (flag === '--dnd-cold') a.dndCold = true;

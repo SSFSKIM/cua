@@ -305,12 +305,14 @@ fn after_the_launcher(
             ..Ending::default()
         },
     };
-    // every record a writer wrote before it died, read to the pipe's end
+    // every record a writer wrote before it died, read to the pipe's end; a dying process closes its descriptors
+    // before its pidfd reports the exit, so the exits are looked for until the same deadline
+    let deadline = std::time::Instant::now() + ENDED_WAIT;
     let complete = record.wait_for_writers(ENDED_WAIT) == Writers::Gone;
     let exited = ending
         .signalled
         .iter()
-        .filter(|pidfd| pidfd.as_ref().is_some_and(exited_now))
+        .filter(|pidfd| pidfd.as_ref().is_some_and(|pidfd| exited_by(pidfd, deadline)))
         .count();
     let unseen = ending.signalled.len() - exited;
     let stopped = ending.unstopped.is_empty() && ending.unlisted.is_none();
@@ -438,11 +440,17 @@ fn end_holders(link: &str, kills: &Kills, found: &mut dyn FnMut(u32)) -> Ending 
     ending
 }
 
-/// Whether the process a pidfd refers to has exited, now.
-fn exited_now(pidfd: &OwnedFd) -> bool {
-    let zero = Timespec { tv_sec: 0, tv_nsec: 0 };
+/// Whether the process a pidfd refers to has exited by `deadline`.
+fn exited_by(pidfd: &OwnedFd, deadline: std::time::Instant) -> bool {
     let mut fds = [PollFd::new(pidfd, PollFlags::IN)];
-    rustix::event::poll(&mut fds, Some(&zero)).is_ok_and(|n| n > 0)
+    loop {
+        let left = Timespec::try_from(deadline.saturating_duration_since(std::time::Instant::now())).ok();
+        match rustix::event::poll(&mut fds, left.as_ref()) {
+            Err(rustix::io::Errno::INTR) => continue,
+            Ok(n) => return n > 0,
+            Err(_) => return false,
+        }
+    }
 }
 
 /// When process `pid` started, in clock ticks since boot (`/proc/<pid>/stat`'s 22nd field), or None when it is gone.
@@ -672,10 +680,6 @@ mod tests {
             pid
         };
         let (engine, other) = (read("engine"), read("other"));
-        let alive = |pid: u32| {
-            std::fs::read_to_string(format!("/proc/{pid}/stat"))
-                .is_ok_and(|s| !matches!(s[s.rfind(')').unwrap() + 2..].chars().next(), Some('Z' | 'X')))
-        };
         assert!(alive(engine) && alive(other));
         let started = Instant::now();
         let said = released_after_writers(&mut record).expect("a sentence");
@@ -684,7 +688,7 @@ mod tests {
             said.contains("outlived the launcher by 1.25s: ended 1 holding it, 1 gone"),
             "{said}"
         );
-        assert!(!alive(engine), "the record's writer is ended");
+        assert!(ends(engine), "the record's writer is ended");
         assert!(alive(other), "what does not hold the record is left alone");
         let _ = rustix::process::kill_process(Pid::from_raw(other as i32).unwrap(), Signal::KILL);
         assert_eq!(record.wait_for_writers(Duration::from_secs(1)), Writers::Gone);
@@ -693,6 +697,16 @@ mod tests {
     fn alive(pid: u32) -> bool {
         std::fs::read_to_string(format!("/proc/{pid}/stat"))
             .is_ok_and(|s| !matches!(s[s.rfind(')').unwrap() + 2..].chars().next(), Some('Z' | 'X')))
+    }
+
+    /// Whether `pid` has exited within a second: a process sent SIGKILL closes its descriptors, which ends the pipe,
+    /// before its exit is complete.
+    fn ends(pid: u32) -> bool {
+        let until = Instant::now() + Duration::from_secs(1);
+        while alive(pid) && Instant::now() < until {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        !alive(pid)
     }
 
     /// The record, the engine's stand-in (a sleep holding its write end, left behind by its launcher, a shell), and a
@@ -757,7 +771,7 @@ mod tests {
             Some(vec![Held::Key(50)]),
             "the last record is in the release: {said:?}"
         );
-        assert!(!alive(engine));
+        assert!(ends(engine));
         assert!(said.unwrap().contains("ended 1 holding it, 1 gone"));
     }
 
@@ -776,7 +790,7 @@ mod tests {
             run.last(&[Held::Key(50)]);
             let (held, said) = after_the_launcher(&mut run.record, &kills, &mut |_| {});
             assert_eq!(held, Some(vec![Held::Key(50)]), "{fault}: {said:?}");
-            assert!(!alive(run.engine), "{fault}: killed by pid");
+            assert!(ends(run.engine), "{fault}: killed by pid");
             assert!(said.unwrap().contains("ended 1 holding it"), "{fault}");
         }
     }

@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
 // background session's SendEvents (audit.test.mjs has the same shapes).
@@ -300,6 +300,18 @@ test("the exit settle's measured steps: the stop runs alone, the settle 0 includ
   assert.equal(args.exitSettleMs, 0);
   assert.equal(parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', '--exit-settle-ms', '250']).exitSettleMs, 250);
   assert.throws(() => parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', '--exit-settle-ms', '-1']), /--exit-settle-ms/);
+});
+
+test("a paste run keeps which rule confirmed it and what was observed whole; a series counts its runs by rule", () => {
+  const stats = { id: 9, elapsed_ms: 40, paste: { observed: 'Some(…)', expected: [1376, 9], confirmed: true, confirm_ms: 21, confirm_rule: 'scrolled', observed_whole: [1376, 20], observed_whole_ms: 3.8, transfer: 'served', requests: 3, attributed: 2 } };
+  const record = pasteRecordOf(stats);
+  assert.equal(record.confirm_rule, 'scrolled');
+  assert.deepEqual(record.observed_whole, [1376, 20]);
+  assert.equal(record.observed_whole_ms, 3.8);
+  assert.equal(pasteRecordOf({ id: 1, paste: { confirmed: false } }).confirm_rule, null, 'an engine without the field');
+  assert.equal(pasteRecordOf({ id: 1 }), null);
+  const rows = [{ paste: { confirm_rule: 'segment' } }, { paste: { confirm_rule: 'scrolled' } }, { paste: { confirm_rule: 'segment' } }, { paste: { confirm_rule: null } }, {}];
+  assert.deepEqual(confirmRules(rows), { segment: 2, scrolled: 1 });
 });
 
 test('--scenarios runs only the scenarios it names, in the experiment\'s order, with no stop runs; an unknown name is refused', () => {

@@ -379,10 +379,28 @@ export function missCause(run) {
 
 /** The paste's own `--stats` record of a run, the parts that say what its observation and confirmation saw. */
 function pasteRecord(engine) {
-  const stats = [...engine.statsById.values()].find((s) => s?.paste);
-  if (!stats) return null;
-  const { observed, expected, confirmed, confirm_ms: confirmMs, transfer, requests, attributed, settle, observed_around: observedAround, unconfirmed_around: unconfirmedAround } = stats.paste;
-  return { id: stats.id, elapsed_ms: stats.elapsed_ms, observed, expected, confirmed, confirm_ms: confirmMs, transfer, requests, attributed, settle: settle ?? null, observed_around: observedAround ?? null, unconfirmed_around: unconfirmedAround ?? null };
+  return pasteRecordOf([...engine.statsById.values()].find((s) => s?.paste));
+}
+
+/**
+ * A paste's `--stats` record, the parts a run keeps: what its observation saw (the field whole too, where its family's
+ * text scrolls), how it was confirmed (`confirm_rule`: the inserted segment, or the scrolled field) or not, and its
+ * transfer. Null for none.
+ */
+export function pasteRecordOf(stats) {
+  if (!stats?.paste) return null;
+  const { observed, expected, confirmed, confirm_ms: confirmMs, confirm_rule: confirmRule, observed_whole: observedWhole, observed_whole_ms: observedWholeMs, transfer, requests, attributed, settle, observed_around: observedAround, unconfirmed_around: unconfirmedAround } = stats.paste;
+  return { id: stats.id, elapsed_ms: stats.elapsed_ms, observed, expected, confirmed, confirm_ms: confirmMs, confirm_rule: confirmRule ?? null, observed_whole: observedWhole ?? null, observed_whole_ms: observedWholeMs ?? null, transfer, requests, attributed, settle: settle ?? null, observed_around: observedAround ?? null, unconfirmed_around: unconfirmedAround ?? null };
+}
+
+/** A series' paste runs counted by the rule that confirmed each (runs no rule confirmed are not counted). */
+export function confirmRules(rows) {
+  const out = {};
+  for (const r of rows) {
+    const rule = r.paste?.confirm_rule;
+    if (rule) out[rule] = (out[rule] ?? 0) + 1;
+  }
+  return out;
 }
 
 /**
@@ -430,7 +448,7 @@ async function series(ctx, family, lane, name, windows) {
   const wrongText = rows.filter((r) => !Object.values(r.exact).every(Boolean)).length;
   const missCauses = {};
   for (const r of rows) if (r.miss) missCauses[r.miss] = (missCauses[r.miss] ?? 0) + 1;
-  const out = { family, lane, scenario: name, need, ...verdict, raw: { misses: raw.misses, streak: raw.streak, reached: raw.reached }, wrong_text: wrongText, miss_causes: missCauses, burst_ms_median: tenth(median(rows.map((r) => r.burst_ms))), first_miss: rows.find((r) => !r.ok) ?? null };
+  const out = { family, lane, scenario: name, need, ...verdict, raw: { misses: raw.misses, streak: raw.streak, reached: raw.reached }, wrong_text: wrongText, miss_causes: missCauses, ...(name === 'paste' ? { confirm_rules: confirmRules(rows) } : {}), burst_ms_median: tenth(median(rows.map((r) => r.burst_ms))), first_miss: rows.find((r) => !r.ok) ?? null };
   emit({ kind: 'focus-timer-series', ...out });
   return out;
 }

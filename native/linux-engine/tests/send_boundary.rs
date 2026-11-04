@@ -64,7 +64,7 @@ const EGRESS: [(&str, &str); 25] = [
 /// Process spawning, a route to the bus through a child (`busctl`, `dbus-send`): allowed only where named.
 const SPAWN: &str = "Command";
 /// Explicit allowances: (file, identifier, why it cannot carry a call to the bus).
-const ALLOWED: [(&str, &str, &str); 4] = [
+const ALLOWED: [(&str, &str, &str); 5] = [
     (
         "apps.rs",
         SPAWN,
@@ -79,6 +79,12 @@ const ALLOWED: [(&str, &str, &str); 4] = [
         "engine/paste_faults.rs",
         SPAWN,
         "test-only fault injection: starts yad, a GTK 3 window, as its paste target",
+    ),
+    (
+        "engine/targets_faults.rs",
+        SPAWN,
+        "test-only TARGETS hooks: starts python3 with the GTK 3 target that keeps its targets \
+         (tests/support/targets-refresh.py)",
     ),
     (
         "main.rs",

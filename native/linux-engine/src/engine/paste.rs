@@ -1,9 +1,10 @@
 //! `type_text` and `clipboard_write`: one verified paste route (Design, Text and clipboard), on the clipboard core
 //! (`clipboard/`). It observes the field before it acts, focuses it only if needed, holds the display's clipboard lock
-//! from the snapshot through the cleanup, revalidates the field and the desktop focus, sends the family's paste chord
-//! once, confirms the inserted segment, and ends through the core's guarded cleanup on every path. The answer is
-//! applied (success), not applied (a refusal before dispatch, or the chord rejected outright), or unconfirmed (anything
-//! else after dispatch); nothing is ever sent a second time.
+//! from the snapshot through the cleanup, has the target's `TARGETS` request answered first (task 56, fix 3),
+//! revalidates the field and the desktop focus, sends the family's paste chord once, confirms the inserted segment,
+//! and ends through the core's guarded cleanup on every path. The answer is applied (success), not applied (a refusal
+//! before dispatch, or the chord rejected outright), or unconfirmed (anything else after dispatch); nothing is ever
+//! sent a second time.
 //!
 //! The chord goes through the background route; for a family that ignores it there (`families.rs`), the foreground
 //! route in dedicated mode (the window activated, then the desktop route) and a refusal in shared mode; a request
@@ -539,7 +540,7 @@ fn await_targets(
     }
 }
 
-/// Steps 3 to 6: the lock, the snapshot and the ownership; the revalidation; the chord, once; the confirmation and
+/// Steps 3 to 6: the lock, the snapshot and the ownership; the target's `TARGETS` answer; the revalidation; the chord, once; the confirmation and
 /// the transfer, within their bounds; the guarded cleanup on every path, and the answer.
 fn dispatch_and_confirm(
     x: &mut X11,

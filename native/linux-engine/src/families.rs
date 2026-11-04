@@ -457,10 +457,25 @@ mod tests {
         assert_eq!(gtk(Some(" 4")).map(|f| f.name), Some("GTK 4"));
         let gtk3 = gtk(Some("3.24.41")).expect("GTK 3 is listed");
         assert_eq!(gtk3.name, "GTK 3");
-        for kind in [Kind::Paste, Kind::Keys, Kind::Clicks, Kind::Scroll, Kind::Move, Kind::Drag] {
-            assert_eq!(gtk3.ignores(kind), None, "gedit's GTK 3 takes the background route: {kind:?}");
+        for kind in [
+            Kind::Paste,
+            Kind::Keys,
+            Kind::Clicks,
+            Kind::Scroll,
+            Kind::Move,
+            Kind::Drag,
+        ] {
+            assert_eq!(
+                gtk3.ignores(kind),
+                None,
+                "gedit's GTK 3 takes the background route: {kind:?}"
+            );
         }
-        assert_eq!((gtk3.paste, gtk3.drag), (DEFAULT_PASTE, DragPacing::NONE), "as an unlisted family");
+        assert_eq!(
+            (gtk3.paste, gtk3.drag),
+            (DEFAULT_PASTE, DragPacing::NONE),
+            "as an unlisted family"
+        );
         assert!(gtk(Some("40.1")).is_none());
         assert!(gtk(None).is_none(), "no version: not known to be GTK 4");
         assert_eq!(
@@ -477,9 +492,17 @@ mod tests {
     fn the_families_that_ask_for_targets_at_every_owner_change_are_gtk_and_vte() {
         // task 56 fix 3's matrix pass: gedit and Writer (GTK 3), gnome-text-editor (GTK 4) and gnome-terminal asked;
         // Chrome, Electron, Firefox, kate and qtcreator did not
-        let refreshing: Vec<&str> = FAMILIES.iter().filter(|f| f.refreshes_targets).map(|f| f.name).collect();
+        let refreshing: Vec<&str> = FAMILIES
+            .iter()
+            .filter(|f| f.refreshes_targets)
+            .map(|f| f.name)
+            .collect();
         assert_eq!(refreshing, vec!["GTK 4", "GTK 3", "VTE"]);
-        let writer = family(FAMILIES, Some("libreoffice-writer"), Some(&toolkit("gtk", Some("3.24.41"))));
+        let writer = family(
+            FAMILIES,
+            Some("libreoffice-writer"),
+            Some(&toolkit("gtk", Some("3.24.41"))),
+        );
         assert!(writer.is_some_and(|f| f.refreshes_targets), "Writer on its gtk3 plugin");
         for (class, toolkit) in [
             ("Google-chrome", None),

@@ -64,7 +64,7 @@ const EGRESS: [(&str, &str); 25] = [
 /// Process spawning, a route to the bus through a child (`busctl`, `dbus-send`): allowed only where named.
 const SPAWN: &str = "Command";
 /// Explicit allowances: (file, identifier, why it cannot carry a call to the bus).
-const ALLOWED: [(&str, &str, &str); 5] = [
+const ALLOWED: [(&str, &str, &str); 6] = [
     (
         "apps.rs",
         SPAWN,
@@ -85,6 +85,11 @@ const ALLOWED: [(&str, &str, &str); 5] = [
         SPAWN,
         "test-only TARGETS hooks: starts python3 with the GTK 3 target that keeps its targets \
          (tests/support/targets-refresh.py)",
+    ),
+    (
+        "pressed/panic_tests.rs",
+        SPAWN,
+        "test-only: the panic regression runs this test binary again as its child, the engine's panic hook installed there",
     ),
     (
         "main.rs",

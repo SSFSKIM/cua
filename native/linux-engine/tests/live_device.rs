@@ -5,7 +5,7 @@
 //! (`SendEvent`, the background route) or real (XTEST, the desktop and foreground routes), so "nothing was sent" and
 //! "the foreground route" are read from the window itself, on a display with no window manager (the CI gate's Xvfb).
 //!
-//!   xvfb-run -a dbus-run-session -- cargo test --features live -- --test-threads 1
+//!   xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --features live -- --test-threads 1
 
 #![cfg(feature = "live")]
 
@@ -994,6 +994,60 @@ fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_before
         "{:?}",
         exited - answered
     );
+}
+
+/// The exit's first act is the release of what the engine holds (the design session's ruling, M4 T7b): a key held at
+/// the server is up at once after the stop, before the watch's wait (the take comes `EXIT_LATE_TAKE` after the answer),
+/// and the watch still runs out and cancels its late take.
+#[test]
+fn the_exit_releases_a_held_key_before_it_waits_out_the_late_take_watch() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(EXIT_LATE_TAKE));
+    focus_nothing();
+    let (conn, _) = x11rb::connect(None).expect("an X connection");
+    let shift = keycode_of(&conn, 0xffe1);
+    let held = |conn: &RustConnection| {
+        let keys = conn.query_keymap().unwrap().reply().unwrap().keys;
+        keys[usize::from(shift / 8)] & (1 << (shift % 8)) != 0
+    };
+    let mut shared = Engine::start();
+    *TAKE_TO_ESCAPE.lock().unwrap() = None;
+    shared.request("key_down", json!({"key": "shift"})).unwrap();
+    assert!(held(&conn), "Shift down at the server");
+    assert_eq!(
+        shared.request("drag", json!({"window": {"id": window}, "path": path})),
+        Ok(Value::Null)
+    );
+    let answered = Instant::now();
+    shared.signal(rustix::process::Signal::TERM);
+    let mut up = None;
+    while up.is_none() && answered.elapsed() < Duration::from_secs(3) {
+        if !held(&conn) {
+            up = Some(answered.elapsed());
+        }
+        sleep(Duration::from_millis(2));
+    }
+    let (status, exited) = shared.exit_within(Duration::from_secs(5)).expect("the engine exits");
+    assert_eq!(status.code(), Some(143), "an orderly exit");
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    recorder.join().unwrap();
+    let up = up.expect("Shift released at the server");
+    assert!(
+        up < EXIT_LATE_TAKE / 2,
+        "released at once, before the watch's wait: {up:?}"
+    );
+    assert!(
+        TAKE_TO_ESCAPE.lock().unwrap().is_some(),
+        "the watch still ran out and cancelled its late take"
+    );
+    let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+    assert_eq!(
+        order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
+        vec!["escape", "focus-out"],
+        "the release first keeps the Escape before the session's FocusOut"
+    );
+    assert!(exited - answered >= EXIT_LATE_TAKE, "{:?}", exited - answered);
 }
 
 /// The forced late take (`--dnd-defer-take`) with a key held at the server: the release of the held key runs and the

@@ -3,7 +3,7 @@
 //! CI gate's Xvfb). The release workflow runs these on the shipped asset (`CUA_ENGINE_BIN`), so the exit drain after
 //! SIGTERM is proven on the bytes that ship.
 //!
-//!   xvfb-run -a dbus-run-session -- cargo test --features live -- --test-threads 1
+//!   xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --features live -- --test-threads 1
 
 #![cfg(feature = "live")]
 
@@ -473,7 +473,8 @@ fn stdin_closing_inside_the_delay_drains_the_focus_out_too() {
 }
 
 #[test]
-fn a_second_signal_ends_the_drain_at_once() {
+fn a_second_sigterm_carries_the_drain_on_to_its_focus_out() {
+    // the REPL host's SIGTERM may follow the owned group's (the design session's ruling, M4 T7b)
     let (seen, exited, stopped) = stopped_after_a_burst(|engine| {
         engine.signal(Signal::TERM);
         sleep(Duration::from_millis(5));
@@ -481,8 +482,103 @@ fn a_second_signal_ends_the_drain_at_once() {
     });
     let (status, at) = exited.expect("the engine exits");
     assert_eq!(status.code(), Some(143));
+    assert_eq!(kinds(&seen), burst(10), "every key, then the FocusOut");
+    assert!(
+        at - stopped >= EXIT_SETTLE - DELAY / 2,
+        "the drain ran on: {:?}",
+        at - stopped
+    );
+}
+
+#[test]
+fn a_second_sigint_ends_the_drain_at_once() {
+    let (seen, exited, stopped) = stopped_after_a_burst(|engine| {
+        engine.signal(Signal::INT);
+        sleep(Duration::from_millis(5));
+        engine.signal(Signal::INT);
+    });
+    let (status, at) = exited.expect("the engine exits");
+    assert_eq!(status.code(), Some(130));
     assert!(at - stopped < DELAY / 2, "at once: {:?}", at - stopped);
     assert_eq!(kinds(&seen), &burst(10)[..21], "cut before the FocusOut");
+}
+
+fn keycode_of(conn: &RustConnection, keysym: u32) -> u8 {
+    let setup = conn.setup();
+    let (min, max) = (setup.min_keycode, setup.max_keycode);
+    let map = conn.get_keyboard_mapping(min, max - min + 1).unwrap().reply().unwrap();
+    let at = map
+        .keysyms
+        .iter()
+        .position(|&k| k == keysym)
+        .expect("the keysym is mapped");
+    min + (at / usize::from(map.keysyms_per_keycode)) as u8
+}
+
+/// Whether the X server holds the key with `keysym` down, and whether it holds any pointer button down.
+fn held_at_the_server(conn: &RustConnection, keysym: u32) -> (bool, bool) {
+    let keycode = keycode_of(conn, keysym);
+    let keys = conn.query_keymap().unwrap().reply().unwrap().keys;
+    let root = conn.setup().roots[0].root;
+    let mask = u16::from(conn.query_pointer(root).unwrap().reply().unwrap().mask);
+    (
+        keys[usize::from(keycode / 8)] & (1 << (keycode % 8)) != 0,
+        mask & 0x1f00 != 0,
+    )
+}
+
+const SHIFT_L: u32 = 0xffe1;
+
+/// Shift held at the server (`key_down` on the desktop route, XTEST), then a desktop scroll that runs far longer than
+/// the backstop (655 wheel steps of 36 ms, each holding its button), stopped by `stop` inside it: the exit that ends the
+/// engine before its request does still releases what it holds, the key and the wheel's button.
+fn forced_inside_a_request(stop: impl FnOnce(&Engine)) -> (std::process::ExitStatus, Duration, (bool, bool)) {
+    // the test's own connection, held through the test: xvfb-run's server resets its state once its last client leaves
+    let (conn, _) = connect();
+    let mut engine = Engine::start();
+    engine.request("key_down", json!({"key": "shift"})).unwrap();
+    assert!(held_at_the_server(&conn, SHIFT_L).0, "Shift down at the server");
+    engine.pipeline(&[("scroll", json!({"direction": "down", "pixels": 65535}))]);
+    sleep(Duration::from_millis(300));
+    let stopped = Instant::now();
+    stop(&engine);
+    let (status, at) = engine.exit_within(Duration::from_secs(10)).expect("the engine exits");
+    let held = held_at_the_server(&conn, SHIFT_L);
+    // whatever an engine left down released here, so the tests after this one start clean
+    use x11rb::protocol::xtest::ConnectionExt as _;
+    let root = conn.setup().roots[0].root;
+    let shift = keycode_of(&conn, SHIFT_L);
+    let _ = conn.xtest_fake_input(x11rb::protocol::xproto::KEY_RELEASE_EVENT, shift, 0, root, 0, 0, 0);
+    for button in [4, 5] {
+        let _ = conn.xtest_fake_input(x11rb::protocol::xproto::BUTTON_RELEASE_EVENT, button, 0, root, 0, 0, 0);
+    }
+    conn.get_input_focus().unwrap().reply().unwrap();
+    (status, at - stopped, held)
+}
+
+#[test]
+fn the_backstop_releases_what_the_engine_holds_before_it_ends_a_request_still_running() {
+    let (status, took, (key, button)) = forced_inside_a_request(|engine| engine.signal(Signal::TERM));
+    assert_eq!(status.code(), Some(143));
+    assert!(
+        took >= Duration::from_millis(1900) && took < Duration::from_millis(3000),
+        "ended by the backstop: {took:?}"
+    );
+    assert!(!key, "Shift released at the server");
+    assert!(!button, "the wheel's button released");
+}
+
+#[test]
+fn a_second_sigint_releases_what_the_engine_holds_before_it_ends_a_request_still_running() {
+    let (status, took, (key, button)) = forced_inside_a_request(|engine| {
+        engine.signal(Signal::INT);
+        sleep(Duration::from_millis(5));
+        engine.signal(Signal::INT);
+    });
+    assert_eq!(status.code(), Some(130));
+    assert!(took < Duration::from_millis(1000), "at once: {took:?}");
+    assert!(!key, "Shift released at the server");
+    assert!(!button, "the wheel's button released");
 }
 
 #[test]

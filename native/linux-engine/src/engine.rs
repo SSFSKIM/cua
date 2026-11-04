@@ -653,18 +653,22 @@ impl Engine {
         Ok(dir)
     }
 
-    /// The orderly exit: an armed after-release watch run out, every key still held released and every input session
+    /// The orderly exit: every key still held released, an armed after-release watch run out, every input session
     /// ended, each pending `FocusOut` waited out (at most the delay; `route.rs`), the clipboard's owner stopped (CLIPBOARD goes with it, as the vendor's does),
     /// then the screenshot directory removed.
     pub fn shutdown(&mut self) {
-        // an armed after-release watch first runs out its lifetime (at most `dnd::SETTLE` after its drag's release), so
+        // first, every key still held released, so no wait below keeps one down: the holds, then whatever the ledger
+        // still has down (pressed.rs; normally nothing). The design session's ruling, M4 T7b
+        self.inputs.release_held(&mut self.x);
+        crate::pressed::release_rest(&self.x.conn, self.x.root);
+        // an armed after-release watch then runs out its lifetime (at most `dnd::SETTLE` after its drag's release), so
         // a late take inside it is still cancelled, its Escape sent before any FocusOut of the exit's and before the
         // connection closes; collected then, the Escape restarts its window's timer for the drain below
         if let Some(watch) = &self.late_watch {
             watch.run_out();
         }
         self.collect_late_watch(true);
-        self.inputs.release_everything(&mut self.x);
+        self.inputs.drain_exit(&mut self.x);
         self.report_sent();
         let _ = self.x.sync();
         // the exit drops every redirect it holds: input still queued in a covered Chromium window would be cut, so the

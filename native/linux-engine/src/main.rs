@@ -24,6 +24,7 @@ mod identity;
 mod input;
 mod keys;
 mod paste;
+mod pressed;
 mod readiness;
 mod resolve;
 mod route;
@@ -192,8 +193,16 @@ fn main() {
         eprintln!("Error the stop signals could not be blocked: {error}");
         std::process::exit(1);
     }
+    // every exit but SIGKILL lets go of the keys still down: the orderly one in `Engine::shutdown`, the forced ones (the
+    // backstop, a second SIGINT, a panic, which aborts) here, over a connection of their own (pressed.rs)
+    let release = || pressed::release_all_within(pressed::FORCED_RELEASE_BOUND);
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        default_hook(info);
+        release();
+    }));
     let (inbox, next) = std::sync::mpsc::channel();
-    serve::watch_stop_signals(inbox.clone());
+    serve::watch_stop_signals(inbox.clone(), release);
     let mut engine = match Engine::new(cfg) {
         Ok(engine) => engine,
         Err(error) => {

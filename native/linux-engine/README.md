@@ -22,7 +22,7 @@ printf '%s\n' '{"id":1,"command":"list_windows","input":{}}' | target/release/cu
 target/release/cua-engine --version   # cua-engine <version> (<git sha>)
 cargo test
 # the live tests (an X display, a session bus with AT-SPI, yad for a GTK 3 window), as the engine-linux gate runs them
-xvfb-run -a dbus-run-session -- cargo test --features live -- --test-threads 1
+xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --features live -- --test-threads 1
 ```
 
 Releases are built, tested and attested by `.github/workflows/linux-engine.yml` from the version in `Cargo.toml`
@@ -71,9 +71,10 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   hold whenever they end a session, its instant recorded first (`focus_timer::Gate`). With `--stats`, each `FocusOut` is reported (`focus_out`: window, cause `timer`, `flush` or
   `exit`, the time since the window's last input, and the request whose input last started the timer): on the line of
   the request it went out in, or on a line of its own (`"id": null`) when it went out between requests.
-- **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: an armed
-  after-release drag-and-drop watch first runs out its lifetime (at most 300 ms after its drag's release), so a late
-  take is still cancelled with its Escape before any of the exit's `FocusOut`s; then held keys released, then every
+- **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: held keys
+  are released first, so no wait of the exit keeps one down; then an armed
+  after-release drag-and-drop watch runs out its lifetime (at most 300 ms after its drag's release), so a late
+  take is still cancelled with its Escape before any of the exit's `FocusOut`s; then every
   pending `FocusOut` waited out (at most 100 ms, the Escape's window's counted from the Escape) and sent, then the
   exit's settle: the engine waits until `--exit-settle-ms` (300 ms) has passed since the last background key input to
   a window whose redirect it still holds, the watch's Escape included (keys only: the unredirect cut no click in the
@@ -84,8 +85,14 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   its window gets its `FocusOut`; an exit with no such input in the last 300 ms waits for nothing. The declared limits
   are SIGKILL and load beyond twice the gate's. A request already running finishes first; requests
   queued behind the signal are not run. The exit code is 0 for stdin closing and 128 plus the signal's number
-  otherwise. A second signal, or an exit still not done 2 s after the first, ends the process at once. SIGKILL cuts the
-  drain: the last burst's window keeps its synthetic focus until it next gets a `FocusOut`. The stop signals are
+  otherwise. A second SIGINT, or an exit still not done 2 s after the first signal (the backstop), ends the process at
+  once, a request still running included, but first releases every key still down and any wheel button over a
+  connection of its own (`pressed.rs`, the record kept beside the bookkeeping), and so does a panic; a second SIGTERM or
+  SIGHUP changes nothing, since a supervisor may send its own after another's. A drag's button (1 to 3) still down at
+  such an exit (a `drag` cut by the backstop, a `drag_handle` before its end) is not released: that release would drop
+  the drag where the pointer is. SIGKILL cuts the
+  drain and the release: the last burst's window keeps its synthetic focus until it next gets a `FocusOut`, and a key
+  held at the server stays down. The stop signals are
   blocked in every thread and taken by one thread with `sigwait`; a program `launch_app` starts gets them unblocked.
   The drain reads nothing from stdin and writes nothing to stdout, and an answer that cannot go out does not hold it
   back: answers are written by a thread of their own, and the loop, waiting for each, also watches for the stop. That is

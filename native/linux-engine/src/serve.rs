@@ -5,9 +5,10 @@
 //! (`Engine::shutdown`), which waits out every pending `FocusOut` (at most its 100 ms) before the engine exits, so a burst
 //! typed just before the signal still arrives in order and its `FocusOut` follows (the design session, M4 pre-flight).
 //! A request already running when the signal comes finishes first; requests still queued behind it are not run. A
-//! second signal, or an exit that has not happened `EXIT_BACKSTOP` after the first, ends the process at once, as the
-//! signal's default action would have. SIGKILL cannot be caught: it cuts the drain, and the window keeps the synthetic
-//! focus of its last burst until it next gets a `FocusOut` (the engine README).
+//! second SIGINT, or an exit that has not happened `EXIT_BACKSTOP` after the first signal, ends the process at once,
+//! once every key still down is released (`pressed.rs`); a second SIGTERM or SIGHUP changes nothing (the design
+//! session's ruling, M4 T7b). SIGKILL cannot be caught: it cuts the drain and the release, and the window keeps the
+//! synthetic focus of its last burst until it next gets a `FocusOut` (the engine README).
 //!
 //! The signals are blocked in every thread (`block_stop_signals`, before the first thread starts) and taken by one
 //! thread of their own with `sigwait`, so no handler runs at an arbitrary point. A child keeps its parent's mask, so a
@@ -208,9 +209,19 @@ pub(crate) fn unblock_stop_signals(set: &KernelSigSet) -> std::io::Result<()> {
         .map_err(std::io::Error::from)
 }
 
-/// The thread that takes the stop signals: the first is put where the loop sees it and sent to the inbox; a second, or
-/// `EXIT_BACKSTOP` passing with the process still running, ends the process at once with 128 plus the signal.
-pub fn watch_stop_signals(inbox: Sender<Next>) {
+/// Whether a stop signal that comes once the orderly exit has begun ends the process at once: only SIGINT, a person's
+/// interrupt pressed again at a terminal. SIGTERM and SIGHUP are a server's stop, and a supervisor may send its own
+/// SIGTERM after another's (the REPL host's stop after the owned group's, `src/repl-host/kernel-child.mjs`), so the
+/// drain carries on under them, bounded by the backstop (the design session's ruling, M4 T7b).
+fn ends_the_drain(signal: Signal) -> bool {
+    signal == Signal::INT
+}
+
+/// The thread that takes the stop signals: the first is put where the loop sees it and sent to the inbox; a later
+/// SIGINT ([`ends_the_drain`]), or `EXIT_BACKSTOP` passing with the process still running, ends the process at once with
+/// 128 plus the signal, `release` first: it lets go of every key still down (`pressed.rs`), since the main thread may be
+/// anywhere, its own release not yet run.
+pub fn watch_stop_signals(inbox: Sender<Next>, release: fn()) {
     std::thread::spawn(move || {
         let set = stop_set();
         let mut first = true;
@@ -221,13 +232,18 @@ pub fn watch_stop_signals(inbox: Sender<Next>) {
             };
             let code = 128 + signal.as_raw();
             if !first {
-                std::process::exit(code);
+                if ends_the_drain(signal) {
+                    release();
+                    std::process::exit(code);
+                }
+                continue;
             }
             first = false;
             STOPPED_BY.store(signal.as_raw(), Ordering::SeqCst);
             let _ = inbox.send(Next::Stop(signal.as_raw()));
             std::thread::spawn(move || {
                 std::thread::sleep(EXIT_BACKSTOP);
+                release();
                 std::process::exit(code);
             });
         }
@@ -467,6 +483,16 @@ mod tests {
         assert_eq!(code, 143);
         assert_eq!(seen, ["a"], "nothing queued behind it runs");
         assert_eq!(after, 0);
+    }
+
+    #[test]
+    fn only_a_second_sigint_ends_the_drain_at_once() {
+        assert!(ends_the_drain(Signal::INT));
+        assert!(
+            !ends_the_drain(Signal::TERM),
+            "the REPL host's SIGTERM may follow the owned group's"
+        );
+        assert!(!ends_the_drain(Signal::HUP));
     }
 
     #[test]

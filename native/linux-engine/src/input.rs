@@ -599,10 +599,13 @@ fn send_key(x: &X11, target: Window, time: u32, keycode: u8, press: bool, state:
         x.conn.send_event(false, target, EventMask::NO_EVENT, event)?.check()?;
         Ok(())
     };
-    #[cfg(test)]
-    return crate::fault::key(keycode, press, send);
-    #[cfg(not(test))]
-    send()
+    // recorded for the exits that cannot wait for the bookkeeping (pressed.rs)
+    crate::pressed::window_key(target, keycode, state, time, press, || {
+        #[cfg(test)]
+        return crate::fault::key(keycode, press, send);
+        #[cfg(not(test))]
+        send()
+    })
 }
 
 #[cfg(test)]

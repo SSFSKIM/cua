@@ -62,10 +62,13 @@ impl Desktop {
     fn key(x: &X11, keycode: u8, press: bool) -> Result<()> {
         let kind = if press { KEY_PRESS_EVENT } else { KEY_RELEASE_EVENT };
         let send = || fake(x, kind, keycode, x.root, 0, 0);
-        #[cfg(test)]
-        return crate::fault::key(keycode, press, send);
-        #[cfg(not(test))]
-        send()
+        // recorded for the exits that cannot wait for the bookkeeping (pressed.rs)
+        crate::pressed::desktop_key(keycode, press, || {
+            #[cfg(test)]
+            return crate::fault::key(keycode, press, send);
+            #[cfg(not(test))]
+            send()
+        })
     }
 
     /// Presses each keycode not already held, in order (behaviour §11.3).
@@ -122,7 +125,8 @@ impl Desktop {
         } else {
             BUTTON_RELEASE_EVENT
         };
-        fake(x, kind, button, x.root, 0, 0)
+        // recorded for the exits that cannot wait for the bookkeeping (pressed.rs)
+        crate::pressed::desktop_button(button, press, || fake(x, kind, button, x.root, 0, 0))
     }
 
     /// One absolute motion of the real pointer.

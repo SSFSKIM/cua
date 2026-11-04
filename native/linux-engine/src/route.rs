@@ -198,10 +198,11 @@ impl Inputs {
         std::mem::take(&mut self.sent)
     }
 
-    /// The engine's exit: every key still held released in reverse press order (the desktop's first, so nothing real
-    /// stays down while the background drains), then every pending `FocusOut` timer drained: waited out, at most the
-    /// delay, the released holds' windows' timers starting at their release.
-    pub fn release_everything(&mut self, x: &mut X11) {
+    /// The engine's exit, its first act: every key still held released in reverse press order (the desktop's first, so
+    /// nothing real stays down a moment longer than it must), each released hold's session put on its `FocusOut` timer
+    /// from its release. It sends no `FocusOut`: the exit's drain ([`Inputs::drain_exit`]) follows the late-take watch,
+    /// whose Escape goes before any of them.
+    pub fn release_held(&mut self, x: &mut X11) {
         self.holds = Holds::default();
         self.desktop.release_all(x);
         let held: Vec<(Window, Session)> = self.sessions.drain().collect();
@@ -213,6 +214,10 @@ impl Inputs {
             }
             self.timers.start(window, session, now, self.request.clone());
         }
+    }
+
+    /// The exit's drain: every pending `FocusOut` timer waited out, at most the delay.
+    pub fn drain_exit(&mut self, x: &mut X11) {
         self.flush(x, None, Cause::Exit);
     }
 

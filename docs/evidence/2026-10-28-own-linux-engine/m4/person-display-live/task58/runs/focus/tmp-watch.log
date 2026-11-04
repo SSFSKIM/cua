@@ -1,0 +1,72 @@
+== 2026-11-04T23:38:18.104Z sample 1
+/tmp entries newer than the start (not the tmproot):
+== 2026-11-04T23:38:48.139Z sample 2
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+      1   com.google.Chrome.YYfZho
+      1   com.google.Chrome.YYfZho/SingletonCookie
+      1   com.google.Chrome.YYfZho/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-04T23:39:18.172Z sample 3
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+      1   com.google.Chrome.YYfZho
+      1   com.google.Chrome.YYfZho/SingletonCookie
+      1   com.google.Chrome.YYfZho/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-04T23:39:48.214Z sample 4
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+      1   com.google.Chrome.YYfZho
+      1   com.google.Chrome.YYfZho/SingletonCookie
+      1   com.google.Chrome.YYfZho/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-04T23:40:18.237Z sample 5
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+      1   com.google.Chrome.YYfZho
+      1   com.google.Chrome.YYfZho/SingletonCookie
+      1   com.google.Chrome.YYfZho/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-04T23:40:48.262Z sample 6
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+      1   com.google.Chrome.YYfZho
+      1   com.google.Chrome.YYfZho/SingletonCookie
+      1   com.google.Chrome.YYfZho/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-04T23:41:18.291Z sample 7
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+      1   com.google.Chrome.YYfZho
+      1   com.google.Chrome.YYfZho/SingletonCookie
+      1   com.google.Chrome.YYfZho/SingletonSocket
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-04T23:41:48.311Z sample 8
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-04T23:42:18.336Z sample 9
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-04T23:42:48.374Z sample 10
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-04T23:43:18.409Z sample 11
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-04T23:43:48.434Z sample 12
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-04T23:44:18.471Z sample 13
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix
+== 2026-11-04T23:44:48.501Z sample 14
+run tmp /tmp/c58-927s7L/cua171-run-wabkad/tmp:
+/tmp entries newer than the start (not the tmproot):
+  .X11-unix

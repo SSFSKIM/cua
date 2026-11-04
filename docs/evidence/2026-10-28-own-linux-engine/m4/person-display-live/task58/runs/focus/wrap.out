@@ -1,0 +1,20 @@
+| family | lane | scenario | runs | misses (independent) | wrong text | tails met at the start | streak at the end | verdict | raw misses | raw streak | median burst ms |
+|---|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|
+| chrome | timer | burst | 30 | 0 | 0 | 0 | 30 | 30 consecutive | 0 | 30 | 13.3 |
+| chrome | timer | aba | 30 | 0 | 0 | 0 | 30 | 30 consecutive | 0 | 30 | 221.1 |
+| chrome | control-0ms | burst | 10 | 0 | 0 | 0 | 10 | **cuts nothing** | 0 | 10 | 26.9 |
+| chrome | control-0ms | aba | 10 | 0 | 0 | 0 | 10 | **cuts nothing** | 0 | 10 | 39.5 |
+| electron | timer | burst | 30 | 0 | 0 | 0 | 30 | 30 consecutive | 0 | 30 | 13.9 |
+| electron | timer | aba | 30 | 0 | 0 | 0 | 30 | 30 consecutive | 0 | 30 | 221.4 |
+| electron | control-0ms | burst | 10 | 0 | 0 | 0 | 10 | **cuts nothing** | 0 | 10 | 35.3 |
+| electron | control-0ms | aba | 10 | 0 | 0 | 0 | 10 | **cuts nothing** | 0 | 10 | 44.2 |
+
+| family | lane | audit | FocusOuts attributed (deferred) | sessions as expected | problems |
+|---|---|---|---:|---|---|
+| chrome | timer | clean | 4 (4) | yes | – |
+| chrome | control-0ms | clean | 44 (0) | yes | – |
+| electron | timer | clean | 4 (4) | yes | – |
+| electron | control-0ms | clean | 44 (0) | yes | – |
+
+**The question:** the plain 0 ms control cut nothing.
+{"exit": 0, "samples": 3334, "maps_samples": 1112, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 805, "browsers": 48}

@@ -1,0 +1,17 @@
+{
+ "DISPLAY": ":0",
+ "DBUS_SESSION_BUS_ADDRESS": "unix:path=<task58>/runs/focus/decoy/session.sock",
+ "AT_SPI_BUS_ADDRESS": "unix:path=<task58>/runs/focus/decoy/a11y.sock",
+ "HOME": "<home>",
+ "XDG_RUNTIME_DIR": "/run/user/501",
+ "XDG_CONFIG_HOME": null,
+ "XDG_DATA_HOME": null,
+ "XDG_CACHE_HOME": null,
+ "XDG_STATE_HOME": null,
+ "GSETTINGS_BACKEND": null,
+ "XAUTHORITY": "<home>/.Xauthority",
+ "ACCESSIBILITY_ENABLED": null,
+ "GNOME_ACCESSIBILITY": null,
+ "SESSION_MANAGER": null,
+ "TMPDIR": "/tmp/c58-927s7L"
+}

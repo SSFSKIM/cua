@@ -108,3 +108,32 @@ or follows an unconfirmed paste fails too. Rows carry `trial` (their index) and 
 - **Independent counts from the earlier rows** (a run's own burst arrived whole iff its text ends with the burst): in
   `load2/` (the 100 ms drain) Chrome had 6 own cuts of 10 (raw 8), Electron 3 (raw 4); in `delay-200-load2/` Chrome 0,
   Electron 4 (raw 5); in `delay-400-load2/` none.
+
+## Fix 2 (`fix2/`): the paste's confirmation in a terminal that scrolls
+
+The design session's ruling on T7's paste trace (2026-11-04). In every missed gnome-terminal paste the keys had landed
+before the paste observed the field. In most, the paste landed but wrapped the last row of a full screen, the first
+row scrolled out, and the confirmation read offsets taken before the scroll; in the rest the terminal never took the
+paste. Every sitting below ran on a private Xvfb the harness started, never on `:0`; the candidates are musl builds made
+the release workflow's way (dev runs).
+
+| Directory | Harness | Engine | What | Result |
+|---|---|---|---|---|
+| `terminal-030-load2/` (`t56-fix2-terminal-030-load2`) | 76ba4842 | the released 0.3.0 (`5f4a1600…`) | gnome-terminal, every lane, 2x | timer paste 30/30; unredirect paste 6/60 unconfirmed (raw 11): 3 landed and scrolled, 3 never taken; control 3/10 (2 scrolled, 1 never taken) |
+| `vte-probe/` | 76ba4842 | 0.3.0 | the harness's terminal filled by keys, its accessible text after each 14 keys | 20 rows of 69; no newline at a soft wrap, only the text's last; `GetTextAtOffset` at `LINE_START` gives the rows; a scroll drops exactly the first row |
+| `paste-probe-old/` | 29e31ee1 | musl 67681a38 (T7's first fix) | idle, a full screen, 60 runs of 8 keys and a paste of the run's own text | 7 pastes scrolled the screen: all 7 landed, none confirmed |
+| `paste-probe-new/` | 29e31ee1 | musl 29e31ee1 (the fix) | the same | 7 scrolled, 7 confirmed by the scrolled rule; 53 by the segment; 60/60; the whole read 3.8 ms median |
+| `fresh-terminal-load2/` (`t56-fix2-fresh-terminal-load2`) | df1e835f | musl df1e835f (`9c4b9e4f…`) | gnome-terminal, every lane, 2x | timer paste 30 consecutive after one never-taken miss (trial 3); unredirect 30 consecutive in 48 (3 never taken); no scrolled miss; audits clean |
+| `fresh-terminal-load2-b/` (`t56-fix2-fresh-terminal-load2-b`) | 3dac77a8 | musl 3dac77a8 (`e6c1c5e4…`) | the same, the rows carrying `confirm_rule` | timer paste 30 consecutive in 45 (2 never taken, trials 13-14), 5 confirmed by the scrolled rule; unredirect 30 in 38 (2 never taken), 3 scrolled; no scrolled miss; the timer audit is "not clean" only because its one paste was never taken (no forbidden request, no attribution problem) |
+| `fresh-others-paste-load2/` (`t56-fix2-fresh-others-paste-load2`) | df1e835f, `--scenarios paste` | musl df1e835f | Chrome, Electron, gedit, kate, qtcreator, Firefox, Writer: key-then-paste, 2x | every timer lane 30/30 with no miss; every unredirect lane 30 consecutive (Firefox in 51, one unconfirmed whose observation read the caret before its keys had moved it: count 875, caret 867); the Chrome and Electron controls fail as they must; audits clean |
+
+- **The rule** (`native/linux-engine/src/paste.rs` `Expected::confirmed_scrolled`): in a family whose text scrolls
+  (VTE), the paste observes the field whole, its text and its lines. A field that has lost text since confirms only
+  when the whole of it is the observed text with the paste at the caret less a prefix ending where an observed line
+  starts, the paste whole after it, and the paste text occurs exactly once in that expected text. Anything else stays
+  unconfirmed, within the unchanged 2 s budget.
+- **Each run's own paste text** (`Pasted` and three letters, from 29e31ee1): the terminal's screen holds many runs'
+  text, and the rule cannot confirm a paste whose text the scrolled screen already shows.
+- **The never-taken paste** (the terminal asks `TARGETS` and never the data; transfer `ended`, nothing lands): the
+  released 0.3.0 misses it the same way on today's harness (4 of 100 paste runs across its lanes), so it is a load
+  limit, not this fix's; the fresh sittings show it at about the same rate (4 of 92, 6 of 93).

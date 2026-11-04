@@ -57,6 +57,18 @@ export const CHROMIUM = ['chrome', 'electron'];
 /** Chromium's scene page: a field whose page spends a few milliseconds on each key (pages/keys.html). */
 export const KEYS_PAGE = 'keys.html';
 export const SCENARIOS = ['burst', 'aba', 'paste'];
+
+/**
+ * The scenarios a sitting runs, in the experiment's order, and whether it runs the stop runs: every scenario and the
+ * stops, or with `--scenarios` only those named and no stops (a rerun of one scenario, as task 56 fix 2's other
+ * families' paste at twice the load).
+ */
+export function chosenScenarios(args) {
+  if (!args.scenarios?.length) return { scenarios: SCENARIOS, stops: true };
+  if (args.stopsOnly) throw new Error('--stops-only runs no scenario; drop --scenarios');
+  for (const name of args.scenarios) if (!SCENARIOS.includes(name)) throw new Error(`unknown focus-timer scenario ${name}`);
+  return { scenarios: SCENARIOS.filter((name) => args.scenarios.includes(name)), stops: false };
+}
 /** The engine's delay from a window's last input to its FocusOut. */
 export const DELAY_MS = 100;
 /** Consecutive passing runs a timer-lane series needs, and the runs it may take to get them. */
@@ -437,7 +449,7 @@ async function auditPass(ctx, family, lane, windows) {
   const runs = [];
   let text;
   try {
-    for (const name of SCENARIOS) {
+    for (const name of ctx.scenarios) {
       const row = await oneRun(ctx, engine, name, windows);
       runs.push({ scenario: name, ok: row.ok, errors: row.errors });
     }
@@ -452,7 +464,7 @@ async function auditPass(ctx, family, lane, windows) {
   const forbidden = auditRequests(trace);
   const attributed = attributeFocusOuts(trace, records, { delayMs: timed(lane) ? DELAY_MS : 0 });
   const ids = { a: windows.a.id, b: windows.b.id };
-  const want = SCENARIOS.flatMap((name) => expectedSessions(name, lane, ids));
+  const want = ctx.scenarios.flatMap((name) => expectedSessions(name, lane, ids));
   const seen = attributed.sessions.map((s) => s.destination);
   const sessionsOk = JSON.stringify(seen) === JSON.stringify(want);
   // the control lane's runs may reorder, which is what it is for; its audit judges the trace and the records alone
@@ -550,6 +562,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
   emit({ kind: 'focus-timer-display', display: server.display, cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), load_factor: args.load ? (args.loadFactor ?? 1) : 0 });
   const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   const families = args.families.length ? args.families : FAMILIES;
+  const chosen = chosenScenarios(args);
   const results = { series: [], audits: [], stops: [], skipped: [] };
   let wm = null;
   let load = null;
@@ -564,7 +577,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
     load = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
     // the stop runs' engine: as it ships, or with the exit settle a measurement step sets
     const stopArgs = args.exitSettleMs === undefined ? [] : ['--exit-settle-ms', String(args.exitSettleMs)];
-    const ctx = { desktop, oracle, emit, cua: args.cua, need: args.samplesTrials ?? CONSECUTIVE, stopArgs, pasteText: pasteTexts() };
+    const ctx = { desktop, oracle, emit, cua: args.cua, need: args.samplesTrials ?? CONSECUTIVE, stopArgs, pasteText: pasteTexts(), scenarios: chosen.scenarios };
     for (const family of families) {
       let windows;
       try {
@@ -577,18 +590,18 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
       try {
         // the control lane and SIGKILL last: the keys they cut reach the window only with a later FocusIn, which would
         // fail whatever ran after them
-        const cutsKeys = CHROMIUM.includes(family);
+        const cutsKeys = CHROMIUM.includes(family) && chosen.stops;
         if (!args.stopsOnly) {
-          for (const name of SCENARIOS) results.series.push(await series(ctx, family, 'timer', name, windows));
+          for (const name of ctx.scenarios) results.series.push(await series(ctx, family, 'timer', name, windows));
           results.audits.push(await auditPass(ctx, family, 'timer', windows));
-          for (const name of SCENARIOS) results.series.push(await series(ctx, family, 'unredirect', name, windows));
+          for (const name of ctx.scenarios) results.series.push(await series(ctx, family, 'unredirect', name, windows));
         }
         if (cutsKeys) {
           for (let i = 0; i < SIGTERM_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i));
           for (let i = 0; i < POINTER_STOP_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i, 'clicks'));
         }
         if (!args.stopsOnly) {
-          for (const name of SCENARIOS) results.series.push(await series(ctx, family, 'control', name, windows));
+          for (const name of ctx.scenarios) results.series.push(await series(ctx, family, 'control', name, windows));
           results.audits.push(await auditPass(ctx, family, 'control', windows));
         }
         if (cutsKeys) for (let i = 0; i < SIGKILL_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGKILL', windows, i));

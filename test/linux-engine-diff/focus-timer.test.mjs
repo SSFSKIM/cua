@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
 // background session's SendEvents (audit.test.mjs has the same shapes).
@@ -300,6 +300,15 @@ test("the exit settle's measured steps: the stop runs alone, the settle 0 includ
   assert.equal(args.exitSettleMs, 0);
   assert.equal(parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', '--exit-settle-ms', '250']).exitSettleMs, 250);
   assert.throws(() => parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', '--exit-settle-ms', '-1']), /--exit-settle-ms/);
+});
+
+test('--scenarios runs only the scenarios it names, in the experiment\'s order, with no stop runs; an unknown name is refused', () => {
+  const args = (...more) => parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', ...more]);
+  assert.deepEqual(chosenScenarios(args()), { scenarios: SCENARIOS, stops: true });
+  assert.deepEqual(chosenScenarios(args('--scenarios', 'paste')), { scenarios: ['paste'], stops: false });
+  assert.deepEqual(chosenScenarios(args('--scenarios', 'paste,burst')), { scenarios: ['burst', 'paste'], stops: false });
+  assert.throws(() => chosenScenarios(args('--scenarios', 'paste,drag')), /unknown focus-timer scenario drag/);
+  assert.throws(() => chosenScenarios(args('--scenarios', 'paste', '--stops-only')), /--stops-only runs no scenario/);
 });
 
 test("a --stats line's FocusOuts are read apart from the exit's settle, which is no FocusOut", () => {

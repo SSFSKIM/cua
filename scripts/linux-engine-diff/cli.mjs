@@ -12,7 +12,7 @@ export const USAGE = `usage:
       [--dev] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
   linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer --cua <bin> --out <dir> [--run <name>]
-      [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--stops-only] [--exit-settle-ms <ms>] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
+      [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
@@ -70,6 +70,8 @@ export function parseArgs(argv) {
     else if (flag === '--dnd-short') a.dndShort = true;
     // the focus-timer experiment's stop runs alone (the exit settle's measured steps, with --exit-settle-ms)
     else if (flag === '--stops-only') a.stopsOnly = true;
+    // the focus-timer experiment's series of these scenarios alone, with no stop runs
+    else if (flag === '--scenarios') a.scenarios = need().split(',').filter(Boolean);
     // the stop runs' exit settle, 0 (the 100 ms drain alone) included
     else if (flag === '--exit-settle-ms') {
       const n = Number(need());

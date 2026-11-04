@@ -988,6 +988,12 @@ fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_before
         "the exit waited for the watch: {:?}",
         exited - answered
     );
+    // the take, then the exit's settle after the Escape (300 ms), and no more: not the 2 s backstop
+    assert!(
+        exited - answered < EXIT_LATE_TAKE + Duration::from_millis(300 + 250),
+        "{:?}",
+        exited - answered
+    );
 }
 
 /// The forced late take (`--dnd-defer-take`) with a key held at the server: the release of the held key runs and the

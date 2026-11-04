@@ -852,7 +852,9 @@ node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" -
   On the private Xvfb a `FocusOut` with the redirect kept cuts nothing in Chromium (task 56: `--teardown-ms 0` alone,
   0 of 10 runs, idle and at twice the load), while the unredirect after it cuts keys and delivers them with the next
   `FocusIn`, the reorder M0.4 saw on `:0` after a `FocusOut` alone. Each run is a fresh engine's. The scenarios, pipelined: `burst` (20 keys, Shift chords among them), `aba` (8 keys to A, 8 to B,
-  8 to A again) and `paste` (8 keys, then a `type_text` to the same window). A run passes when every answer is a success
+  8 to A again) and `paste` (8 keys, then a `type_text` to the same window, of `Pasted` and three letters of the
+  run's own: a terminal's screen holds many runs' text, and the engine confirms a paste the screen's scroll moved only
+  when its text occurs once, task 56 fix 2). `--scenarios <list>` runs only those, with no stop runs. A run passes when every answer is a success
   and each window's text is exactly its old text with the scenario's text put at the caret read before the run. The
   timer and unredirect lanes each need 30 consecutive passing runs of each scenario (at most 60; a miss restarts the
   series and is reported; `--trials` sets fewer for a development run, which the verdict then fails); the control lane

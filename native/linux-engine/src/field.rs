@@ -114,6 +114,57 @@ pub fn restore(bus: &mut Bus, element: &ObjRef, before: &TextState) -> Result<bo
     Ok(bool_of(&result) == Some(true))
 }
 
+/// AT-SPI's `TEXT_BOUNDARY_LINE_START`: a line from its first character to the next line's.
+const LINE_START: u32 = 5;
+
+/// The whole field and where its lines start, observed together, for a confirmation in a field that scrolls
+/// (`paste::Whole`): its text, then each line through `GetTextAtOffset` at `LINE_START` from the start, which are the
+/// toolkit's own lines (a terminal's rows, soft-wrapped ones included: VTE ends only its last row with a newline,
+/// task 56 fix 2's probe), then the count again. None when any read fails, the lines do not follow one another to the
+/// text's end, there are more than `max_lines`, or the field changed meanwhile.
+pub fn read_lines(bus: &mut Bus, element: &ObjRef, count: i32, max_lines: usize) -> Result<Option<(String, Vec<i32>)>> {
+    let deadline = Instant::now() + crate::dbus::IO_TIMEOUT;
+    let Some(text) = read_whole(bus, element, deadline)? else {
+        return Ok(None);
+    };
+    if text.chars().count() != usize::try_from(count).unwrap_or(usize::MAX) {
+        return Ok(None);
+    }
+    let mut starts = Vec::new();
+    let mut offset = 0;
+    while offset < count {
+        if starts.len() >= max_lines {
+            return Ok(None);
+        }
+        let args = [Arg::I32(offset), Arg::U32(LINE_START)];
+        let line = bus.call(&call(element, TEXT, "GetTextAtOffset", &args))?;
+        let (start, end) = match line.as_ref().ok().map(Vec::as_slice) {
+            Some([Value::Str(_), Value::I32(start), Value::I32(end), ..]) => (*start, *end),
+            _ => return Ok(None),
+        };
+        if start != offset || end <= start {
+            return Ok(None);
+        }
+        starts.push(start);
+        offset = end;
+    }
+    let again = bus.call(&call(element, PROPERTIES, "Get", &COUNT))?;
+    Ok((int_of(&again) == Some(count)).then_some((text, starts)))
+}
+
+/// The field's whole text, waited for no later than `deadline`; None when it cannot be read or the deadline came first.
+pub fn read_whole(bus: &mut Bus, element: &ObjRef, deadline: Instant) -> Result<Option<String>> {
+    let range = [Arg::I32(0), Arg::I32(-1)];
+    let calls = [call(element, TEXT, "GetText", &range)];
+    let Some(results) = bus.calls_until(&calls, deadline)? else {
+        return Ok(None);
+    };
+    Ok(match results[0].as_ref().ok().and_then(|v| v.first()) {
+        Some(Value::Str(s)) => Some(s.clone()),
+        _ => None,
+    })
+}
+
 /// The field's character count and its text at offsets `at..at + len`, read together and waited for no later than
 /// `deadline`; None when either cannot be read or the deadline came first.
 pub fn read(bus: &mut Bus, element: &ObjRef, at: i32, len: i32, deadline: Instant) -> Result<Option<(i32, String)>> {

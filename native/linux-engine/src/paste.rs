@@ -121,9 +121,60 @@ pub struct Expected {
     /// The field's character count before the paste, and what it read at the same offsets.
     pub count_before: i32,
     pub before: String,
+    /// The whole field as observed, in a family whose text scrolls away at its start (`families.rs`), else None.
+    pub whole: Option<Whole>,
+}
+
+/// The whole field as observed before the paste, in a family whose text scrolls its beginning away as text arrives (a
+/// terminal whose screen is full: task 56, fix 2): its text, and the offsets where the toolkit's own lines start.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Whole {
+    pub text: String,
+    pub line_starts: Vec<i32>,
 }
 
 impl Expected {
+    /// Whether the whole field read after the paste (`after`) shows the paste in a field that scrolled (the design
+    /// session's ruling, task 56 fix 2). Only a field observed whole can say, and only when both hold:
+    ///
+    /// - `after` is the expected text (the text observed whole, with the paste at the caret) less a prefix that ends
+    ///   where one of the observed lines starts, the paste still whole after it;
+    /// - the paste text occurs exactly once in the expected text, so exactly once in `after`, at the caret's distance
+    ///   from the end.
+    ///
+    /// The count is over the expected text, not `after` alone: when the text just before the caret is the paste text
+    /// itself, a field that scrolled by one line and took no paste reads exactly as the expected text less the next
+    /// line, with one copy in it. Anything else stays unconfirmed: a wrong confirm is worse than a false "unconfirmed".
+    pub fn confirmed_scrolled(&self, after: &str) -> bool {
+        let Some(whole) = &self.whole else {
+            return false;
+        };
+        let before: Vec<char> = whole.text.chars().collect();
+        let paste: Vec<char> = self.text.chars().collect();
+        let Ok(at) = usize::try_from(self.at) else {
+            return false;
+        };
+        if self.feff_after_astral || paste.is_empty() || at > before.len() {
+            return false;
+        }
+        let expected: Vec<char> = before[..at]
+            .iter()
+            .chain(&paste)
+            .chain(&before[at..])
+            .copied()
+            .collect();
+        let after: Vec<char> = after.chars().collect();
+        let Some(prefix) = expected.len().checked_sub(after.len()).filter(|&k| k > 0 && k <= at) else {
+            return false;
+        };
+        whole
+            .line_starts
+            .iter()
+            .any(|&start| usize::try_from(start) == Ok(prefix))
+            && expected[prefix..] == after[..]
+            && occurrences(&expected, &paste) == 1
+    }
+
     /// Whether a read of the field's `count` and of its offsets `at..at + len` (`read`) shows the paste: the
     /// inserted segment is there, and the field changed (its count, or what those offsets held). Text around the
     /// segment (autocompletion, suggestions) is not judged.
@@ -137,6 +188,14 @@ impl Expected {
         };
         normalize(read) == self.text && (count != self.count_before || normalize(&self.before) != self.text)
     }
+}
+
+/// How many times `needle` occurs in `hay`, overlapping occurrences included.
+fn occurrences(hay: &[char], needle: &[char]) -> usize {
+    if needle.is_empty() {
+        return 0;
+    }
+    hay.windows(needle.len()).filter(|w| *w == needle).count()
 }
 
 /// Whether X window `requestor` belongs to the X client that created `client` (Decision Log, M2.1: a request counts
@@ -250,6 +309,7 @@ mod tests {
             feff_after_astral: feff,
             count_before,
             before: before.into(),
+            whole: None,
         }
     }
 
@@ -264,6 +324,97 @@ mod tests {
         assert!(!e.confirmed_by(10, "xyzwvutsr"), "not yet");
         assert!(!e.confirmed_by(18, "cua171 🙃"));
         assert!(!e.confirmed_by(17, "cua171 "), "a short read");
+    }
+
+    /// A terminal's screen as its accessible text reads: rows of `width` characters, the last one partial, then the
+    /// newline VTE ends its text with; the caret before that newline. Observed whole, its lines starting at each row.
+    fn screen(rows: &[&str], paste: &str) -> Expected {
+        let before: String = rows.concat() + "\n";
+        let mut starts = Vec::new();
+        let mut at = 0;
+        for row in rows {
+            starts.push(at);
+            at += row.chars().count() as i32;
+        }
+        Expected {
+            text: paste.into(),
+            at,
+            len: offsets(paste, false),
+            feff_after_astral: false,
+            count_before: at + 1,
+            before: "\n".into(),
+            whole: Some(Whole {
+                text: before,
+                line_starts: starts,
+            }),
+        }
+    }
+
+    #[test]
+    fn a_scrolled_field_whose_paste_landed_confirms() {
+        // the trace's case: the paste wraps the last row of a full screen, the first row scrolls out, and every offset
+        // the observation took is one row off
+        let e = screen(&["0123456789", "abcdefghij", "KLMNOP"], "Pasted");
+        assert!(
+            !e.confirmed_by(16, ""),
+            "the inserted segment's offsets read past the end"
+        );
+        assert!(e.confirmed_scrolled("abcdefghijKLMNOPPasted\n"), "one row out");
+        assert!(e.confirmed_scrolled("KLMNOPPasted\n"), "two rows out");
+        assert!(
+            !e.confirmed_scrolled("0123456789abcdefghijKLMNOPPasted\n"),
+            "no scroll: the inserted segment's rule decides"
+        );
+        assert!(
+            !e.confirmed_scrolled("asted\n"),
+            "the paste itself partly scrolled out: not shown whole"
+        );
+        assert!(!e.confirmed_scrolled("abcdefghijKLMNOPPastex\n"));
+        assert!(!e.confirmed_scrolled("abcdefghijKLMNOP\n"), "nothing pasted");
+        let unobserved = Expected { whole: None, ..e };
+        assert!(
+            !unobserved.confirmed_scrolled("abcdefghijKLMNOPPasted\n"),
+            "a field not observed whole"
+        );
+    }
+
+    #[test]
+    fn a_scrolled_field_with_the_paste_text_already_in_it_and_no_paste_does_not_confirm() {
+        // the negative control: the paste never landed, the screen scrolled by one row, and what is left reads exactly
+        // as the paste would have, one row further: the text before the caret was the paste text already
+        let e = screen(&["r1\n", "ab\n", "ab\n"], "ab\n");
+        let after = "ab\nab\n\n";
+        let expected: String = "r1\nab\nab\nab\n\n".chars().skip(6).collect();
+        assert_eq!(
+            after, expected,
+            "the scrolled text equals the expected text less two rows"
+        );
+        assert!(!e.confirmed_scrolled(after));
+    }
+
+    #[test]
+    fn a_scroll_whose_prefix_does_not_end_where_a_line_starts_stays_unconfirmed() {
+        let mut e = screen(&["0123456789", "abcdefghij", "KLMNOP"], "Pasted");
+        e.whole.as_mut().unwrap().line_starts = vec![0, 20];
+        assert!(!e.confirmed_scrolled("abcdefghijKLMNOPPasted\n"));
+        assert!(
+            !e.confirmed_scrolled("123456789abcdefghijKLMNOPPasted\n"),
+            "one character out, within a row"
+        );
+        assert!(e.confirmed_scrolled("KLMNOPPasted\n"));
+    }
+
+    #[test]
+    fn a_scrolled_field_where_the_paste_text_occurs_twice_stays_unconfirmed() {
+        // the paste landed, but an earlier copy of its text is still on the screen
+        let e = screen(&["0123456789", "PastedXXXX", "KLMNOP"], "Pasted");
+        assert!(!e.confirmed_scrolled("PastedXXXXKLMNOPPasted\n"));
+        // and one in the rows that scrolled out counts too
+        let e = screen(&["Pasted6789", "abcdefghij", "KLMNOP"], "Pasted");
+        assert!(!e.confirmed_scrolled("abcdefghijKLMNOPPasted\n"));
+        // overlapping occurrences count
+        let e = screen(&["0123456789", "abcdefghia", "KLMNOa"], "aa");
+        assert!(!e.confirmed_scrolled("abcdefghiaKLMNOaaa\n"));
     }
 
     #[test]

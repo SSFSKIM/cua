@@ -38,6 +38,11 @@ const FOCUS_POLL: Duration = Duration::from_millis(10);
 /// How many focusing clicks at most (`click_for_focus`).
 const FOCUS_CLICKS: u32 = 2;
 
+/// The largest field observed whole for the scrolled-field confirmation, in characters, and in lines (a terminal's
+/// screen is far smaller: 20 rows of 69 on the harness's).
+const WHOLE_LIMIT: i32 = 65_536;
+const WHOLE_LINES: usize = 512;
+
 /// Why a paste is refused when another program took CLIPBOARD after the engine had (`paste::not_dispatched` ends it).
 const LOST: &str = "another program took the clipboard before the paste was sent";
 const UNKNOWN_HANDLE: &str = "unknown clipboard handle; copy again in this Linux helper";
@@ -66,6 +71,11 @@ struct Report {
     requests: u32,
     attributed: u32,
     confirm_ms: Option<f64>,
+    /// Which rule confirmed it: the inserted segment, or the whole field scrolled.
+    confirm_rule: Option<&'static str>,
+    /// The field observed whole (a family whose text scrolls): its characters and its lines, and how long that took.
+    observed_whole: Option<(usize, usize)>,
+    observed_whole_ms: Option<f64>,
     /// The field's text state when observed, and the offsets the confirmation reads.
     observed: Option<String>,
     expected: Option<(i32, i32)>,
@@ -159,6 +169,9 @@ impl Engine {
                 "requests": report.requests,
                 "attributed": report.attributed,
                 "confirm_ms": report.confirm_ms,
+                "confirm_rule": report.confirm_rule,
+                "observed_whole": report.observed_whole,
+                "observed_whole_ms": report.observed_whole_ms,
                 "observed": report.observed,
                 "expected": report.expected,
                 "log": report.log,
@@ -232,6 +245,7 @@ impl Engine {
         }
         self.enter_checked(way, request.window.map(|_| window), |_| Ok(()))?;
         let feff = family.is_some_and(|f| f.feff_after_astral);
+        let scrolls = family.is_some_and(|f| f.text_scrolls);
         let target = way.target(window);
         let resource_id_mask = self.x.conn.setup().resource_id_mask;
         let Engine {
@@ -314,13 +328,28 @@ impl Engine {
                     Some((state, at)) => {
                         let len = paste::offsets(text, feff);
                         let until = Instant::now() + crate::dbus::IO_TIMEOUT;
-                        field::read(bus, &element.target, at, len, until)?.map(|(_, before)| Expected {
+                        let before = field::read(bus, &element.target, at, len, until)?;
+                        // a field whose text scrolls away at its start is observed whole as well, so a paste the
+                        // scroll moved can still be confirmed (`Expected::confirmed_scrolled`): never over a
+                        // selection, whose replacement the whole text could not foresee
+                        let whole = (scrolls && !feff && state.selected().is_none() && state.count <= WHOLE_LIMIT)
+                            .then(|| {
+                                let started = Instant::now();
+                                let read = field::read_lines(bus, &element.target, state.count, WHOLE_LINES);
+                                report.observed_whole_ms = Some(started.elapsed().as_secs_f64() * 1000.0);
+                                read.ok().flatten()
+                            })
+                            .flatten()
+                            .map(|(text, line_starts)| paste::Whole { text, line_starts });
+                        report.observed_whole = whole.as_ref().map(|w| (w.text.chars().count(), w.line_starts.len()));
+                        before.map(|(_, before)| Expected {
                             text: text.to_string(),
                             at,
                             len,
                             feff_after_astral: feff,
                             count_before: state.count,
                             before,
+                            whole,
                         })
                     }
                     None => None,
@@ -549,13 +578,16 @@ fn dispatch_and_confirm(
         if !report.confirmed
             && now < confirm_deadline
             && let Some(e) = &expected
-            && confirmed_before(
-                |until| field::read(bus, &element.target, e.at, e.len, until),
+            && let Some(rule) = confirmed_before(
+                |bus: &mut crate::dbus::Bus, until| field::read(bus, &element.target, e.at, e.len, until),
+                |bus: &mut crate::dbus::Bus, until| field::read_whole(bus, &element.target, until),
+                bus,
                 e,
                 confirm_deadline,
             )
         {
             report.confirmed = true;
+            report.confirm_rule = Some(rule.name());
             report.confirm_ms = Some(dispatched_at.elapsed().as_secs_f64() * 1000.0);
         }
         let confirm_done = report.confirmed || expected.is_none() || Instant::now() >= confirm_deadline;
@@ -676,16 +708,48 @@ fn send_chord(x: &X11, route: &mut Route, keycodes: &[u8]) -> Chord {
     chord
 }
 
-/// One confirming read, bounded by the confirmation's deadline: the read itself waits no later than it, and its result
-/// counts only if it came before it, so a reply that arrives late never confirms a paste that applied late.
-fn confirmed_before(
-    read: impl FnOnce(Instant) -> Result<Option<(i32, String)>>,
+/// Which rule a confirming look proved the paste by (`--stats` `confirm_rule`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Rule {
+    /// The inserted segment at its offsets (`Expected::confirmed_by`).
+    Segment,
+    /// The whole field, scrolled (`Expected::confirmed_scrolled`).
+    Scrolled,
+}
+
+impl Rule {
+    fn name(self) -> &'static str {
+        match self {
+            Rule::Segment => "segment",
+            Rule::Scrolled => "scrolled",
+        }
+    }
+}
+
+/// One confirming look, bounded by the confirmation's deadline: the inserted segment at its offsets (`read`); else, in a
+/// field observed whole whose count shows that text has left it (a scroll takes text from the field's start, so it
+/// holds fewer characters than the paste alone would make), the whole field as it reads now (`read_whole`), under the
+/// scrolled-field rule. Each read waits no later than the deadline, and its result counts only if it came before it,
+/// so a reply that arrives late never confirms a paste that applied late.
+fn confirmed_before<C>(
+    read: impl FnOnce(&mut C, Instant) -> Result<Option<(i32, String)>>,
+    read_whole: impl FnOnce(&mut C, Instant) -> Result<Option<String>>,
+    on: &mut C,
     expected: &Expected,
     deadline: Instant,
-) -> bool {
-    Instant::now() < deadline
-        && matches!(read(deadline), Ok(Some((count, text))) if expected.confirmed_by(count, &text))
-        && Instant::now() < deadline
+) -> Option<Rule> {
+    if Instant::now() >= deadline {
+        return None;
+    }
+    let (count, text) = read(on, deadline).ok().flatten()?;
+    if expected.confirmed_by(count, &text) {
+        return (Instant::now() < deadline).then_some(Rule::Segment);
+    }
+    if expected.whole.is_none() || count >= expected.count_before + expected.len || Instant::now() >= deadline {
+        return None;
+    }
+    let after = read_whole(on, deadline).ok().flatten()?;
+    (expected.confirmed_scrolled(&after) && Instant::now() < deadline).then_some(Rule::Scrolled)
 }
 
 #[cfg(test)]
@@ -819,7 +883,19 @@ mod tests {
             feff_after_astral: false,
             count_before: 0,
             before: String::new(),
+            whole: None,
         }
+    }
+
+    /// The inserted segment's rule alone: a field not observed whole is never read whole.
+    fn segment(read: impl FnOnce(Instant) -> Result<Option<(i32, String)>>, deadline: Instant) -> Option<Rule> {
+        confirmed_before(
+            |_: &mut (), until| read(until),
+            |_: &mut (), _| panic!("a field not observed whole is read whole"),
+            &mut (),
+            &expected(),
+            deadline,
+        )
     }
 
     #[test]
@@ -830,7 +906,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(80));
             Ok(Some((6, "cua171".to_string())))
         };
-        assert!(!confirmed_before(late, &expected(), deadline));
+        assert_eq!(segment(late, deadline), None);
     }
 
     #[test]
@@ -841,31 +917,101 @@ mod tests {
             given = Some(until);
             Ok(Some((6, "cua171".to_string())))
         };
-        assert!(confirmed_before(read, &expected(), deadline));
+        assert_eq!(segment(read, deadline), Some(Rule::Segment));
         assert_eq!(
             given,
             Some(deadline),
             "the read waits no later than the confirmation's deadline"
         );
-        assert!(!confirmed_before(
-            |_| Ok(Some((6, "cua17".into()))),
-            &expected(),
-            deadline
-        ));
-        assert!(
-            !confirmed_before(|_| Ok(None), &expected(), deadline),
-            "a read the deadline cut short"
-        );
+        assert_eq!(segment(|_| Ok(Some((6, "cua17".into()))), deadline), None);
+        assert_eq!(segment(|_| Ok(None), deadline), None, "a read the deadline cut short");
         let past = Instant::now() - Duration::from_millis(1);
         let mut read_at_all = false;
-        assert!(!confirmed_before(
-            |_| {
-                read_at_all = true;
-                Ok(Some((6, "cua171".into())))
-            },
-            &expected(),
-            past
-        ));
+        assert_eq!(
+            segment(
+                |_| {
+                    read_at_all = true;
+                    Ok(Some((6, "cua171".into())))
+                },
+                past
+            ),
+            None
+        );
         assert!(!read_at_all, "no read starts after the deadline");
+    }
+
+    /// A terminal's full screen observed whole: two rows and a partial one, the caret before VTE's closing newline.
+    fn screen() -> Expected {
+        Expected {
+            text: "Pasted".into(),
+            at: 16,
+            len: 6,
+            feff_after_astral: false,
+            count_before: 17,
+            before: "\n".into(),
+            whole: Some(paste::Whole {
+                text: "0123456789KLMNOP\n".into(),
+                line_starts: vec![0, 10],
+            }),
+        }
+    }
+
+    #[test]
+    fn a_field_observed_whole_is_read_whole_only_once_text_has_left_it_and_confirms_scrolled() {
+        let deadline = Instant::now() + Duration::from_millis(500);
+        let look = |wholes: &mut i32, count: i32, segment: &str, whole: &str| {
+            confirmed_before(
+                |_: &mut i32, _| Ok(Some((count, segment.to_string()))),
+                |n: &mut i32, _| {
+                    *n += 1;
+                    Ok(Some(whole.to_string()))
+                },
+                wholes,
+                &screen(),
+                deadline,
+            )
+        };
+        let mut wholes = 0;
+        assert_eq!(
+            look(&mut wholes, 23, "Pasted", ""),
+            Some(Rule::Segment),
+            "no scroll: the segment's rule"
+        );
+        assert_eq!(
+            look(&mut wholes, 23, "\n", ""),
+            None,
+            "as many characters as the paste makes: nothing left the field, no whole read"
+        );
+        assert_eq!(wholes, 0);
+        assert_eq!(
+            look(&mut wholes, 17, "\n", "0123456789KLMNOP\n"),
+            None,
+            "not landed yet"
+        );
+        // the screen scrolled by its first row as the paste wrapped the last: the segment's offsets read past the end
+        assert_eq!(look(&mut wholes, 13, "", "KLMNOPPasted\n"), Some(Rule::Scrolled));
+        assert_eq!(look(&mut wholes, 13, "", "KLMNOPPastex\n"), None);
+        assert_eq!(wholes, 3);
+        // a whole read that the deadline cut short, or that came after it, confirms nothing
+        let cut = confirmed_before(
+            |_: &mut (), _| Ok(Some((13, String::new()))),
+            |_: &mut (), _| Ok(None),
+            &mut (),
+            &screen(),
+            deadline,
+        );
+        assert_eq!(cut, None);
+        let soon = Instant::now() + Duration::from_millis(30);
+        let late = confirmed_before(
+            |_: &mut (), _| Ok(Some((13, String::new()))),
+            |_: &mut (), _| {
+                std::thread::sleep(Duration::from_millis(50));
+                Ok(Some("KLMNOPPasted\n".into()))
+            },
+            &mut (),
+            &screen(),
+            soon,
+        );
+        assert_eq!(late, None);
     }
 }

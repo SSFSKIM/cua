@@ -98,6 +98,9 @@ pub struct Family {
     /// Its HTML5 drag and drop changes the desktop when it drops (Chrome, M1a.4 and M3.1): a background drag that
     /// becomes one is cancelled before the drop in shared mode (`dnd.rs`).
     pub drop_changes_desktop: bool,
+    /// Its text scrolls its beginning away as text arrives (a terminal's screen): a paste's confirmation observes the
+    /// whole field first, so a paste the scroll moved can still be confirmed (`paste::Expected::confirmed_scrolled`).
+    pub text_scrolls: bool,
     /// The runs that showed it (`docs/evidence/2026-10-28-own-linux-engine/`).
     pub evidence: &'static str,
 }
@@ -166,6 +169,7 @@ pub const FAMILIES: &[Family] = &[
         }],
         feff_after_astral: false,
         drop_changes_desktop: true,
+        text_scrolls: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible, m31-dnd-candidate, m31-dnd-candidate-stats",
     },
@@ -186,6 +190,7 @@ pub const FAMILIES: &[Family] = &[
         }],
         feff_after_astral: false,
         drop_changes_desktop: false,
+        text_scrolls: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible",
     },
@@ -226,6 +231,7 @@ pub const FAMILIES: &[Family] = &[
         ],
         feff_after_astral: true,
         drop_changes_desktop: false,
+        text_scrolls: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
                    m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600; m3/kinds/ \
                    runs m31-kinds-covered, m31-kinds-partial, m31-kinds-partial-deep, m31-move-covered, \
@@ -270,6 +276,7 @@ pub const FAMILIES: &[Family] = &[
         ],
         feff_after_astral: false,
         drop_changes_desktop: false,
+        text_scrolls: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible; m3/kinds/ runs m31-kinds-covered, \
                    m31-kinds-visible, m31-move-covered, m31-drag-covered, m31-drag-visible-new",
     },
@@ -288,9 +295,11 @@ pub const FAMILIES: &[Family] = &[
         }],
         feff_after_astral: false,
         drop_changes_desktop: false,
+        text_scrolls: false,
         evidence: "m3/kinds/ runs m31-kinds-covered, m31-kinds-visible, m31-qt-covered, m31-qt-visible",
     },
-    // A VTE terminal pastes with Ctrl+Shift+V; Ctrl+V inserts the next key literally in a shell.
+    // A VTE terminal pastes with Ctrl+Shift+V; Ctrl+V inserts the next key literally in a shell. Its text is its
+    // screen, whose first row scrolls out as text wraps the last row of a full screen.
     Family {
         name: "VTE",
         toolkit: None,
@@ -301,7 +310,9 @@ pub const FAMILIES: &[Family] = &[
         ignores: &[],
         feff_after_astral: false,
         drop_changes_desktop: false,
-        evidence: "M2.2's terminal paste (task-14 report; m2/ from M2.3)",
+        text_scrolls: true,
+        evidence: "M2.2's terminal paste (task-14 report; m2/ from M2.3); the scroll: task 56's paste trace \
+                   (m4/focus-timer/fix/terminal-trace-load2/)",
     },
     // xterm pastes PRIMARY, not CLIPBOARD, by default, and ignores synthetic keys (`allowSendEvents` false, M0.4): no
     // paste route is verified, so text is refused.
@@ -318,6 +329,7 @@ pub const FAMILIES: &[Family] = &[
         }],
         feff_after_astral: false,
         drop_changes_desktop: false,
+        text_scrolls: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible",
     },
 ];
@@ -360,6 +372,7 @@ mod tests {
             ignores: &[],
             feff_after_astral: false,
             drop_changes_desktop: false,
+            text_scrolls: false,
             evidence: "test",
         },
         Family {
@@ -372,6 +385,7 @@ mod tests {
             ignores: &[],
             feff_after_astral: false,
             drop_changes_desktop: false,
+            text_scrolls: false,
             evidence: "test",
         },
     ];
@@ -421,6 +435,13 @@ mod tests {
             gtk(Some("4.14.2")).and_then(|f| f.ignores(Kind::Keys)),
             Some(When::Always)
         );
+    }
+
+    #[test]
+    fn only_a_terminal_s_text_scrolls_away_at_its_start() {
+        let scrolls: Vec<&str> = FAMILIES.iter().filter(|f| f.text_scrolls).map(|f| f.name).collect();
+        assert_eq!(scrolls, vec!["VTE"]);
+        assert!(family(FAMILIES, Some("Gnome-terminal"), None).is_some_and(|f| f.text_scrolls));
     }
 
     #[test]

@@ -153,18 +153,27 @@ async function textAndCaret(desktop, oracle, scene) {
   return { text, caret: caret.caret };
 }
 
-/** Reads until two reads 150 ms apart agree (a covered Chromium page updates its tree late), at most 5 s. */
-async function settledRead(read) {
-  const started = Date.now();
-  let previous = JSON.stringify(await read());
+/**
+ * Reads until two reads 150 ms apart agree and the text is at least `want` characters long, at most `boundMs`: a covered
+ * Chromium page updates its tree late, and under load two reads can agree before the renderer has taken the first key.
+ * Keys that never come within the bound (a cut, delivered only with a later FocusIn) leave the read short, and the run
+ * is judged on it (`long_enough` false).
+ */
+export async function settledRead(read, { want = 0, boundMs = 5000, gapMs = 150, sleep: wait = sleep, now: clock = Date.now } = {}) {
+  const started = clock();
+  const longEnough = (r) => (typeof r.text === 'string' ? r.text.length : 0) >= want;
+  let previous = await read();
   for (;;) {
-    await sleep(150);
-    const now = await read();
-    const same = JSON.stringify(now) === previous;
-    if (same || Date.now() - started > 5000) return { ...now, settled: same };
-    previous = JSON.stringify(now);
+    await wait(gapMs);
+    const current = await read();
+    const same = JSON.stringify(current) === JSON.stringify(previous);
+    if ((same && longEnough(current)) || clock() - started > boundMs) return { ...current, settled: same, long_enough: longEnough(current) };
+    previous = current;
   }
 }
+
+/** The length a window's text must reach once a run has put `text` into it. */
+const grown = (before, text) => (typeof before.text === 'string' ? before.text.length : 0) + [...text].length;
 
 /**
  * The engine's `--stats` records of its FocusOuts, in the order it wrote them: each `{window, cause, after_input_ms,
@@ -196,7 +205,7 @@ async function oneRun(ctx, engine, name, windows) {
   const { responses, ms } = await engine.pipeline(requests);
   const answered = performance.now() - started;
   const after = {};
-  for (const k of keys) after[k] = await settledRead(() => textAndCaret(desktop, oracle, windows[k]));
+  for (const k of keys) after[k] = await settledRead(() => textAndCaret(desktop, oracle, windows[k]), { want: grown(before[k], expected[k]) });
   const texts = Object.fromEntries(keys.map((k) => [k, insertedAt(before[k].text, before[k].caret, expected[k], after[k].text)]));
   const errors = responses.filter((r) => r.ok !== true).map((r) => String(r.error).slice(0, 300));
   const got = Object.fromEntries(keys.map((k) => [k, typeof after[k].text === 'string' && typeof before[k].text === 'string' ? after[k].text.slice(before[k].caret ?? 0, (before[k].caret ?? 0) + after[k].text.length - before[k].text.length) : null]));
@@ -313,7 +322,7 @@ async function stopRun(ctx, family, signal, windows, i) {
     await proxy.mark('end');
     text = await proxy.stop();
   }
-  const after = await settledRead(() => textAndCaret(desktop, oracle, windows.a));
+  const after = await settledRead(() => textAndCaret(desktop, oracle, windows.a), { want: grown(before, expected.a) });
   const sessions = focusSessions(parseXtrace(text));
   const exitRecord = records.find((r) => r.cause === 'exit') ?? null;
   const keysInOrder = insertedAt(before.text, before.caret, expected.a, after.text);
@@ -323,7 +332,8 @@ async function stopRun(ctx, family, signal, windows, i) {
     signal === 'SIGTERM'
       ? keysInOrder && closedSession && exit.code === 143 && exitRecord !== null && exitRecord.after_input_ms >= DELAY_MS && drained < EXIT_WITHIN_MS && !exit.answers
       : !closedSession && sessions.sessions.length === 1;
-  const row = { kind: 'focus-timer-stop', family, signal, run: i, ok, keys_in_order: keysInOrder, session_closed: closedSession, session_problems: sessions.problems, exit, exit_record: exitRecord, signalled_after_answer_ms: Math.round(gap * 10) / 10, exited_after_answer_ms: Math.round(drained * 10) / 10 };
+  const got = typeof after.text === 'string' && typeof before.text === 'string' ? after.text.slice(before.caret ?? 0, (before.caret ?? 0) + after.text.length - before.text.length) : null;
+  const row = { kind: 'focus-timer-stop', family, signal, run: i, ok, keys_in_order: keysInOrder, got, session_closed: closedSession, session_problems: sessions.problems, exit, exit_record: exitRecord, signalled_after_answer_ms: Math.round(gap * 10) / 10, exited_after_answer_ms: Math.round(drained * 10) / 10 };
   emit(row);
   return row;
 }

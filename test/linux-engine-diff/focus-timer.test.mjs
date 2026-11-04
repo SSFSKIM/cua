@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
-import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, runPasses, scenario, seriesVerdict } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, runPasses, scenario, seriesVerdict, settledRead } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
 // background session's SendEvents (audit.test.mjs has the same shapes).
@@ -216,4 +216,30 @@ test("a run passes on its text and its answers; only a Qt paste's unconfirmed an
   assert.equal(runPasses({ family: 'kate', errors: [UNCONFIRMED], exact: { a: false } }), false, 'the text decides');
   assert.equal(runPasses({ family: 'qtcreator', errors: ['requested field or selection changed before dispatch; nothing was sent'], exact: { a: true } }), false);
   assert.equal(runPasses({ family: 'gedit', errors: [], exact: { a: true, b: false } }), false);
+});
+
+// a fake clock and its reads: each read returns the next text, each wait advances the clock
+const reads = (texts) => {
+  let t = 0;
+  let i = 0;
+  return {
+    read: async () => ({ text: texts[Math.min(i++, texts.length - 1)], caret: 0 }),
+    opts: { sleep: async (ms) => { t += ms; }, now: () => t },
+    count: () => i,
+  };
+};
+
+test('a read settles when two reads agree, once the text is as long as the run must make it, at most the bound', async () => {
+  // two equal reads before the keys show (a loaded renderer's tree) do not settle a read that waits for 4 characters
+  const late = reads(['', '', '', 'ab', 'abcd', 'abcd']);
+  assert.deepEqual(await settledRead(late.read, { want: 4, ...late.opts }), { text: 'abcd', caret: 0, settled: true, long_enough: true });
+  // with nothing to wait for, two equal reads settle at once
+  const now = reads(['x', 'x']);
+  assert.equal((await settledRead(now.read, now.opts)).text, 'x');
+  assert.equal(now.count(), 2);
+  // keys that never come (a cut, delivered only with a later FocusIn) leave the read short at the bound, judged as read
+  const cut = reads(['ab']);
+  const short = await settledRead(cut.read, { want: 4, ...cut.opts });
+  assert.equal(short.text, 'ab');
+  assert.equal(short.long_enough, false);
 });

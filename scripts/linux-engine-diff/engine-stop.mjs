@@ -68,6 +68,8 @@ const RELEASE_KEYSYM = 'Shift_L';
 /** Where on the xterm the handle starts, and how far its one move goes, from the window's top left. */
 const HANDLE_START = [60, 60];
 const HANDLE_MOVE = [80, 30];
+/** The app an approval of desktop input names (cua's elicitation for a request with no window). */
+const DESKTOP_APPROVAL = '(desktop)';
 /**
  * `held-back`: how long the cell admitted before the stream's end runs. cua serve waits for the task's completion at
  * most 5 s after the end (server.mjs `completionDeadlineMs`), then tears the runtime down (upstream.mjs, budget 5 s):
@@ -98,7 +100,12 @@ const leftNothingStopped = (row) => Array.isArray(row.stopped_left) && row.stopp
 export function runPasses(row) {
   if (!valid(row)) return false;
   if (row.case === 'hold') return row.held_before === true && Array.isArray(row.keys_after) && row.keys_after.length === 0;
-  if (row.case === 'handle') return Array.isArray(row.buttons_before) && row.buttons_before.includes(1) && Array.isArray(row.buttons_after) && row.buttons_after.length === 0;
+  if (row.case === 'handle') {
+    const released = Array.isArray(row.buttons_before) && row.buttons_before.includes(1) && Array.isArray(row.buttons_after) && row.buttons_after.length === 0;
+    // the drop where the model left the pointer: nobody else moves it on the run's private display
+    const end = row.handle?.end;
+    return released && Array.isArray(row.pointer_after) && row.pointer_after[0] === end?.x && row.pointer_after[1] === end?.y;
+  }
   return row.in_order === true;
 }
 
@@ -499,7 +506,8 @@ async function oneRun(ctx, lane, path, kind, scenes, trial) {
   const root = lane === 'drain' ? REPO : ctx.controlRoot;
   const scene = kind === 'burst' ? scenes.chrome : scenes.xterm;
   const asked = [];
-  const answer = approvals(scene.app, asked);
+  // the handle acts on the desktop (its approval names no app: "(desktop)"), the other cases on their window's app
+  const answer = approvals(kind === 'handle' ? DESKTOP_APPROVAL : scene.app, asked);
   const row = { kind: 'engine-stop-run', lane, path, case: kind, sandbox: ctx.sandbox, trial };
   let read = null;
   let before = null;

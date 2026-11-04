@@ -10,7 +10,7 @@ import { CASES, PATHS, casesOf, controlLabel, engineStopVerdict, enginesUnder, r
 
 const hold = (over = {}) => ({ case: 'hold', engines: 1, held_before: true, keys_after: [], stopped_left: [], ...over });
 const burst = (over = {}) => ({ case: 'burst', engines: 1, in_order: true, stopped_left: [], ...over });
-const handle = (over = {}) => ({ case: 'handle', engines: 1, buttons_before: [1], buttons_after: [], stopped_left: [], ...over });
+const handle = (over = {}) => ({ case: 'handle', engines: 1, handle: { start: { x: 60, y: 60 }, end: { x: 140, y: 90 } }, buttons_before: [1], buttons_after: [], pointer_after: [140, 90], stopped_left: [], ...over });
 const ofCase = { hold, burst, handle };
 
 test('a hold passes only when the key was down before the stop and nothing is down after it; a burst only when every key landed in order', () => {
@@ -30,6 +30,8 @@ test("a drag_handle's run passes only when button 1 was down before the stop and
   assert.equal(runPasses(handle({ buttons_after: [1] })), false, 'the drag left held');
   assert.equal(runPasses(handle({ buttons_before: [] })), false, 'no drag held: the case proved nothing');
   assert.equal(runPasses(handle({ buttons_after: null })), false, 'an unread pointer is no release');
+  assert.equal(runPasses(handle({ pointer_after: [60, 60] })), false, 'released, but not where the model left the pointer');
+  assert.equal(runPasses(handle({ pointer_after: null })), false);
   assert.ok(CASES.includes('handle'));
 });
 

@@ -109,10 +109,11 @@ export function enginesUnder(root, bin, { proc = '/proc' } = {}) {
     for (let p = parent.get(pid), hops = 0; p !== undefined && p > 1 && hops < 64; p = parent.get(p), hops++) if (p === root) return true;
     return false;
   };
-  const real = realpathSync(bin);
+  // the path as given or as resolved: the kernel's link names the file it ran by its resolved path
+  const names = new Set([bin, realpathSync(bin)]);
   return [...parent.keys()].filter((pid) => {
     try {
-      return readlinkSync(join(proc, String(pid), 'exe')) === real && under(pid);
+      return names.has(readlinkSync(join(proc, String(pid), 'exe'))) && under(pid);
     } catch {
       return false;
     }

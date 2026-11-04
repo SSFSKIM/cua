@@ -15,6 +15,7 @@ mod dbus;
 mod desktop;
 mod dnd;
 mod engine;
+mod exec;
 mod families;
 #[cfg(test)]
 mod fault;
@@ -48,6 +49,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
        [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
        [--targets-wait-ms <ms>] [--stats]
+       cua-engine exec-under-parent <parent pid> <program> [args...]
        cua-engine --version";
 
 fn version() -> String {
@@ -91,11 +93,33 @@ fn fixed_drag(cfg: &mut Config) -> &mut families::DragPacing {
 
 enum Command {
     Version,
+    /// The REPL host's launcher shim (`exec.rs`).
+    ExecUnderParent {
+        parent: i32,
+        program: String,
+        args: Vec<String>,
+    },
     /// Boxed: the configuration is far larger than the version's nothing.
     Server(Box<Config>),
 }
 
 fn parse_args(args: &[String]) -> Result<Command, String> {
+    // the shim's arguments after its parent are the program's own, never read as the engine's flags
+    if args.first().map(String::as_str) == Some(exec::SUBCOMMAND) {
+        let parent = args
+            .get(1)
+            .and_then(|p| p.parse::<i32>().ok())
+            .filter(|&p| p > 0)
+            .ok_or_else(|| format!("{} needs the parent's pid", exec::SUBCOMMAND))?;
+        let program = args
+            .get(2)
+            .ok_or_else(|| format!("{} needs a program", exec::SUBCOMMAND))?;
+        return Ok(Command::ExecUnderParent {
+            parent,
+            program: program.clone(),
+            args: args[3..].to_vec(),
+        });
+    }
     let mut cfg = default_config();
     let mut server = false;
     let mut i = 0;
@@ -181,6 +205,12 @@ fn main() {
         Ok(Command::Version) => {
             println!("{}", version());
             return;
+        }
+        Ok(Command::ExecUnderParent { parent, program, args }) => {
+            // before anything else: the program keeps the signal mask and the threads the REPL host gave the shim
+            let (code, sentence) = exec::exec_under_parent(parent, &program, &args);
+            eprintln!("{sentence}");
+            std::process::exit(code);
         }
         Ok(Command::Server(cfg)) => *cfg,
         Err(message) => {

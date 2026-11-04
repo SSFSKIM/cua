@@ -64,7 +64,7 @@ const EGRESS: [(&str, &str); 25] = [
 /// Process spawning, a route to the bus through a child (`busctl`, `dbus-send`): allowed only where named.
 const SPAWN: &str = "Command";
 /// Explicit allowances: (file, identifier, why it cannot carry a call to the bus).
-const ALLOWED: [(&str, &str, &str); 6] = [
+const ALLOWED: [(&str, &str, &str); 7] = [
     (
         "apps.rs",
         SPAWN,
@@ -85,6 +85,12 @@ const ALLOWED: [(&str, &str, &str); 6] = [
         SPAWN,
         "test-only TARGETS hooks: starts python3 with the GTK 3 target that keeps its targets \
          (tests/support/targets-refresh.py)",
+    ),
+    (
+        "exec.rs",
+        SPAWN,
+        "the REPL host's launcher shim: execs the program its command line names (the trusted worker's sandbox \
+         launcher), with a parent-death signal, before any engine starts; never an argv the engine writes",
     ),
     (
         "pressed/panic_tests.rs",

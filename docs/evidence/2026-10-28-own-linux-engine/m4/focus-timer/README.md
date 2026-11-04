@@ -164,3 +164,8 @@ Its cost is bounded (`fix4/README.md`): at the route's limits one check takes 11
 unconfirmed there used 827 ms of CPU over its 2 s confirmation, judging the same read at every look. The confirmation
 now judges a whole read once while it reads the same: 15.8 ms over the 2 s. A 64 KiB paste into a full gnome-terminal
 screen lands and is answered unconfirmed, with 10 to 30 ms of the engine's CPU over the request.
+
+Along the paste's size (`fix5/README.md`): the rule now finds where the scroll would end from the lengths before
+building anything, and compares in place, so a 64 MiB paste whose read cannot hold it is judged in 0.1 ms with nothing
+of its size allocated (it took 260 ms and 268 MB), and one check at the field limit takes about 3 ms on the shipped
+musl build (it took 24).

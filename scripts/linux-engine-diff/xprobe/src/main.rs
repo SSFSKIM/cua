@@ -21,6 +21,8 @@
 //! - `xprobe minimize <window>`, `restore <window>`: asks the window manager to iconify it (`WM_CHANGE_STATE`), or maps
 //!   it again, and waits until it is, for harness-owned windows.
 //! - `xprobe keys-down`: the keycodes the X server holds down (`QueryKeymap`), as a JSON array.
+//! - `xprobe buttons-down`: the pointer buttons the X server holds down (`QueryPointer`'s mask, buttons 1 to 5), as a
+//!   JSON array.
 //! - `xprobe record <x> <y> <width> <height> [focus] [managed <title>]`: a recorder window that prints the input events
 //!   it receives (`record.rs`).
 //! - `xprobe clip-own <text>`, `clip-read`, `grabs`, `within <window> <ancestor>`: the clipboard owner and reader and
@@ -88,6 +90,7 @@ fn main() {
         Some("minimize") if args.len() == 2 => minimize(&args[1]),
         Some("restore") if args.len() == 2 => restore(&args[1]),
         Some("keys-down") if args.len() == 1 => keys_down(),
+        Some("buttons-down") if args.len() == 1 => buttons_down(),
         Some("record") => record::record(&args[1..]),
         Some("clip-own") => clip::own(&args[1..]),
         Some("clip-read") if args.len() == 1 => clip::read(),
@@ -659,6 +662,18 @@ fn keys_down() -> Result<()> {
     let down: Vec<String> = (0..256usize)
         .filter(|&k| keys[k / 8] & (1 << (k % 8)) != 0)
         .map(|k| k.to_string())
+        .collect();
+    println!("[{}]", down.join(","));
+    Ok(())
+}
+
+fn buttons_down() -> Result<()> {
+    let (conn, screen) = crate::xconnect(None)?;
+    let root = conn.setup().roots[screen].root;
+    let mask = u16::from(conn.query_pointer(root)?.reply()?.mask);
+    let down: Vec<String> = (1..=5u16)
+        .filter(|b| mask & (0x80 << b) != 0)
+        .map(|b| b.to_string())
         .collect();
     println!("[{}]", down.join(","));
     Ok(())

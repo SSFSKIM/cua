@@ -12,16 +12,22 @@
 //   - held-back: the stream's end while admitted work runs past upstream's escalation (`HELD_BACK_MS`), so the owned
 //     group's SIGTERM comes before the REPL host's own stop (hold only).
 // `--sandbox disabled` runs each under CUA_SHIM_SANDBOX=disabled, the worker and the engine in the owned group.
-// Two cases on each, each run a fresh `cua serve` in `dedicated` mode:
+// Three cases on each, each run a fresh `cua serve` in `dedicated` mode:
 //   - hold: key_down of Shift on an xterm, whose keys only the foreground route delivers (XTEST): the X server holds the
 //     key across requests (read before the stop, the case's positive control); after the stop its keymap is empty;
 //   - burst: press_key requests one after another (`BURST`) into the run's own Chrome on the keys page (pages/keys.html),
 //     covered by the front window, so the background route and the window's redirect: straight after their last answer,
-//     the stop; every key lands, in order, at the field's caret.
+//     the stop; every key lands, in order, at the field's caret;
+//   - handle: a drag_handle started on the xterm and moved, not ended: the X server holds button 1 across requests (read
+//     before the stop); after the stop no button is down, and the pointer is where the model left it.
 // Lanes: `drain`, the REPL host of this checkout, must pass every run; `kill`, the same with the REPL host of
 // `--control-root` (a checkout from before the change, whose stop SIGKILLs the tree at once), is the control: its hold
-// leaves the key down (released by the harness after), and its burst may lose keys. The engine is the same in both.
-// Each run records how long the engine lived after the stop began and after the last answer, the budget's numbers.
+// and its handle leave the key and the button down (released by the harness after); its bursts are reported, since
+// through these paths even an immediate kill lands every burst (`engineStopVerdict`), unless `--require-burst-cut`
+// asks for a sitting where it must cut one. The engine is the same in both.
+// Each run records how long the engine lived after the stop began and after the last answer, the budget's numbers, and
+// every process left stopped once the run has ended, which must be none (the launcher hold: kernel-child.mjs
+// `holdLauncher`).
 //
 // Where it runs: only on a private X server it starts itself, with Openbox and the harness's own Desktop on it (the
 // run's applications, homes and session bus, its own Chrome), the live-run declaration withdrawn first, as the
@@ -45,7 +51,7 @@ import { startPrivateServer, xdotool, xprobe } from './xtools.mjs';
 import { LIVE_RUN, assertReachable, xExecFileSync, xSpawn } from './xspawn.mjs';
 
 export const PATHS = ['idle', 'eof', 'signal', 'remote', 'held-back'];
-export const CASES = ['hold', 'burst'];
+export const CASES = ['hold', 'burst', 'handle'];
 export const LANES = ['drain', 'kill'];
 /** Runs of each lane, path and case (`--trials` sets another count). */
 export const RUNS = 10;
@@ -59,6 +65,9 @@ export const BURST = 'abcDefgHijkLmnoP';
 /** The key the hold holds, and the keysym the control's leftover is released by. */
 export const HELD = 'shift';
 const RELEASE_KEYSYM = 'Shift_L';
+/** Where on the xterm the handle starts, and how far its one move goes, from the window's top left. */
+const HANDLE_START = [60, 60];
+const HANDLE_MOVE = [80, 30];
 /**
  * `held-back`: how long the cell admitted before the stream's end runs. cua serve waits for the task's completion at
  * most 5 s after the end (server.mjs `completionDeadlineMs`), then tears the runtime down (upstream.mjs, budget 5 s):
@@ -78,13 +87,18 @@ export const casesOf = (path, cases) => (path === 'held-back' ? cases.filter((c)
 /** The control's record: its checkout's directory name, never its path (the evidence is public). */
 export const controlLabel = (root) => (root ? basename(root) : null);
 
-/** Whether the run stopped what it meant to: nothing failed on its way, and its session's one engine was found first. */
-const valid = (row) => !row.error && row.engines === 1;
+/**
+ * Whether the run stopped what it meant to: nothing failed on its way, its session's one engine was found first, and no
+ * process was left stopped once it ended.
+ */
+const valid = (row) => !row.error && row.engines === 1 && leftNothingStopped(row);
+const leftNothingStopped = (row) => Array.isArray(row.stopped_left) && row.stopped_left.length === 0;
 
 /** A run's verdict: the drain lane's runs must pass, the kill lane's are counted. */
 export function runPasses(row) {
   if (!valid(row)) return false;
   if (row.case === 'hold') return row.held_before === true && Array.isArray(row.keys_after) && row.keys_after.length === 0;
+  if (row.case === 'handle') return Array.isArray(row.buttons_before) && row.buttons_before.includes(1) && Array.isArray(row.buttons_after) && row.buttons_after.length === 0;
   return row.in_order === true;
 }
 
@@ -96,6 +110,7 @@ export function runPasses(row) {
 export function controlShows(row) {
   if (!valid(row)) return false;
   if (row.case === 'hold') return row.held_before === true && Array.isArray(row.keys_after) && row.keys_after.length > 0;
+  if (row.case === 'handle') return Array.isArray(row.buttons_before) && row.buttons_before.includes(1) && Array.isArray(row.buttons_after) && row.buttons_after.includes(1);
   return row.in_order === false;
 }
 
@@ -105,14 +120,22 @@ export function controlShows(row) {
  */
 const controlLeavesHold = (path, sandbox) => !(path === 'held-back' && sandbox === 'disabled');
 
+/** What the control's failure is, by case, as the verdict names it. */
+const CONTROL_FAILURE = { hold: 'did not leave the key down', handle: "did not leave the drag's button down" };
+
 /**
  * The experiment's verdict from its rows: every drain run passes on every path and case; the control (the kill lane)
- * shows its failure on every hold run, so the check can see a missing release, and none of its runs failed on its way.
- * Its bursts: with `burstControl` 'cut' (a sitting whose load leaves a burst pending at the stop), at least one cut on
- * each path, else the sitting showed no pending burst; otherwise they are reported.
+ * shows its failure on every hold and handle run, so the check can see a missing release, and none of its runs failed
+ * on its way; no run of either lane left a process stopped.
+ * Its bursts are reported (`burstControl` 'report', the design session's ruling, M4 T7b): through the production paths
+ * cua's service spaces each window input 100 ms behind the previous key, and the stop's own latency follows, so even
+ * an immediate kill lands every burst, and the burst half is judged by the drain's effect alone. With 'cut'
+ * (`--require-burst-cut`, for T8 once that spacing shrinks) at least one cut on each path is required, else the sitting
+ * showed no pending burst.
  */
 export function engineStopVerdict(rows, { paths = PATHS, cases = CASES, lanes = LANES, sandbox = 'scoped', burstControl = 'report' } = {}) {
   const failed = [];
+  const controlBursts = [];
   const md = ['| lane | path | case | runs | pass | engine after the stop, median ms | after the last answer, median ms |', '|---|---|---|---:|---:|---:|---:|'];
   for (const lane of lanes) {
     for (const path of paths) {
@@ -126,20 +149,72 @@ export function engineStopVerdict(rows, { paths = PATHS, cases = CASES, lanes = 
           failed.push(`${label}: no run`);
           continue;
         }
+        const stoppedLeft = runs.filter((r) => !leftNothingStopped(r)).length;
         if (lane === 'drain') {
           if (passed < runs.length) failed.push(`${label}: ${runs.length - passed} of ${runs.length} failed`);
-          continue;
+        } else {
+          const errored = runs.filter((r) => !valid(r)).length;
+          const shown = runs.filter(controlShows).length;
+          if (kind === 'burst') controlBursts.push(...runs);
+          if (kind in CONTROL_FAILURE && controlLeavesHold(path, sandbox)) {
+            if (shown < runs.length) failed.push(`${label}: ${runs.length - shown} of ${runs.length} ${CONTROL_FAILURE[kind]} (the control's failure)${errored ? `: ${errored} errored` : ''}`);
+          } else if (errored) failed.push(`${label}: ${errored} of ${runs.length} errored`);
+          else if (kind === 'burst' && burstControl === 'cut' && shown === 0) failed.push(`${label}: the control cut no burst (0 of ${runs.length}): no pending burst was shown`);
         }
-        const errored = runs.filter((r) => !valid(r)).length;
-        const shown = runs.filter(controlShows).length;
-        if (kind === 'hold' && controlLeavesHold(path, sandbox)) {
-          if (shown < runs.length) failed.push(`${label}: ${runs.length - shown} of ${runs.length} did not leave the key down (the control's failure)${errored ? `: ${errored} errored` : ''}`);
-        } else if (errored) failed.push(`${label}: ${errored} of ${runs.length} errored`);
-        else if (kind === 'burst' && burstControl === 'cut' && shown === 0) failed.push(`${label}: the control cut no burst (0 of ${runs.length}): no pending burst was shown`);
+        if (stoppedLeft) failed.push(`${label}: ${stoppedLeft} of ${runs.length} left a stopped process`);
       }
     }
   }
+  if (controlBursts.length) {
+    const cut = controlBursts.filter(controlShows).length;
+    md.push('', burstControl === 'cut'
+      ? `The control's bursts: ${cut} of ${controlBursts.length} cut (required on each path).`
+      : `The control's bursts: ${cut} of ${controlBursts.length} cut (reported, not required: through the production paths the service spaces each window input 100 ms behind the previous key, so the control cannot fail there).`);
+  }
   return { md, failed };
+}
+
+/** Every process stopped or traced (state T or t) in `proc`: {pid, comm, state}. */
+export function stoppedProcesses({ proc = '/proc' } = {}) {
+  const out = [];
+  for (const name of readdirSync(proc)) {
+    if (!/^\d+$/.test(name)) continue;
+    let stat;
+    try {
+      stat = readFileSync(join(proc, name, 'stat'), 'utf8');
+    } catch {
+      continue; // gone meanwhile
+    }
+    const close = stat.lastIndexOf(')');
+    const state = stat.slice(close + 2, close + 3);
+    if (state === 'T' || state === 't') out.push({ pid: Number(name), comm: stat.slice(stat.indexOf('(') + 1, close), state });
+  }
+  return out.sort((a, b) => a.pid - b.pid);
+}
+
+/** The pointer buttons the X server holds down, or null when they could not be read. */
+function buttonsDown() {
+  try {
+    return JSON.parse(xprobe(['buttons-down']).trim());
+  } catch {
+    return null;
+  }
+}
+
+/** The pointer's position, or null. */
+function pointerAt() {
+  try {
+    const shell = Object.fromEntries(xdotool('getmouselocation', '--shell').split('\n').map((l) => l.split('=')));
+    return [Number(shell.X), Number(shell.Y)];
+  } catch {
+    return null;
+  }
+}
+
+/** A window's top left on the screen. */
+function windowAt(id) {
+  const shell = Object.fromEntries(xdotool('getwindowgeometry', '--shell', id).split('\n').map((l) => l.split('=')));
+  return [Number(shell.X), Number(shell.Y)];
 }
 
 /** The pids of the processes under `root` (its descendants, from /proc) that run the executable at `bin`. */
@@ -422,7 +497,7 @@ const findWindow = (id) => `const w = (await cua.computer.list_windows({})).find
 async function oneRun(ctx, lane, path, kind, scenes, trial) {
   const { desktop, oracle } = ctx;
   const root = lane === 'drain' ? REPO : ctx.controlRoot;
-  const scene = kind === 'hold' ? scenes.xterm : scenes.chrome;
+  const scene = kind === 'burst' ? scenes.chrome : scenes.xterm;
   const asked = [];
   const answer = approvals(scene.app, asked);
   const row = { kind: 'engine-stop-run', lane, path, case: kind, sandbox: ctx.sandbox, trial };
@@ -437,16 +512,28 @@ async function oneRun(ctx, lane, path, kind, scenes, trial) {
   } else {
     const stale = keysDown();
     if (stale?.length) throw new Error(`keys down before the run: ${JSON.stringify(stale)}`);
+    const pressed = buttonsDown();
+    if (pressed?.length) throw new Error(`buttons down before the run: ${JSON.stringify(pressed)}`);
+  }
+  const stoppedBefore = new Set(stoppedProcesses().map((p) => p.pid));
+  let handleEnd = null;
+  if (kind === 'handle') {
+    const [wx, wy] = windowAt(scene.id);
+    const start = { x: wx + HANDLE_START[0], y: wy + HANDLE_START[1] };
+    handleEnd = { x: start.x + HANDLE_MOVE[0], y: start.y + HANDLE_MOVE[1] };
+    row.handle = { start, end: handleEnd };
   }
   const session = path === 'remote' ? await remoteSession(ctx, root, path, answer) : stdioSession(ctx, root, path, answer);
   try {
     await session.initialize();
     const setup = await session.js(`${findWindow(scene.id)} nodeRepl.write('found');`);
     if (!/found/.test(text(setup))) throw new Error(`the session's first cell: ${text(setup).slice(-400)}`);
-    const code =
-      kind === 'hold'
-        ? `${findWindow(scene.id)} await cua.computer.key_down({window: w, key: ${JSON.stringify(HELD)}}); nodeRepl.write('held');`
-        : `${findWindow(scene.id)} for (const key of ${JSON.stringify(keysOf(BURST))}) await cua.computer.press_key({window: w, key}); nodeRepl.write('sent');`;
+    const code = {
+      hold: `${findWindow(scene.id)} await cua.computer.key_down({window: w, key: ${JSON.stringify(HELD)}}); nodeRepl.write('held');`,
+      burst: `${findWindow(scene.id)} for (const key of ${JSON.stringify(keysOf(BURST))}) await cua.computer.press_key({window: w, key}); nodeRepl.write('sent');`,
+      // started and moved, never ended: the handle's button 1 held across requests
+      handle: `const h = cua.computer.drag_handle(); await h.start(${JSON.stringify(row.handle?.start)}); await h.move_to(${JSON.stringify(handleEnd)}); nodeRepl.write('held');`,
+    }[kind];
     const reply = await session.js(code);
     const answered = performance.now();
     const said = text(reply);
@@ -456,6 +543,7 @@ async function oneRun(ctx, lane, path, kind, scenes, trial) {
     // the session's one engine, or the stop below proves nothing: an empty list is gone at once
     if (engines.length !== 1) throw new Error(`${engines.length} engines under the session before the stop, not 1`);
     if (kind === 'hold') row.held_before = (keysDown() ?? []).length > 0;
+    if (kind === 'handle') row.buttons_before = buttonsDown();
     if (path === 'held-back') {
       // admitted work the stream's end must wait for, past upstream's escalation; its answer is the closing refusal
       session.js(`await new Promise((r) => setTimeout(r, ${HELD_BACK_MS})); nodeRepl.write('slept');`);
@@ -481,7 +569,10 @@ async function oneRun(ctx, lane, path, kind, scenes, trial) {
     if (gone === null) throw new Error(`the engine still ran ${STOP_BOUND_MS} ms after the stop`);
     // the effect, read once the engine has gone and before the run's own cleanup, which could change it
     if (kind === 'hold') row.keys_after = keysDown();
-    else {
+    else if (kind === 'handle') {
+      row.buttons_after = buttonsDown();
+      row.pointer_after = pointerAt();
+    } else {
       const after = await settledRead(read, { want: (before.text?.length ?? 0) + BURST.length });
       row.in_order = insertedAt(before.text, before.caret, BURST, after.text);
       row.got = typeof after.text === 'string' && typeof before.text === 'string' ? after.text.slice(before.caret ?? 0, (before.caret ?? 0) + after.text.length - before.text.length) : null;
@@ -493,10 +584,16 @@ async function oneRun(ctx, lane, path, kind, scenes, trial) {
     await session.close();
   }
   row.approvals = asked;
+  // every process the run left stopped (none may be: the launcher hold), listed once it has ended
+  row.stopped_left = stoppedProcesses().filter((p) => !stoppedBefore.has(p.pid));
   // whatever a run left down released, so the next one starts with nothing held
   if (kind === 'hold' && keysDown()?.length) {
     xdotool('keyup', RELEASE_KEYSYM);
     row.released_by_harness = keysDown()?.length === 0;
+  }
+  if (kind === 'handle' && buttonsDown()?.length) {
+    xdotool('mouseup', 1);
+    row.released_by_harness = buttonsDown()?.length === 0;
   }
   row.ok = runPasses(row);
   ctx.emit(row);
@@ -534,8 +631,8 @@ export async function runEngineStop(args, { emit, run, startLoad }) {
     if (unknown.length) throw new Error(`unknown ${unknown.join(', ')}: the experiment knows ${known.join(', ')}`);
   }
   const sandbox = args.sandbox ?? 'scoped';
-  // under load a burst is left pending at the stop, and there the control must show the cut (the review of T7b)
-  const burstControl = args.load ? 'cut' : 'report';
+  // the control's bursts are reported; a sitting that must show the cut asks for it (T8, the design session's ruling)
+  const burstControl = args.requireBurstCut ? 'cut' : 'report';
   // from here on the spawner refuses every display this process did not create, the person's included (xspawn.mjs)
   delete process.env[LIVE_RUN];
   useDisplay(NO_DISPLAY);

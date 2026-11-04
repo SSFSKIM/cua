@@ -150,8 +150,8 @@ wait.
 
 Results on the final musl build:
 
-- gnome-terminal's key-then-paste at twice the load, with no proxy: 200 of 200 runs pasted, against 21 of 200 never
-  taken before the fix.
+- gnome-terminal's key-then-paste at twice the load, with no proxy: 200 of 200 runs pasted. Before the fix 22 of 200
+  failed: 21 never taken, and trial 28, a landed paste the scrolled rule left unconfirmed (below).
 - Fresh focus-timer series: the timer and unredirect paste reach 30 consecutive from the first run, both idle and at
   twice the load.
 - The other families are unchanged.

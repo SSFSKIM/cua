@@ -1,15 +1,17 @@
 cua-engine 0.3.0 (69e3724be5be), wait 1000 ms, 5 pastes per target, load True
 
-Who asked for TARGETS at an owner change: in pastes into another window (any time), and in its own pastes
-before the chord (ms < 0 from the dispatch; at 0 or after, the request is its paste's own):
-  chrome             into others: 0/35; own, before the chord: 0/5; own, at or after it: 5/5
-  electron           into others: 0/35; own, before the chord: 0/5; own, at or after it: 5/5
-  gedit              into others: 35/35; own, before the chord: 3/5; own, at or after it: 5/5
-  kate               into others: 0/35; own, before the chord: 0/5; own, at or after it: 5/5
-  qtcreator          into others: 0/35; own, before the chord: 0/5; own, at or after it: 5/5
-  firefox            into others: 0/35; own, before the chord: 0/5; own, at or after it: 5/5
-  writer             into others: 35/35; own, before the chord: 5/5; own, at or after it: 0/5
-  gnome-terminal     into others: 35/35; own, before the chord: 5/5; own, at or after it: 0/5
+Who asked for TARGETS at an owner change: in pastes into another window (any time), and in its own pastes,
+by its first TARGETS request's time from the chord's dispatch: before (ms < 0), within the chord's millisecond
+(ms 0: the log's times are whole ms, so this is either side), after (ms > 0, its paste's own request).
+Whether the target's answer came before the chord is the engine's own targets.answered, per target below.
+  chrome             into others: 0/35; own, first TARGETS before / at 0 / after the chord: 0 / 1 / 4 of 5
+  electron           into others: 0/35; own, first TARGETS before / at 0 / after the chord: 0 / 0 / 5 of 5
+  gedit              into others: 35/35; own, first TARGETS before / at 0 / after the chord: 3 / 2 / 0 of 5
+  kate               into others: 0/35; own, first TARGETS before / at 0 / after the chord: 0 / 1 / 4 of 5
+  qtcreator          into others: 0/35; own, first TARGETS before / at 0 / after the chord: 0 / 2 / 3 of 5
+  firefox            into others: 0/35; own, first TARGETS before / at 0 / after the chord: 0 / 0 / 5 of 5
+  writer             into others: 35/35; own, first TARGETS before / at 0 / after the chord: 5 / 0 / 0 of 5
+  gnome-terminal     into others: 35/35; own, first TARGETS before / at 0 / after the chord: 5 / 0 / 0 of 5
   gnome-text-editor  into others: 40/40
   writer-gen         into others: 0/40
 

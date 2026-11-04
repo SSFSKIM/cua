@@ -14,17 +14,21 @@ pastes = [r for r in rows if r['kind'] == 'paste']
 families = list(meta['windows'])
 targets_atom = next((q['target'] for p in pastes for q in p['requests'] if q['outcome'] == 'Targets'), None)
 print(f"{meta['version']}, wait {meta['wait_ms']} ms, {meta['runs']} pastes per target, load {meta['load']}")
-print('\nWho asked for TARGETS at an owner change: in pastes into another window (any time), and in its own pastes')
-print('before the chord (ms < 0 from the dispatch; at 0 or after, the request is its paste\'s own):')
+print('\nWho asked for TARGETS at an owner change: in pastes into another window (any time), and in its own pastes,')
+print('by its first TARGETS request\'s time from the chord\'s dispatch: before (ms < 0), within the chord\'s millisecond')
+print('(ms 0: the log\'s times are whole ms, so this is either side), after (ms > 0, its paste\'s own request).')
+print('Whether the target\'s answer came before the chord is the engine\'s own targets.answered, per target below.')
 for f in families:
     other = [p for p in pastes if p['target'] != f]
     own = [p for p in pastes if p['target'] == f]
     asked_other = [p for p in other if any(q['client'] == f and q['target'] == targets_atom for q in p['requests'])]
-    asked_own = [p for p in own if any(q['client'] == f and q['target'] == targets_atom and q['ms'] < 0 for q in p['requests'])]
-    after_own = [p for p in own if any(q['client'] == f and q['target'] == targets_atom and q['ms'] >= 0 for q in p['requests'])]
+    first = [min((q['ms'] for q in p['requests'] if q['client'] == f and q['target'] == targets_atom), default=None) for p in own]
+    before = sum(1 for ms in first if ms is not None and ms < 0)
+    at_chord = sum(1 for ms in first if ms == 0)
+    after = sum(1 for ms in first if ms is not None and ms > 0)
     line = f"  {f:18s} into others: {len(asked_other)}/{len(other)}"
     if own:
-        line += f"; own, before the chord: {len(asked_own)}/{len(own)}; own, at or after it: {len(after_own)}/{len(own)}"
+        line += f"; own, first TARGETS before / at 0 / after the chord: {before} / {at_chord} / {after} of {len(own)}"
     print(line)
 print('\nOther requests (not TARGETS), by client and outcome:')
 other = collections.Counter((q['client'], q['whose'], q['outcome']) for p in pastes for q in p['requests'] if q['target'] != targets_atom)

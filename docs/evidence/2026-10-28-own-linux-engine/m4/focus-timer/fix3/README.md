@@ -38,12 +38,14 @@ release workflow's way (`task56/build-musl.sh`), all dev runs.
 
 ## The matrix pass: who asks for TARGETS at an owner change (`matrix-idle/`, `matrix-load2/`)
 
-`targets-matrix.mjs` opens one window of each family at once, behind the front window: Chrome, Electron, gedit
-(GTK 3), gnome-text-editor (GTK 4), kate (Qt 5), qtcreator (Qt 6), Firefox (Gecko), Writer (gtk3 plugin; and an
-observer on its gen plugin) and gnome-terminal (VTE). It then makes five pastes into each family that takes a
-background paste. Each paste uses a fresh engine with `--targets-wait-ms 1000` and `--stats`. The owner's log names
-each request's requestor window, which identifies the family by its client's resource range. `matrix-summary.py`
-reads the result (`matrix-idle.txt`, `matrix-load2.txt`). The two sittings agree, idle and at twice the load:
+`targets-matrix.mjs` opens one window of each family at once, behind the front window: Chrome, Electron, gedit (GTK
+3), gnome-text-editor (GTK 4), kate (Qt 5), qtcreator (Qt 6), Firefox (Gecko), Writer (gtk3 plugin; and an observer on
+its gen plugin) and gnome-terminal (VTE). It then makes five pastes into each family that takes a background paste.
+Each paste uses a fresh engine with `--targets-wait-ms 1000` and `--stats`. The owner's log names each request's
+requestor window, which identifies the family by its client's resource range. `matrix-summary.py` reads the result
+(`matrix-idle.txt`, `matrix-load2.txt`). The column "its own paste: answered before the chord" is the engine's
+`paste.targets.answered`. The owner's log times are whole milliseconds, so a request in the chord's own millisecond
+reads 0 from either side, and the summary counts those apart. The two sittings agree, idle and at twice the load:
 
 | family (toolkit) | asked when another window's paste took CLIPBOARD | its own paste: answered before the chord | flag |
 |---|---|---|---|
@@ -77,7 +79,7 @@ direct runs (below) on the final bytes held at it as well.
 
 | sitting | what | result |
 |---|---|---|
-| `proof-terminal-load2/` | gnome-terminal key-then-paste, 2x, no proxy, 200 runs (the probe's scene, `probe.mjs --direct --runs 200`) | **200/200 pasted, 0 never taken** (before the fix, the same scene and load: 21 of 200 never taken, `../fix2/never-taken/direct-2/`). The target's TARGETS was answered before the chord in all 200 (the owner's log: −14 to 0 ms from the dispatch) |
+| `proof-terminal-load2/` | gnome-terminal key-then-paste, 2x, no proxy, 200 runs (the probe's scene, `probe.mjs --direct --runs 200`) | **200/200 pasted, 0 never taken** (before the fix, the same scene and load, `../fix2/never-taken/direct-2/`: 22 of 200 failed, 21 never taken and trial 28, which landed whole and stayed unconfirmed under fix 2's scrolled rule; the scrolled rule below confirms that reading now, and 25 of these 200 confirmed by it). The target's TARGETS was answered before the chord in all 200 (the owner's log: −14 to 0 ms from the dispatch) |
 | `fresh-terminal-idle/` | the focus-timer experiment, gnome-terminal, idle | timer and unredirect paste **30 consecutive from the first run** (0 misses, raw 0); burst and A-B-A 30/30; audits clean; control paste 9/10 |
 | `fresh-terminal-load2/` | the same at twice the load | timer and unredirect paste **30 consecutive from the first run** (0 misses, raw 0), 6 confirmed by the scrolled rule; burst and A-B-A 30/30; control 10/10; audits clean |
 | `fresh-others-paste-load2/` | Chrome, Electron, gedit, kate, qtcreator, Firefox, Writer: key-then-paste, 2x (`--scenarios paste`) | every timer and unredirect lane 30 consecutive (kate's timer lane in 31: its first run refused before any clipboard work, `window identity changed while resolving X11 window …; retry the operation`, the association's refusal); Chrome's and Electron's controls fail as they must (4/10, 9/10); audits clean |

@@ -4,8 +4,11 @@ These are development runs on the #171 VM, 2026-11-04, each on its own private X
 and `pgrep -x stress-ng` was 0.
 
 - Before: fix 5's engine, the musl build of 50c1e536.
-- After: the musl build of bf1e44de, made the way the release workflow makes it: `cua-engine 0.3.0 (bf1e44decc23)`,
-  sha256 `bc81a2cee481a795523123e1279468928b3285249b7214d95d014466daf8bdf3`.
+- After: the musl build of bf1e44de, made the way the release workflow makes it (`cua-engine 0.3.0 (bf1e44decc23)`,
+  sha256 `bc81a2cee481a795523123e1279468928b3285249b7214d95d014466daf8bdf3`). Also the musl build of 1a7e0920, which
+  waits for the ended holders' exits until the drain's deadline (`cua-engine 0.3.0 (1a7e09203ee3)`, sha256
+  `afd9125eaf313bcaae26a054d30e5e02553efd14ff20b7de63f8185d4f8773ec`). The reproducers give the same results on both
+  builds (`repro-*-1a7e0920.log`).
 
 ## The reviewer's reproducers (`task57-review5-*.mjs`, run by `repro.sh`)
 

@@ -272,17 +272,76 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertEqual(view(area, true, true), .webArea, "the web area itself")
     XCTAssertEqual(view(field, true, false), .webArea, "a web area is one whether or not an observation saw it")
     XCTAssertEqual(view(Node("AXButton", parent: toolbar), true, true), .acceptsFirstMouse, "Chrome's toolbar")
-    XCTAssertEqual(view(Node("AXButton", parent: toolbar), true, false), .unknown, "no page tree seen yet: a page point may answer outside one")
+    XCTAssertEqual(view(Node("AXButton", parent: toolbar), true, false), .possibleWebArea, "no page tree seen yet: a page point may answer outside one")
     XCTAssertEqual(view(window, true, true), .acceptsFirstMouse, "the window itself is native")
-    XCTAssertEqual(view(nil, true, true), .unknown, "no hit")
+    XCTAssertEqual(view(nil, true, true), .possibleWebArea, "no hit in a Chromium process")
     XCTAssertEqual(view(field, false, true), .unknown, "not a Chromium process")
-    // Bounded: a parent loop never hangs the walk.
+    XCTAssertEqual(view(Node("AXButton", parent: Node("AXGroup", parent: Node("AXApplication"))), true, true), .acceptsFirstMouse,
+                   "the walk may end at the application too")
+    // The walk stops at the window: an AXWebArea above it (none in practice) is not the hit's.
+    XCTAssertEqual(webAreaWalk(Node("AXButton", parent: Node("AXWindow", parent: Node("AXWebArea"))), role: { $0.role }, parent: { $0.parent }), .outside)
+  }
+
+  /// #282's review: only a walk that reached the window (or the application) with every role and parent read says the
+  /// hit is outside every web area. A failed parent read, an unreadable role, or the bound running out with the web area
+  /// beyond it is incomplete: in a Chromium process a possible web area, never a view known to accept first mouse.
+  func testAnIncompleteWalkIsNeverKnownToAcceptFirstMouse() {
+    let view = { (hit: Node) in pointerView(chromium: true, webAreaSeen: true, hit: hit, role: { $0.role }, parent: { $0.parent }) }
+    // A parent that could not be read: the chain ends before any window.
+    let orphan = Node("AXTextArea", parent: Node("AXGroup"))
+    XCTAssertEqual(webAreaWalk(orphan, role: { $0.role }, parent: { $0.parent }), .incomplete)
+    XCTAssertEqual(view(orphan), .possibleWebArea, "a failed parent read")
+    // An unreadable role on the way up, with the web area above it.
+    let unreadable = Node("AXTextArea", parent: Node(nil, parent: Node("AXWebArea", parent: Node("AXWindow"))))
+    XCTAssertEqual(webAreaWalk(unreadable, role: { $0.role }, parent: { $0.parent }), .incomplete)
+    XCTAssertEqual(view(unreadable), .possibleWebArea, "an unreadable role")
+    XCTAssertEqual(view(Node(nil, parent: Node("AXWindow"))), .possibleWebArea, "the hit's own role unreadable")
+    // The bound exhausted, an AXWebArea beyond it.
+    var deep = Node("AXGroup", parent: Node("AXWebArea", parent: Node("AXWindow")))
+    for _ in 0..<301 { deep = Node("AXGroup", parent: deep) }
+    XCTAssertEqual(webAreaWalk(deep, role: { $0.role }, parent: { $0.parent }), .incomplete)
+    XCTAssertEqual(view(deep), .possibleWebArea, "the bound ran out")
+    // A parent loop never hangs the walk.
     final class Loop { var parent: Loop?; init() {} }
     let loop = Loop()
     loop.parent = loop
-    XCTAssertFalse(insideWebArea(loop, role: { _ in "AXGroup" }, parent: { $0.parent }))
-    // The walk stops at the window: an AXWebArea above it (none in practice) is not the hit's.
-    XCTAssertFalse(insideWebArea(Node("AXButton", parent: Node("AXWindow", parent: Node("AXWebArea"))), role: { $0.role }, parent: { $0.parent }))
+    XCTAssertEqual(webAreaWalk(loop, role: { _ in "AXGroup" }, parent: { $0.parent }), .incomplete)
+  }
+
+  /// A possible web area is a web area in shared mode: a plain click with an element route takes it, anything else is
+  /// refused with nothing posted; in dedicated mode it is posted, and its consuming down answers clickUnconfirmed.
+  func testAPossibleWebAreaIsRefusedOrElementRoutedInSharedModeAndUnconfirmedElsewhere() throws {
+    let possible = { (route: ((inout InputMeta) throws -> Void)?) in
+      PointerTarget(view: .possibleWebArea, app: "Google Chrome for Testing", elementRoute: route)
+    }
+    let refusedSeam = GuardSeam(frontmost: user)
+    var refusedMeta = meta(connection())
+    XCTAssertThrowsError(try click(refusedSeam, activation: chrome(refusedSeam), pointer: possible(nil), meta: &refusedMeta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "backgroundClickRefused")
+    }
+    XCTAssertEqual(refusedSeam.posts.count, 0)
+    let routedSeam = GuardSeam(frontmost: user)
+    var routedMeta = meta(connection())
+    var pressed = 0
+    try click(routedSeam, activation: chrome(routedSeam), pointer: possible { _ in pressed += 1 }, meta: &routedMeta)
+    XCTAssertEqual(pressed, 1)
+    XCTAssertEqual(routedSeam.posts.count, 0)
+    // Joining a spent hold: refused too, never re-armed.
+    let heldSeam = GuardSeam(frontmost: user)
+    let holder = connection()
+    try holdChrome(holder, heldSeam)
+    var heldMeta = meta(holder)
+    XCTAssertThrowsError(try click(heldSeam, activation: chrome(heldSeam), pointer: possible(nil), meta: &heldMeta))
+    XCTAssertEqual(heldSeam.posts.map(\.kind), inertClick, "nothing withdrawn or re-run")
+    holder.endFocusHold()
+    // Dedicated mode where no inert click could be placed: posted, and unconfirmed.
+    let dedicatedSeam = GuardSeam(frontmost: user)
+    dedicatedSeam.activationPoint = outside
+    let unplaced = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: nil, windowID: 41, system: dedicatedSeam.system)
+    var dedicatedMeta = meta(connection(.dedicated))
+    XCTAssertThrowsError(try click(dedicatedSeam, activation: unplaced, pointer: possible(nil), meta: &dedicatedMeta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
+    }
   }
 
   func testTheElementRoutesActionIsTheElementClicksForAPlainLeftClickOnly() {

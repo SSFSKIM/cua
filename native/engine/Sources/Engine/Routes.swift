@@ -268,38 +268,57 @@ enum PointerView: Equatable {
   case acceptsFirstMouse
   /// A Chromium web area or inside one, whose view refuses first mouse.
   case webArea
-  /// Anything else: an app with no known rule, or a Chromium hit-test that answered nothing.
+  /// A Chromium hit not established outside every web area (no hit, an incomplete walk, a page tree not yet seen):
+  /// treated as a web area in shared mode, since the owner's rule refuses input the app may ignore (#282's review).
+  case possibleWebArea
+  /// Anything else: an app with no known rule.
   case unknown
+
+  /// Whether shared mode refuses a pointer here (or carries a plain click by the hit's action).
+  var mayBeWebArea: Bool { self == .webArea || self == .possibleWebArea }
 }
 
 /// The roles a web-area walk stops at: the hit's window, or anything above one.
 private let webAreaWalkStops: Set<String> = ["AXWindow", "AXSheet", "AXApplication"]
 
+/// What the walk from a hit up its parents established about a web area.
+enum WebAreaWalk: Equatable {
+  /// The hit is an AXWebArea or lies inside one.
+  case inside
+  /// Established outside one: the walk reached the hit's window, sheet or application with every role and parent read.
+  case outside
+  /// Neither: a role or a parent could not be read before a stop, or the bound ran out; an AXWebArea may lie beyond.
+  case incomplete
+}
+
 /// Whether `hit` is an AXWebArea or lies inside one, its parents walked up to 300 levels (the gate's bound) and no
-/// further than its window.
-func insideWebArea<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?) -> Bool {
-  var current: Element? = hit
-  var level = 0
-  while let element = current, level <= 300 {
-    let name = role(element)
-    if name == "AXWebArea" { return true }
-    if let name, webAreaWalkStops.contains(name) { return false }
-    current = parent(element)
-    level += 1
+/// further than its window. Only a walk that reached a stop with every role read says `outside` (#282's review).
+func webAreaWalk<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?) -> WebAreaWalk {
+  var current = hit
+  for _ in 0...300 {
+    guard let name = role(current) else { return .incomplete }
+    if name == "AXWebArea" { return .inside }
+    if webAreaWalkStops.contains(name) { return .outside }
+    guard let next = parent(current) else { return .incomplete }
+    current = next
   }
-  return false
+  return .incomplete
 }
 
 /// The view a left pointer's point hits in a process: in a Chromium-family process (`chromiumFamily`, Enablement.swift),
-/// a web area when the hit is or lies inside an AXWebArea; else a native view known to accept first mouse, but only once
-/// an observation has seen a web area in the process (`webAreaSeen`: its page's tree is exposed, so a page point would
-/// have answered inside one); unknown when the process is not Chromium's, its hit-test answered nothing, or its page's
-/// tree may not be exposed yet.
+/// a web area when the hit is or lies inside an AXWebArea; a native view known to accept first mouse only when the walk
+/// established the hit outside every web area and an observation has seen a web area in the process (`webAreaSeen`: its
+/// page's tree is exposed, so a page point would have answered inside one); otherwise, in a Chromium process, a possible
+/// web area (no hit, an incomplete walk, or a page tree not yet seen), and `unknown` outside one.
 func pointerView<Element>(chromium: Bool, webAreaSeen: Bool, hit: Element?, role: (Element) -> String?,
                           parent: (Element) -> Element?) -> PointerView {
-  guard chromium, let hit else { return .unknown }
-  if insideWebArea(hit, role: role, parent: parent) { return .webArea }
-  return webAreaSeen ? .acceptsFirstMouse : .unknown
+  guard chromium else { return .unknown }
+  guard let hit else { return .possibleWebArea }
+  switch webAreaWalk(hit, role: role, parent: parent) {
+  case .inside: return .webArea
+  case .outside: return webAreaSeen ? .acceptsFirstMouse : .possibleWebArea
+  case .incomplete: return .possibleWebArea
+  }
 }
 
 /// The action a pointer refused in a web area takes instead (#282): the one an element click on the hit would take

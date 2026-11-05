@@ -224,7 +224,7 @@ extension Engine {
     }
     meta.pointUnconfirmed = pointing.relation.unconfirmed
     var pointer = route == .activation && button == .left ? pointerTarget(hit: pointing.hitElement, app: app, appPid: appPid) : .acceptingFirstMouse
-    if webAreaElementRoute, pointer.view == .webArea, let hit = pointing.hitElement {
+    if webAreaElementRoute, pointer.view.mayBeWebArea, let hit = pointing.hitElement {
       pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: point, windowID: pointing.windowID, app: app,
                                           appPid: appPid, guarding: guarding, context: context)
     }

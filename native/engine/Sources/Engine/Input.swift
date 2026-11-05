@@ -211,7 +211,7 @@ struct PointerTarget {
 /// events); the click that consumed it rides in the meta when this action ran the activation or consumed its arm.
 ///
 /// #282 (Routes.swift), by the connection's device mode, for a left pointer (`postsLeftMouseDown`) under route 3: in
-/// shared mode one into a Chromium web area (`pointer.view`) meeting an activation that clicks no activation point is
+/// shared mode one into a Chromium web area, or a Chromium hit not established outside one (`pointer.view.mayBeWebArea`), meeting an activation that clicks no activation point is
 /// refused by the registry before anything is posted, and answers by `pointer.elementRoute` when it has one, else as
 /// `backgroundClickRefused`; only one into a view known to accept first mouse re-arms a spent hold. In dedicated mode the
 /// arm's inert click goes early, no hold is re-armed, and the events go out with no delivery guard and no after-action
@@ -239,7 +239,7 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     activation.holdsThroughDelivery = shared
     let hold = postsLeftMouseDown
       ? PointerHold(defersArmClick: shared, rearmsSpentArm: shared && pointer.view == .acceptsFirstMouse,
-                    refusedWithoutActivationPointClick: shared && pointer.view == .webArea)
+                    refusedWithoutActivationPointClick: shared && pointer.view.mayBeWebArea)
       : nil
     // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
     // focusing click inside set_value's held activation), unless the action re-arms a hold of its own connection whose
@@ -423,7 +423,7 @@ extension Engine {
         var pointer = PointerTarget.acceptingFirstMouse
         if route == .activation, button == .left {
           pointer = signposted("click.pointerView") { pointerTarget(hit: hit, app: app, appPid: appPid) }
-          if pointer.view == .webArea, let hit {
+          if pointer.view.mayBeWebArea, let hit {
             pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
                                                 appPid: appPid, guarding: guarding, context: context)
           }

@@ -7,21 +7,22 @@
 //! same target. The desktop's counts are one set, whichever window a foreground hold was made for: XTEST's keys are
 //! the server's.
 //!
-//! A session no hold keeps waits on its `FocusOut` timer once its request's input ends (`focus_timer.rs`; M4's T7):
-//! the next background input to the same window takes it back with no `FocusOut` between, and any other input (to
-//! another window, through the desktop or the foreground route) first flushes every pending timer, waiting out the rest
-//! of each window's delay.
+//! A session no hold keeps ends with its request: its `FocusOut` goes as the request's input ends, before the answer,
+//! and the window's redirect is kept (M4's T7, as the design session ruled on task 59's measurement, 2026-11-04: with
+//! the redirect held, a `FocusOut` at once cut and reordered no key on any family, idle or at twice the load). Nothing
+//! is left pending between requests, so input to another window, the desktop or the foreground route waits for nothing.
+//! What follows a window's keys is time, kept here per window: the exit's settle and a paste's (`settle.rs`).
 
 use std::collections::HashMap;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use serde_json::Value;
+use serde_json::{Value, json};
 use x11rb::protocol::xproto::Window;
 
 use crate::desktop::Desktop;
-use crate::focus_timer::{self, Cause, Sent, Timers, Wall};
 use crate::input::{Pacing, Session};
+use crate::settle;
 use crate::x11::X11;
 
 /// A request's input target: a window (the background route), the desktop, or a window reached through the desktop
@@ -65,21 +66,59 @@ impl Holds {
     }
 }
 
-/// The input state of the engine's life: the open sessions of windows with held keys, the sessions waiting on their
-/// `FocusOut` timer, the desktop's held keys and the holds themselves.
+/// Why a session's `FocusOut` went out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cause {
+    /// Its request's input ended.
+    Request,
+    /// The engine's exit ended a session a hold had kept open, once it had released the hold.
+    Exit,
+}
+
+/// One `FocusOut` a session's end sent, for the `--stats` line and the harness's audit: its window, why, how long
+/// after the session's input ended it went out (0 but for a teardown set for measurement), and the request whose input
+/// it ends (`scheduled_by`, the name the audit reads; the exit's names the last request handled).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Sent {
+    pub window: u32,
+    pub cause: Cause,
+    pub after_input: Duration,
+    pub scheduled_by: Value,
+}
+
+impl Sent {
+    /// The record on the `--stats` line.
+    pub fn record(&self) -> Value {
+        json!({
+            "window": self.window,
+            "cause": match self.cause {
+                Cause::Request => "request",
+                Cause::Exit => "exit",
+            },
+            "after_input_ms": (self.after_input.as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0,
+            "scheduled_by": self.scheduled_by,
+        })
+    }
+}
+
+/// The input state of the engine's life: the open sessions of windows with held keys, the desktop's held keys, the
+/// holds themselves, and when each window last took a key.
 pub struct Inputs {
     pub pacing: Pacing,
     pub sessions: HashMap<Window, Session>,
-    timers: Timers<Session>,
     pub desktop: Desktop,
     pub holds: Holds,
-    /// The id of the request being handled, which a timer its input starts names (`Sent::scheduled_by`).
+    /// The id of the request being handled, which the `FocusOut` its input's end sends names (`Sent::scheduled_by`).
     pub request: Value,
     /// The `FocusOut`s sent and not yet reported (`take_sent`).
     sent: Vec<Sent>,
-    /// When each window's background key input last ended, for the exit's settle (`exit_settle_until`): the exit's
-    /// unredirect cut keys at twice the load and no click (task 56's measured steps), so the settle follows keys.
-    last_input: HashMap<Window, Instant>,
+    /// When each window's background key input last ended, the late-take Escape included (`note_key`): what the exit's
+    /// settle and a paste's follow (`settle.rs`). The exit's unredirect cut keys at twice the load and no click (task
+    /// 56's measured steps), and a paste's observation raced keys (task 59), so both follow keys.
+    last_key: HashMap<Window, Instant>,
+    /// Sessions a hold kept open, their keys released by the exit's first act and their `FocusOut` not yet sent: the
+    /// exit sends it once an armed late-take watch has run out (`end_released`).
+    released: Vec<(Window, Session)>,
 }
 
 /// A request's route while it runs: a window's session, or the desktop, with the window a foreground request's
@@ -94,20 +133,19 @@ impl Inputs {
         Inputs {
             pacing,
             sessions: HashMap::new(),
-            timers: Timers::new(pacing.teardown),
             desktop: Desktop::new(pacing.key),
             holds: Holds::default(),
             request: Value::Null,
             sent: Vec::new(),
-            last_input: HashMap::new(),
+            last_key: HashMap::new(),
+            released: Vec::new(),
         }
     }
 
-    /// Runs `body` on the target's route. Every other window's pending `FocusOut` timer is flushed first (a window's
-    /// own is kept for more background input to it). A window's session is the held one if its keys are held, else the
-    /// one waiting on its timer, else opened for this request; afterwards it stays open while the window has holds,
-    /// with any button still down released and its grab dropped, and otherwise ends its input and waits on its timer
-    /// (whatever the body's outcome; the body's error wins).
+    /// Runs `body` on the target's route. A window's session is the held one if its keys are held, else opened for this
+    /// request; afterwards it stays open while the window has holds, with any button still down released and its grab
+    /// dropped, and otherwise ends, its `FocusOut` sent before the request answers (whatever the body's outcome; the
+    /// body's error wins).
     pub fn with_route<T>(
         &mut self,
         x: &mut X11,
@@ -115,22 +153,14 @@ impl Inputs {
         body: impl FnOnce(&mut X11, &mut Route, &mut Holds) -> Result<T>,
     ) -> Result<T> {
         match target {
-            Target::Desktop => {
-                self.flush(x, None, Cause::Flush);
-                body(x, &mut Route::Desktop(&mut self.desktop, None), &mut self.holds)
-            }
+            Target::Desktop => body(x, &mut Route::Desktop(&mut self.desktop, None), &mut self.holds),
             Target::Foreground(window) => {
-                self.flush(x, None, Cause::Flush);
                 body(x, &mut Route::Desktop(&mut self.desktop, Some(window)), &mut self.holds)
             }
             Target::Window(window) => {
-                self.flush(x, Some(window), Cause::Flush);
                 let mut session = match self.sessions.remove(&window) {
                     Some(session) => session,
-                    None => match self.timers.resume(window) {
-                        Some(session) => session.resume(x)?,
-                        None => Session::open(x, window, self.pacing)?,
-                    },
+                    None => Session::open(x, window, self.pacing)?,
                 };
                 let result = body(x, &mut Route::Window(&mut session), &mut self.holds);
                 if self.holds.any_for(target) {
@@ -139,58 +169,51 @@ impl Inputs {
                     self.sessions.insert(window, session);
                 } else {
                     session.finish(x);
-                    self.defer(x, window, session);
+                    self.end(x, window, session, Cause::Request);
                 }
                 result
             }
         }
     }
 
-    /// A session whose input has ended put on its `FocusOut` timer; with no delay (`--teardown-ms 0`) it ends at once.
-    fn defer(&mut self, x: &mut X11, window: Window, session: Session) {
-        let now = Instant::now();
+    /// A session whose input has ended: its last key noted, then its `FocusOut` sent (after the teardown a measurement
+    /// sets, 0 by default) and its redirect kept or dropped as the retention says.
+    fn end(&mut self, x: &mut X11, window: Window, session: Session, cause: Cause) {
+        let ended = Instant::now();
         if session.took_keys() {
-            self.last_input.insert(window, now);
+            self.last_key.insert(window, ended);
         }
-        self.timers.start(window, session, now, self.request.clone());
-        if self.pacing.teardown.is_zero() {
-            self.fire_due(x);
+        if !self.pacing.teardown.is_zero() {
+            std::thread::sleep(self.pacing.teardown);
+        }
+        let after_input = ended.elapsed();
+        session.end(x);
+        self.sent.push(Sent {
+            window,
+            cause,
+            after_input,
+            scheduled_by: self.request.clone(),
+        });
+    }
+
+    /// A key that reached `window` by another route at `at` (the late-take Escape): the settles follow it as they follow
+    /// the engine's own keys, since the exit's unredirect could cut it.
+    pub fn note_key(&mut self, window: Window, at: Instant) {
+        let last = self.last_key.entry(window).or_insert(at);
+        if at > *last {
+            *last = at;
         }
     }
 
-    /// Every pending timer but `keep`'s waited out and its session ended (`focus_timer.rs`), recorded as `cause`.
-    fn flush(&mut self, x: &mut X11, keep: Option<Window>, cause: Cause) {
-        let sent = self.timers.flush(keep, cause, &mut Wall, |_, session| session.end(x));
-        self.sent.extend(sent);
-    }
-
-    /// The ordinary flush before input that goes to no background session (a paste's observation, an activation):
-    /// every pending timer waited out, its window's own included.
-    pub fn flush_all(&mut self, x: &mut X11) {
-        self.flush(x, None, Cause::Flush);
-    }
-
-    /// Every timer due by now fired.
-    pub fn fire_due(&mut self, x: &mut X11) {
-        let sent = self.timers.fire_due(&Wall, |_, session| session.end(x));
-        self.sent.extend(sent);
-    }
-
-    /// The late-take watch's route to a window past the timers while it watches (`focus_timer::Gate`), None after.
-    pub fn set_gate(&mut self, gate: Option<crate::focus_timer::Gate>) {
-        self.timers.set_gate(gate);
-    }
-
-    /// When the next pending `FocusOut` is due.
-    pub fn next_due(&self) -> Option<Instant> {
-        self.timers.next_due()
-    }
-
-    /// Input that reached `window` by another route at `at` (the late-take Escape, a key): its pending timer restarts,
-    /// and the exit's settle follows it as it follows the engine's own keys, since the exit's unredirect could cut it.
-    pub fn restart(&mut self, window: Window, at: Instant) {
-        self.timers.restart(window, at);
-        self.last_input.insert(window, at);
+    /// A paste's settle (`settle.rs`), before its observation: if `window` took a key within the settle, waits until the
+    /// settle has passed since that key. Returns how long ago the last key was when the paste came (None: never), and
+    /// the time waited.
+    pub fn settle_paste(&self, window: Window) -> (Option<Duration>, Duration) {
+        let last = self.last_key.get(&window).copied();
+        let now = Instant::now();
+        let wait = settle::paste_wait(last, self.pacing.paste_settle, now);
+        let waited = settle::wait((!wait.is_zero()).then(|| now + wait));
+        (last.map(|at| now.saturating_duration_since(at)), waited)
     }
 
     /// The `FocusOut`s sent since the last call, for the `--stats` line.
@@ -199,33 +222,31 @@ impl Inputs {
     }
 
     /// The engine's exit, its first act: every key still held released in reverse press order (the desktop's first, so
-    /// nothing real stays down a moment longer than it must), each released hold's session put on its `FocusOut` timer
-    /// from its release. It sends no `FocusOut`: the exit's drain ([`Inputs::drain_exit`]) follows the late-take watch,
-    /// whose Escape goes before any of them.
+    /// nothing real stays down a moment longer than it must), each released hold's session kept for its `FocusOut`,
+    /// which `end_released` sends once an armed late-take watch has run out, so that watch's Escape still goes inside
+    /// the session it was sent for.
     pub fn release_held(&mut self, x: &mut X11) {
         self.holds = Holds::default();
         self.desktop.release_all(x);
         let held: Vec<(Window, Session)> = self.sessions.drain().collect();
         for (window, mut session) in held {
             session.finish(x);
-            let now = Instant::now();
-            if session.took_keys() {
-                self.last_input.insert(window, now);
-            }
-            self.timers.start(window, session, now, self.request.clone());
+            self.released.push((window, session));
         }
     }
 
-    /// The exit's drain: every pending `FocusOut` timer waited out, at most the delay.
-    pub fn drain_exit(&mut self, x: &mut X11) {
-        self.flush(x, None, Cause::Exit);
+    /// The exit's sessions ended: each one `release_held` kept gets its `FocusOut` now, with no wait.
+    pub fn end_released(&mut self, x: &mut X11) {
+        for (window, session) in std::mem::take(&mut self.released) {
+            self.end(x, window, session, Cause::Exit);
+        }
     }
 
-    /// When the exit's settle ends (`focus_timer::EXIT_SETTLE`): the settle after the last input to a window whose
-    /// redirect the exit drops, None when no such window took input.
+    /// When the exit's settle ends (`settle::EXIT_SETTLE`): the settle after the last key to a window whose redirect the
+    /// exit drops, None when no such window took a key.
     pub fn exit_settle_until(&self, x: &X11) -> Option<Instant> {
-        let held = self.last_input.iter().filter(|(window, _)| x.holds_redirect(**window));
-        focus_timer::exit_settle_until(held.map(|(_, at)| *at), self.pacing.exit_settle)
+        let held = self.last_key.iter().filter(|(window, _)| x.holds_redirect(**window));
+        settle::until(held.map(|(_, at)| *at), self.pacing.exit_settle)
     }
 }
 

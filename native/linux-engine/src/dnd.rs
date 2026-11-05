@@ -272,8 +272,7 @@ pub struct LateDrop {
     pub escape_after_release: Duration,
     /// Whether the cancel's Escape went out.
     pub escaped: bool,
-    /// When the Escape went out, if it did: input to the target that restarts its pending `FocusOut` timer
-    /// (`focus_timer.rs`).
+    /// When the Escape went out, if it did: a key to the target, which the exit's settle follows (`settle.rs`).
     pub escaped_at: Option<Instant>,
 }
 
@@ -311,8 +310,6 @@ pub struct LateWatch {
     pub app: String,
     /// The window a late take's Escape goes to.
     pub target: Window,
-    /// The Escape's route past the engine's timers (`focus_timer::Gate`): sent under its lock, recorded first.
-    gate: crate::focus_timer::Gate,
     /// When the drag's button went up (`released`): the watch ends by itself `SETTLE` after it.
     released_at: std::cell::Cell<Option<Instant>>,
 }
@@ -322,16 +319,13 @@ impl LateWatch {
     pub fn start(target: Window, escape: u8) -> Result<LateWatch> {
         let (notes, inbox) = std::sync::mpsc::channel();
         let (ready, subscribed) = std::sync::mpsc::channel();
-        let gate = crate::focus_timer::Gate::new(target);
-        let sends = gate.clone();
-        let thread = std::thread::spawn(move || watch_after_release(target, escape, sends, inbox, ready));
+        let thread = std::thread::spawn(move || watch_after_release(target, escape, inbox, ready));
         match subscribed.recv_timeout(Duration::from_secs(2)) {
             Ok(Ok(())) => Ok(LateWatch {
                 notes,
                 thread: Some(thread),
                 app: String::new(),
                 target,
-                gate,
                 released_at: std::cell::Cell::new(None),
             }),
             Ok(Err(error)) => Err(anyhow::anyhow!("the drag-and-drop watch could not start: {error}")),
@@ -346,7 +340,7 @@ impl LateWatch {
     }
 
     /// At the engine's exit: the watch left to run out its own lifetime, so a take inside it is still cancelled (its
-    /// Escape sent before the exit's flush and before the connection closes). It returns once the watch has ended by
+    /// Escape sent before the exit's settle and before the connection closes). It returns once the watch has ended by
     /// itself, and at the latest a poll past `SETTLE` after the release; at once for a watch never told of one.
     pub fn run_out(&self) {
         let Some(released) = self.released_at.get() else {
@@ -370,11 +364,6 @@ impl LateWatch {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
-    }
-
-    /// The route its Escape takes past the engine's timers, for them to hold while the watch can send it.
-    pub fn gate(&self) -> crate::focus_timer::Gate {
-        self.gate.clone()
     }
 
     /// Whether the watch has ended by itself (its settle over, a take cancelled, a failure).
@@ -401,7 +390,6 @@ impl LateWatch {
             thread: Some(thread),
             app: "app".into(),
             target: 0,
-            gate: crate::focus_timer::Gate::new(0),
             released_at: std::cell::Cell::new(None),
         }
     }
@@ -479,7 +467,6 @@ fn watch_loop(
 fn watch_after_release(
     target: Window,
     escape: u8,
-    gate: crate::focus_timer::Gate,
     inbox: std::sync::mpsc::Receiver<Note>,
     ready: std::sync::mpsc::Sender<std::result::Result<(), String>>,
 ) -> WatchEnd {
@@ -522,7 +509,7 @@ fn watch_after_release(
         conn.get_input_focus()?.reply()?;
         Ok(())
     };
-    let escape_pair = |time: u32| -> bool {
+    let cancel = |time: u32| -> bool {
         [KEY_PRESS_EVENT, KEY_RELEASE_EVENT].into_iter().all(|response_type| {
             let event = KeyPressEvent {
                 response_type,
@@ -543,8 +530,6 @@ fn watch_after_release(
                 .is_ok_and(|c| c.check().is_ok())
         })
     };
-    // under the gate: the engine's timers send no FocusOut between this Escape and its window's timer restart
-    let cancel = |time: u32| -> bool { gate.send(|| escape_pair(time)) };
     watch_loop(&inbox, || inject_fault(&conn, root), look, sync, cancel)
 }
 
@@ -802,13 +787,13 @@ mod tests {
             at - late.after_release < Duration::from_millis(10),
             "the Escape within a poll of the take: {late:?}, Escape at {at:?}"
         );
-        // when it went out, for the target's FocusOut timer, which the Escape restarts (focus_timer.rs)
+        // when it went out: a key to the target, which the exit's settle follows (settle.rs)
         let escaped_at = late.escaped_at.expect("an Escape that went out has its instant");
         assert!(escaped_at >= released + late.after_release && escaped_at <= Instant::now());
     }
 
     #[test]
-    fn a_cancel_whose_escape_did_not_go_out_restarts_no_timer() {
+    fn a_cancel_whose_escape_did_not_go_out_records_no_key() {
         let (notes, inbox) = std::sync::mpsc::channel();
         notes.send(Note::Released { at: Instant::now() }).unwrap();
         let end = watch_loop(&inbox, || {}, || Ok(Some(7)), || Ok(()), |_| false);
@@ -818,7 +803,7 @@ mod tests {
 
     #[test]
     fn at_the_exit_a_watch_runs_out_its_lifetime_so_a_late_take_is_still_cancelled() {
-        // a take 200 ms after the release, past the exit's FocusOut drain (at most 100 ms): still cancelled
+        // a take 200 ms after the release, past when the drag answered: still cancelled
         let (notes, inbox) = std::sync::mpsc::channel();
         let released = Instant::now();
         notes.send(Note::Released { at: released }).unwrap();

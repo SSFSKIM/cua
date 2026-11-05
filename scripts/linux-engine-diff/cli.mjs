@@ -77,7 +77,7 @@ export function parseArgs(argv) {
     else if (flag === '--scenarios') a.scenarios = need().split(',').filter(Boolean);
     // the focus-timer experiment's series runs each through xtrace, a missed run's trace kept (a sitting of its own)
     else if (flag === '--trace') a.trace = true;
-    // the stop runs' exit settle, 0 (the 100 ms drain alone) included
+    // the stop runs' exit settle, 0 included
     else if (flag === '--exit-settle-ms') {
       const n = Number(need());
       if (!Number.isInteger(n) || n < 0) throw new Error('--exit-settle-ms needs a whole number of milliseconds');

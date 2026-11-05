@@ -773,9 +773,7 @@ impl Engine {
                 .x
                 .get_window(window)
                 .map_or_else(|_| format!("window {window}"), |w| w.app);
-            let watch = after.handed_over(app);
-            self.inputs.set_gate(Some(watch.gate()));
-            self.late_watch = Some(watch);
+            self.late_watch = Some(after.handed_over(app));
         } else {
             after.done();
         }

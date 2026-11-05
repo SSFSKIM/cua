@@ -8,10 +8,11 @@ import { gunzipSync } from 'node:zlib';
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, chosenLanes, delayOf, judged, focusOutsOf, keepTrace, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { EXIT_WITHIN_MS, LANES, SCENARIOS, SETTLE_STEPS, UNCONFIRMED, auditVerdict, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, settleCost, stopPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, chosenLanes, judged, focusOutsOf, keepTrace, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
-// M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
-// background session's SendEvents (audit.test.mjs has the same shapes).
+// M4's T7: the audit of each FocusOut, attributed to the request whose input it ends (audit.mjs; written for T7's
+// timer, whose FocusOuts were deferred past their answers, and the guard that none is deferred now). Lines in the shape
+// the VM's xtrace prints a background session's SendEvents (audit.test.mjs has the same shapes).
 const A = 0x012000f8;
 const B = 0x01400010;
 const hex = (w) => `0x${w.toString(16).padStart(8, '0')}`;
@@ -172,22 +173,20 @@ test('a timer series needs 30 consecutive passes: a miss restarts it and is coun
   assert.equal(seriesVerdict([...Array(10).fill(true), false, ...Array(30).fill(true)]).reached, true);
 });
 
-test('the sessions a scenario must leave: one per burst on the timer lane, one per request on the control lane', () => {
+test('the sessions a scenario must leave: one per request on every lane, its FocusOut before its answer', () => {
   const ids = { a: 7, b: 9 };
-  assert.deepEqual(expectedSessions('burst', 'timer', ids), [7]);
-  assert.deepEqual(expectedSessions('aba', 'timer', ids), [7, 9, 7]);
-  assert.deepEqual(expectedSessions('paste', 'timer', ids), [7, 7]);
-  assert.equal(expectedSessions('burst', 'control', ids).length, 20);
-  assert.deepEqual(expectedSessions('paste', 'control', ids), Array(9).fill(7));
+  assert.equal(expectedSessions('burst', ids).length, 20);
+  assert.deepEqual(expectedSessions('aba', ids), [...Array(8).fill(7), ...Array(8).fill(9), ...Array(8).fill(7)]);
+  assert.deepEqual(expectedSessions('paste', ids), Array(9).fill(7));
 });
 
 const passingSeries = (family, lane, name) => ({ family, lane, scenario: name, runs: lane === 'control' ? 10 : 30, misses: lane === 'control' ? 4 : 0, streak: 30, reached: lane !== 'control', burst_ms_median: 3 });
 const cleanAudit = (family, lane) => ({ family, lane, clean: true, attributed: [], deferred: 0, sessions: { expected: [1], seen: [1] }, problems: [], forbidden: [] });
-const stopRow = (signal, ok) => ({ family: 'chrome', signal, ok, exited_after_answer_ms: 110 });
+const stopRow = (signal, ok) => ({ family: 'chrome', signal, ok, exited_after_answer_ms: 310 });
 const results = (edit = (r) => r) =>
   edit({
-    series: ['chrome', 'gedit'].flatMap((f) => ['timer', 'unredirect', 'control'].flatMap((lane) => SCENARIOS.map((name) => passingSeries(f, lane, name)))),
-    audits: ['chrome', 'gedit'].flatMap((f) => ['timer', 'control'].map((lane) => cleanAudit(f, lane))),
+    series: ['chrome', 'gedit'].flatMap((f) => ['shipped', 'control'].flatMap((lane) => SCENARIOS.map((name) => passingSeries(f, lane, name)))),
+    audits: ['chrome', 'gedit'].flatMap((f) => ['shipped', 'control'].map((lane) => cleanAudit(f, lane))),
     stops: [stopRow('SIGTERM', true), stopRow('SIGKILL', true)],
     skipped: [],
   });
@@ -197,76 +196,95 @@ test("the verdict passes only when every family's lanes, audits and stops did wh
   assert.deepEqual(focusTimerVerdict(results(), { families }).failed, []);
   const failing = (edit) => focusTimerVerdict(results(edit), { families }).failed.join('\n');
   assert.match(
-    failing((r) => ({ ...r, series: r.series.map((s) => (s.family === 'gedit' && s.lane === 'timer' && s.scenario === 'aba' ? { ...s, reached: false, misses: 2 } : s)) })),
+    failing((r) => ({ ...r, series: r.series.map((s) => (s.family === 'gedit' && s.lane === 'shipped' && s.scenario === 'aba' ? { ...s, reached: false, misses: 2 } : s)) })),
     /gedit aba: no 30 consecutive passing runs/,
   );
   assert.match(
     failing((r) => ({ ...r, series: r.series.map((s) => (s.family === 'chrome' && s.lane === 'control' && s.scenario === 'paste' ? { ...s, misses: 0 } : s)) })),
     /chrome paste: the control lane showed no reorder/,
   );
-  // the delay alone, each request's redirect dropped with its FocusOut as the control's is, must pass as the timer does
-  assert.match(
-    failing((r) => ({ ...r, series: r.series.map((s) => (s.family === 'chrome' && s.lane === 'unredirect' && s.scenario === 'burst' ? { ...s, reached: false, misses: 1 } : s)) })),
-    /chrome burst \(unredirect\): no 30 consecutive passing runs/,
-  );
   // the control's line says how its runs failed: a text cut or reordered, or only an answer (a paste racing the keys)
   const lines = focusTimerVerdict(results((r) => ({ ...r, series: r.series.map((s) => (s.lane === 'control' ? { ...s, wrong_text: 1 } : s)) })), { families }).md;
-  assert.ok(lines.some((l) => l.startsWith('| chrome | control | burst |') && l.includes('fails without the delay (4/10; the text wrong in 1)')), lines.join('\n'));
-  // a family where nothing reorders without the delay is reported, not failed
+  assert.ok(lines.some((l) => l.startsWith('| chrome | control | burst |') && l.includes('fails with each request unredirected (4/10; the text wrong in 1)')), lines.join('\n'));
+  // a family where nothing reorders in the control is reported, not failed
   assert.deepEqual(failing((r) => ({ ...r, series: r.series.map((s) => (s.family === 'gedit' && s.lane === 'control' ? { ...s, misses: 0 } : s)) })), '');
-  assert.match(failing((r) => ({ ...r, audits: r.audits.map((a, i) => (i === 0 ? { ...a, clean: false } : a)) })), /chrome timer: the audit is not clean/);
-  assert.match(failing((r) => ({ ...r, stops: [stopRow('SIGTERM', false), stopRow('SIGKILL', true)] })), /chrome SIGTERM: 1 of 1 runs did not drain/);
-  assert.match(failing((r) => ({ ...r, stops: [stopRow('SIGTERM', true), stopRow('SIGKILL', false)] })), /chrome SIGKILL: .*the drain check is blind/);
+  assert.match(failing((r) => ({ ...r, audits: r.audits.map((a, i) => (i === 0 ? { ...a, clean: false } : a)) })), /chrome shipped: the audit is not clean/);
+  assert.match(failing((r) => ({ ...r, stops: [stopRow('SIGTERM', false), stopRow('SIGKILL', true)] })), /chrome SIGTERM: 1 of 1 runs did not keep the burst in order through the exit's settle/);
+  assert.match(failing((r) => ({ ...r, stops: [stopRow('SIGTERM', true), stopRow('SIGKILL', false)] })), /chrome SIGKILL: .*the settle check is blind/);
   assert.match(failing((r) => ({ ...r, skipped: [{ family: 'gedit', why: 'no window' }], series: r.series.filter((s) => s.family !== 'gedit') })), /gedit could not be opened/);
   assert.match(focusTimerVerdict(results(), { families: [...families, 'kate'] }).failed.join('\n'), /kate was not measured/);
 });
 
-test('the lanes: the engine as it ships; the delay alone with each request unredirecting; the control, that without the delay', () => {
-  assert.deepEqual(LANES.timer, []);
-  assert.deepEqual(LANES.unredirect, ['--retention', 'per-request']);
-  assert.deepEqual(LANES.control, ['--teardown-ms', '0', '--retention', 'per-request']);
-});
-
-test("the plain 0 ms control as an engine setting: no FocusOut delay, the default (session) retention kept", () => {
-  assert.deepEqual(LANES['control-0ms'], ['--teardown-ms', '0'], 'no --retention: the redirect is kept as the engine ships');
-  assert.equal(delayOf('control-0ms'), 0);
-  assert.equal(delayOf('control'), 0);
-  assert.equal(delayOf('timer'), 100);
-  assert.equal(delayOf('unredirect'), 100);
-  // judged by the wait rule as the timed lanes are: the question is whether 0 ms passes 30 consecutive
-  assert.equal(judged('control-0ms'), true);
-  assert.equal(judged('timer'), true);
+test("the lanes: the engine as it ships; the paste settle's measured steps; the control, each request unredirected", () => {
+  assert.deepEqual(LANES.shipped, []);
+  assert.deepEqual(LANES.control, ['--retention', 'per-request']);
+  assert.deepEqual(
+    Object.keys(LANES).filter((l) => l.startsWith('settle-')),
+    SETTLE_STEPS.map((ms) => `settle-${ms}`),
+  );
+  assert.deepEqual(SETTLE_STEPS, [25, 50, 75, 100]);
+  assert.deepEqual(LANES['settle-50'], ['--paste-settle-ms', '50'], 'the redirect kept as the engine ships: only the settle set');
+  // every lane but the control is judged by the wait rule: the control must show the reorder
+  for (const lane of ['shipped', 'settle-25', 'settle-100']) assert.equal(judged(lane), true);
   assert.equal(judged('control'), false);
-  // its FocusOut goes as each request's input ends: one synthetic-focus session per request, as the control's
-  const ids = { a: 7, b: 9 };
-  for (const name of SCENARIOS) assert.deepEqual(expectedSessions(name, 'control-0ms', ids), expectedSessions(name, 'control', ids));
 });
 
-test("--lanes runs the lanes it names beside the timer lane, in the experiment's order, with no stop runs", () => {
+test("--lanes runs only the lanes it names, in the experiment's order, with no stop runs", () => {
   const args = (...more) => parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', ...more]);
-  assert.deepEqual(chosenLanes(args()), { lanes: ['timer', 'unredirect', 'control'], stops: true }, "the default is T7's proof, unchanged");
-  assert.deepEqual(chosenLanes(args('--lanes', 'control-0ms,timer')), { lanes: ['timer', 'control-0ms'], stops: false });
-  assert.deepEqual(chosenLanes(args('--lanes', 'timer,control,unredirect,control-0ms')), { lanes: ['timer', 'unredirect', 'control-0ms', 'control'], stops: false });
-  assert.throws(() => chosenLanes(args('--lanes', 'control-0ms')), /the focus-timer lanes need timer/);
-  assert.throws(() => chosenLanes(args('--lanes', 'timer,zero')), /unknown focus-timer lane zero/);
-  assert.throws(() => chosenLanes(args('--lanes', 'timer', '--stops-only')), /--stops-only runs no lane/);
+  assert.deepEqual(chosenLanes(args()), { lanes: ['shipped', 'control'], stops: true }, "the default is T7's proof on the engine as it ships");
+  assert.deepEqual(chosenLanes(args('--lanes', 'settle-50,settle-25')), { lanes: ['settle-25', 'settle-50'], stops: false }, "the settle's steps, measured beside one another");
+  assert.deepEqual(chosenLanes(args('--lanes', 'control,shipped')), { lanes: ['shipped', 'control'], stops: false });
+  assert.throws(() => chosenLanes(args('--lanes', 'timer')), /unknown focus-timer lane timer/);
+  assert.throws(() => chosenLanes(args('--lanes', 'control')), /a judged lane/);
+  assert.throws(() => chosenLanes(args('--lanes', 'shipped', '--stops-only')), /--stops-only runs no lane/);
 });
 
-test('the 0 ms lane is judged by the wait rule: short of 30 consecutive it fails, and its line says so', () => {
+test('a settle lane is judged by the wait rule: short of 30 consecutive it fails, and its line says so', () => {
   const families = ['chrome', 'gedit'];
-  const withZero = (edit = (s) => s) => (r) => ({ ...r, series: [...r.series, ...families.flatMap((f) => SCENARIOS.map((name) => edit(passingSeries(f, 'control-0ms', name))))], audits: [...r.audits, ...families.map((f) => cleanAudit(f, 'control-0ms'))] });
-  const passing = focusTimerVerdict(results(withZero()), { families });
+  const withStep = (edit = (s) => s) => (r) => ({ ...r, series: [...r.series, ...families.map((f) => edit(passingSeries(f, 'settle-25', 'paste')))], audits: [...r.audits, ...families.map((f) => cleanAudit(f, 'settle-25'))] });
+  const passing = focusTimerVerdict(results(withStep()), { families });
   assert.deepEqual(passing.failed, []);
-  assert.ok(passing.md.some((l) => l.startsWith('| gedit | control-0ms | paste |') && l.includes('30 consecutive')), passing.md.join('\n'));
-  const cut = focusTimerVerdict(results(withZero((s) => (s.family === 'chrome' && s.scenario === 'burst' ? { ...s, reached: false, misses: 3, miss_causes: { text: 3 } } : s))), { families });
-  assert.match(cut.failed.join('\n'), /chrome burst \(control-0ms\): no 30 consecutive passing runs/);
-  assert.ok(cut.md.some((l) => l.startsWith('| chrome | control-0ms | burst |') && l.includes('**not reached** (text 3)')), cut.md.join('\n'));
-  const dirty = (r) => ({ ...withZero()(r), audits: [...r.audits, { ...cleanAudit('chrome', 'control-0ms'), clean: false }] });
-  assert.match(focusTimerVerdict(results(dirty), { families }).failed.join('\n'), /chrome control-0ms: the audit is not clean/);
+  assert.ok(passing.md.some((l) => l.startsWith('| gedit | settle-25 | paste |') && l.includes('30 consecutive')), passing.md.join('\n'));
+  const short = focusTimerVerdict(results(withStep((s) => (s.family === 'chrome' ? { ...s, reached: false, misses: 3, miss_causes: { refused: 3 } } : s))), { families });
+  assert.match(short.failed.join('\n'), /chrome paste \(settle-25\): no 30 consecutive passing runs/);
+  assert.ok(short.md.some((l) => l.startsWith('| chrome | settle-25 | paste |') && l.includes('**not reached** (refused 3)')), short.md.join('\n'));
+});
+
+test("an audit is clean only with every FocusOut sent within its own request, before the request's answer", () => {
+  const sent = (deferred) => ({ window: 7, scheduled_by: 1, cause: 'request', after_input_ms: 0.01, deferred });
+  const base = { forbidden: { clean: true }, attributed: { clean: true, attributed: [sent(false), sent(false)] }, sessionsOk: true, runsOk: true, lane: 'shipped' };
+  assert.equal(auditVerdict(base), true);
+  assert.equal(auditVerdict({ ...base, attributed: { clean: true, attributed: [sent(false), sent(true)] } }), false, 'a FocusOut left for a later request');
+  assert.equal(auditVerdict({ ...base, sessionsOk: false }), false);
+  assert.equal(auditVerdict({ ...base, forbidden: { clean: false } }), false);
+  assert.equal(auditVerdict({ ...base, runsOk: false }), false, 'a run that missed inside the audit');
+  assert.equal(auditVerdict({ ...base, lane: 'control', runsOk: false }), true, "the control's runs may reorder: that is what it is for");
+});
+
+test("a stop run passes on SIGTERM when the burst kept its order, every session closed, and the exit settled before it ended; SIGKILL, with no settle, must not", () => {
+  const good = { signal: 'SIGTERM', inOrder: true, sessions: { sessions: Array(20).fill({ closed: true }), problems: [] }, exit: { code: 143, signal: null }, settle: { waited_ms: 287 }, drainedMs: 301 };
+  assert.equal(stopPasses(good), true);
+  assert.equal(stopPasses({ ...good, inOrder: false }), false, 'a key cut or reordered');
+  assert.equal(stopPasses({ ...good, settle: null }), false, 'no settle: the redirects went at once');
+  assert.equal(stopPasses({ ...good, sessions: { sessions: [{ closed: false }], problems: ['never closed'] } }), false);
+  assert.equal(stopPasses({ ...good, drainedMs: EXIT_WITHIN_MS + 1 }), false, 'ended by the backstop');
+  assert.equal(stopPasses({ ...good, exit: { code: 143, signal: null, answers: ['refused'] } }), false);
+  // clicks get no settle: it follows keys
+  assert.equal(stopPasses({ ...good, input: 'clicks', settle: null }), true);
+  assert.equal(stopPasses({ ...good, input: 'clicks' }), false, 'a settle after clicks alone');
+  const killed = { ...good, signal: 'SIGKILL', exit: { code: null, signal: 'SIGKILL' }, settle: null };
+  assert.equal(stopPasses(killed), true, 'the control: the kill skipped the settle');
+  assert.equal(stopPasses({ ...killed, settle: { waited_ms: 290 } }), false, 'a kill that settled cannot be told from the drain');
+});
+
+test("a series' paste settle cost: how long each paste waited, and how soon after its window's last key it came", () => {
+  const row = (waited_ms, after_key_ms) => ({ paste: { settle: { waited_ms, after_key_ms, settle_ms: 50 } } });
+  assert.deepEqual(settleCost([row(40, 10), row(30, 20), row(0, 80), row(50, 0), {}]), { pastes: 4, waited_median: 35, waited_max: 50, after_key_median: 15 });
+  assert.equal(settleCost([{}]), null, 'no paste');
 });
 
 test("a missed run keeps the engine's FocusOut records, each with the request whose line carried it", () => {
-  const out = (window, scheduled_by, after_input_ms) => ({ window, cause: 'timer', after_input_ms, scheduled_by });
+  const out = (window, scheduled_by, after_input_ms) => ({ window, cause: 'request', after_input_ms, scheduled_by });
   const stats = [{ id: 1, focus_out: [out(7, 1, 0.004)] }, { id: 2, command: 'press_key' }, { id: 3, focus_out: [out(7, 2, 0.003), out(7, 3, 0.002)] }, null];
   assert.deepEqual(focusOutsOf(stats), [
     { ...out(7, 1, 0.004), reported_on: 1 },
@@ -281,8 +299,8 @@ test("--trace keeps a missed run's X trace with its synthetic-focus sessions and
   try {
     const redirect = `000:<:0002: 12: Composite-Request(142,1): RedirectWindow window=${hex(A)} update=Manual(0x01)`;
     const text = [redirect, ...burst(A, 2), focusIn(A), key(A)].join('\n');
-    const kept = keepTrace(dir, 'chrome-control-0ms-burst-3', text);
-    assert.equal(kept.file, 'traces/chrome-control-0ms-burst-3.xtrace.gz');
+    const kept = keepTrace(dir, 'chrome-control-burst-3', text);
+    assert.equal(kept.file, 'traces/chrome-control-burst-3.xtrace.gz');
     assert.equal(gunzipSync(readFileSync(join(dir, kept.file))).toString(), text);
     assert.deepEqual(kept.composite, ['RedirectWindow']);
     assert.deepEqual(kept.sessions.map((s) => [s.destination, s.inputs, s.closed]), [[A, 4, true], [A, 1, false]]);
@@ -338,8 +356,8 @@ test("a miss's cause: the guard refusing after an earlier miss is told apart fro
 });
 
 test("a run's row names its index `trial`, so the sitting's own `run` name survives the emit", () => {
-  const row = trialRow('focus-timer-run', { family: 'chrome', lane: 'timer', scenario: 'burst' }, 7, { ok: true, run: 3 });
-  assert.deepEqual(row, { kind: 'focus-timer-run', family: 'chrome', lane: 'timer', scenario: 'burst', trial: 7, ok: true });
+  const row = trialRow('focus-timer-run', { family: 'chrome', lane: 'shipped', scenario: 'burst' }, 7, { ok: true, run: 3 });
+  assert.deepEqual(row, { kind: 'focus-timer-run', family: 'chrome', lane: 'shipped', scenario: 'burst', trial: 7, ok: true });
   // the emit puts the sitting's name first and the row's fields after it: nothing in the row may overwrite it
   assert.equal({ run: 't56-idle', ...row }.run, 't56-idle');
 });
@@ -359,12 +377,12 @@ test('the raw count adds what independent starts hide: a tail an earlier cut lef
 
 test("the summary shows each series' independent and raw counts; the verdict judges the independent ones", () => {
   const families = ['chrome', 'gedit'];
-  const lines = focusTimerVerdict(results((r) => ({ ...r, series: r.series.map((s) => (s.family === 'chrome' && s.lane === 'timer' && s.scenario === 'burst' ? { ...s, raw: { misses: 2, streak: 28, reached: false } } : s)) })), { families });
-  assert.ok(lines.md.some((l) => l.startsWith('| chrome | timer | burst |') && l.includes('| 2 | 28 |')), lines.md.join('\n'));
+  const lines = focusTimerVerdict(results((r) => ({ ...r, series: r.series.map((s) => (s.family === 'chrome' && s.lane === 'shipped' && s.scenario === 'burst' ? { ...s, raw: { misses: 2, streak: 28, reached: false } } : s)) })), { families });
+  assert.ok(lines.md.some((l) => l.startsWith('| chrome | shipped | burst |') && l.includes('| 2 | 28 |')), lines.md.join('\n'));
   assert.deepEqual(lines.failed, [], 'raw misses are reported, not failed');
 });
 
-test("the exit settle's measured steps: the stop runs alone, the settle 0 included (the 100 ms drain alone)", () => {
+test("the exit settle's measured steps: the stop runs alone, the settle 0 included", () => {
   const args = parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', '--stops-only', '--exit-settle-ms', '0']);
   assert.equal(args.stopsOnly, true);
   assert.equal(args.exitSettleMs, 0);

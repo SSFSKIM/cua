@@ -130,10 +130,8 @@ impl Engine {
         self.extra.insert("route".into(), json!(way.name()));
     }
 
-    /// The foreground route's start: every pending `FocusOut` timer flushed (M4's T7), then the window activated, and
-    /// holding the X input focus.
+    /// The foreground route's start: the window activated, and holding the X input focus.
     pub(super) fn enter(&mut self, window: Window) -> Result<()> {
-        self.inputs.flush_all(&mut self.x);
         activate(&self.x, window)?;
         let deadline = Instant::now() + ACTIVATION_WAIT;
         while !focus_is_within(&self.x, window)? {

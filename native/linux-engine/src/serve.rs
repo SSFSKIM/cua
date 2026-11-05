@@ -1,14 +1,17 @@
 //! The server loop (behaviour §1): one line in, one line out, strictly in order. Between requests the engine waits for
-//! whichever comes first: the next request line, the next `FocusOut` due (M4's T7, `focus_timer.rs`), or a stop.
+//! whichever comes first: the next request line or a stop. Nothing is left pending between requests: a background
+//! request's `FocusOut` goes with it (M4's T7, `route.rs`).
 //!
 //! A stop is SIGTERM, SIGINT or SIGHUP, or stdin closing. Each ends the loop through the engine's orderly exit
-//! (`Engine::shutdown`), which waits out every pending `FocusOut` (at most its 100 ms) before the engine exits, so a burst
-//! typed just before the signal still arrives in order and its `FocusOut` follows (the design session, M4 pre-flight).
+//! (`Engine::shutdown`), which releases what the engine holds and waits out the exit's settle after the last key to a
+//! window it holds redirected before the engine exits, so a burst typed just before the signal still arrives in order
+//! (`settle.rs`; the design session, M4 pre-flight and T7).
 //! A request already running when the signal comes finishes first; requests still queued behind it are not run. A
 //! second SIGINT, or an exit that has not happened `EXIT_BACKSTOP` after the first signal, ends the process at once,
 //! once every key still down is released (`pressed.rs`); a second SIGTERM or SIGHUP changes nothing (the design
-//! session's ruling, M4 T7b). SIGKILL cannot be caught: it cuts the drain and the release, and the window keeps the
-//! synthetic focus of its last burst until it next gets a `FocusOut` (the engine README).
+//! session's ruling, M4 T7b). SIGKILL cannot be caught: it cuts the settle and the release, and a window whose session
+//! was still open (a hold, or a request still running) keeps its synthetic focus until it next gets a `FocusOut` (the
+//! engine README).
 //!
 //! The signals are blocked in every thread (`block_stop_signals`, before the first thread starts) and taken by one
 //! thread of their own with `sigwait`, so no handler runs at an arbitrary point. A child keeps its parent's mask, so a
@@ -21,7 +24,7 @@
 use std::io::{BufRead, Write};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use rustix::runtime::{How, KernelSigSet, Signal};
 
@@ -51,10 +54,6 @@ pub trait Server {
     fn respond(&mut self, line: &str) -> Option<String>;
     /// Work after a response has gone out.
     fn after_response(&mut self);
-    /// When the server must next act with no request (a `FocusOut` due).
-    fn next_due(&self) -> Option<Instant>;
-    /// That work, done when it is due.
-    fn tick(&mut self);
 }
 
 /// The signal a stop came with, 0 before any: set by the signal thread before it tells the loop, so a request line
@@ -127,17 +126,7 @@ impl Outbox {
 
 fn serve_with(server: &mut impl Server, inbox: &Receiver<Next>, out: &Outbox, stopped: &AtomicI32) -> i32 {
     loop {
-        let next = match server.next_due() {
-            Some(due) => match inbox.recv_timeout(due.saturating_duration_since(Instant::now())) {
-                Ok(next) => next,
-                Err(RecvTimeoutError::Timeout) => {
-                    server.tick();
-                    continue;
-                }
-                Err(RecvTimeoutError::Disconnected) => Next::End,
-            },
-            None => inbox.recv().unwrap_or(Next::End),
-        };
+        let next = inbox.recv().unwrap_or(Next::End);
         let signal = stopped.load(Ordering::SeqCst);
         if signal != 0 {
             return 128 + signal;
@@ -163,7 +152,6 @@ fn serve_with(server: &mut impl Server, inbox: &Receiver<Next>, out: &Outbox, st
             Sent::Stopped(signal) => return 128 + signal,
         }
         server.after_response();
-        server.tick();
     }
 }
 
@@ -259,41 +247,23 @@ pub fn watch_stop_signals(inbox: Sender<Next>, release: fn()) {
 mod tests {
     use super::*;
     use std::sync::mpsc::channel;
+    use std::time::Instant;
 
-    /// Answers each line with its own text, records what it was asked, and has work due when a test says so.
+    /// Answers each line with its own text and records what it was asked.
     #[derive(Default)]
     struct Echo {
         seen: Vec<String>,
-        due: Option<Instant>,
-        ticks: Vec<Instant>,
         after: usize,
-        /// Told of each tick as it happens (the timed test's sender waits for it).
-        ticked: Option<std::sync::mpsc::Sender<()>>,
-        /// How many ticks had happened when each line was answered.
-        ticks_at_line: Vec<usize>,
     }
 
     impl Server for Echo {
         fn respond(&mut self, line: &str) -> Option<String> {
             let line = line.trim();
             self.seen.push(line.to_string());
-            self.ticks_at_line.push(self.ticks.len());
             (!line.is_empty()).then(|| format!("ok {line}"))
         }
         fn after_response(&mut self) {
             self.after += 1;
-        }
-        fn next_due(&self) -> Option<Instant> {
-            self.due
-        }
-        fn tick(&mut self) {
-            if self.due.is_some_and(|d| d <= Instant::now()) {
-                self.ticks.push(Instant::now());
-                self.due = None;
-                if let Some(ticked) = &self.ticked {
-                    let _ = ticked.send(());
-                }
-            }
         }
     }
 
@@ -431,10 +401,6 @@ mod tests {
                 Some(line.trim().to_string())
             }
             fn after_response(&mut self) {}
-            fn next_due(&self) -> Option<Instant> {
-                None
-            }
-            fn tick(&mut self) {}
         }
         let written = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let out = Shared::default();
@@ -527,36 +493,7 @@ mod tests {
             "the release lands before the group's SIGKILL"
         );
         assert_eq!(wait, b + r + 50, "the REPL host's kill follows the engine's latest end");
-        // T7's longest drain, a stop straight after a watched drag: its watch (300 ms) and its settle (300 ms)
-        assert!(b > 600 + 100, "the backstop leaves the drain its longest");
-    }
-
-    #[test]
-    fn work_due_while_waiting_for_a_line_is_done_on_time() {
-        // ordered, not timed: the line is sent only once the tick has happened (or after 5 s, which fails), so a
-        // loaded machine cannot make a tick that waited for the line look on time
-        let (tx, rx) = channel();
-        let (ticked, tick) = channel();
-        let started = Instant::now();
-        let mut echo = Echo {
-            due: Some(started + Duration::from_millis(40)),
-            ticked: Some(ticked),
-            ..Echo::default()
-        };
-        let sender = std::thread::spawn(move || {
-            let _ = tick.recv_timeout(Duration::from_secs(5));
-            tx.send(Next::Line("late\n".into())).unwrap();
-            tx.send(Next::End).unwrap();
-        });
-        let code = serve_with(&mut echo, &rx, &Outbox::spawn(Shared::default()), &AtomicI32::new(0));
-        sender.join().unwrap();
-        assert_eq!(code, 0);
-        assert_eq!(echo.ticks.len(), 1, "fired once, while idle");
-        assert!(
-            echo.ticks[0] - started >= Duration::from_millis(40),
-            "not before it was due"
-        );
-        assert_eq!(echo.ticks_at_line, [1], "before the next line, not at it");
-        assert_eq!(echo.seen, ["late"]);
+        // the exit's longest, straight after a watched drag: its watch (300 ms), then the settle after its Escape
+        assert!(b > 600 + 100, "the backstop leaves the exit its longest");
     }
 }

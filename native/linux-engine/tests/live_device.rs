@@ -864,8 +864,8 @@ fn a_windowless_drag_and_drop_over_chromium_is_released_no_sooner_than_350_ms_af
 
 /// A drag and drop that begins only after the drag's release (the source takes `XdndSelection` and the focus 30 ms
 /// after it, where no look during the drag could see it): the drag answers at its release as a plain drag; the watch,
-/// told the instant the button went up, sends the cancel's Escape within a few milliseconds of the take, before the
-/// drag's own teardown (100 ms) is over; a read runs, and the first acting request answers the notice, not run, with
+/// told the instant the button went up, sends the cancel's Escape within a few milliseconds of the take, not after any
+/// wait of the drag's own; a read runs, and the first acting request answers the notice, not run, with
 /// nothing sent (the design session's rulings, 2026-10-31).
 #[test]
 fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_acting_request() {
@@ -889,7 +889,7 @@ fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_acting_
         .expect("the watch's Escape reached the source");
     assert!(
         waited < Duration::from_millis(50),
-        "the Escape {waited:?} after the take: at once, not after the teardown"
+        "the Escape {waited:?} after the take: at once"
     );
     assert!(shared.request("list_windows", json!({})).is_ok(), "a read runs");
     assert_eq!(
@@ -927,16 +927,20 @@ fn a_drag_and_drop_that_begins_after_the_release_is_reported_by_the_next_acting_
     );
 }
 
-/// How long after the release the exit test's late drag and drop begins: past the exit's `FocusOut` drain (the drag's
-/// timer is due 100 ms after its release), inside the watch's 300 ms.
+/// How long after the release the exit test's late drag and drop begins: well after the drag answered, inside the
+/// watch's 300 ms.
 const EXIT_LATE_TAKE: Duration = Duration::from_millis(200);
 
+/// The exit's settle after the last key to a window it holds redirected (`settle::EXIT_SETTLE`).
+const EXIT_SETTLE: Duration = Duration::from_millis(300);
+
 /// An engine stopped straight after a watched drag's answer, with the after-release watch still armed: a drag and drop
-/// that begins after the exit's `FocusOut` drain would have ended is still cancelled. The watch runs out its lifetime
-/// before the exit's flush, so its Escape reaches the source before the session's `FocusOut`, and the engine exits only
-/// after both (the re-review of T7's first fix: a safety Escape cut at exit lets a late drop land).
+/// that begins well after the drag answered is still cancelled. The drag's session ended with its answer, its
+/// `FocusOut` sent then (M4's T7 as ruled on task 59); the watch runs out its lifetime, its Escape reaches the source,
+/// and the engine exits only once the exit's settle has passed since that Escape, so the redirect it would drop cannot
+/// cut it (the re-review of T7's first fix: a safety Escape cut at exit lets a late drop land).
 #[test]
-fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_before_its_focus_out() {
+fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_and_settles_after_its_escape() {
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
     let (window, stop, recorder) = drag_source(OnRelease::TakesLateAfter(EXIT_LATE_TAKE));
     focus_nothing();
@@ -975,13 +979,15 @@ fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_before
     let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
     assert_eq!(
         order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
-        vec!["escape", "focus-out"],
-        "the Escape before the session's FocusOut"
+        vec!["focus-out", "escape"],
+        "the drag's FocusOut with its answer, then the watch's Escape, and no FocusOut after it"
     );
-    // the probe reads each event at most a poll after it arrived
+    // the source reads the Escape at most a poll after it arrived (it reads the FocusOut only after its own wait for the
+    // late take, so that read's time says nothing)
     assert!(
-        order[1].1 <= exited + Duration::from_millis(5),
-        "the FocusOut before the exit"
+        exited >= order[1].1 + EXIT_SETTLE - Duration::from_millis(20),
+        "the exit settled after the Escape: {:?}",
+        exited.saturating_duration_since(order[1].1)
     );
     assert!(
         exited - answered >= EXIT_LATE_TAKE,
@@ -1044,8 +1050,13 @@ fn the_exit_releases_a_held_key_before_it_waits_out_the_late_take_watch() {
     let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
     assert_eq!(
         order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
-        vec!["escape", "focus-out"],
-        "the release first keeps the Escape before the session's FocusOut"
+        vec!["focus-out", "escape"],
+        "the drag's FocusOut with its answer, then the watch's Escape after the release"
+    );
+    assert!(
+        exited >= order[1].1 + EXIT_SETTLE - Duration::from_millis(20),
+        "the exit settled after the Escape: {:?}",
+        exited.saturating_duration_since(order[1].1)
     );
     assert!(exited - answered >= EXIT_LATE_TAKE, "{:?}", exited - answered);
 }
@@ -1090,7 +1101,7 @@ fn a_late_drag_and_drop_lets_releases_and_reads_run_and_refuses_the_next_acting_
     deferred
         .request("click", json!({"window": {"id": window}, "x": 50, "y": 50}))
         .unwrap();
-    // the click answers as soon as its release is sent (its FocusOut follows on its timer, M4's T7): the recorder
+    // the click answers as soon as its release and its FocusOut are sent: the recorder
     // reads on until the release has arrived
     sleep(SETTLE);
     stop.send(()).unwrap();
@@ -1196,7 +1207,7 @@ fn keycode_of(conn: &RustConnection, keysym: u32) -> u8 {
 /// as though nothing happened. Its connection killed by the server: a read runs, the click is refused with the
 /// watch-failure sentence and sends nothing. Its thread panicked: the engine's release profile aborts on a panic, so
 /// the engine ends and nothing more is sent. The panic comes when the watch hears of the release, off the request path,
-/// so the drag's own answer, which goes as soon as its release is sent (its FocusOut follows on its timer, M4's T7), may
+/// so the drag's own answer, which goes as soon as its release is sent, may
 /// or may not be out first; the next request is never answered.
 #[test]
 fn a_failed_after_release_watch_never_lets_the_next_acting_request_run() {

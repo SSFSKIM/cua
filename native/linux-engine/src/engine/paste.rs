@@ -1,5 +1,6 @@
 //! `type_text` and `clipboard_write`: one verified paste route (Design, Text and clipboard), on the clipboard core
-//! (`clipboard/`). It observes the field before it acts, focuses it only if needed, holds the display's clipboard lock
+//! (`clipboard/`). It observes the field before it acts (once its settle has passed when its window took keys just
+//! before, `settle.rs`), focuses it only if needed, holds the display's clipboard lock
 //! from the snapshot through the cleanup, has the target's `TARGETS` request answered first (task 56, fix 3),
 //! revalidates the field and the desktop focus, sends the family's paste chord once, confirms the inserted segment,
 //! and ends through the core's guarded cleanup on every path. The answer is applied (success), not applied (a refusal
@@ -91,6 +92,9 @@ struct Report {
     targets: Option<(bool, f64, u64)>,
     /// A press of the chord whose delivery is unknown.
     delivery: Option<String>,
+    /// The settle before the observation (`settle.rs`): how long after its window's last key the paste came (None: no
+    /// key yet), what it waited, and the settle, in ms.
+    settle: Option<(Option<f64>, f64, f64)>,
     /// How long a clicked element took to report the focus (or the wait, when it did not), and the clicks it took.
     focus_ms: Option<f64>,
     clicks: u32,
@@ -195,6 +199,11 @@ impl Engine {
                     "bound_ms": bound_ms,
                 })),
                 "delivery": report.delivery,
+                "settle": report.settle.map(|(after_key_ms, waited_ms, settle_ms)| json!({
+                    "after_key_ms": after_key_ms,
+                    "waited_ms": waited_ms,
+                    "settle_ms": settle_ms,
+                })),
                 "focus_ms": report.focus_ms,
                 "clicks": report.clicks,
                 "observed_around": report.observed_around,
@@ -237,9 +246,15 @@ impl Engine {
             }),
         );
         let keycodes = chord_keycodes(&self.x, chord)?;
-        // A paste observes its field before it acts: every pending FocusOut timer is waited out first, its own window's
-        // included, so keys sent just before it have arrived and the paste opens a session of its own (M4's T7)
-        self.inputs.flush_all(&mut self.x);
+        // A paste observes its field before it acts, and keys its window took just before may not have landed: the
+        // settle waits until it has passed since the last of them, here, before the observation and the clipboard lock
+        // and never between the observation and the dispatch (`settle.rs`; the design session, 2026-11-04)
+        let (after_key, waited) = self.inputs.settle_paste(window);
+        report.settle = Some((
+            after_key.map(|d| d.as_secs_f64() * 1000.0),
+            waited.as_secs_f64() * 1000.0,
+            self.inputs.pacing.paste_settle.as_secs_f64() * 1000.0,
+        ));
         // The element: the one named, resolved with its ancestors for the focusing click's point; else the window's
         // focused element, looked for once the session's synthetic focus is in (a background Chrome reports its
         // address bar focused only then).

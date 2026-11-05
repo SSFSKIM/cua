@@ -18,12 +18,14 @@ use crate::x11::X11;
 pub struct Pacing {
     /// After each new key edge (the pinned build's 33 ms).
     pub key: Duration,
-    /// From a window's last input to its session's `FocusOut` (the vendor's 100 ms): the `FocusOut` timer's delay
-    /// (`focus_timer.rs`), off the request path; zero sends it as each request's input ends.
+    /// Before a session's `FocusOut`, on the request path, for measurement only (`--teardown-ms`: 0.3.0's wait, the
+    /// vendor's 100 ms there); 0, the default, sends it as the request's input ends (`route.rs`).
     pub teardown: Duration,
-    /// After the exit's `FocusOut` drain, from the last input to a window whose redirect the exit drops
-    /// (`focus_timer::EXIT_SETTLE`).
+    /// Before the exit drops its redirects, from the last key to a window it still holds redirected
+    /// (`settle::EXIT_SETTLE`).
     pub exit_settle: Duration,
+    /// Before a paste observes its field, from the last key to its window (`settle::PASTE_SETTLE`).
+    pub paste_settle: Duration,
     /// A drag's waits fixed for every target by the measurement flags (`--drag-step-ms`, `--drag-step-us`,
     /// `--drag-press-dwell-ms`, `--drag-release-dwell-ms`); None, the default, paces each drag by its target's family
     /// (`families.rs`).
@@ -175,8 +177,8 @@ impl Keys {
     }
 }
 
-/// A window's input session (behaviour §8.1): one request's, kept open across requests while a hold names the window
-/// (`route.rs`), or while its `FocusOut` timer runs (`focus_timer.rs`).
+/// A window's input session (behaviour §8.1): one request's, kept open across requests only while a hold names the
+/// window (`route.rs`).
 pub struct Session {
     pub target: Window,
     synthesized_focus: bool,
@@ -188,7 +190,7 @@ pub struct Session {
     grab: Option<Window>,
     pointer: Option<Pointer>,
     pacing: Pacing,
-    /// Whether a key event went to the target in this session: the exit's settle follows keys (`focus_timer::EXIT_SETTLE`).
+    /// Whether a key event went to the target in this session: the exit's and a paste's settles follow keys (`settle.rs`).
     took_keys: bool,
 }
 
@@ -273,27 +275,6 @@ impl Session {
         Ok(session)
     }
 
-    /// The session taken back from its `FocusOut` timer for more input (`focus_timer.rs`): its synthetic focus, redirect
-    /// and time anchor are reused with no X request, except where it holds no synthetic focus because the real focus was
-    /// within the target when it opened, and the real focus has left it since: then `FocusIn` is synthesized now, as a
-    /// session opened now would. A failure ends the session, as a failed open does.
-    pub fn resume(mut self, x: &mut X11) -> Result<Session> {
-        if self.synthesized_focus {
-            return Ok(self);
-        }
-        let synthesized = match focus_is_within(x, self.target) {
-            Ok(true) => return Ok(self),
-            Ok(false) => self.focus_in(x),
-            Err(error) => Err(error),
-        };
-        if let Err(error) = synthesized {
-            self.finish(x);
-            self.end(x);
-            return Err(error);
-        }
-        Ok(self)
-    }
-
     /// The synthetic `FocusIn` (detail `Nonlinear`, mode `Normal`); the session counts it as held either way, so its end
     /// sends the `FocusOut` that answers a `FocusIn` whose delivery the error leaves unknown.
     fn focus_in(&mut self, x: &X11) -> Result<()> {
@@ -312,7 +293,7 @@ impl Session {
     }
 
     /// The end of a request's input on this session: keys and buttons still held released (best effort: the request
-    /// has already answered with any release error). The session's `FocusOut` comes later (`end`), on its timer.
+    /// has already answered with any release error). The session's `FocusOut` follows (`end`), unless a hold keeps it.
     pub fn finish(&mut self, x: &X11) {
         let (target, buttons, time) = (self.target, self.buttons, self.clock());
         self.keys
@@ -320,8 +301,8 @@ impl Session {
         self.release_buttons(x);
     }
 
-    /// Ends the session, once its `FocusOut` timer has come due or a flush has waited it out (`focus_timer.rs`):
-    /// `FocusOut` unless the real focus has since entered the target, and the per-request unredirect.
+    /// Ends the session, as its request's input ends (`route.rs`): `FocusOut` unless the real focus has since entered the
+    /// target, and the per-request unredirect.
     pub fn end(self, x: &mut X11) {
         if self.synthesized_focus && !focus_is_within(x, self.target).unwrap_or(false) {
             let focus_out = FocusOutEvent {

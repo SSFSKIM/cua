@@ -1,26 +1,27 @@
-// The FocusOut timer's proof (M4's T7; the design session's rulings, M4 pre-flight, "The timer and the settle"):
-// `--experiment focus-timer`. cua's engine answers a background request as soon as its input is sent and sends the
-// window's synthetic FocusOut 100 ms after its last input, on a timer (the engine's `focus_timer.rs`); a FocusOut sooner
-// than that after a pipelined burst is what makes Chromium cut its last keys and deliver them with the next FocusIn, out
-// of order (M0.4). Per application family that takes background keys, in three lanes (`LANES`): the engine as it ships
-// (`timer`), a control with no delay (`control`, the FocusOut and the unredirect sent as each request's input ends) and
-// the delay with the control's unredirect (`unredirect`); and, named with `--lanes`, the plain 0 ms control as an engine
-// setting (`control-0ms`, the redirect kept), judged by the wait rule as the timer is:
+// T7's proof of the background route's FocusOut and the paste's settle (M4's T7, as the design session ruled on task
+// 59's measurement, 2026-11-04): `--experiment focus-timer`, named for T7's timer, which it measured and which is gone.
+// cua's engine sends a background request's synthetic FocusOut as its input ends, before its answer, the window's
+// redirect kept: with the redirect held, a FocusOut at once cut and reordered no key on any family, idle or at twice the
+// load (task 59). A paste whose window took keys just before waits its settle before it observes its field (the
+// engine's `settle.rs`), since an observation that reads the field before those keys land refuses the paste or misses
+// its confirmation. Per application family that takes background keys, in the lanes `LANES` names: the engine as it
+// ships (`shipped`), the paste's settle at each of its measured steps (`settle-<ms>`, named with `--lanes`), and a
+// control that drops each request's redirect with its FocusOut (`control`), which cuts Chromium's keys:
 //
 // - `burst`: one window, pipelined `press_key` requests (Shift chords among them), the exact text read back;
 // - `aba`: window A, then B, then A again, pipelined, each window's exact text and its order;
 // - `paste`: keys to a window, then a `type_text` to it, pipelined, the exact text and its order.
 //
 // Each is read back from the window's own text at its caret (the caret read before the run), so a key cut and delivered
-// later, or a paste that lands before keys sent ahead of it, fails the run. The timed lanes must pass 30 consecutive
+// later, or a paste that lands before keys sent ahead of it, fails the run. The judged lanes must pass 30 consecutive
 // runs of each scenario (a miss restarts the series and is reported); the control lane must show the reorder on the
 // Chromium families (Chrome, Electron), which proves the test can see it. Then, per family and lane, an audit pass with
 // the engine's connection through xtrace and its `--stats` records: every FocusOut in the trace is attributed to the
-// request whose input started its timer (audit.mjs `attributeFocusOuts`), each synthetic-focus session is one burst's,
-// no two windows are under synthetic focus at once, and on the timer lane no FocusOut comes sooner than 100 ms after its
-// window's last input. Last, the exit drain on the bytes under test: SIGTERM straight after a burst's last answer,
-// inside the 100 ms, must leave every key of the burst in order, its FocusOut in the trace and an exit of 128 + 15;
-// SIGKILL, the documented limit, is the control that leaves the session unclosed.
+// request whose input it ends and none is left past that request's answer (audit.mjs `attributeFocusOuts`,
+// `auditVerdict`), each synthetic-focus session is one request's, and no two windows are under synthetic focus at once.
+// Last, the exit on the bytes under test: SIGTERM straight after a burst's last answer, inside the exit's settle, must
+// leave every key of the burst in order and an exit of 128 + 15 that settled first; SIGKILL, the documented limit, is
+// the control that skips the settle.
 //
 // Where it runs: only on a private X server it starts itself (`startPrivateServer`, under its watchdog and marked
 // private), with Openbox, and the harness's own Desktop on it: the run's own applications, homes and session bus, its
@@ -73,9 +74,7 @@ export function chosenScenarios(args) {
   for (const name of args.scenarios) if (!SCENARIOS.includes(name)) throw new Error(`unknown focus-timer scenario ${name}`);
   return { scenarios: SCENARIOS.filter((name) => args.scenarios.includes(name)), stops: false };
 }
-/** The engine's delay from a window's last input to its FocusOut. */
-export const DELAY_MS = 100;
-/** Consecutive passing runs a timer-lane series needs, and the runs it may take to get them. */
+/** Consecutive passing runs a judged lane's series needs, and the runs it may take to get them. */
 export const CONSECUTIVE = 30;
 export const MAX_RUNS = 60;
 export const CONTROL_RUNS = 10;
@@ -89,42 +88,41 @@ export const SIGKILL_RUNS = 3;
  */
 export const POINTER_STOP_RUNS = 10;
 export const STOP_KINDS = ['keys', 'clicks'];
+/** The paste settle's measured steps, in ms (the design session's wait rule, 2026-11-04: the smallest that passes). */
+export const SETTLE_STEPS = [25, 50, 75, 100];
 /**
- * The lanes. `timer`: the engine as it ships (session retention: a window stays redirected until the engine exits).
- * `control`: no delay, and each request's redirect dropped with its FocusOut (`--retention per-request`): on the private
- * Xvfb a FocusOut alone, the redirect kept, cuts no key (task 56: 0 of 10 runs, idle and at twice the load), while a
- * FocusOut followed by the unredirect cuts keys as M0.4 saw a FocusOut alone cut them on `:0`. `unredirect`: the
- * delay with the control's per-request unredirect, so the delay is the one thing the control changes. `control-0ms`: the
- * plain 0 ms control as an engine setting (task 59, the design session's ruling, 2026-11-04): no delay, each request's
- * FocusOut sent as its input ends, the redirect kept as the engine ships (session retention), the flag M0.4's key-pace
- * runs set and task 58 ran on `:0`. It is judged by the wait rule as the timed lanes are: if every family passes, the
- * timer can go.
+ * The lanes. `shipped`: the engine as it ships (each request's FocusOut as its input ends, session retention: a window
+ * stays redirected until the engine exits; its paste settle). `settle-<ms>`: the same with the paste's settle set to one
+ * of its measured steps (`--paste-settle-ms`), the redirect kept. `control`: each request's redirect dropped with its
+ * FocusOut (`--retention per-request`): on the private Xvfb a FocusOut with the redirect kept cuts no key (tasks 56 and
+ * 59), while a FocusOut followed by the unredirect cuts Chromium's keys and delivers them with the next FocusIn, the
+ * reorder M0.4 saw (task 58 found M0.4's own control ended its engine, and with it every redirect, before its read).
  */
-export const LANES = { timer: [], unredirect: ['--retention', 'per-request'], 'control-0ms': ['--teardown-ms', '0'], control: ['--teardown-ms', '0', '--retention', 'per-request'] };
-/** The lanes a sitting runs unless `--lanes` names others: T7's proof. */
-export const DEFAULT_LANES = ['timer', 'unredirect', 'control'];
-/** The delay from a window's last input to its FocusOut on a lane. */
-export const delayOf = (lane) => (['control', 'control-0ms'].includes(lane) ? 0 : DELAY_MS);
+export const LANES = {
+  shipped: [],
+  ...Object.fromEntries(SETTLE_STEPS.map((ms) => [`settle-${ms}`, ['--paste-settle-ms', String(ms)]])),
+  control: ['--retention', 'per-request'],
+};
+/** The lanes a sitting runs unless `--lanes` names others: T7's proof on the engine as it ships. */
+export const DEFAULT_LANES = ['shipped', 'control'];
 /** Whether a lane must pass its series (30 consecutive): every lane but `control`, which must show the reorder. */
 export const judged = (lane) => lane !== 'control';
-/** Whether a lane gets an audit pass: every lane but `unredirect`, whose FocusOuts are the timer's. */
-const audited = (lane) => lane !== 'unredirect';
 
 /**
  * The lanes a sitting runs, in the experiment's order (`LANES`), and whether it runs the stop runs: T7's lanes and the
- * stops, or with `--lanes` only those named, beside the timer lane they are compared with, and no stops (the stops prove
- * the engine as it ships, not a lane).
+ * stops, or with `--lanes` only those named, at least one of them judged, and no stops (the stops prove the engine as
+ * it ships, not a lane).
  */
 export function chosenLanes(args) {
   if (!args.lanes?.length) return { lanes: DEFAULT_LANES, stops: true };
   if (args.stopsOnly) throw new Error('--stops-only runs no lane; drop --lanes');
   for (const name of args.lanes) if (!LANES[name]) throw new Error(`unknown focus-timer lane ${name}; known: ${Object.keys(LANES).join(', ')}`);
-  if (!args.lanes.includes('timer')) throw new Error('the focus-timer lanes need timer, the engine as it ships, in the same sitting');
+  if (!args.lanes.some(judged)) throw new Error('the focus-timer lanes need a judged lane beside the control');
   return { lanes: Object.keys(LANES).filter((name) => args.lanes.includes(name)), stops: false };
 }
 /**
- * A SIGTERM run's exit after the burst's last answer, at most: its drain (at most the delay and the exit's settle), not
- * the engine's 1 s backstop (serve.rs EXIT_BACKSTOP; T7's sittings measured at most 416 ms, at twice the load).
+ * A SIGTERM run's exit after the burst's last answer, at most: the exit's settle (300 ms after the last key), not the
+ * engine's 1 s backstop (serve.rs EXIT_BACKSTOP).
  */
 export const EXIT_WITHIN_MS = 900;
 
@@ -193,13 +191,46 @@ export function seriesVerdict(oks, need = CONSECUTIVE) {
 }
 
 /**
- * The synthetic-focus sessions a scenario must leave in the trace, by window, in order: on a lane with the delay one per
- * burst (A's flushed by B, B's by A again, a window's keys by its paste); on a lane without it one per request.
+ * The synthetic-focus sessions a scenario must leave in the trace, by window, in order: one per request, on every lane,
+ * since each request's FocusOut goes as its input ends.
  */
-export function expectedSessions(name, lane, { a, b }) {
-  const { requests } = scenario(name, { a, b });
-  if (delayOf(lane) === 0) return requests.map((r) => r.input.window.id);
-  return { burst: [a], aba: [a, b, a], paste: [a, a] }[name];
+export function expectedSessions(name, { a, b }) {
+  return scenario(name, { a, b }).requests.map((r) => r.input.window.id);
+}
+
+/**
+ * An audit pass's verdict: nothing forbidden in the trace, every FocusOut attributed to its request and none deferred
+ * past that request's answer, the sessions exactly the scenarios', and the runs passing (the control's runs may
+ * reorder, which is what it is for).
+ */
+export function auditVerdict({ forbidden, attributed, sessionsOk, runsOk, lane }) {
+  const noneDeferred = attributed.attributed.every((a) => !a.deferred);
+  return forbidden.clean && attributed.clean && noneDeferred && sessionsOk && (lane === 'control' || runsOk);
+}
+
+/**
+ * A stop run's verdict. SIGTERM: the burst in order at the caret, every synthetic-focus session closed, an orderly exit
+ * (128 + 15) that ended by itself before the backstop, every answer a success, and after keys the exit's settle run (its
+ * `--stats` record; clicks get none, since the settle follows keys). SIGKILL, the control: the kill skipped the
+ * settle, so the settle check can fail.
+ */
+export function stopPasses({ signal, input = 'keys', inOrder, sessions, exit, settle, drainedMs }) {
+  if (signal === 'SIGKILL') return exit.signal === 'SIGKILL' && settle === null;
+  const closed = sessions.sessions.length > 0 && sessions.sessions.every((s) => s.closed) && sessions.problems.length === 0;
+  const settled = input === 'keys' ? settle !== null : settle === null;
+  return inOrder && closed && exit.code === 143 && settled && drainedMs < EXIT_WITHIN_MS && !exit.answers;
+}
+
+/**
+ * The paste settle's cost over a series' runs: how many pastes, the median and the largest wait, and the median time
+ * since the window's last key when the paste came (each paste's `--stats` record, `paste.settle`). Null for none.
+ */
+export function settleCost(rows) {
+  const settles = rows.map((r) => r.paste?.settle).filter(Boolean);
+  if (!settles.length) return null;
+  const waited = settles.map((s) => s.waited_ms);
+  const after = settles.map((s) => s.after_key_ms).filter((v) => typeof v === 'number');
+  return { pastes: settles.length, waited_median: tenth(median(waited)), waited_max: tenth(Math.max(...waited)), after_key_median: after.length ? tenth(median(after)) : null };
 }
 
 /** A scene's text and caret, as one offset into that text (`families.mjs` `readCaret`; a terminal's text grows at its end). */
@@ -467,7 +498,7 @@ export function keepTrace(out, name, text) {
  * A lane's series of one scenario: a judged lane to `need` consecutive passes (30; `--trials` sets fewer for a
  * development run, which its rows record), at most twice that many runs, the control lane `CONTROL_RUNS` runs. Each run
  * is a fresh engine's, as M0.4's key-pace runs were and as a service's first burst is: its first request redirects the
- * window again, and the engine's exit drains its last FocusOut.
+ * window again, and the engine's exit settles after its last key.
  */
 async function series(ctx, family, lane, name, windows) {
   const { emit, cua, need } = ctx;
@@ -511,7 +542,7 @@ async function series(ctx, family, lane, name, windows) {
   const wrongText = rows.filter((r) => !Object.values(r.exact).every(Boolean)).length;
   const missCauses = {};
   for (const r of rows) if (r.miss) missCauses[r.miss] = (missCauses[r.miss] ?? 0) + 1;
-  const out = { family, lane, scenario: name, need, ...verdict, raw: { misses: raw.misses, streak: raw.streak, reached: raw.reached }, wrong_text: wrongText, miss_causes: missCauses, ...(name === 'paste' ? { confirm_rules: confirmRules(rows) } : {}), burst_ms_median: tenth(median(rows.map((r) => r.burst_ms))), first_miss: rows.find((r) => !r.ok) ?? null };
+  const out = { family, lane, scenario: name, need, ...verdict, raw: { misses: raw.misses, streak: raw.streak, reached: raw.reached }, wrong_text: wrongText, miss_causes: missCauses, ...(name === 'paste' ? { confirm_rules: confirmRules(rows), settle: settleCost(rows) } : {}), burst_ms_median: tenth(median(rows.map((r) => r.burst_ms))), first_miss: rows.find((r) => !r.ok) ?? null };
   emit({ kind: 'focus-timer-series', ...out });
   return out;
 }
@@ -519,7 +550,7 @@ async function series(ctx, family, lane, name, windows) {
 /**
  * The audit pass of a family and lane: one run of each scenario with the engine's X connection through an xtrace proxy
  * and its `--stats` records, then the trace judged: nothing the background route forbids (`auditRequests`), every
- * FocusOut attributed to its request and none sooner than the delay on the timer lane (`attributeFocusOuts`), and the
+ * FocusOut attributed to its request and none deferred past its answer (`attributeFocusOuts`, `auditVerdict`), and the
  * synthetic-focus sessions, by window and in order, exactly the scenarios' (`expectedSessions`).
  */
 async function auditPass(ctx, family, lane, windows) {
@@ -543,22 +574,22 @@ async function auditPass(ctx, family, lane, windows) {
   }
   const trace = parseXtrace(text);
   const forbidden = auditRequests(trace);
-  const attributed = attributeFocusOuts(trace, records, { delayMs: delayOf(lane) });
+  const attributed = attributeFocusOuts(trace, records, { delayMs: 0 });
   const ids = { a: windows.a.id, b: windows.b.id };
-  const want = ctx.scenarios.flatMap((name) => expectedSessions(name, lane, ids));
+  const want = ctx.scenarios.flatMap((name) => expectedSessions(name, ids));
   const seen = attributed.sessions.map((s) => s.destination);
   const sessionsOk = JSON.stringify(seen) === JSON.stringify(want);
   // the control lane's runs may reorder, which is what it is for; its audit judges the trace and the records alone
-  const clean = forbidden.clean && attributed.clean && sessionsOk && (lane === 'control' || runs.every((r) => r.ok));
+  const clean = auditVerdict({ forbidden, attributed, sessionsOk, runsOk: runs.every((r) => r.ok), lane });
   const row = { kind: 'focus-timer-audit', family, lane, clean, runs, requests: forbidden.requests, forbidden: forbidden.forbidden.slice(0, 10), problems: attributed.problems.slice(0, 10), sessions: { expected: want, seen }, attributed: attributed.attributed, deferred: attributed.attributed.filter((a) => a.deferred).length };
   emit(row);
   return row;
 }
 
 /**
- * The exit drain: a burst to a fresh engine through the proxy, then `signal` straight after its last answer, inside the
- * delay. SIGTERM must leave every key in order, the session closed by its FocusOut after the keys, the engine's exit
- * record (`cause` exit, the full delay waited) and exit code 143; SIGKILL leaves the session unclosed.
+ * The exit: a burst to a fresh engine through the proxy, then `signal` straight after its last answer, inside the exit's
+ * settle (`stopPasses`). SIGTERM must leave every key in order, each request's session closed by its FocusOut, the
+ * exit's settle run after keys and exit code 143; SIGKILL, the control, skips the settle.
  */
 async function stopRun(ctx, family, signal, windows, i, kind = 'keys') {
   const { desktop, oracle, emit, cua } = ctx;
@@ -590,17 +621,13 @@ async function stopRun(ctx, family, signal, windows, i, kind = 'keys') {
   }
   const after = await settledRead(read, { want: grown(before, expected.a) });
   const sessions = focusSessions(parseXtrace(text));
-  const exitRecord = records.find((r) => r.cause === 'exit') ?? null;
   const inOrder = insertedAt(before.text, before.caret, expected.a, after.text);
-  const closedSession = sessions.sessions.length === 1 && sessions.sessions[0].closed && sessions.problems.length === 0;
-  // drained by its own exit, before the 1 s backstop that would end the process at once
-  const ok =
-    signal === 'SIGTERM'
-      ? inOrder && closedSession && exit.code === 143 && exitRecord !== null && exitRecord.after_input_ms >= DELAY_MS && drained < EXIT_WITHIN_MS && !exit.answers
-      : !closedSession && sessions.sessions.length === 1;
-  const got = typeof after.text === 'string' && typeof before.text === 'string' ? after.text.slice(before.caret ?? 0, (before.caret ?? 0) + after.text.length - before.text.length) : null;
   const settle = settles[0] ?? null;
-  const row = { kind: 'focus-timer-stop', family, signal, input: kind, trial: i, ok, tail_at_start: tail, exit_settle_ms: settle?.waited_ms ?? null, in_order: inOrder, got, session_closed: closedSession, session_problems: sessions.problems, exit, exit_record: exitRecord, signalled_after_answer_ms: Math.round(gap * 10) / 10, exited_after_answer_ms: Math.round(drained * 10) / 10 };
+  // settled by its own exit, before the 1 s backstop that would end the process at once
+  const ok = stopPasses({ signal, input: kind, inOrder, sessions, exit, settle, drainedMs: drained });
+  const got = typeof after.text === 'string' && typeof before.text === 'string' ? after.text.slice(before.caret ?? 0, (before.caret ?? 0) + after.text.length - before.text.length) : null;
+  const closedSessions = sessions.sessions.filter((s) => s.closed).length;
+  const row = { kind: 'focus-timer-stop', family, signal, input: kind, trial: i, ok, tail_at_start: tail, exit_settle_ms: settle?.waited_ms ?? null, in_order: inOrder, got, sessions: sessions.sessions.length, sessions_closed: closedSessions, session_problems: sessions.problems, exit, focus_outs: records.length, signalled_after_answer_ms: Math.round(gap * 10) / 10, exited_after_answer_ms: Math.round(drained * 10) / 10 };
   emit(row);
   return row;
 }
@@ -633,7 +660,7 @@ function useDisplay(display) {
   process.env.DISPLAY = display;
 }
 
-/** `--experiment focus-timer`: every family's lanes, audits and the exit drain; `{md, complete, failed, ending}`. */
+/** `--experiment focus-timer`: every family's lanes, audits and the exit; `{md, complete, failed, ending}`. */
 export async function runFocusTimer(args, { emit, run, startLoad }) {
   // from here on the spawner refuses every display this process did not create, the person's included (xspawn.mjs)
   delete process.env[LIVE_RUN];
@@ -678,7 +705,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
         const cutsKeys = CHROMIUM.includes(family) && stops;
         const lane = async (name) => {
           for (const scenarioName of ctx.scenarios) results.series.push(await series(ctx, family, name, scenarioName, windows));
-          if (audited(name)) results.audits.push(await auditPass(ctx, family, name, windows));
+          results.audits.push(await auditPass(ctx, family, name, windows));
         };
         if (!args.stopsOnly) for (const name of lanes.filter((l) => l !== 'control')) await lane(name);
         if (cutsKeys) {
@@ -713,9 +740,9 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
 }
 
 /**
- * The experiment's verdict from its results: every timer series reached its consecutive passes, every Chromium control
- * series showed the reorder, every audit is clean, every SIGTERM run drained and every SIGKILL run did not; a family
- * that could not be opened fails it. Returns the summary's lines and the failures.
+ * The experiment's verdict from its results: every judged series reached its consecutive passes, every Chromium control
+ * series showed the reorder, every audit is clean, every SIGTERM run kept its order and settled, every SIGKILL run did
+ * not settle; a family that could not be opened fails it. Returns the summary's lines and the failures.
  */
 export function focusTimerVerdict({ series: all, audits, stops, skipped }, { families, stopsOnly = false }) {
   const failed = [];
@@ -724,13 +751,13 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped }, { fam
     let verdict;
     if (judged(s.lane)) {
       const need = s.need ?? CONSECUTIVE;
-      const name = `${s.family} ${s.scenario}${s.lane === 'timer' ? '' : ` (${s.lane})`}`;
+      const name = `${s.family} ${s.scenario}${s.lane === 'shipped' ? '' : ` (${s.lane})`}`;
       verdict = s.reached ? `${need} consecutive` : '**not reached**';
       if (!s.reached) failed.push(`${name}: no ${need} consecutive passing runs in ${s.runs}`);
       if (need < CONSECUTIVE) failed.push(`${name}: a development series of ${need}, not the ${CONSECUTIVE} the proof needs`);
     } else {
       const required = CHROMIUM.includes(s.family);
-      verdict = s.misses > 0 ? `fails without the delay (${s.misses}/${s.runs}; the text wrong in ${s.wrong_text ?? '?'})` : required ? '**shows nothing**' : 'no reorder (not required)';
+      verdict = s.misses > 0 ? `fails with each request unredirected (${s.misses}/${s.runs}; the text wrong in ${s.wrong_text ?? '?'})` : required ? '**shows nothing**' : 'no reorder (not required)';
       if (required && s.misses === 0) failed.push(`${s.family} ${s.scenario}: the control lane showed no reorder in ${s.runs} runs, so the test cannot see one`);
     }
     // a timed lane's misses by cause: the retry guard refusing after an earlier miss is not a miss of its own
@@ -753,7 +780,7 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped }, { fam
           const rawGood = rows.filter((r) => r.ok && !r.tail_at_start).length;
           md.push(`| ${family} | ${signal} | ${input} | ${rows.length} | ${good}/${rows.length} | ${rawGood}/${rows.length} | ${tenth(median(rows.map((r) => r.exited_after_answer_ms)))} |`);
           const what = input === 'keys' ? 'the burst' : 'the clicks';
-          if (good !== rows.length) failed.push(`${family} ${signal}${input === 'keys' ? '' : ` (${input})`}: ${rows.length - good} of ${rows.length} runs ${signal === 'SIGTERM' ? `did not drain ${what} and its FocusOut` : 'closed the session, so the drain check is blind'}`);
+          if (good !== rows.length) failed.push(`${family} ${signal}${input === 'keys' ? '' : ` (${input})`}: ${rows.length - good} of ${rows.length} runs ${signal === 'SIGTERM' ? `did not keep ${what} in order through the exit's settle` : 'settled, so the settle check is blind'}`);
         }
       }
     }

@@ -1,7 +1,10 @@
-//! The `FocusOut` timer, live (M4's T7; `src/focus_timer.rs`): the engine binary over its wire, against bare windows of
+//! A background session's `FocusOut` and the paste's settle, live (M4's T7 as the design session ruled on task 59's
+//! measurement, 2026-11-04; `src/route.rs`, `src/settle.rs`): the engine binary over its wire, against bare windows of
 //! the test's own that record every key and focus event they receive and when, on a display with no window manager (the
-//! CI gate's Xvfb). The release workflow runs these on the shipped asset (`CUA_ENGINE_BIN`), so the exit drain after
-//! SIGTERM is proven on the bytes that ship.
+//! CI gate's Xvfb). Each background request's `FocusOut` goes as its input ends, before its answer, the window's
+//! redirect kept; a paste after keys to its window waits until its settle has passed since the last of them; the exit
+//! releases what it holds and settles before its redirects go. The release workflow runs these on the shipped asset
+//! (`CUA_ENGINE_BIN`), so the exit is proven on the bytes that ship.
 //!
 //!   xvfb-run -a dbus-run-session --dbus-daemon="$PWD/tests/dbus-daemon-quiet" -- cargo test --features live -- --test-threads 1
 
@@ -22,12 +25,16 @@ use x11rb::protocol::xproto::{
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
-/// The engine's delay from a window's last input to its `FocusOut` (`--teardown-ms`'s default).
-const DELAY: Duration = Duration::from_millis(100);
-/// The exit's settle after the last input to a window whose redirect it drops (`--exit-settle-ms`'s default).
+/// The exit's settle after the last key to a window whose redirect it drops (`--exit-settle-ms`'s default).
 const EXIT_SETTLE: Duration = Duration::from_millis(300);
-/// The slack a `FocusOut` measured at the probe may show below the delay: the last key's own trip to the probe.
+/// The paste's settle these tests set (`--paste-settle-ms`), well above a failing paste's own work on a bare window, so
+/// a wait shows apart from that work whatever the shipped value (`settle::PASTE_SETTLE`).
+const PASTE_SETTLE: Duration = Duration::from_millis(150);
+/// The slack a time measured at the probe may show: an event's own trip to the probe, and the probe's poll.
 const SLACK: Duration = Duration::from_millis(10);
+/// What a request answered with no wait takes here at most, its own X and bus round trips: far under every wait the
+/// tests tell apart (the settles, a teardown set for measurement, 0.3.0's 100 ms).
+const PROMPT: Duration = Duration::from_millis(50);
 /// How long the probes wait for events still on their way.
 const QUIET: Duration = Duration::from_millis(400);
 
@@ -97,7 +104,7 @@ impl Probe {
                 &aux,
             )
             .unwrap();
-            let wm_class = format!("probe\0cua-focus-timer-{name}\0");
+            let wm_class = format!("probe\0cua-focus-out-{name}\0");
             conn.change_property8(
                 PropMode::REPLACE,
                 id,
@@ -167,9 +174,17 @@ fn record<T>(probe: &Probe, act: impl FnOnce() -> T) -> (T, Vec<Seen>) {
             probe.poll(&mut seen);
             seen
         });
+        // the watcher told to end however `act` ends, a panic included, so a failing test fails instead of hanging
+        struct Ends<'a>(&'a std::sync::atomic::AtomicBool);
+        impl Drop for Ends<'_> {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let ends = Ends(&done);
         let result = act();
         sleep(QUIET);
-        done.store(true, std::sync::atomic::Ordering::SeqCst);
+        drop(ends);
         (result, watcher.join().unwrap())
     })
 }
@@ -199,6 +214,21 @@ fn all_ok(answers: &[(Value, Instant)]) {
     }
 }
 
+/// A duration as a flag's milliseconds.
+fn ms(d: Duration) -> String {
+    d.as_millis().to_string()
+}
+
+/// One session per request: each request's `FocusIn`, its keys, then its `FocusOut`, `n` times.
+fn per_request(keys_each: usize, n: usize) -> Vec<Kind> {
+    burst(keys_each).repeat(n)
+}
+
+/// When each `FocusOut` was read.
+fn focus_outs(seen: &[Seen]) -> Vec<Instant> {
+    seen.iter().filter(|s| s.kind == Kind::FocusOut).map(|s| s.at).collect()
+}
+
 /// The time from the last key event before `focus_out` to `focus_out`.
 fn after_last_key(seen: &[Seen], focus_out: usize) -> Duration {
     let last = seen[..focus_out]
@@ -210,7 +240,7 @@ fn after_last_key(seen: &[Seen], focus_out: usize) -> Duration {
 }
 
 #[test]
-fn a_burst_answers_before_its_one_focus_out_which_follows_its_last_key_by_the_delay() {
+fn each_request_s_focus_out_follows_its_own_keys_before_its_answer() {
     let probe = Probe::open("burst", 0);
     let mut engine = Engine::start();
     let target = probe.target();
@@ -221,20 +251,21 @@ fn a_burst_answers_before_its_one_focus_out_which_follows_its_last_key_by_the_de
     all_ok(&answers);
     assert_eq!(
         kinds(&seen),
-        burst(10),
-        "one FocusIn and one FocusOut around the whole burst"
+        per_request(1, 10),
+        "one session per request: its FocusIn, its key, its FocusOut"
     );
-    let focus_out = seen.len() - 1;
-    let waited = after_last_key(&seen, focus_out);
-    assert!(waited >= DELAY - SLACK && waited < DELAY * 3, "{waited:?}");
-    assert!(
-        answers[9].1 < seen[focus_out].at,
-        "the last answer came before the FocusOut"
-    );
+    // the probe reads each event at most a poll after it arrived, on a thread apart from the answers'
+    for (i, (out, (_, answered))) in focus_outs(&seen).iter().zip(&answers).enumerate() {
+        assert!(
+            *out <= *answered + SLACK,
+            "request {i}'s FocusOut came {:?} after its answer",
+            out.saturating_duration_since(*answered)
+        );
+    }
 }
 
 #[test]
-fn input_to_another_window_waits_out_the_first_window_s_delay_then_its_focus_out_goes_first() {
+fn input_to_another_window_waits_for_nothing_and_never_finds_two_windows_focused() {
     let ab = Probe::open_all(&[("a", 0), ("b", 400)]);
     let mut engine = Engine::start();
     let (ta, tb) = (ab.target_of(0), ab.target_of(1));
@@ -249,13 +280,14 @@ fn input_to_another_window_waits_out_the_first_window_s_delay_then_its_focus_out
     let at = |window: Window| -> Vec<Kind> {
         kinds(&seen.iter().copied().filter(|s| s.window == window).collect::<Vec<_>>())
     };
-    let mut twice = burst(3);
-    twice.extend(burst(3));
-    assert_eq!(at(ab.ids[0]), twice, "a, then a again: two sessions");
-    assert_eq!(at(ab.ids[1]), burst(3));
-    // never two windows under a synthetic focus at once, and each FocusOut the delay after its window's last key
+    assert_eq!(
+        at(ab.ids[0]),
+        per_request(1, 6),
+        "a, then a again: a session per request"
+    );
+    assert_eq!(at(ab.ids[1]), per_request(1, 3));
     let mut open: Option<Window> = None;
-    for (i, s) in seen.iter().enumerate() {
+    for s in &seen {
         match s.kind {
             Kind::FocusIn => {
                 assert_eq!(open, None, "a FocusIn while another window held the focus: {seen:?}");
@@ -264,18 +296,26 @@ fn input_to_another_window_waits_out_the_first_window_s_delay_then_its_focus_out
             Kind::FocusOut => {
                 assert_eq!(open, Some(s.window));
                 open = None;
-                let waited = after_last_key(&seen, i);
-                assert!(waited >= DELAY - SLACK, "flushed before the delay: {waited:?}");
             }
             _ => assert_eq!(open, Some(s.window), "a key outside its window's session"),
         }
     }
+    // the switch from a to b and back waits for nothing: no FocusOut is left to wait out
+    for i in [3, 6] {
+        let gap = answers[i].1 - answers[i - 1].1;
+        assert!(
+            gap < PROMPT,
+            "request {i}, to the other window, answered {gap:?} after the one before it"
+        );
+    }
 }
 
+/// A paste right after a key to its own window waits until its settle has passed since that key, before it observes.
+/// The bare window has no accessible field, so the paste then fails, sending nothing: its answer marks the wait's end.
 #[test]
-fn a_paste_waits_out_its_own_window_s_delay_and_ends_its_session_before_it_observes() {
+fn a_paste_after_a_key_to_its_window_waits_out_the_settle_since_that_key() {
     let probe = Probe::open("paste", 0);
-    let mut engine = Engine::start();
+    let mut engine = Engine::start_with(&["--paste-settle-ms", &ms(PASTE_SETTLE)]);
     let target = probe.target();
     let (answers, seen) = record(&probe, || {
         engine.pipeline(&[
@@ -285,30 +325,61 @@ fn a_paste_waits_out_its_own_window_s_delay_and_ends_its_session_before_it_obser
         engine.answers(2)
     });
     assert_eq!(answers[0].0["ok"], json!(true));
-    let focus_out = seen
-        .iter()
-        .position(|s| s.kind == Kind::FocusOut)
-        .expect("the key's FocusOut");
-    assert_eq!(kinds(&seen[..=focus_out]), burst(1));
-    assert!(after_last_key(&seen, focus_out) >= DELAY - SLACK);
-    // the bare window has no accessible field, so the paste itself fails; its flush came first: the paste's answer waited
-    // out the key's delay (the probe's own read times lag arrival by up to a poll, so they cannot order it against an
-    // answer read on another thread)
+    assert_eq!(
+        answers[1].0["ok"],
+        json!(false),
+        "no field to paste into: {}",
+        answers[1].0
+    );
+    assert_eq!(
+        kinds(&seen),
+        burst(1),
+        "the key's session, ended before the paste; the paste sent nothing"
+    );
     let waited = answers[1].1 - answers[0].1;
     assert!(
-        waited >= DELAY - SLACK,
-        "the paste answered {waited:?} after the key: it did not wait for the key's FocusOut"
+        waited >= PASTE_SETTLE - SLACK,
+        "the paste answered {waited:?} after the key: it did not wait out the settle"
+    );
+    assert!(waited < PASTE_SETTLE + PROMPT * 2, "{waited:?}");
+}
+
+/// The settle follows the paste's own window's keys, and only while they are recent: a paste after keys to another
+/// window, or after its own window's settle has passed, waits for nothing.
+#[test]
+fn a_paste_waits_for_nothing_after_keys_to_another_window_or_once_its_settle_has_passed() {
+    let ab = Probe::open_all(&[("a", 0), ("b", 400)]);
+    let mut engine = Engine::start_with(&["--paste-settle-ms", &ms(PASTE_SETTLE)]);
+    let (ta, tb) = (ab.target_of(0), ab.target_of(1));
+    let paste_after = |engine: &mut Engine, key_to: &Value, pause: Duration| {
+        engine
+            .request("press_key", json!({"window": key_to, "key": "a"}))
+            .unwrap();
+        sleep(pause);
+        let started = Instant::now();
+        let answer = engine.request("type_text", json!({"window": ta, "text": "x"}));
+        assert!(answer.is_err(), "no field to paste into: {answer:?}");
+        started.elapsed()
+    };
+    let other = paste_after(&mut engine, &tb, Duration::ZERO);
+    assert!(other < PROMPT, "after a key to the other window: {other:?}");
+    let settled = paste_after(&mut engine, &ta, PASTE_SETTLE);
+    assert!(settled < PROMPT, "after its own window's settle: {settled:?}");
+    let recent = paste_after(&mut engine, &ta, Duration::ZERO);
+    assert!(
+        recent >= PASTE_SETTLE - SLACK,
+        "the control, a key just before: {recent:?}"
     );
 }
 
 #[test]
-fn a_held_key_keeps_its_session_open_and_its_release_starts_the_timer() {
+fn a_held_key_keeps_its_session_open_and_its_release_ends_it_at_once() {
     let probe = Probe::open("hold", 0);
     let mut engine = Engine::start();
     let target = probe.target();
     let (held, mut seen) = record(&probe, || {
         let held = engine.request("key_down", json!({"window": target, "key": "shift"}));
-        sleep(DELAY * 2);
+        sleep(PROMPT * 4);
         held
     });
     held.unwrap();
@@ -326,26 +397,37 @@ fn a_held_key_keeps_its_session_open_and_its_release_starts_the_timer() {
         kinds(&seen),
         [Kind::FocusIn, Kind::KeyPress, Kind::KeyRelease, Kind::FocusOut]
     );
-    assert!(after_last_key(&seen, 3) >= DELAY - SLACK);
+    assert!(after_last_key(&seen, 3) < PROMPT, "{:?}", after_last_key(&seen, 3));
 }
 
+/// `--teardown-ms`, a measurement setting (0.3.0's wait before each `FocusOut`, the vendor's 100 ms there): each
+/// request waits it out on the request path, so its `FocusOut` still comes before its answer.
 #[test]
-fn with_no_delay_each_request_s_focus_out_follows_its_own_keys() {
-    let probe = Probe::open("no-delay", 0);
-    let mut engine = Engine::start_with(&["--teardown-ms", "0"]);
+fn a_teardown_set_for_measurement_is_waited_out_before_each_focus_out_and_its_answer() {
+    let teardown = Duration::from_millis(80);
+    let probe = Probe::open("teardown", 0);
+    let mut engine = Engine::start_with(&["--teardown-ms", &ms(teardown)]);
     let target = probe.target();
     let (answers, seen) = record(&probe, || {
         engine.pipeline(&keys(&target, 3));
         engine.answers(3)
     });
     all_ok(&answers);
-    assert_eq!(kinds(&seen), [burst(1), burst(1), burst(1)].concat());
+    assert_eq!(kinds(&seen), per_request(1, 3));
+    for (i, _) in seen.iter().enumerate().filter(|(_, s)| s.kind == Kind::FocusOut) {
+        let waited = after_last_key(&seen, i);
+        assert!(waited >= teardown - SLACK, "{waited:?}");
+    }
+    for (out, (_, answered)) in focus_outs(&seen).iter().zip(&answers) {
+        assert!(*out <= *answered + SLACK, "a FocusOut after its answer");
+    }
+    assert!(answers[2].1 - answers[1].1 >= teardown - SLACK);
 }
 
 /// What a stopped engine left: what the probe received, the exit (with when it was seen) and when it was stopped.
 type Stopped = (Vec<Seen>, Option<(std::process::ExitStatus, Instant)>, Instant);
 
-/// A burst, then `stop` straight after its last answer, inside the delay.
+/// A burst, then `stop` straight after its last answer, inside the exit's settle.
 fn stopped_after_a_burst(stop: impl FnOnce(&mut Engine)) -> Stopped {
     let probe = Probe::open("stop", 0);
     let mut engine = Engine::start();
@@ -358,12 +440,12 @@ fn stopped_after_a_burst(stop: impl FnOnce(&mut Engine)) -> Stopped {
         (answers, stopped, engine.exit_within(Duration::from_secs(5)))
     });
     all_ok(&answers);
-    assert!(stopped - answers[9].1 < DELAY / 2, "stopped inside the delay");
+    assert!(stopped - answers[9].1 < EXIT_SETTLE / 4, "stopped inside the settle");
     (seen, exited, stopped)
 }
 
 #[test]
-fn sigterm_inside_the_delay_drains_the_focus_out_then_exits() {
+fn sigterm_straight_after_a_burst_waits_the_settle_after_its_last_key_then_exits() {
     let (seen, exited, stopped) = stopped_after_a_burst(|engine| engine.signal(Signal::TERM));
     let (status, at) = exited.expect("the engine exits");
     use std::os::unix::process::ExitStatusExt;
@@ -372,30 +454,23 @@ fn sigterm_inside_the_delay_drains_the_focus_out_then_exits() {
         (Some(143), None),
         "an orderly exit: 128 + SIGTERM"
     );
-    assert_eq!(kinds(&seen), burst(10), "every key, in order, then the FocusOut");
-    let focus_out = seen.len() - 1;
-    assert!(after_last_key(&seen, focus_out) >= DELAY - SLACK);
-    // the engine's exit waits for the server to handle its FocusOut; the probe's read time lags arrival by up to a poll
-    assert!(seen[focus_out].at <= at + SLACK, "the FocusOut before the exit");
-    assert!(
-        at - stopped < EXIT_SETTLE + DELAY,
-        "the drain is bounded by the exit's settle: {:?}",
-        at - stopped
+    assert_eq!(
+        kinds(&seen),
+        per_request(1, 10),
+        "every key, in order, each with its FocusOut"
     );
-}
-
-#[test]
-fn the_exit_waits_the_settle_after_the_last_input_to_a_window_it_holds_redirected() {
-    let (seen, exited, stopped) = stopped_after_a_burst(|engine| engine.signal(Signal::TERM));
-    let (_, at) = exited.expect("the engine exits");
     let last_key = seen[seen.len() - 2].at;
-    // the probe reads the last key at most a poll after it arrived, so the exit is measured from the stop as well
+    // the probe reads the last key at most a poll after it arrived, so the exit is bounded from the stop as well
     assert!(
         at - last_key >= EXIT_SETTLE - SLACK * 2,
         "the redirect stays until the settle has passed: {:?}",
         at - last_key
     );
-    assert!(at - stopped >= EXIT_SETTLE - DELAY / 2, "{:?}", at - stopped);
+    assert!(
+        at - stopped < EXIT_SETTLE + PROMPT,
+        "the settle alone: {:?}",
+        at - stopped
+    );
 }
 
 #[test]
@@ -413,11 +488,7 @@ fn clicks_alone_hold_the_exit_back_for_no_settle() {
     engine.signal(Signal::TERM);
     let (status, at) = engine.exit_within(Duration::from_secs(5)).expect("the engine exits");
     assert_eq!(status.code(), Some(143));
-    assert!(
-        at - stopped < DELAY + EXIT_SETTLE / 4,
-        "the FocusOut drain alone: {:?}",
-        at - stopped
-    );
+    assert!(at - stopped < PROMPT, "at once: {:?}", at - stopped);
 }
 
 #[test]
@@ -428,19 +499,19 @@ fn input_older_than_the_settle_holds_the_exit_back_for_nothing() {
     engine
         .request("press_key", json!({"window": target, "key": "a"}))
         .unwrap();
-    sleep(EXIT_SETTLE + DELAY);
+    sleep(EXIT_SETTLE + PROMPT);
     let stopped = Instant::now();
     engine.signal(Signal::TERM);
     let (status, at) = engine.exit_within(Duration::from_secs(5)).expect("the engine exits");
     assert_eq!(status.code(), Some(143));
-    assert!(at - stopped < DELAY, "at once: {:?}", at - stopped);
+    assert!(at - stopped < PROMPT, "at once: {:?}", at - stopped);
 }
 
 #[test]
-fn an_answer_stuck_in_a_full_pipe_does_not_hold_the_exit_s_drain_back() {
+fn an_answer_stuck_in_a_full_pipe_does_not_hold_the_exit_back() {
     // the REPL host freezes the trusted worker, the engine's reader, before it tells the engine to stop
-    // (src/repl-host/kernel-child.mjs stopProcessTree): answers it can no longer read fill the pipe, and the burst's
-    // FocusOut must still follow from the drain, not be cut by the backstop that ends a wedged exit 1 s after the signal
+    // (src/repl-host/kernel-child.mjs stopProcessTree): answers it can no longer read fill the pipe, and the exit must
+    // still come from the settle, not from the backstop that ends a wedged exit 1 s after the signal
     let probe = Probe::open("stuck", 0);
     let mut engine = Engine::start_unread();
     let target = probe.target();
@@ -449,31 +520,30 @@ fn an_answer_stuck_in_a_full_pipe_does_not_hold_the_exit_s_drain_back() {
     requests.extend(std::iter::repeat_n(("capabilities", json!({})), 4000));
     let ((stopped, exited), seen) = record(&probe, || {
         engine.pipeline(&requests);
-        sleep(DELAY / 2);
+        sleep(PROMPT);
         engine.signal(Signal::TERM);
         let stopped = Instant::now();
         (stopped, engine.exit_within(Duration::from_secs(5)))
     });
     let (status, at) = exited.expect("the engine exits");
     assert_eq!(status.code(), Some(143), "an orderly exit: 128 + SIGTERM");
-    assert_eq!(kinds(&seen), burst(10), "every key, then the FocusOut from the drain");
+    assert_eq!(kinds(&seen), per_request(1, 10), "every key, each with its FocusOut");
     assert!(
-        at - stopped < DELAY + EXIT_SETTLE + Duration::from_millis(400),
-        "ended by its drain, not by the backstop: {:?}",
+        at - stopped < EXIT_SETTLE + Duration::from_millis(400),
+        "ended by its settle, not by the backstop: {:?}",
         at - stopped
     );
 }
 
 #[test]
-fn stdin_closing_inside_the_delay_drains_the_focus_out_too() {
+fn stdin_closing_straight_after_a_burst_exits_in_order_too() {
     let (seen, exited, _) = stopped_after_a_burst(Engine::close_stdin);
     assert_eq!(exited.expect("the engine exits").0.code(), Some(0));
-    assert_eq!(kinds(&seen), burst(10));
-    assert!(after_last_key(&seen, seen.len() - 1) >= DELAY - SLACK);
+    assert_eq!(kinds(&seen), per_request(1, 10));
 }
 
 #[test]
-fn a_second_sigterm_carries_the_drain_on_to_its_focus_out() {
+fn a_second_sigterm_carries_the_settle_on() {
     // the REPL host's SIGTERM may follow the owned group's (the design session's ruling, M4 T7b)
     let (seen, exited, stopped) = stopped_after_a_burst(|engine| {
         engine.signal(Signal::TERM);
@@ -482,16 +552,16 @@ fn a_second_sigterm_carries_the_drain_on_to_its_focus_out() {
     });
     let (status, at) = exited.expect("the engine exits");
     assert_eq!(status.code(), Some(143));
-    assert_eq!(kinds(&seen), burst(10), "every key, then the FocusOut");
+    assert_eq!(kinds(&seen), per_request(1, 10));
     assert!(
-        at - stopped >= EXIT_SETTLE - DELAY / 2,
-        "the drain ran on: {:?}",
+        at - stopped >= EXIT_SETTLE * 2 / 3,
+        "the settle ran on: {:?}",
         at - stopped
     );
 }
 
 #[test]
-fn a_second_sigint_ends_the_drain_at_once() {
+fn a_second_sigint_ends_the_settle_at_once() {
     let (seen, exited, stopped) = stopped_after_a_burst(|engine| {
         engine.signal(Signal::INT);
         sleep(Duration::from_millis(5));
@@ -499,8 +569,38 @@ fn a_second_sigint_ends_the_drain_at_once() {
     });
     let (status, at) = exited.expect("the engine exits");
     assert_eq!(status.code(), Some(130));
-    assert!(at - stopped < DELAY / 2, "at once: {:?}", at - stopped);
-    assert_eq!(kinds(&seen), &burst(10)[..21], "cut before the FocusOut");
+    assert!(at - stopped < PROMPT, "at once: {:?}", at - stopped);
+    assert_eq!(
+        kinds(&seen),
+        per_request(1, 10),
+        "each request's FocusOut had gone with it"
+    );
+}
+
+/// Inside a hold, where a session spans requests: SIGTERM releases the key and ends the session with its `FocusOut`;
+/// SIGKILL, the documented limit, cuts both, the control that shows the first check can fail.
+#[test]
+fn inside_a_hold_sigterm_ends_the_session_and_sigkill_cuts_it() {
+    for (signal, expected) in [
+        (
+            Signal::TERM,
+            vec![Kind::FocusIn, Kind::KeyPress, Kind::KeyRelease, Kind::FocusOut],
+        ),
+        (Signal::KILL, vec![Kind::FocusIn, Kind::KeyPress]),
+    ] {
+        let probe = Probe::open("held-stop", 0);
+        let mut engine = Engine::start();
+        let target = probe.target();
+        let (exited, seen) = record(&probe, || {
+            engine
+                .request("key_down", json!({"window": target, "key": "shift"}))
+                .unwrap();
+            engine.signal(signal);
+            engine.exit_within(Duration::from_secs(5))
+        });
+        assert!(exited.is_some(), "{signal:?}: the engine exits");
+        assert_eq!(kinds(&seen), expected, "{signal:?}");
+    }
 }
 
 fn keycode_of(conn: &RustConnection, keysym: u32) -> u8 {
@@ -621,13 +721,4 @@ fn an_exit_ends_a_drag_handle_as_its_end_would_where_the_model_left_the_pointer(
         "released where the model left the pointer"
     );
     assert!(at - stopped < Duration::from_millis(500), "at once: {:?}", at - stopped);
-}
-
-#[test]
-fn sigkill_cuts_the_drain_and_no_focus_out_follows() {
-    // the documented limit, and the control that shows the FocusOut checks above can fail
-    let (seen, exited, _) = stopped_after_a_burst(|engine| engine.signal(Signal::KILL));
-    use std::os::unix::process::ExitStatusExt;
-    assert_eq!(exited.expect("the engine exits").0.signal(), Some(9));
-    assert_eq!(kinds(&seen), &burst(10)[..21]);
 }

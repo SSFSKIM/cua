@@ -19,7 +19,6 @@ mod families;
 #[cfg(test)]
 mod fault;
 mod field;
-mod focus_timer;
 mod held;
 mod identity;
 mod input;
@@ -30,6 +29,7 @@ mod readiness;
 mod resolve;
 mod route;
 mod serve;
+mod settle;
 mod shim;
 mod shm;
 mod stray;
@@ -38,7 +38,7 @@ mod tree;
 mod wire;
 mod x11;
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use engine::{Config, Engine};
 use readiness::CaptureWait;
@@ -47,7 +47,7 @@ use x11::Retention;
 const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop shared|dedicated]
        [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
-       [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
+       [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
        [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
        [--targets-wait-ms <ms>] [--stats]
        cua-engine launcher-shim <parent pid> <program> [args...]
@@ -62,8 +62,8 @@ fn version() -> String {
 }
 
 /// The defaults: the tree read's window as M0 chose it (Design, Observation); session retention; no wait after a
-/// redirect before input and no key pacing, with the vendor's 100 ms before `FocusOut` (Design, Retention and the
-/// fixed waits); a capture's wait is the readiness rule.
+/// redirect before input, no key pacing and no wait before `FocusOut` (M4's T7 as ruled on task 59), the exit's and a
+/// paste's settles after keys (`settle.rs`); a capture's wait is the readiness rule.
 fn default_config() -> Config {
     Config {
         window: tree::WINDOW,
@@ -72,8 +72,9 @@ fn default_config() -> Config {
         capture_wait: CaptureWait::Damage,
         pacing: input::Pacing {
             key: Duration::ZERO,
-            teardown: Duration::from_millis(100),
-            exit_settle: focus_timer::EXIT_SETTLE,
+            teardown: Duration::ZERO,
+            exit_settle: settle::EXIT_SETTLE,
+            paste_settle: settle::PASTE_SETTLE,
             drag: None,
         },
         stats: false,
@@ -182,6 +183,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             }
             "--teardown-ms" => cfg.pacing.teardown = Duration::from_millis(number(value, arg)?),
             "--exit-settle-ms" => cfg.pacing.exit_settle = Duration::from_millis(number(value, arg)?),
+            "--paste-settle-ms" => cfg.pacing.paste_settle = Duration::from_millis(number(value, arg)?),
             "--key-pace-ms" => cfg.pacing.key = Duration::from_millis(number(value, arg)?),
             "--drag-step-ms" => fixed_drag(&mut cfg).step = Duration::from_millis(number(value, arg)?),
             "--drag-step-us" => fixed_drag(&mut cfg).step = Duration::from_micros(number(value, arg)?),
@@ -255,8 +257,7 @@ fn main() {
     std::process::exit(code);
 }
 
-/// The engine as the server loop drives it (`serve.rs`): each line parsed and handled (behaviour §1), its `FocusOut`
-/// timers between requests.
+/// The engine as the server loop drives it (`serve.rs`): each line parsed and handled (behaviour §1).
 impl serve::Server for Engine {
     fn respond(&mut self, line: &str) -> Option<String> {
         let response = match wire::parse_line(line) {
@@ -269,14 +270,6 @@ impl serve::Server for Engine {
 
     fn after_response(&mut self) {
         Engine::after_response(self);
-    }
-
-    fn next_due(&self) -> Option<Instant> {
-        Engine::next_due(self)
-    }
-
-    fn tick(&mut self) {
-        Engine::tick(self);
     }
 }
 
@@ -316,18 +309,37 @@ mod tests {
         assert_eq!(dedicated.desktop, engine::DesktopMode::Dedicated);
         assert_eq!(
             (cfg.settle, cfg.pacing.key, cfg.pacing.teardown),
-            (Duration::ZERO, Duration::ZERO, Duration::from_millis(100)),
-            "no input settle and no key pacing; the 100 ms before FocusOut stays"
+            (Duration::ZERO, Duration::ZERO, Duration::ZERO),
+            "no input settle, no key pacing and no wait before FocusOut: it goes as each request's input ends"
         );
         assert_eq!(
-            cfg.pacing.exit_settle,
-            focus_timer::EXIT_SETTLE,
-            "the exit settles after recent input"
+            (cfg.pacing.exit_settle, cfg.pacing.paste_settle),
+            (settle::EXIT_SETTLE, settle::PASTE_SETTLE),
+            "the exit and a paste settle after recent keys"
         );
-        let Ok(Command::Server(measured)) = parse_args(&args(&["server", "--exit-settle-ms", "250"])) else {
+        let Ok(Command::Server(measured)) = parse_args(&args(&[
+            "server",
+            "--exit-settle-ms",
+            "250",
+            "--paste-settle-ms",
+            "25",
+            "--teardown-ms",
+            "100",
+        ])) else {
             panic!()
         };
-        assert_eq!(measured.pacing.exit_settle, Duration::from_millis(250));
+        assert_eq!(
+            (
+                measured.pacing.exit_settle,
+                measured.pacing.paste_settle,
+                measured.pacing.teardown
+            ),
+            (
+                Duration::from_millis(250),
+                Duration::from_millis(25),
+                Duration::from_millis(100)
+            )
+        );
         assert_eq!(
             cfg.targets_wait, None,
             "a paste's TARGETS wait is its target's family's"

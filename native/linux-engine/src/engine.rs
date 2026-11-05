@@ -29,10 +29,9 @@ use crate::apps;
 use crate::atspi::{self, Association};
 use crate::dbus::{Broken, Bus, BusStats};
 use crate::families::{self, DragPacing, Family};
-use crate::focus_timer::Sent;
 use crate::input::Pacing;
 use crate::readiness::CaptureWait;
-use crate::route::Inputs;
+use crate::route::{Inputs, Sent};
 use crate::tree;
 use crate::wire::{self, GetWindowStateInput, NoInput, Request, Response, parse_input};
 use crate::x11::{Retention, X11};
@@ -263,9 +262,6 @@ impl Engine {
         // before now counts); any other request only collects it once it has ended by itself
         let acting = acts(&request.command, request.input.as_ref());
         self.collect_late_watch(acting);
-        // a FocusOut that came due while the engine waited for this request goes first; the rest wait on their timers
-        // or on this request's flush (`route.rs`)
-        self.inputs.fire_due(&mut self.x);
         self.inputs.request = request.id.clone();
         // a late drag and drop, or a watch that failed, is the first acting request's answer, the request not run;
         // reads and releases run meanwhile, and the report waits for the request that would act
@@ -339,47 +335,28 @@ impl Engine {
     }
 
     /// Collects the after-release watch when `acting` (stopping it) or once it has ended by itself: what it saw waits in
-    /// `late_pending` for the first acting request. Its Escape, sent at once on the watch's own connection and never
-    /// waiting for a flush, joins the target window's burst: that window's pending `FocusOut` timer restarts from when
-    /// the Escape went out, and a timer pending on another window keeps its schedule (the design session, M4
-    /// pre-flight).
+    /// `late_pending` for the first acting request. Its Escape, sent at once on the watch's own connection, is a key to
+    /// the target window that the settles follow (`settle.rs`): the exit's unredirect could cut it.
     fn collect_late_watch(&mut self, acting: bool) {
         if !self.late_watch.as_ref().is_some_and(|w| acting || w.finished()) {
             return;
         }
         let watch = self.late_watch.take().expect("checked");
         let (app, target) = (watch.app.clone(), watch.target);
-        let end = watch.stop();
-        // the watch can send no more: the timers no longer hold its gate (an Escape it sent restarted its timer there)
-        self.inputs.set_gate(None);
-        match end {
+        match watch.stop() {
             crate::dnd::WatchEnd::Quiet => {}
             end => {
                 if let crate::dnd::WatchEnd::Late(late) = &end
                     && let Some(at) = late.escaped_at
                 {
-                    self.inputs.restart(target, at);
+                    self.inputs.note_key(target, at);
                 }
                 self.late_pending = Some((app, end));
             }
         }
     }
 
-    /// When the engine must next act with no request: the earliest pending `FocusOut` (`focus_timer.rs`).
-    pub fn next_due(&self) -> Option<Instant> {
-        self.inputs.next_due()
-    }
-
-    /// Between requests: an after-release watch that has ended is collected (its Escape restarting its window's
-    /// timer), then every `FocusOut` due is sent, each reported on a `--stats` line of its own.
-    pub fn tick(&mut self) {
-        self.collect_late_watch(false);
-        self.inputs.fire_due(&mut self.x);
-        self.report_sent();
-    }
-
-    /// The `FocusOut`s sent outside any request, each on a `--stats` line of its own: `{"stats": {"id": null, "focus_out":
-    /// …}}`.
+    /// The `FocusOut`s the exit sent, each on a `--stats` line of its own: `{"stats": {"id": null, "focus_out": …}}`.
     fn report_sent(&mut self) {
         let sent = self.inputs.take_sent();
         if self.cfg.stats {
@@ -405,6 +382,7 @@ impl Engine {
                 "settle_ms": self.cfg.settle.as_millis() as u64,
                 "capture_wait": format!("{:?}", self.cfg.capture_wait).to_lowercase(),
                 "teardown_ms": self.cfg.pacing.teardown.as_millis() as u64,
+                "paste_settle_ms": self.cfg.pacing.paste_settle.as_millis() as u64,
                 "key_pace_ms": self.cfg.pacing.key.as_millis() as u64,
             },
             "bus": {
@@ -654,7 +632,7 @@ impl Engine {
     }
 
     /// The orderly exit: a `drag_handle` still held ended, every key still held released, an armed after-release watch
-    /// run out, every input session ended, each pending `FocusOut` waited out (at most the delay; `route.rs`), the
+    /// run out, the sessions a hold kept open ended, the exit's settle waited out (`settle::EXIT_SETTLE`), the
     /// clipboard's owner stopped (CLIPBOARD goes with it, as the vendor's does), then the screenshot directory removed.
     pub fn shutdown(&mut self) {
         // first, every key and button still held released, so no wait below keeps one down (the design session's
@@ -667,20 +645,20 @@ impl Engine {
         self.inputs.release_held(&mut self.x);
         crate::pressed::release_rest(&self.x.conn, self.x.root);
         // an armed after-release watch then runs out its lifetime (at most `dnd::SETTLE` after its drag's release), so
-        // a late take inside it is still cancelled, its Escape sent before any FocusOut of the exit's and before the
-        // connection closes; collected then, the Escape restarts its window's timer for the drain below
+        // a late take inside it is still cancelled, its Escape sent before the connections close and before the
+        // FocusOut of a session the exit released; collected then, the Escape is a key the settle below follows
         if let Some(watch) = &self.late_watch {
             watch.run_out();
         }
         self.collect_late_watch(true);
-        self.inputs.drain_exit(&mut self.x);
+        self.inputs.end_released(&mut self.x);
         self.report_sent();
         let _ = self.x.sync();
-        // the exit drops every redirect it holds: input still queued in a covered Chromium window would be cut, so the
-        // last input to such a window is given the exit's settle first (`focus_timer::EXIT_SETTLE`)
+        // the exit drops every redirect it holds: keys still queued in a covered Chromium window would be cut, so the
+        // last key to such a window is given the exit's settle first (`settle::EXIT_SETTLE`)
         let until = self.inputs.exit_settle_until(&self.x);
         let started = Instant::now();
-        crate::focus_timer::settle_exit(&mut crate::focus_timer::Wall, until);
+        crate::settle::wait(until);
         if self.cfg.stats && until.is_some() {
             let waited = started.elapsed().as_secs_f64() * 1000.0;
             eprintln!(

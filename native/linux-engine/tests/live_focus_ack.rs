@@ -35,6 +35,10 @@ const CLICKS: usize = 10;
 /// Between clicks: past Qt's 100 ms focusInTimer and a blocked turn, so each click starts with no focus window in Qt.
 const BETWEEN: Duration = Duration::from_millis(400);
 const PATIENCE: Duration = Duration::from_secs(30);
+/// The wait's bound these tests set (`--focus-ack-ms`): the late window answers the bus only between its blocked turns,
+/// later than kate and qtcreator did at twice the load (the shipped bound, 25 ms, is that measurement's), so the tests
+/// prove what the wait waits for, not its bound; the bound's own refusal has a test of its own.
+const LATE_BOUND: &str = "200";
 
 type Log = Arc<Mutex<Vec<Value>>>;
 
@@ -190,7 +194,7 @@ fn click(window: u32) -> (&'static str, Value) {
 #[test]
 fn a_background_click_to_a_late_qt_window_waits_for_its_focus_and_leaves_the_x_focus_where_it_was() {
     for binding in ["qt5", "qt6"] {
-        let mut engine = Engine::start();
+        let mut engine = Engine::start_with(&["--focus-ack-ms", LATE_BOUND]);
         let Some(late) = late(binding, &mut engine) else {
             continue;
         };
@@ -225,7 +229,7 @@ fn with_no_focus_wait_the_late_qt_window_takes_the_x_focus_on_a_background_click
 fn a_click_right_after_a_key_to_a_late_qt_window_leaves_the_x_focus_where_it_was() {
     // the click's session opens while Qt still counts the key's FocusOut down: the wait first sees that focus let go
     for binding in ["qt5", "qt6"] {
-        let mut engine = Engine::start();
+        let mut engine = Engine::start_with(&["--focus-ack-ms", LATE_BOUND]);
         let Some(late) = late(binding, &mut engine) else {
             continue;
         };
@@ -244,7 +248,7 @@ fn a_click_right_after_a_key_to_a_late_qt_window_leaves_the_x_focus_where_it_was
 #[test]
 fn a_background_drag_to_a_late_qt_window_leaves_the_x_focus_where_it_was() {
     for binding in ["qt5", "qt6"] {
-        let mut engine = Engine::start();
+        let mut engine = Engine::start_with(&["--focus-ack-ms", LATE_BOUND]);
         let Some(late) = late(binding, &mut engine) else {
             continue;
         };
@@ -260,6 +264,33 @@ fn a_background_drag_to_a_late_qt_window_leaves_the_x_focus_where_it_was() {
         );
         assert_eq!(taken, 0, "{binding}: no drag took the X focus from the front window");
         assert_eq!(presses, CLICKS, "{binding}: every drag's press reached the editor");
+    }
+}
+
+#[test]
+fn a_press_whose_focus_is_not_reported_within_the_bound_is_refused_with_nothing_sent() {
+    // a bound shorter than the late window's blocked turn: most clicks cannot see the focus taken in time
+    for binding in ["qt5"] {
+        let mut engine = Engine::start_with(&["--focus-ack-ms", "1"]);
+        let Some(late) = late(binding, &mut engine) else {
+            continue;
+        };
+        let front = Front::open();
+        let (taken, answers, presses) = clicks(&mut engine, &late, &front, &[click(late.window)]);
+        let refused: Vec<&Value> = answers.iter().filter(|a| a["ok"] != json!(true)).collect();
+        assert!(!refused.is_empty(), "a 1 ms bound refuses some clicks: {answers:?}");
+        for answer in &refused {
+            let error = answer["error"].as_str().unwrap_or("");
+            assert!(
+                error.ends_with(
+                    "did not take the background focus within 1 ms, so a press could have activated its window; \
+                     nothing was sent, so it is safe to retry"
+                ),
+                "{error}"
+            );
+        }
+        assert_eq!(taken, 0, "no click took the X focus, refused or sent");
+        assert_eq!(presses, CLICKS - refused.len(), "a refused click pressed nothing");
     }
 }
 

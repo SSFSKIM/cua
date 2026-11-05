@@ -36,8 +36,11 @@ use crate::tree::ObjRef;
 
 /// How long a background press waits for the toolkit to report the session's focus taken (`--focus-ack-ms`, for
 /// measurement): the smallest of 25, 50, 100 and 200 ms that held 30 consecutive independent click runs on kate (Qt
-/// 5.15) and qtcreator (Qt 6.4) at twice the gate's load, by the wait rule (evidence `m4/qt-activation/`).
-pub const FOCUS_ACK: Duration = Duration::from_millis(100);
+/// 5.15) and qtcreator (Qt 6.4) at twice the gate's load, by the wait rule (evidence `m4/qt-activation/`). Every step
+/// held, none refused and none activated; the wait itself took a median of 4 to 8 ms and at most 23.6 ms. With no wait
+/// the same clicks activated the window 9 and 5 times in 30. A wait that reaches its bound refuses the press with
+/// nothing sent, never sends it.
+pub const FOCUS_ACK: Duration = Duration::from_millis(25);
 
 /// How long Qt keeps a window its focus window after a `FocusOut` (`QXcbConnection`'s `focusInDelay`, 100 ms in Qt
 /// 5.15 and 6.4): the earlier focus a press waits to see let go, beside the bound.
@@ -241,13 +244,13 @@ mod tests {
         );
         assert_eq!(
             ack.record(),
-            json!({"bound_ms": 100, "released_ms": null, "waited_ms": null})
+            json!({"bound_ms": 25, "released_ms": null, "waited_ms": null})
         );
         ack.released = Some(Duration::from_micros(1500));
         ack.taken = Some(Duration::from_micros(12_345));
         assert_eq!(
             ack.record(),
-            json!({"bound_ms": 100, "released_ms": 1.5, "waited_ms": 12.345})
+            json!({"bound_ms": 25, "released_ms": 1.5, "waited_ms": 12.345})
         );
     }
 }

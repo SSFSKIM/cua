@@ -87,9 +87,10 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   So in shared mode, before the first press of a background session that synthesized the focus (a click, a drag, an
   element's right click, a paste's focusing click), a press to a family that does this (`families.rs`
   `activates_on_press`, Qt) waits until the window's AT-SPI frame reports `active`, Qt's own state of the window, at
-  most `--focus-ack-ms` (100 ms); a frame already active before the session opens (an earlier session's `FocusOut`,
+  most `--focus-ack-ms` (25 ms, by the wait rule at twice the load: every bound from 25 to 200 ms held on kate and
+  qtcreator, the wait itself a median of 4 to 8 ms); a frame already active before the session opens (an earlier session's `FocusOut`,
   which Qt counts down for 100 ms) is first waited out until it reads inactive, before the `FocusIn`. A press with no
-  such report in time is refused, nothing pressed: "`<app>` did not take the background focus within 100 ms, so a
+  such report in time is refused, nothing pressed: "`<app>` did not take the background focus within 25 ms, so a
   press could have activated its window; nothing was sent, so it is safe to retry". Dedicated mode waits for nothing.
   With `--stats` each such press's line carries `focus_ack` (its bound, and what it waited).
 - **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: a
@@ -356,7 +357,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--teardown-ms` | 0 | a wait before each background session's `FocusOut`, on the request path, for measurement only (0.3.0's wait, the vendor's 100 ms there); 0 sends each `FocusOut` as its request's input ends |
 | `--paste-settle-ms` | 100 | a paste's wait before it observes, after the last key to its window (The paste's settle, above); the measured value, set otherwise only to measure it |
 | `--paste-click-settle-ms` | 25 | a paste's wait before it observes, after the last click to its window (The paste's settle, above); the measured value, set otherwise only to measure it |
-| `--focus-ack-ms` | 100 | in shared mode, how long a background press to a Qt window waits for its frame to report the session's focus taken (A press waits for Qt's focus, above); the measured value, set otherwise only to measure it; 0 turns the wait off (the control) |
+| `--focus-ack-ms` | 25 | in shared mode, how long a background press to a Qt window waits for its frame to report the session's focus taken (A press waits for Qt's focus, above); the measured value, set otherwise only to measure it; 0 turns the wait off (the control) |
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |

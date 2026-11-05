@@ -20,6 +20,10 @@ import Foundation
 // has failed three actions in a row for the app; route 3's pointer actions and the paste route add `delivery` (#200), the paste route its
 // value-free diagnostics as `paste` (#187, Paste.swift), and every result on a
 // connection whose after-action watch has repaired carries `afterActionRepairs` (Activation.swift AfterActionWatches).
+// Route 3's left pointers follow the connection's device mode (#282, Routes.swift): in shared mode one into a Chromium web
+// area is refused as backgroundClickRefused with nothing posted, or a plain click there is carried by the hit's own
+// action (`elementClick.reason` webArea); one whose own down consumed the activation's arm in a view not known to accept
+// first mouse answers clickUnconfirmed after its events.
 // The settle an action arms runs at the next get_app_state (markActed).
 // Spike-only arguments, which the facade never sends: `spikeRoute` ("1"|"2'"|"2"|"3", force one route; route 2, the ⌘
 // post, is reachable only this way), `spikeEventSource` ("private", post keys from a private event source instead of
@@ -170,14 +174,28 @@ func withMeta(_ error: EngineError, _ meta: InputMeta) -> EngineError {
 /// click); `announce` (the agent cursor's hook, which only enqueues) runs after it, as the events are about to go out.
 /// The meta carries the route from the start, so a refusal names the route that failed.
 func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton, count: Int, activation: FakeActivation?,
-                  activations: HeldActivations = HeldActivations(), foreground: ForegroundAssist? = nil, targetActive: () -> Bool,
+                  activations: HeldActivations = HeldActivations(), foreground: ForegroundAssist? = nil,
+                  pointer: PointerTarget = .acceptingFirstMouse, targetActive: () -> Bool,
                   beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, announce: () -> Void = {},
                   post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
   try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, postsLeftMouseDown: button == .left,
-                     foreground: foreground, beforeActivating: beforeActivating, beforePosting: beforePosting, announce: announce, post: post,
-                     meta: &meta) {
+                     foreground: foreground, pointer: pointer, beforeActivating: beforeActivating, beforePosting: beforePosting,
+                     announce: announce, post: post, meta: &meta) {
     clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
   }
+}
+
+/// What a left pointer action aims at, for #282's rules (Routes.swift): the view its point hits, the app's name for the
+/// sentences, the action's noun, and the element route a refused plain click takes instead (the hit's own action, which
+/// fills the meta it is given; nil where there is none, and the action is refused).
+struct PointerTarget {
+  let view: PointerView
+  let app: String
+  var noun = "click"
+  var elementRoute: ((inout InputMeta) throws -> Void)? = nil
+
+  /// The unit tests' default: a view known to accept first mouse, where a pointer's path is the one before #282.
+  static var acceptingFirstMouse: PointerTarget { PointerTarget(view: .acceptsFirstMouse, app: "the app") }
 }
 
 /// A synthesized pointer action's delivery (a click's, a drag's), as `deliverClick` describes it: `events` makes the
@@ -191,30 +209,49 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
 /// mouse down (`postsLeftMouseDown`: a left click, a drag) lets that consume the activation's arm, as before #187's
 /// inert click: no inert click goes before it, and one goes at the release only when none went (a stop before the
 /// events); the click that consumed it rides in the meta when this action ran the activation or consumed its arm.
+///
+/// #282 (Routes.swift), by the connection's device mode, for a left pointer (`postsLeftMouseDown`) under route 3: in
+/// shared mode one into a Chromium web area (`pointer.view`) meeting an activation that clicks no activation point is
+/// refused by the registry before anything is posted, and answers by `pointer.elementRoute` when it has one, else as
+/// `backgroundClickRefused`; only one into a view known to accept first mouse re-arms a spent hold. In dedicated mode the
+/// arm's inert click goes early, no hold is re-armed, and the events go out with no delivery guard and no after-action
+/// watch: the window may come forward and stays so. Everywhere, events whose own mouse down consumed the arm into a view
+/// not known to accept first mouse answer `clickUnconfirmed` once they are out.
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
-                    postsLeftMouseDown: Bool = true, foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {},
-                    beforePosting: () throws -> Void = {}, announce: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta,
-                    events: () -> [CGEvent]) throws {
+                    postsLeftMouseDown: Bool = true, foreground: ForegroundAssist? = nil, pointer: PointerTarget = .acceptingFirstMouse,
+                    beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, announce: () -> Void = {},
+                    post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
   // An earlier action's after-action watch ends before anything of this one happens (its activation included).
   let watches = meta.context.connection.afterAction
   watches.cancel()
+  let shared = meta.context.connection.desktop == .shared
   var release: (() -> Bool)?
   var standing: FakeActivation?
   var reportsArm = false
+  var consumedArm = false
   defer {
     _ = release?()  // every path out of the action, error or success, ends its lease
     if reportsArm, let kind = standing?.clickKind { meta.activationClickKind = kind }  // a release's inert click included
   }
   defer { activation?.releaseOpenHold() }  // a stop before the events ends the activation's hold with the action
   if route == .activation, let activation {
-    activation.holdsThroughDelivery = true
+    activation.holdsThroughDelivery = shared
+    let hold = postsLeftMouseDown
+      ? PointerHold(defersArmClick: shared, rearmsSpentArm: shared && pointer.view == .acceptsFirstMouse,
+                    refusedWithoutActivationPointClick: shared && pointer.view == .webArea)
+      : nil
     // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
     // focusing click inside set_value's held activation), unless the action re-arms a hold of its own connection whose
     // arm was spent early (`HeldActivations.acquire`), whose new activation's guard and click are recorded as a run's.
-    release = try activations.acquire(pid: activation.pid, holder: ActivationHolder(connection: meta.context.connection.id),
-                                      postsLeftMouseDown: postsLeftMouseDown, beforeActivating: beforeActivating,
-                                      make: { activation }, meta: &meta)
+    do {
+      release = try activations.acquire(pid: activation.pid, holder: ActivationHolder(connection: meta.context.connection.id),
+                                        pointer: hold, beforeActivating: beforeActivating, make: { activation }, meta: &meta)
+    } catch is PointerRefused {
+      guard let elementRoute = pointer.elementRoute else { throw backgroundClickRefused(pointer.app) }
+      try elementRoute(&meta)
+      return
+    }
     standing = activations.activation(of: activation.pid)
     reportsArm = standing === activation
   }
@@ -228,14 +265,16 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     // samples after the events are its own time (`delivery.guardMs`), not the action's.
     func postAll() { meta.posting { _ = postToProcess(made, pid: pid, post: post); return true } }
     func postEvents() {
-      if let standing { if standing.postAction(made, postAll) { reportsArm = true } } else { postAll() }
+      if let standing { if standing.postAction(made, postAll) { reportsArm = true; consumedArm = true } } else { postAll() }
     }
-    if let standing { meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, postEvents) } else { postEvents() }
+    // Dedicated mode puts nothing back: no delivery guard, no after-action watch (the Linux foreground route's choice).
+    if let standing, shared { meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, postEvents) } else { postEvents() }
   }
   if route == .foreground, let foreground {
     defer { meta.keyWindowRestored = foreground.keyWindowRestored }  // on a restore failure too
     try foreground.run(send)
   } else { try send() }
+  if consumedArm, pointer.view != .acceptsFirstMouse { throw clickUnconfirmed(pointer.app, noun: pointer.noun) }
 }
 
 /// Typed text keyed unit by unit (the spec's Design, "Text"): the input source checked before every event and after the
@@ -342,19 +381,14 @@ extension Engine {
           defer { meta.elementClick?.hit = pointing.taken }
           switch plan {
           case .action(let action):
-            // Route 3's held activation first when the app does not believe it has focus (FocusHold.swift).
+            // Route 3's held activation first when the app does not believe it has focus (FocusHold.swift); the cursor at
+            // the element's clickable point, as the action goes out.
             let route = forced == nil ? actionRoute(for: target, app: app, connection: context.connection) : .action
-            if route == .activation {
-              try holdElementFocus(target, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
-            }
-            try guarding.checkInFlight()
-            if let point = pointing.point {  // route 1: the element's clickable point, as the action goes out
-              cursor.act(connection: context.connection.id, app: app.key, window: pointing.windowID, .click(point))
-            }
-            try deliverAction(action, route: route, perform: { gatedPerform(target.element, $0) }, meta: &meta)
+            try elementActionClick(target.element, owner: target.owner, action: action, route: route, point: pointing.point,
+                                   windowID: pointing.windowID, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
           case .synthesized(let route):
             try synthesizedClick(pointing, route: route, button: button, count: count, app: app, appPid: appPid, guarding: guarding,
-                                 connection: context.connection.id, meta: &meta)
+                                 context: context, meta: &meta)
           }
         }
         context.connection.clearMenuRecord(app: app.key)
@@ -384,10 +418,20 @@ extension Engine {
           return (route, route == .activation
             ? FakeActivation(pid: owner, appPid: appPid, window: placed.window, windowFrame: placed.windowFrame, windowID: windowID, sparing: sparing) : nil)
         }
+        // What a left click by route 3 points into (#282): in shared mode a Chromium web area's plain click takes the hit's
+        // own action when it has one, any other is refused, before anything is posted.
+        var pointer = PointerTarget.acceptingFirstMouse
+        if route == .activation, button == .left {
+          pointer = signposted("click.pointerView") { pointerTarget(hit: hit, app: app, appPid: appPid) }
+          if pointer.view == .webArea, let hit {
+            pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
+                                                appPid: appPid, guarding: guarding, context: context)
+          }
+        }
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
           try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
             try signposted("click.deliver") { try deliverClick(target, route: route, button: button, count: count, activation: activation, activations: heldActivations,
-                             foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
+                             foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil, pointer: pointer,
                              targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
                              beforeActivating: guarding.checkInFlight,
                              beforePosting: { try guarding.checkInFlight(); frameBeforePost = frame(of: placed.window) },

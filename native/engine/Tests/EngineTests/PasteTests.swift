@@ -1801,7 +1801,7 @@ extension PasteActivationTests {
       if code == 0x09 && postsAtCommandV == nil { postsAtCommandV = seam.posts.map(\.kind) }
     }, before: { engine, system in
       var pointerMeta = InputMeta(ExecutionContext(connection: ConnectionState(id: 2, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
-      pointerRelease = try engine.heldActivations.acquire(pid: self.target, holder: ActivationHolder(connection: 2), postsLeftMouseDown: true, beforeActivating: {}, make: {
+      pointerRelease = try engine.heldActivations.acquire(pid: self.target, holder: ActivationHolder(connection: 2), pointer: PointerHold(), beforeActivating: {}, make: {
         FakeActivation(pid: self.target, window: AXUIElementCreateApplication(self.target), windowFrame: Self.chromeFrame, windowID: 41, system: system)
       }, meta: &pointerMeta)
       XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1)], "the pointer holder's activation, its arm unconsumed")

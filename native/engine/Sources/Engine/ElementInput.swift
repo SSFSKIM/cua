@@ -30,6 +30,8 @@ final class ElementPointing {
   let visible: CGRect?
   let point: CGPoint?
   private var hit: HitRelation?
+  /// The element the hit-test at the point answered, once `relation` has been taken (nil: no point, or no answer).
+  private(set) var hitElement: AXUIElement?
 
   init(_ element: AXUIElement, owner: pid_t, ax: AXOps = .live) {
     self.element = element
@@ -47,8 +49,8 @@ final class ElementPointing {
   /// The hit-test at the point, classified against the element (no point: no answer).
   var relation: HitRelation {
     if let hit { return hit }
-    let found = point.map { hitRelation(hitTest(application: owner, at: $0), to: element,
-                                        parent: { elementAttribute($0, kAXParentAttribute) }, same: { CFEqual($0, $1) }) } ?? .noAnswer
+    hitElement = point.flatMap { hitTest(application: owner, at: $0) }
+    let found = hitRelation(hitElement, to: element, parent: { elementAttribute($0, kAXParentAttribute) }, same: { CFEqual($0, $1) })
     hit = found
     return found
   }
@@ -197,6 +199,9 @@ extension Engine {
     } catch let error as EngineError where route == .activation && error.errorName == "activationFailed" {
       meta.routeAdvice = routeAdvice.record(app.bundleIdentifier, guardFailed: true)
       throw error
+    } catch let error as EngineError where route == .activation && error.errorName == "clickUnconfirmed" {
+      _ = routeAdvice.record(app.bundleIdentifier, guardFailed: false)  // its guard passed: the events went (#282)
+      throw error
     }
   }
 
@@ -205,14 +210,24 @@ extension Engine {
   /// `pointUnconfirmed` when the hit-test answers nothing or only a container; route 3's activation for the element's
   /// own window (the app's primary window for a menu-bar item's), whose click spares the element for any button but the
   /// left; the in-flight intervention check just before the click's events.
+  ///
+  /// A left click by route 3 is a pointer into the view the hit-test answered (#282, `pointerTarget`): in shared mode,
+  /// one into a Chromium web area takes the hit's own action instead when `webAreaElementRoute` allows it (an element
+  /// click's, never focusField's fallback) and it advertises one, else it is refused with nothing posted.
   func synthesizedClick(_ pointing: ElementPointing, route: InputRoute, button: MouseButton, count: Int, app: ResolvedApp, appPid: pid_t,
-                        guarding: InterventionGuard, connection: Int, meta: inout InputMeta) throws {
+                        guarding: InterventionGuard, context: ExecutionContext, webAreaElementRoute: Bool = true, meta: inout InputMeta) throws {
+    let connection = context.connection.id
     // A point in a minimized window reaches nothing on screen (Minimized.swift); a route-1 action never comes here.
     try refuseMinimizedWindow(minimized: pointing.window.map(isMinimized) ?? false, app: app.displayName)
     guard let point = pointing.point, !pointing.relation.covered else {
       throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.")
     }
     meta.pointUnconfirmed = pointing.relation.unconfirmed
+    var pointer = route == .activation && button == .left ? pointerTarget(hit: pointing.hitElement, app: app, appPid: appPid) : .acceptingFirstMouse
+    if webAreaElementRoute, pointer.view == .webArea, let hit = pointing.hitElement {
+      pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: point, windowID: pointing.windowID, app: app,
+                                          appPid: appPid, guarding: guarding, context: context)
+    }
     let sparing = activationSparing(button: button, target: pointing.visible)
     let owner = pointing.owner
     func activation() -> FakeActivation {
@@ -226,7 +241,7 @@ extension Engine {
     try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
       try deliverClick(target, route: route, button: button, count: count, activation: route == .activation ? activation() : nil,
                        activations: heldActivations,
-                       foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
+                       foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil, pointer: pointer,
                        targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
                        beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
                        announce: { cursor.act(connection: connection, app: app.key, window: pointing.windowID, .click(point)) },
@@ -237,16 +252,59 @@ extension Engine {
   /// focusFieldIfNeeded with its fallback click: a plain left click by the synthesized route the app takes (3, or 4
   /// under the owner's override), kept by `focusingClick`. In a minimized window the click is skipped rather than
   /// refused: set_value and select_text act through Accessibility, which needs no window on screen (Minimized.swift).
-  func focusField(_ target: ElementTarget, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, connection: ConnectionState,
+  /// Inside a Chromium web area in shared mode the click is refused, never pressed (#282): an action is no focusing.
+  func focusField(_ target: ElementTarget, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
                   meta: inout InputMeta) throws {
+    let connection = context.connection
     try focusFieldIfNeeded(target.element, bundleIdentifier: app.bundleIdentifier, ax: .live, beforeMutating: guarding.checkInFlight) {
       try focusFallbackClick(target.element, ax: .live) {
         let route = synthesizedClickRoute(forced: nil, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
         try focusingClick(&meta, acted: { connection.markActed(app) }) { clickMeta in
           try synthesizedClick(ElementPointing(target.element, owner: target.owner), route: route, button: .left, count: 1,
-                               app: app, appPid: appPid, guarding: guarding, connection: connection.id, meta: &clickMeta)
+                               app: app, appPid: appPid, guarding: guarding, context: context, webAreaElementRoute: false, meta: &clickMeta)
         }
       }
     }
+  }
+
+  /// What a left pointer by route 3 aims at (#282, Routes.swift `pointerView`): the view `hit` is in `app`'s process, a
+  /// web area seen there or not (`WebAccessibility`), with the app's name for the sentences. No element route: the
+  /// caller adds one where a plain click may take it (`webAreaPress`).
+  func pointerTarget(hit: AXUIElement?, app: ResolvedApp, appPid: pid_t, noun: String = "click") -> PointerTarget {
+    let chromium = webAccessibility.isChromiumFamily(app.appPath)
+    let seen = chromium && webAccessibility.hasSeenWebArea(pid: appPid, launched: processGeneration(launchDate: app.running?.launchDate, pid: appPid))
+    let view = pointerView(chromium: chromium, webAreaSeen: seen, hit: hit, role: { attribute($0, kAXRoleAttribute) as? String },
+                           parent: { elementAttribute($0, kAXParentAttribute) })
+    return PointerTarget(view: view, app: app.displayName, noun: noun)
+  }
+
+  /// The element route a plain left click refused in a web area takes (#282): the action an element click on `hit` would
+  /// take (`webAreaElementAction`), carried as an element click's is (`elementActionClick`) and recorded with the reason
+  /// `webArea`; nil when the click is not a plain left one or the hit advertises neither AXPick nor AXPress.
+  func webAreaPress(_ hit: AXUIElement, button: MouseButton, count: Int, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp,
+                    appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext) -> ((inout InputMeta) throws -> Void)? {
+    guard let action = webAreaElementAction(button: button, count: count, role: attribute(hit, kAXRoleAttribute) as? String,
+                                            actions: establishedActionNames(of: hit)) else { return nil }
+    return { [self] meta in
+      let owner = ownerPid(of: hit, fallback: appPid)
+      try refuseForbiddenOwner(owner)
+      actionTargets(owner, app: app, connection: context.connection)
+      meta.elementClick = ElementClickRecord(plan: .action(action), reason: .webArea, hit: nil)
+      try elementActionClick(hit, owner: owner, action: action, route: actionRoute(owner: owner, app: app, connection: context.connection),
+                             point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+    }
+  }
+
+  /// An element click by its own action (route 1; route 3's held activation first, `route` .activation, when the app does
+  /// not believe it has focus, FocusHold.swift): the in-flight check, the agent cursor at `point` as the action goes
+  /// out, and the action, refused as actionFailed when the element does not accept it.
+  func elementActionClick(_ element: AXUIElement, owner: pid_t, action: String, route: InputRoute, point: CGPoint?, windowID: CGWindowID?,
+                          app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext, meta: inout InputMeta) throws {
+    if route == .activation {
+      try holdElementFocus(element: element, owner: owner, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+    }
+    try guarding.checkInFlight()
+    if let point { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point)) }
+    try deliverAction(action, route: route, perform: { gatedPerform(element, $0) }, meta: &meta)
   }
 }

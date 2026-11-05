@@ -147,7 +147,8 @@ extension Engine {
       let start = try coordinatePoint(fromX, fromY, app: app, appPid: appPid, context: context)
       let end = try coordinatePoint(toX, toY, app: app, appPid: appPid, context: context)
       // Both points were refused in a minimized window as they were placed (coordinatePoint), before anything below.
-      let owner = hitTest(window: start.window, at: start.point).map { ownerPid(of: $0, fallback: appPid) } ?? appPid
+      let hit = hitTest(window: start.window, at: start.point)
+      let owner = hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
       try refuseForbiddenOwner(owner)
       actionTargets(owner, app: app, connection: context.connection)
       let windowID = windowNumber(of: start.window, pid: appPid, frame: start.windowFrame)
@@ -155,10 +156,12 @@ extension Engine {
       let route = coordinateClickRoute(forced: forced, foreground: routeFourOverride(app.bundleIdentifier, routes: routes))
       let activation = route == .activation
         ? FakeActivation(pid: owner, appPid: appPid, window: start.window, windowFrame: start.windowFrame, windowID: windowID) : nil
+      // Where the drag's own down goes (#282): in shared mode one starting in a Chromium web area is refused, nothing posted.
+      let pointer = route == .activation ? pointerTarget(hit: hit, app: app, appPid: appPid, noun: "drag") : .acceptingFirstMouse
       try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
         try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
           try deliverPointer(to: owner, route: route, activation: activation, activations: heldActivations, postsLeftMouseDown: true,
-                             foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
+                             foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil, pointer: pointer,
                              beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
                              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .drag([start.point, end.point])) },
                              post: gatedPost, meta: &meta) {

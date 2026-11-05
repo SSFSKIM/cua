@@ -53,7 +53,9 @@ func elementClickPlan(forced: InputRoute?, button: MouseButton, count: Int, role
 /// text field says whether an AXPress (which keeps the field's selection) or a posted click (which places a caret)
 /// carried it. Value-free: action names and enumeration words only.
 struct ElementClickRecord: Equatable {
-  enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced }
+  /// `webArea` (#282): a left pointer into a Chromium web area in shared mode, carried by the action of the element the
+  /// pointer's point hits instead of a posted click (a coordinate click's record too).
+  enum Reason: String { case advertised, descendant, noAction, notPlainLeft, forced, webArea }
   let plan: ElementClickPlan
   let reason: Reason
   var hit: HitRelation?
@@ -233,6 +235,93 @@ func hitRelation<Element>(_ hit: Element?, to target: Element, parent: (Element)
   if landsOnStrictDescendant(hit, of: target, parent: parent, same: same) { return .descendant }
   if landsOnStrictDescendant(target, of: hit, parent: parent, same: same) { return .ancestor }
   return .other
+}
+
+// MARK: A background pointer into a view that refuses first mouse (#282)
+//
+// Route 3's left pointer actions (a click, a drag, focusField's fallback) post their own left mouse down into an app that
+// subtype 1 made believe it is active. Where its activation clicked no AXActivationPoint (Chrome's lies outside its frame),
+// that down meets the activation's arm (AppKit's `_mouseActivationInProgress`), makes the window key, and reaches a view
+// only if the view accepts first mouse; or, joining a hold whose arm an inert click spent, it meets a key window and
+// orders it front (#200's raise). Chromium's web content (`RenderWidgetHostViewCocoa acceptsFirstMouse:`) refuses first
+// mouse below the popup levels, so the first loses the click silently and the second raises the window. The owner's
+// ruling for that class (the Linux engine's device mode): on a shared desktop cua refuses input an app ignores, and a
+// dedicated desktop may bring the window forward. So, per connection (its ping's `desktop`):
+// - shared (the default): a left pointer into a Chromium web area, where the activation it meets clicked no activation
+//   point, is never posted: a plain click takes the hit element's own action when it advertises one (the element route),
+//   anything else is refused (`backgroundClickRefused`), with nothing posted;
+// - dedicated: the inert click goes right after subtype 1 for left pointers too, so their own down meets a key window and
+//   is delivered, and nothing puts the person's window order back for that action (nobody is at the desktop);
+// - everywhere: a pointer whose own down consumed the arm, into a view not known to accept first mouse, answers
+//   `clickUnconfirmed`, never plain success.
+
+/// The device mode a connection runs in (#282), as its ping names it (the service passes the session's
+/// `CUA_DESKTOP_MODE`, which src/runtime/launch.mjs resolves); shared when it names none.
+enum DesktopMode: String {
+  case shared, dedicated
+}
+
+/// What a left pointer action's point hits, as #282's rules read it.
+enum PointerView: Equatable {
+  /// Known to accept first mouse: a Chromium process's native views (its toolbar; `BridgedContentView acceptsFirstMouse:`
+  /// answers YES), the one rule cua knows. A down that consumes the arm there is delivered.
+  case acceptsFirstMouse
+  /// A Chromium web area or inside one, whose view refuses first mouse.
+  case webArea
+  /// Anything else: an app with no known rule, or a Chromium hit-test that answered nothing.
+  case unknown
+}
+
+/// The roles a web-area walk stops at: the hit's window, or anything above one.
+private let webAreaWalkStops: Set<String> = ["AXWindow", "AXSheet", "AXApplication"]
+
+/// Whether `hit` is an AXWebArea or lies inside one, its parents walked up to 300 levels (the gate's bound) and no
+/// further than its window.
+func insideWebArea<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?) -> Bool {
+  var current: Element? = hit
+  var level = 0
+  while let element = current, level <= 300 {
+    let name = role(element)
+    if name == "AXWebArea" { return true }
+    if let name, webAreaWalkStops.contains(name) { return false }
+    current = parent(element)
+    level += 1
+  }
+  return false
+}
+
+/// The view a left pointer's point hits in a process: in a Chromium-family process (`chromiumFamily`, Enablement.swift),
+/// a web area when the hit is or lies inside an AXWebArea; else a native view known to accept first mouse, but only once
+/// an observation has seen a web area in the process (`webAreaSeen`: its page's tree is exposed, so a page point would
+/// have answered inside one); unknown when the process is not Chromium's, its hit-test answered nothing, or its page's
+/// tree may not be exposed yet.
+func pointerView<Element>(chromium: Bool, webAreaSeen: Bool, hit: Element?, role: (Element) -> String?,
+                          parent: (Element) -> Element?) -> PointerView {
+  guard chromium, let hit else { return .unknown }
+  if insideWebArea(hit, role: role, parent: parent) { return .webArea }
+  return webAreaSeen ? .acceptsFirstMouse : .unknown
+}
+
+/// The action a pointer refused in a web area takes instead (#282): the one an element click on the hit would take
+/// (`elementClickPlan`'s, AXPick else AXPress), for a plain left click only; nil when the hit advertises neither.
+func webAreaElementAction(button: MouseButton, count: Int, role: String?, actions: [String]?) -> String? {
+  guard button == .left, count == 1, let actions,
+        case .action(let action)? = try? elementClickPlan(forced: nil, button: button, count: count, role: role ?? "", actions: actions,
+                                                          landsOnDescendant: { false }) else { return nil }
+  return action
+}
+
+/// Shared mode's refusal of a left pointer into a Chromium web area (#282), in the Linux engine's form (the cause, then
+/// the remedy): nothing was posted.
+func backgroundClickRefused(_ app: String) -> EngineError {
+  EngineError(name: "backgroundClickRefused", "\(app)'s web page does not accept a background click; bring \(app) forward or use a dedicated desktop")
+}
+
+/// The answer of a pointer whose own mouse down consumed route 3's activation arm in a view not known to accept first
+/// mouse (#282): posted, but AppKit may have taken it as the window's activating click and passed it to no view.
+func clickUnconfirmed(_ app: String, noun: String = "click") -> EngineError {
+  EngineError(name: "clickUnconfirmed",
+    "The \(noun) could not be confirmed: it was sent to \(app) in the background, but it may only have activated the window without reaching what is under the pointer. Observe the app with get_app_state before any retry, and never retry blindly.")
 }
 
 /// The roles whose frame clips what of an element shows: the vendor's (FUN_10078e49c intersects the frames of the

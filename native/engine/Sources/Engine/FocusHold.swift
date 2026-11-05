@@ -107,7 +107,12 @@ extension Engine {
   /// An element action's route: 3 when the process serving the element does not believe it has focus, unless the
   /// connection's recorded menu of the app already holds its activation (MenuSpan.swift).
   func actionRoute(for target: ElementTarget, app: ResolvedApp, connection: ConnectionState) -> InputRoute {
-    elementActionRoute(believesFocus: ActivationSystem().believesItHasFocus(target.owner), insideHeldMenu: connection.menuSpan.app == app.key)
+    actionRoute(owner: target.owner, app: app, connection: connection)
+  }
+
+  /// `actionRoute(for:)` for the element served by `owner`.
+  func actionRoute(owner: pid_t, app: ResolvedApp, connection: ConnectionState) -> InputRoute {
+    elementActionRoute(believesFocus: ActivationSystem().believesItHasFocus(owner), insideHeldMenu: connection.menuSpan.app == app.key)
   }
 
   /// The focus hold for an element action: the process serving the element, activated for the element's own window (a
@@ -115,12 +120,18 @@ extension Engine {
   /// AXRaise as route 3's clicks keep it.
   func holdElementFocus(_ target: ElementTarget, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
                         context: ExecutionContext, meta: inout InputMeta) throws {
-    try holdingFocus(pid: target.owner, app: app, guarding: guarding, context: context, meta: &meta) {
-      if let window = elementAttribute(target.element, kAXWindowAttribute) {
-        return FakeActivation(pid: target.owner, appPid: appPid, window: window)
+    try holdElementFocus(element: target.element, owner: target.owner, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
+  }
+
+  /// `holdElementFocus` for `element`, served by `owner`.
+  func holdElementFocus(element: AXUIElement, owner: pid_t, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
+                        context: ExecutionContext, meta: inout InputMeta) throws {
+    try holdingFocus(pid: owner, app: app, guarding: guarding, context: context, meta: &meta) {
+      if let window = elementAttribute(element, kAXWindowAttribute) {
+        return FakeActivation(pid: owner, appPid: appPid, window: window)
       }
       let application = prepare(AXUIElementCreateApplication(appPid))
-      return FakeActivation(pid: target.owner, appPid: appPid, window: primaryWindow(of: application) ?? application)
+      return FakeActivation(pid: owner, appPid: appPid, window: primaryWindow(of: application) ?? application)
     }
   }
 

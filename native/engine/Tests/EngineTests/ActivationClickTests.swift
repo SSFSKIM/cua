@@ -260,7 +260,7 @@ final class ActivationClickTests: XCTestCase {
     let seam = GuardSeam(frontmost: user)
     let registry = HeldActivations()
     var pointerMeta = freshMeta()
-    let pointer = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), postsLeftMouseDown: true, beforeActivating: {}, make: { self.chromeActivation(seam) },
+    let pointer = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), pointer: PointerHold(), beforeActivating: {}, make: { self.chromeActivation(seam) },
                                        meta: &pointerMeta)
     XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1)], "a pointer holder's activation: no early click")
     XCTAssertNil(pointerMeta.activationClickKind, "awaiting the action's own mouse down")

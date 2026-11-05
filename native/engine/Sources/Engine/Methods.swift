@@ -83,7 +83,7 @@ final class Engine: @unchecked Sendable {
   func handle(_ request: Request, on connection: ConnectionState, receivedAt: Int64) -> Outcome {
     do {
       switch request.method {
-      case "ping": return Outcome(result: .success(try ping(request.params)))
+      case "ping": return Outcome(result: .success(try ping(request.params, connection)))
       case "status": return Outcome(result: .success(status(connection)))
       case "approve": return Outcome(result: .success(approve()))
       case "shutdown":
@@ -101,12 +101,21 @@ final class Engine: @unchecked Sendable {
     }
   }
 
-  private func ping(_ params: [String: Any]) throws -> [String: Any] {
+  /// `ping {clientApiVersion, desktop?}`: the handshake. `desktop` ("shared" | "dedicated", #282) is the session's device
+  /// mode, kept on the connection for its pointer actions (Routes.swift); a ping without one leaves the connection's
+  /// as it is (shared from the start), and any other value is invalid params, the connection's mode unchanged.
+  private func ping(_ params: [String: Any], _ connection: ConnectionState) throws -> [String: Any] {
     guard let client = params["clientApiVersion"] as? String else {
       throw EngineError(rpc: .invalidParams, "Invalid params: clientApiVersion is required")
     }
     guard client == serverApiVersion else {
       throw EngineError(.incompatibleClientVersion, "The client speaks \(client.prefix(64)); this engine speaks \(serverApiVersion).")
+    }
+    if let given = params["desktop"] {
+      guard let mode = (given as? String).flatMap(DesktopMode.init(rawValue:)) else {
+        throw EngineError(rpc: .invalidParams, "Invalid params: desktop must be shared or dedicated")
+      }
+      connection.desktop = mode
     }
     var identity: [String: Any] = ["serverApiVersion": serverApiVersion, "engineVersion": engineVersion, "build": engineBuild]
     if let engineVariant { identity["variant"] = engineVariant }

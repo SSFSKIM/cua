@@ -68,6 +68,14 @@ test('connect pings with cua-engine-1, accepts an engine whose version and build
   assert.equal(engine.received.length, 1, 'a live connection is reused');
 });
 
+test('an engine naming a variant (#187\'s control build) is accepted on its version and build, and the variant kept in its identity', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  await startFakeEngine(t, socket, {identity: {...IDENTITY, variant: 'control-no-inert-click'}});
+  const {client} = clientFor(socket);
+  t.after(() => client.close());
+  assert.deepEqual(await client.connect(), {serverApiVersion: 'cua-engine-1', ...IDENTITY, variant: 'control-no-inert-click'});
+});
+
 test('a connection opened late in the first window gets its own full ping wait, so a slow ping to a healthy engine launches nothing', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   const engine = await startFakeEngine(t, socket, {handlers: {ping: async () => { await new Promise(resolve => setTimeout(resolve, 80)); return {serverApiVersion: 'cua-engine-1', ...IDENTITY}; }}});

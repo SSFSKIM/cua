@@ -184,7 +184,9 @@ export function createEngineClient({nodeRepl, appPath, socketPath = socketPathFo
     if (answer.engineVersion !== want.engineVersion || answer.build !== want.build) {
       throw new Mismatch(`cua engine mismatch: the engine answering ${socketPath} is version ${answer.engineVersion} build ${answer.build}, but ${appPath} is version ${want.engineVersion} build ${want.build}; that engine was started from another build and is left running. Install this build with cua install --engine, which stops the old engine once nothing uses it`);
     }
-    return {serverApiVersion: answer.serverApiVersion, engineVersion: answer.engineVersion, build: answer.build};
+    // `variant`: a non-shipping build's name (#187's control build, `control-no-inert-click`), absent for a release.
+    return {serverApiVersion: answer.serverApiVersion, engineVersion: answer.engineVersion, build: answer.build,
+      ...(typeof answer.variant === 'string' ? {variant: answer.variant.slice(0, 64)} : {})};
   }
 
   async function attempt(budgetMs, want, born) {

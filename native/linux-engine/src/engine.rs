@@ -93,9 +93,9 @@ pub struct Engine {
     launched: apps::Launched,
     /// Each window's family, looked up once (`families.rs`).
     families: HashMap<x11rb::protocol::xproto::Window, Option<&'static Family>>,
-    /// Whether each window of no listed family is a Qt application's, by its process's map, looked up once
-    /// (`Engine::qt_without_toolkit`).
-    qt_by_map: HashMap<x11rb::protocol::xproto::Window, bool>,
+    /// Whether each window of no listed family is a Qt application's, and by which mark (`families::qt_mark`), looked
+    /// up once (`Engine::qt_without_toolkit`).
+    qt_marks: HashMap<x11rb::protocol::xproto::Window, Option<families::QtMark>>,
     /// The pacing of the drag a `drag_handle` holds, from its start to its end.
     handle_pacing: pointer::HandlePacing,
     /// The clipboard's own connections, opened on first use.
@@ -262,7 +262,7 @@ impl Engine {
             extra: Default::default(),
             pending_stats: None,
             families: HashMap::new(),
-            qt_by_map: HashMap::new(),
+            qt_marks: HashMap::new(),
             handle_pacing: pointer::HandlePacing::default(),
             launched: apps::Launched::default(),
             clipboard: None,
@@ -498,19 +498,30 @@ impl Engine {
     }
 
     /// Whether `window` is a Qt application's that no listed family names, so one with no accessibility tree on the bus
-    /// (no `ToolkitName` to read), found by its process's map (`families::process_is_qt`), looked up once (task 61's
-    /// fix, the design session's ruling B). A window whose process's map cannot be read (no `_NET_WM_PID`, a process of
-    /// another user or of a PID namespace the engine does not see, a remote client) is not: its toolkit is unknown.
-    fn qt_without_toolkit(&mut self, window: x11rb::protocol::xproto::Window) -> bool {
+    /// (no `ToolkitName` to read), and by which mark (`families::qt_mark`), looked up once (task 61's fixes, the design
+    /// session's rulings): Qt's `_XEMBED_INFO` on the window, which cua's worker sandbox can read, else its process's
+    /// map, which the sandbox cannot (its own PID namespace and `/proc`). A window with neither (no mark, and no map to
+    /// read: no `_NET_WM_PID`, a process of another user or of a PID namespace the engine does not see, a remote
+    /// client) is not: its toolkit is unknown. The mark found goes on the `--stats` line as `qt_without_tree`.
+    fn qt_without_toolkit(&mut self, window: x11rb::protocol::xproto::Window) -> Option<families::QtMark> {
         if self.family_of(window).is_some() {
-            return false;
+            return None;
         }
-        if let Some(&qt) = self.qt_by_map.get(&window) {
-            return qt;
+        let mark = match self.qt_marks.get(&window) {
+            Some(&mark) => mark,
+            None => {
+                let x = &self.x;
+                let mark = families::qt_mark(x.xembed_marked(window), || {
+                    x.pid(window).and_then(families::process_is_qt)
+                });
+                self.qt_marks.insert(window, mark);
+                mark
+            }
+        };
+        if let Some(mark) = mark {
+            self.extra.insert("qt_without_tree".into(), json!(mark.name()));
         }
-        let qt = self.x.pid(window).and_then(families::process_is_qt).unwrap_or(false);
-        self.qt_by_map.insert(window, qt);
-        qt
+        mark
     }
 
     /// In shared mode, the refusal of input to `window` while a modal dialog of its own is shown, for a toolkit that
@@ -521,7 +532,8 @@ impl Engine {
         if self.cfg.desktop != DesktopMode::Shared {
             return None;
         }
-        let relays = self.family_of(window).is_some_and(|f| f.relays_focus_to_modal) || self.qt_without_toolkit(window);
+        let relays = self.family_of(window).is_some_and(|f| f.relays_focus_to_modal)
+            || self.qt_without_toolkit(window).is_some();
         if !relays {
             return None;
         }

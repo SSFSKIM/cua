@@ -14,7 +14,7 @@ use crate::desktop::Desktop;
 use crate::dnd::{DndWatch, LateWatch, Outcome, Standing};
 use crate::families::DragPacing;
 use crate::families::Kind;
-use crate::focus_ack::nothing_pressed;
+use crate::focus_ack::{nothing_pressed, refused_press};
 use crate::input::chord_keycodes;
 use crate::route::{Route, Target};
 use crate::stray::{StrayWatch, Strays, Watching};
@@ -477,15 +477,21 @@ impl Engine {
                 Some((px, py)) => Some(route.root_point(x, px, py)?),
                 None => None,
             };
-            if let (Some(ack), Some(bus), Some(at)) = (ack.as_mut(), bus.as_mut(), at) {
-                ack.before_press(bus, x, route, at)?
-                    .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
-            }
-            if let Some((rx, ry)) = at {
-                route.place(x, rx, ry)?;
-            }
-            for _ in 0..count {
-                click_once(x, route, &keycodes, at, button, hold)?;
+            // the press's checks before every press, not once per request: the person may move the focus during an
+            // earlier click's hold (the bounded re-review's P1); a count of 0 still checks and places, pressing nothing
+            for sent in 0..count.max(1) {
+                if let (Some(ack), Some(bus), Some(at)) = (ack.as_mut(), bus.as_mut(), at) {
+                    ack.before_press(bus, x, route, at)?
+                        .map_err(|cause| anyhow!(refused_press(cause, sent, count)))?;
+                }
+                if sent == 0
+                    && let Some((rx, ry)) = at
+                {
+                    route.place(x, rx, ry)?;
+                }
+                if count > 0 {
+                    click_once(x, route, &keycodes, at, button, hold)?;
+                }
             }
             Ok(())
         });

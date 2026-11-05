@@ -431,6 +431,40 @@ pub fn process_is_qt(pid: u32) -> Option<bool> {
     Some(maps_qt(std::io::BufReader::new(file)))
 }
 
+/// How a window of no listed family was found to be a Qt application's, which has no accessibility tree to say so.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QtMark {
+    /// The window carries `_XEMBED_INFO`, which Qt's xcb backend sets on every window it creates (`QXcbWindow::create`,
+    /// Qt 5.15 and 6.4): on every Qt window of task 61 fix 2's survey, top-levels and native children alike, and on no
+    /// window of any other family surveyed (GTK 3, GTK 4, VTE, Firefox, Chrome, Electron, Java AWT and Swing, Tk,
+    /// LibreOffice on both its VCL plugins, xterm). One property read, which inside cua's worker sandbox still answers.
+    Xembed,
+    /// Its process maps Qt's core library ([`process_is_qt`]): only where `/proc` shows that process.
+    Map,
+}
+
+impl QtMark {
+    /// The name on the `--stats` line.
+    pub fn name(self) -> &'static str {
+        match self {
+            QtMark::Xembed => "xembed",
+            QtMark::Map => "map",
+        }
+    }
+}
+
+/// Whether a window with no listed family is Qt's (the design session's rulings, task 61's fixes): by its
+/// `_XEMBED_INFO` mark (`xembed`), else by its process's map where it can be read (`map`, read only when needed). A
+/// window with neither is of an unknown toolkit. A false mark only refuses a press to a window with no tree, the safe
+/// direction.
+pub fn qt_mark(xembed: bool, map: impl FnOnce() -> Option<bool>) -> Option<QtMark> {
+    if xembed {
+        Some(QtMark::Xembed)
+    } else {
+        map().unwrap_or(false).then_some(QtMark::Map)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -763,6 +797,24 @@ mod tests {
             Some(false),
             "this test is no Qt process"
         );
+    }
+
+    #[test]
+    fn a_window_with_no_tree_is_qt_s_by_its_xembed_mark_else_by_its_process_s_map_where_readable() {
+        // the design session's ruling, 2026-11-05: Qt marks every window it creates with _XEMBED_INFO, readable from
+        // inside the worker's sandbox, where no application's map is (fix 2's survey: on every Qt window, on no other
+        // family's)
+        let unread = || -> Option<bool> { panic!("the map is not read once the mark answers") };
+        assert_eq!(qt_mark(true, unread), Some(QtMark::Xembed));
+        assert_eq!(qt_mark(false, || Some(true)), Some(QtMark::Map));
+        assert_eq!(qt_mark(false, || Some(false)), None);
+        assert_eq!(
+            qt_mark(false, || None),
+            None,
+            "no mark and no map to read: unknown, so allowed"
+        );
+        assert_eq!(QtMark::Xembed.name(), "xembed");
+        assert_eq!(QtMark::Map.name(), "map");
     }
 
     #[test]

@@ -110,7 +110,8 @@ pub fn native_child(app: &str) -> String {
     )
 }
 
-/// The refusal for a Qt window with no accessibility tree to wait on (found by its process's map, `families.rs`).
+/// The refusal for a Qt window with no accessibility tree to wait on (found by its `_XEMBED_INFO` mark or its
+/// process's map, `families::qt_mark`).
 pub fn no_frame(app: &str) -> String {
     format!(
         "{app} is a Qt application with no accessibility tree on the bus, so cua cannot see it take the background \
@@ -122,6 +123,25 @@ pub fn no_frame(app: &str) -> String {
 /// What a coordinate press's refusal ends with: nothing of the request's input went out.
 pub fn nothing_pressed(cause: String) -> String {
     format!("{cause}; nothing was sent, so it is safe to retry")
+}
+
+/// What a refusal of one press of a multi-click ends with once `sent` of its `count` clicks have gone to the window:
+/// they may have changed it, so a retry is not safe blind (the bounded re-review's P1; as a paste refused after its
+/// focusing click says, `paste::AFTER_CLICK`).
+pub fn after_clicks(cause: String, sent: u32, count: u32) -> String {
+    format!(
+        "{cause}; the request's next click was not sent, but {sent} of its {count} clicks already reached the window, \
+         so read the window before retrying"
+    )
+}
+
+/// A coordinate press's refusal, worded by how many of the request's `count` clicks were already `sent`.
+pub fn refused_press(cause: String, sent: u32, count: u32) -> String {
+    if sent == 0 {
+        nothing_pressed(cause)
+    } else {
+        after_clicks(cause, sent, count)
+    }
 }
 
 /// What a press needs once its recipient is the target window itself (`FocusAck::before_press`), from the real focus
@@ -350,6 +370,27 @@ mod tests {
         // the review's case: a hold kept a session opened with the real focus within, and the focus has left since,
         // so the session holds no focus at all: it takes one, as a fresh session would
         assert_eq!(need(false, false), Need::Refocus);
+    }
+
+    #[test]
+    fn a_press_refused_after_earlier_clicks_of_its_request_says_they_were_sent() {
+        // the bounded re-review's P1: the check runs before every press of a multi-click; once a click has gone, a
+        // refusal of the next must not say that nothing was sent
+        assert_eq!(
+            after_clicks(not_taken("org.kde.kate", FOCUS_ACK), 1, 2),
+            "org.kde.kate did not take the background focus within 25 ms, so a press could have activated its \
+             window; the request's next click was not sent, but 1 of its 2 clicks already reached the window, so read \
+             the window before retrying"
+        );
+        assert_eq!(
+            refused_press(native_child("kate"), 0, 3),
+            nothing_pressed(native_child("kate")),
+            "before the first click, nothing was sent"
+        );
+        assert_eq!(
+            refused_press(native_child("kate"), 2, 3),
+            after_clicks(native_child("kate"), 2, 3)
+        );
     }
 
     #[test]

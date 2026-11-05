@@ -69,6 +69,7 @@ const ATOM_NAMES: &[&str] = &[
     "AT_SPI_BUS",
     "XdndSelection",
     "_NET_FRAME_EXTENTS",
+    "_XEMBED_INFO",
 ];
 
 pub struct X11 {
@@ -152,6 +153,36 @@ pub fn modal_transient(
     state.contains(&modal)
         && transient_for.first().is_some_and(|w| *w != x11rb::NONE)
         && (map_state == MapState::VIEWABLE || iconic(map_state, wm_state))
+}
+
+/// One window of the target's own X client, as the modal lookup reads it (`X11::modal_transient_of`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Candidate {
+    pub window: Window,
+    /// Its `WM_TRANSIENT_FOR`, when it names a window.
+    pub transient_for: Option<Window>,
+    /// Whether it is a modal transient that is shown (`modal_transient`).
+    pub modal_shown: bool,
+}
+
+/// The first of `candidates` (the other windows of the target's X client) that blocks the target, whose own
+/// `WM_TRANSIENT_FOR` is `transient_for`: a shown modal transient that is not one of the target's ancestors along the
+/// transient chain. A dialog's own modal parent does not block it: a modal D1 that opened a modal D2 leaves D2 the
+/// dialog the person can use (the bounded re-review's P2), while D2 still blocks D1 and both block the window below.
+pub fn blocking_dialog(transient_for: Option<Window>, candidates: &[Candidate]) -> Option<Window> {
+    let mut ancestors = Vec::new();
+    let mut next = transient_for;
+    while let Some(w) = next {
+        if ancestors.contains(&w) {
+            break;
+        }
+        ancestors.push(w);
+        next = candidates.iter().find(|c| c.window == w).and_then(|c| c.transient_for);
+    }
+    candidates
+        .iter()
+        .find(|c| c.modal_shown && !ancestors.contains(&c.window))
+        .map(|c| c.window)
 }
 
 /// The pending replies for one window's description.
@@ -467,11 +498,12 @@ impl X11 {
         }
     }
 
-    /// A modal transient of `window`'s own X client that is shown (`modal_transient`), if any: a dialog that blocks it.
-    /// The candidates are the window manager's client list, else, with no window manager, the root's children, of the
-    /// same client (its resource-id base): a toolkit's dialogs share its connection. Two round trips, the candidates'
-    /// requests pipelined. A dialog that blocks a sibling window of the same application, not this one, counts too
-    /// (X11 does not tell window-modal from application-modal), which refuses more, never less.
+    /// A modal transient of `window`'s own X client that is shown (`modal_transient`) and blocks it
+    /// (`blocking_dialog`: not one of its own ancestors), if any. The candidates are the window manager's client list,
+    /// else, with no window manager, the root's children, of the same client (its resource-id base): a toolkit's
+    /// dialogs share its connection. Two round trips, the candidates' requests and the window's own `WM_TRANSIENT_FOR`
+    /// pipelined. A dialog that blocks a sibling window of the same application, not this one, counts too (X11 does
+    /// not tell window-modal from application-modal), which refuses more, never less.
     pub fn modal_transient_of(&self, window: Window) -> Result<Option<Window>> {
         let mask = self.conn.setup().resource_id_mask;
         let listed = values32(&self.get_property(self.root, self.atom("_NET_CLIENT_LIST"))?);
@@ -480,6 +512,7 @@ impl X11 {
         } else {
             listed
         };
+        let own = self.property(window, AtomEnum::WM_TRANSIENT_FOR.into())?;
         let pending = candidates
             .into_iter()
             .filter(|&w| w != window && w & !mask == window & !mask)
@@ -494,7 +527,8 @@ impl X11 {
             })
             .collect::<Result<Vec<_>>>()?;
         let modal = self.atom("_NET_WM_STATE_MODAL");
-        let mut found = None;
+        let named = |reply: &GetPropertyReply| values32(reply).first().copied().filter(|w| *w != x11rb::NONE);
+        let mut read = Vec::new();
         for (w, state, transient_for, attributes, wm_state) in pending {
             // a window gone meanwhile blocks nothing
             let (Ok(state), Ok(transient_for), Ok(attributes), Ok(wm_state)) = (
@@ -505,19 +539,26 @@ impl X11 {
             ) else {
                 continue;
             };
-            if found.is_none()
-                && modal_transient(
+            read.push(Candidate {
+                window: w,
+                transient_for: named(&transient_for),
+                modal_shown: modal_transient(
                     &values32(&state),
                     modal,
                     &values32(&transient_for),
                     attributes.map_state,
                     &values32(&wm_state),
-                )
-            {
-                found = Some(w);
-            }
+                ),
+            });
         }
-        Ok(found)
+        Ok(blocking_dialog(named(&own.reply()?), &read))
+    }
+
+    /// Whether `window` carries `_XEMBED_INFO`, Qt's mark on every window it creates (`families::QtMark::Xembed`). A
+    /// window that cannot be read carries nothing here; the request that names it answers its own error.
+    pub fn xembed_marked(&self, window: Window) -> bool {
+        self.get_property(window, self.atom("_XEMBED_INFO"))
+            .is_ok_and(|reply| reply.type_ != x11rb::NONE)
     }
 
     /// `_NET_WM_PID` when it is exactly one non-zero value.
@@ -1076,6 +1117,83 @@ mod tests {
             MapState::VIEWABLE,
             &normal_state
         ));
+    }
+
+    #[test]
+    fn a_dialog_s_modal_ancestors_do_not_block_it_and_a_modal_dialog_above_a_window_does() {
+        // the bounded re-review's P2: modal D1 over the main window opens modal D2; D2 is the dialog the person can
+        // use, so input to it goes, while input to D1 or to the main window is refused (each blocked by a dialog
+        // above it)
+        const MAIN: Window = 0x600006;
+        const D1: Window = 0x600010;
+        const D2: Window = 0x600020;
+        const LEADER: Window = 0x600001;
+        let shown = |w, transient_for| Candidate {
+            window: w,
+            transient_for,
+            modal_shown: true,
+        };
+        let nested = [
+            Candidate {
+                window: MAIN,
+                transient_for: None,
+                modal_shown: false,
+            },
+            shown(D1, Some(MAIN)),
+            shown(D2, Some(D1)),
+        ];
+        let others = |of: Window| {
+            nested
+                .iter()
+                .filter(move |c| c.window != of)
+                .copied()
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            blocking_dialog(Some(D1), &others(D2)),
+            None,
+            "D2 is not blocked by its ancestor D1"
+        );
+        assert_eq!(
+            blocking_dialog(Some(MAIN), &others(D1)),
+            Some(D2),
+            "D1 is blocked by D2"
+        );
+        assert_eq!(
+            blocking_dialog(None, &others(MAIN)),
+            Some(D1),
+            "the main window is blocked"
+        );
+        // two dialogs transient for their group's leader (application-modal, the leader a window no list holds):
+        // neither is the other's ancestor, so the other one blocks, which refuses more, never less
+        let leader = [shown(D1, Some(LEADER))];
+        assert_eq!(
+            blocking_dialog(Some(LEADER), &leader),
+            Some(D1),
+            "a sibling dialog blocks"
+        );
+        assert_eq!(blocking_dialog(Some(LEADER), &[]), None);
+        // a window transient for a tool window that is not modal, itself transient for modal D1: D1 is still the
+        // window's ancestor, so it does not block it, while D2, a modal dialog of D1's, does
+        const TOOL: Window = 0x600030;
+        let through = [
+            Candidate {
+                window: TOOL,
+                transient_for: Some(D1),
+                modal_shown: false,
+            },
+            shown(D1, Some(MAIN)),
+        ];
+        assert_eq!(
+            blocking_dialog(Some(TOOL), &through),
+            None,
+            "an ancestor along a chain through a window that is not modal"
+        );
+        let with_d2 = [through[0], through[1], shown(D2, Some(D1))];
+        assert_eq!(blocking_dialog(Some(TOOL), &with_d2), Some(D2));
+        // a cycle of transients ends
+        let cycle = [shown(D1, Some(D2)), shown(D2, Some(D1))];
+        assert_eq!(blocking_dialog(Some(D1), &cycle), None);
     }
 
     #[test]

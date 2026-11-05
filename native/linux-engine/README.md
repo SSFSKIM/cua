@@ -101,21 +101,28 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     window of its own the input focus on a press at that point, …". No press lands on one in the Qt applications on
     the #171 VM (0 of 10,800 points over 8 applications).
   - *The real focus before every press.* A session a hold keeps open is reused, and one opened while the real focus
-    was within the window synthesized no `FocusIn`. Before each press the real focus is read again; when it has left
-    such a session, the session takes a synthetic focus then, as a fresh one would (the earlier focus let go, the
-    `FocusIn`, its `active` waited for), and its end sends the `FocusOut`.
-  - *Qt with no accessibility tree.* A window no listed family names whose process maps Qt 5's or Qt 6's core
-    library (`/proc/<pid>/maps`, by `_NET_WM_PID`; only the two names are looked for) has no frame to wait on: its
-    presses are refused in shared mode ("`<app>` is a Qt application with no accessibility tree on the bus, …").
-    Where that map cannot be read (a pid of another PID namespace, as inside cua's sandbox, another user's process, a
-    remote client) the toolkit is unknown and the press goes unwaited.
+    was within the window synthesized no `FocusIn`. Before each press, every press of a multi-click included, the
+    real focus is read again; when it has left such a session, the session takes a synthetic focus then, as a fresh
+    one would (the earlier focus let go, the `FocusIn`, its `active` waited for), and its end sends the `FocusOut`. A
+    press refused after earlier clicks of its request went says so: "…; the request's next click was not sent, but
+    `<n>` of its `<count>` clicks already reached the window, so read the window before retrying".
+  - *Qt with no accessibility tree.* A window no listed family names that carries `_XEMBED_INFO` (Qt's xcb backend
+    sets it on every window it creates; no other family surveyed carries it: GTK 3, GTK 4, VTE, Firefox, Chrome,
+    Electron, Java AWT and Swing, Tk, LibreOffice, xterm), or whose process maps Qt 5's or Qt 6's core library
+    (`/proc/<pid>/maps`, by `_NET_WM_PID`; only the two names are looked for), has no frame to wait on: its presses
+    are refused in shared mode ("`<app>` is a Qt application with no accessibility tree on the bus, …"); keys still
+    go. The mark is read from the X server, so it answers inside cua's worker sandbox, whose own PID namespace and
+    `/proc` hide every application's map; a window with neither (unmarked, and its map unreadable) is of an unknown
+    toolkit and its press goes unwaited. With `--stats` the line carries `qt_without_tree` (`xembed` or `map`).
 - **A window its modal dialog blocks** (`engine.rs`, the design session's ruling A): Qt hands a `FocusIn` or a
   `FocusOut` on a window its modal dialog blocks to the dialog, and asks for the dialog's activation, so any background
   input's synthetic `FocusIn` makes the dialog take the desktop's focus (5 of 5 on Qt 5 and Qt 6, with and without
   Openbox, and on kate's and Qt Creator's Open dialogs; GTK 3, GTK 4 and Chrome 0 of 5). In shared mode, input to a
-  Qt window (`families.rs` `relays_focus_to_modal`, or Qt found by its process's map) while a modal transient of its
-  own X client is shown (`_NET_WM_STATE_MODAL`, `WM_TRANSIENT_FOR`, viewable or iconic) is refused before anything is
-  sent, after the minimized refusal and for the same requests: "`<app>` window `<id>` is blocked by its modal dialog,
+  Qt window (`families.rs` `relays_focus_to_modal`, or Qt with no tree, above) while a modal transient of its own X
+  client is shown (`_NET_WM_STATE_MODAL`, `WM_TRANSIENT_FOR`, viewable or iconic) that is not one of the window's own
+  ancestors along `WM_TRANSIENT_FOR` (a modal dialog that opened a modal dialog over itself is blocked by it, and the
+  dialog on top takes input) is refused before anything is sent, after the minimized refusal and for the same
+  requests: "`<app>` window `<id>` is blocked by its modal dialog,
   window `<dialog>`, which takes the desktop's focus on background input to the window; nothing was sent: send the
   input to the dialog, or use a dedicated desktop". Releases always run; dedicated mode is unchanged. A dialog that
   maps during a request is not seen by it: when that request's own click opened it, Qt asks for its activation as it

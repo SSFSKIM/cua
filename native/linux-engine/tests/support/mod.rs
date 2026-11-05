@@ -10,6 +10,27 @@ use std::sync::mpsc::{Receiver, channel};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
+/// `unshare`'s options for [`Engine::start_sandboxed`]: a user namespace mapping the test's user, a PID namespace with
+/// its own `/proc`, the engine its first child, killed with `unshare`.
+const SANDBOX: [&str; 6] = [
+    "--user",
+    "--map-current-user",
+    "--pid",
+    "--fork",
+    "--kill-child",
+    "--mount-proc",
+];
+
+/// Whether process `pid` of the test's namespace can be read from inside a namespace as [`Engine::start_sandboxed`]
+/// makes: its map, as the engine would read it.
+pub fn sandbox_reads_maps_of(pid: u32) -> bool {
+    Command::new("unshare")
+        .args(SANDBOX)
+        .args(["sh", "-c", &format!("head -c 1 /proc/{pid}/maps >/dev/null 2>&1")])
+        .status()
+        .is_ok_and(|s| s.success())
+}
+
 /// How long one wire request may take before the test gives up on the engine.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -85,21 +106,42 @@ impl Engine {
         self.child.id()
     }
 
+    /// [`Engine::start_with`] inside a PID namespace of its own with its own `/proc`, as cua's worker sandbox runs it
+    /// (`codex-linux-sandbox`'s bwrap: `--unshare-pid` and a fresh proc), so no process of the display's applications
+    /// is visible to it and their `/proc/<pid>/maps` cannot be read. `unshare` makes a user namespace that maps the
+    /// test's own user, so the X server and the accessibility bus see the same peer. None, said on stderr, where this
+    /// host refuses such namespaces.
+    pub fn start_sandboxed(options: &[&str]) -> Option<Engine> {
+        if !Command::new("unshare")
+            .args(SANDBOX)
+            .arg("true")
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+        {
+            eprintln!("skipped: unshare cannot make a user and PID namespace here");
+            return None;
+        }
+        clear_display_record();
+        let mut command = Command::new("unshare");
+        command.args(SANDBOX).arg(engine_bin()).arg("server").args(options);
+        Some(Engine::spawn_command(command, "the sandboxed engine", false))
+    }
+
     fn spawn_with(bin: &std::path::Path, options: &[&str], env: &[(&str, &str)]) -> Engine {
-        let mut child = Command::new(bin)
-            .arg("server")
-            .args(options)
-            .envs(env.iter().copied())
-            // an engine given an injected fault says so on stderr; the test reads its effect, not the message
-            .stderr(if env.is_empty() {
-                Stdio::inherit()
-            } else {
-                Stdio::null()
-            })
+        let mut command = Command::new(bin);
+        command.arg("server").args(options).envs(env.iter().copied());
+        // an engine given an injected fault says so on stderr; the test reads its effect, not the message
+        Engine::spawn_command(command, &bin.display().to_string(), !env.is_empty())
+    }
+
+    fn spawn_command(mut command: Command, what: &str, quiet: bool) -> Engine {
+        let mut child = command
+            .stderr(if quiet { Stdio::null() } else { Stdio::inherit() })
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .spawn()
-            .unwrap_or_else(|e| panic!("cannot start {}: {e}", bin.display()));
+            .unwrap_or_else(|e| panic!("cannot start {what}: {e}"));
         let stdin = child.stdin.take();
         let stdout = child.stdout.take().unwrap();
         let (tx, lines) = channel();

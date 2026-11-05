@@ -47,8 +47,10 @@ struct Late {
     child: Child,
     log: Log,
     window: u32,
-    /// Its modal dialog, in the `modal` mode.
+    /// Its modal dialog, in the `modal` and `nested` modes.
     dialog: Option<u32>,
+    /// The modal dialog that dialog opened over itself, in the `nested` mode.
+    inner: Option<u32>,
 }
 
 impl Drop for Late {
@@ -128,20 +130,25 @@ fn late_as(binding: &str, engine: &mut Engine, block: u32, mode: Option<&str>, a
         assert!(Instant::now() < deadline, "the Qt window is shown");
         sleep(Duration::from_millis(50));
     };
-    let dialog = (mode == Some("modal")).then(|| {
+    let dialogs = matches!(mode, Some("modal" | "nested")).then(|| {
         loop {
-            if let Some(xid) = log.lock().unwrap().iter().find_map(|r| r["dialog"].as_u64()) {
-                break xid as u32;
+            if let Some(record) = log.lock().unwrap().iter().find(|r| r["dialog"].is_u64()) {
+                break (
+                    record["dialog"].as_u64().unwrap() as u32,
+                    record["inner"].as_u64().map(|w| w as u32),
+                );
             }
             assert!(Instant::now() < deadline, "the Qt window's modal dialog is shown");
             sleep(Duration::from_millis(50));
         }
     });
+    let (dialog, inner) = (dialogs.map(|d| d.0), dialogs.and_then(|d| d.1));
     let late = Late {
         child,
         log,
         window,
         dialog,
+        inner,
     };
     let source = |engine: &mut Engine| {
         engine
@@ -580,31 +587,196 @@ fn background_input_to_a_qt_window_its_modal_dialog_blocks_is_refused_in_shared_
 #[test]
 fn a_background_press_to_a_qt_window_with_no_accessibility_tree_is_refused_in_shared_mode() {
     // the design session's ruling B: a Qt window whose application put no tree on the bus has no frame to wait on;
-    // found by its process's map, its presses are refused, while keys, which Qt never activates on, still go. The
-    // engine before the fix knew no family for it and pressed without waiting.
+    // found by its _XEMBED_INFO mark or its process's map, its presses are refused, while keys, which Qt never
+    // activates on, still go. The engine before the fix knew no family for it and pressed without waiting. With the
+    // mark taken off the window, the map alone still finds it where the map can be read.
     for binding in ["qt5", "qt6"] {
         let mut engine = Engine::start_with(&["--focus-ack-ms", LATE_BOUND]);
         let Some(late) = late_as(binding, &mut engine, BLOCK_MS, None, false) else {
             continue;
         };
         let front = Front::open();
-        let (taken, answers, presses) = clicks(&mut engine, &late, &front, &[click(late.window)]);
-        assert_eq!(
-            taken, 0,
-            "{binding}: no click took the X focus from the front window: {answers:?}"
+        assert_refused_with_no_tree(binding, &mut engine, &late, &front);
+        unmark(late.window);
+        let mut by_map = Engine::start_with(&["--focus-ack-ms", LATE_BOUND]);
+        assert_refused_with_no_tree(&format!("{binding}, by its map"), &mut by_map, &late, &front);
+    }
+}
+
+#[test]
+fn inside_a_sandbox_that_cannot_read_its_map_a_qt_window_with_no_tree_is_refused_by_its_mark() {
+    // the design session's ruling, 2026-11-05: in service the engine runs in the worker sandbox's own PID namespace and
+    // /proc, where no application's map can be read, so the map alone left a Qt window with no tree unknown there, and
+    // its presses went unwaited. Qt's _XEMBED_INFO mark is read from the X server, which the sandbox reaches. The
+    // control: the same window with its mark taken off is unknown inside the sandbox, and a click takes the X focus.
+    for binding in ["qt5", "qt6"] {
+        let Some(mut engine) = Engine::start_sandboxed(&["--focus-ack-ms", LATE_BOUND]) else {
+            return;
+        };
+        let Some(late) = late_as(binding, &mut engine, BLOCK_MS, None, false) else {
+            continue;
+        };
+        assert!(
+            !support::sandbox_reads_maps_of(late.child.id()),
+            "{binding}: the sandbox cannot read the Qt process's map"
         );
-        for answer in &answers {
-            let error = answer["error"].as_str().unwrap_or("");
-            assert!(
-                error.contains("is a Qt application with no accessibility tree on the bus")
-                    && error.ends_with("nothing was sent, so it is safe to retry"),
-                "{binding}: refused, nothing sent: {answer}"
+        let front = Front::open();
+        assert_refused_with_no_tree(&format!("{binding}, sandboxed"), &mut engine, &late, &front);
+        unmark(late.window);
+        let mut control = Engine::start_sandboxed(&["--focus-ack-ms", LATE_BOUND]).expect("sandboxed as above");
+        let (taken, answers, _) = clicks(&mut control, &late, &front, &[click(late.window)]);
+        assert!(
+            answers.iter().all(|a| a["ok"] == json!(true)),
+            "{binding}: the control: unmarked and unreadable, the window's toolkit is unknown: {answers:?}"
+        );
+        assert!(
+            taken > 0,
+            "{binding}: the control: a click to it takes the X focus ({taken} of {CLICKS})"
+        );
+    }
+}
+
+/// `CLICKS` clicks to a Qt window with no tree each refused with nothing sent and the X focus left where it was, and a
+/// key that still goes.
+fn assert_refused_with_no_tree(lane: &str, engine: &mut Engine, late: &Late, front: &Front) {
+    let (taken, answers, presses) = clicks(engine, late, front, &[click(late.window)]);
+    assert_eq!(
+        taken, 0,
+        "{lane}: no click took the X focus from the front window: {answers:?}"
+    );
+    for answer in &answers {
+        let error = answer["error"].as_str().unwrap_or("");
+        assert!(
+            error.contains("is a Qt application with no accessibility tree on the bus")
+                && error.ends_with("nothing was sent, so it is safe to retry"),
+            "{lane}: refused, nothing sent: {answer}"
+        );
+    }
+    assert_eq!(presses, 0, "{lane}: a refused click pressed nothing");
+    front.focus();
+    sleep(BETWEEN);
+    let typed = engine.request("press_key", key(late.window).1);
+    assert!(typed.is_ok(), "{lane}: a key still goes: {typed:?}");
+}
+
+/// Qt's `_XEMBED_INFO` mark taken off `window`, so only its process's map can tell that it is Qt's.
+fn unmark(window: u32) {
+    let (conn, _) = x11rb::connect(None).expect("an X connection");
+    let atom = conn.intern_atom(true, b"_XEMBED_INFO").unwrap().reply().unwrap().atom;
+    let marked = conn
+        .get_property(false, window, atom, x11rb::protocol::xproto::AtomEnum::ANY, 0, 2)
+        .unwrap()
+        .reply()
+        .unwrap();
+    assert_ne!(marked.type_, x11rb::NONE, "Qt marked its window with _XEMBED_INFO");
+    conn.delete_property(window, atom).unwrap();
+    conn.sync().unwrap();
+}
+
+#[test]
+fn a_double_click_on_a_held_session_checks_the_focus_again_before_its_second_press() {
+    // the bounded re-review's P1: the Qt window holds the real focus, so key_down("shift") opens a session that
+    // synthesizes no FocusIn; a held double click then starts, and the person focuses another window during the first
+    // click's hold. Before the fix the press's checks ran once per request, so the second press went on the first's
+    // stale decision and Qt took the X focus; now they run before every press, and the second takes a fresh focus.
+    const RUNS: usize = 5;
+    for binding in ["qt5", "qt6"] {
+        let mut engine = Engine::start_with(&["--focus-ack-ms", LATE_BOUND]);
+        let Some(late) = late_as(binding, &mut engine, 0, None, true) else {
+            continue;
+        };
+        let front = Front::open();
+        let shift = json!({"window": {"id": late.window}, "key": "shift"});
+        let double = json!({"window": {"id": late.window}, "x": 40, "y": 12, "click_count": 2, "duration": 400});
+        let before = late.presses();
+        let mut taken = 0;
+        for _ in 0..RUNS {
+            front.give(late.window);
+            sleep(BETWEEN);
+            engine.request("key_down", shift.clone()).expect("key_down");
+            let first = late.presses() + 1;
+            engine.pipeline(&[("click", double.clone())]);
+            let deadline = Instant::now() + PATIENCE;
+            while late.presses() < first {
+                assert!(
+                    Instant::now() < deadline,
+                    "{binding}: the first press reached the editor"
+                );
+                sleep(Duration::from_millis(5));
+            }
+            // the person focuses their window during the first click's hold
+            front.focus();
+            let (answer, _) = engine.answers(1).remove(0);
+            sleep(Duration::from_millis(300));
+            if !front.holds_focus() {
+                taken += 1;
+            }
+            engine.request("key_up", shift.clone()).expect("key_up");
+            assert_eq!(
+                answer["ok"],
+                json!(true),
+                "{binding}: the double click answered: {answer}"
             );
         }
-        assert_eq!(presses, 0, "{binding}: a refused click pressed nothing");
-        front.focus();
-        sleep(BETWEEN);
-        let typed = engine.request("press_key", key(late.window).1);
-        assert!(typed.is_ok(), "{binding}: a key still goes: {typed:?}");
+        sleep(Duration::from_millis(300));
+        assert_eq!(
+            taken, 0,
+            "{binding}: no second press took the X focus from the front window"
+        );
+        assert_eq!(
+            late.presses() - before,
+            2 * RUNS,
+            "{binding}: both presses of every double click reached the editor"
+        );
+    }
+}
+
+#[test]
+fn a_modal_dialog_over_a_modal_dialog_takes_input_and_the_dialog_below_it_is_refused() {
+    // the bounded re-review's P2 and the design session's regression: modal D1 over the main window opens modal D2, as
+    // a message box over a file dialog. D2 is the dialog the person can use: input to it goes, the X focus staying
+    // where it was. D1 is blocked by D2, and the main window by both, so input to either is refused with nothing sent.
+    // Before the fix every other modal window of the client counted, D2's own parent D1 among them, so input to D2 was
+    // refused too and the flow could not be completed in shared mode.
+    for binding in ["qt5", "qt6"] {
+        let mut engine = Engine::start_with(&[]);
+        let Some(late) = late_as(binding, &mut engine, 0, Some("nested"), true) else {
+            continue;
+        };
+        let (d1, d2) = (late.dialog.expect("D1"), late.inner.expect("D2"));
+        let front = Front::open();
+        let blocked = |window: u32, by: u32| {
+            format!(
+                "window {window} is blocked by its modal dialog, window {by}, which takes the desktop's focus on \
+                 background input to the window; nothing was sent: send the input to the dialog, or use a dedicated \
+                 desktop"
+            )
+        };
+        for _ in 0..3 {
+            front.focus();
+            sleep(BETWEEN);
+            let to_d2 = engine.request("press_key", key(d2).1);
+            sleep(Duration::from_millis(300));
+            assert!(to_d2.is_ok(), "{binding}: input to the topmost dialog goes: {to_d2:?}");
+            assert!(
+                front.holds_focus(),
+                "{binding}: and the X focus stays with the front window, not {}",
+                front.focused()
+            );
+        }
+        for (window, by) in [(d1, d2), (late.window, d1)] {
+            front.focus();
+            sleep(BETWEEN);
+            let answer = engine.request("press_key", key(window).1);
+            sleep(Duration::from_millis(300));
+            assert!(
+                answer.as_ref().is_err_and(|e| e.ends_with(&blocked(window, by))),
+                "{binding}: input to window {window} below an open modal dialog is refused: {answer:?}"
+            );
+            assert!(
+                front.holds_focus(),
+                "{binding}: the X focus stayed with the front window"
+            );
+        }
     }
 }

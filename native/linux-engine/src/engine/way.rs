@@ -141,9 +141,9 @@ impl Engine {
             return Ok(None);
         }
         if !self.family_of(window).is_some_and(|f| f.activates_on_press) {
-            // Qt with no accessibility tree has no frame to wait on (the design session's ruling B)
-            if self.qt_without_toolkit(window) {
-                self.extra.insert("qt_by_map".into(), json!(true));
+            // Qt with no accessibility tree has no frame to wait on (the design session's ruling B), found by its
+            // `_XEMBED_INFO` mark or its process's map (`qt_without_tree` on the `--stats` line)
+            if self.qt_without_toolkit(window).is_some() {
                 bail!(nothing_pressed(no_frame(&self.x.get_window(window)?.app)));
             }
             return Ok(None);

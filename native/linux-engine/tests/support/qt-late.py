@@ -15,8 +15,10 @@ A mode, if given, changes the window as task 61's review and the design session'
 - `native`: the editor's viewport is a native child X window (`WA_NativeWindow`, which makes the editor native too), so
   a press lands on a window that is never Qt's focus window: the review's reproducer.
 - `modal`: a modal dialog of the window's own is shown over it, and `{"dialog": id}` printed once it is.
+- `nested`: as `modal`, and that dialog opens a modal dialog of its own over itself, as a message box over a file
+  dialog: `{"dialog": id, "inner": id}` printed once both are shown (the bounded re-review's P2).
 
-usage: qt-late.py <title> qt5|qt6 <block ms> <every ms> [native|modal]
+usage: qt-late.py <title> qt5|qt6 <block ms> <every ms> [native|modal|nested]
 """
 
 import json
@@ -62,13 +64,21 @@ if mode == 'native':
 app.focusWindowChanged.connect(lambda w: say({'focus_window': w is not None and w is editor.windowHandle()}))
 editor.show()
 say({'xid': int(editor.winId())})
-if mode == 'modal':
+if mode in ('modal', 'nested'):
     dialog = QDialog(editor)
     dialog.setWindowTitle(title + ' dialog')
     dialog.setModal(True)
     dialog.resize(200, 100)
     dialog.show()
-    QTimer.singleShot(300, lambda: say({'dialog': int(dialog.winId())}))
+    if mode == 'modal':
+        QTimer.singleShot(300, lambda: say({'dialog': int(dialog.winId())}))
+    else:
+        inner = QDialog(dialog)
+        inner.setWindowTitle(title + ' inner dialog')
+        inner.setModal(True)
+        inner.resize(150, 80)
+        QTimer.singleShot(200, inner.show)
+        QTimer.singleShot(500, lambda: say({'dialog': int(dialog.winId()), 'inner': int(inner.winId())}))
 
 
 def late():

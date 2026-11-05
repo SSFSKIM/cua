@@ -15,7 +15,7 @@ use super::windows::activate;
 use crate::atspi;
 use crate::engine::DesktopMode;
 use crate::families::{Kind, When};
-use crate::focus_ack::{FocusAck, nothing_pressed};
+use crate::focus_ack::{FocusAck, no_frame, nothing_pressed};
 use crate::input::focus_is_within;
 use crate::route::Target;
 use crate::tree::ObjRef;
@@ -141,6 +141,11 @@ impl Engine {
             return Ok(None);
         }
         if !self.family_of(window).is_some_and(|f| f.activates_on_press) {
+            // Qt with no accessibility tree has no frame to wait on (the design session's ruling B)
+            if self.qt_without_toolkit(window) {
+                self.extra.insert("qt_by_map".into(), json!(true));
+                bail!(nothing_pressed(no_frame(&self.x.get_window(window)?.app)));
+            }
             return Ok(None);
         }
         let info = self.x.get_window(window)?;

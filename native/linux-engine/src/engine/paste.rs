@@ -333,7 +333,7 @@ impl Engine {
                         || {
                             confirmed(&element, &mut shared.borrow_mut(), x, *clicked)?;
                             if let Some(ack) = ack.as_mut() {
-                                ack.taken(&mut shared.borrow_mut(), route)?
+                                ack.before_press(&mut shared.borrow_mut(), x, route, (rx, ry))?
                                     .map_err(|cause| refused(&cause, *clicked))?;
                             }
                             // sent from the moment the pointer is placed, so no later refusal says nothing was

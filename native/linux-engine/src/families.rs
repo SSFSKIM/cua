@@ -111,6 +111,11 @@ pub struct Family {
     /// not its own focus window (Qt, task 61): a background press in shared mode first waits for the window's frame to
     /// report the session's synthetic focus taken (`focus_ack.rs`).
     pub activates_on_press: bool,
+    /// Its toolkit hands a `FocusIn` or `FocusOut` on a window its modal dialog blocks to that dialog, asking for the
+    /// dialog's activation (Qt's `relayFocusToModalWindow`, task 61 and its fix): background input, whose session
+    /// synthesizes that `FocusIn`, to a window with a modal dialog of its own is refused in shared mode
+    /// (`engine.rs`, `x11::X11::modal_transient_of`).
+    pub relays_focus_to_modal: bool,
     /// The runs that showed it (`docs/evidence/2026-10-28-own-linux-engine/`).
     pub evidence: &'static str,
 }
@@ -182,6 +187,7 @@ pub const FAMILIES: &[Family] = &[
         text_scrolls: false,
         refreshes_targets: false,
         activates_on_press: false,
+        relays_focus_to_modal: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible, m31-dnd-candidate, m31-dnd-candidate-stats",
     },
@@ -205,6 +211,7 @@ pub const FAMILIES: &[Family] = &[
         text_scrolls: false,
         refreshes_targets: false,
         activates_on_press: false,
+        relays_focus_to_modal: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible",
     },
@@ -248,6 +255,7 @@ pub const FAMILIES: &[Family] = &[
         text_scrolls: false,
         refreshes_targets: false,
         activates_on_press: false,
+        relays_focus_to_modal: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
                    m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600; m3/kinds/ \
                    runs m31-kinds-covered, m31-kinds-partial, m31-kinds-partial-deep, m31-move-covered, \
@@ -295,6 +303,7 @@ pub const FAMILIES: &[Family] = &[
         text_scrolls: false,
         refreshes_targets: true,
         activates_on_press: false,
+        relays_focus_to_modal: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible; m3/kinds/ runs m31-kinds-covered, \
                    m31-kinds-visible, m31-move-covered, m31-drag-covered, m31-drag-visible-new; the TARGETS: \
                    m4/focus-timer/fix3/ (matrix-idle, matrix-load2)",
@@ -315,12 +324,16 @@ pub const FAMILIES: &[Family] = &[
         text_scrolls: false,
         refreshes_targets: true,
         activates_on_press: false,
+        relays_focus_to_modal: false,
         evidence: "m4/focus-timer/fix3/ (matrix-idle, matrix-load2)",
     },
     // Qt (kate on Qt 5.15, qtcreator on Qt 6.4) takes synthetic clicks and keys (M0.4) but no synthetic wheel event,
     // covered or visible, in every engine (M3.1): probably because its xcb backend reads the wheel through XInput 2. Its
     // press asks for the window's activation when Qt handles it before the synthetic FocusIn's activation, which a
     // loaded main thread makes likely (task 61; `focus_ack.rs`): a background press waits for its frame's `active`.
+    // A FocusIn or FocusOut on a window its modal dialog blocks makes Qt activate the dialog, for any input kind (task
+    // 61's fix: 5 of 5 background keys on Qt 5 and Qt 6, with and without a window manager; GTK 3, GTK 4 and Chrome 0
+    // of 5 each): input to such a window is refused in shared mode.
     Family {
         name: "Qt",
         toolkit: Some("Qt"),
@@ -337,8 +350,9 @@ pub const FAMILIES: &[Family] = &[
         text_scrolls: false,
         refreshes_targets: false,
         activates_on_press: true,
+        relays_focus_to_modal: true,
         evidence: "m3/kinds/ runs m31-kinds-covered, m31-kinds-visible, m31-qt-covered, m31-qt-visible; the press's \
-                   activation: m4/qt-activation/",
+                   activation: m4/qt-activation/; the modal dialog's: m4/qt-activation/fix/",
     },
     // A VTE terminal pastes with Ctrl+Shift+V; Ctrl+V inserts the next key literally in a shell. Its text is its
     // screen, whose first row scrolls out as text wraps the last row of a full screen.
@@ -355,6 +369,7 @@ pub const FAMILIES: &[Family] = &[
         text_scrolls: true,
         refreshes_targets: true,
         activates_on_press: false,
+        relays_focus_to_modal: false,
         evidence: "M2.2's terminal paste (task-14 report; m2/ from M2.3); the scroll: task 56's paste trace \
                    (m4/focus-timer/fix/terminal-trace-load2/); the TARGETS: m4/focus-timer/fix2/never-taken/, \
                    m4/focus-timer/fix3/",
@@ -377,6 +392,7 @@ pub const FAMILIES: &[Family] = &[
         text_scrolls: false,
         refreshes_targets: false,
         activates_on_press: false,
+        relays_focus_to_modal: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible",
     },
 ];
@@ -397,6 +413,22 @@ pub fn family<'a>(table: &'a [Family], class: Option<&str>, toolkit: Option<&Too
     class
         .and_then(|c| table.iter().find(|f| f.by_class(c)))
         .or_else(|| toolkit.and_then(|t| table.iter().find(|f| f.by_toolkit(t))))
+}
+
+/// Whether a process's memory map (`/proc/<pid>/maps`, line by line) maps Qt 5's or Qt 6's core library: Qt found with
+/// no accessibility bus (task 61's fix, the design session's ruling B). Only the two library names are looked for; no
+/// line is kept, logged or reported, since the process may be the person's own application.
+pub fn maps_qt(maps: impl std::io::BufRead) -> bool {
+    maps.lines()
+        .map_while(std::io::Result::ok)
+        .any(|line| line.contains("/libQt5Core.so") || line.contains("/libQt6Core.so"))
+}
+
+/// [`maps_qt`] for process `pid`; None when its map cannot be read (no such process here, another user's, or a pid
+/// from another namespace or host), which leaves the toolkit unknown.
+pub fn process_is_qt(pid: u32) -> Option<bool> {
+    let file = std::fs::File::open(format!("/proc/{pid}/maps")).ok()?;
+    Some(maps_qt(std::io::BufReader::new(file)))
 }
 
 #[cfg(test)]
@@ -422,6 +454,7 @@ mod tests {
             text_scrolls: false,
             refreshes_targets: false,
             activates_on_press: false,
+            relays_focus_to_modal: false,
             evidence: "test",
         },
         Family {
@@ -437,6 +470,7 @@ mod tests {
             text_scrolls: false,
             refreshes_targets: false,
             activates_on_press: false,
+            relays_focus_to_modal: false,
             evidence: "test",
         },
     ];
@@ -702,6 +736,52 @@ mod tests {
         ] {
             let found = family(FAMILIES, Some(class), toolkit.as_ref());
             assert!(!found.is_some_and(|f| f.activates_on_press), "{class}");
+        }
+    }
+
+    #[test]
+    fn a_process_is_qt_when_its_map_maps_qt_5_s_or_qt_6_s_core_library() {
+        let map = |libs: &[&str]| {
+            libs.iter()
+                .map(|l| format!("7f2a3c000000-7f2a3c200000 r-xp 00000000 08:01 1234 /usr/lib/x86_64-linux-gnu/{l}\n"))
+                .collect::<String>()
+        };
+        for qt in ["libQt5Core.so.5.15.13", "libQt6Core.so.6.4.2"] {
+            assert!(maps_qt(map(&["libc.so.6", qt, "libm.so.6"]).as_bytes()), "{qt}");
+        }
+        for not in [
+            map(&["libc.so.6", "libgtk-3.so.0.2409.32"]),
+            map(&["libQt6Core5Compat.so.6.4.2"]),
+            map(&["libQt5Gui.so.5"]),
+            String::new(),
+        ] {
+            assert!(!maps_qt(not.as_bytes()), "{not}");
+        }
+        assert_eq!(process_is_qt(0), None, "no such process: unknown");
+        assert_eq!(
+            process_is_qt(std::process::id()),
+            Some(false),
+            "this test is no Qt process"
+        );
+    }
+
+    #[test]
+    fn only_qt_hands_a_blocked_window_s_focus_to_its_modal_dialog() {
+        // task 61's fix: a background key to a window its modal dialog blocks moved the focus to the dialog on Qt 5
+        // and Qt 6, never on GTK 3, GTK 4 or Chrome
+        let relaying: Vec<&str> = FAMILIES
+            .iter()
+            .filter(|f| f.relays_focus_to_modal)
+            .map(|f| f.name)
+            .collect();
+        assert_eq!(relaying, vec!["Qt"]);
+        for (class, toolkit) in [
+            ("Google-chrome", None),
+            ("Gedit", Some(toolkit("GTK", Some("3.24.41")))),
+            ("org.gnome.TextEditor", Some(toolkit("GTK", Some("4.14.2")))),
+        ] {
+            let found = family(FAMILIES, Some(class), toolkit.as_ref());
+            assert!(!found.is_some_and(|f| f.relays_focus_to_modal), "{class}");
         }
     }
 

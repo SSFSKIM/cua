@@ -345,8 +345,9 @@ impl Session {
         self.clock()()
     }
 
-    /// Whether the X input focus was within the target when the session opened: the synthetic-focus state the
-    /// session holds (no FocusIn was synthesized), which a paste revalidates before its dispatch.
+    /// Whether the session holds no synthetic focus: none was synthesized, because the X input focus was within the
+    /// target when the session opened (and no press took one since, `refocus`). The synthetic-focus state a paste
+    /// revalidates before its dispatch.
     pub fn focus_was_within(&self) -> bool {
         !self.synthesized_focus
     }
@@ -417,6 +418,26 @@ impl Session {
         send_key(x, self.target, self.now(), keycode, false, self.state())
     }
 
+    /// The window a press at a root point would go to, sending nothing: the implicit-grab window while a button is
+    /// held, else the deepest viewable child under the point, as [`Session::move_to`] places the pointer.
+    pub fn recipient(&self, x: &X11, root_x: i16, root_y: i16) -> Result<Window> {
+        match self.grab {
+            Some(grab) => Ok(grab),
+            None => Ok(deepest_at(x, self.target, root_x, root_y)?.0),
+        }
+    }
+
+    /// Takes the synthetic focus now, if the session holds none: a session opened while the real focus was within
+    /// the target synthesized no `FocusIn`, and the real focus may have left since (a hold keeps the session across
+    /// requests). Answers whether a `FocusIn` went; the session's end then sends its `FocusOut`.
+    pub fn refocus(&mut self, x: &X11) -> Result<bool> {
+        if self.synthesized_focus {
+            return Ok(false);
+        }
+        self.focus_in(x)?;
+        Ok(true)
+    }
+
     /// Places the pointer at a root point: Enter and Motion to the deepest viewable child under it, or one
     /// Motion to the implicit-grab window while a button is held (behaviour §8.2).
     pub fn move_to(&mut self, x: &X11, root_x: i16, root_y: i16) -> Result<()> {
@@ -432,54 +453,7 @@ impl Session {
             });
             return Ok(());
         }
-        let base = self.target;
-        let local = x.conn.translate_coordinates(x.root, base, root_x, root_y)?;
-        let geometry = x.conn.get_geometry(base)?;
-        let (local, geometry) = (local.reply()?, geometry.reply()?);
-        if local.dst_x < 0
-            || local.dst_y < 0
-            || local.dst_x as i32 >= geometry.width as i32
-            || local.dst_y as i32 >= geometry.height as i32
-        {
-            bail!("background pointer position is outside the target window");
-        }
-        let (mut window, mut lx, mut ly) = (base, local.dst_x, local.dst_y);
-        for _ in 0..100 {
-            let children = x.conn.query_tree(window)?.reply()?.children;
-            let mut pending = Vec::with_capacity(children.len());
-            for &child in children.iter().rev() {
-                pending.push((
-                    child,
-                    x.conn.get_window_attributes(child)?,
-                    x.conn.get_geometry(child)?,
-                    x.conn.translate_coordinates(x.root, child, root_x, root_y)?,
-                ));
-            }
-            let mut found = None;
-            for (child, attributes, geometry, local) in pending {
-                if found.is_some() {
-                    continue;
-                }
-                let (Ok(attributes), Ok(geometry), Ok(local)) = (attributes.reply(), geometry.reply(), local.reply())
-                else {
-                    continue;
-                };
-                if attributes.map_state != MapState::VIEWABLE {
-                    continue;
-                }
-                let inside = local.dst_x >= 0
-                    && local.dst_y >= 0
-                    && (local.dst_x as i32) < geometry.width as i32
-                    && (local.dst_y as i32) < geometry.height as i32;
-                if inside {
-                    found = Some((child, local.dst_x, local.dst_y));
-                }
-            }
-            match found {
-                Some((child, cx, cy)) => (window, lx, ly) = (child, cx, cy),
-                None => break,
-            }
-        }
+        let (window, lx, ly) = deepest_at(x, self.target, root_x, root_y)?;
         let enter = EnterNotifyEvent {
             response_type: ENTER_NOTIFY_EVENT,
             detail: NotifyDetail::NONLINEAR,
@@ -569,6 +543,59 @@ impl Session {
         }
         Ok(())
     }
+}
+
+/// The deepest viewable child of `base` under a root point, with the point in its coordinates (behaviour §8.2): each
+/// level's children topmost first, the first viewable one containing the point. A point outside `base` is refused.
+fn deepest_at(x: &X11, base: Window, root_x: i16, root_y: i16) -> Result<(Window, i16, i16)> {
+    let local = x.conn.translate_coordinates(x.root, base, root_x, root_y)?;
+    let geometry = x.conn.get_geometry(base)?;
+    let (local, geometry) = (local.reply()?, geometry.reply()?);
+    if local.dst_x < 0
+        || local.dst_y < 0
+        || local.dst_x as i32 >= geometry.width as i32
+        || local.dst_y as i32 >= geometry.height as i32
+    {
+        bail!("background pointer position is outside the target window");
+    }
+    let (mut window, mut lx, mut ly) = (base, local.dst_x, local.dst_y);
+    for _ in 0..100 {
+        let children = x.conn.query_tree(window)?.reply()?.children;
+        let mut pending = Vec::with_capacity(children.len());
+        for &child in children.iter().rev() {
+            pending.push((
+                child,
+                x.conn.get_window_attributes(child)?,
+                x.conn.get_geometry(child)?,
+                x.conn.translate_coordinates(x.root, child, root_x, root_y)?,
+            ));
+        }
+        let mut found = None;
+        for (child, attributes, geometry, local) in pending {
+            if found.is_some() {
+                continue;
+            }
+            let (Ok(attributes), Ok(geometry), Ok(local)) = (attributes.reply(), geometry.reply(), local.reply())
+            else {
+                continue;
+            };
+            if attributes.map_state != MapState::VIEWABLE {
+                continue;
+            }
+            let inside = local.dst_x >= 0
+                && local.dst_y >= 0
+                && (local.dst_x as i32) < geometry.width as i32
+                && (local.dst_y as i32) < geometry.height as i32;
+            if inside {
+                found = Some((child, local.dst_x, local.dst_y));
+            }
+        }
+        match found {
+            Some((child, cx, cy)) => (window, lx, ly) = (child, cx, cy),
+            None => break,
+        }
+    }
+    Ok((window, lx, ly))
 }
 
 /// One key event to the top-level target, root and event coordinates 0 (behaviour §8.3).

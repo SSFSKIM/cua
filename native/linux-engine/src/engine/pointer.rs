@@ -473,18 +473,17 @@ impl Engine {
         let mut ack = self.focus_ack_for(target, None)?;
         let Engine { x, inputs, bus, .. } = self;
         let clicked = inputs.with_route(x, target, |x, route, _| {
-            if let (Some(ack), Some(bus)) = (ack.as_mut(), bus.as_mut()) {
-                ack.taken(bus, route)?
-                    .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
-            }
             let at = match position {
-                Some((px, py)) => {
-                    let (rx, ry) = route.root_point(x, px, py)?;
-                    route.place(x, rx, ry)?;
-                    Some((rx, ry))
-                }
+                Some((px, py)) => Some(route.root_point(x, px, py)?),
                 None => None,
             };
+            if let (Some(ack), Some(bus), Some(at)) = (ack.as_mut(), bus.as_mut(), at) {
+                ack.before_press(bus, x, route, at)?
+                    .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
+            }
+            if let Some((rx, ry)) = at {
+                route.place(x, rx, ry)?;
+            }
             for _ in 0..count {
                 click_once(x, route, &keycodes, at, button, hold)?;
             }
@@ -699,10 +698,6 @@ impl Engine {
         let may_arm_watch = guard.is_some();
         let Engine { x, inputs, bus, .. } = self;
         let dragged = inputs.with_route_kept(x, target, may_arm_watch, |x, route, _| {
-            if let (Some(ack), Some(bus)) = (ack.as_mut(), bus.as_mut()) {
-                ack.taken(bus, route)?
-                    .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
-            }
             let points = input
                 .path
                 .iter()
@@ -710,6 +705,11 @@ impl Engine {
                 .collect::<Result<Vec<_>>>()?;
             if points.len() < 2 {
                 bail!("drag path must contain at least two points");
+            }
+            // the drag's press goes at the path's start
+            if let (Some(ack), Some(bus)) = (ack.as_mut(), bus.as_mut()) {
+                ack.before_press(bus, x, route, points[0])?
+                    .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
             }
             route.place(x, points[0].0, points[0].1)?;
             let keycodes = chord(x, input.key.as_deref())?;

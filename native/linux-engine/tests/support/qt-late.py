@@ -11,7 +11,12 @@ It prints, one JSON line each, flushed at once: `{"xid": id}` once the window is
 nth mouse press, and `{"focus_window": bool}` as Qt's own focus window becomes the window or stops being it. Killed by
 the test.
 
-usage: qt-late.py <title> qt5|qt6 <block ms> <every ms>
+A mode, if given, changes the window as task 61's review and the design session's rulings need (2026-11-05):
+- `native`: the editor's viewport is a native child X window (`WA_NativeWindow`, which makes the editor native too), so
+  a press lands on a window that is never Qt's focus window: the review's reproducer.
+- `modal`: a modal dialog of the window's own is shown over it, and `{"dialog": id}` printed once it is.
+
+usage: qt-late.py <title> qt5|qt6 <block ms> <every ms> [native|modal]
 """
 
 import json
@@ -20,12 +25,13 @@ import time
 
 title, binding = sys.argv[1], sys.argv[2]
 block, every = int(sys.argv[3]), int(sys.argv[4])
+mode = sys.argv[5] if len(sys.argv) > 5 else None
 if binding == 'qt5':
-    from PyQt5.QtCore import QEvent, QObject, QTimer
-    from PyQt5.QtWidgets import QApplication, QPlainTextEdit
+    from PyQt5.QtCore import QEvent, QObject, Qt, QTimer
+    from PyQt5.QtWidgets import QApplication, QDialog, QPlainTextEdit
 else:
-    from PyQt6.QtCore import QEvent, QObject, QTimer
-    from PyQt6.QtWidgets import QApplication, QPlainTextEdit
+    from PyQt6.QtCore import QEvent, QObject, Qt, QTimer
+    from PyQt6.QtWidgets import QApplication, QDialog, QPlainTextEdit
 
 
 def say(record):
@@ -51,9 +57,18 @@ editor.setPlainText('late one\nlate two\n')
 editor.resize(400, 200)
 watcher = Presses()
 editor.viewport().installEventFilter(watcher)
+if mode == 'native':
+    editor.viewport().setAttribute(Qt.WidgetAttribute.WA_NativeWindow)
 app.focusWindowChanged.connect(lambda w: say({'focus_window': w is not None and w is editor.windowHandle()}))
 editor.show()
 say({'xid': int(editor.winId())})
+if mode == 'modal':
+    dialog = QDialog(editor)
+    dialog.setWindowTitle(title + ' dialog')
+    dialog.setModal(True)
+    dialog.resize(200, 100)
+    dialog.show()
+    QTimer.singleShot(300, lambda: say({'dialog': int(dialog.winId())}))
 
 
 def late():

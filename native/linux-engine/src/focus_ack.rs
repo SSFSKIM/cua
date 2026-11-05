@@ -23,6 +23,21 @@
 //! reads the next session's `FocusIn`, leaving no focus window when the press is handled. So a press to a window whose
 //! frame already reads active before its session opens (an earlier session's `FocusOut` counting down) first waits,
 //! before the session's `FocusIn`, until the frame reads inactive: then the `active` that follows is the session's own.
+//!
+//! Two more things decide whether a press is safe (the review of task 61 and the design session's rulings, 2026-11-05):
+//!
+//! - **Its recipient.** The press goes to the deepest X window under the point (`input.rs`), and Qt compares that
+//!   window's own `QWindow` with its focus window, which is the top-level's. A native child window (a widget with
+//!   `WA_NativeWindow`, or one Qt made native for it) is therefore never Qt's focus window, so Qt asks to focus it on
+//!   every press (`requestActivate` on a child sets the X input focus to it), however long the top-level's focus was
+//!   waited for. The frame's `active` cannot show a child's state, so a press whose recipient is not the target
+//!   window itself is refused. Across the Qt applications on the #171 VM no press lands on one (task 61 fix's
+//!   measurement: 0 of 10,800 grid points over 9 windows of 8 applications).
+//! - **The real focus now, not when the session opened.** A session kept open by a hold is reused, and one opened
+//!   while the real focus was within the window synthesized no `FocusIn`; the person may have moved the focus away
+//!   since. So the focus is read before every press: if it has left a session that holds no synthetic focus, the
+//!   session takes one now, as a fresh session would (the earlier focus let go first, then the `FocusIn`, then its
+//!   `active` waited for), and its end sends the `FocusOut`.
 
 use std::time::{Duration, Instant};
 
@@ -31,8 +46,10 @@ use serde_json::{Value, json};
 
 use crate::atspi;
 use crate::dbus::Bus;
+use crate::input::focus_is_within;
 use crate::route::Route;
 use crate::tree::ObjRef;
+use crate::x11::X11;
 
 /// How long a background press waits for the toolkit to report the session's focus taken (`--focus-ack-ms`, for
 /// measurement): the smallest of 25, 50, 100 and 200 ms that held 30 consecutive independent click runs on kate (Qt
@@ -85,9 +102,48 @@ pub fn not_released(app: &str, bound: Duration) -> String {
     )
 }
 
+/// The refusal when the press would go to a native child window of the target rather than to the target itself.
+pub fn native_child(app: &str) -> String {
+    format!(
+        "{app} gives a native child window of its own the input focus on a press at that point, so a background press \
+         there would move the desktop's focus (use an element action, or a dedicated desktop)"
+    )
+}
+
+/// The refusal for a Qt window with no accessibility tree to wait on (found by its process's map, `families.rs`).
+pub fn no_frame(app: &str) -> String {
+    format!(
+        "{app} is a Qt application with no accessibility tree on the bus, so cua cannot see it take the background \
+         focus, and a press could activate its window (turn its accessibility on and restart it, or use a dedicated \
+         desktop)"
+    )
+}
+
 /// What a coordinate press's refusal ends with: nothing of the request's input went out.
 pub fn nothing_pressed(cause: String) -> String {
     format!("{cause}; nothing was sent, so it is safe to retry")
+}
+
+/// What a press needs once its recipient is the target window itself (`FocusAck::before_press`), from the real focus
+/// read just before it and whether the session synthesized a focus of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Need {
+    /// The real focus is within the window: Qt's focus window is the window's own, nothing to wait for.
+    Nothing,
+    /// The session's synthetic focus: its `active` reported, once per request.
+    Taken,
+    /// The session holds no synthetic focus (it opened with the real focus within) and the real focus has left: an
+    /// earlier focus let go, a `FocusIn` taken now, then its `active` reported.
+    Refocus,
+}
+
+/// [`Need`] from the real focus now and the session's synthetic focus.
+pub fn need(within_now: bool, synthesized: bool) -> Need {
+    match (within_now, synthesized) {
+        (true, _) => Need::Nothing,
+        (false, true) => Need::Taken,
+        (false, false) => Need::Refocus,
+    }
 }
 
 /// One request's wait for a window's focus (`Engine::focus_ack_for`): its frame, the bound, and what it waited.
@@ -101,8 +157,12 @@ pub struct FocusAck {
     released: Option<Duration>,
     /// After the session's `FocusIn`: how long the toolkit took to report it, None until looked at.
     taken: Option<Duration>,
-    /// No wait is needed any more: the focus reported taken, or not synthesized at all.
+    /// The session's synthetic focus reported taken in this request: not waited for again.
     settled: bool,
+    /// A press found the real focus gone from a session that held no synthetic focus, and took one (`Need::Refocus`).
+    refocused: bool,
+    /// A press was refused because it would have gone to a native child window.
+    native_child: bool,
 }
 
 impl FocusAck {
@@ -114,6 +174,8 @@ impl FocusAck {
             released: None,
             taken: None,
             settled: false,
+            refocused: false,
+            native_child: false,
         }
     }
 
@@ -133,20 +195,40 @@ impl FocusAck {
         )
     }
 
-    /// Just before a press: the session's synthetic focus reported taken, at most the bound. The inner error is the
-    /// refusal's cause when it was not, for the caller to word; the outer, a failed read. Nothing to wait for once
-    /// reported, or when the session synthesized no focus (the real focus was within the window) or is not a background
-    /// one.
-    pub fn taken(&mut self, bus: &mut Bus, route: &Route) -> Result<std::result::Result<(), String>> {
-        if self.settled {
-            return Ok(Ok(()));
-        }
-        let Some(session) = route.session() else {
-            self.settled = true;
+    /// Just before a press at root point `at`, on the request's route: the press's recipient the target window itself,
+    /// then the focus it needs (`need`), read now. The inner error is the refusal's cause, for the caller to word; the
+    /// outer, a failed read or send. Nothing to check on a route that is not a background session.
+    pub fn before_press(
+        &mut self,
+        bus: &mut Bus,
+        x: &X11,
+        route: &mut Route,
+        at: (i16, i16),
+    ) -> Result<std::result::Result<(), String>> {
+        let Some(session) = route.session_mut() else {
             return Ok(Ok(()));
         };
-        if session.focus_was_within() {
-            self.settled = true;
+        if session.recipient(x, at.0, at.1)? != session.target {
+            self.native_child = true;
+            return Ok(Err(native_child(&self.app)));
+        }
+        match need(focus_is_within(x, session.target)?, !session.focus_was_within()) {
+            Need::Nothing => Ok(Ok(())),
+            Need::Refocus => {
+                if let Err(cause) = self.released(bus)? {
+                    return Ok(Err(cause));
+                }
+                self.refocused = session.refocus(x)?;
+                self.settled = false;
+                self.taken(bus)
+            }
+            Need::Taken => self.taken(bus),
+        }
+    }
+
+    /// The session's synthetic focus reported taken, at most the bound, once per request.
+    fn taken(&mut self, bus: &mut Bus) -> Result<std::result::Result<(), String>> {
+        if self.settled {
             return Ok(Ok(()));
         }
         let frame = &self.frame;
@@ -162,13 +244,16 @@ impl FocusAck {
         )
     }
 
-    /// The record on the `--stats` line: the bound and each wait, in ms (null where none was looked at).
+    /// The record on the `--stats` line: the bound and each wait, in ms (null where none was looked at), and whether
+    /// the press took a fresh synthetic focus or was refused for a native child.
     pub fn record(&self) -> Value {
         let ms = |d: Option<Duration>| d.map(|d| (d.as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0);
         json!({
             "bound_ms": self.bound.as_millis() as u64,
             "released_ms": ms(self.released),
             "waited_ms": ms(self.taken),
+            "refocused": self.refocused,
+            "native_child": self.native_child,
         })
     }
 }
@@ -244,13 +329,42 @@ mod tests {
         );
         assert_eq!(
             ack.record(),
-            json!({"bound_ms": 25, "released_ms": null, "waited_ms": null})
+            json!({"bound_ms": 25, "released_ms": null, "waited_ms": null, "refocused": false, "native_child": false})
         );
         ack.released = Some(Duration::from_micros(1500));
         ack.taken = Some(Duration::from_micros(12_345));
+        ack.refocused = true;
         assert_eq!(
             ack.record(),
-            json!({"bound_ms": 25, "released_ms": 1.5, "waited_ms": 12.345})
+            json!({"bound_ms": 25, "released_ms": 1.5, "waited_ms": 12.345, "refocused": true, "native_child": false})
+        );
+    }
+
+    #[test]
+    fn a_press_needs_the_focus_as_it_is_now_not_as_the_session_found_it() {
+        // the real focus within the window: Qt's own focus window is it
+        assert_eq!(need(true, true), Need::Nothing);
+        assert_eq!(need(true, false), Need::Nothing);
+        // the session's synthetic focus: its report waited for
+        assert_eq!(need(false, true), Need::Taken);
+        // the review's case: a hold kept a session opened with the real focus within, and the focus has left since,
+        // so the session holds no focus at all: it takes one, as a fresh session would
+        assert_eq!(need(false, false), Need::Refocus);
+    }
+
+    #[test]
+    fn the_native_child_and_no_frame_refusals_say_why_and_what_to_do() {
+        assert_eq!(
+            nothing_pressed(native_child("org.kde.kate")),
+            "org.kde.kate gives a native child window of its own the input focus on a press at that point, so a \
+             background press there would move the desktop's focus (use an element action, or a dedicated desktop); \
+             nothing was sent, so it is safe to retry"
+        );
+        assert_eq!(
+            nothing_pressed(no_frame("qtcreator")),
+            "qtcreator is a Qt application with no accessibility tree on the bus, so cua cannot see it take the \
+             background focus, and a press could activate its window (turn its accessibility on and restart it, or use \
+             a dedicated desktop); nothing was sent, so it is safe to retry"
         );
     }
 }

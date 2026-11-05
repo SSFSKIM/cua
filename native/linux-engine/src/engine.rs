@@ -93,6 +93,9 @@ pub struct Engine {
     launched: apps::Launched,
     /// Each window's family, looked up once (`families.rs`).
     families: HashMap<x11rb::protocol::xproto::Window, Option<&'static Family>>,
+    /// Whether each window of no listed family is a Qt application's, by its process's map, looked up once
+    /// (`Engine::qt_without_toolkit`).
+    qt_by_map: HashMap<x11rb::protocol::xproto::Window, bool>,
     /// The pacing of the drag a `drag_handle` holds, from its start to its end.
     handle_pacing: pointer::HandlePacing,
     /// The clipboard's own connections, opened on first use.
@@ -165,6 +168,17 @@ fn input_window(command: &str, input: Option<&Value>) -> Option<u32> {
 /// The answer to window-targeted input while its window is minimized: nothing was sent.
 fn minimized_sentence(window: u32) -> String {
     format!("Window {window} is minimized; activate it first")
+}
+
+/// The answer, in shared mode, to input to a window a modal dialog of its own blocks, for a toolkit that hands the
+/// input's synthetic focus to the dialog (`Engine::modal_refusal`): nothing was sent. The same set of requests as the
+/// minimized refusal (`input_window`), each of which opens the window's input session and so its `FocusIn`, or (a
+/// `clipboard_read` whose Copy left a menu open) may; releases always run.
+fn modal_sentence(app: &str, window: u32, dialog: u32) -> String {
+    format!(
+        "{app} window {window} is blocked by its modal dialog, window {dialog}, which takes the desktop's focus on \
+         background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop"
+    )
 }
 
 /// The `truncated` that `get_window_state` reports beside its tree (Design, The tree read; M4): the accessibility read's
@@ -248,6 +262,7 @@ impl Engine {
             extra: Default::default(),
             pending_stats: None,
             families: HashMap::new(),
+            qt_by_map: HashMap::new(),
             handle_pacing: pointer::HandlePacing::default(),
             launched: apps::Launched::default(),
             clipboard: None,
@@ -282,12 +297,19 @@ impl Engine {
         if minimized.is_some() {
             self.extra.insert("minimized".into(), json!(true));
         }
+        // in shared mode, input to a window its modal dialog blocks, for a toolkit that would hand the session's
+        // synthetic focus to the dialog, is refused before anything is sent, after the minimized refusal
+        let blocked = match (&refusal, minimized) {
+            (None, None) => input_window(&request.command, request.input.as_ref()).and_then(|w| self.modal_refusal(w)),
+            _ => None,
+        };
         let result = match request.command.as_str() {
             _ if refusal.is_some() => Err(anyhow!(match refusal.as_ref().expect("checked") {
                 (app, crate::dnd::WatchEnd::Failed(why)) => crate::dnd::watch_failed_notice(app, why),
                 (app, _) => crate::dnd::late_notice(app),
             })),
             _ if minimized.is_some() => Err(anyhow!(minimized_sentence(minimized.expect("checked")))),
+            _ if blocked.is_some() => Err(anyhow!(blocked.expect("checked"))),
             "list_windows" => self.list_windows(request.input),
             "list_apps" => self.list_apps(request.input),
             "get_screenshot" => self.get_screenshot(request.input),
@@ -473,6 +495,47 @@ impl Engine {
         }
         self.families.insert(window, found);
         found
+    }
+
+    /// Whether `window` is a Qt application's that no listed family names, so one with no accessibility tree on the bus
+    /// (no `ToolkitName` to read), found by its process's map (`families::process_is_qt`), looked up once (task 61's
+    /// fix, the design session's ruling B). A window whose process's map cannot be read (no `_NET_WM_PID`, a process of
+    /// another user or of a PID namespace the engine does not see, a remote client) is not: its toolkit is unknown.
+    fn qt_without_toolkit(&mut self, window: x11rb::protocol::xproto::Window) -> bool {
+        if self.family_of(window).is_some() {
+            return false;
+        }
+        if let Some(&qt) = self.qt_by_map.get(&window) {
+            return qt;
+        }
+        let qt = self.x.pid(window).and_then(families::process_is_qt).unwrap_or(false);
+        self.qt_by_map.insert(window, qt);
+        qt
+    }
+
+    /// In shared mode, the refusal of input to `window` while a modal dialog of its own is shown, for a toolkit that
+    /// hands the synthetic `FocusIn` of that input's session to the dialog, asking for the dialog's activation (Qt,
+    /// `families.rs` `relays_focus_to_modal`; the design session's ruling A). A dialog that cannot be looked for is a
+    /// refusal too: the window or its client may be gone.
+    fn modal_refusal(&mut self, window: u32) -> Option<String> {
+        if self.cfg.desktop != DesktopMode::Shared {
+            return None;
+        }
+        let relays = self.family_of(window).is_some_and(|f| f.relays_focus_to_modal) || self.qt_without_toolkit(window);
+        if !relays {
+            return None;
+        }
+        let dialog = match self.x.modal_transient_of(window) {
+            Ok(dialog) => dialog?,
+            Err(error) => return Some(format!("{error:#}")),
+        };
+        self.extra.insert("modal_dialog".into(), json!(dialog));
+        let app = self
+            .x
+            .get_window(window)
+            .map(|i| i.app)
+            .unwrap_or_else(|_| format!("x11:{window}"));
+        Some(modal_sentence(&app, window, dialog))
     }
 
     /// A drag's pacing: the flags' where they fix it, else the family of the window it goes to; no window, or an
@@ -710,7 +773,9 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use super::{Observed, acts, input_window, minimized_sentence, own_route_read, reported_truncation};
+    use super::{
+        Observed, acts, input_window, minimized_sentence, modal_sentence, own_route_read, reported_truncation,
+    };
     use crate::atspi::{Told, Unassociated};
     use crate::tree::{AxNode, Truncated};
     use serde_json::json;
@@ -845,6 +910,18 @@ mod tests {
             "a malformed window is the request's own error"
         );
         assert_eq!(minimized_sentence(77), "Window 77 is minimized; activate it first");
+    }
+
+    #[test]
+    fn a_window_its_modal_dialog_blocks_is_refused_naming_the_dialog_to_send_the_input_to() {
+        // the same requests as the minimized refusal (input_window, above): each opens the window's input session,
+        // whose synthetic FocusIn Qt hands to the dialog; releases, reads and activation are not refused
+        assert_eq!(
+            modal_sentence("org.kde.kate", 6291462, 6291476),
+            "org.kde.kate window 6291462 is blocked by its modal dialog, window 6291476, which takes the desktop's \
+             focus on background input to the window; nothing was sent: send the input to the dialog, or use a \
+             dedicated desktop"
+        );
     }
 
     #[test]

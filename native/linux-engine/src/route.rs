@@ -442,6 +442,14 @@ impl Route<'_> {
         }
     }
 
+    /// [`Route::session`], to change: a press that takes a fresh synthetic focus (`focus_ack.rs`).
+    pub fn session_mut(&mut self) -> Option<&mut Session> {
+        match self {
+            Route::Window(session) => Some(session),
+            Route::Desktop(..) => None,
+        }
+    }
+
     pub fn button(&mut self, x: &X11, button: u8, press: bool) -> Result<()> {
         match self {
             Route::Window(session) => session.button(x, button, press),

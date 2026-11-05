@@ -47,6 +47,8 @@ struct Late {
     child: Child,
     log: Log,
     window: u32,
+    /// Its modal dialog, in the `modal` mode.
+    dialog: Option<u32>,
 }
 
 impl Drop for Late {
@@ -66,6 +68,14 @@ impl Late {
 /// The fixture on `binding` (`qt5`, `qt6`), its window mapped and its tree on the bus; None, said on stderr, without
 /// that PyQt.
 fn late(binding: &str, engine: &mut Engine) -> Option<Late> {
+    late_as(binding, engine, BLOCK_MS, None, true)
+}
+
+/// [`late`], its main thread blocked `block` ms in every `EVERY_MS`, in a fixture mode (`native`, `modal`), and with its
+/// accessibility on or off. Off, it starts with no way to reach an accessibility bus (no session bus, and the root
+/// window's `AT_SPI_BUS` taken away while it starts, then put back for the engine), so it never registers a tree: a Qt
+/// window the engine can find only by its process's map.
+fn late_as(binding: &str, engine: &mut Engine, block: u32, mode: Option<&str>, accessible: bool) -> Option<Late> {
     let module = if binding == "qt5" {
         "PyQt5.QtWidgets"
     } else {
@@ -80,10 +90,22 @@ fn late(binding: &str, engine: &mut Engine) -> Option<Late> {
         return None;
     }
     let title = format!("cua-engine-qt-late-{binding}-{}", std::process::id());
-    let mut child = Command::new("python3")
-        .args([FIXTURE, &title, binding, &BLOCK_MS.to_string(), &EVERY_MS.to_string()])
-        .env("QT_LINUX_ACCESSIBILITY_ALWAYS_ON", "1")
-        .env("QT_ACCESSIBILITY", "1")
+    let mut command = Command::new("python3");
+    command.args([FIXTURE, &title, binding, &block.to_string(), &EVERY_MS.to_string()]);
+    command.args(mode);
+    let hidden = if accessible {
+        command
+            .env("QT_LINUX_ACCESSIBILITY_ALWAYS_ON", "1")
+            .env("QT_ACCESSIBILITY", "1");
+        None
+    } else {
+        command
+            .env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent/cua-engine-test-bus")
+            .env_remove("AT_SPI_BUS_ADDRESS")
+            .env_remove("QT_LINUX_ACCESSIBILITY_ALWAYS_ON");
+        Some(RootBusProperty::hide())
+    };
+    let mut child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -106,20 +128,99 @@ fn late(binding: &str, engine: &mut Engine) -> Option<Late> {
         assert!(Instant::now() < deadline, "the Qt window is shown");
         sleep(Duration::from_millis(50));
     };
-    let late = Late { child, log, window };
+    let dialog = (mode == Some("modal")).then(|| {
+        loop {
+            if let Some(xid) = log.lock().unwrap().iter().find_map(|r| r["dialog"].as_u64()) {
+                break xid as u32;
+            }
+            assert!(Instant::now() < deadline, "the Qt window's modal dialog is shown");
+            sleep(Duration::from_millis(50));
+        }
+    });
+    let late = Late {
+        child,
+        log,
+        window,
+        dialog,
+    };
+    let source = |engine: &mut Engine| {
+        engine
+            .request(
+                "get_window_state",
+                json!({"window": {"id": window}, "include_screenshot": false}),
+            )
+            .map(|s| s["ax_tree_source"].clone())
+    };
+    if let Some(hidden) = hidden {
+        // past Qt's start, where its bridge looks for the bus once
+        sleep(Duration::from_secs(2));
+        drop(hidden);
+        let found = source(engine);
+        assert_eq!(
+            found,
+            Ok(json!("x11")),
+            "{binding}: the window is read as an X11 tree: its process has no tree on the bus"
+        );
+        return Some(late);
+    }
     // its frame on the bus: the engine reads the window's tree from AT-SPI
     loop {
-        let state = engine.request(
-            "get_window_state",
-            json!({"window": {"id": window}, "include_screenshot": false}),
-        );
-        if state.is_ok_and(|s| s["ax_tree_source"] == json!("at_spi")) {
+        if source(engine).is_ok_and(|s| s == json!("at_spi")) {
             break;
         }
         assert!(Instant::now() < deadline, "the Qt window's tree is on the bus");
         sleep(Duration::from_millis(200));
     }
     Some(late)
+}
+
+/// The root window's `AT_SPI_BUS` (the accessibility bus's address, which Qt's bridge reads first) taken away until
+/// dropped, then put back as it was.
+struct RootBusProperty {
+    conn: RustConnection,
+    root: Window,
+    atom: u32,
+    saved: Option<(u32, u8, Vec<u8>)>,
+}
+
+impl RootBusProperty {
+    fn hide() -> RootBusProperty {
+        let (conn, screen) = x11rb::connect(None).expect("an X connection");
+        let root = conn.setup().roots[screen].root;
+        let atom = conn.intern_atom(false, b"AT_SPI_BUS").unwrap().reply().unwrap().atom;
+        let reply = conn
+            .get_property(false, root, atom, x11rb::protocol::xproto::AtomEnum::ANY, 0, 4096)
+            .unwrap()
+            .reply()
+            .unwrap();
+        let saved = (reply.type_ != x11rb::NONE).then(|| (reply.type_, reply.format, reply.value.clone()));
+        conn.delete_property(root, atom).unwrap();
+        conn.sync().unwrap();
+        RootBusProperty {
+            conn,
+            root,
+            atom,
+            saved,
+        }
+    }
+}
+
+impl Drop for RootBusProperty {
+    fn drop(&mut self) {
+        if let Some((type_, format, value)) = &self.saved {
+            let len = value.len() as u32 / (u32::from(*format) / 8).max(1);
+            let _ = self.conn.change_property(
+                x11rb::protocol::xproto::PropMode::REPLACE,
+                self.root,
+                self.atom,
+                *type_,
+                *format,
+                len,
+                value,
+            );
+            let _ = self.conn.sync();
+        }
+    }
 }
 
 /// A window of the test's own, mapped, that holds the X input focus between clicks: the person's front window.
@@ -162,7 +263,20 @@ impl Front {
     }
 
     fn holds_focus(&self) -> bool {
-        self.conn.get_input_focus().unwrap().reply().unwrap().focus == self.window
+        self.focused() == self.window
+    }
+
+    /// The window holding the X input focus now.
+    fn focused(&self) -> Window {
+        self.conn.get_input_focus().unwrap().reply().unwrap().focus
+    }
+
+    /// The X input focus given to another window, as the person clicking into it would.
+    fn give(&self, window: Window) {
+        self.conn
+            .set_input_focus(InputFocus::PARENT, window, x11rb::CURRENT_TIME)
+            .unwrap();
+        self.conn.sync().unwrap();
     }
 }
 
@@ -314,5 +428,183 @@ fn in_dedicated_mode_a_background_click_is_as_before_and_waits_for_nothing() {
             taken > 0,
             "dedicated mode is the engine before the wait: {taken} of {CLICKS}"
         );
+    }
+}
+
+fn key(window: u32) -> (&'static str, Value) {
+    ("press_key", json!({"window": {"id": window}, "key": "a"}))
+}
+
+#[test]
+fn a_background_press_onto_a_native_child_of_a_qt_window_is_refused_with_nothing_sent() {
+    // the review's reproducer (task 61's review, P1): the editor's viewport is a native child window, which is never
+    // Qt's focus window, so Qt asks to focus it on every press however long the top-level's focus was waited for; the
+    // engine before the fix waited, answered success and lost the X focus. The control: the same window with the
+    // gate off takes the X focus.
+    for binding in ["qt5", "qt6"] {
+        let mut engine = Engine::start_with(&[]);
+        let Some(late) = late_as(binding, &mut engine, 0, Some("native"), true) else {
+            continue;
+        };
+        let front = Front::open();
+        let (taken, answers, presses) = clicks(&mut engine, &late, &front, &[click(late.window)]);
+        assert_eq!(
+            taken, 0,
+            "{binding}: no click took the X focus from the front window: {answers:?}"
+        );
+        for answer in &answers {
+            let error = answer["error"].as_str().unwrap_or("");
+            assert!(
+                error.contains("gives a native child window of its own the input focus on a press at that point")
+                    && error.ends_with("nothing was sent, so it is safe to retry"),
+                "{binding}: refused, nothing sent: {answer}"
+            );
+        }
+        assert_eq!(presses, 0, "{binding}: a refused click pressed nothing");
+        let mut control = Engine::start_with(&["--focus-ack-ms", "0"]);
+        let (taken, answers, _) = clicks(&mut control, &late, &front, &[click(late.window)]);
+        assert!(answers.iter().all(|a| a["ok"] == json!(true)), "{binding}: {answers:?}");
+        assert!(
+            taken > 0,
+            "{binding}: the control: a press onto the native child takes the focus ({taken} of {CLICKS})"
+        );
+    }
+}
+
+#[test]
+fn a_click_on_a_held_session_the_real_focus_has_left_takes_a_fresh_focus_first() {
+    // the review's sequence (task 61's review, P1): the Qt window holds the real focus, so key_down("shift") opens a
+    // session that synthesizes no FocusIn; the hold keeps that session while the person focuses another window; a
+    // background click then reuses it. Before the fix it skipped the wait on that stale snapshot and took the X focus.
+    const RUNS: usize = 5;
+    for binding in ["qt5", "qt6"] {
+        let mut engine = Engine::start_with(&["--focus-ack-ms", LATE_BOUND]);
+        let Some(late) = late(binding, &mut engine) else {
+            continue;
+        };
+        let front = Front::open();
+        let shift = json!({"window": {"id": late.window}, "key": "shift"});
+        let before = late.presses();
+        let mut taken = 0;
+        for _ in 0..RUNS {
+            front.give(late.window);
+            sleep(BETWEEN);
+            engine.request("key_down", shift.clone()).expect("key_down");
+            front.focus();
+            sleep(BETWEEN);
+            let answer = engine.request("click", click(late.window).1);
+            sleep(Duration::from_millis(200));
+            if !front.holds_focus() {
+                taken += 1;
+            }
+            engine.request("key_up", shift.clone()).expect("key_up");
+            assert!(answer.is_ok(), "{binding}: the click answered: {answer:?}");
+        }
+        sleep(Duration::from_millis(300));
+        assert_eq!(taken, 0, "{binding}: no click took the X focus from the front window");
+        assert_eq!(
+            late.presses() - before,
+            RUNS,
+            "{binding}: every press reached the editor"
+        );
+    }
+}
+
+#[test]
+fn background_input_to_a_qt_window_its_modal_dialog_blocks_is_refused_in_shared_mode() {
+    // the design session's ruling A: Qt hands a synthetic FocusIn on a window its modal dialog blocks to the dialog,
+    // which takes the X focus (with no window manager, Qt's own SetInputFocus), for keys as for clicks; the engine
+    // before the fix sent them. Input to the dialog itself goes; dedicated mode is unchanged, and there the same key
+    // hands the focus to the dialog (the control).
+    for binding in ["qt5", "qt6"] {
+        let mut engine = Engine::start_with(&[]);
+        let Some(late) = late_as(binding, &mut engine, 0, Some("modal"), true) else {
+            continue;
+        };
+        let dialog = late.dialog.expect("the modal mode's dialog");
+        let front = Front::open();
+        let sentence = format!(
+            "window {} is blocked by its modal dialog, window {dialog}, which takes the desktop's focus on background \
+             input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop",
+            late.window
+        );
+        let before = late.presses();
+        for (command, input) in [key(late.window), click(late.window)] {
+            for _ in 0..3 {
+                front.focus();
+                sleep(BETWEEN);
+                let answer = engine.request(command, input.clone());
+                sleep(Duration::from_millis(300));
+                assert!(
+                    front.holds_focus(),
+                    "{binding} {command}: the X focus stayed with the front window, not {}: {answer:?}",
+                    front.focused()
+                );
+                assert!(
+                    answer.as_ref().is_err_and(|e| e.ends_with(&sentence)),
+                    "{binding} {command}: {answer:?}"
+                );
+            }
+        }
+        assert_eq!(
+            late.presses() - before,
+            0,
+            "{binding}: nothing reached the blocked window"
+        );
+        front.focus();
+        sleep(BETWEEN);
+        let to_dialog = engine.request("press_key", key(dialog).1);
+        sleep(Duration::from_millis(300));
+        assert!(
+            to_dialog.is_ok(),
+            "{binding}: input to the dialog itself goes: {to_dialog:?}"
+        );
+        assert!(
+            front.holds_focus(),
+            "{binding}: and the X focus stays with the front window"
+        );
+        let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+        front.focus();
+        sleep(BETWEEN);
+        let answer = dedicated.request("press_key", key(late.window).1);
+        sleep(Duration::from_millis(300));
+        assert!(answer.is_ok(), "{binding}: dedicated mode sends it: {answer:?}");
+        assert_eq!(
+            front.focused(),
+            dialog,
+            "{binding}: the control: the key's FocusIn handed the X focus to the dialog"
+        );
+    }
+}
+
+#[test]
+fn a_background_press_to_a_qt_window_with_no_accessibility_tree_is_refused_in_shared_mode() {
+    // the design session's ruling B: a Qt window whose application put no tree on the bus has no frame to wait on;
+    // found by its process's map, its presses are refused, while keys, which Qt never activates on, still go. The
+    // engine before the fix knew no family for it and pressed without waiting.
+    for binding in ["qt5", "qt6"] {
+        let mut engine = Engine::start_with(&["--focus-ack-ms", LATE_BOUND]);
+        let Some(late) = late_as(binding, &mut engine, BLOCK_MS, None, false) else {
+            continue;
+        };
+        let front = Front::open();
+        let (taken, answers, presses) = clicks(&mut engine, &late, &front, &[click(late.window)]);
+        assert_eq!(
+            taken, 0,
+            "{binding}: no click took the X focus from the front window: {answers:?}"
+        );
+        for answer in &answers {
+            let error = answer["error"].as_str().unwrap_or("");
+            assert!(
+                error.contains("is a Qt application with no accessibility tree on the bus")
+                    && error.ends_with("nothing was sent, so it is safe to retry"),
+                "{binding}: refused, nothing sent: {answer}"
+            );
+        }
+        assert_eq!(presses, 0, "{binding}: a refused click pressed nothing");
+        front.focus();
+        sleep(BETWEEN);
+        let typed = engine.request("press_key", key(late.window).1);
+        assert!(typed.is_ok(), "{binding}: a key still goes: {typed:?}");
     }
 }

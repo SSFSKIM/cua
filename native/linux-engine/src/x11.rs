@@ -138,6 +138,22 @@ pub fn iconic(map_state: MapState, wm_state: &[u32]) -> bool {
     map_state != MapState::VIEWABLE && wm_state.first() == Some(&ICONIC_STATE)
 }
 
+/// Whether a window's properties make it a modal transient that can take another window's focus (task 61's fix):
+/// `_NET_WM_STATE` names `_NET_WM_STATE_MODAL`, `WM_TRANSIENT_FOR` names a window (its parent, or its group's leader for
+/// an application-modal dialog), and it is shown: viewable, or iconic, since a toolkit still counts a minimized dialog
+/// as blocking and its activation would bring it back.
+pub fn modal_transient(
+    state: &[u32],
+    modal: Atom,
+    transient_for: &[u32],
+    map_state: MapState,
+    wm_state: &[u32],
+) -> bool {
+    state.contains(&modal)
+        && transient_for.first().is_some_and(|w| *w != x11rb::NONE)
+        && (map_state == MapState::VIEWABLE || iconic(map_state, wm_state))
+}
+
 /// The pending replies for one window's description.
 struct Describe<'c> {
     attributes: Cookie<'c, RustConnection, GetWindowAttributesReply>,
@@ -449,6 +465,59 @@ impl X11 {
             (Ok(attributes), Ok(state)) => iconic(attributes.map_state, &values32(&state)),
             _ => false,
         }
+    }
+
+    /// A modal transient of `window`'s own X client that is shown (`modal_transient`), if any: a dialog that blocks it.
+    /// The candidates are the window manager's client list, else, with no window manager, the root's children, of the
+    /// same client (its resource-id base): a toolkit's dialogs share its connection. Two round trips, the candidates'
+    /// requests pipelined. A dialog that blocks a sibling window of the same application, not this one, counts too
+    /// (X11 does not tell window-modal from application-modal), which refuses more, never less.
+    pub fn modal_transient_of(&self, window: Window) -> Result<Option<Window>> {
+        let mask = self.conn.setup().resource_id_mask;
+        let listed = values32(&self.get_property(self.root, self.atom("_NET_CLIENT_LIST"))?);
+        let candidates = if listed.is_empty() {
+            self.conn.query_tree(self.root)?.reply()?.children
+        } else {
+            listed
+        };
+        let pending = candidates
+            .into_iter()
+            .filter(|&w| w != window && w & !mask == window & !mask)
+            .map(|w| {
+                Ok((
+                    w,
+                    self.property(w, self.atom("_NET_WM_STATE"))?,
+                    self.property(w, AtomEnum::WM_TRANSIENT_FOR.into())?,
+                    self.conn.get_window_attributes(w)?,
+                    self.property(w, self.atom("WM_STATE"))?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let modal = self.atom("_NET_WM_STATE_MODAL");
+        let mut found = None;
+        for (w, state, transient_for, attributes, wm_state) in pending {
+            // a window gone meanwhile blocks nothing
+            let (Ok(state), Ok(transient_for), Ok(attributes), Ok(wm_state)) = (
+                state.reply(),
+                transient_for.reply(),
+                attributes.reply(),
+                wm_state.reply(),
+            ) else {
+                continue;
+            };
+            if found.is_none()
+                && modal_transient(
+                    &values32(&state),
+                    modal,
+                    &values32(&transient_for),
+                    attributes.map_state,
+                    &values32(&wm_state),
+                )
+            {
+                found = Some(w);
+            }
+        }
+        Ok(found)
     }
 
     /// `_NET_WM_PID` when it is exactly one non-zero value.
@@ -966,6 +1035,48 @@ impl X11 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_modal_transient_is_modal_transient_for_a_window_and_shown() {
+        const MODAL: Atom = 401;
+        const ABOVE: Atom = 402;
+        let (iconic_state, normal_state) = ([3u32, 0], [1u32, 0]);
+        // a Qt dialog: modal, transient for its parent (or its group's leader), mapped
+        assert!(modal_transient(
+            &[ABOVE, MODAL],
+            MODAL,
+            &[0x600006],
+            MapState::VIEWABLE,
+            &normal_state
+        ));
+        // minimized, it still blocks: its activation would bring it back
+        assert!(modal_transient(
+            &[MODAL],
+            MODAL,
+            &[0x600006],
+            MapState::UNMAPPED,
+            &iconic_state
+        ));
+        assert!(
+            !modal_transient(&[MODAL], MODAL, &[0x600006], MapState::UNMAPPED, &[]),
+            "a hidden (withdrawn) dialog blocks nothing"
+        );
+        assert!(
+            !modal_transient(&[ABOVE], MODAL, &[0x600006], MapState::VIEWABLE, &normal_state),
+            "a transient that is not modal"
+        );
+        assert!(
+            !modal_transient(&[MODAL], MODAL, &[], MapState::VIEWABLE, &normal_state),
+            "a modal window transient for nothing is a top-level of its own"
+        );
+        assert!(!modal_transient(
+            &[MODAL],
+            MODAL,
+            &[0],
+            MapState::VIEWABLE,
+            &normal_state
+        ));
+    }
 
     #[test]
     fn property_text_is_lossy_trimmed_and_drops_trailing_nuls() {

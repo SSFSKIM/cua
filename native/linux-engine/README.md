@@ -92,7 +92,34 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   which Qt counts down for 100 ms) is first waited out until it reads inactive, before the `FocusIn`. A press with no
   such report in time is refused, nothing pressed: "`<app>` did not take the background focus within 25 ms, so a
   press could have activated its window; nothing was sent, so it is safe to retry". Dedicated mode waits for nothing.
-  With `--stats` each such press's line carries `focus_ack` (its bound, and what it waited).
+  With `--stats` each such press's line carries `focus_ack` (its bound, what it waited, and `refocused` and
+  `native_child`, below). Three more rules, from task 61's review and the design session's rulings (2026-11-05):
+  - *The press's recipient.* A press goes to the deepest X window under its point, and Qt compares that window's
+    own focus with the top-level's: a native child window (a widget made native) is never Qt's focus window, so Qt
+    focuses it on any press, however long the frame's `active` was waited for. In shared mode a press to a Qt window
+    whose recipient at that point is not the window itself is refused, nothing sent: "`<app>` gives a native child
+    window of its own the input focus on a press at that point, …". No press lands on one in the Qt applications on
+    the #171 VM (0 of 10,800 points over 8 applications).
+  - *The real focus before every press.* A session a hold keeps open is reused, and one opened while the real focus
+    was within the window synthesized no `FocusIn`. Before each press the real focus is read again; when it has left
+    such a session, the session takes a synthetic focus then, as a fresh one would (the earlier focus let go, the
+    `FocusIn`, its `active` waited for), and its end sends the `FocusOut`.
+  - *Qt with no accessibility tree.* A window no listed family names whose process maps Qt 5's or Qt 6's core
+    library (`/proc/<pid>/maps`, by `_NET_WM_PID`; only the two names are looked for) has no frame to wait on: its
+    presses are refused in shared mode ("`<app>` is a Qt application with no accessibility tree on the bus, …").
+    Where that map cannot be read (a pid of another PID namespace, as inside cua's sandbox, another user's process, a
+    remote client) the toolkit is unknown and the press goes unwaited.
+- **A window its modal dialog blocks** (`engine.rs`, the design session's ruling A): Qt hands a `FocusIn` or a
+  `FocusOut` on a window its modal dialog blocks to the dialog, and asks for the dialog's activation, so any background
+  input's synthetic `FocusIn` makes the dialog take the desktop's focus (5 of 5 on Qt 5 and Qt 6, with and without
+  Openbox, and on kate's and Qt Creator's Open dialogs; GTK 3, GTK 4 and Chrome 0 of 5). In shared mode, input to a
+  Qt window (`families.rs` `relays_focus_to_modal`, or Qt found by its process's map) while a modal transient of its
+  own X client is shown (`_NET_WM_STATE_MODAL`, `WM_TRANSIENT_FOR`, viewable or iconic) is refused before anything is
+  sent, after the minimized refusal and for the same requests: "`<app>` window `<id>` is blocked by its modal dialog,
+  window `<dialog>`, which takes the desktop's focus on background input to the window; nothing was sent: send the
+  input to the dialog, or use a dedicated desktop". Releases always run; dedicated mode is unchanged. A dialog that
+  maps during a request is not seen by it: when that request's own click opened it, Qt asks for its activation as it
+  shows it, which no rule of the engine's can stop.
 - **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: a
   `drag_handle` still between its start and its end ends first as its own end would (the family's release dwell, then
   button 1 up where the pointer is), then held keys are released, so no wait of the exit keeps one down; then an armed
@@ -357,7 +384,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--teardown-ms` | 0 | a wait before each background session's `FocusOut`, on the request path, for measurement only (0.3.0's wait, the vendor's 100 ms there); 0 sends each `FocusOut` as its request's input ends |
 | `--paste-settle-ms` | 100 | a paste's wait before it observes, after the last key to its window (The paste's settle, above); the measured value, set otherwise only to measure it |
 | `--paste-click-settle-ms` | 25 | a paste's wait before it observes, after the last click to its window (The paste's settle, above); the measured value, set otherwise only to measure it |
-| `--focus-ack-ms` | 25 | in shared mode, how long a background press to a Qt window waits for its frame to report the session's focus taken (A press waits for Qt's focus, above); the measured value, set otherwise only to measure it; 0 turns the wait off (the control) |
+| `--focus-ack-ms` | 25 | in shared mode, how long a background press to a Qt window waits for its frame to report the session's focus taken (A press waits for Qt's focus, above); the measured value, set otherwise only to measure it; 0 turns the press's checks off (the control), the modal dialog's refusal staying |
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |

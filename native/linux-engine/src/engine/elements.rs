@@ -213,7 +213,7 @@ fn right_click(
         let (rx, ry) = visible_point(bus, element, "right-clicking").inspect_err(|_| point_failed = true)?;
         element.associated.confirm_before_acting(bus, x)?;
         if let Some(ack) = ack.as_mut() {
-            ack.taken(bus, route)?
+            ack.before_press(bus, x, route, (rx, ry))?
                 .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
         }
         route.place(x, rx, ry)?;

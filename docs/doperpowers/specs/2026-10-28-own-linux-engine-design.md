@@ -1474,9 +1474,9 @@ The Linux runtime record (M6a): beside the archive pins, parsed as strictly; it 
     - A press to a Qt window with no AT-SPI tree, which has no frame to wait on; keys still go. Qt is recognised without the bus by `_XEMBED_INFO`, which Qt sets on every window it creates, or, where `/proc` can be read, by the process's map holding `libQt5Core` or `libQt6Core`. The map's content is never kept or logged. In service the engine runs in the sandbox's own PID namespace, where a host process's map cannot be read, so the property is what works there. The survey (all windows of each application, each alone on a private display): the property is on every Qt 5 and Qt 6 window, top-levels and native children. It is on none of 94 windows from GTK 3 3.24.41, GTK 4 4.14.5, VTE 3.52, Firefox 159, Chrome 156, Electron 44, Java Swing and AWT (OpenJDK 21), Tk 8.6.14, LibreOffice 24.2 (gtk3 and gen VCL) and xterm 390. A false positive would only refuse a press, the safe direction.
   - Judge findings, fixed: the witness never recorded Qt's own activation requests (it now selects StructureNotify on the root), and the focus-timer judge passed activated runs (it now fails any run that changed the desktop, in every scenario).
   - Declared limits:
-    - A dialog the request's own click opens is activated by Qt itself, 5 of 5: the model asked for the action whose result is the dialog. Other toolkits are unmeasured for that case; the ticket suggests measuring them (the design session registers it).
+    - A dialog the request's own click opens is activated by Qt itself, 5 of 5: the model asked for the action whose result is the dialog. Other toolkits are unmeasured for that case; #285 suggests measuring them.
     - The person can still move Qt's focus in the sub-millisecond gap between a press's read and the press.
-    - A Qt window that never got `_XEMBED_INFO`, inside the sandbox, would be unknown and allowed; no real case is known.
+    - A Qt window that never got `_XEMBED_INFO`, inside the sandbox, would be unknown and allowed; no real case is known (#286).
   - Stated costs, with numbers:
     - The 25 ms bound leaves a thin margin, so load heavier than twice the gate's gives refusals, never activations.
     - A click right after a key to the same Qt window costs about 100 ms, because Qt holds its focus 100 ms after a FocusOut.

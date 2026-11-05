@@ -841,6 +841,7 @@ measured and which is gone.
 node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/focus-timer/idle" [--family <list>]
 node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/focus-timer/load2" --load-factor 2
 node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/paste-settle/idle" --lanes settle-25,settle-50,settle-75,settle-100 --scenarios paste
+node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/paste-settle/fix/click-idle" --lanes click-0 --scenarios click-paste
 ```
 
 - **Its display**, as the AT-SPI probe's: a private X server it starts itself, Openbox, the harness's own Desktop with
@@ -849,10 +850,14 @@ node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" -
 - **The families**: every family of the matrix whose background keys cua sends (Chrome, Electron, gedit, kate,
   qtcreator, Firefox, Writer on gtk3, gnome-terminal; Writer on gen exposes no text field), two windows each, covered by
   the front window. Chromium's windows show `pages/keys.html`, whose page spends 3 ms on each key, so a burst outruns
-  the renderer.
+  the renderer, and 3 ms on each press in its field. A scenario a family cannot have (`NOT_APPLICABLE`: click-then-paste
+  on Firefox, whose caret no background click moves) runs no series or audit there, and the verdict lists it.
 - **The lanes**: the engine as it ships (`shipped`); the paste's settle at each of its measured steps (`settle-25`,
-  `settle-50`, `settle-75`, `settle-100`: `--paste-settle-ms`, the redirect kept); and a control whose every request
-  drops its redirect with its `FocusOut` (`control`, `--retention per-request`; its paste series drops the settle instead, `--paste-settle-ms 0` with the redirect kept), which cuts Chromium's keys and
+  `settle-50`, `settle-75`, `settle-100`: `--paste-settle-ms`, the redirect kept); the settle after a click at its
+  steps (`click-0` to `click-100`: `--paste-click-settle-ms`, 0 the engine before the click trigger); and a control
+  whose every request drops its redirect with its `FocusOut` (`control`, `--retention per-request`; its paste series
+  drops the settle instead, `--paste-settle-ms 0` with the redirect kept, and its click-then-paste series the click
+  settle, `--paste-click-settle-ms 0`), which cuts Chromium's keys and
   delivers them with the next `FocusIn`, the reorder M0.4 saw (on the private Xvfb a `FocusOut` with the redirect kept
   cuts nothing, tasks 56 and 59). `--lanes <list>` runs only the lanes it names, at least one judged, and no stop runs.
   `--trace` runs every series run with the engine's connection through xtrace and keeps a missed run's trace under
@@ -861,15 +866,19 @@ node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" -
   pipelined: `burst` (20 keys, Shift chords among them), `aba` (8 keys to A, 8 to B, 8 to A again) and `paste` (8
   keys, then a `type_text` to the same window, of `Pasted` and three letters of the run's own: a terminal's screen
   holds many runs' text, and the engine confirms a paste the screen's scroll moved only under its strict rule, task 56
-  fix 3). `--scenarios <list>` runs only those, with no stop runs. A run passes when every answer is a success and each
+  fix 3); and, named with `--scenarios`, `click-paste` (a fresh engine first puts the caret at the field's end, an empty
+  field given text first; then a click at the field's first character and a `type_text` with no element: the paste must
+  land at the text's start and be confirmed; a terminal, whose recorder reports the click, takes it after the click's
+  reports, at its end). `--scenarios <list>` runs only those, with no stop runs. A run passes when every answer is a success and each
   window's text is exactly its old text with the scenario's text put at the caret read before the run. Every lane but
   the control needs 30 consecutive passing runs of each scenario (at most 60; a miss restarts the series and is
   reported; `--trials` sets fewer for a development run, which the verdict then fails); the control lane runs 10 and
   must fail on Chromium, which shows the run can see a cut; its line counts the runs whose text was wrong. A paste
-  series reports its settle's cost (`settleCost`: the pastes, the median and the largest wait, and the median time
-  since the window's last key), from each paste's `--stats` record.
-- **The audit**, a pass per family and lane: each scenario once with the engine's X connection through xtrace and its
-  `--stats` records of its `FocusOut`s. Nothing the background route forbids; the synthetic-focus sessions, by window and
+  series reports its settle's cost (`settleCost`: the pastes, the median and the largest wait, and the median times
+  since the window's last key and its last click), from each paste's `--stats` record.
+- **The audit**, a pass per family and lane: each scenario once, each on an engine of its own with the flags its
+  series ran with (`auditRuns`: the control's paste with no settle, not unredirected), its X connection through xtrace
+  and its `--stats` records of its `FocusOut`s, one row per scenario. Nothing the background route forbids; the synthetic-focus sessions, by window and
   in order, exactly the scenarios' (one per request); no two windows under synthetic focus at once; every `FocusOut` in
   the trace attributed to the request whose input it ends, and none left past that request's answer (`audit.mjs`
   `attributeFocusOuts`, `auditVerdict`).

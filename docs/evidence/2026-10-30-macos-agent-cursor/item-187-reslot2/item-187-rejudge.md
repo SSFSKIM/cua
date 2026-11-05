@@ -1,17 +1,19 @@
 # #187: the re-judgment addendum (item-187-rejudge.md)
 
-An offline re-judgment of this out directory's records, by the judge's predicates as amended on 2026-11-05 (the kit at faf584858940), after the slot and before this judgment ran. `item-187.md` stays exactly as the slot's judge computed it; this file is beside it. The amendments, each with its reason:
+An offline re-judgment of this out directory's records, by the judge's predicates as amended on 2026-11-05 (the kit at 4c4d373df571), after the slot and before this judgment ran. `item-187.md` stays exactly as the slot's judge computed it; this file is beside it. The amendments, each with its reason:
 
-- **(a) The read stage.** When a paste threw with no stage meta, its read-stage timeout is taken from the error itself: code -10005 with "Timed out waiting for the application to read the clipboard". The saved engine (dd7a) never emits the stage meta, on any paste, so this does not depend on the outcome; only that code with that message counts, nothing broader.
-- **(b) The key.** The run window's own AXFocused is no longer part of the key reading: it read no on 66 of 66 Chrome key-window readings, both builds (the shipping build 51 of 51, the saved engine 15 of 15), so it carries no information.
-- **(c) The bar.** The key-window conditions leave the bar for the mechanism section. The cell's discrimination rests on delivery alone, as both halves pre-registered it: AFTER both pastes delivered; BEFORE the background paste timing out at the read stage and the frontmost paste not delivered. The mechanism section reports the key readings per half (frontmost, AXMain, AXFocusedWindow, hasFocus) and judges the "Chrome frontmost with no key window" prediction as it was stated. The AXPress route stays reported only.
+- **(a) The read stage, corrected.** The first re-judgment (b04ca136) read a paste with no stage meta that threw code -10005 with "Timed out waiting for the application to read the clipboard" as a read-stage timeout, and re-judged LANDS. The independent adversarial review of a950e5a1..b04ca136 found that wrong: in the saved engine's lineage, Paste.swift threw that same sentence when the read wait failed and when the effect wait failed (7a24390b:166 and :168), so the error names a read-or-effect timeout whose stage is unknown. The judge now counts a read timeout only from the stage meta; a legacy -10005 is reported as a read-or-effect timeout (legacy, stage unknown). This file replaces b04ca136's.
+- **(b) The key.** The run window's own AXFocused is no longer part of the key reading: it was never observed true, reading no on 66 of 66 Chrome key-window readings, both builds (the shipping build 51 of 51, the saved engine 15 of 15).
+- **(c) The bar, a post-hoc acceptance change.** The key-window conditions leave the bar for the mechanism section, and the cell's discrimination rests on delivery and stage: AFTER both pastes delivered; BEFORE the background paste timing out at the read stage and the frontmost paste not delivered. This change was made after the readings were seen, so it is an acceptance decision, not the pre-registered bar passing. The mechanism section reports the key readings per half (frontmost, AXMain, AXFocusedWindow, hasFocus) and judges the "Chrome frontmost with no key window" prediction as it was stated. The AXPress route stays reported only.
 - **(e) The per-line record.** typeText still needs one record per line, each confirmed by its own change, every later line opened by a settled Return. paste needs exactly one record: the engine sends the whole text, newlines included, as one part in one ⌘V (Paste.swift:720) and counts its lines as 1 plus its Return parts (:487), so a paste is one act with one record, confirmed by its own change. The bar had asked a paste for a record per line of its text.
 
-**What these are.** (a), (b) and (e) are judge predicates that no run could meet: the saved engine never emits the stage meta, AXFocused read no on every Chrome reading on both builds, and a paste never makes more than one record. Correcting them changes what the judge can read, not what the slot did. (c) is different: the "Chrome frontmost with no key window" prediction was tested, and the readings refute it. It is a refuted prediction, recorded as wrong, not restated, and it leaves the bar because the pre-registered discrimination of both halves is delivery.
+**What these are.** (e) corrects a predicate no run could meet: a paste never makes more than one record. (b) rests on an observation: AXFocused was never observed true on Chrome in this slot. (c) is outcome-dependent: the "Chrome frontmost with no key window" prediction was tested, and the readings refute it; it is recorded as wrong, not restated, and its leaving the bar is a post-hoc acceptance change. (a), as corrected, removes nothing from the bar: the saved engine's stage stays unknown.
 
-## Re-judged: LANDS, on the background paste
+## Re-judged: DOES NOT LAND
 
-- every condition held
+- the background-paste cell's BEFORE half: 0 of 3 counted repetitions failing as predicted (the background paste timing out at the read stage, the frontmost paste not delivered) (3 counted; before-0: the background paste timed out with the legacy -10005 read-or-effect sentence and no stage meta (stage unknown), not shown to be a read timeout; before-1: the background paste timed out with the legacy -10005 read-or-effect sentence and no stage meta (stage unknown), not shown to be a read timeout; before-2: the background paste timed out with the legacy -10005 read-or-effect sentence and no stage meta (stage unknown), not shown to be a read timeout)
+
+**What the cell does show, by delivery alone:** AFTER 3 of 3 counted repetitions with both pastes delivered; BEFORE 3 of 3 with neither delivered. What it does not show: the BEFORE stage (legacy, unknown), and the inert click's role in isolation, since the saved engine differs from the shipping build by more than the inert click. Closing #187 needs a cell pre-registered on delivery and stage, its BEFORE on a control build of the same head with only the inert click disabled at build time.
 
 The prediction "Chrome frontmost with no key window" (the saved engine, after `open -a`) was tested and is NOT supported: the key readings after `open -a` were identical on both builds.
 
@@ -23,9 +25,9 @@ A row is delivered only when the engine's read-back is exact and the page's own 
 
 **The bar**: chrome/composing@textedit 18/18 with every line confirmed by its own change (`cua/paste.perLine`); the three controls 18/18; the background-paste cell, latin on purpose, on 3 counted repetitions a half: AFTER (the shipping build) both pastes delivered, and BEFORE (the saved engine, in the same slot) the background paste timing out at the read stage and the frontmost paste not delivered (a BEFORE that delivers: NO VERDICT, the cell does not discriminate); the key-window readings are reported in the mechanism section, never the bar; every watcher whole with its longest gap within 50 ms; no raise and no menu opened; nothing else on the person's side touched; the put-back verified (the owner's source read back, the saved engine installed and approved). A person-touched row or repetition is invalid. The AXPress route is reported, never the bar. Anything less is DOES NOT LAND.
 
-## Overall: LANDS, on the background paste
+## Overall: DOES NOT LAND
 
-- every condition held
+- the background-paste cell's BEFORE half: 0 of 3 counted repetitions failing as predicted (the background paste timing out at the read stage, the frontmost paste not delivered) (3 counted; before-0: the background paste timed out with the legacy -10005 read-or-effect sentence and no stage meta (stage unknown), not shown to be a read timeout; before-1: the background paste timed out with the legacy -10005 read-or-effect sentence and no stage meta (stage unknown), not shown to be a read timeout; before-2: the background paste timed out with the legacy -10005 read-or-effect sentence and no stage meta (stage unknown), not shown to be a read timeout)
 
 The baseline, cited and not re-run: on 6226f2698ab0 as built (the slot of 2026-11-01's arm A, 187-A1 (36, twice) and 187-B's arm A blocks (27)), 0 of 99 valid rows delivered, every one stopping at the read (timeout) stage (docs/evidence/2026-10-30-macos-agent-cursor/item-187/item-187.md).
 
@@ -45,7 +47,8 @@ Per repetition: Chrome for Testing relaunched clean and placed at the left, Text
 | before | 3 | counted | outsideFrame / – | not delivered | – | frontmost no, AXFocused no, AXMain yes, focused window run, hasFocus no | frontmost yes, AXFocused no, AXMain yes, focused window run, hasFocus yes (1124 ms) | not delivered | – |
 
 AFTER: 3 of 3 counted repetitions with both pastes delivered (3 needed).
-BEFORE: 3 of 3 counted repetitions failing as predicted (3 needed).
+BEFORE: 0 of 3 counted repetitions failing as predicted (3 needed).
+By delivery alone, stage aside: AFTER 3 of 3 counted repetitions with both pastes delivered, BEFORE 3 of 3 with neither delivered. 3 BEFORE background paste(s) timed out with the legacy -10005 read-or-effect sentence and no stage meta (stage unknown), not shown to be a read timeout.
 
 ## The mechanism: the key-window readings (reported, never the bar)
 

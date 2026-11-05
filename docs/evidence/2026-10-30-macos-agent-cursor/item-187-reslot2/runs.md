@@ -31,7 +31,10 @@ in front at the put-back.
 - **The BEFORE half** on dd7a delivered **neither** paste in 3 of 3 repetitions. Each failed with "Computer Use server
   error -10005: Timed out waiting for the application to read the clipboard", which is #187's failure. dd7a's error
   carries no `stage` meta, so the judge's "read timeout" check read "no stage" and did not count them as failing as
-  predicted. Its key readings after `open -a` were the same as the AFTER half's.
+  predicted. Its key readings after `open -a` were the same as the AFTER half's. That sentence names no stage: dd7a's
+  lineage threw it for a read timeout and an effect timeout alike (7a24390b Paste.swift:166, :168), so the BEFORE stage
+  is unknown. The re-judgment (`item-187-rejudge.md`, corrected at 4c4d373d after its independent review) is DOES NOT
+  LAND on that alone; what it shows is delivery, AFTER 3 of 3 both pastes and BEFORE 3 of 3 neither.
 - **chrome/composing@textedit** delivered 18 of 18 (the baseline: 0 of 99), read back exact, with 0 raises and 0 menus.
   One row (`#1.6`, the `lines` string, block 2) carried 1 per-line record for its 2 lines; the same string's row in
   block 1 carried both.

@@ -8,7 +8,7 @@ import { gunzipSync } from 'node:zlib';
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { EXIT_WITHIN_MS, LANES, SCENARIOS, ALL_SCENARIOS, CLICK_STEPS, auditRuns, insertionAt, laneArgs, SETTLE_STEPS, UNCONFIRMED, auditVerdict, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, settleCost, stopPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, chosenLanes, judged, focusOutsOf, keepTrace, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { EXIT_WITHIN_MS, LANES, SCENARIOS, ALL_SCENARIOS, CLICK_STEPS, NOT_APPLICABLE, familyScenarios, auditRuns, insertionAt, pastedAfterClickReports, laneArgs, SETTLE_STEPS, UNCONFIRMED, auditVerdict, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, settleCost, stopPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, chosenLanes, judged, focusOutsOf, keepTrace, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7: the audit of each FocusOut, attributed to the request whose input it ends (audit.mjs; written for T7's
 // timer, whose FocusOuts were deferred past their answers, and the guard that none is deferred now). Lines in the shape
@@ -159,6 +159,13 @@ test("click-then-paste: a click into the field at its first character, then a pa
   assert.equal(insertionAt('click-paste', { kindOf: 'terminal' }, { text: 'abc', caret: 3 }), 3);
   assert.equal(insertionAt('paste', { kindOf: 'field' }, { text: 'abc', caret: 2 }), 2, 'every other scenario types at the caret read before');
   assert.ok(ALL_SCENARIOS.includes('click-paste'));
+  // a terminal's recorder reports the click (press and release, mouse reporting on), and the paste must follow it
+  const report = (b) => `\x1b[M${b}*D`;
+  assert.equal(pastedAfterClickReports('x', 'Pasted', `x${report(' ')}${report('#')}Pasted`), true);
+  assert.equal(pastedAfterClickReports('x', 'Pasted', 'xPasted'), true, 'no report at all');
+  assert.equal(pastedAfterClickReports('x', 'Pasted', `xPasted${report(' ')}${report('#')}`), false, 'the paste before the click');
+  assert.equal(pastedAfterClickReports('x', 'Pasted', `x${report(' ')}PasPasted`), false, 'anything else between');
+  assert.equal(pastedAfterClickReports('x', 'Pasted', `y${report(' ')}Pasted`), false, 'the text before changed');
 });
 
 test("each run's paste text is its own in the sitting, letters only: a terminal's screen holds many runs' text, and a paste whose text the scrolled screen already shows cannot be confirmed", () => {
@@ -261,6 +268,17 @@ test("click-then-paste's lanes: the click settle at each of its steps, 0 the eng
   assert.deepEqual(LANES['click-50'], ['--paste-click-settle-ms', '50'], 'the redirect and the key settle kept as the engine ships');
   assert.deepEqual(laneArgs('control', 'click-paste'), ['--paste-click-settle-ms', '0']);
   assert.deepEqual(laneArgs('click-25', 'click-paste'), ['--paste-click-settle-ms', '25']);
+});
+
+test("a scenario a family cannot have is left out of its series and audits, and the verdict lists it as measured", () => {
+  assert.deepEqual(familyScenarios('firefox', ['paste', 'click-paste']), ['paste']);
+  assert.deepEqual(familyScenarios('chrome', ['paste', 'click-paste']), ['paste', 'click-paste']);
+  assert.match(NOT_APPLICABLE['click-paste'].firefox, /caret/);
+  const families = ['chrome', 'gedit', 'firefox'];
+  const notApplicable = [{ family: 'firefox', scenario: 'click-paste', why: 'no caret moves' }];
+  const verdict = focusTimerVerdict(results((r) => ({ ...r, notApplicable })), { families });
+  assert.deepEqual(verdict.failed, [], 'a family whose one scenario is not applicable is not "not measured"');
+  assert.ok(verdict.md.includes('| firefox | click-paste | no caret moves |'), verdict.md.join('\n'));
 });
 
 test("an audit pass runs each scenario on the flags its series ran with: the control's paste with no settle, not unredirected", () => {

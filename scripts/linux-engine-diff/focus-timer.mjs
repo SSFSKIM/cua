@@ -217,6 +217,33 @@ export function insertionAt(name, scene, before) {
   return scene.kindOf === 'terminal' ? before.caret : 0;
 }
 
+/**
+ * Click-then-paste on a terminal: the harness's recorder turns mouse reporting on (families.mjs `terminalLaunch`), so
+ * the click itself writes its press and release reports (`ESC [ M` and three bytes each) at the end, and the paste must
+ * come after them: `after` is `before`, then the click's reports and nothing else, then the paste's text.
+ */
+export function pastedAfterClickReports(before, pasted, after) {
+  if (typeof before !== 'string' || typeof after !== 'string' || !after.startsWith(before) || !after.endsWith(pasted)) return false;
+  const between = after.slice(before.length, after.length - pasted.length);
+  return after.length >= before.length + pasted.length && /^(?:\x1b\[M[\s\S]{3})*$/.test(between);
+}
+
+/**
+ * The scenarios a family cannot have, and why: its windows run none of that scenario's series or audits, and the
+ * verdict lists it. Click-then-paste on Firefox: shared mode refuses a background click to a covered Gecko window with
+ * nothing sent (families.rs, Gecko), and a fully unobscured one takes the click without moving its caret (task 60's
+ * fix, probe `paste-settle/fix/firefox-click-probe.txt`: three clicks inside the textarea and an element click, each
+ * key after them at the end), so no click moves what a paste observes. Gecko also answers no extents for the field.
+ */
+export const NOT_APPLICABLE = {
+  'click-paste': {
+    firefox: 'a background click moves no Gecko caret (refused while covered, taken but caret unmoved while fully unobscured)',
+  },
+};
+
+/** A family's own scenarios of those a sitting runs (`NOT_APPLICABLE` left out). */
+export const familyScenarios = (family, scenarios) => scenarios.filter((name) => !NOT_APPLICABLE[name]?.[family]);
+
 /** Whether `after` is `before` with `inserted` put at `caret`, exactly. */
 export function insertedAt(before, caret, inserted, after) {
   return typeof before === 'string' && typeof after === 'string' && Number.isInteger(caret) && caret >= 0 && caret <= before.length && after === before.slice(0, caret) + inserted + before.slice(caret);
@@ -478,9 +505,23 @@ async function clickPasteStart(ctx, scene) {
     await engine.close();
   }
   const field = scene.kindOf === 'paragraphs' ? oracle.children(scene.document).find((id) => oracle.role(id) === 'paragraph') : scene.field;
-  const e = oracle.charExtents(field, 0);
-  return { x: Math.round(e.x - origin.x + Math.max(1, e.w / 4)), y: Math.round(e.y - origin.y + e.h / 2) };
+  const inside = ({ x, y }) => x >= 0 && y >= 0 && x < origin.width && y < origin.height;
+  // a window just resized or raised can answer no extents for a moment (Gecko answers zeros, or -1): looked for again
+  let e;
+  let f;
+  for (let tries = 0; tries < 20; tries++) {
+    e = oracle.charExtents(field, 0);
+    const atChar = { x: Math.round(e.x - origin.x + Math.max(1, e.w / 4)), y: Math.round(e.y - origin.y + e.h / 2) };
+    if (e.w > 0 && e.h > 0 && inside(atChar)) return atChar;
+    // no usable extents for the character: the field's own top left, inside its first line
+    f = oracle.extents(field);
+    const atField = { x: Math.round(f.x - origin.x + 3), y: Math.round(f.y - origin.y + Math.min(f.h / 2, 10)) };
+    if (f.w > 0 && f.h > 0 && inside(atField)) return atField;
+    await sleep(100);
+  }
+  throw new Error(`${scene.label}: no point to click in the field (character ${JSON.stringify(e)}, field ${JSON.stringify(f)})`);
 }
+
 
 /** One run of a scenario on the scene windows: the answers, each window's text and caret before and after. */
 async function oneRun(ctx, engine, name, windows) {
@@ -492,6 +533,13 @@ async function oneRun(ctx, engine, name, windows) {
     for (const k of clicks ? ['a'] : Object.keys(scenario(name, { a: 0, b: 0 }).expected)) tail = (await cleanStart(ctx, windows[k], () => textAndCaret(desktop, oracle, windows[k]), { reset: !clicks })).tail || tail;
   }
   const click = clicks ? await clickPasteStart(ctx, windows.a) : undefined;
+  return judgedRun(ctx, engine, name, windows, { tail, click });
+}
+
+/** A run's requests and its judgement, once its start is ready (`oneRun`). */
+async function judgedRun(ctx, engine, name, windows, { tail, click }) {
+  const { desktop, oracle } = ctx;
+  const clicks = name === 'click-paste';
   const { requests, expected } = scenario(name, { a: windows.a.id, b: windows.b?.id }, PASTES.includes(name) ? { pasted: ctx.pasteText(), click } : {});
   const keys = Object.keys(expected);
   const before = {};
@@ -502,10 +550,11 @@ async function oneRun(ctx, engine, name, windows) {
   const after = {};
   for (const k of keys) after[k] = await settledRead(() => textAndCaret(desktop, oracle, windows[k]), { want: grown(before[k], expected[k]) });
   const at = Object.fromEntries(keys.map((k) => [k, insertionAt(name, windows[k], before[k])]));
-  const texts = Object.fromEntries(keys.map((k) => [k, insertedAt(before[k].text, at[k], expected[k], after[k].text)]));
+  const exact = (k) => (clicks && windows[k].kindOf === 'terminal' ? pastedAfterClickReports(before[k].text, expected[k], after[k].text) : insertedAt(before[k].text, at[k], expected[k], after[k].text));
+  const texts = Object.fromEntries(keys.map((k) => [k, exact(k)]));
   const errors = responses.filter((r) => r.ok !== true).map((r) => String(r.error).slice(0, 300));
   const got = Object.fromEntries(keys.map((k) => [k, typeof after[k].text === 'string' && typeof before[k].text === 'string' ? after[k].text.slice(at[k] ?? 0, (at[k] ?? 0) + after[k].text.length - before[k].text.length) : null]));
-  return { ok: runPasses({ family: windows.a.family, errors, exact: texts }), tail_at_start: tail, answered_ok: errors.length === 0, errors, expected, got, exact: texts, caret_read: keys.every((k) => before[k].caret !== null), ...(clicks ? { click, caret_before: before.a.caret } : {}), burst_ms: Math.round(ms * 10) / 10, answered_ms: Math.round(answered * 10) / 10 };
+  return { ok: runPasses({ family: windows.a.family, errors, exact: texts }), tail_at_start: tail, answered_ok: errors.length === 0, errors, expected, got, exact: texts, caret_read: keys.every((k) => before[k].caret !== null), ...(clicks ? { click, caret_before: before.a.caret, landed_at: typeof after.a.text === 'string' ? after.a.text.indexOf(expected.a) : null } : {}), burst_ms: Math.round(ms * 10) / 10, answered_ms: Math.round(answered * 10) / 10 };
 }
 
 /**
@@ -761,7 +810,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
   emit({ kind: 'focus-timer-display', display: server.display, cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), load_factor: args.load ? (args.loadFactor ?? 1) : 0, lanes: laneFlags });
   const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   const families = args.families.length ? args.families : FAMILIES;
-  const results = { series: [], audits: [], stops: [], skipped: [] };
+  const results = { series: [], audits: [], stops: [], skipped: [], notApplicable: [] };
   let wm = null;
   let load = null;
   let watched = null;
@@ -777,9 +826,18 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
     const stopArgs = args.exitSettleMs === undefined ? [] : ['--exit-settle-ms', String(args.exitSettleMs)];
     const ctx = { desktop, oracle, emit, cua: args.cua, out: args.out, trace: Boolean(args.trace), need: args.samplesTrials ?? CONSECUTIVE, stopArgs, pasteText: pasteTexts(), scenarios: chosen.scenarios };
     for (const family of families) {
+      const scenarios = familyScenarios(family, ctx.scenarios);
+      for (const name of ctx.scenarios.filter((n) => !scenarios.includes(n))) {
+        const row = { family, scenario: name, why: NOT_APPLICABLE[name][family] };
+        results.notApplicable.push(row);
+        emit({ kind: 'focus-timer-not-applicable', ...row });
+      }
+      const cutsKeys = CHROMIUM.includes(family) && stops;
+      if (!scenarios.length && !cutsKeys) continue;
+      const fctx = { ...ctx, scenarios };
       let windows;
       try {
-        windows = await openWindows(ctx, family);
+        windows = await openWindows(fctx, family);
       } catch (error) {
         results.skipped.push({ family, why: String(error.message).slice(0, 300) });
         emit({ kind: 'focus-timer-skipped', family, why: String(error.message).slice(0, 300) });
@@ -788,18 +846,17 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
       try {
         // the control lane and SIGKILL last: the keys they cut reach the window only with a later FocusIn, which would
         // fail whatever ran after them
-        const cutsKeys = CHROMIUM.includes(family) && stops;
         const lane = async (name) => {
-          for (const scenarioName of ctx.scenarios) results.series.push(await series(ctx, family, name, scenarioName, windows));
-          results.audits.push(...(await auditPass(ctx, family, name, windows)));
+          for (const scenarioName of fctx.scenarios) results.series.push(await series(fctx, family, name, scenarioName, windows));
+          results.audits.push(...(await auditPass(fctx, family, name, windows)));
         };
         if (!args.stopsOnly) for (const name of lanes.filter((l) => l !== 'control')) await lane(name);
         if (cutsKeys) {
-          for (let i = 0; i < SIGTERM_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i));
-          for (let i = 0; i < POINTER_STOP_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i, 'clicks'));
+          for (let i = 0; i < SIGTERM_RUNS; i++) results.stops.push(await stopRun(fctx, family, 'SIGTERM', windows, i));
+          for (let i = 0; i < POINTER_STOP_RUNS; i++) results.stops.push(await stopRun(fctx, family, 'SIGTERM', windows, i, 'clicks'));
         }
         if (!args.stopsOnly && lanes.includes('control')) await lane('control');
-        if (cutsKeys) for (let i = 0; i < SIGKILL_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGKILL', windows, i));
+        if (cutsKeys) for (let i = 0; i < SIGKILL_RUNS; i++) results.stops.push(await stopRun(fctx, family, 'SIGKILL', windows, i));
       } finally {
         await desktop.close([windows.a, windows.b]);
       }
@@ -830,7 +887,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
  * series showed the reorder, every audit is clean, every SIGTERM run kept its order and settled, every SIGKILL run did
  * not settle; a family that could not be opened fails it. Returns the summary's lines and the failures.
  */
-export function focusTimerVerdict({ series: all, audits, stops, skipped }, { families, stopsOnly = false }) {
+export function focusTimerVerdict({ series: all, audits, stops, skipped, notApplicable = [] }, { families, stopsOnly = false }) {
   const failed = [];
   const md = ['| family | lane | scenario | runs | misses | passing streak at the end | verdict | raw misses | raw streak | median burst ms |', '|---|---|---|---:|---:|---:|---|---:|---:|---:|'];
   for (const s of all) {
@@ -871,9 +928,13 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped }, { fam
       }
     }
   }
+  if (notApplicable.length) {
+    md.push('', '| family | scenario | not applicable |', '|---|---|---|');
+    for (const n of notApplicable) md.push(`| ${n.family} | ${n.scenario} | ${n.why} |`);
+  }
   for (const s of skipped) failed.push(`${s.family} could not be opened: ${s.why}`);
   for (const family of families) {
-    const measured = all.some((s) => s.family === family) || (stopsOnly && stops.some((s) => s.family === family));
+    const measured = all.some((s) => s.family === family) || (stopsOnly && stops.some((s) => s.family === family)) || notApplicable.some((n) => n.family === family);
     if (!measured && !skipped.some((s) => s.family === family)) failed.push(`${family} was not measured`);
   }
   return { md, failed };

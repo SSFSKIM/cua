@@ -15,6 +15,8 @@
 //   obs+checkbox, obs+button, obs+textarea   the branch, shared mode: one observation, 2.5 s with no activation, the
 //                            target's action names, then the click
 //   obs-timeline             the checkbox's action names every 100 ms for 3 s after one observation, no activation
+//   btn-timeline             after one observation, no click: the hit at the button's centre (asked of the application)
+//                            with its chain to AXWebArea, then the button's and the hit's action names every 100 ms for 4 s
 // Every click cell: get_app_state with a screenshot, the target's centre from its node's frame in screenshot pixels, the
 // AX hit there (hit.swift), the page's counters and the server's load count before and 2.5 s after the click, the
 // frontmost app before and after, an observation after (its focused element). Only node builtins.
@@ -190,6 +192,8 @@ const CELLS = [
   {label: 'obs+button', engine: 'branch', target: 'button', waitMs: 2500},
   {label: 'obs+textarea', engine: 'branch', target: 'textarea', waitMs: 2500},
   {label: 'obs-timeline', engine: 'branch', timeline: 'checkbox'},
+  // The button's AXPress over 4 s after one observation, no click (hit.swift button-timeline).
+  {label: 'btn-timeline', engine: 'branch', buttonTimeline: true},
 ].filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)));
 
 async function cell(spec) {
@@ -217,6 +221,16 @@ async function cell(spec) {
     row.window = sky.window; row.screenshot = sky.screenshot;
     row.observation = {chromium: sky.timings?.chromium, webAreaFound: sky.timings?.webAreaFound, webShaped: sky.timings?.webShaped,
       enabled: sky.timings?.enabled ?? null, enablementPrior: sky.timings?.enablementPrior ?? null};
+    if (spec.buttonTimeline) {
+      const n = sky.nodes.find(TARGETS.button);
+      row.buttonNode = {title: n.title, actions: n.actions, frame: n.frame};
+      row.startedAfterObservationMs = Date.now() - observedAt;
+      const r = spawnSync(HIT, ['button-timeline', String(chrome.pid), String(n.frame.x + n.frame.width / 2), String(n.frame.y + n.frame.height / 2), '4000', '100'],
+        {encoding: 'utf8', timeout: 30_000});
+      try { row.buttonTimeline = JSON.parse(r.stdout); } catch { row.buttonTimeline = {status: r.status, out: (r.stdout || '').slice(0, 2000), err: (r.stderr || '').slice(0, 2000)}; }
+      row.frontAfter = frontmost();
+      return row;
+    }
     if (spec.timeline) {
       const n = sky.nodes.find(TARGETS[spec.timeline]);
       const at = [String(n.frame.x + n.frame.width / 2), String(n.frame.y + n.frame.height / 2)];
@@ -295,6 +309,7 @@ async function cell(spec) {
 // The one-line reading of a cell's click: the answer's error name or route and element-click reason.
 function verdict(row) {
   if (row.timeline) return `timeline of ${row.timeline.length} reads`;
+  if (row.buttonTimeline) return `button timeline, started ${row.startedAfterObservationMs} ms after the observation`;
   if (row.geometry) return `frameEqual=${row.geometry.frameEqual} activationPointEqual=${row.geometry.activationPointEqual}`;
   const c = row.click;
   if (!c) return `no click (${JSON.stringify(row.problem ?? row.exception ?? '').slice(0, 300)})`;
@@ -325,6 +340,9 @@ for (const spec of CELLS) {
   if (row.hit) log(`${row.label}: hit before ${JSON.stringify(row.hit.appChain?.slice(0, 3))} actions ${JSON.stringify(row.hit.appActions)}; after actions ${JSON.stringify(row.hitAfter?.appActions)}`);
   if (row.geometry) log(`${row.label}: geometry ${JSON.stringify(row.geometry)}`);
   if (row.actions) log(`${row.label}: actions ${JSON.stringify(row.actions)}`);
+  if (row.buttonTimeline) { const b = row.buttonTimeline; log(`${row.label}: hitIsButton=${b.hitIsButton} buttonFound=${b.buttonFound} chain ${JSON.stringify(b.hitChain)}`);
+    log(`${row.label}: button ${JSON.stringify(b.button)} hit ${JSON.stringify(b.hit)} freshHit ${JSON.stringify(b.freshHit)}`);
+    log(`${row.label}: timeline ${JSON.stringify(b.timeline?.map(e => [e.t, +e.button, +e.hit, +e.freshHit, +e.freshIsButton]))}`); }
   if (row.timeline) log(`${row.label}: AXPress after observation ms=${row.axPressAfterObservationMs} observation=${JSON.stringify(row.observation)} timeline ${JSON.stringify(row.timeline.map(e => [e.t, Array.isArray(e.actions) && e.actions.includes('AXPress')]))}`);
   if (row.exception || row.problem) log(`${row.label}: PROBLEM ${JSON.stringify(row.problem ?? '')} ${row.exception ?? ''} ${row.buttons ? JSON.stringify(row.buttons) : ''}`);
 }

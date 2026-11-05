@@ -38,6 +38,74 @@ func geometry(_ w: AXUIElement) -> [String: Any] {
           "frontmost": NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? NSNull()]
 }
 
+func actionNames(_ e: AXUIElement) -> Any {
+  var names: CFArray?
+  let error = AXUIElementCopyActionNames(e, &names)
+  return error == .success ? (names as? [String] ?? []) : "error \(error.rawValue)"
+}
+func hasPress(_ actions: Any) -> Bool { (actions as? [String])?.contains("AXPress") == true }
+
+// What `actions` held over a timeline: when AXPress first appeared, and every later change (appeared or disappeared).
+func pressSummary(_ ticks: [(Int, Any)]) -> [String: Any] {
+  var first: Int?, changes: [[String: Any]] = [], last: Bool?
+  for (t, actions) in ticks {
+    let now = hasPress(actions)
+    if now, first == nil { first = t }
+    if let last, last != now { changes.append(["t": t, "axPress": now]) }
+    last = now
+  }
+  return ["firstAXPressMs": first ?? NSNull(), "changes": changes, "disappeared": changes.contains { $0["axPress"] as? Bool == false }]
+}
+
+if args.count == 7, args[1] == "button-timeline", let pid = pid_t(args[2]), let x = Float(args[3]), let y = Float(args[4]),
+   let total = Int(args[5]), let interval = Int(args[6]) {
+  //   hit button-timeline <pid> <x> <y> <ms> <intervalMs>   at the point: the hit asked of the application (the fixed
+  //   engine's hit-test), its chain up to AXWebArea with each level's role and action names; the page's Apply button found
+  //   in the tree (AXButton titled Apply); then every interval for ms, with no activation, the action names of that tree
+  //   button, of the first hit (both held from the start), and of a fresh hit-test at the point.
+  let app = AXUIElementCreateApplication(pid)
+  func hitAt() -> AXUIElement? { var h: AXUIElement?; return AXUIElementCopyElementAtPosition(app, x, y, &h) == .success ? h : nil }
+  let start = DispatchTime.now().uptimeNanoseconds
+  let ms = { Int((DispatchTime.now().uptimeNanoseconds - start) / 1_000_000) }
+  let hit = hitAt()
+  var levels: [[String: Any]] = [], cur = hit
+  while let e = cur, levels.count < 300 {
+    let role = attr(e, kAXRoleAttribute) as? String ?? "?"
+    levels.append(["role": role, "title": attr(e, kAXTitleAttribute) as? String ?? NSNull(), "actions": actionNames(e)])
+    if role == "AXWebArea" || ["AXWindow", "AXSheet", "AXApplication"].contains(role) { break }
+    cur = attr(e, kAXParentAttribute).map { $0 as! AXUIElement }
+  }
+  // The tree's Apply button: breadth first from the first window, at most 5000 elements.
+  var button: AXUIElement?, queue = (attr(app, kAXWindowsAttribute) as? [AXUIElement])?.prefix(1).map { $0 } ?? [], seen = 0
+  while !queue.isEmpty, button == nil, seen < 5000 {
+    let e = queue.removeFirst(); seen += 1
+    if attr(e, kAXRoleAttribute) as? String == "AXButton", attr(e, kAXTitleAttribute) as? String == "Apply" { button = e; break }
+    queue += (attr(e, kAXChildrenAttribute) as? [AXUIElement]) ?? []
+  }
+  let hitIsButton = hit.flatMap { h in button.map { CFEqual(h, $0) } } ?? false
+  var buttonTicks: [(Int, Any)] = [], hitTicks: [(Int, Any)] = [], freshTicks: [(Int, Any)] = [], timeline: [[String: Any]] = []
+  var tick = 0
+  while tick * interval <= total {
+    let due = UInt64(tick * interval) * 1_000_000
+    let elapsed = DispatchTime.now().uptimeNanoseconds - start
+    if elapsed < due { usleep(UInt32((due - elapsed) / 1000)) }
+    let t = ms()
+    let b: Any = button.map(actionNames) ?? NSNull(), h: Any = hit.map(actionNames) ?? NSNull()
+    let fresh = hitAt()
+    let f: Any = fresh.map(actionNames) ?? NSNull()
+    buttonTicks.append((t, b)); hitTicks.append((t, h)); freshTicks.append((t, f))
+    timeline.append(["t": t, "button": hasPress(b), "hit": hasPress(h), "freshHit": hasPress(f),
+                     "freshIsButton": fresh.flatMap { fh in button.map { CFEqual(fh, $0) } } ?? false,
+                     "freshRole": fresh.flatMap { attr($0, kAXRoleAttribute) as? String } ?? NSNull()])
+    tick += 1
+  }
+  emit(["trusted": AXIsProcessTrusted(), "hitChain": levels, "buttonFound": button != nil, "searched": seen, "hitIsButton": hitIsButton,
+        "button": pressSummary(buttonTicks), "hit": pressSummary(hitTicks), "freshHit": pressSummary(freshTicks),
+        "firstActions": ["button": buttonTicks.first?.1 ?? NSNull(), "hit": hitTicks.first?.1 ?? NSNull()],
+        "lastActions": ["button": buttonTicks.last?.1 ?? NSNull(), "hit": hitTicks.last?.1 ?? NSNull()], "timeline": timeline])
+  exit(0)
+}
+
 if args.count == 3, args[1] == "geom", let pid = pid_t(args[2]) {
   let app = AXUIElementCreateApplication(pid)
   guard let w = (attr(app, kAXWindowsAttribute) as? [AXUIElement])?.first else { emit(["error": "noWindow"]); exit(1) }

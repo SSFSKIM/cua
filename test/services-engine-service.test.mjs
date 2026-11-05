@@ -713,6 +713,34 @@ test('the service tells the engine its session\'s cursor at connect, and end_tas
   await until(() => engine.sockets.size === 0);
 });
 
+test('the service names its session\'s device mode in the ping (#282): CUA_DESKTOP_MODE, shared when the launch names none', async t => {
+  for (const [env, desktop] of [[{}, 'shared'], [{CUA_DESKTOP_MODE: ''}, 'shared'], [{CUA_DESKTOP_MODE: 'dedicated'}, 'dedicated']]) {
+    const {service, engine} = await ownService(t, {CUA_CURSOR: '0', ...env});
+    await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]});
+    assert.deepEqual(engine.received[0], {...engine.received[0], method: 'ping', params: {clientApiVersion: 'cua-engine-1', desktop}}, JSON.stringify(env));
+  }
+  const {service, engine} = await ownService(t, {CUA_DESKTOP_MODE: 'kiosk'});
+  await assert.rejects(service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]}), {message: 'cua: CUA_DESKTOP_MODE must be shared or dedicated [invalid_setting]'});
+  assert.equal(engine.received.length, 0, 'nothing reaches the engine in a mode it was not given');
+});
+
+test('#282: the engine\'s background-click refusal and clickUnconfirmed reach the model with their sentence, name and meta', async t => {
+  const refusal = "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop";
+  const unconfirmed = 'The click could not be confirmed: it was sent to Example in the background, but it may only have activated the window without reaching what is under the pointer. Observe the app with get_app_state before any retry, and never retry blindly.';
+  for (const [name, message, meta] of [['backgroundClickRefused', refusal, {...INPUT_META, startedAt: null, endedAt: null, activationJoin: 'fresh'}],
+    ['clickUnconfirmed', unconfirmed, {...INPUT_META, activationClickKind: {kind: 'action', when: 'consumedByAction'}}]]) {
+    const {getApp, call, meta: seen} = await session(t, {handlers: {'execute:click': () => { throw new EngineFailure(-10005, message, name, {meta}); }}});
+    const {app} = await getApp('TextEdit');
+    await assert.rejects(call(() => app.click([10, 20])), error => {
+      assert.equal(error.message, `Computer Use server error -10005: ${message}`, 'the whole sentence');
+      assert.equal(error.errorName, name);
+      return true;
+    });
+    assert.equal(seen['cua/inputRoute'], meta.inputRoute, name);
+    assert.deepEqual(seen['cua/actionInterval'], {startedAt: meta.startedAt, endedAt: meta.endedAt}, `the interval says whether anything was posted: ${name}`);
+  }
+});
+
 test('against an engine without the cursor method the session goes on, and end_task still closes the connection, sending nothing', async t => {
   const {service, engine, turnEnded} = await ownService(t, {CUA_CURSOR: '0'}, {handlers: {cursor: undefined}});
   assert.deepEqual(await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]}), []);

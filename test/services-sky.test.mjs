@@ -136,7 +136,7 @@ test('an input error whose meta says nothing was posted answers that nothing was
 test('a concealed set_value stopped under one of cua\'s set_value names repeats the name, value-free, and says whether anything was entered', async () => {
   const value = VALUES['WORK_PASSWORD'];
   const names = ['valueNotSettable', 'invalidNumber', 'invalidDate', 'unsupportedValueType', 'cannotClickOffscreenElement',
-    'elementNoLongerValid', 'elementAmbiguousBeforeRefetch', 'elementAmbiguousAfterRefetch'];
+    'backgroundClickRefused', 'elementNoLongerValid', 'elementAmbiguousBeforeRefetch', 'elementAmbiguousAfterRefetch'];
   for (const name of names) {
     const {service} = harness({answer: () => { throw new EngineError(name, `refused ${value}`, NOTHING_POSTED); }});
     const error = await rejection(service.handleRpc(setValue(REF('WORK_PASSWORD'))));
@@ -146,7 +146,7 @@ test('a concealed set_value stopped under one of cua\'s set_value names repeats 
     assertValueFree(error);
   }
   // A refused write, and a value refused after the focus click posted: named, and maybe entered.
-  for (const name of ['actionFailed', 'invalidNumber']) {
+  for (const name of ['actionFailed', 'invalidNumber', 'clickUnconfirmed']) {
     const {service} = harness({answer: () => { throw new EngineError(name, `refused ${value}`, {...NOTHING_POSTED, inputRoute: '1', startedAt: 1000, endedAt: 1042}); }});
     const error = await rejection(service.handleRpc(setValue(REF('WORK_PASSWORD'))));
     assert.match(error.message, new RegExp(`failed \\(${name}\\)`), name);

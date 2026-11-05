@@ -68,6 +68,18 @@ test('connect pings with cua-engine-1, accepts an engine whose version and build
   assert.equal(engine.received.length, 1, 'a live connection is reused');
 });
 
+test('a session\'s device mode (#282) is named in every connection\'s ping, so the engine applies it per connection', async t => {
+  const socket = join(scratchDir(t), 'engine.sock');
+  const engine = await startFakeEngine(t, socket);
+  const {client} = clientFor(socket, {desktop: 'dedicated'});
+  t.after(() => client.close());
+  await client.connect();
+  client.close();
+  await client.connect();
+  assert.deepEqual(engine.received.map(r => [r.method, r.params]), [['ping', {clientApiVersion: 'cua-engine-1', desktop: 'dedicated'}],
+    ['ping', {clientApiVersion: 'cua-engine-1', desktop: 'dedicated'}]], 'a reconnect names it again');
+});
+
 test('an engine naming a variant (#187\'s control build) is accepted on its version and build, and the variant kept in its identity', async t => {
   const socket = join(scratchDir(t), 'engine.sock');
   await startFakeEngine(t, socket, {identity: {...IDENTITY, variant: 'control-no-inert-click'}});

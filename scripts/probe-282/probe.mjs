@@ -102,14 +102,8 @@ const delta = (before, after) => before && after
   ? Object.fromEntries(Object.keys(after.counts ?? after).filter(k => typeof after[k] === 'number' && k !== 'seq').map(k => [k, after[k] - (before[k] ?? 0)]))
   : null;
 
-function findNode(nodes, pred) {
-  for (const n of nodes ?? []) {
-    if (pred(n)) return n;
-    const hit = findNode(n.children, pred);
-    if (hit) return hit;
-  }
-  return null;
-}
+// A Skyshot's nodes are one flat list in walk order (each node's `children` a count).
+const findNode = (nodes, pred) => (nodes ?? []).find(pred) ?? null;
 function lean(response) {  // the click's answer without anything bulky
   return JSON.parse(JSON.stringify(response, (k, v) => (k === 'nodes' || k === 'menuBar' ? `[${Array.isArray(v) ? v.length : '?'} omitted]` : v)));
 }

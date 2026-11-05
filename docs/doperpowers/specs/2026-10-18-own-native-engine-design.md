@@ -1781,6 +1781,44 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   guard off). A keys-then-click row with a raise watcher is queued for the next
   attended slot.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's ruling on #261's hold join.
+- Decision (#187's isolating slot, 2026-11-05, `fix/187-isolate`; the design session's rulings on the next slot's kit,
+  item 1): **a control build without the inert click, cut at compile time, and the hold join named in the meta.**
+  1. **The cut.** Under `CUA_CONTROL_NO_INERT_CLICK`, `activationClickPlan`'s one return of `.inertOutside` returns
+     `.skipped(.controlBuild)` instead, so the arm is left set as before #187's inert click. That one return removes
+     both the early and the release inert click, the release click being the plan's kept point. Everything else of
+     #261 stays (the hold join, the multi-line paste, the paste route's guard and watch, stage meta); with no arm spent
+     early, the hold join's re-arming never fires, the pre-#261 behaviour for that path. The `controlBuild` skip
+     reason (on the wire as {kind `skipped`, skippedReason `controlBuild`}) and the ping's `variant:
+     "control-no-inert-click"` (`engineVariant`, Version.swift) exist only under the condition, so the running binary
+     says what it is, and a sitting attests each half from the engine's ping, not from the bundle's metadata.
+  2. **Why at compile time.** The slot compares the merged engine with the same engine minus one behaviour. A runtime
+     switch (an engine.json key, a request flag) would ship the regression's path in every release and let any
+     configuration turn it on; a separate source branch would let the two halves drift. One `#if` around one return
+     keeps the halves identical elsewhere, and a release cannot reach it.
+  3. **How it stays out of a release.** The shipping Package.swift never defines the condition, and the shipping
+     builder (`buildEngine`, src/runtime/engine.mjs) has no option for it. The kit copies native/engine/ whole into a
+     scratch directory, adds the define to the copy's Package.swift and builds the copy with the unchanged builder;
+     the build hash covers Package.swift, so the control has its own build id. ci-kit's `engine-swift` gate compiles
+     the branch (`swift build -Xswiftc -DCUA_CONTROL_NO_INERT_CLICK`, its own scratch), so it cannot rot unnoticed;
+     its tests are not run there, the shipping suite asserting the inert click.
+  4. **`activationJoin` in the input meta.** Each `HeldActivations.acquire` and `refresh` that reaches the registry
+     records how it came by the process's activation: `fresh` (no holder: a new one ran), `shared` (a current one
+     shared, none run: a joiner, a no-click joiner consuming a set arm, or a holder's refresh of the one it holds),
+     `rearmed` (a pointer joining its own connection's spent-arm hold: that one ended and a new one ran) and
+     `replacedSpent` (a stale or withdrawn one replaced, by acquire or refresh). It is written before any activation
+     runs, so a failed guard's refusal names the path it failed on; a request stopped before the registry (an
+     intervention under its lock) or that acquires nothing leaves it absent. The last acquire or refresh of a request
+     wins, so a click's meta names its own join. Before, the re-arming wrote the new activation's guard and click into
+     meta, but nothing said the join happened; the keys-then-click row's premise reads it.
+  5. **Carried to results.** The service passes `activationJoin` through as `cua/activationJoin` (reset per call, as
+     every optional input key), and the client keeps a ping's `variant` in the engine's identity, so
+     `cua/nativeEngine` names it ({engine, version, build, variant}); a release's identity is unchanged. The client
+     still accepts an engine on its version and build alone: the variant attests, it does not gate.
+  Proven offline (the shipping suite, 731 tests: each value asserted on the path that produces it in `FocusHoldTests`
+  and `ActivationClickTests`, a click replacing a stale hold's activation added; the shipping ping naming no variant;
+  `swift build` with the define compiling, and under it the inert-click and ping tests failing as they should; the
+  client's and service's tests for the variant and the join's pass-through). Nothing live ran.
+  Date/Author: 2026-11-05, cursor235's implementer for the design session's rulings on #187's isolating slot.
 
 ## Outcomes & Retrospective
 

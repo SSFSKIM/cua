@@ -30,7 +30,9 @@ gates:
   # #117: cua's own native engine (native/engine/, a Swift package on Apple frameworks only) built in release, as
   # `cua engine build` builds it, and its unit tests run, the build's scratch under the runner's temp, never in the
   # checkout. The hosted runner holds no Accessibility or Screen Recording grant: the engine's untrusted paths run here,
-  # its live parts on the Mac mini. No Node, so no shared setup.
+  # its live parts on the Mac mini. No Node, so no shared setup. The #187 control build's branch
+  # (`CUA_CONTROL_NO_INERT_CLICK`, which no shipping Package.swift defines) is compiled too, in its own scratch, so it
+  # cannot stop compiling unnoticed.
   - name: engine-swift
     lane: hosted-macos
     timeout: 20
@@ -39,6 +41,7 @@ gates:
       swift --version
       swift build -c release --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-build"
       swift test --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-build"
+      swift build --package-path native/engine --scratch-path "$RUNNER_TEMP/cua-engine-control" -Xswiftc -DCUA_CONTROL_NO_INERT_CLICK
     paths:
       - "native/engine/**"
       - ".github/ci-kit.yml"

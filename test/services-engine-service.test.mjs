@@ -29,7 +29,7 @@ const byPath = Object.fromEntries(Object.values(APPS).map(app => [app.appPath, a
 const NO_LONGER_VALID = 'The element ID is no longer valid. Try to get the on-screen content again and see if that resolves the issue.';
 const ENGINE_MS = {resolve_app: 999};
 const INPUT_META = {inputRoute: 3, startedAt: 1000, endedAt: 1042, receivedAt: 990, hidIdleMs: 31000, activationGuardMs: 41.5, activationClick: 'posted',
-  activationClickKind: {kind: 'activationPoint'}, pointUnconfirmed: true};
+  activationClickKind: {kind: 'activationPoint'}, activationJoin: 'rearmed', pointUnconfirmed: true};
 // Route 3's delivery guard after a pointer action (#200): one restore, under the cap.
 const DELIVERY = {restores: 1, frontmostRestored: false, otherAppFront: false, restoreLatencyMs: 10, guardMs: 40, screenHoldMs: 52.5, capped: false,
   raiseLeft: false, holdStartedAt: 1793399999947, releasedAt: 1793400000000};
@@ -52,7 +52,8 @@ let facadeInstance = 0;
 
 // A session: the fake engine, the worker's nodeRepl, the service behind the real wrapper, and the facade over it.
 // `handlers` override the engine's; `answer(request)` is the client's answer to an approval (accept for the session).
-async function session(t, {handlers = {}, answer = () => ({action: 'accept', content: null, _meta: {persist: 'session'}}), secrets = {}, env = {}} = {}) {
+async function session(t, {handlers = {}, answer = () => ({action: 'accept', content: null, _meta: {persist: 'session'}}), secrets = {}, env = {},
+  identity} = {}) {
   const s = shortScratch('cua-esv-');
   t.after(s.cleanup);
   const socket = join(s.dir, 'engine.sock');
@@ -61,7 +62,7 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
   const trees = new Map(Object.values(APPS).map(app => [app.appPath, scene(app, {screenshot: {url: pathToFileURL(shot).href, width: 600, height: 400, scale: 1}})]));
   const record = {elicitations: [], asked: [], meta: [], items: [], budget: 0, suspendedAt: {}};
   const during = method => { (record.suspendedAt[method] ??= []).push(record.budget > 0); };
-  const engine = await startFakeEngine(t, socket, {handlers: {
+  const engine = await startFakeEngine(t, socket, {identity, handlers: {
     'execute:resolve_app': ({args}) => {
       during('resolve_app');
       const app = APPS[args.app] ?? byPath[args.app] ?? Object.values(APPS).find(each => each.bundleIdentifier === args.app);
@@ -71,7 +72,7 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
     'execute:get_app_state': ({args}) => { during('get_app_state'); return trees.get(args.app); },
     'execute:list_apps': () => { during('list_apps'); return [{id: 'com.apple.TextEdit', displayName: 'TextEdit', isRunning: true, extra: 1}, {id: 'io.example.old', displayName: 'Old', isRunning: false, lastUsedDate: 1.5, useCount: 2}]; },
     'execute:click': () => { during('click'); return {meta: INPUT_META}; },
-    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, activationClick: undefined, activationClickKind: undefined, pointUnconfirmed: undefined}}),
+    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, activationClick: undefined, activationClickKind: undefined, activationJoin: undefined, pointUnconfirmed: undefined}}),
     'execute:type_text': () => ({meta: {...INPUT_META, inputRoute: "2'"}}),
     ...handlers,
   }});
@@ -202,6 +203,7 @@ test('an element index becomes the lineage\'s token, every execute carrying its 
   assert.equal(meta['cua/activationGuardMs'], 41.5);
   assert.equal(meta['cua/activationClick'], 'posted');
   assert.deepEqual(meta['cua/activationClickKind'], {kind: 'activationPoint'});
+  assert.equal(meta['cua/activationJoin'], 'rearmed');
   assert.equal(meta['cua/pointUnconfirmed'], true);
   assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.1.0', build: 'b1'});
 
@@ -215,6 +217,7 @@ test('an element index becomes the lineage\'s token, every execute carrying its 
   assert.equal(meta['cua/activationGuardMs'], null, 'a key\'s result does not inherit the click\'s guard time');
   assert.equal(meta['cua/activationClick'], null, 'nor its activation click');
   assert.equal(meta['cua/activationClickKind'], null);
+  assert.equal(meta['cua/activationJoin'], null, 'nor its join');
   assert.equal(meta['cua/pointUnconfirmed'], null);
   assert.equal(engine.executes().at(-1).args.element, undefined);
 });
@@ -541,6 +544,16 @@ test('a coordinate click\'s placement rides as cua/coordinateClick on its result
   assert.deepEqual(meta['cua/coordinateClick'], record);
   await call(() => app.getAXState({emit: false}));
   assert.equal(meta['cua/coordinateClick'], null, 'reset by the next call');
+});
+
+test('a control build\'s variant rides in cua/nativeEngine, on its results and its input errors alike', async t => {
+  const {getApp, call, meta} = await session(t, {identity: {engineVersion: '0.1.0', build: 'b1', variant: 'control-no-inert-click'},
+    handlers: {'execute:press_key': () => { throw new EngineFailure(-10005, 'activationFailed', 'activationFailed', {meta: INPUT_META}); }}});
+  const {app} = await getApp('TextEdit');
+  const control = {engine: 'cua', version: '0.1.0', build: 'b1', variant: 'control-no-inert-click'};
+  assert.deepEqual(meta['cua/nativeEngine'], control);
+  await assert.rejects(call(() => app.pressKey('super+l')));
+  assert.deepEqual(meta['cua/nativeEngine'], control);
 });
 
 test('an observation of a minimized window carries no screenshot and its meta says why; the next observation clears it', async t => {

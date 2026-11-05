@@ -39,7 +39,8 @@
 //   them cua/activationGuardMs, cua/activationClick (what the inert-point rule decided at the window's activation
 //   point: "posted" there, or why not), cua/activationClickKind (the click that consumed the activation's arm and
 //   when, #187: {kind "activationPoint" | "inertOutside" with point | "action" | "skipped" with skippedReason, when
-//   "early" | "release" | "consumedByAction"}), cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
+//   "early" | "release" | "consumedByAction"}), cua/activationJoin (how the request came by a held activation: "fresh" |
+//   "shared" | "rearmed" | "replacedSpent"), cua/pointUnconfirmed, cua/intervention ("off": intervention detection is not running,
 //   no Input Monitoring grant), cua/entered (the UTF-16 units a type_text entered, on its result and on the error that
 //   stopped it), cua/routeAdvice (the per-app route-4 override, once route 3's guard has failed three actions in a
 //   row for the app) and cua/delivery (route 3's delivery guard after a pointer action's events, #200: the restores it
@@ -93,7 +94,7 @@ const SPIKE_ROUTES = new Set(['1', "2'", '2', '3']);
 // The keys a call sets only sometimes, reset at its start.
 const PER_CALL = {
   'cua/engineMs': null, 'cua/settle': null, 'cua/screenshotOmitted': null, 'cua/inputRoute': null, 'cua/actionInterval': null, 'cua/receivedAt': null, 'cua/hidIdleMs': null,
-  'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
+  'cua/activationGuardMs': null, 'cua/activationClick': null, 'cua/activationClickKind': null, 'cua/activationJoin': null, 'cua/pointUnconfirmed': null, 'cua/intervention': null, 'cua/entered': null, 'cua/routeAdvice': null, 'cua/observation': null,
   'cua/delivery': null, 'cua/afterActionRepairs': null, 'cua/paste': null, 'cua/elementClick': null, 'cua/coordinateClick': null,
 };
 // The methods whose success may carry the engine's `note` (the paste route's unconfirmed paste, #187), and its bound.
@@ -102,7 +103,7 @@ const NOTE_CHARS = 500;
 // The engine's optional input meta keys, carried under cua/<key> when it sends them (`paste`: the paste route's
 // value-free diagnostics, #187; `elementClick`: an element click's plan, the ladder's reason and the hit-test's answer,
 // #188; `coordinateClick`: a coordinate click's placement from the screenshot point to the posted events, #259).
-const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
+const OPTIONAL_INPUT_META = ['activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'pointUnconfirmed', 'intervention', 'entered', 'routeAdvice', 'delivery', 'afterActionRepairs', 'paste',
   'elementClick', 'coordinateClick'];
 
 // The Skyshot timings the native matrix keeps per call (scripts/native-matrix/lane.mjs engineMetaOf), so a row on a
@@ -172,7 +173,9 @@ export function createService({nodeRepl, client = null}) {
   // end_task: the cursor fades and the engine connection closes, if this session's client ever reached the engine; the
   // next engine-bound request reconnects (client.mjs `release`, #237). Nothing here waits on the engine.
   nodeRepl?.addTurnEndedHandler?.({timeoutMs: TURN_ENDED_MS, run: () => client?.release?.()});
-  const nativeEngine = identity => ({engine: 'cua', version: identity.engineVersion, build: identity.build});
+  // A non-shipping build names its variant (#187's control build), so a sitting attests the half that answered.
+  const nativeEngine = identity => ({engine: 'cua', version: identity.engineVersion, build: identity.build,
+    ...(identity.variant ? {variant: identity.variant} : {})});
 
   // One engine request; the engine's identity goes into the result meta, an input error's meta too, and the round trip
   // unless `own` is false (the policy's resolve_app, whose round trip is not the method's).

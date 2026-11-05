@@ -60,6 +60,9 @@
 //                                                [--electron-arg <switch>]…   the fixture launched with these switches too
 //                                                [--page counters]   Chrome on the counters page (#187's slot), whose
 //                                                beacons the page server keeps, numbers only, in <dir>/chrome-page-counters.json
+//                                                [--page popup]   the counters page whose script opens a popup window
+//                                                when the kit posts to its server (#187's isolating slot, C3); this launch
+//                                                alone adds --disable-popup-blocking
 //   node scripts/repl-parity/scenes-mac.mjs activate <scene> --run <dir>    the run's process to the front (exit 1 if not)
 //   node scripts/repl-parity/scenes-mac.mjs teardown-steps <scene> --run <dir>
 //   node scripts/repl-parity/scenes-mac.mjs down <scene|all> --run <dir>   (exit 1 when something stays up or changed)
@@ -463,10 +466,12 @@ const placementArgs = ({x, y, width, height}) => [`--window-position=${x},${y}`,
 // chromePreferences), and no argument but the URL that is not a switch: Chrome opens every non-switch argument as a
 // tab (chromeArgsProblems).
 export const CHROME_DISABLED_FEATURES = Object.freeze(['MediaRouter', 'DialMediaRouteProvider', 'Translate', 'TranslateUI', 'OptimizationHints']);
-export const chromeArgs = ({userDataDir, url, placement = SCENES.chrome.placement}) => [
+// `popups`: the popup page's launch (#187's isolating slot, C3), whose script opens its popup with no user gesture, which
+// Chrome's popup blocker would refuse: that launch alone adds --disable-popup-blocking.
+export const chromeArgs = ({userDataDir, url, placement = SCENES.chrome.placement, popups = false}) => [
   `--user-data-dir=${userDataDir}`, '--no-first-run', '--no-default-browser-check', '--use-mock-keychain', '--password-store=basic',
   '--disable-sync', '--disable-background-networking', '--disable-component-update', '--disable-default-apps',
-  `--disable-features=${CHROME_DISABLED_FEATURES.join(',')}`, ...placementArgs(placement), '--new-window', url];
+  `--disable-features=${CHROME_DISABLED_FEATURES.join(',')}`, ...(popups ? ['--disable-popup-blocking'] : []), ...placementArgs(placement), '--new-window', url];
 // The arguments of a Chrome launch that are not switches, other than the page's URL at the end. Chrome opens each as a
 // tab: the first sitting's `-AppleLanguages (en-US)` pair (the per-process UI language, 5bb0d13f) left `(en-US)` as
 // such an argument, the diagnosis of U3 read from the code and the records: a tab of that name opened beside the scene
@@ -551,7 +556,7 @@ export async function upScene(id, {run, chromeApp, electronApp, electronExtra = 
       record.page = await io.spawnPage(run, page === undefined ? {} : {page});
       // An open can start Chrome without yielding an unambiguous launch identity.
       record.launchAttempted = true;
-      Object.assign(record, await startOwn({app, bundleId: scene.bundleId, args: chromeArgs({userDataDir, url: record.page.url}), io}));
+      Object.assign(record, await startOwn({app, bundleId: scene.bundleId, args: chromeArgs({userDataDir, url: record.page.url, popups: page === 'popup'}), io}));
       // On screen only: a fresh Chrome for Testing can list another document-size window ahead of the one it shows, and
       // up recorded that one (#187's slot of 2026-11-05: 64065 recorded, 64056 the only one on screen).
       record.window = await awaitWindow(record.pid, {io, onScreenOnly: true});
@@ -755,7 +760,7 @@ const writeAtomically = (file, value) => {
 async function servePage(run, variant = 'shared') {
   let port = null, kept = -1;
   const onCounters = record => { if (record.seq > kept) { kept = record.seq; writeAtomically(join(run, PAGE_COUNTERS), {...record, receivedAt: Date.now()}); } };
-  const page = await startScenePage({page: variant, onReady: () => writeAtomically(join(run, PAGE_LOADED), {port, at: Date.now()}), ...(variant === 'counters' ? {onCounters} : {})});
+  const page = await startScenePage({page: variant, onReady: () => writeAtomically(join(run, PAGE_LOADED), {port, at: Date.now()}), ...(variant === 'counters' || variant === 'popup' ? {onCounters} : {})});
   port = page.port;
   writeAtomically(join(run, 'chrome-page.json'), {url: page.url, port: page.port});
   process.once('SIGTERM', () => page.close().then(() => process.exit(0)));

@@ -656,6 +656,9 @@ incomplete, never pass. To run one variant again: `--variant sonoma`.
 
 ## Item 187: a paste behind a Hangul composition on the shipping build (#187), the re-slot
 
+This is the record of the slots of 2026-11-05 (`item-187-reslot/`, `item-187-reslot2/`). Its kit stays runnable
+(`paste-187`), but the next slot is the isolating one below.
+
 **About 31–41 minutes; the owner about 8–10 at the start and 4–6 for the BEFORE half at the end** (the step list
 below). Nobody touches the Mac once the drive starts: an input in a driven app is the person's to the engine and refuses
 the next action, anything typed meanwhile goes through 2-Set Korean, and a row or repetition the person touches is
@@ -857,6 +860,314 @@ scrolled the field. The report gives the target line and where the caret landed 
 the posted point by the start's geometry, the scroll, and the engine's six `cua/coordinateClick` values (screenshot
 point, window point, posted location, posted window location, the window frame used and the one read before the
 events).
+
+## Item 187: the isolating slot
+
+**About 25–34 minutes at the Mac. The owner is active for about 3–4 of them, their steps at the start. The
+hands-off window is about 17–23 minutes** (the step list below). The plan is
+`~/.local/share/187/next-slot-plan.md`; its rulings of 2026-11-05 decide where it differs from its draft.
+
+**What the slot tests.** Is the inert click outside the frame what makes Chrome's background paste deliver? The two
+halves differ by that click alone:
+
+- AFTER is the merged shipping build.
+- BEFORE is the control build of the same source. It is built by `control-build`
+  (`scripts/cursor-sitting/control-build.mjs`): native/engine is copied whole, and the copy's Package.swift defines
+  `CUA_CONTROL_NO_INERT_CLICK` on the Engine target alone. The copy is built by the CLI's own `engine build`, so
+  activationClickPlan records `skipped controlBuild`, and the ping names `variant: control-no-inert-click`.
+
+The kit is `scripts/cursor-sitting/item-187-isolate.mjs`. Its header says what each item does and how the verdict is
+judged. It reuses the re-slot's cell, rows, Korean, touch rule, order watcher and placement. The hold-join rows (C2,
+C3 and C4's tail) are `scripts/cursor-sitting/item-187-join.mjs`, whose header states their bars.
+
+The slot writes to its own new directory, `item-187-isolate/`, which the slot creates. The drive refuses a directory
+that holds a re-slot's `item-187.md`, so `item-187-reslot2/` is never written over.
+
+Run the slot under a CPU hold, as on 11-05, with the load gate open before the hands-off notice.
+
+**Before the slot** (the operator, at any time no session uses the engine; the owner only if a key prompt or a grant
+appears, and on 11-05 none did). This takes about 10–16 minutes:
+
+1. The owner's engine is saved first.
+2. Both halves are built, approved and saved under `$SLOT` (`engine-after/`, `engine-control/`).
+3. The owner's engine is put back until the slot.
+
+`control-build --dry-run` prints the two build ids that the `engine status` readings below must show.
+
+```sh
+REPO=/Users/new/Developer/GitHub/cua/.claude/worktrees/fix-187b; cd "$REPO"
+S="node scripts/cursor-sitting.mjs"; SC="node scripts/repl-parity/scenes-mac.mjs"
+SLOT="$HOME/.local/share/cua-187-isolate"; RUN="$SLOT/run"; OUTI="$REPO/docs/evidence/2026-10-30-macos-agent-cursor/item-187-isolate"
+$S save --home "$HOME" --to "$SLOT/engine-owner"                                   # the owner's engine first
+$S control-build --home "$HOME" --scratch "$SLOT/control-check" --dry-run          # prints shippingBuild and controlBuild
+node bin/cua.mjs engine build --sign-wait 600000                                   # AFTER
+node bin/cua.mjs engine approve
+node bin/cua.mjs engine status --json                                              # expected: build = shippingBuild, approved: true
+$S save --home "$HOME" --to "$SLOT/engine-after"
+$S control-build --home "$HOME" --scratch "$SLOT/control-src" --sign-wait 600000   # BEFORE, by the CLI's engine build
+node bin/cua.mjs engine approve
+node bin/cua.mjs engine status --json                                              # expected: build = controlBuild, approved: true
+$S save --home "$HOME" --to "$SLOT/engine-control"
+$S restore --home "$HOME" --from "$SLOT/engine-owner" --aside "$SLOT/aside/prep"   # expected: ok, the owner's build approved
+```
+
+**The owner, at the start of the slot.** Ask each one; the kit does none of them:
+
+1. **The input-source switch**, as in the re-slot's item 1. On a yes: `$S source consent yes --out "$OUTI"`.
+2. **Their own TextEdit documents** saved and TextEdit quit.
+3. **Their own Chrome windows** hidden or moved, on their fresh yes.
+4. **Finder's windows** closed. #188's rows run behind the run's own Finder window.
+5. **Do Not Disturb** on.
+6. **Nothing sensitive on the clipboard**, and no clipboard manager.
+7. The terminal stays **trusted for Accessibility**.
+8. **The end state**, asked now (ruling 6; 1ea561bc:403): keep the merged build (`--end keep-merged`), or have
+   their saved engine restored (`--end restore-owner`, the default, and the safe one until they have chosen). The drive
+   records the choice in the out directory at its start and applies it on every exit, so a stopped or partial drive
+   never leaves the control build installed.
+
+**The hands-off notice.** The operator sends it after step 4. It says that hands-off lasts about 23 minutes, until
+the clock time it gives, and that the verdict comes right after.
+
+It names the one touch allowed. If a macOS prompt for cua Engine appears (a grant, or a screen capture confirmation),
+the owner answers it and touches nothing else. The kit has already stopped at that block's swap: its approve runs
+with no terminal, so any prompt fails it. The operator sends one line naming the prompt, waits for the owner's
+"done", and resumes with `--blocks <n>-7`, where n is the stopped block. Apart from that line, nobody messages the
+owner until the drive ends, except to stop.
+
+```sh
+# step 1 (operator, unattended): the fixtures and Swift tools, the dry run's counts (below), the owner's front app
+$SC place-chrome && $SC build-electron && $S prepare
+$S isolate-187 drive --out "$OUTI" --dry-run --quiet | tail -10
+$SC frontmost
+defaults read com.apple.HIToolbox AppleGlobalTextInputProperties                   # expected: does not exist
+# steps 2-3 (the owner)
+mkdir -p "$OUTI" && $S source consent yes --out "$OUTI"                            # only on the owner's yes
+# step 4 (operator): the scenes, Chrome on the counters page; then the hands-off notice
+$SC preflight --run "$RUN"
+$SC up textedit --run "$RUN" && $SC up chrome --run "$RUN" --page counters && $SC up electron --run "$RUN" && $SC up finder --run "$RUN"
+# steps 5-14 (the drive): the start (the preparation's pair in $SLOT/control-src/control.json, checked again; the
+# end choice), the placement, blocks 1-6, block 7 (#188, C2, C3), the tail (C4), the owner's source; then, on every
+# exit, the cleanup (the end choice applied and attested); it writes item-187-isolate.md
+$S isolate-187 drive --run "$RUN" --out "$OUTI" --home "$HOME" --halves "$SLOT" --end restore-owner   # or keep-merged
+# a drive stopped at block n (a swap that met a prompt, once the owner says done): the same command with --blocks n-7
+# running long: --no-tail leaves the tail out
+# step 15 (operator)
+$S isolate-187 judge --out "$OUTI"                                                 # item-187-isolate.md again; exit 1 unless LANDS
+$S source restore --out "$OUTI"
+defaults read com.apple.HIToolbox AppleGlobalTextInputProperties                   # still does not exist
+$SC down all --run "$RUN"
+$SC reactivate --bundle-id <saved bundle id> --pid <saved pid>
+# step 16: the drive's cleanup already applied the owner's choice; read it back from the running engine's own ping
+$S isolate-187 engine-identity --home "$HOME" --halves "$SLOT" --end restore-owner   # the same --end as the drive
+# expected: "the running engine: build <the end choice's save's build>, no variant"; exit 0. A variant
+# (control-no-inert-click) or another build prints "!!! ..." and exits 1: stop, and do the by-hand restore below
+# before the owner leaves
+```
+
+The dry run is expected to print the following counts. `--blocks 7` alone prints 381 steps. `--no-tail` prints 1058,
+and the tail's line is gone.
+
+```
+dry run: the start (the pair, the placement): 6 steps
+dry run: block 1, AFTER: 126 steps
+dry run: block 2, BEFORE: 126 steps
+dry run: block 3, BEFORE: 126 steps
+dry run: block 4, AFTER: 126 steps
+dry run: block 5, AFTER: 126 steps
+dry run: block 6, BEFORE: 126 steps
+dry run: block 7, AFTER only (188, C2, C3): 286 steps
+dry run: the tail (C4b, C4c): 79 steps
+dry run: the end (the owner's source): 3 steps
+dry run: the cleanup on every exit (restore-owner): 7 steps
+dry run: 1137 steps, nothing sent
+```
+
+**Signals.** Ctrl-C (SIGINT), a kill (SIGTERM) or the terminal closing (SIGHUP) during the drive stops it after its
+current step: every later step of the item throws, its sessions close, and only the end items run. Then the cleanup
+puts the end choice back and attests it, the verdict file is written, and the drive exits 128 plus the signal's number
+(130, 143, 129). A second signal during the cleanup is ignored, and stderr says so. A terminal's Ctrl-C signals the
+whole foreground process group, so every subprocess the swaps and the cleanup run (`cua engine stop`, `status` and
+`approve`, the restore's copies, the attestation's `cua serve`) runs in its own process group
+(`scripts/cursor-sitting/detached.mjs`), out of the signal's reach. A cleanup attempt that still stops part way is run
+again, up to 3 attempts (a restore moves whatever is installed aside and copies the save in once more), before the
+alarm. The drive's own helpers before the cleanup (the scenes, the input source) stay in the kit's group: a Ctrl-C
+ends the step they serve, which the stop wants anyway.
+
+**If the cleanup fails, or never ran.** A failed cleanup makes the verdict file's first line, and the drive's first
+printed line, begin `**!!! THE ENGINE WAS NOT PUT BACK`, and the drive exits 1. SIGKILL, a crash, or the Mac losing
+power mid-drive cannot be caught: the cleanup never runs and nothing says so, which is why step 16 reads the running
+engine's own identity. Either way the control build may still be installed. The operator stops there, runs nothing
+else on the engine, and puts the chosen save back by hand, with the owner at the console:
+`$S restore --home "$HOME" --from "$SLOT/engine-owner" --aside "$SLOT/aside/end-by-hand"` (or `engine-after` for
+keep-merged), then `node bin/cua.mjs engine approve` if the restore says so, and `$S isolate-187 engine-identity`
+as in step 16. It must read the save's build with no variant, never the preparation's `controlBuild`. Then
+`$S isolate-187 judge --out "$OUTI"` re-reads the records, and the report says what was put back by hand.
+
+- A block of 126 steps is a swap (7), two cell repetitions (33 each) and its composing rows (53).
+- Block 7's 286 are its swap (7), #188's part (129), C2's three repetitions (23 each) and C3's three (27 each).
+- The tail's 79 are C4 (b) (42) and C4 (c) (37), three repetitions each in one session.
+- The re-slot's dry runs are unchanged (806, 131 and 15 steps).
+
+**The step list** (minutes):
+
+| # | step | who | minutes |
+|---|---|---|---|
+| 0 | before the slot: the owner's engine saved, both halves built, approved and saved, the owner's engine put back | operator (the owner only on a prompt) | 10–16, not in the slot |
+| 1 | the fixtures, the Swift tools, the dry run's counts, the owner's front app read, the HIToolbox check | operator, unattended | 2–3 |
+| 2 | the owner's yes to the Korean switch, and their end-state choice | owner | 1 |
+| 3 | their TextEdit documents, Chrome windows and Finder windows; Do Not Disturb; the clipboard; the Accessibility trust | owner | 2–3 |
+| 4 | the preflight, the scenes up (TextEdit, Chrome on the counters page, Electron, Finder), the load gate; **the hands-off notice** | operator | 1–2 |
+| 5 | 187-iso-place: the preconditions, Chrome at the left, TextEdit over its right half | drive | 0.5 |
+| 6–11 | blocks 1–6, A B B A A B. Each is a swap (restore, headless approve, the ping attested: 0.3–0.5), two cell repetitions (relaunch, placement, background paste, `open -a`, key read, frontmost paste: 0.7–1), and three composing rows behind a fresh composition (0.4–0.6). BEFORE's pastes wait out their read | drive | 1.5–2 each, 9–12 |
+| 12 | block 7, AFTER only: the swap to AFTER (0.5), #188's `--part 188` (its placement, the 4 rows and cell 3 on cua and the vendor, its source; 2.5–4), C2's three repetitions (Chrome relaunched and placed, ⌘L, the click, the tail and its observation: 0.3–0.4 each) and C3's three (relaunched on the popup page, the popup opened, ⌘A, the click on its close button, the release and its readings: 0.4–0.5 each) | drive | 5–7 |
+| 13 | the tail: C4 (b) (Chrome relaunched, three menu records and clicks in one session: 0.5–1) and C4 (c) (Finder placed over TextEdit, three ⌘↑ and clicks in one session: 0.4–0.8); left out with `--no-tail` | drive | 1–2 |
+| 14 | 187-iso-end: the owner's source selected again and read back; then the cleanup, on every exit: the owner's end choice restored, approved with no terminal and attested (no variant, that save's build); the verdict file written | drive | 1 |
+| 15 | judge, `source restore`, the scenes down, the owner's front app back; the verdict to the owner | operator | 2 |
+| 16 | the end state: the drive's cleanup already applied the owner's choice (restore-owner or keep-merged); `isolate-187 engine-identity` reads the running engine's ping: that save's build, no variant (a control variant stops the operator for the by-hand restore) | operator | 0.5 |
+| | **the slot (steps 1–16)** | | **about 25–34** |
+
+- **The owner is active for about 3–4 minutes**: steps 2 and 3, plus the one prompt if one appears.
+- **The hands-off window** starts with the notice at the end of step 4 and ends with the drive, its cleanup included,
+  at the end of step 14, about 17–23 minutes. The one touch allowed is a cua Engine prompt at a swap.
+- The minutes of steps 12 and 13 are estimates from the cell's measured relaunch and session times. No hold-join row
+  has run live yet.
+- A person-touched cell repetition gets one replacement, run right after it in its block, adding about 0.5 minutes.
+  More than three person-touched items stop the drive, except for its end.
+
+| item | what | why |
+|---|---|---|
+| 187-iso-place | the preconditions and the placement | as in the re-slot |
+| 187-iso-swap-1..6 | the block's half restored from `$SLOT/engine-after` or `engine-control`, `engine approve` with no terminal, one observation whose `cua/nativeEngine` must be the saved build with the half's variant | the half is the engine that answers; a swap that does not attest stops the drive |
+| 187-iso-cell-after-0..5, 187-iso-cell-before-0..5 | the re-slot's background-paste cell, 2 a block | the bar's cell, 6 a half |
+| 187-iso-composing-after-0..2, 187-iso-composing-before-0..2 | chrome/composing@textedit, a third of hold 3's nine paste rows a block, behind a fresh composition | #187's own failure on both halves, 9 a half |
+| 187-iso-swap-7, 188-* | the swap to AFTER, then `--part 188` as it is | #188's verdict, on the merged build |
+| 187-iso-raise-0..2 | C2: ⌘L into background Chrome, then a coordinate click into its textarea inside the hold | #261's re-arming, live; its own verdict |
+| 187-iso-dialog-0..2 | C3: the same with a popup window, the click closing it, then the hold ended | the release stamped with a closed window; its own verdict |
+| 187-iso-menu, 187-iso-inframe | C4 (b) and (c), three repetitions each | #279's numbers, no verdict |
+| 187-iso-cell-<half>-6…, 187-iso-raise-3…, 187-iso-dialog-3… | replacements | one for each repetition the person touched |
+| 187-iso-end | the owner's source | as in the re-slot |
+
+**The verdict** (`isolate-187 judge`, written into `item-187-isolate.md` with the kit's commit; pre-registered, so the
+file states the bar before any reading). The bar is the plan's C1 with ruling 2's composing bar, read as the design
+session's RULINGS 2 decided (1ea561bc:400). Each part is checked in the order below:
+
+- **The halves.** Both are one preparation's pair: control-build's `control.json` names the shipping build and the
+  control build of one source tree. The drive checks it again at its start (this checkout's tree, and that tree with
+  the one define) and refuses unless each half's save is the pair's build; it records the pair in the out directory.
+  The judge never trusts a stored `ok`. A swap counts only when, from its records, it restored its half's save of
+  that pair and its observation's `cua/nativeEngine` attests the half. A repetition or row counts only in a block
+  whose swap counts.
+- **Counted.** A repetition is counted only when all of these hold:
+  - it is recorded and the person did not touch it;
+  - both pastes' results attest the half: the pair's build for the half, with variant `control-no-inert-click` on
+    BEFORE and none on AFTER;
+  - the background paste's activation click was planned outside the frame;
+  - its `activationClickKind` is inertOutside early on AFTER, and skipped controlBuild on BEFORE;
+  - both pastes are valid.
+
+  A composing row is counted on the same premise, row by row. Anything not counted is reported with its reason.
+- **DOES NOT LAND, at any count.** These are decisive, however few are counted:
+  - any counted AFTER read-stage timeout (#187's own failure on the fixed build);
+  - BEFORE delivers in 2 or more counted;
+  - BEFORE fails at a stage other than read, by its stage meta, in 2 or more;
+  - AFTER misses its delivery in 2 or more.
+- **INCONCLUSIVE.** A part is INCONCLUSIVE when nothing decisive happened and a half has fewer than 4 counted.
+- **LANDS (the cell), on absolute counts.** At least 5 counted AFTER repetitions deliver both pastes. At least 5
+  counted BEFORE repetitions have their background paste time out at stage read, read from its stage meta alone
+  (`readTimedOut`), with the frontmost paste not delivered.
+- **LANDS (composing), on absolute counts.** At least 8 counted AFTER rows deliver exact, and at least 8 counted
+  BEFORE rows time out at read.
+- **Otherwise** a part is INCONCLUSIVE.
+- **Short of a full count.** A premise failure lowers the counted number, so it can only make LANDS harder. The one
+  miss a full half allows covers any failure but an AFTER read timeout. A failure with no stage meta (the legacy
+  -10005, stage unknown) is a miss: never a read timeout, never a failure at another stage. On an attested half it is
+  unexpected, so the verdict file names each counted one in its own line under the verdict, with its half and its
+  repetition or row (1ea561bc:402).
+- **The overall verdict** is DOES NOT LAND when either part does, LANDS only when both do, and INCONCLUSIVE
+  otherwise.
+- **Reported, never judged:**
+  - the key readings per half before and after `open -a`: frontmost, AXMain, AXFocusedWindow, hasFocus, and the run
+    window's AXFocused;
+  - the activation joins and click kinds;
+  - what the rows did to the person's side;
+  - each swap's attestation;
+  - #188's rows, judged as #188's, once each row or cell-3 part whose action's result does not attest AFTER (block
+    7's swap counting) is made invalid, so #188's judge never counts it;
+  - the owner's source, and the cleanup (the end choice applied and attested; a failed one is the file's first line).
+
+**C2, C3 and C4: the hold-join rows** (`item-187-join.mjs`). All run on the AFTER build, after #188's part. Each has
+its own section in `item-187-isolate.md`. C1's verdict stays the cell's and composing's, whatever these show.
+
+- **C2, the keys-then-click row.** It runs 3 repetitions, each its own item:
+  - Chrome is relaunched clean and placed, with TextEdit in front under ABC and both watchers on.
+  - ⌘L goes into Chrome's run window, under TextEdit's key guard.
+  - Inside the hold, a coordinate click goes into the page's textarea, at its middle as read through Accessibility.
+  - A 1 s tail follows, then one observation of Chrome, whose reply carries the after-action repairs.
+
+  **Premise:** the click's `activationJoin` is `rearmed`.
+
+  **Bar, every condition in each of 3 counted repetitions:**
+  - the order watcher never shows Chrome's window above TextEdit's;
+  - TextEdit is frontmost at every reading, and no app is activated over the row;
+  - no repair: the delivery guard's restores are 0, and no after-action repair names the click;
+  - the page saw the click: its own counters show a click and a textarea focus after it;
+  - no order sample is out of place after the display hold.
+- **C3, the dialog variant.** It runs 3 repetitions, each its own item:
+  - Chrome is relaunched on the **popup page** (`up chrome --page popup`).
+  - The page opens a 360 × 240 popup window when the kit posts to the page's own loopback server. The page holds a
+    request open there, and the server answers it on the kit's post.
+  - Chrome's popup blocker refuses a script's `window.open` with no user gesture. So that launch alone adds
+    `--disable-popup-blocking`, the switch ChromeDriver passes by default. No person and no engine action opens the
+    popup, and nothing touches Chrome before the row but the kit's own placement.
+  - TextEdit is activated in front again, and the session takes the popup as Chrome's window. The runner's `windows`
+    option lets the target guard check the popup as Chrome's front window.
+  - ⌘A goes into the popup. Inside the hold, a coordinate click lands on its close button, so the click's own window
+    closes.
+  - After a 1 s tail, **the hold is ended by one observation of the electron scene**: a request aimed at another app
+    ends the connection's hold before it runs (FocusHold.swift). Its subtype 2 carries the closed popup's window number.
+    This is the composing rows' way of ending a hold, and it is deterministic, where the 120 s idle bound is not.
+  - Chrome is then read every 100 ms for up to 2 s.
+
+  **Premise:** the popup opened, the click's join is `rearmed`, and the popup is gone after the click.
+
+  **Bar, every condition in each of 3 counted repetitions:**
+  - Chrome's main window's `document.hasFocus()` is false, with a window blur beaconed after the release. This reads
+    unread, not failed, when the page did not hold the focus as the hold ended, because its blur could not show.
+  - Chrome's AXFrontmost is false.
+  - TextEdit is frontmost.
+
+  A failing condition is the live counterpart of 11-05's static reading, and it reopens the Decision Log's item 8.
+- **The verdicts.** C2 and C3 are each judged the same way:
+  - PASS when 3 repetitions are counted and every condition holds in each.
+  - FAIL when a counted repetition fails a condition.
+  - INCOMPLETE otherwise.
+  - Not counted, with the reason given: person-touched (replaced once), not attested, invalid, premise not met.
+- **The touch rule and the popup.** The rule is by process and bundle, never by window (`personTouchedOf`). The popup
+  belongs to Chrome's process and bundle, so an activation of Chrome as it opens is the scene's. C3's activation
+  watcher starts before the popup opens, so that opening is read and classified. C4 (c) names Finder as its scene
+  (`187-activations-start <item> finder`), so the kit's own activation of Finder, and Finder in front, are the run's,
+  not the person's.
+- **C4 (b) and (c), measured with no verdict.** Each runs 3 repetitions in one item and one session, in the tail.
+  - **(b)** The engine records Chrome's last menu-bar item (Help). The kit reads whether a menu shows open, then makes
+    a coordinate click into the page with no observation between.
+  - **(c)** TextEdit is placed at the left, behind the run's Finder window. ⌘↑ goes in (it selects and changes
+    nothing), then a coordinate click into the text.
+  - Reported for each repetition: whether the click ordered the window, the guard's repairs and their times, whether a
+    sample was out of place after the display hold, and the click's `activationJoin`.
+- **Resuming.** A drive stopped in C3 leaves Chrome on the popup page. The placement's preflight accepts that page,
+  which also carries the counters, so `--blocks 7` resumes there.
+- **Section D, the judge replay** (`$S isolate-187 replay`, `scripts/cursor-sitting/isolate-replay.mjs`). It runs the
+  judge's pure pieces over `item-187-reslot2/`, as recorded and under named mutations, and C2's and C3's judges over
+  synthetic fixtures. It writes [the replay](item-187-isolate-replay.md): one table per predicate, each row a case, its
+  edit, the expected outcome and the outcome. It exits 1 when any outcome differs from its expected one, and a test
+  checks that the committed file is what the kit writes now.
+  - 11-05's records carry no `cua/nativeEngine`, so the replay attests each half by the slot's own recorded build.
+  - dd7a records no click kind, so its posting no inert click is read as the control's.
+  - A case needing six a half counts each of 11-05's three repetitions twice, and says so.
+  - Composing's BEFORE rows are 11-05's nine paste rows edited to a read-stage timeout.
+
+  As recorded, the real records judge AFTER-passing on AFTER and "stage unknown" on dd7a's BEFORE (the legacy -10005),
+  so the cell is INCONCLUSIVE at 3 counted a half.
 
 ## Known limits
 

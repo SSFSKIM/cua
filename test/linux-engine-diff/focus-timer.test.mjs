@@ -159,6 +159,16 @@ test("click-then-paste: a click into the field at its first character, then a pa
   assert.equal(insertionAt('click-paste', { kindOf: 'terminal' }, { text: 'abc', caret: 3 }), 3);
   assert.equal(insertionAt('paste', { kindOf: 'field' }, { text: 'abc', caret: 2 }), 2, 'every other scenario types at the caret read before');
   assert.ok(ALL_SCENARIOS.includes('click-paste'));
+  // click-field: the click into the page's other field, the paste expected there and the first field unchanged
+  const field = scenario('click-field', { a: 1 }, { pasted: 'Pastedaac', click: { x: 7, y: 8 } });
+  assert.deepEqual(field.requests.map((r) => r.command), ['click', 'type_text']);
+  assert.deepEqual(field.expected, { a: 'Pastedaac', left: '' });
+  assert.equal(insertionAt('click-field', { kindOf: 'page' }, { text: 'abc', caret: 3 }), 0);
+  assert.equal(insertedAt('xyz', 0, '', 'xyz'), true, "the field left unchanged is its text with nothing put in it");
+  assert.equal(insertedAt('xyz', 0, '', 'Pxyz'), false);
+  assert.deepEqual(laneArgs('control', 'click-field'), ['--paste-click-settle-ms', '0']);
+  assert.deepEqual(familyScenarios('electron', ['click-field']), ['click-field'], "Chromium's keys page has the other field");
+  for (const family of ['gedit', 'kate', 'qtcreator', 'firefox', 'writer', 'gnome-terminal']) assert.deepEqual(familyScenarios(family, ['click-field']), [], family);
   // a terminal's recorder reports the click (press and release, mouse reporting on), and the paste must follow it
   const report = (b) => `\x1b[M${b}*D`;
   assert.equal(pastedAfterClickReports('x', 'Pasted', `x${report(' ')}${report('#')}Pasted`), true);

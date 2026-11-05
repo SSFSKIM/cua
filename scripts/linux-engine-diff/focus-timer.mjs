@@ -14,7 +14,10 @@
 // - `click-paste` (named with `--scenarios`): a click into the window's field at its first character, the caret at the
 //   field's end before it, then a `type_text` with no element, pipelined: the paste's text where the click put the
 //   caret, its answer confirmed (the design session's ruling on task 60's review, 2026-11-05: a paste's observation can
-//   come before a click just before it lands, and then reads the caret or the field the click left).
+//   come before a click just before it lands, and then reads the caret or the field the click left);
+// - `click-field` (named with `--scenarios`, Chromium's keys page only): the focus in the page's field, a click into
+//   its other field at its first character, then a `type_text` with no element, pipelined: the paste's text at the
+//   start of the field clicked, the first field unchanged, the answer confirmed (the review's own case).
 //
 // Each is read back from the window's own text at its caret (the caret read before the run), so a key cut and delivered
 // later, or a paste that lands before keys sent ahead of it, fails the run. The judged lanes must pass 30 consecutive
@@ -67,9 +70,11 @@ export const CHROMIUM = ['chrome', 'electron'];
 export const KEYS_PAGE = 'keys.html';
 export const SCENARIOS = ['burst', 'aba', 'paste'];
 /** Every scenario, in the experiment's order: the default ones, then those a sitting names with `--scenarios`. */
-export const ALL_SCENARIOS = [...SCENARIOS, 'click-paste'];
+export const ALL_SCENARIOS = [...SCENARIOS, 'click-paste', 'click-field'];
 /** The scenarios whose last request is a paste: their runs keep the paste's `--stats` record. */
-const PASTES = ['paste', 'click-paste'];
+const PASTES = ['paste', 'click-paste', 'click-field'];
+/** The scenarios that click before they paste. */
+const CLICKS = ['click-paste', 'click-field'];
 
 /**
  * The scenarios a sitting runs, in the experiment's order, and whether it runs the stop runs: every scenario and the
@@ -129,7 +134,7 @@ export const LANES = {
 export const CONTROL_PASTE = ['--paste-settle-ms', '0'];
 /** The control's flags for click-then-paste: no settle after the click, the redirect and the key settle kept. */
 export const CONTROL_CLICK_PASTE = ['--paste-click-settle-ms', '0'];
-const CONTROLS = { paste: CONTROL_PASTE, 'click-paste': CONTROL_CLICK_PASTE };
+const CONTROLS = { paste: CONTROL_PASTE, 'click-paste': CONTROL_CLICK_PASTE, 'click-field': CONTROL_CLICK_PASTE };
 /** A lane's engine flags for a scenario's series: each control drops the one protection its scenario rests on. */
 export const laneArgs = (lane, scenario) => (lane === 'control' ? (CONTROLS[scenario] ?? LANES.control) : LANES[lane]);
 /**
@@ -188,8 +193,10 @@ export function scenario(name, { a, b }, { pasted: pasteText = 'Pasted', click =
     const [typed, pasted] = ['abcDefgH', pasteText];
     return { requests: [...press(a, typed), { command: 'type_text', input: { window: { id: a }, text: pasted } }], expected: { a: typed + pasted } };
   }
-  if (name === 'click-paste') {
-    return { requests: [{ command: 'click', input: { window: { id: a }, ...click } }, { command: 'type_text', input: { window: { id: a }, text: pasteText } }], expected: { a: pasteText } };
+  if (CLICKS.includes(name)) {
+    const requests = [{ command: 'click', input: { window: { id: a }, ...click } }, { command: 'type_text', input: { window: { id: a }, text: pasteText } }];
+    // click-field's `a` is the field clicked; the field that had the focus (`left`) must be unchanged
+    return { requests, expected: name === 'click-field' ? { a: pasteText, left: '' } : { a: pasteText } };
   }
   throw new Error(`unknown scenario ${name}`);
 }
@@ -213,7 +220,7 @@ export function pasteTexts() {
  * click-then-paste's, which goes where its click puts the caret, at the text's start; a terminal takes it at its end.
  */
 export function insertionAt(name, scene, before) {
-  if (name !== 'click-paste') return before.caret;
+  if (!CLICKS.includes(name)) return before.caret;
   return scene.kindOf === 'terminal' ? before.caret : 0;
 }
 
@@ -239,6 +246,8 @@ export const NOT_APPLICABLE = {
   'click-paste': {
     firefox: 'a background click moves no Gecko caret (refused while covered, taken but caret unmoved while fully unobscured)',
   },
+  // the other field is the keys page's (pages/keys.html): the other families' scenes have one text field a window
+  'click-field': Object.fromEntries(['gedit', 'kate', 'qtcreator', 'firefox', 'writer', 'gnome-terminal'].map((f) => [f, "the family's scene has one text field a window"])),
 };
 
 /** A family's own scenarios of those a sitting runs (`NOT_APPLICABLE` left out). */
@@ -495,16 +504,51 @@ async function clickPasteStart(ctx, scene) {
   const origin = response.output.window;
   if (scene.kindOf === 'terminal') return { x: Math.round(origin.width / 2), y: Math.round(origin.height / 2) };
   const { text } = await settledRead(() => textAndCaret(desktop, oracle, scene));
-  const engine = new Engine({ label: 'cua-caret', bin: ctx.cua }).start();
+  await pressKeys(ctx, scene, [...(text ? [] : keysOf('seed')), 'ctrl+End']);
+  const field = scene.kindOf === 'paragraphs' ? oracle.children(scene.document).find((id) => oracle.role(id) === 'paragraph') : scene.field;
+  return firstCharacterPoint(ctx, scene, field, origin);
+}
+
+/** Keys to a scene window from a fresh engine, closed before the run, so the run's engine has no key to settle after. */
+async function pressKeys(ctx, scene, keys) {
+  const engine = new Engine({ label: 'cua-prepare', bin: ctx.cua }).start();
   try {
-    for (const key of [...(text ? [] : keysOf('seed')), 'ctrl+End']) {
-      const { response: pressed } = await engine.request('press_key', { window: { id: scene.id }, key });
-      if (pressed.ok !== true) throw new Error(`putting ${scene.label}'s caret at its end: ${pressed.error}`);
+    for (const key of keys) {
+      const { response } = await engine.request('press_key', { window: { id: scene.id }, key });
+      if (response.ok !== true) throw new Error(`preparing ${scene.label}: ${key}: ${response.error}`);
     }
   } finally {
     await engine.close();
   }
-  const field = scene.kindOf === 'paragraphs' ? oracle.children(scene.document).find((id) => oracle.role(id) === 'paragraph') : scene.field;
+}
+
+/**
+ * Click-field's start on window A (Chromium's keys page): its other field given text if it has none, then the focus
+ * put in its first field (AT-SPI's GrabFocus, no click); the click's point is the other field's first character.
+ */
+async function clickFieldStart(ctx, scene) {
+  const { desktop, oracle } = ctx;
+  const other = { ...scene, field: scene.other };
+  const { text } = await settledRead(() => textAndCaret(desktop, oracle, other));
+  // GrabFocus also gives Chrome the X input focus: the front window takes it back at once, the page's own focus left
+  // where GrabFocus put it, so the run's window is in the background as every other run's is
+  if (!text) {
+    oracle.grabFocus(scene.other);
+    desktop.focusFront();
+    await sleep(200);
+    await pressKeys(ctx, scene, keysOf('seed'));
+  }
+  oracle.grabFocus(scene.field);
+  desktop.focusFront();
+  await sleep(200);
+  const { response } = await desktop.reader.request('get_window_state', { window: { id: scene.id }, include_screenshot: false });
+  if (!response.ok) throw new Error(`${scene.label}: no window state (${response.error})`);
+  return firstCharacterPoint(ctx, scene, scene.other, response.output.window);
+}
+
+/** A click's point at a field's first character, window-relative (`origin`). */
+async function firstCharacterPoint(ctx, scene, field, origin) {
+  const { oracle } = ctx;
   const inside = ({ x, y }) => x >= 0 && y >= 0 && x < origin.width && y < origin.height;
   // a window just resized or raised can answer no extents for a moment (Gecko answers zeros, or -1): looked for again
   let e;
@@ -526,11 +570,16 @@ async function clickPasteStart(ctx, scene) {
 /** One run of a scenario on the scene windows: the answers, each window's text and caret before and after. */
 async function oneRun(ctx, engine, name, windows) {
   const { desktop, oracle } = ctx;
-  const clicks = name === 'click-paste';
+  const clicks = CLICKS.includes(name);
   let tail = false;
   // a Chromium field is emptied for each run's keys; click-then-paste needs text to click into, so it keeps it
   if (CHROMIUM.includes(windows.a.family)) {
     for (const k of clicks ? ['a'] : Object.keys(scenario(name, { a: 0, b: 0 }).expected)) tail = (await cleanStart(ctx, windows[k], () => textAndCaret(desktop, oracle, windows[k]), { reset: !clicks })).tail || tail;
+  }
+  if (name === 'click-field') {
+    const click = await clickFieldStart(ctx, windows.a);
+    // judged on the field clicked (`a`) and the field the focus left (`left`)
+    return judgedRun(ctx, engine, name, { a: { ...windows.a, field: windows.a.other }, left: windows.a, b: windows.b }, { tail, click });
   }
   const click = clicks ? await clickPasteStart(ctx, windows.a) : undefined;
   return judgedRun(ctx, engine, name, windows, { tail, click });
@@ -539,7 +588,7 @@ async function oneRun(ctx, engine, name, windows) {
 /** A run's requests and its judgement, once its start is ready (`oneRun`). */
 async function judgedRun(ctx, engine, name, windows, { tail, click }) {
   const { desktop, oracle } = ctx;
-  const clicks = name === 'click-paste';
+  const clicks = CLICKS.includes(name);
   const { requests, expected } = scenario(name, { a: windows.a.id, b: windows.b?.id }, PASTES.includes(name) ? { pasted: ctx.pasteText(), click } : {});
   const keys = Object.keys(expected);
   const before = {};
@@ -775,8 +824,11 @@ async function openWindows(ctx, family) {
   const page = CHROMIUM.includes(family) ? { page: KEYS_PAGE } : {};
   const open = async (role) => {
     const scene = await openFamily(desktop, oracle, family, role, page);
-    if (page.page && !scene.field) {
-      scene.field = preorder((await desktop.state(scene)).ax_tree).find((n) => n.role === 'entry' && n.name === 'Field')?.id ?? null;
+    if (page.page) {
+      const nodes = preorder((await desktop.state(scene)).ax_tree);
+      scene.field ??= nodes.find((n) => n.role === 'entry' && n.name === 'Field')?.id ?? null;
+      // the keys page's other field, which click-field clicks into
+      scene.other = nodes.find((n) => n.role === 'entry' && n.name === 'Other')?.id ?? null;
     }
     if (scene.kindOf !== 'terminal' && !scene.field && !scene.document) throw new Error(`${family}'s window has no text field the harness can read`);
     return scene;

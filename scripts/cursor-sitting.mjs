@@ -135,6 +135,10 @@
 //   cursor-sitting.mjs isolate-187 drive --run <dir> --out <dir> --home <dir> --halves <dir> [--blocks <list>] [--no-tail]
 //                                      [--quiet] [--dry-run]
 //   cursor-sitting.mjs isolate-187 judge --out <dir>
+//   cursor-sitting.mjs isolate-187 replay [--from <records dir>] [--to <file>]
+//       Section D (./cursor-sitting/isolate-replay.mjs): the judge's pure pieces over the second re-slot's records
+//       (item-187-reslot2/, or --from) as recorded and under named mutations, and C2's and C3's over synthetic fixtures;
+//       writes item-187-isolate-replay.md (or --to), a table per predicate. Exit 1 when any outcome is not its expected one.
 //       #187's isolating slot (./cursor-sitting/item-187-isolate.mjs; the runbook's "Item 187: the isolating slot"):
 //       the placement, six blocks A B B A A B (each a swap to its half's save under --halves, engine-after/ or
 //       engine-control/, approved with no terminal and attested from the running engine's ping; 2 background-paste
@@ -685,7 +689,18 @@ export async function main(argv) {
       print(text);
       return judged.ok ? 0 : 1;
     }
-    throw new Error('isolate-187 takes drive or judge');
+    if (sub === 'replay') {
+      // Section D: the judge's pure pieces over 11-05's records and the C2/C3 fixtures (./cursor-sitting/isolate-replay.mjs).
+      const {RECORDS, REPLAY_FILE, realRecords, replayMarkdown} = await import('./cursor-sitting/isolate-replay.mjs');
+      const to = values.to ? absolute(values, 'to') : REPLAY_FILE;
+      // No commit in the text: the replay is a function of the records and the kit, so the committed file stays checkable.
+      const {text, cases, mismatches} = replayMarkdown(realRecords(values.from ? absolute(values, 'from') : RECORDS));
+      writeFileSync(to, `${text.replace(/\n+$/, '')}\n`);
+      print(`the replay: ${cases} cases, ${cases - mismatches.length} as expected; wrote ${to}`);
+      for (const m of mismatches) print(`NOT as expected: ${m.name}: expected ${m.expected}, got ${m.outcome}`);
+      return mismatches.length ? 1 : 0;
+    }
+    throw new Error('isolate-187 takes drive, judge or replay');
   }
   if (command === 'remote') {
     const kit = absolute(values, 'kit'), sub = positionals[0];

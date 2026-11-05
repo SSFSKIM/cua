@@ -1022,7 +1022,8 @@ dry run: 1128 steps, nothing sent
 | 187-iso-end | the owner's source | as in the re-slot |
 
 **The verdict** (`isolate-187 judge`, written into `item-187-isolate.md` with the kit's commit; pre-registered, so the
-file states the bar before any reading). The bar is exactly the plan's C1 with ruling 2's composing bar:
+file states the bar before any reading). The bar is the plan's C1 with ruling 2's composing bar, read as the design
+session's RULINGS 2 decided (1ea561bc:400). Each part is checked in the order below:
 
 - **Counted.** A repetition is counted only when all of these hold:
   - it is recorded and the person did not touch it;
@@ -1033,19 +1034,21 @@ file states the bar before any reading). The bar is exactly the plan's C1 with r
   - both pastes are valid.
 
   A composing row is counted on the same premise, row by row. Anything not counted is reported with its reason.
-- **INCONCLUSIVE.** A part is INCONCLUSIVE when a half has fewer than 4 counted.
-- **DOES NOT LAND.** A part does not land when any of these holds:
+- **DOES NOT LAND, at any count.** These are decisive, however few are counted:
+  - any counted AFTER read-stage timeout (#187's own failure on the fixed build);
   - BEFORE delivers in 2 or more counted;
-  - BEFORE fails at a stage other than read in 2 or more;
+  - BEFORE fails at a stage other than read, by its stage meta, in 2 or more;
   - AFTER misses its delivery in 2 or more.
-- **LANDS (the cell).** AFTER delivers both pastes in at least 5 of 6 counted, with no read-stage timeout. BEFORE's
-  background paste times out at stage read, read from its stage meta alone (`readTimedOut`), with the frontmost paste
-  not delivered, in as many.
-- **LANDS (composing).** AFTER delivers exact in at least 8 of 9, with no read-stage timeout. BEFORE times out at read
-  in as many.
+- **INCONCLUSIVE.** A part is INCONCLUSIVE when nothing decisive happened and a half has fewer than 4 counted.
+- **LANDS (the cell), on absolute counts.** At least 5 counted AFTER repetitions deliver both pastes. At least 5
+  counted BEFORE repetitions have their background paste time out at stage read, read from its stage meta alone
+  (`readTimedOut`), with the frontmost paste not delivered.
+- **LANDS (composing), on absolute counts.** At least 8 counted AFTER rows deliver exact, and at least 8 counted
+  BEFORE rows time out at read.
 - **Otherwise** a part is INCONCLUSIVE.
-- **Short of a full count.** 5 of 6 and 8 of 9 are each one miss among the counted, so a premise failure never counts
-  against a half.
+- **Short of a full count.** A premise failure lowers the counted number, so it can only make LANDS harder. The one
+  miss a full half allows covers any failure but an AFTER read timeout. A failure with no stage meta (the legacy
+  -10005, stage unknown) is a miss: never a read timeout, never a failure at another stage.
 - **The overall verdict** is DOES NOT LAND when either part does, LANDS only when both do, and INCONCLUSIVE
   otherwise.
 - **Reported, never judged:**
@@ -1118,9 +1121,18 @@ its own section in `item-187-isolate.md`. C1's verdict stays the cell's and comp
     sample was out of place after the display hold, and the click's `activationJoin`.
 - **Resuming.** A drive stopped in C3 leaves Chrome on the popup page. The placement's preflight accepts that page,
   which also carries the counters, so `--blocks 7` resumes there.
-- **Section D** (later) calls the judge's pure pieces over 11-05's records: `repPremise`, `cellOutcome`, `rowOutcome`,
-  `partVerdict` and `combineVerdict`. For C2 and C3, it calls `joinStatus`, `raiseConditions`, `releaseConditions`
-  and `joinVerdict`.
+- **Section D, the judge replay** (`$S isolate-187 replay`, `scripts/cursor-sitting/isolate-replay.mjs`). It runs the
+  judge's pure pieces over `item-187-reslot2/`, as recorded and under named mutations, and C2's and C3's judges over
+  synthetic fixtures. It writes [the replay](item-187-isolate-replay.md): one table per predicate, each row a case, its
+  edit, the expected outcome and the outcome. It exits 1 when any outcome differs from its expected one, and a test
+  checks that the committed file is what the kit writes now.
+  - 11-05's records carry no `cua/nativeEngine`, so the replay attests each half by the slot's own recorded build.
+  - dd7a records no click kind, so its posting no inert click is read as the control's.
+  - A case needing six a half counts each of 11-05's three repetitions twice, and says so.
+  - Composing's BEFORE rows are 11-05's nine paste rows edited to a read-stage timeout.
+
+  As recorded, the real records judge AFTER-passing on AFTER and "stage unknown" on dd7a's BEFORE (the legacy -10005),
+  so the cell is INCONCLUSIVE at 3 counted a half.
 
 ## Known limits
 

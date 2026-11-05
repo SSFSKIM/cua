@@ -25,18 +25,20 @@ const KIND = {after: {kind: 'inertOutside', point: 'offset', when: 'early'}, bef
 const PIDS = {chrome: 201, textedit: 202};
 const ZERO = {windowFocus: 0, windowBlur: 0, textFocus: 0, textBlur: 0, mousedown: 0, click: 0};
 const start = {kind: 'start'};
+// The saved dd7a's error, which names no stage.
+const LEGACY = 'Computer Use server error -10005: Timed out waiting for the application to read the clipboard';
 
 // One paste row's record as rowRecord makes it: on `half`'s engine, delivered or timing out at the read (`outcome`:
 // delivered | read | effect), `over` replacing any reading.
 function pasteRow({half, group, item, key, row = CELL_ROW, outcome = half === 'after' ? 'delivered' : 'read', prior = 0, native = NATIVE[half], kind = KIND[half], click = 'outsideFrame', ...over}) {
   const background = group !== 'chrome-cell', delivered = outcome === 'delivered', expectedLength = prior + row.string.text.length;
   const paste = delivered ? {stage: 'effect', confirmed: true, readWait: 'handedOver', effectWait: 'reading', focusEnforcement: {activated: true}, perLine: [{line: 1, confirmed: true, effectWait: 'reading', baseline: {c: 0}, confirming: {c: 1}}]}
-    : outcome === 'read' ? {stage: 'read', readWait: 'timeout', confirmed: null} : {stage: 'effect', readWait: 'handedOver', effectWait: 'timeout', confirmed: false};
+    : outcome === 'read' ? {stage: 'read', readWait: 'timeout', confirmed: null} : outcome === 'legacy' ? null : {stage: 'effect', readWait: 'handedOver', effectWait: 'timeout', confirmed: false};
   return rowRecord({
     spec: {key, item, group, block: 0, i: 0, string: row.string.id, method: row.method, expectedLength, lines: 1, regime: background ? 'background' : 'frontmost', engine: 'cua'},
     prepare: {ok: true, value: {ready: true}},
-    act: {ok: true, value: {actMs: delivered ? 180 : 2100, threw: !delivered, message: delivered ? null : 'timed out'}, route: 'paste', nativeEngine: native,
-      meta: {activationGuardMs: 40, activationClick: click, activationClickKind: kind, activationJoin: 'fresh', paste}},
+    act: {ok: true, value: {actMs: delivered ? 180 : 2100, threw: !delivered, message: delivered ? null : outcome === 'legacy' ? LEGACY : 'timed out'}, route: 'paste', nativeEngine: native,
+      meta: {activationGuardMs: 40, activationClick: click, activationClickKind: kind, activationJoin: 'fresh', ...(paste ? {paste} : {})}},
     check: {ok: true, value: {ok: delivered, outcome: {exact: delivered, length: delivered ? expectedLength : prior, expectedLength}}},
     page: {mid: {seq: 4, length: prior, counts: {...ZERO}, focused: !background}, after: {seq: 5, length: delivered ? expectedLength : prior, counts: {...ZERO}, focused: !background}},
     front: background ? {mid: PIDS.textedit, after: PIDS.textedit, expected: PIDS.textedit} : {mid: PIDS.chrome, after: PIDS.chrome, expected: PIDS.chrome},
@@ -222,17 +224,22 @@ test('the premise per repetition: attested, the click planned outside the frame 
   assert.equal(rowPremise(composingRow('after', 0, 0, {userKept: false, disturbed: true}), {half: 'after', build: BUILD.after})[0], 'invalid');
 });
 
-test('the cell\'s verdict: LANDS as predicted and with one miss a half; DOES NOT LAND each way; INCONCLUSIVE below 4 counted and short of the bar', () => {
+test('the cell\'s verdict (RULINGS 2): LANDS on absolute counts; DOES NOT LAND each way at any count; INCONCLUSIVE below 4 counted only when nothing decisive happened', () => {
   const verdictOf = options => judgeIsolate(evidence(options)).cell;
   assert.equal(verdictOf({}).verdict, 'LANDS');
-  assert.deepEqual(verdictOf({}).counts, {after: {counted: 6, met: 6, readTimeouts: 0}, before: {counted: 6, met: 6, delivers: 0, otherStage: 0}});
-  // 5 of 6: one miss allowed on each half.
+  assert.deepEqual(verdictOf({}).counts, {after: {counted: 6, met: 6, readTimeouts: 0}, before: {counted: 6, met: 6, delivers: 0, otherStage: 0, stageUnknown: 0}});
+  // 5 of 6 each way: the one miss covers any failure but an AFTER read timeout.
   assert.equal(verdictOf({cell: (h, rep) => (h === 'after' && rep === 2 ? {fg: {outcome: 'effect'}} : h === 'before' && rep === 4 ? {bg: {outcome: 'effect'}} : {})}).verdict, 'LANDS');
+  // Ruling 1: absolute counts. Exactly 5 counted each way, all as predicted, lands; a premise failure only lowers the count.
+  assert.equal(verdictOf({cell: (h, rep) => (on('after', [0])(h, rep) || on('before', [5])(h, rep) ? {bg: {click: 'posted'}} : {})}).verdict, 'LANDS');
   const dnl = [
+    ['ruling 2: one counted AFTER read-stage timeout (the frontmost paste)', {cell: (h, rep) => (on('after', [4])(h, rep) ? {fg: {outcome: 'read'}} : {})}, /1 read-stage timeout\(s\) on AFTER, counted/],
+    ['ruling 2: one counted AFTER read-stage timeout (the background paste)', {cell: (h, rep) => (on('after', [1])(h, rep) ? {bg: {outcome: 'read'}} : {})}, /1 read-stage timeout/],
+    ['ruling 2 at a low count: an AFTER read timeout with 3 counted', {cell: (h, rep) => (on('after', [0, 1, 2])(h, rep) ? {bg: {click: 'posted'}} : on('after', [3])(h, rep) ? {fg: {outcome: 'read'}} : {})}, /1 read-stage timeout/],
     ['BEFORE delivers the background paste in 2', {cell: (h, rep) => (on('before', [1, 4])(h, rep) ? {bg: {outcome: 'delivered'}} : {})}, /BEFORE delivered in 2 counted/],
+    ['ruling 3 at a low count: BEFORE delivers in 2 of 2 counted', {cell: (h, rep) => (on('before', [0, 1, 2, 3])(h, rep) ? {bg: {kind: KIND.after}} : on('before', [4, 5])(h, rep) ? {bg: {outcome: 'delivered'}} : {})}, /BEFORE delivered in 2 counted/],
     ['BEFORE fails at a stage other than read in 2', {cell: (h, rep) => (on('before', [0, 5])(h, rep) ? {bg: {outcome: 'effect'}} : {})}, /BEFORE failed at a stage other than read in 2 counted/],
     ['AFTER fails the delivery bar', {cell: (h, rep) => (on('after', [0, 3])(h, rep) ? {fg: {outcome: 'effect'}} : {})}, /AFTER missed its delivery in 2 of 6 counted/],
-    ['AFTER\'s background paste times out twice', {cell: (h, rep) => (on('after', [1, 2])(h, rep) ? {bg: {outcome: 'read'}} : {})}, /AFTER missed its delivery in 2 of 6/],
   ];
   for (const [what, options, why] of dnl) {
     const v = verdictOf(options);
@@ -240,35 +247,39 @@ test('the cell\'s verdict: LANDS as predicted and with one miss a half; DOES NOT
     assert.match(v.why.join('; '), why, what);
   }
   const inconclusive = [
-    ['3 counted on AFTER (premise failures)', {cell: (h, rep) => (on('after', [0, 1, 2])(h, rep) ? {bg: {click: 'posted'}} : {})}, /fewer than 4 counted in a half \(AFTER 3, BEFORE 6\)/],
-    ['3 counted on BEFORE (not attested)', {cell: (h, rep) => (on('before', [3, 4, 5])(h, rep) ? {bg: {native: NATIVE.after}} : {})}, /fewer than 4 counted in a half \(AFTER 6, BEFORE 3\)/],
+    ['3 counted on AFTER (premise failures), nothing decisive', {cell: (h, rep) => (on('after', [0, 1, 2])(h, rep) ? {bg: {click: 'posted'}} : {})}, /fewer than 4 counted in a half \(AFTER 3, BEFORE 6\), and nothing decisive/],
+    ['3 counted on BEFORE (not attested)', {cell: (h, rep) => (on('before', [3, 4, 5])(h, rep) ? {bg: {native: NATIVE.after}} : {})}, /AFTER 6, BEFORE 3/],
     ['repetitions not recorded', {cell: (h, rep) => (on('after', [2, 3, 4])(h, rep) ? null : {})}, /AFTER 3, BEFORE 6/],
-    ['one read-stage timeout on AFTER', {cell: (h, rep) => (on('after', [4])(h, rep) ? {fg: {outcome: 'read'}} : {})}, /1 read-stage timeout\(s\) on AFTER/],
-    ['BEFORE short of the bar, neither way twice', {cell: (h, rep) => (on('before', [0])(h, rep) ? {bg: {outcome: 'delivered'}} : on('before', [1])(h, rep) ? {bg: {outcome: 'effect'}} : {})}, /BEFORE failed as predicted in 4 of 6 counted \(at most 1 miss\)/],
-    ['BEFORE\'s frontmost paste delivered twice after a read timeout', {cell: (h, rep) => (on('before', [2, 3])(h, rep) ? {fg: {outcome: 'delivered'}} : {})}, /BEFORE failed as predicted in 4 of 6/],
+    ['ruling 1: 4 counted on AFTER, all delivered: under 5', {cell: (h, rep) => (on('after', [0, 1])(h, rep) ? {bg: {click: 'posted'}} : {})}, /AFTER met its delivery in 4 counted, under 5/],
+    ['ruling 1: 5 counted on AFTER with one miss', {cell: (h, rep) => (on('after', [0])(h, rep) ? {bg: {click: 'posted'}} : on('after', [3])(h, rep) ? {fg: {outcome: 'effect'}} : {})}, /AFTER met its delivery in 4 counted, under 5/],
+    ['BEFORE one delivery and one other stage: neither twice', {cell: (h, rep) => (on('before', [0])(h, rep) ? {bg: {outcome: 'delivered'}} : on('before', [1])(h, rep) ? {bg: {outcome: 'effect'}} : {})}, /BEFORE failed as predicted in 4 counted, under 5/],
+    ['BEFORE\'s frontmost paste delivered twice after a read timeout', {cell: (h, rep) => (on('before', [2, 3])(h, rep) ? {fg: {outcome: 'delivered'}} : {})}, /BEFORE failed as predicted in 4 counted/],
+    ['BEFORE with no stage meta in 2: stage unknown, a miss, never decisive', {cell: (h, rep) => (on('before', [2, 3])(h, rep) ? {bg: {outcome: 'legacy'}, fg: {outcome: 'legacy'}} : {})}, /under 5 \(2 with no stage meta, stage unknown\)/],
   ];
   for (const [what, options, why] of inconclusive) {
     const v = verdictOf(options);
     assert.equal(v.verdict, 'INCONCLUSIVE', what);
     assert.match(v.why.join('; '), why, what);
   }
-  // Below 4 counted is INCONCLUSIVE even with BEFORE delivering: too few to judge either way.
-  assert.equal(verdictOf({cell: (h, rep) => (on('before', [0, 1, 2])(h, rep) ? {bg: {kind: KIND.after}} : on('before', [3, 4])(h, rep) ? {bg: {outcome: 'delivered'}} : {})}).verdict, 'INCONCLUSIVE');
-  // At 4 counted, one miss still lands.
-  assert.equal(verdictOf({cell: (h, rep) => (on('after', [0, 1])(h, rep) ? {bg: {click: 'posted'}} : on('after', [2])(h, rep) ? {fg: {outcome: 'effect'}} : {})}).verdict, 'LANDS');
+  assert.deepEqual(verdictOf({cell: (h, rep) => (on('before', [2, 3])(h, rep) ? {bg: {outcome: 'legacy'}} : {})}).counts.before, {counted: 6, met: 4, delivers: 0, otherStage: 0, stageUnknown: 2});
 });
 
-test('composing\'s verdict (ruling 2): 8 of 9 a half; the same DOES NOT LAND and INCONCLUSIVE rules; LANDS needs both parts', () => {
+test('composing\'s verdict (RULINGS 2): at least 8 counted each way; the same decisive and low-count rules; LANDS needs both parts', () => {
   const judged = options => judgeIsolate(evidence(options));
   assert.equal(judged({}).composing.verdict, 'LANDS');
   assert.equal(judged({}).verdict, 'LANDS');
-  assert.equal(judged({row: (h, i, k) => (h === 'after' && i === 1 && k === 2 ? {outcome: 'effect'} : h === 'before' && i === 0 && k === 0 ? {outcome: 'effect'} : {})}).composing.verdict, 'LANDS', 'one miss each');
+  assert.equal(judged({row: (h, i, k) => (h === 'after' && i === 1 && k === 2 ? {outcome: 'effect'} : h === 'before' && i === 0 && k === 0 ? {outcome: 'effect'} : {})}).composing.verdict, 'LANDS', 'one miss each, not a read timeout');
+  assert.equal(judged({row: (h, i, k) => (h === 'after' && i === 0 && k === 0 ? {click: 'posted'} : {})}).composing.verdict, 'LANDS', '8 counted, all delivered');
   const cases = [
-    ['BEFORE delivers in 2', {row: (h, i) => (h === 'before' && i === 2 ? {outcome: 'delivered'} : {})}, 'DOES NOT LAND', /BEFORE delivered in 3 counted/],
+    ['BEFORE delivers in 3', {row: (h, i) => (h === 'before' && i === 2 ? {outcome: 'delivered'} : {})}, 'DOES NOT LAND', /BEFORE delivered in 3 counted/],
+    ['ruling 3 at a low count: BEFORE 2 counted, both delivered', {row: (h, i, k) => (h === 'before' ? (i === 0 && k < 2 ? {outcome: 'delivered'} : {kind: KIND.after}) : {})}, 'DOES NOT LAND', /BEFORE delivered in 2 counted/],
     ['BEFORE fails at another stage in 2', {row: (h, i, k) => (h === 'before' && k === 1 && i < 2 ? {outcome: 'effect'} : {})}, 'DOES NOT LAND', /stage other than read in 2/],
-    ['AFTER misses 2', {row: (h, i, k) => (h === 'after' && k === 0 && i < 2 ? {outcome: 'read'} : {})}, 'DOES NOT LAND', /AFTER missed its delivery in 2 of 9/],
-    ['3 counted on BEFORE', {row: (h, i) => (h === 'before' && i > 0 ? {kind: KIND.after} : {})}, 'INCONCLUSIVE', /fewer than 4 counted in a half \(AFTER 9, BEFORE 3\)/],
-    ['one AFTER read timeout', {row: (h, i, k) => (h === 'after' && i === 2 && k === 2 ? {outcome: 'read'} : {})}, 'INCONCLUSIVE', /1 read-stage timeout/],
+    ['ruling 2: one AFTER read timeout', {row: (h, i, k) => (h === 'after' && i === 2 && k === 2 ? {outcome: 'read'} : {})}, 'DOES NOT LAND', /1 read-stage timeout\(s\) on AFTER, counted/],
+    ['ruling 2 at a low count: AFTER 3 counted, one read timeout', {row: (h, i, k) => (h === 'after' ? (i === 0 && k === 0 ? {outcome: 'read'} : i > 0 ? {kind: KIND.before} : {}) : {})}, 'DOES NOT LAND', /1 read-stage timeout/],
+    ['AFTER misses 2 at another stage', {row: (h, i, k) => (h === 'after' && k === 0 && i < 2 ? {outcome: 'effect'} : {})}, 'DOES NOT LAND', /AFTER missed its delivery in 2 of 9/],
+    ['3 counted on BEFORE, nothing decisive', {row: (h, i) => (h === 'before' && i > 0 ? {kind: KIND.after} : {})}, 'INCONCLUSIVE', /fewer than 4 counted in a half \(AFTER 9, BEFORE 3\), and nothing decisive/],
+    ['ruling 1: BEFORE 7 counted, all as predicted: under 8', {row: (h, i, k) => (h === 'before' && i === 0 && k < 2 ? {native: NATIVE.after} : {})}, 'INCONCLUSIVE', /BEFORE failed as predicted in 7 counted, under 8/],
+    ['ruling 1: AFTER 8 counted with one miss', {row: (h, i, k) => (h === 'after' && i === 0 ? (k === 0 ? {click: 'posted'} : k === 1 ? {outcome: 'effect'} : {}) : {})}, 'INCONCLUSIVE', /AFTER met its delivery in 7 counted, under 8/],
   ];
   for (const [what, options, verdict, why] of cases) {
     const j = judged(options);
@@ -291,10 +302,14 @@ test('the overall verdict: DOES NOT LAND when either part does, LANDS when both 
   assert.equal(combineVerdict(v('LANDS'), v('INCONCLUSIVE')), 'INCONCLUSIVE');
   assert.equal(combineVerdict(v('INCONCLUSIVE'), v('LANDS')), 'INCONCLUSIVE');
   // partVerdict straight over entries, as a replay calls it.
-  const e = (n, over = {}) => Array.from({length: n}, () => ({counted: true, met: true, delivers: false, otherStage: false, readTimeout: false, ...over}));
+  const e = (n, over = {}) => Array.from({length: n}, () => ({counted: true, met: true, delivers: false, otherStage: false, stageUnknown: false, readTimeout: false, ...over}));
   assert.equal(partVerdict({after: e(6), before: e(6)}, BAR.cell).verdict, 'LANDS');
+  assert.equal(partVerdict({after: e(5), before: e(5)}, BAR.cell).verdict, 'LANDS', 'absolute: 5 counted each way, all met');
   assert.equal(partVerdict({after: e(MIN_COUNTED - 1), before: e(6)}, BAR.cell).verdict, 'INCONCLUSIVE');
+  assert.equal(partVerdict({after: e(MIN_COUNTED), before: e(6)}, BAR.cell).verdict, 'INCONCLUSIVE', 'absolute: 4 met is under 5');
   assert.equal(partVerdict({after: e(6), before: [...e(4), ...e(2, {met: false, delivers: true})]}, BAR.cell).verdict, 'DOES NOT LAND');
+  assert.equal(partVerdict({after: e(1), before: e(2, {met: false, delivers: true})}, BAR.cell).verdict, 'DOES NOT LAND', 'ruling 3: decisive at any count');
+  assert.equal(partVerdict({after: e(1, {met: false, readTimeout: true}), before: e(1)}, BAR.cell).verdict, 'DOES NOT LAND', 'ruling 2: decisive at any count');
   assert.equal(partVerdict({after: [...e(5), ...e(1, {counted: false, met: false})], before: e(6)}, BAR.cell).verdict, 'LANDS', 'an uncounted entry counts for nothing');
 });
 
@@ -324,8 +339,11 @@ test('the verdict file: the pre-registered bar, the verdict and each part, the s
   const md = isolateMarkdown(judgeIsolate(evidence()), {commit: '0123456789ab'});
   assert.match(md, /^# #187: the isolating slot, the inert click as the cause \(scripts\/cursor-sitting\/item-187-isolate\.mjs, the kit at 0123456789ab\)/);
   assert.match(md, /\*\*The bar, pre-registered\*\*/);
-  assert.match(md, /at least 5 of 6 \(at most 1 miss among the counted\)/);
-  assert.match(md, /at least 8 of 9 \(at most 1 miss\)/);
+  assert.match(md, /RULINGS 2 on the judge's readings, 1ea561bc:400/);
+  assert.match(md, /\*\*DOES NOT LAND\*\* for a part, at any count: any counted AFTER read-stage timeout; BEFORE delivering in 2 or more counted/);
+  assert.match(md, /\*\*INCONCLUSIVE\*\* for a part when nothing decisive happened and a half has fewer than 4 counted/);
+  assert.match(md, /the cell when at least 5 counted AFTER repetitions deliver both pastes and at least 5 counted BEFORE repetitions time out at stage read/);
+  assert.match(md, /composing when at least 8 counted AFTER rows deliver exact and at least 8 counted BEFORE rows time out at read/);
   assert.match(md, /## Verdict: LANDS\n/);
   assert.match(md, /- the background-paste cell: \*\*LANDS\*\*/);
   assert.match(md, /- chrome\/composing@textedit: \*\*LANDS\*\*/);

@@ -31,13 +31,19 @@
 //   (`activationClick` outsideFrame); AFTER's `activationClickKind` inertOutside early, BEFORE's skipped controlBuild;
 //   both pastes valid (./item-187.mjs rowRecord). A composing row is counted on the same premise, row by row. What is
 //   not counted is reported with its reason.
-// - Each part (the cell, composing) is INCONCLUSIVE with fewer than MIN_COUNTED counted in a half; else DOES NOT LAND
-//   when BEFORE delivers in AGAINST or more, or fails at a stage other than read in AGAINST or more, or AFTER misses its
-//   delivery in AGAINST or more; else LANDS when AFTER misses at most BAR[part].of - BAR[part].at (both pastes delivered;
-//   composing: delivered exact) with no read-stage timeout on AFTER, and BEFORE misses at most as many (the cell: the
-//   background paste timing out at stage read, by its stage meta alone, readTimedOut, and the frontmost paste not
-//   delivered; composing: timing out at read); else INCONCLUSIVE. 5 of 6 and 8 of 9 are one miss each, so a premise
-//   failure never counts against a half.
+// - Each part (the cell, composing), by the design session's RULINGS 2 (1ea561bc:400), checked in this order:
+//   - DOES NOT LAND, at any count (decisive): any counted AFTER read-stage timeout (#187's own failure on the fixed
+//     build, ruling 2); BEFORE delivering in AGAINST or more counted (ruling 3); BEFORE failing at a stage other than
+//     read, by its stage meta, in AGAINST or more; AFTER missing its delivery in AGAINST or more.
+//   - INCONCLUSIVE when nothing decisive happened and a half has fewer than MIN_COUNTED counted (ruling 3).
+//   - LANDS on absolute counts (ruling 1): at least BAR[part].at counted AFTER entries delivering (the cell: both
+//     pastes; composing: delivered exact) and at least as many counted BEFORE entries failing as predicted (the cell: the
+//     background paste timing out at stage read, by its stage meta alone, readTimedOut, and the frontmost paste not
+//     delivered; composing: timing out at read). A premise failure lowers the counted number, so it can only make
+//     LANDS harder; the one miss allowed of a full half covers any failure but an AFTER read timeout.
+//   - INCONCLUSIVE otherwise.
+//   A failure with no stage meta (the legacy -10005, stage unknown) is a miss, never a read timeout and never a failure
+//   at another stage.
 // - Overall: DOES NOT LAND when either part does; LANDS only when both do; INCONCLUSIVE otherwise.
 // - Reported, never judged: the key readings per half before and after `open -a` (frontmost, AXMain, AXFocusedWindow,
 //   hasFocus, the run window's AXFocused), the activation joins, what the rows did to the person's side, each swap's
@@ -251,32 +257,34 @@ export function repPremise(record, {half, build}) {
 export const rowPremise = (r, {half, build}) => pastePremise(r, {half, build}, 'composing') ?? ['counted', null];
 
 // What a counted entry shows for the bar: AFTER's `met` its delivery, BEFORE's `met` the predicted failure;
-// `delivers` (a BEFORE delivering), `otherStage` (a BEFORE failing otherwise than a read timeout), `readTimeout`.
+// `delivers` (a BEFORE delivering); `otherStage` (failing at a stage its stage meta names, not a read timeout);
+// `stageUnknown` (failing with no stage meta: the legacy -10005, a miss and nothing more); `readTimeout`.
+const failure = (r, read) => ({otherStage: r.delivered !== true && !read && r.paste?.stage != null, stageUnknown: r.delivered !== true && r.paste?.stage == null});
 export function cellOutcome(record, half) {
   const bg = record.background, fg = record.row, bgRead = readTimedOut(bg);
   return {met: half === 'after' ? bg.delivered === true && fg.delivered === true : bgRead && fg.delivered !== true,
-    delivers: bg.delivered === true, otherStage: bg.delivered !== true && !bgRead, readTimeout: bgRead || readTimedOut(fg)};
+    delivers: bg.delivered === true, ...failure(bg, bgRead), readTimeout: bgRead || readTimedOut(fg)};
 }
 export function rowOutcome(r, half) {
   const read = readTimedOut(r);
-  return {met: half === 'after' ? r.delivered === true : read, delivers: r.delivered === true, otherStage: r.delivered !== true && !read, readTimeout: read};
+  return {met: half === 'after' ? r.delivered === true : read, delivers: r.delivered === true, ...failure(r, read), readTimeout: read};
 }
 
-// A part's verdict from its entries per half ({counted, met, delivers, otherStage, readTimeout}). -> {verdict, counts,
-// why}.
-export function partVerdict({after, before}, {of, at}) {
-  const A = after.filter(e => e.counted), B = before.filter(e => e.counted), allowed = of - at;
-  const counts = {after: {counted: A.length, met: A.filter(e => e.met).length, readTimeouts: A.filter(e => e.readTimeout).length},
-    before: {counted: B.length, met: B.filter(e => e.met).length, delivers: B.filter(e => e.delivers).length, otherStage: B.filter(e => e.otherStage).length}};
-  const afterMiss = A.length - counts.after.met, beforeMiss = B.length - counts.before.met;
-  if (A.length < MIN_COUNTED || B.length < MIN_COUNTED) return {verdict: 'INCONCLUSIVE', counts, why: [`fewer than ${MIN_COUNTED} counted in a half (AFTER ${A.length}, BEFORE ${B.length})`]};
-  const against = [counts.before.delivers >= AGAINST && `BEFORE delivered in ${counts.before.delivers} counted`,
+// A part's verdict from its entries per half ({counted, met, delivers, otherStage, stageUnknown, readTimeout}), by
+// RULINGS 2: what is decisive first, at any count; then too few counted; then the absolute bar. -> {verdict, counts, why}.
+export function partVerdict({after, before}, {at}) {
+  const A = after.filter(e => e.counted), B = before.filter(e => e.counted), n = (list, key) => list.filter(e => e[key]).length;
+  const counts = {after: {counted: A.length, met: n(A, 'met'), readTimeouts: n(A, 'readTimeout')},
+    before: {counted: B.length, met: n(B, 'met'), delivers: n(B, 'delivers'), otherStage: n(B, 'otherStage'), stageUnknown: n(B, 'stageUnknown')}};
+  const afterMiss = A.length - counts.after.met;
+  const against = [counts.after.readTimeouts > 0 && `${counts.after.readTimeouts} read-stage timeout(s) on AFTER, counted`,
+    counts.before.delivers >= AGAINST && `BEFORE delivered in ${counts.before.delivers} counted`,
     counts.before.otherStage >= AGAINST && `BEFORE failed at a stage other than read in ${counts.before.otherStage} counted`,
     afterMiss >= AGAINST && `AFTER missed its delivery in ${afterMiss} of ${A.length} counted`].filter(Boolean);
   if (against.length) return {verdict: 'DOES NOT LAND', counts, why: against};
-  const unmet = [afterMiss > allowed && `AFTER met its delivery in ${counts.after.met} of ${A.length} counted (at most ${allowed} miss)`,
-    counts.after.readTimeouts > 0 && `${counts.after.readTimeouts} read-stage timeout(s) on AFTER`,
-    beforeMiss > allowed && `BEFORE failed as predicted in ${counts.before.met} of ${B.length} counted (at most ${allowed} miss)`].filter(Boolean);
+  if (A.length < MIN_COUNTED || B.length < MIN_COUNTED) return {verdict: 'INCONCLUSIVE', counts, why: [`fewer than ${MIN_COUNTED} counted in a half (AFTER ${A.length}, BEFORE ${B.length}), and nothing decisive`]};
+  const unmet = [counts.after.met < at && `AFTER met its delivery in ${counts.after.met} counted, under ${at}`,
+    counts.before.met < at && `BEFORE failed as predicted in ${counts.before.met} counted, under ${at}${counts.before.stageUnknown ? ` (${counts.before.stageUnknown} with no stage meta, stage unknown)` : ''}`].filter(Boolean);
   return unmet.length ? {verdict: 'INCONCLUSIVE', counts, why: unmet} : {verdict: 'LANDS', counts, why: []};
 }
 
@@ -370,12 +378,12 @@ const statusText = e => `${e.status}${e.status === 'counted' ? '' : e.why ? ` ($
 const nativeText = n => (n ? `${short(n.build)}${n.variant ? ` ${n.variant}` : ''}` : '–');
 // The bar as the kit pre-registers it, in words.
 export function barText() {
-  const allowed = part => BAR[part].of - BAR[part].at;
-  return [`**The bar, pre-registered** (the plan's C1 and its ruling 2, written into the kit before the slot). AFTER is the merged shipping build, BEFORE the control build of the same source with only the inert click cut (CUA_CONTROL_NO_INERT_CLICK). The blocks run A B B A A B, each a swap, ${CELL_REPS_PER_BLOCK} background-paste repetitions and ${COMPOSING_ROWS_PER_BLOCK} chrome/composing@textedit paste rows: ${BAR.cell.of} repetitions and ${BAR.composing.of} rows a half.`, '',
+  return [`**The bar, pre-registered** (the plan's C1, its ruling 2 and the RULINGS 2 on the judge's readings, 1ea561bc:400, written into the kit before the slot). AFTER is the merged shipping build, BEFORE the control build of the same source with only the inert click cut (CUA_CONTROL_NO_INERT_CLICK). The blocks run A B B A A B, each a swap, ${CELL_REPS_PER_BLOCK} background-paste repetitions and ${COMPOSING_ROWS_PER_BLOCK} chrome/composing@textedit paste rows: ${BAR.cell.of} repetitions and ${BAR.composing.of} rows a half.`, '',
     `- **Counted** only when the premise holds: recorded and not the person's; both pastes' results attesting the half (\`cua/nativeEngine\`: the half's saved build, variant ${CONTROL_VARIANT} on BEFORE and none on AFTER); the background paste's activation click planned outside the frame; its \`activationClickKind\` inertOutside early on AFTER, skipped controlBuild on BEFORE; both pastes valid. A composing row on the same premise, row by row. What is not counted is reported with its reason.`,
-    `- **INCONCLUSIVE** for a part with fewer than ${MIN_COUNTED} counted in a half.`,
-    `- **DOES NOT LAND** for a part when BEFORE delivers in ${AGAINST} or more counted, or BEFORE fails at a stage other than read in ${AGAINST} or more, or AFTER misses its delivery in ${AGAINST} or more.`,
-    `- **LANDS** for the cell when AFTER delivers both pastes in at least ${BAR.cell.at} of ${BAR.cell.of} (at most ${allowed('cell')} miss among the counted) with no read-stage timeout, and BEFORE's background paste times out at stage read (its stage meta alone) with the frontmost paste not delivered in as many; for composing when AFTER delivers exact in at least ${BAR.composing.at} of ${BAR.composing.of} (at most ${allowed('composing')} miss) with no read-stage timeout, and BEFORE times out at read in as many. Otherwise INCONCLUSIVE.`,
+    `- **DOES NOT LAND** for a part, at any count: any counted AFTER read-stage timeout; BEFORE delivering in ${AGAINST} or more counted; BEFORE failing at a stage other than read (by its stage meta) in ${AGAINST} or more; AFTER missing its delivery in ${AGAINST} or more.`,
+    `- **INCONCLUSIVE** for a part when nothing decisive happened and a half has fewer than ${MIN_COUNTED} counted.`,
+    `- **LANDS**, on absolute counts: the cell when at least ${BAR.cell.at} counted AFTER repetitions deliver both pastes and at least ${BAR.cell.at} counted BEFORE repetitions time out at stage read (the background paste's stage meta alone) with the frontmost paste not delivered; composing when at least ${BAR.composing.at} counted AFTER rows deliver exact and at least ${BAR.composing.at} counted BEFORE rows time out at read. A premise failure lowers the counted number, so it only makes LANDS harder; the one miss a full half allows covers any failure but an AFTER read timeout. Otherwise INCONCLUSIVE.`,
+    '- A failure with no stage meta (the legacy -10005, stage unknown) is a miss: never a read timeout, never a failure at another stage.',
     '- **Overall**: DOES NOT LAND when either part does; LANDS only when both do; INCONCLUSIVE otherwise.',
     '- Reported, never judged: the key readings, the activation joins, the person\'s side, the swaps\' attestations, #188 (its own verdict) and the owner\'s source.'].join('\n');
 }
@@ -392,7 +400,7 @@ export function isolateMarkdown(j, {commit = null} = {}) {
     if (!s.recorded) { lines.push(`| ${s.n} | ${s.half} | not recorded | – | – | – |`); continue; }
     lines.push(`| ${s.n} | ${s.half} | ${s.swap ? s.swap.ok ? `restored ${short(s.swap.saved)}` : `FAILED: ${s.swap.problem}` : s.stopped ? `stopped: ${s.stopped}` : '–'} | ${s.swap?.approved ? `${yes(s.swap.approved.approved)}, capture confirmation ${s.swap.approved.captureConfirmation ?? '–'}` : '–'} | ${nativeText(s.attest?.observed)} | ${s.attest ? s.attest.ok ? 'yes' : `NO: ${s.attest.problem}` : '–'} |`);
   }
-  const counts = (part, p) => `AFTER ${p.counts.after.met} of ${p.counts.after.counted} counted met (${p.counts.after.readTimeouts} read timeout(s)); BEFORE ${p.counts.before.met} of ${p.counts.before.counted} counted failed as predicted (${p.counts.before.delivers} delivered, ${p.counts.before.otherStage} at another stage). The bar: ${BAR[part].at} of ${BAR[part].of}.`;
+  const counts = (part, p) => `AFTER ${p.counts.after.met} of ${p.counts.after.counted} counted met (${p.counts.after.readTimeouts} read timeout(s)); BEFORE ${p.counts.before.met} of ${p.counts.before.counted} counted failed as predicted (${p.counts.before.delivers} delivered, ${p.counts.before.otherStage} at another stage, ${p.counts.before.stageUnknown} stage unknown). The bar: at least ${BAR[part].at} counted each way.`;
   lines.push('', '## The background-paste cell', '', 'Per repetition, as on 11-05: Chrome for Testing relaunched clean and placed, TextEdit in front under ABC, one background paste of the Latin string, `open -a`, the key read, one frontmost paste.', '',
     '| half | rep | block | status | background: click / kind / join | the ping | background paste | stage / read | frontmost paste | stage / read |', '|---|---|---|---|---|---|---|---|---|---|');
   for (const half of HALVES) for (const c of j.cells[half]) {

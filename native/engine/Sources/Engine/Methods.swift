@@ -111,7 +111,7 @@ final class Engine: @unchecked Sendable {
     return ["serverApiVersion": serverApiVersion, "engineVersion": engineVersion, "build": engineBuild]
   }
 
-  private func status(_ connection: ConnectionState) -> [String: Any] {
+  func status(_ connection: ConnectionState) -> [String: Any] {
     [
       "engineVersion": engineVersion,
       "build": engineBuild,

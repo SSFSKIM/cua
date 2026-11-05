@@ -1,0 +1,4 @@
+{"at":1793867252123.677,"kind":"start","pid":43949,"registered":true,"target":38984}
+{"at":1793867273978.354,"kind":"end","why":"SIGTERM"}
+{"at":1793867280424.71,"kind":"start","pid":51058,"registered":true,"target":38984}
+{"at":1793867302344.249,"kind":"end","why":"SIGTERM"}

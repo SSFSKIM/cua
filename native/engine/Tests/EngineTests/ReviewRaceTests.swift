@@ -29,7 +29,7 @@ final class ReviewRaceTests: XCTestCase {
       sleep(ms)
     }
     var meta = meta()
-    let release = try registry.acquire(pid: target, beforeActivating: {}, make: { self.activation(system) }, meta: &meta)
+    let release = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), beforeActivating: {}, make: { self.activation(system) }, meta: &meta)
     try registry.refresh(pid: target, beforeActivating: {}, make: { self.activation(seam.system) }, meta: &meta)
     XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 2, "a cycle during the first guard must cause a fresh activation")
     _ = release()
@@ -38,7 +38,7 @@ final class ReviewRaceTests: XCTestCase {
     let registry = HeldActivations()
     let seam = GuardSeam(frontmost: 990002)
     var meta = meta()
-    let release = try registry.acquire(pid: target, beforeActivating: {}, make: { self.activation(seam.system) }, meta: &meta)
+    let release = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), beforeActivating: {}, make: { self.activation(seam.system) }, meta: &meta)
     registry.realActivationChanged(target)
     try registry.refresh(pid: target, beforeActivating: {}, make: {
       // Notification while obtaining the window/frame, before the replacement's subtype 1.
@@ -52,7 +52,7 @@ final class ReviewRaceTests: XCTestCase {
     let registry = HeldActivations()
     let seam = GuardSeam(frontmost: 990002)
     var meta = meta()
-    let release = try registry.acquire(pid: target, beforeActivating: {}, make: { self.activation(seam.system) }, meta: &meta)
+    let release = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), beforeActivating: {}, make: { self.activation(seam.system) }, meta: &meta)
     registry.realActivationChanged(target)
     var system = seam.system
     system.sleep = { _ in

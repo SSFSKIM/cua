@@ -157,7 +157,7 @@ extension Engine {
         ? FakeActivation(pid: owner, appPid: appPid, window: start.window, windowFrame: start.windowFrame, windowID: windowID) : nil
       try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
         try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
-          try deliverPointer(to: owner, route: route, activation: activation, activations: heldActivations,
+          try deliverPointer(to: owner, route: route, activation: activation, activations: heldActivations, postsLeftMouseDown: true,
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                              beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
                              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .drag([start.point, end.point])) },

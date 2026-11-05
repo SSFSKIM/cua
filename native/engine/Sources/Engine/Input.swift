@@ -17,7 +17,7 @@ import Foundation
 // startedAt, endedAt, receivedAt, hidIdleMs}, startedAt/endedAt null while nothing was posted, inputRoute null until a
 // route is chosen; the guard's duration rides as activationGuardMs when route 3 ran one, `intervention: "off"` when
 // detection is off, `entered` on a type_text that keyed (never a concealed one), and `routeAdvice` once route 3's guard
-// has failed three actions in a row for the app; route 3's pointer actions add `delivery` (#200), the paste route its
+// has failed three actions in a row for the app; route 3's pointer actions and the paste route add `delivery` (#200), the paste route its
 // value-free diagnostics as `paste` (#187, Paste.swift), and every result on a
 // connection whose after-action watch has repaired carries `afterActionRepairs` (Activation.swift AfterActionWatches).
 // The settle an action arms runs at the next get_app_state (markActed).
@@ -67,8 +67,10 @@ struct InputMeta {
   var startedAt: Int64? = nil
   var endedAt: Int64? = nil
   var activationGuardMs: Double? = nil
-  /// What route 3's activation click did when an activation ran: posted, or why it was skipped.
+  /// What the inert-point rule decided at the activation point when an activation ran: posted there, or why not.
   var activationClick: ActivationClick? = nil
+  /// The click that activation posted (at the activation point, the inert one outside the frame, or none and why).
+  var activationClickKind: ActivationClickKind? = nil
   /// A synthesized element click whose hit-test answered nothing or only a container of the element, so the point
   /// could not be confirmed to reach it; reported as `pointUnconfirmed: true`.
   var pointUnconfirmed = false
@@ -87,6 +89,8 @@ struct InputMeta {
   var paste: PasteDiagnostics?
   /// An element click's plan, the ladder's reason and the hit-test's answer (#188, Routes.swift ElementClickRecord).
   var elementClick: ElementClickRecord?
+  /// A coordinate click's placement, from the screenshot point to the posted events (#259, Routes.swift).
+  var coordinateClick: CoordinateClickRecord?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -131,6 +135,7 @@ struct InputMeta {
     ]
     if let activationGuardMs { wire["activationGuardMs"] = activationGuardMs }
     if let activationClick { wire["activationClick"] = activationClick.rawValue }
+    if let activationClickKind { wire["activationClickKind"] = activationClickKind.wire }
     if pointUnconfirmed { wire["pointUnconfirmed"] = true }
     if interventionOff { wire["intervention"] = "off" }
     if let entered { wire["entered"] = entered }
@@ -139,6 +144,7 @@ struct InputMeta {
     if let delivery { wire["delivery"] = delivery.wire }
     if let paste { wire["paste"] = paste.wire }
     if let elementClick { wire["elementClick"] = elementClick.wire }
+    if let coordinateClick { wire["coordinateClick"] = coordinateClick.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }
@@ -163,8 +169,9 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
                   activations: HeldActivations = HeldActivations(), foreground: ForegroundAssist? = nil, targetActive: () -> Bool,
                   beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, announce: () -> Void = {},
                   post: (CGEvent, pid_t) -> Void, meta: inout InputMeta) throws {
-  try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, foreground: foreground,
-                     beforeActivating: beforeActivating, beforePosting: beforePosting, announce: announce, post: post, meta: &meta) {
+  try deliverPointer(to: target.pid, route: route, activation: activation, activations: activations, postsLeftMouseDown: button == .left,
+                     foreground: foreground, beforeActivating: beforeActivating, beforePosting: beforePosting, announce: announce, post: post,
+                     meta: &meta) {
     clickEvents(target, button: button, count: count, flags: clickFlags(route, targetActive: targetActive()))
   }
 }
@@ -176,24 +183,36 @@ func deliverClick(_ target: ClickTarget, route: InputRoute, button: MouseButton,
 /// behind another holder's activation stops it before its activation and activation click; `beforePosting` runs again
 /// just before the events, and `announce` once they are made and about to be posted. Under route 3 the events go out
 /// through the standing activation's delivery guard (`FakeActivation.deliver`, #200), inside the activation's own
-/// screen-update hold when this action ran it, on the window the events name.
+/// screen-update hold when this action ran it, on the window the events name. An action whose events open with a left
+/// mouse down (`postsLeftMouseDown`: a left click, a drag) lets that consume the activation's arm, as before #187's
+/// inert click: no inert click goes before it, and one goes at the release only when none went (a stop before the
+/// events); the click that consumed it rides in the meta when this action ran the activation or consumed its arm.
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
-                    foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {},
-                    announce: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
+                    postsLeftMouseDown: Bool = true, foreground: ForegroundAssist? = nil, beforeActivating: () throws -> Void = {},
+                    beforePosting: () throws -> Void = {}, announce: () -> Void = {}, post: (CGEvent, pid_t) -> Void, meta: inout InputMeta,
+                    events: () -> [CGEvent]) throws {
   meta.inputRoute = route
   // An earlier action's after-action watch ends before anything of this one happens (its activation included).
   let watches = meta.context.connection.afterAction
   watches.cancel()
   var release: (() -> Bool)?
-  defer { _ = release?() }  // every path out of the action, error or success, ends its lease
   var standing: FakeActivation?
+  var reportsArm = false
+  defer {
+    _ = release?()  // every path out of the action, error or success, ends its lease
+    if reportsArm, let kind = standing?.clickKind { meta.activationClickKind = kind }  // a release's inert click included
+  }
   defer { activation?.releaseOpenHold() }  // a stop before the events ends the activation's hold with the action
   if route == .activation, let activation {
     activation.holdsThroughDelivery = true
     // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
-    // focusing click inside set_value's held activation).
-    release = try activations.acquire(pid: activation.pid, beforeActivating: beforeActivating, make: { activation }, meta: &meta)
+    // focusing click inside set_value's held activation), unless the action re-arms a hold of its own connection whose
+    // arm was spent early (`HeldActivations.acquire`), whose new activation's guard and click are recorded as a run's.
+    release = try activations.acquire(pid: activation.pid, holder: ActivationHolder(connection: meta.context.connection.id),
+                                      postsLeftMouseDown: postsLeftMouseDown, beforeActivating: beforeActivating,
+                                      make: { activation }, meta: &meta)
     standing = activations.activation(of: activation.pid)
+    reportsArm = standing === activation
   }
   // The interval is stamped as the events are posted, so an error after them (route 4's restore) still says they were.
   func send() throws {
@@ -203,7 +222,10 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     announce()
     // The interval is the events' own posting, inside the delivery guard's hold when one stands: the guard's setup and its
     // samples after the events are its own time (`delivery.guardMs`), not the action's.
-    func postEvents() { meta.posting { _ = postToProcess(made, pid: pid, post: post); return true } }
+    func postAll() { meta.posting { _ = postToProcess(made, pid: pid, post: post); return true } }
+    func postEvents() {
+      if let standing { if standing.postAction(made, postAll) { reportsArm = true } } else { postAll() }
+    }
     if let standing { meta.delivery = standing.deliver(window: stampedWindow(of: made), watches: watches, postEvents) } else { postEvents() }
   }
   if route == .foreground, let foreground {
@@ -334,8 +356,9 @@ extension Engine {
         context.connection.clearMenuRecord(app: app.key)
       } else {
         // Each step a timing interval of its own (Signposts.swift), so a sitting can place what moves in a click.
+        let given = CGPoint(x: numberArg(args["x"])!, y: numberArg(args["y"])!)
         let placed = try signposted("click.coordinatePoint") {
-          try coordinatePoint(numberArg(args["x"])!, numberArg(args["y"])!, app: app, appPid: appPid, context: context)
+          try coordinatePlacement(given.x, given.y, app: app, appPid: appPid, context: context)
         }
         let (hit, owner) = signposted("click.hitTest") { () -> (AXUIElement?, pid_t) in
           let hit = hitTest(window: placed.window, at: placed.point)
@@ -347,6 +370,10 @@ extension Engine {
         }
         let windowID = signposted("click.windowNumber") { windowNumber(of: placed.window, pid: appPid, frame: placed.windowFrame) }
         let target = ClickTarget(point: placed.point, windowFrame: placed.windowFrame, windowID: windowID, pid: owner)
+        // #259's record; the window's frame is read again just before the events, on every path that reaches them.
+        meta.coordinateClick = CoordinateClickRecord(screenshotPoint: given, windowPoint: placed.local, target: target)
+        var frameBeforePost: CGRect?
+        defer { meta.coordinateClick?.frameBeforePost = frameBeforePost }
         let (route, activation) = signposted("click.route") { () -> (InputRoute, FakeActivation?) in
           let route = coordinateClickRoute(forced: forced, foreground: foreground)
           let sparing = button == .left ? nil : activationSparing(button: button, target: pointArea(placed.point, hitFrame: hit.flatMap { frame(of: $0) }))
@@ -358,7 +385,8 @@ extension Engine {
             try signposted("click.deliver") { try deliverClick(target, route: route, button: button, count: count, activation: activation, activations: heldActivations,
                              foreground: route == .foreground ? ForegroundAssist(appPid: appPid) : nil,
                              targetActive: { NSRunningApplication(processIdentifier: owner)?.isActive == true },
-                             beforeActivating: guarding.checkInFlight, beforePosting: guarding.checkInFlight,
+                             beforeActivating: guarding.checkInFlight,
+                             beforePosting: { try guarding.checkInFlight(); frameBeforePost = frame(of: placed.window) },
                              announce: { cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(placed.point)) },
                              post: gatedPost, meta: &meta) }
           }
@@ -480,7 +508,8 @@ extension Engine {
   private func forcedActivation(_ route: InputRoute?, pid: pid_t, application: AXUIElement, guarding: InterventionGuard,
                                 meta: inout InputMeta) throws -> (() -> Bool)? {
     guard route == .activation else { return nil }
-    return try heldActivations.acquire(pid: pid, beforeActivating: guarding.checkInFlight, make: {
+    return try heldActivations.acquire(pid: pid, holder: ActivationHolder(connection: meta.context.connection.id),
+                                       beforeActivating: guarding.checkInFlight, make: {
       FakeActivation(pid: pid, window: primaryWindow(of: application) ?? application)
     }, meta: &meta)
   }

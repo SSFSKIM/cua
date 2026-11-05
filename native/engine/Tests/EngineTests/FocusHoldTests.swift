@@ -42,6 +42,25 @@ final class FocusHoldTests: XCTestCase {
                   activation: { self.activation(seam, pid: pid) }, beforeActivating: beforeActivating, meta: &meta)
   }
 
+  /// A focus hold (a ⌘ key equivalent's, an element action's or write's) posts no left mouse down of its own: on Chrome,
+  /// whose activation point lies outside its frame, the inert click goes right after subtype 1, before the holder's
+  /// input, so its keys and actions reach a key window (#187); the release adds no second click.
+  func testAFocusHoldOnChromeTakesTheInertClickBeforeItsInput() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try holdFocus(app: "chrome", pid: target, connection: connection, activations: activations, activation: {
+      seam.activationPoint = CGPoint(x: -1, y: 1441)
+      return FakeActivation(pid: self.target, window: AXUIElementCreateApplication(self.target), windowFrame: self.window, windowID: 41,
+                            system: seam.system)
+    }, beforeActivating: {}, meta: &meta)
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)])
+    XCTAssertEqual(seam.posts[1].location, CGPoint(x: -1, y: 1441))
+    XCTAssertEqual(meta.activationClickKind, .inertOutside(.activationPoint, .early))
+    connection.endFocusHold()
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)])
+  }
+
   /// The vendor's lifecycle: the first action activates, the ones after it find the app already believing itself active
   /// (no second activation, no deactivation between), and the release withdraws it once.
   func testTheFirstActionActivatesAndTheNextOnesRunInsideTheHold() throws {
@@ -322,5 +341,266 @@ final class FocusHoldTests: XCTestCase {
     XCTAssertEqual(activations.holders(target), 1)
     connection.endFocusHold()
     XCTAssertEqual(seam.posts.map(\.kind).last, .appKit(2))
+  }
+
+  // MARK: #261's hold join (the Decision Log's 2026-11-05 entry): a pointer re-arms its own connection's spent hold
+
+  private let outside = CGPoint(x: -1, y: 1441)
+
+  /// Chrome's activation: its point outside the frame, so a no-click holder spends the arm with the inert click there.
+  private func chrome(_ seam: GuardSeam, framed: Bool = true) -> FakeActivation {
+    seam.activationPoint = outside
+    return FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: framed ? window : nil, windowID: 41,
+                          system: seam.system)
+  }
+
+  /// A ⌘ key equivalent's focus hold on Chrome.
+  private func holdChrome(_ connection: ConnectionState, _ seam: GuardSeam, framed: Bool = true, meta: inout InputMeta) throws {
+    try holdFocus(app: "chrome", pid: target, connection: connection, activations: activations, activation: { self.chrome(seam, framed: framed) },
+                  beforeActivating: {}, meta: &meta)
+  }
+
+  private func meta(connection id: Int) -> InputMeta {
+    InputMeta(ExecutionContext(connection: ConnectionState(id: id, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+  }
+
+  /// A left coordinate click into Chrome on connection 1's request.
+  private func clickChrome(_ seam: GuardSeam, beforePosting: () throws -> Void = {}) throws -> InputMeta {
+    var clickMeta = meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: chrome(seam), activations: activations,
+                     targetActive: { false }, beforePosting: beforePosting, post: seam.system.post, meta: &clickMeta)
+    return clickMeta
+  }
+
+  private let inertClick: [GuardPost.Kind] = [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)]
+  private let click: [GuardPost.Kind] = [.mouse(.leftMouseDown), .mouse(.leftMouseUp)]
+
+  /// ⌘L into background Chrome, then a coordinate click into it within the hold: the hold's inert click spent the arm,
+  /// so the click's own mouse down would meet a key window of an app believing itself active (#200's ordering click).
+  /// The click withdraws the hold's activation and runs its own, whose arm its mouse down consumes with no ordering; the
+  /// focus hold carries over under it, the next ⌘ key runs inside it, and the hold's end withdraws it once.
+  func testAPointerJoiningItsOwnConnectionsSpentHoldReArmsIt() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var keys = meta()
+    try holdChrome(connection, seam, meta: &keys)
+    XCTAssertEqual(mouseKinds(seam), inertClick, "the hold spent its arm early")
+    var during = 0
+    let clicked = try clickChrome(seam, beforePosting: { during = self.activations.holders(self.target) })
+    XCTAssertEqual(Array(mouseKinds(seam).dropFirst(3)), [.appKit(2), .appKit(1)] + click, "withdrawn, re-armed, then the click alone")
+    XCTAssertEqual(seam.posts.dropFirst(5).first?.location, clickTarget().point, "the click's own mouse down consumed the new arm")
+    XCTAssertEqual(clicked.activationClickKind, .action)
+    XCTAssertEqual(clicked.wire["activationClickKind"] as? NSDictionary, ["kind": "action", "when": "consumedByAction"])
+    XCTAssertEqual(clicked.activationClick, .outsideFrame, "recorded as a run's")
+    XCTAssertNotNil(clicked.activationGuardMs, "the new activation's guard ran")
+    XCTAssertEqual(during, 2, "the hold's share kept beside the click's")
+    XCTAssertEqual(activations.holders(target), 1, "the focus hold carries over")
+
+    var next = meta()
+    try holdChrome(connection, seam, meta: &next)
+    XCTAssertEqual(seam.posts.count, 7, "the next ⌘ key runs inside the new activation, its window key")
+    XCTAssertNil(next.activationGuardMs)
+    connection.endFocusHold()
+    XCTAssertEqual(mouseKinds(seam).last, .appKit(2))
+    XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(2) }.count, 2, "the old activation's withdrawal and the hold's end, once each")
+    XCTAssertEqual(seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.count, 2, "no release click")
+    XCTAssertEqual(activations.holders(target), 0)
+  }
+
+  /// Unchanged: a holder with no left mouse down of its own (keys, an element action) joining an unconsumed hold posts
+  /// the kept inert click before its input, and one joining a spent hold, on its own connection too, posts nothing.
+  func testANoClickJoinerStillConsumesEarlyAndNeverReArms() throws {
+    let seam = GuardSeam(frontmost: user)
+    var pointerMeta = meta()
+    let pointer = try activations.acquire(pid: target, holder: ActivationHolder(connection: 1), postsLeftMouseDown: true, beforeActivating: {},
+                                          make: { self.chrome(seam) }, meta: &pointerMeta)
+    XCTAssertEqual(mouseKinds(seam), [.appKit(1)], "the pointer holder's arm, unconsumed")
+    let connection = connection()
+    var keys = meta()
+    try holdChrome(connection, seam, meta: &keys)
+    XCTAssertEqual(mouseKinds(seam), inertClick, "the joiner consumed the arm before its input")
+    XCTAssertEqual(keys.activationClickKind, .inertOutside(.activationPoint, .early))
+    _ = pointer()
+    var forced = meta()
+    let key = try activations.acquire(pid: target, holder: ActivationHolder(connection: 1), beforeActivating: {}, make: {
+      XCTFail("shared, not made")
+      return self.chrome(seam)
+    }, meta: &forced)
+    XCTAssertEqual(seam.posts.count, 3, "spent already: nothing more, no re-arming")
+    XCTAssertNil(forced.activationClickKind)
+    XCTAssertEqual(activations.holders(target), 2)
+    _ = key()
+    connection.endFocusHold()
+    XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)])
+  }
+
+  /// Unchanged: a pointer joining a hold whose arm is still set (its click skipped: no frame to place it outside) shares
+  /// it, and its own mouse down consumes that arm.
+  func testAPointerJoiningAHoldWithItsArmStillSetSharesIt() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var keys = meta()
+    try holdChrome(connection, seam, framed: false, meta: &keys)
+    XCTAssertEqual(mouseKinds(seam), [.appKit(1)])
+    XCTAssertEqual(keys.activationClickKind, .skipped(.noFrame))
+    let clicked = try clickChrome(seam)
+    XCTAssertEqual(mouseKinds(seam), [.appKit(1)] + click, "no withdrawal, no second activation")
+    XCTAssertNil(clicked.activationGuardMs, "the click shared the held activation")
+    XCTAssertEqual(clicked.activationClickKind, .action, "its mouse down consumed the held arm")
+    connection.endFocusHold()
+    XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(2) }.count, 1)
+  }
+
+  /// Today's join while another connection holds the activation, alone or beside the clicker's own hold: that holder may
+  /// be mid-action under it, so it is never withdrawn (the click's raise is the delivery guard's to repair).
+  func testAPointerJoiningAHoldOfAnotherConnectionSharesIt() throws {
+    for ownHoldToo in [false, true] {
+      let seam = GuardSeam(frontmost: user)
+      let other = ConnectionState(id: 2, fd: -1, menuSpan: Clock().span(), focusHold: Clock().span())
+      var otherKeys = meta(connection: 2)
+      try holdChrome(other, seam, meta: &otherKeys)
+      let own = connection()
+      if ownHoldToo {
+        var keys = meta()
+        try holdChrome(own, seam, meta: &keys)
+      }
+      let clicked = try clickChrome(seam)
+      XCTAssertEqual(mouseKinds(seam), inertClick + click, "no withdrawal, no second activation: own hold too \(ownHoldToo)")
+      XCTAssertNil(clicked.activationGuardMs)
+      own.endFocusHold()
+      other.endFocusHold()
+      XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(2) }.count, 1)
+      XCTAssertEqual(activations.holders(target), 0)
+    }
+  }
+
+  /// Today's join while the clicker's own connection holds the activation for a recorded menu: withdrawing it could close
+  /// the menu the model is about to click into.
+  func testAPointerJoiningARecordedMenusSpanSharesIt() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var menuMeta = meta()
+    try recordHeldMenu(Engine.element(90), app: "chrome", pid: target, connection: connection, activations: activations,
+                       activation: { self.chrome(seam) }, beforeActivating: {}, meta: &menuMeta)
+    XCTAssertEqual(mouseKinds(seam), inertClick)
+    let clicked = try clickChrome(seam)
+    XCTAssertEqual(mouseKinds(seam), inertClick + click, "the menu's activation kept")
+    XCTAssertNil(clicked.activationGuardMs)
+    connection.endMenuInteraction()
+    XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(2) }.count, 1)
+  }
+
+  /// The re-arming's new activation fails its guard: the click is refused as a run's is, its activation undone; the old
+  /// one stays withdrawn under the focus hold, whose share is kept, so its next ⌘ key activates again with its guard and
+  /// its end withdraws that one once.
+  func testAReArmingWhoseGuardFailsLeavesTheHoldToActivateAgain() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var keys = meta()
+    try holdChrome(connection, seam, meta: &keys)
+    let failing = GuardSeam(frontmost: user, targetInFront: { _ in true })  // the new activation's window never stays behind
+    var clickMeta = meta()
+    XCTAssertThrowsError(try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: chrome(failing),
+                                          activations: activations, targetActive: { false }, post: failing.system.post, meta: &clickMeta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "activationFailed")
+    }
+    XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)], "the hold's activation withdrawn")
+    XCTAssertEqual(mouseKinds(failing), inertClick + [.appKit(2)], "the new one undone, its kept click at the release")
+    XCTAssertNotNil(clickMeta.activationGuardMs)
+    XCTAssertEqual(activations.holders(target), 1, "the focus hold keeps its share")
+
+    var next = meta()
+    try holdChrome(connection, seam, meta: &next)
+    XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)] + inertClick, "activated again for the hold's next key")
+    XCTAssertNotNil(next.activationGuardMs)
+    connection.endFocusHold()
+    XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)] + inertClick + [.appKit(2)])
+    XCTAssertEqual(activations.holders(target), 0)
+  }
+
+  /// The review of 4ea25f9f..4d68fee4: a click that re-armed the hold and then stopped before its events (a user event)
+  /// leaves the hold no set arm, so the hold's next ⌘ key reaches a key window.
+  func testAReArmingClickStoppedBeforeItsEventsLeavesTheHeldKeyNoSetArm() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var keys = meta()
+    try holdChrome(connection, seam, meta: &keys)
+    XCTAssertThrowsError(try clickChrome(seam, beforePosting: { throw userChanged("TextEdit") }))
+    var next = meta()
+    try holdChrome(connection, seam, meta: &next)
+    XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)] + inertClick, "withdrawn, re-armed, and the arm consumed before the key")
+    connection.endFocusHold()
+    XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)] + inertClick + [.appKit(2)], "withdrawn once more, no release click")
+    XCTAssertEqual(activations.holders(target), 0)
+  }
+
+  /// The release's guard: a re-arming pointer whose events were never made, leaving only no-click holders, posts the
+  /// kept inert click as its share is released, recorded in its own meta as the release's.
+  func testAReArmingPointerReleasedWithItsArmSetPostsTheKeptClick() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var keys = meta()
+    try holdChrome(connection, seam, meta: &keys)
+    var pointerMeta = meta()
+    XCTAssertThrowsError(try deliverPointer(to: target, route: .activation, activation: chrome(seam), activations: activations,
+                                            postsLeftMouseDown: true, post: seam.system.post, meta: &pointerMeta) { [] }) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "eventCreationFailed")
+    }
+    XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)] + inertClick, "the kept click at the pointer's release")
+    XCTAssertEqual(seam.posts.dropFirst(6).first?.location, outside)
+    XCTAssertEqual(pointerMeta.activationClickKind, .inertOutside(.activationPoint, .release))
+    XCTAssertEqual(activations.holders(target), 1)
+    connection.endFocusHold()
+    XCTAssertEqual(seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.count, 2, "no second release click")
+  }
+
+  /// The held path's guard: a ⌘ key inside a hold whose arm is set (a re-arming pointer's share still awaiting its own
+  /// mouse down) posts the kept inert click before its input, recorded in its meta, as a no-click joiner does.
+  func testAHeldKeyConsumesASetArmBeforeItsInput() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var keys = meta()
+    try holdChrome(connection, seam, meta: &keys)
+    var pointerMeta = meta()
+    let pointer = try activations.acquire(pid: target, holder: ActivationHolder(connection: 1), postsLeftMouseDown: true, beforeActivating: {},
+                                          make: { self.chrome(seam) }, meta: &pointerMeta)
+    XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2), .appKit(1)], "re-armed, the arm set")
+    var next = meta()
+    try holdChrome(connection, seam, meta: &next)
+    XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)] + inertClick, "consumed before the key")
+    XCTAssertEqual(next.activationClickKind, .inertOutside(.activationPoint, .early))
+    XCTAssertNil(next.activationGuardMs, "no activation ran for it")
+    _ = pointer()
+    XCTAssertEqual(seam.posts.count, 7, "nothing more at the pointer's release")
+    connection.endFocusHold()
+    XCTAssertEqual(mouseKinds(seam).last, .appKit(2))
+  }
+
+  /// The re-review of 4d68fee4..23d68dae: the held path runs the in-flight intervention check under the registry's lock
+  /// before it may consume a set arm, so a user event stops the held key with nothing posted.
+  func testAUserEventStopsAHeldKeyBeforeItConsumesASetArm() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var keys = meta()
+    try holdChrome(connection, seam, meta: &keys)
+    var pointerMeta = meta()
+    let pointer = try activations.acquire(pid: target, holder: ActivationHolder(connection: 1), postsLeftMouseDown: true, beforeActivating: {},
+                                          make: { self.chrome(seam) }, meta: &pointerMeta)
+    let armed = seam.posts.count
+    var underLock = false
+    var next = meta()
+    XCTAssertThrowsError(try holdFocus(app: "chrome", pid: target, connection: connection, activations: activations,
+                                       activation: { XCTFail("held, not made"); return self.chrome(seam) }, beforeActivating: {
+                                         underLock = self.activations.isLocked
+                                         throw userChanged("Chrome")
+                                       }, meta: &next)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "userIntervened")
+    }
+    XCTAssertTrue(underLock, "the check runs once the registry's lock is held")
+    XCTAssertEqual(seam.posts.count, armed, "nothing posted: the arm is left set")
+    XCTAssertNil(next.activationClickKind)
+    _ = pointer()
+    connection.endFocusHold()
+    XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)] + inertClick + [.appKit(2)], "the kept click at the pointer's release")
   }
 }

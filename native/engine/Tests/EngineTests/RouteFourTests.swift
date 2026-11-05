@@ -224,7 +224,9 @@ final class ClickInterventionTests: XCTestCase {
                                           post: seam.system.post, meta: &meta)) { error in
       XCTAssertEqual((error as? EngineError)?.errorName, "userIntervened")
     }
-    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .appKit(2)], "the activation and its withdrawal, never the click")
+    XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)],
+                   "the activation, then, the click never posted, the kept inert click before its withdrawal (#187)")
+    XCTAssertFalse(seam.posts.contains { $0.location == CGPoint(x: 300, y: 400) }, "never the click")
     XCTAssertNil(meta.startedAt)
   }
 }

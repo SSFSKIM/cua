@@ -4,9 +4,10 @@
 // Mac: sessions through ./session.mjs, cues spoken with `say`, the go file the operator touches once the owner is done,
 // the harness scenes' activation, the engine's stop and status through this checkout's CLI, engine.json's switch, the
 // approved bundle's activation watcher and focus probe, item 1's screen recording (./recording.mjs), and #200's window
-// placement, order watcher, delivery reads and the fixture's relaunch (./raise.mjs), and #244's first-observation reads of
-// the fixture's accessibility record (./first-observation.mjs). Whatever the item changed outside its sessions is put back
-// in `finally`: engine.json as it was, the watchers and the recorder stopped, every session closed.
+// placement, order watcher, delivery reads and the fixture's relaunch (./raise.mjs), #244's first-observation reads of
+// the fixture's accessibility record (./first-observation.mjs), and #187's re-slot (./item-187.mjs: the composition, each
+// row's readings, the confirming cell's relaunch of Chrome and its activation). Whatever the item changed outside its sessions is
+// put back in `finally`: engine.json as it was, the watchers and the recorder stopped, every session closed.
 import {execFileSync, spawn} from 'node:child_process';
 import {appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
@@ -26,6 +27,9 @@ import {BUILT_IN_SCREEN, coverOver, farPoint, liveWindowList, overlaysAbove, pla
 import {liveSourceSwitch, restoreAfterFailure, sourceTargetProblem, switchSource} from './input-source.mjs';
 import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRecording, stopRecording} from './recording.mjs';
 import {firstTasks} from './first-observation.mjs';
+import {item187Tasks, liveDeps187, stop187} from './item-187.mjs';
+import {item188Tasks, stop188} from './item-188.mjs';
+import {readConsent} from './input-source.mjs';
 import {liveElementFrame, liveMoveWindow, raiseTasks, stopRaiseWatch} from './raise.mjs';
 import {openDriven} from './session.mjs';
 import {latinSourceProblem, STILL_TAIL_MS, STILL_WAIT_MAX_MS} from './timing.mjs';
@@ -224,6 +228,8 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
     // What the finally puts back: engine.json, and the engine stopped so none keeps running under the changed file.
     cleanup: async ctx => {
       await stopRaiseWatch(ctx);
+      await stop187(ctx);
+      stop188(ctx);
       if (ctx.settingsChanged) {
         await ctx.io.tasks['engine-json-restore']();
         await ctx.io.tasks['engine-stop']();
@@ -242,6 +248,12 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
     textView: textViewOf, moveWindow: liveMoveWindow(), elementFrame: liveElementFrame(), scenes: args => scenes(args, 120_000)}));
   // #244's tasks (./first-observation.mjs): the relaunch with the variant's switch, the marks, the record's reads.
   Object.assign(io.tasks, firstTasks({run}));
+  // #187's tasks (./item-187.mjs): the slot's preconditions and placement, the composition, each row's readings, the
+  // cell's relaunch of Chrome (the scenes CLI) and its activation. #188's tasks over the same deps (./item-188.mjs): the
+  // ABC gate, the matrix rows' readings, cell 3's range reads, #259's geometry.
+  const deps187 = liveDeps187({io, run, out, guard, cli: args => cli(args), probe: args => runProbe(enginePaths().bundle, args),
+    bundle: enginePaths().bundle, windowList: () => liveWindowList(), moveWindow: liveMoveWindow(), consent: () => readConsent(out), scenes: args => scenes(args, 120_000)});
+  Object.assign(io.tasks, item187Tasks(deps187), item188Tasks(deps187));
   function writeSettings(write) {
     const text = existsSync(settingsFile) ? readFileSync(settingsFile, 'utf8') : null;
     if (existsSync(before) || existsSync(`${before}.absent`)) throw new Error(`${before} exists from an earlier run: restore engine.json from it by hand, then remove it`);
@@ -256,7 +268,7 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
 }
 
 const describe = step => {
-  if (step.open) return `open session ${step.open}${step.device ? ` on the device ${step.device}` : ''} on ${step.scenes.join(', ')}${step.bind === false ? ' (none bound)' : ''}${step.env ? ` with ${JSON.stringify(step.env)}` : ''}${step.engine ? ` (${step.engine} engine)` : ''}`;
+  if (step.open) return `open session ${step.open}${step.device ? ` on the device ${step.device}` : ''} on ${step.scenes.join(', ')}${step.bind === false ? ' (none bound)' : Array.isArray(step.bind) ? ` (${step.bind.join(', ')} bound)` : ''}${step.env ? ` with ${JSON.stringify(step.env)}` : ''}${step.engine ? ` (${step.engine} engine)` : ''}`;
   if (step.run) return `${step.run}: ${step.label}${step.keys ? ` (only while ${step.keys} is frontmost)` : ''}`;
   if (step.together) return `at once: ${step.together.map(describe).join(' | ')}`;
   if (step.cue) return `CUE (spoken to the owner, then ${step.ms} ms): ${step.cue}`;
@@ -309,8 +321,8 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
       if (step.when && !step.when(ctx.results)) { record({step: n, kind: 'skipped', text: describe(step)}); continue; }
       if (step.open) {
         ctx.sessions[step.open] = await io.open({name: step.open, engine: step.engine ?? engine, env: step.env ?? {}, scenes: step.scenes.map(io.scene), device: step.device ?? null,
-          bind: step.bind !== false});
-        record({step: n, kind: 'open', session: step.open, env: step.env ?? {}, engine: step.engine ?? engine, ...(step.bind === false ? {bound: false} : {})});
+          bind: step.bind ?? true});
+        record({step: n, kind: 'open', session: step.open, env: step.env ?? {}, engine: step.engine ?? engine, ...(step.bind === false || Array.isArray(step.bind) ? {bound: step.bind} : {})});
       } else if (step.run) await runCell(step);
       else if (step.together) await Promise.all(step.together.map(runCell));
       else if (step.cue) { record({step: n, kind: 'cue', text: step.cue}); await io.cue(step.cue); await io.wait(step.ms); }
@@ -328,7 +340,7 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
       else if (step.series) record({step: n, kind: 'series', series: step.series, counts: step.counts});
       else if (step.task) {
         const result = await io.tasks[step.task](step.args ?? [], ctx);
-        if (step.task === 'engine-json-off' || step.task === 'engine-json-arm') ctx.settingsChanged = true;
+        if (['engine-json-off', 'engine-json-arm'].includes(step.task)) ctx.settingsChanged = true;
         if (step.task === 'engine-json-restore') ctx.settingsChanged = false;
         if (step.task === 'watch-start') ctx.watch = result.watch;
         if (step.task === 'watch-stop') ctx.watch = null;

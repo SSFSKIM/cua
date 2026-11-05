@@ -347,7 +347,7 @@ return {ok: shown !== null && shown.from > __m.before, outcome: {moved: shown !=
 const named = name => `indexOfTarget(ax, ${j(name)})`;
 const statusText = (container, pattern) => `elementLines(ax).filter(l => parentIndexOf(ax, l.index) === ${container}).map(l => l.content).find(c => ${pattern}.test(c)) ?? null`;
 // The text fields' known contents for the replacing and dragging cases: lines whose words occur once each.
-const FIELD_LINES = ['alpha one', 'bravo two', 'charlie three', 'delta four', 'echo five', 'foxtrot six', 'golf seven', 'hotel eight'];
+export const FIELD_LINES = Object.freeze(['alpha one', 'bravo two', 'charlie three', 'delta four', 'echo five', 'foxtrot six', 'golf seven', 'hotel eight']);
 const FIELD_VALUE = j(FIELD_LINES.join('\n'));
 // A web field's selectText: the field given a fresh text holding "matrix" once, which the act selects.
 const selectMatrix = (kase, name) => ({method: 'selectText', case: kase, expect: 'outcome',
@@ -415,6 +415,10 @@ return {ok: applied, outcome: {applied}};`},
 
 // ---- The Electron fixture -----------------------------------------------------------------------------------------------
 
+// The fixture in its 720 x 560 window: the text field's second to fourth lines, below the 28-point title bar and the
+// body's 16-pixel margin (fixtures/electron/fixture.css), for the drag case and #188's positional click
+// (scripts/cursor-sitting/item-188.mjs).
+export const ELECTRON_FIELD_LAYOUT = Object.freeze({window: Object.freeze([720, 560]), from: Object.freeze([30, 69]), to: Object.freeze([300, 99])});
 // The fixture status's press count, or null (the route A/B cell polls it too: ./route-ab.mjs).
 export const pressed = `(() => { const status = ${statusText(named('Fixture status'), '/Pressed \\d+ times?/')}; const m = /Pressed (\\d+) times?/.exec(status ?? ""); return m ? Number(m[1]) : null; })()`;
 const electron = [
@@ -446,9 +450,7 @@ return {ok: moved, outcome: {moved}};`},
   selectMatrix('text', 'Fixture text'),
   {method: 'paste', case: 'replace', expect: 'outcome', keys: ['paste'],
     prepare: `${selectedIn({find: named('Fixture text'), value: FIELD_VALUE, word: j('golf')})}\nreturn {ready: true};`, act: `await __app.paste(${j(PASTED)});`, check: replaced(named('Fixture text'), PASTED)},
-  // The fixture in its 720 x 560 window: the text field's second to fourth lines, below the 28-point title bar and the
-  // body's 16-pixel margin (fixtures/electron/fixture.css).
-  dragSelect({find: named('Fixture text'), value: FIELD_VALUE, layout: {window: [720, 560], from: [30, 69], to: [300, 99]}}),
+  dragSelect({find: named('Fixture text'), value: FIELD_VALUE, layout: ELECTRON_FIELD_LAYOUT}),
   refusal({method: 'setValue', kase: 'notSettable', find: named('Fixture button'), act: 'await __app.setValue(__m.index, "x");', watch: `[${pressed}, valueOfIndex(ax, ${named('Fixture text')})]`,
     sentence: REFUSALS.notSettable}),
 ];

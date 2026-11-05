@@ -107,13 +107,32 @@
 //       <out>/item-244-<variant>-<engine>.jsonl. `drive` then judges the engine's variants; `judge` writes every variant
 //       on both engines to <out>/item-244.md and prints it. Exit 1 unless cua's plain variant passes (judge), or unless
 //       nothing stopped and every judged variant run passes (drive).
+//   cursor-sitting.mjs paste-187 drive --run <dir> --out <dir> [--part reslot|premise|before|cell|composing|controls|259|188|188-vendor-click | --vendor]
+//                                    [--saved <dir>] [--quiet] [--dry-run]
+//   cursor-sitting.mjs paste-187 judge --out <dir> [--addendum]
+//       #187's re-slot (./cursor-sitting/item-187.mjs; the runbook's "Item 187"): pastes into Chrome for Testing's
+//       counters page behind a Hangul composition in TextEdit's run window, on the shipping build. `drive` (the default
+//       part, reslot) checks the preconditions (the owner's yes to the source switch recorded, every scene up, Chrome on
+//       the counters page), places the harness windows, runs the confirming cell's AFTER half (three background-paste
+//       repetitions: Chrome relaunched by the scenes tool and placed, one background paste with TextEdit in front,
+//       Chrome activated by `open -a`, the key read, one frontmost paste; then the AXPress repetition, when the premise
+//       part opened it), places the windows again, runs chrome/composing@textedit as 2 blocks of 9, the three controls
+//       once each and #259's diagnostic cell (recorded only), each item recorded in <out>/item-<name>.jsonl, and selects
+//       the owner's source again; a person-touched repetition is replaced once, and more than three person-touched items
+//       in the out directory stop the drive. `--part premise` (the preflight) times AXPress on freshly relaunched
+//       Chromes; `--part before --saved <the save's directory>` runs the cell's BEFORE half once the owner's engine is put
+//       back (the put-back read against the save); `--part cell`, `composing`, `controls` rerun that part alone, `259`
+//       the #259 cell alone; `--part 188` runs #188's items alone, `188-vendor-click` only its cell 3 on the vendor's
+//       engine; `--vendor` the vendor's lanes (recorded only). `judge` writes <out>/item-187.md; with `--addendum` it
+//       writes the re-judgment by the amended predicates to <out>/item-187-rejudge.md and never touches item-187.md.
+//       Exit 1 unless the bar holds (the item's header).
 //   cursor-sitting.mjs remote prepare|enroll|run --kit <dir> [--port n] [--run <dir> --out <dir>] [--quiet] [--dry-run]
 //       Acceptance 8's loopback device (./cursor-sitting/remote.mjs): prepare the kit (and print what it still needs),
 //       enrol it on a loopback relay, then run: the relay and the agent started, three client sessions driven
 //       (recorded as item 8), both stopped.
 import {execFileSync} from 'node:child_process';
 import {appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync} from 'node:fs';
-import {isAbsolute, join, resolve} from 'node:path';
+import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
 import {ORDER_TARGETS, route3Plan, writeFrames, writeLag, writeOrder} from './cursor-sitting/clip.mjs';
@@ -125,6 +144,7 @@ import {PLANS} from './cursor-sitting/plans.mjs';
 import {CASES, elementFrameTool, ENGINES, itemOf, judgeCase, moveWindowTool, orderFileOf, orderLines, orderWatchProbe, placeSteps, raiseMarkdown,
   raiseSteps} from './cursor-sitting/raise.mjs';
 import {ENGINES as FIRST_ENGINES, firstMarkdown, firstSteps, itemOf as firstItemOf, judgeFirst, VARIANTS} from './cursor-sitting/first-observation.mjs';
+import {ADDENDUM_FILE, axStateTool, driveItems, item187Addendum, item187Markdown, judge187, judgedOk, menuTool, PARTS as PARTS_187, plan187, slotTouches} from './cursor-sitting/item-187.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
 import {liveIo, runSteps} from './cursor-sitting/runner.mjs';
 import {clipPathProblem, REPO_ROOT} from './cursor-sitting/recording.mjs';
@@ -137,7 +157,7 @@ const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'string'}, aside: {type: 'string'}, run: {type: 'string'}, out: {type: 'string'},
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
   arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'}, source: {type: 'string'}, 'no-clip': {type: 'boolean', default: false}, still: {type: 'boolean', default: false}, control: {type: 'boolean', default: false},
-  case: {type: 'string'}, variant: {type: 'string'}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}};
+  case: {type: 'string'}, variant: {type: 'string'}, part: {type: 'string'}, vendor: {type: 'boolean', default: false}, saved: {type: 'string'}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}, addendum: {type: 'boolean', default: false}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
 const absolute = (values, name) => {
@@ -330,6 +350,48 @@ async function driveFirstObservation(values) {
   return !stopped && judged.every(j => j.verdict === 'recorded' || j.verdict === 'PASS') ? 0 : 1;
 }
 
+// #187's evidence: every item's rows, from <out>/item-187-<name>.jsonl and #188's and #259's <out>/item-18[8]|259-<name>.jsonl
+// (the watchers' files left out). -> {item: rows}.
+export function read187(out) {
+  if (!existsSync(out)) return {};
+  return Object.fromEntries(readdirSync(out).map(f => f.match(/^item-((?:18[78]|259)-[\w-]+)\.jsonl$/)?.[1]).filter(name => name && !name.endsWith('-order'))
+    .map(name => [name, readJsonl(join(out, `item-${name}.jsonl`))]));
+}
+
+// #187's drive: the plan's items in order, each its own item (./cursor-sitting/item-187.mjs driveItems): an item that
+// throws is marked in its jsonl and stops the items after it but the last, which selects the owner's source again; a
+// cell repetition, #259's cell, a #188 item or an item the person touched that throws is marked and the drive goes on.
+// A person-touched cell repetition is replaced once; more than three person-touched items in the slot (this out
+// directory: every attempt of every item counts, so the BEFORE half carries the re-slot's and a re-run part keeps its
+// earlier attempts' touches) stop the drive.
+async function drive187(values) {
+  const part = values.part ?? 'reslot';
+  if (!PARTS_187.includes(part)) throw new Error(`--part takes ${PARTS_187.join(', ')}`);
+  if (values.vendor && values.part) throw new Error('--vendor runs the vendor lane alone; it takes no --part');
+  const out = absolute(values, 'out'), dryRun = values['dry-run'];
+  const run = dryRun ? values.run ?? '/nonexistent' : absolute(values, 'run');
+  if (part === 'before' && !dryRun && !values.saved) throw new Error('--part before takes --saved <the directory `save` wrote before the build>, read for the put-back');
+  const saved = values.saved ? absolute(values, 'saved') : '<saved>';
+  const io = liveIo({run, out, quiet: values.quiet});
+  const plan = plan187({part, vendor: values.vendor, saved});
+  const lines = file => (existsSync(file) ? readJsonl(file) : []);
+  const evidenceOf = item => ({rows: lines(join(out, `item-${item}.jsonl`)), activations: lines(join(out, `item-${item}-activations.ndjson`))});
+  // The slot's count so far: every person-touched item the out directory records, in every attempt of every item (a
+  // part run again included), so no re-run resets the stop rule.
+  const seed = dryRun ? 0 : Object.keys(read187(out)).filter(item => item.startsWith('187-'))
+    .reduce((n, item) => n + (({rows, activations}) => slotTouches(rows, activations))(evidenceOf(item)), 0);
+  let steps = 0;
+  const {stopped} = await driveItems(plan, {seed, print,
+    runItem: async ({item, steps: itemSteps}) => { steps += itemSteps.length; try { await runSteps(itemSteps, {item, out, io, dryRun}); return null; } catch (error) { return error; } },
+    evidenceOf: item => (dryRun ? {rows: [], activations: []} : evidenceOf(item)),
+    mark: (item, error, touched) => appendFileSync(join(out, `item-${item}.jsonl`), `${JSON.stringify({item, at: Date.now(), kind: 'stopped', error: error.message, ...(touched.count ? {personTouched: touched.foreign ?? true} : {})})}\n`)});
+  if (dryRun) { print(`dry run: ${steps} steps, nothing sent`); return 0; }
+  const judged = judge187(read187(out));
+  writeFileSync(join(out, 'item-187.md'), item187Markdown(judged));
+  print(item187Markdown(judged));
+  return !stopped && judgedOk(judged) ? 0 : 1;
+}
+
 async function drive(steps, {item, values, gap = null}) {
   const out = absolute(values, 'out');
   const run = values['dry-run'] ? values.run ?? '/nonexistent' : absolute(values, 'run');
@@ -348,6 +410,8 @@ export async function main(argv) {
     print(`#200's order watcher: ${orderWatchProbe()}`);
     print(`#200's window mover: ${moveWindowTool()}`);
     print(`#200's element-frame reader: ${elementFrameTool()}`);
+    print(`#187's menu reader: ${menuTool()}`);
+    print(`#187's key-window and #259's geometry reader: ${axStateTool()}`);
     return 0;
   }
   if (command === 'save') {
@@ -517,6 +581,26 @@ export async function main(argv) {
     }
     throw new Error('first-observation takes drive or judge');
   }
+  if (command === 'paste-187') {
+    const sub = positionals[0];
+    if (sub === 'drive') return drive187(values);
+    if (sub === 'judge') {
+      const out = absolute(values, 'out'), judged = judge187(read187(out));
+      // --addendum: the re-judgment by the amended predicates, beside the slot's report; item-187.md is never touched.
+      if (values.addendum) {
+        let commit = null;
+        try { commit = execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {cwd: dirname(fileURLToPath(import.meta.url)), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']}).trim() || null; } catch {}
+        const text = item187Addendum(judged, {commit});
+        writeFileSync(join(out, ADDENDUM_FILE), `${text.replace(/\n+$/, '')}\n`);
+        print(text);
+        return judgedOk(judged) ? 0 : 1;
+      }
+      writeFileSync(join(out, 'item-187.md'), item187Markdown(judged));
+      print(item187Markdown(judged));
+      return judgedOk(judged) ? 0 : 1;
+    }
+    throw new Error('paste-187 takes drive or judge');
+  }
   if (command === 'remote') {
     const kit = absolute(values, 'kit'), sub = positionals[0];
     if (sub === 'prepare') {
@@ -545,7 +629,7 @@ export async function main(argv) {
     }
     throw new Error('remote takes prepare, enroll or run');
   }
-  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | source consent|restore | clip frames|order | raise drive|judge | first-observation drive|judge | remote prepare|enroll|run (see the header)');
+  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | source consent|restore | clip frames|order | raise drive|judge | first-observation drive|judge | paste-187 drive|judge | remote prepare|enroll|run (see the header)');
 }
 
 if (process.argv[1] && SCRIPT === resolve(process.argv[1])) {

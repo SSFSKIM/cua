@@ -1,0 +1,28 @@
+{"item":"187-end","at":1793555805067,"kind":"start","steps":3,"dryRun":false}
+{"item":"187-end","at":1793555805067,"step":1,"kind":"say","text":"#187: the owner's input source selected again, TextEdit's run window on top"}
+{"item":"187-end","at":1793555805550,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":41418,"bundleId":"com.apple.TextEdit"}}}
+{"item":"187-end","at":1793555806802,"step":3,"kind":"task","task":"select-source","args":["owner","textedit"],"result":{"ok":true,"which":"owner","switched":true,"requested":"com.apple.inputmethod.Korean.2SetKorean","current":{"id":"com.apple.inputmethod.Korean.2SetKorean","name":"2-Set Korean"}}}
+{"item":"187-end","at":1793556356607,"kind":"start","steps":3,"dryRun":false}
+{"item":"187-end","at":1793556356615,"step":1,"kind":"say","text":"#187: the owner's input source selected again, TextEdit's run window on top"}
+{"item":"187-end","at":1793556357315,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":41418,"bundleId":"com.apple.TextEdit"}}}
+{"item":"187-end","at":1793556358001,"step":3,"kind":"task","task":"select-source","args":["owner","textedit"],"result":{"ok":true,"which":"owner","switched":true,"requested":"com.apple.inputmethod.Korean.2SetKorean","current":{"id":"com.apple.inputmethod.Korean.2SetKorean","name":"2-Set Korean"}}}
+{"item":"187-end","at":1793557300434,"kind":"start","steps":3,"dryRun":false}
+{"item":"187-end","at":1793557300435,"step":1,"kind":"say","text":"#187: the owner's input source selected again, TextEdit's run window on top"}
+{"item":"187-end","at":1793557301145,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":41418,"bundleId":"com.apple.TextEdit"}}}
+{"item":"187-end","at":1793557301966,"step":3,"kind":"task","task":"select-source","args":["owner","textedit"],"result":{"ok":true,"which":"owner","switched":true,"requested":"com.apple.inputmethod.Korean.2SetKorean","current":{"id":"com.apple.inputmethod.Korean.2SetKorean","name":"2-Set Korean"}}}
+{"item":"187-end","at":1793557762761,"kind":"start","steps":3,"dryRun":false}
+{"item":"187-end","at":1793557762762,"step":1,"kind":"say","text":"#187: the owner's input source selected again, TextEdit's run window on top"}
+{"item":"187-end","at":1793557763011,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":41418,"bundleId":"com.apple.TextEdit"}}}
+{"item":"187-end","at":1793557763379,"step":3,"kind":"task","task":"select-source","args":["owner","textedit"],"result":{"ok":true,"which":"owner","switched":true,"requested":"com.apple.inputmethod.Korean.2SetKorean","current":{"id":"com.apple.inputmethod.Korean.2SetKorean","name":"2-Set Korean"}}}
+{"item":"187-end","at":1793557949355,"kind":"start","steps":3,"dryRun":false}
+{"item":"187-end","at":1793557949355,"step":1,"kind":"say","text":"#187: the owner's input source selected again, TextEdit's run window on top"}
+{"item":"187-end","at":1793557949496,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":41418,"bundleId":"com.apple.TextEdit"}}}
+{"item":"187-end","at":1793557949818,"step":3,"kind":"task","task":"select-source","args":["owner","textedit"],"result":{"ok":true,"which":"owner","switched":true,"requested":"com.apple.inputmethod.Korean.2SetKorean","current":{"id":"com.apple.inputmethod.Korean.2SetKorean","name":"2-Set Korean"}}}
+{"item":"187-end","at":1793557979081,"kind":"start","steps":3,"dryRun":false}
+{"item":"187-end","at":1793557979082,"step":1,"kind":"say","text":"#187: the owner's input source selected again, TextEdit's run window on top"}
+{"item":"187-end","at":1793557979217,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":41418,"bundleId":"com.apple.TextEdit"}}}
+{"item":"187-end","at":1793557979540,"step":3,"kind":"task","task":"select-source","args":["owner","textedit"],"result":{"ok":true,"which":"owner","switched":true,"requested":"com.apple.inputmethod.Korean.2SetKorean","current":{"id":"com.apple.inputmethod.Korean.2SetKorean","name":"2-Set Korean"}}}
+{"item":"187-end","at":1793558202817,"kind":"start","steps":3,"dryRun":false}
+{"item":"187-end","at":1793558202817,"step":1,"kind":"say","text":"#187: the owner's input source selected again, TextEdit's run window on top"}
+{"item":"187-end","at":1793558203065,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":41418,"bundleId":"com.apple.TextEdit"}}}
+{"item":"187-end","at":1793558203396,"step":3,"kind":"task","task":"select-source","args":["owner","textedit"],"result":{"ok":true,"which":"owner","switched":true,"requested":"com.apple.inputmethod.Korean.2SetKorean","current":{"id":"com.apple.inputmethod.Korean.2SetKorean","name":"2-Set Korean"}}}

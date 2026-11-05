@@ -156,6 +156,54 @@ final class ElementClickRecordTests: XCTestCase {
   }
 }
 
+// MARK: A coordinate click's placement (#259)
+
+final class CoordinateClickRecordTests: XCTestCase {
+  /// #259's cell: the Electron fixture's window 720 × 560 at (140, 100), a screenshot at scale 2, the point [120, 168].
+  private let windowFrame = CGRect(x: 140, y: 100, width: 720, height: 560)
+  private func target(windowID: CGWindowID? = 41) -> ClickTarget {
+    ClickTarget(point: CGPoint(x: 200, y: 184), windowFrame: windowFrame, windowID: windowID, pid: 990_001)
+  }
+
+  /// Every step from the model's point to the posted events, as numbers: the screenshot point as given, the window-local
+  /// point the conversion computed, the global location and the window location the events carry, the AX frame the
+  /// conversion used, and the frame read again just before the events (null until read).
+  func testTheRecordNamesEveryStepOfTheConversionAsNumbers() throws {
+    var record = CoordinateClickRecord(screenshotPoint: CGPoint(x: 120, y: 168), windowPoint: CGPoint(x: 60, y: 84), target: target())
+    let wire = record.wire
+    XCTAssertEqual(wire["screenshotPoint"] as? NSDictionary, ["x": 120, "y": 168])
+    XCTAssertEqual(wire["windowPoint"] as? NSDictionary, ["x": 60, "y": 84])
+    XCTAssertEqual(wire["postedLocation"] as? NSDictionary, ["x": 200, "y": 184])
+    XCTAssertEqual(wire["postedWindowLocation"] as? NSDictionary, ["x": 60, "y": 84], "the point less the frame's origin, unflipped")
+    XCTAssertEqual(wire["windowFrame"] as? NSDictionary, ["x": 140, "y": 100, "width": 720, "height": 560])
+    XCTAssertTrue(wire["frameBeforePost"] is NSNull, "not read yet")
+    record.frameBeforePost = CGRect(x: 140, y: 116, width: 720, height: 544)
+    XCTAssertEqual(record.wire["frameBeforePost"] as? NSDictionary, ["x": 140, "y": 116, "width": 720, "height": 544])
+    XCTAssertTrue(JSONSerialization.isValidJSONObject(record.wire))
+    let unnamed = CoordinateClickRecord(screenshotPoint: CGPoint(x: 120, y: 168), windowPoint: CGPoint(x: 60, y: 84), target: target(windowID: nil))
+    XCTAssertTrue(unnamed.wire["postedWindowLocation"] is NSNull, "no window number: no window location is stamped")
+  }
+
+  /// The posted fields are the click events' own: every event's global location, and the window location the events
+  /// are stamped with (`stampWindow`'s, through the one helper it stamps by).
+  func testThePostedFieldsAreTheClickEventsOwn() throws {
+    let record = CoordinateClickRecord(screenshotPoint: CGPoint(x: 120, y: 168), windowPoint: CGPoint(x: 60, y: 84), target: target())
+    let events = clickEvents(target(), button: .left, count: 2, flags: [])
+    XCTAssertEqual(events.count, 4)
+    for event in events { XCTAssertEqual(event.location, record.postedLocation) }
+    XCTAssertEqual(stampedWindowLocation(target().point, id: 41, frame: windowFrame), record.postedWindowLocation)
+    XCTAssertNil(stampedWindowLocation(target().point, id: nil, frame: windowFrame), "stampWindow stamps nothing without an id")
+    XCTAssertNil(stampedWindowLocation(target().point, id: 41, frame: nil))
+  }
+
+  func testTheInputMetaCarriesTheRecordOnlyForACoordinateClick() {
+    var meta = InputMeta(ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+    XCTAssertNil(meta.wire["coordinateClick"])
+    meta.coordinateClick = CoordinateClickRecord(screenshotPoint: CGPoint(x: 120, y: 168), windowPoint: CGPoint(x: 60, y: 84), target: target())
+    XCTAssertEqual((meta.wire["coordinateClick"] as? [String: Any])?["windowPoint"] as? NSDictionary, ["x": 60, "y": 84])
+  }
+}
+
 // MARK: The descendant hit-test gate
 
 final class DescendantGateTests: XCTestCase {
@@ -373,19 +421,25 @@ final class ActivationGuardTests: XCTestCase {
                           system: seam.system)
   }
 
-  func testTheActivationClickIsPostedOnlyInsideTheWindowsFrame() throws {
+  /// The click at the activation point only inside the window's frame; outside it, or with no point, the inert click
+  /// outside the frame (#187, 2026-11-01), so the arm subtype 1 sets is always consumed. All to the target's pid.
+  func testTheActivationClickIsPostedAtThePointOnlyInsideTheWindowsFrame() throws {
     let inside = GuardSeam(frontmost: user)
     try activation(inside, activationPoint: CGPoint(x: 110, y: 76)).activate()
     XCTAssertEqual(inside.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)])
     XCTAssertEqual(inside.posts.map(\.pid), [target, target, target])
+    XCTAssertEqual(inside.posts[1].location, CGPoint(x: 110, y: 76))
 
     let outside = GuardSeam(frontmost: user)
     try activation(outside, activationPoint: CGPoint(x: -1, y: 1441)).activate()
-    XCTAssertEqual(outside.posts.map(\.kind), [.appKit(1)], "subtype 1 alone, as Chrome's route-3 clicks delivered")
+    XCTAssertEqual(outside.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)], "Chrome's: the inert click")
+    XCTAssertEqual(outside.posts[1].location, CGPoint(x: -1, y: 1441), "far enough outside: at the point itself")
+    XCTAssertEqual(outside.posts.map(\.pid), [target, target, target])
 
     let unsupported = GuardSeam(frontmost: user)
     try activation(unsupported, activationPoint: nil).activate()
-    XCTAssertEqual(unsupported.posts.map(\.kind), [.appKit(1)])
+    XCTAssertEqual(unsupported.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)])
+    XCTAssertEqual(unsupported.posts[1].location, CGPoint(x: frame.minX - 24, y: frame.midY), "no point: the offset point")
   }
 
   func testTheTargetComingToTheFrontIsRefusedAfterTheUsersAppIsBroughtBack() {

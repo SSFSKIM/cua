@@ -521,7 +521,7 @@ final class PasteOperationTests: XCTestCase {
       log.append("paste " + (pasteboard.appReads() ?? "nil"))
       characters += 1
       return true
-    }, postReturn: { log.append("Return"); return true }, entered: &entered, meta: &meta)) {
+    }, postReturn: { log.append("Return"); characters += 1; return true }, entered: &entered, meta: &meta)) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "clipboardConflict")
     }
     XCTAssertEqual(log, ["paste a", "Return"], "line b was never written")
@@ -551,7 +551,7 @@ final class PasteOperationTests: XCTestCase {
       log.append("paste " + (pasteboard.appReads() ?? "nil"))
       characters += 1
       return true
-    }, postReturn: { afterReturn = true; log.append("Return"); return true }, entered: &entered, meta: &meta)) {
+    }, postReturn: { afterReturn = true; characters += 1; log.append("Return"); return true }, entered: &entered, meta: &meta)) {
       XCTAssertEqual(($0 as? EngineError)?.errorName, "clipboardConflict")
     }
     XCTAssertTrue(copied)
@@ -927,7 +927,7 @@ final class PasteOperationTests: XCTestCase {
             }, postPaste: { characters = 6; return true }, entered: &entered, meta: &meta)
     let wire = diagnostics(meta)
     XCTAssertEqual(Set(wire.keys), ["line", "lines", "notificationSource", "baselineEmpty", "keyFocusAtPaste", "readWait", "readWaitMs",
-                                    "readAfterPostMs", "effectWait", "effectWaitMs", "mainLagMs", "restore", "stage", "confirmed"])
+                                    "readAfterPostMs", "effectWait", "effectWaitMs", "mainLagMs", "restore", "stage", "confirmed", "perLine"])
     XCTAssertEqual(wire["readAfterPostMs"] as? Double, -5, "read 5 ms before ⌘V")
     XCTAssertEqual(wire["readWait"] as? String, "handedOver")
     XCTAssertEqual(wire["effectWait"] as? String, "reading")
@@ -1013,7 +1013,7 @@ final class PasteOperationTests: XCTestCase {
       pastes += 1
       if pastes == 1 { characters += 2 }  // line 1 lands visibly; line 2's effect is never seen
       return true
-    }, entered: &entered, meta: &meta)) { error in
+    }, postReturn: { characters += 1; return true }, entered: &entered, meta: &meta)) { error in
       let typed = typedPasteError(error as! EngineError, entered: entered, total: unitsOf(text), line: meta.paste?.line, lines: meta.paste?.lines)
       XCTAssertEqual(typed.errorName, "pasteUnconfirmed")
       XCTAssertEqual(typed.message, pasteUnconfirmed.message + " Confirmed entered: 3 of 8 characters (1 of 3 lines complete); line 2 is in an unknown state.")
@@ -1145,7 +1145,7 @@ final class PasteOperationTests: XCTestCase {
       log.append("paste " + (pasteboard.appReads() ?? "nil"))
       characters += 1
       return true
-    }, postReturn: { log.append("Return"); return true }, entered: &entered, meta: &meta)
+    }, postReturn: { log.append("Return"); characters += 1; return true }, entered: &entered, meta: &meta)
     XCTAssertEqual(log, ["paste 줄1", "Return", "paste 줄2"])
     XCTAssertEqual(entered, unitsOf("줄1\n줄2"))
     XCTAssertEqual(pasteboard.strings(), ["the owner's"])
@@ -1169,8 +1169,317 @@ final class PasteOperationTests: XCTestCase {
                                  checkInFlight: {
       checks += 1
       if checks == 3 { throw userChanged("TextEdit") }
-    }, postPaste: { _ = pasteboard.appReads(); characters += 2; return true }, entered: &entered, meta: &meta))
+    }, postPaste: { _ = pasteboard.appReads(); characters += 2; return true }, postReturn: { characters += 1; return true },
+       entered: &entered, meta: &meta))
     XCTAssertEqual(entered, 3)
+  }
+
+  // MARK: The Return between lines (#187, the slot of 2026-11-01)
+
+  /// A field whose Return lands `lateMs` after its post (its newline and caret move), and whose pastes land only while
+  /// `lands` says so: the reading on the fake clock, for the tests of the Return between lines.
+  private final class LateReturnField {
+    var characters = 0
+    var returnAt: [Double] = []
+    var lateMs: Double = 10
+    var returnLands = true
+    func reading(_ clock: Double) -> EffectReading {
+      let returns = returnLands ? returnAt.filter { clock >= $0 + lateMs }.count : 0
+      return EffectReading(range: [characters + returns, 0], characters: characters + returns)
+    }
+  }
+
+  /// The live false success of 2026-11-01 (B#3.5, `줄1⏎줄2` into Chrome): line 2's ⌘V never landed, but its baseline was
+  /// taken right after the Return was posted, before the Return's own effect showed, so the Return's late newline
+  /// "confirmed" line 2 a poll later. The Return's effect is settled first: line 2's baseline holds it, and only line 2's
+  /// own paste could confirm line 2, which here never lands.
+  func testAReturnThatLandsLateNeverConfirmsTheNextLine() {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let field = LateReturnField()
+    var pastes = 0
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    XCTAssertThrowsError(try run(pasteParts(typing: "a\nb"), pasteboard, effect: effect { [unowned self] in field.reading(clock) }, postPaste: {
+      _ = pasteboard.appReads()
+      pastes += 1
+      if pastes == 1 { field.characters += 1 }  // line 1 lands; line 2 is read and never inserted
+      return true
+    }, postReturn: { [unowned self] in field.returnAt.append(clock); return true }, entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "pasteUnconfirmed")
+    }
+    XCTAssertEqual(entered, 2, "line 1 and its Return, never line 2")
+    XCTAssertEqual(diagnostics(meta)["line"] as? Int, 2)
+    XCTAssertEqual(diagnostics(meta)["stage"] as? String, "effect")
+    XCTAssertEqual(diagnostics(meta)["confirmed"] as? Bool, false)
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+    let records = try? XCTUnwrap(diagnostics(meta)["perLine"] as? [[String: Any]])
+    XCTAssertEqual(records?.last?["baseline"] as? [String: AnyHashable], ["range": [2, 0], "characters": 2], "line 2's baseline holds the Return")
+  }
+
+  /// A Return whose effect never shows within the bound: the line it opens is unconfirmed at the Return's own stage, never
+  /// a success; that line is never pasted, the Return is not counted, and the sentence says so with what was confirmed.
+  func testAReturnWhoseEffectNeverShowsLeavesItsLineUnconfirmedAtItsStage() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let field = LateReturnField()
+    field.returnLands = false
+    var log: [String] = []
+    var entered = 0
+    let bareMeta = meta()
+    var meta = bareMeta
+    clock = 0
+    XCTAssertThrowsError(try run(pasteParts(typing: "ab\ncd"), pasteboard, effect: effect { [unowned self] in field.reading(clock) }, postPaste: {
+      log.append("paste " + (pasteboard.appReads() ?? "nil"))
+      field.characters += 2
+      return true
+    }, postReturn: { [unowned self] in log.append("Return"); field.returnAt.append(clock); return true }, entered: &entered, meta: &meta)) { error in
+      let typed = typedPasteError(error as! EngineError, entered: entered, total: 5, line: meta.paste?.line, lines: meta.paste?.lines)
+      XCTAssertEqual(typed.errorName, "pasteUnconfirmed")
+      XCTAssertEqual(typed.message, returnUnconfirmed.message + " Confirmed entered: 2 of 5 characters (1 of 2 lines complete); line 2 is in an unknown state.")
+    }
+    XCTAssertEqual(log, ["paste ab", "Return"], "line 2 never pasted")
+    XCTAssertEqual(entered, 2, "line 1 only: the Return was never seen")
+    XCTAssertEqual(clock, 2_000, accuracy: 30, "the effect wait's bound")
+    let wire = diagnostics(meta)
+    XCTAssertEqual(wire["line"] as? Int, 2)
+    XCTAssertEqual(wire["stage"] as? String, "returnEffect")
+    XCTAssertEqual(wire["confirmed"] as? Bool, false)
+    XCTAssertEqual(wire["restore"] as? String, "restored")
+    let records = try XCTUnwrap(wire["perLine"] as? [[String: Any]])
+    XCTAssertEqual(records.count, 2)
+    XCTAssertEqual(records[1]["stage"] as? String, "returnEffect")
+    let opening = try XCTUnwrap(records[1]["openingReturn"] as? [String: Any])
+    XCTAssertEqual(opening["settle"] as? String, "timeout")
+    XCTAssertEqual(opening["settleMs"] as? Double ?? 0, 2_000, accuracy: 30)
+    XCTAssertNil(opening["toCommandVMs"], "no ⌘V followed")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+
+    // The request's deadline ends the settle first: its stage's error, recorded as "deadline".
+    let short = LateReturnField()
+    short.returnLands = false
+    var shortEntered = 0
+    var shortMeta = bareMeta
+    clock = 0
+    XCTAssertThrowsError(try run(pasteParts(typing: "a\nb"), pasteboard, effect: effect { [unowned self] in short.reading(clock) },
+                                 remainingMs: { [unowned self] in 300 - clock },
+                                 postPaste: { _ = pasteboard.appReads(); short.characters += 1; return true },
+                                 entered: &shortEntered, meta: &shortMeta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "pasteUnconfirmed")
+    }
+    let shortOpening = (diagnostics(shortMeta)["perLine"] as? [[String: Any]])?.last?["openingReturn"] as? [String: Any]
+    XCTAssertEqual(shortOpening?["settle"] as? String, "deadline")
+    XCTAssertEqual(clock, 300, accuracy: 30)
+  }
+
+  /// A Return whose effect never shows while the user copies during its settle: the Return's own error, not the
+  /// conflict (no one's contents were pasted at that stage), and the human's copy is kept.
+  func testAMovedCountDuringAReturnsSettleKeepsItsOwnError() {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var entered = 0
+    var meta = meta()
+    var characters = 0
+    clock = 0
+    XCTAssertThrowsError(try run(pasteParts(typing: "a\nb"), pasteboard, effect: effect { EffectReading(range: nil, characters: characters) },
+                                 postPaste: { _ = pasteboard.appReads(); characters += 1; return true },
+                                 postReturn: { pasteboard.userCopies("human copy"); return true }, entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.message, returnUnconfirmed.message)
+    }
+    XCTAssertEqual(pasteboard.strings(), ["human copy"])
+  }
+
+  /// The per-line records: one per line reached, oldest first, value-free (counts and offsets, never text), each with
+  /// its stage, whether it was confirmed and by which channel, its waits and times against its own ⌘V, and the Return
+  /// that opened it with its post-to-settle and post-to-⌘V times; an empty line between two Returns has its Return's
+  /// record only, and the top-level fields stay the last line's.
+  func testThePerLineRecords() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let field = LateReturnField()
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    try run(pasteParts(typing: "ab\n\ncd"), pasteboard, effect: effect { [unowned self] in field.reading(clock) }, postPaste: { [unowned self] in
+      _ = pasteboard.appReads()
+      clock += 1
+      field.characters += 2
+      return true
+    }, postReturn: { [unowned self] in field.returnAt.append(clock); return true }, entered: &entered, meta: &meta)
+    XCTAssertEqual(entered, 6)
+    let wire = diagnostics(meta)
+    XCTAssertEqual(wire["line"] as? Int, 3, "the top level is the last line's")
+    XCTAssertEqual(wire["lines"] as? Int, 3)
+    XCTAssertEqual(wire["effectWait"] as? String, "reading")
+    let records = try XCTUnwrap(wire["perLine"] as? [[String: Any]])
+    XCTAssertEqual(records.map { $0["line"] as? Int }, [1, 2, 3])
+
+    let first = records[0]
+    XCTAssertEqual(first["stage"] as? String, "effect")
+    XCTAssertEqual(first["confirmed"] as? Bool, true)
+    XCTAssertEqual(first["effectWait"] as? String, "reading")
+    XCTAssertEqual(first["readWait"] as? String, "handedOver")
+    XCTAssertEqual(first["effectAfterPostMs"] as? Double, 1, "seen at the first poll, 1 ms after ⌘V")
+    XCTAssertEqual(first["baseline"] as? [String: AnyHashable], ["range": [0, 0], "characters": 0])
+    XCTAssertEqual(first["confirming"] as? [String: AnyHashable], ["range": [2, 0], "characters": 2])
+    XCTAssertNil(first["openingReturn"])
+
+    let empty = records[1]
+    XCTAssertEqual(empty["stage"] as? String, "returnEffect")
+    XCTAssertNil(empty["confirmed"], "nothing pasted on it")
+    XCTAssertEqual(empty["baseline"] as? [String: AnyHashable], ["range": [2, 0], "characters": 2], "taken before its Return")
+    XCTAssertEqual(empty["openingReturn"] as? [String: AnyHashable], ["settle": "reading", "settleMs": 50.0],
+                   "moved at the poll after its 10 ms and held one interval more")
+
+    let last = records[2]
+    XCTAssertEqual(last["baseline"] as? [String: AnyHashable], ["range": [4, 0], "characters": 4], "both Returns in it")
+    XCTAssertEqual(last["confirming"] as? [String: AnyHashable], ["range": [6, 0], "characters": 6])
+    let opening = try XCTUnwrap(last["openingReturn"] as? [String: Any])
+    XCTAssertEqual(opening["settle"] as? String, "reading")
+    XCTAssertEqual(opening["toCommandVMs"] as? Double, 50, "its ⌘V right after the settle")
+    for record in records {
+      let keys = Set(record.keys)
+      XCTAssertTrue(keys.isSubset(of: ["line", "stage", "confirmed", "keyFocusAtPaste", "readWait", "readWaitMs", "readAfterPostMs",
+                                       "firstReadAfterPostMs", "effectWait", "effectWaitMs", "effectAfterPostMs", "baseline", "confirming",
+                                       "openingReturn"]), "\(keys)")
+    }
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+  }
+
+  /// A Return after the last line is not settled (no later baseline depends on it; a search field's submitting Return
+  /// may change nothing), as before: counted, with no record of its own.
+  func testATrailingReturnIsNotSettled() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var characters = 0
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    try run(pasteParts(typing: "ab\n"), pasteboard, effect: effect { EffectReading(range: nil, characters: characters) },
+            postPaste: { _ = pasteboard.appReads(); characters += 2; return true }, entered: &entered, meta: &meta)
+    XCTAssertEqual(entered, 3)
+    XCTAssertEqual(clock, 0, "no settle waited")
+    XCTAssertEqual(diagnostics(meta)["line"] as? Int, 1)
+    XCTAssertEqual((diagnostics(meta)["perLine"] as? [[String: Any]])?.count, 1)
+  }
+
+  /// With nothing to see a Return by (the baseline empty, no trusted source), the settle answers at once and the next
+  /// line is answered by its read after ⌘V, as a line with no channel is.
+  func testWithNoChannelAReturnIsNotWaitedFor() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    let outcome = try run(pasteParts(typing: "a\nb"), pasteboard, effect: effect(reading: { EffectReading() }), postPaste: { [unowned self] in
+      clock += 1
+      _ = pasteboard.appReads()
+      return true
+    }, entered: &entered, meta: &meta)
+    XCTAssertEqual(outcome, PasteOutcome(pastedLines: 2, unconfirmedLines: 2))
+    XCTAssertEqual(entered, 3)
+    XCTAssertEqual(clock, 2, "no wait beyond the two reads")
+    let opening = (diagnostics(meta)["perLine"] as? [[String: Any]])?.last?["openingReturn"] as? [String: Any]
+    XCTAssertEqual(opening?["settle"] as? String, "noChannel")
+  }
+
+  /// A text that begins with a newline into a field seen only by its notifications: the Return's sole notification,
+  /// arriving while the Return's delivery guard runs, counts for its settle (the review of 0d888300..c32bec9c, finding
+  /// 2): the gate is armed before the Return is posted, as it is for a ⌘V.
+  func testAReturnsNotificationDuringItsDeliveryGuardCountsForItsSettle() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let watch = effect(observer: true, reading: { EffectReading() })
+    var log: [String] = []
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    try runPaste(pasteParts(typing: "\nab"), pasteboard: pasteboard.access, effect: watch, readTimeoutMs: 0, mainProbe: { $0() },
+                 deliver: { post in
+                   post()
+                   watch.notification()  // the field's only report of the event, inside the guard's samples
+                   return nil
+                 }, checkInFlight: {}, postPaste: {
+                   log.append("paste " + (pasteboard.appReads() ?? "nil"))
+                   return true
+                 }, postReturn: { log.append("Return"); return true }, entered: &entered, meta: &meta)
+    XCTAssertEqual(log, ["Return", "paste ab"])
+    XCTAssertEqual(entered, 3, "the newline and the line")
+    let opening = (diagnostics(meta)["perLine"] as? [[String: Any]])?.last?["openingReturn"] as? [String: Any]
+    XCTAssertEqual(opening?["settle"] as? String, "notification")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+  }
+
+  /// A Return whose effect half-lands across the settle's bound (the review of 0d888300..c32bec9c, finding 3: the range
+  /// moved at 1975 ms, the count at 2025 ms) is unconfirmed at its stage: the settle never saw the reading hold, so it
+  /// is no success, and the next line, never pasted, cannot be "confirmed" by the Return's late count.
+  func testAReturnThatMovesOnlyAtTheBoundIsUnconfirmed() throws {
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var characters = 0
+    var returnAt: Double?
+    var log: [String] = []
+    var entered = 0
+    var meta = meta()
+    clock = 0
+    let reading = { [unowned self] () -> EffectReading in
+      let since = returnAt.map { clock - $0 } ?? -1
+      return EffectReading(range: [characters + (since >= 1_975 ? 1 : 0), 0], characters: characters + (since >= 2_025 ? 1 : 0))
+    }
+    XCTAssertThrowsError(try run(pasteParts(typing: "a\nb"), pasteboard, effect: effect(reading: reading), postPaste: {
+      log.append("paste " + (pasteboard.appReads() ?? "nil"))
+      if log.count == 1 { characters += 1 }  // line 1 lands; a line 2 would be read and never inserted
+      return true
+    }, postReturn: { [unowned self] in log.append("Return"); returnAt = clock; return true }, entered: &entered, meta: &meta)) {
+      XCTAssertEqual(($0 as? EngineError)?.message, returnUnconfirmed.message)
+    }
+    XCTAssertEqual(log, ["paste a", "Return"], "line 2 never pasted")
+    XCTAssertEqual(entered, 1, "line 1 only")
+    let wire = diagnostics(meta)
+    XCTAssertEqual(wire["stage"] as? String, "returnEffect")
+    XCTAssertEqual(wire["confirmed"] as? Bool, false)
+    let opening = (wire["perLine"] as? [[String: Any]])?.last?["openingReturn"] as? [String: Any]
+    XCTAssertEqual(opening?["settle"] as? String, "timeout")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+  }
+
+  /// The settle on its own: a reading must move and then hold one interval; a trusted notification after the Return's
+  /// post counts only with no baseline; a reading that came back after the time ran out is not accepted.
+  func testTheReturnsSettle() {
+    var characters = 0
+    var reads = 0
+    let watch = effect { reads += 1; return EffectReading(range: nil, characters: characters) }
+    clock = 0
+    watch.begin()
+    watch.keyPosted(at: 0)
+    XCTAssertEqual(watch.settle(timeoutMs: 100, intervalMs: 25), .timeout)
+    characters = 1
+    watch.begin()
+    characters = 2
+    clock = 0
+    XCTAssertEqual(watch.settle(timeoutMs: 100, intervalMs: 25), .reading)
+    XCTAssertEqual(clock, 25, "moved at once, held at the next poll")
+
+    let trusted = effect(observer: true, reading: { EffectReading() })
+    trusted.begin()
+    trusted.notification()  // before the Return: not its effect
+    clock = 0
+    trusted.keyPosted(at: 0)
+    XCTAssertEqual(trusted.settle(timeoutMs: 50, intervalMs: 25), .timeout)
+    trusted.notification()
+    XCTAssertEqual(trusted.settle(timeoutMs: 50, intervalMs: 25), .notification)
+
+    var slowReads = 0
+    let slow = PasteEffect(readWithin: { [unowned self] _ in  // the baseline, then a moved reading 500 ms late
+      slowReads += 1
+      clock += 500
+      return EffectReading(range: nil, characters: slowReads > 1 ? 1 : 0)
+    }, now: { [unowned self] in clock }, sleep: { [unowned self] in clock += $0 })
+    slow.begin()
+    clock = 0
+    slow.keyPosted(at: 0)
+    XCTAssertEqual(slow.settle(timeoutMs: 100, intervalMs: 25), .timeout)
   }
 }
 
@@ -1269,6 +1578,285 @@ extension PasteActivationTests {
     XCTAssertEqual(engine.pasteNotificationSource(registered: true, app: chrome, pid: target), .trusted)
     engine.webAccessibility.release(connection: 1)
     XCTAssertEqual(engine.pasteNotificationSource(registered: true, app: chrome, pid: target), .untrusted, "written back")
+  }
+}
+
+// MARK: The paste's activation click (#187: an activation never leaves an arm)
+
+/// Every event route 3 was asked to post, kept whole (the activation click's window fields are read from them).
+private final class PostedEvents {
+  var events: [CGEvent] = []
+}
+
+extension PasteActivationTests {
+  /// Chrome's window and its AXActivationPoint outside the frame (U13's corner).
+  private static let chromeFrame = CGRect(x: 80, y: 60, width: 610, height: 860)
+  private static let outsidePoint = CGPoint(x: -1, y: 1441)
+
+  /// A paste through the engine into a window the seam places (frame and number 41) whose activation point lies outside
+  /// its frame, stopped by a user event at the in-flight check just before ⌘V (the third: after the paste lock's and the
+  /// activation's), so nothing reaches the real desktop. The meta it stopped with.
+  private func pasteStoppedBeforeCommandV(seam: GuardSeam, posted: PostedEvents, typed: Bool = false) -> InputMeta {
+    seam.activationPoint = Self.outsidePoint
+    var system = seam.system
+    let post = system.post
+    system.post = { event, pid in
+      posted.events.append(event.copy()!)
+      post(event, pid)
+    }
+    system.windowPlacement = { _, _ in (Self.chromeFrame, 41) }
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false },
+                        pasteboard: { pasteboard.access }, pasteActivation: system)
+    let context = ExecutionContext(connection: ConnectionState(id: 1, fd: -1), receivedAt: 1, hidIdleMs: 0,
+                                   deadline: unixMilliseconds() + 60_000, lineage: nil)
+    let app = ResolvedApp(appPath: "/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "Chrome", running: nil)
+    var checks = 0
+    let guarding = InterventionGuard(detection: true, verdict: .proceed, app: "Chrome", start: 0, latest: {
+      checks += 1
+      return checks >= 3 ? AttributedEvent(sequence: 1, at: 2) : nil
+    }, lastAtCheck: nil)
+    let pasteTarget = PasteTarget(app: app, pid: target, application: AXUIElementCreateApplication(target), keyboard: target, guarding: guarding)
+    var meta = InputMeta(context)
+    var entered = 0
+    XCTAssertThrowsError(try typed
+      ? String(describing: engine.typeTextByPaste("x\ny", pasteTarget, context, meta: &meta))
+      : String(describing: engine.pasteOperation([.content(plain("x"), units: 1)], pasteTarget, context, entered: &entered, meta: &meta))) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "userIntervened", "stopped before ⌘V")
+    }
+    XCTAssertEqual(checks, 3, "the stop is the check just before ⌘V")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"], "restored")
+    return meta
+  }
+
+  /// The paste route's activation (paste and type_text alike): the inert click pair goes at Chrome's outside point,
+  /// which lies far beyond the frame, right after subtype 1, with route 3's activation click recipe (the window's number
+  /// in the NSEvent and in fields 91 and 92, no flags, subtype 3), so the window is key before ⌘V. The activation's guard
+  /// still runs after it and repairs a raise; the deactivation still follows; the meta records where the point lay and
+  /// the click's kind. What the slot's B arm did, now with no switch.
+  func testThePastesActivationPostsTheInertClickAtTheOutsidePointAndStillGuards() throws {
+    for typed in [false, true] {
+      let seam = GuardSeam(frontmost: user)
+      seam.targetAbove = true  // the target's window found above the user's at the guard's first sample, repaired
+      let posted = PostedEvents()
+      let meta = pasteStoppedBeforeCommandV(seam: seam, posted: posted, typed: typed)
+      XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)], typed ? "type_text" : "paste")
+      XCTAssertEqual(seam.posts[1].location, Self.outsidePoint)
+      XCTAssertEqual(seam.posts[2].location, Self.outsidePoint)
+      XCTAssertEqual(seam.posts[1].flags, [], "no ⌘: an activation click, not route 2's")
+      for event in posted.events[1...2] {
+        XCTAssertEqual(event.getIntegerValueField(CGEventField(rawValue: 91)!), 41, "kCGMouseEventWindowUnderMousePointer")
+        XCTAssertEqual(event.getIntegerValueField(CGEventField(rawValue: 92)!), 41, "…ThatCanHandleThisEvent")
+        XCTAssertEqual(NSEvent(cgEvent: event)?.windowNumber, 41, "the NSEvent's window number")
+        XCTAssertEqual(event.getIntegerValueField(.mouseEventSubtype), 3)
+      }
+      XCTAssertEqual(seam.raises, 1, "the activation's guard repaired the raise")
+      XCTAssertNotNil(meta.activationGuardMs)
+      XCTAssertEqual(meta.activationClick, .outsideFrame, "the activation point's own decision")
+      XCTAssertEqual(meta.wire["activationClickKind"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint", "when": "early"])
+      let record = try XCTUnwrap(meta.paste?.wire["focusEnforcement"] as? [String: Any])
+      XCTAssertEqual(record["activated"] as? Bool, true)
+      XCTAssertEqual(record["point"] as? String, "outside")
+      XCTAssertEqual(record["click"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint", "when": "early"])
+      XCTAssertNil(record["arm"], "no switch, no arm")
+      XCTAssertNil(record["liftedClick"], "retired: `click` says what was posted")
+      XCTAssertNil(record["clickToCommandVMs"], "stopped before ⌘V: no time to it")
+      XCTAssertEqual(seam.holds, 1, "one screen-update hold for the paste")
+      XCTAssertEqual(seam.releases, 1, "a stop before the first ⌘V ends the hold the activation left open")
+      XCTAssertNil(meta.delivery, "no event of the paste's own went out: no delivery guard")
+    }
+  }
+
+  // MARK: The delivery guard and the after-action watch on the paste route (#200's, the slot of 2026-11-01)
+
+  /// A paste through the engine to its end on the seam, into a window it places (frame and number 41): the paste's keys
+  /// go out through route 3's post (the seam's), the fake app reads the pasteboard at each ⌘V's key down, and `onKeyDown`
+  /// runs at each key down with its key code (⌘V's 0x09, Return's 0x24). `before` runs on the engine first (another
+  /// holder's activation). The meta it answered with.
+  private func pasteToItsEnd(_ text: String, typed: Bool, seam: GuardSeam, connection: ConnectionState, pasteboard: TestPasteboard,
+                             onKeyDown: @escaping (CGKeyCode) -> Void = { _ in },
+                             before: (Engine, ActivationSystem) throws -> Void = { _, _ in }) throws -> InputMeta {
+    var system = seam.system
+    let post = system.post
+    system.post = { event, pid in
+      if event.type == .keyDown {
+        let code = CGKeyCode(event.getIntegerValueField(.keyboardEventKeycode))
+        if code == 0x09 { _ = pasteboard.appReads() }
+        onKeyDown(code)
+      }
+      post(event, pid)
+    }
+    system.windowPlacement = { _, _ in (Self.chromeFrame, 41) }
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false },
+                        pasteboard: { pasteboard.access }, pasteActivation: system)
+    let context = ExecutionContext(connection: connection, receivedAt: 1, hidIdleMs: 0, deadline: unixMilliseconds() + 60_000, lineage: nil)
+    let app = ResolvedApp(appPath: "/Applications/TextEdit.app", bundleIdentifier: nil, displayName: "TextEdit", running: nil)
+    let pasteTarget = PasteTarget(app: app, pid: target, application: AXUIElementCreateApplication(target), keyboard: target,
+                                  guarding: .off(app: "TextEdit"))
+    try before(engine, system)
+    var meta = InputMeta(context)
+    var entered = 0
+    if typed {
+      _ = try engine.typeTextByPaste(text, pasteTarget, context, meta: &meta)
+    } else {
+      try engine.pasteOperation([.content(plain(text), units: text.utf16.count)], pasteTarget, context, entered: &entered, meta: &meta)
+    }
+    return meta
+  }
+
+  /// The paste's first ⌘V goes out through the delivery guard, inside the screen-update hold its activation left open:
+  /// a raise of the target's window at ⌘V is undone before the hold is released, one hold for the whole action, and
+  /// the result carries `delivery` as a pointer action's does; the activation's own guard ends on one sample.
+  func testThePastesFirstCommandVGoesThroughTheDeliveryGuardInsideTheActivationsHold() throws {
+    for typed in [false, true] {
+      let seam = GuardSeam(frontmost: user)
+      seam.targetAbove = false
+      let pasteboard = TestPasteboard()
+      pasteboard.userCopies("the owner's")
+      var commandVs = 0
+      var heldAtRaise = false
+      let meta = try pasteToItsEnd(typed ? "a\nb" : "x", typed: typed, seam: seam, connection: ConnectionState(id: 1, fd: -1),
+                                   pasteboard: pasteboard) { code in
+        guard code == 0x09 else { return }
+        commandVs += 1
+        if commandVs == 1 {
+          seam.targetAbove = true  // the app raises its window at the first ⌘V
+          heldAtRaise = seam.holds > seam.releases
+        }
+      }
+      let label = typed ? "type_text" : "paste"
+      XCTAssertEqual(commandVs, typed ? 2 : 1, label)
+      XCTAssertTrue(heldAtRaise, "the first ⌘V went out inside the activation's hold (\(label))")
+      XCTAssertEqual(seam.targetAbove, false, "the user's window is back on top (\(label))")
+      XCTAssertEqual(seam.raises, 1, label)
+      XCTAssertEqual(seam.repairsOutsideHold, 0, "repaired inside the hold (\(label))")
+      XCTAssertEqual(seam.holds, 1, "one hold for the activation and the paste (\(label))")
+      XCTAssertEqual(seam.releases, 1, label)
+      let delivery = try XCTUnwrap(meta.delivery, label)
+      XCTAssertEqual(delivery.restores, 1, label)
+      XCTAssertFalse(delivery.raiseLeft, label)
+      XCTAssertNotNil(meta.wire["delivery"], "on the wire as a pointer action's (\(label))")
+      XCTAssertEqual(meta.activationGuardMs, 10, "the activation's guard settles on one sample when a delivery guard follows (\(label))")
+      XCTAssertEqual(pasteboard.strings(), ["the owner's"], "restored (\(label))")
+    }
+  }
+
+  /// The after-action watch covers the whole paste: it runs while every later line and Return goes out, however long
+  /// the lines' waits (here past the first ⌘V's own second), and until a second after the paste's last event; the paste
+  /// answers, its pasteboard restored, while the watch still runs. Its repairs are keyed by the delivery's `postedAt`.
+  func testTheWatchCoversEveryLineAndASecondAfterThePastesLastEvent() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.targetAbove = false
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    let connection = ConnectionState(id: 7, fd: -1)
+    var raisesAtTheReturn: Int?
+    var lastCommandVAt: Double?
+    var commandVs = 0
+    let meta = try pasteToItsEnd("a\nb", typed: true, seam: seam, connection: connection, pasteboard: pasteboard) { code in
+      if code == returnKeyCode {
+        seam.advance(1_200)  // line 1's waits outlast a second after the first ⌘V
+        seam.targetAbove = true
+        seam.advance(20)
+        raisesAtTheReturn = seam.raises
+      } else if code == 0x09 {
+        commandVs += 1
+        if commandVs == 2 { lastCommandVAt = seam.clock }
+      }
+    }
+    XCTAssertEqual(raisesAtTheReturn, 1, "a raise between the lines, past the first ⌘V's second, is repaired")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"], "the paste answered with its restore done")
+    XCTAssertTrue(connection.afterAction.watching, "and the watch still running")
+    let last = try XCTUnwrap(lastCommandVAt)
+    seam.targetAbove = true
+    seam.advance(last + deliveryRepairWindowMs - 100 - seam.clock)
+    XCTAssertEqual(seam.raises, 2, "repaired inside the second after the last ⌘V")
+    XCTAssertEqual(seam.targetAbove, false)
+    seam.advance(200)
+    XCTAssertFalse(connection.afterAction.watching, "past it the watch has ended")
+    seam.targetAbove = true
+    seam.advance(100)
+    XCTAssertEqual(seam.raises, 2)
+    let wire = try XCTUnwrap(connection.afterAction.wire)
+    XCTAssertEqual(wire["repairs"] as? Int, 2)
+    let actions = try XCTUnwrap(wire["actions"] as? [[String: Any]])
+    XCTAssertEqual(actions.count, 1)
+    XCTAssertEqual(actions[0]["postedAt"] as? Int, Int(try XCTUnwrap(meta.delivery).postedAt), "keyed by the paste's delivery")
+  }
+
+  /// A paste that joins a hold whose arm no mouse down has consumed (a pointer action's activation on Chrome, awaiting its
+  /// own click) posts the kept inert click itself, before its first ⌘V, so ⌘V reaches a key window; its meta records it.
+  func testAPasteJoiningAnUnconsumedHoldClicksBeforeItsCommandV() throws {
+    let seam = GuardSeam(frontmost: user)
+    seam.activationPoint = Self.outsidePoint
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var postsAtCommandV: [GuardPost.Kind]?
+    var pointerRelease: (() -> Bool)?
+    let meta = try pasteToItsEnd("x", typed: false, seam: seam, connection: ConnectionState(id: 1, fd: -1), pasteboard: pasteboard,
+                                 onKeyDown: { code in
+      if code == 0x09 && postsAtCommandV == nil { postsAtCommandV = seam.posts.map(\.kind) }
+    }, before: { engine, system in
+      var pointerMeta = InputMeta(ExecutionContext(connection: ConnectionState(id: 2, fd: -1), receivedAt: 1, hidIdleMs: 0, deadline: 2, lineage: nil))
+      pointerRelease = try engine.heldActivations.acquire(pid: self.target, holder: ActivationHolder(connection: 2), postsLeftMouseDown: true, beforeActivating: {}, make: {
+        FakeActivation(pid: self.target, window: AXUIElementCreateApplication(self.target), windowFrame: Self.chromeFrame, windowID: 41, system: system)
+      }, meta: &pointerMeta)
+      XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1)], "the pointer holder's activation, its arm unconsumed")
+    })
+    XCTAssertEqual(Array(try XCTUnwrap(postsAtCommandV).prefix(3)), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)],
+                   "the inert click before ⌘V")
+    XCTAssertEqual(seam.posts[1].location, Self.outsidePoint)
+    XCTAssertEqual(meta.wire["activationClickKind"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint", "when": "early"])
+    XCTAssertEqual((meta.paste?.wire["focusEnforcement"] as? [String: Any])?["activated"] as? Bool, false, "the activation is the other holder's")
+    XCTAssertEqual(pasteboard.strings(), ["the owner's"])
+    _ = pointerRelease?()
+    XCTAssertEqual(seam.posts.filter { $0.kind == .mouse(.leftMouseDown) }.count, 1, "no second click at the release")
+    XCTAssertEqual(seam.posts.last?.kind, .appKit(2))
+  }
+
+  /// The retired switch is not in the engine's status: an engine.json still carrying it changes nothing.
+  func testTheStatusNoLongerReportsTheRetiredSwitch() {
+    let engine = Engine(paths: ServerPaths(socket: "/tmp/x.sock", directory: "/tmp", lock: "/tmp/x.lock", usage: "/tmp/cua-engine-test-usage.json"),
+                        intervention: InterventionMonitor(listenGranted: { false }), screenLocked: { false })
+    XCTAssertNil(engine.status(ConnectionState(id: 1, fd: -1))["pasteFocusEnforcement"])
+  }
+}
+
+extension PasteOperationTests {
+  /// The paste's activation record rides on every line's diagnostics, with the times from the activation and from its
+  /// click to that line's ⌘V on route 3's clock; without a record from the caller there is none.
+  func testTheFocusEnforcementRecordTimesEachLinesCommandV() throws {
+    var record = PasteFocusEnforcement(activation: nil)
+    XCTAssertEqual(record.wire as NSDictionary, ["activated": false], "no activation of the paste's own")
+    record.activated = true
+    record.point = .outside
+    record.click = .inertOutside(.activationPoint, .early)
+    record.activatedAt = 100
+    record.clickPostedAt = 101
+    let pasteboard = TestPasteboard()
+    pasteboard.userCopies("the owner's")
+    var activationClock = 150.0
+    var characters = 0
+    var entered = 0
+    var bare = meta()
+    var meta = meta()
+    try runPaste([.content(plain("a"), units: 1), .returnKey(units: 1), .content(plain("b"), units: 1)], pasteboard: pasteboard.access,
+                 effect: effect { EffectReading(range: [characters, 0], characters: characters) }, readTimeoutMs: 0,
+                 focusEnforcement: record, activationNow: { activationClock }, mainProbe: { $0() }, checkInFlight: {},
+                 postPaste: { _ = pasteboard.appReads(); characters += 1; activationClock += 20; return true },
+                 postReturn: { characters += 1; return true },
+                 entered: &entered, meta: &meta)
+    let wire = try XCTUnwrap(meta.paste?.wire["focusEnforcement"] as? [String: Any])
+    XCTAssertEqual(wire["point"] as? String, "outside")
+    XCTAssertEqual(wire["click"] as? NSDictionary, ["kind": "inertOutside", "point": "activationPoint", "when": "early"])
+    XCTAssertEqual(wire["activationToCommandVMs"] as? Double, 70, "line 2's ⌘V, 20 ms after line 1's at 150")
+    XCTAssertEqual(wire["clickToCommandVMs"] as? Double, 69)
+    try run([.content(plain("c"), units: 1)], pasteboard, effect: effect { EffectReading(range: [characters, 0], characters: characters) },
+            postPaste: { _ = pasteboard.appReads(); characters += 1; return true }, entered: &entered, meta: &bare)
+    XCTAssertNil(bare.paste?.wire["focusEnforcement"])
   }
 }
 

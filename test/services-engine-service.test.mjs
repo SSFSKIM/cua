@@ -28,7 +28,8 @@ const APPS = {
 const byPath = Object.fromEntries(Object.values(APPS).map(app => [app.appPath, app]));
 const NO_LONGER_VALID = 'The element ID is no longer valid. Try to get the on-screen content again and see if that resolves the issue.';
 const ENGINE_MS = {resolve_app: 999};
-const INPUT_META = {inputRoute: 3, startedAt: 1000, endedAt: 1042, receivedAt: 990, hidIdleMs: 31000, activationGuardMs: 41.5, activationClick: 'posted', pointUnconfirmed: true};
+const INPUT_META = {inputRoute: 3, startedAt: 1000, endedAt: 1042, receivedAt: 990, hidIdleMs: 31000, activationGuardMs: 41.5, activationClick: 'posted',
+  activationClickKind: {kind: 'activationPoint'}, pointUnconfirmed: true};
 // Route 3's delivery guard after a pointer action (#200): one restore, under the cap.
 const DELIVERY = {restores: 1, frontmostRestored: false, otherAppFront: false, restoreLatencyMs: 10, guardMs: 40, screenHoldMs: 52.5, capped: false,
   raiseLeft: false, holdStartedAt: 1793399999947, releasedAt: 1793400000000};
@@ -70,7 +71,7 @@ async function session(t, {handlers = {}, answer = () => ({action: 'accept', con
     'execute:get_app_state': ({args}) => { during('get_app_state'); return trees.get(args.app); },
     'execute:list_apps': () => { during('list_apps'); return [{id: 'com.apple.TextEdit', displayName: 'TextEdit', isRunning: true, extra: 1}, {id: 'io.example.old', displayName: 'Old', isRunning: false, lastUsedDate: 1.5, useCount: 2}]; },
     'execute:click': () => { during('click'); return {meta: INPUT_META}; },
-    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, activationClick: undefined, pointUnconfirmed: undefined}}),
+    'execute:press_key': () => ({meta: {...INPUT_META, inputRoute: "2'", activationGuardMs: undefined, activationClick: undefined, activationClickKind: undefined, pointUnconfirmed: undefined}}),
     'execute:type_text': () => ({meta: {...INPUT_META, inputRoute: "2'"}}),
     ...handlers,
   }});
@@ -200,6 +201,7 @@ test('an element index becomes the lineage\'s token, every execute carrying its 
   assert.equal(meta['cua/hidIdleMs'], 31000);
   assert.equal(meta['cua/activationGuardMs'], 41.5);
   assert.equal(meta['cua/activationClick'], 'posted');
+  assert.deepEqual(meta['cua/activationClickKind'], {kind: 'activationPoint'});
   assert.equal(meta['cua/pointUnconfirmed'], true);
   assert.deepEqual(meta['cua/nativeEngine'], {engine: 'cua', version: '0.1.0', build: 'b1'});
 
@@ -212,6 +214,7 @@ test('an element index becomes the lineage\'s token, every execute carrying its 
   assert.equal(meta['cua/inputRoute'], "2'");
   assert.equal(meta['cua/activationGuardMs'], null, 'a key\'s result does not inherit the click\'s guard time');
   assert.equal(meta['cua/activationClick'], null, 'nor its activation click');
+  assert.equal(meta['cua/activationClickKind'], null);
   assert.equal(meta['cua/pointUnconfirmed'], null);
   assert.equal(engine.executes().at(-1).args.element, undefined);
 });
@@ -525,6 +528,19 @@ test('an element click\'s plan rides as cua/elementClick on its result, and stan
   assert.deepEqual(meta['cua/elementClick'], record);
   await call(() => app.getAXState({emit: false}));
   assert.equal(meta['cua/elementClick'], null, 'reset by the next call');
+});
+
+test('a coordinate click\'s placement rides as cua/coordinateClick on its result, and stands on no other call', async t => {
+  const point = (x, y) => ({x, y});
+  const record = {screenshotPoint: point(120, 168), windowPoint: point(60, 84), postedLocation: point(200, 184), postedWindowLocation: point(60, 84),
+    windowFrame: {x: 140, y: 100, width: 720, height: 560}, frameBeforePost: {x: 140, y: 100, width: 720, height: 560}};
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => ({meta: {...INPUT_META, coordinateClick: record}})}});
+  const {app} = await getApp('TextEdit');
+  assert.equal(meta['cua/coordinateClick'], null);
+  await call(() => app.click([120, 168]));
+  assert.deepEqual(meta['cua/coordinateClick'], record);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/coordinateClick'], null, 'reset by the next call');
 });
 
 test('an observation of a minimized window carries no screenshot and its meta says why; the next observation clears it', async t => {

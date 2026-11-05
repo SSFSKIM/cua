@@ -99,11 +99,13 @@ export const SETTLE_STEPS = [25, 50, 75, 100];
  * FocusOut (`--retention per-request`): on the private Xvfb a FocusOut with the redirect kept cuts no key (tasks 56 and
  * 59), while a FocusOut followed by the unredirect cuts Chromium's keys and delivers them with the next FocusIn, the
  * reorder M0.4 saw (task 58 found M0.4's own control ended its engine, and with it every redirect, before its read).
+ * The control's paste has no settle (`--paste-settle-ms 0`), so its observation races the keys it follows, as at 0 in
+ * task 59, and the key-then-paste scenario shows what the settle prevents.
  */
 export const LANES = {
   shipped: [],
   ...Object.fromEntries(SETTLE_STEPS.map((ms) => [`settle-${ms}`, ['--paste-settle-ms', String(ms)]])),
-  control: ['--retention', 'per-request'],
+  control: ['--retention', 'per-request', '--paste-settle-ms', '0'],
 };
 /** The lanes a sitting runs unless `--lanes` names others: T7's proof on the engine as it ships. */
 export const DEFAULT_LANES = ['shipped', 'control'];

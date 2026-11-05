@@ -217,7 +217,7 @@ test("the verdict passes only when every family's lanes, audits and stops did wh
 
 test("the lanes: the engine as it ships; the paste settle's measured steps; the control, each request unredirected", () => {
   assert.deepEqual(LANES.shipped, []);
-  assert.deepEqual(LANES.control, ['--retention', 'per-request']);
+  assert.deepEqual(LANES.control, ['--retention', 'per-request', '--paste-settle-ms', '0'], 'the paste with no settle, so its race shows too');
   assert.deepEqual(
     Object.keys(LANES).filter((l) => l.startsWith('settle-')),
     SETTLE_STEPS.map((ms) => `settle-${ms}`),

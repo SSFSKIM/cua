@@ -1,0 +1,72 @@
+   Compiling cua-linux-engine v0.3.0 (<checkout>/native/linux-engine)
+    Finished `release` profile [optimized] target(s) in 9.71s
+     Running tests/live_focus_ack.rs (target/release/deps/live_focus_ack-c9af77cccabc9385)
+
+running 5 tests
+test a_background_click_to_a_late_qt_window_waits_for_its_focus_and_leaves_the_x_focus_where_it_was ... {"stats":{"bus":{"by_member":{"org.a11y.atspi.Accessible.GetChildren":1,"org.freedesktop.DBus.Hello":1},"calls":2,"connections":1,"max_in_flight":1,"peak_staged_bytes":258,"reply_bytes":338,"waits":2,"waits_alone":2},"command":"get_window_state","elapsed_ms":19.326,"id":1,"ok":true,"tree":{"admitted":0,"discovered":0,"hit_tests":0,"identity":null,"source":"x11","tables_listed":0,"tables_sampled":0,"truncated":{"depth":0,"failed":0,"nodes":0},"wasted_calls":0},"variant":{"call_reservation":4096,"capture_wait":"damage","key_pace_ms":0,"paste_settle_ms":100,"retention":"Session","settle_ms":0,"slack_nodes":8,"teardown_ms":0,"window_bytes":4194304,"window_calls":32}}}
+{"stats":{"bus":{"by_member":{"org.a11y.atspi.Accessible.GetChildren":8,"org.a11y.atspi.Accessible.GetInterfaces":6,"org.a11y.atspi.Accessible.GetRoleName":6,"org.a11y.atspi.Accessible.GetState":6,"org.a11y.atspi.Action.GetName":5,"org.a11y.atspi.Text.GetText":1,"org.freedesktop.DBus.GetConnectionUnixProcessID":1,"org.freedesktop.DBus.Properties.Get":20},"calls":53,"connections":0,"max_in_flight":17,"peak_staged_bytes":465,"reply_bytes":5088,"waits":29,"waits_alone":5},"command":"get_window_state","elapsed_ms":55.846,"id":2,"ok":true,"tree":{"admitted":6,"discovered":6,"hit_tests":0,"identity":"title","source":"at_spi","tables_listed":0,"tables_sampled":0,"truncated":{"depth":0,"failed":0,"nodes":0},"wasted_calls":0},"variant":{"call_reservation":4096,"capture_wait":"damage","key_pace_ms":0,"paste_settle_ms":100,"retention":"Session","settle_ms":0,"slack_nodes":8,"teardown_ms":0,"window_bytes":4194304,"window_calls":32}}}
+{"stats":{"bus":{"by_member":{"org.a11y.atspi.Accessible.GetChildren":1,"org.freedesktop.DBus.GetConnectionUnixProcessID":1,"org.freedesktop.DBus.Properties.Get":2},"calls":4,"connections":0,"max_in_flight":2,"peak_staged_bytes":155,"reply_bytes":367,"waits":3,"waits_alone":2},"command":"click","elapsed_ms":16.516,"focus_out":[{"after_input_ms":0.003,"cause":"request","scheduled_by":3,"window":4194310}],"id":3,"ok":true,"route":"background","toolkit":{"name":"Qt","version":"5.15.13"},"variant":{"call_reservation":4096,"capture_wait":"damage","key_pace_ms":0,"paste_settle_ms":100,"retention":"Session","settle_ms":0,"slack_nodes":8,"teardown_ms":0,"window_bytes":4194304,"window_calls":32}}}
+{"stats":{"bus":{"by_member":{},"calls":0,"connections":0,"max_in_flight":0,"peak_staged_bytes":0,"reply_bytes":0,"waits":0,"waits_alone":0},"command":"click","elapsed_ms":13.317,"focus_out":[{"after_input_ms":0.001,"cause":"request","scheduled_by":4,"window":4194310}],"id":4,"ok":true,"route":"background","variant":{"call_reservation":4096,"capture_wait":"damage","key_pace_ms":0,"paste_settle_ms":100,"retention":"Session","settle_ms":0,"slack_nodes":8,"teardown_ms":0,"window_bytes":4194304,"window_calls":32}}}
+{"stats":{"bus":{"by_member":{},"calls":0,"connections":0,"max_in_flight":0,"peak_staged_bytes":0,"reply_bytes":0,"waits":0,"waits_alone":0},"command":"click","elapsed_ms":13.925,"focus_out":[{"after_input_ms":0.002,"cause":"request","scheduled_by":5,"window":4194310}],"id":5,"ok":true,"route":"background","variant":{"call_reservation":4096,"capture_wait":"damage","key_pace_ms":0,"paste_settle_ms":100,"retention":"Session","settle_ms":0,"slack_nodes":8,"teardown_ms":0,"window_bytes":4194304,"window_calls":32}}}
+{"stats":{"bus":{"by_member":{},"calls":0,"connections":0,"max_in_flight":0,"peak_staged_bytes":0,"reply_bytes":0,"waits":0,"waits_alone":0},"command":"click","elapsed_ms":13.109,"focus_out":[{"after_input_ms":0.002,"cause":"request","scheduled_by":6,"window":4194310}],"id":6,"ok":true,"route":"background","variant":{"call_reservation":4096,"capture_wait":"damage","key_pace_ms":0,"paste_settle_ms":100,"retention":"Session","settle_ms":0,"slack_nodes":8,"teardown_ms":0,"window_bytes":4194304,"window_calls":32}}}
+{"stats":{"bus":{"by_member":{},"calls":0,"connections":0,"max_in_flight":0,"peak_staged_bytes":0,"reply_bytes":0,"waits":0,"waits_alone":0},"command":"click","elapsed_ms":13.159,"focus_out":[{"after_input_ms":0.001,"cause":"request","scheduled_by":7,"window":4194310}],"id":7,"ok":true,"route":"background","variant":{"call_reservation":4096,"capture_wait":"damage","key_pace_ms":0,"paste_settle_ms":100,"retention":"Session","settle_ms":0,"slack_nodes":8,"teardown_ms":0,"window_bytes":4194304,"window_calls":32}}}
+{"stats":{"bus":{"by_member":{},"calls":0,"connections":0,"max_in_flight":0,"peak_staged_bytes":0,"reply_bytes":0,"waits":0,"waits_alone":0},"command":"click","elapsed_ms":13.173,"focus_out":[{"after_input_ms":0.001,"cause":"request","scheduled_by":8,"window":4194310}],"id":8,"ok":true,"route":"background","variant":{"call_reservation":4096,"capture_wait":"damage","key_pace_ms":0,"paste_settle_ms":100,"retention":"Session","settle_ms":0,"slack_nodes":8,"teardown_ms":0,"window_bytes":4194304,"window_calls":32}}}
+{"stats":{"bus":{"by_member":{},"calls":0,"connections":0,"max_in_flight":0,"peak_staged_bytes":0,"reply_bytes":0,"waits":0,"waits_alone":0},"command":"click","elapsed_ms":13.218,"focus_out":[{"after_input_ms":0.002,"cause":"request","scheduled_by":9,"window":4194310}],"id":9,"ok":true,"route":"background","variant":{"call_reservation":4096,"capture_wait":"damage","key_pace_ms":0,"paste_settle_ms":100,"retention":"Session","settle_ms":0,"slack_nodes":8,"teardown_ms":0,"window_bytes":4194304,"window_calls":32}}}
+{"stats":{"bus":{"by_member":{},"calls":0,"connections":0,"max_in_flight":0,"peak_staged_bytes":0,"reply_bytes":0,"waits":0,"waits_alone":0},"command":"click","elapsed_ms":13.313,"focus_out":[{"after_input_ms":0.002,"cause":"request","scheduled_by":10,"window":4194310}],"id":10,"ok":true,"route":"background","variant":{"call_reservation":4096,"capture_wait":"damage","key_pace_ms":0,"paste_settle_ms":100,"retention":"Session","settle_ms":0,"slack_nodes":8,"teardown_ms":0,"window_bytes":4194304,"window_calls":32}}}
+{"stats":{"bus":{"by_member":{},"calls":0,"connections":0,"max_in_flight":0,"peak_staged_bytes":0,"reply_bytes":0,"waits":0,"waits_alone":0},"command":"click","elapsed_ms":13.16,"focus_out":[{"after_input_ms":0.001,"cause":"request","scheduled_by":11,"window":4194310}],"id":11,"ok":true,"route":"background","variant":{"call_reservation":4096,"capture_wait":"damage","key_pace_ms":0,"paste_settle_ms":100,"retention":"Session","settle_ms":0,"slack_nodes":8,"teardown_ms":0,"window_bytes":4194304,"window_calls":32}}}
+{"stats":{"bus":{"by_member":{},"calls":0,"connections":0,"max_in_flight":0,"peak_staged_bytes":0,"reply_bytes":0,"waits":0,"waits_alone":0},"command":"click","elapsed_ms":13.962,"focus_out":[{"after_input_ms":0.003,"cause":"request","scheduled_by":12,"window":4194310}],"id":12,"ok":true,"route":"background","variant":{"call_reservation":4096,"capture_wait":"damage","key_pace_ms":0,"paste_settle_ms":100,"retention":"Session","settle_ms":0,"slack_nodes":8,"teardown_ms":0,"window_bytes":4194304,"window_calls":32}}}
+{"stats":{"exit_settle":{"waited_ms":0.0},"id":null}}
+FAILED
+test a_background_drag_to_a_late_qt_window_leaves_the_x_focus_where_it_was ... FAILED
+test a_click_right_after_a_key_to_a_late_qt_window_leaves_the_x_focus_where_it_was ... FAILED
+test in_dedicated_mode_a_background_click_is_as_before_and_waits_for_nothing ... ok
+test with_no_focus_wait_the_late_qt_window_takes_the_x_focus_on_a_background_click ... unknown argument --focus-ack-ms
+usage: cua-engine server [--mouse-size-px <n>] [--desktop shared|dedicated]
+       [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
+       [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
+       [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
+       [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
+       [--targets-wait-ms <ms>] [--stats]
+       cua-engine launcher-shim <parent pid> <program> [args...]
+       cua-engine --version
+FAILED
+
+failures:
+
+---- a_background_click_to_a_late_qt_window_waits_for_its_focus_and_leaves_the_x_focus_where_it_was stdout ----
+
+thread 'a_background_click_to_a_late_qt_window_waits_for_its_focus_and_leaves_the_x_focus_where_it_was' (3721964) panicked at tests/live_focus_ack.rs:196:9:
+assertion `left == right` failed: qt5: no click took the X focus from the front window
+  left: 9
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_background_drag_to_a_late_qt_window_leaves_the_x_focus_where_it_was stdout ----
+
+thread 'a_background_drag_to_a_late_qt_window_leaves_the_x_focus_where_it_was' (3722077) panicked at tests/live_focus_ack.rs:254:9:
+assertion `left == right` failed: qt6: no drag took the X focus from the front window
+  left: 8
+ right: 0
+
+---- a_click_right_after_a_key_to_a_late_qt_window_leaves_the_x_focus_where_it_was stdout ----
+
+thread 'a_click_right_after_a_key_to_a_late_qt_window_leaves_the_x_focus_where_it_was' (3722265) panicked at tests/live_focus_ack.rs:232:9:
+assertion `left == right` failed: qt5: no click took the X focus from the front window
+  left: 9
+ right: 0
+
+---- with_no_focus_wait_the_late_qt_window_takes_the_x_focus_on_a_background_click stdout ----
+
+thread 'with_no_focus_wait_the_late_qt_window_takes_the_x_focus_on_a_background_click' (3722436) panicked at tests/support/mod.rs:226:35:
+called `Result::unwrap()` on an `Err` value: Os { code: 32, kind: BrokenPipe, message: "Broken pipe" }
+
+
+failures:
+    a_background_click_to_a_late_qt_window_waits_for_its_focus_and_leaves_the_x_focus_where_it_was
+    a_background_drag_to_a_late_qt_window_leaves_the_x_focus_where_it_was
+    a_click_right_after_a_key_to_a_late_qt_window_leaves_the_x_focus_where_it_was
+    with_no_focus_wait_the_late_qt_window_takes_the_x_focus_on_a_background_click
+
+test result: FAILED. 1 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 33.85s
+
+error: test failed, to rerun pass `--test live_focus_ack`

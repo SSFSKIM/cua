@@ -1,0 +1,28 @@
+qt5 control 1: no key, focus 2097152 (front 2097152)
+qt5 control 2: no key, focus 2097152 (front 2097152)
+qt5 control 3: no key, focus 2097152 (front 2097152)
+qt5 key 1: focus before 2097152
+qt5 key 1: answer {"id":1,"ok":true,"output":null,"error":null,"restart":false} focus 4194320 (front 2097152, main 4194310, dialog 4194320)
+qt5 key 2: focus before 2097152
+qt5 key 2: answer {"id":1,"ok":true,"output":null,"error":null,"restart":false} focus 4194320 (front 2097152, main 4194310, dialog 4194320)
+qt5 key 3: focus before 2097152
+qt5 key 3: answer {"id":1,"ok":true,"output":null,"error":null,"restart":false} focus 4194320 (front 2097152, main 4194310, dialog 4194320)
+qt5 key 4: focus before 2097152
+qt5 key 4: answer {"id":1,"ok":true,"output":null,"error":null,"restart":false} focus 4194320 (front 2097152, main 4194310, dialog 4194320)
+qt5 key 5: focus before 2097152
+qt5 key 5: answer {"id":1,"ok":true,"output":null,"error":null,"restart":false} focus 4194320 (front 2097152, main 4194310, dialog 4194320)
+qt5: the dialog took the X focus after 5 of 5 background keys to the blocked main window
+qt6 control 1: no key, focus 2097152 (front 2097152)
+qt6 control 2: no key, focus 2097152 (front 2097152)
+qt6 control 3: no key, focus 2097152 (front 2097152)
+qt6 key 1: focus before 2097152
+qt6 key 1: answer {"id":1,"ok":true,"output":null,"error":null,"restart":false} focus 4194320 (front 2097152, main 4194310, dialog 4194320)
+qt6 key 2: focus before 2097152
+qt6 key 2: answer {"id":1,"ok":true,"output":null,"error":null,"restart":false} focus 4194320 (front 2097152, main 4194310, dialog 4194320)
+qt6 key 3: focus before 2097152
+qt6 key 3: answer {"id":1,"ok":true,"output":null,"error":null,"restart":false} focus 4194320 (front 2097152, main 4194310, dialog 4194320)
+qt6 key 4: focus before 2097152
+qt6 key 4: answer {"id":1,"ok":true,"output":null,"error":null,"restart":false} focus 4194320 (front 2097152, main 4194310, dialog 4194320)
+qt6 key 5: focus before 2097152
+qt6 key 5: answer {"id":1,"ok":true,"output":null,"error":null,"restart":false} focus 4194320 (front 2097152, main 4194310, dialog 4194320)
+qt6: the dialog took the X focus after 5 of 5 background keys to the blocked main window

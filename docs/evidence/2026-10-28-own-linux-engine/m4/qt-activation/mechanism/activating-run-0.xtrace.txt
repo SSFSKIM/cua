@@ -1,0 +1,37 @@
+000:>:02c6: Event Expose(12) window=0x00c00006 x=0 y=0 width=900 height=700 count=0x0000
+000:>:02c6: Event (generated) FocusIn(9) detail=Nonlinear(0x03) event=0x00c00006 mode=Normal(0x00)
+000:>:02c6: Event (generated) EnterNotify(7) detail=Nonlinear(0x03) mode=Normal(0x00) flags=same-screen time=0x2b2239b8 root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=60 root-y=120 event-x=60 event-y=120 state=0
+000:>:02c6: Event (generated) MotionNotify(6) detail=Normal(0x00) time=0x2b2239b8 root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=60 root-y=120 event-x=60 event-y=120 state=0 same-screen=true(0x01)
+000:>:02c6: Event (generated) EnterNotify(7) detail=Nonlinear(0x03) mode=Normal(0x00) flags=same-screen time=0x2b2239b8 root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=60 root-y=120 event-x=60 event-y=120 state=0
+000:>:02c6: Event (generated) MotionNotify(6) detail=Normal(0x00) time=0x2b2239b8 root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=60 root-y=120 event-x=60 event-y=120 state=0 same-screen=true(0x01)
+000:>:02c6: Event (generated) ButtonPress(4) button=left button(0x01) time=0x2b2239b8 root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=60 root-y=120 event-x=60 event-y=120 state=0 same-screen=true(0x01)
+000:<:02c7: 28: Request(18): ChangeProperty mode=Replace(0x00) window=0x00c00006 property=0x118("_NET_WM_USER_TIME") type=0x6("CARDINAL") data=0x2b2239b8;
+000:<:02c8: 44: Request(25): SendEvent propagate=false(0x00) destination=0x000001ff event-mask=StructureNotify,SubstructureRedirect ClientMessage(33) format=0x20 window=0x00c00006 type=0x100("_NET_ACTIVE_WINDOW") data=0x01,0x00,0x00,0x00,0xb8,0x39,0x22,0x2b,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00;
+000:<:02c9:  4: Request(43): GetInputFocus 
+000:>:02c9: Event PropertyNotify(28) window=0x00c00006 atom=0x118("_NET_WM_USER_TIME") time=0x2b2239b9 state=NewValue(0x00)
+000:>:02c9: Event (generated) ClientMessage(33) format=0x20 window=0x00c00006 type=0x100("_NET_ACTIVE_WINDOW") data=0x01,0x00,0x00,0x00,0xb8,0x39,0x22,0x2b,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00;
+000:>:02c9:32: Reply to GetInputFocus: revert-to=PointerRoot(0x01) focus=0x00a0000c
+000:<:02ca: 28: Request(18): ChangeProperty mode=Replace(0x00) window=0x00c00006 property=0x118("_NET_WM_USER_TIME") type=0x6("CARDINAL") data=0x2b2239b8;
+000:<:02cb: 20: Request(59): SetClipRectangles ordering=YXBanded(0x03) gc=0x00c00016 clip-x-origin=0 clip-y-origin=0 rectangles={x=0 y=0 w=900 h=700};
+000:<:02cc: 40: MIT-SHM-Request(130,3): PutImage drawable=0x00c00006 gc=0x00c00016 total-width=900 total-height=700 src-x=0 src-y=0 src-width=900 src-height=700 dst-x=0 dst-y=0 depth=24 format=ZPixmap(0x02) send-event=false(0x00) shmseg=0x00c00014 offset=0x00000000
+000:<:02cd: 16: Request(56): ChangeGC gc=0x00c00016 values={clip-mask=None(0x00000000)}
+000:<:02ce:  8: Request(38): QueryPointer window=0x000001ff
+000:>:02ce: Event PropertyNotify(28) window=0x00c00006 atom=0x118("_NET_WM_USER_TIME") time=0x2b2239ba state=NewValue(0x00)
+000:>:02ce:32: Reply to QueryPointer: same-screen=true(0x01) root=0x000001ff child=0x00600139 root-x=640 root-y=400 win-x=640 win-y=400 mask=0
+000:<:02cf:  8: Request(38): QueryPointer window=0x000001ff
+000:>:02cf:32: Reply to QueryPointer: same-screen=true(0x01) root=0x000001ff child=0x00600139 root-x=640 root-y=400 win-x=640 win-y=400 mask=0
+000:<:02d0:  4: Request(43): GetInputFocus 
+000:>:02d0:32: Reply to GetInputFocus: revert-to=PointerRoot(0x01) focus=0x00a0000c
+000:>:02d0: Event EnterNotify(7) detail=Nonlinear(0x03) mode=Normal(0x00) flags=same-screen time=0x2b2239c5 root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=640 root-y=400 event-x=640 event-y=400 state=0
+000:>:02d0: Event Generic(35) XInputExtension(131) Enter(7) deviceid=0x02 time=0x2b2239c5 sourceid=0x02 mode=Normal(0x00) detail=Nonlinear(0x03) root=0x000001ff event=0x00c00006 child=0x00000000 root_x=640.000000 root_y=400.000000 event_x=640.000000 event_y=400.000000 same_screen=true(0x01) focus=false(0x00) mods={base_mods=0x00000000 latched_mods=0x00000000 locked_mods=0x00000000 effective_mods=0x00000000}; group={base_group=0x00 latched_group=0x00 locked_group=0x00 effective_group=0x00}; masks=0x00000000;
+000:>:02d0: Event PropertyNotify(28) window=0x000001ff atom=0xfa(unrecognized atom) time=0x2b2239c5 state=NewValue(0x00)
+000:>:02d0: Event FocusIn(9) detail=Nonlinear(0x03) event=0x00c00006 mode=Normal(0x00)
+000:>:02d0: Event (generated) ClientMessage(33) format=0x20 window=0x00c00006 type=0xed("WM_PROTOCOLS") data=0xf1,0x00,0x00,0x00,0xba,0x39,0x22,0x2b,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00;
+000:>:02d0: Event (generated) ButtonRelease(5) button=left button(0x01) time=0x2b2239c5 root=0x000001ff event=0x00c00006 child=None(0x00000000) root-x=60 root-y=120 event-x=60 event-y=120 state=Button1 same-screen=true(0x01)
+000:>:02d0: Event PropertyNotify(28) window=0x000001ff atom=0x100("_NET_ACTIVE_WINDOW") time=0x2b2239c5 state=NewValue(0x00)
+000:>:02d0: Event PropertyNotify(28) window=0x000001ff atom=0x100("_NET_ACTIVE_WINDOW") time=0x2b2239c6 state=NewValue(0x00)
+000:<:02d1: 20: Request(59): SetClipRectangles ordering=YXBanded(0x03) gc=0x00c00016 clip-x-origin=0 clip-y-origin=0 rectangles={x=0 y=0 w=900 h=700};
+000:<:02d2: 40: MIT-SHM-Request(130,3): PutImage drawable=0x00c00006 gc=0x00c00016 total-width=900 total-height=700 src-x=0 src-y=0 src-width=900 src-height=700 dst-x=0 dst-y=0 depth=24 format=ZPixmap(0x02) send-event=false(0x00) shmseg=0x00c00014 offset=0x00000000
+000:<:02d3: 16: Request(56): ChangeGC gc=0x00c00016 values={clip-mask=None(0x00000000)}
+000:<:02d4:  8: Request(38): QueryPointer window=0x000001ff
+000:>:02d4:32: Reply to QueryPointer: same-screen=true(0x01) root=0x000001ff child=0x006001ca root-x=640 root-y=400 win-x=640 win-y=400 mask=0

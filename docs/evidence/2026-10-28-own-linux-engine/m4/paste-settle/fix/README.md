@@ -91,7 +91,8 @@ first runs on (`front_active` in each click run's row): 27 of 30 on kate and 28 
 none idle. The engines before task 60 and task 60's do the same (`qt-activation/`, 10 runs on kate each: 10 and 9).
 So a Qt window takes the X focus and becomes active, and the audits then see input with no synthetic-focus session
 (`input outside a session`), which fails them closed. It is not this fix's, nor task 60's. It changes the person's
-desktop in shared mode, so it goes to the design session.
+desktop in shared mode, so it goes to the design session. Task 61 settled it: a background press to a Qt window now
+waits for Qt's focus (`../../qt-activation/`).
 
 ## Files
 

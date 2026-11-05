@@ -1,0 +1,38 @@
+== kate, load factor 0 (engine 6dbc0057: no wait)
+{"family":"kate","frame":":1.0:/org/a11y/atspi/accessible/2147483753","field":":1.0:/org/a11y/atspi/accessible/2147483768","front":10485772,"window":12582918,"active_window":10485772,"frame_active":false}
+{"probe":"hold","i":0,"ok":true,"answered_ms":5.9,"active_after_ms":6.1,"inactive_after_focus_out_ms":98.1,"active_window_is_front":true}
+{"probe":"hold","i":1,"ok":true,"answered_ms":6.6,"active_after_ms":5.3,"inactive_after_focus_out_ms":99.8,"active_window_is_front":true}
+{"probe":"hold","i":2,"ok":true,"answered_ms":6,"active_after_ms":5.6,"inactive_after_focus_out_ms":108.6,"active_window_is_front":true}
+{"probe":"hold","i":3,"ok":true,"answered_ms":7.3,"active_after_ms":6.4,"inactive_after_focus_out_ms":108.4,"active_window_is_front":true}
+{"probe":"hold","i":4,"ok":true,"answered_ms":6.2,"active_after_ms":6.6,"inactive_after_focus_out_ms":107.8,"active_window_is_front":true}
+{"probe":"click","i":0,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":1,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":2,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":3,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":4,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":5,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":6,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":7,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":8,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":9,"ok":true,"error":null,"front_active":true}
+{"family":"kate","factor":0,"clicks":10,"front_lost":0}
+watchdog true
+== kate, load factor 2 (engine 6dbc0057: no wait)
+{"family":"kate","frame":":1.0:/org/a11y/atspi/accessible/2147483753","field":":1.0:/org/a11y/atspi/accessible/2147483768","front":10485772,"window":12582918,"active_window":10485772,"frame_active":false}
+{"probe":"hold","i":0,"ok":true,"answered_ms":29.7,"active_after_ms":12,"inactive_after_focus_out_ms":101.1,"active_window_is_front":true}
+{"probe":"hold","i":1,"ok":true,"answered_ms":11.1,"active_after_ms":22.5,"inactive_after_focus_out_ms":114.7,"active_window_is_front":true}
+{"probe":"hold","i":2,"ok":true,"answered_ms":20.2,"active_after_ms":11,"inactive_after_focus_out_ms":101.5,"active_window_is_front":true}
+{"probe":"hold","i":3,"ok":true,"answered_ms":19.1,"active_after_ms":13.8,"inactive_after_focus_out_ms":114.7,"active_window_is_front":true}
+{"probe":"hold","i":4,"ok":true,"answered_ms":22.4,"active_after_ms":11.9,"inactive_after_focus_out_ms":105,"active_window_is_front":true}
+{"probe":"click","i":0,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":1,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":2,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":3,"ok":true,"error":null,"front_active":false}
+{"probe":"click","i":4,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":5,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":6,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":7,"ok":true,"error":null,"front_active":false}
+{"probe":"click","i":8,"ok":true,"error":null,"front_active":true}
+{"probe":"click","i":9,"ok":true,"error":null,"front_active":true}
+{"family":"kate","factor":2,"clicks":10,"front_lost":2}
+watchdog true

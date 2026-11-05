@@ -268,8 +268,10 @@ fn a_background_drag_to_a_late_qt_window_leaves_the_x_focus_where_it_was() {
 }
 
 #[test]
-fn a_press_whose_focus_is_not_reported_within_the_bound_is_refused_with_nothing_sent() {
-    // a bound shorter than the late window's blocked turn: most clicks cannot see the focus taken in time
+fn at_a_bound_shorter_than_qt_s_turn_a_press_is_refused_with_nothing_sent_or_sent_with_the_focus_taken() {
+    // a 1 ms bound: whether a click sees the focus taken in time depends on when Qt answers the bus (the first read
+    // waits for Qt's main thread), so either outcome may come; each must leave the X focus where it was, and a refused
+    // click must press nothing (the bound's expiry itself: `focus_ack.rs`'s unit tests)
     for binding in ["qt5"] {
         let mut engine = Engine::start_with(&["--focus-ack-ms", "1"]);
         let Some(late) = late(binding, &mut engine) else {
@@ -278,7 +280,10 @@ fn a_press_whose_focus_is_not_reported_within_the_bound_is_refused_with_nothing_
         let front = Front::open();
         let (taken, answers, presses) = clicks(&mut engine, &late, &front, &[click(late.window)]);
         let refused: Vec<&Value> = answers.iter().filter(|a| a["ok"] != json!(true)).collect();
-        assert!(!refused.is_empty(), "a 1 ms bound refuses some clicks: {answers:?}");
+        eprintln!(
+            "{binding}: {} of {CLICKS} clicks refused at a 1 ms bound",
+            refused.len()
+        );
         for answer in &refused {
             let error = answer["error"].as_str().unwrap_or("");
             assert!(

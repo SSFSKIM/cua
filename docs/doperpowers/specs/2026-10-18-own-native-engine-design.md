@@ -1749,7 +1749,23 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      subtype 2. A deactivation that cannot post keeps today's join. Rejected: dropping the entry, because the lingering
      holders' releases would then have nothing to release; and restoring the old activation, which would mean another
      subtype 1 and guard inside a refusal.
-  7. **Unchanged.** Another connection's holder present (it may be mid-action under the activation, a paste's ⌘V or a
+  7. **No hold is left a set arm** (the review of 4ea25f9f..4d68fee4, one P2). A joiner that re-armed and then stopped
+     before its events (an intervention, events not made) used to leave the new arm set under the hold that remained, and
+     the hold's next key, which only refreshes an already-held activation, met no key window. Now two guards prevent
+     this. At release, a pointer share that leaves only holders with no mouse down of their own posts the kept inert
+     click if the arm is still set; it is recorded in that action's meta as {`inertOutside`, when `release`}. And the
+     already-held path (`refresh`, the focus hold's next key or element action) consumes a set arm before its input, as
+     a no-click joiner of `acquire` does, recorded in its meta as `early`. So no-click input never meets a set arm,
+     whatever left it set.
+  8. **The window number of the final subtype 2** (the reviewer's reading, settled statically). After a swap, the
+     hold's last subtype 2 carries the click's window number, which may be a dialog's. On 25G83, subtype 2's dispatch
+     (`-[NSApplication sendEvent:]`'s fast path, then `_handleAppKitDefinedEvent:`'s table, then
+     `_handleDeactivateEvent:`) does not need that number to resolve to a live window: the handler's window lookup at
+     +496 reads an application ivar, a failed lookup continues, and +1096 clears `isActive`. So a closed dialog does not
+     keep the app active, and the swap keeps the click's window (`~/.local/share/187/appkit/d-act.txt`, `d-act2.txt`,
+     `d-app-sendEvent.txt` on the MacBook). Application overrides and live behaviour are unverified; the dialog variant
+     of the keys-then-click row is queued for the next slot.
+  9. **Unchanged.** Another connection's holder present (it may be mid-action under the activation, a paste's ⌘V or a
      drag's events): today's join, so the joiner's ordering mouse down is left to the delivery guard to repair (ticket
      pending). A pointer joining a hold whose arm is still set (a skipped click): its own mouse down consumes the arm. A
      no-click joiner: item 1. The replacement of a stale activation.
@@ -1759,7 +1775,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   fails, refused, leaving the hold to activate again at its next key and to withdraw once, failing before the change; a
   no-click joiner consuming early and never re-arming; a pointer on a still-set arm, another connection's hold (alone
   and beside the clicker's own) and a recorded menu's span, each sharing as today; the existing click-inside-a-hold
-  tests, at an inert activation point, unchanged). A keys-then-click row with a raise watcher is queued for the next
+  tests, at an inert activation point, unchanged; after the review, a re-arming click stopped before its events
+  leaving the hold's next key no set arm, failing with both guards off, and each guard's own test, failing with that
+  guard off). A keys-then-click row with a raise watcher is queued for the next
   attended slot.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's ruling on #261's hold join.
 

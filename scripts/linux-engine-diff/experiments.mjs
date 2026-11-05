@@ -27,6 +27,7 @@ import { runDrag } from './drag.mjs';
 import { runEvents } from './events.mjs';
 import { controlLabel, runEngineStop } from './engine-stop.mjs';
 import { runFocusTimer } from './focus-timer.mjs';
+import { runQtActivation } from './qt-activation.mjs';
 import { runDnd } from './dnd.mjs';
 import { runKinds } from './kinds.mjs';
 import { familyNames, openFamily, readText } from './families.mjs';
@@ -313,6 +314,15 @@ export async function runExperiment(args) {
     // on a private X server of its own, like the AT-SPI probe (focus-timer.mjs), its load started there
     emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
     const { md, complete, failed, ending } = await runFocusTimer(args, { emit, run, startLoad });
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    process.stdout.write(`${md.join('\n')}\n`);
+    writeSummary(args.out);
+    return complete;
+  }
+  if (args.experiment === 'qt-activation') {
+    // on a private X server of its own, as the focus-timer experiment (qt-activation.mjs), its load started there
+    emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
+    const { md, complete, failed, ending } = await runQtActivation(args, { emit, run, startLoad });
     emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);
     writeSummary(args.out);

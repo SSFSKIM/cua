@@ -99,14 +99,22 @@ export const SETTLE_STEPS = [25, 50, 75, 100];
  * FocusOut (`--retention per-request`): on the private Xvfb a FocusOut with the redirect kept cuts no key (tasks 56 and
  * 59), while a FocusOut followed by the unredirect cuts Chromium's keys and delivers them with the next FocusIn, the
  * reorder M0.4 saw (task 58 found M0.4's own control ended its engine, and with it every redirect, before its read).
- * The control's paste has no settle (`--paste-settle-ms 0`), so its observation races the keys it follows, as at 0 in
- * task 59, and the key-then-paste scenario shows what the settle prevents.
+ * The control's paste series drops the paste's settle instead (`CONTROL_PASTE`, `laneArgs`), the redirect kept, so its
+ * observation races the keys it follows, as at 0 in task 59.
  */
 export const LANES = {
   shipped: [],
   ...Object.fromEntries(SETTLE_STEPS.map((ms) => [`settle-${ms}`, ['--paste-settle-ms', String(ms)]])),
-  control: ['--retention', 'per-request', '--paste-settle-ms', '0'],
+  control: ['--retention', 'per-request'],
 };
+/**
+ * The control's flags for the key-then-paste scenario: no settle, the redirect kept. With each request's redirect
+ * dropped as well, the race went out of sight on Chrome (0 of 10, idle, task 60), the per-request redirects slowing the
+ * paste's own path; with the redirect kept it missed 21 of 60 (task 59).
+ */
+export const CONTROL_PASTE = ['--paste-settle-ms', '0'];
+/** A lane's engine flags for a scenario's series: each control drops the one protection its scenario rests on. */
+export const laneArgs = (lane, scenario) => (lane === 'control' && scenario === 'paste' ? CONTROL_PASTE : LANES[lane]);
 /** The lanes a sitting runs unless `--lanes` names others: T7's proof on the engine as it ships. */
 export const DEFAULT_LANES = ['shipped', 'control'];
 /** Whether a lane must pass its series (30 consecutive): every lane but `control`, which must show the reorder. */
@@ -510,7 +518,7 @@ async function series(ctx, family, lane, name, windows) {
   for (let run = 0; run < (judged(lane) ? need * (MAX_RUNS / CONSECUTIVE) : CONTROL_RUNS); run++) {
     // with --trace, the run's engine connection through xtrace (a sitting of its own: the proxy delays every request)
     const proxy = ctx.trace ? await startProxy() : null;
-    const engine = new Engine({ label: `cua-${lane}`, bin: cua, args: LANES[lane], stats: true, ...(proxy ? { env: proxy.env } : {}) }).start();
+    const engine = new Engine({ label: `cua-${lane}`, bin: cua, args: laneArgs(lane, name), stats: true, ...(proxy ? { env: proxy.env } : {}) }).start();
     const stderrClosed = new Promise((resolve) => engine.child.stderr.once('close', resolve));
     let row;
     let text = null;
@@ -675,6 +683,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
   const stops = chosen.stops && laneStops;
   // each lane's engine flags, as the sitting ran them
   const laneFlags = Object.fromEntries(lanes.map((name) => [name, LANES[name]]));
+  if (lanes.includes('control')) laneFlags['control paste'] = CONTROL_PASTE;
   emit({ kind: 'focus-timer-display', display: server.display, cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), load_factor: args.load ? (args.loadFactor ?? 1) : 0, lanes: laneFlags });
   const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   const families = args.families.length ? args.families : FAMILIES;

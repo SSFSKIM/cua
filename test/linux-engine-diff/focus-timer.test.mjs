@@ -8,7 +8,7 @@ import { gunzipSync } from 'node:zlib';
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { EXIT_WITHIN_MS, LANES, SCENARIOS, SETTLE_STEPS, UNCONFIRMED, auditVerdict, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, settleCost, stopPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, chosenLanes, judged, focusOutsOf, keepTrace, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { EXIT_WITHIN_MS, LANES, SCENARIOS, laneArgs, SETTLE_STEPS, UNCONFIRMED, auditVerdict, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, settleCost, stopPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, chosenLanes, judged, focusOutsOf, keepTrace, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7: the audit of each FocusOut, attributed to the request whose input it ends (audit.mjs; written for T7's
 // timer, whose FocusOuts were deferred past their answers, and the guard that none is deferred now). Lines in the shape
@@ -217,7 +217,14 @@ test("the verdict passes only when every family's lanes, audits and stops did wh
 
 test("the lanes: the engine as it ships; the paste settle's measured steps; the control, each request unredirected", () => {
   assert.deepEqual(LANES.shipped, []);
-  assert.deepEqual(LANES.control, ['--retention', 'per-request', '--paste-settle-ms', '0'], 'the paste with no settle, so its race shows too');
+  assert.deepEqual(LANES.control, ['--retention', 'per-request']);
+  // each scenario's control drops the one protection that scenario rests on: the redirect for keys, the settle for a
+  // paste (with the redirect kept, as at 0 in task 59: per-request redirects slow the race out of sight on Chrome)
+  assert.deepEqual(laneArgs('control', 'burst'), ['--retention', 'per-request']);
+  assert.deepEqual(laneArgs('control', 'aba'), ['--retention', 'per-request']);
+  assert.deepEqual(laneArgs('control', 'paste'), ['--paste-settle-ms', '0']);
+  assert.deepEqual(laneArgs('shipped', 'paste'), []);
+  assert.deepEqual(laneArgs('settle-50', 'paste'), ['--paste-settle-ms', '50']);
   assert.deepEqual(
     Object.keys(LANES).filter((l) => l.startsWith('settle-')),
     SETTLE_STEPS.map((ms) => `settle-${ms}`),

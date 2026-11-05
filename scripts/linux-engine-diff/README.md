@@ -852,7 +852,7 @@ node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" -
   the renderer.
 - **The lanes**: the engine as it ships (`shipped`); the paste's settle at each of its measured steps (`settle-25`,
   `settle-50`, `settle-75`, `settle-100`: `--paste-settle-ms`, the redirect kept); and a control whose every request
-  drops its redirect with its `FocusOut` (`control`, `--retention per-request --paste-settle-ms 0`: its paste has no settle), which cuts Chromium's keys and
+  drops its redirect with its `FocusOut` (`control`, `--retention per-request`; its paste series drops the settle instead, `--paste-settle-ms 0` with the redirect kept), which cuts Chromium's keys and
   delivers them with the next `FocusIn`, the reorder M0.4 saw (on the private Xvfb a `FocusOut` with the redirect kept
   cuts nothing, tasks 56 and 59). `--lanes <list>` runs only the lanes it names, at least one judged, and no stop runs.
   `--trace` runs every series run with the engine's connection through xtrace and keeps a missed run's trace under

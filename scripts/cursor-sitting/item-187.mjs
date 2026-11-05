@@ -82,7 +82,8 @@
 // - each of the three controls 18/18 valid and delivered;
 // - the background-paste cell, in the same slot: AFTER on CELL_REPS counted repetitions, both pastes delivered; BEFORE
 //   on the saved engine on CELL_REPS counted repetitions, the background paste timing out at the read stage (by its stage
-//   meta, or by the saved engine's -10005 read-timeout error: readTimedOut) and the frontmost paste not delivered. A counted BEFORE
+//   meta alone: readTimedOut; the saved engine's -10005 error names a read-or-effect timeout, stage unknown, legacyTimeout,
+//   corrected 2026-11-05 on the re-judgment's review) and the frontmost paste not delivered. A counted BEFORE
 //   repetition that delivers is NO VERDICT (#187 stays Refs) when nothing else fails; LANDS names the route it rests on;
 // - every background item's order watcher (the cell's AFTER repetitions' too) whole, its longest gap within
 //   WATCH_GAP_MS, its raises reconciled;
@@ -756,16 +757,23 @@ export function reconciliationProblem(watcher) {
 // pre-registered it; the key-window readings left the pass and the prediction and are reported in the mechanism section
 // (mechanismOf), where the "frontmost with no key window" prediction is judged on its own.
 //
-// Whether a paste's read timed out: its stage meta saying so, or, when it threw with no stage meta, its error being the
-// read-stage timeout itself (amended 2026-11-05, (a)): code -10005 with "Timed out waiting for the application to read the
-// clipboard". The saved engine (dd7a) never emits the stage meta on any paste, delivered or not, so this reading of its
-// error does not depend on the outcome being judged; only that code with that message counts, nothing broader.
+// Whether a paste's read timed out: its stage meta saying so, and nothing else. An engine that emits no stage meta (the
+// saved dd7a) answers both its read wait and its effect wait with the one -10005 sentence "Timed out waiting for the
+// application to read the clipboard" (that lineage's Paste.swift threw clipboardReadTimedOut for either, 7a24390b:166
+// and :168; the vendor's remap, which #187's 2026-11-01 entry split), so its error names a read-or-effect timeout whose
+// stage is unknown: legacyTimeout, reported, never a read timeout (corrected 2026-11-05 on the re-judgment's independent
+// review, which found the first amendment (a), reading that error as the read stage, wrong).
 export const READ_TIMEOUT = Object.freeze({code: '-10005', message: 'Timed out waiting for the application to read the clipboard'});
 export function readTimedOut(r) {
-  if (r?.paste?.stage != null) return r.paste.stage === 'read' && r.paste.readWait === 'timeout';
+  return r?.paste?.stage != null && r.paste.stage === 'read' && r.paste.readWait === 'timeout';
+}
+// A paste with no stage meta that threw the legacy -10005 sentence: a read-or-effect timeout, stage unknown.
+export function legacyTimeout(r) {
+  if (r?.paste?.stage != null) return false;
   const error = typeof r?.error === 'string' ? r.error : '';
   return r?.threw === true && new RegExp(`(^|[^\\d-])${READ_TIMEOUT.code}(?!\\d)`).test(error) && error.includes(READ_TIMEOUT.message);
 }
+const LEGACY_TEXT = `timed out with the legacy ${READ_TIMEOUT.code} read-or-effect sentence and no stage meta (stage unknown), not shown to be a read timeout`;
 const repStatus = (c, bg) => {
   if (c.personTouched) return ['person-touched', `touched by the person (${touchText(c.personTouched)})`];
   if (c.route === 'press') {
@@ -793,9 +801,12 @@ export function cellVerdict(c) {
     route === 'paste' && (pasteText(bg, 'background') ?? (!bg.delivered && 'the background paste did not deliver')),
     pasteText(fg, 'frontmost') ?? (!fg.delivered && 'the frontmost paste did not deliver')].filter(Boolean);
   const beforeWhy = !counted ? [premise] : [
-    route === 'paste' && (pasteText(bg, 'background') ?? (bg.delivered ? 'the background paste delivered' : !timedOut(bg) && `the background paste stopped at ${bg.paste?.stage ?? 'no stage'} (read ${bg.paste?.readWait ?? '–'}), not a read timeout`)),
-    pasteText(fg, 'frontmost') ?? (fg.delivered ? 'the frontmost paste delivered' : route === 'press' && !timedOut(fg) && 'the frontmost paste\'s read did not time out')].filter(Boolean);
-  return {recorded: true, route, status, counted, pass, predicted, delivers, key, keyless, bgDelivered, delivered: fgDelivered, bgReadTimeout: timedOut(bg), readTimeout: timedOut(fg),
+    route === 'paste' && (pasteText(bg, 'background') ?? (bg.delivered ? 'the background paste delivered' : !timedOut(bg) && (legacyTimeout(bg) ? `the background paste ${LEGACY_TEXT}` : `the background paste stopped at ${bg.paste?.stage ?? 'no stage'} (read ${bg.paste?.readWait ?? '–'}), not a read timeout`))),
+    pasteText(fg, 'frontmost') ?? (fg.delivered ? 'the frontmost paste delivered' : route === 'press' && !timedOut(fg) && (legacyTimeout(fg) ? `the frontmost paste ${LEGACY_TEXT}` : 'the frontmost paste\'s read did not time out'))].filter(Boolean);
+  // What delivery alone shows, whatever the stage: a counted repetition in which no paste delivered.
+  const deliversNeither = counted && valid(fg) && !fg.delivered && (route !== 'paste' || (valid(bg) && !bg.delivered));
+  return {recorded: true, route, status, counted, pass, predicted, delivers, deliversNeither, key, keyless, bgDelivered, delivered: fgDelivered,
+    bgReadTimeout: timedOut(bg), readTimeout: timedOut(fg), bgLegacyTimeout: legacyTimeout(bg), legacyTimeout: legacyTimeout(fg),
     why: why.join('; ') || null, beforeWhy: beforeWhy.join('; ') || null};
 }
 
@@ -885,7 +896,7 @@ export function judge187(items) {
   const cellRows = cells.paste.after.filter(currentRep).flatMap(c => [c.record.background, c.record.row]).filter(Boolean);
   const bar = barOf({groupOf: name => groups.find(g => g.item === name) ?? null, cells, putback, cellRows});
   // #188's rows and cell 3, and #259's cell, judged apart (./item-188.mjs): reported, never part of the bar.
-  return {groups, cells, premise, press: pressStatement(cells.press, premise), mechanism: mechanismOf(cells.paste), axFocused: axFocusedCount({groups, cells}), bar, putback, restore, overall: {ok: bar.ok, verdict: bar.verdict, why: bar.why, on: bar.on},
+  return {groups, cells, premise, press: pressStatement(cells.press, premise), mechanism: mechanismOf(cells.paste), axFocused: axFocusedCount({groups, cells}), bar, putback, restore, overall: {ok: bar.ok, verdict: bar.verdict, why: bar.why, on: bar.on, shown: bar.shown},
     vendor: items[ITEMS.vendor] ? summarize(records(ITEMS.vendor)) : null, vendorKorean: items[ITEMS.vendorKorean] ? summarize(records(ITEMS.vendorKorean)) : null,
     item188: judge188(items), item259: judge259(items)};
 }
@@ -1028,7 +1039,9 @@ function barOf({groupOf, cells, putback, cellRows}) {
   if (unread) why.push(`Chrome's menus could not be read after ${unread} row(s)`);
   why.push(...putback.why);
   const verdict = why.length ? 'DOES NOT LAND' : noVerdict ? 'NO VERDICT' : 'LANDS';
-  return {ok: verdict === 'LANDS', verdict, why: noVerdict ? [...why, noVerdict] : why, on: verdict === 'LANDS' ? ROUTE_NAMES.paste : null};
+  // What delivery alone shows, stage aside: AFTER's repetitions with both pastes delivered, BEFORE's with neither.
+  const shown = {after: {both: afterPass.length, of: afterCounted.length}, before: {neither: beforeCounted.filter(c => c.deliversNeither).length, of: beforeCounted.length}};
+  return {ok: verdict === 'LANDS', verdict, why: noVerdict ? [...why, noVerdict] : why, on: verdict === 'LANDS' ? ROUTE_NAMES.paste : null, shown};
 }
 
 // The owner's source at the end (187-end's select-source): restored only when it was switched and read back as the one
@@ -1050,13 +1063,14 @@ export function item187Addendum(judged, {commit = null} = {}) {
   const ax = judged.axFocused;
   return [`# #187: the re-judgment addendum (${ADDENDUM_FILE})`, '',
     `An offline re-judgment of this out directory's records, by the judge's predicates as amended on 2026-11-05${commit ? ` (the kit at ${commit})` : ''}, after the slot and before this judgment ran. \`item-187.md\` stays exactly as the slot's judge computed it; this file is beside it. The amendments, each with its reason:`, '',
-    `- **(a) The read stage.** When a paste threw with no stage meta, its read-stage timeout is taken from the error itself: code ${READ_TIMEOUT.code} with "${READ_TIMEOUT.message}". The saved engine (dd7a) never emits the stage meta, on any paste, so this does not depend on the outcome; only that code with that message counts, nothing broader.`,
-    `- **(b) The key.** The run window's own AXFocused is no longer part of the key reading: it read no on ${ax.all.no} of ${ax.all.of} Chrome key-window readings, both builds (the shipping build ${ax.shipping.no} of ${ax.shipping.of}, the saved engine ${ax.saved.no} of ${ax.saved.of}), so it carries no information.`,
-    '- **(c) The bar.** The key-window conditions leave the bar for the mechanism section. The cell\'s discrimination rests on delivery alone, as both halves pre-registered it: AFTER both pastes delivered; BEFORE the background paste timing out at the read stage and the frontmost paste not delivered. The mechanism section reports the key readings per half (frontmost, AXMain, AXFocusedWindow, hasFocus) and judges the "Chrome frontmost with no key window" prediction as it was stated. The AXPress route stays reported only.',
+    `- **(a) The read stage, corrected.** The first re-judgment (b04ca136) read a paste with no stage meta that threw code ${READ_TIMEOUT.code} with "${READ_TIMEOUT.message}" as a read-stage timeout, and re-judged LANDS. The independent adversarial review of a950e5a1..b04ca136 found that wrong: in the saved engine's lineage, Paste.swift threw that same sentence when the read wait failed and when the effect wait failed (7a24390b:166 and :168), so the error names a read-or-effect timeout whose stage is unknown. The judge now counts a read timeout only from the stage meta; a legacy ${READ_TIMEOUT.code} is reported as a read-or-effect timeout (legacy, stage unknown). This file replaces b04ca136's.`,
+    `- **(b) The key.** The run window's own AXFocused is no longer part of the key reading: it was never observed true, reading no on ${ax.all.no} of ${ax.all.of} Chrome key-window readings, both builds (the shipping build ${ax.shipping.no} of ${ax.shipping.of}, the saved engine ${ax.saved.no} of ${ax.saved.of}).`,
+    '- **(c) The bar, a post-hoc acceptance change.** The key-window conditions leave the bar for the mechanism section, and the cell\'s discrimination rests on delivery and stage: AFTER both pastes delivered; BEFORE the background paste timing out at the read stage and the frontmost paste not delivered. This change was made after the readings were seen, so it is an acceptance decision, not the pre-registered bar passing. The mechanism section reports the key readings per half (frontmost, AXMain, AXFocusedWindow, hasFocus) and judges the "Chrome frontmost with no key window" prediction as it was stated. The AXPress route stays reported only.',
     '- **(e) The per-line record.** typeText still needs one record per line, each confirmed by its own change, every later line opened by a settled Return. paste needs exactly one record: the engine sends the whole text, newlines included, as one part in one ⌘V (Paste.swift:720) and counts its lines as 1 plus its Return parts (:487), so a paste is one act with one record, confirmed by its own change. The bar had asked a paste for a record per line of its text.', '',
-    `**What these are.** (a), (b) and (e) are judge predicates that no run could meet: the saved engine never emits the stage meta, AXFocused read no on every Chrome reading on both builds, and a paste never makes more than one record. Correcting them changes what the judge can read, not what the slot did. (c) is different: ${judged.mechanism.tested && !judged.mechanism.supported ? `the "${PREDICTION}" prediction was tested, and the readings refute it. It is a refuted prediction, recorded as wrong, not restated` : `the "${PREDICTION}" prediction is judged in the mechanism section (${judged.mechanism.tested ? 'supported there' : 'not tested'})`}, and it leaves the bar because the pre-registered discrimination of both halves is delivery.`, '',
+    `**What these are.** (e) corrects a predicate no run could meet: a paste never makes more than one record. (b) rests on an observation: AXFocused was never observed true on Chrome in this slot. (c) is outcome-dependent: ${judged.mechanism.tested && !judged.mechanism.supported ? `the "${PREDICTION}" prediction was tested, and the readings refute it; it is recorded as wrong, not restated` : `the "${PREDICTION}" prediction is judged in the mechanism section (${judged.mechanism.tested ? 'supported there' : 'not tested'})`}, and its leaving the bar is a post-hoc acceptance change. (a), as corrected, removes nothing from the bar: the saved engine's stage stays unknown.`, '',
     `## Re-judged: ${judged.overall.verdict}${judged.overall.on ? `, on ${judged.overall.on}` : ''}`, '',
     ...(judged.overall.why.length ? judged.overall.why.map(w => `- ${w}`) : ['- every condition held']), '',
+    `**What the cell does show, by delivery alone:** AFTER ${judged.overall.shown.after.both} of ${judged.overall.shown.after.of} counted repetitions with both pastes delivered; BEFORE ${judged.overall.shown.before.neither} of ${judged.overall.shown.before.of} with neither delivered. What it does not show: the BEFORE stage (legacy, unknown), and the inert click's role in isolation, since the saved engine differs from the shipping build by more than the inert click. Closing #187 needs a cell pre-registered on delivery and stage, its BEFORE on a control build of the same head with only the inert click disabled at build time.`, '',
     `${judged.mechanism.statement}`, '',
     '---', '', item187Markdown(judged)].join('\n');
 }
@@ -1094,7 +1108,8 @@ export function item187Markdown(judged) {
   lines.push('', `AFTER: ${counted('after').filter(c => c.pass).length} of ${counted('after').length} counted repetitions with both pastes delivered (${CELL_REPS} needed).`);
   if (judged.cells.paste.before.some(c => c.recorded || c.stopped)) {
     const before = counted('before'), delivering = before.filter(c => c.delivers);
-    lines.push(`BEFORE: ${before.filter(c => c.predicted).length} of ${before.length} counted repetitions failing as predicted (${CELL_REPS} needed).${delivering.length ? ` **${delivering.length} BEFORE repetition(s) delivered: the cell does not discriminate, NO VERDICT, and #187 stays Refs.**` : ''}`);
+    lines.push(`BEFORE: ${before.filter(c => c.predicted).length} of ${before.length} counted repetitions failing as predicted (${CELL_REPS} needed).${delivering.length ? ` **${delivering.length} BEFORE repetition(s) delivered: the cell does not discriminate, NO VERDICT, and #187 stays Refs.**` : ''}`,
+      `By delivery alone, stage aside: AFTER ${counted('after').filter(c => c.pass).length} of ${counted('after').length} counted repetitions with both pastes delivered, BEFORE ${before.filter(c => c.deliversNeither).length} of ${before.length} with neither delivered.${before.some(c => c.bgLegacyTimeout) ? ` ${before.filter(c => c.bgLegacyTimeout).length} BEFORE background paste(s) ${LEGACY_TEXT}.` : ''}`);
   } else lines.push('BEFORE: not recorded (`--part before`, once the owner\'s engine is put back).');
   const mech = judged.mechanism, ax = judged.axFocused;
   lines.push('', '## The mechanism: the key-window readings (reported, never the bar)', '',

@@ -12,7 +12,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {main, read187} from '../../scripts/cursor-sitting.mjs';
 import {ADDENDUM_FILE, AXPRESS_BOUND_MS, BLOCK_ROWS, CELL_REPS, CELL_ROW, cellItem, cellVerdict, clipboardReaders, COMPOSE_LEAD_MS, COMPOSE_REPOST_LEAD_MS, COMPOSING_BLOCKS, CONTROLS, driveItems, freshActivation, GROUPS, groupItem,
-  item187Markdown, item187Tasks, ITEMS, judge187, judgedOk, keyHeld, LABELS, menuOpened, PARTS, perLineProblem, personTouchedOf, plan187, PREMISE_SAMPLES, PRESS_REPS, pressItem, READ_TIMEOUT, readTimedOut, releaseOf,
+  item187Markdown, item187Tasks, ITEMS, judge187, judgedOk, keyHeld, LABELS, menuOpened, PARTS, perLineProblem, personTouchedOf, plan187, PREMISE_SAMPLES, PRESS_REPS, pressItem, READ_TIMEOUT, readTimedOut, legacyTimeout, releaseOf,
   premiseOpens, RELAUNCH_STABLE_POLLS, ROWS, rowRecord, slotTouches, TARGET, TOUCHED_STOP, touchedOfItem, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
 import {ITEMS_188, ITEMS_259} from '../../scripts/cursor-sitting/item-188.mjs';
 import {describeStep, runSteps} from '../../scripts/cursor-sitting/runner.mjs';
@@ -1015,7 +1015,8 @@ test('a touch only the watcher saw, in a group that completed, survives the part
   assert.equal(slotTouches(rows, []), 1);
 });
 
-// The saved engine's paste as the second re-slot recorded it: thrown with no stage meta, the error the read timeout.
+// The saved engine's paste as the second re-slot recorded it: thrown with no stage meta, the legacy -10005 sentence,
+// which that lineage threw for a read timeout and an effect timeout alike.
 const DD7A_ERROR = 'Computer Use server error -10005: Timed out waiting for the application to read the clipboard';
 const DD7A_TIMED_OUT = {act: {ok: true, value: {actMs: 2118, threw: true, message: DD7A_ERROR}, route: 'paste', meta: {activationGuardMs: 40, activationClick: 'outsideFrame'}},
   check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: CELL_ROW.string.text.length}}}};
@@ -1023,24 +1024,34 @@ const DD7A_TIMED_OUT = {act: {ok: true, value: {actMs: 2118, threw: true, messag
 // its own AXFocused no, the page focused.
 const SLOT_KEY = {reading: {...KEY, focused: false}, pageFocused: true, settledMs: 1123};
 
-test('(a) the saved engine\'s thrown paste with no stage meta times out at the read stage by its error: that code with that message only', () => {
+test('(a) corrected: a read timeout comes from the stage meta alone; the saved engine\'s legacy -10005 is a read-or-effect timeout, stage unknown, and fails the BEFORE prediction', () => {
   const r = over => cellRow('before', 0, 'chrome-cell-background', over);
   const dd7a = r(DD7A_TIMED_OUT);
   assert.equal(dd7a.paste, null, 'no stage meta');
-  assert.equal(readTimedOut(dd7a), true);
+  assert.equal(readTimedOut(dd7a), false, 'the legacy sentence names no stage');
+  assert.equal(legacyTimeout(dd7a), true);
   const withError = message => r({act: {...DD7A_TIMED_OUT.act, value: {...DD7A_TIMED_OUT.act.value, message}}});
-  assert.equal(readTimedOut(withError(DD7A_ERROR.replace('-10005', '-10004'))), false, 'another code');
-  assert.equal(readTimedOut(withError(DD7A_ERROR.replace('-10005', '-100051'))), false);
-  assert.equal(readTimedOut(withError('Computer Use server error -10005: The application did not respond')), false, 'that code with another message');
-  assert.equal(readTimedOut(withError('Timed out waiting for the application to read the clipboard')), false, 'the message without the code');
-  assert.equal(readTimedOut(r({act: {...DD7A_TIMED_OUT.act, value: {actMs: 10, threw: false, message: DD7A_ERROR}}})), false, 'a paste that did not throw');
-  assert.equal(readTimedOut(r({act: {...DD7A_TIMED_OUT.act, meta: {...DD7A_TIMED_OUT.act.meta, paste: {stage: 'effect', readWait: 'handedOver'}}}})), false, 'a stage meta that says otherwise wins');
+  assert.equal(legacyTimeout(withError(DD7A_ERROR.replace('-10005', '-10004'))), false, 'another code');
+  assert.equal(legacyTimeout(withError(DD7A_ERROR.replace('-10005', '-100051'))), false);
+  assert.equal(legacyTimeout(withError('Computer Use server error -10005: The application did not respond')), false, 'that code with another message');
+  assert.equal(legacyTimeout(withError('Timed out waiting for the application to read the clipboard')), false, 'the message without the code');
+  assert.equal(legacyTimeout(r({act: {...DD7A_TIMED_OUT.act, value: {actMs: 10, threw: false, message: DD7A_ERROR}}})), false, 'a paste that did not throw');
+  const staged = (stage, readWait) => r({act: {...DD7A_TIMED_OUT.act, meta: {...DD7A_TIMED_OUT.act.meta, paste: {stage, readWait}}}});
+  assert.deepEqual([readTimedOut(staged('read', 'timeout')), legacyTimeout(staged('read', 'timeout'))], [true, false], 'a stage meta decides');
+  assert.deepEqual([readTimedOut(staged('effect', 'handedOver')), legacyTimeout(staged('effect', 'handedOver'))], [false, false]);
   assert.equal(READ_TIMEOUT.code, '-10005');
-  // The BEFORE half as the slot recorded it fails as predicted, and with the AFTER half delivering the cell lands.
+  // The BEFORE half as the slot recorded it: neither paste delivered, the stage unknown, so not as predicted: DOES NOT LAND.
   const before = () => ({background: cellRow('before', 0, 'chrome-cell-background', DD7A_TIMED_OUT), row: cellRow('before', 0, 'chrome-cell', DD7A_TIMED_OUT), keyAfter: SLOT_KEY});
   const judged = judge187(evidence({before, cell: () => ({keyAfter: SLOT_KEY})}));
-  assert.deepEqual(judged.cells.paste.before.map(c => [c.bgReadTimeout, c.predicted]), Array(3).fill([true, true]));
-  assert.equal(judged.overall.verdict, 'LANDS', judged.overall.why.join('; '));
+  assert.deepEqual(judged.cells.paste.before.map(c => [c.bgReadTimeout, c.bgLegacyTimeout, c.deliversNeither, c.predicted]), Array(3).fill([false, true, true, false]));
+  assert.equal(judged.overall.verdict, 'DOES NOT LAND');
+  assert.match(judged.overall.why.join('; '), /BEFORE half: 0 of 3 counted repetitions failing as predicted .*legacy -10005 read-or-effect sentence and no stage meta \(stage unknown\), not shown to be a read timeout/);
+  assert.deepEqual(judged.overall.shown, {after: {both: 3, of: 3}, before: {neither: 3, of: 3}}, 'what delivery alone shows');
+  assert.match(item187Markdown(judged), /By delivery alone, stage aside: AFTER 3 of 3 counted repetitions with both pastes delivered, BEFORE 3 of 3 with neither delivered\. 3 BEFORE background paste\(s\) timed out with the legacy -10005/);
+  // The same rows with a stage meta that says read timeout would fail as predicted: the predicate can come out either way.
+  const readStage = {...DD7A_TIMED_OUT, act: {...DD7A_TIMED_OUT.act, meta: {...DD7A_TIMED_OUT.act.meta, paste: {stage: 'read', readWait: 'timeout'}}}};
+  const staged187 = judge187(evidence({before: () => ({...before(), background: cellRow('before', 0, 'chrome-cell-background', readStage)}), cell: () => ({keyAfter: SLOT_KEY})}));
+  assert.equal(staged187.overall.verdict, 'LANDS', staged187.overall.why.join('; '));
   const other = judge187(evidence({before: () => ({...before(), background: cellRow('before', 0, 'chrome-cell-background', {...DD7A_TIMED_OUT, act: {...DD7A_TIMED_OUT.act, value: {...DD7A_TIMED_OUT.act.value, message: 'Computer Use server error -10004: refused'}}})})}));
   assert.match(other.overall.why.join('; '), /BEFORE half: 0 of 3 counted repetitions failing as predicted .*stopped at no stage \(read –\), not a read timeout/);
 });
@@ -1094,11 +1105,14 @@ test('the addendum: `judge --addendum` writes item-187-rejudge.md beside the slo
   assert.equal(ADDENDUM_FILE, 'item-187-rejudge.md');
   assert.match(addendum, /^# #187: the re-judgment addendum/);
   assert.match(addendum, /\(the kit at [0-9a-f]{12}\)/, 'the kit\'s commit that judged it');
-  assert.match(addendum, /\*\*\(a\) The read stage\.\*\* .*-10005 with "Timed out waiting for the application to read the clipboard"/);
-  assert.match(addendum, /\*\*\(b\) The key\.\*\* .*read no on \d+ of \d+ Chrome key-window readings, both builds/);
-  assert.match(addendum, /\(a\), \(b\) and \(e\) are judge predicates that no run could meet/);
-  assert.match(addendum, /\(c\) is different: the "Chrome frontmost with no key window" prediction was tested, and the readings refute it\. It is a refuted prediction, recorded as wrong, not restated/);
+  assert.match(addendum, /\*\*\(a\) The read stage, corrected\.\*\* .*-10005 with "Timed out waiting for the application to read the clipboard".*independent adversarial review of a950e5a1\.\.b04ca136 found that wrong.*read-or-effect timeout \(legacy, stage unknown\)\. This file replaces b04ca136's\./);
+  assert.match(addendum, /\*\*\(b\) The key\.\*\* .*never observed true, reading no on \d+ of \d+ Chrome key-window readings, both builds/);
+  assert.match(addendum, /\*\*\(c\) The bar, a post-hoc acceptance change\.\*\*/);
+  assert.match(addendum, /\(c\) is outcome-dependent: the "Chrome frontmost with no key window" prediction was tested, and the readings refute it; it is recorded as wrong, not restated, and its leaving the bar is a post-hoc acceptance change/);
+  assert.doesNotMatch(addendum, /no run could meet: the saved engine/);
+  // This synthetic slot's BEFORE carries the read-stage meta, so it lands; the real slot's legacy rows do not (test (a)).
   assert.match(addendum, /## Re-judged: LANDS, on the background paste/);
+  assert.match(addendum, /\*\*What the cell does show, by delivery alone:\*\* AFTER 3 of 3 counted repetitions with both pastes delivered; BEFORE 3 of 3 with neither delivered\. What it does not show: the BEFORE stage/);
   assert.match(addendum, /\n---\n\n# #187: the re-slot/, 'the full re-judged report follows');
   assert.deepEqual(leaks(addendum), []);
   // Without --addendum the judge still writes item-187.md, as a drive's end does.

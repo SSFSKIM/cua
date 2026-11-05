@@ -278,27 +278,36 @@ extension Engine {
     return PointerTarget(view: view, app: app.displayName, noun: noun)
   }
 
-  /// The element route a plain left click refused in a web area takes (#282): for an allowlisted role outside any
-  /// editable region (`webAreaElementRoute`), the action an element click on `hit` would take, carried as an element
-  /// click's is (`elementActionClick`), confirmed by its value where its role has one (`pressConfirmingValue`), and
-  /// recorded with the reason `webArea`; nil, so the click is refused, otherwise.
+  /// The element route a plain left click refused in a web area takes (#282): the control the hit resolves to
+  /// (`webAreaControl`: the hit, or its nearest allowlisted ancestor through plain children), its action read and, where
+  /// the process's accessibility is fresh, re-read for up to 2 s posting nothing (`webAreaActionRereading`), carried as an
+  /// element click's is (`elementActionClick`), confirmed by its value where its role has one (`pressConfirmingValue`),
+  /// and recorded with the reason `webArea`, the control's role and whether it was the hit. A control with no action
+  /// after that is refused, asking for an observation first; nil, so the click is refused, when the hit resolves to none.
   func webAreaPress(_ hit: AXUIElement, button: MouseButton, count: Int, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp,
                     appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext) -> ((inout InputMeta) throws -> Void)? {
-    let role = attribute(hit, kAXRoleAttribute) as? String
-    let editable = attribute(hit, "AXEditableAncestor") != nil
-    // A role on the list whose actions lack AXPress (`.refuse(.noAction)`) is where a bounded re-read of a fresh Chrome's
-    // actions would go, before the refusal.
-    guard case .press(let action) = webAreaElementRoute(button: button, count: count, role: role, editable: editable,
-                                                        actions: establishedActionNames(of: hit)) else { return nil }
+    guard button == .left, count == 1,
+          case .success(let resolved) = webAreaControl(hit, role: { attribute($0, kAXRoleAttribute) as? String },
+                                                       parent: { elementAttribute($0, kAXParentAttribute) },
+                                                       editable: { attribute($0, "AXEditableAncestor") != nil }) else { return nil }
+    let control = resolved.control, role = resolved.role
     return { [self] meta in
-      let owner = ownerPid(of: hit, fallback: appPid)
+      let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
+      let fresh = webAreaAccessibilityFresh(enabledAt: webAccessibility.lastEnabledAt(pid: appPid, launched: generation),
+                                            now: monotonicMilliseconds(), webAreaSeen: webAccessibility.hasSeenWebArea(pid: appPid, launched: generation))
+      guard let action = webAreaActionRereading(role: role, first: establishedActionNames(of: control), fresh: fresh,
+                                                read: { establishedActionNames(of: control) }, now: monotonicMilliseconds,
+                                                sleep: { usleep(UInt32($0 * 1000)) }) else {
+        throw backgroundClickRefusedObserveFirst(app.displayName)
+      }
+      let owner = ownerPid(of: control, fallback: appPid)
       try refuseForbiddenOwner(owner)
       actionTargets(owner, app: app, connection: context.connection)
-      meta.elementClick = ElementClickRecord(plan: .action(action), reason: .webArea, hit: nil)
-      try pressConfirmingValue(app: app.displayName, checksValue: role.map(webAreaValueCheckedRoles.contains) ?? false,
-                               readValue: { attribute(hit, kAXValueAttribute).map { "\($0)" } }, now: monotonicMilliseconds,
+      meta.elementClick = ElementClickRecord(plan: .action(action), reason: .webArea, hit: nil, pressedRole: role, pressedAncestor: resolved.ancestor)
+      try pressConfirmingValue(app: app.displayName, checksValue: webAreaValueCheckedRoles.contains(role),
+                               readValue: { attribute(control, kAXValueAttribute).map { "\($0)" } }, now: monotonicMilliseconds,
                                sleep: { usleep(UInt32($0 * 1000)) }) {
-        try elementActionClick(hit, owner: owner, action: action, route: actionRoute(owner: owner, app: app, connection: context.connection),
+        try elementActionClick(control, owner: owner, action: action, route: actionRoute(owner: owner, app: app, connection: context.connection),
                                point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context, meta: &meta)
       }
     }

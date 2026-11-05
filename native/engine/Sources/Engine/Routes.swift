@@ -59,6 +59,10 @@ struct ElementClickRecord: Equatable {
   let plan: ElementClickPlan
   let reason: Reason
   var hit: HitRelation?
+  /// `webArea` only: the role of the control pressed, and whether it was the hit itself or an ancestor the walk reached
+  /// through the hit's plain children (`webAreaControl`); `pressed` "hit" | "ancestor" on the wire.
+  var pressedRole: String? = nil
+  var pressedAncestor: Bool? = nil
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["reason": reason.rawValue]
@@ -67,6 +71,8 @@ struct ElementClickRecord: Equatable {
     case .synthesized: wire["plan"] = "synthesized"
     }
     if let hit { wire["hit"] = "\(hit)"; wire["hitTest"] = "application" }
+    if let pressedRole { wire["pressedRole"] = pressedRole }
+    if let pressedAncestor { wire["pressed"] = pressedAncestor ? "ancestor" : "hit" }
     return wire
   }
 }
@@ -340,26 +346,78 @@ let webAreaValueCheckedRoles: Set<String> = ["AXCheckBox", "AXRadioButton"]
 let webAreaValueSettleMs: Double = 500
 let webAreaValueSampleMs: Double = 20
 
-/// What shared mode does with a plain left click refused in a web area (#282), from the hit's role, whether it lies in
-/// an editable region (`AXEditableAncestor`; text entry and editing go to #283), and its advertised actions.
-enum WebAreaElementRoute: Equatable {
-  /// Press the hit with this action (AXPick else AXPress, `elementClickPlan`'s choice).
-  case press(String)
-  /// Refused, and why: another button or count, a role whose press has no known effect, an editable region, or an
-  /// allowlisted role advertising no action (where a bounded re-read of a fresh Chrome's actions would go).
-  case refuse(Refusal)
+/// The roles the walk from a hit to its control may pass through (the design session's bounds, 1ea561bc 7a6a3638): a
+/// control's plain, non-interactive children, its label's text, an icon, a wrapping group (Chromium's generic
+/// containers arrive as AXGroup). Any other role on the way up refuses.
+let webAreaPassableRoles: Set<String> = ["AXStaticText", "AXImage", "AXGroup"]
+/// The roles that make an element editable whatever its attributes say (text entry; text and editing are #283's).
+let webAreaEditableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
 
-  enum Refusal: Equatable { case notPlainLeft, roleNotAllowed, editable, noAction }
+/// Why shared mode refuses a plain left click in a web area rather than pressing a control (#282).
+enum WebAreaRefusal: Error, Equatable {
+  /// Another button or count.
+  case notPlainLeft
+  /// The hit, or an element on the way up to a control, is neither an allowlisted control nor a passable child; or the
+  /// walk reached the AXWebArea before any control.
+  case roleNotAllowed
+  /// The walk met an editable element (text entry, or one with an `AXEditableAncestor`) before a control.
+  case editable
+  /// The ancestry could not be read to a control: a role or parent unread, or the bound ran out.
+  case incompleteAncestry
+  /// The control advertises neither AXPick nor AXPress, after the re-read where the process's accessibility is fresh.
+  case noAction
 }
 
-func webAreaElementRoute(button: MouseButton, count: Int, role: String?, editable: Bool, actions: [String]?) -> WebAreaElementRoute {
-  guard button == .left, count == 1 else { return .refuse(.notPlainLeft) }
-  guard let role, webAreaPressableRoles.contains(role) else { return .refuse(.roleNotAllowed) }
-  guard !editable else { return .refuse(.editable) }
-  guard let actions,
-        case .action(let action)? = try? elementClickPlan(forced: nil, button: button, count: count, role: role, actions: actions,
-                                                          landsOnDescendant: { false }) else { return .refuse(.noAction) }
-  return .press(action)
+/// The control a plain left click in a web area presses (#282, the design session's bounds): the hit when it is an
+/// allowlisted control, else its nearest allowlisted ancestor reached through passable children only
+/// (`webAreaPassableRoles`), never past the AXWebArea; refused when the walk meets an editable element, another role,
+/// the web area itself or an ancestry it cannot read (up to 300 levels). `ancestor`: the control is not the hit.
+func webAreaControl<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?,
+                             editable: (Element) -> Bool) -> Result<(control: Element, role: String, ancestor: Bool), WebAreaRefusal> {
+  var current = hit
+  for level in 0...300 {
+    guard let name = role(current) else { return .failure(.incompleteAncestry) }
+    if webAreaEditableRoles.contains(name) || editable(current) { return .failure(.editable) }
+    if webAreaPressableRoles.contains(name) { return .success((current, name, level > 0)) }
+    guard webAreaPassableRoles.contains(name) else { return .failure(.roleNotAllowed) }  // the AXWebArea included
+    guard let next = parent(current) else { return .failure(.incompleteAncestry) }
+    current = next
+  }
+  return .failure(.incompleteAncestry)
+}
+
+/// The action an element click on a control would take (`elementClickPlan`'s: AXPick else AXPress); nil when it
+/// advertises neither, or its actions could not be read.
+func webAreaAction(role: String, actions: [String]?) -> String? {
+  guard let actions, case .action(let action)? = try? elementClickPlan(forced: nil, button: .left, count: 1, role: role, actions: actions,
+                                                                     landsOnDescendant: { false }) else { return nil }
+  return action
+}
+
+/// How long a control with no action yet is re-read in a process whose accessibility is fresh (#282's hosted probe, run
+/// 42131623237: a checkbox began advertising AXPress 1.6 to 1.7 s after the engine's enablement write, with no
+/// activation at all): every 100 ms for up to 2 s, posting nothing. Fresh: the engine's last enablement write to the
+/// process is under `webAreaFreshEnablementMs` old, or no observation has seen a web area in it yet.
+let webAreaActionRereadMs: Double = 2_000
+let webAreaActionRereadSampleMs: Double = 100
+let webAreaFreshEnablementMs: Double = 10_000
+
+func webAreaAccessibilityFresh(enabledAt: Double?, now: Double, webAreaSeen: Bool) -> Bool {
+  !webAreaSeen || enabledAt.map { now - $0 < webAreaFreshEnablementMs } == true
+}
+
+/// The control's action, re-read every `webAreaActionRereadSampleMs` for up to `webAreaActionRereadMs` when `fresh` and
+/// the first read found none; nil when none came (or the process was not fresh: no wait at all).
+func webAreaActionRereading(role: String, first: [String]?, fresh: Bool, read: () -> [String]?, now: () -> Double,
+                            sleep: (Double) -> Void) -> String? {
+  if let action = webAreaAction(role: role, actions: first) { return action }
+  guard fresh else { return nil }
+  let started = now()
+  while now() - started < webAreaActionRereadMs {
+    sleep(webAreaActionRereadSampleMs)
+    if let action = webAreaAction(role: role, actions: read()) { return action }
+  }
+  return nil
 }
 
 /// A web-area press whose role has a value to check (`webAreaValueCheckedRoles`): the value read before the press and
@@ -384,6 +442,13 @@ func pressConfirmingValue(app: String, checksValue: Bool, readValue: () -> Strin
 /// the remedy): nothing was posted.
 func backgroundClickRefused(_ app: String) -> EngineError {
   EngineError(name: "backgroundClickRefused", "\(app)'s web page does not accept a background click; bring \(app) forward or use a dedicated desktop")
+}
+
+/// The refusal of a control whose action the page has not exposed yet (`WebAreaRefusal.noAction`): its accessibility may
+/// still be coming up, so observing the app first may let the next click through.
+func backgroundClickRefusedObserveFirst(_ app: String) -> EngineError {
+  EngineError(name: "backgroundClickRefused",
+    "\(app)'s web page does not accept a background click, and the control there exposes no action yet; observe \(app) with get_app_state first and click again, or bring \(app) forward or use a dedicated desktop")
 }
 
 /// The answer of a pointer whose own mouse down consumed route 3's activation arm in a view not known to accept first

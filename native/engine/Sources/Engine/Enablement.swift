@@ -181,6 +181,8 @@ final class WebAccessibility: @unchecked Sendable {
   /// Per process, the writes the engine made to its attribute, true or false, by any connection; kept past the
   /// entry's retirement (`enablements`).
   private var writes: [String: UInt64] = [:]
+  /// Per process, when the engine last wrote its attribute true (monotonic ms; `lastEnabledAt`).
+  private var enabledAt: [String: Double] = [:]
   /// Told (a bounded, value-free line) when a reset of the attribute the engine set fails; it stays owned.
   private let releaseFailed: (String) -> Void
 
@@ -205,6 +207,14 @@ final class WebAccessibility: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return writes[Self.process(pid, launched)] ?? 0
+  }
+
+  /// When the engine last turned the process's enablement attribute on (monotonic ms), or nil when it never did: the
+  /// page's actions appear some time after (#282's hosted probe: a checkbox's AXPress 1.6 to 1.7 s after the write).
+  func lastEnabledAt(pid: pid_t, launched: Date?) -> Double? {
+    lock.lock()
+    defer { lock.unlock() }
+    return enabledAt[Self.process(pid, launched)]
   }
 
   func hasSeenWebArea(pid: pid_t, launched: Date?) -> Bool {
@@ -305,6 +315,7 @@ final class WebAccessibility: @unchecked Sendable {
     entry.on = true
     lock.lock()
     writes[key, default: 0] += 1
+    enabledAt[key] = monotonicMilliseconds()
     // Owned, and so released later, only when it read false (A3): an unreadable value may be another client's. A value
     // the engine itself wrote back is its own whatever it reads now.
     if read == false || reEnabling {

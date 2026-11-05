@@ -47,7 +47,7 @@ import { Engine } from './engine.mjs';
 import { openFamily, readCaret, readText } from './families.mjs';
 import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
-import { Desktop, desktopEnding } from './scenes.mjs';
+import { Desktop, activeWindow, desktopEnding } from './scenes.mjs';
 import { median } from './stats.mjs';
 import { startPrivateServer } from './xtools.mjs';
 import { LIVE_RUN, assertReachable, xExecFileSync } from './xspawn.mjs';
@@ -523,21 +523,20 @@ async function pressKeys(ctx, scene, keys) {
 }
 
 /**
- * Click-field's start on window A (Chromium's keys page): its other field given text if it has none, then the focus
- * put in its first field (AT-SPI's GrabFocus, no click); the click's point is the other field's first character.
+ * Click-field's start on window A (Chromium's keys page): its other field emptied and given a word, so its first
+ * character stays in view whatever the runs before pasted into it (a small field that scrolls moves the click's point
+ * off it), then the focus put in its first field (AT-SPI's GrabFocus, no click); the click's point is the other
+ * field's first character.
  */
 async function clickFieldStart(ctx, scene) {
   const { desktop, oracle } = ctx;
-  const other = { ...scene, field: scene.other };
-  const { text } = await settledRead(() => textAndCaret(desktop, oracle, other));
   // GrabFocus also gives Chrome the X input focus: the front window takes it back at once, the page's own focus left
   // where GrabFocus put it, so the run's window is in the background as every other run's is
-  if (!text) {
-    oracle.grabFocus(scene.other);
-    desktop.focusFront();
-    await sleep(200);
-    await pressKeys(ctx, scene, keysOf('seed'));
-  }
+  oracle.grabFocus(scene.other);
+  desktop.focusFront();
+  await sleep(200);
+  await pressKeys(ctx, scene, ['ctrl+a', 'BackSpace', ...keysOf('seed')]);
+  await settledRead(() => textAndCaret(desktop, oracle, { ...scene, field: scene.other }));
   oracle.grabFocus(scene.field);
   desktop.focusFront();
   await sleep(200);
@@ -603,7 +602,7 @@ async function judgedRun(ctx, engine, name, windows, { tail, click }) {
   const texts = Object.fromEntries(keys.map((k) => [k, exact(k)]));
   const errors = responses.filter((r) => r.ok !== true).map((r) => String(r.error).slice(0, 300));
   const got = Object.fromEntries(keys.map((k) => [k, typeof after[k].text === 'string' && typeof before[k].text === 'string' ? after[k].text.slice(at[k] ?? 0, (at[k] ?? 0) + after[k].text.length - before[k].text.length) : null]));
-  return { ok: runPasses({ family: windows.a.family, errors, exact: texts }), tail_at_start: tail, answered_ok: errors.length === 0, errors, expected, got, exact: texts, caret_read: keys.every((k) => before[k].caret !== null), ...(clicks ? { click, caret_before: before.a.caret, landed_at: typeof after.a.text === 'string' ? after.a.text.indexOf(expected.a) : null } : {}), burst_ms: Math.round(ms * 10) / 10, answered_ms: Math.round(answered * 10) / 10 };
+  return { ok: runPasses({ family: windows.a.family, errors, exact: texts }), tail_at_start: tail, answered_ok: errors.length === 0, errors, expected, got, exact: texts, caret_read: keys.every((k) => before[k].caret !== null), ...(clicks ? { click, caret_before: before.a.caret, landed_at: typeof after.a.text === 'string' ? after.a.text.indexOf(expected.a) : null, front_active: activeWindow() === desktop.front.id } : {}), burst_ms: Math.round(ms * 10) / 10, answered_ms: Math.round(answered * 10) / 10 };
 }
 
 /**
@@ -748,7 +747,7 @@ async function auditRun(ctx, family, lane, name, args, windows) {
   let text;
   try {
     const row = await oneRun(ctx, engine, name, windows);
-    run = { scenario: name, ok: row.ok, errors: row.errors };
+    run = { scenario: name, ok: row.ok, errors: row.errors, expected: row.expected, got: row.got, exact: row.exact, ...(row.click ? { click: row.click, landed_at: row.landed_at } : {}) };
   } finally {
     await engine.close();
     await closed;

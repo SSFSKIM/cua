@@ -1,0 +1,23 @@
+{
+  "summary": [
+    {
+      "label": "before-t60",
+      "runs": 10,
+      "passed": 10,
+      "landed_in_b": 10
+    },
+    {
+      "label": "t60",
+      "runs": 10,
+      "passed": 0,
+      "landed_in_b": 9
+    },
+    {
+      "label": "fix",
+      "runs": 10,
+      "passed": 10,
+      "landed_in_b": 10
+    }
+  ],
+  "watchdog_clean": true
+}

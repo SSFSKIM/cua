@@ -124,3 +124,9 @@ same one-in-40 showed in task 56's `speed-new/`. No sample of these ops follows 
 - `settle/verdicts.md`, `accept/verdicts.md` (`scripts/verdicts.py`), `accept/latency-idle.md`,
   `accept/latency-load2.md` (`scripts/latency.py`, against task 59's sittings).
 - `scripts/`: the builds, the harness exports, the sittings' drivers and the tables' scripts.
+
+## The fix (`fix/`)
+
+The design session's rulings on this task and the review's two findings: a watched drag's session kept focused until
+its late-take watch ends, so the watch's Escape lands inside it; the paste's settle after clicks too, S = 25 ms by the
+wait rule on click-then-paste; each focus-timer audit on its series' own flags. `fix/README.md` has the sittings.

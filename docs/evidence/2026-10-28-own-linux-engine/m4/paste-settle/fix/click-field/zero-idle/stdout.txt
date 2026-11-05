@@ -1,0 +1,10 @@
+fatal: not a git repository (or any of the parent directories): .git
+| family | lane | scenario | runs | misses | passing streak at the end | verdict | raw misses | raw streak | median burst ms |
+|---|---|---|---:|---:|---:|---|---:|---:|---:|
+| chrome | click-0 | click-field | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 70.1 |
+| electron | click-0 | click-field | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 53.1 |
+
+| family | lane | scenario | engine flags | audit | FocusOuts attributed (deferred) | sessions as expected | problems |
+|---|---|---|---|---|---:|---|---|
+| chrome | click-0 | click-field | `--paste-click-settle-ms 0` | clean | 2 (0) | yes | – |
+| electron | click-0 | click-field | `--paste-click-settle-ms 0` | clean | 2 (0) | yes | – |

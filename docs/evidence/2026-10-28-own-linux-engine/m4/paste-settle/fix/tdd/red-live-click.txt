@@ -1,0 +1,47 @@
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running tests/live_focus_out.rs (target/release/deps/live_focus_out-d2698581c69c2c45)
+
+running 3 tests
+test a_paste_after_a_click_to_its_window_waits_out_the_click_settle_since_that_click ... unknown argument --paste-click-settle-ms
+usage: cua-engine server [--mouse-size-px <n>] [--desktop shared|dedicated]
+       [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
+       [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
+       [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
+       [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
+       [--targets-wait-ms <ms>] [--stats]
+       cua-engine launcher-shim <parent pid> <program> [args...]
+       cua-engine --version
+FAILED
+test a_paste_waits_for_nothing_after_a_click_to_another_window_or_once_its_click_settle_has_passed ... unknown argument --paste-click-settle-ms
+usage: cua-engine server [--mouse-size-px <n>] [--desktop shared|dedicated]
+       [--window-calls <W>] [--window-bytes <R>] [--call-reservation <bytes>] [--slack-nodes <n>]
+       [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
+       [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
+       [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
+       [--targets-wait-ms <ms>] [--stats]
+       cua-engine launcher-shim <parent pid> <program> [args...]
+       cua-engine --version
+FAILED
+test clicks_alone_hold_the_exit_back_for_the_settle_too ... ok
+
+failures:
+
+---- a_paste_after_a_click_to_its_window_waits_out_the_click_settle_since_that_click stdout ----
+
+thread 'a_paste_after_a_click_to_its_window_waits_out_the_click_settle_since_that_click' (3280928) panicked at tests/support/mod.rs:185:41:
+no answer within 30s
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_paste_waits_for_nothing_after_a_click_to_another_window_or_once_its_click_settle_has_passed stdout ----
+
+thread 'a_paste_waits_for_nothing_after_a_click_to_another_window_or_once_its_click_settle_has_passed' (3280932) panicked at tests/support/mod.rs:231:33:
+no answer to click within 30s
+
+
+failures:
+    a_paste_after_a_click_to_its_window_waits_out_the_click_settle_since_that_click
+    a_paste_waits_for_nothing_after_a_click_to_another_window_or_once_its_click_settle_has_passed
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.42s
+
+error: test failed, to rerun pass `--test live_focus_out`

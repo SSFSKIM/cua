@@ -1,0 +1,21 @@
+| lane | path | case | runs | pass | engine after the stop, median ms | after the last answer, median ms |
+|---|---|---|---:|---:|---:|---:|
+| drain | idle | hold | 10 | 10 | 135.3 | 145.9 |
+| drain | idle | burst | 10 | 10 | 364.2 | 372.6 |
+| drain | idle | handle | 10 | 10 | 131.1 | 142.3 |
+| drain | eof | hold | 10 | 10 | 68.7 | 81.9 |
+| drain | eof | burst | 10 | 10 | 291.3 | 299.6 |
+| drain | eof | handle | 10 | 10 | 97.9 | 117.4 |
+| drain | signal | hold | 10 | 10 | 72.6 | 82.9 |
+| drain | signal | burst | 10 | 10 | 290.6 | 298.8 |
+| drain | signal | handle | 10 | 10 | 69 | 81.6 |
+| drain | remote | hold | 10 | 10 | 163.9 | 178.5 |
+| drain | remote | burst | 10 | 10 | 363.9 | 371.6 |
+| drain | remote | handle | 10 | 10 | 152.2 | 166.1 |
+| kill | idle | burst | 10 | 10 | 131.4 | 139 |
+| kill | eof | burst | 10 | 10 | 66 | 74.2 |
+| kill | signal | burst | 10 | 10 | 66.6 | 74.3 |
+| kill | remote | burst | 10 | 10 | 145.8 | 154 |
+
+The control's bursts: 0 of 40 cut (reported, not required: through the production paths the service spaces each window input 100 ms behind the previous key, so the control cannot fail there).
+{"exit": 0, "samples": 5805, "maps_samples": 1936, "flags": 0, "decoy_connections": 0, "leftovers": [], "processes": 4413, "browsers": 32}

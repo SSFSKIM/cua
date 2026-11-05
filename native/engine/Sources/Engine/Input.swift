@@ -206,8 +206,10 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
   if route == .activation, let activation {
     activation.holdsThroughDelivery = true
     // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
-    // focusing click inside set_value's held activation).
-    release = try activations.acquire(pid: activation.pid, postsLeftMouseDown: postsLeftMouseDown, beforeActivating: beforeActivating,
+    // focusing click inside set_value's held activation), unless the action re-arms a hold of its own connection whose
+    // arm was spent early (`HeldActivations.acquire`), whose new activation's guard and click are recorded as a run's.
+    release = try activations.acquire(pid: activation.pid, holder: ActivationHolder(connection: meta.context.connection.id),
+                                      postsLeftMouseDown: postsLeftMouseDown, beforeActivating: beforeActivating,
                                       make: { activation }, meta: &meta)
     standing = activations.activation(of: activation.pid)
     reportsArm = standing === activation
@@ -506,7 +508,8 @@ extension Engine {
   private func forcedActivation(_ route: InputRoute?, pid: pid_t, application: AXUIElement, guarding: InterventionGuard,
                                 meta: inout InputMeta) throws -> (() -> Bool)? {
     guard route == .activation else { return nil }
-    return try heldActivations.acquire(pid: pid, beforeActivating: guarding.checkInFlight, make: {
+    return try heldActivations.acquire(pid: pid, holder: ActivationHolder(connection: meta.context.connection.id),
+                                       beforeActivating: guarding.checkInFlight, make: {
       FakeActivation(pid: pid, window: primaryWindow(of: application) ?? application)
     }, meta: &meta)
   }

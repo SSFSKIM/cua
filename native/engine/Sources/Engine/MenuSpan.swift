@@ -143,6 +143,14 @@ final class ActivationSpan: @unchecked Sendable {
   }
 }
 
+/// Who holds a share of a process's activation: the connection (`ConnectionState.id`) whose request or hold acquired it,
+/// and whether the share is a recorded menu's span. A connection runs one request at a time, so a holder of the joiner's
+/// own connection is a lingering hold, never one mid-action.
+struct ActivationHolder: Equatable {
+  let connection: Int
+  var menuSpan = false
+}
+
 /// The held activations of the engine, one per target process however many holders it has: menu spans, focus holds, and
 /// the per-action activations of synthesized clicks, drags, pastes and forced keys, each for the action's duration
 /// (route 3's state is the process's, not a connection's or an action's). The first holder to acquire a process's
@@ -157,9 +165,23 @@ final class ActivationSpan: @unchecked Sendable {
 /// since: a real event before the post leaves it current, one after makes it stale, however the event interleaves with
 /// the activation's AX reads, guard or hit-test. A stale activation is replaced by the next acquire or `refresh`, and
 /// never deactivated, on its last release or its failed guard's cleanup alike, the system having withdrawn its state.
+///
+/// A pointer holder (`postsLeftMouseDown`) joining an activation whose arm an earlier holder spent early re-arms it, when
+/// every holder is of its own connection and none is a recorded menu's span (the Decision Log's "#261's hold join",
+/// 2026-11-05): its own mouse down would otherwise meet a key window of an app that believes itself active, an ordering
+/// click (#200's raise). The activation is withdrawn and a new one run in its place, the holders kept.
 final class HeldActivations: @unchecked Sendable {
+  /// One process's held activation and its holders, each by its acquire's share.
+  private struct Entry {
+    var activation: FakeActivation
+    var holders: [Int: ActivationHolder]
+    /// Withdrawn by a re-arming whose new activation failed its guard: replaced as a stale one is, and never deactivated.
+    var withdrawn = false
+  }
+
   private let lock = NSLock()
-  private var held: [pid_t: (activation: FakeActivation, holders: Int)] = [:]
+  private var held: [pid_t: Entry] = [:]
+  private var shares = 0
   /// The real-activation epochs, behind their own lock: the workspace's notifications bump them from the main thread
   /// without waiting on an activation's guard under `lock`, and an activation reads its process's under its guard.
   private let epochLock = NSLock()
@@ -169,7 +191,7 @@ final class HeldActivations: @unchecked Sendable {
   func holders(_ pid: pid_t) -> Int {
     lock.lock()
     defer { lock.unlock() }
-    return held[pid]?.holders ?? 0
+    return held[pid]?.holders.count ?? 0
   }
 
   /// The activation `pid`'s holders share; nil when none holds it.
@@ -204,6 +226,17 @@ final class HeldActivations: @unchecked Sendable {
     activation.epoch.map { $0 != epoch(activation.pid) } ?? false
   }
 
+  /// Whether the entry's activation is to be replaced, never deactivated: stale, or withdrawn.
+  private func isSpent(_ entry: Entry) -> Bool { entry.withdrawn || isStale(entry.activation) }
+
+  /// Whether a pointer holder `joining` re-arms the entry's activation rather than sharing it: its arm was spent early,
+  /// and no other connection's holder (which may be mid-action under it) nor a recorded menu (which the withdrawal could
+  /// close) holds it.
+  private func rearms(_ entry: Entry, for joining: ActivationHolder) -> Bool {
+    entry.activation.armSpentOutsideActivationPoint
+      && entry.holders.values.allSatisfy { $0.connection == joining.connection && !$0.menuSpan }
+  }
+
   /// Runs a new activation, its guard time and click into `meta` (a failed guard's too); a failed guard throws with it
   /// undone, unless a real event already withdrew it (the undoing posts the kept inert click first, so its click kind is
   /// read after it). `postsLeftMouseDown`: the holder posts its own left mouse down (`FakeActivation.defersArmClick`).
@@ -231,25 +264,41 @@ final class HeldActivations: @unchecked Sendable {
   /// run, shared or recorded. When no holder has the activation, or it is stale, `make()`'s runs (a failed guard throws
   /// with nothing more held); otherwise the running one is shared, and a holder that posts no left mouse down of its own
   /// (`postsLeftMouseDown` false) consumes its arm first when no mouse down has (the kept inert click, recorded in its
-  /// meta; after a pointer holder's events already going out, `FakeActivation.postAction`), so its keys reach a key window. Answers the release, which runs once and deactivates when the last holder
-  /// releases; it answers false only when that deactivation could not post.
-  func acquire(pid: pid_t, postsLeftMouseDown: Bool = false, beforeActivating: () throws -> Void, make: () -> FakeActivation,
-               meta: inout InputMeta) throws -> () -> Bool {
+  /// meta; after a pointer holder's events already going out, `FakeActivation.postAction`), so its keys reach a key window.
+  /// A holder that does post its own (`postsLeftMouseDown`) joining an activation whose arm was spent early, held only by
+  /// `holder`'s connection and by no recorded menu (`rearms`), re-arms it: the shared activation deactivated (subtype 2)
+  /// and `make()`'s run in its place, every holder kept, so the holder's own mouse down consumes the new arm with no
+  /// ordering. A failed guard there throws with the new one undone and the old one left withdrawn for the holders that
+  /// remain (the next acquire or `refresh` runs a new one, as for a stale one). Answers the release, which runs once and
+  /// deactivates when the last holder releases; it answers false only when that deactivation could not post.
+  func acquire(pid: pid_t, holder: ActivationHolder, postsLeftMouseDown: Bool = false, beforeActivating: () throws -> Void,
+               make: () -> FakeActivation, meta: inout InputMeta) throws -> () -> Bool {
     lock.lock()
     defer { lock.unlock() }
     try beforeActivating()
-    if let shared = held[pid] {
-      let activation: FakeActivation
-      if isStale(shared.activation) {
-        activation = try run(make, postsLeftMouseDown: postsLeftMouseDown, meta: &meta)
-      } else {
-        activation = shared.activation
-        if !postsLeftMouseDown, activation.consumeArm(.early) { meta.activationClickKind = activation.clickKind }
+    if var entry = held[pid] {
+      if isSpent(entry) {
+        entry.activation = try run(make, postsLeftMouseDown: postsLeftMouseDown, meta: &meta)
+        entry.withdrawn = false
+      } else if postsLeftMouseDown, rearms(entry, for: holder), entry.activation.deactivate() {
+        do {
+          entry.activation = try run(make, postsLeftMouseDown: true, meta: &meta)
+        } catch {
+          held[pid]?.withdrawn = true
+          throw error
+        }
+      } else if !postsLeftMouseDown, entry.activation.consumeArm(.early) {
+        meta.activationClickKind = entry.activation.clickKind
       }
-      held[pid] = (activation, shared.holders + 1)
+      shares += 1
+      entry.holders[shares] = holder
+      held[pid] = entry
     } else {
-      held[pid] = (try run(make, postsLeftMouseDown: postsLeftMouseDown, meta: &meta), 1)
+      let activation = try run(make, postsLeftMouseDown: postsLeftMouseDown, meta: &meta)
+      shares += 1
+      held[pid] = Entry(activation: activation, holders: [shares: holder])
     }
+    let share = shares
     let once = NSLock()
     var released = false
     return { [self] in
@@ -257,30 +306,32 @@ final class HeldActivations: @unchecked Sendable {
       defer { once.unlock() }
       guard !released else { return true }
       released = true
-      return release(pid)
+      return release(pid, share: share)
     }
   }
 
-  /// For a holder that already holds `pid`: when its activation went stale, `beforeActivating`, then `make()`'s run in its
-  /// place (a failed guard throws and leaves the stale one held); otherwise nothing.
+  /// For a holder that already holds `pid`: when its activation went stale (or was withdrawn), `beforeActivating`, then
+  /// `make()`'s run in its place (a failed guard throws and leaves the spent one held); otherwise nothing.
   func refresh(pid: pid_t, beforeActivating: () throws -> Void, make: () -> FakeActivation, meta: inout InputMeta) throws {
     lock.lock()
     defer { lock.unlock() }
-    guard let entry = held[pid], isStale(entry.activation) else { return }
+    guard var entry = held[pid], isSpent(entry) else { return }
     try beforeActivating()
-    held[pid] = (try run(make, meta: &meta), entry.holders)
+    entry.activation = try run(make, meta: &meta)
+    entry.withdrawn = false
+    held[pid] = entry
   }
 
-  private func release(_ pid: pid_t) -> Bool {
+  private func release(_ pid: pid_t, share: Int) -> Bool {
     lock.lock()
     defer { lock.unlock() }
-    guard let entry = held[pid] else { return true }
-    guard entry.holders <= 1 else {
-      held[pid] = (entry.activation, entry.holders - 1)
+    guard var entry = held[pid], entry.holders.removeValue(forKey: share) != nil else { return true }
+    guard entry.holders.isEmpty else {
+      held[pid] = entry
       return true
     }
     held[pid] = nil
-    return isStale(entry.activation) || entry.activation.deactivate()
+    return isSpent(entry) || entry.activation.deactivate()
   }
 }
 
@@ -330,7 +381,8 @@ func menuSpanStep(method: String, app: String?, heldApp: String?, inRecordedMenu
 func recordHeldMenu(_ item: AXUIElement, app key: String, pid: pid_t, connection: ConnectionState, activations: HeldActivations,
                     activation: () -> FakeActivation, beforeActivating: () throws -> Void, announce: () -> Void = {},
                     meta: inout InputMeta) throws {
-  let release = try activations.acquire(pid: pid, beforeActivating: beforeActivating, make: activation, meta: &meta)
+  let release = try activations.acquire(pid: pid, holder: ActivationHolder(connection: connection.id, menuSpan: true),
+                                        beforeActivating: beforeActivating, make: activation, meta: &meta)
   connection.recordMenu(item, app: key, release: release)
   announce()
 }

@@ -31,7 +31,8 @@ import Foundation
 // the activation point is skipped, an inert click stamped with the window's number goes outside its frame
 // (`activationClickPlan`), right after subtype 1 for a route with no left mouse down of its own (and for such a holder
 // joining an unconsumed hold), else before subtype 2 when the route's own left mouse down never went; it replaced the
-// paste slot's outside-frame lift and its engine.json switch.
+// paste slot's outside-frame lift and its engine.json switch. A route with its own left mouse down joining a hold of its
+// connection whose arm was spent early re-arms it (`HeldActivations.acquire`, the Decision Log's "#261's hold join").
 
 /// How long the screen-update hold may last: well under the guard's 1 s poll, and above the guards the sittings
 /// measured (37–58 ms, a coordinate click into TextEdit 82), so a guard of the usual length holds as the vendor's does.
@@ -614,6 +615,14 @@ final class FakeActivation {
     (armSet, kind, keptInert) = (false, .inertOutside(kept.place, when), nil)
     postClick(at: kept.point)
     return true
+  }
+
+  /// Whether a holder's own left mouse down would meet an arm this activation no longer has, where a new one would give
+  /// it one: subtype 1 was posted and its arm consumed early, by the inert click outside the frame or an earlier holder's
+  /// own mouse down. Not when the click at an inert activation point consumed it, which a new activation would post
+  /// again, nor while the arm is set or claimed.
+  var armSpentOutsideActivationPoint: Bool {
+    armLock.withLock { !armSet && !armClaimed && kind != nil && kind != .activationPoint }
   }
 
   /// A holder's own events going out to the process (`post`, which posts them all): a left mouse down stamped with a

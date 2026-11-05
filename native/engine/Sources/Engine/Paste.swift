@@ -773,7 +773,8 @@ extension Engine {
       defer { _ = release?() }
       var made: FakeActivation?
       defer { made?.releaseOpenHold() }  // a stop before the first event ends the activation's hold with the paste
-      release = try heldActivations.acquire(pid: target.pid, beforeActivating: target.guarding.checkInFlight, make: {
+      release = try heldActivations.acquire(pid: target.pid, holder: ActivationHolder(connection: context.connection.id),
+                                            beforeActivating: target.guarding.checkInFlight, make: {
         let activation = FakeActivation(pid: target.pid, window: activated, windowFrame: placed.frame, windowID: placed.id, system: system)
         activation.holdsThroughDelivery = true
         made = activation

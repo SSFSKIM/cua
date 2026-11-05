@@ -86,7 +86,8 @@ func holdFocus(app key: String, pid: pid_t, connection: ConnectionState, activat
     try activations.refresh(pid: pid, beforeActivating: beforeActivating, make: activation, meta: &meta)
     return
   }
-  let release = try activations.acquire(pid: pid, beforeActivating: beforeActivating, make: activation, meta: &meta)
+  let release = try activations.acquire(pid: pid, holder: ActivationHolder(connection: connection.id), beforeActivating: beforeActivating,
+                                        make: activation, meta: &meta)
   if joining {
     connection.focusHeld.add(pid, release: release)
     return

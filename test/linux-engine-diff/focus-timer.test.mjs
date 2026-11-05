@@ -8,7 +8,7 @@ import { gunzipSync } from 'node:zlib';
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { EXIT_WITHIN_MS, LANES, SCENARIOS, laneArgs, SETTLE_STEPS, UNCONFIRMED, auditVerdict, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, settleCost, stopPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, chosenLanes, judged, focusOutsOf, keepTrace, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { EXIT_WITHIN_MS, LANES, SCENARIOS, ALL_SCENARIOS, CLICK_STEPS, auditRuns, insertionAt, laneArgs, SETTLE_STEPS, UNCONFIRMED, auditVerdict, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, settleCost, stopPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, chosenLanes, judged, focusOutsOf, keepTrace, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7: the audit of each FocusOut, attributed to the request whose input it ends (audit.mjs; written for T7's
 // timer, whose FocusOuts were deferred past their answers, and the guard that none is deferred now). Lines in the shape
@@ -146,6 +146,21 @@ test("a scenario's keys type its text, capitals through Shift, and each window's
   assert.equal(tagged.expected.a, 'abcDefgHPastedaab');
 });
 
+test("click-then-paste: a click into the field at its first character, then a paste with no element, the paste's text expected where the click put the caret", () => {
+  const run = scenario('click-paste', { a: 1 }, { pasted: 'Pastedaab', click: { x: 5, y: 6 } });
+  assert.deepEqual(run.requests, [
+    { command: 'click', input: { window: { id: 1 }, x: 5, y: 6 } },
+    { command: 'type_text', input: { window: { id: 1 }, text: 'Pastedaab' } },
+  ]);
+  assert.deepEqual(run.expected, { a: 'Pastedaab' });
+  // the click puts the caret at the text's start; a terminal takes a paste at its end, wherever the click
+  assert.equal(insertionAt('click-paste', { kindOf: 'field' }, { text: 'abc', caret: 3 }), 0);
+  assert.equal(insertionAt('click-paste', { kindOf: 'paragraphs' }, { text: 'abc\ndef', caret: 7 }), 0);
+  assert.equal(insertionAt('click-paste', { kindOf: 'terminal' }, { text: 'abc', caret: 3 }), 3);
+  assert.equal(insertionAt('paste', { kindOf: 'field' }, { text: 'abc', caret: 2 }), 2, 'every other scenario types at the caret read before');
+  assert.ok(ALL_SCENARIOS.includes('click-paste'));
+});
+
 test("each run's paste text is its own in the sitting, letters only: a terminal's screen holds many runs' text, and a paste whose text the scrolled screen already shows cannot be confirmed", () => {
   const next = pasteTexts();
   const texts = Array.from({ length: 26 * 26 + 3 }, () => next());
@@ -178,6 +193,7 @@ test('the sessions a scenario must leave: one per request on every lane, its Foc
   assert.equal(expectedSessions('burst', ids).length, 20);
   assert.deepEqual(expectedSessions('aba', ids), [...Array(8).fill(7), ...Array(8).fill(9), ...Array(8).fill(7)]);
   assert.deepEqual(expectedSessions('paste', ids), Array(9).fill(7));
+  assert.deepEqual(expectedSessions('click-paste', ids), [7, 7], "the click's session, then the paste's");
 });
 
 const passingSeries = (family, lane, name) => ({ family, lane, scenario: name, runs: lane === 'control' ? 10 : 30, misses: lane === 'control' ? 4 : 0, streak: 30, reached: lane !== 'control', burst_ms_median: 3 });
@@ -232,8 +248,31 @@ test("the lanes: the engine as it ships; the paste settle's measured steps; the 
   assert.deepEqual(SETTLE_STEPS, [25, 50, 75, 100]);
   assert.deepEqual(LANES['settle-50'], ['--paste-settle-ms', '50'], 'the redirect kept as the engine ships: only the settle set');
   // every lane but the control is judged by the wait rule: the control must show the reorder
-  for (const lane of ['shipped', 'settle-25', 'settle-100']) assert.equal(judged(lane), true);
+  for (const lane of ['shipped', 'settle-25', 'settle-100', 'click-0', 'click-100']) assert.equal(judged(lane), true);
   assert.equal(judged('control'), false);
+});
+
+test("click-then-paste's lanes: the click settle at each of its steps, 0 the engine before it; its control drops that settle alone", () => {
+  assert.deepEqual(CLICK_STEPS, [0, 25, 50, 75, 100]);
+  assert.deepEqual(
+    Object.keys(LANES).filter((l) => l.startsWith('click-')),
+    CLICK_STEPS.map((ms) => `click-${ms}`),
+  );
+  assert.deepEqual(LANES['click-50'], ['--paste-click-settle-ms', '50'], 'the redirect and the key settle kept as the engine ships');
+  assert.deepEqual(laneArgs('control', 'click-paste'), ['--paste-click-settle-ms', '0']);
+  assert.deepEqual(laneArgs('click-25', 'click-paste'), ['--paste-click-settle-ms', '25']);
+});
+
+test("an audit pass runs each scenario on the flags its series ran with: the control's paste with no settle, not unredirected", () => {
+  assert.deepEqual(auditRuns('control', ['burst', 'aba', 'paste', 'click-paste']), [
+    { scenario: 'burst', args: ['--retention', 'per-request'] },
+    { scenario: 'aba', args: ['--retention', 'per-request'] },
+    { scenario: 'paste', args: ['--paste-settle-ms', '0'] },
+    { scenario: 'click-paste', args: ['--paste-click-settle-ms', '0'] },
+  ]);
+  assert.deepEqual(auditRuns('shipped', ['paste']), [{ scenario: 'paste', args: [] }]);
+  assert.deepEqual(auditRuns('settle-50', ['paste']), [{ scenario: 'paste', args: ['--paste-settle-ms', '50'] }]);
+  for (const lane of Object.keys(LANES)) for (const run of auditRuns(lane, ALL_SCENARIOS)) assert.deepEqual(run.args, laneArgs(lane, run.scenario), `${lane} ${run.scenario}`);
 });
 
 test("--lanes runs only the lanes it names, in the experiment's order, with no stop runs", () => {
@@ -286,7 +325,9 @@ test("a stop run passes on SIGTERM when the burst kept its order, every session 
 
 test("a series' paste settle cost: how long each paste waited, and how soon after its window's last key it came", () => {
   const row = (waited_ms, after_key_ms) => ({ paste: { settle: { waited_ms, after_key_ms, settle_ms: 50 } } });
-  assert.deepEqual(settleCost([row(40, 10), row(30, 20), row(0, 80), row(50, 0), {}]), { pastes: 4, waited_median: 35, waited_max: 50, after_key_median: 15 });
+  assert.deepEqual(settleCost([row(40, 10), row(30, 20), row(0, 80), row(50, 0), {}]), { pastes: 4, waited_median: 35, waited_max: 50, after_key_median: 15, after_click_median: null });
+  const clicked = (waited_ms, after_click_ms) => ({ paste: { settle: { waited_ms, after_key_ms: null, after_click_ms, settle_ms: 100, click_settle_ms: 50 } } });
+  assert.deepEqual(settleCost([clicked(48, 2), clicked(46, 4)]), { pastes: 2, waited_median: 47, waited_max: 48, after_key_median: null, after_click_median: 3 });
   assert.equal(settleCost([{}]), null, 'no paste');
 });
 
@@ -414,6 +455,7 @@ test('--scenarios runs only the scenarios it names, in the experiment\'s order, 
   assert.deepEqual(chosenScenarios(args()), { scenarios: SCENARIOS, stops: true });
   assert.deepEqual(chosenScenarios(args('--scenarios', 'paste')), { scenarios: ['paste'], stops: false });
   assert.deepEqual(chosenScenarios(args('--scenarios', 'paste,burst')), { scenarios: ['burst', 'paste'], stops: false });
+  assert.deepEqual(chosenScenarios(args('--scenarios', 'click-paste')), { scenarios: ['click-paste'], stops: false });
   assert.throws(() => chosenScenarios(args('--scenarios', 'paste,drag')), /unknown focus-timer scenario drag/);
   assert.throws(() => chosenScenarios(args('--scenarios', 'paste', '--stops-only')), /--stops-only runs no scenario/);
 });

@@ -10,7 +10,11 @@
 //
 // - `burst`: one window, pipelined `press_key` requests (Shift chords among them), the exact text read back;
 // - `aba`: window A, then B, then A again, pipelined, each window's exact text and its order;
-// - `paste`: keys to a window, then a `type_text` to it, pipelined, the exact text and its order.
+// - `paste`: keys to a window, then a `type_text` to it, pipelined, the exact text and its order;
+// - `click-paste` (named with `--scenarios`): a click into the window's field at its first character, the caret at the
+//   field's end before it, then a `type_text` with no element, pipelined: the paste's text where the click put the
+//   caret, its answer confirmed (the design session's ruling on task 60's review, 2026-11-05: a paste's observation can
+//   come before a click just before it lands, and then reads the caret or the field the click left).
 //
 // Each is read back from the window's own text at its caret (the caret read before the run), so a key cut and delivered
 // later, or a paste that lands before keys sent ahead of it, fails the run. The judged lanes must pass 30 consecutive
@@ -62,6 +66,10 @@ export const CHROMIUM = ['chrome', 'electron'];
 /** Chromium's scene page: a field whose page spends a few milliseconds on each key (pages/keys.html). */
 export const KEYS_PAGE = 'keys.html';
 export const SCENARIOS = ['burst', 'aba', 'paste'];
+/** Every scenario, in the experiment's order: the default ones, then those a sitting names with `--scenarios`. */
+export const ALL_SCENARIOS = [...SCENARIOS, 'click-paste'];
+/** The scenarios whose last request is a paste: their runs keep the paste's `--stats` record. */
+const PASTES = ['paste', 'click-paste'];
 
 /**
  * The scenarios a sitting runs, in the experiment's order, and whether it runs the stop runs: every scenario and the
@@ -71,8 +79,8 @@ export const SCENARIOS = ['burst', 'aba', 'paste'];
 export function chosenScenarios(args) {
   if (!args.scenarios?.length) return { scenarios: SCENARIOS, stops: true };
   if (args.stopsOnly) throw new Error('--stops-only runs no scenario; drop --scenarios');
-  for (const name of args.scenarios) if (!SCENARIOS.includes(name)) throw new Error(`unknown focus-timer scenario ${name}`);
-  return { scenarios: SCENARIOS.filter((name) => args.scenarios.includes(name)), stops: false };
+  for (const name of args.scenarios) if (!ALL_SCENARIOS.includes(name)) throw new Error(`unknown focus-timer scenario ${name}`);
+  return { scenarios: ALL_SCENARIOS.filter((name) => args.scenarios.includes(name)), stops: false };
 }
 /** Consecutive passing runs a judged lane's series needs, and the runs it may take to get them. */
 export const CONSECUTIVE = 30;
@@ -93,6 +101,11 @@ export const STOP_KINDS = ['keys', 'clicks'];
 /** The paste settle's measured steps, in ms (the design session's wait rule, 2026-11-04: the smallest that passes). */
 export const SETTLE_STEPS = [25, 50, 75, 100];
 /**
+ * The click settle's measured steps, in ms: a paste's settle after a click to its window (`--paste-click-settle-ms`),
+ * 0 the engine before it (the design session's ruling on task 60's review, 2026-11-05, by the wait rule).
+ */
+export const CLICK_STEPS = [0, 25, 50, 75, 100];
+/**
  * The lanes. `shipped`: the engine as it ships (each request's FocusOut as its input ends, session retention: a window
  * stays redirected until the engine exits; its paste settle). `settle-<ms>`: the same with the paste's settle set to one
  * of its measured steps (`--paste-settle-ms`), the redirect kept. `control`: each request's redirect dropped with its
@@ -105,6 +118,7 @@ export const SETTLE_STEPS = [25, 50, 75, 100];
 export const LANES = {
   shipped: [],
   ...Object.fromEntries(SETTLE_STEPS.map((ms) => [`settle-${ms}`, ['--paste-settle-ms', String(ms)]])),
+  ...Object.fromEntries(CLICK_STEPS.map((ms) => [`click-${ms}`, ['--paste-click-settle-ms', String(ms)]])),
   control: ['--retention', 'per-request'],
 };
 /**
@@ -113,8 +127,16 @@ export const LANES = {
  * paste's own path; with the redirect kept it missed 21 of 60 (task 59).
  */
 export const CONTROL_PASTE = ['--paste-settle-ms', '0'];
+/** The control's flags for click-then-paste: no settle after the click, the redirect and the key settle kept. */
+export const CONTROL_CLICK_PASTE = ['--paste-click-settle-ms', '0'];
+const CONTROLS = { paste: CONTROL_PASTE, 'click-paste': CONTROL_CLICK_PASTE };
 /** A lane's engine flags for a scenario's series: each control drops the one protection its scenario rests on. */
-export const laneArgs = (lane, scenario) => (lane === 'control' && scenario === 'paste' ? CONTROL_PASTE : LANES[lane]);
+export const laneArgs = (lane, scenario) => (lane === 'control' ? (CONTROLS[scenario] ?? LANES.control) : LANES[lane]);
+/**
+ * An audit pass's runs, one engine each: every scenario on the flags its series ran with (`laneArgs`), so the audit of
+ * a control's paste judges the engine the series measured, with no settle, and not one unredirected (task 60's review).
+ */
+export const auditRuns = (lane, scenarios) => scenarios.map((scenario) => ({ scenario, args: laneArgs(lane, scenario) }));
 /** The lanes a sitting runs unless `--lanes` names others: T7's proof on the engine as it ships. */
 export const DEFAULT_LANES = ['shipped', 'control'];
 /** Whether a lane must pass its series (30 consecutive): every lane but `control`, which must show the reorder. */
@@ -152,7 +174,7 @@ export function keysOf(text) {
  * to exactly itself), capitals among them so Shift chords ride the burst; the paste's text is the caller's (`pasted`,
  * each run's own in a sitting: `pasteTexts`).
  */
-export function scenario(name, { a, b }, { pasted: pasteText = 'Pasted' } = {}) {
+export function scenario(name, { a, b }, { pasted: pasteText = 'Pasted', click = { x: 0, y: 0 } } = {}) {
   const press = (window, text) => keysOf(text).map((key) => ({ command: 'press_key', input: { window: { id: window }, key } }));
   if (name === 'burst') {
     const text = 'abcDefgHijkLmnoPqrsT';
@@ -165,6 +187,9 @@ export function scenario(name, { a, b }, { pasted: pasteText = 'Pasted' } = {}) 
   if (name === 'paste') {
     const [typed, pasted] = ['abcDefgH', pasteText];
     return { requests: [...press(a, typed), { command: 'type_text', input: { window: { id: a }, text: pasted } }], expected: { a: typed + pasted } };
+  }
+  if (name === 'click-paste') {
+    return { requests: [{ command: 'click', input: { window: { id: a }, ...click } }, { command: 'type_text', input: { window: { id: a }, text: pasteText } }], expected: { a: pasteText } };
   }
   throw new Error(`unknown scenario ${name}`);
 }
@@ -181,6 +206,15 @@ export function pasteTexts() {
     n += 1;
     return `Pasted${letters}`;
   };
+}
+
+/**
+ * Where a scenario's text goes in a window's text read before the run (`{text, caret}`): at the caret, except
+ * click-then-paste's, which goes where its click puts the caret, at the text's start; a terminal takes it at its end.
+ */
+export function insertionAt(name, scene, before) {
+  if (name !== 'click-paste') return before.caret;
+  return scene.kindOf === 'terminal' ? before.caret : 0;
 }
 
 /** Whether `after` is `before` with `inserted` put at `caret`, exactly. */
@@ -233,15 +267,19 @@ export function stopPasses({ signal, inOrder, sessions, exit, settle, drainedMs 
 }
 
 /**
- * The paste settle's cost over a series' runs: how many pastes, the median and the largest wait, and the median time
- * since the window's last key when the paste came (each paste's `--stats` record, `paste.settle`). Null for none.
+ * The paste settle's cost over a series' runs: how many pastes, the median and the largest wait, and the median times
+ * since the window's last key and its last click when the paste came (each paste's `--stats` record, `paste.settle`).
+ * Null for none.
  */
 export function settleCost(rows) {
   const settles = rows.map((r) => r.paste?.settle).filter(Boolean);
   if (!settles.length) return null;
   const waited = settles.map((s) => s.waited_ms);
-  const after = settles.map((s) => s.after_key_ms).filter((v) => typeof v === 'number');
-  return { pastes: settles.length, waited_median: tenth(median(waited)), waited_max: tenth(Math.max(...waited)), after_key_median: after.length ? tenth(median(after)) : null };
+  const since = (field) => {
+    const values = settles.map((s) => s[field]).filter((v) => typeof v === 'number');
+    return values.length ? tenth(median(values)) : null;
+  };
+  return { pastes: settles.length, waited_median: tenth(median(waited)), waited_max: tenth(Math.max(...waited)), after_key_median: since('after_key_ms'), after_click_median: since('after_click_ms') };
 }
 
 /** A scene's text and caret, as one offset into that text (`families.mjs` `readCaret`; a terminal's text grows at its end). */
@@ -417,15 +455,45 @@ async function pointerStop(ctx, windows) {
   return { requests, expected: { a: 'du'.repeat(10) }, read };
 }
 
+/**
+ * Click-then-paste's start on window A: the caret put at the field's end by a fresh engine's `ctrl+End` (an empty field
+ * first given text to click into), so that the click at the first character moves it; then the click's point,
+ * window-relative: the first character's left part. A terminal takes a paste at its end whatever the click, so it is
+ * clicked in its middle and nothing is prepared.
+ */
+async function clickPasteStart(ctx, scene) {
+  const { desktop, oracle } = ctx;
+  const { response } = await desktop.reader.request('get_window_state', { window: { id: scene.id }, include_screenshot: false });
+  if (!response.ok) throw new Error(`${scene.label}: no window state (${response.error})`);
+  const origin = response.output.window;
+  if (scene.kindOf === 'terminal') return { x: Math.round(origin.width / 2), y: Math.round(origin.height / 2) };
+  const { text } = await settledRead(() => textAndCaret(desktop, oracle, scene));
+  const engine = new Engine({ label: 'cua-caret', bin: ctx.cua }).start();
+  try {
+    for (const key of [...(text ? [] : keysOf('seed')), 'ctrl+End']) {
+      const { response: pressed } = await engine.request('press_key', { window: { id: scene.id }, key });
+      if (pressed.ok !== true) throw new Error(`putting ${scene.label}'s caret at its end: ${pressed.error}`);
+    }
+  } finally {
+    await engine.close();
+  }
+  const field = scene.kindOf === 'paragraphs' ? oracle.children(scene.document).find((id) => oracle.role(id) === 'paragraph') : scene.field;
+  const e = oracle.charExtents(field, 0);
+  return { x: Math.round(e.x - origin.x + Math.max(1, e.w / 4)), y: Math.round(e.y - origin.y + e.h / 2) };
+}
+
 /** One run of a scenario on the scene windows: the answers, each window's text and caret before and after. */
 async function oneRun(ctx, engine, name, windows) {
   const { desktop, oracle } = ctx;
-  const { requests, expected } = scenario(name, { a: windows.a.id, b: windows.b?.id }, name === 'paste' ? { pasted: ctx.pasteText() } : {});
-  const keys = Object.keys(expected);
+  const clicks = name === 'click-paste';
   let tail = false;
+  // a Chromium field is emptied for each run's keys; click-then-paste needs text to click into, so it keeps it
   if (CHROMIUM.includes(windows.a.family)) {
-    for (const k of keys) tail = (await cleanStart(ctx, windows[k], () => textAndCaret(desktop, oracle, windows[k]))).tail || tail;
+    for (const k of clicks ? ['a'] : Object.keys(scenario(name, { a: 0, b: 0 }).expected)) tail = (await cleanStart(ctx, windows[k], () => textAndCaret(desktop, oracle, windows[k]), { reset: !clicks })).tail || tail;
   }
+  const click = clicks ? await clickPasteStart(ctx, windows.a) : undefined;
+  const { requests, expected } = scenario(name, { a: windows.a.id, b: windows.b?.id }, PASTES.includes(name) ? { pasted: ctx.pasteText(), click } : {});
+  const keys = Object.keys(expected);
   const before = {};
   for (const k of keys) before[k] = await settledRead(() => textAndCaret(desktop, oracle, windows[k]));
   const started = performance.now();
@@ -433,10 +501,11 @@ async function oneRun(ctx, engine, name, windows) {
   const answered = performance.now() - started;
   const after = {};
   for (const k of keys) after[k] = await settledRead(() => textAndCaret(desktop, oracle, windows[k]), { want: grown(before[k], expected[k]) });
-  const texts = Object.fromEntries(keys.map((k) => [k, insertedAt(before[k].text, before[k].caret, expected[k], after[k].text)]));
+  const at = Object.fromEntries(keys.map((k) => [k, insertionAt(name, windows[k], before[k])]));
+  const texts = Object.fromEntries(keys.map((k) => [k, insertedAt(before[k].text, at[k], expected[k], after[k].text)]));
   const errors = responses.filter((r) => r.ok !== true).map((r) => String(r.error).slice(0, 300));
-  const got = Object.fromEntries(keys.map((k) => [k, typeof after[k].text === 'string' && typeof before[k].text === 'string' ? after[k].text.slice(before[k].caret ?? 0, (before[k].caret ?? 0) + after[k].text.length - before[k].text.length) : null]));
-  return { ok: runPasses({ family: windows.a.family, errors, exact: texts }), tail_at_start: tail, answered_ok: errors.length === 0, errors, expected, got, exact: texts, caret_read: keys.every((k) => before[k].caret !== null), burst_ms: Math.round(ms * 10) / 10, answered_ms: Math.round(answered * 10) / 10 };
+  const got = Object.fromEntries(keys.map((k) => [k, typeof after[k].text === 'string' && typeof before[k].text === 'string' ? after[k].text.slice(at[k] ?? 0, (at[k] ?? 0) + after[k].text.length - before[k].text.length) : null]));
+  return { ok: runPasses({ family: windows.a.family, errors, exact: texts }), tail_at_start: tail, answered_ok: errors.length === 0, errors, expected, got, exact: texts, caret_read: keys.every((k) => before[k].caret !== null), ...(clicks ? { click, caret_before: before.a.caret } : {}), burst_ms: Math.round(ms * 10) / 10, answered_ms: Math.round(answered * 10) / 10 };
 }
 
 /**
@@ -534,7 +603,7 @@ async function series(ctx, family, lane, name, windows) {
     }
     await stderrClosed;
     // what the paste's observation and confirmation saw, from its --stats line
-    if (name === 'paste') row.paste = pasteRecord(engine);
+    if (PASTES.includes(name)) row.paste = pasteRecord(engine);
     row.miss = missCause(row);
     // a miss keeps when each FocusOut went, after which input and on whose answer (the cut's grounds, if one), and
     // with --trace the engine's whole X trace
@@ -553,29 +622,35 @@ async function series(ctx, family, lane, name, windows) {
   const wrongText = rows.filter((r) => !Object.values(r.exact).every(Boolean)).length;
   const missCauses = {};
   for (const r of rows) if (r.miss) missCauses[r.miss] = (missCauses[r.miss] ?? 0) + 1;
-  const out = { family, lane, scenario: name, need, ...verdict, raw: { misses: raw.misses, streak: raw.streak, reached: raw.reached }, wrong_text: wrongText, miss_causes: missCauses, ...(name === 'paste' ? { confirm_rules: confirmRules(rows), settle: settleCost(rows) } : {}), burst_ms_median: tenth(median(rows.map((r) => r.burst_ms))), first_miss: rows.find((r) => !r.ok) ?? null };
+  const out = { family, lane, scenario: name, need, ...verdict, raw: { misses: raw.misses, streak: raw.streak, reached: raw.reached }, wrong_text: wrongText, miss_causes: missCauses, ...(PASTES.includes(name) ? { confirm_rules: confirmRules(rows), settle: settleCost(rows) } : {}), burst_ms_median: tenth(median(rows.map((r) => r.burst_ms))), first_miss: rows.find((r) => !r.ok) ?? null };
   emit({ kind: 'focus-timer-series', ...out });
   return out;
 }
 
 /**
- * The audit pass of a family and lane: one run of each scenario with the engine's X connection through an xtrace proxy
- * and its `--stats` records, then the trace judged: nothing the background route forbids (`auditRequests`), every
- * FocusOut attributed to its request and none deferred past its answer (`attributeFocusOuts`, `auditVerdict`), and the
- * synthetic-focus sessions, by window and in order, exactly the scenarios' (`expectedSessions`).
+ * The audit pass of a family and lane: one run of each scenario, each on its own engine with the flags its series ran
+ * with (`auditRuns`), its X connection through an xtrace proxy and its `--stats` records, then each trace judged:
+ * nothing the background route forbids (`auditRequests`), every FocusOut attributed to its request and none deferred
+ * past its answer (`attributeFocusOuts`, `auditVerdict`), and the synthetic-focus sessions, by window and in order,
+ * exactly the scenario's (`expectedSessions`). One row per scenario.
  */
 async function auditPass(ctx, family, lane, windows) {
+  const rows = [];
+  for (const { scenario: name, args } of auditRuns(lane, ctx.scenarios)) rows.push(await auditRun(ctx, family, lane, name, args, windows));
+  return rows;
+}
+
+/** One scenario's audit run (`auditPass`). */
+async function auditRun(ctx, family, lane, name, args, windows) {
   const { emit, cua } = ctx;
   const proxy = await startProxy();
-  const engine = new Engine({ label: `cua-${lane}-audit`, bin: cua, args: LANES[lane], stats: true, env: proxy.env }).start();
+  const engine = new Engine({ label: `cua-${lane}-audit`, bin: cua, args, stats: true, env: proxy.env }).start();
   const { records, closed } = collectFocusOuts(engine);
-  const runs = [];
+  let run;
   let text;
   try {
-    for (const name of ctx.scenarios) {
-      const row = await oneRun(ctx, engine, name, windows);
-      runs.push({ scenario: name, ok: row.ok, errors: row.errors });
-    }
+    const row = await oneRun(ctx, engine, name, windows);
+    run = { scenario: name, ok: row.ok, errors: row.errors };
   } finally {
     await engine.close();
     await closed;
@@ -586,13 +661,12 @@ async function auditPass(ctx, family, lane, windows) {
   const trace = parseXtrace(text);
   const forbidden = auditRequests(trace);
   const attributed = attributeFocusOuts(trace, records, { delayMs: 0 });
-  const ids = { a: windows.a.id, b: windows.b.id };
-  const want = ctx.scenarios.flatMap((name) => expectedSessions(name, ids));
+  const want = expectedSessions(name, { a: windows.a.id, b: windows.b.id });
   const seen = attributed.sessions.map((s) => s.destination);
   const sessionsOk = JSON.stringify(seen) === JSON.stringify(want);
   // the control lane's runs may reorder, which is what it is for; its audit judges the trace and the records alone
-  const clean = auditVerdict({ forbidden, attributed, sessionsOk, runsOk: runs.every((r) => r.ok), lane });
-  const row = { kind: 'focus-timer-audit', family, lane, clean, runs, requests: forbidden.requests, forbidden: forbidden.forbidden.slice(0, 10), problems: attributed.problems.slice(0, 10), sessions: { expected: want, seen }, attributed: attributed.attributed, deferred: attributed.attributed.filter((a) => a.deferred).length };
+  const clean = auditVerdict({ forbidden, attributed, sessionsOk, runsOk: run.ok, lane });
+  const row = { kind: 'focus-timer-audit', family, lane, scenario: name, args, clean, runs: [run], requests: forbidden.requests, forbidden: forbidden.forbidden.slice(0, 10), problems: attributed.problems.slice(0, 10), sessions: { expected: want, seen }, attributed: attributed.attributed, deferred: attributed.attributed.filter((a) => a.deferred).length };
   emit(row);
   return row;
 }
@@ -683,7 +757,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
   const stops = chosen.stops && laneStops;
   // each lane's engine flags, as the sitting ran them
   const laneFlags = Object.fromEntries(lanes.map((name) => [name, LANES[name]]));
-  if (lanes.includes('control')) laneFlags['control paste'] = CONTROL_PASTE;
+  if (lanes.includes('control')) for (const name of chosen.scenarios) if (CONTROLS[name]) laneFlags[`control ${name}`] = CONTROLS[name];
   emit({ kind: 'focus-timer-display', display: server.display, cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), load_factor: args.load ? (args.loadFactor ?? 1) : 0, lanes: laneFlags });
   const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   const families = args.families.length ? args.families : FAMILIES;
@@ -717,7 +791,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
         const cutsKeys = CHROMIUM.includes(family) && stops;
         const lane = async (name) => {
           for (const scenarioName of ctx.scenarios) results.series.push(await series(ctx, family, name, scenarioName, windows));
-          results.audits.push(await auditPass(ctx, family, name, windows));
+          results.audits.push(...(await auditPass(ctx, family, name, windows)));
         };
         if (!args.stopsOnly) for (const name of lanes.filter((l) => l !== 'control')) await lane(name);
         if (cutsKeys) {
@@ -776,10 +850,10 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped }, { fam
     const causes = judged(s.lane) && s.misses ? ` (${Object.entries(s.miss_causes ?? {}).map(([c, n]) => `${c} ${n}`).join(', ')})` : '';
     md.push(`| ${s.family} | ${s.lane} | ${s.scenario} | ${s.runs} | ${s.misses} | ${s.streak} | ${verdict}${causes} | ${s.raw?.misses ?? '–'} | ${s.raw?.streak ?? '–'} | ${s.burst_ms_median ?? '–'} |`);
   }
-  md.push('', '| family | lane | audit | FocusOuts attributed (deferred) | sessions as expected | problems |', '|---|---|---|---:|---|---|');
+  md.push('', '| family | lane | scenario | engine flags | audit | FocusOuts attributed (deferred) | sessions as expected | problems |', '|---|---|---|---|---|---:|---|---|');
   for (const a of audits) {
-    md.push(`| ${a.family} | ${a.lane} | ${a.clean ? 'clean' : '**not clean**'} | ${a.attributed.length} (${a.deferred}) | ${JSON.stringify(a.sessions.seen) === JSON.stringify(a.sessions.expected) ? 'yes' : '**no**'} | ${[...a.problems, ...a.forbidden.map((f) => f.what)].join('; ') || '–'} |`);
-    if (!a.clean) failed.push(`${a.family} ${a.lane}: the audit is not clean`);
+    md.push(`| ${a.family} | ${a.lane} | ${a.scenario ?? 'all'} | ${a.args?.length ? `\`${a.args.join(' ')}\`` : '–'} | ${a.clean ? 'clean' : '**not clean**'} | ${a.attributed.length} (${a.deferred}) | ${JSON.stringify(a.sessions.seen) === JSON.stringify(a.sessions.expected) ? 'yes' : '**no**'} | ${[...a.problems, ...a.forbidden.map((f) => f.what)].join('; ') || '–'} |`);
+    if (!a.clean) failed.push(`${a.family} ${a.lane}${a.scenario ? ` ${a.scenario}` : ''}: the audit is not clean`);
   }
   if (stops.length) {
     md.push('', '| family | signal | input | runs | as required | raw (a tail met at the start fails) | exit ms after the last answer (median) |', '|---|---|---|---:|---|---|---:|');

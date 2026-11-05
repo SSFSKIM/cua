@@ -175,6 +175,8 @@ final class HeldActivations: @unchecked Sendable {
   private struct Entry {
     var activation: FakeActivation
     var holders: [Int: ActivationHolder]
+    /// The shares whose holder posts its own left mouse down (`postsLeftMouseDown`).
+    var pointers: Set<Int> = []
     /// Withdrawn by a re-arming whose new activation failed its guard: replaced as a stale one is, and never deactivated.
     var withdrawn = false
   }
@@ -270,7 +272,9 @@ final class HeldActivations: @unchecked Sendable {
   /// and `make()`'s run in its place, every holder kept, so the holder's own mouse down consumes the new arm with no
   /// ordering. A failed guard there throws with the new one undone and the old one left withdrawn for the holders that
   /// remain (the next acquire or `refresh` runs a new one, as for a stale one). Answers the release, which runs once and
-  /// deactivates when the last holder releases; it answers false only when that deactivation could not post.
+  /// deactivates when the last holder releases; it answers false only when that deactivation could not post. A pointer
+  /// holder's release that leaves only holders with no mouse down of their own posts the kept inert click when the arm is
+  /// still set (its events never went), so the holds that remain never hold a set arm.
   func acquire(pid: pid_t, holder: ActivationHolder, postsLeftMouseDown: Bool = false, beforeActivating: () throws -> Void,
                make: () -> FakeActivation, meta: inout InputMeta) throws -> () -> Bool {
     lock.lock()
@@ -292,11 +296,12 @@ final class HeldActivations: @unchecked Sendable {
       }
       shares += 1
       entry.holders[shares] = holder
+      if postsLeftMouseDown { entry.pointers.insert(shares) }
       held[pid] = entry
     } else {
       let activation = try run(make, postsLeftMouseDown: postsLeftMouseDown, meta: &meta)
       shares += 1
-      held[pid] = Entry(activation: activation, holders: [shares: holder])
+      held[pid] = Entry(activation: activation, holders: [shares: holder], pointers: postsLeftMouseDown ? [shares] : [])
     }
     let share = shares
     let once = NSLock()
@@ -311,11 +316,17 @@ final class HeldActivations: @unchecked Sendable {
   }
 
   /// For a holder that already holds `pid`: when its activation went stale (or was withdrawn), `beforeActivating`, then
-  /// `make()`'s run in its place (a failed guard throws and leaves the spent one held); otherwise nothing.
+  /// `make()`'s run in its place (a failed guard throws and leaves the spent one held); otherwise the kept inert click
+  /// when the arm is still set, recorded in `meta`, as a joiner with no mouse down of its own posts it: the holder's
+  /// input never meets a set arm, whatever left it set.
   func refresh(pid: pid_t, beforeActivating: () throws -> Void, make: () -> FakeActivation, meta: inout InputMeta) throws {
     lock.lock()
     defer { lock.unlock() }
-    guard var entry = held[pid], isSpent(entry) else { return }
+    guard var entry = held[pid] else { return }
+    guard isSpent(entry) else {
+      if entry.activation.consumeArm(.early) { meta.activationClickKind = entry.activation.clickKind }
+      return
+    }
     try beforeActivating()
     entry.activation = try run(make, meta: &meta)
     entry.withdrawn = false
@@ -326,7 +337,9 @@ final class HeldActivations: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     guard var entry = held[pid], entry.holders.removeValue(forKey: share) != nil else { return true }
+    let pointer = entry.pointers.remove(share) != nil
     guard entry.holders.isEmpty else {
+      if pointer, entry.pointers.isEmpty, !isSpent(entry) { entry.activation.consumeArm(.release) }
       held[pid] = entry
       return true
     }

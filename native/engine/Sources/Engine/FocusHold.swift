@@ -82,7 +82,7 @@ func holdFocus(app key: String, pid: pid_t, connection: ConnectionState, activat
                activation: () -> FakeActivation, beforeActivating: () throws -> Void, meta: inout InputMeta) throws {
   let joining = connection.focusHold.app == key
   if joining && connection.focusHeld.contains(pid) {
-    // Held already; re-established when a real activation cycle cleared it since.
+    // Held already; re-established when a real activation cycle cleared it since, and its arm consumed if still set.
     try activations.refresh(pid: pid, beforeActivating: beforeActivating, make: activation, meta: &meta)
     return
   }

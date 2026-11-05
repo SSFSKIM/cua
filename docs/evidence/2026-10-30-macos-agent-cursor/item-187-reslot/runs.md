@@ -1,7 +1,7 @@
 # Item 187's re-slot, 2026-11-05: how it ran
 
 The slot ran on the MacBook at the design session's GO (04:00Z; again 06:08Z after the owner's O7 sitting), on build
-1f73143d1fb0 (ce555a73, fix/187-3b-slot rebased onto main; built twice, same hash), approved 06:11:36Z. It stopped after
+1f73143d1fb0 (source tree 27686ced, = e02938e6 on fix/187-3b-slot; built twice, same hash), approved 06:11:36Z. It stopped after
 the confirming cell, and the design session stopped the slot there: no composing block, control, #259 cell or BEFORE
 half ran. `item-187.md` is the judge's report of what ran (DOES NOT LAND: nothing reached the bar).
 

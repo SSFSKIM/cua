@@ -127,7 +127,8 @@ const swapSteps = (item, half, say) => {
     {say},
     {series: [item], counts: {rows: 0}},
     {task: '187-iso-swap', args: [tag, half], required: true},
-    {open: S, engine: 'cua', scenes: ['textedit']},
+    // Its own process group, so a terminal's Ctrl-C cannot kill the session the attestation reads (./detached.mjs).
+    {open: S, engine: 'cua', scenes: ['textedit'], detached: true},
     {run: S, cell: OBSERVE('textedit'), label: LABELS.attest(tag), required: true},
     {close: S},
     {task: '187-iso-attest', args: [tag, half], required: true},
@@ -200,14 +201,24 @@ export function startOf({record = null, check, saved = {}, end = DEFAULT_END}) {
 }
 
 // The drive, then the cleanup on every exit, whatever the drive did: `drive()` (-> {stopped}), `cleanup(steps)` running
-// cleanupSteps(end). A throw from either is kept, never lost. `guard` (signalGuard): from the cleanup on, a further
-// signal is ignored and said so, so it cannot cut the restore short. -> {stopped, error, cleanupError, signal}.
-export async function driveThenCleanup({drive, cleanup, end = DEFAULT_END, guard = null}) {
-  let stopped = null, error = null, cleanupError = null;
+// cleanupSteps(end), up to CLEANUP_ATTEMPTS times until one runs through (a restore and attestation interrupted part
+// way is run again: the restore moves whatever is there aside and copies the save in once more). A throw from the
+// drive or the last attempt is kept, never lost. `guard` (signalGuard): from the cleanup on, a further signal is
+// ignored and said so. -> {stopped, error, cleanupError, cleanupAttempts, signal}.
+export const CLEANUP_ATTEMPTS = 3;
+export async function driveThenCleanup({drive, cleanup, end = DEFAULT_END, guard = null, attempts = CLEANUP_ATTEMPTS, log = text => process.stderr.write(text)}) {
+  let stopped = null, error = null, cleanupError = null, tried = 0;
   try { ({stopped = null} = (await drive()) ?? {}); } catch (e) { error = e; }
   guard?.cleaning();
-  try { await cleanup(cleanupSteps(end)); } catch (e) { cleanupError = e; }
-  return {stopped, error, cleanupError, signal: guard?.signal() ?? null};
+  const steps = cleanupSteps(end);
+  while (tried < attempts) {
+    tried += 1;
+    try { await cleanup(steps); cleanupError = null; break; } catch (e) {
+      cleanupError = e;
+      if (tried < attempts) log(`\n!!! the cleanup's attempt ${tried} of ${attempts} stopped (${e.message}); running it again\n`);
+    }
+  }
+  return {stopped, error, cleanupError, cleanupAttempts: tried, signal: guard?.signal() ?? null};
 }
 
 // The judge's and the drive's exit: 0 only when the verdict LANDS and the cleanup is attested.
@@ -298,6 +309,7 @@ export function attestProblem(native, {build, variant}) {
 export const pairBuilds = start => (start?.ok === true && start.pair?.shippingBuild && start.pair?.controlBuild ? {after: start.pair.shippingBuild, before: start.pair.controlBuild} : null);
 export function isolateTasks(d) {
   const st = ctx => (ctx.iso ??= {});
+  let asides = 0;  // a fresh aside for every restore, a retried one too
   const pair = pairBuilds(d.start);
   return {
     // The preparation's pair and the owner's end choice, as the drive checked them before anything ran.
@@ -312,7 +324,7 @@ export function isolateTasks(d) {
       const want = half === 'owner' ? d.start?.ownerBuild ?? null : pair?.[half] ?? null;
       if (!want) return {ok: false, ...base, saved: build, problem: half === 'owner' ? 'the start recorded no owner build' : 'no preparation pair was recorded'};
       if (build !== want) return {ok: false, ...base, saved: build, problem: `${from}'s build ${short(build)} is not ${half === 'owner' ? 'the owner save the start recorded' : 'this preparation\'s'} ${short(want)}`};
-      const aside = join(d.halves, 'aside', `${tag.replace(/#.*$/, '')}-${d.now()}`);
+      const aside = join(d.halves, 'aside', `${tag.replace(/#.*$/, '')}-${d.now()}-${++asides}`);
       let restored;
       try { restored = await d.restore({from, aside}); } catch (error) { return {ok: false, ...base, saved: build, aside, problem: `the restore refused: ${error.message}`}; }
       if (restored?.ok !== true) return {ok: false, ...base, saved: build, aside, restored, problem: `the restore did not end on the saved build, approved: ${restored?.next ?? JSON.stringify(restored?.status ?? null)}`};

@@ -102,9 +102,9 @@ export function gate({name, engine, scenes, guard, send}) {
 // scenes are still the guard's, so a cell may act on them, but the session's first observation of each is a cell's own
 // (#244); a list of scene ids binds those alone (#188: Finder as the user window, never observed). `open`: the
 // session's opener (scripts/accept/mcp-session.mjs openSession; the tests' fake).
-export async function openDriven({name, engine, env, scenes, guard, device = null, bind = true, open = openSession}) {
+export async function openDriven({name, engine, env, scenes, guard, device = null, bind = true, open = openSession, detached = false}) {
   const asked = [];
-  const session = open({args: [CLI, 'serve'], clientName: `cua-cursor-sitting-${name}`, env: serveEnv({engine, env}),
+  const session = open({args: [CLI, 'serve'], clientName: `cua-cursor-sitting-${name}`, env: serveEnv({engine, env}), ...(detached ? {detached: true} : {}),
     onServerRequest: msg => {
       const accepted = isSceneApproval(msg, SCENE_BUNDLE_IDS);
       asked.push({app: msg?.params?._meta?.tool_params?.app ?? null, answer: accepted ? 'accept (session)' : 'decline'});

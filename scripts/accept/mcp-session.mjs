@@ -6,8 +6,9 @@ import {createInterface} from 'node:readline';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-export function openSession({args, env, onServerRequest = () => ({action: 'decline'}), clientName = 'cua-accept'}) {
-  const child = spawn(process.execPath, args, {stdio: ['pipe', 'pipe', 'pipe'], env});
+// `detached`: the server in its own process group, out of reach of a terminal's signal to the caller's group.
+export function openSession({args, env, onServerRequest = () => ({action: 'decline'}), clientName = 'cua-accept', detached = false}) {
+  const child = spawn(process.execPath, args, {stdio: ['pipe', 'pipe', 'pipe'], env, ...(detached ? {detached: true} : {})});
   const transcript = [];
   let stderr = '';
   child.stderr.on('data', data => { stderr += data; });

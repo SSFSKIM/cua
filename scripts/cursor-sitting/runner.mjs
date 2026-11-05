@@ -333,7 +333,7 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
       if (step.when && !step.when(ctx.results)) { record({step: n, kind: 'skipped', text: describe(step)}); continue; }
       if (step.open) {
         ctx.sessions[step.open] = await io.open({name: step.open, engine: step.engine ?? engine, env: step.env ?? {}, scenes: step.scenes.map(id => sessionRecord(io.scene(id), step.windows?.[id], ctx.results)), device: step.device ?? null,
-          bind: step.bind ?? true});
+          bind: step.bind ?? true, ...(step.detached ? {detached: true} : {})});
         record({step: n, kind: 'open', session: step.open, env: step.env ?? {}, engine: step.engine ?? engine, ...(step.bind === false || Array.isArray(step.bind) ? {bound: step.bind} : {})});
       } else if (step.run) await runCell(step);
       else if (step.together) await Promise.all(step.together.map(runCell));

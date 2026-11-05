@@ -150,8 +150,9 @@
 //       <out>/item-187-isolate.md, the pre-registered verdict: LANDS, DOES NOT LAND or INCONCLUSIVE; a cleanup that did
 //       not attest is its first line. Exit 1 unless LANDS with the cleanup done. The dry run prints each block's steps.
 //       A SIGINT, SIGTERM or SIGHUP stops the drive after its current step, runs the cleanup, and exits 128 + its number;
-//       a second one during the cleanup is ignored (and said so on stderr). SIGKILL cannot be caught: step 16's
-//       engine-identity read is what shows a control build left behind.
+//       a second one during the cleanup is ignored (and said so on stderr), and the cleanup's subprocesses run in their own
+//       process group so a terminal's Ctrl-C cannot reach them, an interrupted attempt run again up to 3 times. SIGKILL
+//       cannot be caught: step 16's engine-identity read is what shows a control build left behind.
 //   cursor-sitting.mjs isolate-187 engine-identity --home <dir> --halves <dir> [--end restore-owner|keep-merged]
 //       The put-back read from the running engine's own ping (its socket under <home>): the end choice's save's build
 //       and no variant, exit 0; a variant (the control's) or another build is a stop for the by-hand restore, exit 1.
@@ -173,6 +174,7 @@ import {keepSeriesSignposts, signpostCoverage} from './cursor-sitting/signposts.
 import {liveSourceSwitch, switchSource, writeConsent} from './cursor-sitting/input-source.mjs';
 import {windowListProbe, writeOrderFromMeta} from './cursor-sitting/glide.mjs';
 import {buildControl, checkPair, CONTROL_RECORD, prepareControlSource} from './cursor-sitting/control-build.mjs';
+import {copyDetached, runDetached} from './cursor-sitting/detached.mjs';
 import {engineDirOf, restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
 import {abortableIo, cleanupSteps, DEFAULT_END, driveThenCleanup, END_CHOICES, isolateExit, putBackReading, signalGuard, GOES_ON_ISO, isolateMarkdown, isolatePlan, isolateTasks, ITEMS as ITEMS_ISO, judgeIsolate, parseBlocks, SAVED as SAVED_ISO, startOf, stepCounts, VERDICT_FILE} from './cursor-sitting/item-187-isolate.mjs';
 import {PLANS} from './cursor-sitting/plans.mjs';
@@ -210,16 +212,21 @@ function cuaJson(home, args) {
   }
 }
 
-// The engine's stop and status for engine-copy's restore, as `restore` runs them.
-const engineDeps = home => ({stop: async () => { const r = cuaJson(home, ['engine', 'stop']); return r.ok === false ? r : {ok: true, ...r}; },
-  status: async () => cuaJson(home, ['engine', 'status'])});
-// `cua engine approve --json` with no terminal (stdin closed), so a missing grant or a capture confirmation fails it at
-// once instead of waiting for someone. -> its JSON (also when it exits 1), or {ok: false, detail}.
-function approveHeadless(home) {
-  try { return JSON.parse(execFileSync(process.execPath, [CLI, 'engine', 'approve', '--json'], {encoding: 'utf8', env: {...process.env, HOME: home}, stdio: ['ignore', 'pipe', 'pipe'], timeout: 180_000})); } catch (error) {
-    try { return JSON.parse(String(error.stdout ?? '').trim().split('\n').at(-1)); } catch { return {ok: false, detail: String(error.stderr || error.message).trim().split('\n').at(-1)}; }
+// `cua <args> --json` with HOME set to `home`, in its own process group (./cursor-sitting/detached.mjs): the isolating
+// slot's swaps and cleanup, which a terminal's Ctrl-C must not cut short. -> its JSON (also on a non-zero exit, when it
+// printed one), or {ok: false, detail}.
+async function cuaJsonDetached(home, args, {timeout = 60_000} = {}) {
+  const r = await runDetached(process.execPath, [CLI, ...args, '--json'], {env: {...process.env, HOME: home}, timeout});
+  try { return JSON.parse(r.code === 0 ? r.stdout : r.stdout.trim().split('\n').at(-1)); } catch {
+    return {ok: false, detail: String(r.stderr || r.stdout || r.error?.message || (r.timedOut ? 'timed out' : `exit ${r.code ?? r.signal}`)).trim().split('\n').at(-1)};
   }
 }
+// The engine's stop and status for engine-copy's restore, as `restore` runs them, each in its own process group.
+const engineDeps = home => ({stop: async () => { const r = await cuaJsonDetached(home, ['engine', 'stop']); return r.ok === false ? r : {ok: true, ...r}; },
+  status: async () => cuaJsonDetached(home, ['engine', 'status'])});
+// `cua engine approve --json` with no terminal (stdin closed), so a missing grant or a capture confirmation fails it at
+// once instead of waiting for someone; in its own process group. -> its JSON (also when it exits 1), or {ok: false, detail}.
+const approveHeadless = home => cuaJsonDetached(home, ['engine', 'approve'], {timeout: 180_000});
 // This checkout's commit, for a report's header. -> 12 hex digits, or null.
 function kitCommit() {
   try { return execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {cwd: dirname(SCRIPT), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']}).trim() || null; } catch { return null; }
@@ -478,7 +485,7 @@ async function driveIsolate(values) {
   if (!start.ok) throw new Error(`the slot's preparation does not hold, so nothing was run: ${start.problem}`);
   const io = liveIo({run, out, quiet: values.quiet});
   Object.assign(io.tasks, isolateTasks({halves, start, now: Date.now, savedRecord: dir => JSON.parse(readFileSync(join(dir, 'saved.json'), 'utf8')),
-    restore: ({from, aside}) => restoreEngine({home, from, aside, ...engineDeps(home)}), approve: async () => approveHeadless(home)}));
+    restore: ({from, aside}) => restoreEngine({home, from, aside, ...engineDeps(home), copy: copyDetached}), approve: async () => approveHeadless(home)}));
   // The cleanup runs on every exit, a SIGINT, SIGTERM or SIGHUP included: the owner's end choice applied and attested.
   const guard = signalGuard();
   try {

@@ -13,6 +13,7 @@ import {join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {main, read187} from '../../scripts/cursor-sitting.mjs';
 import {CONTROL_DEFINE, CONTROL_RECORD, CONTROL_VARIANT, checkPair, controlPackage, prepareControlSource} from '../../scripts/cursor-sitting/control-build.mjs';
+import {runDetached} from '../../scripts/cursor-sitting/detached.mjs';
 import {abortableIo, AFTER_BLOCK, AFTER_ONLY, attested188, isolateExit, putBackReading, signalGuard, attestProblem, cleanupAlarm, cleanupSteps, driveThenCleanup, startOf, BAR, BLOCKS, CELL_PER_HALF, combineVerdict, COMPOSING_PER_HALF, GOES_ON_ISO, isolateMarkdown, isolatePlan, isolateTasks, ITEMS, judgeIsolate,
   LABELS, MIN_COUNTED, ORDER, parseBlocks, partVerdict, repPremise, rowPremise, SAVED, stepCounts, TAIL, THIRDS, VERDICT_FILE} from '../../scripts/cursor-sitting/item-187-isolate.mjs';
 import {CELL_ROW, driveItems, ITEMS as ITEMS_187, plan187, rowRecord, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
@@ -189,7 +190,7 @@ test('the swap\'s tasks: restored and approved with no prompt, else refused with
   const ctx = {results: {}};
   const swapped = await tasks()['187-iso-swap'](['187-iso-swap-2#0', 'before'], ctx);
   assert.equal(swapped.ok, true, swapped.problem);
-  assert.deepEqual(calls, [['restore', {from: '/halves/engine-control', aside: '/halves/aside/187-iso-swap-2-99'}], ['approve']]);
+  assert.deepEqual(calls, [['restore', {from: '/halves/engine-control', aside: '/halves/aside/187-iso-swap-2-99-1'}], ['approve']]);
   ctx.results[LABELS.attest('187-iso-swap-2#0')] = {ok: true, nativeEngine: NATIVE.before};
   assert.equal((await tasks()['187-iso-attest'](['187-iso-swap-2#0', 'before'], ctx)).ok, true);
   ctx.results[LABELS.attest('187-iso-swap-2#0')] = {ok: true, nativeEngine: NATIVE.after};
@@ -590,16 +591,21 @@ test('#188 on AFTER (the wave\'s P2): a row or cell-3 part whose action\'s resul
 
 // The child (fixtures/isolate-signal-child.mjs) sent `signal` once it waits in its BEFORE repetition, and `second` again
 // once its cleanup's restore has started. -> {code, report, stderr}.
-function signalled(t, signal, {second = null} = {}) {
-  const out = scratch(t), child = spawn(process.execPath, [fileURLToPath(new URL('./fixtures/isolate-signal-child.mjs', import.meta.url)), out, second ? '600' : '100'], {stdio: ['ignore', 'pipe', 'pipe']});
+// `group`: the child leads its own process group and every signal goes to the whole group, as a terminal's Ctrl-C does;
+// `mode`: the child's restore (timer, helper: a real subprocess in its own group, inline: one in the child's group).
+// The second signal comes `secondAfter` ms after CLEANING, while the restore's helper runs.
+function signalled(t, signal, {second = null, group = false, mode = 'timer', slow = second ? '600' : '100', secondAfter = 0} = {}) {
+  const out = scratch(t), child = spawn(process.execPath, [fileURLToPath(new URL('./fixtures/isolate-signal-child.mjs', import.meta.url)), out, slow, mode],
+    {stdio: ['ignore', 'pipe', 'pipe'], ...(group ? {detached: true} : {})});
+  const send = sig => (group ? process.kill(-child.pid, sig) : child.kill(sig));
   let stdout = '', stderr = '';
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`the child never finished: ${stdout} ${stderr}`)); }, 20_000);
+    const timer = setTimeout(() => { try { process.kill(group ? -child.pid : child.pid, 'SIGKILL'); } catch {} reject(new Error(`the child never finished: ${stdout} ${stderr}`)); }, 20_000);
     child.stdout.on('data', chunk => {
       const before = stdout;
       stdout += chunk;
-      if (!before.includes('IN-BEFORE') && stdout.includes('IN-BEFORE')) child.kill(signal);
-      if (second && !before.includes('CLEANING') && stdout.includes('CLEANING')) child.kill(second);
+      if (!before.includes('IN-BEFORE') && stdout.includes('IN-BEFORE')) send(signal);
+      if (second && !before.includes('CLEANING') && stdout.includes('CLEANING')) setTimeout(() => send(second), secondAfter);
     });
     child.stderr.on('data', chunk => { stderr += chunk; });
     child.on('exit', code => { clearTimeout(timer); resolve({code, stderr, report: JSON.parse(stdout.trim().split('\n').at(-1))}); });
@@ -693,4 +699,39 @@ test('the judge\'s exit (the re-review\'s P2) and the put-back reading (1ea561bc
   const none = cli(['isolate-187', 'engine-identity', '--home', dir, '--halves', dir]);
   assert.equal(none.status, 1);
   assert.match(none.stdout, /!!! no engine answered its ping/);
+});
+
+test('a terminal\'s Ctrl-C to the whole process group (the re-review of 5e5999cb): the cleanup\'s helpers run in their own group, an interrupted restore is run again, the engine ends restored and attested', async t => {
+  // The group signalled mid-BEFORE, and again while the restore's real subprocess helper runs: the helper, in its own
+  // group, finishes, and the owner's engine is restored and attested on the first attempt.
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    const {code, report, stderr} = await signalled(t, signal, {group: true, mode: 'helper', second: signal, slow: '600', secondAfter: 150});
+    assert.equal(code, signal === 'SIGINT' ? 130 : 143, signal);
+    assert.deepEqual([report.installed, report.restores, report.cleanupError, report.cleanupAttempts], ['owner', ['owner'], null, 1], signal);
+    assert.deepEqual(report.helpers, [{code: 0, signal: null}], `${signal}: the helper was not in the signalled group`);
+    assert.match(stderr, new RegExp(`${signal} again: ignored while the cleanup restores the engine`));
+  }
+  // The same group signal reaching a helper run in the kit's own group (execFileSync) kills it: the cleanup's next
+  // attempt restores and attests, so the interruption is recovered, not an alarm.
+  const inline = await signalled(t, 'SIGINT', {group: true, mode: 'inline', second: 'SIGINT', slow: '600', secondAfter: 150});
+  assert.equal(inline.code, 130);
+  assert.deepEqual(inline.report.helpers, [{code: null, signal: 'SIGINT'}, {code: 0, signal: null}], 'the first helper died with the group, the retry\'s did not');
+  assert.deepEqual([inline.report.installed, inline.report.cleanupError, inline.report.cleanupAttempts], ['owner', null, 2]);
+  assert.match(inline.stderr, /the cleanup's attempt 1 of 3 stopped .*the engine did not stop \(SIGINT\)\); running it again/);
+});
+
+test('the cleanup\'s retry and the detached runner: an attempt that stops is run again up to three times; a helper in its own group outlives a signal to ours', async () => {
+  const logs = [];
+  let calls = 0;
+  const twice = await driveThenCleanup({drive: async () => ({stopped: null}), log: text => logs.push(text),
+    cleanup: async () => { calls += 1; if (calls < 3) throw new Error(`killed ${calls}`); }});
+  assert.deepEqual([twice.cleanupError, twice.cleanupAttempts, logs.length], [null, 3, 2]);
+  calls = 0;
+  const never = await driveThenCleanup({drive: async () => ({stopped: null}), log: () => {}, cleanup: async () => { calls += 1; throw new Error(`killed ${calls}`); }});
+  assert.deepEqual([never.cleanupError.message, never.cleanupAttempts, calls], ['killed 3', 3, 3]);
+  const helper = fileURLToPath(new URL('./fixtures/sleep-helper.mjs', import.meta.url));
+  const ran = await runDetached(process.execPath, [helper, '50']);
+  assert.deepEqual([ran.code, ran.signal, ran.stdout.trim()], [0, null, 'STARTED']);
+  const late = await runDetached(process.execPath, [helper, '5000'], {timeout: 100});
+  assert.deepEqual([late.timedOut, late.signal], [true, 'SIGKILL'], 'a timeout kills its whole group');
 });

@@ -985,7 +985,13 @@ dry run: 1137 steps, nothing sent
 **Signals.** Ctrl-C (SIGINT), a kill (SIGTERM) or the terminal closing (SIGHUP) during the drive stops it after its
 current step: every later step of the item throws, its sessions close, and only the end items run. Then the cleanup
 puts the end choice back and attests it, the verdict file is written, and the drive exits 128 plus the signal's number
-(130, 143, 129). A second signal during the cleanup is ignored, and stderr says so; the restore completes.
+(130, 143, 129). A second signal during the cleanup is ignored, and stderr says so. A terminal's Ctrl-C signals the
+whole foreground process group, so every subprocess the swaps and the cleanup run (`cua engine stop`, `status` and
+`approve`, the restore's copies, the attestation's `cua serve`) runs in its own process group
+(`scripts/cursor-sitting/detached.mjs`), out of the signal's reach. A cleanup attempt that still stops part way is run
+again, up to 3 attempts (a restore moves whatever is installed aside and copies the save in once more), before the
+alarm. The drive's own helpers before the cleanup (the scenes, the input source) stay in the kit's group: a Ctrl-C
+ends the step they serve, which the stop wants anyway.
 
 **If the cleanup fails, or never ran.** A failed cleanup makes the verdict file's first line, and the drive's first
 printed line, begin `**!!! THE ENGINE WAS NOT PUT BACK`, and the drive exits 1. SIGKILL, a crash, or the Mac losing

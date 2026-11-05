@@ -691,8 +691,11 @@ its premise is now read in every repetition (below); its records stay where they
    reader, the key-window reads, the premise's action reads and #259's geometry read (`ax-state.swift`) need it;
    untrusted, they answer `trusted: false` and the placement stops the drive at once.
 
-Then the operator sends **the hands-off notice** (step 6 below) and the owner may leave once the drive starts; they
-come back for the BEFORE half, whose restore may need their grants again.
+Then the operator sends **the hands-off notice** (step 6 below) and the owner may leave once the drive starts. The
+notice names the one touch it allows: if a macOS prompt for cua's engine appears at the restore (about a clock time the
+notice gives), the owner answers it and touches nothing else. If the restore stops on a missing grant with no prompt on
+screen, the operator sends the only message allowed besides a stop: one line saying what to grant, then waits for the
+owner's "done".
 
 ```sh
 REPO=/Users/new/Developer/GitHub/cua/.claude/worktrees/fix-187b; cd "$REPO"
@@ -746,7 +749,7 @@ runs right after their step 4, before the scenes come up; it never runs during t
 | 3 | the owner's yes to the Korean switch (`source consent yes`) | owner | 1 |
 | 4 | `engine build` (the key prompt) and `engine approve` (the three grants), status read | owner | 5–6 |
 | 5 | their TextEdit documents saved and TextEdit quit; their Chrome windows handled by them; Do Not Disturb on; nothing sensitive on the clipboard; the terminal's Accessibility trust confirmed | owner | 2–3 |
-| 6 | the scenes' preflight and up (TextEdit, Chrome on the counters page, Electron); **the hands-off notice**: one message to the owner saying hands-off lasts about 15–20 minutes (the drive, the restore and the BEFORE half), until about the clock time that gives, and that the verdict comes right after the put-back. From then until the put-back nobody messages the owner, except to stop | operator | 1–2 |
+| 6 | the scenes' preflight and up (TextEdit, Chrome on the counters page, Electron); **the hands-off notice**: one message to the owner saying hands-off lasts about 15–20 minutes (the drive, the restore and the BEFORE half), until about the clock time that gives, and that the verdict comes right after the put-back; and the one touch allowed: a macOS prompt for cua's engine at the restore (about its clock time) is answered, nothing else. From then until the put-back nobody messages the owner, except to stop, or one line naming a missing grant when the restore stops with no prompt on screen | operator | 1–2 |
 | 7 | 187-place: the preconditions, Chrome at the left, TextEdit over its right half | drive | 0.5 |
 | 8 | the confirming cell's AFTER half: 3 background-paste repetitions (relaunch about 10–15 s with the window wait, the placement, the session, the background paste, `open -a`, the key read, the frontmost paste), then the AXPress repetition when the premise part opened it | drive | 1.5–2.5 |
 | 9 | 187-place-again (the cell relaunched Chrome) | drive | 0.5 |

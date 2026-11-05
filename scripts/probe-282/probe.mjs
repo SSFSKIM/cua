@@ -203,8 +203,17 @@ async function cell(spec) {
     row.window = sky.window; row.screenshot = sky.screenshot;
     row.observation = {chromium: sky.timings?.chromium, webAreaFound: sky.timings?.webAreaFound, webShaped: sky.timings?.webShaped};
     if (spec.geometry) {
+      // Beside the geometry: the page controls' action names (what webAreaPress reads) before this activation, right
+      // after it, and 2 s later, to see whether Chrome advertises AXPress only once its window has been activated.
+      const centre = n => [String(n.frame.x + n.frame.width / 2), String(n.frame.y + n.frame.height / 2)];
+      const controls = ['checkbox', 'button', 'textarea'].map(t => [t, sky.nodes.find(TARGETS[t])]).filter(([, n]) => n?.frame);
+      const actionsNow = () => Object.fromEntries(controls.map(([t, n]) => [t, json(sh(HIT, [String(chrome.pid), ...centre(n)])).appActions ?? null]));
+      row.actions = {beforeActivation: actionsNow()};
       row.frontBefore = frontmost();
       row.geometry = json(sh(HIT, ['geom', String(chrome.pid)]));
+      row.actions.afterActivation = actionsNow();
+      await sleep(2000);
+      row.actions.afterActivation2s = actionsNow();
       const g = row.geometry;
       row.geometry.frameEqual = JSON.stringify(g.before?.frame) === JSON.stringify(g.afterActivation?.frame);
       row.geometry.activationPointEqual = JSON.stringify(g.before?.activationPoint) === JSON.stringify(g.afterActivation?.activationPoint);
@@ -283,6 +292,7 @@ for (const spec of CELLS) {
   if (row.delta) log(`${row.label}: delta ${JSON.stringify(row.delta)} checked=${row.after?.checked} lastClick=${JSON.stringify(row.after?.lastClick)} active=${row.after?.active} focusedAfter=${JSON.stringify(row.focusedAfter)}`);
   if (row.hit) log(`${row.label}: hit before ${JSON.stringify(row.hit.appChain?.slice(0, 3))} actions ${JSON.stringify(row.hit.appActions)}; after actions ${JSON.stringify(row.hitAfter?.appActions)}`);
   if (row.geometry) log(`${row.label}: geometry ${JSON.stringify(row.geometry)}`);
+  if (row.actions) log(`${row.label}: actions ${JSON.stringify(row.actions)}`);
   if (row.exception || row.problem) log(`${row.label}: PROBLEM ${JSON.stringify(row.problem ?? '')} ${row.exception ?? ''} ${row.buttons ? JSON.stringify(row.buttons) : ''}`);
 }
 server.close();

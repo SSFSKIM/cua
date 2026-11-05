@@ -143,7 +143,7 @@ import {PLANS} from './cursor-sitting/plans.mjs';
 import {CASES, elementFrameTool, ENGINES, itemOf, judgeCase, moveWindowTool, orderFileOf, orderLines, orderWatchProbe, placeSteps, raiseMarkdown,
   raiseSteps} from './cursor-sitting/raise.mjs';
 import {ENGINES as FIRST_ENGINES, firstMarkdown, firstSteps, itemOf as firstItemOf, judgeFirst, VARIANTS} from './cursor-sitting/first-observation.mjs';
-import {axStateTool, driveItems, item187Markdown, judge187, judgedOk, menuTool, PARTS as PARTS_187, plan187, touchedOfItem} from './cursor-sitting/item-187.mjs';
+import {axStateTool, driveItems, item187Markdown, judge187, judgedOk, menuTool, PARTS as PARTS_187, plan187, slotTouches} from './cursor-sitting/item-187.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
 import {liveIo, runSteps} from './cursor-sitting/runner.mjs';
 import {clipPathProblem, REPO_ROOT} from './cursor-sitting/recording.mjs';
@@ -361,7 +361,8 @@ export function read187(out) {
 // throws is marked in its jsonl and stops the items after it but the last, which selects the owner's source again; a
 // cell repetition, #259's cell, a #188 item or an item the person touched that throws is marked and the drive goes on.
 // A person-touched cell repetition is replaced once; more than three person-touched items in the slot (this out
-// directory: its other items' records count too, so the BEFORE half carries the re-slot's) stop the drive.
+// directory: every attempt of every item counts, so the BEFORE half carries the re-slot's and a re-run part keeps its
+// earlier attempts' touches) stop the drive.
 async function drive187(values) {
   const part = values.part ?? 'reslot';
   if (!PARTS_187.includes(part)) throw new Error(`--part takes ${PARTS_187.join(', ')}`);
@@ -371,11 +372,13 @@ async function drive187(values) {
   if (part === 'before' && !dryRun && !values.saved) throw new Error('--part before takes --saved <the directory `save` wrote before the build>, read for the put-back');
   const saved = values.saved ? absolute(values, 'saved') : '<saved>';
   const io = liveIo({run, out, quiet: values.quiet});
-  const plan = plan187({part, vendor: values.vendor, saved}), names = new Set(plan.map(p => p.item));
+  const plan = plan187({part, vendor: values.vendor, saved});
   const lines = file => (existsSync(file) ? readJsonl(file) : []);
   const evidenceOf = item => ({rows: lines(join(out, `item-${item}.jsonl`)), activations: lines(join(out, `item-${item}-activations.ndjson`))});
-  const seed = dryRun ? 0 : Object.keys(read187(out)).filter(item => item.startsWith('187-') && !names.has(item))
-    .reduce((n, item) => n + (({rows, activations}) => touchedOfItem(rows, activations).count)(evidenceOf(item)), 0);
+  // The slot's count so far: every person-touched item the out directory records, in every attempt of every item (a
+  // part run again included), so no re-run resets the stop rule.
+  const seed = dryRun ? 0 : Object.keys(read187(out)).filter(item => item.startsWith('187-'))
+    .reduce((n, item) => n + (({rows, activations}) => slotTouches(rows, activations))(evidenceOf(item)), 0);
   let steps = 0;
   const {stopped} = await driveItems(plan, {seed, print,
     runItem: async ({item, steps: itemSteps}) => { steps += itemSteps.length; try { await runSteps(itemSteps, {item, out, io, dryRun}); return null; } catch (error) { return error; } },

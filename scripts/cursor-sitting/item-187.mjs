@@ -50,7 +50,9 @@
 //   order watcher (latin on purpose: no composition, so the cell isolates the activation's arm; the composing part covers
 //   the titled rows); Chrome activated as the person would (`open -a` on the harness Chrome's app bundle path); the
 //   key-window state read (the run window's AXFocused and AXMain, the app's AXFrontmost, the page's hasFocus()); then
-//   one frontmost paste. Neither paste's prepare clicks. The premise, read from the background paste's own record: its
+//   one frontmost paste. Neither paste's prepare clicks; the frontmost one accepts the field empty or holding the
+//   background paste's string (a delivered one leaves it; emptying it would take an engine action on Chrome between the
+//   activations compared), and its read-back expects the concatenation. The premise, read from the background paste's own record: its
 //   activation click skipped (`activationClick` outsideFrame), so nothing but the shipping build's inert click (or, on
 //   the saved engine, nothing) consumes the arm; an activation point inside the frame posts a click of its own, which
 //   consumes the arm on either engine (the slot's rep 2), and that repetition is premise not met, never counted.
@@ -64,7 +66,7 @@
 //   PRECONDITION UNMET and posts nothing, and a click whose recorded plan is not action/AXPress is premise not met.
 //   The kit's earlier claim that Chromium advertises AXPress on the textarea was never verified on Chrome.
 // A repetition the person touches (an app neither a scene's nor the engine's activated or frontmost during it) is
-// invalid and replaced once; so is every row the person touches invalid, and more than TOUCHED_STOP such items in one
+// invalid and replaced once (the replacement counting only for the attempt it names); so is every row the person touches invalid, and more than TOUCHED_STOP such items in one
 // slot stop the drive (driveItems), 187-end still selecting the owner's source. Before the drive the operator sends the
 // owner one hands-off notice (how long hands-off lasts, when the verdict comes; the runbook's step); from then until
 // the put-back nobody messages the owner except to stop.
@@ -215,16 +217,22 @@ export const PRESS_READ = scene => cell(`${head(scene)}
 const ax = await observe();
 const __index = (ax => ${TEXT_FIELDS[scene]})(ax);
 return {inFront: inFront(ax), found: __index !== null, focused: __index !== null && focusedIndexOf(ax) === __index, empty: __index !== null && plain(valueOfIndex(ax, __index) ?? "") === ""};`);
-// The cell's paste row's prepare: nothing clicked or written, so no mouse-down reaches the window before the paste; the
-// field must be empty, its focus recorded. -> {ready, focused} or {ready: false, reason}.
-export const CELL_PREPARE = scene => cell(`${head(scene)}
+// The cell's paste rows' prepare: nothing clicked or written, so no mouse-down and no engine activation reaches the
+// window before the paste; the field must be empty or, when the row names one (`prior`), hold exactly that known prior
+// content (the background paste's string, which a delivered background paste leaves in the textarea: emptying it would
+// take an engine action on Chrome between the activations the cell compares). Compared by hash in the cell; only which
+// one it held (`prior`: empty or background) and its focus are kept. -> {ready, prior, focused} or {ready: false, reason}.
+export const CELL_PREPARE = (scene, prior = null) => cell(`${head(scene)}
 // cua-187: prepare (no click)
 const ax = await observe();
 if (!inFront(ax)) return {ready: false, reason: "the scene window is not the app's front window"};
 const __index = (ax => ${TEXT_FIELDS[scene]})(ax);
 if (__index === null) return {ready: false, reason: "the field is not in the text"};
-if (plain(valueOfIndex(ax, __index) ?? "") !== "") return {ready: false, reason: "the field is not empty"};
-return {ready: true, focused: focusedIndexOf(ax) === __index};`);
+const __value = plain(valueOfIndex(ax, __index) ?? "");
+${prior === null ? '' : `const __priorLength = ${prior.length};
+if (__value !== "" && sha256Hex(__value) === ${j(sha256Hex(prior))}) return {ready: true, prior: "background", focused: focusedIndexOf(ax) === __index};
+`}if (__value !== "") return {ready: false, reason: ${j(prior === null ? 'the field is not empty' : 'the field holds neither nothing nor the background paste\'s string')}};
+return {ready: true, prior: "empty", focused: focusedIndexOf(ax) === __index};`);
 
 // ---- the steps -----------------------------------------------------------------------------------------------------
 
@@ -248,18 +256,21 @@ export const LABELS = Object.freeze({
 
 // The cell's paste rows prepare with CELL_PREPARE (nothing clicked) under their own label; the record reads either.
 const prepareLabel = (group, key) => (GROUPS[group].clickless ? LABELS.cellPrepare(key) : LABELS.prepare(key));
-function rowSteps({item, group, block, i, row, engine = 'cua'}) {
+// `prior`: a clickless row's known prior content (CELL_PREPARE), read back before the row's own string when the prepare
+// found it.
+export const priorText = (results, label, prior) => (prior !== null && results[label]?.value?.prior === 'background' ? prior : '');
+function rowSteps({item, group, block, i, row, engine = 'cua', prior = null}) {
   const g = GROUPS[group], key = keyOf(item, block, i), tag = tagOf(item, block), release = releaseOf(group);
   const actLabel = LABELS.act(key, row.method, row.string.id), label = prepareLabel(group, key);
   const live = results => !results[disturbedOf(tag)];
   const prepared = results => live(results) && results[label]?.value?.ready === true;
   return [
     {task: '187-before', args: [key]},
-    {run: S, cell: (g.clickless ? CELL_PREPARE : PREPARE)(g.driven), label, when: live},
+    {run: S, cell: g.clickless ? CELL_PREPARE(g.driven, prior) : PREPARE(g.driven), label, when: live},
     ...(release ? [{run: S, cell: OBSERVE(release), label: LABELS.release(key, release), when: prepared}] : []),
     {task: '187-mid', args: [key, group], when: prepared},
     {run: S, cell: ACT(g.driven, row.method, row.string.text), label: actLabel, keys: g.user ?? g.driven, when: prepared},
-    {run: S, cell: CHECK(g.driven, row.string.text), label: LABELS.check(key), when: results => Boolean(results[actLabel])},
+    {run: S, cell: prior === null ? CHECK(g.driven, row.string.text) : results => CHECK(g.driven, priorText(results, label, prior) + row.string.text), label: LABELS.check(key), when: results => Boolean(results[actLabel])},
     {task: '187-row', args: [key, group, engine, String(block), String(i), row.method, row.string.id]},
     ...(g.user ? [{task: '187-order-restore', args: [key, group], required: true}] : []),
   ];
@@ -349,7 +360,9 @@ export function cellItem({half, rep}) {
     {task: '187-key', args: [tag, 'chrome', 'before'], when: sent},
     {task: '187-open', args: [tag, 'chrome'], required: true, when: sent},
     {task: '187-key', args: [tag, 'chrome', 'after'], when: sent},
-    ...rowSteps({item, group: 'chrome-cell', block: 1, i: 0, row: CELL_ROW}).map(gate),
+    // The frontmost paste goes in after what the background paste left (nothing on the saved engine, its string on the
+    // shipping build), read back as the concatenation.
+    ...rowSteps({item, group: 'chrome-cell', block: 1, i: 0, row: CELL_ROW, prior: CELL_ROW.string.text}).map(gate),
     {task: '187-menu-stop', args: [item]},
     {close: S},
     {task: '187-activations-stop', args: [item]},
@@ -447,11 +460,15 @@ export function plan187({part = 'reslot', vendor = false, saved = '<saved>'} = {
   }
   if (!PARTS.includes(part)) throw new Error(`--part takes ${PARTS.join(', ')}`);
   const next = {};
-  const repEntry = (route, half, rep, replacement = false) => {
-    const entry = {item: repItem(route, half, rep), stage: route === 'paste' ? 'cell' : 'press', steps: (route === 'paste' ? cellItem : pressItem)({half, rep}), route, half, rep};
-    if (replacement) return {...entry, replacement: true};
+  // A replacement's first step names the attempt it replaces (its parent's item and that attempt's start time), so the
+  // judge counts it only for that attempt's person-touched repetition, never for a later re-run of the half.
+  const repEntry = (route, half, rep, parent = null) => {
+    const steps = (route === 'paste' ? cellItem : pressItem)({half, rep});
+    const entry = {item: repItem(route, half, rep), stage: route === 'paste' ? 'cell' : 'press', route, half, rep,
+      steps: parent ? [{task: '187-replaces', args: [parent.item, String(parent.attempt)]}, ...steps] : steps};
+    if (parent) return {...entry, replacement: parent};
     const key = `${route}-${half}`;
-    return {...entry, replace: () => repEntry(route, half, next[key] = (next[key] ?? (route === 'paste' ? CELL_REPS : PRESS_REPS) - 1) + 1, true)};
+    return {...entry, replace: attempt => repEntry(route, half, next[key] = (next[key] ?? (route === 'paste' ? CELL_REPS : PRESS_REPS) - 1) + 1, {item: entry.item, attempt})};
   };
   const cell = half => [...Array.from({length: CELL_REPS}, (_, rep) => repEntry('paste', half, rep)), ...Array.from({length: PRESS_REPS}, (_, rep) => repEntry('press', half, rep))];
   const placeAgain = {item: ITEMS.placeAgain, stage: 'place', steps: placeAgainSteps()};
@@ -538,7 +555,7 @@ export function rowRecord({spec, prepare = null, act = null, check = null, page 
   const opened = menu ? (menu.observed > 0 ? true : menuOpened(menu.read) ?? (menu.watchVerified === true && menu.observed === 0 ? false : null)) : null;
   const kw = keyWindowOf(keyWindow), pageFocused = page?.mid ? (typeof page.mid.focused === 'boolean' ? page.mid.focused : null) : null;
   return {ok: invalid === null && delivered, key: spec.key, item: spec.item, group: spec.group, id: rowId(spec.group, spec.method, spec.string), block: spec.block,
-    i: spec.i, string: spec.string, method: spec.method, expectedLength: spec.expectedLength, lines: spec.lines ?? 1, regime: spec.regime, engine: spec.engine,
+    i: spec.i, string: spec.string, method: spec.method, expectedLength: spec.expectedLength, prior: spec.prior ?? null, lines: spec.lines ?? 1, regime: spec.regime, engine: spec.engine,
     route: act?.route ?? null, activationClick: meta.activationClick ?? null, activationClickKind: meta.activationClickKind ?? null, activationGuardMs: meta.activationGuardMs ?? null,
     entered: meta.entered ?? null, delivery: meta.delivery ?? null, afterActionRepairs: meta.afterActionRepairs ?? null,
     actMs: act?.value?.actMs ?? null, threw: act?.value?.threw ?? null, error: act?.value?.message ?? null, paste,
@@ -568,13 +585,25 @@ const touchText = t => [t.apps?.length && `${t.apps.join(', ')} activated`, t.fr
 // or, when none was, one for a foreign activation the watcher saw (the item stopped before recording it, or the person
 // came between rows). `rep`: the item is a cell repetition the person touched. -> {count, rep, foreign}.
 export function touchedOfItem(rows, activationLines = []) {
-  const last = lastAttempt(rows ?? []);
-  const rowsTouched = last.filter(r => r.kind === 'task' && r.task === '187-row' && r.result?.personTouched).length;
-  const cell = last.findLast(r => r.kind === 'task' && r.task === '187-cell')?.result ?? null;
-  const watched = last.some(r => r.kind === 'task' && r.task === '187-activations-start');
-  const foreign = watched ? personTouchedOf({activations: activationLines}) : null;
+  return attemptTouches(lastAttempt(rows ?? []), activationLines);
+}
+// One attempt's touches: its rows and repetition recorded as touched, else the drive's mark on its stop, else (the latest
+// attempt only, whose watcher's file it is) a foreign activation the watcher saw.
+function attemptTouches(attempt, activationLines) {
+  const rowsTouched = attempt.filter(r => r.kind === 'task' && r.task === '187-row' && r.result?.personTouched).length;
+  const cell = attempt.findLast(r => r.kind === 'task' && r.task === '187-cell')?.result ?? null;
+  const marked = attempt.findLast(r => r.kind === 'stopped')?.personTouched ?? null;
+  const watched = activationLines && attempt.some(r => r.kind === 'task' && r.task === '187-activations-start');
+  const foreign = marked && typeof marked === 'object' ? marked : watched ? personTouchedOf({activations: activationLines}) : null;
   const recorded = rowsTouched + (cell?.personTouched ? 1 : 0);
-  return {count: recorded || (foreign ? 1 : 0), rep: cell ? Boolean(cell.personTouched) : Boolean(foreign), foreign};
+  return {count: recorded || (marked || foreign ? 1 : 0), rep: cell ? Boolean(cell.personTouched) : Boolean(marked || foreign), foreign};
+}
+// The slot's touches so far in an item's evidence: every attempt's (touchedOfItem's per attempt), so re-running a part
+// never resets the stop rule. The watcher's file is the latest attempt's alone.
+export function slotTouches(rows, activationLines = []) {
+  const starts = (rows ?? []).flatMap((r, k) => (r.kind === 'start' ? [k] : []));
+  if (!starts.length) return 0;
+  return starts.reduce((n, from, k) => n + attemptTouches(rows.slice(from, starts[k + 1]), k === starts.length - 1 ? activationLines : null).count, 0);
 }
 
 // The drive's loop (the CLI's `paste-187 drive`): each item of `plan` run in order by `runItem(entry)` (-> null, or the
@@ -592,7 +621,8 @@ export async function driveItems(plan, {runItem, evidenceOf, mark = () => {}, se
     const entry = queue.shift();
     if (stopped && entry.stage !== 'end') continue;
     const error = await runItem(entry);
-    const t = entry.stage === 'premise' ? {count: 0, rep: false, foreign: null} : (({rows, activations}) => touchedOfItem(rows, activations))(evidenceOf(entry.item));
+    const evidence = entry.stage === 'premise' ? null : evidenceOf(entry.item);
+    const t = evidence ? touchedOfItem(evidence.rows, evidence.activations) : {count: 0, rep: false, foreign: null};
     touched += t.count;
     if (error) mark(entry.item, error, t);
     ran.push({item: entry.item, touched: t.count, error: error?.message ?? null});
@@ -601,7 +631,7 @@ export async function driveItems(plan, {runItem, evidenceOf, mark = () => {}, se
       if (!stopped) { stopped = `${touched} person-touched items in the slot, more than ${TOUCHED_STOP}`; print(`stopped: ${stopped}; only the owner's source is put back`); }
       continue;
     }
-    if (t.rep && entry.replace) { const replacement = entry.replace(); queue.unshift(replacement); print(`${entry.item} was touched by the person: ${replacement.item} replaces it`); }
+    if (t.rep && entry.replace) { const replacement = entry.replace(lastAttempt(evidence.rows)[0]?.at ?? null); queue.unshift(replacement); print(`${entry.item} was touched by the person: ${replacement.item} replaces it`); }
     if (!error || stopped) continue;
     if (GOES_ON.includes(entry.stage) || t.count) { print(`${entry.item} stopped: ${error.message}; the drive goes on`); continue; }
     stopped = `${entry.item}: ${error.message}`;
@@ -794,7 +824,7 @@ export function judge187(items) {
   const reps = (route, half) => {
     const planned = Array.from({length: route === 'paste' ? CELL_REPS : PRESS_REPS}, (_, rep) => repItem(route, half, rep));
     const found = Object.keys(items).filter(name => { const m = name.match(REP_ITEM); return m && (m[1] === 'cell' ? 'paste' : 'press') === route && m[2] === half; });
-    return [...new Set([...planned, ...found])].map(name => [name, Number(name.match(REP_ITEM)[3])]).sort((a, b) => a[1] - b[1]).map(([name, rep]) => {
+    const list = [...new Set([...planned, ...found])].map(name => [name, Number(name.match(REP_ITEM)[3])]).sort((a, b) => a[1] - b[1]).map(([name, rep]) => {
       const stop = rowsOf(name).findLast(r => r.kind === 'stopped') ?? null, gate = taskResult(name, '187-press-gate');
       // The background paste's row with its raises reconciled as a composing row's are (the restore's late read, the
       // final watcher record), and that watcher kept for the bar.
@@ -802,7 +832,20 @@ export function judge187(items) {
       const record = bgRow ? {...kept, background: bgRow} : kept, watcher = route === 'paste' ? taskResult(name, '187-order-stop') : null, v = cellVerdict(record);
       const [status, why] = record ? [v.status, v.why] : gate?.ok === false ? ['not run', gate.problem ?? 'the AXPress gate was closed']
         : stop ? [stop.personTouched ? 'person-touched' : 'stopped', stop.error] : ['not recorded', null];
-      return {item: name, route, half, rep, stopped: stop?.error ?? null, record, watcher, ...v, status, why};
+      return {item: name, route, half, rep, attemptAt: rowsOf(name)[0]?.at ?? null, replaces: taskResult(name, '187-replaces'), stopped: stop?.error ?? null, record, watcher, ...v, status, why};
+    });
+    // A replacement counts only in place of the attempt it was run for: that attempt still the parent's last, and
+    // person-touched; one per parent attempt. Any other (a stale one from before the half was re-run) counts for nothing.
+    const used = new Set();
+    return list.map(c => {
+      if (c.rep < planned.length || c.status === 'not recorded') return c;
+      const parent = list.find(p => p.item === c.replaces?.parent), key = `${c.replaces?.parent}@${c.replaces?.attempt}`;
+      const live = parent && c.replaces.attempt != null && parent.attemptAt === c.replaces.attempt && parent.status === 'person-touched' && !used.has(key);
+      if (live) { used.add(key); return c; }
+      return {...c, status: 'stale replacement', counted: false, pass: false, predicted: false, delivers: false,
+        why: !c.replaces ? 'it names no attempt it replaces' : !parent ? `it replaces ${c.replaces.parent}, not a repetition of this half`
+          : parent.attemptAt !== c.replaces.attempt ? `it replaced an earlier attempt of ${parent.item}, which has run again since`
+            : parent.status !== 'person-touched' ? `${parent.item}'s attempt was ${parent.status}, not person-touched` : `${parent.item}'s attempt is already replaced`};
     });
   };
   const cells = Object.fromEntries(ROUTES.map(route => [route, Object.fromEntries(HALVES.map(half => [half, reps(route, half)]))]));
@@ -820,16 +863,18 @@ export function judge187(items) {
     item188: judge188(items), item259: judge259(items)};
 }
 
-// Whether the premise part opens the AXPress route: every sample saw AXPress within AXPRESS_BOUND_MS of the session's
-// first observation of a freshly relaunched Chrome.
-export const premiseOpens = samples => samples.length > 0 && samples.every(s => s?.advertised === true);
+// Whether the premise part opens the AXPress route: its latest attempt holds all PREMISE_SAMPLES samples, each read whole
+// (`ok`) and each seeing AXPress within AXPRESS_BOUND_MS of the session's first observation of a freshly relaunched Chrome.
+const sampleSaw = s => s?.ok === true && s.advertised === true;
+export const premiseOpens = samples => samples.length === PREMISE_SAMPLES && samples.every(sampleSaw);
+const premiseText = samples => `the premise part saw AXPress within ${AXPRESS_BOUND_MS} ms in ${samples.filter(sampleSaw).length} of ${PREMISE_SAMPLES} sample(s)${samples.length === PREMISE_SAMPLES ? '' : ` (${samples.length} recorded)`}`;
 
 // The AXPress route's statement for the report (never the bar): what its counted repetitions showed on each half, or
 // why it did not run. -> {ran, unproven, lines}.
 export function pressStatement(press, premise) {
   const all = [...press.after, ...press.before], ran = all.some(c => c.recorded || (c.stopped && c.status !== 'not run'));
   const after = press.after.filter(c => c.counted), before = press.before.filter(c => c.counted);
-  const gate = premise ? `the premise part saw AXPress within ${AXPRESS_BOUND_MS} ms in ${premise.samples.filter(s => s?.advertised).length} of ${premise.samples.length} sample(s)` : 'the premise part has not run';
+  const gate = premise ? premiseText(premise.samples) : 'the premise part has not run';
   const lines = [];
   if (!ran) lines.push(`The AXPress route did not run (${gate}).`);
   else {
@@ -1075,7 +1120,7 @@ export function item187Tasks(d) {
     '187-press-gate': async () => {
       const samples = lastAttempt(attempt(d.premiseRows) ?? []).filter(r => r.kind === 'task' && r.task === '187-axpress').map(r => r.result), open = premiseOpens(samples);
       return {ok: open, samples: samples.map(s => s?.appearedMs ?? null),
-        ...(open ? {} : {problem: samples.length ? `the premise part saw AXPress within ${AXPRESS_BOUND_MS} ms in ${samples.filter(s => s?.advertised).length} of ${samples.length} sample(s)` : 'the premise part has not run (--part premise, in the preflight)'})};
+        ...(open ? {} : {problem: samples.length ? premiseText(samples) : 'the premise part has not run (--part premise, in the preflight)'})};
     },
     // How long after the session's first observation of a freshly relaunched Chrome (the open step's bind, right before
     // this) its textarea advertises AXPress, read outside the engine (ax-state.swift actions: names only), every
@@ -1093,6 +1138,8 @@ export function item187Tasks(d) {
       ctx.results[LABELS.axpress(tag)] = result;
       return result;
     },
+    // A replacement's link to the attempt it replaces (plan187's repEntry), for the judge.
+    '187-replaces': async ([parent, attempt]) => ({ok: true, parent, attempt: Number.isFinite(Number(attempt)) && attempt !== 'null' ? Number(attempt) : null}),
     '187-down': async ([scene]) => { const down = d.scenes(['down', scene]); return {ok: down?.down === true, scene, ...(down?.down === true ? {} : {problem: down?.reason ?? down?.error ?? 'no answer'})}; },
     '187-place': async () => place(),
     // The cell's Chrome relaunched by the scenes tool (its harness Chrome: down, then up on the counters page), so no
@@ -1306,7 +1353,10 @@ export function item187Tasks(d) {
     '187-row': async ([key, group, engine, block, i, method, stringId], ctx) => {
       const g = GROUPS[group], s = st(ctx), row = (s.rows[key] ??= {}), tag = key.slice(0, key.lastIndexOf('.')), item = tag.slice(0, tag.lastIndexOf('#'));
       const r = [...ROWS, CELL_ROW].find(x => x.method === method && x.string.id === stringId);
-      const spec = {key, item, group, block: Number(block), i: Number(i), string: stringId, method, expectedLength: r.string.text.length, lines: r.string.text.split('\n').length, regime: g.regime, engine};
+      // A clickless row whose prepare found the background paste's string expects it before its own (CELL_PREPARE).
+      const prior = priorText(ctx.results, prepareLabel(group, key), CELL_ROW.string.text);
+      const spec = {key, item, group, block: Number(block), i: Number(i), string: stringId, method, expectedLength: prior.length + r.string.text.length, lines: r.string.text.split('\n').length,
+        regime: g.regime, engine, ...(prior ? {prior: 'background'} : {})};
       const act = ctx.results[LABELS.act(key, method, stringId)] ?? null, from = row.mid?.at ?? null;
       let page = null;
       if (g.driven === 'chrome' && row.mid) {

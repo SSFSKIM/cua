@@ -13,7 +13,7 @@ import {join} from 'node:path';
 import {main, read187} from '../../scripts/cursor-sitting.mjs';
 import {AXPRESS_BOUND_MS, BLOCK_ROWS, CELL_REPS, CELL_ROW, cellItem, cellVerdict, clipboardReaders, COMPOSE_LEAD_MS, COMPOSE_REPOST_LEAD_MS, COMPOSING_BLOCKS, CONTROLS, driveItems, freshActivation, GROUPS, groupItem,
   item187Markdown, item187Tasks, ITEMS, judge187, judgedOk, keyHeld, LABELS, menuOpened, PARTS, perLineProblem, personTouchedOf, plan187, PREMISE_SAMPLES, PRESS_REPS, pressItem, releaseOf,
-  RELAUNCH_STABLE_POLLS, ROWS, rowRecord, TARGET, TOUCHED_STOP, touchedOfItem, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
+  premiseOpens, RELAUNCH_STABLE_POLLS, ROWS, rowRecord, slotTouches, TARGET, TOUCHED_STOP, touchedOfItem, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
 import {ITEMS_188, ITEMS_259} from '../../scripts/cursor-sitting/item-188.mjs';
 import {describeStep, runSteps} from '../../scripts/cursor-sitting/runner.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
@@ -76,6 +76,8 @@ const cellRecord = (half, rep, over = {}) => ({tag: `${ITEMS.cell(half, rep)}#0`
     ? {background: cellRow(half, rep, 'chrome-cell-background'), keyAfter: {reading: KEY, pageFocused: true, settledMs: 120}, row: cellRow(half, rep, 'chrome-cell')}
     : {background: cellRow(half, rep, 'chrome-cell-background', TIMED_OUT), keyAfter: {reading: KEYLESS, pageFocused: false, settledMs: 1000}, row: cellRow(half, rep, 'chrome-cell', TIMED_OUT)}),
   ...over});
+// A replacement repetition's rows: its link to the attempt it replaces, then its record.
+const replacementRows = (half, rep, parent, attempt, over) => [{...start, at: attempt + 1000}, {kind: 'task', task: '187-replaces', result: {ok: true, parent, attempt}}, ...cellItemRows(half, rep, over).slice(1)];
 const cellItemRows = (half, rep, over, stop = orderStop()) => [start, {kind: 'task', task: '187-cell', result: cellRecord(half, rep, over)}, ...(stop ? [stop] : [])];
 // One AXPress repetition's record: AXPress advertised, the click on the action plan; AFTER key and delivered, BEFORE
 // keyless with the read timing out.
@@ -428,15 +430,40 @@ test('the BEFORE half gates the bar: a BEFORE that delivers is NO VERDICT (the c
 });
 
 test('a person-touched repetition is invalid and its replacement counts in its place; a stopped one the drive marked touched reads so', () => {
-  const items = evidence({cell: rep => (rep === 0 ? {personTouched: {apps: ['com.apple.ActivityMonitor'], frontPids: []}} : {})});
-  items[ITEMS.cell('after', 3)] = cellItemRows('after', 3);
+  const TOUCH = {personTouched: {apps: ['com.apple.ActivityMonitor'], frontPids: []}};
+  const items = evidence({cell: rep => (rep === 0 ? TOUCH : {})});
+  items[ITEMS.cell('after', 0)][0] = {...start, at: T0};
+  items[ITEMS.cell('after', 3)] = replacementRows('after', 3, ITEMS.cell('after', 0), T0);
   const judged = judge187(items);
   assert.equal(judged.overall.verdict, 'LANDS', judged.overall.why.join('; '));
   assert.deepEqual(judged.cells.paste.after.map(c => [c.item, c.status]), [[ITEMS.cell('after', 0), 'person-touched'], ...[1, 2, 3].map(rep => [ITEMS.cell('after', rep), 'counted'])]);
   // The touched repetition's rows are the person's: its raise does not fail the bar.
-  const raised = evidence({cell: rep => (rep === 0 ? {personTouched: {apps: ['com.apple.ActivityMonitor'], frontPids: []}, background: cellRow('after', 0, 'chrome-cell-background', {raisedAt: [T0]})} : {})});
-  raised[ITEMS.cell('after', 3)] = cellItemRows('after', 3);
+  const raised = evidence({cell: rep => (rep === 0 ? {...TOUCH, background: cellRow('after', 0, 'chrome-cell-background', {raisedAt: [T0]})} : {})});
+  raised[ITEMS.cell('after', 0)][0] = {...start, at: T0};
+  raised[ITEMS.cell('after', 3)] = replacementRows('after', 3, ITEMS.cell('after', 0), T0);
   assert.equal(judge187(raised).overall.verdict, 'LANDS');
+  // A re-run of the half: the old replacement never fills in for the new attempt's premise-not-met or stopped one.
+  const rerun = evidence({cell: rep => (rep === 0 ? {background: cellRow('after', 0, 'chrome-cell-background', {act: {...input().act, meta: {...input().act.meta, activationClick: 'posted'}}})} : {})});
+  rerun[ITEMS.cell('after', 0)] = [{...start, at: T0}, {kind: 'task', task: '187-cell', result: cellRecord('after', 0, TOUCH)}, orderStop(), {...start, at: T0 + 60_000}, ...rerun[ITEMS.cell('after', 0)].slice(1)];
+  rerun[ITEMS.cell('after', 3)] = replacementRows('after', 3, ITEMS.cell('after', 0), T0);
+  const rj = judge187(rerun);
+  assert.equal(rj.overall.verdict, 'DOES NOT LAND');
+  assert.equal(rj.cells.paste.after.at(-1).status, 'stale replacement');
+  assert.match(rj.overall.why.join('; '), /AFTER half: 2 of 3 counted .*after-0: premise not met.*after-3: stale replacement \(it replaced an earlier attempt of 187-cell-after-0, which has run again since\)/);
+  const rerunBefore = evidence();
+  rerunBefore[ITEMS.cell('before', 0)] = [{...start, at: T0}, {kind: 'task', task: '187-cell', result: cellRecord('before', 0, TOUCH)}, {...start, at: T0 + 60_000}, {kind: 'stopped', error: '187-relaunch refused'}];
+  rerunBefore[ITEMS.cell('before', 3)] = replacementRows('before', 3, ITEMS.cell('before', 0), T0);
+  const bj = judge187(rerunBefore);
+  assert.equal(bj.overall.verdict, 'DOES NOT LAND');
+  assert.deepEqual(bj.cells.paste.before.map(c => c.status), ['stopped', 'counted', 'counted', 'stale replacement']);
+  // A replacement that names no attempt, or one for a repetition that was not touched, counts for nothing either.
+  const unlinked = evidence({cell: rep => (rep === 0 ? TOUCH : {})});
+  unlinked[ITEMS.cell('after', 3)] = cellItemRows('after', 3);
+  assert.match(judge187(unlinked).overall.why.join('; '), /after-3: stale replacement \(it names no attempt it replaces\)/);
+  const untouched = evidence();
+  untouched[ITEMS.cell('after', 1)][0] = {...start, at: T0};
+  untouched[ITEMS.cell('after', 3)] = replacementRows('after', 3, ITEMS.cell('after', 1), T0);
+  assert.equal(judge187(untouched).cells.paste.after.at(-1).status, 'stale replacement');
   const stopped = evidence();
   stopped[ITEMS.cell('before', 1)] = [start, {kind: 'stopped', error: 's: refused, nothing sent: keys for chrome need its run window on top', personTouched: {apps: ['com.cmuxterm.app'], frontPids: []}}];
   const sj = judge187(stopped);
@@ -445,8 +472,8 @@ test('a person-touched repetition is invalid and its replacement counts in its p
 });
 
 test('the AXPress route is reported, never the bar: not run behind a closed gate, PRECONDITION UNMET without AXPress, premise not met off the action plan, and its own BEFORE', () => {
-  const premise = (appeared, opens = true) => [start, {kind: 'task', task: '187-premise-engine', result: {ok: true, build: 'dd7a09235885', approved: true}},
-    ...appeared.map((ms, k) => ({kind: 'task', task: '187-axpress', result: {tag: `${ITEMS.premise}#${k}`, advertised: ms !== null && ms <= AXPRESS_BOUND_MS, appearedMs: ms, boundMs: 10000}})), ...(opens ? [] : [])];
+  const premise = appeared => [start, {kind: 'task', task: '187-premise-engine', result: {ok: true, build: 'dd7a09235885', approved: true}},
+    ...appeared.map((ms, k) => ({kind: 'task', task: '187-axpress', result: {ok: true, tag: `${ITEMS.premise}#${k}`, advertised: ms !== null && ms <= AXPRESS_BOUND_MS, appearedMs: ms, boundMs: 10000}}))];
   const closed = evidence();
   closed[ITEMS.premise] = premise([2100, null, 6200]);
   closed[ITEMS.press('after', 0)] = [start, {kind: 'task', task: '187-press-gate', result: {ok: false, problem: 'the premise part saw AXPress within 5000 ms in 1 of 3 sample(s)'}}, {kind: 'stopped', error: '187-press-gate refused'}];
@@ -460,18 +487,22 @@ test('the AXPress route is reported, never the bar: not run behind a closed gate
   const ran = evidence();
   ran[ITEMS.premise] = premise([1900, 2100, 2300]);
   ran[ITEMS.press('after', 0)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('after', 0)}];
-  ran[ITEMS.press('after', 1)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('after', 1, {premise: {advertised: false, appearedMs: null, actions: ['AXShowMenu']}})}];
   ran[ITEMS.press('before', 0)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('before', 0)}];
-  ran[ITEMS.press('before', 1)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('before', 1, {press: {ok: true, pressed: true, plan: 'synthesized', reason: 'noAction'}})}];
-  const rj = judge187(ran), rmd = item187Markdown(rj);
+  const rj = judge187(ran);
   assert.equal(rj.overall.verdict, 'LANDS');
-  assert.deepEqual(rj.cells.press.after.map(c => c.status), ['counted', 'precondition unmet']);
-  assert.deepEqual(rj.cells.press.before.map(c => c.status), ['counted', 'premise not met']);
-  assert.match(rmd, /AFTER: 1 of 1 counted repetition\(s\) key and delivered\./);
-  assert.match(rmd, /BEFORE: 1 of 1 counted repetition\(s\) keyless with the read timing out, as predicted\./);
+  assert.match(item187Markdown(rj), /AFTER: 1 of 1 counted repetition\(s\) key and delivered\./);
+  assert.match(item187Markdown(rj), /BEFORE: 1 of 1 counted repetition\(s\) keyless with the read timing out, as predicted\./);
+  const unmet = evidence();
+  unmet[ITEMS.premise] = premise([1900, 2100, 2300]);
+  unmet[ITEMS.press('after', 0)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('after', 0, {premise: {advertised: false, appearedMs: null, actions: ['AXShowMenu']}})}];
+  unmet[ITEMS.press('before', 0)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('before', 0, {press: {ok: true, pressed: true, plan: 'synthesized', reason: 'noAction'}})}];
+  const uj = judge187(unmet), rmd = item187Markdown(uj);
+  assert.equal(uj.overall.verdict, 'LANDS');
+  assert.deepEqual([uj.cells.press.after[0].status, uj.cells.press.before[0].status], ['precondition unmet', 'premise not met']);
+  assert.match(rmd, /\*\*AXPress on Chrome is unproven\*\*/);
   assert.match(rmd, /precondition unmet \(AXPress was not advertised on the textarea within 5000 ms of the session's first observation \(it advertised AXShowMenu\)\)/);
   assert.match(rmd, /premise not met \(the click's plan was synthesized \(noAction\), not action\/AXPress\)/);
-  assert.doesNotMatch(rmd, /AXPress on Chrome is unproven/);
+  assert.doesNotMatch(item187Markdown(rj), /AXPress on Chrome is unproven/);
   // A failing AXPress repetition, even a BEFORE that delivers, never moves the bar.
   ran[ITEMS.press('before', 0)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('after', 0, {half: 'before'})}];
   ran[ITEMS.press('after', 0)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('after', 0, {keyAfter: {reading: KEYLESS, pageFocused: false}})}];
@@ -522,8 +553,11 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
       }
       if (code.includes('// cua-187: prepare')) {
         calls.push(['prepare', code.includes('(no click)') ? 'no click' : 'emptied']);
-        if (!code.includes('(no click)')) page = {...page, seq: page.seq + 1, length: 0};
-        return {ok: true, value: {ready: true}, route: null, meta: {}, images: []};
+        if (!code.includes('(no click)')) { page = {...page, seq: page.seq + 1, length: 0}; return {ok: true, value: {ready: true}, route: null, meta: {}, images: []}; }
+        // The clickless prepare as the kit's cell reads the field: empty, or (when it names one) holding the known prior.
+        const prior = Number(code.match(/__priorLength = (\d+)/)?.[1] ?? NaN);
+        const value = page.length === 0 ? {ready: true, prior: 'empty', focused: true} : page.length === prior ? {ready: true, prior: 'background', focused: true} : {ready: false, reason: 'the field is not empty'};
+        return {ok: true, value, route: null, meta: {}, images: []};
       }
       if (code.includes('// cua-187: act')) {
         const text = JSON.parse(code.match(/__app\.(?:typeText|paste)\(("(?:[^"\\]|\\.)*")\)/)[1]);
@@ -532,7 +566,7 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
         if (activationsInWaitAt.includes(key)) { stalePage = {...page}; lagReads = 2; pairDue = true; }
         const chromeAct = code.includes('cursor-sitting:scene chrome'), lands = !(chromeAct && (armSet || (keyless && keys === 'chrome')));
         if (foreignAt.includes(key)) activationsLog.push({kind: 'activated', bundleId: 'com.apple.ActivityMonitor', pid: 900, at: tick()});
-        if (lands) beacon({length: text.length});
+        if (lands) beacon({length: page.length + text.length});  // a paste goes in at the caret, after what the field holds
         if (raiseAt.includes(key)) order('back-above');
         if (lateRaiseAt.includes(key)) { order('back-above'); changes.at(-1).visibleAfter = attempts + 2; }
         return {ok: true, value: {actMs: lands ? 180 : 2100, threw: !lands, message: lands ? null : 'timed out'}, route: 'paste', images: [],
@@ -598,7 +632,7 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
       return {moved: true};
     },
     axActions: () => { actionReads += 1; calls.push(['actions']); return {trusted: true, ok: true, found: true, count: 1, walked: 40, actions: actionReads > axpressReads ? ['AXPress', 'AXShowMenu'] : ['AXShowMenu']}; },
-    premiseRows: () => (premise === 'none' ? [] : [start, ...[1900, premise === 'open' ? 2200 : null, 2400].map((ms, k) => ({kind: 'task', task: '187-axpress', result: {tag: `${ITEMS.premise}#${k}`, advertised: ms !== null, appearedMs: ms}}))]),
+    premiseRows: () => (premise === 'none' ? [] : [start, ...[1900, premise === 'open' ? 2200 : null, 2400].map((ms, k) => ({kind: 'task', task: '187-axpress', result: {ok: true, tag: `${ITEMS.premise}#${k}`, advertised: ms !== null, appearedMs: ms}}))]),
     order: {start: async ({file}) => ({pid: 77, file, start: {state: 'front-above'}}), stop: async () => ({start: {state: 'front-above'}, changes, end: {samples: 400, maxGapMs: 9}}),
       attempt: () => { attempts += 1; return {start: {state: 'front-above', at: T0}, changes: changes.filter(c => !(c.visibleAfter > attempts)), end: null}; }},
     activations: {start: () => ({}), lines: () => [...activationsLog], stop: () => [...activationsLog]},
@@ -730,6 +764,14 @@ test('the background-paste cell end to end: relaunched, placed, the background p
   assert.equal(cell.background.front.expected, PIDS.textedit, 'TextEdit in front for the background paste');
   assert.deepEqual([cell.keyBefore.reading.frontmost, cell.keyAfter.reading.frontmost, cell.keyAfter.reading.focused, cell.keyAfter.pageFocused], [false, true, true, true]);
   assert.equal(cell.row.delivered, true);
+  // The background string stays in the field: the frontmost paste's prepare (clicking nothing) accepts it as the known
+  // prior content, and its read-back expects the concatenation.
+  assert.deepEqual([cell.row.prior, cell.row.expectedLength, cell.row.readBack.length], ['background', 2 * CELL_ROW.string.text.length, 2 * CELL_ROW.string.text.length]);
+  const fgCheck = cellItem({half: 'after', rep: 0}).filter(s => s.run && /check:/.test(s.label)).at(-1), fgPrepare = cellItem({half: 'after', rep: 0}).filter(s => s.run && /prepare:/.test(s.label)).at(-1);
+  assert.equal(typeof fgCheck.cell, 'function');
+  assert.match(fgCheck.cell({[fgPrepare.label]: {value: {ready: true, prior: 'background'}}}), new RegExp(`expectedLength: ${2 * CELL_ROW.string.text.length}`));
+  assert.match(fgCheck.cell({[fgPrepare.label]: {value: {ready: true, prior: 'empty'}}}), new RegExp(`expectedLength: ${CELL_ROW.string.text.length}\\b`));
+  assert.ok(!fgPrepare.cell.includes(CELL_ROW.string.text), 'the prior is compared by hash, its text not in the cell');
   const order = after.calls.map(c => c[0]), acts = after.calls.filter(c => c[0] === 'act');
   assert.deepEqual(acts, [['act', 'textedit'], ['act', 'chrome']]);
   assert.ok(order.indexOf('move') < order.indexOf('act') && order.lastIndexOf('act') > order.indexOf('open'));
@@ -811,17 +853,19 @@ const interferenceRowsOf = r => [r.front?.changed && !r.personTouched && 'front 
 
 test('the drive: a person-touched repetition is replaced once, more than three touches stop it but the owner\'s source, and other stops follow the stages', async () => {
   const drive = async (touches, {errors = {}, seed = 0} = {}) => {
-    const ran = [], marks = [];
+    const ran = [], marks = [], entries = [];
     const result = await driveItems(plan187({part: 'cell'}), {seed,
-      runItem: async entry => { ran.push(entry.item); return errors[entry.item] ? new Error(errors[entry.item]) : null; },
-      evidenceOf: item => ({rows: touches.includes(item) ? [start, {kind: 'task', task: '187-cell', result: {personTouched: {apps: ['com.apple.ActivityMonitor'], frontPids: []}}}] : [start], activations: []}),
+      runItem: async entry => { ran.push(entry.item); entries.push(entry); return errors[entry.item] ? new Error(errors[entry.item]) : null; },
+      evidenceOf: item => ({rows: touches.includes(item) ? [{...start, at: 7000 + Number(item.match(/\d+$/)?.[0] ?? 0)}, {kind: 'task', task: '187-cell', result: {personTouched: {apps: ['com.apple.ActivityMonitor'], frontPids: []}}}] : [start], activations: []}),
       mark: (item, error, touched) => marks.push([item, error.message, touched.count])});
-    return {...result, ran, marks};
+    return {...result, ran, marks, entries};
   };
   const once = await drive([ITEMS.cell('after', 0), ITEMS.cell('after', 3)]);
   assert.deepEqual(once.ran, [ITEMS.place, ITEMS.cell('after', 0), ITEMS.cell('after', 3), ITEMS.cell('after', 1), ITEMS.cell('after', 2), ITEMS.press('after', 0), ITEMS.placeAgain, ITEMS.end],
     'the replacement right after; a touched replacement is not replaced again');
   assert.deepEqual([once.stopped, once.touched], [null, 2]);
+  const replacement = once.entries.find(e => e.item === ITEMS.cell('after', 3));
+  assert.deepEqual(replacement.steps[0], {task: '187-replaces', args: [ITEMS.cell('after', 0), '7000']}, 'the replacement names the attempt it replaces');
   const many = await drive([ITEMS.cell('after', 0), ITEMS.cell('after', 3), ITEMS.cell('after', 1), ITEMS.cell('after', 4)]);
   assert.equal(many.touched, TOUCHED_STOP + 1);
   assert.match(many.stopped, /4 person-touched items in the slot, more than 3/);
@@ -888,4 +932,35 @@ test('the CLI: the dry runs print every step and touch nothing; judge writes ite
   const judged = await quietly(() => main(['paste-187', 'judge', '--out', dir]));
   assert.equal(judged.code, 1, 'nothing recorded: nothing lands');
   assert.match(readFileSync(join(dir, 'item-187.md'), 'utf8'), /## Overall: DOES NOT LAND/);
+});
+
+test('the slot\'s touch count keeps every attempt of every item, so re-running a part never resets the stop rule', () => {
+  const touchedRow = {kind: 'task', task: '187-row', result: {personTouched: {apps: ['com.apple.ActivityMonitor'], frontPids: []}}};
+  const touchedCell = {kind: 'task', task: '187-cell', result: {personTouched: {apps: ['com.cmuxterm.app'], frontPids: []}}};
+  // An attempt with a touched row, one stopped by a touch the drive marked, then a clean latest attempt.
+  const rows = [start, touchedRow, touchedRow, start, {kind: 'task', task: '187-activations-start'}, {kind: 'stopped', error: 'key guard', personTouched: {apps: ['com.cmuxterm.app'], frontPids: []}}, start];
+  assert.equal(slotTouches(rows, [{kind: 'activated', bundleId: 'com.cmuxterm.app'}]), 3, 'the latest attempt never started its watcher: its file is not read');
+  assert.equal(touchedOfItem(rows, []).count, 0, 'the latest attempt alone is clean');
+  assert.equal(slotTouches([start, touchedCell, start, touchedCell]), 2);
+  assert.equal(slotTouches([start, {kind: 'task', task: '187-activations-start'}], [{kind: 'activated', bundleId: 'com.cmuxterm.app'}]), 1, 'the latest attempt\'s own watcher counts');
+  assert.equal(slotTouches([], []), 0);
+  // A mark the drive wrote after a recorded touch does not count it twice.
+  assert.equal(slotTouches([start, touchedCell, {kind: 'stopped', error: 'x', personTouched: true}]), 1);
+});
+
+test('the premise gate opens only on all three samples of the latest attempt, each read whole and each seeing AXPress in time', async () => {
+  const sample = (over = {}) => ({ok: true, advertised: true, appearedMs: 2000, ...over});
+  assert.equal(premiseOpens([sample(), sample(), sample()]), true);
+  assert.equal(premiseOpens([sample(), sample()]), false, 'a premise part that stopped after two samples');
+  assert.equal(premiseOpens([sample()]), false);
+  assert.equal(premiseOpens([sample(), sample({ok: false}), sample()]), false, 'a sample read untrusted');
+  assert.equal(premiseOpens([sample(), sample({advertised: false, appearedMs: 6200}), sample()]), false);
+  assert.equal(PREMISE_SAMPLES, 3);
+  const gate = rows => item187Tasks({premiseRows: () => rows})['187-press-gate']([], {results: {}});
+  const axpress = result => ({kind: 'task', task: '187-axpress', result});
+  assert.equal((await gate([start, axpress(sample()), axpress(sample()), axpress(sample())])).ok, true);
+  // An earlier full attempt does not open the gate for a latest attempt that stopped short.
+  const short = await gate([start, axpress(sample()), axpress(sample()), axpress(sample()), start, axpress(sample())]);
+  assert.equal(short.ok, false);
+  assert.match(short.problem, /in 1 of 3 sample\(s\) \(1 recorded\)/);
 });

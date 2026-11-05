@@ -794,7 +794,9 @@ down consumes the activation's arm, the same events on the saved engine. Now:
   harness Chrome's bundle path, its process frontmost within 3 s or the repetition stops); the key-window state read
   until it holds or 1 s passes (the run window's AXFocused and AXMain and the app's AXFrontmost by `ax-state.swift
   window`, value-free; the page's `document.hasFocus()` from the counters page's beacon); then one frontmost paste whose
-  prepare clicks nothing. **The premise**, read from the background paste's own record: its activation click skipped
+  prepare clicks nothing. A delivered background paste leaves its string in the textarea, and emptying it would take an
+  engine action on Chrome between the activations the cell compares, so the frontmost paste's prepare accepts the field
+  empty or holding exactly that string (compared by hash) and its read-back expects the concatenation. **The premise**, read from the background paste's own record: its activation click skipped
   (`activationClick` outsideFrame), so nothing but the shipping build's inert click (or, on the saved engine, nothing)
   consumes the arm. Where the activation point lies inside the frame the paste posts its own click there, which consumes
   the arm on either engine (as the slot's synthesized click did); that repetition is premise not met and is never
@@ -812,8 +814,10 @@ down consumes the activation's arm, the same events on the saved engine. Now:
 **The person.** A row or repetition during which the bundle's activation watcher sees an app activated that is neither
 a scene's nor the engine's, or whose front app reading is no scene's, is person-touched: invalid, recorded as such, and
 the drive goes on (an item it stops goes on too). A person-touched cell repetition gets one replacement, run right
-after it. More than three person-touched items in one slot (the out directory: the BEFORE half counts the re-slot's)
-stops the drive; 187-end still selects the owner's source, and the report follows.
+after it; the replacement names the attempt it replaces and counts only for that attempt, so a part run again never
+lets an old replacement fill in for a new repetition. More than three person-touched items in one slot (the out
+directory: every attempt of every item counts, the re-slot's for the BEFORE half and a re-run part's earlier attempts
+too) stops the drive; 187-end still selects the owner's source, and the report follows.
 
 **Each row** (as in the slot): the driven field emptied, one observation of the third scene (so the act gets a fresh
 activation), the readings before (front app, clipboard type-list digest, page and fixture counters, and now the driven

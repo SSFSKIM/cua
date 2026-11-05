@@ -79,7 +79,8 @@ test('the verdict needs a clean audit wherever a vendor build keeps its witness 
     { engine, series: 'warm', ms: 90, ok: true, witness, effect: true, equal: true },
   ];
   const base = [...rows('pinned', true), ...rows('newest', true), ...rows('cua', true)];
-  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua' };
+  // the audit is judged here; speed needs 20 samples a side (speed-guard.test.mjs)
+  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua', judgeSpeed: false };
   const a = (clean) => ({ clean, oks: [true, true] });
   assert.equal(judgeOperation(base, { ...opts, audits: { pinned: a(true), newest: a(true), cua: a(true) } }).pass, true);
   const dirty = judgeOperation(base, { ...opts, audits: { pinned: a(true), newest: a(true), cua: a(false) } });

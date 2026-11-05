@@ -86,6 +86,14 @@ function engineAttested(meta) {
   return `${record.requested} (attested: ${answered.join('; ') || 'none'}${record.unattested ? `; ${record.unattested} unattested` : ''})`;
 }
 const approvedAttested = approved => (approved?.build ? `${attestedBuild(approved.build)} (cua ${approved.engineVersion ?? '?'}, ${approved.bundlePath ?? '?'})` : null);
+// The services a Linux run's engines were driven by, as the run observed them below its serves (#171 M3,
+// ../repl-parity/engine-answered.mjs engineProcesses), an observation without that evidence named `unattested`; null
+// for a run that observed no engine (its recorded meta.service.answered stands).
+function linuxServices(meta) {
+  if (meta.platform !== 'linux') return null;
+  const observed = meta.nativeEngine?.observed ?? [];
+  return observed.length ? [...new Set(observed.map(o => ('service' in o ? o.service ?? 'an unknown service' : 'unattested')))].join(', ') : null;
+}
 // The facts a run attests, as the strings the summary compares and prints.
 export function attestation(meta) {
   const hw = meta.hardware ?? {}, os = meta.os ?? {}, display = meta.display ?? {}, service = meta.service ?? {}, plan = meta.plan ?? {};
@@ -100,7 +108,7 @@ export function attestation(meta) {
     os: os.version ? `${os.name ?? 'macOS'} ${os.version}${os.build ? ` (${os.build})` : ''}` : null,
     display: display.resolution ? `${display.resolution} points at scale ${display.scale ?? '?'}${display.pixels ? ` (${display.pixels} pixels)` : ''}` : null,
     service: service.surface === 'browser' ? 'browser surface, no service call'
-      : service.surface ? `${service.surface} surface, answered by ${service.answered ?? '?'}${service.helper ? ` (helper: ${service.helper})` : ''}` : null,
+      : service.surface ? `${service.surface} surface, answered by ${linuxServices(meta) ?? service.answered ?? '?'}${service.helper ? ` (helper: ${service.helper})` : ''}` : null,
     sandbox: meta.sandbox?.mode ? `${meta.sandbox.mode} (${meta.sandbox.explicit ? 'CUA_SHIM_SANDBOX' : 'platform default'})` : null,
     plan: plan.samples ? `${plan.cold} cold, ${plan.samples} warm, ${plan.tasks} tasks` : null,
   };

@@ -9,6 +9,7 @@ import {mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync} from 'node:
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createSkyService, desktopEntryFor} from '../src/services/sky.mjs';
+import {fakeLinuxEngine} from './helpers/fake-linux-engine.mjs';
 
 const APPS = [{id: 'org.gnome.gedit.desktop', name: 'gedit', windows: []}, {id: 'kde-okular.desktop', name: 'Okular', windows: []}, {id: 'mine.desktop', name: 'Mine', windows: []}];
 const launchApp = (input, extra = {}) => ({type: 'execute', method: 'launch_app', args: [input], ...extra});
@@ -75,4 +76,42 @@ test('Linux launch_app in any other shape goes to the vendor unchanged once the 
   assert.deepEqual(asked, Array(3).fill('org.gnome.gedit.desktop'));
   const darwin = createSkyService({loadVendor: async () => ({handleRpc: async () => 'vendor'}), secrets: {}, platform: 'darwin', openApplication: async () => assert.fail('macOS never launches here')});
   assert.equal(await darwin.handleRpc(launchApp({app: 'com.apple.TextEdit'})), 'vendor');
+});
+
+// The late-take watch's acting-request rule reaches this launch too (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md,
+// Decision Log 2026-10-31): the launch changes the desktop by the supervisor's route, not the engine's, so right before
+// it the wrapper asks cua's Linux service for the engine's preflight, an acting request that sends nothing. A late drag
+// and drop (or a failed watch) the engine has not reported yet is then the launch's answer, and nothing is launched.
+// The vendor's service has no preflight, and nothing changes there (the tests above).
+test('Linux launch_app through cua\'s own Linux service: a pending late drag-and-drop notice is the launch\'s answer and nothing is launched; without one it launches', async t => {
+  const notice = 'Google-chrome started a drag and drop after your drag ended; it may have dropped and changed the desktop; this request was not run, so read the window before sending it again';
+  const engine = fakeLinuxEngine(t);
+  const pending = join(engine.dir, 'pending');
+  engine.behave(`import {existsSync, unlinkSync} from 'node:fs';
+    export function answer(command) {
+      if (command === 'list_apps') return {output: ${JSON.stringify(APPS)}};
+      if (command === 'preflight' && existsSync(${JSON.stringify(pending)})) {
+        unlinkSync(${JSON.stringify(pending)});
+        return {error: ${JSON.stringify(notice)}};
+      }
+    }`);
+  const d = desktop(t);
+  const launched = [], order = [];
+  const saved = process.env.CUA_ENGINE_BIN;
+  process.env.CUA_ENGINE_BIN = engine.path;
+  t.after(() => { if (saved === undefined) delete process.env.CUA_ENGINE_BIN; else process.env.CUA_ENGINE_BIN = saved; });
+  // the module CUA_SKY_SERVICE names on Linux, loaded as the wrapper loads it
+  const cua = await import('../src/services/engine/linux/service.mjs');
+  const nodeRepl = {requestMeta: {}, createElicitation: async () => { order.push('approved'); return {action: 'accept', content: {}}; }};
+  const service = createSkyService({loadVendor: async () => cua, secrets: {read: async () => assert.fail('no secret is read')}, platform: 'linux', env: d.env,
+    nodeRepl, openApplication: async target => { order.push('launched'); launched.push(target); return {}; }});
+
+  writeFileSync(pending, '');
+  await assert.rejects(service.handleRpc(launchApp({app: 'org.gnome.gedit.desktop'})), {message: notice});
+  assert.deepEqual(launched, [], 'nothing launched');
+  assert.equal(await service.handleRpc(launchApp({app: 'org.gnome.gedit.desktop'})), undefined);
+  assert.deepEqual(launched, [{applicationPath: d.gedit}], 'launched as today');
+  const commands = engine.requests().map(r => r.command).filter(c => c !== 'capabilities' && c !== 'list_windows');
+  assert.deepEqual(commands, ['list_apps', 'preflight', 'list_apps', 'preflight'], 'the inventory, then the preflight before each launch');
+  assert.deepEqual(order, ['approved', 'approved', 'launched'], 'the preflight comes after the approval, right before the launch');
 });

@@ -116,3 +116,33 @@ export async function startOwner(text) {
   }
   return owner;
 }
+
+/**
+ * A running `xprobe overlay <args>` (an override-redirect window of the harness's own, until `stop()`): `id`, and
+ * `cross(window)`, which moves it above `window` and back below it under one server grab and resolves once done.
+ */
+export async function startOverlay(args) {
+  const child = spawn(XPROBE, ['overlay', ...args], { stdio: ['pipe', 'pipe', 'inherit'] });
+  const lines = createInterface({ input: child.stdout });
+  const waiting = [];
+  lines.on('line', (line) => waiting.shift()?.(JSON.parse(line)));
+  const next = () => new Promise((resolve, reject) => {
+    waiting.push(resolve);
+    child.once('exit', () => reject(new Error(`xprobe overlay ${args.join(' ')} exited`)));
+  });
+  const { overlay: id } = await next();
+  return {
+    id,
+    async cross(window) {
+      const done = next();
+      child.stdin.write(`cross ${window}\n`);
+      await done;
+    },
+    async stop() {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      const exited = new Promise((resolve) => child.once('exit', resolve));
+      child.stdin.end();
+      await exited;
+    },
+  };
+}

@@ -1,0 +1,59 @@
+== head 9bf9d3a945afe39d7b7c66340b7930c915a927b8; CUA_HOME=<fresh> (<fresh>)
+== cua install --engine
+installing 26.928.40906-linux-x64 from https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_26.928.40906_amd64.deb
+installed and activated 26.928.40906-linux-x64 at <fresh>/runtimes/26.928.40906-linux-x64
+installed cua's sandbox helper at <fresh>/sandbox/rust-v0.163.0/codex-linux-sandbox
+installed cua's Linux engine 0.3.0 (linux-engine-v0.3.0) at <fresh>/engine/linux/cua-engine
+installing Node 24.22.0 for cua's own REPL host from https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz
+installed Node 24.22.0 for cua's own REPL host at <fresh>/node/24.22.0
+install exit 0
+== installed engine
+-rwxr-xr-x 1 new new 1692384 Nov  1 16:03 <fresh>/engine/linux/cua-engine
+<fresh>/engine/linux/cua-engine: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, BuildID[sha1]=90faf1ec54b9383c7a60e490d747c5b3f2dce639, stripped
+cua-engine 0.3.0 (cd4c929758ca)
+sha256 5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60
+pin    5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60
+== install.json
+{
+  "schema": 1,
+  "build": "pinned",
+  "version": "0.3.0",
+  "release": "linux-engine-v0.3.0",
+  "sha256": "5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60",
+  "source": "https://github.com/SSFSKIM/cua/releases/download/linux-engine-v0.3.0/cua-engine-0.3.0-linux-x64",
+  "installedAt": "2026-11-02T00:03:43.469Z"
+}
+
+== CUA_NATIVE_ENGINE=cua cua doctor
+cua doctor (CUA_HOME=<fresh>)
+PASS     platform                 linux-x64 has pinned release 26.928.40906-linux-x64
+PASS     runtime.installed        active release 26.928.40906-linux-x64 at <fresh>/runtimes/26.928.40906-linux-x64
+PASS     runtime.files            every pinned runtime path is present
+PASS     runtime.vendor-manifest  runtime 0.0.27/20260927214556-b77d38801cca, node 24.21.0-cua.1, linux-x64
+PASS     runtime.ipc              not applicable on linux
+PASS     runtime.signatures       archive hash is the trust root on linux: install verified the pinned archive's length and SHA-256 before extracting it, and nothing here is code-signed
+PASS     sandbox                  CUA_SHIM_SANDBOX=scoped (the default): JavaScript cells write only their connection's run directory and its session temp ($CUA_HOME/run/<session>, their TMPDIR), no trusted code path lies under either, and cells have no network (the trusted services do, so the computer-use helper reaches the X display and the session bus); CUA_SHIM_SANDBOX=disabled lifts both limits
+PASS     sandbox.launcher         cua's own sandbox confines the children: the pinned helper <fresh>/sandbox/rust-v0.163.0/codex-linux-sandbox (SHA-256 da88ac0975a1138b0c90d7cecdf6d30de26e9fc36296d4d537bb9cf1cdb0f344); no Codex CLI is launched
+PASS     run.stale                <fresh>/run: nothing stale
+PASS     runtime.leftovers        nothing the Codex CLI left behind is here; cua runs no Codex CLI (#115)
+PASS     display                  X display :0 has XTEST, Composite and XFIXES
+PASS     accessibility.bus        AT-SPI (org.a11y.Bus) is on the session bus at unix:path=/run/user/501/bus
+PASS     accessibility.enabled    org.a11y.Status IsEnabled is true on the session bus at unix:path=/run/user/501/bus, so Qt applications put their accessibility trees on the bus
+PASS     sandbox.userns           bubblewrap can create an unprivileged user namespace (bwrap --ro-bind / / true), which the runtime's sandbox uses
+PASS     secrets.store            3 secrets in /Users/new/.config/claude-secrets (0700, yours, each file 0600)
+SKIP     secrets.project          no project secrets for /Users/new/Developer/GitHub/cua (/Users/new/.config/claude-secrets/projects/-Users-new-Developer-GitHub-cua); /secret KEY in a Claude Code session there, or cua secrets set KEY --project, stores the first
+PASS     repl.host                cua host (linux) on Node <fresh>/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the only one on Linux (the browser surface, if on, uses cua's browser service; the vendor host is retired there, #115). The profile listing (browser only): cua host (linux) on Node <fresh>/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the only one on Linux (the browser surface, if on, uses cua's browser service; the vendor host is retired there, #115).
+PASS     engine                   cua's engine is selected (CUA_NATIVE_ENGINE=cua): sessions here run the pinned cua-engine 0.3.0 (linux-engine-v0.3.0) at <fresh>/engine/linux/cua-engine, SHA-256 5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60, behind service cua (cua's own Linux service); device mode shared (the default: CUA_DESKTOP_MODE=dedicated, or "desktop": "dedicated" in ~/.config/cua/engine.json, gives the agent the desktop); capabilities, from cua-engine started for this check and stopped: backend x11, build cd4c929758ca, capture.desktop true, capture.window retained, desktop shared, input.background true, input.desktop true, text.literal true, text.paste verified, tree at_spi, version 0.3.0
+BLOCKED  chrome.route             this home has no Chrome registration: run `cua chrome register` (cua's own host, for the cua extension); install or load the cua extension in each Chrome profile you use (README, "Chrome") [chrome_not_registered]
+BLOCKED  chrome.host.registered   io.github.ssfskim.cua names /Users/new/.local/share/cua/chrome/host, not this home's launcher <fresh>/chrome/host (another cua home is registered; cua chrome register --replace points it here)
+BLOCKED  chrome.hosts.live        no cua host is serving in <fresh>/chrome/b: open Chrome with the cua extension enabled in a profile
+SKIP     maws.hosts               no cua process is connected to a MAWS backend (MAWS passes CUA_BROWSER_BACKENDS to its sessions' engines; cua serve connects then)
+SKIP     agent.installed          this machine is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install
+SKIP     agent.running            this machine is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install
+SKIP     agent.enrolled           this machine is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install
+SKIP     agent.console            this machine is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install
+SKIP     agent.relay              this machine is not set up for remote control (not applicable); to set it up: run cua remote enroll, then cua agent install
+passive runtime checks pass; live capability remains unverified (blocked: chrome.route, chrome.host.registered, chrome.hosts.live)
+doctor exit 0
+== engine processes left: 0
+temporary home removed

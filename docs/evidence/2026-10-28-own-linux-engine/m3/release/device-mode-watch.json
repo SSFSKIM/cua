@@ -1,0 +1,22 @@
+{
+  "exit": 0,
+  "steps": 18,
+  "passed": 18,
+  "failed": [],
+  "samples": 570,
+  "maxSkyLinux": 0,
+  "cuaEngines": [
+    {
+      "pid": "397524",
+      "exe": "/Users/new/.local/share/cua/engine/linux/cua-engine",
+      "ppid": "397511",
+      "parent": "/Users/new/.local/share/cua/node/24.22.0/bin/node --experimental-vm-modules /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/src/repl-host/trusted-worker.mjs"
+    },
+    {
+      "pid": "398091",
+      "exe": "/Users/new/.local/share/cua/engine/linux/cua-engine",
+      "ppid": "398077",
+      "parent": "/Users/new/.local/share/cua/node/24.22.0/bin/node --experimental-vm-modules /Users/new/Developer/GitHub/cua/.claude/worktrees/cua-171/src/repl-host/trusted-worker.mjs"
+    }
+  ]
+}

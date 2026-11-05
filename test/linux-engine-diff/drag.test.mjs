@@ -5,9 +5,36 @@ import { CORNERS, DRAG_FAMILIES, dragEngines, judgeCell, judgeRuns, pagePath, pa
 import { FAMILIES } from '../../scripts/linux-engine-diff/families.mjs';
 
 test("the drag page's status lines parse into each kind's value", () => {
-  const s = parseDragStatus(['Range', 'select pha_bravo_charlie_de', 'range 75', 'scroller 117', 'dnd starts 2 drops 1', 'canvas strokes 3 moves 2 dev 140']);
-  assert.deepEqual(s, { select: 'pha_bravo_charlie_de', range: 75, scroller: 117, dnd: { starts: 2, drops: 1 }, canvas: { strokes: 3, moves: 2, dev: 140 } });
+  const s = parseDragStatus(['Range', 'select pha_bravo_charlie_de', 'range 75', 'scroller 117', 'dnd starts 2 drops 1 downs 3 detail 2 gap 412 selects 1 ends 2 effect 0 lat 31 dur 12 ups 1 at 123456789', 'canvas strokes 3 moves 2 dev 140']);
+  assert.deepEqual(s, { select: 'pha_bravo_charlie_de', range: 75, scroller: 117, dnd: { starts: 2, drops: 1, downs: 3, detail: 2, gap: 412, selects: 1, ends: 2, effect: 0, lat: 31, dur: 12, ups: 1, at: 123456789 }, canvas: { strokes: 3, moves: 2, dev: 140 }, moves: null });
+  assert.equal(parseDragStatus(['dnd starts 0 drops 0 downs 1 detail 1 gap -1 selects 0']).dnd.gap, -1, 'no press before it');
   assert.equal(parseDragStatus([]).range, null, 'a missing line is unknown, never zero');
+});
+
+test("the drag page's pointer log: every move between the source's press and its release, and the first past Blink's drag threshold", () => {
+  // a drag that started: three moves, the third 4 px out (Blink's threshold off the Mac: |dx| or |dy| at least 4), then dragstart
+  const started = parseDragStatus(['moves seq 7 n 3 start 6.2/6.9 up -1 cancel 6.2/7.0 end 381.0/382.4 m 1.0/1.3/1/0/1/1 2.1/2.4/2/0/1/1 4.4/6.8/4/0/1/2']);
+  assert.deepEqual(started.moves, {
+    seq: 7,
+    n: 3,
+    start: { t: 6.2, h: 6.9 },
+    up: null,
+    cancel: { t: 6.2, h: 7 },
+    end: { t: 381, h: 382.4 },
+    moves: [
+      { t: 1, h: 1.3, dx: 1, dy: 0, buttons: 1, coalesced: 1 },
+      { t: 2.1, h: 2.4, dx: 2, dy: 0, buttons: 1, coalesced: 1 },
+      { t: 4.4, h: 6.8, dx: 4, dy: 0, buttons: 1, coalesced: 2 },
+    ],
+    past: 2,
+  });
+  // the miss's shape: the press and the release, no move past the threshold with the button held, no dragstart
+  const missed = parseDragStatus(['moves seq 8 n 2 start -1 up 120.5/131.0 cancel -1 end -1 m 0.6/90.1/1/0/1/1 1.2/90.2/-5/0/0/1']);
+  assert.equal(missed.moves.start, null);
+  assert.deepEqual(missed.moves.up, { t: 120.5, h: 131 });
+  assert.equal(missed.moves.past, null, 'a move past the threshold without the left button held cannot start a drag');
+  assert.equal(parseDragStatus(['moves seq 9 n 0 start -1 up 3.0/3.1 cancel -1 end -1 m']).moves.moves.length, 0);
+  assert.equal(parseDragStatus([]).moves, null, 'no log line: unknown');
 });
 
 test('every family of the experiment is a family of the matrix; the lanes are the reference, cua as it ships and cua at 0 ms', () => {

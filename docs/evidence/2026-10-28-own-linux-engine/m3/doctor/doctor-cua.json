@@ -1,0 +1,82 @@
+{
+ "rows": [
+  {
+   "name": "display",
+   "status": "pass",
+   "detail": "X display :0 has XTEST, Composite and XFIXES"
+  },
+  {
+   "name": "accessibility.bus",
+   "status": "pass",
+   "detail": "AT-SPI (org.a11y.Bus) is on the session bus at unix:path=/run/user/501/bus"
+  },
+  {
+   "name": "accessibility.enabled",
+   "status": "pass",
+   "detail": "org.a11y.Status IsEnabled is true on the session bus at unix:path=/run/user/501/bus, so Qt applications put their accessibility trees on the bus"
+  },
+  {
+   "name": "repl.host",
+   "status": "pass",
+   "detail": "cua host (linux) on Node /Users/new/.local/share/cua/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the only one on Linux (the browser surface, if on, uses cua's browser service; the vendor host is retired there, #115). The profile listing (browser only): cua host (linux) on Node /Users/new/.local/share/cua/node/24.22.0/bin/node: CUA_REPL_HOST is unset, and cua's own host is the only one on Linux (the browser surface, if on, uses cua's browser service; the vendor host is retired there, #115)."
+  },
+  {
+   "name": "engine",
+   "status": "warn",
+   "detail": "cua's engine is selected (CUA_NATIVE_ENGINE=cua): sessions here run /Users/new/.local/share/cua-171/task19/engine/cua-engine, which CUA_LINUX_ENGINE_BIN names in place of the installed engine (a harness setting), behind service cua (cua's own Linux service); installed: the pinned cua-engine 0.2.0 (linux-engine-v0.2.0) at /Users/new/.local/share/cua/engine/linux/cua-engine, SHA-256 2a0036acfb331f612ab2ce79b8a5ae902e29232f406ce1d3395ab83b1b0c543c; device mode shared (the default: CUA_DESKTOP_MODE=dedicated, or \"desktop\": \"dedicated\" in ~/.config/cua/engine.json, gives the agent the desktop); capabilities, from cua-engine started for this check and stopped: backend x11, build bcf64d68401c, capture.desktop true, capture.window retained, desktop shared, input.background true, input.desktop true, text.literal true, text.paste verified, tree at_spi, version 0.3.0"
+  }
+ ],
+ "engine": {
+  "selected": "cua",
+  "reason": "explicit",
+  "refused": null,
+  "preferred": {
+   "engine": "cua",
+   "reason": "explicit"
+  },
+  "service": "cua",
+  "runs": {
+   "path": "/Users/new/.local/share/cua-171/task19/engine/cua-engine",
+   "source": "override"
+  },
+  "installed": {
+   "path": "/Users/new/.local/share/cua/engine/linux/cua-engine",
+   "exists": true,
+   "executable": true,
+   "sha256": "2a0036acfb331f612ab2ce79b8a5ae902e29232f406ce1d3395ab83b1b0c543c",
+   "version": "0.2.0",
+   "build": "pinned",
+   "release": "linux-engine-v0.2.0",
+   "current": true
+  },
+  "pinned": {
+   "version": "0.2.0",
+   "release": "linux-engine-v0.2.0",
+   "sha256": "2a0036acfb331f612ab2ce79b8a5ae902e29232f406ce1d3395ab83b1b0c543c"
+  },
+  "desktop": {
+   "mode": "shared",
+   "reason": "default"
+  },
+  "capabilities": {
+   "backend": "x11",
+   "build": "bcf64d68401c",
+   "capture": {
+    "desktop": true,
+    "window": "retained"
+   },
+   "desktop": "shared",
+   "input": {
+    "background": true,
+    "desktop": true
+   },
+   "text": {
+    "literal": true,
+    "paste": "verified"
+   },
+   "tree": "at_spi",
+   "version": "0.3.0"
+  },
+  "capabilitiesUnread": null
+ }
+}

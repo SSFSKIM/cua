@@ -61,12 +61,14 @@ function restrictsUserns(osRelease) {
   return major > 23 || (major === 23 && minor >= 10);
 }
 
-// -> [display, accessibility.bus, sandbox.userns]. `exec`, `findTool` and `osRelease` are test seams.
-// bubblewrap is looked up where the launch-time check (bwrapUserns) and the runtime find it, on the system path, never
-// on the caller's PATH; `findSystemTool` is that lookup's test seam.
+// -> [display, accessibility.bus, accessibility.enabled, sandbox.userns]. `exec`, `findTool` and `osRelease` are test
+// seams. bubblewrap is looked up where the launch-time check (bwrapUserns) and the runtime find it, on the system path,
+// never on the caller's PATH; `findSystemTool` is that lookup's test seam.
 export async function linuxDesktopChecks({env = process.env, exec = defaultExec, findTool = name => findOnPath(name, env.PATH),
   findSystemTool = findOnSystemPath, osRelease = defaultOsRelease}) {
-  return [await displayCheck(env, exec, findTool), await busCheck(env, exec, findTool), await usernsCheck(exec, findSystemTool, osRelease)];
+  const display = await displayCheck(env, exec, findTool);
+  const bus = await busCheck(env, exec, findTool);
+  return [display, bus, await enabledCheck(env, exec, findTool, bus), await usernsCheck(exec, findSystemTool, osRelease)];
 }
 
 // The display row alone, for another environment than doctor's: the installed agent's (doctor's agent.console on Linux).
@@ -97,6 +99,29 @@ async function busCheck(env, exec, findTool) {
   const activatable = await ask('ListActivatableNames');
   if (activatable.code === 0 && lists(activatable.stdout)) return result('accessibility.bus', 'pass', `AT-SPI (${A11Y_BUS}) is activatable on the session bus at ${address}; it starts on first use`);
   return result('accessibility.bus', 'fail', `the session bus at ${address} has no AT-SPI (${A11Y_BUS}), running or activatable; install at-spi2-core, or accessibility trees fall back to X11 window-level only`);
+}
+
+// The property AT-SPI's bus launcher keeps for the session (backed by gsettings' toolkit-accessibility where it has
+// GSettings), and the command that turns it on (deploy/cloud-vm/cua-provision.sh runs it at each session's start).
+const A11Y_ENABLED = ['--dest=org.a11y.Bus', '/org/a11y/bus'];
+export const A11Y_ENABLE_COMMAND = `dbus-send --session --print-reply ${A11Y_ENABLED.join(' ')} org.freedesktop.DBus.Properties.Set string:org.a11y.Status string:IsEnabled variant:boolean:true`;
+
+// Whether org.a11y.Status IsEnabled is true: Qt 6 registers its tree on the bus only when it is (or ScreenReaderEnabled,
+// or QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1) at the application's start (#171 M0.4's matrix). Asked only once the bus row
+// found AT-SPI; reading it starts an activatable launcher, as any client's first use does.
+async function enabledCheck(env, exec, findTool, bus) {
+  if (bus.status !== 'pass') return result('accessibility.enabled', 'skip', 'no AT-SPI bus to ask (see accessibility.bus)');
+  const address = sessionBusAddress(env);
+  const run = await exec(findTool('dbus-send'), ['--session', '--print-reply', ...A11Y_ENABLED, 'org.freedesktop.DBus.Properties.Get', 'string:org.a11y.Status', 'string:IsEnabled'],
+    {env: {DBUS_SESSION_BUS_ADDRESS: address, ...(env.HOME ? {HOME: env.HOME} : {})}});
+  const value = run.code === 0 ? /variant\s+boolean\s+(true|false)\b/.exec(run.stdout)?.[1] : undefined;
+  if (value === 'true') return result('accessibility.enabled', 'pass', `org.a11y.Status IsEnabled is true on the session bus at ${address}, so Qt applications put their accessibility trees on the bus`);
+  const turnOn = `turn it on with ${A11Y_ENABLE_COMMAND}, then restart those applications`;
+  if (value === 'false')
+    return result('accessibility.enabled', 'warn', `org.a11y.Status IsEnabled is false on the session bus at ${address}, so a Qt 6 application started now puts no accessibility tree on the bus `
+      + `(cua sees its windows without their elements): ${turnOn}`);
+  return result('accessibility.enabled', 'warn', `org.a11y.Status IsEnabled could not be read on the session bus at ${address} (${lastLine(run.code === 0 ? run.stdout : run.stderr)}), `
+    + `so whether Qt 6 applications put their accessibility trees on the bus is unknown: ${turnOn}`);
 }
 
 // The remedy where the kernel refuses unprivileged user namespaces: lift Ubuntu's AppArmor restriction, or let

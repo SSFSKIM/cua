@@ -10,6 +10,7 @@ import { auditForeground } from '../../scripts/linux-engine-diff/audit.mjs';
 import { waitQuarantineOver } from '../../scripts/linux-engine-diff/clip.mjs';
 import { DEVIATIONS, declaredDeviation } from '../../scripts/linux-engine-diff/deviations.mjs';
 import { topUpRounds } from '../../scripts/linux-engine-diff/run.mjs';
+import { medianDifferenceInterval } from '../../scripts/linux-engine-diff/events.mjs';
 import { judgeOperation } from '../../scripts/linux-engine-diff/stats.mjs';
 import { TEXT_OPS } from '../../scripts/linux-engine-diff/text.mjs';
 import { judgeFocus, judgeForegroundSpan } from '../../scripts/linux-engine-diff/witness.mjs';
@@ -108,15 +109,15 @@ test('successful, witness-clean, clipboard-keeping samples whose effect could no
 test('a 3-sample desktop group is never judged on its medians, faster or slower', () => {
   const series = (engine, cold, warm) => [...cold.map((ms) => ({ engine, series: 'cold', ms, ok: true })), ...warm.map((ms) => ({ engine, series: 'warm', ms, ok: true }))];
   const warm = Array.from({ length: 21 }, (_, i) => 0.7 + (i % 3) * 0.01);
-  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua', minSamples: 20 };
+  const opts = { vendors: ['pinned', 'newest'], candidate: 'cua', noise: medianDifferenceInterval };
   // cua faster on three cold samples: still not a pass
   const faster = [...series('pinned', [4.9, 5.1, 5.0], warm), ...series('newest', [4.0, 4.1, 3.9], warm), ...series('cua', [3.0, 3.1, 2.9], warm)];
   const v = judgeOperation(faster, opts);
   assert.equal(v.pass, false);
-  assert.match(v.reasons.join(), /cold: 3 samples a side, fewer than 20; not judged on medians/);
+  assert.match(v.reasons.join(), /cold .* undetermined: 3 samples a side, fewer than 20; not judged on medians/);
   // slower on three: the reason is the sample count, not the medians
   const slower = [...series('pinned', [4.9, 5.1, 5.0], warm), ...series('newest', [4.0, 4.1, 3.9], warm), ...series('cua', [4.4, 4.5, 4.3], warm)];
-  assert.deepEqual(judgeOperation(slower, opts).reasons, ['cua: cold: 3 samples a side, fewer than 20; not judged on medians']);
+  assert.deepEqual(judgeOperation(slower, opts).reasons, ['cua: cold 4.4 ms against the bar 4 ms, undetermined: 3 samples a side, fewer than 20; not judged on medians']);
   // with 20 a side, judged
   const cold20 = (c) => Array.from({ length: 20 }, (_, i) => c + (i % 5) * 0.01);
   assert.equal(judgeOperation([...series('pinned', cold20(5), warm), ...series('newest', cold20(4), warm), ...series('cua', cold20(3), warm)], opts).pass, true);

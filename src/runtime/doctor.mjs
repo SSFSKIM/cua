@@ -123,7 +123,7 @@ function launcherCheck({sandboxExec, compat, node}) {
   return result('sandbox.launcher', 'pass', `cua's own sandbox confines the children: ${sandboxExec} for cua's own host, and on the vendor host ${compat}${node ? ` on ${node}` : ''}; no Codex CLI is launched`);
 }
 
-export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper}) {
+export async function inspectRuntime({home, env = process.env, live = false, pins, host = {platform: process.platform, arch: process.arch}, verifySignatures = verifyCodeSignatures, inspectHelper = inspectNativeHelper, inspectSecrets = inspectSecretStore, inspectLinux = linuxDesktopChecks, inspectChrome = defaultInspectChrome, inspectAgent = defaultInspectAgent, sweep = sweepRun, resolveOwnNode, engine, inspectEngine = defaultInspectEngine, readEngineRecords = defaultEngineRecords, inspectLinuxEngine, readLinuxCapabilities, launcher = {sandboxExec: SEATBELT_EXEC, compat: COMPAT_EXECUTABLE}, linuxHelper = verifiedLinuxHelper}) {
   if (live) throw new Error(`inspectRuntime is passive; live probes are separate explicit scripts (${LIVE_PROBE})`);
   pins ??= loadPins();
   const checks = [];
@@ -191,7 +191,7 @@ export async function inspectRuntime({home, env = process.env, live = false, pin
   const replHost = replHostCheck(home, env, host.platform, resolveOwnNode, engineInputs);
   checks.push(replHost.row);
   const engineRow = await engineCheck({env, platform: host.platform, arch: host.arch, home, session: replHost.session, engine: engineInputs, inspect: inspectEngine, records: readEngineRecords,
-    ...(inspectLinuxEngine ? {inspectLinux: inspectLinuxEngine} : {})});
+    ...(inspectLinuxEngine ? {inspectLinux: inspectLinuxEngine} : {}), ...(readLinuxCapabilities ? {readCapabilities: readLinuxCapabilities} : {})});
   checks.push(engineRow.row);
   checks.push(...await inspectChrome({home, host, env}));
   checks.push(...await inspectAgent({home, env, host}));

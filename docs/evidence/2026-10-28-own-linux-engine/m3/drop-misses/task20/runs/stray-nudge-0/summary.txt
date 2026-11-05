@@ -1,0 +1,16 @@
+
+## cua: 6 drags, modes {"L":1,"A":5,"B":0,"?":0}, unmatched presses 0
+  ms (answer)          n 6 min 133.5 p50 134.2 p90 463.4 p95 463.4 p99 463.4 max 463.4
+  press→cross (X)      n 6 min 3 p50 3 p90 4 p95 4 p99 4 max 4
+  press→take (X)       n 1 min 9 p50 9 p90 9 p95 9 p99 9 max 9
+  press→release (X)    n 6 min 29 p50 29 p90 359 p95 359 p99 359 max 359
+  steps before take    n 1 min 11 p50 11 p90 11 p95 11 p99 11 max 11
+  take→release (X)     n 1 min 350 p50 350 p90 350 p95 350 p99 350 max 350
+  page: past move h    n 6 min 4.2 p50 9.2 p90 15.1 p95 15.1 p99 15.1 max 15.1
+  page: dragstart h    n 1 min 4.3 p50 4.3 p90 4.3 p95 4.3 p99 4.3 max 4.3
+  page: coalesced 1st  n 6 min 1 p50 1 p90 2 p95 2 p99 2 max 2
+  miss A i0 {"ms":134.6,"x":{"via":"send_event","motions":41,"states":[256],"cross":4,"take":null,"release":31,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":7,"past_h":15.1,"past_t":15,"first_move_h":0.5,"coalesced_first":1,"start_h":null,"up_h":30.3,"end_h":null,"buttons":[1,0]}}
+  miss A i1 {"ms":134.2,"x":{"via":"send_event","motions":41,"states":[256],"cross":4,"take":null,"release":29,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":5,"past_h":11.5,"past_t":11,"first_move_h":11.2,"coalesced_first":1,"start_h":null,"up_h":28.2,"end_h":null,"buttons":[1,0]}}
+  miss A i3 {"ms":133.5,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":29,"steps_before_take":null,"steps_after_take":null,"stray":2},"page":{"moves":5,"past_h":10.5,"past_t":11,"first_move_h":10.3,"coalesced_first":2,"start_h":null,"up_h":28.7,"end_h":null,"buttons":[1,0]}}
+  miss A i4 {"ms":134.4,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":29,"steps_before_take":null,"steps_after_take":null,"stray":1},"page":{"moves":5,"past_h":7.9,"past_t":8,"first_move_h":0.8,"coalesced_first":2,"start_h":null,"up_h":29.2,"end_h":null,"buttons":[1,0]}}
+  miss A i5 {"ms":134,"x":{"via":"send_event","motions":41,"states":[256],"cross":3,"take":null,"release":29,"steps_before_take":null,"steps_after_take":null,"stray":0},"page":{"moves":5,"past_h":9.2,"past_t":9,"first_move_h":0.5,"coalesced_first":1,"start_h":null,"up_h":29,"end_h":null,"buttons":[1,0]}}

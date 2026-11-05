@@ -1,0 +1,11 @@
+
+## cua: 6 drags, modes {"L":6,"A":0,"B":0,"?":0}, unmatched presses 0
+  ms (answer)          n 6 min 463 p50 472.4 p90 477.5 p95 477.5 p99 477.5 max 477.5
+  press→cross (X)      n 6 min 3 p50 3 p90 4 p95 4 p99 4 max 4
+  press→take (X)       n 6 min 9 p50 17 p90 19 p95 19 p99 19 max 19
+  press→release (X)    n 6 min 359 p50 369 p90 369 p95 369 p99 369 max 369
+  steps before take    n 6 min 10 p50 19 p90 26 p95 26 p99 26 max 26
+  take→release (X)     n 6 min 350 p50 351 p90 352 p95 352 p99 352 max 352
+  page: past move h    n 6 min 4 p50 13.1 p90 13.9 p95 13.9 p99 13.9 max 13.9
+  page: dragstart h    n 6 min 4.2 p50 13.3 p90 14 p95 14 p99 14 max 14
+  page: coalesced 1st  n 6 min 2 p50 2 p90 20 p95 20 p99 20 max 20

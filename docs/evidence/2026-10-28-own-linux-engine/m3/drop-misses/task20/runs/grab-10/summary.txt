@@ -1,0 +1,11 @@
+
+## cua: 10 drags, modes {"L":10,"A":0,"B":0,"?":0}, unmatched presses 0
+  ms (answer)          n 10 min 464 p50 471.4 p90 475 p95 476.9 p99 476.9 max 476.9
+  press→cross (X)      n 10 min 3 p50 3 p90 3 p95 4 p99 4 max 4
+  press→take (X)       n 10 min 9 p50 17 p90 21 p95 22 p99 22 max 22
+  press→release (X)    n 10 min 359 p50 367 p90 372 p95 372 p99 372 max 372
+  steps before take    n 10 min 12 p50 21 p90 26 p95 27 p99 27 max 27
+  take→release (X)     n 10 min 350 p50 350 p90 351 p95 351 p99 351 max 351
+  page: past move h    n 10 min 4.2 p50 12 p90 15.1 p95 16.6 p99 16.6 max 16.6
+  page: dragstart h    n 10 min 4.4 p50 12.2 p90 15.2 p95 16.8 p99 16.8 max 16.8
+  page: coalesced 1st  n 10 min 1 p50 3 p90 16 p95 20 p99 20 max 20

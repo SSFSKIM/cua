@@ -1,0 +1,21 @@
+{"setup":true,"window":{"app":"Google-chrome","focused":true,"height":780,"id":8388610,"modal":false,"title":"cua171-diff-task23-jitter-../../../../../../../../../.local/share/cua-171/task20b/pages/track-track - Google Chrome","width":1050,"window_type":"normal","x":0,"y":0},"page":{"x":4,"y":87},"jitter":200,"engines":[{"label":"before","bin":"/Users/new/.local/share/cua-171/task22/engine-hold/cua-engine"},{"label":"after","bin":"/Users/new/.local/share/cua-171/task23/engine/cua-engine"}]}
+{"engine":"before","i":0,"ok":true,"ms":448.6,"landed":true,"press":{"grab_ms":81.29845900000001,"pointer_inside":true,"samples":1004,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"after","i":0,"ok":true,"ms":852,"landed":true,"press":{"crossed":false,"grab_ms":1.071827,"pointer_inside":true,"samples":8,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"before","i":1,"ok":true,"ms":463.5,"landed":true,"press":{"grab_ms":87.87168600000001,"pointer_inside":true,"samples":1004,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"after","i":1,"ok":true,"ms":895.2,"landed":true,"press":{"crossed":false,"grab_ms":1.6121539999999999,"pointer_inside":true,"samples":8,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"before","i":2,"ok":true,"ms":461.2,"landed":true,"press":{"grab_ms":87.459812,"pointer_inside":true,"samples":1004,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"after","i":2,"ok":true,"ms":854.5,"landed":true,"press":{"crossed":false,"grab_ms":1.130067,"pointer_inside":true,"samples":8,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"before","i":3,"ok":true,"ms":449.9,"landed":true,"press":{"grab_ms":80.656372,"pointer_inside":true,"samples":1004,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"after","i":3,"ok":true,"ms":848.6,"landed":true,"press":{"crossed":false,"grab_ms":1.276982,"pointer_inside":true,"samples":8,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"before","i":4,"ok":true,"ms":472.1,"landed":true,"press":{"grab_ms":99.652086,"pointer_inside":true,"samples":1004,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"after","i":4,"ok":true,"ms":842.5,"landed":true,"press":{"crossed":false,"grab_ms":0.9447070000000001,"pointer_inside":true,"samples":8,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"before","i":5,"ok":true,"ms":467.2,"landed":true,"press":{"grab_ms":96.40518900000001,"pointer_inside":true,"samples":1004,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"after","i":5,"ok":true,"ms":849.7,"landed":true,"press":{"crossed":false,"grab_ms":0.715154,"pointer_inside":true,"samples":8,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"before","i":6,"ok":true,"ms":463.5,"landed":true,"press":{"grab_ms":90.08176499999999,"pointer_inside":true,"samples":1004,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"after","i":6,"ok":true,"ms":869.3,"landed":true,"press":{"crossed":false,"grab_ms":0.845891,"pointer_inside":true,"samples":8,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"before","i":7,"ok":true,"ms":453.4,"landed":true,"press":{"grab_ms":83.624498,"pointer_inside":true,"samples":1004,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"after","i":7,"ok":true,"ms":848.8,"landed":true,"press":{"crossed":false,"grab_ms":1.177747,"pointer_inside":true,"samples":8,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"before","i":8,"ok":true,"ms":459.6,"landed":true,"press":{"grab_ms":88.84737299999999,"pointer_inside":true,"samples":1004,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"after","i":8,"ok":true,"ms":855.8,"landed":true,"press":{"crossed":false,"grab_ms":1.113424,"pointer_inside":true,"samples":8,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"before","i":9,"ok":true,"ms":464.8,"landed":true,"press":{"grab_ms":96.260027,"pointer_inside":true,"samples":1004,"strays":{"count":0,"first":[]},"taken":false}}
+{"engine":"after","i":9,"ok":true,"ms":961.8,"landed":true,"press":{"crossed":false,"grab_ms":1.371991,"pointer_inside":true,"samples":8,"strays":{"count":0,"first":[]},"taken":false}}

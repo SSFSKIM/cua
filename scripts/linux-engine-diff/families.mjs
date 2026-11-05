@@ -114,6 +114,45 @@ export const FAMILIES = {
     // pages/gtk4-button.py: one button whose label counts its presses
     launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'gtk4-button.py'), ctx.label], match: (w) => w.title === ctx.label }),
   },
+  // M3.1: the GTK 4 input scene (pages/gtk4-input.py): a status line counting its scroll, scale, pointer moves, button
+  // presses and keys, for the device mode's scroll, drag, move and click measurements and cases
+  'gtk4-input': {
+    title: 'GTK 4 input (harness scene)',
+    kind: 'gtk4-input',
+    geometry: [600, 400],
+    // window-relative, as the scene lays itself out (pages/gtk4-input.py): GTK 4.14's extents are not window coordinates
+    places: { scale: { x0: 20, x1: 580, y: 40 }, button: { x: 300, y: 103 }, list: { x: 300, y: 300 } },
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'gtk4-input.py'), ctx.label], match: (w) => w.title === ctx.label }),
+  },
+  // M3.1: the Qt input scene (pages/qt-input.py) under each major version, plain Qt widgets counting the pointer moves,
+  // wheel events and presses that reach the toolkit, written to a record file: whether kate's and qtcreator's
+  // difference is the version's or the applications'
+  'qt5-input': {
+    title: 'Qt 5 input (harness scene)',
+    kind: 'qt-input',
+    geometry: [600, 400],
+    launch: (ctx) => qtLaunch(ctx, 'qt5'),
+  },
+  'qt6-input': {
+    title: 'Qt 6 input (harness scene)',
+    kind: 'qt-input',
+    geometry: [600, 400],
+    launch: (ctx) => qtLaunch(ctx, 'qt6'),
+  },
+  // M3.1: the same scene under Qt 5 with an auto-raise tool button whose hover highlight the style draws, under KDE's
+  // Breeze and under Qt's own Fusion: whether a hover highlight that misses a background move is Breeze's
+  'qt5-breeze': {
+    title: 'Qt 5 Breeze (harness scene)',
+    kind: 'qt-style',
+    geometry: [600, 400],
+    launch: (ctx) => qtLaunch(ctx, 'qt5', 'breeze'),
+  },
+  'qt5-fusion': {
+    title: 'Qt 5 Fusion (harness scene)',
+    kind: 'qt-style',
+    geometry: [600, 400],
+    launch: (ctx) => qtLaunch(ctx, 'qt5', 'fusion'),
+  },
   'gtk-scale': {
     title: 'GTK 3 scale (harness scene)',
     kind: 'scale',
@@ -243,6 +282,21 @@ export const FAMILIES = {
   },
 };
 
+/** The Qt input scene under a binding (and a style, with its tool button), its counts appended to a record file. */
+function qtLaunch(ctx, binding, style) {
+  const record = join(ctx.dir, `${ctx.label}.counts`);
+  writeFileSync(record, '');
+  const args = ['-I', join(PAGES, 'qt-input.py'), ctx.label, record, binding, ...(style ? [style] : [])];
+  return { cmd: 'python3', args, match: (w) => w.title === ctx.label, record };
+}
+
+/** The Qt input scene's last counts: `{moves, wheels, presses, hovers}`, or null before its first line. */
+export function readQtCounts(scene) {
+  const last = readFileSync(scene.record, 'utf8').trim().split('\n').at(-1) ?? '';
+  const m = last.match(/^moves (\d+) wheels (\d+) presses (\d+) hovers (\d+)$/);
+  return m ? { moves: Number(m[1]), wheels: Number(m[2]), presses: Number(m[3]), hovers: Number(m[4]) } : null;
+}
+
 /**
  * A size asked for explicitly: Writer's first window opens at it, in the normal state (state 1), instead of maximized
  * on this screen, where the window manager then refuses a resize.
@@ -273,7 +327,8 @@ export function terminalLaunch(ctx, extra) {
   }
   const record = join(ctx.dir, `${ctx.label}.input`);
   writeFileSync(record, '');
-  const script = `printf '\\033[?1000h'; stty raw -echo; exec cat >> "$1"`;
+  // with `motion`, every pointer motion is reported too (mode 1003)
+  const script = `printf '\\033[?${ctx.motion ? 1003 : 1000}h'; stty raw -echo; exec cat >> "$1"`;
   return { cmd: 'xterm', args: ['-T', ctx.label, ...extra, '-e', 'sh', '-c', script, 'sh', record], match: (w) => w.title === ctx.label, record };
 }
 
@@ -284,10 +339,16 @@ export function terminalLaunch(ctx, extra) {
  * appears in the terminal's own text, where an engine can confirm it.
  */
 export function vteLaunch(ctx) {
+  if (ctx.doc) {
+    const file = scratchFile(ctx);
+    const pidfile = join(ctx.dir, `${ctx.label}.pid`);
+    const script = `echo $$ > "$2"; printf '\\033]0;%s\\007' "$3"; cat "$1"; exec sleep 86400`;
+    return { cmd: 'gnome-terminal', args: ['--wait', '--title', ctx.label, '--', 'sh', '-c', script, 'sh', file, pidfile, ctx.label], match: (w) => w.title === ctx.label, record: null, pidfile };
+  }
   const record = join(ctx.dir, `${ctx.label}.input`);
   const pidfile = join(ctx.dir, `${ctx.label}.pid`);
   writeFileSync(record, '');
-  const script = `echo $$ > "$2"; printf '\\033]0;%s\\007\\033[?1000h' "$3"; stty raw -echo; exec tee -a "$1"`;
+  const script = `echo $$ > "$2"; printf '\\033]0;%s\\007\\033[?${ctx.motion ? 1003 : 1000}h' "$3"; stty raw -echo; exec tee -a "$1"`;
   return { cmd: 'gnome-terminal', args: ['--wait', '--title', ctx.label, '--', 'sh', '-c', script, 'sh', record, pidfile, ctx.label], match: (w) => w.title === ctx.label, record, pidfile };
 }
 
@@ -295,7 +356,7 @@ export function vteLaunch(ctx) {
  * Opens a family's window on the harness's desktop: launched, found, sized and placed, its objects resolved.
  * Returns the scene: `{kind: 'family', family, id, pid, group, ...targets}`.
  */
-export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null } = {}) {
+export async function openFamily(desktop, oracle, name, role, { env = {}, geometry = null, page = null, doc = null, motion = false } = {}) {
   const family = FAMILIES[name];
   if (!family) throw new Error(`unknown family ${name}`);
   const label = desktop.label(name.replace(/[^a-z0-9]+/gi, ''), role);
@@ -304,7 +365,9 @@ export async function openFamily(desktop, oracle, name, role, { env = {}, geomet
     const opened = await desktop.openChrome(role, page ?? 'matrix.html');
     scene = { ...opened, family: name, kindOf: family.kind };
   } else {
-    const ctx = { label, dir: join(desktop.dir, label), geometry, page, doc };
+    // a stopping run opens nothing more (scenes.mjs `stop`); the process is registered as soon as it is started
+    desktop.assertOpen();
+    const ctx = { label, dir: join(desktop.dir, label), geometry, page, doc, motion };
     mkdirSync(ctx.dir, { recursive: true });
     const spec = family.launch(ctx);
     const child = spawn(spec.cmd, spec.args, { stdio: 'ignore', detached: true, env: { ...process.env, ...(spec.env ?? {}), ...env } });
@@ -395,6 +458,10 @@ async function resolveTargets(desktop, oracle, scene) {
     scene.button = nodes.find((n) => n.role === 'push button' && /^presses \d+$/.test(n.name ?? ''))?.id ?? null;
   } else if (scene.kindOf === 'scale') {
     scene.slider = nodes.find((n) => n.role === 'slider')?.id ?? null;
+  } else if (scene.kindOf === 'gtk4-input') {
+    scene.status = nodes.find((n) => GTK4_STATUS.test(n.name ?? ''))?.id ?? null;
+    scene.slider = nodes.find((n) => n.role === 'slider')?.id ?? null;
+    scene.button = nodes.find((n) => n.name === 'press')?.id ?? null;
   } else if (scene.kindOf === 'button') {
     scene.button = nodes.find((n) => COUNTED.test(n.name ?? ''))?.id ?? null;
   } else if (scene.kindOf === 'electron') {
@@ -442,6 +509,16 @@ export async function readCaret(desktop, oracle, scene) {
 }
 
 const COUNTED = /^presses \d+$/;
+const GTK4_STATUS = /^scroll -?\d+ scale -?\d+ moves \d+ presses \d+ keys \d+ rights \d+$/;
+
+/** The GTK 4 input scene's status line, parsed: `{scroll, scale, moves, presses, keys, rights}`, or null when not read. */
+export async function readGtk4Status(desktop, scene) {
+  const nodes = preorder((await desktop.state(scene)).ax_tree);
+  const line = nodes.find((n) => GTK4_STATUS.test(n.name ?? ''))?.name;
+  if (!line) return null;
+  const num = (key) => Number(line.match(new RegExp(`\\b${key} (-?\\d+)`))[1]);
+  return { scroll: num('scroll'), scale: num('scale'), moves: num('moves'), presses: num('presses'), keys: num('keys'), rights: num('rights') };
+}
 
 /** The click counter: the matrix page's or the GTK 4 scene's button label, the Electron fixture's status. */
 export async function readCounter(desktop, oracle, scene) {

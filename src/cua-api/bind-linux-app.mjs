@@ -8,7 +8,27 @@
 // at most one screenshot region; a missing screenshot is an error alone (the combined observation returns the state).
 // Element ids are String(index); scroll takes { pixels } (a positive finite number) or nothing, never a page count;
 // paste is text only and types it; selectText and setValue are unavailable. Each refusal comes before any input.
+//
+// cua's one addition to the vendor's binder (docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, Observation;
+// #171 M3): a window state whose `truncated` ({nodes, depth, failed}, cua-engine's count of the elements cut by the
+// element limit, the depth limit and failed reads) counts any, ends its rendered state with the line
+// `Accessibility tree truncated: at least <n> elements not shown (<reason>)`, in getAXState and the combined observation
+// alike, emitted or not. Each count is a cut point whose subtree is never read, so <n> is a lower bound. The reason
+// names each cause that cut something, with its count when there are several. A state without the field renders as the
+// vendor's does.
 import {image, one_screenshot, positive_pixels, require_plain_text, text} from './display.mjs';
+
+// The causes of `truncated`, in the order the line names them.
+const TRUNCATION_CAUSES = [['nodes', 'over the element limit'], ['depth', 'below the depth limit'], ['failed', 'unreadable']];
+
+// The truncation line for a state's `truncated`, with the newline that puts it after the tree, or '' when it cut nothing.
+function truncation(truncated) {
+  const cut = TRUNCATION_CAUSES.map(([key, words]) => [Number.isSafeInteger(truncated?.[key]) && truncated[key] > 0 ? truncated[key] : 0, words]).filter(([count]) => count > 0);
+  if (cut.length === 0) return '';
+  const total = cut.reduce((sum, [count]) => sum + count, 0);
+  const reason = cut.length === 1 ? cut[0][1] : cut.map(([count, words]) => `${count} ${words}`).join(', ');
+  return `\nAccessibility tree truncated: at least ${total} elements not shown (${reason})`;
+}
 
 export function bind_linux_app(sky, window) {
   async function windowState({include_screenshot}) {
@@ -16,7 +36,7 @@ export function bind_linux_app(sky, window) {
     window = state.window;
     return state;
   }
-  const describe = state => `Accessibility source: ${state.ax_tree_source}\n${state.ax_tree.to_string()}`;
+  const describe = state => `Accessibility source: ${state.ax_tree_source}\n${state.ax_tree.to_string()}${truncation(state.truncated)}`;
   return {
     async getAXState(options) {
       const state = describe(await windowState({include_screenshot: false}));

@@ -28,10 +28,12 @@ const linuxTree = () => ({id: 'n1', native_id: 'at:1', role: 'frame', name: 'Edi
 ]});
 
 const linuxWindow = {id: 7, app: 'gedit', title: 'Untitled'};
-const linuxSky = (ctx, f, {screenshots = [{bytes: Uint8Array.from([5, 6])}]} = {}) => skyDouble(ctx, 'linux', {
+const linuxSky = (ctx, f, {screenshots = [{bytes: Uint8Array.from([5, 6])}], truncated} = {}) => skyDouble(ctx, 'linux', {
   get_window_state: request => ({window: {...request.window, title: 'Refreshed'}, ax_tree_source: 'at_spi', ax_tree: f.accessibility_tree(linuxTree()),
-    screenshots: request.include_screenshot ? screenshots : []}),
+    screenshots: request.include_screenshot ? screenshots : [], ...(truncated ? {truncated} : {})}),
 });
+const RENDERED = ['Accessibility source: at_spi', 'n1 frame Editor', '\tn2 container', '\t\tn3 push button (focused) Save, Description: Save the file', '\t\tn4 text Line 1 Col 2\\tok',
+  `\t\tn6 entry (settable, disabled) Find, Secondary Actions: activate, Value: ${'x'.repeat(120)}`].join('\n');
 
 function browserFixture(ctx, f, {id = 'b1', tabs = [{id: 't1', title: 'One', url: 'https://one.test/'}], userTabs = [], tabKind = 'ax', noNew = false, noGoto = false,
   capabilities = true, nameSession = true, documentation = `DOC ${id}`} = {}) {
@@ -239,6 +241,25 @@ export const scenarios = [
       ['sky.drag', {window: w, path: [{x: 1, y: 2}, {x: 3, y: 4}]}], ['sky.scroll', {window: w, direction: 'down', element_id: '3'}],
       ['sky.scroll', {window: w, direction: 'up', x: 1, y: 2, pixels: 300}], ['sky.type_text', {window: w, text: 'p'}], ['sky.type_text', {window: w, text: 'p'}],
       ['sky.press_key', {window: w, key: 'ctrl+a'}], ['sky.type_text', {window: w, text: 'typed'}], ['sky.perform_secondary_action', {window: w, element_id: '4', action: 'Expand'}]]);
+  }},
+  {name: 'linux app: a truncated tree ends with the truncation line, in getAXState and the combined observation, emitted or not (#171 Observation)',
+    differs: 'own Linux engine spec (#171), Observation: the truncation line', run: async (f, ctx) => {
+      const app = f.bind_linux_app(linuxSky(ctx, f, {truncated: {nodes: 1200, depth: 0, failed: 0}}), linuxWindow);
+      const several = f.bind_linux_app(linuxSky(ctx, f, {truncated: {nodes: 30, depth: 2, failed: 1}}), {...linuxWindow, id: 8});
+      return [await app.getAXState(), await app.getAXState({emit: false}), await app.getAXStateAndScreenshot(), await app.getAXStateAndScreenshot({emit: false}),
+        await several.getAXState({emit: false})];
+    }, check(record, assert) {
+      const line = 'Accessibility tree truncated: at least 1200 elements not shown (over the element limit)';
+      const state = `${RENDERED}\n${line}`;
+      assert.deepEqual(record.result, [state, state, {state, screenshot: {uint8: [5, 6]}}, {state, screenshot: {uint8: [5, 6]}},
+        `${RENDERED}\nAccessibility tree truncated: at least 33 elements not shown (30 over the element limit, 2 below the depth limit, 1 unreadable)`]);
+      assert.deepEqual(writes(record), [['cua.state', state], ['cua.state', state]], 'the emitted state carries the line too');
+    }},
+  {name: 'linux app: a state whose truncated counts nothing renders as one without it', run: async (f, ctx) => {
+    const app = f.bind_linux_app(linuxSky(ctx, f, {truncated: {nodes: 0, depth: 0, failed: 0}}), linuxWindow);
+    return [await app.getAXState({emit: false}), await app.getAXStateAndScreenshot({emit: false})];
+  }, check(record, assert) {
+    assert.deepEqual(record.result, [RENDERED, {state: RENDERED, screenshot: {uint8: [5, 6]}}]);
   }},
   {name: 'linux accessibility tree: the vendor\'s condensed one-line-per-node rendering', run: async f => {
     const tree = f.accessibility_tree(linuxTree());

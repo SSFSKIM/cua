@@ -306,7 +306,7 @@ pub struct LaunchAppInput {
     pub app: String,
 }
 
-/// The pinned helper's 20 commands, the newest build's `type_characters` and cua's `capabilities`
+/// The pinned helper's 20 commands, the newest build's `type_characters` and cua's `capabilities` and `preflight`
 /// (behaviour §2). Those this build does not answer yet answer [`not_available`].
 pub const COMMANDS: &[&str] = &[
     "perform_secondary_action",
@@ -331,6 +331,7 @@ pub const COMMANDS: &[&str] = &[
     "get_window_state",
     "type_characters",
     "capabilities",
+    "preflight",
 ];
 
 /// cua's bounded sentence for a known command this build does not answer (the M1a pattern,

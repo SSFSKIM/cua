@@ -2,14 +2,16 @@
 // distribution and install" and Interfaces, Selection): nativeEngineFor resolves CUA_NATIVE_ENGINE, else engine.json's
 // `engine`, else the default (`vendor`), with macOS's precedence, reasons and refusals; a `cua` selection carries the
 // engine's path, the installed one or CUA_LINUX_ENGINE_BIN's (read only then), and a Linux computer launch hands it to
-// the vendor service as OAI_SKY_LINUX_BIN; the scoped preflight protects it. The device mode resolves beside it. Every
+// cua's own Linux service (M3) as CUA_ENGINE_BIN, with the device mode as CUA_DESKTOP_MODE; the scoped preflight
+// protects it. Every
 // home and HOME here is a scratch directory: the account's engine.json and engine are never read.
 import './helpers/scratch-home.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {chmodSync, mkdirSync, realpathSync, symlinkSync, writeFileSync} from 'node:fs';
-import {join} from 'node:path';
-import {buildLaunch, desktopModeFor, nativeEngineFor, replHostFor, SKY_SERVICE} from '../src/runtime/launch.mjs';
+import {dirname, join} from 'node:path';
+import {buildLaunch, desktopModeFor, nativeEngineFor, replHostFor, LINUX_ENGINE_SERVICE, SKY_SERVICE} from '../src/runtime/launch.mjs';
+import {REPO} from './fixtures/runtime-fixture.mjs';
 import {parsePin, runtimeFor} from '../src/runtime/manifest.mjs';
 import {assertSandboxFits} from '../src/runtime/sandbox.mjs';
 import {scratch, linuxFixturePin} from './fixtures/runtime-fixture.mjs';
@@ -112,27 +114,40 @@ function linuxRuntime(home) {
 }
 const AMBIENT = {HOME: '/home/u', USER: 'u', PATH: '/usr/bin', DISPLAY: ':0'};
 
-test('a Linux computer launch with cua\'s engine runs it behind the vendor service: OAI_SKY_LINUX_BIN is the engine', t => {
-  const {dir, home} = cuaHome(t);
+test('a Linux computer launch with cua\'s engine runs cua\'s own service (M3): CUA_SKY_SERVICE names it, CUA_ENGINE_BIN the engine, CUA_DESKTOP_MODE the device mode', t => {
+  const {dir, home, user} = cuaHome(t);
   const runtime = linuxRuntime(home);
   const launch = ambient => buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, ...ambient}, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode});
-  const vendor = launch({});
+  const vendor = launch({CUA_DESKTOP_MODE: 'mine'});
   assert.equal(vendor.env.OAI_SKY_LINUX_BIN, runtime.paths.skyLinuxBin, 'the default is today\'s path');
+  assert.equal(vendor.env.CUA_SKY_SERVICE, runtime.paths.skyVendorService);
+  for (const name of ['CUA_ENGINE_BIN', 'CUA_DESKTOP_MODE']) assert.equal(name in vendor.env, false, `${name} is cua's engine's alone, and never read for the vendor's`);
   assert.equal(vendor.linuxEngine, null);
   const path = installedIn(home);
   const cua = launch({CUA_NATIVE_ENGINE: 'cua'});
-  assert.equal(cua.env.OAI_SKY_LINUX_BIN, path);
-  assert.equal(cua.env.CUA_SKY_SERVICE, runtime.paths.skyVendorService, 'the vendor service until M3');
+  assert.equal(LINUX_ENGINE_SERVICE, join(REPO, 'src', 'services', 'engine', 'linux', 'service.mjs'));
+  assert.equal(cua.env.CUA_SKY_SERVICE, LINUX_ENGINE_SERVICE);
+  assert.equal(cua.env.CUA_ENGINE_BIN, path);
+  assert.equal(cua.env.CUA_DESKTOP_MODE, 'shared', 'the default device mode');
+  assert.equal('OAI_SKY_LINUX_BIN' in cua.env, false, 'nothing of the vendor\'s Linux computer surface is named');
+  assert.ok(cua.env.CUA_REPL_TRUSTED_CODE_PATHS.split(':').includes(dirname(SKY_SERVICE)) && LINUX_ENGINE_SERVICE.startsWith(`${dirname(SKY_SERVICE)}/`),
+    'the trusted worker may import the service: it lies under the wrapper\'s trusted directory');
   assert.deepEqual(cua.linuxEngine, {path, lookup: path, source: 'installed'});
   assert.equal(cua.engineRoot, join(home, 'engine'), 'the engine directory, which the scoped preflight protects');
   assert.equal(cua.nativeEngine, null);
   for (const name of ['CUA_NATIVE_ENGINE', 'CUA_LINUX_ENGINE_BIN']) assert.equal(name in cua.env, false, `${name} is the proxy's alone`);
   const built = engineAt(join(dir, 'checkout', 'cua-engine'));
-  assert.equal(launch({CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}).env.OAI_SKY_LINUX_BIN, built);
+  assert.equal(launch({CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}).env.CUA_ENGINE_BIN, built);
   assert.equal(launch({CUA_LINUX_ENGINE_BIN: built}).env.OAI_SKY_LINUX_BIN, runtime.paths.skyLinuxBin, 'the override is read only for cua\'s engine');
+  // The device mode: the caller's CUA_DESKTOP_MODE, else engine.json's desktop; anything else is refused before launch.
+  assert.equal(launch({CUA_NATIVE_ENGINE: 'cua', CUA_DESKTOP_MODE: 'dedicated'}).env.CUA_DESKTOP_MODE, 'dedicated');
+  mkdirSync(join(user, '.config', 'cua'), {recursive: true});
+  writeFileSync(join(user, '.config', 'cua', 'engine.json'), JSON.stringify({desktop: 'dedicated'}));
+  assert.equal(launch({HOME: user, CUA_NATIVE_ENGINE: 'cua'}).env.CUA_DESKTOP_MODE, 'dedicated');
+  assert.throws(() => launch({CUA_NATIVE_ENGINE: 'cua', CUA_DESKTOP_MODE: 'mine'}), {code: 'invalid_setting', message: 'CUA_DESKTOP_MODE must be shared or dedicated'});
   // A selection the connection resolved once is what every launch of it runs.
   const resolved = replHostFor({platform: 'linux', surfaces: ['computer'], ambient: {...AMBIENT, CUA_NATIVE_ENGINE: 'cua', CUA_LINUX_ENGINE_BIN: built}, home, resolveOwnNode: ownNode});
-  assert.equal(buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, replHost: resolved}).env.OAI_SKY_LINUX_BIN, built);
+  assert.equal(buildLaunch({runtime, home, sessionId: SESSION, ambient: AMBIENT, services: {sky: SKY_SERVICE}, replHost: resolved}).env.CUA_ENGINE_BIN, built);
 });
 
 test('scoped: an engine cells could write is refused before anything starts, the home\'s engine directory or the one CUA_LINUX_ENGINE_BIN names', t => {
@@ -166,7 +181,7 @@ test('scoped: an installed engine reached through a link into a write root is re
   mkdirSync(join(home, 'engine'), {recursive: true});
   symlinkSync(join(home, 'run', SESSION, 'planted'), join(home, 'engine', 'linux'));
   const launch = buildLaunch({runtime, home, sessionId: SESSION, ambient: {...AMBIENT, CUA_NATIVE_ENGINE: 'cua'}, services: {sky: SKY_SERVICE}, resolveOwnNode: ownNode});
-  assert.equal(launch.env.OAI_SKY_LINUX_BIN, real, 'the canonical file, never the replaceable link');
+  assert.equal(launch.env.CUA_ENGINE_BIN, real, 'the canonical file, never the replaceable link');
   assert.deepEqual(launch.linuxEngine, {path: real, lookup: join(home, 'engine', 'linux', 'cua-engine'), source: 'installed'});
   assert.throws(() => assertSandboxFits('scoped', launch), error => error.code === 'sandbox_conflict' && /cua's Linux engine/.test(error.message) && error.message.includes(real));
 });
@@ -180,7 +195,7 @@ test('scoped: a CUA_LINUX_ENGINE_BIN that is a link in a write root is refused, 
   const writable = join(home, 'run', SESSION, 'cua-engine');
   symlinkSync(target, writable);
   const inRun = launch(writable);
-  assert.equal(inRun.env.OAI_SKY_LINUX_BIN, target);
+  assert.equal(inRun.env.CUA_ENGINE_BIN, target);
   assert.throws(() => assertSandboxFits('scoped', inRun), error => error.code === 'sandbox_conflict' && /symbolic link on the path to cua's Linux engine/.test(error.message) && error.message.includes(writable));
   // A link through a directory a cell could replace: refused too.
   symlinkSync(join(dir, 'checkout'), join(home, 'run', SESSION, 'checkout'));
@@ -188,7 +203,7 @@ test('scoped: a CUA_LINUX_ENGINE_BIN that is a link in a write root is refused, 
   const outside = join(dir, 'engine-link');
   symlinkSync(target, outside);
   const fine = launch(outside);
-  assert.equal(fine.env.OAI_SKY_LINUX_BIN, target);
+  assert.equal(fine.env.CUA_ENGINE_BIN, target);
   assertSandboxFits('scoped', fine);
 });
 

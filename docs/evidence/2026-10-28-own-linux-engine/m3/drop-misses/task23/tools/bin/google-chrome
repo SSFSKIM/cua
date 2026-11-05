@@ -1,0 +1,4 @@
+#!/bin/sh
+# A private Chrome for task 23's runs on a private display: its own profile, so it never reaches the person's Chrome
+# on :0 (the harness asks `google-chrome --new-window <url>`).
+exec /usr/bin/google-chrome-stable --user-data-dir=/Users/new/.local/share/cua-171/task23/chrome-profile --force-renderer-accessibility --password-store=basic --no-first-run --no-default-browser-check --disable-gpu "$@"

@@ -1,0 +1,17 @@
+pass  capabilities                                   answer     16 samples: ok x16 | routes {None: 16}
+pass  chrome_drag_visible_path_shared                background 6 samples: ok x6 | routes {'background': 6}
+pass  chrome_drag_covered_path_shared                refusal    6 samples: Google-chrome does not accept background input;  x6 | routes {None: 6}
+pass  chrome_drag_covered_dedicated                  foreground 6 samples: ok x6 | routes {'foreground': 6}
+pass  chrome_dnd_shared                              cancel     6 samples: Google-chrome began a drag and drop, which chang x6 | routes {'background': 6}
+pass  chrome_dnd_in_front_shared                     background 6 samples: ok x6 | routes {'background': 6}
+pass  chrome_dnd_late_shared                         late       6 samples: Google-chrome began a drag and drop, which chang x6 | routes {'background': 6}
+pass  chrome_dnd_covered_dedicated                   foreground 6 samples: ok x6 | routes {'foreground': 6}
+pass  chrome_dnd_short_in_front_shared               background 6 samples: ok x6 | routes {'background': 6}
+pass  chrome_dnd_short_covered_dedicated             foreground 6 samples: ok x6 | routes {'foreground': 6}
+pass  chrome_dnd_obscured_in_front_shared            cancel     6 samples: Google-chrome began a drag and drop, which chang x6 | routes {'background': 6}
+pass  chrome_dnd_obscured_in_front_late_shared       late       6 samples: Google-chrome began a drag and drop, which chang x6 | routes {'background': 6}
+pass  chrome_dnd_late_take_shared                    late-take  6 samples: ok x6 | routes {'background': 6}
+pass  chrome_dnd_short_pointer_outside_shared        stray      6 samples: Google-chrome may not have started the drag, and x6 | routes {'background': 6}
+pass  chrome_dnd_short_pointer_outside_dedicated     foreground 6 samples: ok x6 | routes {'foreground': 6}
+pass  chrome_select_nudged_shared                    stray      6 samples: Google-chrome may not have started the drag, and x6 | routes {'background': 6}
+end: {"run": "dev2", "kind": "end", "valid": true, "pass": true, "failed": [], "parity": [], "refused": [], "finished": "2026-11-01T08:03:49.134Z"}

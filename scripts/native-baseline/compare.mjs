@@ -254,13 +254,13 @@ export const LANE_MODES = Object.freeze({
     note: 'The product verdict: host and engine are two variables at once, so a regression here is located by A and B, not by C.'},
 });
 // Linux's one comparison (#171, docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md, The facade suites;
-// Acceptance 10): Linux serves one host, cua's own, so the engine is the lanes' one difference until M3 makes cua's
-// service the candidate's too.
+// Acceptance 10): Linux serves one host, cua's own, so the lanes differ in the engine and, from M3, in the service that
+// drives it (each lane's attested by the trusted worker's environment, ../repl-parity/engine-answered.mjs).
 export const LINUX_LANE_MODES = Object.freeze({
-  engines: {id: 'A', title: 'engine (Linux)', flag: '--engines', usage: '<cv-dir> <cc-dir>', baseline: CV, candidate: CC, differ: ['engine'], linux: true,
-    note: 'The engine is the one variable: the vendor engine against cua\'s, both driven by the vendor service in cua\'s own host, the only one Linux serves.'},
+  engines: {id: 'A', title: 'engine (Linux)', flag: '--engines', usage: '<cv-dir> <cc-dir>', baseline: CV, candidate: CC, differ: ['engine', 'service'], linux: true,
+    note: 'The engine and its service are the variable: the vendor engine behind the vendor service against cua\'s engine behind cua\'s service, both in cua\'s own host, the only one Linux serves.'},
 });
-// The operations a Linux computer run's engine answers (each reaches it through the vendor service): on these the Linux
+// The operations a Linux computer run's engine answers (each reaches it through the lane's service): on these the Linux
 // comparison also fails when cua's median is above the vendor engine's (Acceptance 10). The cold phases, warm.noop and
 // the binder's own refusals never reach an engine, so they keep the tolerance rule alone.
 export const ENGINE_ANSWERED = Object.freeze(['warm.getState', 'warm.listApps', 'bind.getApp', 'warm.getAXState', 'warm.getScreenshot', 'task.act', 'task.verify', 'task.clear', 'task.total', 'method.typeText', 'method.paste']);

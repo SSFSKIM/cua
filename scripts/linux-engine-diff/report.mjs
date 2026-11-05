@@ -5,6 +5,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { candidateLine, gateLabel } from './candidate.mjs';
 import { matrixMarkdown } from './matrix-judge.mjs';
 import { summarizeEngine, verdictLine } from './stats.mjs';
 
@@ -27,9 +28,19 @@ export function renderSummary(lines) {
       else for (const r of rows.filter((x) => x.kind === 'experiment-summary')) out.push(...r.markdown, '');
       continue;
     }
-    out.push(`## ${run}`, '');
+    // one execution's rows only: a run name whose rows come from a gate and a dev run (or a run from before #267) is not
+    // judged, so no row's label stands for another execution's
+    const kinds = new Set(rows.filter((r) => r.kind === 'meta' || r.kind === 'end').map((r) => r.gate));
+    if (kinds.size > 1) {
+      const mix = kinds.has(true) && kinds.has(false) ? 'a release gate and a development run' : 'executions of different kinds';
+      out.push(`## ${run} (not judged: its rows mix ${mix})`, '', 'Each execution needs a run name of its own; these rows are no verdict.', '');
+      continue;
+    }
+    const label = gateLabel(meta?.gate);
+    out.push(`## ${run}${label ? ` (${label})` : ''}`, '');
     if (meta) {
       out.push(`commit ${fmt(meta.commit)}; ${fmt(meta.cua_version)}; occlusion ${meta.occlusion}; ${meta.blocks} blocks; ${meta.samples_tree} warm tree reads and ${meta.samples_input} warm inputs per block`);
+      if (meta.candidate) out.push('', candidateLine(meta.candidate));
       const variants = meta.engines.filter((e) => e.args.length).map((e) => `\`${e.label}\` = \`${e.args.join(' ')}\``);
       if (variants.length) out.push('', `variants: ${variants.join('; ')}`);
       out.push('');
@@ -77,16 +88,27 @@ export function renderSummary(lines) {
         const eq = equality.find((r) => r.scene === scene && r.op === op && r.engine === engine);
         const v = verdicts.find((r) => r.scene === scene && r.op === op && r.candidate === engine);
         const declared = v?.deviations?.length ? ` (declared: ${v.deviations.join(', ')})` : '';
-        const noise = v?.noise?.length ? ` (same within noise: ${v.noise.map((n) => `${n.series} ${Math.round(n.candidate * 100) / 100} against ${Math.round(n.bar * 100) / 100}, [${n.interval.join(', ')}]`).join('; ')})` : '';
+        // each passing series' label with its interval (Acceptance 3); a run before the labels shows its noise passes
+        const labelled = v?.labels?.length ? ` (${v.labels.map((l) => `${l.series} ${l.label} [${l.interval.join(', ')}]`).join('; ')})` : '';
+        const noise = labelled || (v?.noise?.length ? ` (same within noise: ${v.noise.map((n) => `${n.series} ${Math.round(n.candidate * 100) / 100} against ${Math.round(n.bar * 100) / 100}, [${n.interval.join(', ')}]`).join('; ')})` : '');
         const r2 = (x) => Math.round(x * 100) / 100;
         const parity = v?.parity?.length ? ` (${v.parity.map((p) => `${p.series} ${r2(p.candidate)} against ${r2(p.bar)}, within the ${p.against} build's spread [${p.spread.join(', ')}]; ${p.section}`).join('; ')})` : '';
-        const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`;
+        const verdict = !v ? '' : v.pass ? `PASS${noise}${declared}` : v.verdict === 'parity' ? `**parity**, not a pass${parity}${noise}${declared}` : v.verdict === 'declared refusal' ? `**declared refusal**, a loss, not a pass (${v.refusal?.section ?? ''})` : `FAIL: ${v.reasons.join('; ')}${noise}${declared}`;
         const a = audits.find((r) => r.scene === scene && r.op === op && r.engine === engine);
         const audit = a ? (a.clean ? 'clean' : `**${[...new Set(a.forbidden.map((f) => f.what))].join(', ') || 'not traced'}**`) : '–';
         const wasted = mine.map((r) => r.stats?.tree?.wasted_calls).filter((w) => typeof w === 'number');
         out.push(`| ${scene} | ${op} | ${engine} | ${fmt(s.cold)} | ${fmt(s.warm)} | ${s.n_warm} | ${cold ? `${cold.calls} / ${warm?.calls ?? '–'}` : '–'} | ${cold ? `${cold.serial_calls} / ${warm?.serial_calls ?? '–'}` : '–'} | ${wasted.length ? Math.max(...wasted) : '–'} | ${frac(mine, 'witness')} | ${audit} | ${frac(mine, 'effect')} | ${eq ? `${eq.equal}/${eq.of}${eq.declared ? ` (${eq.declared} declared)` : ''}` : '–'} | ${verdict} |`);
       }
       if (bar) out.push(`| ${scene} | ${op} | **bar** | ${fmt(bar.cold)} | ${fmt(bar.warm)} | | | | | | | | | |`);
+    }
+    // every pass that is a small measured loss inside the bound, in one table (Acceptance 3)
+    // a label's `candidate` is the candidate's median; the engine is the verdict's own `candidate`
+    const bound = verdicts.flatMap((v) => (v.labels ?? []).filter((l) => l.label === 'within the bound').map((l) => ({ ...l, scene: v.scene, op: v.op, engine: v.candidate })));
+    if (bound.length) {
+      out.push('', 'Within the bound (passes that are a small measured loss: the interval wholly above 0, its upper end inside max(5% of the bar, 1 ms)):', '');
+      out.push('| scene | op | candidate | series | cua ms | bar ms | against | cua − bar, 95% interval | bound |', '|---|---|---|---|---:|---:|---|---|---:|');
+      const r2 = (x) => Math.round(x * 100) / 100;
+      for (const l of bound) out.push(`| ${l.scene} | ${l.op} | ${l.engine} | ${l.series} | ${r2(l.candidate)} | ${r2(l.bar)} | ${l.against} | [${l.interval.join(', ')}] | ${r2(l.bound)} |`);
     }
     const notes = verdicts.filter((v) => v.first_comparison && !v.first_comparison.equal);
     if (notes.length) {
@@ -150,11 +172,62 @@ export function renderSummary(lines) {
       out.push('', "Bus-call bound (the cold and the warm count, each at most the vendor's plus 256):");
       for (const v of bounded) out.push(`- ${v.scene} ${v.candidate}: ${v.calls_bound.pass ? 'within' : `**${v.calls_bound.reasons.join('; ')}**`}`);
     }
+    out.push(...prepareFaultsMarkdown(rows));
+    out.push(...textRestoresMarkdown(rows));
     const end = rows.find((r) => r.kind === 'end');
-    const ending = !end || end.pass === undefined ? '' : `; ${verdictLine(end, (s) => `**${s}**`)}`;
+    const endLabel = gateLabel(end?.gate);
+    const ending = !end || end.pass === undefined ? '' : `; ${endLabel ? `${endLabel}: ` : ''}${verdictLine(end, (s) => `**${s}**`)}`;
     out.push('', end ? `run ${end.valid ? 'valid' : '**invalid**'}${ending}, finished ${end.finished}` : 'run unfinished', '');
   }
   return out.join('\n');
+}
+
+/** The backstop's warm-up as the summary names it: the operation run once on the fresh window, and how it went. */
+function warmUpText(w) {
+  if (!w) return '';
+  if (w.refused) return `; the operation's warm-up refused at its preparation: ${w.refused}`;
+  const answer = w.ok ? 'ok' : `failed: ${w.error ?? 'no answer'}`;
+  const witness = w.witness === false ? `witness **changed** (${(w.witness_fields ?? []).join(', ')})` : w.witness === true ? 'witness clean' : 'no witness';
+  return `; the operation run once on it: ${answer}, ${witness}`;
+}
+
+/**
+ * The scene text the oracle put back before samples' preparations (prepare.mjs `judgeTextRestores`, task 24): the count
+ * per lane, every lane named, and each restored sample with what its window held; a candidate's lost word, which stopped
+ * the run, is listed as never put back. A run from before the restore has no record and shows nothing.
+ */
+export function textRestoresMarkdown(rows) {
+  const restores = rows.find((r) => r.kind === 'text-restores');
+  if (!restores) return [];
+  const head = `Text restores (the oracle put the scene's first word back before a sample's preparation): ${Object.entries(restores.lanes).map(([lane, n]) => `${lane} ${n}`).join(', ')}`;
+  if (!restores.samples.length) return ['', `${head}.`];
+  const out = ['', `${head}:`, ''];
+  for (const r of restores.samples) {
+    const what = r.lost ? `found '${r.found}', **never put back: a sample of its lane left the text wrong, and the run stopped**` : `found '${r.found}', put back '${r.inserted}'`;
+    out.push(`- ${r.scene} ${r.op} ${r.engine} ${r.block}/${r.i}${r.series ? ` (${r.series})` : ''}${r.warm_up ? ", the backstop's warm-up" : r.resample ? ', its resample' : ''}: ${what}`);
+  }
+  return out;
+}
+
+/**
+ * The gate's rule for harness-side preparation failures (prepare.mjs; Decision Log 2026-11-01): the resampled and
+ * invalid samples per case and for the run against their caps, and each failed sample with the step it failed at. A run
+ * from before the rule has no record and shows nothing.
+ */
+export function prepareFaultsMarkdown(rows) {
+  const faults = rows.find((r) => r.kind === 'prepare-faults');
+  if (!faults) return [];
+  const { total } = faults;
+  const head = `Harness preparation failures (the gate's rule, Decision Log 2026-11-01): ${total.resampled} resampled and ${total.invalid} invalid of ${total.samples} samples, against the run's cap of 1% (${total.limit})${total.over ? ', **over the cap**' : ''}`;
+  if (!faults.cases.length) return ['', `${head}.`];
+  const out = ['', `${head}:`, '', '| scene | op | samples | resampled | invalid | cap | |', '|---|---|---:|---:|---:|---:|---|'];
+  for (const c of faults.cases) out.push(`| ${c.scene} | ${c.op} | ${c.samples} | ${c.resampled} | ${c.invalid} | ${c.limit} | ${c.over ? '**over the cap**' : 'within'} |`);
+  out.push('');
+  for (const f of rows.filter((r) => r.kind === 'prepare-failure')) {
+    const restored = f.scene_restore ? `; its scene restored before the resample (gedit ${f.scene_restore.old_pid} replaced by ${f.scene_restore.new_pid}, window ${f.scene_restore.old_id} by ${f.scene_restore.new_id}${warmUpText(f.scene_restore.warm_up)})` : '';
+    out.push(`- ${f.scene} ${f.op} ${f.engine} ${f.block}/${f.i} (${f.series}): ${f.outcome}; failed at the ${f.step} step: ${f.error}${restored}${f.resample ? `; the resample failed at the ${f.resample.step} step too: ${f.resample.error}` : ''}${f.why ? `; ${f.why}` : ''}`);
+  }
+  return out;
 }
 
 export function writeSummary(dir) {

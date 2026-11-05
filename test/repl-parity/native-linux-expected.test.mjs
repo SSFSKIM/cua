@@ -31,7 +31,7 @@ function lane(engine, {values = outcome[engine]} = {}) {
   const meta = {schema: 1, host: 'cua', platform: 'linux', device: 'cua-171', commit: 'c'.repeat(40), harnessCommit: 'c'.repeat(40), runtimeRelease: RELEASE, suite: 'native',
     engine, engineBin: engine === 'cua' ? observed('cua') : null, caseIds: ids, caseCells: Object.fromEntries(ids.map(id => [id, ['exercise', 'end-task']])),
     caseConfigurations: Object.fromEntries(ids.map(id => [id, {surfaces: ['computer'], sandbox: 'scoped'}])), caseProofs: Object.fromEntries(ids.map(id => [id, 'native-live'])),
-    engineAnswered: ids.map(id => ({case: id, requested: engine, expected: observed(engine), error: null, observed: [{exe: observed(engine), kind: engine, parent: 'trusted-worker.mjs'}]})),
+    engineAnswered: ids.map(id => ({case: id, requested: engine, expected: observed(engine), error: null, observed: [{exe: observed(engine), kind: engine, parent: 'trusted-worker.mjs', service: engine}]})),
     complete: true, connections: ['connection-1'], hostAttestations: [{connection: 'connection-1', host: 'cua', serverInfo: {name: 'cua-repl-host', version: '0.4.0'}, _meta: {'cua/replHost': {host: 'cua', version: '0.4.0'}}, executionFacts: {ownNode: {path: '/n/node', version: 'v24.22.0'}}}]};
   return {meta, tools: {tools: []}, rows};
 }

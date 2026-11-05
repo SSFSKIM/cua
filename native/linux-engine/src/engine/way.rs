@@ -44,9 +44,15 @@ impl Way {
     pub(super) fn target(self, window: Window) -> Target {
         match self {
             Way::Background => Target::Window(window),
-            Way::Foreground | Way::Desktop => Target::Desktop,
+            Way::Foreground => Target::Foreground(window),
+            Way::Desktop => Target::Desktop,
         }
     }
+}
+
+/// The input target of a route into an optional window: the desktop when no window is named.
+pub(super) fn target_of(way: Way, window: Option<Window>) -> Target {
+    window.map_or(Target::Desktop, |window| way.target(window))
 }
 
 /// The Device mode sentence, in shared mode, for a kind the family ignores on the background route.
@@ -59,6 +65,22 @@ impl Engine {
     /// ignores it; on the foreground route the window is activated and holds the X input focus before this returns.
     /// The route is recorded as the `--stats` line's `route`.
     pub(super) fn way_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Way> {
+        let way = self.route_for(window, kind)?;
+        if let (Way::Foreground, Some(window)) = (way, window) {
+            self.enter(window)?;
+        }
+        Ok(way)
+    }
+
+    /// [`Engine::way_for`]'s choice alone, with nothing activated yet: for a request that checks its own input
+    /// before the foreground route activates the window, so that one refused for its input changes nothing.
+    pub(super) fn route_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Way> {
+        self.route_along(window, kind, &[])
+    }
+
+    /// [`Engine::route_for`] for input along a path of root points (a drag's every sample): a family's
+    /// `unless_path_unobscured` judges the path.
+    pub(super) fn route_along(&mut self, window: Option<Window>, kind: Kind, path: &[(i16, i16)]) -> Result<Way> {
         let way = match window {
             None => Way::Desktop,
             Some(window) => {
@@ -66,6 +88,7 @@ impl Engine {
                 let ignored = match family.and_then(|f| f.ignores(kind)) {
                     Some(When::Always) => true,
                     Some(When::UnlessUnobscured) => !self.x.unobscured(window),
+                    Some(When::UnlessPathUnobscured) => !self.x.points_unobscured(window, path),
                     None => false,
                 };
                 match (ignored, self.cfg.desktop) {
@@ -75,18 +98,49 @@ impl Engine {
                 }
             }
         };
-        self.extra.insert("route".into(), json!(way.name()));
-        if let (Way::Foreground, Some(window)) = (way, window) {
-            activate(&self.x, window)?;
-            let deadline = Instant::now() + ACTIVATION_WAIT;
-            while !focus_is_within(&self.x, window)? {
-                if Instant::now() >= deadline {
-                    bail!("window {window} did not take the input focus when activated; nothing was sent");
-                }
-                std::thread::sleep(FOCUS_POLL);
-            }
-        }
+        self.record_route(way);
         Ok(way)
+    }
+
+    /// The input target `kind` takes into `window` (None: the desktop), refused in shared mode where the family ignores
+    /// it, the window entered on the foreground route: for a request whose input needs no check before the route.
+    pub(super) fn target_for(&mut self, window: Option<Window>, kind: Kind) -> Result<Target> {
+        let way = self.way_for(window, kind)?;
+        Ok(window.map_or(Target::Desktop, |window| way.target(window)))
+    }
+
+    /// The foreground route's start for a request that checks its own input first (`check`: its chord, its path, its
+    /// amount), as `press_key` does: a request refused for its input activates nothing. On the other routes nothing
+    /// happens here, and the request checks its input inside the route, in the vendor's order.
+    pub(super) fn enter_checked(
+        &mut self,
+        way: Way,
+        window: Option<Window>,
+        check: impl FnOnce(&crate::x11::X11) -> Result<()>,
+    ) -> Result<()> {
+        if let (Way::Foreground, Some(window)) = (way, window) {
+            check(&self.x)?;
+            self.enter(window)?;
+        }
+        Ok(())
+    }
+
+    /// The route on the `--stats` line, for the harness's witness.
+    pub(super) fn record_route(&mut self, way: Way) {
+        self.extra.insert("route".into(), json!(way.name()));
+    }
+
+    /// The foreground route's start: the window activated, and holding the X input focus.
+    pub(super) fn enter(&mut self, window: Window) -> Result<()> {
+        activate(&self.x, window)?;
+        let deadline = Instant::now() + ACTIVATION_WAIT;
+        while !focus_is_within(&self.x, window)? {
+            if Instant::now() >= deadline {
+                bail!("window {window} did not take the input focus when activated; nothing was sent");
+            }
+            std::thread::sleep(FOCUS_POLL);
+        }
+        Ok(())
     }
 }
 

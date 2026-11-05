@@ -89,6 +89,20 @@ export function auditForeground({ requests, extensions }, target) {
   return { clean: traced && found.length === 0, traced, requests: requests.length, allowed, forbidden: found };
 }
 
+/**
+ * The audit of a request that must send nothing (M3.1: a kind the window's family ignores, refused in shared mode):
+ * no SendEvent at all, and none of the requests the background route forbids. A trace with no requests is not clean.
+ */
+export function auditNothingSent({ requests, extensions }) {
+  const found = [];
+  for (const r of requests) {
+    const what = r.major === 25 ? 'SendEvent' : forbidden(r, extensions);
+    if (what) found.push({ conn: r.conn, seq: r.seq, what, text: r.text });
+  }
+  const traced = requests.length > 0;
+  return { clean: traced && found.length === 0, traced, requests: requests.length, forbidden: found };
+}
+
 function freeDisplay() {
   for (let n = 40; n < 100; n++) {
     if (!existsSync(`/tmp/.X11-unix/X${n}`) && !existsSync(`/tmp/.X${n}-lock`)) return n;

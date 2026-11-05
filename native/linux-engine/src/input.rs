@@ -186,7 +186,7 @@ pub struct Session {
 }
 
 /// The server time now: an InputOnly window's property change, whose `PropertyNotify` carries the time.
-fn server_time(x: &mut X11) -> Result<u32> {
+pub(crate) fn server_time(x: &mut X11) -> Result<u32> {
     let window = x.conn.generate_id()?;
     let aux = CreateWindowAux::new().event_mask(EventMask::PROPERTY_CHANGE);
     x.conn

@@ -16,9 +16,73 @@ is logged of windows it did not open, beyond `list_windows` digests and counts.
 ```bash
 cargo build --release --offline --manifest-path scripts/linux-engine-diff/xprobe/Cargo.toml   # the witness and probes
 node scripts/linux-engine-diff.mjs --check-wire --vendor-js "$SKY"
-node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$BUILT" \
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$ARTIFACT" \
   --scene gedit,chrome,chrome-input,over-budget,big-text,gtk-table,calc,retention --ops all --out "$OUT"
 ```
+
+`$ARTIFACT` is the release workflow's attested artifact of the checked-out commit, or the run is `--dev` (below).
+
+## The candidate: a gate judges the bytes that ship (#267)
+
+A verdict run is a release gate unless it is given `--dev`. A gate takes as cua's candidate only the bytes a release
+ships: the release workflow's (`.github/workflows/linux-engine.yml`) attested static musl artifact of the commit this
+checkout is at (Decision Log 2026-11-01, "the gate judges the bytes that ship"). A musl build made the way the workflow
+makes it passes only if its bytes are the attested artifact's, since the attestation is looked up by the file's
+digest. On the #171 VM they are not: cd4c9297 built there with the workflow's toolchain, `RUSTFLAGS` remaps, hermetic
+Cargo home, `CUA_ENGINE_GIT_SHA` and `strip` gave `15cee88b…` (4 KB smaller), not the attested `5f4a1600…`, and was
+refused as unattested (#267). So a gate takes the workflow's artifact. `--cua` names the file:
+
+```bash
+# the build-only run of the release workflow on the commit to gate (the head of the ref it is dispatched on)
+gh workflow run linux-engine.yml --repo SSFSKIM/cua --ref "$BRANCH" -f commit="$(git rev-parse HEAD)" -f publish=false
+DIR=$(mktemp -d)   # a fresh, empty directory for the download
+gh run download "$RUN_ID" --repo SSFSKIM/cua -n "cua-engine-$VERSION-linux-x64" -D "$DIR"
+# or a released engine, with the checkout at the release's commit
+gh release download "linux-engine-v$VERSION" --repo SSFSKIM/cua -p "cua-engine-$VERSION-linux-x64" -D "$DIR"
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua "$DIR/cua-engine-$VERSION-linux-x64" \
+  --scene "$SCENES" --ops all --run "$RUN" --out "$OUT"
+```
+
+`candidate.mjs` stores the file as `cua-engine`, mode 0700, in a directory the run makes first under the temporary
+directory (a downloaded artifact has lost its executable bit), and checks that copy, so the bytes checked are the bytes
+every cua lane starts. The directory is removed on a refusal, an error and the run's end, and by a stop (SIGINT or
+SIGTERM) at any point: a handler owns the stop from before the copy is made until the run's own (the Desktop's) is in
+place, and a stop during the checks kills the command they wait on with SIGKILL and waits for it to end before the
+harness exits 130 or 143. A gate runs the candidate only once it is attested; in order, it refuses:
+
+- a file that is not an ELF file, a gnu build (a glibc interpreter or glibc's ABI tag: the host's default
+  `x86_64-unknown-linux-gnu`, which `m2-final` and `m3-gate-t25` judged), a dynamic one, or one for another
+  architecture than the host's;
+- a checkout whose commit or state cannot be read, or that is not clean (`git status --porcelain` lists anything:
+  commit the evidence of an earlier run, or write it outside the checkout);
+- an unattested file: `gh attestation verify <copy> --repo SSFSKIM/cua --signer-workflow
+  SSFSKIM/cua/.github/workflows/linux-engine.yml --deny-self-hosted-runners --format json` fails, with gh's reason;
+- a digest mismatch: no verified attestation names the copy's sha256;
+- a commit mismatch: the verified attestations name another source commit than the checkout's HEAD;
+- then, the candidate's first run, a `--version` that does not name the checkout's commit (`cua-engine <version>
+  (<12 hex>)`).
+
+A refusal prints `candidate refused: <reason>` and exits 2 before anything runs.
+
+Each execution takes a `--run` name of its own (the default is the start time): a name the out directory's
+`results.jsonl` already has rows of is refused (`run refused: …`, exit 2) before the candidate is stored. `summary.md`
+does not judge a run name whose rows mix a gate and a dev run (or a run from before #267): its heading says so and no
+verdict line is drawn, so no row's label ever stands for another execution's. An accepted gate prints `release
+gate; candidate: …` first.
+
+The run records the candidate in its `meta` row (`gate`, and `candidate`: `sha256`, `target`, `linkage`, `version`, the
+checkout's `commit` and whether it was `clean`, and `attestation`: the signer workflow and, from gh's JSON, each verified
+attestation's subjects, predicate, source commit and ref, the workflow run and the runner) and `gate` in its `end` row.
+`summary.md` shows it under the run's heading. gh's JSON is the record because its plain output prints nothing when it
+is not on a terminal.
+
+`--dev` runs any build, from any checkout, and asks gh nothing; the copy and the record are made the same way, with
+`attestation` null, and the candidate's `--version` is run unchecked. Its summary heading, its verdict line in `summary.md` and on stdout all say `development run, not a
+release gate`. Iterate on dev builds; a speed claim or an adoption run takes a musl build made the workflow's way
+(`--target x86_64-unknown-linux-musl`, the workflow's `RUSTFLAGS` path remaps, `CUA_ENGINE_GIT_SHA`, and its `strip`),
+still a dev run, or better the workflow's own artifact.
+
+The experiments (`--experiment`) take `--cua` as before and are not gates.
 
 ## What a run does
 
@@ -198,7 +262,8 @@ variants included; their evidence is written either way. The run's `end` row kee
     audit pass requires its keys and clicks answered).
   - The events experiment's wire request times are part of its outcome (`eventsPass`); through the vendor client they
     are recorded only.
-  - The desktop route's are judged from interleaved fresh engines (`desktopBlocks`, 31 rounds, `--first-rounds`):
+  - The desktop route's are judged from interleaved fresh engines (`desktopBlocks`, 20 rounds since M3.1's fix
+    round, `--first-rounds`):
     - a timed request counts only when it answers as the pinned build's same request (`blockAnswerMismatches`; a
       mismatch fails the run);
     - a group is judged only with 20 samples an engine, and every Acceptance 3 desktop group
@@ -207,7 +272,10 @@ variants included; their evidence is written either way. The run's `end` row kee
       max(5% of the bar, 1 ms) (`stats.mjs` `noiseBound`) is "same (within noise)", in any series;
     - a loss `deviations.mjs` `SPEED_GAPS` declares is a "declared gap", never a pass;
     - an interval that includes 0 but reaches past the bound is undetermined: its commands' sequences get up to two
-      more sets of rounds (`TOP_UPS`, `events-top-up` rows), and a group still that wide fails.
+      more sets of rounds (`TOP_UPS`, `events-top-up` rows), and a group still that wide fails. Since M3.1's fix round
+      the sets follow Acceptance 3's schedule (`eventStage`): a group short of 20 samples an engine is brought to 20,
+      one undetermined at 20 to 40, where its outcome is final, and a group decided at a stage keeps that verdict
+      whatever the later rounds of shared sequences add.
   - `--via vendor-js` refuses `--variant`: the vendor client starts the engine without the variant's flags.
   - The desktop entries the harness writes take their paths as quoted `Exec` arguments (`desktop-entry.mjs`), never as
     shell source.
@@ -289,14 +357,47 @@ variants included; their evidence is written either way. The run's `end` row kee
 - **The desktop route's groups are topped up**: a group of a `desktop` scene operation with fewer than 20 samples an
   engine in a series (the cold series has one a block) gets fresh-engine rounds (`top-up` rows, blocks `topup-<n>`)
   until each engine has 20, and is then judged with the interval and its bound; the judge never passes or fails a
-  desktop group on fewer (`judgeOperation` `minSamples`).
+  desktop group on fewer (`judgeOperation` `minSamples`). Superseded at M3.1: every series is topped up (M3.1's
+  additions, below).
 - **The display-wide unconfirmed-paste window** (`CUA_CLIPBOARD_QUARANTINE`): after an unconfirmed paste every cua
   engine on the display refuses text requests for up to 10 s. The harness waits it out before every text sample, every
   safety case and each late-conversion trial (`clip.mjs` `waitQuarantineOver`, `xprobe quarantine`), and never
   removes it, since the unconfirmed paste's target may still convert until it ends.
-- **A failed preparation**: a sample whose engine could not make the handle it needs (`prepare_error`: both Copy
-  attempts failed, so a handle no engine issued is sent) times another request than the operation's, so no engine's
-  such sample is in the medians; a cua sample of that kind fails its verdict, a vendor build's is recorded.
+- **A failed preparation** (`prepare.mjs`; the gate's rule, Decision Log 2026-11-01): every failed attempt records
+  the step it failed at (`prepare_attempts`): the harness oracle's (a selection the window refused) or the engine's
+  request. A sample whose engine could not make the handle it needs (`prepare_error`, `prepare_step` engine: a Copy
+  failed, so a handle no engine issued is sent) times another request than the operation's, so no engine's such sample
+  is in the medians; a cua sample of that kind fails its verdict, a vendor build's is recorded, and it is never
+  resampled. A sample whose preparation failed only at the oracle sends nothing and is resampled once in its own
+  condition (a cold one on a fresh engine); a second oracle failure leaves it invalid (`prepare-failure` rows, outcome
+  `resampled` or `invalid`). More than 2 resampled or invalid samples in a case, or 1% of its samples if larger, or more
+  than 1% of the run's samples, fails the run; the summary lists the counts.
+- **The text scene kept as each sample needs it** (task 24, after m3-gate-verdict).
+  - **The first word.** Each lane's gedit text window lives for the whole run. The pinned build's failed paste over a
+    selection deletes the range and inserts nothing, which emptied its window after 9 samples. So before each sample
+    whose preparation selects the first word, the oracle checks that word and puts it back through `EditableText`
+    when it is missing (`text.mjs` `sceneTextBefore`).
+    - The check is the same for every lane.
+    - The restore is recorded on the sample (`text_restored`).
+    - The verdict line and the summary count the restores per lane, every lane named.
+    - A candidate's window is never put back. A restore it would need means its own sample left the text wrong, so
+      the run stops as a failure (`text-lost`).
+  - **The caret.** `selectFirstWord` puts the caret at the end before it selects, since GTK 3 refuses `AddSelection`
+    while a selection exists.
+  - **The backstop.** A refusal the restore cannot prevent restores the lane's scene before the one resample:
+    - a fresh window, opened only once the old one is gone;
+    - the cover given back;
+    - for a warm sample, the operation itself run once on the fresh window, untimed, with its own preparation and
+      witness, as the series' samples ran it (`run.mjs` `restoreLaneScene`, `warmUpRecord`); a cold sample gets a fresh
+      engine and a fresh window only;
+    - the restore and its warm-up recorded on the failure's row and on the counted resample (`scene_restore`).
+    A candidate's warm-up that fails, or whose witness saw a change, fails the run with its error text
+    (`prepare.mjs` `judgeWarmUps`); a vendor's is recorded. A warm-up whose own preparation is refused leaves the
+    sample invalid. The caps count the resample as before.
+  - Every restore counts in its lane's total: the samples', the failed preparations', the warm-ups', the audit's
+    (`text_restores` on its row) and the bus pass's. None of them adds a timed sample.
+- **A stopped run** (`stop.mjs`): SIGINT or SIGTERM stops the witness and closes every window the harness opened (its
+  Chrome scenes live in the person's Chrome) before the process exits 130 or 143.
 - **Every cleanup a case owes runs when it ends** (`Cases.guarded`): the engines, clipboard owners and target windows
   a case starts, whether it ends by its verdict or by an exception half-way through its setup; a sample's clipboard
   owner ends with the sample the same way (`runSample`). Each disposal establishes that what it ends is gone (an
@@ -331,7 +432,8 @@ variants included; their evidence is written either way. The run's `end` row kee
   whose bootstrap 95% interval of the candidate's median minus the bar build's includes 0 and reaches at most max(5% of
   the bar, 1 ms) passes as "same within noise", listed in the verdict with its interval, when both sides have at least
   20 samples in the series; a wider interval is undetermined, which fails the verdict (the differential run adds no
-  samples); with fewer samples, the medians alone decide.
+  samples); with fewer samples, the medians alone decide. Superseded at M3.1 (below): no series is judged on its
+  medians.
 - **Parity** (Acceptance 3's parity rule): `deviations.mjs` `PARITY` lists an operation, scene and series whose work
   is identical by construction in every engine (the cold desktop screenshot, Decision Log, M1a.4). Above the bar, it is
   **parity** when cua's median lies within the bar build's own spread of samples of that series in the run, which is
@@ -339,19 +441,120 @@ variants included; their evidence is written either way. The run's `end` row kee
   outside that spread it fails. Unlisted operations are unaffected. `clipboard_release` (a map removal in every engine, about 0.1 ms the harness's own
   scheduling dominates) takes 10 warm samples a block so that its warm series has them.
 
+## M3.1's additions: the device mode
+
+- **The kinds experiment** (`--experiment kinds [--family <list>] [--ops scroll,move,click] [--occlusion …]
+  [--lanes …]`, `kinds.mjs`): per family of M0.4's matrix, plus the harness's GTK 4 scene (`pages/gtk4-input.py`) and
+  Qt scenes (`pages/qt-input.py`: plain Qt 5 or Qt 6 widgets counting what reaches the toolkit, and under a named
+  style an auto-raise tool button for the hover run, families `qt5-breeze` and `qt5-fusion`), each lane scrolls,
+  moves or clicks its own window `--trials` times and reads the effect back (a page's or scene's counts, a terminal's
+  mouse reports, a scroll bar's value, or for a hover the pixels of a capture). The lanes: the vendor builds, `cua`,
+  and the control `xtest` (the window activated, then a windowless request at root coordinates through XTEST). A cell
+  the control takes and no background lane takes is a kind the family ignores (`ignored`), the evidence for a listing
+  in `families.rs`.
+- **Load** (`--load`, `--load-factor <workers per core>`): stress-ng's CPU workers for the experiment's length, ended
+  with it, an interrupted experiment included.
+- **Occlusions** (`--occlusion`, `Desktop.arrange`): `covered`, `visible`, `partial` (the front window over the scene
+  window's bottom half), `partial-deep` (its bottom 70%) and `partial-top` (its top 55%, where the targets are). The
+  drag experiment takes the same lanes and occlusions.
+- **The drag-and-drop experiment** (`--experiment dnd [--family chrome,electron,firefox] [--lanes …]`, `dnd.mjs`):
+  per lane, drags along `pages/drag.html`'s drag-and-drop path, each recorded with the `XdndSelection` owners, the
+  grabs during and after, the desktop (active window, focus, stacking) before, at the answer and 1 s later, the
+  witness, the drop, and cua's answer (the declared refusal, or that the drop may have happened). `cua:active` is cua
+  with the window activated before each drag; `--variant` adds the dedicated and forced-late lanes. `--no-grabs` leaves
+  out the 100 ms grab sampler, whose own grabs can fail Chrome's drag-start grab. `--dnd-cold` (task 20) makes every
+  drag the first request of a fresh engine, its window in front after the device case's 1200 ms settle, the lanes
+  taking turns round by round; `--prelude dedicated` runs the case a block runs before it (cua's dedicated long drop
+  through the foreground route), `--cover-ms N` covers the window that long first, and `--ballast gate` opens the
+  Chrome windows a full verdict run has open. Each row carries the page's counters and its pointer log. Measurement
+  only, for the mechanism: `--stray nudge|popup:<ms>` puts a pointer event that is not the drag's into it (the real
+  pointer nudged a pixel and back through XTEST, or another client's window mapped under the real pointer for 5 ms),
+  `--park-pointer X,Y` parks the real pointer first, and `--grab-at-ms` fires another client's momentary grab.
+- **The drop-miss instruments** (task 18, run beside any run; none is started by the harness): `xprobe request-watch`
+  records through RECORD every client's `SetSelectionOwner`, core and XInput 2 pointer and keyboard grabs with their
+  replies, server grabs, XDND client messages sent over the wire (Chrome short-circuits its own), and synthetic
+  (`SendEvent`) or XTEST key, button and focus events, motions counted (`XPROBE_EVERY_MOTION=1` lists each); `xprobe
+  cursor-watch` the displayed cursor's changes (a drag source's grab cursor shows its negotiated operation);
+  `xprobe crossing-watch` the crossing events clients receive and the real pointer. The two RECORD watchers exit
+  nonzero, naming the cause, when their record is cut short (the collector failed or its data ended before stdin
+  closed), so a partial record never reads as complete. The drag page's `dnd` line also
+  counts dragends with the last drop effect, the press-to-dragstart and dragstart-to-dragend times, the page's mouseups
+  and the last press's wall clock (`at`), which lines a drag up with those records. Its `moves` line (task 20) logs
+  every pointermove between a source's press and its release (event time and handler time after the press's, offset,
+  buttons, coalesced count) and the dragstart, pointercancel, pointerup and dragend times, so a record shows whether the
+  renderer saw a move past Blink's 4 px drag threshold before the mouseup; `XPROBE_EVERY_MOTION=1` lists each
+  synthetic motion with its window and button state.
+- **Acceptance 8's cases** (`device.mjs`, the scenes `device-gtk4`, `device-firefox`, `device-xterm`, `device-qt`,
+  `device-chrome`, `device-chrome-dnd`, and `gnome-text-editor`'s and `desktop`'s): cua alone, each judged by its
+  expectation (refusal with the Device mode sentence and nothing sent; the foreground route in dedicated mode; the
+  background route; a drag and drop cancelled before the drop; an honest answer when the cancel comes too late), with
+  the witness and the X request audit of the kind the expectation needs. The audit counts only over audited requests
+  that answered as the case expects (`audit.answered`: a refusal or a cancel its sentence, a late case an honest one,
+  the others success), and at least one. `capabilities` is checked against the engine's version and build. The cancel
+  and the late case run again with the drop's signature already held (`obscuredInFront`: Chrome activated, and an
+  override-redirect window of the harness's own, `xprobe overlay`, over its bottom-right corner, away from the path,
+  so the drag is watched); the engine must record the bits held (`dnd.held_at_start`). The `stray` cases (task 20)
+  expect the answer that the drag may not have started, nothing dropped, and the background audit clean: Chrome in
+  front with the real pointer parked outside its window, on the front window (its capture grab crosses in), and with
+  the pointer parked inside while xdotool nudges it a pixel and back every 2 ms all through a text selection (a drag
+  that never takes a drag and drop is in its press window until its release; the case's `alongside` input starts just
+  before the request, and the witness allows the pointer field alone, `pointerMoves`). In dedicated mode the pointer
+  parked outside takes the foreground route and the short drop lands. A parked pointer goes back where the case found
+  it in the sample's cleanup.
+- **The witness's allowances** (`witness.mjs`):
+  - **Foreground.** Override-redirect windows of the target's own X client (its resource-id base) may map, restack
+    and unmap; one may stay mapped at the end only where the input opens it, as a right click's menu. Every other
+    client's window still fails, and `foregroundNegativeCheck` maps another client's popup (`xprobe popup`), which
+    must fail.
+  - **In front** (`judgeInFrontSpan`), only for the case that declares it and a request whose `--stats` `dnd`
+    recorded `in_front`. It is judged on the event records: activations name the target, restacks move only the
+    target client's own windows with its frame on top, the frame's order among every other client's mapped windows
+    (override-redirect ones included) kept, and focus events stay with the target. `inFrontNegativeCheck` runs beside
+    the stub check in every run: the target's own activation passes, and another window's activation, a coalesced
+    restack, or another client's override-redirect window raised just above the target's frame and put back under one
+    server grab (`xprobe overlay … below <frame>`, `cross`) fails.
+- **The speed rule, revised** (Acceptance 3 as the design session revised it at M3.1, after #235's review found the
+  shortcut): `judgeOperation` and `eventSpeeds` judge a series only when cua and the bar build each have 20 samples,
+  and only through the interval guard, whichever way the medians point. The interval passes when its upper end is at
+  most max(5% of the bar, 1 ms), is a loss when it lies above 0, and is otherwise undetermined; fewer samples are
+  undetermined too. A passing series is labelled by its interval (`speedLabel`, spec 948c30d4): **faster** (wholly
+  below 0), **same (within noise)** (including 0) or **within the bound** (wholly above 0: a small measured loss, never
+  called noise). The summary lists every "within the bound" pass in one table.
+  - The differential run tops every undetermined series up to 20 samples a side, then 40 (`top-up` rows, blocks
+    `topup-<level>-<pass>-<n>`): fresh engines for a cold series, and for a warm one only the rounds it needs. One still
+    undetermined at 40 fails. The rounds are planned from the samples the judge counts (`windowTopUp`: no failed
+    preparation, and for a text command none of a vendor build's unsuccessful requests), and planned again, up to
+    three times a level, when failed samples left a series short. Since M3.1's second fix round each series is decided
+    per candidate at the first look that judges it (`speedDecisions`: a pass or failure on 20 a side, or undetermined
+    on 40), and that decision is frozen with the samples it rested on (`speed-decision` rows): the cold samples that a
+    warm top-up's fresh engines prime never reopen it. The verdict judges each series' speed on its decided samples and
+    everything else on every sample (`judgeWithDecisions`); `rejudge.mjs` replays the recorded decisions.
+  - A parity-declared series with an open interval is sampled on and rests at parity.
+  - `rejudge.mjs <results.jsonl> <run>` judges a recorded run again offline: the verdicts that change, and the
+    under-20 series the old rule judged on medians. A run made through the vendor client (`meta.via` `vendor-js`) is
+    not judged on speed, as the live run never judges it.
+- **Declared refusals** (`deviations.mjs` `REFUSALS`): an operation the vendor lands and cua refuses in shared mode,
+  recorded as a loss (verdict `declared refusal`, listed apart, never a pass) while every cua sample answers the
+  declared sentence with the witness unchanged. It excuses only what the refusal itself makes differ (the failed
+  request, the answer, the effect; `declaredRefusalVerdict`); the audit and every other failure the judge finds stand.
+- **The drag-and-drop experiment's probes** (`withDropProbes`): each drag's `XdndSelection` watcher and grab sampler
+  are stopped whatever happens, each stop tried on its own.
+
 ## Files
 
 | File | What it is |
 |---|---|
 | `../linux-engine-diff.mjs` | the entry point |
 | `cli.mjs` | the command line |
+| `candidate.mjs` | a verdict run's cua candidate: stored, its target read, its attestation verified; a gate's refusals |
 | `engine.mjs` | an engine process over the wire |
 | `run.mjs`, `ops.mjs` | the differential run and its operations |
 | `audit.mjs` | the X request audit through `xtrace` |
 | `deviations.mjs` | the declared deviations |
 | `vendor-js.mjs` | `--via vendor-js`: the engines behind OpenAI's JavaScript client |
 | `readiness-check.mjs` | the engine's capture readiness judged by content, per family |
-| `scenes.mjs` | the harness's windows and the reader that reads effects back |
+| `scenes.mjs`, `stop.mjs` | the harness's windows and the reader that reads effects back; their cleanup on SIGINT or SIGTERM |
+| `prepare.mjs` | the gate's rule for a sample whose harness-side preparation fails: one resample, the counts and caps |
 | `witness.mjs`, `xprobe/` | the witness; `xprobe` is the harness's own X client (witness, retention probe, image comparison, window close) |
 | `busmon.mjs` | accessibility-bus call counts |
 | `normalize.mjs`, `images.mjs`, `stats.mjs`, `report.mjs` | output and screenshot comparison, medians, verdicts and the exit status, summary.md |
@@ -362,3 +565,5 @@ variants included; their evidence is written either way. The run's `end` row kee
 | `events.mjs`, `xprobe/src/record.rs` | M1a.2's input events experiment and its recorder window |
 | `pages/` | the Chrome scenes (`input.html` the pointer and key scene, `text.html` the text scene) and `gtk-table.py`, the large-table scene |
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |
+| `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |
+| `rejudge.mjs` | a recorded run's speed verdicts judged again under the revised rule |

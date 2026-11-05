@@ -1,0 +1,984 @@
+# #171 M3: cua's own Linux service, the device mode and the capability report
+
+On the #171 VM (`dc-linux171-1e68`, Ubuntu 24.04.4, x86-64, 8 vCPU, X11 on `:0`, Openbox), 2026-10-30 and 2026-10-31.
+The vendor builds are the pinned 26.928.40906 and the newest 26.1023.51421. M3 ran as three loop tasks and a follow-up
+(Decision Log, "M3 pre-flight" and the 2026-10-31 entries); this directory holds the evidence of all of them.
+
+| part | directory | what it holds |
+|---|---|---|
+| M3.1, the engine's device mode and capability report | `kinds/`, `diff/`, `rejudge/`, `device-fix1/`, `device-fix2/`, `device-fix3/`, `late-take/` | the measurements behind `families.rs`, the Chrome drag-and-drop guard, M3.1's verdict run and its fix rounds ([M3.1](#m31-the-device-modes-measurements-and-the-verdict-run), below) |
+| M3.2, cua's own Linux service | `services/` | the two services render the same states and numbers on one engine; no vendor module with cua's engine ([its README](services/README.md)) |
+| the drop-miss follow-up | `drop-misses/`, `drop-misses/task18/` | the mechanism of M3.1's Chrome drop misses and the 350 ms release floor ([its README](drop-misses/task18/README.md)) |
+| M3's gate | `gate-musl/` (the verdict); `gate/`, `gate-final/`, `gate-verdict/`, `gate-t25/` (earlier runs) | **M3's verdict is `m3-gate-musl`: it exits 0**, on the release workflow's attested x64 musl build of cd4c9297 ([below](#m3s-gate-the-verdict-gate-musl-run-m3-gate-musl-it-passes)). The earlier fresh full verdict runs did not pass: `m3-gate` on the M3.3 engine and `m3-gate-final` on the merged head after task 20 **both exit 1**. `m3-gate-verdict`, after tasks 22 and 23, was **stopped by ruling** once the harness-fault caps were exceeded. `m3-gate-t25`, after task 24, was **stopped by ruling** 9 minutes in, because its cua engine was a VM build, not the bytes that ship |
+| M3's release and the pinned engine | `release/` | `linux-engine-v0.3.0`, whose x64 asset is the gated bytes, pinned and installed: Acceptance 9 in a fresh home, Acceptance 1, the device-mode fixture and Acceptance 10's facade suites on the installed engine, the release build's feature graph ([below](#m3s-release-and-the-pinned-engine-release)) |
+| M3.3, doctor, provisioning and the facade proof | `doctor/`, `provision/`, `facade/`, `accept/`, `parity/`, `baseline/` | below |
+
+The engine of every M3.3 run and of `m3-gate` is one frozen release build of the head's engine sources: the engine
+sources last changed at 1b7debef, built at bcf64d68, `cua-engine 0.3.0 (bcf64d68401c)`, SHA-256
+`01955bef9ff69fa9af948c50c324edb07dfbd303474e179f7f0c7f42e163032d`. No M3.3 commit touches `native/linux-engine/`.
+Until 0.3.0 was released and pinned, the installed engine was 0.2.0, which cua's service refuses (`MIN_ENGINE_VERSION`
+0.3.0), so the facade runs named the build: `--engine-bin` for the suites, `CUA_LINUX_ENGINE_BIN` for the fixtures.
+Since the pin (9bf9d3a9), the installed engine is the released 0.3.0 (`release/`, below).
+
+## M3's release and the pinned engine (`release/`)
+
+**The release.** `linux-engine.yml` ran with `publish: true` on the branch `release/linux-engine-v0.3.0`, at
+cd4c9297, the gate commit: run [41364541329](https://github.com/SSFSKIM/cua/actions/runs/41364541329)
+(`workflow_dispatch`, success). For both arches, natively, the run:
+- built the engine;
+- checked that the binary carries no runner path, no token and no fault injection;
+- ran the engine's tests, the live ones against the built binary;
+- attested each asset and verified the attestations as the pin script does.
+
+It then published `linux-engine-v0.3.0`. The tag points at cd4c9297, and the release was published 2026-11-02 00:00:41Z.
+
+**The pin.** `node scripts/linux-engine-pin.mjs linux-engine-v0.3.0` printed "(attestation verified)" for both assets
+and wrote `runtime/engine/linux-engine.json` (9bf9d3a9):
+
+| arch | asset | SHA-256 |
+|---|---|---|
+| x64 | `cua-engine-0.3.0-linux-x64`, 1,692,384 bytes | `5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60` |
+| arm64 | `cua-engine-0.3.0-linux-arm64`, 1,446,096 bytes | `57e699b4eaf8a817b54b3cbdbb473ac038cdf5d7e2ca60c66f7c476a793d9e5f` |
+
+**The published x64 asset is the gated binary, byte for byte.** Its SHA-256 equals that of the candidate `m3-gate-musl`
+judged (the build-only run 41350086196's artifact, above), and so does that of the release's own download and of every
+installed copy below. Both runs built from the same commit with the same toolchain and produced the same bytes.
+
+**The toolchain.** Each target is built with rustc 1.94.1 (`native/linux-engine/rust-toolchain.toml`) for
+`x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`, each on its own native runner, and is a static-pie.
+
+**The release build's feature graph** (`release/feature-graph/`, made by its `feature-graph.sh`):
+- What it is: `cargo tree -e no-dev` for each musl target, the resolved features without dev edges, before (380b132b)
+  and after (cd4c9297) task 26's `[dev-dependencies]`.
+- **Before and after are identical for both targets.** The dev-only features never reach the shipped binary:
+  - x11rb has no `res` (`composite, damage, render, shape, shm, xfixes, xinput, xtest`);
+  - rustix has no `process` (`alloc, default, event, fs, mm, net, std, system`).
+- rustix's `net` was there before task 26, through x11rb.
+
+On the #171 VM (x86-64), on the pinned asset, at 9bf9d3a9:
+
+- **Acceptance 9, fresh home** (`release/fresh-home.txt`; the temporary home was removed afterwards).
+  - `CUA_HOME=<fresh> node bin/cua.mjs install --engine`: "installed cua's Linux engine 0.3.0 (linux-engine-v0.3.0) at
+    <fresh>/engine/linux/cua-engine".
+  - `file`: `ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, … stripped`.
+  - `--version` prints `cua-engine 0.3.0 (cd4c929758ca)`, and its SHA-256 is the pin's, `5f4a1600…`.
+  - `CUA_NATIVE_ENGINE=cua node bin/cua.mjs doctor` passes the engine row and the accessibility row:
+    > PASS engine: cua's engine is selected (CUA_NATIVE_ENGINE=cua): sessions here run the pinned cua-engine 0.3.0
+    > (linux-engine-v0.3.0) at <fresh>/engine/linux/cua-engine, SHA-256
+    > 5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60, behind service cua (cua's own Linux service);
+    > device mode shared (…); capabilities, from cua-engine started for this check and stopped: backend x11, build
+    > cd4c929758ca, capture.desktop true, capture.window retained, desktop shared, input.background true,
+    > input.desktop true, text.literal true, text.paste verified, tree at_spi, version 0.3.0
+
+    > PASS accessibility.enabled: org.a11y.Status IsEnabled is true on the session bus at unix:path=/run/user/501/bus,
+    > so Qt applications put their accessibility trees on the bus
+  - Doctor exits 0. Its three `chrome.*` rows are BLOCKED because a fresh home has no Chrome registration; that is the
+    browser surface, not the engine.
+- **Acceptance 1 and the Linux acceptance fixture, VM default home** (`release/default-home.txt`,
+  `release/accept-linux-native-cua.json`).
+  - `node bin/cua.mjs install --engine` replaced 0.2.0 (`8b49b6825ae5`): "installed cua's Linux engine 0.3.0
+    (linux-engine-v0.3.0) at /Users/new/.local/share/cua/engine/linux/cua-engine". The installed engine is
+    `cua-engine 0.3.0 (cd4c929758ca)` with SHA-256 `5f4a1600…`.
+  - The fixture then ran as `CUA_NATIVE_ENGINE=cua node scripts/accept/linux-native.mjs`, with no
+    `CUA_LINUX_ENGINE_BIN`, under `release/accept-watch.mjs` (M2's sampler, unchanged), which sampled the process
+    table every 50 ms.
+  - **PASS**, all 11 steps, over 3,370 samples.
+  - The most `sky_linux` processes seen at once was 0.
+  - The one engine process was `/Users/new/.local/share/cua/engine/linux/cua-engine`, the installed one, a child of
+    the trusted worker (`src/repl-host/trusted-worker.mjs`).
+- **Acceptance 6's gnome-text-editor case and Acceptance 8 through the facade, on the installed engine**
+  (`release/device-mode.json`, the fixture's own report; `release/device-mode-watch.json`).
+  - `CUA_NATIVE_ENGINE=cua node scripts/accept/linux-device-mode.mjs` ran with no `--engine-bin` and no
+    `CUA_LINUX_ENGINE_BIN` (the report's `engineBin` is null), unchanged, under the same 50 ms sampler
+    (`release/device-watch.mjs`).
+  - **18 of 18 steps PASS**, both negative controls included, over 570 samples.
+  - 0 `sky_linux` processes were seen.
+  - The two engine processes, one per device mode's `cua serve`, were both the installed
+    `/Users/new/.local/share/cua/engine/linux/cua-engine`, each a child of the trusted worker.
+  - The fixture closed everything it opened. A stray check afterwards found no harness process and only the owner's
+    window on `:0`.
+- **Not run here:** the arm64 install, which is M5's on the arm64 VM. The release run tested the arm64 asset natively
+  on GitHub's `ubuntu-24.04-arm` runner.
+
+### Acceptance 10 on the installed engine (`release/parity/`, `release/baseline/`)
+
+M3.3 ran the facade suites at 5e439324 on a VM build passed with `--engine-bin` (below). Tasks 20, 22 and 23 changed
+the engine after that: the atomic press, the hold and `preflight`. So both suites ran again on the bytes that ship.
+
+- **Head:** 23d0b7c9, clean. Both repl-parity lanes ran from that one controller commit, and so did every
+  native-baseline run.
+- **Engine:** the installed, pinned `cua-engine 0.3.0 (cd4c929758ca)` from `linux-engine-v0.3.0`, SHA-256 `5f4a1600…`.
+  Neither lane named `--engine-bin` or `CUA_LINUX_ENGINE_BIN`, and `CUA_NATIVE_ENGINE` was set per lane.
+- **How the engine got into each home:**
+  - Each suite serves from its own scratch home, and the checkout's `cua install` installs the pinned engine there.
+  - `src/runtime/install.mjs` accepts an installed engine only when its SHA-256 equals the pin's; otherwise it
+    downloads the asset and verifies it against the pin.
+  - The parity preparation's home held `5f4a1600…` (`sha256sum` during the run, and its `install.json` names
+    `linux-engine-v0.3.0`).
+  - The harness command was M3.3's (`task19/facade.sh`'s parity and baseline parts) without `--engine-bin`.
+
+**repl-parity, the native suite** (2026-11-02, from 00:13:27Z):
+
+| Lane | Result |
+|---|---|
+| vendor (`--engine vendor`) | complete, `RECORDED_VENDOR_DEFECT`: 31 covered, the 2 declared vendor defects (the x64 vendor text failure) |
+| cua (`--engine cua`, no `--engine-bin`) | complete, **`PASS`**: 33 covered |
+| `diff … --expected scripts/repl-parity/expected/native-linux.json` (`release/parity/diff.json`) | **`ok: true`**, 0 differences, the 2 declared (`linux-text-typetext-m2`, `linux-text-paste-m2`) |
+
+Each lane's engine observation was recorded on all 19 native cases:
+- The requested engine ran as the trusted worker's child, at the expected path, behind its own service. In the vendor
+  lane that is `sky_linux_x64` behind `@oai/sky` (`service: vendor`); in the cua lane it is the home's installed
+  `engine/linux/cua-engine` behind cua's service (`service: cua`).
+- `engineBin` is null in both lanes' `meta.json`, and no observation carries an error.
+
+**The native baseline and `compare --engines`** (experiment `171-m3-release-20261102`):
+- Three runs a lane, interleaved, with the default plan (5 cold, 30 warm, 10 tasks).
+- `compare --engines cv cc` (`release/baseline/engines.md`): **VERDICT: PASS**.
+- "Problems: none: both sides are complete, attested and comparable."
+- The attested differences are exactly the engine and the service. Each run's `nativeEngine` names the requested engine
+  with `bin` null, observed as the trusted worker's child at the expected path: `sky_linux_x64` with `service: vendor`
+  in every `cv` run, and the home's installed `cua-engine` with `service: cua` in every `cc` run.
+
+| Operation (engine-answered) | vendor median, ms | cua median, ms |
+|---|---:|---:|
+| warm.getAXState | 488.0 | 95.3 |
+| warm.getScreenshot | 611.5 | 113.4 |
+| bind.getApp | 566.1 | 123.6 |
+| task.total (the pressKey task) | 18891.3 | 9555.9 |
+| warm.getState / warm.listApps | 24.3 / 23.8 | 16.8 / 17.8 |
+| method.typeText | 10238.1, every sample `editable Paste did not insert text` | 166.6, every sample returned, gedit alive, the text read back |
+| method.paste | 10234.6, the same failure | 162.6, the same success |
+
+No cua median is above the vendor's on an operation the engine answers. Four operations no engine answers
+(`warm.noop`, the binder's paste-format and selectText refusals, `end_task`) have cua medians 0.5 to 3.1 ms above the
+vendor lane's, inside the tolerance rule. `engines.md` lists them.
+
+The suites closed what they opened. A stray check afterwards found no harness process or gedit, and only the owner's
+window on `:0`.
+
+## M3's gate, the verdict (`gate-musl/`, run `m3-gate-musl`): it passes
+
+**The gate is met.** `m3-gate-musl` is M3's verdict: a fresh full differential verdict run on the engine bytes the
+release ships. It **exits 0**. It ran on 2026-11-01 from 21:21:25Z to 23:52:33Z.
+
+- **Gate commit:** cd4c9297, checked out clean when the run started; the meta record's `commit` is
+  `cd4c929758caf90329fd5cfb0d5028f1ec1c92c2`. It is task 26's fix, which touches only tests and the workflow. The
+  engine sources (`native/linux-engine/src`, `build.rs`, `Cargo.lock`) are unchanged since 380b132b, and so is the
+  harness (`scripts/linux-engine-diff/`) since b01ac8fd. `Cargo.toml` gained only `[dev-dependencies]`, which the
+  binary does not link.
+- **The candidate, as shipped:** the `linux-engine` workflow's x64 asset `cua-engine-0.3.0-linux-x64`, from the
+  build-only run [41350086196](https://github.com/SSFSKIM/cua/actions/runs/41350086196) on cd4c9297.
+  - It is an `x86_64-unknown-linux-musl` static-pie (`file`: `static-pie linked`, stripped), built with rustc 1.94.1
+    (`native/linux-engine/rust-toolchain.toml`).
+  - `--version` prints `cua-engine 0.3.0 (cd4c929758ca)`.
+  - It was copied to a fresh directory as `cua-engine` (mode 0700), and the copy's SHA-256 matched the artifact's.
+  - `gh attestation verify <copy> --repo SSFSKIM/cua --signer-workflow SSFSKIM/cua/.github/workflows/linux-engine.yml`
+    exits 0 on the copy. It gives an SLSA provenance v1 predicate, the subject `cua-engine-0.3.0-linux-x64` with that
+    digest, the signer `linux-engine.yml@refs/heads/feat/171-m3`, the source commit cd4c9297, and run 41350086196,
+    attempt 1.
+  - Nothing built on the VM was a candidate. Only the harness's own `xprobe` was built there.
+- **The three engines** (the run's meta record, SHA-256):
+
+  | engine | build | SHA-256 |
+  |---|---|---|
+  | pinned | 26.928.40906 | `7ac3c2ae45a3dacc9209063e91d2df4ea9f206b814a9ffd976f5bcf90d73f1cd` |
+  | newest | 26.1023.51421 | `88ce5e0ae64290dd36dbb2942a33ece6a7222f7294fc66410f4e26c29e4b2991` |
+  | cua | `cua-engine 0.3.0 (cd4c929758ca)`, the shipped musl asset | `5f4a1600e66b7f7b458948462fc4701942583af9674ad41798188d1312687b60` |
+
+  The pinned and newest builds are byte-identical to the earlier gate runs'. Their hashes are the same in
+  `m3-gate-verdict`'s and `m3-gate-t25`'s meta records.
+
+```
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua <the shipped musl asset, as cua-engine> \
+  --scene desktop,gedit,chrome,chrome-input,over-budget,retention,chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target,device-gtk4,device-firefox,device-xterm,device-qt,device-chrome,device-chrome-dnd \
+  --ops all --blocks 3 --run m3-gate-musl --out docs/evidence/2026-10-28-own-linux-engine/m3/gate-musl
+```
+
+These are the scenes, device cases and flags of `m3-gate-final`, `m3-gate-verdict` and `m3-gate-t25`. The verdict
+line:
+
+> run valid; no verdict FAIL; **declared refusal** (a loss, not a pass): chrome-input drag cua; text restores (the
+> first word put back before a sample): pinned 43, newest 0, cua 0
+
+**The run is valid.** The stub engine failed both the witness and the audit. The foreground and in-front standing
+controls held.
+
+**The speed verdicts.** 66 speed series are judged on 20 or more samples a side:
+- 63 are **faster**;
+- 3 are **same (within noise)**, each interval's upper end inside the bound;
+- none is **within the bound**, so there is no "within the bound" table;
+- none is undetermined, at parity or a speed gap.
+
+The same-within-noise series:
+
+| scene | op | series | cua − bar, 95% interval (ms) |
+|---|---|---|---|
+| desktop | get_screenshot | cold | [−3.525, 0.905] |
+| desktop | launch_app | warm | [−0.1, 0.05] |
+| gedit | clipboard_release | warm | [0, 0.04] |
+
+Desktop `get_screenshot` cold, at its declared parity in `m3-gate-final`, is same within noise here.
+
+On the repaired gedit scene the pinned build sets the bar for `clipboard_read` (649.1 / 656.9 ms cold / warm, its
+effect 40 of 40) and for `clipboard_release`. That is the stricter direction the 2026-11-01 Decision Log entry
+expected once the emptied buffer was fixed. cua's `clipboard_read` is 48.7 / 45.1 ms.
+
+**Every other verdict passes.**
+- Every device case of Acceptance 8 passes, on every sample. That includes every Chrome drag-and-drop case:
+  `chrome_dnd_short_in_front_shared` landed 9 of 9, the cold samples included, and so did
+  `chrome_dnd_covered_dedicated`.
+- Task 20's per-branch cases pass, and so does every paste safety case.
+- `clipboard_write` in gedit and `type_text` in gnome-text-editor pass under their declarations.
+- `chrome-input`'s covered drag is the declared refusal it has been since M3.1 (the path rule), listed as a loss.
+
+**The harness-fault rule.** 0 resampled and 0 invalid of 4,956 samples, against the run's cap of 1% (49.56). No case
+had a preparation failure in any lane, so no scene backstop ran.
+
+**The scene-text restores per lane:** pinned 43, newest 0, **cua 0**.
+- A restore before a cua-lane sample would have failed the run; there was none.
+- The newest lane needed none.
+- The pinned lane's 43 each found `' diffe'` and put back `cua171`, the word its own failed `type_text_selection` had
+  deleted (task 24's mechanism A):
+  - 40 before measured samples: 36 `type_text_selection` samples and 4 cold `clipboard_read` samples, across the
+    blocks and the top-ups;
+  - 2 in the audit pass;
+  - 1 in the bus pass.
+
+`results.jsonl` and `summary.md` are the run's own files, committed as they came out. Stray checks before the run and
+after it found no harness process and only the owner's window on `:0`.
+
+**The head this record ships on, against the gate commit.** Between cd4c9297 and this record's head, these files
+differ:
+- the spec, `docs/doperpowers/specs/2026-10-28-own-linux-engine-design.md` (8aa4a63d, committed during the run);
+- this evidence: `m3/README.md`, `m3/gate-musl/results.jsonl` and `m3/gate-musl/summary.md`.
+
+Nothing under `native/linux-engine/`, `scripts/linux-engine-diff/` or `src/services/engine/linux/` differs.
+
+**What the earlier gate runs became.** None of them is a verdict. Each stays as the record of a failure and the fix it
+led to:
+- `m3-gate` (`gate/`): exits 1. A cold `chrome_dnd_short_in_front_shared` sample's drag never started (Blink's reset
+  on a buttonless move), which led to task 20's atomic press and watch.
+- `m3-gate-final` (`gate-final/`): exits 1, for two reasons.
+  - Its cold short in-front drops released before Chrome's late take, which led to task 22's hold.
+  - One cua `clipboard_write` sample was refused by the harness oracle, which led to the harness-fault rule and later
+    to task 24's diagnosis.
+- `m3-gate-verdict` (`gate-verdict/`): stopped by ruling once the harness-fault caps were exceeded. The pinned build
+  emptied its own gedit buffer, which led to task 24's scene-text restore, caret and backstop.
+- `m3-gate-t25` (`gate-t25/`): stopped by ruling. Its cua engine was a VM-built gnu binary, not the shipped musl
+  bytes, which led to this run on the workflow's attested asset (and task 26's fix, which the asset's build needed).
+
+## M3's gate, fourth run (`gate-t25/`, run `m3-gate-t25`): stopped by ruling, the wrong build target
+
+**The gate is not met.** `m3-gate-t25` was started as a fresh full differential verdict run after task 24's scene-text
+fix, and the design session stopped it: the gate must judge the bytes that ship.
+
+- **Gate commit:** 380b132b, whose code is b01ac8fd's (380b132b changes only the spec).
+- **Engine:** a release build of that head's engine sources made on the VM, `cargo build --release --locked`, frozen as
+  a copy outside the worktree: `cua-engine 0.3.0 (380b132bdabf)`, SHA-256
+  `0cd99eb3057efbbac7fba8c61734885a929c7fc6049848534022b233127c5556`. That build targets
+  `x86_64-unknown-linux-gnu` (dynamic, glibc). The release ships the `linux-engine` workflow's
+  `x86_64-unknown-linux-musl` static-pie, built by the same rustc 1.94.1. **That target mismatch is why the run was
+  stopped.** It says nothing about the engine's behaviour.
+- **The vendor builds** are byte-identical to `m3-gate-verdict`'s: pinned SHA-256 `7ac3c2ae45a3dacc9209063e91d2df4ea9f206b814a9ffd976f5bcf90d73f1cd`,
+  newest `88ce5e0ae64290dd36dbb2942a33ece6a7222f7294fc66410f4e26c29e4b2991` (the run's meta record). cua's hash
+  differs from that run's (`88a647bc…`) only because the binary embeds its build commit. The engine sources at
+  f3ad9dbb and 380b132b are identical.
+- **Command:** `m3-gate-verdict`'s scenes, device cases and flags, with `--run m3-gate-t25 --out docs/evidence/2026-10-28-own-linux-engine/m3/gate-t25`.
+- **Run:** 2026-11-01 20:39:56Z, stopped with SIGINT at 20:49:21Z, exit 130 at 20:49:23Z. Task 22's hook closed its
+  scene windows. The stray checks before the start and after the stop found no harness process, and only the owner's
+  window on `:0`.
+
+The run was valid at its start: the stub engine failed both the witness and the audit, and the foreground and in-front
+standing controls held. `results.jsonl` holds its 454 rows as they stood, 450 of them samples: block 0 of `desktop`,
+`gedit` and `chrome`, and `chrome-input` up to its first `right_click_fallback` sample. There are no top-ups and no
+summary. These are observations from an incomplete run, not verdicts:
+- No preparation failed in any lane.
+- The first-word restores: pinned 6, newest 0, cua 0. Each put back the word that one of the pinned build's failed
+  `type_text_selection` samples had deleted (each found `" diffe"`): before its `type_text_selection` warm 1–5 and
+  its `clipboard_read` cold 0, as task 24 expected.
+- Every cua sample answered ok. The failed samples are the vendors' known ones: the pinned build's x64 paste defect
+  (`type_text`, `type_text_selection`, `clipboard_write`, 6 each) and its missing `type_characters` (6), and the newest
+  build's `clipboard_write` in gedit (6 of 6; it failed on every sample of the three earlier gate runs too).
+
+## M3's gate, third run (`gate-verdict/`, run `m3-gate-verdict`): stopped by ruling, a failed run
+
+**The gate is not met.** `m3-gate-verdict` was a fresh full differential verdict run, on the branch merged with
+`origin/main`, after task 22's hold and harness-fault rule and task 23's fixes.
+
+- **Gate commit:** f3ad9dbb, the merge of main at 7aa1cbbb (#255), with plugin 0.21.0. `ci-gate`, every gate, was
+  GREEN on it (run 41332540589).
+- **Engine:** one release build of that head's engine sources (code last changed at 596ec1c5), frozen as a copy
+  outside the worktree: `cua-engine 0.3.0 (f3ad9dbba2c1)`, SHA-256
+  `88a647bc05530fd794a9efcd09e9a0dec3abc26539616d471bde815bf1e20bef`.
+- **Command:** `m3-gate-final`'s, with `--run m3-gate-verdict --out docs/evidence/2026-10-28-own-linux-engine/m3/gate-verdict`.
+- **Run:** 2026-11-01 18:10:29Z to 19:25:12Z.
+
+The run was valid at its start: the stub engine failed both the witness and the audit, and the foreground and in-front
+standing controls held.
+
+In block 1, the harness oracle's selection in **the pinned lane's own gedit text window** began to fail. That was the
+step the 2026-11-01 harness-fault rule counts. Every resample failed the same way. The caps (more than 2 resampled or
+invalid samples in a case, of about 100 to 120) were exceeded in `type_text_selection` and `clipboard_release` well
+before the run's end, and the counts could only grow. The design session ruled to stop the run, and it was stopped with
+SIGINT. Task 22's hook closed its scene windows, and no harness process or window was left behind. `results.jsonl` holds
+its 2,571 rows as they stood: the three blocks were complete up to block 2's last `device-chrome-dnd` cases, and no
+top-up had run. The run wrote no summary.
+
+**Its harness faults:** 28 prepare-failures, all in the pinned lane's gedit text window, all at the oracle's step, all
+left invalid after the resample:
+
+| case | invalid |
+|---|---:|
+| gedit `type_text_selection` | 4 |
+| gedit `clipboard_read` | 2 |
+| gedit `clipboard_write` | 2 |
+| gedit `clipboard_release` | 20 |
+
+No cua or newest sample failed a preparation.
+
+**The mechanism** (task 24's diagnosis, from the recorded results of this run and the two before it):
+- Each lane's gedit text window is opened once per run, with 54 characters in the buffer.
+- The pinned build's `type_text_selection` deletes the selected first word, then its paste fails (M2's declared x64
+  defect, about 10.2 s). Every such sample removes 6 characters, so after 9 samples the window is empty.
+- The 10th sample (block 1, warm, i 3) is where the refusals start. On an empty buffer, GTK accepts the selection of an
+  empty range, and since task 22 the harness reports the empty selected text as a refusal.
+- The same emptying happened from block 1 on in `m3-gate` and `m3-gate-final`. There it showed only as the pinned
+  build's `editable element has no selected text to Copy`, in 342 `clipboard_read` samples across five runs. Every
+  pinned Copy on a buffer that still held its first word succeeded (30 of 30).
+- `m3-gate-final`'s one failed cua `clipboard_write` sample came from a second mechanism, which the first exposed. A
+  selection the lane's own `clipboard_read` left behind makes GTK refuse a new one, and only the emptied pinned window's
+  samples ran in between, so nothing took the X PRIMARY selection that would have cleared it.
+
+None of this is scored against the vendor: the refused samples never measured an act. The harness fix follows before
+the next run.
+
+**What the run did show.** The Chrome drop fixes held in the gate's own sequence:
+- `chrome_dnd_short_in_front_shared` landed on 9 of 9 samples, the three cold samples included (558–599 ms). It had
+  failed `m3-gate` and `m3-gate-final` on its cold samples.
+- The in-front, covered, short-covered and pointer-outside dedicated drops landed on every sample.
+- The other Chrome drag-and-drop cases answered the errors they expect.
+
+These are observations from an incomplete run, not verdicts.
+
+## M3's gate, second run (`gate-final/`, run `m3-gate-final`): it fails
+
+**The gate is not met.** `m3-gate-final` is a fresh full differential verdict run, from 2026-11-01 10:23:06Z to
+12:50:32Z. It ran after task 20's press watch and its fix round, on the branch merged with `origin/main`.
+
+- **Gate commit:** 37c3228c, the merge of main at a2c94e78 (#252), with plugin 0.21.0.
+- **Engine:** one release build of that head's engine sources, frozen as a copy outside the worktree before the run
+  and never rebuilt during it: `cua-engine 0.3.0 (37c3228cc6a4)`, SHA-256
+  `5d8aa1e159a29f475e7826c2ac76fb7d4fe657ae0e219f6a91287ea5bc4e2084`.
+- **Engine sources:** they last changed at 6dc17da3, task 20's fix round.
+
+```
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua <the frozen build> \
+  --scene desktop,gedit,chrome,chrome-input,over-budget,retention,chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target,device-gtk4,device-firefox,device-xterm,device-qt,device-chrome,device-chrome-dnd \
+  --ops all --blocks 3 --run m3-gate-final --out docs/evidence/2026-10-28-own-linux-engine/m3/gate-final
+```
+
+The scenes and device cases are `m3-gate`'s, plus task 20's per-branch Chrome cases: the pointer parked outside in
+shared and in dedicated mode, and the nudged selection. The verdict line:
+
+> run valid; **FAIL**: device-chrome-dnd chrome_dnd_short_in_front_shared cua, gedit clipboard_write cua; **parity**
+> (declared, not a pass): desktop get_screenshot cua; **declared refusal** (a loss, not a pass): chrome-input drag cua
+
+It **exits 1**. The run is valid: the stub engine failed both the witness and the audit, and the foreground and
+in-front standing controls held.
+
+**The two failing verdicts.**
+- `chrome_dnd_short_in_front_shared`: the effect was not verified on 3 of 9 samples, the three cold samples (block/i
+  0/0, 1/0, 2/0). Each answered success in 133.8–138.1 ms, carries no `after_take` record (no take seen before the
+  release), with the pointer inside, no strays, a clean witness and the desktop unchanged. The page counted the press
+  and a `dragstart` but no drop. All six warm samples landed, each released 350.2 ms after its take. Each cold sample
+  directly follows `chrome_dnd_covered_dedicated` (the foreground route) in a fresh engine; each warm sample follows its
+  own case's previous sample. `m3-gate` had the same order and missed 1 of its 3 cold samples.
+- `gedit clipboard_write`: one top-up cold sample (`topup-0-0`). Its preparation failed (`clipboard_read for a handle
+  failed: cua171-diff-m3-gate-final-gedit-text_cua refused the selection`), so it was sent a handle no engine had
+  issued, and it answered `unknown clipboard handle; copy again in this Linux helper`. The other 40 samples passed.
+
+The design session has both findings. M3 does not merge on this run.
+
+**Everything else passes.** 65 speed series judged on 20 or more samples a side: 62 **faster** and 3 **same (within noise)**.
+None is **within the bound**, so there is no "within the bound" table. The same-within-noise series are desktop
+`launch_app` cold [−0.965, 0.625] and gedit `clipboard_release` cold [−0.735, 0.14] and warm [−0.01, 0.025]. Desktop
+`get_screenshot` cold stands at its declared parity. Every other device case passed on every sample, task 20's
+per-branch cases included, and so did every paste safety case. `results.jsonl` and `summary.md` are the run's own
+files, committed as they came out.
+
+**The shipped head against the gate commit.** Main moved three times during the gate session. #253 and #254 were
+merged after 37c3228c and before this record, with the run left going (the design session's ruling). Between
+37c3228c and this record's head, nothing under `native/linux-engine/`, `scripts/linux-engine-diff/` (the harness and its
+scenes) or `src/services/engine/linux/` changed. The files that differ:
+
+| files | from | why the gate does not exercise them |
+|---|---|---|
+| `src/chrome/client-mode.mjs` | #253 | comments only |
+| `test/chrome-client-mode-contract.test.mjs`, `test/helpers/fake-maws-peer.mjs` | #253 | tests |
+| `native/engine/Sources/Engine/{AX,Enablement,Input,Paste,Pasteboard,Skyshot}.swift`, `native/engine/Tests/EngineTests/{ObservationRulesTests,PasteTests}.swift` | #254 | the macOS engine |
+| `scripts/native-matrix/{lane,live-device}.mjs` | #254 | the macOS native matrix |
+| `src/services/engine/service.mjs`, `test/services-engine-service.test.mjs` | #254 | the macOS engine service, not the Linux one. The change is additive and acts only on a `note` the engine sends on paste or type_text, or on a `paste` meta key, which cua-engine never sends |
+| `docs/doperpowers/specs/2026-10-18-own-native-engine-design.md` | #254 | the macOS engine's spec |
+| `docs/evidence/2026-10-28-own-linux-engine/m3/` | this branch | this evidence |
+
+`ci-gate`, every gate, was GREEN on 37c3228c (run 41294919425), on eacadd62 (41300115827) and on 754dea8a
+(41305956966).
+
+## M3's gate: the full verdict run (`gate/`, run `m3-gate`): it fails
+
+**The gate is not met.** `m3-gate` is a fresh full differential verdict run on the build above, at checkout bcf64d68,
+2026-10-31 19:38–22:00Z:
+
+```
+node scripts/linux-engine-diff.mjs --vendor "$VENDOR" --newest "$NEWEST" --cua <the build> \
+  --scene desktop,gedit,chrome,chrome-input,over-budget,retention,chrome-textarea,chrome-address-bar,gnome-text-editor,paste-target,device-gtk4,device-firefox,device-xterm,device-qt,device-chrome,device-chrome-dnd \
+  --ops all --blocks 3 --run m3-gate
+```
+
+Every M3 scene and device case: Concrete Steps' scenes for M3, `chrome-input` (M3.1's drag scenes), `paste-target`
+(the paste safety cases' GTK 3 target), and each `device-*` scene. Its verdict line:
+
+> run valid; **FAIL**: device-chrome-dnd chrome_dnd_short_in_front_shared cua; **declared refusal** (a loss, not a
+> pass): chrome-input drag cua
+
+It **exits 1**. The run is valid: the stub engine failed both the witness and the audit, and the foreground and
+in-front standing controls held.
+
+**The one failing verdict.** `chrome_dnd_short_in_front_shared`, the follow-up's 40 px drop into Chrome already in
+front, took effect on 8 of 9 samples. The sample that did not is block 2's cold sample (`i` 0):
+- it answered success in 133.4 ms, where the other eight took 461.9–477.2 ms;
+- it carries no `after_take` record: the engine saw no take of `XdndSelection` before its release, so the 350 ms floor
+  never started (each of the other eight released 350.1 ms after its take);
+- the drag page counted the press and a mouseup (`downs` 66 to 67, `ups` 15 to 16), and no `dragstart` (`starts` 66 to 66)
+  and no drop;
+- the witness is clean, and the desktop unchanged.
+
+The design session has the finding; the plan-executor recommended a bounded isolated reproduction (the short in-front
+drop, about 100 fresh-engine samples, with the instruments, and the pinned and newest lanes) before any engine change.
+M3 does not merge on this run.
+
+**Everything else passes.** Every other verdict of the run passes. 66 speed series are judged on 20 or more samples a
+side:
+- 60 are **faster**;
+- 6 are **same (within noise)**, each interval's upper end inside the bound;
+- none is **within the bound**, so M3 has no "within the bound" table to give;
+- none is undetermined, and none stands at parity or as a speed gap.
+
+The 6 same-within-noise series:
+
+| scene | op | series | cua − bar, 95% interval (ms) |
+|---|---|---|---|
+| desktop | get_screenshot | cold | [−6.085, 0.19] |
+| desktop | launch_app | cold | [−0.535, 0.14] |
+| desktop | launch_app | warm | [−0.12, 0.07] |
+| gedit | clipboard_release | cold | [−1.975, 0.37] |
+| gedit | clipboard_release | warm | [0, 0.025] |
+| chrome-input | key_up | cold | [−0.31, 0.02] |
+
+The reference operations (cua against the bar, the faster vendor build, medians in ms, cold / warm):
+
+| scene | op | cua | bar |
+|---|---|---|---|
+| gedit | tree read | 95.2 / 93.3 | 715.7 / 700.3 |
+| gedit | tree with screenshot | 130.9 / 105.3 | 824.5 / 838.2 |
+| gedit | press_key | 108.4 / 101.3 | 240.8 / 236.0 |
+| gedit | click | 121.2 / 113.9 | 219.1 / 215.0 |
+| gedit | type_text | 185.6 / 168.4 | 1018.4 / 1022.5 |
+| chrome | tree read | 80.0 / 62.2 | 572.4 / 597.0 |
+| chrome | tree with screenshot | 132.5 / 94.3 | 710.0 / 680.4 |
+| over-budget | tree read | 983.5 / 974.7 | 7238.7 / 7100.8 |
+
+Every device case of Acceptance 8 other than the failing one passes, the Chrome drag-and-drop cases included (the
+cancel, late, late-take, obscured, in-front and dedicated drops, and the short dedicated drop 9/9), with every case's
+route as expected and its witness clean within its route's allowance. The paste safety cases all pass.
+`chrome-input`'s covered drag is the declared refusal it has been since M3.1 (the path rule), listed as a loss.
+`results.jsonl` and `summary.md` are the run's own files, committed as they came out.
+
+## M3.3: doctor
+
+`src/runtime/doctor-engine.mjs`'s Linux engine row now names the service and reads the capability report;
+`src/runtime/linux-desktop.mjs` adds the `accessibility.enabled` row. On `:0` (`doctor/doctor-cua.json`, the rows that
+matter and the report's `engine` object, from `CUA_NATIVE_ENGINE=cua CUA_LINUX_ENGINE_BIN=<the build> cua doctor --json`):
+
+- `engine` (warn, for `CUA_LINUX_ENGINE_BIN`, a harness setting): "sessions here run <the build> … **behind service
+  cua (cua's own Linux service)**; installed: the pinned cua-engine 0.2.0 …; device mode shared …; capabilities, from
+  cua-engine started for this check and stopped: backend x11, build bcf64d68401c, capture.desktop true,
+  capture.window retained, desktop shared, input.background true, input.desktop true, text.literal true, text.paste
+  verified, tree at_spi, version 0.3.0". The report's `engine.service` is `cua`, and `engine.capabilities` the object.
+- `accessibility.enabled` (pass): "org.a11y.Status IsEnabled is true on the session bus at unix:path=/run/user/501/bus,
+  so Qt applications put their accessibility trees on the bus".
+
+Off `:0` (`doctor/live.txt`, with the same build under another file name, `cua-engine-m3`): on a private Xvfb and session bus in `dedicated` mode the report reads `desktop
+dedicated`; with the installed 0.2.0 the row fails with the service's own sentence (`cua-engine 0.2.0 is older than
+0.3.0, which this cua needs; run cua install --engine`), as a session's first computer call would; with no `DISPLAY`
+doctor starts nothing and warns that the report is unread (`no X display is reachable here (DISPLAY is not set; see
+display), and cua-engine starts only on one`). No engine doctor started was left running.
+
+## M3.3: provisioning (`provision/live.txt`)
+
+`deploy/cloud-vm/cua-provision.sh`'s two steps, run for real without root and away from the owner's session:
+- **engine.json**, the step cut from the script and run against scratch homes: an absent file becomes `{"desktop":
+  "dedicated"}`; `{"engine":"cua"}` becomes `{"engine":"cua","desktop":"dedicated"}`; `{"desktop":"shared"}` stays (the
+  owner's mode); a second run changes nothing; `[1]` stops the run with "is not a JSON object: fix or remove it".
+- **IsEnabled**, the autostart's command on a private session bus with AT-SPI's own launcher and GSettings in memory
+  (so the owner's dconf is untouched): doctor's `accessibility.enabled` row read `warn … IsEnabled is false` before
+  and `pass … true` after.
+
+## M3.3: the facade proof
+
+All on `:0`, cua's service on the cua lane.
+
+### Acceptance 1: no vendor process, no vendor module (`accept/`)
+
+`scripts/accept/linux-native.mjs`, a real `cua serve` computer session (bind gedit, read it, `typeText`, a screenshot,
+`launch_app`), run under `strace -f -e trace=openat,execve` while a sampler ran `pgrep -fc sky_linux` every 50 ms and
+recorded each `cua-engine` process with its parent and that parent's `CUA_SKY_SERVICE`:
+
+| lane | fixture | `pgrep -fc sky_linux`, most at once (samples) | `@oai/sky` files opened | engine processes | cua Linux service files opened |
+|---|---|---:|---:|---|---:|
+| `CUA_NATIVE_ENGINE=cua` (the build) | **PASS** 11/11 | **0** (3,539) | **0** | `cua-engine --version`, `cua-engine server --desktop shared`, the trusted worker's child, its service `src/services/engine/linux/service.mjs` | 5 |
+| `CUA_NATIVE_ENGINE=vendor`, the control | 10/11 (the declared x64 vendor text failure) | 1 (3,802) | 60 | `sky_linux_x64 server` | 0 |
+
+The control shows the sampler and the trace see a vendor engine and module when there is one. `modules.json` holds
+the derived record, `watch-*.json` the sampler's; the raw traces stay on the VM. Doctor shows the service as `cua`
+(above).
+
+### Acceptance 6's gnome-text-editor case and Acceptance 8, through the facade (`facade/device-mode.json`)
+
+`scripts/accept/linux-device-mode.mjs` (new; reworked in M3.3's fix round 1): a `cua serve` session in each device
+mode binds a gnome-text-editor window of its own (GTK 4, listed for clicks, keys and paste) and sends it a coordinate
+click, a key and `typeText` through the real facade. Before every input a harness-owned xterm covers the screen and
+holds the focus, so the editor starts behind it. Each call runs inside the differential harness's continuous witness
+(`scripts/linux-engine-diff/witness.mjs`: the root's property, restack and focus events in order, the focus and the
+pointer sampled every 5 ms), open until 300 ms after the answer. The field is read through the fixture's own AT-SPI
+reads, never through the engine. Run on `:0` with the frozen build (`--engine-bin`'s file, `task19/engine/cua-engine`),
+**18 steps, all PASS** (`device-mode.json`'s `steps`):
+
+| mode | input | answer | the field | the witness and the desktop |
+|---|---|---|---|---|
+| shared | click, `pressKey('BackSpace')`, `typeText` | each `org.gnome.TextEditor does not accept background input; use a dedicated desktop or activate the window first` | text and caret unchanged | strict span clean (72 samples each, gaps ≤ 5.8 ms); the front window still active and in front |
+| dedicated | `typeText('cua171 안녕 é 🙂\nline2')` | success | reads back exactly that string, once | the foreground allowance clean, with the editor activated, raised and focused (`active`, `stacking`, `focus` allowed); at the end the editor active and above the front window |
+| dedicated | `pressKey('BackSpace')` | success | the last character removed | the same, brought forward again from behind the front window |
+| dedicated | click near the field's start | success | the caret from 19 to 1 | the same |
+
+The negative controls, which the fixture's own judges must fail, failed them:
+- **shared:** a refused `typeText` during which the harness activates the editor and restores the front window. The
+  strict span records `stacking`, `focus` and `active`, so the shared judge fails it, although the front window is in
+  front again at the end.
+- **dedicated:** a `getAXState` (a read that activates nothing), judged as a dedicated input granted its effect. The
+  span shows no activation, so the dedicated judge fails it.
+
+Each session asked the window's approval once, ended its task and exited cleanly. The cleanup step passed: the front
+xterm and both editors each `terminated` on SIGTERM with their exits awaited, the witness stopped, and the directory
+removed after them. (The first sitting of this fixture, before the fix round, judged the desktop only before and
+300 ms after each call; it is superseded.)
+
+### repl-parity, the native suite (`parity/`)
+
+Prepared at, and run from, 5e439324 (both lanes from one controller commit), the cua lane on the build (`--engine-bin`):
+
+| Lane | Result |
+|---|---|
+| vendor (`--engine vendor`) | complete, `RECORDED_VENDOR_DEFECT`: 31 covered, the 2 declared vendor defects (the x64 vendor text failure) |
+| cua (`--engine cua --engine-bin <the build>`) | complete, **`PASS`**: 33 covered |
+| `diff … --expected scripts/repl-parity/expected/native-linux.json` (`parity/diff.json`) | **`ok: true`**, 0 differences, the 2 declared (`linux-text-typetext-m2`, `linux-text-paste-m2`) |
+
+Each lane's engine observation now carries the service its trusted worker loaded (CUA_SKY_SERVICE, read from the
+worker's environment; `scripts/repl-parity/engine-answered.mjs`), and a lane is sound only when its engine ran behind
+its own service: the vendor lane's `sky_linux_x64` behind `@oai/sky`, the cua lane's `cua-engine` behind cua's service.
+Both lanes passed that check on every native case.
+
+### The native baseline and `compare --engines` (`baseline/`): Acceptance 2 through the facade
+
+Prepared at, and run from, 5e439324; experiment `171-m3-20261031`; three runs a lane, interleaved (`cv/run-n`, then
+`cc/run-n`), the default plan (5 cold, 30 warm, 10 tasks), the cua lane on the build. `compare --engines cv cc`
+(`baseline/engines.md`): **VERDICT: PASS**. The attested differences are exactly the two the Linux comparison permits
+from M3: the engine (`sky_linux_x64` against `cua-engine`) and the service (`computer surface, answered by vendor`
+against `answered by cua`). The typeText and paste method cases are judged as positive: every cua sample returned, kept
+gedit alive and read its text back.
+
+| Operation (engine-answered) | vendor median, ms | cua median, ms |
+|---|---:|---:|
+| warm.getAXState | 510.9 | 92.2 |
+| warm.getScreenshot | 648.9 | 113.2 |
+| bind.getApp | 563.5 | 147.0 |
+| task.total (the pressKey task) | 18921.6 | 9540.6 |
+| warm.getState / warm.listApps | 22.0 / 21.4 | 17.4 / 17.2 |
+| method.typeText | 10237.7, every sample `editable Paste did not insert text` | 168.2, every sample returned, gedit alive, the text read back |
+| method.paste | 10235.5, the same failure | 165.8, the same success |
+
+No cua median is above the vendor's on an operation the engine answers. Eight operations no engine answers
+(`cold.miss.initialize`, `cold.miss.tools_list`, `cold.miss.total`, `warm.noop`, the binder's paste-format,
+selectText and scroll-by-pages refusals, `end_task`) have cua medians 0.1 to 24.6 ms above the vendor lane's, inside
+the tolerance rule; `engines.md` lists them.
+
+### The Linux acceptance fixture
+
+`CUA_NATIVE_ENGINE=cua CUA_LINUX_ENGINE_BIN=<the build> node scripts/accept/linux-native.mjs` on the VM's default home:
+**PASS**, 11 of 11 steps (`accept/accept-linux-native-cua.json`), the run Acceptance 1's sampler and trace watched
+(above).
+
+## M3.3: the plugin
+
+`.claude-plugin/plugin.json` and `marketplace.json` 0.19.0 to 0.20.0, in a commit of its own (ef139029) so it can be
+renumbered if another initiative's bump merges first.
+
+## M3.1: the device mode's measurements and the verdict run
+
+On the #171 VM (`dc-linux171-1e68`, Ubuntu 24.04.4, x86-64, 8 vCPU, X11 on `:0`, Openbox), 2026-10-30. The vendor
+builds are the pinned 26.928.40906 and the newest 26.1023.51421. Every run is the differential harness
+(`scripts/linux-engine-diff.mjs --vendor <pinned> --newest <newest> --cua <engine> …`). Its `--experiment` and
+`--run` names are below; `results.jsonl` and `summary.md` in each directory hold every row.
+
+- `kinds/`: the measurements behind the device mode's listings (Plan of Work, M3 pre-flight: scroll and drag measured
+  in every family of M0's matrix, the move with them), and the Chrome drag-and-drop item.
+- `diff/`: the verdict run. It covers Acceptance 8 on the engine, and Acceptance 2–5 for the commands M3.1 changes.
+- `rejudge/`: recorded runs judged again offline under Acceptance 3 as revised at M3.1 (`rejudge.mjs`), again with
+  the fix round's judges (below).
+- `drop-misses/`: the open finding on Chrome drops in the full verdict run (below).
+- `device-fix1/`: Acceptance 8's device cases after M3.1's first fix round (run m31-fix1-device, below).
+- `late-take/` and `device-fix2/`: the second fix round's late-take rate, and the drag-and-drop cases and a speed run on
+  the engine of fix round 2 (below); `device-fix3/`: the drag-and-drop cases after fix round 3, the current engine.
+
+### The engines
+
+The background measurements (`kinds`, `drag`, `m31-dnd-visible`, `m31-dnd-covered`) ran on a copy of the engine
+built at c15441ec (`cua-engine 0.2.0 (c15441ecd0ba)`). That build has the device mode for clicks and keys only, so
+its scroll, move and drag requests take the background route, which is what these runs measure. Its clicks to Gecko
+under any cover and to GTK 4, and its keys to xterm, are already refused. In those cells the `cua` lane's 0/10 is the
+refusal, and the pinned build's column shows the behaviour.
+
+The drag-and-drop candidate runs used `cua-engine 0.3.0 (cdf5a4cd79d5)`, and the verdict run the release build of
+790d8007, `cua-engine 0.3.0 (790d8007c9d0)`. Its engine sources are unchanged through 7713bcb7 and later carry only
+measurement flags and `--stats` fields. m31-dnd-load used that same build. m31-drag-options-load and m31-dnd-edge-load4
+used the build stamped `d9207a48dfd1`, whose working tree already held c6347ec7's measurement flag
+`--drag-dnd-wait-ms`, committed right after.
+
+The lanes:
+- `pinned` and `newest`, the vendor builds;
+- `cua`;
+- `xtest`, the control: the window activated, then cua-engine's windowless request through XTEST at the same root
+  point.
+
+A cell where the control takes every run and no background lane takes any is a kind the family ignores (**ignored**).
+
+The occlusions:
+- `covered`: the front window over the whole screen;
+- `visible`: the window raised, the front window in its corner;
+- `partial`, `partial-deep` and `partial-top`: the front window over the window's bottom 50%, its bottom 70%, or its
+  top 55% (where the targets are).
+
+### What the listings rest on (families.rs)
+
+| family | kind and condition | runs |
+|---|---|---|
+| GTK 4 | Scroll, Move, Drag (with Clicks, Keys, Paste from M0) `always` | m31-kinds-covered, m31-kinds-visible, m31-move-covered (scroll, move, click 0/0/10 covered and visible); m31-drag-covered (gnome-text-editor select 0/0/10), m31-drag-visible-new (scale 0/0/10) |
+| Gecko | Scroll, Move, Drag (with Clicks from M0) `unless_unobscured` | m31-kinds-covered and m31-move-covered (scroll, move 0/0/10); m31-drag-covered (select, range, scroller, canvas 0/0/10, dnd 0/0/5); m31-kinds-partial-deep (scroll 0/0/10 with the bottom 70% covered) |
+| Chromium | Drag `unless_path_unobscured` | m31-drag-covered (select, scroller, dnd 0/0/10); m31-drag-partial (every kind 10/10 with the path visible); m31-drag-partial-top (fails only with the path under the cover, below) |
+| Qt, any version | Scroll `always` | m31-kinds-covered and m31-kinds-visible (kate, qtcreator 0/0/10); m31-qt-covered and m31-qt-visible (plain Qt 5.15 and Qt 6.4 widgets 0/0/10: the toolkit) |
+
+Kinds measured and not listed, taken on the background route:
+- every kind in Chrome, except its covered drags, and every kind in Electron, likewise (Chrome's covered smooth
+  scroll: the pinned build 1/10 here, cua 10/10, as M0.4's 30/30);
+- gedit and the GTK 3 scale;
+- Writer through gtk3 and through gen, scroll, move and select (m31-move-visible-writer, m31-drag-covered-2);
+- xterm and gnome-terminal (VTE), scroll, move and select (m31-drag-covered-2: VTE select 10/10 covered);
+- Qt's moves and clicks on plain widgets, and kate's and qtcreator's select and scroll bar drags.
+
+Gecko under a partial cover:
+- With its bottom half covered (m31-kinds-partial, m31-drag-partial), it takes scroll, move and every drag at points
+  the cover leaves visible.
+- With its bottom 70% covered (m31-kinds-partial-deep, m31-drag-partial-deep), it ignores the scroll and takes the
+  move, select and range.
+- So `unless_unobscured` refuses some requests that would land. The design session kept the window-level rule.
+
+#### Chromium's drags under a cover over the targets (m31-drag-partial-top, condition 1)
+
+| family | kind | path (window y) against the cover (to y) | changed: pinned / cua / xtest |
+|---|---|---|---|
+| Chrome | select | 119, under (429) | 0/10 / 0/10 / 10/10 |
+| Chrome | range | 169, under | 9/10 / 9/10 / 10/10 |
+| Chrome | scroller | 247–307, under | 0/10 / 0/10 / 10/10 |
+| Chrome | dnd | 242–257, under | 0/10 / 0/10 / 10/10 |
+| Chrome | canvas | 457–617, visible | 10/10 / 10/10 / 10/10 |
+| Electron | select | 32, under (385) | 10/10 / 10/10 / 10/10 |
+| Electron | range | 82, under | 9/10 / 9/10 / 10/10 |
+| Electron | scroller | 160–220, under | 0/10 / 0/10 / 10/10 |
+| Electron | dnd | 155–170, under | 0/10 / 0/10 / 10/10 |
+| Electron | canvas | 370–530, crossing | 10/10 / 10/10 / 10/10 |
+
+Nothing fails with a visible path. A background failure (select, scroller, dnd) always has its whole path under the
+cover. The path rule refuses the covered range drags (taken 9/10) and Electron's covered select (taken 10/10 here,
+0/10 under full cover). Those are its loss, declared in `deviations.mjs`, and the evidence for two M4 candidates:
+decide by the AT-SPI role at the path's start, and measure which part of the path decides.
+
+### Qt's move and hover
+
+- m31-qt-covered and m31-qt-visible: plain Qt 5 and Qt 6 widgets take background moves (9/9/9: run 0 moves to the
+  pointer's own position) and clicks 10/10.
+- m31-qt-style: an auto-raise tool button's hover highlight follows background moves under Fusion 10/10, and under
+  Breeze 8/10. Breeze's two misses are the first enter and the leave that follows it. Its hover event still arrives,
+  but the first highlight is not drawn; every later one is.
+- m31-move-covered: both styles 8/10.
+- So Breeze does not ignore background moves. kate's 0/10 hover (m31-kinds-visible) is not explained by its style,
+  and the limit keeps the general wording: a hover effect that reads the real pointer position does not follow a
+  background move.
+
+### Chrome's HTML5 drag and drop (`--experiment dnd`)
+
+m31-dnd-visible, 10 drags a lane, the windows visible, the focus on a front xterm:
+
+| family | lane | drops | desktop changed at the answer and 1 s later |
+|---|---|---:|---|
+| Chrome | pinned | 9/10 | active, focus, stacking on every drop |
+| Chrome | newest | 8/10 | the same |
+| Chrome | cua (no candidate) | 10/10 | the same |
+| Electron, Firefox | every lane | 10/10 | none |
+
+In every browser, the source takes `XdndSelection` 15–53 ms into cua's drag, holds a pointer grab (none is left
+after), maps override-redirect drag windows and cycles a keyboard grab. Under full cover (m31-dnd-covered) no drop
+lands in any engine.
+
+The candidate, Chrome visible, 10 drags a lane (the answer rule as it stood then: "nothing was dropped" unless the
+signature showed; since the fix round the answer follows the order of the take and the release, below):
+- `cua`, shared:
+  - m31-dnd-candidate: 0/10 drops. All 10 answers are the declared refusal, the witness is clean, the desktop is
+    unchanged, and the selection was taken 10/10.
+  - m31-dnd-candidate-stats: the same; `--stats` shows `started`, no signature, and a settle of 301–304 ms.
+- `cua:active` (activated first), shared:
+  - Both runs: 10/10 drops, with the desktop unchanged at the answer and 1 s later.
+  - The strict witness flags `stacking` 10/10. Chrome's drop asks the window manager to activate its own window,
+    already active, and Openbox rewrites `_NET_CLIENT_LIST_STACKING` with the same order (a notify; no value changed).
+    The witness's in-front allowance judges this case (witness.mjs, below).
+- `cua:dedicated`: 10/10 drops, and the desktop changes as in the vendor builds.
+- `cua:late` (`--dnd-cancel-after-release`):
+  - 10/10 drops, and 10/10 answers say the drop may have happened.
+  - The signature showed at the engine's first read, 0.1–0.3 ms after the late Escape: the drop's activation follows
+    the release within the few milliseconds before that read. The 300 ms settle is a margin, not a measured need.
+- The pinned build, in the same run: 8/10 drops, each changing the desktop.
+
+### The verdict run (`diff/`, run m31-verdict)
+
+`m31-verdict`, run at 91b2746e, ran the scenes `desktop`, `gedit`, `chrome`, `chrome-input`, `chrome-textarea`,
+`chrome-address-bar` and `gnome-text-editor`, and every device scene, with `--ops all` and 3 blocks. Every series was
+topped up to 20 samples a side. **It exits 1**: run valid, and every verdict passes except two Chrome drop cases (the
+open finding below); chrome-input's covered drag is a declared refusal.
+
+- **Acceptance 8:** every case passes except `chrome_dnd_in_front_shared` (3 of 9 drops missed) and
+  `chrome_dnd_covered_dedicated` (1 of 9). The cases that pass:
+  - refusals with nothing sent;
+  - foreground cases with their route, the window left active and the foreground audit;
+  - background cases;
+  - the drag-and-drop cancel (`chrome_dnd_shared`: 0 drops, witness clean, no XTEST);
+  - the honest late answer (`chrome_dnd_late_shared`);
+  - `capabilities`.
+
+  The standing controls held: the stub, the foreground checks (another client's popup included), and the in-front
+  checks.
+- **Acceptance 2–5** for the commands M3.1 changes pass under the revised speed rule. The run predates the labels, so
+  `rejudge/m31-verdict.json` labels them offline: 53 series are faster and 7 are the same (within noise); none is within
+  the bound, and none is undetermined at 20. The 7:
+
+  | scene | op | series | cua | bar | cua − bar, 95% interval |
+  |---|---|---|---:|---:|---|
+  | desktop | get_screenshot | cold | 32.74 | 38.38 | [-8.185, 1.755] |
+  | desktop | launch_app | cold | 3.58 | 3.96 | [-1.335, 0.365] |
+  | desktop | launch_app | warm | 0.72 | 0.64 | [-0.03, 0.2] |
+  | gedit | clipboard_release | cold | 2.73 | 2.76 | [-0.36, 0.195] |
+  | gedit | clipboard_release | warm | 0.13 | 0.12 | [-0.01, 0.02] |
+  | chrome-input | key_up | cold | 100.69 | 100.74 | [-0.1, 0.015] |
+  | chrome-input | activate_window | cold | 3.83 | 4.61 | [-1.98, 0.45] |
+
+- **The re-judge of m2-final** under the revised rule (`rejudge/m2-final.json`):
+  - 19 verdicts move from pass to undetermined, on sample count alone: 1 to 15 samples a side, the medians 1.4 to 7
+    times faster than the bar.
+  - The desktop's cold screenshot moves from pass to parity. Its 20 samples a side have an interval past the bound,
+    and it lies within the declared spread.
+  - m2-final's exit 0 depended on the old rule. `rejudge/m31-verdict-first-sitting.json` shows the same for this
+    milestone's first sitting.
+
+### The open finding: Chrome drops missed in the full verdict run (`drop-misses/`), since explained
+
+The drop-miss follow-up found the mechanism (Chrome's drag session starts, and the release beats its accept) and built the
+350 ms release floor after the take (a769edcd, 1b7debef); its full run on the fix landed every drop, 36 of 36
+(`drop-misses/task18/README.md`). M3.1's record of the finding follows as it stood.
+
+**Three full sittings missed drops in Chrome:**
+- The first sitting (`verdict-first-sitting.jsonl`): in-front 2 of 9, dedicated 1 of 9.
+- `m31-verdict` (above): in-front 3 of 9, always the third sample of a block; dedicated 1 of 9.
+- The third sitting, with the drag page instrumented and stopped after two blocks (`verdict-third-sitting.jsonl`):
+  dedicated missed the third sample in both blocks; in-front lost none.
+
+**The signature of every miss:**
+- The page's `dragstart` fires and the press is counted with `event.detail` 1, the gap from the previous press 5.4 to
+  6.3 s.
+- No drop arrives, and Chrome makes none of its drop activation.
+- The request answers in 290 to 310 ms, where a landed drop takes 500 to 900 ms (Chrome's drag loop holds it).
+- In the dnd experiment, every miss also leaves `XdndSelection` untaken. Chrome's X11 drag session never starts.
+
+**What does not reproduce it:**
+
+| setting | drops |
+|---|---|
+| device-chrome-dnd alone, 3 blocks (`alone-dnd-scene.jsonl`) | 36/36 |
+| with chrome, chrome-input and device-chrome, 3 blocks (`with-chrome-scenes.jsonl`) | 36/36 |
+| every device scene and gnome-text-editor, no vendor scenes, 3 blocks (`device-only.jsonl`) | 36/36 |
+| the drag experiment under stress-ng at 16 and 32 workers on 8 cores, every option including the shipping pacing | no drop missed |
+
+The trigger lies in the full run's vendor scenes or their state (gedit, Chrome's scene windows for all three engines,
+the text and clipboard operations), or in the run's length. It is not CPU load alone.
+
+**Not multi-click.** Every press, the misses included, has `event.detail` 1, and no selection began.
+
+**Not ignored time fields, in isolation.** `instrumented.jsonl` records the engine's `--stats` `event_time`;
+`instrumented-request-watch.jsonl` and `instrumented-selection-watch.jsonl` come from `xprobe request-watch` (RECORD)
+and `xprobe selection-watch`:
+- The background route's event times run 0 to 3 ms behind the server's, never ahead.
+- Chrome's `SetSelectionOwner(XdndSelection)` carries the triggering event's time, 0 to 3 ms behind the server's.
+- Each of its `GrabPointer` replies is a success.
+
+Whether a miss in the full run is such an ignored request is still untested: the instruments are built, and the full
+run is where to use them.
+
+**The options, measured on the same data** (`options-m31-drag-options-load.md`, every Chromium kind in Chrome and
+Electron, 20 runs; `options-m31-dnd-edge-load4.md`, Chrome drops, 40 runs; `scripts/linux-engine-diff/drag-options.mjs`):
+- No option misses a Chrome or Electron drop at either load: the shipping pacing (`d0`), a press dwell of 10, 20, 30 or
+  40 ms, or the event-driven wait (`ev50`, `--drag-dnd-wait-ms 50`). So no dwell edge was found.
+- Every option is faster than the pinned build on every kind.
+- The cost against `d0`: about the dwell itself, and 44 to 49 ms on every non-drop drag for `ev50`.
+- The first sitting ran at 16 workers rather than the intended 8: an interrupted run had left its stress-ng running.
+  The harness now ends its load when interrupted.
+
+**Load parity beside it.** Under 16 workers, cua's thumb drags missed where the pinned build missed none:
+
+| family | kind | cua option | taken | pinned |
+|---|---|---|---:|---:|
+| Electron | scroller | `d0` | 19/20 | 20/20 |
+| Electron | scroller | `pd10` | 18/20 | 20/20 |
+| Electron | scroller | `pd30` | 17/20 | 20/20 |
+| Chrome | range | `pd20` | 19/20 | 20/20 |
+
+An interrupted sitting (not kept) saw Chrome's scroller at 17/20 for `d0` and 18/20 for `pd30`, against the pinned
+build's 20/20. At idle (M1a.4) the thumbs land as the pinned build's.
+
+**A likely artifact.** The dnd experiment's grab sampler (`xprobe grabs`, every 100 ms) takes the pointer for a moment
+itself, so it can make Chrome's drag-start pointer grab fail. That fits its misses in every lane, the pinned build's
+included: 1 to 2 of 10 idle, 3 of 20 under load. The drag experiment, which has no sampler, saw none. No sampler runs
+during the verdict run's drop cases, so it does not explain the finding.
+
+### Fix round 1 (`device-fix1/`, `rejudge/`)
+
+The task review's fixes (task-16-report.md, "Fix round 1"). Engine `cua-engine 0.3.0 (af6b2a1eb312)`, harness at the
+same commit, 2026-10-31, on `:0`.
+
+**The drop guard answers by the order of events** (the design session's ruling of 2026-10-31). The engine watches
+`XdndSelection` from the drag's start through 300 ms after the release. A take seen before the release is cancelled
+(Escape, then the release) and answered "nothing was dropped" unless the activation signature then changes; a take seen
+only after the release is answered "the drop may have happened", Escape following; no take within the settle is an
+ordinary drag; a take whose cancel could not be sent is answered "it was cancelled, but whether the drop landed cannot
+be confirmed". `--stats` `dnd` records the `outcome` and whether the signature already held (`held_at_start`).
+
+**m31-fix1-device**: every device case of Acceptance 8, 4 blocks (12 timed samples a case, 2 audited), run valid,
+**every verdict passes** (41 of 41), the standing controls held (the stub; the foreground checks; the in-front checks,
+now with another client's override-redirect window raised across the target's frame and back under one server grab,
+which fails as it must). The drag-and-drop cases:
+
+| case | arrangement | answers | drops | witness clean | engine's outcome | median ms |
+|---|---|---|---:|---:|---|---:|
+| `chrome_dnd_shared` | Chrome visible, not active | 12 cancelled | 0/12 | 12/12 | in_time 12 | 424.0 |
+| `chrome_dnd_obscured_in_front_shared` | Chrome active, focused, on top; a corner covered by an override-redirect overlay | 12 cancelled | 0/12 | 12/12 | in_time 12, signature held at the start 12 | 423.4 |
+| `chrome_dnd_late_shared` | visible, `--dnd-cancel-after-release` | 12 may have happened | 12/12 | (not judged) | late 12 | 509.3 |
+| `chrome_dnd_obscured_in_front_late_shared` | in front, corner covered, forced late | 12 may have happened | 12/12 | (not judged) | late 12, held 12 | 500.3 |
+| `chrome_dnd_in_front_shared` | in front, fully unobscured (unwatched) | 12 success | 12/12 | 12/12 (in-front allowance) | – | 501.3 |
+| `chrome_dnd_covered_dedicated` | covered, dedicated | 12 success | 12/12 | 12/12 (foreground allowance) | – | 688.8 |
+
+- The design session asked for the in-time cancel to be proven under the signature-held, partly covered arrangement
+  before the rule relies on it there: 12 timed and 2 audited in-time cancels, 0 drops (and 3 of 3 in a smoke run
+  before it). Rule (a) holds in that arrangement.
+- The forced-late case under the same arrangement is the one the review found: before the fix the answer there was
+  "nothing was dropped" although every drop landed (the signature cannot change when it already holds; the engine's
+  live test `with_the_signature_already_held_…` shows it against 8e5aa0a2's engine).
+- No Chrome drop missed in this run (the in-front and dedicated cases 12/12 each). The open finding below is a full
+  verdict run's; this run had only the device scenes, where M3.1 never reproduced it either.
+- **The guard's cost on an ordinary drag.** A watched drag with no take now waits out the 300 ms settle:
+  `chrome_drag_visible_path_shared` (a background drag into a partly covered Chrome, not in front) answers in 697.0 ms
+  median, against 398.0 in `m31-verdict`. Only shared-mode background drags into Chrome not already in front pay it.
+
+**The re-judges with the fixed judges** (`rejudge/`):
+- `m31-verdict.json`: the same verdicts, the same 60 intervals; nothing changes under the declared-refusal rule
+  (chrome-input's covered drag stays a declared refusal: its speed passes).
+- `m2-final.json`: the same 20 changed verdicts and 32 under-20 series; it now lists the 14 intervals of the series
+  judged on 20 a side (the earlier file predates the field).
+- `m1a4-vendor-js-final.json`: a run through the vendor client is not judged on speed: nothing changes, nothing listed.
+- `m1a4-events-gate3.json` (`--events`): the events experiment's desktop groups under the schedule (20 rounds, then 40
+  for a group undetermined at 20). Every group is decided at 20 rounds, each the same outcome the run recorded at 31
+  (pass as faster or same within noise, desktop `move` later the declared gap); no recorded events run ever topped up.
+  `m1a4-events-gate.json`: refused, its block rows carry neither round nor step.
+- `m31-verdict-first-sitting.json` is kept as it was: its source run is not in the repository (`drop-misses/` holds an
+  excerpt of it).
+
+### Fix round 2 (`late-take/`, `device-fix2/`)
+
+The re-reviews' remaining findings and the design session's ruling on the settle (task-16-report.md, "Fix round 2").
+Engine `cua-engine 0.3.0 (1b0bab1bcb81)`, harness at the same commit, 2026-10-31, on `:0`.
+
+**No settle on the request path.** A watched drag with no take of `XdndSelection` by its release answers at the
+release as a plain drag. A watch on its own X connection, subscribed before the drag, goes on off the request path
+for 300 ms or until the next request; on a take it sends the cancel's Escape at once (synthetic, to Chrome's window),
+and the next request on the connection is answered, not run, with `<app> started a drag and drop after your drag
+ended; it may have dropped and changed the desktop; this request was not run, so read the window before sending it
+again`.
+
+**The late-take rate** (`late-take/`, the dnd experiment's `cua` lane in shared mode, Chrome visible, the round-1
+engine `cua-engine 0.3.0 (af6b2a1eb312)`, whose `--stats` `dnd.outcome` says whether Chrome's take came before the
+release or after it):
+
+| run | load | drags | takes | before the release | after the release | no take |
+|---|---|---:|---:|---:|---:|---:|
+| m31-late-take-idle | none | 60 | 60 | 60 | 0 | 0 |
+| m31-late-take-load | 16 stress-ng workers on 8 cores | 60 | 59 | 59 | 0 | 1 |
+| m31-late-take-load4 | 32 workers | 100 | 93 | 93 | 0 | 7 |
+| m31-fix1-device (`device-fix1/`) | none | 28 watched drops | 28 | 28 | 0 | 0 |
+
+No take came after the release in 240 (95% upper bound by the rule of three: 1.25%). The drags with no take are
+Chrome drag sessions that never started (the open finding's signature; the dnd experiment's grab sampler adds its
+own); they answer as plain drags, as before. This is the known limit as declared: a take later than 300 ms after the
+release, or after the next request has begun, is not seen.
+
+**m31-fix2-device** (`device-fix2/`, 3 blocks): the Chrome drag and drop cases, the path rule's drags,
+gnome-text-editor's refusal and `capabilities`, every verdict passing, run valid, the standing controls held:
+
+| case | answers | drops | witness clean | median ms |
+|---|---|---:|---:|---:|
+| `chrome_drag_visible_path_shared` (watched, no take) | 9 success | – | 9/9 | 402.5 (697.0 in round 1, 398.0 before it) |
+| `chrome_dnd_shared` | 9 cancelled | 0/9 | 9/9 | 427.0 |
+| `chrome_dnd_obscured_in_front_shared` | 9 cancelled | 0/9 | 9/9 | 423.8 |
+| `chrome_dnd_late_shared` (`--dnd-cancel-after-release`) | 9 may have happened | 9/9 | – | 498.8 |
+| `chrome_dnd_obscured_in_front_late_shared` | 9 may have happened | 9/9 | – | 501.6 |
+| **`chrome_dnd_late_take_shared`** (`--dnd-defer-take`) | 9 success, then 9 notices on the next request | 9/9 | 0/9: the change recorded, as the notice reports | 518.7 |
+| `chrome_dnd_in_front_shared` | 9 success | 9/9 | 9/9 (in-front allowance) | 504.1 |
+| `chrome_dnd_covered_dedicated` | 9 success | 9/9 | 9/9 (foreground allowance) | 687.3 |
+
+**m31-fix2-speed** (`device-fix2/`, gedit `click`, 3 blocks): the window route's frozen speed decisions, live. One
+top-up of 17 rounds, then both series decided at 20 a side (`speed-decision` rows: cold faster [-101.03, -96], warm
+faster [-101.93, -100.435]); the verdict judged on those decisions passes.
+
+### Fix round 3 (`device-fix3/`)
+
+The last review items (task-16-report.md, "Fix round 3"). Engine `cua-engine 0.3.0 (9381f166e106)`, 2026-10-31, on `:0`:
+- The watch is told the instant the drag's button goes up, so a late take is cancelled at once and the settle runs
+  from the real release.
+- A watch that fails refuses the first acting request with the watch-failure sentence, never "nothing happened".
+- Only requests that send input or change state are refused: reads and releases (`key_up`, `clipboard_release`,
+  `drag_handle`'s end) run.
+
+**m31-fix3-device** (`device-fix3/`, 3 blocks): every Chrome drag-and-drop case, the watched drag with no take, and
+`capabilities`. The run is valid, every verdict passes, and the standing controls held. The harness's working tree
+carried one uncommitted fix to the late-take case at the run (a variable that shadowed the case's page reader),
+committed right after it.
+- The forced late take (`chrome_dnd_late_take_shared`): 9 plain answers. The read after each ran. The first acting
+  request (a pointer move) answered the notice 9 of 9. All 9 drops were recorded by the witness. The watch's Escape
+  went out 1.6 to 7.0 ms after the release (`late_dnd.escape_after_release_ms`; the take was held from before the
+  release, `after_release_ms` 0).
+- In time: 0/9 drops, both visible and with the signature held.
+- A watched drag with no take: 400.6 ms.

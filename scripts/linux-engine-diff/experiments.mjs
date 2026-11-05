@@ -22,6 +22,8 @@ import { elementClick, partialCover } from './clicks.mjs';
 import { Engine } from './engine.mjs';
 import { runDrag } from './drag.mjs';
 import { runEvents } from './events.mjs';
+import { runDnd } from './dnd.mjs';
+import { runKinds } from './kinds.mjs';
 import { familyNames, openFamily, readText } from './families.mjs';
 import { matrixOutcome } from './matrix-judge.mjs';
 import { matrixMarkdown, runMatrix } from './matrix.mjs';
@@ -265,12 +267,25 @@ function gitHead() {
   }
 }
 
-/** Every core busy for the experiment's length (`--load`): stress-ng, one CPU worker per core, ended after. */
-function startLoad(emit) {
+/**
+ * Every core busy for the experiment's length (`--load`): stress-ng, `factor` CPU workers per core (one unless
+ * `--load-factor` names more), ended after.
+ */
+function startLoad(emit, factor = 1) {
   const cores = availableParallelism();
-  const child = spawn('stress-ng', ['--cpu', String(cores), '--cpu-method', 'matrixprod', '--timeout', '3h', '--quiet'], { stdio: 'ignore', detached: true });
+  const child = spawn('stress-ng', ['--cpu', String(cores * factor), '--cpu-method', 'matrixprod', '--timeout', '3h', '--quiet'], { stdio: 'ignore', detached: true });
   const exited = new Promise((resolve) => child.once('exit', resolve));
-  emit({ kind: 'load', started: true, cores, pid: child.pid, loadavg_before: loadavg() });
+  // an interrupted experiment ends its load too: a load left running skews every run after it. A stopped run exits once
+  // its desktop is closed (scenes.mjs, stop.mjs), and the exit ends the load
+  const end = () => {
+    try {
+      process.kill(-child.pid, 'SIGTERM');
+    } catch {
+      // already ended
+    }
+  };
+  process.once('exit', end);
+  emit({ kind: 'load', started: true, cores, workers: cores * factor, pid: child.pid, loadavg_before: loadavg() });
   execFileSync('sleep', ['5']);
   emit({ kind: 'load', loadavg_running: loadavg() });
   return {
@@ -292,7 +307,7 @@ export async function runExperiment(args) {
   mkdirSync(args.out, { recursive: true });
   const results = join(args.out, 'results.jsonl');
   const emit = (row) => appendFileSync(results, `${JSON.stringify({ run, ...row })}\n`);
-  emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: execFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(args.experiment === 'matrix' ? { audit: args.audit, occlusion: args.occlusion } : {}), started: new Date().toISOString() });
+  emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), cua_version: execFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), families: args.families, load: args.load, ...(['matrix', 'drag', 'kinds', 'dnd'].includes(args.experiment) ? { audit: args.audit, occlusion: args.occlusion } : {}), started: new Date().toISOString() });
   if (args.experiment === 'events') {
     // on a private X server of its own: no scene windows, no desktop
     const { md, pass } = await runEvents(args, emit);
@@ -302,7 +317,7 @@ export async function runExperiment(args) {
     return pass;
   }
   const desktop = new Desktop({ cua: args.cua, run });
-  const load = args.load ? startLoad(emit) : null;
+  const load = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
   let md;
   // a matrix run that could not judge a family it was asked for is incomplete, and the run exits nonzero
   let outcome = { complete: true, failed: [] };
@@ -319,8 +334,9 @@ export async function runExperiment(args) {
       md = result.md;
       outcome = { complete: result.pass, failed: result.pass ? [] : ["a first capture was wrong or unjudged, or the pinned build's capture did not confirm a truth"] };
     }
-    else if (args.experiment === 'drag') {
-      const result = await runDrag(args, { desktop, emit });
+    else if (['drag', 'kinds', 'dnd'].includes(args.experiment)) {
+      const measure = { drag: runDrag, kinds: runKinds, dnd: runDnd }[args.experiment];
+      const result = await measure(args, { desktop, emit });
       md = result.md;
       outcome = { complete: result.complete, failed: result.failed };
     } else if (args.experiment === 'matrix') {

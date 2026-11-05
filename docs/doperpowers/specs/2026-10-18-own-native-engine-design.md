@@ -1895,7 +1895,20 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      diagnostic repeats (src/services/sky.mjs), since focusField's fallback can stop under them.
   11. **Not done.** Route 2′ on a Chrome carrying Chromium 212c026a (the ruling's D) and WebKit's first-mouse rules
      (Safari's page refuses first mouse unless a selection may be dragged; it gets `clickUnconfirmed`, not a refusal).
-  Proven offline (`BackgroundPointerTests`, 16, failing before the change where they bite: shared mode's refusal of
+  12. **The coordinate hit-test asks the application** (found live on the hosted runner, probe/282-hosted, runs
+     42123497534 and 42124119631; the design session's conditions, 1ea561bc bbaa0eba). The coordinate click, the drag
+     and the coordinate scroll asked AXUIElementCopyElementAtPosition of the window element, which answers
+     kAXErrorIllegalArgument (-25201): their hit was always nil, so on 8e859095 shared mode posted a background Chrome
+     click and answered `clickUnconfirmed`, neither refused nor element-routed. `hitTest(window:pid:at:)` now asks the
+     window's process's application element and keeps the hit only when its first AXWindow ancestor is the target window
+     (CFEqual); a hit in another window of the app, one whose ancestry cannot be read to a window, or no answer stays
+     nil, a Chromium process's possible web area. What the real hit changes: those three requests' owner is the hit's
+     process (checked against the forbidden list, its events counted as the user's on the app), a right or middle
+     coordinate click's sparing area is the hit's frame rather than the one point, and the web-area walk sees the page
+     (the element route now reachable). A hit that is itself the window, sheet or application is a coarse answer, an
+     incomplete walk, never a view known to accept first mouse. The element click and focusField's fallback always hit-
+     tested the owner's application (`ElementPointing`) and are unchanged.
+  Proven offline (`BackgroundPointerTests`, 18, failing before the change where they bite: shared mode's refusal of
   a click, a double click and a drag into a web area with nothing posted, no hold taken and nothing left held; a plain
   click carried by the element route with no mouse event; a web-area pointer joining its own or another connection's
   spent hold refused with the hold untouched; an Electron-shaped activation still posting; dedicated mode's inert click

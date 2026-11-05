@@ -287,18 +287,20 @@ enum WebAreaWalk: Equatable {
   case inside
   /// Established outside one: the walk reached the hit's window, sheet or application with every role and parent read.
   case outside
-  /// Neither: a role or a parent could not be read before a stop, or the bound ran out; an AXWebArea may lie beyond.
+  /// Neither: a role or a parent could not be read before a stop, or the bound ran out; an AXWebArea may lie beyond. And
+  /// a hit that is itself the window, sheet or application: a coarse answer, which says nothing of the view at the point.
   case incomplete
 }
 
 /// Whether `hit` is an AXWebArea or lies inside one, its parents walked up to 300 levels (the gate's bound) and no
-/// further than its window. Only a walk that reached a stop with every role read says `outside` (#282's review).
+/// further than its window. Only a walk from an element below a stop that reached one with every role read says
+/// `outside` (#282's review).
 func webAreaWalk<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?) -> WebAreaWalk {
   var current = hit
-  for _ in 0...300 {
+  for level in 0...300 {
     guard let name = role(current) else { return .incomplete }
     if name == "AXWebArea" { return .inside }
-    if webAreaWalkStops.contains(name) { return .outside }
+    if webAreaWalkStops.contains(name) { return level == 0 ? .incomplete : .outside }
     guard let next = parent(current) else { return .incomplete }
     current = next
   }

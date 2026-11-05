@@ -273,7 +273,7 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertEqual(view(field, true, false), .webArea, "a web area is one whether or not an observation saw it")
     XCTAssertEqual(view(Node("AXButton", parent: toolbar), true, true), .acceptsFirstMouse, "Chrome's toolbar")
     XCTAssertEqual(view(Node("AXButton", parent: toolbar), true, false), .possibleWebArea, "no page tree seen yet: a page point may answer outside one")
-    XCTAssertEqual(view(window, true, true), .acceptsFirstMouse, "the window itself is native")
+    XCTAssertEqual(view(window, true, true), .possibleWebArea, "a coarse answer, the window itself, says nothing of the view")
     XCTAssertEqual(view(nil, true, true), .possibleWebArea, "no hit in a Chromium process")
     XCTAssertEqual(view(field, false, true), .unknown, "not a Chromium process")
     XCTAssertEqual(view(Node("AXButton", parent: Node("AXGroup", parent: Node("AXApplication"))), true, true), .acceptsFirstMouse,
@@ -350,6 +350,53 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertNil(webAreaElementAction(button: .left, count: 1, role: "AXTextArea", actions: ["AXShowMenu"]), "no action: refused")
     XCTAssertNil(webAreaElementAction(button: .left, count: 1, role: "AXButton", actions: nil), "unread actions: refused")
     XCTAssertNil(webAreaElementAction(button: .left, count: 2, role: "AXButton", actions: ["AXPress"]), "a double click is refused")
+  }
+
+  // MARK: The coordinate hit-test asks the application, bounded to the window (#282, found live on the hosted runner)
+
+  /// The AX layer as AppKit answers it: AXUIElementCopyElementAtPosition of a window element is kAXErrorIllegalArgument
+  /// (-25201) with no element; of the application, the element at the point.
+  private func stub(_ application: Node, answers hit: Node?) -> (Node, CGPoint) -> (AXError, Node?) {
+    { root, _ in root === application ? (hit == nil ? .noValue : .success, hit) : (.illegalArgument, nil) }
+  }
+
+  private func hitIn(_ application: Node, _ window: Node, _ elementAt: (Node, CGPoint) -> (AXError, Node?)) -> Node? {
+    windowHit(application: application, window: window, at: point, elementAt: elementAt, role: { $0.role }, parent: { $0.parent },
+                     same: { $0 === $1 })
+  }
+
+  /// The hit-test is asked of the application element, never the window (which answers -25201): a page point in the
+  /// target window answers its element, and through it the web area; a stub that answers -25201 to every root, as the
+  /// window did, leaves the hit nil, a Chromium process's possible web area.
+  func testTheCoordinateHitTestAsksTheApplicationAndANilAnswerStaysCovered() {
+    let application = Node("AXApplication")
+    let window = Node("AXWindow", parent: application)
+    let field = Node("AXTextArea", parent: Node("AXGroup", parent: Node("AXWebArea", parent: Node("AXGroup", parent: window))))
+    var asked: [Node] = []
+    let found = hitIn(application, window) { root, at in asked.append(root); return self.stub(application, answers: field)(root, at) }
+    XCTAssertTrue(found === field)
+    XCTAssertEqual(asked.count, 1)
+    XCTAssertTrue(asked.first === application, "asked of the application, never the window")
+    XCTAssertEqual(pointerView(chromium: true, webAreaSeen: true, hit: found, role: { $0.role }, parent: { $0.parent }), .webArea)
+    let refused = hitIn(application, window) { _, _ in (.illegalArgument, nil) }  // -25201, the window's answer
+    XCTAssertNil(refused)
+    XCTAssertEqual(pointerView(chromium: true, webAreaSeen: true, hit: refused, role: { $0.role }, parent: { $0.parent }), .possibleWebArea)
+    XCTAssertNil(hitIn(application, window, stub(application, answers: nil)), "no element at the point")
+  }
+
+  /// A hit whose AXWindow ancestor is another window of the app (one above the target at the point) counts as nil, as
+  /// does one whose ancestry cannot be read to a window; the target window itself, or a sheet's element under it, counts.
+  func testAHitInAnotherWindowOfTheAppCountsAsNil() {
+    let application = Node("AXApplication")
+    let window = Node("AXWindow", parent: application)
+    let other = Node("AXWindow", parent: application)
+    let covering = Node("AXButton", parent: Node("AXGroup", parent: other))
+    XCTAssertNil(hitIn(application, window, stub(application, answers: covering)), "another window's element")
+    XCTAssertNil(hitIn(application, window, stub(application, answers: Node("AXButton", parent: Node("AXGroup")))), "no window ancestor read")
+    XCTAssertNil(hitIn(application, window, stub(application, answers: application)), "the application itself")
+    let inSheet = Node("AXButton", parent: Node("AXSheet", parent: window))
+    XCTAssertTrue(hitIn(application, window, stub(application, answers: inSheet)) === inSheet, "a sheet's element is its window's")
+    XCTAssertTrue(hitIn(application, window, stub(application, answers: window)) === window, "the window itself")
   }
 
   // MARK: The mode reaches the connection through its ping

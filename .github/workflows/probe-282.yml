@@ -33,8 +33,10 @@ jobs:
           git worktree add "$RUNNER_TEMP/main" origin/main
           git -C "$RUNNER_TEMP/main" log --oneline -1
           swift build --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng-main"
+      - name: Build the hit-test diagnostic
+        run: swiftc -o "$RUNNER_TEMP/p282-hit" scripts/probe-282/hit.swift
       - name: Probe
-        run: node scripts/probe-282/probe.mjs --main "$RUNNER_TEMP/eng-main/debug/cua-engine" --branch "$RUNNER_TEMP/eng-branch/debug/cua-engine" --out "$RUNNER_TEMP/probe-282"
+        run: node scripts/probe-282/probe.mjs --main "$RUNNER_TEMP/eng-main/debug/cua-engine" --branch "$RUNNER_TEMP/eng-branch/debug/cua-engine" --hit "$RUNNER_TEMP/p282-hit" --out "$RUNNER_TEMP/probe-282"
       - name: Upload
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

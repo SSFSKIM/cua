@@ -19,7 +19,7 @@ import {join} from 'node:path';
 
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-282: runs only on a GitHub-hosted runner'); process.exit(2); }
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
-const OUT = arg('out'), MAIN = arg('main'), BRANCH = arg('branch');
+const OUT = arg('out'), MAIN = arg('main'), BRANCH = arg('branch'), HIT = arg('hit');
 if (!OUT || !MAIN || !BRANCH) { console.error('usage: probe.mjs --main <bin> --branch <bin> --out <dir>'); process.exit(2); }
 mkdirSync(OUT, {recursive: true});
 const CFT = '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
@@ -178,6 +178,11 @@ async function variant(label, bin, desktop) {
     const scale = sky.screenshot.width / wf.width;
     const x = Math.round((af.x + af.width / 2 - wf.x) * scale), y = Math.round((af.y + af.height / 2 - wf.y) * scale);
     row.target = {textareaFrame: af, screenshotPixel: {x, y}, scale};
+    // What the engine's pointerView reads before the click (Routes.swift): the AX hit at the posted point now, and the
+    // principal class chromiumFamily reads.
+    const posted = {x: wf.x + x / scale, y: wf.y + y / scale};
+    if (HIT) { const h = sh(HIT, [String(chrome.pid), String(posted.x), String(posted.y)]); try { row.hit = JSON.parse(h.out); } catch { row.hit = h; } }
+    row.principalClass = sh('/usr/libexec/PlistBuddy', ['-c', 'Print :NSPrincipalClass', CFT.replace(/MacOS\/.*$/, 'Info.plist')]).out;
     row.frontBefore = frontmost();
     await sleep(800);
     row.before = counters();
@@ -214,6 +219,7 @@ for (const [label, bin, desktop] of [['a-main', MAIN, null], ['b-shared', BRANCH
   log(`${label}: frontBefore=${row.frontBefore} frontAfter=${row.frontAfter} textEdit=${JSON.stringify(row.textEdit)}`);
   log(`${label}: click ${row.click?.error ? 'ERROR ' + JSON.stringify(row.click.error).slice(0, 600) : 'OK ' + String(JSON.stringify(row.click?.result?.meta ?? row.click?.result)).slice(0, 900)}`);
   log(`${label}: delta ${JSON.stringify(row.delta)} after ${JSON.stringify(row.after)}`);
+  log(`${label}: principalClass=${row.principalClass} hit ${JSON.stringify(row.hit)}`);
   if (row.exception || row.problem || row.getAppStateError) log(`${label}: PROBLEM ${row.problem ?? ''} ${JSON.stringify(row.getAppStateError ?? '')} ${row.exception ?? ''}`);
 }
 server.close();

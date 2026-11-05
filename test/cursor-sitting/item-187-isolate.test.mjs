@@ -5,12 +5,15 @@
 // control copy (the define on the Engine target alone, its own build id) and the CLI's dry runs. Nothing is driven.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {spawn, spawnSync} from 'node:child_process';
+import {EventEmitter} from 'node:events';
+import {existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {fileURLToPath} from 'node:url';
 import {main, read187} from '../../scripts/cursor-sitting.mjs';
 import {CONTROL_DEFINE, CONTROL_RECORD, CONTROL_VARIANT, checkPair, controlPackage, prepareControlSource} from '../../scripts/cursor-sitting/control-build.mjs';
-import {AFTER_BLOCK, AFTER_ONLY, attested188, attestProblem, cleanupAlarm, cleanupSteps, driveThenCleanup, startOf, BAR, BLOCKS, CELL_PER_HALF, combineVerdict, COMPOSING_PER_HALF, GOES_ON_ISO, isolateMarkdown, isolatePlan, isolateTasks, ITEMS, judgeIsolate,
+import {abortableIo, AFTER_BLOCK, AFTER_ONLY, attested188, isolateExit, putBackReading, signalGuard, attestProblem, cleanupAlarm, cleanupSteps, driveThenCleanup, startOf, BAR, BLOCKS, CELL_PER_HALF, combineVerdict, COMPOSING_PER_HALF, GOES_ON_ISO, isolateMarkdown, isolatePlan, isolateTasks, ITEMS, judgeIsolate,
   LABELS, MIN_COUNTED, ORDER, parseBlocks, partVerdict, repPremise, rowPremise, SAVED, stepCounts, TAIL, THIRDS, VERDICT_FILE} from '../../scripts/cursor-sitting/item-187-isolate.mjs';
 import {CELL_ROW, driveItems, ITEMS as ITEMS_187, plan187, rowRecord, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
 import {ITEMS_188, LABELS_188} from '../../scripts/cursor-sitting/item-188.mjs';
@@ -583,4 +586,111 @@ test('#188 on AFTER (the wave\'s P2): a row or cell-3 part whose action\'s resul
   assert.equal(j.item188.attest[0].unattested, 1);
   items[ITEMS.swap(AFTER_BLOCK)] = swapRows(AFTER_BLOCK, 'after', {observed: NATIVE.before});
   assert.equal(judgeIsolate(items).item188.attest[0].unattested, 2, 'block 7\'s swap does not count: no action attests AFTER');
+});
+
+// The child (fixtures/isolate-signal-child.mjs) sent `signal` once it waits in its BEFORE repetition, and `second` again
+// once its cleanup's restore has started. -> {code, report, stderr}.
+function signalled(t, signal, {second = null} = {}) {
+  const out = scratch(t), child = spawn(process.execPath, [fileURLToPath(new URL('./fixtures/isolate-signal-child.mjs', import.meta.url)), out, second ? '600' : '100'], {stdio: ['ignore', 'pipe', 'pipe']});
+  let stdout = '', stderr = '';
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error(`the child never finished: ${stdout} ${stderr}`)); }, 20_000);
+    child.stdout.on('data', chunk => {
+      const before = stdout;
+      stdout += chunk;
+      if (!before.includes('IN-BEFORE') && stdout.includes('IN-BEFORE')) child.kill(signal);
+      if (second && !before.includes('CLEANING') && stdout.includes('CLEANING')) child.kill(second);
+    });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('exit', code => { clearTimeout(timer); resolve({code, stderr, report: JSON.parse(stdout.trim().split('\n').at(-1))}); });
+  });
+}
+
+test('a signal mid-BEFORE (the re-review\'s P1): SIGTERM or SIGINT stops the drive\'s further steps, the cleanup puts the owner\'s engine back and attests it, and the process exits non-zero', async t => {
+  for (const [signal, code] of [['SIGTERM', 143], ['SIGINT', 130]]) {
+    const {code: exit, report, stderr} = await signalled(t, signal);
+    assert.equal(exit, code, `${signal}: 128 + its number`);
+    assert.deepEqual([report.signal, report.installed, report.restores, report.ranAfterSignal, report.cleanupError], [signal, 'owner', ['owner'], [], null], signal);
+    assert.match(report.stopped, new RegExp(`stopped by ${signal}`));
+    assert.match(stderr, new RegExp(`!!! ${signal}: the drive stops after its current step, then the cleanup puts the owner's end choice back`));
+  }
+  // A second signal while the cleanup restores: ignored, said so, and the restore completes.
+  const twice = await signalled(t, 'SIGTERM', {second: 'SIGTERM'});
+  assert.equal(twice.code, 143);
+  assert.deepEqual([twice.report.installed, twice.report.cleanupError], ['owner', null]);
+  assert.match(twice.stderr, /!!! SIGTERM again: ignored while the cleanup restores the engine; only SIGKILL stops it now/);
+});
+
+test('the signal guard and the abortable io: the first signal is kept, later ones only said; after it every task and cell throws', async () => {
+  const proc = new EventEmitter(), said = [];
+  const guard = signalGuard({proc, log: text => said.push(text)});
+  assert.equal(guard.signal(), null);
+  const ran = [], io = {tasks: {t: async () => { ran.push('t'); return {ok: true}; }}, open: async () => ({run: async () => ({ok: true}), close: async () => 0})};
+  const stoppable = abortableIo(io, guard.signal);
+  await stoppable.tasks.t([]);
+  proc.emit('SIGHUP');
+  assert.deepEqual([guard.signal(), guard.exitCode()], ['SIGHUP', 129]);
+  await assert.rejects(stoppable.tasks.t([]), /stopped by SIGHUP/);
+  await assert.rejects(stoppable.open({}), /stopped by SIGHUP/);
+  assert.deepEqual(ran, ['t']);
+  await io.tasks.t([]);
+  assert.deepEqual(ran, ['t', 't'], 'the cleanup\'s io is not stopped');
+  guard.cleaning();
+  proc.emit('SIGINT');
+  assert.equal(guard.signal(), 'SIGHUP', 'the first signal is the one kept');
+  assert.match(said.at(-1), /SIGINT again: ignored while the cleanup restores the engine/);
+  guard.dispose();
+  assert.equal(proc.listenerCount('SIGTERM'), 0);
+  // driveItems' abort: once it answers, only the end items run.
+  const items = [];
+  let aborted = null;
+  await driveItems(isolatePlan({blocks: [2]}), {abort: () => aborted, evidenceOf: () => ({rows: [], activations: []}),
+    runItem: async entry => { items.push(entry.item); if (entry.stage === 'swap') aborted = 'SIGTERM'; return null; }});
+  assert.deepEqual(items, [ITEMS.start, ITEMS.place, ITEMS.swap(2), ITEMS.end]);
+});
+
+test('#188 (the re-review\'s P2): a row with no action result in its own attempt is unattested and invalid', () => {
+  const name = ITEMS_188.rows('cua'), after = {build: BUILD.after, variant: null};
+  const row = (key, id) => ({kind: 'task', task: '188-row', result: {key, id, item: name, regime: 'frontmost', invalid: null, valid: true, delivered: true}});
+  // The action was attested in an earlier attempt; the latest attempt's row has none of its own.
+  const items = {[name]: [start, {kind: 'cell', label: LABELS_188.act('r.0', 'a'), nativeEngine: NATIVE.after}, row('r.0', 'a'), start, row('r.0', 'a'), row('r.1', 'b')]};
+  const {items: out, attest} = attested188(items, after);
+  assert.equal(out[name][2].result.invalid, null, 'the earlier attempt\'s row has its action');
+  assert.match(out[name][4].result.invalid, /^not attested on AFTER: no action result recorded in its attempt/);
+  assert.match(out[name][5].result.invalid, /no action result recorded in its attempt/);
+  assert.deepEqual([out[name][5].result.valid, out[name][5].result.delivered], [false, false]);
+  assert.deepEqual(attest[0], {item: name, actions: 3, unattested: 2, first: 'no action result recorded in its attempt'});
+  // A row already invalid keeps its own reason beside the attestation's.
+  const already = attested188({[name]: [start, {...row('r.2', 'c'), result: {...row('r.2', 'c').result, invalid: 'the act cell failed', valid: false}}]}, after);
+  assert.equal(already.items[name][1].result.invalid, 'the act cell failed; not attested on AFTER: no action result recorded in its attempt');
+});
+
+test('the judge\'s exit (the re-review\'s P2) and the put-back reading (1ea561bc:404)', async t => {
+  assert.equal(isolateExit(judgeIsolate(evidence())), 0);
+  assert.equal(isolateExit(judgeIsolate(evidence({cleanup: false}))), 1, 'LANDS with no attested cleanup is not a pass');
+  const dir = scratch(t);
+  for (const [name, rows] of Object.entries(evidence({cleanup: false}))) writeFileSync(join(dir, `item-${name}.jsonl`), rows.map(r => JSON.stringify(r)).join('\n') + '\n');
+  // The CLI in a child process: patching this process's stdout would swallow the test reporter's pending output.
+  const cli = args => spawnSync(process.execPath, [fileURLToPath(new URL('../../scripts/cursor-sitting.mjs', import.meta.url)), ...args], {encoding: 'utf8'});
+  const judged = cli(['isolate-187', 'judge', '--out', dir]);
+  assert.equal(judged.status, 1);
+  assert.match(judged.stdout, /^\*\*!!! THE ENGINE WAS NOT PUT BACK/);
+  assert.match(judged.stdout, /## Verdict: LANDS/);
+  // The put-back read from the engine's own ping: the end choice's build and no variant, else stop.
+  const ping = result => ({ok: true, result: {serverApiVersion: 'cua-engine-1', engineVersion: '0.1.0', ...result}});
+  assert.deepEqual(putBackReading(ping({build: OWNER}), {build: OWNER}), {ok: true, stop: false, identity: {engineVersion: '0.1.0', build: OWNER, variant: null}, problem: null});
+  const control = putBackReading(ping({build: BUILD.before, variant: CONTROL_VARIANT}), {build: OWNER});
+  assert.deepEqual([control.ok, control.stop], [false, true]);
+  assert.match(control.problem, /^THE CONTROL BUILD IS INSTALLED \(variant control-no-inert-click\): stop and do the by-hand restore/);
+  assert.match(putBackReading(ping({build: BUILD.after}), {build: OWNER}).problem, /running build is aaaaaaaaaaaa, not the end choice's ffffffffffff/);
+  assert.match(putBackReading({ok: false, unreachable: 'ENOENT'}, {build: OWNER}).problem, /no engine answered its ping \(ENOENT\)/);
+  // The verb: refuses without the end choice's save, and with no engine answering reads it as a stop.
+  const missing = cli(['isolate-187', 'engine-identity', '--home', dir, '--halves', dir]);
+  assert.equal(missing.status, 2);
+  assert.match(missing.stderr, /engine-owner holds no save to read the put-back against/);
+  mkdirSync(join(dir, 'engine-owner'));
+  writeFileSync(join(dir, 'engine-owner', 'saved.json'), JSON.stringify({status: {build: OWNER}}));
+  const none = cli(['isolate-187', 'engine-identity', '--home', dir, '--halves', dir]);
+  assert.equal(none.status, 1);
+  assert.match(none.stdout, /!!! no engine answered its ping/);
 });

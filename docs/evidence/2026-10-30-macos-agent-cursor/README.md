@@ -957,8 +957,11 @@ $S source restore --out "$OUTI"
 defaults read com.apple.HIToolbox AppleGlobalTextInputProperties                   # still does not exist
 $SC down all --run "$RUN"
 $SC reactivate --bundle-id <saved bundle id> --pid <saved pid>
-# step 16: the drive's cleanup already applied the owner's choice; read it back
-node bin/cua.mjs engine status --json                                              # expected: the chosen save's build, approved: true
+# step 16: the drive's cleanup already applied the owner's choice; read it back from the running engine's own ping
+$S isolate-187 engine-identity --home "$HOME" --halves "$SLOT" --end restore-owner   # the same --end as the drive
+# expected: "the running engine: build <the end choice's save's build>, no variant"; exit 0. A variant
+# (control-no-inert-click) or another build prints "!!! ..." and exits 1: stop, and do the by-hand restore below
+# before the owner leaves
 ```
 
 The dry run is expected to print the following counts. `--blocks 7` alone prints 381 steps. `--no-tail` prints 1058,
@@ -979,13 +982,20 @@ dry run: the cleanup on every exit (restore-owner): 7 steps
 dry run: 1137 steps, nothing sent
 ```
 
-**If the cleanup fails.** The verdict file's first line, and the drive's first printed line, then begin
-`**!!! THE ENGINE WAS NOT PUT BACK`, and the drive exits 1. The control build may still be installed. The operator
-stops there, runs nothing else on the engine, and puts the chosen save back by hand, with the owner at the console:
+**Signals.** Ctrl-C (SIGINT), a kill (SIGTERM) or the terminal closing (SIGHUP) during the drive stops it after its
+current step: every later step of the item throws, its sessions close, and only the end items run. Then the cleanup
+puts the end choice back and attests it, the verdict file is written, and the drive exits 128 plus the signal's number
+(130, 143, 129). A second signal during the cleanup is ignored, and stderr says so; the restore completes.
+
+**If the cleanup fails, or never ran.** A failed cleanup makes the verdict file's first line, and the drive's first
+printed line, begin `**!!! THE ENGINE WAS NOT PUT BACK`, and the drive exits 1. SIGKILL, a crash, or the Mac losing
+power mid-drive cannot be caught: the cleanup never runs and nothing says so, which is why step 16 reads the running
+engine's own identity. Either way the control build may still be installed. The operator stops there, runs nothing
+else on the engine, and puts the chosen save back by hand, with the owner at the console:
 `$S restore --home "$HOME" --from "$SLOT/engine-owner" --aside "$SLOT/aside/end-by-hand"` (or `engine-after` for
-keep-merged), then `node bin/cua.mjs engine approve` if the restore says so, and `engine status --json`. The status
-must read the save's build, never the preparation's `controlBuild`. Then `$S isolate-187 judge --out "$OUTI"`
-re-reads the records, and the report says what was put back by hand.
+keep-merged), then `node bin/cua.mjs engine approve` if the restore says so, and `$S isolate-187 engine-identity`
+as in step 16. It must read the save's build with no variant, never the preparation's `controlBuild`. Then
+`$S isolate-187 judge --out "$OUTI"` re-reads the records, and the report says what was put back by hand.
 
 - A block of 126 steps is a swap (7), two cell repetitions (33 each) and its composing rows (53).
 - Block 7's 286 are its swap (7), #188's part (129), C2's three repetitions (23 each) and C3's three (27 each).
@@ -1007,7 +1017,7 @@ re-reads the records, and the report says what was put back by hand.
 | 13 | the tail: C4 (b) (Chrome relaunched, three menu records and clicks in one session: 0.5–1) and C4 (c) (Finder placed over TextEdit, three ⌘↑ and clicks in one session: 0.4–0.8); left out with `--no-tail` | drive | 1–2 |
 | 14 | 187-iso-end: the owner's source selected again and read back; then the cleanup, on every exit: the owner's end choice restored, approved with no terminal and attested (no variant, that save's build); the verdict file written | drive | 1 |
 | 15 | judge, `source restore`, the scenes down, the owner's front app back; the verdict to the owner | operator | 2 |
-| 16 | the end state: the drive's cleanup already applied the owner's choice (restore-owner or keep-merged); its status read | operator | 0.5 |
+| 16 | the end state: the drive's cleanup already applied the owner's choice (restore-owner or keep-merged); `isolate-187 engine-identity` reads the running engine's ping: that save's build, no variant (a control variant stops the operator for the by-hand restore) | operator | 0.5 |
 | | **the slot (steps 1–16)** | | **about 25–34** |
 
 - **The owner is active for about 3–4 minutes**: steps 2 and 3, plus the one prompt if one appears.

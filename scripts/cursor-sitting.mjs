@@ -149,6 +149,12 @@
 //       run. The out directory is the slot's own, never a re-slot's (one holding item-187.md is refused). `judge` writes
 //       <out>/item-187-isolate.md, the pre-registered verdict: LANDS, DOES NOT LAND or INCONCLUSIVE; a cleanup that did
 //       not attest is its first line. Exit 1 unless LANDS with the cleanup done. The dry run prints each block's steps.
+//       A SIGINT, SIGTERM or SIGHUP stops the drive after its current step, runs the cleanup, and exits 128 + its number;
+//       a second one during the cleanup is ignored (and said so on stderr). SIGKILL cannot be caught: step 16's
+//       engine-identity read is what shows a control build left behind.
+//   cursor-sitting.mjs isolate-187 engine-identity --home <dir> --halves <dir> [--end restore-owner|keep-merged]
+//       The put-back read from the running engine's own ping (its socket under <home>): the end choice's save's build
+//       and no variant, exit 0; a variant (the control's) or another build is a stop for the by-hand restore, exit 1.
 //   cursor-sitting.mjs isolate-187 replay [--from <records dir>] [--to <file>]
 //       Section D (./cursor-sitting/isolate-replay.mjs): the judge's pure pieces over the second re-slot's records
 //       (item-187-reslot2/, or --from) as recorded and under named mutations, and C2's and C3's over synthetic fixtures;
@@ -168,7 +174,7 @@ import {liveSourceSwitch, switchSource, writeConsent} from './cursor-sitting/inp
 import {windowListProbe, writeOrderFromMeta} from './cursor-sitting/glide.mjs';
 import {buildControl, checkPair, CONTROL_RECORD, prepareControlSource} from './cursor-sitting/control-build.mjs';
 import {engineDirOf, restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
-import {cleanupSteps, DEFAULT_END, driveThenCleanup, GOES_ON_ISO, isolateMarkdown, isolatePlan, isolateTasks, ITEMS as ITEMS_ISO, judgeIsolate, parseBlocks, SAVED as SAVED_ISO, startOf, stepCounts, VERDICT_FILE} from './cursor-sitting/item-187-isolate.mjs';
+import {abortableIo, cleanupSteps, DEFAULT_END, driveThenCleanup, END_CHOICES, isolateExit, putBackReading, signalGuard, GOES_ON_ISO, isolateMarkdown, isolatePlan, isolateTasks, ITEMS as ITEMS_ISO, judgeIsolate, parseBlocks, SAVED as SAVED_ISO, startOf, stepCounts, VERDICT_FILE} from './cursor-sitting/item-187-isolate.mjs';
 import {PLANS} from './cursor-sitting/plans.mjs';
 import {CASES, elementFrameTool, ENGINES, itemOf, judgeCase, moveWindowTool, orderFileOf, orderLines, orderWatchProbe, placeSteps, raiseMarkdown,
   raiseSteps} from './cursor-sitting/raise.mjs';
@@ -429,14 +435,17 @@ async function drive187(values) {
 // A #187 plan's items driven into `out` (./cursor-sitting/item-187.mjs driveItems), seeded with the slot's count so far:
 // every person-touched item the out directory records, in every attempt of every item (a part run again included), so
 // no re-run resets the stop rule. `goesOn`: the stages whose stop lets the drive go on. -> {stopped, steps}.
-async function drivePlan(plan, {out, io, dryRun, goesOn = GOES_ON}) {
+// `abort()`: a signal's name once one came (signalGuard), else null; then the drive stops after its current step (every
+// item's io but the end items' is abortableIo) and only the end items run.
+async function drivePlan(plan, {out, io, dryRun, goesOn = GOES_ON, abort = null}) {
+  const stoppable = abort ? abortableIo(io, abort) : io;
   const lines = file => (existsSync(file) ? readJsonl(file) : []);
   const evidenceOf = item => ({rows: lines(join(out, `item-${item}.jsonl`)), activations: lines(join(out, `item-${item}-activations.ndjson`))});
   const seed = dryRun ? 0 : Object.keys(read187(out)).filter(item => item.startsWith('187-'))
     .reduce((n, item) => n + (({rows, activations}) => slotTouches(rows, activations))(evidenceOf(item)), 0);
   let steps = 0;
-  const {stopped} = await driveItems(plan, {seed, print, goesOn,
-    runItem: async ({item, steps: itemSteps}) => { steps += itemSteps.length; try { await runSteps(itemSteps, {item, out, io, dryRun}); return null; } catch (error) { return error; } },
+  const {stopped} = await driveItems(plan, {seed, print, goesOn, ...(abort ? {abort} : {}),
+    runItem: async ({item, stage, steps: itemSteps}) => { steps += itemSteps.length; try { await runSteps(itemSteps, {item, out, io: stage === 'end' ? io : stoppable, dryRun}); return null; } catch (error) { return error; } },
     evidenceOf: item => (dryRun ? {rows: [], activations: []} : evidenceOf(item)),
     mark: (item, error, touched) => appendFileSync(join(out, `item-${item}.jsonl`), `${JSON.stringify({item, at: Date.now(), kind: 'stopped', error: error.message, ...(touched.count ? {personTouched: touched.foreign ?? true} : {})})}\n`)});
   return {stopped, steps};
@@ -470,15 +479,20 @@ async function driveIsolate(values) {
   const io = liveIo({run, out, quiet: values.quiet});
   Object.assign(io.tasks, isolateTasks({halves, start, now: Date.now, savedRecord: dir => JSON.parse(readFileSync(join(dir, 'saved.json'), 'utf8')),
     restore: ({from, aside}) => restoreEngine({home, from, aside, ...engineDeps(home)}), approve: async () => approveHeadless(home)}));
-  // The cleanup runs on every exit: the owner's end choice applied and attested.
-  const outcome = await driveThenCleanup({end, drive: () => drivePlan(plan, {out, io, dryRun, goesOn: GOES_ON_ISO}),
-    cleanup: steps => runSteps(steps, {item: ITEMS_ISO.cleanup, out, io})});
-  const judged = judgeIsolate(read187(out)), text = isolateMarkdown(judged, {commit: kitCommit()});
-  writeFileSync(join(out, VERDICT_FILE), text);
-  print(text);  // a failed cleanup is its first line
-  if (outcome.error) print(`the drive threw (the cleanup ran after it): ${outcome.error.message}`);
-  if (outcome.cleanupError) print(`the cleanup stopped: ${outcome.cleanupError.message}`);
-  return judged.cleanup.ok && !outcome.stopped && !outcome.error && judged.ok ? 0 : 1;
+  // The cleanup runs on every exit, a SIGINT, SIGTERM or SIGHUP included: the owner's end choice applied and attested.
+  const guard = signalGuard();
+  try {
+    const outcome = await driveThenCleanup({end, guard, drive: () => drivePlan(plan, {out, io, dryRun, goesOn: GOES_ON_ISO, abort: guard.signal}),
+      cleanup: steps => runSteps(steps, {item: ITEMS_ISO.cleanup, out, io})});
+    const judged = judgeIsolate(read187(out)), text = isolateMarkdown(judged, {commit: kitCommit()});
+    writeFileSync(join(out, VERDICT_FILE), text);
+    print(text);  // a failed cleanup is its first line
+    if (outcome.signal) print(`the drive was stopped by ${outcome.signal}; the cleanup ran after it`);
+    if (outcome.error) print(`the drive threw (the cleanup ran after it): ${outcome.error.message}`);
+    if (outcome.cleanupError) print(`the cleanup stopped: ${outcome.cleanupError.message}`);
+    if (outcome.signal) return guard.exitCode();
+    return isolateExit(judged) === 0 && !outcome.stopped && !outcome.error ? 0 : 1;
+  } finally { guard.dispose(); }
 }
 
 async function drive(steps, {item, values, gap = null}) {
@@ -706,7 +720,7 @@ export async function main(argv) {
       const out = absolute(values, 'out'), judged = judgeIsolate(read187(out)), text = isolateMarkdown(judged, {commit: kitCommit()});
       writeFileSync(join(out, VERDICT_FILE), text);
       print(text);
-      return judged.ok ? 0 : 1;
+      return isolateExit(judged);
     }
     if (sub === 'replay') {
       // Section D: the judge's pure pieces over 11-05's records and the C2/C3 fixtures (./cursor-sitting/isolate-replay.mjs).
@@ -719,7 +733,19 @@ export async function main(argv) {
       for (const m of mismatches) print(`NOT as expected: ${m.name}: expected ${m.expected}, got ${m.outcome}`);
       return mismatches.length ? 1 : 0;
     }
-    throw new Error('isolate-187 takes drive, judge or replay');
+    if (sub === 'engine-identity') {
+      // The put-back read from the running engine's own ping (1ea561bc:404): the end choice's save's build, no variant.
+      const home = absolute(values, 'home'), halves = absolute(values, 'halves'), end = values.end ?? DEFAULT_END, target = END_CHOICES[end];
+      if (!target) throw new Error(`--end takes ${Object.keys(END_CHOICES).join(' or ')}`);
+      const build = (() => { try { return JSON.parse(readFileSync(join(halves, SAVED_ISO[target], 'saved.json'), 'utf8')).status?.build ?? null; } catch { return null; } })();
+      if (!build) throw new Error(`${join(halves, SAVED_ISO[target])} holds no save to read the put-back against`);
+      const {rpc} = await import('../src/runtime/engine.mjs'), {CLIENT_API_VERSION} = await import('../src/services/engine/protocol.mjs');
+      const reading = putBackReading(await rpc(join(engineDirOf(home), 'engine.sock'), 'ping', {clientApiVersion: CLIENT_API_VERSION}), {build});
+      print(reading.ok ? `the running engine: build ${reading.identity.build}, no variant: the end choice's (${end}, ${SAVED_ISO[target]})` : `!!! ${reading.problem}`);
+      print(reading);
+      return reading.ok ? 0 : 1;
+    }
+    throw new Error('isolate-187 takes drive, judge, replay or engine-identity');
   }
   if (command === 'remote') {
     const kit = absolute(values, 'kit'), sub = positionals[0];

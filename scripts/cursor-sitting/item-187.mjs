@@ -634,13 +634,15 @@ export function slotTouches(rows, activationLines = []) {
 // replacement, once (`entry.replace`). More than TOUCHED_STOP stops the drive: only the 'end' items still run (187-end,
 // the owner's source). An item that stops stops the items after it but the end, unless its stage goes on (a cell
 // repetition, #259's cell, a #188 item: each later item sets up its own scene) or the person touched it. `mark(item,
-// error, touched)` records a stop. -> {stopped, touched, ran}.
+// error, touched)` records a stop. `abort()`: a reason to stop now (a signal), or null; once it answers, only the 'end'
+// items run. -> {stopped, touched, ran}.
 export const GOES_ON = Object.freeze(['cell', 'press', '259', '188']);
-export async function driveItems(plan, {runItem, evidenceOf, mark = () => {}, seed = 0, print = () => {}, goesOn = GOES_ON}) {
+export async function driveItems(plan, {runItem, evidenceOf, mark = () => {}, seed = 0, print = () => {}, goesOn = GOES_ON, abort = () => null}) {
   const queue = [...plan], ran = [];
   let stopped = null, touched = seed;
   while (queue.length) {
     const entry = queue.shift();
+    if (!stopped && abort()) { stopped = `stopped by ${abort()}`; print(`${stopped}; only the end items run`); }
     if (stopped && entry.stage !== 'end') continue;
     const error = await runItem(entry);
     const evidence = entry.stage === 'premise' ? null : evidenceOf(entry.item);

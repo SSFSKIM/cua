@@ -200,12 +200,57 @@ export function startOf({record = null, check, saved = {}, end = DEFAULT_END}) {
 }
 
 // The drive, then the cleanup on every exit, whatever the drive did: `drive()` (-> {stopped}), `cleanup(steps)` running
-// cleanupSteps(end). A throw from either is kept, never lost. -> {stopped, error, cleanupError}.
-export async function driveThenCleanup({drive, cleanup, end = DEFAULT_END}) {
+// cleanupSteps(end). A throw from either is kept, never lost. `guard` (signalGuard): from the cleanup on, a further
+// signal is ignored and said so, so it cannot cut the restore short. -> {stopped, error, cleanupError, signal}.
+export async function driveThenCleanup({drive, cleanup, end = DEFAULT_END, guard = null}) {
   let stopped = null, error = null, cleanupError = null;
   try { ({stopped = null} = (await drive()) ?? {}); } catch (e) { error = e; }
+  guard?.cleaning();
   try { await cleanup(cleanupSteps(end)); } catch (e) { cleanupError = e; }
-  return {stopped, error, cleanupError};
+  return {stopped, error, cleanupError, signal: guard?.signal() ?? null};
+}
+
+// The judge's and the drive's exit: 0 only when the verdict LANDS and the cleanup is attested.
+export const isolateExit = judged => (judged.ok && judged.cleanup?.ok === true ? 0 : 1);
+
+// SIGINT, SIGTERM and SIGHUP during the drive (Ctrl-C, a kill, the terminal closing): the first stops the drive's
+// further steps (abortableIo, driveItems' abort) so the cleanup runs, and the process exits 128 + its number after it;
+// one during the cleanup is ignored and said so on stderr, so it cannot abort the restore. SIGKILL and a crash cannot
+// be caught: the runbook's "If the cleanup fails". -> {signal(), cleaning(), exitCode(), dispose()}.
+export const GUARDED_SIGNALS = Object.freeze({SIGINT: 2, SIGTERM: 15, SIGHUP: 1});
+export function signalGuard({proc = process, log = text => process.stderr.write(text)} = {}) {
+  let caught = null, phase = 'drive';
+  const handler = name => () => {
+    if (!caught) {
+      caught = name;
+      log(`\n!!! ${name}: the drive stops after its current step, then the cleanup puts the owner's end choice back and attests it\n`);
+    } else log(`\n!!! ${name} again: ignored ${phase === 'cleanup' ? 'while the cleanup restores the engine' : 'until the cleanup has run'}; only SIGKILL stops it now, and then the runbook's by-hand restore applies\n`);
+  };
+  const handlers = Object.fromEntries(Object.keys(GUARDED_SIGNALS).map(name => [name, handler(name)]));
+  for (const [name, h] of Object.entries(handlers)) proc.on(name, h);
+  return {signal: () => caught, cleaning: () => { phase = 'cleanup'; }, exitCode: () => (caught ? 128 + GUARDED_SIGNALS[caught] : null),
+    dispose: () => { for (const [name, h] of Object.entries(handlers)) proc.off(name, h); }};
+}
+
+// The drive's io, stopped by a signal: once `aborted()` answers, every further task and cell throws instead of running,
+// so the item ends at once (the runner's finally closes its sessions and puts the input source back). The cleanup uses
+// the io unwrapped.
+export function abortableIo(io, aborted) {
+  const check = () => { const why = aborted(); if (why) throw new Error(`stopped by ${why}`); };
+  return {...io,
+    tasks: Object.fromEntries(Object.entries(io.tasks).map(([name, task]) => [name, async (...args) => { check(); return task(...args); }])),
+    open: async (...args) => { check(); const session = await io.open(...args); return {...session, run: async (...a) => { check(); return session.run(...a); }, close: (...a) => session.close(...a)}; }};
+}
+
+// The put-back read from the running engine's own ping (`kit engine-identity`): its build must be the end choice's save
+// and it must name no variant; a control variant stops the operator for the by-hand restore (1ea561bc:404).
+// `answer`: ./src/runtime/engine.mjs rpc's answer to ping. -> {ok, stop, identity, problem}.
+export function putBackReading(answer, {build}) {
+  if (!answer?.ok) return {ok: false, stop: true, identity: null, problem: `no engine answered its ping (${answer?.unreachable ?? answer?.error?.message ?? 'no answer'}): run \`node bin/cua.mjs engine approve\` to launch it, then read again`};
+  const r = answer.result ?? {}, identity = {engineVersion: r.engineVersion ?? null, build: r.build ?? null, variant: r.variant ?? null};
+  if (identity.variant) return {ok: false, stop: true, identity, problem: `THE ${identity.variant === CONTROL_VARIANT ? 'CONTROL BUILD' : `${identity.variant} BUILD`} IS INSTALLED (variant ${identity.variant}): stop and do the by-hand restore (the runbook's "If the cleanup fails")`};
+  if (identity.build !== build) return {ok: false, stop: true, identity, problem: `the running build is ${short(identity.build)}, not the end choice's ${short(build)}: do the by-hand restore`};
+  return {ok: true, stop: false, identity, problem: null};
 }
 
 // `--blocks`: "1-7", "3", "2,5", "4-7". -> the block numbers, in order.
@@ -430,7 +475,8 @@ export function judgeIsolate(items) {
 }
 
 // #188's cua items with every row and cell-3 part whose action's result does not attest `after` made invalid, so
-// judge188 never counts it. A row ties to its action by label (LABELS_188.act, LABELS_188.click). -> {items, attest}.
+// judge188 never counts it. A row ties to its action by label (LABELS_188.act, LABELS_188.click), in its own attempt;
+// a row with no action result there is unattested too. -> {items, attest}.
 export function attested188(items, after) {
   const out = {...items}, attest = [];
   for (const name of ENGINE_ITEMS_188.filter(n => items[n])) {
@@ -439,14 +485,14 @@ export function attested188(items, after) {
     out[name] = rows.map((r, k) => {
       if (r.kind !== 'task' || !r.result || !['188-row', '188-click-record'].includes(r.task)) return r;
       const label = r.task === '188-row' ? LABELS_188.act(r.result.key, r.result.id) : LABELS_188.click(r.result.item, r.result.part);
-      const cell = rows.slice(0, k).findLast(c => c.kind === 'cell' && c.label === label);
-      if (!cell) return r;
+      const from = rows.slice(0, k).map(x => x.kind).lastIndexOf('start');
+      const cell = rows.slice(Math.max(0, from), k).findLast(c => c.kind === 'cell' && c.label === label);
       actions += 1;
-      const problem = attestProblem(cell.nativeEngine ?? null, after);
+      const problem = cell ? attestProblem(cell.nativeEngine ?? null, after) : 'no action result recorded in its attempt';
       if (!problem) return r;
       unattested += 1;
       first ??= problem;
-      const invalid = `not attested on AFTER: ${problem}`;
+      const invalid = `${r.result.invalid ? `${r.result.invalid}; ` : ''}not attested on AFTER: ${problem}`;
       return {...r, result: {...r.result, invalid, ...(r.task === '188-row' ? {valid: false, delivered: false} : {outcome: null})}};
     });
     attest.push({item: name, actions, unattested, first});

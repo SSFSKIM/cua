@@ -121,7 +121,7 @@ async function launchChrome(label) {
   ready = false; latest = null;
   const udd = join(OUT, `chrome-${label}`);
   const child = spawn(CFT, [`--user-data-dir=${udd}`, '--no-first-run', '--no-default-browser-check', '--disable-search-engine-choice-screen',
-    '--window-position=800,40', '--window-size=760,720', URL_], {stdio: 'ignore'});
+    '--window-position=400,30', '--window-size=620,720', URL_], {stdio: 'ignore'});
   for (let i = 0; i < 120 && !ready; i++) await sleep(250);
   if (!ready) throw new Error('Chrome did not load the page in 30 s');
   await sleep(1500);
@@ -134,15 +134,18 @@ async function frontTextEdit() {
     await sleep(1500);
     if (frontmost() === 'com.apple.TextEdit') break;
   }
-  // Chrome sits at x 800 to 1560; TextEdit's window goes to its left, so it is in front without covering the page.
-  const place = osa('tell application "System Events"\ntell process "TextEdit"\nset position of window 1 to {20, 80}\nset size of window 1 to {600, 400}\nend tell\nend tell');
+  // The hosted display is 1024 x 768. Chrome sits at x 400 to 1020; TextEdit's window goes to its left, so it is in front without covering the page.
+  const place = osa('tell application "System Events"\ntell process "TextEdit"\nset position of window 1 to {0, 40}\nset size of window 1 to {380, 300}\nend tell\nend tell');
   const bounds = osa('tell application "System Events" to tell process "TextEdit" to get {position, size} of window 1');
   await sleep(500);
   return {front: frontmost(), placeStatus: place.status, placeErr: place.err.slice(0, 300), bounds: bounds.out};
 }
 
 async function startEngine(bin, label) {
-  const socket = join('/private/tmp', `p282-${label}.sock`);
+  // The engine refuses a socket directory another user owns (/tmp's is root's): one of the run's own, 0700.
+  const dir = join(OUT, 'sock');
+  mkdirSync(dir, {recursive: true, mode: 0o700});
+  const socket = join(dir, `${label}.sock`);
   const env = {...process.env, CUA_ENGINE_SOCKET: socket};
   const child = spawn(bin, [], {env, stdio: ['ignore', 'pipe', 'pipe']});
   let stderr = '';

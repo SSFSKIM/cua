@@ -169,3 +169,15 @@ Along the paste's size (`fix5/README.md`): the rule now finds where the scroll w
 building anything, and compares in place, so a 64 MiB paste whose read cannot hold it is judged in 0.1 ms with nothing
 of its size allocated (it took 260 ms and 268 MB), and one check at the field limit takes about 3 ms on the shipped
 musl build (it took 24).
+
+## Task 59 (`zero/`): the timer shortened to 0, the redirect retained
+
+The design session asked whether the timer stays (`zero/README.md`). The plain 0 ms control as an engine setting
+(`control-0ms`: `--teardown-ms 0`, session retention) ran beside the timer lane, on all 8 families, idle and at twice
+the load.
+
+- No key was cut or reordered at 0 in any burst or A-B-A run.
+- Chrome, Electron and Firefox missed the key-then-paste scenario idle and at twice the load; gnome-terminal missed it
+  idle only.
+- Without the flush's wait, the paste observes its field before the keys sent just before it have landed. It then
+  either refuses with nothing sent, or lands unconfirmed.

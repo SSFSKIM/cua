@@ -1,0 +1,3 @@
+{"pid":42893,"watch":"activations"}
+{"at":1793914237219,"kind":"activated","pid":42146,"bundleId":"com.google.chrome.for.testing"}
+{"pid":43714,"kind":"deactivated","bundleId":"com.apple.TextEdit","at":1793914237220}

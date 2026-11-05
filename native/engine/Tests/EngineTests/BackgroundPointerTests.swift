@@ -91,9 +91,9 @@ final class BackgroundPointerTests: XCTestCase {
     }
   }
 
-  /// A plain click whose hit advertises AXPress goes by the element route instead: the route's closure runs, no mouse
-  /// event is posted by the pointer's path, and the meta is the element route's.
-  func testSharedModeCarriesAPlainClickIntoAWebAreaByTheHitsActionWithNoMouseEvent() throws {
+  /// A plain click whose hit has an element route goes by it instead: the route's closure runs, cua posts nothing on the
+  /// pointer's path, and the meta is the element route's (Chrome may synthesize events of its own for the action).
+  func testSharedModeCarriesAPlainClickIntoAWebAreaByTheHitsActionPostingNothingItself() throws {
     let seam = GuardSeam(frontmost: user)
     var clickMeta = meta(connection())
     var pressed = 0
@@ -102,7 +102,7 @@ final class BackgroundPointerTests: XCTestCase {
       try deliverAction("AXPress", route: .action, perform: { _ in .success }, meta: &meta)
     }, meta: &clickMeta)
     XCTAssertEqual(pressed, 1)
-    XCTAssertEqual(seam.posts.count, 0, "no mouse event, no activation from the pointer's path")
+    XCTAssertEqual(seam.posts.count, 0, "cua posts nothing: no event, no activation from the pointer's path")
     XCTAssertEqual(clickMeta.inputRoute, .action, "route 1")
     XCTAssertNotNil(clickMeta.startedAt, "the action is the request's input")
     XCTAssertEqual(activations.holders(target), 0)
@@ -344,12 +344,62 @@ final class BackgroundPointerTests: XCTestCase {
     }
   }
 
-  func testTheElementRoutesActionIsTheElementClicksForAPlainLeftClickOnly() {
-    XCTAssertEqual(webAreaElementAction(button: .left, count: 1, role: "AXCheckBox", actions: ["AXPress"]), "AXPress")
-    XCTAssertEqual(webAreaElementAction(button: .left, count: 1, role: "AXRadioButton", actions: ["AXPress", "AXPick"]), "AXPick")
-    XCTAssertNil(webAreaElementAction(button: .left, count: 1, role: "AXTextArea", actions: ["AXShowMenu"]), "no action: refused")
-    XCTAssertNil(webAreaElementAction(button: .left, count: 1, role: "AXButton", actions: nil), "unread actions: refused")
-    XCTAssertNil(webAreaElementAction(button: .left, count: 2, role: "AXButton", actions: ["AXPress"]), "a double click is refused")
+  private func route(_ role: String?, editable: Bool = false, actions: [String]? = ["AXPress"], button: MouseButton = .left,
+                     count: Int = 1) -> WebAreaElementRoute {
+    webAreaElementRoute(button: button, count: count, role: role, editable: editable, actions: actions)
+  }
+
+  /// The design session's ruling (1ea561bc fe37aee9): the element route presses only roles whose action has a known
+  /// effect; an allowlisted button passes with the element click's action.
+  func testTheElementRoutePressesAnAllowlistedRoleWithTheElementClicksAction() {
+    for role in ["AXButton", "AXCheckBox", "AXRadioButton", "AXLink", "AXPopUpButton", "AXMenuItem", "AXMenuButton", "AXDisclosureTriangle", "AXTab"] {
+      XCTAssertEqual(route(role), .press("AXPress"), role)
+    }
+    XCTAssertEqual(route("AXRadioButton", actions: ["AXPress", "AXPick"]), .press("AXPick"))
+    XCTAssertEqual(route("AXButton", actions: nil), .refuse(.noAction), "unread actions: refused (the re-read's place)")
+    XCTAssertEqual(route("AXButton", actions: ["AXShowMenu"]), .refuse(.noAction))
+    XCTAssertEqual(route("AXButton", count: 2), .refuse(.notPlainLeft), "a double click is refused")
+    XCTAssertEqual(route("AXButton", button: .right), .refuse(.notPlainLeft))
+  }
+
+  /// The hosted A/B (run 42130746324): AXPress on the page's AXTextArea answered success and did nothing. Text entry, and
+  /// any role off the list, is refused; so is an allowlisted role inside an editable region (#283's).
+  func testTheTextAreaAndAnEditableAncestorHitAreRefused() {
+    for role in ["AXTextArea", "AXTextField", "AXComboBox", "AXStaticText", "AXGroup", "AXWebArea", "AXImage"] {
+      XCTAssertEqual(route(role), .refuse(.roleNotAllowed), role)
+    }
+    XCTAssertEqual(route(nil), .refuse(.roleNotAllowed), "an unreadable role")
+    XCTAssertEqual(route("AXButton", editable: true), .refuse(.editable), "a button in a contenteditable region")
+  }
+
+  /// A checkbox or radio button whose value is unchanged after the press, through the settle, answers clickUnconfirmed;
+  /// one whose value changes passes, as does a role with no value to check.
+  func testAnUnchangedValueAfterThePressAnswersClickUnconfirmed() throws {
+    var clock: Double = 0
+    var presses = 0
+    func run(_ values: [String?], checks: Bool = true) throws {
+      var reads = values.makeIterator()
+      var last: String?
+      try pressConfirmingValue(app: "Google Chrome for Testing", checksValue: checks, readValue: {
+        if let next = reads.next() { last = next }
+        return last
+      }, now: { clock }, sleep: { clock += $0 }) { presses += 1 }
+    }
+    XCTAssertThrowsError(try run(["0", "0"])) {
+      let error = $0 as? EngineError
+      XCTAssertEqual(error?.errorName, "clickUnconfirmed")
+      XCTAssertTrue(error?.message.contains("the control's value did not change") == true, error?.message ?? "")
+    }
+    XCTAssertEqual(presses, 1, "pressed once, never retried")
+    XCTAssertGreaterThanOrEqual(clock, webAreaValueSettleMs, "the whole settle waited")
+    XCTAssertLessThan(clock, webAreaValueSettleMs + 2 * webAreaValueSampleMs, "and no longer")
+    clock = 0
+    XCTAssertNoThrow(try run(["0", "0", "0", "1"]), "the value changed within the settle")
+    XCTAssertLessThan(clock, webAreaValueSettleMs)
+    XCTAssertThrowsError(try run(["1", nil]), "unreadable after a readable value: unconfirmed")
+    XCTAssertNoThrow(try run([nil]), "no value to read before: the press stands")
+    XCTAssertNoThrow(try run(["0"], checks: false), "a button has no value to check")
+    XCTAssertEqual(presses, 5)
   }
 
   // MARK: The coordinate hit-test asks the application, bounded to the window (#282, found live on the hosted runner)

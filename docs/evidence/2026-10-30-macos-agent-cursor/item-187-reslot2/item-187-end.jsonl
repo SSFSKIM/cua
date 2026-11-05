@@ -1,0 +1,8 @@
+{"item":"187-end","at":1793867463803,"kind":"start","steps":3,"dryRun":false}
+{"item":"187-end","at":1793867463803,"step":1,"kind":"say","text":"#187: the owner's input source selected again, TextEdit's run window on top"}
+{"item":"187-end","at":1793867463957,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":94356,"bundleId":"com.apple.TextEdit"}}}
+{"item":"187-end","at":1793867464272,"step":3,"kind":"task","task":"select-source","args":["owner","textedit"],"result":{"ok":true,"which":"owner","switched":true,"requested":"com.apple.keylayout.ABC","current":{"id":"com.apple.keylayout.ABC","name":"ABC"}}}
+{"item":"187-end","at":1793867589084,"kind":"start","steps":3,"dryRun":false}
+{"item":"187-end","at":1793867589084,"step":1,"kind":"say","text":"#187: the owner's input source selected again, TextEdit's run window on top"}
+{"item":"187-end","at":1793867589213,"step":2,"kind":"task","task":"activate","args":["textedit"],"result":{"scene":"textedit","ok":true,"frontmost":{"pid":94356,"bundleId":"com.apple.TextEdit"}}}
+{"item":"187-end","at":1793867589545,"step":3,"kind":"task","task":"select-source","args":["owner","textedit"],"result":{"ok":true,"which":"owner","switched":true,"requested":"com.apple.keylayout.ABC","current":{"id":"com.apple.keylayout.ABC","name":"ABC"}}}

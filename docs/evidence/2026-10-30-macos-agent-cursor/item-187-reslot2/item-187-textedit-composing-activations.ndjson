@@ -1,0 +1,5 @@
+{"pid":70576,"watch":"activations"}
+{"kind":"activated","bundleId":"com.apple.TextEdit","at":1793867361621,"pid":94356}
+{"kind":"deactivated","bundleId":"io.github.ssfskim.cua.fixture.electron","at":1793867361621,"pid":97061}
+{"kind":"activated","bundleId":"io.github.ssfskim.cua.fixture.electron","at":1793867361745,"pid":97061}
+{"kind":"deactivated","bundleId":"com.apple.TextEdit","at":1793867361750,"pid":94356}

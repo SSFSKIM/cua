@@ -1,6 +1,6 @@
-# #282's hosted probe (scripts/probe-282/probe.mjs): whether a hosted macOS runner gives cua's own engine the
-# Accessibility and event-posting grants and delivers a route-3 click into a background Chrome for Testing page. Runs
-# only on a push to probe/282-hosted; not a ci-kit gate.
+# #282's hosted probe (scripts/probe-282/probe.mjs): route-3 pointer actions from cua's own engine into a background
+# Chrome for Testing page on a hosted macOS runner, origin/main's engine against this branch's shared and dedicated
+# modes. Two repetitions on two runners. Runs only on a push to probe/282-hosted; not a ci-kit gate.
 name: probe-282
 on:
   push:
@@ -10,6 +10,10 @@ permissions:
   contents: read
 jobs:
   probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2]
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -24,24 +28,24 @@ jobs:
             echo "== $db"
             sudo sqlite3 "$db" "select service, client, auth_value from access where service in ('kTCCServiceAccessibility','kTCCServicePostEvent','kTCCServiceScreenCapture','kTCCServiceListenEvent') order by service, client" || true
           done
-          ps -o pid,ppid,comm -p $$ -p $PPID
-          ps -axo pid,ppid,comm | grep -iE "hosted-compute|Runner\.(Listener|Worker)|provisioner" | grep -v grep || true
       - name: Build this branch's engine
         run: swift build --package-path native/engine --scratch-path "$RUNNER_TEMP/eng-branch"
       - name: Build origin/main's engine
         run: |
           git worktree add "$RUNNER_TEMP/main" origin/main
-          git -C "$RUNNER_TEMP/main" log --oneline -1
+          echo "P282_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
           swift build --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng-main"
-      - name: Build the hit-test diagnostic
+      - name: Build the AX diagnostic
         run: swiftc -o "$RUNNER_TEMP/p282-hit" scripts/probe-282/hit.swift
       - name: Probe
+        env:
+          P282_REP: ${{ matrix.rep }}
         run: node scripts/probe-282/probe.mjs --main "$RUNNER_TEMP/eng-main/debug/cua-engine" --branch "$RUNNER_TEMP/eng-branch/debug/cua-engine" --hit "$RUNNER_TEMP/p282-hit" --out "$RUNNER_TEMP/probe-282"
       - name: Upload
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
-          name: probe-282
+          name: probe-282-rep${{ matrix.rep }}
           path: |
             ${{ runner.temp }}/probe-282/*.json
             ${{ runner.temp }}/probe-282/*.png

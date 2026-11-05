@@ -769,7 +769,7 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped }, { fam
       if (need < CONSECUTIVE) failed.push(`${name}: a development series of ${need}, not the ${CONSECUTIVE} the proof needs`);
     } else {
       const required = CHROMIUM.includes(s.family);
-      verdict = s.misses > 0 ? `fails with each request unredirected (${s.misses}/${s.runs}; the text wrong in ${s.wrong_text ?? '?'})` : required ? '**shows nothing**' : 'no reorder (not required)';
+      verdict = s.misses > 0 ? `fails without its protection (${s.misses}/${s.runs}; the text wrong in ${s.wrong_text ?? '?'})` : required ? '**shows nothing**' : 'no reorder (not required)';
       if (required && s.misses === 0) failed.push(`${s.family} ${s.scenario}: the control lane showed no reorder in ${s.runs} runs, so the test cannot see one`);
     }
     // a timed lane's misses by cause: the retry guard refusing after an earlier miss is not a miss of its own

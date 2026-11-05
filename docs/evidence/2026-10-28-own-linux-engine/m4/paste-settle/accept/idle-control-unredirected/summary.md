@@ -1,0 +1,30 @@
+# linux-engine-diff summary
+
+## t60-accept-idle-chromium (experiment focus-timer)
+
+| family | lane | scenario | runs | misses | passing streak at the end | verdict | raw misses | raw streak | median burst ms |
+|---|---|---|---:|---:|---:|---|---:|---:|---:|
+| chrome | shipped | burst | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 26 |
+| chrome | shipped | aba | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 31.1 |
+| chrome | shipped | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 168.6 |
+| chrome | control | burst | 10 | 10 | 0 | fails with each request unredirected (10/10; the text wrong in 10) | 10 | 0 | 48.3 |
+| chrome | control | aba | 10 | 8 | 0 | fails with each request unredirected (8/10; the text wrong in 8) | 10 | 0 | 61.6 |
+| chrome | control | paste | 10 | 0 | 10 | **shows nothing** | 1 | 9 | 75.7 |
+| electron | shipped | burst | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 23.3 |
+| electron | shipped | aba | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 33.6 |
+| electron | shipped | paste | 30 | 0 | 30 | 30 consecutive | 0 | 30 | 148.4 |
+| electron | control | burst | 10 | 9 | 0 | fails with each request unredirected (9/10; the text wrong in 9) | 10 | 0 | 44.2 |
+| electron | control | aba | 10 | 9 | 0 | fails with each request unredirected (9/10; the text wrong in 9) | 10 | 0 | 54.9 |
+| electron | control | paste | 10 | 10 | 0 | fails with each request unredirected (10/10; the text wrong in 2) | 10 | 0 | 2047.6 |
+
+| family | lane | audit | FocusOuts attributed (deferred) | sessions as expected | problems |
+|---|---|---|---:|---|---|
+| chrome | shipped | clean | 53 (0) | yes | – |
+| chrome | control | clean | 53 (0) | yes | – |
+| electron | shipped | clean | 53 (0) | yes | – |
+| electron | control | clean | 53 (0) | yes | – |
+
+**Incomplete or failed:** chrome paste: the control lane showed no reorder in 10 runs, so the test cannot see one.
+
+desktop: started with no window active, ended with 0x00a0000c active (harness), neither acted on; holder none; the harness's own trace: 238 requests, 26 changes of a window, every one of its own; the run's record: not run (the display is a private one, and the run's caller declined to start the whole-run RECORD on it)
+

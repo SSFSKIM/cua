@@ -181,3 +181,9 @@ the load.
   idle only.
 - Without the flush's wait, the paste observes its field before the keys sent just before it have landed. It then
   either refuses with nothing sent, or lands unconfirmed.
+
+## Task 60 (`../paste-settle/`): the timer gone, a paste settle in its place
+
+By the design session's ruling on task 59, each request's `FocusOut` now goes as its input ends and the timer is gone;
+a paste waits 100 ms after the last key to its window, the smallest step the wait rule held (`../paste-settle/README.md`,
+with T7's acceptance series, T7b's stop and the speed series rerun on the new build).

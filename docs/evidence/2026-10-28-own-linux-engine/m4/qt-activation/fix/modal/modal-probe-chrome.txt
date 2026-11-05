@@ -1,0 +1,20 @@
+chrome [none]: dialog 8388615 'WM_TRANSIENT_FOR(WINDOW): window id # 0x600002\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 6291458; front 2097155
+chrome [none] control 1: nothing sent, focus 2097155 active none (front 2097155)
+chrome [none] control 2: nothing sent, focus 2097155 active none (front 2097155)
+chrome [none] control 3: nothing sent, focus 2097155 active none (front 2097155)
+chrome [none] press_key 1: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+chrome [none] press_key 2: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+chrome [none] press_key 3: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+chrome [none] press_key 4: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+chrome [none] press_key 5: before focus/active ('2097155', 'none'), answer ok=True None, after focus/active ('2097155', 'none')
+chrome [none]: the X focus or the active window moved off the front window after 0 of 5 background press_keys to the blocked main window
+chrome [openbox]: dialog 10485767 'WM_TRANSIENT_FOR(WINDOW): window id # 0x800002\n_NET_WM_STATE(ATOM) = _NET_WM_STATE_MODAL'; main 8388610; front 4194307
+chrome [openbox] control 1: nothing sent, focus 4194307 active 4194307 (front 4194307)
+chrome [openbox] control 2: nothing sent, focus 4194307 active 4194307 (front 4194307)
+chrome [openbox] control 3: nothing sent, focus 4194307 active 4194307 (front 4194307)
+chrome [openbox] press_key 1: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+chrome [openbox] press_key 2: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+chrome [openbox] press_key 3: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+chrome [openbox] press_key 4: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+chrome [openbox] press_key 5: before focus/active ('4194307', '4194307'), answer ok=True None, after focus/active ('4194307', '4194307')
+chrome [openbox]: the X focus or the active window moved off the front window after 0 of 5 background press_keys to the blocked main window

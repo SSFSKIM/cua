@@ -1,0 +1,11 @@
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running tests/live_focus_ack.rs (target/release/deps/live_focus_ack-c9af77cccabc9385)
+
+running 4 tests
+test a_background_press_onto_a_native_child_of_a_qt_window_is_refused_with_nothing_sent ... ok
+test a_background_press_to_a_qt_window_with_no_accessibility_tree_is_refused_in_shared_mode ... ok
+test a_click_on_a_held_session_the_real_focus_has_left_takes_a_fresh_focus_first ... ok
+test background_input_to_a_qt_window_its_modal_dialog_blocks_is_refused_in_shared_mode ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 68.65s
+

@@ -1,0 +1,49 @@
+   Compiling cua-linux-engine v0.3.0 (<checkout>/native/linux-engine)
+    Finished `release` profile [optimized] target(s) in 10.32s
+     Running tests/live_focus_ack.rs (target/release/deps/live_focus_ack-c9af77cccabc9385)
+
+running 4 tests
+test a_background_press_onto_a_native_child_of_a_qt_window_is_refused_with_nothing_sent ... FAILED
+test a_background_press_to_a_qt_window_with_no_accessibility_tree_is_refused_in_shared_mode ... FAILED
+test a_click_on_a_held_session_the_real_focus_has_left_takes_a_fresh_focus_first ... FAILED
+test background_input_to_a_qt_window_its_modal_dialog_blocks_is_refused_in_shared_mode ... FAILED
+
+failures:
+
+---- a_background_press_onto_a_native_child_of_a_qt_window_is_refused_with_nothing_sent stdout ----
+
+thread 'a_background_press_onto_a_native_child_of_a_qt_window_is_refused_with_nothing_sent' (3949315) panicked at tests/live_focus_ack.rs:449:9:
+assertion `left == right` failed: qt5: no click took the X focus from the front window: [Object {"error": Null, "id": Number(3), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(4), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(5), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(6), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(7), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(8), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(9), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(10), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(11), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(12), "ok": Bool(true), "output": Null, "restart": Bool(false)}]
+  left: 10
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_background_press_to_a_qt_window_with_no_accessibility_tree_is_refused_in_shared_mode stdout ----
+
+thread 'a_background_press_to_a_qt_window_with_no_accessibility_tree_is_refused_in_shared_mode' (3949448) panicked at tests/live_focus_ack.rs:576:9:
+assertion `left == right` failed: qt5: no click took the X focus from the front window: [Object {"error": Null, "id": Number(2), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(3), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(4), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(5), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(6), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(7), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(8), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(9), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(10), "ok": Bool(true), "output": Null, "restart": Bool(false)}, Object {"error": Null, "id": Number(11), "ok": Bool(true), "output": Null, "restart": Bool(false)}]
+  left: 8
+ right: 0
+
+---- a_click_on_a_held_session_the_real_focus_has_left_takes_a_fresh_focus_first stdout ----
+
+thread 'a_click_on_a_held_session_the_real_focus_has_left_takes_a_fresh_focus_first' (3949545) panicked at tests/live_focus_ack.rs:502:9:
+assertion `left == right` failed: qt5: no click took the X focus from the front window
+  left: 5
+ right: 0
+
+---- background_input_to_a_qt_window_its_modal_dialog_blocks_is_refused_in_shared_mode stdout ----
+
+thread 'background_input_to_a_qt_window_its_modal_dialog_blocks_is_refused_in_shared_mode' (3949589) panicked at tests/live_focus_ack.rs:532:17:
+qt5 press_key: the X focus stayed with the front window, not 4194317: Ok(Null)
+
+
+failures:
+    a_background_press_onto_a_native_child_of_a_qt_window_is_refused_with_nothing_sent
+    a_background_press_to_a_qt_window_with_no_accessibility_tree_is_refused_in_shared_mode
+    a_click_on_a_held_session_the_real_focus_has_left_takes_a_fresh_focus_first
+    background_input_to_a_qt_window_its_modal_dialog_blocks_is_refused_in_shared_mode
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 6 filtered out; finished in 22.67s
+
+error: test failed, to rerun pass `--test live_focus_ack`

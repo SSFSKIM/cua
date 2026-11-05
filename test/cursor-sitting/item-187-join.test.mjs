@@ -12,7 +12,7 @@ import {CONTROL_VARIANT} from '../../scripts/cursor-sitting/control-build.mjs';
 import {CLICK_CELL, dialogPlan, inframePlan, ITEMS_JOIN, JOIN_REPS, joinMarkdown, joinRecord, joinStatus, joinTasks, joinVerdict, judgeJoin, judgeTail, KEY_CELL, KEYS,
   LABELS_JOIN as L, lastMenuBarIndex, MENU_CELL, menuPlan, raiseConditions, raisePlan, releaseConditions, RELEASE_SETTLE_MS, TAIL_REPS, tailMarkdown}
   from '../../scripts/cursor-sitting/item-187-join.mjs';
-import {attestProblem, isolateMarkdown, isolatePlan, judgeIsolate} from '../../scripts/cursor-sitting/item-187-isolate.mjs';
+import {attestProblem, cleanupSteps, isolateMarkdown, isolatePlan, judgeIsolate} from '../../scripts/cursor-sitting/item-187-isolate.mjs';
 import {item187Tasks, personTouchedOf, touchedOfItem} from '../../scripts/cursor-sitting/item-187.mjs';
 import {describeStep, sessionRecord} from '../../scripts/cursor-sitting/runner.mjs';
 import {SCENE_MARKER} from '../../scripts/cursor-sitting/target-guard.mjs';
@@ -399,8 +399,11 @@ test('C4\'s measures, no verdict: ordered, the repairs and their times, out of p
 });
 
 test('the verdict file: C2 and C3 with their own verdicts beside C1\'s, unchanged by theirs; C4 measured; the CLI\'s dry run with and without the tail', async t => {
-  const swaps = Object.fromEntries([1, 2, 3, 4, 5, 6, 7].map(n => [`187-iso-swap-${n}`, [start, {kind: 'task', task: '187-iso-swap', result: {ok: true, half: [1, 4, 5, 7].includes(n) ? 'after' : 'before', saved: [1, 4, 5, 7].includes(n) ? BUILD : CONTROL.build}},
-    {kind: 'task', task: '187-iso-attest', result: {ok: true}}]]));
+  // The preparation's pair recorded at the start, and each block's swap with its observation (the judge checks both again).
+  const half = n => ([1, 4, 5, 7].includes(n) ? 'after' : 'before');
+  const swaps = Object.fromEntries([1, 2, 3, 4, 5, 6, 7].map(n => [`187-iso-swap-${n}`, [start, {kind: 'task', task: '187-iso-swap', result: {ok: true, half: half(n), saved: half(n) === 'after' ? BUILD : CONTROL.build}},
+    {kind: 'task', task: '187-iso-attest', result: {ok: true, half: half(n), observed: half(n) === 'after' ? NATIVE : CONTROL}}]]));
+  swaps['187-iso-start'] = [start, {kind: 'task', task: '187-iso-start', result: {ok: true, pair: {shippingBuild: BUILD, controlBuild: CONTROL.build}, end: 'restore-owner', ownerBuild: 'f'.repeat(64)}}];
   const items = {...swaps, ...evidence('raise', raiseRecord, {1: {click: clickAnswer({delivery: {restores: 2}})}}), ...evidence('dialog', dialogRecord)};
   const j = judgeIsolate(items);
   assert.deepEqual([j.raise.verdict, j.dialog.verdict, j.verdict], ['FAIL', 'PASS', 'INCONCLUSIVE'], 'C1 has no repetition here: its own verdict, whatever C2\'s and C3\'s');
@@ -421,6 +424,6 @@ test('the verdict file: C2 and C3 with their own verdicts beside C1\'s, unchange
   const skipped = await quietly(() => main(['isolate-187', 'drive', '--out', out, '--dry-run', '--quiet', '--no-tail']));
   assert.ok(!skipped.text.includes('the tail'), '--no-tail leaves the tail out');
   const steps = plan => plan.reduce((n, p) => n + p.steps.length, 0);
-  assert.match(skipped.text, new RegExp(`dry run: ${steps(isolatePlan({tail: false}))} steps, nothing sent`));
+  assert.match(skipped.text, new RegExp(`dry run: ${steps(isolatePlan({tail: false})) + cleanupSteps().length} steps, nothing sent`));
   assert.equal(steps(isolatePlan()) - steps(isolatePlan({tail: false})), steps([...menuPlan(), ...inframePlan()]));
 });

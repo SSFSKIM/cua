@@ -6,10 +6,10 @@
 // replay fails when any outcome differs.
 //
 // How the replay reads 11-05's records (its adaptation, said in the output):
-// - Attestation. 11-05's results carry no `cua/nativeEngine` (the kit did not keep it then). Each half is attested by
-//   the slot's own recorded build: AFTER by 187-place's preflight reading of the engine, BEFORE by 187-putback's reading
+// - Attestation. 11-05's results carry no `cua/nativeEngine` (the kit did not keep it then). Only where a result has
+//   none, each half is attested by a labelled stand-in, the slot's own recorded build: AFTER by 187-place's preflight reading of the engine, BEFORE by 187-putback's reading
 //   of the restored save (dd7a). BEFORE is given the control's variant as a stand-in: dd7a is not the control build, but
-//   like it posts no inert click.
+//   like it posts no inert click. A recorded identity is never replaced: one that conflicts with its half is not attested.
 // - BEFORE's click kind. dd7a predates `activationClickKind`; its background paste skipped the activation-point click
 //   (outsideFrame) and posted no inert click, so the replay reads it as `skipped controlBuild`.
 // - Full halves. 11-05 ran 3 repetitions a half; a case that needs the slot's 6 counts each real repetition twice, and
@@ -45,8 +45,9 @@ export function realRecords(dir = RECORDS) {
 // ---- the adaptation and the edits ----------------------------------------------------------------------------------
 
 const nativeOf = (builds, half) => ({engine: 'cua', build: builds[half], ...(VARIANTS[half] ? {variant: VARIANTS[half]} : {})});
-// A row given the half's attestation and, on BEFORE where the record has none, the control's click kind.
-const adaptRow = (row, half, builds, {click = true} = {}) => (!row ? row : {...row, nativeEngine: nativeOf(builds, half),
+// A row given the half's labelled stand-in attestation only where the record carries no identity (a recorded one is kept,
+// so one that conflicts with its half is judged not attested), and, on BEFORE where it has none, the control's click kind.
+const adaptRow = (row, half, builds, {click = true} = {}) => (!row ? row : {...row, nativeEngine: row.nativeEngine ?? nativeOf(builds, half),
   ...(click && half === 'before' && row.activationClickKind == null ? {activationClickKind: {...CLICK_KIND.before}} : {})});
 export const adaptRep = (rec, half, builds) => ({...rec, background: adaptRow(rec.background, half, builds), row: adaptRow(rec.row, half, builds, {click: false})});
 export const adaptComposing = (row, half, builds) => adaptRow(row, half, builds);
@@ -127,7 +128,7 @@ export function replayCases(real = realRecords()) {
   // for that reason (its text in the outcome's why).
   const section = (predicate, cases) => sections.push({predicate, cases: cases.map(([name, edit, expected, outcome, because = null]) => ({name, edit,
     expected: because ? `${expected} (${because})` : expected, outcome,
-    match: (outcome === expected || (typeof outcome === 'string' && outcome.startsWith(`${expected}:`))) && (!because || String(outcome).includes(because))}))});
+    match: (outcome === expected || (typeof outcome === 'string' && (outcome.startsWith(`${expected}:`) || outcome.startsWith(`${expected} (`)))) && (!because || String(outcome).includes(because))}))});
 
   section('the premise per repetition (repPremise)', [
     ...A.map((r, k) => [`11-05 AFTER rep ${k + 1}`, 'none (the adaptation only)', 'counted', premiseText(prem(r, 'after'))]),
@@ -138,6 +139,17 @@ export function replayCases(real = realRecords()) {
     ['AFTER rep 1 with the control\'s click kind', 'its background paste\'s activationClickKind skipped controlBuild', 'premise not met', statusOf(prem(bg(withKind({...CLICK_KIND.before}))(A[0]), 'after'))],
     ['BEFORE rep 1 with an inert click', 'its background paste\'s activationClickKind inertOutside early', 'premise not met', statusOf(prem(bg(withKind({kind: 'inertOutside', point: 'activationPoint', when: 'early'}))(B[0]), 'before'))],
     ['AFTER rep 1 clicking at its activation point', 'its background paste\'s activationClick posted', 'premise not met', statusOf(prem(bg(withClick('posted'))(A[0]), 'after'))],
+  ]);
+  // The recorded identity, apart from the mutations above (which edit the adapted record): the stand-in fills only a
+  // missing identity, and a recorded one that conflicts with its half stays and is judged.
+  const recorded = native => rec => ({...rec, background: rec.background && {...rec.background, nativeEngine: native}, row: rec.row && {...rec.row, nativeEngine: native}});
+  const recordedPrem = (raw, half, native) => premiseText(prem(adaptRep(recorded(native)(raw), half, builds), half));
+  section('the recorded identity (adaptRep: the stand-in only where a result names none)', [
+    ['11-05 BEFORE rep 1 recorded with the shipping identity', 'the raw record\'s pastes carry AFTER\'s nativeEngine, then adapted', 'not attested', recordedPrem(real.reps.before[0], 'before', nativeOf(builds, 'after')), 'build was'],
+    ['11-05 AFTER rep 1 recorded with the control\'s identity', 'the raw record\'s pastes carry the control\'s nativeEngine, then adapted', 'not attested', recordedPrem(real.reps.after[0], 'after', {...nativeOf(builds, 'after'), variant: VARIANTS.before}), 'variant was control-no-inert-click'],
+    ['11-05 AFTER rep 1 recorded with its own identity', 'the raw record\'s pastes carry the slot\'s AFTER build, then adapted', 'counted', recordedPrem(real.reps.after[0], 'after', nativeOf(builds, 'after'))],
+    ['11-05 composing row 1 recorded with the control\'s identity', 'the raw row carries the control\'s nativeEngine, then adapted', 'not attested',
+      premiseText(rowPremise(adaptComposing({...real.composing[0], nativeEngine: nativeOf(builds, 'before')}, 'after', builds), {half: 'after', build: builds.after})), 'not the half'],
   ]);
   section('the cell repetition\'s outcome (cellOutcome)', [
     ...A.map((r, k) => [`11-05 AFTER rep ${k + 1}`, 'none', 'AFTER-passing', outcomeWord(cellOutcome(r, 'after'), 'after')]),
@@ -212,7 +224,7 @@ export function replayMarkdown(real = realRecords(), {commit = null} = {}) {
     'Section D of the next slot\'s plan: the isolating slot\'s judge (`item-187-isolate.mjs`, with the design session\'s RULINGS 2 on its readings) run over `item-187-reslot2/`, as recorded and under named mutations, so each predicate is shown coming out each way. C2\'s and C3\'s judges run over synthetic fixtures. A case whose outcome differs from its expected one fails the replay.', '',
     `**${all.length} cases, ${all.length - mismatches.length} as expected${mismatches.length ? `, ${mismatches.length} NOT` : ''}.**`, '',
     '**How the replay reads 11-05\'s records** (its adaptation, applied to every real case):', '',
-    `- **Attestation.** 11-05's results carry no \`cua/nativeEngine\`. Each half is attested by the slot's own recorded build: AFTER ${real.builds.after?.slice(0, 12) ?? 'unread'} (187-place's preflight reading), BEFORE ${real.builds.before?.slice(0, 12) ?? 'unread'} (187-putback's reading of the restored save, dd7a). BEFORE is given the control's variant (\`${VARIANTS.before}\`) as a stand-in: dd7a is not the control build, but like it posts no inert click.`,
+    `- **Attestation.** 11-05's results carry no \`cua/nativeEngine\`. Only where a result names none, a labelled stand-in attests each half by the slot's own recorded build: AFTER ${real.builds.after?.slice(0, 12) ?? 'unread'} (187-place's preflight reading), BEFORE ${real.builds.before?.slice(0, 12) ?? 'unread'} (187-putback's reading of the restored save, dd7a). BEFORE is given the control's variant (\`${VARIANTS.before}\`) as a stand-in: dd7a is not the control build, but like it posts no inert click. A recorded identity is never replaced: one that conflicts with its half is judged not attested (the recorded-identity table).`,
     '- **BEFORE\'s click kind.** dd7a predates `activationClickKind`. Its background paste skipped the activation-point click (outsideFrame) and posted no inert click, so the replay reads it as `skipped controlBuild`.',
     `- **Counts.** 11-05 ran ${real.reps.after.length} repetitions a half. A case marked "six a half" counts each real repetition twice. 11-05 ran composing on the shipping build only, so composing's BEFORE rows are its ${real.composing.length} paste rows edited to a read-stage timeout with the control's click kind.`, ''];
   for (const s of sections) {

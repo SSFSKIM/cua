@@ -8,13 +8,13 @@ import assert from 'node:assert/strict';
 import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {main} from '../../scripts/cursor-sitting.mjs';
-import {CONTROL_DEFINE, CONTROL_RECORD, CONTROL_VARIANT, controlPackage, prepareControlSource} from '../../scripts/cursor-sitting/control-build.mjs';
-import {AFTER_BLOCK, AFTER_ONLY, attestProblem, BAR, BLOCKS, CELL_PER_HALF, combineVerdict, COMPOSING_PER_HALF, GOES_ON_ISO, isolateMarkdown, isolatePlan, isolateTasks, ITEMS, judgeIsolate,
-  LABELS, MIN_COUNTED, ORDER, parseBlocks, partVerdict, repPremise, rowPremise, stepCounts, TAIL, THIRDS, VERDICT_FILE} from '../../scripts/cursor-sitting/item-187-isolate.mjs';
-import {CELL_ROW, ITEMS as ITEMS_187, plan187, rowRecord, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
-import {ITEMS_188} from '../../scripts/cursor-sitting/item-188.mjs';
-import {describeStep} from '../../scripts/cursor-sitting/runner.mjs';
+import {main, read187} from '../../scripts/cursor-sitting.mjs';
+import {CONTROL_DEFINE, CONTROL_RECORD, CONTROL_VARIANT, checkPair, controlPackage, prepareControlSource} from '../../scripts/cursor-sitting/control-build.mjs';
+import {AFTER_BLOCK, AFTER_ONLY, attested188, attestProblem, cleanupAlarm, cleanupSteps, driveThenCleanup, startOf, BAR, BLOCKS, CELL_PER_HALF, combineVerdict, COMPOSING_PER_HALF, GOES_ON_ISO, isolateMarkdown, isolatePlan, isolateTasks, ITEMS, judgeIsolate,
+  LABELS, MIN_COUNTED, ORDER, parseBlocks, partVerdict, repPremise, rowPremise, SAVED, stepCounts, TAIL, THIRDS, VERDICT_FILE} from '../../scripts/cursor-sitting/item-187-isolate.mjs';
+import {CELL_ROW, driveItems, ITEMS as ITEMS_187, plan187, rowRecord, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
+import {ITEMS_188, LABELS_188} from '../../scripts/cursor-sitting/item-188.mjs';
+import {describeStep, runSteps} from '../../scripts/cursor-sitting/runner.mjs';
 import {ENGINE_SOURCE, engineBuild} from '../../src/runtime/engine-bundle.mjs';
 
 const scratch = t => { const dir = mkdtempSync(join(tmpdir(), 'cua-187i-')); t.after(() => rmSync(dir, {recursive: true, force: true})); return dir; };
@@ -53,14 +53,22 @@ function cellRecord(half, rep, {bg = {}, fg = {}, ...over} = {}) {
   return {tag: `${item}#0`, half, rep, route: 'paste', personTouched: null, keyBefore: {reading: {...KEY, frontmost: false}, pageFocused: false}, keyAfter: {reading: KEY, pageFocused: true},
     background, row: pasteRow({half, group: 'chrome-cell', item, key: `${item}#1.0`, prior, ...fg}), ...over};
 }
-const swapRows = (n, half, {build = BUILD[half], attested = true} = {}) => [start, {kind: 'task', task: '187-iso-swap', result: {ok: true, half, saved: build, approved: {approved: true, captureConfirmation: 'none'}}},
-  {kind: 'task', task: '187-iso-attest', result: {ok: attested, half, expected: {build, variant: NATIVE[half].variant ?? null}, observed: NATIVE[half], ...(attested ? {} : {problem: 'no'})}}];
+const swapRows = (n, half, {build = BUILD[half], attested = true, observed = NATIVE[half]} = {}) => [start, {kind: 'task', task: '187-iso-swap', result: {ok: true, half, saved: build, approved: {approved: true, captureConfirmation: 'none'}}},
+  {kind: 'task', task: '187-iso-attest', result: {ok: attested, half, expected: {build, variant: NATIVE[half].variant ?? null}, observed, ...(attested ? {} : {problem: 'no'})}}];
+// The drive's start: the preparation's pair and the owner's end choice.
+const OWNER = 'f'.repeat(64), OWNER_NATIVE = {engine: 'cua', version: '0.1.0', build: OWNER};
+const START = {ok: true, pair: {shippingBuild: BUILD.after, controlBuild: BUILD.before, source: '/src'}, end: 'restore-owner', ownerBuild: OWNER};
+// The cleanup's records: the owner's save restored and its ping attested.
+const cleanupRows = ({observed = OWNER_NATIVE, saved = OWNER, ok = true} = {}) => [start, {kind: 'task', task: '187-iso-swap', result: {ok, half: 'owner', saved, ...(ok ? {} : {problem: 'the restore refused'})}},
+  ...(ok ? [{kind: 'task', task: '187-iso-attest', result: {ok: true, half: 'owner', observed}}] : [])];
 const composingRow = (half, index, k, over = {}) => pasteRow({half, group: 'chrome-composing', item: ITEMS.composing(half, index), key: `${ITEMS.composing(half, index)}#0.${k}`, row: THIRDS[index][k], ...over});
 
 // The whole slot's evidence, every premise holding and every half as predicted; `cell(half, rep)` and `row(half, index, k)`
 // give a repetition's or a row's options.
-function evidence({cell = () => ({}), row = () => ({}), swaps = true, end = true} = {}) {
+function evidence({cell = () => ({}), row = () => ({}), swaps = true, end = true, begin = START, cleanup = true} = {}) {
   const items = {};
+  if (begin) items[ITEMS.start] = [start, {kind: 'task', task: '187-iso-start', result: begin}];
+  if (cleanup) items[ITEMS.cleanup] = cleanupRows();
   if (swaps) for (const b of [...BLOCKS, {n: AFTER_BLOCK, half: 'after'}]) items[ITEMS.swap(b.n)] = swapRows(b.n, b.half);
   for (const half of ['after', 'before']) {
     for (let rep = 0; rep < CELL_PER_HALF; rep++) { const o = cell(half, rep); if (o !== null) items[ITEMS.cell(half, rep)] = [start, {kind: 'task', task: '187-cell', result: cellRecord(half, rep, o)}]; }
@@ -78,7 +86,8 @@ test('the plan: the placement, six blocks A B B A A B (a swap, 2 cell repetition
   assert.deepEqual(THIRDS.flat(), [...VENDOR_ROWS], 'each half pastes every string once');
   const plan = isolatePlan();
   const items = plan.map(p => p.item);
-  assert.equal(items[0], ITEMS.place);
+  assert.deepEqual(items.slice(0, 2), [ITEMS.start, ITEMS.place], 'the pair and the end choice recorded first');
+  assert.ok(plan[0].steps.find(s => s.task === '187-iso-start').required);
   assert.equal(items.at(-1), ITEMS.end);
   for (const b of BLOCKS) {
     const block = plan.filter(p => p.block === b.n);
@@ -145,7 +154,7 @@ test('--blocks: some blocks only, the placement and the end always; the step cou
   assert.throws(() => parseBlocks('a'), /--blocks takes numbers and ranges/);
   assert.throws(() => isolatePlan({blocks: [8]}), /--blocks takes block numbers of 1\.\.7/);
   const only = isolatePlan({blocks: [3]});
-  assert.deepEqual(only.map(p => p.item), [ITEMS.place, ITEMS.swap(3), ITEMS.cell('before', 2), ITEMS.cell('before', 3), ITEMS.composing('before', 1), ITEMS.end]);
+  assert.deepEqual(only.map(p => p.item), [ITEMS.start, ITEMS.place, ITEMS.swap(3), ITEMS.cell('before', 2), ITEMS.cell('before', 3), ITEMS.composing('before', 1), ITEMS.end]);
   const counts = stepCounts(isolatePlan());
   assert.deepEqual(counts.map(c => c.block), [0, 1, 2, 3, 4, 5, 6, 7, 'tail', null]);
   assert.equal(counts.reduce((n, c) => n + c.steps, 0), isolatePlan().reduce((n, p) => n + p.steps.length, 0));
@@ -171,7 +180,7 @@ test('the attestation: the saved build and the half\'s variant, from the result\
 
 test('the swap\'s tasks: restored and approved with no prompt, else refused with why; the attestation reads the observation\'s ping', async () => {
   const calls = [];
-  const tasks = (over = {}) => isolateTasks({halves: '/halves', now: () => 99, savedRecord: dir => ({status: {build: dir.endsWith('engine-control') ? BUILD.before : BUILD.after}}),
+  const tasks = (over = {}) => isolateTasks({halves: '/halves', now: () => 99, start: START, savedRecord: dir => ({status: {build: dir.endsWith('engine-control') ? BUILD.before : BUILD.after}}),
     restore: async args => { calls.push(['restore', args]); return {ok: true, status: {build: BUILD.before, approved: true, matches: true}}; },
     approve: async () => { calls.push(['approve']); return {ok: true, approved: true, build: BUILD.before, captureConfirmation: 'none', grants: {accessibility: true}}; }, ...over});
   const ctx = {results: {}};
@@ -194,6 +203,20 @@ test('the swap\'s tasks: restored and approved with no prompt, else refused with
   await refuse({restore: async () => ({ok: false, status: {build: BUILD.before, approved: false}, next: 'run cua engine approve with the owner'})}, /restore did not end on the saved build, approved: run cua engine approve/);
   await refuse({savedRecord: () => { throw new Error('ENOENT'); }}, /saved\.json could not be read \(ENOENT\)/);
   await refuse({savedRecord: () => ({status: {}})}, /names no build/);
+  // The save must be the preparation's own: an older or newer control fails before anything is restored.
+  calls.length = 0;
+  await refuse({savedRecord: () => ({status: {build: 'd'.repeat(64)}})}, /engine-control's build dddddddddddd is not this preparation's cccccccccccc/);
+  await refuse({start: {...START, ok: false}}, /no preparation pair was recorded/);
+  assert.deepEqual(calls, [], 'nothing restored');
+  // The owner's save, for the cleanup: the build the start recorded, no variant.
+  const owner = tasks({savedRecord: dir => ({status: {build: dir.endsWith('engine-owner') ? OWNER : BUILD.after}}), approve: async () => ({ok: true, approved: true, build: OWNER, captureConfirmation: 'none'})});
+  const octx = {results: {}};
+  assert.equal((await owner['187-iso-swap'](['187-iso-cleanup#0', 'owner'], octx)).ok, true);
+  octx.results[LABELS.attest('187-iso-cleanup#0')] = {nativeEngine: OWNER_NATIVE};
+  assert.equal((await owner['187-iso-attest'](['187-iso-cleanup#0', 'owner'], octx)).ok, true);
+  octx.results[LABELS.attest('187-iso-cleanup#0')] = {nativeEngine: {...OWNER_NATIVE, variant: CONTROL_VARIANT}};
+  assert.match((await owner['187-iso-attest'](['187-iso-cleanup#0', 'owner'], octx)).problem, /variant was control-no-inert-click, not absent/);
+  assert.match((await tasks({start: {...START, ownerBuild: 'e'.repeat(64)}, savedRecord: () => ({status: {build: OWNER}})})['187-iso-swap'](['187-iso-cleanup#0', 'owner'], {results: {}})).problem, /not the owner save the start recorded/);
 });
 
 test('the premise per repetition: attested, the click planned outside the frame and of the half\'s kind, both pastes valid, not the person\'s', () => {
@@ -313,24 +336,53 @@ test('the overall verdict: DOES NOT LAND when either part does, LANDS when both 
   assert.equal(partVerdict({after: [...e(5), ...e(1, {counted: false, met: false})], before: e(6)}, BAR.cell).verdict, 'LANDS', 'an uncounted entry counts for nothing');
 });
 
-test('the halves: each half attested by its swaps\' one build; swaps that restored two builds, or none attested, count nothing for the half', () => {
-  const two = evidence();
-  two[ITEMS.swap(4)] = swapRows(4, 'after', {build: 'b'.repeat(64)});
-  const j = judgeIsolate(two);
-  assert.equal(j.builds.after.build, null);
-  assert.match(j.builds.after.problem, /its swaps restored 2 builds/);
-  assert.equal(j.cell.verdict, 'INCONCLUSIVE');
-  assert.ok(j.cells.after.every(c => c.status === 'not attested'));
-  const none = judgeIsolate(evidence({swaps: false}));
-  assert.match(none.builds.before.problem, /no swap to it attested/);
-  assert.equal(none.verdict, 'INCONCLUSIVE');
-  // A replacement counts in place of the person-touched repetition it replaced.
+test('the halves (one preparation\'s pair): every swap checked again from its records, never its stored ok; a repetition or row counts only in a block whose swap counts', () => {
+  // A swap that restored another build: its block counts nothing, the rest stands.
+  const other = evidence();
+  other[ITEMS.swap(4)] = swapRows(4, 'after', {build: 'b'.repeat(64)});
+  const j = judgeIsolate(other);
+  assert.match(j.swaps.find(s => s.n === 4).problem, /its swap restored bbbbbbbbbbbb, not aaaaaaaaaaaa/);
+  assert.deepEqual(j.cells.after.map(c => c.status), ['counted', 'counted', 'not attested', 'not attested', 'counted', 'counted']);
+  assert.match(j.cells.after[2].why, /its block 4's swap does not count/);
+  assert.equal(j.composingRows.after.filter(r => r.status === 'not attested').length, 3, 'block 4\'s composing rows too');
+  assert.equal(j.cell.verdict, 'INCONCLUSIVE', '4 counted on AFTER: under 5');
+  // The mismatched pair: the start's preparation names an older shipping build than the saves restored.
+  const older = judgeIsolate(evidence({begin: {...START, pair: {...START.pair, shippingBuild: 'b'.repeat(64)}}}));
+  assert.ok(older.swaps.filter(s => s.half === 'after').every(s => /its swap restored aaaaaaaaaaaa, not bbbbbbbbbbbb/.test(s.problem)));
+  assert.equal(older.builds.after.build, null);
+  assert.equal(older.verdict, 'INCONCLUSIVE');
+  // No pair recorded (or one the drive's check refused): nothing counts.
+  for (const begin of [null, {...START, ok: false, problem: 'refused'}]) {
+    const none = judgeIsolate(evidence({begin}));
+    assert.match(none.builds.before.problem, /no preparation pair was recorded/);
+    assert.ok([...none.cells.after, ...none.cells.before].every(c => !c.counted));
+    assert.equal(none.verdict, 'INCONCLUSIVE');
+  }
+  // The flipped identities: every swap's recorded observation names the other half while its stored ok says true.
+  const flipped = evidence();
+  for (const b of [...BLOCKS, {n: AFTER_BLOCK, half: 'after'}]) flipped[ITEMS.swap(b.n)] = swapRows(b.n, b.half, {observed: NATIVE[b.half === 'after' ? 'before' : 'after']});
+  const f = judgeIsolate(flipped);
+  assert.ok(f.swaps.every(s => !s.valid && /the result's build was/.test(s.problem)), 'the stored ok is never trusted');
+  assert.equal(f.verdict, 'INCONCLUSIVE');
+  assert.equal(f.raise.verdict, 'INCOMPLETE', 'and nothing of block 7 attests AFTER');
+  // A swap whose record failed, or whose attestation names the other half, does not count.
+  const failed = evidence();
+  failed[ITEMS.swap(2)][1] = {kind: 'task', task: '187-iso-swap', result: {ok: false, half: 'before', saved: BUILD.before, problem: 'the approve did not pass'}};
+  assert.match(judgeIsolate(failed).swaps.find(s => s.n === 2).problem, /its swap failed \(the approve did not pass\)/);
+  const halved = evidence();
+  halved[ITEMS.swap(2)][2] = {kind: 'task', task: '187-iso-attest', result: {ok: true, half: 'after', observed: NATIVE.before}};
+  assert.match(judgeIsolate(halved).swaps.find(s => s.n === 2).problem, /its attestation names the after half, not before/);
+  // A replacement counts in place of the person-touched repetition it replaced, in its parent's block.
   const items = evidence({cell: (h, rep) => (h === 'after' && rep === 1 ? {personTouched: {apps: ['com.apple.ActivityMonitor'], frontPids: []}} : {})});
   items[ITEMS.cell('after', 1)][0] = {...start, at: 5000};
   items[ITEMS.cell('after', 6)] = [{...start, at: 6000}, {kind: 'task', task: '187-replaces', result: {ok: true, parent: ITEMS.cell('after', 1), attempt: 5000}}, {kind: 'task', task: '187-cell', result: cellRecord('after', 6)}];
   const r = judgeIsolate(items);
   assert.deepEqual(r.cells.after.map(c => c.status), ['counted', 'person-touched', 'counted', 'counted', 'counted', 'counted', 'counted']);
+  assert.equal(r.cells.after.at(-1).block, 1);
   assert.equal(r.cell.counts.after.counted, 6);
+  items[ITEMS.swap(1)] = swapRows(1, 'after', {observed: NATIVE.before});
+  assert.equal(judgeIsolate(items).cells.after.at(-1).status, 'not attested', 'its parent\'s block\'s swap does not count');
+  items[ITEMS.swap(1)] = swapRows(1, 'after');
   items[ITEMS.cell('after', 6)][1].result.attempt = 1;
   assert.equal(judgeIsolate(items).cells.after.at(-1).status, 'stale replacement');
 });
@@ -359,10 +411,12 @@ test('the verdict file: the pre-registered bar, the verdict and each part, the s
   assert.match(isolateMarkdown(judgeIsolate(evidence({end: false}))), /NOT restored/);
   // #188's cua cells read for the AFTER build: one answered by the control build is named.
   const with188 = evidence();
-  with188[ITEMS_188.rows('cua')] = [start, {kind: 'cell', nativeEngine: NATIVE.after}, {kind: 'cell', nativeEngine: NATIVE.before}];
+  const row188 = (key, id) => ({kind: 'task', task: '188-row', result: {key, id, item: ITEMS_188.rows('cua'), invalid: null, valid: true, delivered: true}});
+  with188[ITEMS_188.rows('cua')] = [start, {kind: 'cell', label: LABELS_188.act('r.0', 'a'), nativeEngine: NATIVE.after}, row188('r.0', 'a'),
+    {kind: 'cell', label: LABELS_188.act('r.1', 'b'), nativeEngine: NATIVE.before}, row188('r.1', 'b')];
   const j188 = judgeIsolate(with188);
-  assert.deepEqual(j188.item188.attest, [{item: ITEMS_188.rows('cua'), cells: 2, unattested: 1, first: 'the result\'s build was cccccccccccc, not the half\'s saved aaaaaaaaaaaa'}]);
-  assert.match(isolateMarkdown(j188), /188-rows-cua 1 of 2 cell\(s\) attested \(the result's build was cccccccccccc/);
+  assert.deepEqual(j188.item188.attest, [{item: ITEMS_188.rows('cua'), actions: 2, unattested: 1, first: 'the result\'s build was cccccccccccc, not the half\'s saved aaaaaaaaaaaa'}]);
+  assert.match(isolateMarkdown(j188), /188-rows-cua 1 of 2 action\(s\) attested; the rest made invalid before #188's judge \(the result's build was cccccccccccc/);
   assert.equal(j188.verdict, 'LANDS', '#188 never moves #187\'s verdict');
   assert.match(isolateMarkdown(judgeIsolate(evidence({cell: (h, rep) => (on('before', [1, 4])(h, rep) ? {bg: {outcome: 'delivered'}} : {})}))), /## Verdict: DOES NOT LAND\n/);
   assert.ok(!md.includes(CELL_ROW.string.text), 'no string\'s text');
@@ -390,22 +444,29 @@ test('the control copy: native/engine whole, the define on the Engine target alo
   assert.deepEqual([record.define, record.variant, record.controlBuild], [CONTROL_DEFINE, CONTROL_VARIANT, prepared.controlBuild]);
   assert.equal(readFileSync(join(ENGINE_SOURCE, 'Package.swift'), 'utf8'), shipping, 'the shipping Package.swift untouched');
   assert.throws(() => prepareControlSource({scratch: dir}), /already exists/);
+  // The preparation's pair: this checkout's tree and that tree with the define, computed again.
+  assert.equal(checkPair(record).ok, true);
+  assert.match(checkPair({...record, shippingBuild: 'b'.repeat(64)}).problem, /shipping build bbbbbbbbbbbb is not this checkout's .* \(another source tree\)/);
+  assert.match(checkPair({...record, controlBuild: prepared.shippingBuild}).problem, /control build .* is not this tree with the define/);
+  assert.match(checkPair({...record, controlBuild: undefined}).problem, /names no control build/);
 });
 
 test('the CLI: the dry run prints each block\'s steps and touches nothing; a re-slot\'s directory is refused; judge writes the verdict file; control-build --dry-run', async t => {
   const dir = scratch(t), out = join(dir, 'never-made');
   const {code, text} = await quietly(() => main(['isolate-187', 'drive', '--out', out, '--dry-run', '--quiet']));
   assert.equal(code, 0);
-  const total = isolatePlan().reduce((n, p) => n + p.steps.length, 0);
+  const total = isolatePlan().reduce((n, p) => n + p.steps.length, 0) + cleanupSteps().length;
   assert.match(text, new RegExp(`dry run: ${total} steps, nothing sent`));
+  assert.ok(text.includes(`dry run: the cleanup on every exit (restore-owner): ${cleanupSteps().length} steps`));
   for (const c of stepCounts(isolatePlan())) assert.ok(text.includes(`dry run: ${c.label}: ${c.steps} steps`), c.label);
   assert.equal(existsSync(out), false, 'the dry run creates nothing');
   const some = await quietly(() => main(['isolate-187', 'drive', '--out', out, '--dry-run', '--quiet', '--blocks', '7']));
-  assert.match(some.text, new RegExp(`dry run: ${isolatePlan({blocks: [7]}).reduce((n, p) => n + p.steps.length, 0)} steps`));
+  assert.match(some.text, new RegExp(`dry run: ${isolatePlan({blocks: [7]}).reduce((n, p) => n + p.steps.length, 0) + cleanupSteps().length} steps`));
   writeFileSync(join(dir, 'item-187.md'), '# a re-slot\'s report\n');
   await assert.rejects(main(['isolate-187', 'drive', '--out', dir, '--dry-run']), /holds a re-slot's report/);
   rmSync(join(dir, 'item-187.md'));
-  await assert.rejects(main(['isolate-187', 'drive', '--out', dir, '--run', dir, '--home', dir, '--halves', dir]), /engine-after holds no save/);
+  await assert.rejects(main(['isolate-187', 'drive', '--out', dir, '--run', dir, '--home', dir, '--halves', dir]), /the slot's preparation does not hold, so nothing was run: the preparation's pair does not hold \(.*control-src\/control\.json could not be read\)/);
+  await assert.rejects(main(['isolate-187', 'drive', '--out', dir, '--dry-run', '--end', 'keep']), /--end takes restore-owner or keep-merged/);
   for (const [name, rows] of Object.entries(evidence())) writeFileSync(join(dir, `item-${name}.jsonl`), rows.map(r => JSON.stringify(r)).join('\n') + '\n');
   const judged = await quietly(() => main(['isolate-187', 'judge', '--out', dir]));
   assert.equal(judged.code, 0);
@@ -417,4 +478,109 @@ test('the CLI: the dry run prints each block\'s steps and touches nothing; a re-
   assert.match(control.text, /nothing was built/);
   // The 11-05 re-slot stays runnable.
   assert.equal(plan187().at(-1).item, ITEMS_187.end);
+});
+
+// The slot on a fake engine: which save is installed, the drive's items run as a stub that swaps the engine at each
+// swap item (and stops at `stopAt`, or throws), and the cleanup run for real through the runner over the kit's tasks.
+async function fakeSlot(t, {plan, stopAt = null, throws = false, end = 'restore-owner', restoreFails = false}) {
+  const out = scratch(t), world = {installed: 'owner', restores: []}, builds = {after: BUILD.after, before: BUILD.before, owner: OWNER};
+  const halfOf = dir => Object.entries(SAVED).find(([, d]) => dir.endsWith(d))[0];
+  const tasks = isolateTasks({halves: '/halves', now: () => 1, start: {...START, end}, savedRecord: dir => ({status: {build: builds[halfOf(dir)]}}),
+    restore: async ({from}) => { if (restoreFails) throw new Error('the engine did not stop'); world.installed = halfOf(from); world.restores.push(world.installed); return {ok: true, status: {}}; },
+    approve: async () => ({ok: true, approved: true, build: builds[world.installed], captureConfirmation: 'none'})});
+  const ping = () => ({engine: 'cua', version: '0.1.0', build: builds[world.installed], ...(world.installed === 'before' ? {variant: CONTROL_VARIANT} : {})});
+  const io = {scene: id => ({id, app: `/Apps/${id}.app`, pid: 202, at: 1, window: {number: 12}}), tasks,
+    open: async () => ({run: async () => ({ok: true, value: {inFront: true}, route: null, meta: {}, images: [], nativeEngine: ping()}), close: async () => 0})};
+  const ran = [];
+  const outcome = await driveThenCleanup({end,
+    drive: () => driveItems(plan, {evidenceOf: () => ({rows: [], activations: []}),
+      runItem: async entry => { ran.push(entry.item); if (entry.stage === 'swap') world.installed = entry.half; if (throws && entry.stage === 'swap' && entry.half === 'before') throw new Error('boom'); return entry.item === stopAt ? new Error('the attestation refused') : null; }}),
+    cleanup: steps => runSteps(steps, {item: ITEMS.cleanup, out, io, log: () => {}})});
+  const items = {...evidence({cleanup: false, begin: {...START, end}}), ...read187(out)};
+  return {world, outcome, ran, judged: judgeIsolate(items)};
+}
+
+test('the cleanup (the wave\'s P1, 1ea561bc:403): on every exit the owner\'s end choice is applied and attested; a failed one is the report\'s first line', async t => {
+  // A stop in a BEFORE block: the swaps after it never run, the control would stay installed; the cleanup puts the owner's back.
+  const stop = await fakeSlot(t, {plan: isolatePlan(), stopAt: ITEMS.swap(3)});
+  assert.equal(stop.outcome.stopped, `${ITEMS.swap(3)}: the attestation refused`);
+  assert.ok(!stop.ran.includes(ITEMS.swap(4)), 'the drive stopped at block 3');
+  assert.deepEqual([stop.world.installed, stop.world.restores], ['owner', ['owner']]);
+  assert.deepEqual([stop.judged.cleanup.ok, stop.judged.cleanup.target, stop.judged.cleanup.build], [true, 'owner', OWNER]);
+  assert.match(isolateMarkdown(stop.judged), /The cleanup \(the owner's end choice, restore-owner\): engine-owner restored and attested \(ffffffffffff, no variant\)/);
+  // A partial run ending on BEFORE.
+  const partial = await fakeSlot(t, {plan: isolatePlan({blocks: [2, 3]})});
+  assert.equal(partial.outcome.stopped, null);
+  assert.equal(partial.world.installed, 'owner');
+  assert.equal(partial.judged.cleanup.ok, true);
+  // The owner chose to keep the merged build: the cleanup leaves AFTER, attested with no variant.
+  const kept = await fakeSlot(t, {plan: isolatePlan({blocks: [6]}), end: 'keep-merged'});
+  assert.deepEqual([kept.world.installed, kept.judged.cleanup.ok, kept.judged.cleanup.target, kept.judged.cleanup.build], ['after', true, 'after', BUILD.after]);
+  // A drive that throws: the cleanup still runs, and the error is kept.
+  const thrown = await fakeSlot(t, {plan: isolatePlan(), throws: true});
+  assert.equal(thrown.outcome.error.message, 'boom');
+  assert.equal(thrown.world.installed, 'owner');
+  // The cleanup itself failing: kept, the control still installed, and said first.
+  const failed = await fakeSlot(t, {plan: isolatePlan({blocks: [2]}), restoreFails: true});
+  assert.match(failed.outcome.cleanupError.message, /187-iso-swap refused: the restore refused: the engine did not stop/);
+  assert.equal(failed.world.installed, 'before');
+  assert.equal(failed.judged.cleanup.ok, false);
+  const md = isolateMarkdown(failed.judged);
+  assert.match(md.split('\n')[0], /^\*\*!!! THE ENGINE WAS NOT PUT BACK \(the owner's end choice restore-owner\): its swap failed \(the restore refused: the engine did not stop\)\. The control build may still be installed/);
+  assert.equal(md.split('\n')[0], cleanupAlarm(failed.judged.cleanup));
+  // The judge checks the cleanup again from its records: one attested with the control's variant, or none, is not done.
+  assert.match(judgeIsolate(evidence({cleanup: false})).cleanup.problem, /the cleanup was not recorded/);
+  const controlLeft = evidence();
+  controlLeft[ITEMS.cleanup] = cleanupRows({observed: {...OWNER_NATIVE, variant: CONTROL_VARIANT}});
+  assert.match(judgeIsolate(controlLeft).cleanup.problem, /variant was control-no-inert-click, not absent/);
+  assert.match(isolateMarkdown(judgeIsolate(controlLeft)), /^\*\*!!! THE ENGINE WAS NOT PUT BACK/);
+  assert.throws(() => cleanupSteps('keep'), /--end takes restore-owner or keep-merged/);
+});
+
+test('the drive\'s start (the wave\'s P1): the saves must be one preparation\'s pair, and restore-owner needs the owner\'s save', () => {
+  const check = {ok: true, shippingBuild: BUILD.after, controlBuild: BUILD.before, source: '/src'};
+  const saved = {after: BUILD.after, before: BUILD.before, owner: OWNER};
+  const good = startOf({check, saved});
+  assert.deepEqual([good.ok, good.end, good.ownerBuild, good.pair.shippingBuild, good.pair.controlBuild], [true, 'restore-owner', OWNER, BUILD.after, BUILD.before]);
+  // An older shipping save paired with a newer control.
+  assert.match(startOf({check, saved: {...saved, after: 'b'.repeat(64)}}).problem, /engine-after holds bbbbbbbbbbbb, not the preparation's shipping build aaaaaaaaaaaa/);
+  assert.match(startOf({check, saved: {...saved, before: 'd'.repeat(64)}}).problem, /engine-control holds dddddddddddd, not the preparation's control build cccccccccccc/);
+  assert.match(startOf({check: {ok: false, problem: 'another source tree'}, saved}).problem, /the preparation's pair does not hold \(another source tree\)/);
+  assert.match(startOf({check, saved: {...saved, owner: null}}).problem, /engine-owner holds no save, and the end choice restore-owner needs it/);
+  assert.equal(startOf({check, saved: {...saved, owner: null}, end: 'keep-merged'}).ok, true);
+  assert.match(startOf({check, saved, end: 'keep'}).problem, /--end takes restore-owner or keep-merged/);
+});
+
+test('a stage-less failure on an attested half is named under the verdict (1ea561bc:402)', () => {
+  const j = judgeIsolate(evidence({cell: (h, rep) => (on('before', [2])(h, rep) ? {bg: {outcome: 'legacy'}, fg: {outcome: 'legacy'}} : {}), row: (h, i, k) => (h === 'after' && i === 1 && k === 0 ? {outcome: 'legacy'} : {})}));
+  assert.deepEqual(j.stageUnknown, [
+    {half: 'after', where: `chrome/composing@textedit/paste.${THIRDS[1][0].string.id} (${ITEMS.composing('after', 1)})`, which: 'the composing paste'},
+    {half: 'before', where: `repetition 3 (${ITEMS.cell('before', 2)})`, which: 'the background paste'},
+    {half: 'before', where: `repetition 3 (${ITEMS.cell('before', 2)})`, which: 'the frontmost paste'}]);
+  const md = isolateMarkdown(j), verdict = md.slice(md.indexOf('## Verdict'), md.indexOf('## The halves'));
+  assert.match(verdict, /- \*\*Stage unknown, unexpected on an attested half\*\*: BEFORE repetition 3 \(187-iso-cell-before-2\), the background paste failed with no stage meta \(a miss by the bar\)/);
+  assert.match(verdict, /- \*\*Stage unknown, unexpected on an attested half\*\*: AFTER chrome\/composing@textedit\/paste\.mixed \(187-iso-composing-after-1\), the composing paste failed/);
+  assert.doesNotMatch(isolateMarkdown(judgeIsolate(evidence())), /Stage unknown, unexpected/);
+  // An uncounted one (its premise not met) is not named: only an attested half's.
+  assert.deepEqual(judgeIsolate(evidence({cell: (h, rep) => (on('before', [2])(h, rep) ? {bg: {outcome: 'legacy', native: NATIVE.after}} : {})})).stageUnknown, []);
+});
+
+test('#188 on AFTER (the wave\'s P2): a row or cell-3 part whose action\'s result does not attest AFTER is made invalid before #188\'s judge', () => {
+  const items = evidence(), name = ITEMS_188.rows('cua'), click = ITEMS_188.click('cua');
+  const row = (key, id) => ({kind: 'task', task: '188-row', result: {key, id, item: name, regime: 'frontmost', invalid: null, valid: true, delivered: true}});
+  items[name] = [start, {kind: 'cell', label: LABELS_188.act('r.0', 'a'), nativeEngine: NATIVE.after}, row('r.0', 'a'), {kind: 'cell', label: LABELS_188.act('r.1', 'b'), nativeEngine: NATIVE.before}, row('r.1', 'b')];
+  items[click] = [start, {kind: 'cell', label: LABELS_188.click(click, 'i'), nativeEngine: null}, {kind: 'task', task: '188-click-record', result: {item: click, part: 'i', invalid: null, outcome: 'kept'}}];
+  const {items: out, attest} = attested188(items, {build: BUILD.after, variant: null});
+  assert.deepEqual(attest.map(a => [a.item, a.actions, a.unattested]), [[name, 2, 1], [click, 1, 1]]);
+  assert.equal(out[name][2].result.invalid, null);
+  assert.match(out[name][4].result.invalid, /^not attested on AFTER: the result's build was cccccccccccc/);
+  assert.deepEqual([out[name][4].result.valid, out[name][4].result.delivered], [false, false]);
+  assert.match(out[click][2].result.invalid, /no cua\/nativeEngine/);
+  assert.equal(out[click][2].result.outcome, null);
+  assert.equal(items[name][4].result.invalid, null, 'the evidence itself is left as recorded');
+  // Through the judge: block 7's swap must count, or nothing of #188 attests.
+  const j = judgeIsolate(items);
+  assert.equal(j.item188.attest[0].unattested, 1);
+  items[ITEMS.swap(AFTER_BLOCK)] = swapRows(AFTER_BLOCK, 'after', {observed: NATIVE.before});
+  assert.equal(judgeIsolate(items).item188.attest[0].unattested, 2, 'block 7\'s swap does not count: no action attests AFTER');
 });

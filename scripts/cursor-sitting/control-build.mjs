@@ -9,7 +9,8 @@
 //
 // The copy is checked before anything builds: every source file byte-identical to the checkout's but Package.swift, and
 // Package.swift differing from the shipping one by the one inserted line. Its record (control.json) names both builds.
-import {cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {tmpdir} from 'node:os';
 import {basename, join, relative, sep} from 'node:path';
 import {ENGINE_SOURCE, engineBuild} from '../../src/runtime/engine-bundle.mjs';
 
@@ -63,6 +64,21 @@ export function prepareControlSource({scratch, source = ENGINE_SOURCE, now = () 
   const record = {preparedAt: now().toISOString(), source, copy, define: CONTROL_DEFINE, variant: CONTROL_VARIANT, added: added[0].trim(), shippingBuild, controlBuild};
   writeFileSync(join(scratch, CONTROL_RECORD), `${JSON.stringify(record, null, 2)}\n`, {mode: 0o600});
   return {copy, shippingBuild, controlBuild, record};
+}
+
+// Whether a preparation's record (control.json) is one preparation of this checkout: its shipping build is the
+// checkout's own, and its control build is that tree with the one define, both computed again from a fresh copy.
+// -> {ok, shippingBuild, controlBuild, source, preparedAt, problem?}.
+export function checkPair(record, {source = ENGINE_SOURCE} = {}) {
+  const base = {shippingBuild: record?.shippingBuild ?? null, controlBuild: record?.controlBuild ?? null, source: record?.source ?? null, preparedAt: record?.preparedAt ?? null};
+  if (!base.shippingBuild || !base.controlBuild) return {ok: false, ...base, problem: `the preparation's record names no ${base.shippingBuild ? 'control' : 'shipping'} build`};
+  const dir = mkdtempSync(join(tmpdir(), 'cua-187-pair-'));
+  try {
+    const now = prepareControlSource({scratch: join(dir, 'control'), source});
+    const problem = now.shippingBuild !== base.shippingBuild ? `the preparation's shipping build ${base.shippingBuild.slice(0, 12)} is not this checkout's ${now.shippingBuild.slice(0, 12)} (another source tree)`
+      : now.controlBuild !== base.controlBuild ? `the preparation's control build ${base.controlBuild.slice(0, 12)} is not this tree with the define (${now.controlBuild.slice(0, 12)})` : null;
+    return {ok: problem === null, ...base, ...(problem ? {problem} : {})};
+  } finally { rmSync(dir, {recursive: true, force: true}); }
 }
 
 // The control build installed in `home`'s engine directory, pending approval, by the CLI's own `engine build`

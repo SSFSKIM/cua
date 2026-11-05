@@ -2,11 +2,11 @@
 
 Section D of the next slot's plan: the isolating slot's judge (`item-187-isolate.mjs`, with the design session's RULINGS 2 on its readings) run over `item-187-reslot2/`, as recorded and under named mutations, so each predicate is shown coming out each way. C2's and C3's judges run over synthetic fixtures. A case whose outcome differs from its expected one fails the replay.
 
-**60 cases, 60 as expected.**
+**64 cases, 64 as expected.**
 
 **How the replay reads 11-05's records** (its adaptation, applied to every real case):
 
-- **Attestation.** 11-05's results carry no `cua/nativeEngine`. Each half is attested by the slot's own recorded build: AFTER 1f73143d1fb0 (187-place's preflight reading), BEFORE dd7a09235885 (187-putback's reading of the restored save, dd7a). BEFORE is given the control's variant (`control-no-inert-click`) as a stand-in: dd7a is not the control build, but like it posts no inert click.
+- **Attestation.** 11-05's results carry no `cua/nativeEngine`. Only where a result names none, a labelled stand-in attests each half by the slot's own recorded build: AFTER 1f73143d1fb0 (187-place's preflight reading), BEFORE dd7a09235885 (187-putback's reading of the restored save, dd7a). BEFORE is given the control's variant (`control-no-inert-click`) as a stand-in: dd7a is not the control build, but like it posts no inert click. A recorded identity is never replaced: one that conflicts with its half is judged not attested (the recorded-identity table).
 - **BEFORE's click kind.** dd7a predates `activationClickKind`. Its background paste skipped the activation-point click (outsideFrame) and posted no inert click, so the replay reads it as `skipped controlBuild`.
 - **Counts.** 11-05 ran 3 repetitions a half. A case marked "six a half" counts each real repetition twice. 11-05 ran composing on the shipping build only, so composing's BEFORE rows are its 9 paste rows edited to a read-stage timeout with the control's click kind.
 
@@ -26,6 +26,15 @@ Section D of the next slot's plan: the isolating slot's judge (`item-187-isolate
 | AFTER rep 1 with the control's click kind | its background paste's activationClickKind skipped controlBuild | premise not met | premise not met | yes |
 | BEFORE rep 1 with an inert click | its background paste's activationClickKind inertOutside early | premise not met | premise not met | yes |
 | AFTER rep 1 clicking at its activation point | its background paste's activationClick posted | premise not met | premise not met | yes |
+
+## the recorded identity (adaptRep: the stand-in only where a result names none)
+
+| case | edit | expected | outcome | as expected |
+|---|---|---|---|---|
+| 11-05 BEFORE rep 1 recorded with the shipping identity | the raw record's pastes carry AFTER's nativeEngine, then adapted | not attested (build was) | not attested (the background paste: the result's build was 1f73143d1fb0, not the half's saved dd7a09235885) | yes |
+| 11-05 AFTER rep 1 recorded with the control's identity | the raw record's pastes carry the control's nativeEngine, then adapted | not attested (variant was control-no-inert-click) | not attested (the background paste: the result's variant was control-no-inert-click, not absent) | yes |
+| 11-05 AFTER rep 1 recorded with its own identity | the raw record's pastes carry the slot's AFTER build, then adapted | counted | counted | yes |
+| 11-05 composing row 1 recorded with the control's identity | the raw row carries the control's nativeEngine, then adapted | not attested (not the half) | not attested (the composing paste: the result's build was dd7a09235885, not the half's saved 1f73143d1fb0) | yes |
 
 ## the cell repetition's outcome (cellOutcome)
 

@@ -25,6 +25,11 @@ test('the replay over 11-05\'s records: every case as expected, each predicate b
   const outcomes = sections.find(s => s.predicate.startsWith('the cell repetition\'s outcome')).cases;
   assert.deepEqual(outcomes.filter(c => /^11-05 BEFORE/.test(c.name)).map(c => c.outcome), Array(3).fill('stage unknown'), 'dd7a\'s legacy -10005 is never a read timeout');
   assert.deepEqual(outcomes.filter(c => /^11-05 AFTER/.test(c.name)).map(c => c.outcome), Array(3).fill('AFTER-passing'));
+  // A recorded identity is never replaced by the stand-in: one that conflicts with its half is not attested.
+  const recorded = sections.find(s => s.predicate.startsWith('the recorded identity')).cases;
+  assert.match(recorded.find(c => /BEFORE rep 1 recorded with the shipping identity/.test(c.name)).outcome, /^not attested \(the background paste: the result's build was 1f73143d1fb0/);
+  assert.match(recorded.find(c => /AFTER rep 1 recorded with the control's identity/.test(c.name)).outcome, /^not attested \(.*variant was control-no-inert-click/);
+  assert.equal(recorded.find(c => /recorded with its own identity/.test(c.name)).outcome, 'counted');
   assert.match(outcome('ruling 3 at a low count: 11-05, two BEFORE deliveries'), /^DOES NOT LAND: BEFORE delivered in 2 counted/);
   assert.match(outcome('ruling 2 at a low count: 11-05, one AFTER read timeout'), /^DOES NOT LAND: 1 read-stage timeout/);
   assert.equal(readFileSync(REPLAY_FILE, 'utf8'), `${replayMarkdown(real).text.replace(/\n+$/, '')}\n`, 'the committed replay is what the kit writes now (cursor-sitting.mjs isolate-187 replay)');

@@ -132,22 +132,27 @@
 //       differs; its build id is not the shipping one), recorded in <scratch>/control.json, then built into <home>'s
 //       engine directory, pending approval, by the CLI's own `engine build` with the copy as its source. --dry-run makes
 //       and checks the copy and prints both build ids; nothing is built.
-//   cursor-sitting.mjs isolate-187 drive --run <dir> --out <dir> --home <dir> --halves <dir> [--blocks <list>] [--no-tail]
-//                                      [--quiet] [--dry-run]
+//   cursor-sitting.mjs isolate-187 drive --run <dir> --out <dir> --home <dir> --halves <dir> [--end restore-owner|keep-merged]
+//                                      [--pair <control.json>] [--blocks <list>] [--no-tail] [--quiet] [--dry-run]
 //   cursor-sitting.mjs isolate-187 judge --out <dir>
+//       #187's isolating slot (./cursor-sitting/item-187-isolate.mjs; the runbook's "Item 187: the isolating slot").
+//       Before anything runs, the preparation's pair (--pair, default <halves>/control-src/control.json) is checked
+//       again against this checkout (./cursor-sitting/control-build.mjs checkPair) and each save under --halves against
+//       it (engine-after/ the shipping build, engine-control/ the control's; engine-owner/ for restore-owner); then the
+//       start (the pair and the owner's end choice recorded), the placement, six blocks A B B A A B (each a swap to its
+//       half's save, approved with no terminal and attested from the running engine's ping; 2 background-paste
+//       repetitions; 3 chrome/composing@textedit rows), the AFTER-only block (a swap to AFTER, #188's `--part 188`, C2's
+//       and C3's repetitions, ./cursor-sitting/item-187-join.mjs), the tail (C4 (b), (c)), the owner's source; and, on
+//       every exit (completed, partial, stopped or thrown), the cleanup: --end applied (restore-owner, the default, puts
+//       engine-owner back; keep-merged engine-after) and attested. --blocks runs some blocks only (1-7, 3, 2,5; 7 is the
+//       AFTER-only block) and --no-tail leaves the tail out; the start, the placement, the end and the cleanup always
+//       run. The out directory is the slot's own, never a re-slot's (one holding item-187.md is refused). `judge` writes
+//       <out>/item-187-isolate.md, the pre-registered verdict: LANDS, DOES NOT LAND or INCONCLUSIVE; a cleanup that did
+//       not attest is its first line. Exit 1 unless LANDS with the cleanup done. The dry run prints each block's steps.
 //   cursor-sitting.mjs isolate-187 replay [--from <records dir>] [--to <file>]
 //       Section D (./cursor-sitting/isolate-replay.mjs): the judge's pure pieces over the second re-slot's records
 //       (item-187-reslot2/, or --from) as recorded and under named mutations, and C2's and C3's over synthetic fixtures;
 //       writes item-187-isolate-replay.md (or --to), a table per predicate. Exit 1 when any outcome is not its expected one.
-//       #187's isolating slot (./cursor-sitting/item-187-isolate.mjs; the runbook's "Item 187: the isolating slot"):
-//       the placement, six blocks A B B A A B (each a swap to its half's save under --halves, engine-after/ or
-//       engine-control/, approved with no terminal and attested from the running engine's ping; 2 background-paste
-//       repetitions; 3 chrome/composing@textedit rows), the AFTER-only block (a swap to AFTER, #188's `--part 188`, C2's
-//       and C3's repetitions, ./cursor-sitting/item-187-join.mjs), the tail (C4 (b), (c)), and the owner's source. --blocks runs some blocks only (1-7, 3,
-//       2,5; 7 is the AFTER-only block) and --no-tail leaves the tail out (the slot running long); the placement and the
-//       end always run. The out directory is the slot's own, never
-//       a re-slot's (one holding item-187.md is refused). `judge` writes <out>/item-187-isolate.md, the pre-registered
-//       verdict: LANDS, DOES NOT LAND or INCONCLUSIVE; exit 1 unless LANDS. The dry run prints each block's steps.
 //   cursor-sitting.mjs remote prepare|enroll|run --kit <dir> [--port n] [--run <dir> --out <dir>] [--quiet] [--dry-run]
 //       Acceptance 8's loopback device (./cursor-sitting/remote.mjs): prepare the kit (and print what it still needs),
 //       enrol it on a loopback relay, then run: the relay and the agent started, three client sessions driven
@@ -161,9 +166,9 @@ import {ORDER_TARGETS, route3Plan, writeFrames, writeLag, writeOrder} from './cu
 import {keepSeriesSignposts, signpostCoverage} from './cursor-sitting/signposts.mjs';
 import {liveSourceSwitch, switchSource, writeConsent} from './cursor-sitting/input-source.mjs';
 import {windowListProbe, writeOrderFromMeta} from './cursor-sitting/glide.mjs';
-import {buildControl, prepareControlSource} from './cursor-sitting/control-build.mjs';
+import {buildControl, checkPair, CONTROL_RECORD, prepareControlSource} from './cursor-sitting/control-build.mjs';
 import {engineDirOf, restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
-import {GOES_ON_ISO, isolateMarkdown, isolatePlan, isolateTasks, judgeIsolate, parseBlocks, SAVED as SAVED_ISO, stepCounts, VERDICT_FILE} from './cursor-sitting/item-187-isolate.mjs';
+import {cleanupSteps, DEFAULT_END, driveThenCleanup, GOES_ON_ISO, isolateMarkdown, isolatePlan, isolateTasks, ITEMS as ITEMS_ISO, judgeIsolate, parseBlocks, SAVED as SAVED_ISO, startOf, stepCounts, VERDICT_FILE} from './cursor-sitting/item-187-isolate.mjs';
 import {PLANS} from './cursor-sitting/plans.mjs';
 import {CASES, elementFrameTool, ENGINES, itemOf, judgeCase, moveWindowTool, orderFileOf, orderLines, orderWatchProbe, placeSteps, raiseMarkdown,
   raiseSteps} from './cursor-sitting/raise.mjs';
@@ -182,7 +187,7 @@ const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'str
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
   arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'}, source: {type: 'string'}, 'no-clip': {type: 'boolean', default: false}, still: {type: 'boolean', default: false}, control: {type: 'boolean', default: false},
   case: {type: 'string'}, variant: {type: 'string'}, part: {type: 'string'}, vendor: {type: 'boolean', default: false}, saved: {type: 'string'}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}, addendum: {type: 'boolean', default: false},
-  scratch: {type: 'string'}, 'sign-wait': {type: 'string'}, halves: {type: 'string'}, blocks: {type: 'string'}, 'no-tail': {type: 'boolean', default: false}};
+  scratch: {type: 'string'}, 'sign-wait': {type: 'string'}, halves: {type: 'string'}, blocks: {type: 'string'}, 'no-tail': {type: 'boolean', default: false}, end: {type: 'string'}, pair: {type: 'string'}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
 const absolute = (values, name) => {
@@ -441,25 +446,39 @@ async function drivePlan(plan, {out, io, dryRun, goesOn = GOES_ON}) {
 // --home) beside the kit's, then the plan driven, and the verdict file written at the end. Refused on a re-slot's out
 // directory, so no slot's report is written over.
 async function driveIsolate(values) {
-  const plan = isolatePlan({blocks: parseBlocks(values.blocks), tail: !values['no-tail']});
+  const plan = isolatePlan({blocks: parseBlocks(values.blocks), tail: !values['no-tail']}), end = values.end ?? DEFAULT_END;
+  const cleanup = cleanupSteps(end);  // refuses an unknown --end before anything runs
   const out = absolute(values, 'out'), dryRun = values['dry-run'];
   if (existsSync(join(out, 'item-187.md'))) throw new Error(`${out} holds a re-slot's report (item-187.md): the isolating slot writes to its own new directory`);
   if (dryRun) {
-    const {steps} = await drivePlan(plan, {out, io: liveIo({run: values.run ?? '/nonexistent', out, quiet: values.quiet}), dryRun, goesOn: GOES_ON_ISO});
+    const io = liveIo({run: values.run ?? '/nonexistent', out, quiet: values.quiet});
+    const {steps} = await drivePlan(plan, {out, io, dryRun, goesOn: GOES_ON_ISO});
+    await runSteps(cleanup, {item: ITEMS_ISO.cleanup, out, io, dryRun});
     for (const b of stepCounts(plan)) print(`dry run: ${b.label}: ${b.steps} steps`);
-    print(`dry run: ${steps} steps, nothing sent`);
+    print(`dry run: the cleanup on every exit (${end}): ${cleanup.length} steps`);
+    print(`dry run: ${steps + cleanup.length} steps, nothing sent`);
     return 0;
   }
   const run = absolute(values, 'run'), home = absolute(values, 'home'), halves = absolute(values, 'halves');
-  for (const dir of Object.values(SAVED_ISO)) if (!existsSync(join(halves, dir, 'saved.json'))) throw new Error(`${join(halves, dir)} holds no save (saved.json): save both halves before the slot (the runbook)`);
+  // The preparation's pair and the saves, checked before anything runs; recorded by the drive's first item.
+  const pairFile = values.pair ? absolute(values, 'pair') : join(halves, 'control-src', CONTROL_RECORD);
+  const readJson = file => { try { return JSON.parse(readFileSync(file, 'utf8')); } catch { return null; } };
+  const record = readJson(pairFile), savedBuild = dir => readJson(join(halves, dir, 'saved.json'))?.status?.build ?? null;
+  const start = startOf({record, end, check: record ? checkPair(record) : {ok: false, problem: `${pairFile} could not be read`},
+    saved: Object.fromEntries(Object.entries(SAVED_ISO).map(([half, dir]) => [half, savedBuild(dir)]))});
+  if (!start.ok) throw new Error(`the slot's preparation does not hold, so nothing was run: ${start.problem}`);
   const io = liveIo({run, out, quiet: values.quiet});
-  Object.assign(io.tasks, isolateTasks({halves, now: Date.now, savedRecord: dir => JSON.parse(readFileSync(join(dir, 'saved.json'), 'utf8')),
+  Object.assign(io.tasks, isolateTasks({halves, start, now: Date.now, savedRecord: dir => JSON.parse(readFileSync(join(dir, 'saved.json'), 'utf8')),
     restore: ({from, aside}) => restoreEngine({home, from, aside, ...engineDeps(home)}), approve: async () => approveHeadless(home)}));
-  const {stopped} = await drivePlan(plan, {out, io, dryRun, goesOn: GOES_ON_ISO});
+  // The cleanup runs on every exit: the owner's end choice applied and attested.
+  const outcome = await driveThenCleanup({end, drive: () => drivePlan(plan, {out, io, dryRun, goesOn: GOES_ON_ISO}),
+    cleanup: steps => runSteps(steps, {item: ITEMS_ISO.cleanup, out, io})});
   const judged = judgeIsolate(read187(out)), text = isolateMarkdown(judged, {commit: kitCommit()});
   writeFileSync(join(out, VERDICT_FILE), text);
-  print(text);
-  return !stopped && judged.ok ? 0 : 1;
+  print(text);  // a failed cleanup is its first line
+  if (outcome.error) print(`the drive threw (the cleanup ran after it): ${outcome.error.message}`);
+  if (outcome.cleanupError) print(`the cleanup stopped: ${outcome.cleanupError.message}`);
+  return judged.cleanup.ok && !outcome.stopped && !outcome.error && judged.ok ? 0 : 1;
 }
 
 async function drive(steps, {item, values, gap = null}) {

@@ -4,7 +4,8 @@
 // than that after a pipelined burst is what makes Chromium cut its last keys and deliver them with the next FocusIn, out
 // of order (M0.4). Per application family that takes background keys, in three lanes (`LANES`): the engine as it ships
 // (`timer`), a control with no delay (`control`, the FocusOut and the unredirect sent as each request's input ends) and
-// the delay with the control's unredirect (`unredirect`):
+// the delay with the control's unredirect (`unredirect`); and, named with `--lanes`, the plain 0 ms control as an engine
+// setting (`control-0ms`, the redirect kept), judged by the wait rule as the timer is:
 //
 // - `burst`: one window, pipelined `press_key` requests (Shift chords among them), the exact text read back;
 // - `aba`: window A, then B, then A again, pipelined, each window's exact text and its order;
@@ -90,11 +91,34 @@ export const STOP_KINDS = ['keys', 'clicks'];
  * `control`: no delay, and each request's redirect dropped with its FocusOut (`--retention per-request`): on the private
  * Xvfb a FocusOut alone, the redirect kept, cuts no key (task 56: 0 of 10 runs, idle and at twice the load), while a
  * FocusOut followed by the unredirect cuts keys as M0.4 saw a FocusOut alone cut them on `:0`. `unredirect`: the
- * delay with the control's per-request unredirect, so the delay is the one thing the control changes.
+ * delay with the control's per-request unredirect, so the delay is the one thing the control changes. `control-0ms`: the
+ * plain 0 ms control as an engine setting (task 59, the design session's ruling, 2026-11-04): no delay, each request's
+ * FocusOut sent as its input ends, the redirect kept as the engine ships (session retention), the flag M0.4's key-pace
+ * runs set and task 58 ran on `:0`. It is judged by the wait rule as the timed lanes are: if every family passes, the
+ * timer can go.
  */
-export const LANES = { timer: [], unredirect: ['--retention', 'per-request'], control: ['--teardown-ms', '0', '--retention', 'per-request'] };
-/** Whether a lane runs with the delay, and so must pass its series. */
-export const timed = (lane) => lane !== 'control';
+export const LANES = { timer: [], unredirect: ['--retention', 'per-request'], 'control-0ms': ['--teardown-ms', '0'], control: ['--teardown-ms', '0', '--retention', 'per-request'] };
+/** The lanes a sitting runs unless `--lanes` names others: T7's proof. */
+export const DEFAULT_LANES = ['timer', 'unredirect', 'control'];
+/** The delay from a window's last input to its FocusOut on a lane. */
+export const delayOf = (lane) => (['control', 'control-0ms'].includes(lane) ? 0 : DELAY_MS);
+/** Whether a lane must pass its series (30 consecutive): every lane but `control`, which must show the reorder. */
+export const judged = (lane) => lane !== 'control';
+/** Whether a lane gets an audit pass: every lane but `unredirect`, whose FocusOuts are the timer's. */
+const audited = (lane) => lane !== 'unredirect';
+
+/**
+ * The lanes a sitting runs, in the experiment's order (`LANES`), and whether it runs the stop runs: T7's lanes and the
+ * stops, or with `--lanes` only those named, beside the timer lane they are compared with, and no stops (the stops prove
+ * the engine as it ships, not a lane).
+ */
+export function chosenLanes(args) {
+  if (!args.lanes?.length) return { lanes: DEFAULT_LANES, stops: true };
+  if (args.stopsOnly) throw new Error('--stops-only runs no lane; drop --lanes');
+  for (const name of args.lanes) if (!LANES[name]) throw new Error(`unknown focus-timer lane ${name}; known: ${Object.keys(LANES).join(', ')}`);
+  if (!args.lanes.includes('timer')) throw new Error('the focus-timer lanes need timer, the engine as it ships, in the same sitting');
+  return { lanes: Object.keys(LANES).filter((name) => args.lanes.includes(name)), stops: false };
+}
 /**
  * A SIGTERM run's exit after the burst's last answer, at most: its drain (at most the delay and the exit's settle), not
  * the engine's 1 s backstop (serve.rs EXIT_BACKSTOP; T7's sittings measured at most 416 ms, at twice the load).
@@ -166,12 +190,12 @@ export function seriesVerdict(oks, need = CONSECUTIVE) {
 }
 
 /**
- * The synthetic-focus sessions a scenario must leave in the trace, by window, in order: on the timer lane one per burst
- * (A's flushed by B, B's by A again, a window's keys by its paste); on the control lane one per request.
+ * The synthetic-focus sessions a scenario must leave in the trace, by window, in order: on a lane with the delay one per
+ * burst (A's flushed by B, B's by A again, a window's keys by its paste); on a lane without it one per request.
  */
 export function expectedSessions(name, lane, { a, b }) {
   const { requests } = scenario(name, { a, b });
-  if (lane === 'control') return requests.map((r) => r.input.window.id);
+  if (delayOf(lane) === 0) return requests.map((r) => r.input.window.id);
   return { burst: [a], aba: [a, b, a], paste: [a, a] }[name];
 }
 
@@ -243,7 +267,12 @@ function collectFocusOuts(engine) {
 export function readStatsLine(line) {
   if (!line.startsWith('{"stats"')) return null;
   const { stats } = JSON.parse(line);
-  return { focusOuts: (stats.focus_out ?? []).map((out) => ({ ...out, reported_on: stats.id ?? null })), settle: stats.exit_settle ?? null };
+  return { focusOuts: focusOutsOf([stats]), settle: stats.exit_settle ?? null };
+}
+
+/** The FocusOuts of a run's `--stats` records, in order, each with the id of the request whose line carried it. */
+export function focusOutsOf(statsList) {
+  return statsList.flatMap((stats) => (stats?.focus_out ?? []).map((out) => ({ ...out, reported_on: stats.id ?? null })));
 }
 
 /** A value to a tenth, as each run's times are (null stays null). */
@@ -416,7 +445,7 @@ export function runPasses({ family, errors, exact }) {
 }
 
 /**
- * A lane's series of one scenario: the timer lane to `need` consecutive passes (30; `--trials` sets fewer for a
+ * A lane's series of one scenario: a judged lane to `need` consecutive passes (30; `--trials` sets fewer for a
  * development run, which its rows record), at most twice that many runs, the control lane `CONTROL_RUNS` runs. Each run
  * is a fresh engine's, as M0.4's key-pace runs were and as a service's first burst is: its first request redirects the
  * window again, and the engine's exit drains its last FocusOut.
@@ -425,7 +454,7 @@ async function series(ctx, family, lane, name, windows) {
   const { emit, cua, need } = ctx;
   const oks = [];
   const rows = [];
-  for (let run = 0; run < (timed(lane) ? need * (MAX_RUNS / CONSECUTIVE) : CONTROL_RUNS); run++) {
+  for (let run = 0; run < (judged(lane) ? need * (MAX_RUNS / CONSECUTIVE) : CONTROL_RUNS); run++) {
     const engine = new Engine({ label: `cua-${lane}`, bin: cua, args: LANES[lane], stats: true }).start();
     const stderrClosed = new Promise((resolve) => engine.child.stderr.once('close', resolve));
     let row;
@@ -438,15 +467,17 @@ async function series(ctx, family, lane, name, windows) {
     // what the paste's observation and confirmation saw, from its --stats line
     if (name === 'paste') row.paste = pasteRecord(engine);
     row.miss = missCause(row);
+    // a miss keeps when each FocusOut went, after which input and on whose answer (the cut's grounds, if one)
+    if (!row.ok) row.focus_outs = focusOutsOf([...engine.statsById.values()]);
     oks.push(row.ok);
     rows.push(row);
     emit(trialRow('focus-timer-run', { family, lane, scenario: name }, run, row));
-    if (timed(lane) && seriesVerdict(oks, need).reached) break;
+    if (judged(lane) && seriesVerdict(oks, need).reached) break;
     // an independent start for the next run's paste: the retry guard an unconfirmed paste raises waited out
     if (row.miss === 'unconfirmed') await sleep(GUARD_WAIT_MS);
   }
-  const verdict = seriesVerdict(oks, timed(lane) ? need : Infinity);
-  const raw = seriesVerdict(rawOks(rows), timed(lane) ? need : Infinity);
+  const verdict = seriesVerdict(oks, judged(lane) ? need : Infinity);
+  const raw = seriesVerdict(rawOks(rows), judged(lane) ? need : Infinity);
   // a run can fail on its text (a key cut, or the order) or only on an answer (a paste that raced the keys)
   const wrongText = rows.filter((r) => !Object.values(r.exact).every(Boolean)).length;
   const missCauses = {};
@@ -483,7 +514,7 @@ async function auditPass(ctx, family, lane, windows) {
   }
   const trace = parseXtrace(text);
   const forbidden = auditRequests(trace);
-  const attributed = attributeFocusOuts(trace, records, { delayMs: timed(lane) ? DELAY_MS : 0 });
+  const attributed = attributeFocusOuts(trace, records, { delayMs: delayOf(lane) });
   const ids = { a: windows.a.id, b: windows.b.id };
   const want = ctx.scenarios.flatMap((name) => expectedSessions(name, lane, ids));
   const seen = attributed.sessions.map((s) => s.destination);
@@ -580,10 +611,14 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
   useDisplay(NO_DISPLAY);
   const server = await startPrivateServer({ out: args.out });
   useDisplay(server.display);
-  emit({ kind: 'focus-timer-display', display: server.display, cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), load_factor: args.load ? (args.loadFactor ?? 1) : 0 });
+  const chosen = chosenScenarios(args);
+  const { lanes, stops: laneStops } = chosenLanes(args);
+  const stops = chosen.stops && laneStops;
+  // each lane's engine flags, as the sitting ran them
+  const laneFlags = Object.fromEntries(lanes.map((name) => [name, LANES[name]]));
+  emit({ kind: 'focus-timer-display', display: server.display, cua_version: xExecFileSync(args.cua, ['--version'], { encoding: 'utf8' }).trim(), load_factor: args.load ? (args.loadFactor ?? 1) : 0, lanes: laneFlags });
   const desktop = new Desktop({ cua: args.cua, run, logs: args.out });
   const families = args.families.length ? args.families : FAMILIES;
-  const chosen = chosenScenarios(args);
   const results = { series: [], audits: [], stops: [], skipped: [] };
   let wm = null;
   let load = null;
@@ -611,20 +646,17 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
       try {
         // the control lane and SIGKILL last: the keys they cut reach the window only with a later FocusIn, which would
         // fail whatever ran after them
-        const cutsKeys = CHROMIUM.includes(family) && chosen.stops;
-        if (!args.stopsOnly) {
-          for (const name of ctx.scenarios) results.series.push(await series(ctx, family, 'timer', name, windows));
-          results.audits.push(await auditPass(ctx, family, 'timer', windows));
-          for (const name of ctx.scenarios) results.series.push(await series(ctx, family, 'unredirect', name, windows));
-        }
+        const cutsKeys = CHROMIUM.includes(family) && stops;
+        const lane = async (name) => {
+          for (const scenarioName of ctx.scenarios) results.series.push(await series(ctx, family, name, scenarioName, windows));
+          if (audited(name)) results.audits.push(await auditPass(ctx, family, name, windows));
+        };
+        if (!args.stopsOnly) for (const name of lanes.filter((l) => l !== 'control')) await lane(name);
         if (cutsKeys) {
           for (let i = 0; i < SIGTERM_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i));
           for (let i = 0; i < POINTER_STOP_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGTERM', windows, i, 'clicks'));
         }
-        if (!args.stopsOnly) {
-          for (const name of ctx.scenarios) results.series.push(await series(ctx, family, 'control', name, windows));
-          results.audits.push(await auditPass(ctx, family, 'control', windows));
-        }
+        if (!args.stopsOnly && lanes.includes('control')) await lane('control');
         if (cutsKeys) for (let i = 0; i < SIGKILL_RUNS; i++) results.stops.push(await stopRun(ctx, family, 'SIGKILL', windows, i));
       } finally {
         await desktop.close([windows.a, windows.b]);
@@ -661,7 +693,7 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped }, { fam
   const md = ['| family | lane | scenario | runs | misses | passing streak at the end | verdict | raw misses | raw streak | median burst ms |', '|---|---|---|---:|---:|---:|---|---:|---:|---:|'];
   for (const s of all) {
     let verdict;
-    if (timed(s.lane)) {
+    if (judged(s.lane)) {
       const need = s.need ?? CONSECUTIVE;
       const name = `${s.family} ${s.scenario}${s.lane === 'timer' ? '' : ` (${s.lane})`}`;
       verdict = s.reached ? `${need} consecutive` : '**not reached**';
@@ -673,7 +705,7 @@ export function focusTimerVerdict({ series: all, audits, stops, skipped }, { fam
       if (required && s.misses === 0) failed.push(`${s.family} ${s.scenario}: the control lane showed no reorder in ${s.runs} runs, so the test cannot see one`);
     }
     // a timed lane's misses by cause: the retry guard refusing after an earlier miss is not a miss of its own
-    const causes = timed(s.lane) && s.misses ? ` (${Object.entries(s.miss_causes ?? {}).map(([c, n]) => `${c} ${n}`).join(', ')})` : '';
+    const causes = judged(s.lane) && s.misses ? ` (${Object.entries(s.miss_causes ?? {}).map(([c, n]) => `${c} ${n}`).join(', ')})` : '';
     md.push(`| ${s.family} | ${s.lane} | ${s.scenario} | ${s.runs} | ${s.misses} | ${s.streak} | ${verdict}${causes} | ${s.raw?.misses ?? '–'} | ${s.raw?.streak ?? '–'} | ${s.burst_ms_median ?? '–'} |`);
   }
   md.push('', '| family | lane | audit | FocusOuts attributed (deferred) | sessions as expected | problems |', '|---|---|---|---:|---|---|');

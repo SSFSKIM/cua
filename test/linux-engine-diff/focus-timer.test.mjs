@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, chosenLanes, delayOf, judged, focusOutsOf, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
 // background session's SendEvents (audit.test.mjs has the same shapes).
@@ -221,6 +221,55 @@ test('the lanes: the engine as it ships; the delay alone with each request unred
   assert.deepEqual(LANES.timer, []);
   assert.deepEqual(LANES.unredirect, ['--retention', 'per-request']);
   assert.deepEqual(LANES.control, ['--teardown-ms', '0', '--retention', 'per-request']);
+});
+
+test("the plain 0 ms control as an engine setting: no FocusOut delay, the default (session) retention kept", () => {
+  assert.deepEqual(LANES['control-0ms'], ['--teardown-ms', '0'], 'no --retention: the redirect is kept as the engine ships');
+  assert.equal(delayOf('control-0ms'), 0);
+  assert.equal(delayOf('control'), 0);
+  assert.equal(delayOf('timer'), 100);
+  assert.equal(delayOf('unredirect'), 100);
+  // judged by the wait rule as the timed lanes are: the question is whether 0 ms passes 30 consecutive
+  assert.equal(judged('control-0ms'), true);
+  assert.equal(judged('timer'), true);
+  assert.equal(judged('control'), false);
+  // its FocusOut goes as each request's input ends: one synthetic-focus session per request, as the control's
+  const ids = { a: 7, b: 9 };
+  for (const name of SCENARIOS) assert.deepEqual(expectedSessions(name, 'control-0ms', ids), expectedSessions(name, 'control', ids));
+});
+
+test("--lanes runs the lanes it names beside the timer lane, in the experiment's order, with no stop runs", () => {
+  const args = (...more) => parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', ...more]);
+  assert.deepEqual(chosenLanes(args()), { lanes: ['timer', 'unredirect', 'control'], stops: true }, "the default is T7's proof, unchanged");
+  assert.deepEqual(chosenLanes(args('--lanes', 'control-0ms,timer')), { lanes: ['timer', 'control-0ms'], stops: false });
+  assert.deepEqual(chosenLanes(args('--lanes', 'timer,control,unredirect,control-0ms')), { lanes: ['timer', 'unredirect', 'control-0ms', 'control'], stops: false });
+  assert.throws(() => chosenLanes(args('--lanes', 'control-0ms')), /the focus-timer lanes need timer/);
+  assert.throws(() => chosenLanes(args('--lanes', 'timer,zero')), /unknown focus-timer lane zero/);
+  assert.throws(() => chosenLanes(args('--lanes', 'timer', '--stops-only')), /--stops-only runs no lane/);
+});
+
+test('the 0 ms lane is judged by the wait rule: short of 30 consecutive it fails, and its line says so', () => {
+  const families = ['chrome', 'gedit'];
+  const withZero = (edit = (s) => s) => (r) => ({ ...r, series: [...r.series, ...families.flatMap((f) => SCENARIOS.map((name) => edit(passingSeries(f, 'control-0ms', name))))], audits: [...r.audits, ...families.map((f) => cleanAudit(f, 'control-0ms'))] });
+  const passing = focusTimerVerdict(results(withZero()), { families });
+  assert.deepEqual(passing.failed, []);
+  assert.ok(passing.md.some((l) => l.startsWith('| gedit | control-0ms | paste |') && l.includes('30 consecutive')), passing.md.join('\n'));
+  const cut = focusTimerVerdict(results(withZero((s) => (s.family === 'chrome' && s.scenario === 'burst' ? { ...s, reached: false, misses: 3, miss_causes: { text: 3 } } : s))), { families });
+  assert.match(cut.failed.join('\n'), /chrome burst \(control-0ms\): no 30 consecutive passing runs/);
+  assert.ok(cut.md.some((l) => l.startsWith('| chrome | control-0ms | burst |') && l.includes('**not reached** (text 3)')), cut.md.join('\n'));
+  const dirty = (r) => ({ ...withZero()(r), audits: [...r.audits, { ...cleanAudit('chrome', 'control-0ms'), clean: false }] });
+  assert.match(focusTimerVerdict(results(dirty), { families }).failed.join('\n'), /chrome control-0ms: the audit is not clean/);
+});
+
+test("a missed run keeps the engine's FocusOut records, each with the request whose line carried it", () => {
+  const out = (window, scheduled_by, after_input_ms) => ({ window, cause: 'timer', after_input_ms, scheduled_by });
+  const stats = [{ id: 1, focus_out: [out(7, 1, 0.004)] }, { id: 2, command: 'press_key' }, { id: 3, focus_out: [out(7, 2, 0.003), out(7, 3, 0.002)] }, null];
+  assert.deepEqual(focusOutsOf(stats), [
+    { ...out(7, 1, 0.004), reported_on: 1 },
+    { ...out(7, 2, 0.003), reported_on: 3 },
+    { ...out(7, 3, 0.002), reported_on: 3 },
+  ]);
+  assert.deepEqual(focusOutsOf([]), []);
 });
 
 test("a run passes on its text and its answers; only a Qt paste's unconfirmed answer is excused, its text still exact", () => {

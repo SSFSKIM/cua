@@ -524,9 +524,9 @@ test('the AXPress route is reported, never the bar: not run behind a closed gate
 // textarea's action reads before AXPress shows (Infinity: never); `premise`: the premise part's record (open, closed,
 // none); `strayWindowReads`: window reads of the relaunched Chrome with another window in front (Infinity: always);
 // `shortMoves`: moves of Chrome's window that land halfway; `foreignAt`: acts during which the person activates Activity
-// Monitor.
+// Monitor; `foreignInSetup`: the person activates it once, at the item's first activation (outside every row).
 function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [], tailRaise = false, menuWatch = 'ok', menuSnapshot = true, lostKeys = 0, delayedReads = 0, latinKey = false, keyless: keylessOpen = false,
-  armSet = false, activationInside = false, axpressReads = 0, premise = 'open', strayWindowReads = 0, shortMoves = 0, foreignAt = []} = {}) {
+  armSet = false, activationInside = false, axpressReads = 0, premise = 'open', strayWindowReads = 0, shortMoves = 0, foreignAt = [], foreignInSetup = false} = {}) {
   const keyless = keylessOpen || armSet;
   let actionReads = 0, strays = strayWindowReads, shorts = shortMoves;
   let clock = T0, front = 'textedit', composed = false, typedLatin = false, keyedAt = null, fieldReads = 0;
@@ -584,7 +584,7 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
   const io = {
     scene, open: async () => session, wait: async () => {}, cue: async () => {}, waitGo: async () => {}, goFile: join(out, 'go'),
     tasks: {
-      activate: async ([id]) => { calls.push(['activate', id]); front = id; if (id === 'textedit' && stateNow() === 'back-above') order('front-above'); beacon(); return {ok: true}; },
+      activate: async ([id]) => { if (foreignInSetup && !calls.some(c => c[0] === 'activate')) activationsLog.push({kind: 'activated', bundleId: 'com.apple.ActivityMonitor', pid: 900, at: tick()}); calls.push(['activate', id]); front = id; if (id === 'textedit' && stateNow() === 'back-above') order('front-above'); beacon(); return {ok: true}; },
       'select-source': async args => { calls.push(['select-source', ...args]); return {ok: true, switched: true}; },
     },
   };
@@ -836,7 +836,7 @@ test('the person: a row the person touched is invalid and the block goes on; the
   assert.match(records[1].invalid, /person-touched: com\.apple\.ActivityMonitor activated/);
   assert.equal(records[2].delivered && records[2].invalid === null, true, 'the next row runs and counts');
   assert.deepEqual(interferenceRowsOf(records[1]), [], 'the person\'s own front change is not the row\'s');
-  assert.deepEqual(touchedOfItem(rows, []), {count: 1, rep: false, foreign: null});
+  assert.deepEqual(touchedOfItem(rows, []), {count: 1, rep: true, foreign: {apps: ['com.apple.ActivityMonitor'], frontPids: []}}, 'one touch: the row, the watcher summary naming the same app');
   const rep = await runRep(t, {foreignAt: [0]});
   assert.ok(rep.result.personTouched);
   assert.equal(rep.result.verdict.status, 'person-touched');
@@ -963,4 +963,40 @@ test('the premise gate opens only on all three samples of the latest attempt, ea
   const short = await gate([start, axpress(sample()), axpress(sample()), axpress(sample()), start, axpress(sample())]);
   assert.equal(short.ok, false);
   assert.match(short.problem, /in 1 of 3 sample\(s\) \(1 recorded\)/);
+});
+
+test('a stale replacement\'s rows are obsolete: its old raise, menu or watcher failure never fails a current run that passes', () => {
+  const TOUCH = {personTouched: {apps: ['com.apple.ActivityMonitor'], frontPids: []}};
+  const items = evidence();
+  // AFTER rep 0 touched in an earlier attempt and replaced then; the half run again since, rep 0 now passing.
+  items[ITEMS.cell('after', 0)] = [{...start, at: T0}, {kind: 'task', task: '187-cell', result: cellRecord('after', 0, TOUCH)}, orderStop(), {...start, at: T0 + 60_000}, ...items[ITEMS.cell('after', 0)].slice(1)];
+  const old = {...TOUCH, background: cellRow('after', 3, 'chrome-cell-background', {raisedAt: [T0 + 2]}), row: cellRow('after', 3, 'chrome-cell', {menu: {read: {trusted: true, ok: true, selected: 0, openMenus: 1}, observed: 0}})};
+  items[ITEMS.cell('after', 3)] = [...replacementRows('after', 3, ITEMS.cell('after', 0), T0, old).slice(0, -1), orderStop({maxGapMs: 90, raises: 2})];
+  const judged = judge187(items);
+  assert.equal(judged.cells.paste.after.at(-1).status, 'stale replacement');
+  assert.equal(judged.overall.verdict, 'LANDS', judged.overall.why.join('; '));
+  // An untouched stale replacement's rows are obsolete too.
+  const untouched = evidence();
+  untouched[ITEMS.cell('after', 3)] = [...replacementRows('after', 3, ITEMS.cell('after', 0), T0, {background: cellRow('after', 3, 'chrome-cell-background', {raisedAt: [T0 + 2]})}).slice(0, -1), orderStop({maxGapMs: 90})];
+  assert.equal(judge187(untouched).overall.verdict, 'LANDS', judge187(untouched).overall.why.join('; '));
+  // A live replacement (its parent's attempt still the latest and touched) is judged like any repetition: its raise counts.
+  const liveRaise = evidence({cell: rep => (rep === 0 ? TOUCH : {})});
+  liveRaise[ITEMS.cell('after', 0)][0] = {...start, at: T0};
+  liveRaise[ITEMS.cell('after', 3)] = replacementRows('after', 3, ITEMS.cell('after', 0), T0, {background: cellRow('after', 3, 'chrome-cell-background', {raisedAt: [T0 + 2]})});
+  assert.equal(judge187(liveRaise).cells.paste.after.at(-1).status, 'counted');
+  assert.match(judge187(liveRaise).overall.why.join('; '), /1 raise\(s\): 1 in rows/, 'a live replacement\'s raise still fails the bar');
+});
+
+test('a touch only the watcher saw, in a group that completed, survives the part being run again', async t => {
+  const out = scratch(t);
+  await runSteps(block(ROWS.slice(0, 2)), {item: ITEMS.composing, out, io: fakeMac(out, {foreignInSetup: true}).io, log: () => {}});
+  const first = read187(out)[ITEMS.composing];
+  assert.ok(first.filter(r => r.task === '187-row').every(r => !r.result.personTouched), 'no row saw it: it came outside every row');
+  assert.deepEqual(first.find(r => r.task === '187-activations-stop').result.personTouched, {apps: ['com.apple.ActivityMonitor'], frontPids: []}, 'the attempt\'s own record keeps it');
+  assert.equal(touchedOfItem(first, []).count, 1, 'counted from the record, not the watcher\'s file');
+  // The part run again, clean: the watcher's file is replaced, the earlier attempt's touch still counts for the slot.
+  await runSteps(block(ROWS.slice(0, 2)), {item: ITEMS.composing, out, io: fakeMac(out).io, log: () => {}});
+  const rows = read187(out)[ITEMS.composing];
+  assert.equal(touchedOfItem(rows, []).count, 0);
+  assert.equal(slotTouches(rows, []), 1);
 });

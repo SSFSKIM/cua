@@ -583,18 +583,21 @@ const touchText = t => [t.apps?.length && `${t.apps.join(', ')} activated`, t.fr
 // The person-touched items an item's evidence holds (its jsonl rows, whose last attempt counts, and its activation
 // watcher's lines, read only when that attempt started the watcher): every row and the repetition recorded as touched,
 // or, when none was, one for a foreign activation the watcher saw (the item stopped before recording it, or the person
-// came between rows). `rep`: the item is a cell repetition the person touched. -> {count, rep, foreign}.
+// came between rows). `rep`: touched with no repetition record saying otherwise (only a repetition's entry, which has a
+// replacement, acts on it). -> {count, rep, foreign}.
 export function touchedOfItem(rows, activationLines = []) {
   return attemptTouches(lastAttempt(rows ?? []), activationLines);
 }
-// One attempt's touches: its rows and repetition recorded as touched, else the drive's mark on its stop, else (the latest
-// attempt only, whose watcher's file it is) a foreign activation the watcher saw.
+// One attempt's touches: its rows and repetition recorded as touched, else the drive's mark on its stop, else the touch
+// summary its watcher's stop wrote into the attempt's own record, else (the latest attempt only, whose watcher's file it
+// is, when it stopped before that summary) a foreign activation the watcher saw.
 function attemptTouches(attempt, activationLines) {
   const rowsTouched = attempt.filter(r => r.kind === 'task' && r.task === '187-row' && r.result?.personTouched).length;
   const cell = attempt.findLast(r => r.kind === 'task' && r.task === '187-cell')?.result ?? null;
   const marked = attempt.findLast(r => r.kind === 'stopped')?.personTouched ?? null;
+  const summary = attempt.findLast(r => r.kind === 'task' && r.task === '187-activations-stop' && r.result && 'personTouched' in r.result)?.result ?? null;
   const watched = activationLines && attempt.some(r => r.kind === 'task' && r.task === '187-activations-start');
-  const foreign = marked && typeof marked === 'object' ? marked : watched ? personTouchedOf({activations: activationLines}) : null;
+  const foreign = marked && typeof marked === 'object' ? marked : summary ? summary.personTouched : watched ? personTouchedOf({activations: activationLines}) : null;
   const recorded = rowsTouched + (cell?.personTouched ? 1 : 0);
   return {count: recorded || (marked || foreign ? 1 : 0), rep: cell ? Boolean(cell.personTouched) : Boolean(marked || foreign), foreign};
 }
@@ -855,13 +858,17 @@ export function judge187(items) {
   const putback = putbackOf({restore, putback: taskResult(ITEMS.putback, '187-putback'), ran: Boolean(items[ITEMS.putback])});
   // The background paste's AFTER rows count for the person's side with every other bar row (a person-touched
   // repetition's are the person's); the BEFORE half's rows are the saved engine's, and the AXPress route never gates.
-  const cellRows = cells.paste.after.filter(c => c.record && c.status !== 'person-touched').flatMap(c => [c.record.background, c.record.row]).filter(Boolean);
+  const cellRows = cells.paste.after.filter(currentRep).flatMap(c => [c.record.background, c.record.row]).filter(Boolean);
   const bar = barOf({groupOf: name => groups.find(g => g.item === name) ?? null, cells, putback, cellRows});
   // #188's rows and cell 3, and #259's cell, judged apart (./item-188.mjs): reported, never part of the bar.
   return {groups, cells, premise, press: pressStatement(cells.press, premise), bar, putback, restore, overall: {ok: bar.ok, verdict: bar.verdict, why: bar.why, on: bar.on},
     vendor: items[ITEMS.vendor] ? summarize(records(ITEMS.vendor)) : null, vendorKorean: items[ITEMS.vendorKorean] ? summarize(records(ITEMS.vendorKorean)) : null,
     item188: judge188(items), item259: judge259(items)};
 }
+
+// A repetition whose rows the bar judges: recorded, not the person's (person-touched) and not obsolete (a stale
+// replacement, whose rows belong to an attempt since run again or never touched).
+const currentRep = c => Boolean(c.record) && !['person-touched', 'stale replacement'].includes(c.status);
 
 // Whether the premise part opens the AXPress route: its latest attempt holds all PREMISE_SAMPLES samples, each read whole
 // (`ok`) and each seeing AXPress within AXPRESS_BOUND_MS of the session's first observation of a freshly relaunched Chrome.
@@ -925,7 +932,7 @@ function barOf({groupOf, cells, putback, cellRows}) {
     why.push(`${cell}'s AFTER half: ${afterPass.length} of ${CELL_REPS} counted repetitions with the background paste delivered, the key held after open -a and the frontmost paste delivered (${afterCounted.length} counted; ${repList(P.after, c => (c.pass ? null : c.why))})`);
   touched(cellRows, `${cell}'s AFTER half`);
   // Each AFTER repetition's background paste ran under the order watcher: whole, within the gap, its raises reconciled.
-  const cellWatched = P.after.filter(c => c.record && c.status !== 'person-touched');
+  const cellWatched = P.after.filter(currentRep);
   for (const c of cellWatched) {
     const w = watcherProblem(c.watcher) ?? reconciliationProblem(c.watcher);
     if (w) why.push(`${cell}'s ${c.item.replace(/^187-cell-/, '')}: ${w}`);
@@ -1272,7 +1279,9 @@ export function item187Tasks(d) {
       const lines = d.activations.stop(watch);
       s.itemActivations = lines;
       d.write(`item-${item}-activations.ndjson`, lines.map(l => JSON.stringify(l)).join('\n') + (lines.length ? '\n' : ''));
-      return {ok: true, item, lines: lines.length, activated: lines.filter(l => l.kind === 'activated').length};
+      // The attempt's touch summary kept in its own record, watcher-only touches included (an app activated between rows
+      // or in the setup, the harness reactivating its scene after it): a re-run replaces the watcher's file, never this.
+      return {ok: true, item, lines: lines.length, activated: lines.filter(l => l.kind === 'activated').length, personTouched: personTouchedOf({activations: lines})};
     },
     // Chrome's menus watched for an AXMenuOpened notification over a block (menu-open.swift watch).
     '187-menu-start': async ([item], ctx) => {

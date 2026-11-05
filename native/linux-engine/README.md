@@ -77,7 +77,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   way (a click into another field can land after the observation, which then reads the field it left), so a paste
   whose window took a background click (a press of button 1 to 3) within `--paste-click-settle-ms` (25 ms) waits too,
   until that long has passed since the click (the design session's ruling on task 60: 0 missed on Electron at twice
-  the load, 25 held; a page that spends longer on a press before its field takes the focus can outlast it). Each
+  the load, 25 held; the review's probe, whose page spends 50 ms on the press, confirmed 10 of 10 at 25). Each
   paste's `--stats` record says how long after the key and the click it came and what it waited (`paste.settle`).
 - **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: a
   `drag_handle` still between its start and its end ends first as its own end would (the family's release dwell, then

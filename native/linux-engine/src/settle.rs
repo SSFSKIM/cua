@@ -37,8 +37,9 @@ pub const PASTE_SETTLE: Duration = Duration::from_millis(100);
 /// click into the field's first character held at 0 on every family that takes the case (Firefox's caret moves on no
 /// background click); a click into another field of Chromium's keys page missed at 0 on Electron at twice the load (3
 /// of 60, each refused with nothing sent), and every step from 25 held on Chrome and Electron, idle and at twice the
-/// load. The page spends 3 ms on each press, as it does on each key; a page that spends longer on a press before its
-/// field takes the focus can outlast it (the review's probe spends 50 ms).
+/// load. The page spends 3 ms on each press, as it does on each key. The review's probe, whose page spends 50 ms on the
+/// press, confirmed its paste into the field clicked in 10 of 10 runs at 25, where the engine with no click settle
+/// confirmed none.
 pub const PASTE_CLICK_SETTLE: Duration = Duration::from_millis(25);
 
 /// When a settle of `settle` after the latest of `last_keys` ends: None when there is no key.

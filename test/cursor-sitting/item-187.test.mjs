@@ -1,16 +1,19 @@
 // #187's re-slot kit (scripts/cursor-sitting/item-187.mjs): the plan (no engine.json switch, the confirming cell's two
-// halves, chrome/composing@textedit in 2 blocks of 9, the controls, #259's cell), a row's record and its key-window
-// readings, the per-line confirmation, the bar (each condition alone keeps it from landing), the order put back after a
-// raise, the composition key never typed over a delayed one, the cell run end to end, value-freeness and the CLI's dry
-// runs. Nothing is driven: the runner runs against fakes.
+// routes and two halves, the premise part, chrome/composing@textedit in 2 blocks of 9, the controls, #259's cell), a
+// row's record and its key-window readings, the per-line confirmation, the bar (each condition alone keeps it from
+// landing; the BEFORE half part of it, NO VERDICT when it delivers), the order put back after a raise, the composition
+// key never typed over a delayed one, both cell routes run end to end with their premises, the relaunch's and the
+// placement's waits, the person's touch and the drive's replacement and stop, value-freeness and the CLI's dry runs.
+// Nothing is driven: the runner runs against fakes.
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {main, read187} from '../../scripts/cursor-sitting.mjs';
-import {BLOCK_ROWS, CELL_REPS, CELL_ROW, cellItem, cellVerdict, clipboardReaders, COMPOSE_LEAD_MS, COMPOSE_REPOST_LEAD_MS, COMPOSING_BLOCKS, CONTROLS, freshActivation, GROUPS, groupItem,
-  item187Markdown, item187Tasks, ITEMS, judge187, judgedOk, keyHeld, LABELS, menuOpened, PARTS, perLineProblem, plan187, releaseOf, ROWS, rowRecord, TARGET, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
+import {AXPRESS_BOUND_MS, BLOCK_ROWS, CELL_REPS, CELL_ROW, cellItem, cellVerdict, clipboardReaders, COMPOSE_LEAD_MS, COMPOSE_REPOST_LEAD_MS, COMPOSING_BLOCKS, CONTROLS, driveItems, freshActivation, GROUPS, groupItem,
+  item187Markdown, item187Tasks, ITEMS, judge187, judgedOk, keyHeld, LABELS, menuOpened, PARTS, perLineProblem, personTouchedOf, plan187, PREMISE_SAMPLES, PRESS_REPS, pressItem, releaseOf,
+  RELAUNCH_STABLE_POLLS, ROWS, rowRecord, TARGET, TOUCHED_STOP, touchedOfItem, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
 import {ITEMS_188, ITEMS_259} from '../../scripts/cursor-sitting/item-188.mjs';
 import {describeStep, runSteps} from '../../scripts/cursor-sitting/runner.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
@@ -61,21 +64,39 @@ const orderStop = (over = {}) => ({kind: 'task', task: '187-order-stop', result:
 // The last item: the owner's source selected again and read back.
 const endItem = (result = {ok: true, which: 'owner', switched: true, requested: 'com.apple.keylayout.ABC', current: {id: 'com.apple.keylayout.ABC'}}) =>
   [start, {kind: 'task', task: 'activate', result: {ok: true}}, {kind: 'task', task: 'select-source', args: ['owner', 'textedit'], result}];
-// One cell repetition's record, as '187-cell' writes it; `over` replaces any part.
-const cellRecord = (half, rep, over = {}) => ({tag: `${ITEMS.cell(half, rep)}#0`, half, rep,
+// The saved engine's paste into a keyless Chrome: the read timing out, nothing entered.
+const TIMED_OUT = {act: {ok: true, value: {actMs: 2100, threw: true, message: 'timed out'}, route: 'paste', meta: {activationGuardMs: 40, activationClick: 'outsideFrame', paste: {stage: 'read', readWait: 'timeout', confirmed: null}}},
+  check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: CELL_ROW.string.text.length}}}};
+const cellRow = (half, rep, group, over = {}) => record({item: ITEMS.cell(half, rep), group, block: group === 'chrome-cell' ? 1 : 0, row: CELL_ROW, ...over});
+// One background-paste repetition's record, as '187-cell' writes it, as predicted: on AFTER both pastes delivered and
+// the key held; on BEFORE the background paste timing out at the read stage and Chrome keyless. `over` replaces any part.
+const cellRecord = (half, rep, over = {}) => ({tag: `${ITEMS.cell(half, rep)}#0`, half, rep, route: 'paste', personTouched: null,
+  keyBefore: {reading: {...BACK, focused: false}, pageFocused: false},
+  ...(half === 'after'
+    ? {background: cellRow(half, rep, 'chrome-cell-background'), keyAfter: {reading: KEY, pageFocused: true, settledMs: 120}, row: cellRow(half, rep, 'chrome-cell')}
+    : {background: cellRow(half, rep, 'chrome-cell-background', TIMED_OUT), keyAfter: {reading: KEYLESS, pageFocused: false, settledMs: 1000}, row: cellRow(half, rep, 'chrome-cell', TIMED_OUT)}),
+  ...over});
+const cellItemRows = (half, rep, over, stop = orderStop()) => [start, {kind: 'task', task: '187-cell', result: cellRecord(half, rep, over)}, ...(stop ? [stop] : [])];
+// One AXPress repetition's record: AXPress advertised, the click on the action plan; AFTER key and delivered, BEFORE
+// keyless with the read timing out.
+const pressRecord = (half, rep, over = {}) => ({tag: `${ITEMS.press(half, rep)}#0`, half, rep, route: 'press', personTouched: null,
+  premise: {advertised: true, appearedMs: 2100, actions: ['AXPress', 'AXShowMenu'], textareas: 1},
   press: {ok: true, pressed: true, plan: 'action', action: 'AXPress', reason: 'advertised', kind: {kind: 'inertOutside', point: 'offset', when: 'early'}},
   pressRead: {inFront: true, found: true, focused: true, empty: true}, keyBefore: {reading: {...BACK, focused: false}, pageFocused: false},
-  keyAfter: {reading: KEY, pageFocused: true, settledMs: 120}, row: record({item: ITEMS.cell(half, rep), group: 'chrome-cell', row: CELL_ROW}), ...over});
-const cellItemRows = (half, rep, over) => [start, {kind: 'task', task: '187-cell', result: cellRecord(half, rep, over)}];
+  ...(half === 'after' ? {keyAfter: {reading: KEY, pageFocused: true, settledMs: 120}, row: record({item: ITEMS.press(half, rep), group: 'chrome-cell', row: CELL_ROW})}
+    : {keyAfter: {reading: KEYLESS, pageFocused: false}, row: record({item: ITEMS.press(half, rep), group: 'chrome-cell', row: CELL_ROW, ...TIMED_OUT})}),
+  ...over});
 const groupRows = (item, group, rows, tweak = r => r) => [start, ...rows.map(([block, i, row]) => taskRow(tweak(record({item, group, block, i, row})))), ...(GROUPS[group].user ? [orderStop()] : [])];
 const putbackRow = (over = {}) => [start, {kind: 'task', task: '187-putback', result: {ok: true, saved: 'dd7a09235885', current: {build: 'dd7a09235885', approved: true}, ...over}}];
 
-// The whole re-slot's evidence with every condition holding; the tweaks change rows of one group.
-function evidence({tweakComposing = r => r, tweakControl = r => r, cell = () => ({}), end = true, putback = true} = {}) {
+// The whole re-slot's evidence with every condition holding, the BEFORE half failing as predicted; the tweaks change
+// rows of one group, `cell(rep)` and `before(rep)` a repetition's record.
+function evidence({tweakComposing = r => r, tweakControl = r => r, cell = () => ({}), before = () => ({}), withBefore = true, end = true, putback = true} = {}) {
   const items = {};
   items[ITEMS.composing] = groupRows(ITEMS.composing, 'chrome-composing', COMPOSING_BLOCKS.flatMap((rows, block) => rows.map((row, i) => [block, i, row])), tweakComposing);
   for (const group of CONTROLS) items[ITEMS.control(group)] = groupRows(ITEMS.control(group), group, ROWS.map((row, i) => [0, i, row]), tweakControl);
   for (let rep = 0; rep < CELL_REPS; rep++) items[ITEMS.cell('after', rep)] = cellItemRows('after', rep, cell(rep));
+  if (withBefore) for (let rep = 0; rep < CELL_REPS; rep++) items[ITEMS.cell('before', rep)] = cellItemRows('before', rep, before(rep));
   if (end) items[ITEMS.end] = endItem();
   if (putback) items[ITEMS.putback] = putbackRow();
   return items;
@@ -98,9 +119,10 @@ test('the rows: hold 3\'s nine strings typed and pasted; chrome/composing@texted
   assert.equal(releaseOf('chrome-cell'), null);
 });
 
-test('the re-slot\'s plan: the placement, the cell\'s AFTER half, the placement again, the 2 blocks, the controls once, #259\'s cell, the owner\'s source; no switch, no engine stop, no arm read', () => {
+test('the re-slot\'s plan: the placement, the cell\'s AFTER half on both routes, the placement again, the 2 blocks, the controls once, #259\'s cell, the owner\'s source; no switch, no engine stop, no arm read', () => {
   const plan = plan187();
-  assert.deepEqual(plan.map(p => p.item), [ITEMS.place, ...[0, 1, 2].map(rep => ITEMS.cell('after', rep)), ITEMS.placeAgain, ITEMS.composing, ...CONTROLS.map(ITEMS.control), ITEMS_259.click, ITEMS.end]);
+  assert.deepEqual(plan.map(p => p.item), [ITEMS.place, ...[0, 1, 2].map(rep => ITEMS.cell('after', rep)), ITEMS.press('after', 0), ITEMS.placeAgain, ITEMS.composing, ...CONTROLS.map(ITEMS.control), ITEMS_259.click, ITEMS.end]);
+  assert.equal(PRESS_REPS, 1);
   const steps = plan.flatMap(p => p.steps);
   assert.ok(!steps.some(s => ['engine-json-paste', 'engine-json-restore', 'engine-stop', '187-arm'].includes(s.task)), 'nothing writes engine.json, stops the engine or reads an arm');
   assert.deepEqual(plan[0].steps.filter(s => s.task).map(s => s.task), ['187-preflight', '187-place', 'activate']);
@@ -125,40 +147,81 @@ test('the re-slot\'s plan: the placement, the cell\'s AFTER half, the placement 
   assert.deepEqual(leaks(plan.flatMap(p => p.steps.map(describeStep)).join('\n')), []);
 });
 
-test('the confirming cell: Chrome relaunched, TextEdit in front under ABC, the field clicked in the background, its hold ended, open -a, the key read, a paste whose prepare clicks nothing', () => {
-  const steps = cellItem({half: 'after', rep: 0});
-  const order = steps.map(s => s.task ?? (s.open ? 'open' : s.close ? 'close' : s.run ? s.label.replace(/^\S+ /, '') : null)).filter(Boolean);
-  const at = name => order.findIndex(x => (typeof x === 'string' ? x.startsWith(name) : false));
-  assert.ok(at('187-relaunch') < at('activate') && at('activate') < at('select-source') && at('select-source') < at('open'));
-  assert.ok(at('press:') < at('press read') && at('press read') < at('release: the textedit') && at('release: the textedit') < at('187-open'));
-  assert.ok(at('187-open') < at('187-mid') && at('187-mid') < at('187-row') && at('187-row') < at('187-cell'));
+const orderOf = steps => steps.map(s => s.task ?? (s.open ? 'open' : s.close ? 'close' : s.run ? s.label.replace(/^\S+ /, '') : null)).filter(Boolean);
+const atIn = order => name => order.findIndex(x => (typeof x === 'string' ? x.startsWith(name) : false));
+
+test('the background-paste cell: Chrome relaunched and placed, TextEdit in front under ABC, one background paste under the order watcher, open -a, the key read, a frontmost paste; no prepare clicks', () => {
+  const steps = cellItem({half: 'after', rep: 0}), order = orderOf(steps), at = atIn(order);
+  assert.ok(at('187-relaunch') < at('187-place') && at('187-place') < at('activate') && at('activate') < at('select-source') && at('select-source') < at('187-arrange'));
+  assert.ok(at('187-arrange') < at('187-order-start') && at('187-order-start') < at('open'));
+  const acts = steps.filter(s => s.run && /act:/.test(s.label)), prepares = steps.filter(s => s.run && /prepare:/.test(s.label));
+  assert.deepEqual(acts.map(s => s.keys), ['textedit', 'chrome'], 'the background paste under TextEdit\'s key guard, the frontmost one under Chrome\'s');
+  assert.ok(acts.every(s => /__app\.paste\(/.test(s.cell)));
+  assert.equal(prepares.length, 2);
+  assert.ok(prepares.every(s => !/__app\.(click|setValue|typeText|paste)/.test(s.cell)), 'neither paste\'s prepare sends input: no mouse down reaches Chrome before ⌘V');
+  // No release observation in the fresh session, the watcher stopped before open -a (the person's own raise of Chrome).
+  assert.ok(!steps.some(s => s.run && /release:/.test(s.label)));
+  const bgRow = order.indexOf('187-row'), fgRow = order.lastIndexOf('187-row');
+  assert.ok(bgRow < at('187-order-stop') && at('187-order-stop') < at('187-open') && at('187-open') < fgRow && fgRow < at('187-cell'));
   assert.deepEqual(steps.filter(s => s.task === '187-key').map(s => s.args[2]), ['before', 'after']);
-  assert.deepEqual(steps.find(s => s.task === 'select-source').args, ['latin', 'textedit']);
-  assert.ok(steps.find(s => s.task === '187-relaunch').required && steps.find(s => s.task === '187-open').required);
-  const prepare = steps.find(s => s.run && /prepare:/.test(s.label)), act = steps.find(s => s.run && /act:/.test(s.label)), press = steps.find(s => s.run && /press:/.test(s.label));
-  assert.ok(!/__app\.(click|setValue|typeText|paste)/.test(prepare.cell), 'the paste row\'s prepare sends no input');
-  assert.match(press.cell, /await __app\.click\(__index\)/);
-  const afterClick = press.cell.slice(press.cell.indexOf('await __app.click(__index)') + 'await __app.click(__index)'.length);
-  assert.ok(!/__app\.|observe\(/.test(afterClick), 'the click is the press cell\'s last call, so its meta is the click\'s');
-  assert.equal(act.keys, 'chrome');
-  assert.match(act.cell, /__app\.paste\(/);
-  // The before part: the put-back read against the save, the three repetitions, the owner's source.
+  assert.deepEqual(steps.find(s => s.task === '187-cell').args, [`${ITEMS.cell('after', 0)}#0`, 'after', '0', 'paste']);
+  assert.ok(['187-relaunch', '187-place', '187-arrange', '187-order-start', '187-open'].every(t => steps.find(s => s.task === t).required));
+  assert.deepEqual(steps.find(s => s.task === '187-arrange').args, ['chrome-cell-background']);
+  assert.equal(GROUPS['chrome-cell-background'].condition, 'latin', 'latin on purpose: no composition, the arm isolated');
+  assert.equal(releaseOf('chrome-cell-background'), null);
+  // The before part: the put-back read against the save, both routes' repetitions, the owner's source.
   const before = plan187({part: 'before', saved: '/saved'});
-  assert.deepEqual(before.map(p => p.item), [ITEMS.putback, ...[0, 1, 2].map(rep => ITEMS.cell('before', rep)), ITEMS.end]);
+  assert.deepEqual(before.map(p => p.item), [ITEMS.putback, ...[0, 1, 2].map(rep => ITEMS.cell('before', rep)), ITEMS.press('before', 0), ITEMS.end]);
   assert.deepEqual(before[0].steps.find(s => s.task === '187-putback').args, ['/saved']);
   assert.ok(!before[0].steps.find(s => s.task === '187-putback').required, 'the BEFORE half runs on whatever engine is installed, recorded');
 });
 
+test('the AXPress cell: gated on the premise part, AXPress awaited after the session\'s first observation, the click only once it is advertised, its own last call', () => {
+  const steps = pressItem({half: 'before', rep: 0}), order = orderOf(steps), at = atIn(order);
+  assert.equal(order[0], '187-press-gate');
+  assert.ok(steps.find(s => s.task === '187-press-gate').required, 'a closed gate stops the repetition before anything runs');
+  assert.ok(at('187-relaunch') < at('open') && at('open') < at('187-axpress') && at('187-axpress') < at('press:'));
+  assert.deepEqual(steps.find(s => s.task === '187-axpress').args, [`${ITEMS.press('before', 0)}#0`, 'chrome', 'gate']);
+  const press = steps.find(s => s.run && /press:/.test(s.label)), tag = `${ITEMS.press('before', 0)}#0`;
+  assert.equal(press.when({}), false, 'no AXPress reading: nothing is clicked');
+  assert.equal(press.when({[LABELS.axpress(tag)]: {advertised: false}}), false, 'AXPress not advertised: PRECONDITION UNMET, never the pointer route');
+  assert.equal(press.when({[LABELS.axpress(tag)]: {advertised: true}}), true);
+  assert.match(press.cell, /await __app\.click\(__index\)/);
+  const afterClick = press.cell.slice(press.cell.indexOf('await __app.click(__index)') + 'await __app.click(__index)'.length);
+  assert.ok(!/__app\.|observe\(/.test(afterClick), 'the click is the press cell\'s last call, so its meta is the click\'s');
+  assert.ok(at('press read') < at('release: the textedit') && at('release: the textedit') < at('187-open') && at('187-open') < at('187-cell'));
+  assert.deepEqual(steps.find(s => s.task === '187-cell').args.slice(1), ['before', '0', 'press']);
+});
+
+test('the premise part: in the preflight, the build read, three fresh launches each observed once and timed to AXPress, Chrome down at the end; no placement, no source', () => {
+  const plan = plan187({part: 'premise'});
+  assert.deepEqual(plan.map(p => p.item), [ITEMS.premise]);
+  const order = orderOf(plan[0].steps);
+  assert.equal(order[0], '187-premise-engine');
+  assert.equal(order.filter(x => x === '187-relaunch').length, PREMISE_SAMPLES);
+  assert.equal(order.filter(x => x === 'open').length, PREMISE_SAMPLES);
+  assert.deepEqual(plan[0].steps.filter(s => s.task === '187-axpress').map(s => s.args[2]), Array(PREMISE_SAMPLES).fill('measure'));
+  assert.ok(plan[0].steps.filter(s => s.open).every(s => s.scenes.length === 1 && s.scenes[0] === 'chrome'));
+  assert.equal(order.at(-1), '187-down');
+  assert.ok(!order.some(x => ['187-place', '187-preflight', 'select-source'].includes(x)));
+});
+
 test('the parts: each reruns alone between the placement and the owner\'s source; #188 and #259 under #188\'s own; the vendor\'s lanes', () => {
-  assert.deepEqual(PARTS, ['reslot', 'before', 'cell', 'composing', 'controls', '259', '188', '188-vendor-click']);
-  assert.deepEqual(plan187({part: 'cell'}).map(p => p.item), [ITEMS.place, ...[0, 1, 2].map(rep => ITEMS.cell('after', rep)), ITEMS.placeAgain, ITEMS.end]);
+  assert.deepEqual(PARTS, ['reslot', 'premise', 'before', 'cell', 'composing', 'controls', '259', '188', '188-vendor-click']);
+  assert.deepEqual(plan187({part: 'cell'}).map(p => p.item), [ITEMS.place, ...[0, 1, 2].map(rep => ITEMS.cell('after', rep)), ITEMS.press('after', 0), ITEMS.placeAgain, ITEMS.end]);
   assert.deepEqual(plan187({part: 'composing'}).map(p => p.item), [ITEMS.place, ITEMS.composing, ITEMS.end]);
   assert.deepEqual(plan187({part: 'controls'}).map(p => p.item), [ITEMS.place, ...CONTROLS.map(ITEMS.control), ITEMS.end]);
   assert.deepEqual(plan187({part: '259'}).map(p => p.item), [ITEMS_188.place, ITEMS_259.click, ITEMS_188.end]);
   assert.deepEqual(plan187({vendor: true}).map(p => p.item), [ITEMS.place, ITEMS.vendorKorean, ITEMS.vendor, ITEMS.end], 'the vendor\'s chrome/korean rows first');
   assert.equal(plan187({vendor: true})[1].steps.filter(s => s.task === '187-row').length, 9);
   assert.ok(!plan187().some(p => p.item.startsWith('188-')), '#188\'s items are out of the default');
-  assert.throws(() => plan187({part: 'a'}), /--part takes reslot, before/);
+  assert.throws(() => plan187({part: 'a'}), /--part takes reslot, premise, before/);
+  // A repetition's replacement: the next number on its route and half, itself never replaced.
+  const plan = plan187(), first = plan.find(p => p.item === ITEMS.cell('after', 0)), press = plan.find(p => p.item === ITEMS.press('after', 0));
+  const r1 = first.replace(), r2 = plan.find(p => p.item === ITEMS.cell('after', 2)).replace(), rp = press.replace();
+  assert.deepEqual([r1.item, r2.item, rp.item], [ITEMS.cell('after', 3), ITEMS.cell('after', 4), ITEMS.press('after', 1)]);
+  assert.ok(r1.replacement && !r1.replace);
+  assert.deepEqual(r1.steps.find(s => s.task === '187-cell').args.slice(1), ['after', '3', 'paste']);
 });
 
 test('a row is delivered only when the engine\'s read-back and the page\'s fresh beacon agree; the key-window state before the act is kept', () => {
@@ -235,15 +298,20 @@ test('the per-line record: every line confirmed by its own change, each later li
   assert.equal(openingReturn.settle, 'reading');
 });
 
-test('the bar: every condition holding, the re-slot lands, with the baseline cited', () => {
+test('the bar: every condition holding, the re-slot lands on the background paste, with the baseline cited and AXPress reported unproven', () => {
   const judged = judge187(evidence());
   assert.equal(judged.overall.verdict, 'LANDS', judged.overall.why.join('; '));
   assert.equal(judgedOk(judged), true);
+  assert.equal(judged.overall.on, 'the background paste');
   const md = item187Markdown(judged);
-  assert.match(md, /## Overall: LANDS/);
+  assert.match(md, /## Overall: LANDS, on the background paste/);
   assert.match(md, /0 of 99 valid rows delivered, every one stopping at the read \(timeout\) stage/);
-  assert.match(md, /AFTER: 3 of 3 repetitions key and delivered/);
-  assert.match(md, /BEFORE: not recorded/);
+  assert.match(md, /AFTER: 3 of 3 counted repetitions with both pastes delivered and the key held/);
+  assert.match(md, /BEFORE: 3 of 3 counted repetitions failing as predicted/);
+  assert.match(md, /The cell is latin on purpose/);
+  assert.match(md, /The AXPress route did not run \(the premise part has not run\)/);
+  assert.match(md, /\*\*AXPress on Chrome is unproven\*\*/);
+  assert.match(md, /never verified on Chrome/, 'the report corrects the kit\'s earlier claim');
   assert.deepEqual(leaks(md), []);
 });
 
@@ -262,16 +330,28 @@ test('the bar\'s traps: each one alone is DOES NOT LAND, never a partial verdict
     ['a front-app change', {tweakControl: firstOnly(reRecord, {activations: [{kind: 'activated', bundleId: 'com.google.chrome.for.testing', at: T0}]})}, /touched the person's side \(front app\)/],
     ['the composition disturbed', {tweakComposing: firstOnly(reRecord, {userKept: false})}, /touched the person's side \(composition\)/],
     ['a clipboard restore that did not hold', {tweakComposing: firstOnly(reRecord, {clipboard: {mid: 'a', after: 'b'}})}, /touched the person's side \(clipboard\)/],
-    ['a cell repetition not key', {cell: rep => (rep === 1 ? {keyAfter: {reading: KEYLESS, pageFocused: false}} : {})}, /AFTER half: 2 of 3 repetitions key and delivered \(.*2: the key was not held after the activation/],
+    ['a cell repetition not key', {cell: rep => (rep === 1 ? {keyAfter: {reading: KEYLESS, pageFocused: false}} : {})}, /background-paste cell's AFTER half: 2 of 3 counted repetitions .*after-1: the key was not held after the activation/],
     ['a cell repetition whose page focus is unread', {cell: rep => (rep === 0 ? {keyAfter: {reading: KEY, pageFocused: null}} : {})}, /key-window state after the activation was not read whole/],
-    ['a cell repetition not on the action plan', {cell: rep => (rep === 2 ? {press: {ok: true, pressed: true, plan: 'synthesized'}} : {})}, /the click's plan was synthesized, not the action plan/],
+    ['a cell repetition whose background paste posted its own activation click (premise not met, never counted)', {cell: rep => (rep === 2 ? {background: cellRow('after', 2, 'chrome-cell-background', {act: {...input().act, meta: {...input().act.meta, activationClick: 'posted'}}})} : {})},
+      /AFTER half: 2 of 3 counted repetitions .*\(2 counted; .*after-2: premise not met \(the background paste's activation click was posted, not skipped/],
+    ['a cell repetition whose background paste did not deliver', {cell: rep => (rep === 0 ? {background: cellRow('after', 0, 'chrome-cell-background', TIMED_OUT)} : {})}, /after-0: the background paste did not deliver/],
+    ['a person-touched cell repetition with no replacement', {cell: rep => (rep === 1 ? {personTouched: {apps: ['com.apple.ActivityMonitor'], frontPids: []}} : {})}, /AFTER half: 2 of 3 counted .*after-1: person-touched \(touched by the person \(com\.apple\.ActivityMonitor activated\)\)/],
     // Review P2: a delivering cell paste that touches the person's side fails the bar like any composing or control row.
-    ...[['its clipboard restore did not hold', {clipboard: {mid: 'a', after: 'b'}}, /the cell's AFTER half: 1 row\(s\) touched the person's side \(clipboard\)/],
-      ['it changed the front app', {activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', at: T0}]}, /the cell's AFTER half: 1 row\(s\) touched the person's side \(front app\)/],
-      ['it produced a page click', {page: {mid: {seq: 4, length: 0, counts: ZERO, focused: true}, after: {seq: 6, length: CELL_ROW.string.text.length, counts: {...ZERO, mousedown: 1}, focused: true}}}, /the cell's AFTER half: 1 row\(s\) touched the person's side \(page click\)/],
+    ...[['its clipboard restore did not hold', {clipboard: {mid: 'a', after: 'b'}}, /the background-paste cell's AFTER half: 1 row\(s\) touched the person's side \(clipboard\)/],
+      ['it changed the front app', {activations: [{kind: 'activated', bundleId: 'com.apple.TextEdit', at: T0}]}, /the background-paste cell's AFTER half: 1 row\(s\) touched the person's side \(front app\)/],
+      ['it produced a page click', {page: {mid: {seq: 4, length: 0, counts: ZERO, focused: true}, after: {seq: 6, length: CELL_ROW.string.text.length, counts: {...ZERO, mousedown: 1}, focused: true}}}, /the background-paste cell's AFTER half: 1 row\(s\) touched the person's side \(page click\)/],
       ['it opened a menu', {menu: {read: {trusted: true, ok: true, selected: 0, openMenus: 1}, observed: 0}}, /1 row\(s\) with a menu opened in Chrome/]]
-      .map(([what, over, why]) => [`a delivering cell paste where ${what}`, {cell: rep => (rep === 1 ? {row: reRecord(record({item: ITEMS.cell('after', 1), group: 'chrome-cell', row: CELL_ROW}), {group: 'chrome-cell', item: ITEMS.cell('after', 1), ...over})} : {})}, why]),
-    ['a cell repetition that did not deliver', {cell: rep => (rep === 0 ? {row: reRecord(record({item: ITEMS.cell('after', 0), group: 'chrome-cell', row: CELL_ROW}), {group: 'chrome-cell', item: ITEMS.cell('after', 0), check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 44}}}})} : {})}, /the paste did not deliver/],
+      .map(([what, over, why]) => [`a delivering frontmost cell paste where ${what}`, {cell: rep => (rep === 1 ? {row: cellRow('after', 1, 'chrome-cell', over)} : {})}, why]),
+    ['a background cell paste that clicked the page', {cell: rep => (rep === 0 ? {background: cellRow('after', 0, 'chrome-cell-background', {page: {mid: {seq: 4, length: 0, counts: ZERO, focused: false}, after: {seq: 6, length: CELL_ROW.string.text.length, counts: {...ZERO, mousedown: 1}, focused: false}}})} : {})},
+      /the background-paste cell's AFTER half: 1 row\(s\) touched the person's side \(page click\)/],
+    ['a background cell paste that raised Chrome', {cell: rep => (rep === 2 ? {background: cellRow('after', 2, 'chrome-cell-background', {raisedAt: [T0 + 3]})} : {})}, /1 raise\(s\): 1 in rows/],
+    ['a cell repetition whose frontmost paste did not deliver', {cell: rep => (rep === 0 ? {row: cellRow('after', 0, 'chrome-cell', {check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 44}}}})} : {})}, /the frontmost paste did not deliver/],
+    ['the BEFORE half not recorded', {withBefore: false}, /background-paste cell's BEFORE half on the saved engine was not recorded/],
+    ['a BEFORE repetition that kept the key', {before: rep => (rep === 0 ? {keyAfter: {reading: KEY, pageFocused: true}} : {})}, /BEFORE half: 2 of 3 counted repetitions failing as predicted .*before-0: the key was held after the activation/],
+    ['a BEFORE repetition whose background paste failed otherwise than a read timeout', {before: rep => (rep === 1 ? {background: cellRow('before', 1, 'chrome-cell-background', {...TIMED_OUT, act: {...TIMED_OUT.act, meta: {...TIMED_OUT.act.meta, paste: {stage: 'effect', readWait: 'handedOver'}}}})} : {})},
+      /before-1: the background paste stopped at effect \(read handedOver\), not a read timeout/],
+    ['a BEFORE repetition short', {before: rep => (rep === 2 ? {background: cellRow('before', 2, 'chrome-cell-background', {...TIMED_OUT, act: {...TIMED_OUT.act, meta: {...TIMED_OUT.act.meta, activationClick: 'posted'}}})} : {})},
+      /BEFORE half: 2 of 3 counted repetitions failing as predicted .*\(2 counted; .*before-2: premise not met/],
     ['the put-back not read', {putback: false}, /the engine put-back was not read/],
     ['the source not restored', {end: false}, /owner's input source was not selected again/],
   ];
@@ -283,7 +363,7 @@ test('the bar\'s traps: each one alone is DOES NOT LAND, never a partial verdict
   }
   const missingRep = evidence();
   delete missingRep[ITEMS.cell('after', 2)];
-  assert.match(judge187(missingRep).overall.why.join('; '), /2 of 3 repetitions key and delivered \(.*3: not recorded/);
+  assert.match(judge187(missingRep).overall.why.join('; '), /2 of 3 counted repetitions .*after-2: not recorded/);
   const short = evidence();
   short[ITEMS.control('chrome-korean')].splice(3, 1);
   assert.match(judge187(short).overall.why.join('; '), /chrome\/korean control: 17 of 18 rows valid and delivered \(17 recorded\)/);
@@ -312,24 +392,92 @@ test('the bar\'s watchers: a gap past 50 ms, an unreconciled total, a tail raise
   const reconciled = evidence(), rowKey = reconciled[ITEMS.composing].find(r => r.task === '187-row').result.key;
   reconciled[ITEMS.composing].splice(-1, 1, orderStop({raises: 1, rowRaises: {[rowKey]: [T0 + 7]}}));
   assert.match(judge187(reconciled).overall.why.join('; '), /1 raise\(s\): 1 in rows/, 'a raise the final record holds in a row\'s span is the row\'s');
+  // The background-paste cell's watcher counts like a block's: its gap, and a raise only its final record holds.
+  const gap = evidence();
+  gap[ITEMS.cell('after', 1)] = cellItemRows('after', 1, {}, orderStop({maxGapMs: 70}));
+  assert.match(judge187(gap).overall.why.join('; '), /background-paste cell's after-1: the order watcher's longest gap was 70 ms, past 50/);
+  const unwatched = evidence();
+  unwatched[ITEMS.cell('after', 0)] = cellItemRows('after', 0, {}, null);
+  assert.match(judge187(unwatched).overall.why.join('; '), /after-0: the order watcher's record is missing/);
+  const late = evidence(), bg = cellRecord('after', 2).background;
+  late[ITEMS.cell('after', 2)] = [start, {kind: 'task', task: '187-row', result: bg}, {kind: 'task', task: '187-cell', result: cellRecord('after', 2)}, orderStop({raises: 1, tailRaises: {[bg.key]: [T0 + 11]}})];
+  assert.match(judge187(late).overall.why.join('; '), /1 raise\(s\): 1 in rows/, 'a late raise the cell\'s final watcher record holds is its background paste\'s');
 });
 
-test('the BEFORE half is recorded only: its prediction is reported, a delivery there says the mechanism is wrong, and neither moves the bar', () => {
-  const items = evidence();
-  const before = rep => cellItemRows('before', rep, {keyAfter: {reading: KEYLESS, pageFocused: false},
-    row: reRecord(record({item: ITEMS.cell('before', rep), group: 'chrome-cell', row: CELL_ROW}), {group: 'chrome-cell', item: ITEMS.cell('before', rep),
-      act: {ok: true, value: {actMs: 2100, threw: true, message: 'timed out'}, route: 'paste', meta: {paste: {stage: 'read', readWait: 'timeout', confirmed: null}}},
-      check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: CELL_ROW.string.text.length}}}})});
-  for (let rep = 0; rep < CELL_REPS; rep++) items[ITEMS.cell('before', rep)] = before(rep);
+test('the BEFORE half gates the bar: a BEFORE that delivers is NO VERDICT (the cell does not discriminate), unless another condition already fails', () => {
+  const judged = judge187(evidence());
+  assert.deepEqual(judged.cells.paste.before.map(c => [c.status, c.keyless, c.bgReadTimeout, c.delivered, c.predicted]), Array(3).fill(['counted', true, true, false, true]));
+  // The saved engine delivering the frontmost paste after open -a: the arm was not what kept Chrome keyless.
+  const delivering = judge187(evidence({before: rep => (rep === 1 ? cellRecord('after', 1, {half: 'before'}) : {})}));
+  assert.equal(delivering.overall.verdict, 'NO VERDICT');
+  assert.equal(judgedOk(delivering), false);
+  assert.match(delivering.overall.why.join('; '), /NO VERDICT: 1 counted BEFORE repetition\(s\) on the saved engine delivered a paste, so the cell does not discriminate .*#187 stays Refs/);
+  assert.match(item187Markdown(delivering), /## Overall: NO VERDICT\n/);
+  assert.match(item187Markdown(delivering), /1 BEFORE repetition\(s\) delivered: the cell does not discriminate, NO VERDICT, and #187 stays Refs/);
+  // The background paste alone delivering on the saved engine is enough.
+  const bgOnly = judge187(evidence({before: rep => (rep === 0 ? {background: cellRow('before', 0, 'chrome-cell-background')} : {})}));
+  assert.equal(bgOnly.overall.verdict, 'NO VERDICT');
+  const alsoFailing = judge187(evidence({before: rep => (rep === 1 ? cellRecord('after', 1, {half: 'before'}) : {}), tweakComposing: firstOnly(reRecord, {userKept: false})}));
+  assert.equal(alsoFailing.overall.verdict, 'DOES NOT LAND', 'a failing condition is a verdict of its own');
+  assert.match(alsoFailing.overall.why.join('; '), /NO VERDICT: 1 counted BEFORE/);
+  // A premise-not-met BEFORE repetition that delivered counts for nothing, not for NO VERDICT.
+  const uncounted = judge187(evidence({before: rep => (rep === 2 ? cellRecord('after', 2, {half: 'before', background: cellRow('before', 2, 'chrome-cell-background', {act: {...input().act, meta: {...input().act.meta, activationClick: 'posted'}}})}) : {})}));
+  assert.equal(uncounted.overall.verdict, 'DOES NOT LAND');
+  assert.match(uncounted.overall.why.join('; '), /BEFORE half: 2 of 3 counted/);
+  assert.deepEqual(cellVerdict(null), {recorded: false, route: null, status: 'not recorded', counted: false, pass: false, predicted: false, delivers: false, key: null, keyless: null, why: 'not recorded'});
+});
+
+test('a person-touched repetition is invalid and its replacement counts in its place; a stopped one the drive marked touched reads so', () => {
+  const items = evidence({cell: rep => (rep === 0 ? {personTouched: {apps: ['com.apple.ActivityMonitor'], frontPids: []}} : {})});
+  items[ITEMS.cell('after', 3)] = cellItemRows('after', 3);
   const judged = judge187(items);
-  assert.equal(judged.overall.verdict, 'LANDS');
-  assert.deepEqual(judged.cells.before.map(c => [c.keyless, c.readTimeout, c.delivered]), Array(3).fill([true, true, false]));
-  assert.match(item187Markdown(judged), /BEFORE \(recorded only\): 3 of 3 repetitions keyless with the read timing out, as predicted\./);
-  items[ITEMS.cell('before', 1)] = cellItemRows('before', 1);
-  const wrong = judge187(items);
-  assert.equal(wrong.overall.verdict, 'LANDS', 'the BEFORE half never moves the bar');
-  assert.match(item187Markdown(wrong), /1 BEFORE repetition\(s\) delivered: the mechanism is wrong/);
-  assert.deepEqual(cellVerdict(null), {recorded: false, setUp: false, key: null, delivered: false, keyless: null, readTimeout: false, why: 'not recorded'});
+  assert.equal(judged.overall.verdict, 'LANDS', judged.overall.why.join('; '));
+  assert.deepEqual(judged.cells.paste.after.map(c => [c.item, c.status]), [[ITEMS.cell('after', 0), 'person-touched'], ...[1, 2, 3].map(rep => [ITEMS.cell('after', rep), 'counted'])]);
+  // The touched repetition's rows are the person's: its raise does not fail the bar.
+  const raised = evidence({cell: rep => (rep === 0 ? {personTouched: {apps: ['com.apple.ActivityMonitor'], frontPids: []}, background: cellRow('after', 0, 'chrome-cell-background', {raisedAt: [T0]})} : {})});
+  raised[ITEMS.cell('after', 3)] = cellItemRows('after', 3);
+  assert.equal(judge187(raised).overall.verdict, 'LANDS');
+  const stopped = evidence();
+  stopped[ITEMS.cell('before', 1)] = [start, {kind: 'stopped', error: 's: refused, nothing sent: keys for chrome need its run window on top', personTouched: {apps: ['com.cmuxterm.app'], frontPids: []}}];
+  const sj = judge187(stopped);
+  assert.equal(sj.cells.paste.before[1].status, 'person-touched');
+  assert.match(sj.overall.why.join('; '), /BEFORE half: 2 of 3 counted .*before-1: person-touched/);
+});
+
+test('the AXPress route is reported, never the bar: not run behind a closed gate, PRECONDITION UNMET without AXPress, premise not met off the action plan, and its own BEFORE', () => {
+  const premise = (appeared, opens = true) => [start, {kind: 'task', task: '187-premise-engine', result: {ok: true, build: 'dd7a09235885', approved: true}},
+    ...appeared.map((ms, k) => ({kind: 'task', task: '187-axpress', result: {tag: `${ITEMS.premise}#${k}`, advertised: ms !== null && ms <= AXPRESS_BOUND_MS, appearedMs: ms, boundMs: 10000}})), ...(opens ? [] : [])];
+  const closed = evidence();
+  closed[ITEMS.premise] = premise([2100, null, 6200]);
+  closed[ITEMS.press('after', 0)] = [start, {kind: 'task', task: '187-press-gate', result: {ok: false, problem: 'the premise part saw AXPress within 5000 ms in 1 of 3 sample(s)'}}, {kind: 'stopped', error: '187-press-gate refused'}];
+  const cj = judge187(closed), md = item187Markdown(cj);
+  assert.equal(cj.overall.verdict, 'LANDS', 'a closed gate never moves the bar');
+  assert.equal(cj.cells.press.after[0].status, 'not run');
+  assert.equal(cj.premise.opens, false);
+  assert.match(md, /The premise part \(engine dd7a09235885, approved\): AXPress appeared after 2100 ms, none within 10000 ms, 6200 ms; the route does not run\./);
+  assert.match(md, /The AXPress route did not run \(the premise part saw AXPress within 5000 ms in 1 of 3 sample\(s\)\)/);
+  assert.match(md, /\*\*AXPress on Chrome is unproven\*\*/);
+  const ran = evidence();
+  ran[ITEMS.premise] = premise([1900, 2100, 2300]);
+  ran[ITEMS.press('after', 0)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('after', 0)}];
+  ran[ITEMS.press('after', 1)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('after', 1, {premise: {advertised: false, appearedMs: null, actions: ['AXShowMenu']}})}];
+  ran[ITEMS.press('before', 0)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('before', 0)}];
+  ran[ITEMS.press('before', 1)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('before', 1, {press: {ok: true, pressed: true, plan: 'synthesized', reason: 'noAction'}})}];
+  const rj = judge187(ran), rmd = item187Markdown(rj);
+  assert.equal(rj.overall.verdict, 'LANDS');
+  assert.deepEqual(rj.cells.press.after.map(c => c.status), ['counted', 'precondition unmet']);
+  assert.deepEqual(rj.cells.press.before.map(c => c.status), ['counted', 'premise not met']);
+  assert.match(rmd, /AFTER: 1 of 1 counted repetition\(s\) key and delivered\./);
+  assert.match(rmd, /BEFORE: 1 of 1 counted repetition\(s\) keyless with the read timing out, as predicted\./);
+  assert.match(rmd, /precondition unmet \(AXPress was not advertised on the textarea within 5000 ms of the session's first observation \(it advertised AXShowMenu\)\)/);
+  assert.match(rmd, /premise not met \(the click's plan was synthesized \(noAction\), not action\/AXPress\)/);
+  assert.doesNotMatch(rmd, /AXPress on Chrome is unproven/);
+  // A failing AXPress repetition, even a BEFORE that delivers, never moves the bar.
+  ran[ITEMS.press('before', 0)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('after', 0, {half: 'before'})}];
+  ran[ITEMS.press('after', 0)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('after', 0, {keyAfter: {reading: KEYLESS, pageFocused: false}})}];
+  const fj = judge187(ran);
+  assert.equal(fj.overall.verdict, 'LANDS');
+  assert.match(item187Markdown(fj), /1 delivered: on this route the activation followed by the person's activation does not leave Chrome keyless/);
 });
 
 // The Mac, faked: three scenes, a page that counts what the act enters (and whether the page has the focus), an order
@@ -339,8 +487,17 @@ test('the BEFORE half is recorded only: its prediction is reported, a delivery t
 // Chrome and then TextEdit activated while the row waits for it. `tailRaise`: Chrome raised while the block closes its
 // session; `menuWatch`: the notification watcher's fate (ok, ended, dead, unreadable) and `menuSnapshot` whether the
 // snapshot reads succeed. `lostKeys`: composition keys lost; `delayedReads`: focus reads before the first key lands;
-// `latinKey`: the key lands as the Latin letter; `keyless`: Chrome left without a key window by `open -a`.
-function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [], tailRaise = false, menuWatch = 'ok', menuSnapshot = true, lostKeys = 0, delayedReads = 0, latinKey = false, keyless = false} = {}) {
+// `latinKey`: the key lands as the Latin letter; `keyless`: Chrome left without a key window by `open -a`; `armSet`:
+// the saved engine's arm left set (every paste into Chrome times out at the read, and Chrome stays keyless);
+// `activationInside`: the paste's activation point inside the frame (its own click posted); `axpressReads`: the
+// textarea's action reads before AXPress shows (Infinity: never); `premise`: the premise part's record (open, closed,
+// none); `strayWindowReads`: window reads of the relaunched Chrome with another window in front (Infinity: always);
+// `shortMoves`: moves of Chrome's window that land halfway; `foreignAt`: acts during which the person activates Activity
+// Monitor.
+function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [], tailRaise = false, menuWatch = 'ok', menuSnapshot = true, lostKeys = 0, delayedReads = 0, latinKey = false, keyless: keylessOpen = false,
+  armSet = false, activationInside = false, axpressReads = 0, premise = 'open', strayWindowReads = 0, shortMoves = 0, foreignAt = []} = {}) {
+  const keyless = keylessOpen || armSet;
+  let actionReads = 0, strays = strayWindowReads, shorts = shortMoves;
   let clock = T0, front = 'textedit', composed = false, typedLatin = false, keyedAt = null, fieldReads = 0;
   const pids = {...PIDS}, keystrokes = [], keyClock = [], sleeps = [];
   const bounds = {chrome: {x: 300, y: 80, width: 800, height: 600}, textedit: {x: 500, y: 100, width: 700, height: 500}, electron: {x: 900, y: 120, width: 500, height: 400}};
@@ -373,12 +530,13 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
         const key = calls.filter(c => c[0] === 'act').length;
         calls.push(['act', keys]);
         if (activationsInWaitAt.includes(key)) { stalePage = {...page}; lagReads = 2; pairDue = true; }
-        const lands = !(GROUPS['chrome-cell'] && keys === 'chrome' && keyless);
+        const chromeAct = code.includes('cursor-sitting:scene chrome'), lands = !(chromeAct && (armSet || (keyless && keys === 'chrome')));
+        if (foreignAt.includes(key)) activationsLog.push({kind: 'activated', bundleId: 'com.apple.ActivityMonitor', pid: 900, at: tick()});
         if (lands) beacon({length: text.length});
         if (raiseAt.includes(key)) order('back-above');
         if (lateRaiseAt.includes(key)) { order('back-above'); changes.at(-1).visibleAfter = attempts + 2; }
         return {ok: true, value: {actMs: lands ? 180 : 2100, threw: !lands, message: lands ? null : 'timed out'}, route: 'paste', images: [],
-          meta: {activationGuardMs: 40, activationClick: 'outsideFrame', entered: lands ? text.length : 0,
+          meta: {activationGuardMs: 40, activationClick: activationInside ? 'posted' : 'outsideFrame', entered: lands ? text.length : 0,
             paste: lands ? {stage: 'effect', confirmed: true, focusEnforcement: {activated: true, point: 'outside'}, perLine: linesOf(text)} : {stage: 'read', readWait: 'timeout'}}};
       }
       if (code.includes('// cua-187: check')) {
@@ -398,7 +556,11 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
   };
   const deps = {
     out, scene, state: () => ({scenes: {chrome: {page: {variant: 'counters'}}, textedit: {}, electron: {}}}), activate: id => io.tasks.activate([id]),
-    frontmost: () => ({pid: pids[front], topWindow: {number: numbers[front]}}), windows: pid => { const id = Object.keys(pids).find(k => pids[k] === pid); return [{number: numbers[id], bounds: bounds[id], onScreen: true}]; },
+    frontmost: () => ({pid: pids[front], topWindow: {number: numbers[front]}}), windows: pid => {
+      const id = Object.keys(pids).find(k => pids[k] === pid), own = {number: numbers[id], bounds: bounds[id], onScreen: true};
+      if (id === 'chrome' && strays > 0) { strays -= 1; return [{number: 99, bounds: {x: 0, y: 0, width: 600, height: 400}, onScreen: true}, own]; }
+      return [own];
+    },
     windowList: () => ['textedit', 'chrome', 'electron'].map(id => ({number: numbers[id], bounds: bounds[id]})),
     scenes: args => {
       calls.push(['scenes', ...args]);
@@ -429,10 +591,17 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
     engineStatus: () => ({build: 'b1', approved: true, status: {}}), savedRecord: () => ({status: {build: 'b1'}}),
     consent: () => ({consent: true, owner: {id: 'com.apple.keylayout.ABC'}}), clipboard: () => 'digest', processNames: () => ['/usr/sbin/pboard', '/bin/zsh'],
     pageCounters: () => (lagReads > 0 ? (lagReads--, {...stalePage}) : {...page}), fixtureCounters: () => null,
-    moveWindow: ([pid, , dx, dy]) => { const id = Object.keys(pids).find(k => pids[k] === Number(pid)); bounds[id] = {...bounds[id], x: bounds[id].x + Number(dx), y: bounds[id].y + Number(dy)}; calls.push(['move', id]); return {moved: true}; },
+    moveWindow: ([pid, , dx, dy]) => {
+      const id = Object.keys(pids).find(k => pids[k] === Number(pid)), part = id === 'chrome' && shorts > 0 ? (shorts -= 1, 0.5) : 1;
+      bounds[id] = {...bounds[id], x: bounds[id].x + Math.round(Number(dx) * part), y: bounds[id].y + Math.round(Number(dy) * part)};
+      calls.push(['move', id]);
+      return {moved: true};
+    },
+    axActions: () => { actionReads += 1; calls.push(['actions']); return {trusted: true, ok: true, found: true, count: 1, walked: 40, actions: actionReads > axpressReads ? ['AXPress', 'AXShowMenu'] : ['AXShowMenu']}; },
+    premiseRows: () => (premise === 'none' ? [] : [start, ...[1900, premise === 'open' ? 2200 : null, 2400].map((ms, k) => ({kind: 'task', task: '187-axpress', result: {tag: `${ITEMS.premise}#${k}`, advertised: ms !== null, appearedMs: ms}}))]),
     order: {start: async ({file}) => ({pid: 77, file, start: {state: 'front-above'}}), stop: async () => ({start: {state: 'front-above'}, changes, end: {samples: 400, maxGapMs: 9}}),
       attempt: () => { attempts += 1; return {start: {state: 'front-above', at: T0}, changes: changes.filter(c => !(c.visibleAfter > attempts)), end: null}; }},
-    activations: {start: () => ({}), lines: () => [...activationsLog], stop: () => []},
+    activations: {start: () => ({}), lines: () => [...activationsLog], stop: () => [...activationsLog]},
     menu: {read: () => ({trusted: true, ok: menuSnapshot, selected: 0, openMenus: 0, focusedRole: 'AXTextArea'}), start: async () => ({registered: true}),
       stop: async () => ({opened: 0, end: {at: clock}}), alive: () => menuWatch !== 'dead',
       lines: () => { if (menuWatch === 'unreadable') throw new Error('the log could not be read'); return menuWatch === 'ended' ? [{kind: 'end', at: T0, why: 'crashed'}] : []; }},
@@ -542,30 +711,132 @@ test('the composition key (review P2 on 15583c65): a delayed first key is waited
   assert.deepEqual([latin.result.ok, latin.result.posts, latin.result.read, latin.result.waited], [false, 1, 'latin', false], 'a field holding the Latin key is never typed over');
 });
 
-test('the confirming cell end to end: the relaunch, the press on the action plan, open -a, the key read with the page focused, and the paste; keyless, the paste times out', async t => {
-  const run = async options => {
-    const out = scratch(t), mac = fakeMac(out, options), item = ITEMS.cell(options.keyless ? 'before' : 'after', 0);
-    await runSteps(cellItem({half: options.keyless ? 'before' : 'after', rep: 0}), {item, out, io: mac.io, log: () => {}});
-    return {rows: read187(out)[item], calls: mac.calls};
-  };
-  const after = await run({});
-  const cell = after.rows.find(r => r.task === '187-cell').result;
+// One repetition run on the fake Mac. -> {rows, calls, result (its '187-cell' record), error}.
+const runRep = async (t, {route = 'paste', half = 'after', rep = 0, ...options} = {}) => {
+  const out = scratch(t), mac = fakeMac(out, options), item = route === 'paste' ? ITEMS.cell(half, rep) : ITEMS.press(half, rep);
+  let error = null;
+  await runSteps((route === 'paste' ? cellItem : pressItem)({half, rep}), {item, out, io: mac.io, log: () => {}}).catch(e => { error = e; });
+  const rows = read187(out)[item];
+  return {rows, calls: mac.calls, result: rows.find(r => r.task === '187-cell')?.result ?? null, error, sleeps: mac.sleeps};
+};
+
+test('the background-paste cell end to end: relaunched, placed, the background paste under the order watcher, open -a, the key, the frontmost paste; on the saved engine both fail as predicted', async t => {
+  const after = await runRep(t);
+  assert.equal(after.error, null);
+  const cell = after.result;
   assert.equal(cell.ok, true, JSON.stringify(cell.verdict));
-  assert.deepEqual([cell.press.plan, cell.press.action, cell.press.reason, cell.press.kind.when], ['action', 'AXPress', 'advertised', 'early']);
-  assert.deepEqual([cell.keyBefore.reading.frontmost, cell.keyAfter.reading.frontmost, cell.keyAfter.reading.focused, cell.keyAfter.reading.main, cell.keyAfter.pageFocused], [false, true, true, true, true]);
-  assert.deepEqual([cell.verdict.setUp, cell.verdict.key, cell.verdict.delivered], [true, true, true]);
-  assert.equal(cell.row.keyWindow.focused, true, 'the row read the key right before its act');
-  const relaunch = after.rows.find(r => r.task === '187-relaunch').result;
-  assert.deepEqual([relaunch.ok, relaunch.before, relaunch.pid], [true, PIDS.chrome, PIDS.chrome + 100]);
-  assert.deepEqual(after.calls.filter(c => ['scenes', 'open'].includes(c[0])), [['scenes', 'down', 'chrome'], ['scenes', 'up', 'chrome', '--page', 'counters'], ['open', '/Apps/chrome.app']]);
-  assert.deepEqual(after.calls.find(c => c[0] === 'prepare'), ['prepare', 'no click']);
-  const order = after.calls.map(c => c[0]);
-  assert.ok(order.indexOf('press') < order.indexOf('open') && order.indexOf('open') < order.indexOf('act'));
-  const before = await run({keyless: true});
-  const keyless = before.rows.find(r => r.task === '187-cell').result;
-  assert.deepEqual([keyless.verdict.keyless, keyless.verdict.readTimeout, keyless.verdict.delivered], [true, true, false]);
-  assert.equal(keyless.ok, true, 'the BEFORE half records; it never fails a run');
+  assert.deepEqual([cell.route, cell.verdict.status, cell.verdict.pass], ['paste', 'counted', true]);
+  assert.deepEqual([cell.background.activationClick, cell.background.delivered, cell.background.regime, cell.background.stateAtStart], ['outsideFrame', true, 'background', 'front-above']);
+  assert.equal(cell.background.front.expected, PIDS.textedit, 'TextEdit in front for the background paste');
+  assert.deepEqual([cell.keyBefore.reading.frontmost, cell.keyAfter.reading.frontmost, cell.keyAfter.reading.focused, cell.keyAfter.pageFocused], [false, true, true, true]);
+  assert.equal(cell.row.delivered, true);
+  const order = after.calls.map(c => c[0]), acts = after.calls.filter(c => c[0] === 'act');
+  assert.deepEqual(acts, [['act', 'textedit'], ['act', 'chrome']]);
+  assert.ok(order.indexOf('move') < order.indexOf('act') && order.lastIndexOf('act') > order.indexOf('open'));
+  assert.ok(order.indexOf('open') > order.indexOf('act'), 'open -a after the background paste');
+  assert.deepEqual(after.calls.filter(c => c[0] === 'prepare').map(c => c[1]), ['no click', 'no click']);
+  assert.ok(!order.includes('press'), 'the paste route clicks nothing');
+  const items = evidence();
+  items[ITEMS.cell('after', 0)] = after.rows;
+  assert.equal(judge187(items).overall.verdict, 'LANDS', 'the repetition as the kit records it meets the bar, its watcher whole');
+  const before = await runRep(t, {half: 'before', armSet: true});
+  assert.deepEqual([before.result.verdict.status, before.result.verdict.predicted, before.result.verdict.bgReadTimeout, before.result.verdict.keyless, before.result.verdict.delivers], ['counted', true, true, true, false]);
+  assert.equal(before.result.ok, true);
+  // The activation point inside the frame: the paste's own click consumed the arm, the repetition never counted.
+  const inside = await runRep(t, {activationInside: true});
+  assert.equal(inside.result.verdict.status, 'premise not met');
+  assert.equal(inside.result.ok, false);
   assert.deepEqual(leaks(JSON.stringify(after.rows) + JSON.stringify(before.rows)), []);
+});
+
+test('the AXPress cell end to end: the click only once AXPress shows; without it PRECONDITION UNMET and nothing clicked or pasted; a closed gate runs nothing', async t => {
+  const late = await runRep(t, {route: 'press', axpressReads: 20});
+  const ax = late.rows.find(r => r.task === '187-axpress').result;
+  assert.deepEqual([ax.advertised, ax.polls, ax.actions.includes('AXPress')], [true, 21, true]);
+  assert.ok(ax.appearedMs >= 20 * 100 && ax.appearedMs <= AXPRESS_BOUND_MS, 'how long it took is recorded');
+  assert.equal(late.result.ok, true, JSON.stringify(late.result.verdict));
+  assert.deepEqual([late.result.premise.advertised, late.result.press.plan, late.result.verdict.status], [true, 'action', 'counted']);
+  const never = await runRep(t, {route: 'press', axpressReads: Infinity});
+  assert.equal(never.error, null, 'an unmet precondition is recorded, never a stop');
+  assert.equal(never.result.verdict.status, 'precondition unmet');
+  assert.ok(!never.calls.some(c => ['press', 'act', 'open'].includes(c[0])), 'nothing falls through to the pointer route, nothing is pasted');
+  const waited = never.rows.find(r => r.task === '187-axpress').result;
+  assert.ok(waited.appearedMs === null && waited.advertised === false && waited.polls > 10 && waited.boundMs === AXPRESS_BOUND_MS, 'waited out the bound, polled');
+  const closed = await runRep(t, {route: 'press', premise: 'closed'});
+  assert.match(closed.error?.message ?? '', /187-press-gate refused: the premise part saw AXPress within 5000 ms in 2 of 3 sample\(s\)/);
+  assert.ok(!closed.calls.some(c => c[0] === 'scenes'), 'a closed gate relaunches nothing');
+  const none = await runRep(t, {route: 'press', premise: 'none'});
+  assert.match(none.error?.message ?? '', /the premise part has not run/);
+});
+
+test('the relaunch waits for its run window alone in front, stably; the placement settles and retries a window caught mid-move', async t => {
+  const stray = await runRep(t, {strayWindowReads: 4});
+  const waited = stray.rows.find(r => r.task === '187-relaunch').result;
+  assert.equal(waited.ok, true);
+  assert.equal(waited.polls, 4 + RELAUNCH_STABLE_POLLS, 'the stray window\'s reads, then the stable ones');
+  assert.ok(stray.result, 'the repetition ran once the window settled');
+  const always = await runRep(t, {strayWindowReads: Infinity});
+  assert.match(always.error?.message ?? '', /187-relaunch refused: the chrome scene's run window 11 was not its one on-screen window, in front, .*\(its windows: 99, 11\)/);
+  assert.ok(!always.calls.some(c => c[0] === 'act'));
+  const short = await runRep(t, {shortMoves: 1});
+  const placed = short.rows.find(r => r.task === '187-place').result;
+  assert.deepEqual([placed.ok, placed.attempts], [true, 2]);
+  assert.equal(placed.moves.filter(m => m.id === 'chrome' && m.dx !== undefined).length, 2, 'Chrome moved again from where it was caught');
+  const stuck = await runRep(t, {shortMoves: Infinity});
+  assert.match(stuck.error?.message ?? '', /187-place refused: chrome at \(\d+, \d+\) against \(24, \d+\): not in place after 3 attempt\(s\)/);
+});
+
+test('the person: a row the person touched is invalid and the block goes on; the item\'s touches are counted; a repetition the person touched says so', async t => {
+  const out = scratch(t), mac = fakeMac(out, {foreignAt: [1]});
+  await runSteps(block(ROWS.slice(0, 3)), {item: ITEMS.composing, out, io: mac.io, log: () => {}});
+  const rows = rowsOfRun(out), records = rows.filter(r => r.task === '187-row').map(r => r.result);
+  assert.deepEqual(records.map(r => r.invalid?.startsWith('person-touched') ?? false), [false, true, false]);
+  assert.match(records[1].invalid, /person-touched: com\.apple\.ActivityMonitor activated/);
+  assert.equal(records[2].delivered && records[2].invalid === null, true, 'the next row runs and counts');
+  assert.deepEqual(interferenceRowsOf(records[1]), [], 'the person\'s own front change is not the row\'s');
+  assert.deepEqual(touchedOfItem(rows, []), {count: 1, rep: false, foreign: null});
+  const rep = await runRep(t, {foreignAt: [0]});
+  assert.ok(rep.result.personTouched);
+  assert.equal(rep.result.verdict.status, 'person-touched');
+  assert.equal(touchedOfItem(rep.rows, []).rep, true);
+  assert.deepEqual(personTouchedOf({activations: [{kind: 'activated', bundleId: 'com.google.chrome.for.testing'}, {kind: 'activated', bundleId: 'io.github.ssfskim.cua.engine'}, {kind: 'deactivated', bundleId: 'x'}]}), null, 'the scenes and the engine are not the person');
+  assert.deepEqual(personTouchedOf({fronts: [PIDS.chrome, 95245], scenePids: Object.values(PIDS)}), {apps: [], frontPids: [95245]});
+  assert.deepEqual(personTouchedOf({activations: [{kind: 'activated'}]}), {apps: ['unknown'], frontPids: []});
+  // A stopped repetition that never wrote its record: its watcher's lines tell, but only from an attempt that started it.
+  const stopped = [start, {kind: 'task', task: '187-activations-start', result: {ok: true}}];
+  assert.deepEqual(touchedOfItem(stopped, [{kind: 'activated', bundleId: 'com.cmuxterm.app'}]), {count: 1, rep: true, foreign: {apps: ['com.cmuxterm.app'], frontPids: []}});
+  assert.equal(touchedOfItem([start], [{kind: 'activated', bundleId: 'com.cmuxterm.app'}]).count, 0, 'a stale file from an earlier attempt never counts');
+});
+const interferenceRowsOf = r => [r.front?.changed && !r.personTouched && 'front app'].filter(Boolean);
+
+test('the drive: a person-touched repetition is replaced once, more than three touches stop it but the owner\'s source, and other stops follow the stages', async () => {
+  const drive = async (touches, {errors = {}, seed = 0} = {}) => {
+    const ran = [], marks = [];
+    const result = await driveItems(plan187({part: 'cell'}), {seed,
+      runItem: async entry => { ran.push(entry.item); return errors[entry.item] ? new Error(errors[entry.item]) : null; },
+      evidenceOf: item => ({rows: touches.includes(item) ? [start, {kind: 'task', task: '187-cell', result: {personTouched: {apps: ['com.apple.ActivityMonitor'], frontPids: []}}}] : [start], activations: []}),
+      mark: (item, error, touched) => marks.push([item, error.message, touched.count])});
+    return {...result, ran, marks};
+  };
+  const once = await drive([ITEMS.cell('after', 0), ITEMS.cell('after', 3)]);
+  assert.deepEqual(once.ran, [ITEMS.place, ITEMS.cell('after', 0), ITEMS.cell('after', 3), ITEMS.cell('after', 1), ITEMS.cell('after', 2), ITEMS.press('after', 0), ITEMS.placeAgain, ITEMS.end],
+    'the replacement right after; a touched replacement is not replaced again');
+  assert.deepEqual([once.stopped, once.touched], [null, 2]);
+  const many = await drive([ITEMS.cell('after', 0), ITEMS.cell('after', 3), ITEMS.cell('after', 1), ITEMS.cell('after', 4)]);
+  assert.equal(many.touched, TOUCHED_STOP + 1);
+  assert.match(many.stopped, /4 person-touched items in the slot, more than 3/);
+  assert.deepEqual(many.ran.slice(-2), [ITEMS.cell('after', 4), ITEMS.end], 'only the owner\'s source after the fourth touch');
+  const seeded = await drive([ITEMS.cell('after', 1)], {seed: 3});
+  assert.match(seeded.stopped, /4 person-touched/);
+  assert.ok(!seeded.ran.includes(ITEMS.cell('after', 4)), 'no replacement once the drive stops');
+  const failed = await drive([], {errors: {[ITEMS.cell('after', 1)]: 'open refused', [ITEMS.place]: 'not placed'}});
+  assert.equal(failed.stopped, `${ITEMS.place}: not placed`);
+  assert.deepEqual(failed.ran, [ITEMS.place, ITEMS.end]);
+  const repStop = await drive([], {errors: {[ITEMS.cell('after', 1)]: 'open refused'}});
+  assert.equal(repStop.stopped, null, 'a repetition that stops lets the drive go on');
+  assert.deepEqual(repStop.marks, [[ITEMS.cell('after', 1), 'open refused', 0]]);
+  const touchedStop = await drive([ITEMS.placeAgain], {errors: {[ITEMS.placeAgain]: 'key guard'}});
+  assert.equal(touchedStop.stopped, null, 'an item the person touched goes on');
 });
 
 test('the put-back reading: the build installed against the save\'s record, approved; recorded, never refusing', async t => {
@@ -605,14 +876,14 @@ test('the CLI: the dry runs print every step and touch nothing; judge writes ite
   const before = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--part', 'before']));
   assert.match(before.text, new RegExp(`dry run: ${count({part: 'before'})} steps, nothing sent`));
   assert.match(before.text, /task 187-putback <saved>/);
-  for (const part of ['cell', 'composing', 'controls', '259', '188', '188-vendor-click']) {
+  for (const part of ['premise', 'cell', 'composing', 'controls', '259', '188', '188-vendor-click']) {
     const answer = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--part', part]));
     assert.match(answer.text, new RegExp(`dry run: ${count({part})} steps, nothing sent`), part);
   }
   const vendor = await quietly(() => main(['paste-187', 'drive', '--out', out, '--dry-run', '--quiet', '--vendor']));
   assert.match(vendor.text, new RegExp(`dry run: ${count({vendor: true})} steps`));
   assert.equal(existsSync(out), false);
-  await assert.rejects(main(['paste-187', 'drive', '--out', out, '--dry-run', '--part', 'a']), /--part takes reslot, before, cell, composing, controls, 259, 188, 188-vendor-click/);
+  await assert.rejects(main(['paste-187', 'drive', '--out', out, '--dry-run', '--part', 'a']), /--part takes reslot, premise, before, cell, composing, controls, 259, 188, 188-vendor-click/);
   await assert.rejects(main(['paste-187', 'drive', '--out', dir, '--run', dir, '--part', 'before']), /--part before takes --saved/);
   const judged = await quietly(() => main(['paste-187', 'judge', '--out', dir]));
   assert.equal(judged.code, 1, 'nothing recorded: nothing lands');

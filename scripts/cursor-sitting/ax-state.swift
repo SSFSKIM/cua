@@ -10,6 +10,11 @@
 //       The geometry of the app's focused text element: {"trusted", "ok", "failed", "role", "frame", "characters",
 //       "selected", "bounds"}: its role, frame, character count, selected range, and for each offset the frame of the
 //       one character there (AXBoundsForRange), null where it could not be read. Numbers and a role only: no text.
+//   ax-state actions <pid> <x,y,w,h> <role>
+//       The actions the first element of <role> under the window at those bounds advertises (#187's premise: whether
+//       Chrome's textarea offers AXPress yet): {"trusted", "ok", "failed", "found", "count", "walked", "actions"}: the
+//       window found, how many elements of the role the walk met (breadth first, at most 20000 elements and 64 levels),
+//       and the first one's action names (AXUIElementCopyActionNames), null when none was met. Names only: no text.
 // It never asks for a grant: an untrusted terminal answers {"trusted": false} and reads nothing.
 import ApplicationServices
 import Foundation
@@ -19,8 +24,8 @@ func emit(_ object: [String: Any]) {
   FileHandle.standardOutput.write(data + Data("\n".utf8))
 }
 let args = CommandLine.arguments
-guard args.count >= 3, ["window", "text"].contains(args[1]), let pid = Int32(args[2]) else {
-  FileHandle.standardError.write(Data("usage: ax-state window <pid> <x,y,w,h> | ax-state text <pid> <offset>...\n".utf8))
+guard args.count >= 3, ["window", "text", "actions"].contains(args[1]), let pid = Int32(args[2]) else {
+  FileHandle.standardError.write(Data("usage: ax-state window <pid> <x,y,w,h> | ax-state text <pid> <offset>... | ax-state actions <pid> <x,y,w,h> <role>\n".utf8))
   exit(64)
 }
 guard AXIsProcessTrusted() else { emit(["trusted": false]); exit(0) }
@@ -58,12 +63,12 @@ func flag(_ e: AXUIElement, _ attribute: String, _ name: String) -> Bool? {
   return value
 }
 
-if args[1] == "window" {
-  guard args.count == 4 else { emit(["trusted": true, "ok": false, "failed": ["usage"]]); exit(64) }
-  let parts = args[3].split(separator: ",").compactMap { Double($0) }
-  guard parts.count == 4 else { emit(["trusted": true, "ok": false, "failed": ["bounds"]]); exit(64) }
+/// The app's windows and the one at `bounds` (global top-left points, within 2 pt); a failed list read is named in
+/// `failed`. Nil when the bounds do not parse.
+func runWindow(_ bounds: String) -> (windows: [AXUIElement], run: AXUIElement?)? {
+  let parts = bounds.split(separator: ",").compactMap { Double($0) }
+  guard parts.count == 4 else { return nil }
   let want = CGRect(x: parts[0], y: parts[1], width: parts[2], height: parts[3])
-  let frontmost = flag(app, kAXFrontmostAttribute, "frontmost")
   let list = read(app, kAXWindowsAttribute)
   let windows = (list.value as? [AXUIElement]) ?? []
   if list.status != .success { failed.append("windows") }
@@ -72,6 +77,42 @@ if args[1] == "window" {
     guard let f = frame(w) else { return false }
     return near(f.minX, want.minX) && near(f.minY, want.minY) && near(f.width, want.width) && near(f.height, want.height)
   }
+  return (windows, run)
+}
+
+if args[1] == "actions" {
+  guard args.count == 5 else { emit(["trusted": true, "ok": false, "failed": ["usage"]]); exit(64) }
+  guard let (_, run) = runWindow(args[3]) else { emit(["trusted": true, "ok": false, "failed": ["bounds"]]); exit(64) }
+  let role = args[4]
+  var count = 0, walked = 0
+  var first: AXUIElement?
+  if let run {
+    var level: [AXUIElement] = [run]
+    var depth = 0
+    while !level.isEmpty, depth < 64, walked < 20_000 {
+      var next: [AXUIElement] = []
+      for e in level where walked < 20_000 {
+        walked += 1
+        if read(e, kAXRoleAttribute).value as? String == role { count += 1; if first == nil { first = e } }
+        next.append(contentsOf: (read(e, kAXChildrenAttribute).value as? [AXUIElement]) ?? [])
+      }
+      level = next
+      depth += 1
+    }
+  }
+  var actions: Any = NSNull()
+  if let first {
+    var names: CFArray?
+    if AXUIElementCopyActionNames(first, &names) == .success { actions = (names as? [String]) ?? [] } else { failed.append("actions") }
+  }
+  emit(["trusted": true, "ok": failed.isEmpty && run != nil, "failed": failed, "found": run != nil, "count": count, "walked": walked, "actions": actions])
+  exit(0)
+}
+
+if args[1] == "window" {
+  guard args.count == 4 else { emit(["trusted": true, "ok": false, "failed": ["usage"]]); exit(64) }
+  guard let (windows, run) = runWindow(args[3]) else { emit(["trusted": true, "ok": false, "failed": ["bounds"]]); exit(64) }
+  let frontmost = flag(app, kAXFrontmostAttribute, "frontmost")
   var answer: [String: Any] = ["trusted": true, "windows": windows.count, "found": run != nil]
   answer["frontmost"] = frontmost ?? NSNull()
   if let run {

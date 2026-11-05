@@ -107,21 +107,24 @@
 //       <out>/item-244-<variant>-<engine>.jsonl. `drive` then judges the engine's variants; `judge` writes every variant
 //       on both engines to <out>/item-244.md and prints it. Exit 1 unless cua's plain variant passes (judge), or unless
 //       nothing stopped and every judged variant run passes (drive).
-//   cursor-sitting.mjs paste-187 drive --run <dir> --out <dir> [--part reslot|before|cell|composing|controls|259|188|188-vendor-click | --vendor]
+//   cursor-sitting.mjs paste-187 drive --run <dir> --out <dir> [--part reslot|premise|before|cell|composing|controls|259|188|188-vendor-click | --vendor]
 //                                    [--saved <dir>] [--quiet] [--dry-run]
 //   cursor-sitting.mjs paste-187 judge --out <dir>
 //       #187's re-slot (./cursor-sitting/item-187.mjs; the runbook's "Item 187"): pastes into Chrome for Testing's
 //       counters page behind a Hangul composition in TextEdit's run window, on the shipping build. `drive` (the default
 //       part, reslot) checks the preconditions (the owner's yes to the source switch recorded, every scene up, Chrome on
-//       the counters page), places the harness windows, runs the confirming cell's AFTER half (three repetitions: Chrome
-//       relaunched by the scenes tool, its field clicked in the background, Chrome activated by `open -a`, the key read,
-//       one frontmost paste), places the windows again, runs chrome/composing@textedit as 2 blocks of 9, the three
-//       controls once each and #259's diagnostic cell (recorded only), each item recorded in <out>/item-<name>.jsonl, and
-//       selects the owner's source again. `--part before --saved <the save's directory>` runs the cell's BEFORE half once
-//       the owner's engine is put back (the put-back read against the save, recorded only); `--part cell`, `composing`,
-//       `controls` rerun that part alone, `259` the #259 cell alone; `--part 188` runs #188's items alone,
-//       `188-vendor-click` only its cell 3 on the vendor's engine; `--vendor` the vendor's lanes (recorded only).
-//       `judge` writes <out>/item-187.md. Exit 1 unless the bar holds (the item's header).
+//       the counters page), places the harness windows, runs the confirming cell's AFTER half (three background-paste
+//       repetitions: Chrome relaunched by the scenes tool and placed, one background paste with TextEdit in front,
+//       Chrome activated by `open -a`, the key read, one frontmost paste; then the AXPress repetition, when the premise
+//       part opened it), places the windows again, runs chrome/composing@textedit as 2 blocks of 9, the three controls
+//       once each and #259's diagnostic cell (recorded only), each item recorded in <out>/item-<name>.jsonl, and selects
+//       the owner's source again; a person-touched repetition is replaced once, and more than three person-touched items
+//       in the out directory stop the drive. `--part premise` (the preflight) times AXPress on freshly relaunched
+//       Chromes; `--part before --saved <the save's directory>` runs the cell's BEFORE half once the owner's engine is put
+//       back (the put-back read against the save); `--part cell`, `composing`, `controls` rerun that part alone, `259`
+//       the #259 cell alone; `--part 188` runs #188's items alone, `188-vendor-click` only its cell 3 on the vendor's
+//       engine; `--vendor` the vendor's lanes (recorded only). `judge` writes <out>/item-187.md. Exit 1 unless the bar
+//       holds (the item's header).
 //   cursor-sitting.mjs remote prepare|enroll|run --kit <dir> [--port n] [--run <dir> --out <dir>] [--quiet] [--dry-run]
 //       Acceptance 8's loopback device (./cursor-sitting/remote.mjs): prepare the kit (and print what it still needs),
 //       enrol it on a loopback relay, then run: the relay and the agent started, three client sessions driven
@@ -140,7 +143,7 @@ import {PLANS} from './cursor-sitting/plans.mjs';
 import {CASES, elementFrameTool, ENGINES, itemOf, judgeCase, moveWindowTool, orderFileOf, orderLines, orderWatchProbe, placeSteps, raiseMarkdown,
   raiseSteps} from './cursor-sitting/raise.mjs';
 import {ENGINES as FIRST_ENGINES, firstMarkdown, firstSteps, itemOf as firstItemOf, judgeFirst, VARIANTS} from './cursor-sitting/first-observation.mjs';
-import {axStateTool, item187Markdown, judge187, judgedOk, menuTool, PARTS as PARTS_187, plan187} from './cursor-sitting/item-187.mjs';
+import {axStateTool, driveItems, item187Markdown, judge187, judgedOk, menuTool, PARTS as PARTS_187, plan187, touchedOfItem} from './cursor-sitting/item-187.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
 import {liveIo, runSteps} from './cursor-sitting/runner.mjs';
 import {clipPathProblem, REPO_ROOT} from './cursor-sitting/recording.mjs';
@@ -354,11 +357,11 @@ export function read187(out) {
     .map(name => [name, readJsonl(join(out, `item-${name}.jsonl`))]));
 }
 
-// #187's drive: the plan's items in order, each its own item; an item that throws is marked in its jsonl and stops the
-// items after it but the last, which selects the owner's source again. A cell repetition, #259's cell or a #188 item
-// that throws is marked and the drive goes on: each later item sets up its own scene, and the placement after the cell
-// stops the drive if Chrome did not come back.
-const GOES_ON = new Set(['cell', '259', '188']);
+// #187's drive: the plan's items in order, each its own item (./cursor-sitting/item-187.mjs driveItems): an item that
+// throws is marked in its jsonl and stops the items after it but the last, which selects the owner's source again; a
+// cell repetition, #259's cell, a #188 item or an item the person touched that throws is marked and the drive goes on.
+// A person-touched cell repetition is replaced once; more than three person-touched items in the slot (this out
+// directory: its other items' records count too, so the BEFORE half carries the re-slot's) stop the drive.
 async function drive187(values) {
   const part = values.part ?? 'reslot';
   if (!PARTS_187.includes(part)) throw new Error(`--part takes ${PARTS_187.join(', ')}`);
@@ -368,17 +371,16 @@ async function drive187(values) {
   if (part === 'before' && !dryRun && !values.saved) throw new Error('--part before takes --saved <the directory `save` wrote before the build>, read for the put-back');
   const saved = values.saved ? absolute(values, 'saved') : '<saved>';
   const io = liveIo({run, out, quiet: values.quiet});
-  let steps = 0, stopped = null;
-  for (const {item, stage, steps: plan} of plan187({part, vendor: values.vendor, saved})) {
-    if (stopped && stage !== 'end') continue;
-    steps += plan.length;
-    try { await runSteps(plan, {item, out, io, dryRun}); } catch (error) {
-      appendFileSync(join(out, `item-${item}.jsonl`), `${JSON.stringify({item, at: Date.now(), kind: 'stopped', error: error.message})}\n`);
-      if (GOES_ON.has(stage)) { print(`${item} stopped: ${error.message}; the drive goes on`); continue; }
-      stopped = `${item}: ${error.message}`;
-      print(`stopped at ${stopped}; the items after it were not run`);
-    }
-  }
+  const plan = plan187({part, vendor: values.vendor, saved}), names = new Set(plan.map(p => p.item));
+  const lines = file => (existsSync(file) ? readJsonl(file) : []);
+  const evidenceOf = item => ({rows: lines(join(out, `item-${item}.jsonl`)), activations: lines(join(out, `item-${item}-activations.ndjson`))});
+  const seed = dryRun ? 0 : Object.keys(read187(out)).filter(item => item.startsWith('187-') && !names.has(item))
+    .reduce((n, item) => n + (({rows, activations}) => touchedOfItem(rows, activations).count)(evidenceOf(item)), 0);
+  let steps = 0;
+  const {stopped} = await driveItems(plan, {seed, print,
+    runItem: async ({item, steps: itemSteps}) => { steps += itemSteps.length; try { await runSteps(itemSteps, {item, out, io, dryRun}); return null; } catch (error) { return error; } },
+    evidenceOf: item => (dryRun ? {rows: [], activations: []} : evidenceOf(item)),
+    mark: (item, error, touched) => appendFileSync(join(out, `item-${item}.jsonl`), `${JSON.stringify({item, at: Date.now(), kind: 'stopped', error: error.message, ...(touched.count ? {personTouched: touched.foreign ?? true} : {})})}\n`)});
   if (dryRun) { print(`dry run: ${steps} steps, nothing sent`); return 0; }
   const judged = judge187(read187(out));
   writeFileSync(join(out, 'item-187.md'), item187Markdown(judged));

@@ -552,7 +552,9 @@ export async function upScene(id, {run, chromeApp, electronApp, electronExtra = 
       // An open can start Chrome without yielding an unambiguous launch identity.
       record.launchAttempted = true;
       Object.assign(record, await startOwn({app, bundleId: scene.bundleId, args: chromeArgs({userDataDir, url: record.page.url}), io}));
-      record.window = await awaitWindow(record.pid, {io});
+      // On screen only: a fresh Chrome for Testing can list another document-size window ahead of the one it shows, and
+      // up recorded that one (#187's slot of 2026-11-05: 64065 recorded, 64056 the only one on screen).
+      record.window = await awaitWindow(record.pid, {io, onScreenOnly: true});
       // Up returns once the page has loaded, not when the window appears: the window comes before the page's document.
       record.page.loadedAt = (await awaitPageLoad(run, record.page, {io})).at;
     } catch (error) {

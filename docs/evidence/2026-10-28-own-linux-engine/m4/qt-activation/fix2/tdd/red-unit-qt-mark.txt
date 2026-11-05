@@ -1,0 +1,9 @@
+error[E0425]: cannot find function `qt_mark` in this scope
+error[E0433]: failed to resolve: use of undeclared type `QtMark`
+error[E0425]: cannot find function `qt_mark` in this scope
+error[E0433]: failed to resolve: use of undeclared type `QtMark`
+error[E0425]: cannot find function `qt_mark` in this scope
+error[E0425]: cannot find function `qt_mark` in this scope
+error[E0433]: failed to resolve: use of undeclared type `QtMark`
+error[E0433]: failed to resolve: use of undeclared type `QtMark`
+error: could not compile `cua-linux-engine` (bin "cua-engine" test) due to 8 previous errors

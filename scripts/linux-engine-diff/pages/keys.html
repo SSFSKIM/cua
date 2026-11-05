@@ -18,7 +18,9 @@
      the window's next FocusIn (M0.4, on the person's long-lived Chrome); a fresh, idle Chromium otherwise keeps up with
      a burst and shows no reorder at all. The work per key is `SPIN_MS`; the title comes from the URL's fragment.
      The pad takes pointer input the same way: each press and release costs `SPIN_MS` and is written to the log (`d`,
-     `u`), and a press never moves the focus off the field, so the exit's settle can be measured for clicks. -->
+     `u`), and a press never moves the focus off the field, so the exit's settle can be measured for clicks. A press in
+     the field costs `SPIN_MS` too before it moves the caret, as a page with its own pointer handling does (click-then-
+     paste, task 60's fix). -->
 <textarea id="field" aria-label="Field" autofocus autocomplete="off" spellcheck="false"></textarea>
 <div id="pad" role="button" aria-label="Pad"></div>
 <input id="log" aria-label="Log" readonly value="">
@@ -32,6 +34,7 @@
     }
   };
   document.getElementById('field').addEventListener('keydown', spin);
+  document.getElementById('field').addEventListener('mousedown', spin);
   const pad = document.getElementById('pad');
   const log = document.getElementById('log');
   pad.addEventListener('mousedown', (event) => {

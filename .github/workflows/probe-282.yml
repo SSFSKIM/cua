@@ -40,7 +40,9 @@ jobs:
       - name: Probe
         env:
           P282_REP: ${{ matrix.rep }}
-        run: node scripts/probe-282/probe.mjs --main "$RUNNER_TEMP/eng-main/debug/cua-engine" --branch "$RUNNER_TEMP/eng-branch/debug/cua-engine" --hit "$RUNNER_TEMP/p282-hit" --out "$RUNNER_TEMP/probe-282"
+          # The cells this push runs (probe.mjs --cells): #282's activation-or-enablement set.
+          P282_CELLS: obs
+        run: node scripts/probe-282/probe.mjs --main "$RUNNER_TEMP/eng-main/debug/cua-engine" --branch "$RUNNER_TEMP/eng-branch/debug/cua-engine" --hit "$RUNNER_TEMP/p282-hit" --cells "$P282_CELLS" --out "$RUNNER_TEMP/probe-282"
       - name: Upload
         if: always()
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0

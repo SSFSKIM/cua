@@ -12,6 +12,9 @@
 //   b-shared/cmdL+checkbox   the branch, shared mode, press_key cmd+l, then the checkbox click inside that hold
 //   b-shared/cmdL+textarea   the same, then the textarea
 //   geometry                 the window's frame and AXActivationPoint before and after one fresh activation (hit geom)
+//   obs+checkbox, obs+button, obs+textarea   the branch, shared mode: one observation, 2.5 s with no activation, the
+//                            target's action names, then the click
+//   obs-timeline             the checkbox's action names every 100 ms for 3 s after one observation, no activation
 // Every click cell: get_app_state with a screenshot, the target's centre from its node's frame in screenshot pixels, the
 // AX hit there (hit.swift), the page's counters and the server's load count before and 2.5 s after the click, the
 // frontmost app before and after, an observation after (its focused element). Only node builtins.
@@ -28,6 +31,8 @@ import {join} from 'node:path';
 if (process.env.RUNNER_ENVIRONMENT !== 'github-hosted') { console.error('probe-282: runs only on a GitHub-hosted runner'); process.exit(2); }
 const arg = name => { const i = process.argv.indexOf(`--${name}`); return i > 0 ? process.argv[i + 1] : undefined; };
 const OUT = arg('out'), MAIN = arg('main'), BRANCH = arg('branch'), HIT = arg('hit');
+// --cells <prefix,…>: only the cells whose label starts with one of these (all when absent).
+const ONLY = arg('cells')?.split(',');
 if (!OUT || !MAIN || !BRANCH || !HIT) { console.error('usage: probe.mjs --main <bin> --branch <bin> --hit <bin> --out <dir>'); process.exit(2); }
 mkdirSync(OUT, {recursive: true});
 const CFT = '/Applications/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
@@ -179,7 +184,13 @@ const CELLS = [
   {label: 'b-shared/cmdL+button', engine: 'branch', keysFirst: 'cmd+l', target: 'button'},
   {label: 'b-shared/cmdL+textarea', engine: 'branch', keysFirst: 'cmd+l', target: 'textarea'},
   {label: 'geometry', engine: 'branch', geometry: true},
-];
+  // Activation or enablement (finding 1): one observation, then no activation at all for 2.5 s before the action names
+  // are read and the click goes; and the checkbox's action names every 100 ms for 3 s after one observation.
+  {label: 'obs+checkbox', engine: 'branch', target: 'checkbox', waitMs: 2500},
+  {label: 'obs+button', engine: 'branch', target: 'button', waitMs: 2500},
+  {label: 'obs+textarea', engine: 'branch', target: 'textarea', waitMs: 2500},
+  {label: 'obs-timeline', engine: 'branch', timeline: 'checkbox'},
+].filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)));
 
 async function cell(spec) {
   const {label} = spec;
@@ -196,12 +207,31 @@ async function cell(spec) {
     row.ping = await w.call('ping', spec.desktop ? {clientApiVersion: 'cua-engine-1', desktop: spec.desktop} : {clientApiVersion: 'cua-engine-1'});
     const shots = join(OUT, `shots-${fileName(label)}`);
     mkdirSync(shots, {recursive: true});
+    const observedFrom = Date.now();
     const state = await w.execute('get_app_state', {pid: chrome.pid, includeScreenshot: true, outputDirectory: shots});
+    const observedAt = Date.now();
+    row.observationMs = observedAt - observedFrom;
     if (state.error) { row.problem = {getAppState: state.error}; return row; }
     const sky = state.result;
     writeFileSync(join(OUT, `skyshot-${fileName(label)}.json`), JSON.stringify(sky, null, 1));
     row.window = sky.window; row.screenshot = sky.screenshot;
-    row.observation = {chromium: sky.timings?.chromium, webAreaFound: sky.timings?.webAreaFound, webShaped: sky.timings?.webShaped};
+    row.observation = {chromium: sky.timings?.chromium, webAreaFound: sky.timings?.webAreaFound, webShaped: sky.timings?.webShaped,
+      enabled: sky.timings?.enabled ?? null, enablementPrior: sky.timings?.enablementPrior ?? null};
+    if (spec.timeline) {
+      const n = sky.nodes.find(TARGETS[spec.timeline]);
+      const at = [String(n.frame.x + n.frame.width / 2), String(n.frame.y + n.frame.height / 2)];
+      row.timeline = [];
+      for (let tick = 0; tick <= 30; tick++) {
+        const wait = observedAt + tick * 100 - Date.now();
+        if (wait > 0) await sleep(wait);
+        const t = Date.now() - observedAt;
+        row.timeline.push({t, actions: json(sh(HIT, [String(chrome.pid), ...at])).appActions ?? null});
+      }
+      const first = row.timeline.find(e => Array.isArray(e.actions) && e.actions.includes('AXPress'));
+      row.axPressAfterObservationMs = first ? first.t : null;
+      row.frontAfter = frontmost();
+      return row;
+    }
     if (spec.geometry) {
       // Beside the geometry: the page controls' action names (what webAreaPress reads) before this activation, right
       // after it, and 2 s later, to see whether Chrome advertises AXPress only once its window has been activated.
@@ -231,6 +261,7 @@ async function cell(spec) {
     const x = Math.round((nf.x + nf.width / 2 - wf.x) * scale), y = Math.round((nf.y + nf.height / 2 - wf.y) * scale);
     row.targetNode = {role: node.role, title: node.title, description: node.description, actions: node.actions, frame: nf};
     row.point = {screenshotPixel: {x, y}, scale, screen: {x: wf.x + x / scale, y: wf.y + y / scale}};
+    if (spec.waitMs) { const wait = observedAt + spec.waitMs - Date.now(); if (wait > 0) await sleep(wait); row.waitedAfterObservationMs = Date.now() - observedAt; }
     row.hit = json(sh(HIT, [String(chrome.pid), String(row.point.screen.x), String(row.point.screen.y)]));
     row.frontBefore = frontmost();
     await sleep(800);
@@ -263,6 +294,7 @@ async function cell(spec) {
 
 // The one-line reading of a cell's click: the answer's error name or route and element-click reason.
 function verdict(row) {
+  if (row.timeline) return `timeline of ${row.timeline.length} reads`;
   if (row.geometry) return `frameEqual=${row.geometry.frameEqual} activationPointEqual=${row.geometry.activationPointEqual}`;
   const c = row.click;
   if (!c) return `no click (${JSON.stringify(row.problem ?? row.exception ?? '').slice(0, 300)})`;
@@ -293,6 +325,7 @@ for (const spec of CELLS) {
   if (row.hit) log(`${row.label}: hit before ${JSON.stringify(row.hit.appChain?.slice(0, 3))} actions ${JSON.stringify(row.hit.appActions)}; after actions ${JSON.stringify(row.hitAfter?.appActions)}`);
   if (row.geometry) log(`${row.label}: geometry ${JSON.stringify(row.geometry)}`);
   if (row.actions) log(`${row.label}: actions ${JSON.stringify(row.actions)}`);
+  if (row.timeline) log(`${row.label}: AXPress after observation ms=${row.axPressAfterObservationMs} observation=${JSON.stringify(row.observation)} timeline ${JSON.stringify(row.timeline.map(e => [e.t, Array.isArray(e.actions) && e.actions.includes('AXPress')]))}`);
   if (row.exception || row.problem) log(`${row.label}: PROBLEM ${JSON.stringify(row.problem ?? '')} ${row.exception ?? ''} ${row.buttons ? JSON.stringify(row.buttons) : ''}`);
 }
 server.close();

@@ -70,12 +70,14 @@ final class FocusHoldTests: XCTestCase {
     try hold(connection, seam, meta: &first)
     XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)], "activated by the first action")
     XCTAssertNotNil(first.activationGuardMs, "the guard's time rides in the meta as today")
+    XCTAssertEqual(first.wire["activationJoin"] as? String, "fresh")
     XCTAssertEqual(connection.focusHold.app, "a")
 
     var second = meta()
     try hold(connection, seam, meta: &second)
     XCTAssertEqual(seam.posts.count, 3, "the second action shares the held activation")
     XCTAssertNil(second.activationGuardMs, "no guard ran for it")
+    XCTAssertEqual(second.wire["activationJoin"] as? String, "shared", "the hold's refresh")
     XCTAssertEqual(activations.holders(target), 1)
 
     connection.endFocusHold()
@@ -156,6 +158,7 @@ final class FocusHoldTests: XCTestCase {
       XCTAssertEqual((error as? EngineError)?.errorName, "activationFailed")
     }
     XCTAssertNotNil(meta.activationGuardMs, "the failed guard's time is kept")
+    XCTAssertEqual(meta.activationJoin, .fresh, "and the path it failed on")
     XCTAssertEqual(seam.reactivated, [user], "the user's app is made frontmost again")
     XCTAssertNil(connection.focusHold.app)
     XCTAssertEqual(activations.holders(target), 0)
@@ -168,6 +171,7 @@ final class FocusHoldTests: XCTestCase {
     let intervened = EngineError(name: "userIntervened", "The user changed 'a'.")
     XCTAssertThrowsError(try hold(connection, seam, beforeActivating: { throw intervened }, meta: &meta))
     XCTAssertTrue(seam.posts.isEmpty)
+    XCTAssertNil(meta.wire["activationJoin"], "no held activation reached")
     XCTAssertNil(connection.focusHold.app)
   }
 
@@ -211,11 +215,13 @@ final class FocusHoldTests: XCTestCase {
     try hold(connection, seam, pid: me.processIdentifier, meta: &next)
     XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 2, "re-established after the real cycle")
     XCTAssertNotNil(next.activationGuardMs, "with its own guard")
+    XCTAssertEqual(next.activationJoin, .replacedSpent, "the hold's refresh replaced the stale one")
     XCTAssertEqual(activations.holders(me.processIdentifier), 1, "the same hold, not a second holder")
 
     var again = self.meta()
     try hold(connection, seam, pid: me.processIdentifier, meta: &again)
     XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 2, "and held again after that")
+    XCTAssertEqual(again.activationJoin, .shared)
     connection.endFocusHold()
     XCTAssertEqual(seam.posts.map(\.kind).last, .appKit(2))
   }
@@ -231,6 +237,25 @@ final class FocusHoldTests: XCTestCase {
     connection.endFocusHold()
     XCTAssertFalse(seam.posts.contains { $0.kind == .appKit(2) })
     XCTAssertEqual(activations.holders(target), 0)
+  }
+
+  /// A click joining a hold that a real cycle made stale runs a new activation in the stale one's place, with its guard,
+  /// and its meta says the join replaced a spent activation.
+  func testAClickJoiningAStaleHoldReplacesItsActivation() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var meta = meta()
+    try hold(connection, seam, meta: &meta)
+    activations.realActivationChanged(target)
+    var clickMeta = self.meta()
+    try deliverClick(clickTarget(), route: .activation, button: .left, count: 1, activation: activation(seam), activations: activations,
+                     targetActive: { false }, post: seam.system.post, meta: &clickMeta)
+    XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(1) }.count, 2, "activated again")
+    XCTAssertNotNil(clickMeta.activationGuardMs, "with its own guard")
+    XCTAssertEqual(clickMeta.wire["activationJoin"] as? String, "replacedSpent")
+    XCTAssertEqual(activations.holders(target), 1, "the hold's share kept")
+    connection.endFocusHold()
+    XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(2) }.count, 1, "the new one withdrawn once, the stale one never")
   }
 
   func testARealCycleOfAnotherProcessLeavesTheHoldAlone() throws {
@@ -385,12 +410,14 @@ final class FocusHoldTests: XCTestCase {
     var keys = meta()
     try holdChrome(connection, seam, meta: &keys)
     XCTAssertEqual(mouseKinds(seam), inertClick, "the hold spent its arm early")
+    XCTAssertEqual(keys.activationJoin, .fresh)
     var during = 0
     let clicked = try clickChrome(seam, beforePosting: { during = self.activations.holders(self.target) })
     XCTAssertEqual(Array(mouseKinds(seam).dropFirst(3)), [.appKit(2), .appKit(1)] + click, "withdrawn, re-armed, then the click alone")
     XCTAssertEqual(seam.posts.dropFirst(5).first?.location, clickTarget().point, "the click's own mouse down consumed the new arm")
     XCTAssertEqual(clicked.activationClickKind, .action)
     XCTAssertEqual(clicked.wire["activationClickKind"] as? NSDictionary, ["kind": "action", "when": "consumedByAction"])
+    XCTAssertEqual(clicked.wire["activationJoin"] as? String, "rearmed", "the join itself recorded")
     XCTAssertEqual(clicked.activationClick, .outsideFrame, "recorded as a run's")
     XCTAssertNotNil(clicked.activationGuardMs, "the new activation's guard ran")
     XCTAssertEqual(during, 2, "the hold's share kept beside the click's")
@@ -400,6 +427,7 @@ final class FocusHoldTests: XCTestCase {
     try holdChrome(connection, seam, meta: &next)
     XCTAssertEqual(seam.posts.count, 7, "the next ⌘ key runs inside the new activation, its window key")
     XCTAssertNil(next.activationGuardMs)
+    XCTAssertEqual(next.activationJoin, .shared)
     connection.endFocusHold()
     XCTAssertEqual(mouseKinds(seam).last, .appKit(2))
     XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(2) }.count, 2, "the old activation's withdrawal and the hold's end, once each")
@@ -428,6 +456,7 @@ final class FocusHoldTests: XCTestCase {
     }, meta: &forced)
     XCTAssertEqual(seam.posts.count, 3, "spent already: nothing more, no re-arming")
     XCTAssertNil(forced.activationClickKind)
+    XCTAssertEqual(forced.activationJoin, .shared, "a no-click joiner never re-arms")
     XCTAssertEqual(activations.holders(target), 2)
     _ = key()
     connection.endFocusHold()
@@ -446,6 +475,7 @@ final class FocusHoldTests: XCTestCase {
     let clicked = try clickChrome(seam)
     XCTAssertEqual(mouseKinds(seam), [.appKit(1)] + click, "no withdrawal, no second activation")
     XCTAssertNil(clicked.activationGuardMs, "the click shared the held activation")
+    XCTAssertEqual(clicked.activationJoin, .shared)
     XCTAssertEqual(clicked.activationClickKind, .action, "its mouse down consumed the held arm")
     connection.endFocusHold()
     XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(2) }.count, 1)
@@ -467,6 +497,7 @@ final class FocusHoldTests: XCTestCase {
       let clicked = try clickChrome(seam)
       XCTAssertEqual(mouseKinds(seam), inertClick + click, "no withdrawal, no second activation: own hold too \(ownHoldToo)")
       XCTAssertNil(clicked.activationGuardMs)
+      XCTAssertEqual(clicked.activationJoin, .shared, "own hold too \(ownHoldToo)")
       own.endFocusHold()
       other.endFocusHold()
       XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(2) }.count, 1)
@@ -486,6 +517,7 @@ final class FocusHoldTests: XCTestCase {
     let clicked = try clickChrome(seam)
     XCTAssertEqual(mouseKinds(seam), inertClick + click, "the menu's activation kept")
     XCTAssertNil(clicked.activationGuardMs)
+    XCTAssertEqual(clicked.activationJoin, .shared)
     connection.endMenuInteraction()
     XCTAssertEqual(seam.posts.filter { $0.kind == .appKit(2) }.count, 1)
   }
@@ -507,12 +539,14 @@ final class FocusHoldTests: XCTestCase {
     XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)], "the hold's activation withdrawn")
     XCTAssertEqual(mouseKinds(failing), inertClick + [.appKit(2)], "the new one undone, its kept click at the release")
     XCTAssertNotNil(clickMeta.activationGuardMs)
+    XCTAssertEqual(clickMeta.activationJoin, .rearmed, "the refusal names the path it failed on")
     XCTAssertEqual(activations.holders(target), 1, "the focus hold keeps its share")
 
     var next = meta()
     try holdChrome(connection, seam, meta: &next)
     XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)] + inertClick, "activated again for the hold's next key")
     XCTAssertNotNil(next.activationGuardMs)
+    XCTAssertEqual(next.activationJoin, .replacedSpent, "the withdrawn one replaced")
     connection.endFocusHold()
     XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)] + inertClick + [.appKit(2)])
     XCTAssertEqual(activations.holders(target), 0)
@@ -565,11 +599,13 @@ final class FocusHoldTests: XCTestCase {
     let pointer = try activations.acquire(pid: target, holder: ActivationHolder(connection: 1), postsLeftMouseDown: true, beforeActivating: {},
                                           make: { self.chrome(seam) }, meta: &pointerMeta)
     XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2), .appKit(1)], "re-armed, the arm set")
+    XCTAssertEqual(pointerMeta.activationJoin, .rearmed)
     var next = meta()
     try holdChrome(connection, seam, meta: &next)
     XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)] + inertClick, "consumed before the key")
     XCTAssertEqual(next.activationClickKind, .inertOutside(.activationPoint, .early))
     XCTAssertNil(next.activationGuardMs, "no activation ran for it")
+    XCTAssertEqual(next.activationJoin, .shared)
     _ = pointer()
     XCTAssertEqual(seam.posts.count, 7, "nothing more at the pointer's release")
     connection.endFocusHold()
@@ -599,6 +635,7 @@ final class FocusHoldTests: XCTestCase {
     XCTAssertTrue(underLock, "the check runs once the registry's lock is held")
     XCTAssertEqual(seam.posts.count, armed, "nothing posted: the arm is left set")
     XCTAssertNil(next.activationClickKind)
+    XCTAssertNil(next.activationJoin, "stopped before the held activation was reached")
     _ = pointer()
     connection.endFocusHold()
     XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)] + inertClick + [.appKit(2)], "the kept click at the pointer's release")

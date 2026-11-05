@@ -350,6 +350,9 @@ enum ActivationClickSkip: String, Equatable {
   case spared          // the activation point lies in a non-left click's target (`ActivationClick.spared`)
   case noWindowNumber  // nothing to stamp the click with, and AppKit routes it by that number alone
   case noFrame         // the window's frame is unknown, so no point is known to lie outside it
+  #if CUA_CONTROL_NO_INERT_CLICK
+  case controlBuild    // the control build (#187's isolating cell): no inert click outside the frame, the arm left set
+  #endif
 }
 
 /// A titled resizable window's resize band reaches 4 pt outside its frame (`_resizeDirectionForMouseLocation:`, its
@@ -363,7 +366,9 @@ let inertClickFrameOffset: CGFloat = 24
 /// The click an activation makes after subtype 1 and where (nil: none): at the activation point when the inert-point
 /// rule posted it there, else the inert click outside the frame (which FakeActivation keeps for the release when its
 /// holder posts its own left mouse down), unless the point was spared, the window has no number
-/// or its frame is unknown. An inert click that would land in `sparing` is spared too.
+/// or its frame is unknown. An inert click that would land in `sparing` is spared too. The control build
+/// (`CUA_CONTROL_NO_INERT_CLICK`, defined only in the #187 kit's copied Package.swift, never in a release) skips the
+/// inert click here, both its early and its release posting, and nothing else.
 func activationClickPlan(_ decision: ActivationClick, activationPoint: CGPoint?, windowFrame: CGRect?, windowID: CGWindowID?,
                          sparing: CGRect?) -> (kind: ActivationClickKind, point: CGPoint?) {
   if decision == .posted { return (.activationPoint, activationPoint) }
@@ -378,7 +383,11 @@ func activationClickPlan(_ decision: ActivationClick, activationPoint: CGPoint?,
     inert = (CGPoint(x: frame.minX - inertClickFrameOffset, y: frame.midY), .offset)
   }
   if let sparing, sparing.contains(inert.point) { return (.skipped(.spared), nil) }
+  #if CUA_CONTROL_NO_INERT_CLICK
+  return (.skipped(.controlBuild), nil)
+  #else
   return (.inertOutside(inert.place, .early), inert.point)
+  #endif
 }
 
 /// Where the window's AXActivationPoint lies against its frame (the paste's `focusEnforcement`, #187's 3b): value-free,

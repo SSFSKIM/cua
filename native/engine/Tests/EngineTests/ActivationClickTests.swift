@@ -264,15 +264,18 @@ final class ActivationClickTests: XCTestCase {
                                        meta: &pointerMeta)
     XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1)], "a pointer holder's activation: no early click")
     XCTAssertNil(pointerMeta.activationClickKind, "awaiting the action's own mouse down")
+    XCTAssertEqual(pointerMeta.activationJoin, .fresh)
     var joinMeta = freshMeta()
     let joined = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), beforeActivating: {}, make: { XCTFail("shared, not made"); return self.chromeActivation(seam) },
                                       meta: &joinMeta)
     XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp)], "the joiner consumed the arm")
     XCTAssertEqual(joinMeta.activationClickKind, .inertOutside(.activationPoint, .early))
+    XCTAssertEqual(joinMeta.activationJoin, .shared, "a joiner consuming the arm runs no activation")
     var laterMeta = freshMeta()
     let later = try registry.acquire(pid: target, holder: ActivationHolder(connection: 1), beforeActivating: {}, make: { self.chromeActivation(seam) }, meta: &laterMeta)
     XCTAssertEqual(seam.posts.count, 3, "consumed already: nothing more")
     XCTAssertNil(laterMeta.activationClickKind)
+    XCTAssertEqual(laterMeta.activationJoin, .shared)
     _ = later(); _ = joined(); _ = pointer()
     XCTAssertEqual(seam.posts.map(\.kind), [.appKit(1), .mouse(.leftMouseDown), .mouse(.leftMouseUp), .appKit(2)], "no release click")
   }

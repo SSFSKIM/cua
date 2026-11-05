@@ -151,6 +151,22 @@ struct ActivationHolder: Equatable {
   var menuSpan = false
 }
 
+/// How an acquire or `refresh` of `HeldActivations` came by the process's activation (the input meta's `activationJoin`;
+/// absent when the request reached no held activation). Recorded before any activation runs, so a failed guard's meta
+/// names the path too.
+enum ActivationJoin: String, Equatable {
+  /// No holder had the process: a new activation ran.
+  case fresh
+  /// A current activation was shared, none run: a joiner's acquire, or a holder's `refresh` of the one it holds (a
+  /// no-click holder consuming a set arm first, recorded as its `activationClickKind`).
+  case shared
+  /// A pointer joining its own connection's hold whose arm was spent early: that activation ended and a new one ran.
+  case rearmed
+  /// The held activation was stale (a real activation cycle since) or withdrawn (a failed re-arming): a new one ran in
+  /// its place.
+  case replacedSpent
+}
+
 /// The held activations of the engine, one per target process however many holders it has: menu spans, focus holds, and
 /// the per-action activations of synthesized clicks, drags, pastes and forced keys, each for the action's duration
 /// (route 3's state is the process's, not a connection's or an action's). The first holder to acquire a process's
@@ -170,6 +186,8 @@ struct ActivationHolder: Equatable {
 /// every holder is of its own connection and none is a recorded menu's span (the Decision Log's "#261's hold join",
 /// 2026-11-05): its own mouse down would otherwise meet a key window of an app that believes itself active, an ordering
 /// click (#200's raise). The activation is withdrawn and a new one run in its place, the holders kept.
+///
+/// Each acquire and `refresh` that reaches a held activation records how it did in its meta (`activationJoin`).
 final class HeldActivations: @unchecked Sendable {
   /// One process's held activation and its holders, each by its acquire's share.
   private struct Entry {
@@ -282,23 +300,27 @@ final class HeldActivations: @unchecked Sendable {
     try beforeActivating()
     if var entry = held[pid] {
       if isSpent(entry) {
+        meta.activationJoin = .replacedSpent
         entry.activation = try run(make, postsLeftMouseDown: postsLeftMouseDown, meta: &meta)
         entry.withdrawn = false
       } else if postsLeftMouseDown, rearms(entry, for: holder), entry.activation.deactivate() {
+        meta.activationJoin = .rearmed
         do {
           entry.activation = try run(make, postsLeftMouseDown: true, meta: &meta)
         } catch {
           held[pid]?.withdrawn = true
           throw error
         }
-      } else if !postsLeftMouseDown, entry.activation.consumeArm(.early) {
-        meta.activationClickKind = entry.activation.clickKind
+      } else {
+        meta.activationJoin = .shared
+        if !postsLeftMouseDown, entry.activation.consumeArm(.early) { meta.activationClickKind = entry.activation.clickKind }
       }
       shares += 1
       entry.holders[shares] = holder
       if postsLeftMouseDown { entry.pointers.insert(shares) }
       held[pid] = entry
     } else {
+      meta.activationJoin = .fresh
       let activation = try run(make, postsLeftMouseDown: postsLeftMouseDown, meta: &meta)
       shares += 1
       held[pid] = Entry(activation: activation, holders: [shares: holder], pointers: postsLeftMouseDown ? [shares] : [])
@@ -326,9 +348,11 @@ final class HeldActivations: @unchecked Sendable {
     guard var entry = held[pid] else { return }
     try beforeActivating()
     guard isSpent(entry) else {
+      meta.activationJoin = .shared
       if entry.activation.consumeArm(.early) { meta.activationClickKind = entry.activation.clickKind }
       return
     }
+    meta.activationJoin = .replacedSpent
     entry.activation = try run(make, meta: &meta)
     entry.withdrawn = false
     held[pid] = entry

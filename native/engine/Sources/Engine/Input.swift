@@ -71,6 +71,9 @@ struct InputMeta {
   var activationClick: ActivationClick? = nil
   /// The click that activation posted (at the activation point, the inert one outside the frame, or none and why).
   var activationClickKind: ActivationClickKind? = nil
+  /// How the request came by a held activation (`HeldActivations`: a new one, shared, re-armed, or a spent one replaced);
+  /// the last acquire or refresh of the request's wins. Nil when it reached none.
+  var activationJoin: ActivationJoin? = nil
   /// A synthesized element click whose hit-test answered nothing or only a container of the element, so the point
   /// could not be confirmed to reach it; reported as `pointUnconfirmed: true`.
   var pointUnconfirmed = false
@@ -136,6 +139,7 @@ struct InputMeta {
     if let activationGuardMs { wire["activationGuardMs"] = activationGuardMs }
     if let activationClick { wire["activationClick"] = activationClick.rawValue }
     if let activationClickKind { wire["activationClickKind"] = activationClickKind.wire }
+    if let activationJoin { wire["activationJoin"] = activationJoin.rawValue }
     if pointUnconfirmed { wire["pointUnconfirmed"] = true }
     if interventionOff { wire["intervention"] = "off" }
     if let entered { wire["entered"] = entered }

@@ -108,7 +108,9 @@ final class Engine: @unchecked Sendable {
     guard client == serverApiVersion else {
       throw EngineError(.incompatibleClientVersion, "The client speaks \(client.prefix(64)); this engine speaks \(serverApiVersion).")
     }
-    return ["serverApiVersion": serverApiVersion, "engineVersion": engineVersion, "build": engineBuild]
+    var identity: [String: Any] = ["serverApiVersion": serverApiVersion, "engineVersion": engineVersion, "build": engineBuild]
+    if let engineVariant { identity["variant"] = engineVariant }
+    return identity
   }
 
   func status(_ connection: ConnectionState) -> [String: Any] {

@@ -19,5 +19,14 @@ let engineBuild: String = {
   return build
 }()
 
+/// What a non-shipping build is, named in the ping's identity (`variant`); nil, and absent there, for every release.
+/// The control build (`CUA_CONTROL_NO_INERT_CLICK`, `activationClickPlan`) is defined only in the #187 kit's copied
+/// Package.swift, so a sitting attests the running engine's half from the engine itself.
+#if CUA_CONTROL_NO_INERT_CLICK
+let engineVariant: String? = "control-no-inert-click"
+#else
+let engineVariant: String? = nil
+#endif
+
 /// Whether this executable runs from inside an app bundle (`…/cua Engine.app/Contents/MacOS/cua-engine`).
 let isBundled: Bool = Bundle.main.bundleURL.pathExtension == "app"

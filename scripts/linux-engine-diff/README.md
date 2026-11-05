@@ -855,7 +855,10 @@ node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" -
   beside `timer`, which it must include, and no stop runs; among them `control-0ms`, the plain 0 ms control as an
   engine setting (`--teardown-ms 0`, the default session retention: each request's `FocusOut` as its input ends, the
   redirect kept), judged by the wait rule as `timer` is, with its own audit pass (one session per request); a miss
-  keeps the engine's `FocusOut` records (task 59: whether the timer stays). Each run is a fresh engine's. The scenarios, pipelined: `burst` (20 keys, Shift chords among them), `aba` (8 keys to A, 8 to B,
+  keeps the engine's `FocusOut` records (task 59: whether the timer stays). `--trace` runs every series run with the
+  engine's connection through xtrace and keeps a missed run's trace under `traces/`, with its synthetic-focus sessions
+  and the engine's Composite requests on its row; the proxy delays every request, so a traced sitting is one of its
+  own, never the verdict's. Each run is a fresh engine's. The scenarios, pipelined: `burst` (20 keys, Shift chords among them), `aba` (8 keys to A, 8 to B,
   8 to A again) and `paste` (8 keys, then a `type_text` to the same window, of `Pasted` and three letters of the
   run's own: a terminal's screen holds many runs' text, and the engine confirms a paste the screen's scroll moved only
   when its text occurs once, task 56 fix 2). `--scenarios <list>` runs only those, with no stop runs. A run passes when every answer is a success

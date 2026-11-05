@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
+import { gunzipSync } from 'node:zlib';
 
 import { attributeFocusOuts, focusSessions, parseXtrace } from '../../scripts/linux-engine-diff/audit.mjs';
 import { settleFocus } from '../../scripts/linux-engine-diff/events.mjs';
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, chosenLanes, delayOf, judged, focusOutsOf, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
+import { LANES, SCENARIOS, UNCONFIRMED, expectedSessions, focusTimerVerdict, insertedAt, keysOf, missCause, rawOks, readStatsLine, runPasses, tenth, trialRow, scenario, seriesVerdict, settledRead, pasteTexts, chosenScenarios, chosenLanes, delayOf, judged, focusOutsOf, keepTrace, pasteRecordOf, confirmRules } from '../../scripts/linux-engine-diff/focus-timer.mjs';
 
 // M4's T7, the FocusOut timer: the audit of each deferred FocusOut. Lines in the shape the VM's xtrace prints a
 // background session's SendEvents (audit.test.mjs has the same shapes).
@@ -270,6 +274,23 @@ test("a missed run keeps the engine's FocusOut records, each with the request wh
     { ...out(7, 3, 0.002), reported_on: 3 },
   ]);
   assert.deepEqual(focusOutsOf([]), []);
+});
+
+test("--trace keeps a missed run's X trace with its synthetic-focus sessions and the engine's Composite requests", () => {
+  const dir = mkdtempSync(join(tmpdir(), 'focus-trace-'));
+  try {
+    const redirect = `000:<:0002: 12: Composite-Request(142,1): RedirectWindow window=${hex(A)} update=Manual(0x01)`;
+    const text = [redirect, ...burst(A, 2), focusIn(A), key(A)].join('\n');
+    const kept = keepTrace(dir, 'chrome-control-0ms-burst-3', text);
+    assert.equal(kept.file, 'traces/chrome-control-0ms-burst-3.xtrace.gz');
+    assert.equal(gunzipSync(readFileSync(join(dir, kept.file))).toString(), text);
+    assert.deepEqual(kept.composite, ['RedirectWindow']);
+    assert.deepEqual(kept.sessions.map((s) => [s.destination, s.inputs, s.closed]), [[A, 4, true], [A, 1, false]]);
+    assert.match(kept.problems.join(), /never closed/);
+    assert.equal(parseArgs(['--experiment', 'focus-timer', '--cua', '/bin/true', '--out', '/tmp/x', '--trace']).trace, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("a run passes on its text and its answers; only a Qt paste's unconfirmed answer is excused, its text still exact", () => {

@@ -28,8 +28,11 @@
 // any display this process did not create, `:0` included (xspawn.mjs). `--load-factor 2` runs it under twice the gate's
 // load (16 stress-ng workers on 8 cores).
 
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { createInterface } from 'node:readline';
+import { gzipSync } from 'node:zlib';
 
 import { attributeFocusOuts, auditRequests, focusSessions, parseXtrace, startProxy } from './audit.mjs';
 import { Engine } from './engine.mjs';
@@ -445,6 +448,22 @@ export function runPasses({ family, errors, exact }) {
 }
 
 /**
+ * A missed run's X trace kept, gzipped, under the sitting's `traces/` (`file`, relative to the sitting), with what it
+ * shows of the synthetic focus: each session's window, inputs and whether its FocusOut closed it, and the Composite
+ * requests (a redirect or its release) the engine made.
+ */
+export function keepTrace(out, name, text) {
+  const dir = join(out, 'traces');
+  mkdirSync(dir, { recursive: true });
+  const file = `${name}.xtrace.gz`;
+  writeFileSync(join(dir, file), gzipSync(text));
+  const trace = parseXtrace(text);
+  const { sessions, problems } = focusSessions(trace);
+  const composite = trace.requests.filter((r) => r.ext === 'Composite').map((r) => r.name);
+  return { file: `traces/${file}`, requests: trace.requests.length, sessions, problems, composite };
+}
+
+/**
  * A lane's series of one scenario: a judged lane to `need` consecutive passes (30; `--trials` sets fewer for a
  * development run, which its rows record), at most twice that many runs, the control lane `CONTROL_RUNS` runs. Each run
  * is a fresh engine's, as M0.4's key-pace runs were and as a service's first burst is: its first request redirects the
@@ -455,20 +474,30 @@ async function series(ctx, family, lane, name, windows) {
   const oks = [];
   const rows = [];
   for (let run = 0; run < (judged(lane) ? need * (MAX_RUNS / CONSECUTIVE) : CONTROL_RUNS); run++) {
-    const engine = new Engine({ label: `cua-${lane}`, bin: cua, args: LANES[lane], stats: true }).start();
+    // with --trace, the run's engine connection through xtrace (a sitting of its own: the proxy delays every request)
+    const proxy = ctx.trace ? await startProxy() : null;
+    const engine = new Engine({ label: `cua-${lane}`, bin: cua, args: LANES[lane], stats: true, ...(proxy ? { env: proxy.env } : {}) }).start();
     const stderrClosed = new Promise((resolve) => engine.child.stderr.once('close', resolve));
     let row;
+    let text = null;
     try {
       row = await oneRun(ctx, engine, name, windows);
     } finally {
       await engine.close();
+      if (proxy) {
+        // the trace complete before the proxy ends: the engine's last requests may still be on their way through it
+        await proxy.mark('end');
+        text = await proxy.stop();
+      }
     }
     await stderrClosed;
     // what the paste's observation and confirmation saw, from its --stats line
     if (name === 'paste') row.paste = pasteRecord(engine);
     row.miss = missCause(row);
-    // a miss keeps when each FocusOut went, after which input and on whose answer (the cut's grounds, if one)
+    // a miss keeps when each FocusOut went, after which input and on whose answer (the cut's grounds, if one), and
+    // with --trace the engine's whole X trace
     if (!row.ok) row.focus_outs = focusOutsOf([...engine.statsById.values()]);
+    if (!row.ok && text !== null) row.trace = keepTrace(ctx.out, `${family}-${lane}-${name}-${run}`, text);
     oks.push(row.ok);
     rows.push(row);
     emit(trialRow('focus-timer-run', { family, lane, scenario: name }, run, row));
@@ -633,7 +662,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
     load = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
     // the stop runs' engine: as it ships, or with the exit settle a measurement step sets
     const stopArgs = args.exitSettleMs === undefined ? [] : ['--exit-settle-ms', String(args.exitSettleMs)];
-    const ctx = { desktop, oracle, emit, cua: args.cua, need: args.samplesTrials ?? CONSECUTIVE, stopArgs, pasteText: pasteTexts(), scenarios: chosen.scenarios };
+    const ctx = { desktop, oracle, emit, cua: args.cua, out: args.out, trace: Boolean(args.trace), need: args.samplesTrials ?? CONSECUTIVE, stopArgs, pasteText: pasteTexts(), scenarios: chosen.scenarios };
     for (const family of families) {
       let windows;
       try {

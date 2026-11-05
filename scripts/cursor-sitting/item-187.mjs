@@ -56,8 +56,11 @@
 //   activation click skipped (`activationClick` outsideFrame), so nothing but the shipping build's inert click (or, on
 //   the saved engine, nothing) consumes the arm; an activation point inside the frame posts a click of its own, which
 //   consumes the arm on either engine (the slot's rep 2), and that repetition is premise not met, never counted.
-//   Prediction: AFTER both pastes delivered and the key held; BEFORE the background paste timing out at the read stage
-//   and Chrome keyless after `open -a`. A BEFORE that delivers means the cell does not discriminate: NO VERDICT.
+//   Prediction, judged on delivery alone: AFTER both pastes delivered; BEFORE the background paste timing out at the
+//   read stage and the frontmost paste not delivered. A BEFORE that delivers means the cell does not discriminate: NO
+//   VERDICT. The key-window readings, and the prediction "Chrome frontmost with no key window" on the saved engine, are
+//   reported in the mechanism section (amended 2026-11-05 after the second re-slot, where that prediction was refuted:
+//   the readings were the same on both builds).
 // - The AXPress element click, reported for the mechanism and never the bar, PRESS_REPS a half: only when every sample
 //   of the premise part saw AXPress within AXPRESS_BOUND_MS (187-press-gate). Its repetition waits up to as long for
 //   AXPress after the session's first observation (#244: Chromium reaches complete accessibility mode about 2 s after
@@ -75,11 +78,11 @@
 // - chrome/composing@textedit 18/18 valid and delivered, each row's `cua/paste.perLine` holding every line confirmed by
 //   its own change (each line confirmed by a reading or a trusted notification, every line after the first opened by a
 //   Return whose settle saw its effect before that line's baseline, and a reading-confirmed line's confirming reading not
-//   its baseline);
+//   its baseline; a paste, one ⌘V, has exactly one record, amended 2026-11-05: perLineProblem);
 // - each of the three controls 18/18 valid and delivered;
-// - the background-paste cell, in the same slot: AFTER on CELL_REPS counted repetitions, both pastes delivered and the
-//   key held after `open -a`; BEFORE on the saved engine on CELL_REPS counted repetitions, the background paste timing
-//   out at the read stage, the key not held after `open -a` and the frontmost paste not delivered. A counted BEFORE
+// - the background-paste cell, in the same slot: AFTER on CELL_REPS counted repetitions, both pastes delivered; BEFORE
+//   on the saved engine on CELL_REPS counted repetitions, the background paste timing out at the read stage (by its stage
+//   meta, or by the saved engine's -10005 read-timeout error: readTimedOut) and the frontmost paste not delivered. A counted BEFORE
 //   repetition that delivers is NO VERDICT (#187 stays Refs) when nothing else fails; LANDS names the route it rests on;
 // - every background item's order watcher (the cell's AFTER repetitions' too) whole, its longest gap within
 //   WATCH_GAP_MS, its raises reconciled;
@@ -513,11 +516,14 @@ export function menuOpened(read) {
 // ax-state.swift's window reading, kept value-free: booleans, the app's focused and main windows as run/other/none.
 export const keyWindowOf = r => (r ? {trusted: r.trusted === true, ok: r.ok === true, frontmost: r.frontmost ?? null, found: r.found ?? null, focused: r.focused ?? null, main: r.main ?? null,
   focusedWindow: r.focusedWindow ?? null, mainWindow: r.mainWindow ?? null} : null);
-// Whether a key-window reading shows the app frontmost with its run window key and main (and, on Chrome, the page
-// focused): true, false, or null when the reading is not whole.
+// Whether a key-window reading shows the app frontmost with its run window main (and, on Chrome, the page focused):
+// true, false, or null when the reading is not whole. Amended 2026-11-05 for the second re-slot's re-judgment (b): the
+// run window's own AXFocused is no longer a conjunct. It read no on every Chrome reading of that slot, on both builds,
+// the delivering rows included, so it carries no information about the key; the app's AXFocusedWindow, AXMain,
+// AXFrontmost and the page's hasFocus() are kept and reported.
 export function keyHeld(reading, pageFocused) {
-  if (!reading?.trusted || !reading.ok || typeof reading.focused !== 'boolean' || typeof reading.main !== 'boolean' || typeof reading.frontmost !== 'boolean') return null;
-  const window = reading.frontmost && reading.focused && reading.main;
+  if (!reading?.trusted || !reading.ok || typeof reading.main !== 'boolean' || typeof reading.frontmost !== 'boolean') return null;
+  const window = reading.frontmost && reading.main;
   if (pageFocused === undefined) return window;
   return typeof pageFocused === 'boolean' ? window && pageFocused : window ? null : false;
 }
@@ -650,13 +656,19 @@ const sameReading = (a, b) => j(a ?? null) === j(b ?? null);
 // per line, each confirmed by a reading or a trusted notification; every line after the first opened by a Return
 // whose settle saw its effect (so its baseline was taken after that Return's own change, Paste.swift beginLine); a
 // reading-confirmed line's confirming reading differing from its own baseline.
+// Amended 2026-11-05 for the second re-slot's re-judgment (e): the records expected depend on the method. typeText (on the
+// paste route, typeTextByPaste) makes one record per line, as above. paste sends the whole text, newlines included, as one
+// `.content` part in one ⌘V (Paste.swift:720) and counts its lines as 1 plus its `.returnKey` parts (:487), of which a
+// paste has none: one act, one record, confirmed by its own change. The kit had asked a paste for a record per line of its
+// text, which no run on either build could give.
+export const perLineExpected = record => (record?.method === 'paste' ? 1 : record?.lines ?? 1);
 export function perLineProblem(record) {
-  const list = record?.paste?.perLine;
+  const list = record?.paste?.perLine, expected = perLineExpected(record);
   if (!Array.isArray(list)) return 'no per-line record (cua/paste.perLine)';
-  if (list.length !== record.lines) return `${list.length} per-line record(s) for ${record.lines} line(s)`;
+  if (list.length !== expected) return record.method === 'paste' ? `${list.length} per-line record(s) for one paste (one act, one record)` : `${list.length} per-line record(s) for ${record.lines} line(s)`;
   for (const [k, l] of list.entries()) {
     const n = l?.line ?? k + 1;
-    if (l?.line !== k + 1) return `the per-line records are not lines 1..${record.lines} in order`;
+    if (l?.line !== k + 1) return `the per-line records are not lines 1..${expected} in order`;
     if (l.confirmed !== true || !SEEN.includes(l.effectWait)) return `line ${n} was not confirmed by its own change (confirmed ${l.confirmed ?? 'unread'}, effect ${l.effectWait ?? 'unread'})`;
     if (k > 0 && !SEEN.includes(l.openingReturn?.settle)) return `line ${n}'s opening Return was not settled before its baseline (settle ${l.openingReturn?.settle ?? 'unread'})`;
     if (l.effectWait === 'reading' && (l.baseline == null || l.confirming == null)) return `line ${n} was confirmed by a reading without both its baseline and its confirming reading`;
@@ -736,10 +748,24 @@ export function reconciliationProblem(watcher) {
 // replaced once), PRECONDITION UNMET (the AXPress route: the textarea advertised no AXPress within AXPRESS_BOUND_MS), premise
 // not met (the AXPress route: the click's plan was not action/AXPress; the background paste: its activation click was not
 // skipped, `activationClick` other than outsideFrame, so its own click consumed the arm as in the slot's rep 2), else
-// counted. A counted repetition then passes (AFTER: on the background paste, it delivered; the key held after open -a; the
-// frontmost paste delivered), fails as predicted (BEFORE: on the background paste, it timed out at the read stage; the
-// key not held after open -a; the frontmost paste not delivered, and on the AXPress route its read timing out), or
-// delivers a paste (BEFORE: the cell does not discriminate). Neither of the first two counts for or against anything.
+// counted. A counted repetition then passes (AFTER: on the background paste, it delivered, and the frontmost paste
+// delivered), fails as predicted (BEFORE: on the background paste, it timed out at the read stage, and the frontmost
+// paste was not delivered; on the AXPress route the frontmost paste's read timing out), or delivers a paste (BEFORE: the
+// cell does not discriminate). Neither of the first two counts for or against anything.
+// Amended 2026-11-05 for the second re-slot's re-judgment (c): the discrimination rests on delivery alone, as both halves
+// pre-registered it; the key-window readings left the pass and the prediction and are reported in the mechanism section
+// (mechanismOf), where the "frontmost with no key window" prediction is judged on its own.
+//
+// Whether a paste's read timed out: its stage meta saying so, or, when it threw with no stage meta, its error being the
+// read-stage timeout itself (amended 2026-11-05, (a)): code -10005 with "Timed out waiting for the application to read the
+// clipboard". The saved engine (dd7a) never emits the stage meta on any paste, delivered or not, so this reading of its
+// error does not depend on the outcome being judged; only that code with that message counts, nothing broader.
+export const READ_TIMEOUT = Object.freeze({code: '-10005', message: 'Timed out waiting for the application to read the clipboard'});
+export function readTimedOut(r) {
+  if (r?.paste?.stage != null) return r.paste.stage === 'read' && r.paste.readWait === 'timeout';
+  const error = typeof r?.error === 'string' ? r.error : '';
+  return r?.threw === true && new RegExp(`(^|[^\\d-])${READ_TIMEOUT.code}(?!\\d)`).test(error) && error.includes(READ_TIMEOUT.message);
+}
 const repStatus = (c, bg) => {
   if (c.personTouched) return ['person-touched', `touched by the person (${touchText(c.personTouched)})`];
   if (c.route === 'press') {
@@ -755,21 +781,19 @@ export function cellVerdict(c) {
   if (!c) return {recorded: false, route: null, status: 'not recorded', counted: false, pass: false, predicted: false, delivers: false, key: null, keyless: null, why: 'not recorded'};
   const route = c.route ?? 'press', bg = route === 'paste' ? c.background ?? null : null, fg = c.row ?? null;
   const key = keyHeld(c.keyAfter?.reading, c.keyAfter?.pageFocused ?? null);
-  const keyless = c.keyAfter?.reading?.trusted && c.keyAfter.reading.ok ? c.keyAfter.reading.focused === false || c.keyAfter.reading.main === false : null;
-  const valid = r => r?.invalid === null, timedOut = r => r?.paste?.stage === 'read' && r.paste.readWait === 'timeout';
+  const keyless = key === null ? null : !key;
+  const valid = r => r?.invalid === null, timedOut = readTimedOut;
   const fgDelivered = valid(fg) && fg.delivered === true, bgDelivered = valid(bg) && bg.delivered === true;
   const [status, premise] = repStatus({...c, route}, bg), counted = status === 'counted';
-  const pass = counted && key === true && fgDelivered && (route !== 'paste' || bgDelivered);
+  const pass = counted && fgDelivered && (route !== 'paste' || bgDelivered);
   const delivers = counted && (fgDelivered || bgDelivered);
-  const predicted = counted && keyless === true && valid(fg) && !fg.delivered && (route === 'paste' ? valid(bg) && !bg.delivered && timedOut(bg) : timedOut(fg));
+  const predicted = counted && valid(fg) && !fg.delivered && (route === 'paste' ? valid(bg) && !bg.delivered && timedOut(bg) : timedOut(fg));
   const pasteText = (r, which) => (!r ? `the ${which} paste was not recorded` : r.invalid ? `the ${which} paste was invalid (${r.invalid})` : null);
   const why = !counted ? [premise] : [
     route === 'paste' && (pasteText(bg, 'background') ?? (!bg.delivered && 'the background paste did not deliver')),
-    key === null && 'the key-window state after the activation was not read whole', key === false && 'the key was not held after the activation',
     pasteText(fg, 'frontmost') ?? (!fg.delivered && 'the frontmost paste did not deliver')].filter(Boolean);
   const beforeWhy = !counted ? [premise] : [
     route === 'paste' && (pasteText(bg, 'background') ?? (bg.delivered ? 'the background paste delivered' : !timedOut(bg) && `the background paste stopped at ${bg.paste?.stage ?? 'no stage'} (read ${bg.paste?.readWait ?? '–'}), not a read timeout`)),
-    keyless === null ? 'the key-window state after the activation was not read whole' : keyless === false && 'the key was held after the activation',
     pasteText(fg, 'frontmost') ?? (fg.delivered ? 'the frontmost paste delivered' : route === 'press' && !timedOut(fg) && 'the frontmost paste\'s read did not time out')].filter(Boolean);
   return {recorded: true, route, status, counted, pass, predicted, delivers, key, keyless, bgDelivered, delivered: fgDelivered, bgReadTimeout: timedOut(bg), readTimeout: timedOut(fg),
     why: why.join('; ') || null, beforeWhy: beforeWhy.join('; ') || null};
@@ -861,7 +885,7 @@ export function judge187(items) {
   const cellRows = cells.paste.after.filter(currentRep).flatMap(c => [c.record.background, c.record.row]).filter(Boolean);
   const bar = barOf({groupOf: name => groups.find(g => g.item === name) ?? null, cells, putback, cellRows});
   // #188's rows and cell 3, and #259's cell, judged apart (./item-188.mjs): reported, never part of the bar.
-  return {groups, cells, premise, press: pressStatement(cells.press, premise), bar, putback, restore, overall: {ok: bar.ok, verdict: bar.verdict, why: bar.why, on: bar.on},
+  return {groups, cells, premise, press: pressStatement(cells.press, premise), mechanism: mechanismOf(cells.paste), axFocused: axFocusedCount({groups, cells}), bar, putback, restore, overall: {ok: bar.ok, verdict: bar.verdict, why: bar.why, on: bar.on},
     vendor: items[ITEMS.vendor] ? summarize(records(ITEMS.vendor)) : null, vendorKorean: items[ITEMS.vendorKorean] ? summarize(records(ITEMS.vendorKorean)) : null,
     item188: judge188(items), item259: judge259(items)};
 }
@@ -887,13 +911,62 @@ export function pressStatement(press, premise) {
   else {
     lines.push(`AFTER: ${after.filter(c => c.pass).length} of ${after.length} counted repetition(s) key and delivered.`);
     const delivering = before.filter(c => c.delivers);
-    lines.push(`BEFORE: ${before.filter(c => c.predicted).length} of ${before.length} counted repetition(s) keyless with the read timing out, as predicted.${delivering.length ? ` ${delivering.length} delivered: on this route the activation followed by the person's activation does not leave Chrome keyless on the saved engine.` : ''}`);
+    lines.push(`BEFORE: ${before.filter(c => c.predicted).length} of ${before.length} counted repetition(s) with the paste's read timing out, as predicted.${delivering.length ? ` ${delivering.length} delivered: on this route the activation followed by the person's activation does not stop the paste on the saved engine.` : ''}`);
     const other = all.filter(c => !c.counted && c.status !== 'not recorded');
     if (other.length) lines.push(`Not counted: ${other.map(c => `${c.item} ${c.status}${c.why ? ` (${c.why})` : ''}`).join('; ')}.`);
   }
   const unproven = after.length === 0;
   if (unproven) lines.push('**AXPress on Chrome is unproven**: no repetition clicked the textarea on the action plan.');
   return {ran, unproven, lines};
+}
+
+// The cell's mechanism, reported apart from the bar (amended 2026-11-05, (c)): the key-window readings of the counted
+// background-paste repetitions per half (frontmost, AXMain, AXFocusedWindow, hasFocus), before and after `open -a`, and
+// the prediction "Chrome frontmost with no key window" on the saved engine after `open -a`, judged on them as it was
+// stated: supported only when every counted BEFORE reading shows Chrome frontmost with AXMain no or its AXFocusedWindow
+// not the run window, while every counted AFTER reading shows Chrome frontmost with the run window main and focused.
+// -> {beforeOpen, afterOpen (tallies per half), tested, supported, identical, statement}.
+const keyTuple = k => (k?.reading ? `frontmost ${yes(k.reading.frontmost)}, AXMain ${yes(k.reading.main)}, AXFocusedWindow ${k.reading.focusedWindow ?? '–'}, hasFocus ${yes(k.pageFocused)}${k.reading.ok ? '' : ' (not whole)'}` : 'unread');
+export const PREDICTION = 'Chrome frontmost with no key window';
+export function mechanismOf(paste) {
+  const counted = half => paste[half].filter(c => c.counted && c.record);
+  const tallies = which => Object.fromEntries(HALVES.map(half => [half, tally(counted(half).map(c => keyTuple(c.record[which])))]));
+  const whole = k => k?.reading?.trusted === true && k.reading.ok === true;
+  const keyless = k => whole(k) && k.reading.frontmost === true && (k.reading.main === false || k.reading.focusedWindow !== 'run');
+  const keyed = k => whole(k) && k.reading.frontmost === true && k.reading.main === true && k.reading.focusedWindow === 'run';
+  const after = counted('after').map(c => c.record.keyAfter), before = counted('before').map(c => c.record.keyAfter);
+  const sorted = t => j(Object.entries(t).sort());
+  const afterOpen = tallies('keyAfter'), tested = after.length > 0 && before.length > 0;
+  const supported = tested && before.every(keyless) && after.every(keyed), identical = tested && sorted(afterOpen.after) === sorted(afterOpen.before);
+  const head = `The prediction "${PREDICTION}" (the saved engine, after \`open -a\`)`;
+  const statement = !tested ? `${head} was not tested: a half has no counted repetition.`
+    : supported ? `${head} was tested and is supported: every counted BEFORE reading shows it, and every counted AFTER reading shows the run window main and focused.`
+      : `${head} was tested and is NOT supported: ${identical ? 'the key readings after `open -a` were identical on both builds' : 'the counted readings do not show Chrome frontmost with no key window on the saved engine against a key window on the shipping build'}.`;
+  return {beforeOpen: tallies('keyBefore'), afterOpen, tested, supported, identical, statement};
+}
+
+// How many of the slot's Chrome key-window readings had the run window's own AXFocused read no, per build (the shipping
+// build's: every bar item and the AFTER repetitions; the saved engine's: the BEFORE repetitions) and in all: every Chrome
+// row's reading before its act and each repetition's readings before and after `open -a`; a reading not whole is left
+// out and counted apart (amended 2026-11-05, (b)). -> {shipping, saved, all: {no, of}, unread}.
+export function axFocusedCount({groups, cells}) {
+  const count = {shipping: {no: 0, of: 0}, saved: {no: 0, of: 0}};
+  let unread = 0;
+  const add = (build, reading) => {
+    if (!reading) return;
+    if (reading.trusted !== true || reading.ok !== true || typeof reading.focused !== 'boolean') { unread += 1; return; }
+    count[build].of += 1;
+    if (reading.focused === false) count[build].no += 1;
+  };
+  for (const g of groups.filter(x => x.role === 'bar')) for (const r of g.rows) if (GROUPS[r.group]?.driven === 'chrome') add('shipping', r.keyWindow);
+  for (const route of ROUTES) for (const half of HALVES) for (const c of cells[route][half]) {
+    const r = c.record, build = half === 'after' ? 'shipping' : 'saved';
+    if (!r) continue;
+    for (const row of [r.background, r.row]) if (row) add(build, row.keyWindow);
+    add(build, r.keyBefore?.reading);
+    add(build, r.keyAfter?.reading);
+  }
+  return {...count, all: {no: count.shipping.no + count.saved.no, of: count.shipping.of + count.saved.of}, unread};
 }
 
 // The bar (the header's): every condition, each failing one named. -> {ok, verdict: LANDS | DOES NOT LAND | NO VERDICT,
@@ -929,7 +1002,7 @@ function barOf({groupOf, cells, putback, cellRows}) {
   const repList = (cs, fail) => cs.map(c => `${c.item.replace(/^187-cell-/, '')}: ${c.status === 'counted' ? fail(c) ?? 'as required' : `${c.status}${c.why ? ` (${c.why})` : ''}`}`).join('; ');
   const afterCounted = P.after.filter(c => c.counted), afterPass = afterCounted.filter(c => c.pass);
   if (afterCounted.length < CELL_REPS || afterPass.length !== afterCounted.length)
-    why.push(`${cell}'s AFTER half: ${afterPass.length} of ${CELL_REPS} counted repetitions with the background paste delivered, the key held after open -a and the frontmost paste delivered (${afterCounted.length} counted; ${repList(P.after, c => (c.pass ? null : c.why))})`);
+    why.push(`${cell}'s AFTER half: ${afterPass.length} of ${CELL_REPS} counted repetitions with both pastes delivered (${afterCounted.length} counted; ${repList(P.after, c => (c.pass ? null : c.why))})`);
   touched(cellRows, `${cell}'s AFTER half`);
   // Each AFTER repetition's background paste ran under the order watcher: whole, within the gap, its raises reconciled.
   const cellWatched = P.after.filter(currentRep);
@@ -942,7 +1015,7 @@ function barOf({groupOf, cells, putback, cellRows}) {
   if (!P.before.some(c => c.recorded || c.stopped)) why.push(`${cell}'s BEFORE half on the saved engine was not recorded (\`--part before --saved\`, once the owner's engine is put back)`);
   else if (delivering.length) noVerdict = `NO VERDICT: ${delivering.length} counted BEFORE repetition(s) on the saved engine delivered a paste, so the cell does not discriminate (${repList(P.before, c => (c.delivers ? c.beforeWhy : null))}); #187 stays Refs`;
   else if (beforeCounted.length < CELL_REPS || beforeCounted.some(c => !c.predicted))
-    why.push(`${cell}'s BEFORE half: ${beforeCounted.filter(c => c.predicted).length} of ${CELL_REPS} counted repetitions failing as predicted (the background paste timing out at the read stage, the key not held after open -a, the frontmost paste not delivered) (${beforeCounted.length} counted; ${repList(P.before, c => (c.predicted ? null : c.beforeWhy))})`);
+    why.push(`${cell}'s BEFORE half: ${beforeCounted.filter(c => c.predicted).length} of ${CELL_REPS} counted repetitions failing as predicted (the background paste timing out at the read stage, the frontmost paste not delivered) (${beforeCounted.length} counted; ${repList(P.before, c => (c.predicted ? null : c.beforeWhy))})`);
   // Raises and menus over every bar item and the cell's rows.
   const barGroups = [ITEMS.composing, ...CONTROLS.map(ITEMS.control)].map(groupOf).filter(Boolean);
   const rows = [...barGroups.flatMap(g => g.rows), ...cellRows];
@@ -970,6 +1043,24 @@ export function restoreOf(rows, {recorded, stopped}) {
   return {ok, ...base, why: ok ? null : `the owner's input source was not restored: ${result.problem ?? (result.switched !== true ? result.reason ?? 'nothing was switched' : `read back ${result.current?.id ?? 'nothing'}, not ${result.requested}`)}`};
 }
 
+// The re-judgment addendum (`paste-187 judge --addendum`): the same evidence judged by the amended predicates, written
+// beside the slot's report and never over it. `commit`: the kit's commit that judged it. -> its Markdown.
+export const ADDENDUM_FILE = 'item-187-rejudge.md';
+export function item187Addendum(judged, {commit = null} = {}) {
+  const ax = judged.axFocused;
+  return [`# #187: the re-judgment addendum (${ADDENDUM_FILE})`, '',
+    `An offline re-judgment of this out directory's records, by the judge's predicates as amended on 2026-11-05${commit ? ` (the kit at ${commit})` : ''}, after the slot and before this judgment ran. \`item-187.md\` stays exactly as the slot's judge computed it; this file is beside it. The amendments, each with its reason:`, '',
+    `- **(a) The read stage.** When a paste threw with no stage meta, its read-stage timeout is taken from the error itself: code ${READ_TIMEOUT.code} with "${READ_TIMEOUT.message}". The saved engine (dd7a) never emits the stage meta, on any paste, so this does not depend on the outcome; only that code with that message counts, nothing broader.`,
+    `- **(b) The key.** The run window's own AXFocused is no longer part of the key reading: it read no on ${ax.all.no} of ${ax.all.of} Chrome key-window readings, both builds (the shipping build ${ax.shipping.no} of ${ax.shipping.of}, the saved engine ${ax.saved.no} of ${ax.saved.of}), so it carries no information.`,
+    '- **(c) The bar.** The key-window conditions leave the bar for the mechanism section. The cell\'s discrimination rests on delivery alone, as both halves pre-registered it: AFTER both pastes delivered; BEFORE the background paste timing out at the read stage and the frontmost paste not delivered. The mechanism section reports the key readings per half (frontmost, AXMain, AXFocusedWindow, hasFocus) and judges the "Chrome frontmost with no key window" prediction as it was stated. The AXPress route stays reported only.',
+    '- **(e) The per-line record.** typeText still needs one record per line, each confirmed by its own change, every later line opened by a settled Return. paste needs exactly one record: the engine sends the whole text, newlines included, as one part in one ⌘V (Paste.swift:720) and counts its lines as 1 plus its Return parts (:487), so a paste is one act with one record, confirmed by its own change. The bar had asked a paste for a record per line of its text.', '',
+    `**What these are.** (a), (b) and (e) are judge predicates that no run could meet: the saved engine never emits the stage meta, AXFocused read no on every Chrome reading on both builds, and a paste never makes more than one record. Correcting them changes what the judge can read, not what the slot did. (c) is different: ${judged.mechanism.tested && !judged.mechanism.supported ? `the "${PREDICTION}" prediction was tested, and the readings refute it. It is a refuted prediction, recorded as wrong, not restated` : `the "${PREDICTION}" prediction is judged in the mechanism section (${judged.mechanism.tested ? 'supported there' : 'not tested'})`}, and it leaves the bar because the pre-registered discrimination of both halves is delivery.`, '',
+    `## Re-judged: ${judged.overall.verdict}${judged.overall.on ? `, on ${judged.overall.on}` : ''}`, '',
+    ...(judged.overall.why.length ? judged.overall.why.map(w => `- ${w}`) : ['- every condition held']), '',
+    `${judged.mechanism.statement}`, '',
+    '---', '', item187Markdown(judged)].join('\n');
+}
+
 // The judge's exit status: 0 only when the bar holds.
 export const judgedOk = judged => judged.overall.ok;
 
@@ -982,7 +1073,7 @@ const keyText = (reading, pageFocused) => (reading ? `frontmost ${yes(reading.fr
 export function item187Markdown(judged) {
   const lines = ['# #187: the re-slot, paste behind a composition on the shipping build (scripts/cursor-sitting/item-187.mjs)', '',
     'A row is delivered only when the engine\'s read-back is exact and the page\'s own beacon, sent after the act, reports the expected length. A background row whose act carried no `activationGuardMs` acted under a held activation and is invalid. Page counts are the counters page\'s deltas over the act (window and textarea focus/blur, document-level mousedown and click); raises are the 5 ms order watcher\'s; the clipboard is the type-list digest before and after; the key at the act is the driven app\'s primary window AXFocused and AXMain, the app\'s AXFrontmost, and on Chrome the page\'s hasFocus(), read right before it.', '',
-    `**The bar**: chrome/composing@textedit 18/18 with every line confirmed by its own change (\`cua/paste.perLine\`); the three controls 18/18; the background-paste cell, latin on purpose, on ${CELL_REPS} counted repetitions a half: AFTER (the shipping build) both pastes delivered and the key held after \`open -a\`, and BEFORE (the saved engine, in the same slot) the background paste timing out at the read stage with Chrome keyless after \`open -a\` (a BEFORE that delivers: NO VERDICT, the cell does not discriminate); every watcher whole with its longest gap within ${WATCH_GAP_MS} ms; no raise and no menu opened; nothing else on the person's side touched; the put-back verified (the owner's source read back, the saved engine installed and approved). A person-touched row or repetition is invalid. The AXPress route is reported, never the bar. Anything less is DOES NOT LAND.`, '',
+    `**The bar**: chrome/composing@textedit 18/18 with every line confirmed by its own change (\`cua/paste.perLine\`); the three controls 18/18; the background-paste cell, latin on purpose, on ${CELL_REPS} counted repetitions a half: AFTER (the shipping build) both pastes delivered, and BEFORE (the saved engine, in the same slot) the background paste timing out at the read stage and the frontmost paste not delivered (a BEFORE that delivers: NO VERDICT, the cell does not discriminate); the key-window readings are reported in the mechanism section, never the bar; every watcher whole with its longest gap within ${WATCH_GAP_MS} ms; no raise and no menu opened; nothing else on the person's side touched; the put-back verified (the owner's source read back, the saved engine installed and approved). A person-touched row or repetition is invalid. The AXPress route is reported, never the bar. Anything less is DOES NOT LAND.`, '',
     `## Overall: ${judged.overall.verdict}${judged.overall.on ? `, on ${judged.overall.on}` : ''}`, '', ...(judged.overall.why.length ? judged.overall.why.map(w => `- ${w}`) : ['- every condition held']), '',
     `The baseline, cited and not re-run: on ${BASELINE.engine} as built (the slot of 2026-11-01's arm A, ${BASELINE.items}), ${BASELINE.delivered} of ${BASELINE.rows} valid rows delivered, every one stopping at the ${BASELINE.stage} stage (${BASELINE.evidence}).`, '',
     `The put-back: the owner's input source ${judged.restore.ok ? `restored (${judged.restore.current}, read back)` : `NOT restored (${judged.restore.why})`}; the engine ${judged.putback.engine ? judged.putback.engine.ok ? `put back (build ${judged.putback.engine.current?.build}, approved, the save's)` : `NOT put back (${judged.putback.engine.problem})` : 'put-back not read'}.`, ''];
@@ -992,7 +1083,7 @@ export function item187Markdown(judged) {
   const keyCells = r => `${keyText(r.keyBefore?.reading, r.keyBefore?.pageFocused ?? null)} | ${keyText(r.keyAfter?.reading, r.keyAfter?.pageFocused ?? null)}${r.keyAfter?.settledMs != null ? ` (${r.keyAfter.settledMs} ms)` : ''}`;
   const status = c => `${c.status}${c.status === 'counted' ? '' : c.why ? ` (${c.why})` : ''}`;
   lines.push(`## The confirming cell: ${ROUTE_NAMES.paste} (the bar's route)`, '',
-    'Per repetition: Chrome for Testing relaunched clean and placed at the left, TextEdit over its right half and in front under ABC; one background paste of the one-line Latin string into the page\'s textarea, its prepare clicking nothing. **The cell is latin on purpose**: no composition, so it isolates the activation\'s arm; the composing part covers the titled rows. Then Chrome activated by `open -a`, the key-window state read, and one frontmost paste whose prepare clicks nothing. The premise: the background paste\'s activation click skipped (`activationClick` outsideFrame), so only the shipping build\'s inert click, or nothing on the saved engine, can consume the arm; a repetition whose activation point lies inside the frame posts a click of its own, which consumes the arm on either engine, and is premise not met, never counted. Predicted: AFTER (the shipping build) both pastes delivered and the key held; BEFORE (the saved engine) the background paste timing out at the read stage and Chrome keyless after `open -a`. A BEFORE repetition that delivers means the cell does not discriminate: NO VERDICT.', '',
+    'Per repetition: Chrome for Testing relaunched clean and placed at the left, TextEdit over its right half and in front under ABC; one background paste of the one-line Latin string into the page\'s textarea, its prepare clicking nothing. **The cell is latin on purpose**: no composition, so it isolates the activation\'s arm; the composing part covers the titled rows. Then Chrome activated by `open -a`, the key-window state read, and one frontmost paste whose prepare clicks nothing. The premise: the background paste\'s activation click skipped (`activationClick` outsideFrame), so only the shipping build\'s inert click, or nothing on the saved engine, can consume the arm; a repetition whose activation point lies inside the frame posts a click of its own, which consumes the arm on either engine, and is premise not met, never counted. Predicted, and judged on delivery alone: AFTER (the shipping build) both pastes delivered; BEFORE (the saved engine) the background paste timing out at the read stage and the frontmost paste not delivered. A BEFORE repetition that delivers means the cell does not discriminate: NO VERDICT. The key-window readings are in the mechanism section below.', '',
     '| half | rep | status | background: activation click / click kind | background paste | its stage / read | key before open -a | key after open -a | frontmost paste | its stage / read |', '|---|---|---|---|---|---|---|---|---|---|');
   for (const half of HALVES) for (const c of judged.cells.paste[half]) {
     const r = c.record;
@@ -1000,11 +1091,18 @@ export function item187Markdown(judged) {
     lines.push(`| ${half} | ${c.rep + 1} | ${status(c)} | ${r.background?.activationClick ?? '–'} / ${kindText(r.background?.activationClickKind)} | ${pasteState(r.background)} | ${stageText(r.background)} | ${keyCells(r)} | ${pasteState(r.row)} | ${stageText(r.row)} |`);
   }
   const counted = half => judged.cells.paste[half].filter(c => c.counted);
-  lines.push('', `AFTER: ${counted('after').filter(c => c.pass).length} of ${counted('after').length} counted repetitions with both pastes delivered and the key held (${CELL_REPS} needed).`);
+  lines.push('', `AFTER: ${counted('after').filter(c => c.pass).length} of ${counted('after').length} counted repetitions with both pastes delivered (${CELL_REPS} needed).`);
   if (judged.cells.paste.before.some(c => c.recorded || c.stopped)) {
     const before = counted('before'), delivering = before.filter(c => c.delivers);
     lines.push(`BEFORE: ${before.filter(c => c.predicted).length} of ${before.length} counted repetitions failing as predicted (${CELL_REPS} needed).${delivering.length ? ` **${delivering.length} BEFORE repetition(s) delivered: the cell does not discriminate, NO VERDICT, and #187 stays Refs.**` : ''}`);
   } else lines.push('BEFORE: not recorded (`--part before`, once the owner\'s engine is put back).');
+  const mech = judged.mechanism, ax = judged.axFocused;
+  lines.push('', '## The mechanism: the key-window readings (reported, never the bar)', '',
+    'The background-paste cell\'s counted repetitions: Chrome\'s run window and page read by half (`ax-state.swift window`, value-free, and the counters page\'s `document.hasFocus()`).', '',
+    '| half | before `open -a` | after `open -a` |', '|---|---|---|',
+    ...HALVES.map(half => `| ${half} | ${listed(mech.beforeOpen[half])} | ${listed(mech.afterOpen[half])} |`), '',
+    mech.statement, '',
+    `The run window's own AXFocused read no on ${ax.all.no} of ${ax.all.of} Chrome key-window readings, both builds (the shipping build ${ax.shipping.no} of ${ax.shipping.of}, the saved engine ${ax.saved.no} of ${ax.saved.of}${ax.unread ? `; ${ax.unread} not whole, left out` : ''}); it is no part of the key reading.`);
   lines.push('', '## The AXPress element click (reported for the mechanism, never the bar)', '',
     `It runs only when the premise part saw the textarea advertise AXPress within ${AXPRESS_BOUND_MS} ms of every sample's first observation, and each repetition waits up to as long for it again; without it the repetition is PRECONDITION UNMET and posts nothing, and a click whose plan is not action/AXPress is premise not met. The kit's earlier claim that Chromium advertises AXPress on the textarea was never verified on Chrome: the slot of 2026-11-05 clicked it on the synthesized plan (\`noAction\`), 0.3 s after the session's first observation of a fresh Chrome.`, '');
   if (judged.premise) {

@@ -11,8 +11,8 @@ import {existsSync, mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {main, read187} from '../../scripts/cursor-sitting.mjs';
-import {AXPRESS_BOUND_MS, BLOCK_ROWS, CELL_REPS, CELL_ROW, cellItem, cellVerdict, clipboardReaders, COMPOSE_LEAD_MS, COMPOSE_REPOST_LEAD_MS, COMPOSING_BLOCKS, CONTROLS, driveItems, freshActivation, GROUPS, groupItem,
-  item187Markdown, item187Tasks, ITEMS, judge187, judgedOk, keyHeld, LABELS, menuOpened, PARTS, perLineProblem, personTouchedOf, plan187, PREMISE_SAMPLES, PRESS_REPS, pressItem, releaseOf,
+import {ADDENDUM_FILE, AXPRESS_BOUND_MS, BLOCK_ROWS, CELL_REPS, CELL_ROW, cellItem, cellVerdict, clipboardReaders, COMPOSE_LEAD_MS, COMPOSE_REPOST_LEAD_MS, COMPOSING_BLOCKS, CONTROLS, driveItems, freshActivation, GROUPS, groupItem,
+  item187Markdown, item187Tasks, ITEMS, judge187, judgedOk, keyHeld, LABELS, menuOpened, PARTS, perLineProblem, personTouchedOf, plan187, PREMISE_SAMPLES, PRESS_REPS, pressItem, READ_TIMEOUT, readTimedOut, releaseOf,
   premiseOpens, RELAUNCH_STABLE_POLLS, ROWS, rowRecord, slotTouches, TARGET, TOUCHED_STOP, touchedOfItem, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
 import {ITEMS_188, ITEMS_259} from '../../scripts/cursor-sitting/item-188.mjs';
 import {describeStep, runSteps} from '../../scripts/cursor-sitting/runner.mjs';
@@ -34,6 +34,8 @@ const BACK = {...KEY, frontmost: false, focused: false, main: true, focusedWindo
 // Every line of `text` confirmed by its own change, each later line opened by a settled Return.
 const linesOf = text => text.split('\n').map((_, k) => ({line: k + 1, stage: 'effect', confirmed: true, effectWait: 'reading', baseline: {characters: 10 * k}, confirming: {characters: 10 * k + 2},
   ...(k > 0 ? {openingReturn: {settle: 'reading', settleMs: 15, toCommandVMs: 20}} : {})}));
+// What the engine records for a method: typeText a record per line, paste one record for its whole text (one ⌘V).
+const perLineFor = (method, text) => (method === 'paste' ? linesOf(text).slice(0, 1) : linesOf(text));
 
 // A row's readings, all as a delivering, undisturbed row reads them; `over` replaces any of them.
 function input({group = 'chrome-composing', block = 0, i = 0, row = ROWS[1], item = ITEMS.composing, engine = 'cua', ...over} = {}) {
@@ -44,7 +46,7 @@ function input({group = 'chrome-composing', block = 0, i = 0, row = ROWS[1], ite
     act: {ok: true, value: {actMs: 190, threw: false, message: null}, route: 'paste',
       meta: {activationGuardMs: 41, activationClick: 'outsideFrame', activationClickKind: {kind: 'inertOutside', point: 'offset', when: 'early'}, entered: expectedLength, delivery: {restores: 0},
         paste: {stage: 'effect', confirmed: true, readWait: 'handedOver', readAfterPostMs: 12, effectWait: 'reading', restore: 'restored',
-          focusEnforcement: {activated: true, point: 'outside', click: {kind: 'inertOutside', point: 'offset'}, activationToCommandVMs: 30, clickToCommandVMs: 20}, perLine: linesOf(row.string.text)}}},
+          focusEnforcement: {activated: true, point: 'outside', click: {kind: 'inertOutside', point: 'offset'}, activationToCommandVMs: 30, clickToCommandVMs: 20}, perLine: perLineFor(row.method, row.string.text)}}},
     check: {ok: true, value: {ok: true, outcome: {exact: true, nfcEqual: true, length: expectedLength, expectedLength}}},
     page: chrome ? {mid: {seq: 4, length: 0, counts: {...ZERO}, focused: g.user ? false : true}, after: {seq: 5, length: expectedLength, counts: {...ZERO}, focused: g.user ? false : true}} : null,
     fixture: null,
@@ -272,8 +274,23 @@ test('the key: the app frontmost with its run window AXFocused and AXMain, and o
   assert.equal(keyHeld(null, true), null);
 });
 
-test('the per-line record: every line confirmed by its own change, each later line opened by a settled Return; the slot\'s false success fails it', () => {
+test('the per-line record of a paste (e): exactly one record, the whole text as one act, confirmed by its own change; two or none fail', () => {
   const lines = ROWS.find(r => r.string.id === 'lines' && r.method === 'paste');
+  const withPerLine = perLine => record({row: lines, act: {...input({row: lines}).act, meta: {...input({row: lines}).act.meta, paste: {...input({row: lines}).act.meta.paste, perLine}}}});
+  const one = withPerLine(linesOf(lines.string.text).slice(0, 1));
+  assert.equal(one.lines, 2, 'the text has two lines');
+  assert.equal(perLineProblem(one), null, 'one ⌘V, one record');
+  assert.match(perLineProblem(withPerLine(linesOf(lines.string.text))), /2 per-line record\(s\) for one paste \(one act, one record\)/);
+  assert.match(perLineProblem(withPerLine([])), /0 per-line record\(s\) for one paste/);
+  assert.match(perLineProblem(withPerLine([{...linesOf('x')[0], confirmed: false, effectWait: 'timeout'}])), /line 1 was not confirmed by its own change/);
+  // The composing bar: a paste.lines row with its one record lands; with a record per line it does not.
+  assert.equal(judge187(evidence()).overall.verdict, 'LANDS');
+  const asBefore = evidence({tweakComposing: r => (r.string === 'lines' && r.method === 'paste' ? reRecord(r, {act: {...input().act, meta: {...input().act.meta, paste: {...input().act.meta.paste, perLine: linesOf('a\nb')}}}}) : r)});
+  assert.match(judge187(asBefore).overall.why.join('; '), /whose lines were not each confirmed .*#1\.6: 2 per-line record\(s\) for one paste/);
+});
+
+test('the per-line record of typeText: every line confirmed by its own change, each later line opened by a settled Return; the slot\'s false success fails it', () => {
+  const lines = ROWS.find(r => r.string.id === 'lines' && r.method === 'typeText');
   const ok = record({row: lines});
   assert.equal(ok.lines, 2);
   assert.equal(perLineProblem(ok), null);
@@ -293,7 +310,7 @@ test('the per-line record: every line confirmed by its own change, each later li
     assert.match(perLineProblem(withPerLine([l1, {...l2, ...missing}])), /line 2 was confirmed by a reading without both its baseline and its confirming reading/, JSON.stringify(missing));
     assert.match(perLineProblem(withPerLine([{...l1, ...missing}, l2])), /line 1 was confirmed by a reading without both/);
   }
-  const bare = evidence({tweakComposing: r => (r.string === 'lines' && r.method === 'paste' ? reRecord(r, {act: {...input().act, meta: {...input().act.meta, paste: {...input().act.meta.paste, perLine: linesOf('a\nb').map((l, k) => (k ? {...l, confirming: null} : l))}}}}) : r)});
+  const bare = evidence({tweakComposing: r => (r.string === 'lines' && r.method === 'typeText' ? reRecord(r, {act: {...input().act, meta: {...input().act.meta, paste: {...input().act.meta.paste, perLine: linesOf('a\nb').map((l, k) => (k ? {...l, confirming: null} : l))}}}}) : r)});
   assert.equal(judge187(bare).overall.verdict, 'DOES NOT LAND');
   assert.equal(perLineProblem(withPerLine([l1, {...l2, effectWait: 'notification', confirming: undefined}])), null, 'a trusted notification confirms');
   assert.match(perLineProblem(withPerLine([l2, l1])), /not lines 1\.\.2 in order/);
@@ -308,7 +325,7 @@ test('the bar: every condition holding, the re-slot lands on the background past
   const md = item187Markdown(judged);
   assert.match(md, /## Overall: LANDS, on the background paste/);
   assert.match(md, /0 of 99 valid rows delivered, every one stopping at the read \(timeout\) stage/);
-  assert.match(md, /AFTER: 3 of 3 counted repetitions with both pastes delivered and the key held/);
+  assert.match(md, /AFTER: 3 of 3 counted repetitions with both pastes delivered/);
   assert.match(md, /BEFORE: 3 of 3 counted repetitions failing as predicted/);
   assert.match(md, /The cell is latin on purpose/);
   assert.match(md, /The AXPress route did not run \(the premise part has not run\)/);
@@ -332,8 +349,6 @@ test('the bar\'s traps: each one alone is DOES NOT LAND, never a partial verdict
     ['a front-app change', {tweakControl: firstOnly(reRecord, {activations: [{kind: 'activated', bundleId: 'com.google.chrome.for.testing', at: T0}]})}, /touched the person's side \(front app\)/],
     ['the composition disturbed', {tweakComposing: firstOnly(reRecord, {userKept: false})}, /touched the person's side \(composition\)/],
     ['a clipboard restore that did not hold', {tweakComposing: firstOnly(reRecord, {clipboard: {mid: 'a', after: 'b'}})}, /touched the person's side \(clipboard\)/],
-    ['a cell repetition not key', {cell: rep => (rep === 1 ? {keyAfter: {reading: KEYLESS, pageFocused: false}} : {})}, /background-paste cell's AFTER half: 2 of 3 counted repetitions .*after-1: the key was not held after the activation/],
-    ['a cell repetition whose page focus is unread', {cell: rep => (rep === 0 ? {keyAfter: {reading: KEY, pageFocused: null}} : {})}, /key-window state after the activation was not read whole/],
     ['a cell repetition whose background paste posted its own activation click (premise not met, never counted)', {cell: rep => (rep === 2 ? {background: cellRow('after', 2, 'chrome-cell-background', {act: {...input().act, meta: {...input().act.meta, activationClick: 'posted'}}})} : {})},
       /AFTER half: 2 of 3 counted repetitions .*\(2 counted; .*after-2: premise not met \(the background paste's activation click was posted, not skipped/],
     ['a cell repetition whose background paste did not deliver', {cell: rep => (rep === 0 ? {background: cellRow('after', 0, 'chrome-cell-background', TIMED_OUT)} : {})}, /after-0: the background paste did not deliver/],
@@ -349,7 +364,6 @@ test('the bar\'s traps: each one alone is DOES NOT LAND, never a partial verdict
     ['a background cell paste that raised Chrome', {cell: rep => (rep === 2 ? {background: cellRow('after', 2, 'chrome-cell-background', {raisedAt: [T0 + 3]})} : {})}, /1 raise\(s\): 1 in rows/],
     ['a cell repetition whose frontmost paste did not deliver', {cell: rep => (rep === 0 ? {row: cellRow('after', 0, 'chrome-cell', {check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: 44}}}})} : {})}, /the frontmost paste did not deliver/],
     ['the BEFORE half not recorded', {withBefore: false}, /background-paste cell's BEFORE half on the saved engine was not recorded/],
-    ['a BEFORE repetition that kept the key', {before: rep => (rep === 0 ? {keyAfter: {reading: KEY, pageFocused: true}} : {})}, /BEFORE half: 2 of 3 counted repetitions failing as predicted .*before-0: the key was held after the activation/],
     ['a BEFORE repetition whose background paste failed otherwise than a read timeout', {before: rep => (rep === 1 ? {background: cellRow('before', 1, 'chrome-cell-background', {...TIMED_OUT, act: {...TIMED_OUT.act, meta: {...TIMED_OUT.act.meta, paste: {stage: 'effect', readWait: 'handedOver'}}}})} : {})},
       /before-1: the background paste stopped at effect \(read handedOver\), not a read timeout/],
     ['a BEFORE repetition short', {before: rep => (rep === 2 ? {background: cellRow('before', 2, 'chrome-cell-background', {...TIMED_OUT, act: {...TIMED_OUT.act, meta: {...TIMED_OUT.act.meta, activationClick: 'posted'}}})} : {})},
@@ -491,7 +505,7 @@ test('the AXPress route is reported, never the bar: not run behind a closed gate
   const rj = judge187(ran);
   assert.equal(rj.overall.verdict, 'LANDS');
   assert.match(item187Markdown(rj), /AFTER: 1 of 1 counted repetition\(s\) key and delivered\./);
-  assert.match(item187Markdown(rj), /BEFORE: 1 of 1 counted repetition\(s\) keyless with the read timing out, as predicted\./);
+  assert.match(item187Markdown(rj), /BEFORE: 1 of 1 counted repetition\(s\) with the paste's read timing out, as predicted\./);
   const unmet = evidence();
   unmet[ITEMS.premise] = premise([1900, 2100, 2300]);
   unmet[ITEMS.press('after', 0)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('after', 0, {premise: {advertised: false, appearedMs: null, actions: ['AXShowMenu']}})}];
@@ -508,7 +522,7 @@ test('the AXPress route is reported, never the bar: not run behind a closed gate
   ran[ITEMS.press('after', 0)] = [start, {kind: 'task', task: '187-cell', result: pressRecord('after', 0, {keyAfter: {reading: KEYLESS, pageFocused: false}})}];
   const fj = judge187(ran);
   assert.equal(fj.overall.verdict, 'LANDS');
-  assert.match(item187Markdown(fj), /1 delivered: on this route the activation followed by the person's activation does not leave Chrome keyless/);
+  assert.match(item187Markdown(fj), /1 delivered: on this route the activation followed by the person's activation does not stop the paste on the saved engine/);
 });
 
 // The Mac, faked: three scenes, a page that counts what the act enters (and whether the page has the focus), an order
@@ -571,7 +585,7 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
         if (lateRaiseAt.includes(key)) { order('back-above'); changes.at(-1).visibleAfter = attempts + 2; }
         return {ok: true, value: {actMs: lands ? 180 : 2100, threw: !lands, message: lands ? null : 'timed out'}, route: 'paste', images: [],
           meta: {activationGuardMs: 40, activationClick: activationInside ? 'posted' : 'outsideFrame', entered: lands ? text.length : 0,
-            paste: lands ? {stage: 'effect', confirmed: true, focusEnforcement: {activated: true, point: 'outside'}, perLine: linesOf(text)} : {stage: 'read', readWait: 'timeout'}}};
+            paste: lands ? {stage: 'effect', confirmed: true, focusEnforcement: {activated: true, point: 'outside'}, perLine: perLineFor(code.includes('__app.paste(') ? 'paste' : 'typeText', text)} : {stage: 'read', readWait: 'timeout'}}};
       }
       if (code.includes('// cua-187: check')) {
         const expectedLength = Number(code.match(/expectedLength: (\d+)/)[1]), exact = page.length === expectedLength;
@@ -999,4 +1013,95 @@ test('a touch only the watcher saw, in a group that completed, survives the part
   const rows = read187(out)[ITEMS.composing];
   assert.equal(touchedOfItem(rows, []).count, 0);
   assert.equal(slotTouches(rows, []), 1);
+});
+
+// The saved engine's paste as the second re-slot recorded it: thrown with no stage meta, the error the read timeout.
+const DD7A_ERROR = 'Computer Use server error -10005: Timed out waiting for the application to read the clipboard';
+const DD7A_TIMED_OUT = {act: {ok: true, value: {actMs: 2118, threw: true, message: DD7A_ERROR}, route: 'paste', meta: {activationGuardMs: 40, activationClick: 'outsideFrame'}},
+  check: {ok: true, value: {ok: false, outcome: {exact: false, length: 0, expectedLength: CELL_ROW.string.text.length}}}};
+// Chrome as both builds read it after open -a in that slot: frontmost, the run window main and the app's focused window,
+// its own AXFocused no, the page focused.
+const SLOT_KEY = {reading: {...KEY, focused: false}, pageFocused: true, settledMs: 1123};
+
+test('(a) the saved engine\'s thrown paste with no stage meta times out at the read stage by its error: that code with that message only', () => {
+  const r = over => cellRow('before', 0, 'chrome-cell-background', over);
+  const dd7a = r(DD7A_TIMED_OUT);
+  assert.equal(dd7a.paste, null, 'no stage meta');
+  assert.equal(readTimedOut(dd7a), true);
+  const withError = message => r({act: {...DD7A_TIMED_OUT.act, value: {...DD7A_TIMED_OUT.act.value, message}}});
+  assert.equal(readTimedOut(withError(DD7A_ERROR.replace('-10005', '-10004'))), false, 'another code');
+  assert.equal(readTimedOut(withError(DD7A_ERROR.replace('-10005', '-100051'))), false);
+  assert.equal(readTimedOut(withError('Computer Use server error -10005: The application did not respond')), false, 'that code with another message');
+  assert.equal(readTimedOut(withError('Timed out waiting for the application to read the clipboard')), false, 'the message without the code');
+  assert.equal(readTimedOut(r({act: {...DD7A_TIMED_OUT.act, value: {actMs: 10, threw: false, message: DD7A_ERROR}}})), false, 'a paste that did not throw');
+  assert.equal(readTimedOut(r({act: {...DD7A_TIMED_OUT.act, meta: {...DD7A_TIMED_OUT.act.meta, paste: {stage: 'effect', readWait: 'handedOver'}}}})), false, 'a stage meta that says otherwise wins');
+  assert.equal(READ_TIMEOUT.code, '-10005');
+  // The BEFORE half as the slot recorded it fails as predicted, and with the AFTER half delivering the cell lands.
+  const before = () => ({background: cellRow('before', 0, 'chrome-cell-background', DD7A_TIMED_OUT), row: cellRow('before', 0, 'chrome-cell', DD7A_TIMED_OUT), keyAfter: SLOT_KEY});
+  const judged = judge187(evidence({before, cell: () => ({keyAfter: SLOT_KEY})}));
+  assert.deepEqual(judged.cells.paste.before.map(c => [c.bgReadTimeout, c.predicted]), Array(3).fill([true, true]));
+  assert.equal(judged.overall.verdict, 'LANDS', judged.overall.why.join('; '));
+  const other = judge187(evidence({before: () => ({...before(), background: cellRow('before', 0, 'chrome-cell-background', {...DD7A_TIMED_OUT, act: {...DD7A_TIMED_OUT.act, value: {...DD7A_TIMED_OUT.act.value, message: 'Computer Use server error -10004: refused'}}})})}));
+  assert.match(other.overall.why.join('; '), /BEFORE half: 0 of 3 counted repetitions failing as predicted .*stopped at no stage \(read –\), not a read timeout/);
+});
+
+test('(b)(c) the cell passes on delivery with the run window\'s AXFocused no, the key readings leave the bar for the mechanism, and a BEFORE that delivers still fails it', () => {
+  assert.equal(keyHeld({...KEY, focused: false}, true), true, 'AXFocused is no part of the key');
+  assert.equal(keyHeld({...KEY, focused: null}, true), true);
+  assert.equal(keyHeld({...KEY, main: false}, true), false);
+  const slot = evidence({cell: () => ({keyAfter: SLOT_KEY}), before: () => ({keyAfter: SLOT_KEY})});
+  const judged = judge187(slot);
+  assert.equal(judged.overall.verdict, 'LANDS', judged.overall.why.join('; '));
+  assert.ok(judged.cells.paste.after.every(c => c.pass) && judged.cells.paste.before.every(c => c.predicted));
+  // Key readings unread or even keyless on AFTER no longer move the bar: delivery does.
+  assert.equal(judge187(evidence({cell: rep => (rep === 1 ? {keyAfter: {reading: KEYLESS, pageFocused: false}} : {})})).overall.verdict, 'LANDS');
+  assert.equal(judge187(evidence({before: () => ({keyAfter: {reading: KEY, pageFocused: true}})})).overall.verdict, 'LANDS');
+  // The mechanism: the same readings on both builds refute the prediction, stated as tested and NOT supported.
+  assert.equal(judged.mechanism.identical, true);
+  assert.equal(judged.mechanism.supported, false);
+  assert.match(judged.mechanism.statement, /"Chrome frontmost with no key window" \(the saved engine, after `open -a`\) was tested and is NOT supported: the key readings after `open -a` were identical on both builds/);
+  const md = item187Markdown(judged);
+  assert.match(md, /## The mechanism: the key-window readings \(reported, never the bar\)/);
+  assert.match(md, /\| after \| .* \| frontmost yes, AXMain yes, AXFocusedWindow run, hasFocus yes × 3 \|/);
+  assert.match(md, /\| before \| .* \| frontmost yes, AXMain yes, AXFocusedWindow run, hasFocus yes × 3 \|/);
+  // Readings that do show it on the saved engine, against a key window on the shipping build, support it.
+  const shown = judge187(evidence({cell: () => ({keyAfter: SLOT_KEY}), before: () => ({keyAfter: {reading: {...KEY, focused: false, focusedWindow: 'none'}, pageFocused: false}})}));
+  assert.deepEqual([shown.mechanism.supported, shown.overall.verdict], [true, 'LANDS']);
+  const unlike = judge187(evidence({cell: () => ({keyAfter: SLOT_KEY}), before: rep => (rep === 0 ? {keyAfter: {reading: {...KEY, focusedWindow: 'none'}, pageFocused: false}} : {keyAfter: SLOT_KEY})}));
+  assert.match(unlike.mechanism.statement, /NOT supported: the counted readings do not show/);
+  // A BEFORE repetition that delivers still fails the cell: NO VERDICT, the discrimination being delivery.
+  const delivering = judge187(evidence({cell: () => ({keyAfter: SLOT_KEY}), before: rep => (rep === 0 ? cellRecord('after', 0, {half: 'before', keyAfter: SLOT_KEY}) : {keyAfter: SLOT_KEY})}));
+  assert.equal(delivering.overall.verdict, 'NO VERDICT');
+  const bgDelivering = judge187(evidence({before: rep => (rep === 2 ? {background: cellRow('before', 2, 'chrome-cell-background')} : {})}));
+  assert.equal(bgDelivering.overall.verdict, 'NO VERDICT');
+  // The AXFocused count, both builds: the composing and korean rows, the cell's rows and readings.
+  assert.equal(judged.axFocused.saved.of, 3 * 4, 'per BEFORE repetition: its two rows, the readings before and after open -a');
+  assert.equal(judged.axFocused.saved.no, 3 * 3, 'the fixture\'s frontmost rows read AXFocused yes before their act: counted as read, not as no');
+  assert.ok(judged.axFocused.shipping.of > 3 * 4 && judged.axFocused.all.of === judged.axFocused.shipping.of + judged.axFocused.saved.of);
+  assert.match(md, new RegExp(`AXFocused read no on ${judged.axFocused.all.no} of ${judged.axFocused.all.of} Chrome key-window readings, both builds`));
+});
+
+test('the addendum: `judge --addendum` writes item-187-rejudge.md beside the slot\'s report and never touches item-187.md', async t => {
+  const dir = scratch(t), items = evidence({cell: () => ({keyAfter: SLOT_KEY}), before: () => ({keyAfter: SLOT_KEY})});
+  const {writeFileSync} = await import('node:fs');
+  for (const [name, rows] of Object.entries(items)) writeFileSync(join(dir, `item-${name}.jsonl`), rows.map(r => JSON.stringify(r)).join('\n') + '\n');
+  const report = '# the slot\'s report, as its judge computed it\n';
+  writeFileSync(join(dir, 'item-187.md'), report);
+  const answer = await quietly(() => main(['paste-187', 'judge', '--out', dir, '--addendum']));
+  assert.equal(answer.code, 0);
+  assert.equal(readFileSync(join(dir, 'item-187.md'), 'utf8'), report, 'item-187.md stays exactly as computed');
+  const addendum = readFileSync(join(dir, ADDENDUM_FILE), 'utf8');
+  assert.equal(ADDENDUM_FILE, 'item-187-rejudge.md');
+  assert.match(addendum, /^# #187: the re-judgment addendum/);
+  assert.match(addendum, /\(the kit at [0-9a-f]{12}\)/, 'the kit\'s commit that judged it');
+  assert.match(addendum, /\*\*\(a\) The read stage\.\*\* .*-10005 with "Timed out waiting for the application to read the clipboard"/);
+  assert.match(addendum, /\*\*\(b\) The key\.\*\* .*read no on \d+ of \d+ Chrome key-window readings, both builds/);
+  assert.match(addendum, /\(a\), \(b\) and \(e\) are judge predicates that no run could meet/);
+  assert.match(addendum, /\(c\) is different: the "Chrome frontmost with no key window" prediction was tested, and the readings refute it\. It is a refuted prediction, recorded as wrong, not restated/);
+  assert.match(addendum, /## Re-judged: LANDS, on the background paste/);
+  assert.match(addendum, /\n---\n\n# #187: the re-slot/, 'the full re-judged report follows');
+  assert.deepEqual(leaks(addendum), []);
+  // Without --addendum the judge still writes item-187.md, as a drive's end does.
+  await quietly(() => main(['paste-187', 'judge', '--out', dir]));
+  assert.notEqual(readFileSync(join(dir, 'item-187.md'), 'utf8'), report);
 });

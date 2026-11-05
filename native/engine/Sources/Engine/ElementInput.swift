@@ -283,13 +283,27 @@ extension Engine {
   /// the process's accessibility is fresh, re-read for up to 2 s posting nothing (`webAreaActionRereading`), carried as an
   /// element click's is (`elementActionClick`), confirmed by its value where its role has one (`pressConfirmingValue`),
   /// and recorded with the reason `webArea`, the control's role and whether it was the hit. A control with no action
-  /// after that is refused, asking for an observation first; nil, so the click is refused, when the hit resolves to none.
+  /// after that is refused, asking for an observation first, as a hit that resolves to none is refused; either refusal
+  /// records the walk (`elementClick.walk`, `walkStopped`). Nil for a click that is not a plain left one.
   func webAreaPress(_ hit: AXUIElement, button: MouseButton, count: Int, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp,
                     appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext) -> ((inout InputMeta) throws -> Void)? {
-    guard button == .left, count == 1,
-          case .success(let resolved) = webAreaControl(hit, role: { attribute($0, kAXRoleAttribute) as? String },
-                                                       parent: { elementAttribute($0, kAXParentAttribute) },
-                                                       editable: { attribute($0, "AXEditableAncestor") != nil }) else { return nil }
+    guard button == .left, count == 1 else { return nil }
+    var walk: [String] = []
+    let resolution = webAreaControl(hit, role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
+                                    editable: { attribute($0, "AXEditableAncestor") != nil }, walk: &walk)
+    // A refusal records the walk too: where it stopped, and why (an element click keeps its own plan's record).
+    func refused(_ why: WebAreaRefusal, _ meta: inout InputMeta) {
+      if meta.elementClick == nil { meta.elementClick = ElementClickRecord(plan: .synthesized(.activation), reason: .webArea) }
+      meta.elementClick?.walk = walk
+      meta.elementClick?.walkStopped = why.rawValue
+    }
+    guard case .success(let resolved) = resolution else {
+      guard case .failure(let why) = resolution else { return nil }
+      return { meta in
+        refused(why, &meta)
+        throw backgroundClickRefused(app.displayName)
+      }
+    }
     let control = resolved.control, role = resolved.role
     return { [self] meta in
       let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
@@ -298,12 +312,14 @@ extension Engine {
       guard let action = webAreaActionRereading(role: role, first: establishedActionNames(of: control), fresh: fresh,
                                                 read: { establishedActionNames(of: control) }, now: monotonicMilliseconds,
                                                 sleep: { usleep(UInt32($0 * 1000)) }) else {
+        refused(.noAction, &meta)
         throw backgroundClickRefusedObserveFirst(app.displayName)
       }
       let owner = ownerPid(of: control, fallback: appPid)
       try refuseForbiddenOwner(owner)
       actionTargets(owner, app: app, connection: context.connection)
-      meta.elementClick = ElementClickRecord(plan: .action(action), reason: .webArea, hit: nil, pressedRole: role, pressedAncestor: resolved.ancestor)
+      meta.elementClick = ElementClickRecord(plan: .action(action), reason: .webArea, hit: nil, pressedRole: role, pressedAncestor: resolved.ancestor,
+                                             walk: walk)
       try pressConfirmingValue(app: app.displayName, checksValue: webAreaValueCheckedRoles.contains(role),
                                readValue: { attribute(control, kAXValueAttribute).map { "\($0)" } }, now: monotonicMilliseconds,
                                sleep: { usleep(UInt32($0 * 1000)) }) {

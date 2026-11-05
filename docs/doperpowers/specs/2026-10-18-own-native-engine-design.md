@@ -1930,7 +1930,9 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      `AXEditableAncestor`), any other role (another interactive one included), or the AXWebArea before a control, and
      when it cannot read the ancestry (a role or parent unread, or 300 levels): it never presses outside the web area.
      The meta's `elementClick` names the control's role (`pressedRole`) and whether it was the hit or an ancestor
-     (`pressed`); its reason stays `webArea`, since `descendant` names the gate's choice of synthesis. The probe showed
+     (`pressed`) and the walk itself, roles only from the hit up to where it stopped (`walk`), with why it stopped on a
+     refusal (`walkStopped`, also recorded then); its reason stays `webArea`, since `descendant` names the gate's choice of
+     synthesis. The probe showed
      the missing AXPress was Chromium's accessibility enablement coming up, not activation: with no activation at all a
      page checkbox began advertising AXPress 1.6 to 1.7 s after the engine's first observation (its enablementPrior
      false). So where the process's accessibility is fresh (the engine's last enablement write to it under 10 s old,
@@ -1939,7 +1941,7 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      not at all. The refusal of a control still without an action asks for an observation first
      (`backgroundClickRefusedObserveFirst`). **The cost:** up to 2 s of latency on the first click into a fresh Chrome
      whose control has not yet exposed its action, and the whole 2 s when it never does.
-  Proven offline (`BackgroundPointerTests`, 22, failing before the change where they bite: shared mode's refusal of
+  Proven offline (`BackgroundPointerTests`, 23, failing before the change where they bite: shared mode's refusal of
   a click, a double click and a drag into a web area with nothing posted, no hold taken and nothing left held; a plain
   click carried by the element route with nothing posted by cua; a web-area pointer joining its own or another connection's
   spent hold refused with the hold untouched; an Electron-shaped activation still posting; dedicated mode's inert click

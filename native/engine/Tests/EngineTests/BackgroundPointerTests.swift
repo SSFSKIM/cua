@@ -412,6 +412,33 @@ final class BackgroundPointerTests: XCTestCase {
     guard case .failure(.roleNotAllowed) = control(Node("AXStaticText", parent: slider)) else { return XCTFail("another interactive role in between") }
   }
 
+  /// The walk's chain is recorded, roles only, from the hit up to the pressed control or to where it stopped, and the
+  /// click's meta carries it with why it stopped on a refusal.
+  func testTheWalksChainIsRecordedOnAPressAndOnARefusal() {
+    func walked(_ hit: Node) -> [String] {
+      var walk: [String] = []
+      _ = webAreaControl(hit, role: { $0.role }, parent: { $0.parent }, editable: { _ in false }, walk: &walk)
+      return walk
+    }
+    let button = Node("AXButton", parent: page())
+    XCTAssertEqual(walked(Node("AXStaticText", parent: Node("AXGroup", parent: button))), ["AXStaticText", "AXGroup", "AXButton"])
+    XCTAssertEqual(walked(button), ["AXButton"])
+    XCTAssertEqual(walked(Node("AXStaticText", parent: Node("AXSlider", parent: button))), ["AXStaticText", "AXSlider"], "stopped at the slider")
+    XCTAssertEqual(walked(Node("AXStaticText", parent: page())), ["AXStaticText", "AXWebArea"], "stopped at the web area")
+    XCTAssertEqual(walked(Node("AXImage", parent: Node(nil, parent: button))), ["AXImage", "unreadable"])
+    var record = ElementClickRecord(plan: .synthesized(.activation), reason: .webArea)
+    record.walk = ["AXStaticText", "AXSlider"]
+    record.walkStopped = WebAreaRefusal.roleNotAllowed.rawValue
+    XCTAssertEqual(record.wire["walk"] as? [String], ["AXStaticText", "AXSlider"])
+    XCTAssertEqual(record.wire["walkStopped"] as? String, "roleNotAllowed")
+    let pressed = ElementClickRecord(plan: .action("AXPress"), reason: .webArea, pressedRole: "AXButton", pressedAncestor: true,
+                                     walk: ["AXStaticText", "AXButton"])
+    XCTAssertEqual(pressed.wire["walk"] as? [String], ["AXStaticText", "AXButton"])
+    XCTAssertEqual(pressed.wire["pressed"] as? String, "ancestor")
+    XCTAssertEqual(pressed.wire["pressedRole"] as? String, "AXButton")
+    XCTAssertNil(pressed.wire["walkStopped"])
+  }
+
   /// The bounded re-read (run 42131623237: a fresh Chrome's checkbox advertised AXPress 1.6 to 1.7 s after the engine's
   /// enablement write): where the process's accessibility is fresh, an allowlisted control with no action is re-read every
   /// 100 ms for up to 2 s, posting nothing; found at 1.6 s it is pressed, never found it is refused; not fresh, no wait.

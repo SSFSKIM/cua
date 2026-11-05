@@ -63,6 +63,10 @@ struct ElementClickRecord: Equatable {
   /// through the hit's plain children (`webAreaControl`); `pressed` "hit" | "ancestor" on the wire.
   var pressedRole: String? = nil
   var pressedAncestor: Bool? = nil
+  /// `webArea` only: the roles the walk read from the hit up to where it stopped (`webAreaControl`), and on a refusal
+  /// why it stopped (`walkStopped`, a `WebAreaRefusal` case name).
+  var walk: [String]? = nil
+  var walkStopped: String? = nil
 
   var wire: [String: Any] {
     var wire: [String: Any] = ["reason": reason.rawValue]
@@ -73,6 +77,8 @@ struct ElementClickRecord: Equatable {
     if let hit { wire["hit"] = "\(hit)"; wire["hitTest"] = "application" }
     if let pressedRole { wire["pressedRole"] = pressedRole }
     if let pressedAncestor { wire["pressed"] = pressedAncestor ? "ancestor" : "hit" }
+    if let walk { wire["walk"] = walk }
+    if let walkStopped { wire["walkStopped"] = walkStopped }
     return wire
   }
 }
@@ -354,7 +360,7 @@ let webAreaPassableRoles: Set<String> = ["AXStaticText", "AXImage", "AXGroup"]
 let webAreaEditableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
 
 /// Why shared mode refuses a plain left click in a web area rather than pressing a control (#282).
-enum WebAreaRefusal: Error, Equatable {
+enum WebAreaRefusal: String, Error, Equatable {
   /// Another button or count.
   case notPlainLeft
   /// The hit, or an element on the way up to a control, is neither an allowlisted control nor a passable child; or the
@@ -374,9 +380,21 @@ enum WebAreaRefusal: Error, Equatable {
 /// the web area itself or an ancestry it cannot read (up to 300 levels). `ancestor`: the control is not the hit.
 func webAreaControl<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?,
                              editable: (Element) -> Bool) -> Result<(control: Element, role: String, ancestor: Bool), WebAreaRefusal> {
+  var walk: [String] = []
+  return webAreaControl(hit, role: role, parent: parent, editable: editable, walk: &walk)
+}
+
+/// `webAreaControl`, recording in `walk` the roles it read from the hit up to where it stopped, the pressed control's
+/// or the one it refused at (`unreadable` for a role it could not read): the meta's `elementClick.walk`, value-free.
+func webAreaControl<Element>(_ hit: Element, role: (Element) -> String?, parent: (Element) -> Element?, editable: (Element) -> Bool,
+                             walk: inout [String]) -> Result<(control: Element, role: String, ancestor: Bool), WebAreaRefusal> {
   var current = hit
   for level in 0...300 {
-    guard let name = role(current) else { return .failure(.incompleteAncestry) }
+    guard let name = role(current) else {
+      walk.append("unreadable")
+      return .failure(.incompleteAncestry)
+    }
+    walk.append(name)
     if webAreaEditableRoles.contains(name) || editable(current) { return .failure(.editable) }
     if webAreaPressableRoles.contains(name) { return .success((current, name, level > 0)) }
     guard webAreaPassableRoles.contains(name) else { return .failure(.roleNotAllowed) }  // the AXWebArea included

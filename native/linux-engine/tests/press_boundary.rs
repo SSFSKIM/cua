@@ -1,7 +1,8 @@
 //! The press boundary (#171 M4, task 61's fix 3; the design session's ruling, 2026-11-05): no acknowledgement outlives
-//! the press it was taken for. Every button press the engine sends spends a `PressAck` (`src/focus_ack.rs`), which only
-//! `focus_ack::press_ack` issues, reading Qt's state (and the press's recipient) again just before that press. Two
-//! things make it hold by construction:
+//! the press it was taken for. Every button press on a route (every background press, and the desktop route's but
+//! `drag_handle`'s, which is desktop-only) spends a `PressAck` (`src/focus_ack.rs`), which only `focus_ack::press_ack`
+//! issues, reading Qt's state (and the press's recipient) again just before that press. Two things make it hold by
+//! construction:
 //!
 //! 1. **The types.** `PressAck`'s field is private to `focus_ack`, so no other module can build one; it is neither
 //!    `Clone` nor `Copy`, so a press spends it; `Session::press` and `Route::press`, the only ways to press, take it by
@@ -139,6 +140,23 @@ fn breaches(files: &[(PathBuf, String)]) -> Vec<String> {
                 found.push("focus_ack.rs: the state's check is reachable without press_ack".to_string());
             }
         }
+        // XTEST's presses are the desktop route's: through Route::press, and drag_handle's, which is desktop-only by
+        // design (its start, moves and end name no window; its lifecycle is T17's, #250)
+        for (at, _) in code.match_indices("Desktop::button(") {
+            let line = line_at(&code, at);
+            if !line.contains("true") {
+                continue;
+            }
+            let allowed = matches!(
+                (file.as_str(), in_body(&fns, at).as_deref()),
+                ("route.rs", Some("press")) | ("engine/pointer.rs", Some("drag_handle"))
+            );
+            if !allowed {
+                found.push(format!(
+                    "{file}: an XTEST press outside Route::press and drag_handle: {line}"
+                ));
+            }
+        }
         if !idents(&code, "before_press").is_empty() {
             found.push(format!(
                 "{file}: the per-request acknowledgement (before_press) is back"
@@ -263,4 +281,13 @@ fn a_press_without_a_fresh_acknowledgement_is_caught() {
     caught(&found, "reachable without press_ack", "a public check");
     let found = with(|files| file_mut(files, "engine/pointer.rs").push_str("\nfn before_press() {}\n"));
     caught(&found, "before_press", "the old wait");
+    // an XTEST press past Route::press
+    let found = with(|files| {
+        file_mut(files, "engine/elements.rs").push_str("\nfn sneak(x: &X11) { let _ = Desktop::button(x, 3, true); }\n")
+    });
+    caught(
+        &found,
+        "engine/elements.rs: an XTEST press outside",
+        "an XTEST press in elements.rs",
+    );
 }

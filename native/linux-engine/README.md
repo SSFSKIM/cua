@@ -64,21 +64,27 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   burst when `FocusOut` came sooner (M0.4), but what cut them was the window's redirect going away (M0.4's control
   ended its engine before reading); with the redirect retained, a `FocusOut` at once cut and reordered no key on any
   family, idle or at twice the load (task 59). Nothing is left pending between requests, so input to another window
-  waits for nothing. A session stays open across requests only while a `key_down` holds keys in it. With `--stats`,
-  each `FocusOut` is reported (`focus_out`: window, cause `request` or `exit`, the time since the session's input
-  ended, and the request whose input it ends): on the line of the request it went out in, or for the exit's on a line
-  of its own (`"id": null`).
+  waits for nothing. A session stays open across requests only while a `key_down` holds keys in it, or while its
+  drag's late-take watch is armed (Drag and drop into Chrome, below). With `--stats`,
+  each `FocusOut` is reported (`focus_out`: window, cause `request`, `watch` or `exit`, the time since the session's input
+  ended, and the request whose input it ends): on the line of the request it went out in, or for the exit's and one a
+  watch's end sent between requests on a line of its own (`"id": null`).
 - **The paste's settle** (`settle.rs`, `engine/paste.rs`): a paste observes its field before it acts, and keys its
   window took just before may not have landed yet, so the observation reads the field short and the paste is refused
   with nothing sent, or lands at a caret the confirmation did not expect (task 59). So a paste whose window took a key
   within `--paste-settle-ms` (100 ms) waits, before its observation and before the clipboard lock and never between
-  the observation and the dispatch, until that long has passed since the key. Each paste's `--stats` record says how
-  long after the key it came and what it waited (`paste.settle`).
+  the observation and the dispatch, until that long has passed since the key. A click just before races it the same
+  way (a click into another field can land after the observation, which then reads the field it left), so a paste
+  whose window took a background click (a press of button 1 to 3) within `--paste-click-settle-ms` (25 ms) waits too,
+  until that long has passed since the click (the design session's ruling on task 60: 0 missed on Electron at twice
+  the load, 25 held; a page that spends longer on a press before its field takes the focus can outlast it). Each
+  paste's `--stats` record says how long after the key and the click it came and what it waited (`paste.settle`).
 - **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: a
   `drag_handle` still between its start and its end ends first as its own end would (the family's release dwell, then
   button 1 up where the pointer is), then held keys are released, so no wait of the exit keeps one down; then an armed
   after-release drag-and-drop watch runs out its lifetime (at most 300 ms after its drag's release), so a late
-  take is still cancelled with its Escape; then a session a hold kept open gets its `FocusOut`; then the
+  take is still cancelled with its Escape, inside the drag's session; then that session and a session a hold kept
+  open get their `FocusOut`; then the
   exit's settle: the engine waits until `--exit-settle-ms` (300 ms) has passed since the last background input to
   a window whose redirect it still holds, the watch's Escape included (clicks too: once no `FocusOut` drain waits first, the unredirect cuts them as it
   cuts keys). At its longest, a stop right after a watched drag whose late take comes at the end of the watch,
@@ -94,7 +100,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   a copy the panicking thread keeps of that record, before its diagnostics are written; a second SIGTERM or SIGHUP
   changes nothing, since a supervisor may send its own after another's. A drag's button released there (a `drag` cut
   by the forced exit, a `drag_handle` before its end) ends the drag where the pointer is. SIGKILL cuts the
-  settle and the release: a window whose session was still open (a hold, a request still running) keeps its
+  settle and the release: a window whose session was still open (a hold, a watched drag's, a request still running) keeps its
   synthetic focus until it next gets a `FocusOut`, and a key
   held at the server stays down, unless the engine runs under cua's launcher shim (`cua-engine launcher-shim`,
   `shim.rs`, the REPL host's on Linux): there the engine writes its XTEST-held keys and buttons to a held record
@@ -156,7 +162,10 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   - no take by the release: the drag answers at once as a plain drag (it claims nothing about drops). A watch on its
     own X connection, subscribed before the drag began and told the instant the button went up, goes on off the
     request path for 300 ms from the release, or until a request that acts stops it. A take then gets the cancel's
-    Escape at once (synthetic, to Chrome's window, never XTEST). The first request that sends input or changes state
+    Escape at once (synthetic, to Chrome's window, never XTEST). The drag's own session stays focused until the watch
+    ends, so that Escape lands inside it whatever Chrome does with an unfocused one; the session's `FocusOut` follows
+    the watch's end (cause `watch`), and an engine with no request to handle wakes for it (`serve.rs`; the design
+    session's ruling on task 60). A drag that arms no watch ends its session with its answer. The first request that sends input or changes state
     (`press_key`, `key_down`, `click`, `move`, `move_relative`, `scroll`, `drag`, `drag_handle`'s start and moves,
     `perform_secondary_action`, `activate_window`, `launch_app`, `clipboard_write`, `type_text`, `type_characters`,
     `preflight`) is answered, not run, with `<app> started a drag and drop after your drag ended; it may have dropped
@@ -333,6 +342,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--exit-settle-ms` | 300 | the exit's wait after the last background input to a window whose redirect it still holds (Exit, above); the measured value, set lower or higher only to measure it |
 | `--teardown-ms` | 0 | a wait before each background session's `FocusOut`, on the request path, for measurement only (0.3.0's wait, the vendor's 100 ms there); 0 sends each `FocusOut` as its request's input ends |
 | `--paste-settle-ms` | 100 | a paste's wait before it observes, after the last key to its window (The paste's settle, above); the measured value, set otherwise only to measure it |
+| `--paste-click-settle-ms` | 25 | a paste's wait before it observes, after the last click to its window (The paste's settle, above); the measured value, set otherwise only to measure it |
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |

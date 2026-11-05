@@ -11,8 +11,8 @@
 //! second SIGINT, or an exit that has not happened `EXIT_BACKSTOP` after the first signal, ends the process at once,
 //! once every key still down is released (`pressed.rs`); a second SIGTERM or SIGHUP changes nothing (the design
 //! session's ruling, M4 T7b). SIGKILL cannot be caught: it cuts the settle and the release, and a window whose session
-//! was still open (a hold, or a request still running) keeps its synthetic focus until it next gets a `FocusOut` (the
-//! engine README).
+//! was still open (a hold, a watched drag's, or a request still running) keeps its synthetic focus until it next gets a
+//! `FocusOut` (the engine README).
 //!
 //! The signals are blocked in every thread (`block_stop_signals`, before the first thread starts) and taken by one
 //! thread of their own with `sigwait`, so no handler runs at an arbitrary point. A child keeps its parent's mask, so a

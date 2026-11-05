@@ -1,7 +1,7 @@
-//! The waits that follow keys (M4's T7, as the design session ruled on task 59's measurement, 2026-11-04). A background
+//! The waits that follow input (M4's T7, as the design session ruled on task 59's measurement, 2026-11-04). A background
 //! session's `FocusOut` goes as its request's input ends, the window's redirect kept (`route.rs`): with the redirect
 //! held, a `FocusOut` at once cut and reordered no key on any family, idle or at twice the load (task 59; task 58 on
-//! `:0`). Two things still follow a window's last key, and wait for time to pass since it:
+//! `:0`). Two things still follow a window's last input, and wait for time to pass since it:
 //!
 //! - **The exit's settle.** The exit drops every redirect the engine holds, and a covered Chromium window whose redirect
 //!   goes while it still has input queued cuts it and delivers it only with its next `FocusIn` (task 56). So the exit
@@ -12,7 +12,11 @@
 //!   yet: the observation then reads the field short, and the paste is refused with nothing sent or lands at a caret
 //!   the confirmation did not expect (task 59: Chrome, Electron, Firefox and gnome-terminal at 0). So a paste whose
 //!   window took keys within `PASTE_SETTLE` waits, before its observation and before the clipboard lock, until that long
-//!   has passed since the last of them (`engine/paste.rs`), never between its observation and its dispatch.
+//!   has passed since the last of them (`engine/paste.rs`), never between its observation and its dispatch. A click
+//!   just before races it the same way: a click into another field can land after the observation, which then reads
+//!   the field the click left (the review of task 60), so a paste whose window took a click (a press of button 1 to 3)
+//!   within `PASTE_CLICK_SETTLE` waits too, until that long has passed since the click (the design session's ruling on
+//!   task 60, 2026-11-05).
 
 use std::time::{Duration, Instant};
 
@@ -28,8 +32,14 @@ pub const EXIT_SETTLE: Duration = Duration::from_millis(300);
 /// of 60), and 100 held everywhere. 0 is task 59's measurement: Chrome, Electron, Firefox and gnome-terminal missed.
 pub const PASTE_SETTLE: Duration = Duration::from_millis(100);
 
-/// The paste's settle after a click to its window (PROVISIONAL: the click-then-paste steps are being measured).
-pub const PASTE_CLICK_SETTLE: Duration = Duration::from_millis(100);
+/// The paste's settle after a click to its window: the smallest of 0, 25, 50, 75 and 100 ms that held 30 consecutive
+/// independent click-then-paste runs idle and at twice the load (task 60's fix; evidence `m4/paste-settle/fix/`). A
+/// click into the field's first character held at 0 on every family that takes the case (Firefox's caret moves on no
+/// background click); a click into another field of Chromium's keys page missed at 0 on Electron at twice the load (3
+/// of 60, each refused with nothing sent), and every step from 25 held on Chrome and Electron, idle and at twice the
+/// load. The page spends 3 ms on each press, as it does on each key; a page that spends longer on a press before its
+/// field takes the focus can outlast it (the review's probe spends 50 ms).
+pub const PASTE_CLICK_SETTLE: Duration = Duration::from_millis(25);
 
 /// When a settle of `settle` after the latest of `last_keys` ends: None when there is no key.
 pub fn until(last_keys: impl IntoIterator<Item = Instant>, settle: Duration) -> Option<Instant> {

@@ -376,6 +376,44 @@ fn a_paste_after_a_click_to_its_window_waits_out_the_click_settle_since_that_cli
     assert!(waited < PASTE_SETTLE + PROMPT * 2, "{waited:?}");
 }
 
+/// The click settle the engine ships (`settle::PASTE_CLICK_SETTLE`).
+const SHIPPED_CLICK_SETTLE: Duration = Duration::from_millis(25);
+
+/// As the engine ships, with no flag: a paste right after a click to its window waits out the shipped click settle (the
+/// review's regression on the bytes that ship: before the fix the paste observed at once, a millisecond or two after
+/// the click). A failing paste's own work on a bare window takes some milliseconds too, so the wait is read against
+/// the same paste after a click to another window, which waits nothing (the median of five each).
+#[test]
+fn as_shipped_a_paste_right_after_a_click_to_its_window_waits_out_the_click_settle() {
+    let ab = Probe::open_all(&[("a", 0), ("b", 400)]);
+    let mut engine = Engine::start();
+    let (ta, tb) = (ab.target_of(0), ab.target_of(1));
+    let mut paste_after = |click_to: &Value| {
+        let mut times: Vec<Duration> = (0..5)
+            .map(|_| {
+                // past every settle of the run before
+                sleep(PASTE_SETTLE);
+                engine
+                    .request("click", json!({"window": click_to, "x": 20, "y": 20}))
+                    .unwrap();
+                let started = Instant::now();
+                let answer = engine.request("type_text", json!({"window": ta, "text": "x"}));
+                assert!(answer.is_err(), "no field to paste into: {answer:?}");
+                started.elapsed()
+            })
+            .collect();
+        times.sort();
+        times[2]
+    };
+    let other = paste_after(&tb);
+    let own = paste_after(&ta);
+    assert!(
+        own >= other + SHIPPED_CLICK_SETTLE - SLACK,
+        "after a click to its own window {own:?}, to the other window {other:?}: no wait for the shipped click settle"
+    );
+    assert!(own < other + SHIPPED_CLICK_SETTLE + PROMPT, "{own:?} against {other:?}");
+}
+
 /// The click settle follows the paste's own window's clicks: a click to another window, or one whose settle has passed,
 /// holds the paste back for nothing.
 #[test]

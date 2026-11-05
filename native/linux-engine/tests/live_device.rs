@@ -616,6 +616,7 @@ fn a_drag_that_becomes_a_drag_and_drop_is_cancelled_before_the_drop_when_shared(
              dropped. Use a dedicated desktop, or activate the window first"
         ))
     );
+    let answered = Instant::now();
     sleep(SETTLE);
     stop.send(()).unwrap();
     assert_eq!(
@@ -627,6 +628,18 @@ fn a_drag_that_becomes_a_drag_and_drop_is_cancelled_before_the_drop_when_shared(
             Input::ButtonRelease { button: 1, sent: true },
         ],
         "Escape before the release"
+    );
+    // a drag cancelled in time arms no late-take watch: its session ends at once, before the drop signature's look
+    // (300 ms with no signature here), not held back as a watched drag's is
+    let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+    assert_eq!(
+        order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
+        ["escape", "focus-out"]
+    );
+    assert!(
+        answered.saturating_duration_since(order[1].1) > Duration::from_millis(150),
+        "the FocusOut {:?} before the answer",
+        answered.saturating_duration_since(order[1].1)
     );
     drop(shared);
     let (window, stop, recorder) = drag_source(OnRelease::Nothing);

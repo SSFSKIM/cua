@@ -107,6 +107,10 @@ pub struct Family {
     /// answered, so its chord never reaches the client first (task 56, fix 3). Every family's chord waits for an answer
     /// to a request that has already come.
     pub refreshes_targets: bool,
+    /// Its toolkit asks the window manager to activate a window when it handles a button press while the window is
+    /// not its own focus window (Qt, task 61): a background press in shared mode first waits for the window's frame to
+    /// report the session's synthetic focus taken (`focus_ack.rs`).
+    pub activates_on_press: bool,
     /// The runs that showed it (`docs/evidence/2026-10-28-own-linux-engine/`).
     pub evidence: &'static str,
 }
@@ -177,6 +181,7 @@ pub const FAMILIES: &[Family] = &[
         drop_changes_desktop: true,
         text_scrolls: false,
         refreshes_targets: false,
+        activates_on_press: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible, m31-dnd-candidate, m31-dnd-candidate-stats",
     },
@@ -199,6 +204,7 @@ pub const FAMILIES: &[Family] = &[
         drop_changes_desktop: false,
         text_scrolls: false,
         refreshes_targets: false,
+        activates_on_press: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m3/kinds/ runs m31-drag-covered, \
                    m31-drag-partial, m31-drag-partial-top, m31-dnd-visible",
     },
@@ -241,6 +247,7 @@ pub const FAMILIES: &[Family] = &[
         drop_changes_desktop: false,
         text_scrolls: false,
         refreshes_targets: false,
+        activates_on_press: false,
         evidence: "m1a/ runs m1a4-drag, m1a4-drag-tune, m1a4-drag-scroller; m0/matrix/ README (Text), runs \
                    m04-matrix-covered, m04-matrix-visible, m04-partial-cover; m1a/ run m1a3-cover-800x600; m3/kinds/ \
                    runs m31-kinds-covered, m31-kinds-partial, m31-kinds-partial-deep, m31-move-covered, \
@@ -287,6 +294,7 @@ pub const FAMILIES: &[Family] = &[
         drop_changes_desktop: false,
         text_scrolls: false,
         refreshes_targets: true,
+        activates_on_press: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible; m3/kinds/ runs m31-kinds-covered, \
                    m31-kinds-visible, m31-move-covered, m31-drag-covered, m31-drag-visible-new; the TARGETS: \
                    m4/focus-timer/fix3/ (matrix-idle, matrix-load2)",
@@ -306,10 +314,13 @@ pub const FAMILIES: &[Family] = &[
         drop_changes_desktop: false,
         text_scrolls: false,
         refreshes_targets: true,
+        activates_on_press: false,
         evidence: "m4/focus-timer/fix3/ (matrix-idle, matrix-load2)",
     },
     // Qt (kate on Qt 5.15, qtcreator on Qt 6.4) takes synthetic clicks and keys (M0.4) but no synthetic wheel event,
-    // covered or visible, in every engine (M3.1): probably because its xcb backend reads the wheel through XInput 2.
+    // covered or visible, in every engine (M3.1): probably because its xcb backend reads the wheel through XInput 2. Its
+    // press asks for the window's activation when Qt handles it before the synthetic FocusIn's activation, which a
+    // loaded main thread makes likely (task 61; `focus_ack.rs`): a background press waits for its frame's `active`.
     Family {
         name: "Qt",
         toolkit: Some("Qt"),
@@ -325,7 +336,9 @@ pub const FAMILIES: &[Family] = &[
         drop_changes_desktop: false,
         text_scrolls: false,
         refreshes_targets: false,
-        evidence: "m3/kinds/ runs m31-kinds-covered, m31-kinds-visible, m31-qt-covered, m31-qt-visible",
+        activates_on_press: true,
+        evidence: "m3/kinds/ runs m31-kinds-covered, m31-kinds-visible, m31-qt-covered, m31-qt-visible; the press's \
+                   activation: m4/qt-activation/",
     },
     // A VTE terminal pastes with Ctrl+Shift+V; Ctrl+V inserts the next key literally in a shell. Its text is its
     // screen, whose first row scrolls out as text wraps the last row of a full screen.
@@ -341,6 +354,7 @@ pub const FAMILIES: &[Family] = &[
         drop_changes_desktop: false,
         text_scrolls: true,
         refreshes_targets: true,
+        activates_on_press: false,
         evidence: "M2.2's terminal paste (task-14 report; m2/ from M2.3); the scroll: task 56's paste trace \
                    (m4/focus-timer/fix/terminal-trace-load2/); the TARGETS: m4/focus-timer/fix2/never-taken/, \
                    m4/focus-timer/fix3/",
@@ -362,6 +376,7 @@ pub const FAMILIES: &[Family] = &[
         drop_changes_desktop: false,
         text_scrolls: false,
         refreshes_targets: false,
+        activates_on_press: false,
         evidence: "m0/matrix/ runs m04-matrix-covered, m04-matrix-visible",
     },
 ];
@@ -406,6 +421,7 @@ mod tests {
             drop_changes_desktop: false,
             text_scrolls: false,
             refreshes_targets: false,
+            activates_on_press: false,
             evidence: "test",
         },
         Family {
@@ -420,6 +436,7 @@ mod tests {
             drop_changes_desktop: false,
             text_scrolls: false,
             refreshes_targets: false,
+            activates_on_press: false,
             evidence: "test",
         },
     ];
@@ -660,6 +677,31 @@ mod tests {
             }
             assert_eq!(qt.paste, DEFAULT_PASTE);
             assert_eq!(qt.drag, DragPacing::NONE);
+        }
+    }
+
+    #[test]
+    fn only_qt_s_press_activates_a_window_that_has_not_taken_its_focus() {
+        // task 61: Qt's xcb backend asks for activation on a press it handles while the window is not its focus window
+        let activating: Vec<&str> = FAMILIES
+            .iter()
+            .filter(|f| f.activates_on_press)
+            .map(|f| f.name)
+            .collect();
+        assert_eq!(activating, vec!["Qt"]);
+        for version in ["5.15.13", "6.4.2"] {
+            let qt = family(FAMILIES, Some("qtcreator"), Some(&toolkit("Qt", Some(version))));
+            assert!(qt.is_some_and(|f| f.activates_on_press), "{version}");
+        }
+        for (class, toolkit) in [
+            ("Google-chrome", None),
+            ("cua-electron-fixture", Some(toolkit("Chromium", Some("1.0")))),
+            ("firefox", None),
+            ("Gedit", Some(toolkit("GTK", Some("3.24.41")))),
+            ("Gnome-terminal", None),
+        ] {
+            let found = family(FAMILIES, Some(class), toolkit.as_ref());
+            assert!(!found.is_some_and(|f| f.activates_on_press), "{class}");
         }
     }
 

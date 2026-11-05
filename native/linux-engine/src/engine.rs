@@ -71,6 +71,10 @@ pub struct Config {
     /// Measurement only (`--targets-wait-ms`): how long every paste waits after taking CLIPBOARD for its target to ask
     /// for `TARGETS`, whatever its family (`engine/paste.rs` `targets_wait`).
     pub targets_wait: Option<std::time::Duration>,
+    /// In shared mode, how long a background press to a family whose press activates a window it has not focused waits
+    /// for the window's frame to report the session's synthetic focus taken (`focus_ack.rs`; `--focus-ack-ms`,
+    /// measurement only, sets another, 0 none).
+    pub focus_ack: std::time::Duration,
 }
 
 pub struct Engine {

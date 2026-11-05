@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
-import { ACK_STEPS, KINDS, LANES, chosenKinds, chosenLanes, effectLanded, judged, kindRequests, laneEngine, qtActivationVerdict, runPasses, spanActivations, spanClean } from '../../scripts/linux-engine-diff/qt-activation.mjs';
+import { ACK_STEPS, KINDS, LANES, chosenKinds, chosenLanes, effectLanded, judged, kindRequests, laneEngine, qtActivationVerdict, runPasses } from '../../scripts/linux-engine-diff/qt-activation.mjs';
+import { spanActivations, spanClean } from '../../scripts/linux-engine-diff/witness.mjs';
 
 // M4 task 61: a background press to a Qt window activates it when Qt handles the press before the window system event
 // its synthetic FocusIn queued (QXcbWindow::handleButtonPressEvent asks for activation while QGuiApplication's focus
@@ -91,7 +92,8 @@ test("a run passes on a clean desktop, its answers and its effect; a scroll on a
 });
 
 test("the verdict: each judged lane reaches 30 consecutive; at load the control must still activate; the comparison lanes are counted", () => {
-  const series = (lane, family, { reached = true, runs = 30, activated = 0, kind = 'click' } = {}) => ({ lane, family, kind, need: 30, reached, runs, misses: reached ? 0 : 3, streak: reached ? 30 : 4, activated, refused: 0, landed: runs });
+  // a series row's input kind is `input`: its own `kind` is the row's (`qt-activation-series`)
+  const series = (lane, family, { reached = true, runs = 30, activated = 0, input = 'click' } = {}) => ({ kind: 'qt-activation-series', lane, family, input, need: 30, reached, runs, misses: reached ? 0 : 3, streak: reached ? 30 : 4, activated, refused: 0, landed: runs });
   const good = [series('pinned', 'kate', { activated: 21 }), series('control', 'kate', { activated: 18 }), series('ack-50', 'kate')];
   assert.deepEqual(qtActivationVerdict(good, { families: ['kate'], load: true }).failed, []);
   const short = qtActivationVerdict([...good.slice(0, 2), series('ack-50', 'kate', { reached: false, runs: 60 })], { families: ['kate'], load: true });
@@ -103,4 +105,7 @@ test("the verdict: each judged lane reaches 30 consecutive; at load the control 
   const missing = qtActivationVerdict(good, { families: ['kate', 'qtcreator'], load: true });
   assert.match(missing.failed.join('\n'), /qtcreator was not measured/);
   assert.match(qtActivationVerdict(good, { families: ['kate'], load: true }).md.join('\n'), /\| kate \| click \| pinned \| 30 \| 21 \|/);
+  // the waits a cua lane's series made: the focus reported taken, and an earlier focus let go first
+  const waited = { ...series('ack-50', 'kate'), ack_waited_median: 12.5, ack_waited_max: 31, ack_released_median: 0, ack_released_max: 96.2 };
+  assert.match(qtActivationVerdict([waited], { families: ['kate'], load: false }).md.join('\n'), /\| 12\.5 \/ 31 \| 0 \/ 96\.2 \|/);
 });

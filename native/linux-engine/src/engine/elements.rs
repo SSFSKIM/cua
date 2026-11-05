@@ -12,6 +12,7 @@ use super::way::Way;
 use crate::atspi::{self, Associated};
 use crate::dbus::Bus;
 use crate::families::Kind;
+use crate::focus_ack::{FocusAck, nothing_pressed};
 use crate::resolve;
 use crate::route::{Inputs, Target};
 use crate::tree::ObjRef;
@@ -85,9 +86,28 @@ impl Engine {
             }
             _ => Target::Window(window),
         };
+        // a right click presses button 3: a family whose press activates a window it has not focused waits for the
+        // session's focus first (`focus_ack.rs`); the primary click is the element's action, no press
+        let mut ack = match button {
+            MouseButton::Right => self.focus_ack_for(target, Some(element.associated.frame.clone()))?,
+            _ => None,
+        };
+        let clicked = self.click_resolved(&element, button, target, ack.as_mut());
+        self.record_focus_ack(ack.as_ref());
+        clicked
+    }
+
+    /// [`Engine::element_click`] once the element is resolved and its route chosen.
+    fn click_resolved(
+        &mut self,
+        element: &Element,
+        button: MouseButton,
+        target: Target,
+        ack: Option<&mut FocusAck>,
+    ) -> Result<Value> {
         let (x, bus, inputs) = self.parts()?;
         match button {
-            MouseButton::Right => match right_click(x, bus, inputs, &element, target) {
+            MouseButton::Right => match right_click(x, bus, inputs, element, target, ack) {
                 Ok(()) => Ok(Value::Null),
                 Err(RightClick::Click(error)) => Err(error),
                 Err(RightClick::Point(error)) => {
@@ -102,7 +122,7 @@ impl Engine {
                         .map(|(i, _)| i)
                         .collect();
                     let [index] = matches.as_slice() else { return Err(error) };
-                    do_action(x, bus, inputs, &element, *index)?;
+                    do_action(x, bus, inputs, element, *index)?;
                     Ok(Value::Null)
                 }
             },
@@ -111,7 +131,7 @@ impl Engine {
                 if names.is_empty() {
                     bail!("element has no primary accessibility action");
                 }
-                do_action(x, bus, inputs, &element, 0)?;
+                do_action(x, bus, inputs, element, 0)?;
                 Ok(Value::Null)
             }
         }
@@ -186,11 +206,16 @@ fn right_click(
     inputs: &mut Inputs,
     element: &Element,
     target: Target,
+    mut ack: Option<&mut FocusAck>,
 ) -> std::result::Result<(), RightClick> {
     let mut point_failed = false;
     let result = inputs.with_route(x, target, |x, route, _| {
         let (rx, ry) = visible_point(bus, element, "right-clicking").inspect_err(|_| point_failed = true)?;
         element.associated.confirm_before_acting(bus, x)?;
+        if let Some(ack) = ack.as_mut() {
+            ack.taken(bus, route)?
+                .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
+        }
         route.place(x, rx, ry)?;
         route.button(x, 3, true)?;
         std::thread::sleep(CLICK_HOLD);

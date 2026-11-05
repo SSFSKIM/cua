@@ -19,6 +19,7 @@ mod families;
 #[cfg(test)]
 mod fault;
 mod field;
+mod focus_ack;
 mod held;
 mod identity;
 mod input;
@@ -49,7 +50,7 @@ const USAGE: &str = "usage: cua-engine server [--mouse-size-px <n>] [--desktop s
        [--retention per-request|session|none] [--settle-ms <ms>] [--capture-wait damage|fixed]
        [--teardown-ms <ms>] [--exit-settle-ms <ms>] [--paste-settle-ms <ms>] [--key-pace-ms <ms>] [--drag-step-ms <ms> | --drag-step-us <µs>] [--drag-press-dwell-ms <ms>]
        [--drag-release-dwell-ms <ms>] [--drag-dnd-hold-ms <ms>] [--drag-dnd-after-take-ms <ms>] [--dnd-cancel-after-release] [--dnd-defer-take]
-       [--targets-wait-ms <ms>] [--stats]
+       [--targets-wait-ms <ms>] [--focus-ack-ms <ms>] [--stats]
        cua-engine launcher-shim <parent pid> <program> [args...]
        cua-engine --version";
 
@@ -63,7 +64,8 @@ fn version() -> String {
 
 /// The defaults: the tree read's window as M0 chose it (Design, Observation); session retention; no wait after a
 /// redirect before input, no key pacing and no wait before `FocusOut` (M4's T7 as ruled on task 59), the exit's settle
-/// after input and a paste's after keys and after clicks (`settle.rs`); a capture's wait is the readiness rule.
+/// after input and a paste's after keys and after clicks (`settle.rs`), a background press's wait for a Qt window's focus
+/// (`focus_ack.rs`); a capture's wait is the readiness rule.
 fn default_config() -> Config {
     Config {
         window: tree::WINDOW,
@@ -86,6 +88,7 @@ fn default_config() -> Config {
         dnd_hold: crate::dnd::TAKE_HOLD_AFTER_PRESS,
         dnd_after_take: crate::dnd::RELEASE_AFTER_TAKE,
         targets_wait: None,
+        focus_ack: focus_ack::FOCUS_ACK,
     }
 }
 
@@ -194,6 +197,7 @@ fn parse_args(args: &[String]) -> Result<Command, String> {
             "--drag-dnd-hold-ms" => cfg.dnd_hold = Duration::from_millis(number(value, arg)?),
             "--drag-dnd-after-take-ms" => cfg.dnd_after_take = Duration::from_millis(number(value, arg)?),
             "--targets-wait-ms" => cfg.targets_wait = Some(Duration::from_millis(number(value, arg)?)),
+            "--focus-ack-ms" => cfg.focus_ack = Duration::from_millis(number(value, arg)?),
             other => return Err(format!("unknown argument {other}")),
         }
         i += if takes_value { 2 } else { 1 };
@@ -366,6 +370,22 @@ mod tests {
             panic!()
         };
         assert_eq!(measured.targets_wait, Some(Duration::from_millis(1000)));
+    }
+
+    #[test]
+    fn a_background_press_waits_for_its_focus_by_default_and_a_flag_sets_the_bound_or_turns_it_off() {
+        let Ok(Command::Server(cfg)) = parse_args(&args(&["server"])) else {
+            panic!()
+        };
+        assert_eq!(cfg.focus_ack, focus_ack::FOCUS_ACK);
+        let Ok(Command::Server(measured)) = parse_args(&args(&["server", "--focus-ack-ms", "25"])) else {
+            panic!()
+        };
+        assert_eq!(measured.focus_ack, Duration::from_millis(25));
+        let Ok(Command::Server(off)) = parse_args(&args(&["server", "--focus-ack-ms", "0"])) else {
+            panic!()
+        };
+        assert_eq!(off.focus_ack, Duration::ZERO, "the control: no wait");
     }
 
     #[test]

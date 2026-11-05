@@ -388,12 +388,24 @@ test("--trace keeps a missed run's X trace with its synthetic-focus sessions and
 });
 
 test("a run passes on its text and its answers; only a Qt paste's unconfirmed answer is excused, its text still exact", () => {
-  assert.equal(runPasses({ family: 'chrome', errors: [], exact: { a: true } }), true);
-  assert.equal(runPasses({ family: 'chrome', errors: [UNCONFIRMED], exact: { a: true } }), false, 'Chromium confirms its pastes');
-  assert.equal(runPasses({ family: 'kate', errors: [UNCONFIRMED], exact: { a: true } }), true);
-  assert.equal(runPasses({ family: 'kate', errors: [UNCONFIRMED], exact: { a: false } }), false, 'the text decides');
-  assert.equal(runPasses({ family: 'qtcreator', errors: ['requested field or selection changed before dispatch; nothing was sent'], exact: { a: true } }), false);
-  assert.equal(runPasses({ family: 'gedit', errors: [], exact: { a: true, b: false } }), false);
+  const desktop = { clean: true, frontActive: true };
+  assert.equal(runPasses({ family: 'chrome', errors: [], exact: { a: true }, desktop }), true);
+  assert.equal(runPasses({ family: 'chrome', errors: [UNCONFIRMED], exact: { a: true }, desktop }), false, 'Chromium confirms its pastes');
+  assert.equal(runPasses({ family: 'kate', errors: [UNCONFIRMED], exact: { a: true }, desktop }), true);
+  assert.equal(runPasses({ family: 'kate', errors: [UNCONFIRMED], exact: { a: false }, desktop }), false, 'the text decides');
+  assert.equal(runPasses({ family: 'qtcreator', errors: ['requested field or selection changed before dispatch; nothing was sent'], exact: { a: true }, desktop }), false);
+  assert.equal(runPasses({ family: 'gedit', errors: [], exact: { a: true, b: false }, desktop }), false);
+});
+
+test("a run whose desktop changed fails, its text and answers good: an activation is never a pass (task 61)", () => {
+  // kate at twice the load: the click activated the window, the paste still landed where the click put the caret
+  const run = { family: 'kate', errors: [UNCONFIRMED], exact: { a: true } };
+  assert.equal(runPasses({ ...run, desktop: { clean: false, frontActive: false } }), false, 'the witness saw it and the front lost');
+  assert.equal(runPasses({ ...run, desktop: { clean: false, frontActive: true } }), false, 'a change undone by the span\'s end');
+  assert.equal(runPasses({ ...run, desktop: { clean: true, frontActive: false } }), false, 'the front lost after the span');
+  assert.equal(runPasses(run), false, 'a run with no witness of its desktop is no pass');
+  assert.equal(missCause({ ok: false, errors: [], exact: { a: true }, desktop: { clean: false, frontActive: false } }), 'desktop');
+  assert.equal(missCause({ ok: false, errors: [UNCONFIRMED], exact: { a: false }, desktop: { clean: true, frontActive: false } }), 'desktop', 'the desktop first');
 });
 
 // a fake clock and its reads: each read returns the next text, each wait advances the clock

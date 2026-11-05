@@ -870,7 +870,11 @@ node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" -
   field given text first; then a click at the field's first character and a `type_text` with no element: the paste must
   land at the text's start and be confirmed; a terminal, whose recorder reports the click, takes it after the click's
   reports, at its end). `--scenarios <list>` runs only those, with no stop runs. A run passes when every answer is a success and each
-  window's text is exactly its old text with the scenario's text put at the caret read before the run. Every lane but
+  window's text is exactly its old text with the scenario's text put at the caret read before the run, and the desktop
+  was left alone (task 61): its requests and the reads of their effect run inside a witness span, which must see no
+  change and no activation request, and the front window must still be active after it (`runPasses`; the miss cause
+  `desktop`). A run that finds the front window behind an earlier run's activation puts it back first
+  (`restored_front` on its row). Every lane but
   the control needs 30 consecutive passing runs of each scenario (at most 60; a miss restarts the series and is
   reported; `--trials` sets fewer for a development run, which the verdict then fails); the control lane runs 10 and
   must fail on Chromium, which shows the run can see a cut; its line counts the runs whose text was wrong. A paste
@@ -901,6 +905,41 @@ node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" -
 The events experiment (`events.mjs`) reads each step's events once the synthetic focus it left open has closed, at most
 300 ms (`settleFocus`); cua's `FocusOut` now goes before its answer again, as the pinned build's does, so a step is read
 once, a hold's after the bound.
+
+## M4 task 61's addition: a background press and Qt's activation (`--experiment qt-activation`)
+
+Whether a background input activates a Qt window (task 61). Qt asks the window manager to activate a window when it
+handles a press while the window is not its focus window, and it makes the window its focus window only once it delivers
+the event the synthetic `FocusIn` queued; at twice the gate's load a background click to kate or qtcreator then
+activates the window, in every engine. The engine's press waits for the window's AT-SPI frame to report `active`
+(`focus_ack.rs`).
+
+```bash
+node scripts/linux-engine-diff.mjs --experiment qt-activation --cua "$CANDIDATE" --vendor "$PINNED" --released <0.3.0> --out "$OUT/qt-activation/load2" --load-factor 2 [--family kate,qtcreator] [--lanes pinned,released,shipped,control] [--kinds click,key-click,press_key,drag,scroll]
+```
+
+- **Its display**, as the focus-timer experiment's: a private X server it starts itself, Openbox, the harness's Desktop
+  with one window of each Qt family (kate on Qt 5.15, qtcreator on Qt 6.4) covered by the front window, which holds the
+  focus; the live-run declaration withdrawn first, every lane's binary checked before the server starts.
+- **The lanes**: the pinned vendor build (`pinned`, `--vendor`), cua's released 0.3.0 (`released`, `--released`), the
+  engine as it ships (`shipped`), the focus wait at each measured bound (`ack-25`, `ack-50`, `ack-100`, `ack-200`:
+  `--focus-ack-ms`) and the control with no wait (`control`, `--focus-ack-ms 0`).
+- **The kinds**: `click` (at the field's first character, the caret put at the text's end through AT-SPI first: the
+  caret must land in the first line), `key-click` (a `press_key` of Shift and that click pipelined: the click's session
+  opens while Qt counts the key's `FocusOut` down), `press_key` (`Left`: the caret one back), `drag` (along the first
+  line: a selection in it) and `scroll` (refused on cua's lanes, since Qt ignores synthetic wheel events; judged by the
+  desktop alone).
+- **A run**: a fresh engine's requests and the wait for their effect, inside a witness span with a 200 ms tail; it
+  passes when the span saw no change and no activation request, the front window is still active 300 ms after it,
+  every answer is a success and the effect landed. A run that finds the front window behind an earlier activation puts
+  it back first. The judged lanes (`shipped`, `ack-<ms>`) need 30 consecutive passing runs in at most 60; the others
+  run 30 and are counted (activated, activation requests, refused, landed). At load the control must activate at least
+  once per family on a click, which shows the witness sees an activation. Each cua run keeps its `--stats` `focus_ack`
+  (the bound, the wait for the focus, and the wait for an earlier focus let go), summarized per series.
+
+The witness (`xprobe witness`) selects StructureNotify on the root as well as SubstructureNotify, since Qt sends its own
+activation request with StructureNotify and SubstructureRedirect: before task 61 its focus record missed Qt's requests,
+though the activation itself still showed as a change.
 
 ## M4 T7b's addition: the REPL host's stop (`--experiment engine-stop`)
 
@@ -964,6 +1003,7 @@ node scripts/linux-engine-diff.mjs --experiment engine-stop --cua "$CANDIDATE" -
 | `stub-activating.mjs` | the negative check's stub engine |
 | `events.mjs`, `xprobe/src/record.rs` | M1a.2's input events experiment and its recorder window |
 | `focus-timer.mjs`, `pages/keys.html` | M4 T7's FocusOut and paste-settle experiment and its Chromium page |
+| `qt-activation.mjs` | M4 task 61's experiment: whether a background input activates a Qt window, per engine and kind |
 | `engine-stop.mjs`, `remote-serve.mjs` | M4 T7b's REPL-host stop experiment through `cua serve`, and its remote session's endpoint |
 | `pages/` | the Chrome scenes (`input.html` the pointer and key scene, `text.html` the text scene) and `gtk-table.py`, the large-table scene |
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |

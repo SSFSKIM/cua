@@ -246,6 +246,15 @@ impl Inputs {
         }
     }
 
+    /// Whether a session is open for `window` past its request: a hold's, or the watched drag's kept one.
+    pub fn open_for(&self, window: Window) -> bool {
+        self.sessions.contains_key(&window)
+            || self
+                .watched
+                .as_ref()
+                .is_some_and(|w| w.window == window && w.session.is_some())
+    }
+
     /// A session's input ended now: noted as the window's last input, and as its last key or click if it took any.
     fn note_input(&mut self, window: Window, session: &Session) -> Instant {
         let ended = Instant::now();

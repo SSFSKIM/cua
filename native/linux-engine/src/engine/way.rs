@@ -6,16 +6,19 @@
 
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use serde_json::json;
 use x11rb::protocol::xproto::Window;
 
 use super::Engine;
 use super::windows::activate;
+use crate::atspi;
 use crate::engine::DesktopMode;
 use crate::families::{Kind, When};
+use crate::focus_ack::{FocusAck, nothing_pressed};
 use crate::input::focus_is_within;
 use crate::route::Target;
+use crate::tree::ObjRef;
 
 /// How long an activated window may take to hold the X input focus (the foreground route).
 const ACTIVATION_WAIT: Duration = Duration::from_secs(1);
@@ -123,6 +126,50 @@ impl Engine {
             self.enter(window)?;
         }
         Ok(())
+    }
+
+    /// The wait a background press into `target` needs before it (`focus_ack.rs`): in shared mode, for a family whose
+    /// press activates a window it has not focused, with a bound set; None otherwise. `frame`: the window's frame where
+    /// the request has associated it already (an element's), else associated here, the association's refusal answering
+    /// a window with no frame it can stand behind. Before the request's session opens, an earlier focus the toolkit still
+    /// holds is let go, unless a session is open for the window already or the real focus is within it.
+    pub(super) fn focus_ack_for(&mut self, target: Target, frame: Option<ObjRef>) -> Result<Option<FocusAck>> {
+        let Target::Window(window) = target else {
+            return Ok(None);
+        };
+        if self.cfg.desktop != DesktopMode::Shared || self.cfg.focus_ack.is_zero() {
+            return Ok(None);
+        }
+        if !self.family_of(window).is_some_and(|f| f.activates_on_press) {
+            return Ok(None);
+        }
+        let info = self.x.get_window(window)?;
+        let frame = match frame {
+            Some(frame) => frame,
+            None => {
+                self.with_bus(|bus, x| atspi::associated(bus, x, &info))?
+                    .map_err(anyhow::Error::msg)?
+                    .frame
+            }
+        };
+        let mut ack = FocusAck::new(frame, info.app, self.cfg.focus_ack);
+        if !self.inputs.open_for(window) && !focus_is_within(&self.x, window)? {
+            let bus = self
+                .bus
+                .as_mut()
+                .ok_or_else(|| anyhow!("AT-SPI accessibility bus is unavailable"))?;
+            if let Err(cause) = ack.released(bus)? {
+                bail!(nothing_pressed(cause));
+            }
+        }
+        Ok(Some(ack))
+    }
+
+    /// A press's wait on the `--stats` line (`focus_ack`), for the harness: its bound and what it waited.
+    pub(super) fn record_focus_ack(&mut self, ack: Option<&FocusAck>) {
+        if let Some(ack) = ack {
+            self.extra.insert("focus_ack".into(), ack.record());
+        }
     }
 
     /// The route on the `--stats` line, for the harness's witness.

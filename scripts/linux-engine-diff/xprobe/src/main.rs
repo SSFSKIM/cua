@@ -309,7 +309,14 @@ fn witness() -> Result<()> {
     desktop.conn.change_window_attributes(
         root,
         &ChangeWindowAttributesAux::new()
-            .event_mask(EventMask::PROPERTY_CHANGE | EventMask::SUBSTRUCTURE_NOTIFY | EventMask::FOCUS_CHANGE),
+            // StructureNotify too: Qt sends its own activation request with StructureNotify and SubstructureRedirect
+            // (`QXcbWindow::requestActivateWindow`), which a SubstructureNotify selection alone never receives
+            .event_mask(
+                EventMask::PROPERTY_CHANGE
+                    | EventMask::SUBSTRUCTURE_NOTIFY
+                    | EventMask::STRUCTURE_NOTIFY
+                    | EventMask::FOCUS_CHANGE,
+            ),
     )?;
     focus::watch(&desktop.conn, root)?;
     desktop.conn.flush()?;

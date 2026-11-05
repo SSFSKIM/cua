@@ -40,7 +40,7 @@ import { seriesVerdict } from './focus-timer.mjs';
 import { Oracle } from './oracle.mjs';
 import { Desktop, activeWindow, desktopEnding } from './scenes.mjs';
 import { median } from './stats.mjs';
-import { judgeSpan, startWitness } from './witness.mjs';
+import { judgeSpan, spanActivations, spanClean, startWitness } from './witness.mjs';
 import { XPROBE, startPrivateServer } from './xtools.mjs';
 import { LIVE_RUN, assertReachable, xExecFileSync } from './xspawn.mjs';
 
@@ -127,16 +127,6 @@ export function effectLanded(kind, before, after, { lineEnd }) {
   if (kind === 'press_key') return after.caret === before.caret - 1;
   if (kind === 'drag') return Array.isArray(after.selection) && inLine(after.selection[0]) && inLine(after.selection[1]) && after.selection[1] > after.selection[0];
   return null;
-}
-
-/** The activation requests a span's witness saw (`xprobe witness`'s focus record): a client asking for any window. */
-export function spanActivations(report) {
-  return (report?.focus ?? []).filter((e) => e.kind === 'activate').map(({ window, source, t_ms: t }) => ({ window, source, t_ms: t }));
-}
-
-/** A span with no change of the desktop (`judgeSpan`, strict) and no activation request. */
-export function spanClean(report) {
-  return judgeSpan(report).clean && spanActivations(report).length === 0;
 }
 
 /** The Device mode sentence's tail (engine/way.rs `no_background_input`): a kind the family ignores, refused. */
@@ -266,10 +256,11 @@ async function series(ctx, lane, kind, scene, points) {
   }
   const verdict = seriesVerdict(oks, judged(lane) ? need : Infinity);
   const waits = rows.flatMap((r) => r.focus_ack.map((a) => a.waited_ms)).filter((v) => typeof v === 'number');
+  const releases = rows.flatMap((r) => r.focus_ack.map((a) => a.released_ms)).filter((v) => typeof v === 'number');
   const out = {
     family: scene.family,
     lane,
-    kind,
+    input: kind,
     need,
     ...verdict,
     activated: rows.filter((r) => r.activated).length,
@@ -278,6 +269,8 @@ async function series(ctx, lane, kind, scene, points) {
     activation_requests: rows.filter((r) => r.activations.length).length,
     ack_waited_median: waits.length ? tenth(median(waits)) : null,
     ack_waited_max: waits.length ? tenth(Math.max(...waits)) : null,
+    ack_released_median: releases.length ? tenth(median(releases)) : null,
+    ack_released_max: releases.length ? tenth(Math.max(...releases)) : null,
     answered_median: tenth(median(rows.map((r) => r.answered_ms))),
     first_miss: rows.find((r) => !r.ok) ?? null,
   };
@@ -292,22 +285,22 @@ async function series(ctx, lane, kind, scene, points) {
  */
 export function qtActivationVerdict(all, { families, load }) {
   const failed = [];
-  const md = ['| family | kind | lane | runs | activated | activation requests | refused | landed | misses | streak | verdict | focus wait median / max ms | answered median ms |', '|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|---:|'];
+  const md = ['| family | kind | lane | runs | activated | activation requests | refused | landed | misses | streak | verdict | focus wait median / max ms | earlier focus let go median / max ms | answered median ms |', '|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|---|---|---:|'];
   for (const s of all) {
     let verdict;
-    const name = `${s.family} ${s.kind}`;
+    const name = `${s.family} ${s.input}`;
     if (judged(s.lane)) {
       verdict = s.reached ? `${s.need} consecutive` : '**not reached**';
       if (!s.reached) failed.push(`${name} (${s.lane}): no ${s.need} consecutive passing runs in ${s.runs}`);
       if (s.need < CONSECUTIVE) failed.push(`${name} (${s.lane}): a development series of ${s.need}, not the ${CONSECUTIVE} the rule needs`);
     } else if (s.lane === 'control') {
-      verdict = s.activated > 0 ? `activates without the wait (${s.activated}/${s.runs})` : load && ['click', 'key-click'].includes(s.kind) ? '**activated nothing**' : 'activated nothing';
-      if (load && s.kind === 'click' && s.activated === 0) failed.push(`${name}: the control lane activated nothing in ${s.runs} runs at load, so the test cannot see an activation`);
+      verdict = s.activated > 0 ? `activates without the wait (${s.activated}/${s.runs})` : load && ['click', 'key-click'].includes(s.input) ? '**activated nothing**' : 'activated nothing';
+      if (load && s.input === 'click' && s.activated === 0) failed.push(`${name}: the control lane activated nothing in ${s.runs} runs at load, so the test cannot see an activation`);
     } else {
       verdict = 'counted';
     }
-    const wait = s.ack_waited_median === null || s.ack_waited_median === undefined ? '–' : `${s.ack_waited_median} / ${s.ack_waited_max}`;
-    md.push(`| ${s.family} | ${s.kind} | ${s.lane} | ${s.runs} | ${s.activated} | ${s.activation_requests ?? '–'} | ${s.refused} | ${s.landed} | ${s.misses} | ${s.streak} | ${verdict} | ${wait} | ${s.answered_median ?? '–'} |`);
+    const pair = (median, max) => (median === null || median === undefined ? '–' : `${median} / ${max}`);
+    md.push(`| ${s.family} | ${s.input} | ${s.lane} | ${s.runs} | ${s.activated} | ${s.activation_requests ?? '–'} | ${s.refused} | ${s.landed} | ${s.misses} | ${s.streak} | ${verdict} | ${pair(s.ack_waited_median, s.ack_waited_max)} | ${pair(s.ack_released_median, s.ack_released_max)} | ${s.answered_median ?? '–'} |`);
   }
   for (const family of families) if (!all.some((s) => s.family === family)) failed.push(`${family} was not measured`);
   return { md, failed };

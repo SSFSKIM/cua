@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow, bail};
 use serde_json::{Value, json};
 use x11rb::connection::Connection as _;
 use x11rb::protocol::xproto::{ConnectionExt as _, Window};
@@ -14,6 +14,7 @@ use crate::desktop::Desktop;
 use crate::dnd::{DndWatch, LateWatch, Outcome, Standing};
 use crate::families::DragPacing;
 use crate::families::Kind;
+use crate::focus_ack::nothing_pressed;
 use crate::input::chord_keycodes;
 use crate::route::{Route, Target};
 use crate::stray::{StrayWatch, Strays, Watching};
@@ -468,8 +469,14 @@ impl Engine {
         // a family that ignores synthetic clicks (families.rs): refused in shared mode, the foreground route in
         // dedicated mode
         let target = self.target_for(input.window.map(|w| w.id), Kind::Clicks)?;
-        let Engine { x, inputs, .. } = self;
-        inputs.with_route(x, target, |x, route, _| {
+        // a family whose press activates a window it has not focused: the session's focus reported taken first
+        let mut ack = self.focus_ack_for(target, None)?;
+        let Engine { x, inputs, bus, .. } = self;
+        let clicked = inputs.with_route(x, target, |x, route, _| {
+            if let (Some(ack), Some(bus)) = (ack.as_mut(), bus.as_mut()) {
+                ack.taken(bus, route)?
+                    .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
+            }
             let at = match position {
                 Some((px, py)) => {
                     let (rx, ry) = route.root_point(x, px, py)?;
@@ -482,8 +489,9 @@ impl Engine {
                 click_once(x, route, &keycodes, at, button, hold)?;
             }
             Ok(())
-        })?;
-        Ok(Value::Null)
+        });
+        self.record_focus_ack(ack.as_ref());
+        clicked.map(|()| Value::Null)
     }
 
     /// `move`: the chord pressed, the pointer placed (the background `move_to`, or the desktop's path), the chord
@@ -612,6 +620,8 @@ impl Engine {
             chord(x, input.key.as_deref()).map(drop)
         })?;
         let target = target_of(way, named);
+        // a family whose press activates a window it has not focused: the session's focus reported taken first
+        let mut ack = self.focus_ack_for(target, None)?;
         // in shared mode, a background drag into a family whose drop changes the desktop watches for a drag and drop,
         // unless the window is already in front (active, focused, fully unobscured), where the drop changes nothing
         let mut guard = match target {
@@ -687,8 +697,12 @@ impl Engine {
         // a watched drag's session is kept focused past its answer while its late-take watch is armed, so the watch's
         // Escape lands inside it (the design session's ruling on task 60); a drag that arms no watch ends it below
         let may_arm_watch = guard.is_some();
-        let Engine { x, inputs, .. } = self;
+        let Engine { x, inputs, bus, .. } = self;
         let dragged = inputs.with_route_kept(x, target, may_arm_watch, |x, route, _| {
+            if let (Some(ack), Some(bus)) = (ack.as_mut(), bus.as_mut()) {
+                ack.taken(bus, route)?
+                    .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
+            }
             let points = input
                 .path
                 .iter()
@@ -719,6 +733,7 @@ impl Engine {
             }
             dragged
         });
+        self.record_focus_ack(ack.as_ref());
         if let Some((event, server)) = times {
             self.extra.insert(
                 "event_time".into(),

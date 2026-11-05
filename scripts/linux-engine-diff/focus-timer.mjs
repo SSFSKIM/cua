@@ -20,7 +20,10 @@
 //   start of the field clicked, the first field unchanged, the answer confirmed (the review's own case).
 //
 // Each is read back from the window's own text at its caret (the caret read before the run), so a key cut and delivered
-// later, or a paste that lands before keys sent ahead of it, fails the run. The judged lanes must pass 30 consecutive
+// later, or a paste that lands before keys sent ahead of it, fails the run. Each run's requests and the reads of their
+// effect are watched (`witness.mjs`): a run that changed the desktop, or asked for an activation, fails, and so does one
+// after which the front window is no longer active (task 61: a background click activated kate and qtcreator at twice
+// the load, and the runs passed on their text). The judged lanes must pass 30 consecutive
 // runs of each scenario (a miss restarts the series and is reported); the control lane must show the reorder on the
 // Chromium families (Chrome, Electron), which proves the test can see it. Then, per family and lane, an audit pass with
 // the engine's connection through xtrace and its `--stats` records: every FocusOut in the trace is attributed to the
@@ -49,7 +52,8 @@ import { preorder } from './normalize.mjs';
 import { Oracle } from './oracle.mjs';
 import { Desktop, activeWindow, desktopEnding } from './scenes.mjs';
 import { median } from './stats.mjs';
-import { startPrivateServer } from './xtools.mjs';
+import { spanActivations, spanClean, startWitness } from './witness.mjs';
+import { XPROBE, startPrivateServer } from './xtools.mjs';
 import { LIVE_RUN, assertReachable, xExecFileSync } from './xspawn.mjs';
 
 /**
@@ -568,8 +572,22 @@ async function firstCharacterPoint(ctx, scene, field, origin) {
 
 /** One run of a scenario on the scene windows: the answers, each window's text and caret before and after. */
 async function oneRun(ctx, engine, name, windows) {
-  const { desktop, oracle } = ctx;
+  const { desktop } = ctx;
   const clicks = CLICKS.includes(name);
+  // an earlier run that activated its window (a failed run) left the front window behind it: it is put back in front,
+  // so each run starts from the same desktop and is judged on its own
+  const restored = activeWindow() !== desktop.front.id;
+  if (restored) {
+    desktop.arrangeFront('covered');
+    await sleep(500);
+  }
+  const run = await startedRun(ctx, engine, name, windows, clicks);
+  return restored ? { ...run, restored_front: true } : run;
+}
+
+/** `oneRun` once the front window holds the focus. */
+async function startedRun(ctx, engine, name, windows, clicks) {
+  const { desktop, oracle } = ctx;
   let tail = false;
   // a Chromium field is emptied for each run's keys; click-then-paste needs text to click into, so it keeps it
   if (CHROMIUM.includes(windows.a.family)) {
@@ -592,26 +610,36 @@ async function judgedRun(ctx, engine, name, windows, { tail, click }) {
   const keys = Object.keys(expected);
   const before = {};
   for (const k of keys) before[k] = await settledRead(() => textAndCaret(desktop, oracle, windows[k]));
-  const started = performance.now();
-  const { responses, ms } = await engine.pipeline(requests);
-  const answered = performance.now() - started;
-  const after = {};
-  for (const k of keys) after[k] = await settledRead(() => textAndCaret(desktop, oracle, windows[k]), { want: grown(before[k], expected[k]) });
+  // the requests and the reads of their effect inside a witness span: an input that activates its window (Qt's press,
+  // task 61) does it while the application handles it, which can come after the answers
+  const span = await ctx.witness.span(`${windows.a.family}-${name}`, async () => {
+    const started = performance.now();
+    const { responses, ms } = await engine.pipeline(requests);
+    const answered = performance.now() - started;
+    const after = {};
+    for (const k of keys) after[k] = await settledRead(() => textAndCaret(desktop, oracle, windows[k]), { want: grown(before[k], expected[k]) });
+    return { responses, ms, answered, after };
+  });
+  const { responses, ms, answered, after } = span.value;
+  const desktopLeft = { clean: spanClean(span.report), frontActive: activeWindow() === desktop.front.id };
   const at = Object.fromEntries(keys.map((k) => [k, insertionAt(name, windows[k], before[k])]));
   const exact = (k) => (clicks && windows[k].kindOf === 'terminal' ? pastedAfterClickReports(before[k].text, expected[k], after[k].text) : insertedAt(before[k].text, at[k], expected[k], after[k].text));
   const texts = Object.fromEntries(keys.map((k) => [k, exact(k)]));
   const errors = responses.filter((r) => r.ok !== true).map((r) => String(r.error).slice(0, 300));
   const got = Object.fromEntries(keys.map((k) => [k, typeof after[k].text === 'string' && typeof before[k].text === 'string' ? after[k].text.slice(at[k] ?? 0, (at[k] ?? 0) + after[k].text.length - before[k].text.length) : null]));
-  return { ok: runPasses({ family: windows.a.family, errors, exact: texts }), tail_at_start: tail, answered_ok: errors.length === 0, errors, expected, got, exact: texts, caret_read: keys.every((k) => before[k].caret !== null), ...(clicks ? { click, caret_before: before.a.caret, landed_at: typeof after.a.text === 'string' ? after.a.text.indexOf(expected.a) : null, front_active: activeWindow() === desktop.front.id } : {}), burst_ms: Math.round(ms * 10) / 10, answered_ms: Math.round(answered * 10) / 10 };
+  return { ok: runPasses({ family: windows.a.family, errors, exact: texts, desktop: desktopLeft }), tail_at_start: tail, answered_ok: errors.length === 0, errors, expected, got, exact: texts, caret_read: keys.every((k) => before[k].caret !== null), desktop: desktopLeft, front_active: desktopLeft.frontActive, ...(desktopLeft.clean ? {} : { witness: span.witness.fields, activations: spanActivations(span.report) }), ...(clicks ? { click, caret_before: before.a.caret, landed_at: typeof after.a.text === 'string' ? after.a.text.indexOf(expected.a) : null } : {}), burst_ms: Math.round(ms * 10) / 10, answered_ms: Math.round(answered * 10) / 10 };
 }
 
 /**
- * Why a run missed, null when it passed: `guard` (the engine refused the paste because an earlier paste is still
- * unconfirmed, which follows a miss and is not one of the run's own), `unconfirmed`, `refused` (the field changed between
- * the paste's observation and its dispatch), `error` (another answer) or `text` (every answer a success, the text wrong).
+ * Why a run missed, null when it passed: `desktop` (the run changed the desktop: its witness saw a change or an
+ * activation request, or the front window was no longer active after it), `guard` (the engine refused the paste
+ * because an earlier paste is still unconfirmed, which follows a miss and is not one of the run's own), `unconfirmed`,
+ * `refused` (the field changed between the paste's observation and its dispatch), `error` (another answer) or `text`
+ * (every answer a success, the text wrong).
  */
 export function missCause(run) {
   if (run.ok) return null;
+  if (run.desktop && (!run.desktop.clean || !run.desktop.frontActive)) return 'desktop';
   const errors = run.errors ?? [];
   if (errors.some((e) => e.startsWith('a previous paste could not be confirmed'))) return 'guard';
   if (errors.some((e) => e === UNCONFIRMED)) return 'unconfirmed';
@@ -647,10 +675,13 @@ export function confirmRules(rows) {
 }
 
 /**
- * Whether a run passes: every window's text exact, and every answer a success, except, on a family whose paste never
- * confirms (`PASTE_UNCONFIRMED`), the unconfirmed paste's own answer, its text still judged exactly.
+ * Whether a run passes: the desktop left alone through it (`desktop`: its witness span clean, no activation request
+ * among it, and the front window still active after it; task 61), every window's text exact, and every answer a
+ * success, except, on a family whose paste never confirms (`PASTE_UNCONFIRMED`), the unconfirmed paste's own answer,
+ * its text still judged exactly. A run with no witness of its desktop does not pass.
  */
-export function runPasses({ family, errors, exact }) {
+export function runPasses({ family, errors, exact, desktop }) {
+  if (!desktop?.clean || !desktop.frontActive) return false;
   const excused = (e) => PASTE_UNCONFIRMED.includes(family) && e === UNCONFIRMED;
   return Object.values(exact).every(Boolean) && errors.every(excused);
 }
@@ -864,6 +895,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
   const results = { series: [], audits: [], stops: [], skipped: [], notApplicable: [] };
   let wm = null;
   let load = null;
+  let witness = null;
   let watched = null;
   try {
     await desktop.begin({ startRecord: async () => null });
@@ -872,10 +904,12 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
     const oracle = new Oracle();
     desktop.oracle = oracle;
     await desktop.openFront('covered');
+    // every run's requests are watched: one that changes the desktop fails (`runPasses`)
+    witness = await startWitness(XPROBE);
     load = args.load ? startLoad(emit, args.loadFactor ?? 1) : null;
     // the stop runs' engine: as it ships, or with the exit settle a measurement step sets
     const stopArgs = args.exitSettleMs === undefined ? [] : ['--exit-settle-ms', String(args.exitSettleMs)];
-    const ctx = { desktop, oracle, emit, cua: args.cua, out: args.out, trace: Boolean(args.trace), need: args.samplesTrials ?? CONSECUTIVE, stopArgs, pasteText: pasteTexts(), scenarios: chosen.scenarios };
+    const ctx = { desktop, oracle, witness, emit, cua: args.cua, out: args.out, trace: Boolean(args.trace), need: args.samplesTrials ?? CONSECUTIVE, stopArgs, pasteText: pasteTexts(), scenarios: chosen.scenarios };
     for (const family of families) {
       const scenarios = familyScenarios(family, ctx.scenarios);
       for (const name of ctx.scenarios.filter((n) => !scenarios.includes(n))) {
@@ -914,6 +948,7 @@ export async function runFocusTimer(args, { emit, run, startLoad }) {
     }
   } finally {
     if (load) await load.stop();
+    if (witness) await witness.stop();
     await desktop.closeAll();
     if (wm) {
       try {

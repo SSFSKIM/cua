@@ -282,6 +282,12 @@ impl Engine {
         let scrolls = family.is_some_and(|f| f.text_scrolls);
         let targets_wait = targets_wait(family, self.cfg.targets_wait);
         let target = way.target(window);
+        // a focusing click presses button 1, and only a named element is ever clicked: for a family whose press
+        // activates a window it has not focused, the session's focus is waited for before it (`focus_ack.rs`)
+        let mut ack = match &named {
+            Ok(element) => self.focus_ack_for(target, Some(element.associated.frame.clone()))?,
+            Err(_) => None,
+        };
         let resource_id_mask = self.x.conn.setup().resource_id_mask;
         let Engine {
             x,
@@ -294,7 +300,7 @@ impl Engine {
             .as_mut()
             .ok_or_else(|| anyhow!("AT-SPI accessibility bus is unavailable"))?;
         let clipboard = clipboard.as_mut().expect("connected above");
-        inputs
+        let pasted = inputs
             .with_route(x, target, |x, route, _| {
                 let (element, named) = match &named {
                     Ok(element) => (element.clone(), true),
@@ -326,6 +332,10 @@ impl Engine {
                     let (after, clicks) = click_for_focus(
                         || {
                             confirmed(&element, &mut shared.borrow_mut(), x, *clicked)?;
+                            if let Some(ack) = ack.as_mut() {
+                                ack.taken(&mut shared.borrow_mut(), route)?
+                                    .map_err(|cause| refused(&cause, *clicked))?;
+                            }
                             // sent from the moment the pointer is placed, so no later refusal says nothing was
                             *clicked = true;
                             route.place(x, rx, ry)?;
@@ -410,8 +420,9 @@ impl Engine {
                 };
                 dispatch_and_confirm(x, route, bus, clipboard, field, delivery, report)
             })
-            .map_err(|error| said_after_click(error, report))?;
-        Ok(Value::Null)
+            .map_err(|error| said_after_click(error, report));
+        self.record_focus_ack(ack.as_ref());
+        pasted.map(|()| Value::Null)
     }
 }
 

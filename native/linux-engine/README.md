@@ -79,6 +79,19 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   until that long has passed since the click (the design session's ruling on task 60: 0 missed on Electron at twice
   the load, 25 held; the review's probe, whose page spends 50 ms on the press, confirmed 10 of 10 at 25). Each
   paste's `--stats` record says how long after the key and the click it came and what it waited (`paste.settle`).
+- **A press waits for Qt's focus** (`focus_ack.rs`, task 61): Qt asks the window manager to activate a window when it
+  handles a button press while the window is not its own focus window, and it makes the window its focus window only
+  once it delivers the event the window's `FocusIn` queued, after the batch of X events it read the `FocusIn` in. A
+  synthetic `FocusIn` and the press just after it arrive in one batch when Qt's main thread is late, as at twice the
+  gate's load, and the press then activates the window (kate and qtcreator, in every engine, the vendor's included).
+  So in shared mode, before the first press of a background session that synthesized the focus (a click, a drag, an
+  element's right click, a paste's focusing click), a press to a family that does this (`families.rs`
+  `activates_on_press`, Qt) waits until the window's AT-SPI frame reports `active`, Qt's own state of the window, at
+  most `--focus-ack-ms` (100 ms); a frame already active before the session opens (an earlier session's `FocusOut`,
+  which Qt counts down for 100 ms) is first waited out until it reads inactive, before the `FocusIn`. A press with no
+  such report in time is refused, nothing pressed: "`<app>` did not take the background focus within 100 ms, so a
+  press could have activated its window; nothing was sent, so it is safe to retry". Dedicated mode waits for nothing.
+  With `--stats` each such press's line carries `focus_ack` (its bound, and what it waited).
 - **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: a
   `drag_handle` still between its start and its end ends first as its own end would (the family's release dwell, then
   button 1 up where the pointer is), then held keys are released, so no wait of the exit keeps one down; then an armed
@@ -343,6 +356,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--teardown-ms` | 0 | a wait before each background session's `FocusOut`, on the request path, for measurement only (0.3.0's wait, the vendor's 100 ms there); 0 sends each `FocusOut` as its request's input ends |
 | `--paste-settle-ms` | 100 | a paste's wait before it observes, after the last key to its window (The paste's settle, above); the measured value, set otherwise only to measure it |
 | `--paste-click-settle-ms` | 25 | a paste's wait before it observes, after the last click to its window (The paste's settle, above); the measured value, set otherwise only to measure it |
+| `--focus-ack-ms` | 100 | in shared mode, how long a background press to a Qt window waits for its frame to report the session's focus taken (A press waits for Qt's focus, above); the measured value, set otherwise only to measure it; 0 turns the wait off (the control) |
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
@@ -350,7 +364,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--drag-dnd-hold-ms` | 250 | how long after the press a Chromium drag the engine lets drop keeps its button down for its source's take when none came by the path's end (measurement only; 0 turns the hold off; `--stats` `hold`) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
-| `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, how a desktop screenshot was read (`shm` or `get_image`), each `FocusOut` (`focus_out`, above), the exit's on a line of its own, and a paste's settle (`paste.settle`) |
+| `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, how a desktop screenshot was read (`shm` or `get_image`), each `FocusOut` (`focus_out`, above), the exit's on a line of its own, a paste's settle (`paste.settle`), and a press's wait for Qt's focus (`focus_ack`) |
 
 ## Dependencies
 

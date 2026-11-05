@@ -17,6 +17,19 @@ export function judgeSpan(report) {
   return { clean: fields.length === 0, fields, samples: report.samples, max_gap_ms: report.max_gap_ms };
 }
 
+/** The activation requests a span's witness saw (`xprobe witness`'s focus record): a client asking for any window. */
+export function spanActivations(report) {
+  return (report?.focus ?? []).filter((e) => e.kind === 'activate').map(({ window, source, t_ms: t }) => ({ window, source, t_ms: t }));
+}
+
+/**
+ * A background span's desktop left alone: no change (`judgeSpan`, strict) and no activation request, even one the
+ * window manager ignored (M4, task 61: Qt asks for its window's activation on a press it handles unfocused).
+ */
+export function spanClean(report) {
+  return judgeSpan(report).clean && spanActivations(report).length === 0;
+}
+
 /** A running witness; `span(tag, fn)` runs fn inside a watched span and returns `{value, witness}`. */
 export async function startWitness(xprobe, { tailMs = 20 } = {}) {
   const child = xSpawn(xprobe, ['witness'], { stdio: ['pipe', 'pipe', 'inherit'] });

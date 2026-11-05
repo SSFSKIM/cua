@@ -424,6 +424,12 @@ fn is_active(result: &CallResult) -> bool {
     }
 }
 
+/// Whether a frame's states include `active` now (`focus_ack.rs`): one `GetState`; a failed or malformed reply reads
+/// not active, and only a broken connection is an error.
+pub fn frame_active(bus: &mut Bus, frame: &ObjRef) -> Result<bool> {
+    Ok(is_active(&bus.call(&state_call(frame))?))
+}
+
 fn rect_of(result: &CallResult) -> Option<Rect> {
     crate::table::extents_of(result).ok().map(Rect::from_corners)
 }

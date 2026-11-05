@@ -1,0 +1,253 @@
+//! The focus a toolkit must have taken before a background press reaches it (M4, task 61; the design session's ruling,
+//! 2026-11-05: in shared mode cua never changes the person's desktop, and the active window is part of it).
+//!
+//! Qt's xcb backend asks the window manager to activate a window when it handles a button press while its own focus
+//! window is not that window (`QXcbWindow::handleButtonPressEvent`, Qt 5.15 and 6.4 alike: `requestActivate`, a
+//! `_NET_ACTIVE_WINDOW` client message with source 1, which Openbox grants; with no window manager, `SetInputFocus`).
+//! It makes the window its focus window only when it delivers the window-system event the window's `FocusIn` queued
+//! (`doFocusIn`, `handleWindowActivated`), after the whole batch of X events it read that `FocusIn` in. A synthetic
+//! `FocusIn` and the press that follows it a few milliseconds later arrive in one batch whenever Qt's main thread is
+//! late, which twice the gate's load makes likely: the press then finds no focus window, and the window is activated
+//! (task 60's fix: the front window lost its active state in 27 of 30 kate and 28 of 30 qtcreator click runs; this
+//! task's X trace of kate's own connection, evidence `m4/qt-activation/`, shows the press read in the same batch as
+//! the `FocusIn`, then the request naming no focus window).
+//!
+//! So before the first press of a background session that synthesized the focus, in shared mode, a press to a family
+//! whose press activates such a window (`families.rs` `activates_on_press`) waits until the window's AT-SPI frame reports
+//! `active`. That is Qt's own state, not a time: Qt reports the frame active from its active window, which it sets in
+//! the same delivery that makes the window its focus window, so once the frame reads active the press finds the window
+//! focused. A press with no such report within the bound is refused with nothing sent.
+//!
+//! One state of Qt's reads `active` with no `FocusIn` of the session's: after a `FocusOut`, Qt keeps the window its
+//! focus window for 100 ms (its `focusInTimer`) in case a `FocusIn` follows, and a late timer can still fire before Qt
+//! reads the next session's `FocusIn`, leaving no focus window when the press is handled. So a press to a window whose
+//! frame already reads active before its session opens (an earlier session's `FocusOut` counting down) first waits,
+//! before the session's `FocusIn`, until the frame reads inactive: then the `active` that follows is the session's own.
+
+use std::time::{Duration, Instant};
+
+use anyhow::Result;
+use serde_json::{Value, json};
+
+use crate::atspi;
+use crate::dbus::Bus;
+use crate::route::Route;
+use crate::tree::ObjRef;
+
+/// How long a background press waits for the toolkit to report the session's focus taken (`--focus-ack-ms`, for
+/// measurement): the smallest of 25, 50, 100 and 200 ms that held 30 consecutive independent click runs on kate (Qt
+/// 5.15) and qtcreator (Qt 6.4) at twice the gate's load, by the wait rule (evidence `m4/qt-activation/`).
+pub const FOCUS_ACK: Duration = Duration::from_millis(100);
+
+/// How long Qt keeps a window its focus window after a `FocusOut` (`QXcbConnection`'s `focusInDelay`, 100 ms in Qt
+/// 5.15 and 6.4): the earlier focus a press waits to see let go, beside the bound.
+pub const TOOLKIT_LINGER: Duration = Duration::from_millis(100);
+
+/// Between two reads of the frame's state.
+pub const POLL: Duration = Duration::from_millis(2);
+
+/// Reads `active()` until it answers `want`, every `poll`, for at most `bound` after the first read: the time it took,
+/// zero when the first read answers it, or None when the bound passed first. A read that fails is the error.
+pub fn until_state(
+    want: bool,
+    bound: Duration,
+    poll: Duration,
+    mut active: impl FnMut() -> Result<bool>,
+) -> Result<Option<Duration>> {
+    let started = Instant::now();
+    loop {
+        if active()? == want {
+            return Ok(Some(started.elapsed()));
+        }
+        if started.elapsed() >= bound {
+            return Ok(None);
+        }
+        std::thread::sleep(poll);
+    }
+}
+
+/// The refusal when the toolkit did not report the session's focus taken within the bound.
+pub fn not_taken(app: &str, bound: Duration) -> String {
+    format!(
+        "{app} did not take the background focus within {} ms, so a press could have activated its window",
+        bound.as_millis()
+    )
+}
+
+/// The refusal when the toolkit still held an earlier background focus at the bound.
+pub fn not_released(app: &str, bound: Duration) -> String {
+    format!(
+        "{app} still held an earlier background focus after {} ms, so a press could have activated its window",
+        bound.as_millis()
+    )
+}
+
+/// What a coordinate press's refusal ends with: nothing of the request's input went out.
+pub fn nothing_pressed(cause: String) -> String {
+    format!("{cause}; nothing was sent, so it is safe to retry")
+}
+
+/// One request's wait for a window's focus (`Engine::focus_ack_for`): its frame, the bound, and what it waited.
+#[derive(Debug)]
+pub struct FocusAck {
+    frame: ObjRef,
+    app: String,
+    bound: Duration,
+    /// Before the session opened: how long the toolkit took to let an earlier focus go, None when not looked at (a
+    /// session already open, or the real focus within the window).
+    released: Option<Duration>,
+    /// After the session's `FocusIn`: how long the toolkit took to report it, None until looked at.
+    taken: Option<Duration>,
+    /// No wait is needed any more: the focus reported taken, or not synthesized at all.
+    settled: bool,
+}
+
+impl FocusAck {
+    pub fn new(frame: ObjRef, app: String, bound: Duration) -> FocusAck {
+        FocusAck {
+            frame,
+            app,
+            bound,
+            released: None,
+            taken: None,
+            settled: false,
+        }
+    }
+
+    /// Before the request's session opens: an earlier focus the toolkit still holds let go, at most the toolkit's linger
+    /// and the bound. The inner error is the refusal's cause when it is still held then; the outer, a failed read.
+    pub fn released(&mut self, bus: &mut Bus) -> Result<std::result::Result<(), String>> {
+        let frame = &self.frame;
+        let bound = TOOLKIT_LINGER + self.bound;
+        Ok(
+            match until_state(false, bound, POLL, || atspi::frame_active(bus, frame))? {
+                Some(waited) => {
+                    self.released = Some(waited);
+                    Ok(())
+                }
+                None => Err(not_released(&self.app, bound)),
+            },
+        )
+    }
+
+    /// Just before a press: the session's synthetic focus reported taken, at most the bound. The inner error is the
+    /// refusal's cause when it was not, for the caller to word; the outer, a failed read. Nothing to wait for once
+    /// reported, or when the session synthesized no focus (the real focus was within the window) or is not a background
+    /// one.
+    pub fn taken(&mut self, bus: &mut Bus, route: &Route) -> Result<std::result::Result<(), String>> {
+        if self.settled {
+            return Ok(Ok(()));
+        }
+        let Some(session) = route.session() else {
+            self.settled = true;
+            return Ok(Ok(()));
+        };
+        if session.focus_was_within() {
+            self.settled = true;
+            return Ok(Ok(()));
+        }
+        let frame = &self.frame;
+        Ok(
+            match until_state(true, self.bound, POLL, || atspi::frame_active(bus, frame))? {
+                Some(waited) => {
+                    self.taken = Some(waited);
+                    self.settled = true;
+                    Ok(())
+                }
+                None => Err(not_taken(&self.app, self.bound)),
+            },
+        )
+    }
+
+    /// The record on the `--stats` line: the bound and each wait, in ms (null where none was looked at).
+    pub fn record(&self) -> Value {
+        let ms = |d: Option<Duration>| d.map(|d| (d.as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0);
+        json!({
+            "bound_ms": self.bound.as_millis() as u64,
+            "released_ms": ms(self.released),
+            "waited_ms": ms(self.taken),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    #[test]
+    fn the_wait_ends_at_the_first_read_that_answers_the_state_wanted() {
+        let reads = Cell::new(0);
+        let waited = until_state(true, Duration::from_secs(1), Duration::from_millis(1), || {
+            reads.set(reads.get() + 1);
+            Ok(reads.get() >= 3)
+        })
+        .unwrap();
+        assert_eq!(reads.get(), 3);
+        assert!(waited.is_some_and(|w| w < Duration::from_secs(1)));
+        let at_once = until_state(false, Duration::ZERO, Duration::from_millis(1), || Ok(false)).unwrap();
+        assert!(
+            at_once.is_some(),
+            "a state already as wanted waits nothing, even with no bound"
+        );
+    }
+
+    #[test]
+    fn a_state_that_never_comes_ends_the_wait_at_the_bound_with_none() {
+        let started = Instant::now();
+        let reads = Cell::new(0);
+        let waited = until_state(true, Duration::from_millis(30), Duration::from_millis(2), || {
+            reads.set(reads.get() + 1);
+            Ok(false)
+        })
+        .unwrap();
+        assert_eq!(waited, None);
+        assert!(started.elapsed() >= Duration::from_millis(30));
+        assert!(started.elapsed() < Duration::from_millis(500));
+        assert!(reads.get() > 1, "read again until the bound");
+    }
+
+    #[test]
+    fn a_read_that_fails_is_the_wait_s_error() {
+        let failed = until_state(true, Duration::from_secs(1), POLL, || {
+            anyhow::bail!("org.freedesktop.DBus.Error.NoReply")
+        });
+        assert!(format!("{:#}", failed.unwrap_err()).contains("NoReply"));
+    }
+
+    #[test]
+    fn the_refusals_name_the_application_the_bound_and_why_a_press_was_withheld() {
+        assert_eq!(
+            nothing_pressed(not_taken("org.kde.kate", Duration::from_millis(100))),
+            "org.kde.kate did not take the background focus within 100 ms, so a press could have activated its \
+             window; nothing was sent, so it is safe to retry"
+        );
+        assert_eq!(
+            not_released("org.qt-project.qtcreator", Duration::from_millis(200)),
+            "org.qt-project.qtcreator still held an earlier background focus after 200 ms, so a press could have \
+             activated its window"
+        );
+    }
+
+    #[test]
+    fn the_record_carries_the_bound_and_each_wait_looked_at() {
+        let mut ack = FocusAck::new(
+            ObjRef {
+                bus: ":1.7".into(),
+                path: "/org/a11y/atspi/accessible/9".into(),
+            },
+            "org.kde.kate".into(),
+            FOCUS_ACK,
+        );
+        assert_eq!(
+            ack.record(),
+            json!({"bound_ms": 100, "released_ms": null, "waited_ms": null})
+        );
+        ack.released = Some(Duration::from_micros(1500));
+        ack.taken = Some(Duration::from_micros(12_345));
+        assert_eq!(
+            ack.record(),
+            json!({"bound_ms": 100, "released_ms": 1.5, "waited_ms": 12.345})
+        );
+    }
+}

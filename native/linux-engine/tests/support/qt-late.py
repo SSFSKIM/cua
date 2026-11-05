@@ -1,0 +1,66 @@
+#!/usr/bin/env python3
+"""The engine's late Qt window (#171 M4, task 61): one top-level Qt window, Qt 5 (PyQt5) or Qt 6 (PyQt6), holding a
+plain text editor, whose main thread is kept late on purpose: a timer every `every` ms blocks it for `block` ms, as a
+loaded machine's scheduler does to kate's and qtcreator's at twice the gate's load. Qt's xcb reader thread keeps reading
+X events meanwhile, so a synthetic FocusIn and a press sent a few milliseconds after it are handled in one batch once the
+main thread runs again, and Qt's press handler, finding no focus window yet, asks for the window's activation: with no
+window manager, by taking the X input focus itself (`QXcbWindow::requestActivateWindow`'s `SetInputFocus`). The test reads
+the X input focus after each press.
+
+It prints, one JSON line each, flushed at once: `{"xid": id}` once the window is shown, `{"press": n}` for the editor's
+nth mouse press, and `{"focus_window": bool}` as Qt's own focus window becomes the window or stops being it. Killed by
+the test.
+
+usage: qt-late.py <title> qt5|qt6 <block ms> <every ms>
+"""
+
+import json
+import sys
+import time
+
+title, binding = sys.argv[1], sys.argv[2]
+block, every = int(sys.argv[3]), int(sys.argv[4])
+if binding == 'qt5':
+    from PyQt5.QtCore import QEvent, QObject, QTimer
+    from PyQt5.QtWidgets import QApplication, QPlainTextEdit
+else:
+    from PyQt6.QtCore import QEvent, QObject, QTimer
+    from PyQt6.QtWidgets import QApplication, QPlainTextEdit
+
+
+def say(record):
+    print(json.dumps(record), flush=True)
+
+
+presses = 0
+
+
+class Presses(QObject):
+    def eventFilter(self, obj, event):
+        global presses
+        if event.type() == QEvent.Type.MouseButtonPress:
+            presses += 1
+            say({'press': presses})
+        return False
+
+
+app = QApplication(sys.argv[:1])
+editor = QPlainTextEdit()
+editor.setWindowTitle(title)
+editor.setPlainText('late one\nlate two\n')
+editor.resize(400, 200)
+watcher = Presses()
+editor.viewport().installEventFilter(watcher)
+app.focusWindowChanged.connect(lambda w: say({'focus_window': w is not None and w is editor.windowHandle()}))
+editor.show()
+say({'xid': int(editor.winId())})
+
+
+def late():
+    time.sleep(block / 1000)
+
+
+timer = QTimer()
+timer.timeout.connect(late)
+timer.start(every)
+sys.exit(app.exec() if binding == 'qt6' else app.exec_())

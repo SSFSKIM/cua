@@ -272,17 +272,76 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertEqual(view(area, true, true), .webArea, "the web area itself")
     XCTAssertEqual(view(field, true, false), .webArea, "a web area is one whether or not an observation saw it")
     XCTAssertEqual(view(Node("AXButton", parent: toolbar), true, true), .acceptsFirstMouse, "Chrome's toolbar")
-    XCTAssertEqual(view(Node("AXButton", parent: toolbar), true, false), .unknown, "no page tree seen yet: a page point may answer outside one")
-    XCTAssertEqual(view(window, true, true), .acceptsFirstMouse, "the window itself is native")
-    XCTAssertEqual(view(nil, true, true), .unknown, "no hit")
+    XCTAssertEqual(view(Node("AXButton", parent: toolbar), true, false), .possibleWebArea, "no page tree seen yet: a page point may answer outside one")
+    XCTAssertEqual(view(window, true, true), .possibleWebArea, "a coarse answer, the window itself, says nothing of the view")
+    XCTAssertEqual(view(nil, true, true), .possibleWebArea, "no hit in a Chromium process")
     XCTAssertEqual(view(field, false, true), .unknown, "not a Chromium process")
-    // Bounded: a parent loop never hangs the walk.
+    XCTAssertEqual(view(Node("AXButton", parent: Node("AXGroup", parent: Node("AXApplication"))), true, true), .acceptsFirstMouse,
+                   "the walk may end at the application too")
+    // The walk stops at the window: an AXWebArea above it (none in practice) is not the hit's.
+    XCTAssertEqual(webAreaWalk(Node("AXButton", parent: Node("AXWindow", parent: Node("AXWebArea"))), role: { $0.role }, parent: { $0.parent }), .outside)
+  }
+
+  /// #282's review: only a walk that reached the window (or the application) with every role and parent read says the
+  /// hit is outside every web area. A failed parent read, an unreadable role, or the bound running out with the web area
+  /// beyond it is incomplete: in a Chromium process a possible web area, never a view known to accept first mouse.
+  func testAnIncompleteWalkIsNeverKnownToAcceptFirstMouse() {
+    let view = { (hit: Node) in pointerView(chromium: true, webAreaSeen: true, hit: hit, role: { $0.role }, parent: { $0.parent }) }
+    // A parent that could not be read: the chain ends before any window.
+    let orphan = Node("AXTextArea", parent: Node("AXGroup"))
+    XCTAssertEqual(webAreaWalk(orphan, role: { $0.role }, parent: { $0.parent }), .incomplete)
+    XCTAssertEqual(view(orphan), .possibleWebArea, "a failed parent read")
+    // An unreadable role on the way up, with the web area above it.
+    let unreadable = Node("AXTextArea", parent: Node(nil, parent: Node("AXWebArea", parent: Node("AXWindow"))))
+    XCTAssertEqual(webAreaWalk(unreadable, role: { $0.role }, parent: { $0.parent }), .incomplete)
+    XCTAssertEqual(view(unreadable), .possibleWebArea, "an unreadable role")
+    XCTAssertEqual(view(Node(nil, parent: Node("AXWindow"))), .possibleWebArea, "the hit's own role unreadable")
+    // The bound exhausted, an AXWebArea beyond it.
+    var deep = Node("AXGroup", parent: Node("AXWebArea", parent: Node("AXWindow")))
+    for _ in 0..<301 { deep = Node("AXGroup", parent: deep) }
+    XCTAssertEqual(webAreaWalk(deep, role: { $0.role }, parent: { $0.parent }), .incomplete)
+    XCTAssertEqual(view(deep), .possibleWebArea, "the bound ran out")
+    // A parent loop never hangs the walk.
     final class Loop { var parent: Loop?; init() {} }
     let loop = Loop()
     loop.parent = loop
-    XCTAssertFalse(insideWebArea(loop, role: { _ in "AXGroup" }, parent: { $0.parent }))
-    // The walk stops at the window: an AXWebArea above it (none in practice) is not the hit's.
-    XCTAssertFalse(insideWebArea(Node("AXButton", parent: Node("AXWindow", parent: Node("AXWebArea"))), role: { $0.role }, parent: { $0.parent }))
+    XCTAssertEqual(webAreaWalk(loop, role: { _ in "AXGroup" }, parent: { $0.parent }), .incomplete)
+  }
+
+  /// A possible web area is a web area in shared mode: a plain click with an element route takes it, anything else is
+  /// refused with nothing posted; in dedicated mode it is posted, and its consuming down answers clickUnconfirmed.
+  func testAPossibleWebAreaIsRefusedOrElementRoutedInSharedModeAndUnconfirmedElsewhere() throws {
+    let possible = { (route: ((inout InputMeta) throws -> Void)?) in
+      PointerTarget(view: .possibleWebArea, app: "Google Chrome for Testing", elementRoute: route)
+    }
+    let refusedSeam = GuardSeam(frontmost: user)
+    var refusedMeta = meta(connection())
+    XCTAssertThrowsError(try click(refusedSeam, activation: chrome(refusedSeam), pointer: possible(nil), meta: &refusedMeta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "backgroundClickRefused")
+    }
+    XCTAssertEqual(refusedSeam.posts.count, 0)
+    let routedSeam = GuardSeam(frontmost: user)
+    var routedMeta = meta(connection())
+    var pressed = 0
+    try click(routedSeam, activation: chrome(routedSeam), pointer: possible { _ in pressed += 1 }, meta: &routedMeta)
+    XCTAssertEqual(pressed, 1)
+    XCTAssertEqual(routedSeam.posts.count, 0)
+    // Joining a spent hold: refused too, never re-armed.
+    let heldSeam = GuardSeam(frontmost: user)
+    let holder = connection()
+    try holdChrome(holder, heldSeam)
+    var heldMeta = meta(holder)
+    XCTAssertThrowsError(try click(heldSeam, activation: chrome(heldSeam), pointer: possible(nil), meta: &heldMeta))
+    XCTAssertEqual(heldSeam.posts.map(\.kind), inertClick, "nothing withdrawn or re-run")
+    holder.endFocusHold()
+    // Dedicated mode where no inert click could be placed: posted, and unconfirmed.
+    let dedicatedSeam = GuardSeam(frontmost: user)
+    dedicatedSeam.activationPoint = outside
+    let unplaced = FakeActivation(pid: target, window: AXUIElementCreateApplication(target), windowFrame: nil, windowID: 41, system: dedicatedSeam.system)
+    var dedicatedMeta = meta(connection(.dedicated))
+    XCTAssertThrowsError(try click(dedicatedSeam, activation: unplaced, pointer: possible(nil), meta: &dedicatedMeta)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
+    }
   }
 
   func testTheElementRoutesActionIsTheElementClicksForAPlainLeftClickOnly() {
@@ -291,6 +350,53 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertNil(webAreaElementAction(button: .left, count: 1, role: "AXTextArea", actions: ["AXShowMenu"]), "no action: refused")
     XCTAssertNil(webAreaElementAction(button: .left, count: 1, role: "AXButton", actions: nil), "unread actions: refused")
     XCTAssertNil(webAreaElementAction(button: .left, count: 2, role: "AXButton", actions: ["AXPress"]), "a double click is refused")
+  }
+
+  // MARK: The coordinate hit-test asks the application, bounded to the window (#282, found live on the hosted runner)
+
+  /// The AX layer as AppKit answers it: AXUIElementCopyElementAtPosition of a window element is kAXErrorIllegalArgument
+  /// (-25201) with no element; of the application, the element at the point.
+  private func stub(_ application: Node, answers hit: Node?) -> (Node, CGPoint) -> (AXError, Node?) {
+    { root, _ in root === application ? (hit == nil ? .noValue : .success, hit) : (.illegalArgument, nil) }
+  }
+
+  private func hitIn(_ application: Node, _ window: Node, _ elementAt: (Node, CGPoint) -> (AXError, Node?)) -> Node? {
+    windowHit(application: application, window: window, at: point, elementAt: elementAt, role: { $0.role }, parent: { $0.parent },
+                     same: { $0 === $1 })
+  }
+
+  /// The hit-test is asked of the application element, never the window (which answers -25201): a page point in the
+  /// target window answers its element, and through it the web area; a stub that answers -25201 to every root, as the
+  /// window did, leaves the hit nil, a Chromium process's possible web area.
+  func testTheCoordinateHitTestAsksTheApplicationAndANilAnswerStaysCovered() {
+    let application = Node("AXApplication")
+    let window = Node("AXWindow", parent: application)
+    let field = Node("AXTextArea", parent: Node("AXGroup", parent: Node("AXWebArea", parent: Node("AXGroup", parent: window))))
+    var asked: [Node] = []
+    let found = hitIn(application, window) { root, at in asked.append(root); return self.stub(application, answers: field)(root, at) }
+    XCTAssertTrue(found === field)
+    XCTAssertEqual(asked.count, 1)
+    XCTAssertTrue(asked.first === application, "asked of the application, never the window")
+    XCTAssertEqual(pointerView(chromium: true, webAreaSeen: true, hit: found, role: { $0.role }, parent: { $0.parent }), .webArea)
+    let refused = hitIn(application, window) { _, _ in (.illegalArgument, nil) }  // -25201, the window's answer
+    XCTAssertNil(refused)
+    XCTAssertEqual(pointerView(chromium: true, webAreaSeen: true, hit: refused, role: { $0.role }, parent: { $0.parent }), .possibleWebArea)
+    XCTAssertNil(hitIn(application, window, stub(application, answers: nil)), "no element at the point")
+  }
+
+  /// A hit whose AXWindow ancestor is another window of the app (one above the target at the point) counts as nil, as
+  /// does one whose ancestry cannot be read to a window; the target window itself, or a sheet's element under it, counts.
+  func testAHitInAnotherWindowOfTheAppCountsAsNil() {
+    let application = Node("AXApplication")
+    let window = Node("AXWindow", parent: application)
+    let other = Node("AXWindow", parent: application)
+    let covering = Node("AXButton", parent: Node("AXGroup", parent: other))
+    XCTAssertNil(hitIn(application, window, stub(application, answers: covering)), "another window's element")
+    XCTAssertNil(hitIn(application, window, stub(application, answers: Node("AXButton", parent: Node("AXGroup")))), "no window ancestor read")
+    XCTAssertNil(hitIn(application, window, stub(application, answers: application)), "the application itself")
+    let inSheet = Node("AXButton", parent: Node("AXSheet", parent: window))
+    XCTAssertTrue(hitIn(application, window, stub(application, answers: inSheet)) === inSheet, "a sheet's element is its window's")
+    XCTAssertTrue(hitIn(application, window, stub(application, answers: window)) === window, "the window itself")
   }
 
   // MARK: The mode reaches the connection through its ping

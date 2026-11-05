@@ -1845,8 +1845,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      honest result covers the rest.
   4. **The known-accept rule.** A Chromium process's native views (its toolbar: `BridgedContentView` accepts first
      mouse) count as known to accept, but only once an observation has seen a web area in the process (`webAreaSeen`):
-     before its page tree is exposed, a page point may answer outside any web area and would be misread as native. That
-     is the one rule; everything else is `unknown`.
+     before its page tree is exposed, a page point may answer outside any web area and would be misread as native. And
+     only when the walk established it (`webAreaWalk` `outside`: it reached the hit's window, sheet or application with
+     every role and parent read; the review of 739346e5..8e859095, one P2): a failed parent read, an unreadable role or
+     the 300-level bound running out is `incomplete`, since an AXWebArea may lie beyond. That is the one rule. A Chromium
+     hit not so established (no hit, an incomplete walk, a page tree not yet seen) is a `possibleWebArea`, which shared
+     mode treats as a web area (the element route, else the refusal): the owner's rule refuses input the app may ignore,
+     and a plain click with an action still goes. Outside Chromium everything is `unknown`.
   5. **What is affected: the activation the pointer meets clicked no activation point** (the implementer's reading,
      wider than the ruling's "the pointer's down would consume the arm"). A new activation's click plan is read before
      subtype 1 (the activation point and the hit-test there are window geometry, which subtype 1 does not move), so
@@ -1890,13 +1895,26 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      diagnostic repeats (src/services/sky.mjs), since focusField's fallback can stop under them.
   11. **Not done.** Route 2′ on a Chrome carrying Chromium 212c026a (the ruling's D) and WebKit's first-mouse rules
      (Safari's page refuses first mouse unless a selection may be dragged; it gets `clickUnconfirmed`, not a refusal).
-  Proven offline (`BackgroundPointerTests`, 14, failing before the change where they bite: shared mode's refusal of
+  12. **The coordinate hit-test asks the application** (found live on the hosted runner, probe/282-hosted, runs
+     42123497534 and 42124119631; the design session's conditions, 1ea561bc bbaa0eba). The coordinate click, the drag
+     and the coordinate scroll asked AXUIElementCopyElementAtPosition of the window element, which answers
+     kAXErrorIllegalArgument (-25201): their hit was always nil, so on 8e859095 shared mode posted a background Chrome
+     click and answered `clickUnconfirmed`, neither refused nor element-routed. `hitTest(window:pid:at:)` now asks the
+     window's process's application element and keeps the hit only when its first AXWindow ancestor is the target window
+     (CFEqual); a hit in another window of the app, one whose ancestry cannot be read to a window, or no answer stays
+     nil, a Chromium process's possible web area. What the real hit changes: those three requests' owner is the hit's
+     process (checked against the forbidden list, its events counted as the user's on the app), a right or middle
+     coordinate click's sparing area is the hit's frame rather than the one point, and the web-area walk sees the page
+     (the element route now reachable). A hit that is itself the window, sheet or application is a coarse answer, an
+     incomplete walk, never a view known to accept first mouse. The element click and focusField's fallback always hit-
+     tested the owner's application (`ElementPointing`) and are unchanged.
+  Proven offline (`BackgroundPointerTests`, 18, failing before the change where they bite: shared mode's refusal of
   a click, a double click and a drag into a web area with nothing posted, no hold taken and nothing left held; a plain
   click carried by the element route with no mouse event; a web-area pointer joining its own or another connection's
   spent hold refused with the hold untouched; an Electron-shaped activation still posting; dedicated mode's inert click
   before the down, no restore, no watch, no re-arming; `clickUnconfirmed` for an unknown view's consuming click and
   drag and for a dedicated click whose inert click could not be placed, success for a known-accept view; an unknown
-  view sharing a spent hold rather than re-arming; the web-area walk, its bound and its stop at the window; the
+  view sharing a spent hold rather than re-arming; the web-area walk, its stop at the window, and after the review an incomplete walk (a failed parent read, an unreadable role, the bound run out with the web area beyond) never known to accept, a possible web area refused or element-routed in shared mode and unconfirmed in dedicated; the
   element route's action; the ping's per-connection mode. The service's ping and pass-through, the launch's mode,
   doctor's row and the client's ping in their JS suites). Nothing live ran: the hosted Chrome for Testing A/B of the
   ruling's acceptance is the next step.

@@ -211,7 +211,7 @@ struct PointerTarget {
 /// events); the click that consumed it rides in the meta when this action ran the activation or consumed its arm.
 ///
 /// #282 (Routes.swift), by the connection's device mode, for a left pointer (`postsLeftMouseDown`) under route 3: in
-/// shared mode one into a Chromium web area (`pointer.view`) meeting an activation that clicks no activation point is
+/// shared mode one into a Chromium web area, or a Chromium hit not established outside one (`pointer.view.mayBeWebArea`), meeting an activation that clicks no activation point is
 /// refused by the registry before anything is posted, and answers by `pointer.elementRoute` when it has one, else as
 /// `backgroundClickRefused`; only one into a view known to accept first mouse re-arms a spent hold. In dedicated mode the
 /// arm's inert click goes early, no hold is re-armed, and the events go out with no delivery guard and no after-action
@@ -239,7 +239,7 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     activation.holdsThroughDelivery = shared
     let hold = postsLeftMouseDown
       ? PointerHold(defersArmClick: shared, rearmsSpentArm: shared && pointer.view == .acceptsFirstMouse,
-                    refusedWithoutActivationPointClick: shared && pointer.view == .webArea)
+                    refusedWithoutActivationPointClick: shared && pointer.view.mayBeWebArea)
       : nil
     // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
     // focusing click inside set_value's held activation), unless the action re-arms a hold of its own connection whose
@@ -399,7 +399,7 @@ extension Engine {
           try coordinatePlacement(given.x, given.y, app: app, appPid: appPid, context: context)
         }
         let (hit, owner) = signposted("click.hitTest") { () -> (AXUIElement?, pid_t) in
-          let hit = hitTest(window: placed.window, at: placed.point)
+          let hit = hitTest(window: placed.window, pid: appPid, at: placed.point)
           return (hit, hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid)
         }
         try signposted("click.owner") {
@@ -423,7 +423,7 @@ extension Engine {
         var pointer = PointerTarget.acceptingFirstMouse
         if route == .activation, button == .left {
           pointer = signposted("click.pointerView") { pointerTarget(hit: hit, app: app, appPid: appPid) }
-          if pointer.view == .webArea, let hit {
+          if pointer.view.mayBeWebArea, let hit {
             pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: placed.point, windowID: windowID, app: app,
                                                 appPid: appPid, guarding: guarding, context: context)
           }
@@ -611,17 +611,43 @@ func spikeRouteArg(_ args: [String: Any], usable: [InputRoute]) throws -> InputR
 /// The spike-only private event source for keys.
 func privateSourceArg(_ args: [String: Any]) -> Bool { (args["spikeEventSource"] as? String) == "private" }
 
-/// The element at a global screen point under a window, when the AX hit-test answers one.
-func hitTest(window: AXUIElement, at point: CGPoint) -> AXUIElement? {
+/// AXUIElementCopyElementAtPosition asked of `root`, which must be an application (or the system-wide element): asked
+/// of a window it answers kAXErrorIllegalArgument (-25201) and no element (#282, found live on the hosted runner).
+func elementAtPosition(_ root: AXUIElement, _ point: CGPoint) -> (AXError, AXUIElement?) {
   var hit: AXUIElement?
-  guard AXUIElementCopyElementAtPosition(window, Float(point.x), Float(point.y), &hit) == .success, let hit else { return nil }
-  return prepare(hit)
+  let error = AXUIElementCopyElementAtPosition(root, Float(point.x), Float(point.y), &hit)
+  return (error, hit.map(prepare))
+}
+
+/// The element `window`'s process answers at a global screen point, kept only when it lies in `window` (#282): asked of
+/// the process's application element, then the hit's AXWindow ancestor must be `window` itself (CFEqual). A hit in
+/// another window of the app at that point, one whose ancestry cannot be read to a window, or no answer is nil.
+func hitTest(window: AXUIElement, pid: pid_t, at point: CGPoint) -> AXUIElement? {
+  windowHit(application: prepare(AXUIElementCreateApplication(pid)), window: window, at: point, elementAt: elementAtPosition,
+            role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
+            same: { CFEqual($0, $1) })
+}
+
+/// `hitTest(window:pid:at:)` over its AX calls (the unit tests' seam): the hit-test asked of `application`, never of
+/// `window`; the hit kept when it is `window` or its first AXWindow ancestor (parents walked up to 300 levels) is.
+func windowHit<Element>(application: Element, window: Element, at point: CGPoint, elementAt: (Element, CGPoint) -> (AXError, Element?),
+                        role: (Element) -> String?, parent: (Element) -> Element?, same: (Element, Element) -> Bool) -> Element? {
+  let (error, found) = elementAt(application, point)
+  guard error == .success, let hit = found else { return nil }
+  var current = hit
+  for _ in 0...300 {
+    if role(current) == kAXWindowRole { return same(current, window) ? hit : nil }
+    guard let next = parent(current) else { return nil }
+    current = next
+  }
+  return nil
 }
 
 /// The element a process's application answers at a global screen point (the gate's hit-test: what that app would
 /// deliver a click at the point to, whatever other apps' windows lie above it).
 func hitTest(application pid: pid_t, at point: CGPoint) -> AXUIElement? {
-  hitTest(window: prepare(AXUIElementCreateApplication(pid)), at: point)
+  let (error, hit) = elementAtPosition(prepare(AXUIElementCreateApplication(pid)), point)
+  return error == .success ? hit : nil
 }
 
 /// An element's advertised actions, read now; nil when the query failed (an element with no actions answers an empty

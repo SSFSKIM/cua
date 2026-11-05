@@ -107,7 +107,7 @@ extension Engine {
           placed = (CGPoint(x: windowFrame.midX, y: windowFrame.midY), window, windowFrame)
         }
         window = placed.window  // a coordinate's was refused already when placed; the centre's is checked below
-        let owner = hitTest(window: placed.window, at: placed.point).map { ownerPid(of: $0, fallback: appPid) } ?? appPid
+        let owner = hitTest(window: placed.window, pid: appPid, at: placed.point).map { ownerPid(of: $0, fallback: appPid) } ?? appPid
         try refuseForbiddenOwner(owner)
         actionTargets(owner, app: app, connection: context.connection)
         target = ClickTarget(point: placed.point, windowFrame: placed.windowFrame,
@@ -147,7 +147,7 @@ extension Engine {
       let start = try coordinatePoint(fromX, fromY, app: app, appPid: appPid, context: context)
       let end = try coordinatePoint(toX, toY, app: app, appPid: appPid, context: context)
       // Both points were refused in a minimized window as they were placed (coordinatePoint), before anything below.
-      let hit = hitTest(window: start.window, at: start.point)
+      let hit = hitTest(window: start.window, pid: appPid, at: start.point)
       let owner = hit.map { ownerPid(of: $0, fallback: appPid) } ?? appPid
       try refuseForbiddenOwner(owner)
       actionTargets(owner, app: app, connection: context.connection)

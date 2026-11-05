@@ -121,7 +121,7 @@ async function launchChrome(label) {
   ready = false; latest = null;
   const udd = join(OUT, `chrome-${label}`);
   const child = spawn(CFT, [`--user-data-dir=${udd}`, '--no-first-run', '--no-default-browser-check', '--disable-search-engine-choice-screen',
-    '--window-position=0,40', '--window-size=760,720', URL_], {stdio: 'ignore'});
+    '--window-position=800,40', '--window-size=760,720', URL_], {stdio: 'ignore'});
   for (let i = 0; i < 120 && !ready; i++) await sleep(250);
   if (!ready) throw new Error('Chrome did not load the page in 30 s');
   await sleep(1500);
@@ -134,14 +134,15 @@ async function frontTextEdit() {
     await sleep(1500);
     if (frontmost() === 'com.apple.TextEdit') break;
   }
-  const place = osa('tell application "System Events" to tell process "TextEdit" to set {position, size} of window 1 to {{820, 80}, {480, 360}}');
+  // Chrome sits at x 800 to 1560; TextEdit's window goes to its left, so it is in front without covering the page.
+  const place = osa('tell application "System Events"\ntell process "TextEdit"\nset position of window 1 to {20, 80}\nset size of window 1 to {600, 400}\nend tell\nend tell');
   const bounds = osa('tell application "System Events" to tell process "TextEdit" to get {position, size} of window 1');
   await sleep(500);
   return {front: frontmost(), placeStatus: place.status, placeErr: place.err.slice(0, 300), bounds: bounds.out};
 }
 
 async function startEngine(bin, label) {
-  const socket = join('/tmp', `p282-${label}.sock`);
+  const socket = join('/private/tmp', `p282-${label}.sock`);
   const env = {...process.env, CUA_ENGINE_SOCKET: socket};
   const child = spawn(bin, [], {env, stdio: ['ignore', 'pipe', 'pipe']});
   let stderr = '';
@@ -205,7 +206,7 @@ async function variant(label, bin, desktop) {
 }
 
 log('sw_vers', sh('sw_vers', []).out.replace(/\s+/g, ' '), '| chrome', sh(CFT, ['--version']).out);
-log('screen', sh('system_profiler', ['SPDisplaysDataType']).out.split('\n').filter(l => /Resolution|UI Looks/.test(l)).join(' ').replace(/\s+/g, ' '));
+log('desktop bounds', osa('tell application "Finder" to get bounds of window of desktop').out);
 const rows = [];
 for (const [label, bin, desktop] of [['a-main', MAIN, null], ['b-shared', BRANCH, null], ['c-dedicated', BRANCH, 'dedicated']]) {
   const row = await variant(label, bin, desktop);
@@ -214,7 +215,7 @@ for (const [label, bin, desktop] of [['a-main', MAIN, null], ['b-shared', BRANCH
   const s = row.status ?? {};
   log(`${label}: grants ax=${s.accessibility} postHid=${s.canPostHid} screen=${s.screenRecording} inputMon=${s.inputMonitoring} | engine ${s.engineVersion}`);
   log(`${label}: frontBefore=${row.frontBefore} frontAfter=${row.frontAfter} textEdit=${JSON.stringify(row.textEdit)}`);
-  log(`${label}: click ${row.click?.error ? 'ERROR ' + JSON.stringify(row.click.error).slice(0, 600) : 'OK ' + JSON.stringify(row.click?.result?.meta ?? row.click?.result).slice(0, 900)}`);
+  log(`${label}: click ${row.click?.error ? 'ERROR ' + JSON.stringify(row.click.error).slice(0, 600) : 'OK ' + String(JSON.stringify(row.click?.result?.meta ?? row.click?.result)).slice(0, 900)}`);
   log(`${label}: delta ${JSON.stringify(row.delta)} after ${JSON.stringify(row.after)}`);
   if (row.exception || row.problem || row.getAppStateError) log(`${label}: PROBLEM ${row.problem ?? ''} ${JSON.stringify(row.getAppStateError ?? '')} ${row.exception ?? ''}`);
 }

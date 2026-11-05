@@ -1612,7 +1612,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      (`FakeActivation.postAction`) and consumes it once they are out; a joiner of item 1 waits out the claim and then
      finds the arm consumed, and an inert click's own down and up go out under the lock, so no inert click lands
      between a drag's down and its up, nor ahead of the action's mouse down with branch 1's no-ordering lost. A holder
-     stopped before its events never claims, leaving the arm to item 3.
+     stopped before its events never claims, leaving the arm to item 3. (Amended 2026-11-05, "#261's hold join" below:
+     such a holder joining a hold of its own connection whose arm was spent early re-arms it.)
   3. **At release**, when the hold's last holder deactivates and no left mouse down stamped with a window number reached
      the process (an intervention or the activation's guard refusing the action, an error before its events): the kept
      inert click goes out before subtype 2 (`FakeActivation.deactivate`). AppKit's arm is the application's, so a mouse
@@ -1710,6 +1711,57 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   cell, the posted fields against the click events' own, the meta; the service's pass-through and reset). Nothing live
   ran.
   Date/Author: 2026-11-01, cursor235's implementer for #259's diagnostic.
+- Decision (#261's hold join, 2026-11-05, `fix/187-3b-slot`; amends #187's inert-click entry above, item 2, and route 3
+  in "Input"): **a holder that posts its own left mouse down, joining a hold of its own connection whose arm was spent
+  early, re-arms it.**
+  1. **What changed.** In `HeldActivations.acquire`, a joiner with `postsLeftMouseDown` (a left coordinate click, a
+     synthesized element click, focusField's fallback click, a drag) that finds a current activation whose arm was
+     consumed early, by the inert click outside the frame or an earlier holder's own mouse down
+     (`FakeActivation.armSpentOutsideActivationPoint`), ends it (its deactivation, subtype 2; the release click is a
+     no-op, the arm being consumed) and runs its own in its place (subtype 1, the inert click kept for the release, its
+     guard), keeping every holder's share. A lingering focus hold carries over under the new activation, and its next ⌘
+     key or element action finds the window key. The joiner's own mouse down consumes the new arm through `postAction`
+     (`activationClickKind` {kind `action`, when `consumedByAction`}), and the new activation's `activationGuardMs`,
+     `activationClick` and kind are recorded as a run's are.
+  2. **Why.** Item 1 of the entry above made every no-click holder spend the arm early. A ⌘ key's focus hold or an
+     element action's lingers up to 120 s, and a coordinate click into the same app within it then posted its own mouse
+     down into an already-key window of an app believing itself active: an ordering click, #200's raise, which the
+     delivery guard repairs but the person may see. Before the entry above, that hold left Chrome's arm set, and the
+     click consumed it with no ordering. ⌘L or an AXPress into background Chrome followed by a click into it is a common
+     sequence, so the inert click would have introduced the raise there.
+  3. **Its own connection.** The re-arming happens only when every current holder belongs to the joiner's connection.
+     Each caller passes an `ActivationHolder` (its `ConnectionState.id`): the focus hold, the menu record, the pointer
+     routes, the forced-key route and paste. A connection runs one request at a time, so a holder on the joiner's own
+     connection is a lingering hold, never one mid-action. The registry now tracks holders by share (each acquire's own,
+     which its release removes) rather than by a count.
+  4. **Not under a recorded menu.** When a recorded menu's span holds the activation (`ActivationHolder.menuSpan`), the
+     join is today's: withdrawing the activation the menu's items were computed under could close or disable the menu the
+     model is about to click into (the menu's held activation, 2026-10-21).
+  5. **Not when the activation point's click consumed it** (the implementer's narrowing of the ruling, reported to the
+     design session). Where the click at an inert activation point inside the frame spent the arm (TextEdit, Finder,
+     Electron), a new activation would post that click again, and the joiner's mouse down would still meet a key window.
+     Re-arming would only add a subtype 2/1 pair and a guard, so these keep today's join and the raise the guard repairs,
+     which predates the inert click.
+  6. **A failed guard.** The joiner is refused as `activationFailed`, as a run's failure is, with the new activation
+     undone (its kept inert click, then subtype 2). The old activation stays held, marked withdrawn, with the remaining
+     holders' shares kept and the joiner's not added. It is treated as a stale one: the hold's next acquire or `refresh`
+     (its next ⌘ key or element action) runs a new activation with its guard, and its last release posts no second
+     subtype 2. A deactivation that cannot post keeps today's join. Rejected: dropping the entry, because the lingering
+     holders' releases would then have nothing to release; and restoring the old activation, which would mean another
+     subtype 1 and guard inside a refusal.
+  7. **Unchanged.** Another connection's holder present (it may be mid-action under the activation, a paste's ⌘V or a
+     drag's events): today's join, so the joiner's ordering mouse down is left to the delivery guard to repair (ticket
+     pending). A pointer joining a hold whose arm is still set (a skipped click): its own mouse down consumes the arm. A
+     no-click joiner: item 1. The replacement of a stale activation.
+  Proven offline only (`FocusHoldTests`: a ⌘ hold on Chrome and then a click on the same connection posting subtype
+  2, subtype 1 and the click alone, recorded `consumedByAction` with its guard, the hold's share kept, the next ⌘ key
+  inside the new activation and the hold's end withdrawing it once, failing before the change; a re-arming whose guard
+  fails, refused, leaving the hold to activate again at its next key and to withdraw once, failing before the change; a
+  no-click joiner consuming early and never re-arming; a pointer on a still-set arm, another connection's hold (alone
+  and beside the clicker's own) and a recorded menu's span, each sharing as today; the existing click-inside-a-hold
+  tests, at an inert activation point, unchanged). A keys-then-click row with a raise watcher is queued for the next
+  attended slot.
+  Date/Author: 2026-11-05, cursor235's implementer for the design session's ruling on #261's hold join.
 
 ## Outcomes & Retrospective
 

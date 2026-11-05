@@ -1,6 +1,7 @@
 //! The server loop (behaviour §1): one line in, one line out, strictly in order. Between requests the engine waits for
-//! whichever comes first: the next request line or a stop. Nothing is left pending between requests: a background
-//! request's `FocusOut` goes with it (M4's T7, `route.rs`).
+//! whichever comes first: the next request line, a stop, or the one piece of work it can have due with no request, the
+//! end of a watched drag's late-take watch, which that drag's `FocusOut` follows (`route.rs`, the design session's
+//! ruling on task 60). Every other background request's `FocusOut` goes with it (M4's T7).
 //!
 //! A stop is SIGTERM, SIGINT or SIGHUP, or stdin closing. Each ends the loop through the engine's orderly exit
 //! (`Engine::shutdown`), which releases what the engine holds and waits out the exit's settle after the last key to a
@@ -24,7 +25,7 @@
 use std::io::{BufRead, Write};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use rustix::runtime::{How, KernelSigSet, Signal};
 
@@ -54,6 +55,10 @@ pub trait Server {
     fn respond(&mut self, line: &str) -> Option<String>;
     /// Work after a response has gone out.
     fn after_response(&mut self);
+    /// When the server must next act with no request (a watched drag's watch ending), None for never.
+    fn next_due(&self) -> Option<Instant>;
+    /// That work, done once it is due (a call before then does nothing).
+    fn tick(&mut self);
 }
 
 /// The signal a stop came with, 0 before any: set by the signal thread before it tells the loop, so a request line
@@ -126,7 +131,17 @@ impl Outbox {
 
 fn serve_with(server: &mut impl Server, inbox: &Receiver<Next>, out: &Outbox, stopped: &AtomicI32) -> i32 {
     loop {
-        let next = inbox.recv().unwrap_or(Next::End);
+        let next = match server.next_due() {
+            Some(due) => match inbox.recv_timeout(due.saturating_duration_since(Instant::now())) {
+                Ok(next) => next,
+                Err(RecvTimeoutError::Timeout) => {
+                    server.tick();
+                    continue;
+                }
+                Err(RecvTimeoutError::Disconnected) => Next::End,
+            },
+            None => inbox.recv().unwrap_or(Next::End),
+        };
         let signal = stopped.load(Ordering::SeqCst);
         if signal != 0 {
             return 128 + signal;
@@ -152,6 +167,7 @@ fn serve_with(server: &mut impl Server, inbox: &Receiver<Next>, out: &Outbox, st
             Sent::Stopped(signal) => return 128 + signal,
         }
         server.after_response();
+        server.tick();
     }
 }
 
@@ -247,23 +263,41 @@ pub fn watch_stop_signals(inbox: Sender<Next>, release: fn()) {
 mod tests {
     use super::*;
     use std::sync::mpsc::channel;
-    use std::time::Instant;
 
-    /// Answers each line with its own text and records what it was asked.
+    /// Answers each line with its own text, records what it was asked, and has work due when a test says so.
     #[derive(Default)]
     struct Echo {
         seen: Vec<String>,
         after: usize,
+        due: Option<Instant>,
+        ticks: Vec<Instant>,
+        /// Told of each tick as it happens (the timed test's sender waits for it).
+        ticked: Option<std::sync::mpsc::Sender<()>>,
+        /// How many ticks had happened when each line was answered.
+        ticks_at_line: Vec<usize>,
     }
 
     impl Server for Echo {
         fn respond(&mut self, line: &str) -> Option<String> {
             let line = line.trim();
             self.seen.push(line.to_string());
+            self.ticks_at_line.push(self.ticks.len());
             (!line.is_empty()).then(|| format!("ok {line}"))
         }
         fn after_response(&mut self) {
             self.after += 1;
+        }
+        fn next_due(&self) -> Option<Instant> {
+            self.due
+        }
+        fn tick(&mut self) {
+            if self.due.is_some_and(|d| d <= Instant::now()) {
+                self.ticks.push(Instant::now());
+                self.due = None;
+                if let Some(ticked) = &self.ticked {
+                    let _ = ticked.send(());
+                }
+            }
         }
     }
 
@@ -401,6 +435,10 @@ mod tests {
                 Some(line.trim().to_string())
             }
             fn after_response(&mut self) {}
+            fn next_due(&self) -> Option<Instant> {
+                None
+            }
+            fn tick(&mut self) {}
         }
         let written = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let out = Shared::default();
@@ -495,5 +533,34 @@ mod tests {
         assert_eq!(wait, b + r + 50, "the REPL host's kill follows the engine's latest end");
         // the exit's longest, straight after a watched drag: its watch (300 ms), then the settle after its Escape
         assert!(b > 600 + 100, "the backstop leaves the exit its longest");
+    }
+
+    #[test]
+    fn work_due_while_waiting_for_a_line_is_done_on_time() {
+        // ordered, not timed: the line is sent only once the tick has happened (or after 5 s, which fails), so a
+        // loaded machine cannot make a tick that waited for the line look on time
+        let (tx, rx) = channel();
+        let (ticked, tick) = channel();
+        let started = Instant::now();
+        let mut echo = Echo {
+            due: Some(started + Duration::from_millis(40)),
+            ticked: Some(ticked),
+            ..Echo::default()
+        };
+        let sender = std::thread::spawn(move || {
+            let _ = tick.recv_timeout(Duration::from_secs(5));
+            tx.send(Next::Line("late\n".into())).unwrap();
+            tx.send(Next::End).unwrap();
+        });
+        let code = serve_with(&mut echo, &rx, &Outbox::spawn(Shared::default()), &AtomicI32::new(0));
+        sender.join().unwrap();
+        assert_eq!(code, 0);
+        assert_eq!(echo.ticks.len(), 1, "fired once, while idle");
+        assert!(
+            echo.ticks[0] - started >= Duration::from_millis(40),
+            "not before it was due"
+        );
+        assert_eq!(echo.ticks_at_line, [1], "before the next line, not at it");
+        assert_eq!(echo.seen, ["late"]);
     }
 }

@@ -684,8 +684,11 @@ impl Engine {
         // the time field the drag's events carried at its end, beside the server's time read just after (M3.1: whether
         // a background event's time can run ahead of the server's)
         let mut times = None;
+        // a watched drag's session is kept focused past its answer while its late-take watch is armed, so the watch's
+        // Escape lands inside it (the design session's ruling on task 60); a drag that arms no watch ends it below
+        let may_arm_watch = guard.is_some();
         let Engine { x, inputs, .. } = self;
-        let dragged = inputs.with_route(x, target, |x, route, _| {
+        let dragged = inputs.with_route_kept(x, target, may_arm_watch, |x, route, _| {
             let points = input
                 .path
                 .iter()
@@ -761,11 +764,14 @@ impl Engine {
         let Some(outcome) = guard.outcome else {
             // the drag failed before anything was decided: its own error is the answer
             after.done();
+            self.inputs.end_watched(&mut self.x);
             self.extra
                 .insert("dnd".into(), json!({ "in_front": false, "started": started }));
             return dragged.map(|()| Value::Null);
         };
-        // no take by the release: answered now as a plain drag, the watch handed over until the next request
+        // no take by the release: answered now as a plain drag, the watch handed over until the next request, the drag's
+        // session left to it (`Engine::collect_late_watch` ends it); otherwise the session ends now, before the
+        // signature's look
         if outcome == Outcome::NoStart {
             let window = named.expect("a watched drag named its window");
             // the watch is handed over whatever the window's name reads as: a late take must still be reported
@@ -776,6 +782,7 @@ impl Engine {
             self.late_watch = Some(after.handed_over(app));
         } else {
             after.done();
+            self.inputs.end_watched(&mut self.x);
         }
         // the cross-check of an in-time cancel: the drop's signature, where a change can show
         let window = named.expect("a watched drag named its window");

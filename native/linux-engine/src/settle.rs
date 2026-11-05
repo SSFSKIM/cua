@@ -28,6 +28,9 @@ pub const EXIT_SETTLE: Duration = Duration::from_millis(300);
 /// of 60), and 100 held everywhere. 0 is task 59's measurement: Chrome, Electron, Firefox and gnome-terminal missed.
 pub const PASTE_SETTLE: Duration = Duration::from_millis(100);
 
+/// The paste's settle after a click to its window (PROVISIONAL: the click-then-paste steps are being measured).
+pub const PASTE_CLICK_SETTLE: Duration = Duration::from_millis(100);
+
 /// When a settle of `settle` after the latest of `last_keys` ends: None when there is no key.
 pub fn until(last_keys: impl IntoIterator<Item = Instant>, settle: Duration) -> Option<Instant> {
     last_keys.into_iter().max().map(|at| at + settle)
@@ -96,6 +99,10 @@ mod tests {
         assert!(
             [25, 50, 75, 100].map(|ms| ms * MS).contains(&PASTE_SETTLE),
             "one of the steps measured"
+        );
+        assert!(
+            [25, 50, 75, 100].map(|ms| ms * MS).contains(&PASTE_CLICK_SETTLE),
+            "one of the click-then-paste steps measured"
         );
     }
 }

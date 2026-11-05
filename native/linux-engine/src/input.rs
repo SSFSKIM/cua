@@ -26,6 +26,8 @@ pub struct Pacing {
     pub exit_settle: Duration,
     /// Before a paste observes its field, from the last key to its window (`settle::PASTE_SETTLE`).
     pub paste_settle: Duration,
+    /// Before a paste observes its field, from the last click to its window (`settle::PASTE_CLICK_SETTLE`).
+    pub paste_click_settle: Duration,
     /// A drag's waits fixed for every target by the measurement flags (`--drag-step-ms`, `--drag-step-us`,
     /// `--drag-press-dwell-ms`, `--drag-release-dwell-ms`); None, the default, paces each drag by its target's family
     /// (`families.rs`).
@@ -192,6 +194,9 @@ pub struct Session {
     pacing: Pacing,
     /// Whether a key event went to the target in this session: a paste's settle follows keys (`settle.rs`).
     took_keys: bool,
+    /// Whether a press of button 1, 2 or 3 went to the target in this session (a click, a drag): a paste's settle
+    /// follows clicks too (`settle.rs`).
+    took_clicks: bool,
 }
 
 /// The server time now: an InputOnly window's property change, whose `PropertyNotify` carries the time.
@@ -266,6 +271,7 @@ impl Session {
             pointer: None,
             pacing,
             took_keys: false,
+            took_clicks: false,
         };
         if !within && let Err(error) = session.focus_in(x) {
             session.finish(x);
@@ -360,6 +366,11 @@ impl Session {
     /// Whether a key event went to the target in this session (a press or a release, the paste chord's included).
     pub fn took_keys(&self) -> bool {
         self.took_keys
+    }
+
+    /// Whether a press of button 1, 2 or 3 went to the target in this session (a click, a drag's press).
+    pub fn took_clicks(&self) -> bool {
+        self.took_clicks
     }
 
     /// Presses each keycode not already held, in order, pacing after each new edge (behaviour §11.3).
@@ -554,6 +565,7 @@ impl Session {
         }
         if (1..=3).contains(&button) {
             self.grab = if press { Some(pointer.window) } else { None };
+            self.took_clicks |= press;
         }
         Ok(())
     }

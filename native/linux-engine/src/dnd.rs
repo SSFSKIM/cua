@@ -339,6 +339,11 @@ impl LateWatch {
         let _ = self.notes.send(Note::Released { at });
     }
 
+    /// When the watch's time is up, `SETTLE` after its drag's release; None for a watch never told of one.
+    pub fn ends_at(&self) -> Option<Instant> {
+        self.released_at.get().map(|released| released + SETTLE)
+    }
+
     /// At the engine's exit: the watch left to run out its own lifetime, so a take inside it is still cancelled (its
     /// Escape sent before the exit's settle and before the connection closes). It returns once the watch has ended by
     /// itself, and at the latest a poll past `SETTLE` after the release; at once for a watch never told of one.

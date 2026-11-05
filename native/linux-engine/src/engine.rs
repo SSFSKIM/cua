@@ -315,6 +315,11 @@ impl Engine {
         if let Some(bus) = self.bus.as_mut() {
             merge(&mut self.bus_stats, bus.take_stats());
         }
+        // a drag's session is kept past its request only while its late-take watch is armed: one that armed none (its
+        // drag refused, cancelled in time, or failed) ends with its request
+        if self.late_watch.is_none() {
+            self.inputs.end_watched(&mut self.x);
+        }
         let sent = self.inputs.take_sent();
         if !sent.is_empty() {
             self.extra
@@ -336,7 +341,9 @@ impl Engine {
 
     /// Collects the after-release watch when `acting` (stopping it) or once it has ended by itself: what it saw waits in
     /// `late_pending` for the first acting request. Its Escape, sent at once on the watch's own connection, is a key to
-    /// the target window that the settles follow (`settle.rs`): the exit's unredirect could cut it.
+    /// the target window that the settles follow (`settle.rs`): the exit's unredirect could cut it. Then the drag's
+    /// session, kept focused while the watch was armed, ends: its `FocusOut` comes after the Escape, which the watch's
+    /// own round trip had the server process before the watch ended (the design session's ruling on task 60).
     fn collect_late_watch(&mut self, acting: bool) {
         if !self.late_watch.as_ref().is_some_and(|w| acting || w.finished()) {
             return;
@@ -354,6 +361,28 @@ impl Engine {
                 self.late_pending = Some((app, end));
             }
         }
+        self.inputs.end_watched(&mut self.x);
+    }
+
+    /// When the engine must act with no request (`serve.rs`): an armed late-take watch's end, `dnd::SETTLE` after its
+    /// drag's release, which its drag's `FocusOut` follows.
+    pub fn next_due(&self) -> Option<Instant> {
+        self.late_watch.as_ref().and_then(crate::dnd::LateWatch::ends_at)
+    }
+
+    /// Once an armed late-take watch's time is up with no request come: the watch run out (it ends by itself a poll
+    /// later at most) and collected, and its drag's session ended, its `FocusOut` reported on a `--stats` line of its
+    /// own. What the watch saw still waits for the first acting request.
+    pub fn tick(&mut self) {
+        let Some(watch) = &self.late_watch else {
+            return;
+        };
+        if watch.ends_at().is_none_or(|at| at > Instant::now()) {
+            return;
+        }
+        watch.run_out();
+        self.collect_late_watch(true);
+        self.report_sent();
     }
 
     /// The `FocusOut`s the exit sent, each on a `--stats` line of its own: `{"stats": {"id": null, "focus_out": …}}`.
@@ -632,7 +661,7 @@ impl Engine {
     }
 
     /// The orderly exit: a `drag_handle` still held ended, every key still held released, an armed after-release watch
-    /// run out, the sessions a hold kept open ended, the exit's settle waited out (`settle::EXIT_SETTLE`), the
+    /// run out, its drag's session and the sessions a hold kept open ended, the exit's settle waited out (`settle::EXIT_SETTLE`), the
     /// clipboard's owner stopped (CLIPBOARD goes with it, as the vendor's does), then the screenshot directory removed.
     pub fn shutdown(&mut self) {
         // first, every key and button still held released, so no wait below keeps one down (the design session's
@@ -646,11 +675,13 @@ impl Engine {
         crate::pressed::release_rest(&self.x.conn, self.x.root);
         // an armed after-release watch then runs out its lifetime (at most `dnd::SETTLE` after its drag's release), so
         // a late take inside it is still cancelled, its Escape sent before the connections close and before the
-        // FocusOut of a session the exit released; collected then, the Escape is a key the settle below follows
+        // FocusOut of its drag's session and of a session the exit released; collected then, the Escape is a key the
+        // settle below follows
         if let Some(watch) = &self.late_watch {
             watch.run_out();
         }
         self.collect_late_watch(true);
+        self.inputs.end_watched(&mut self.x);
         self.inputs.end_released(&mut self.x);
         self.report_sent();
         let _ = self.x.sync();

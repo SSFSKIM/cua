@@ -344,6 +344,66 @@ fn a_paste_after_a_key_to_its_window_waits_out_the_settle_since_that_key() {
     assert!(waited < PASTE_SETTLE + PROMPT * 2, "{waited:?}");
 }
 
+/// A paste right after a click to its own window waits until the click settle has passed since that click, before it
+/// observes: a click that moves the focus or the caret can land after an observation made at once, which then reads the
+/// field the click left (the review of task 60: Chrome observed the textarea a click had just left, pasted into the one
+/// clicked, and answered unconfirmed). The bare window has no accessible field, so the paste then fails, sending
+/// nothing: its answer marks the wait's end.
+#[test]
+fn a_paste_after_a_click_to_its_window_waits_out_the_click_settle_since_that_click() {
+    let probe = Probe::open("click-paste", 0);
+    let mut engine = Engine::start_with(&["--paste-click-settle-ms", &ms(PASTE_SETTLE)]);
+    let target = probe.target();
+    let (answers, _) = record(&probe, || {
+        engine.pipeline(&[
+            ("click", json!({"window": target, "x": 20, "y": 20})),
+            ("type_text", json!({"window": target, "text": "x"})),
+        ]);
+        engine.answers(2)
+    });
+    assert_eq!(answers[0].0["ok"], json!(true), "{}", answers[0].0);
+    assert_eq!(
+        answers[1].0["ok"],
+        json!(false),
+        "no field to paste into: {}",
+        answers[1].0
+    );
+    let waited = answers[1].1 - answers[0].1;
+    assert!(
+        waited >= PASTE_SETTLE - SLACK,
+        "the paste answered {waited:?} after the click: it did not wait out the settle"
+    );
+    assert!(waited < PASTE_SETTLE + PROMPT * 2, "{waited:?}");
+}
+
+/// The click settle follows the paste's own window's clicks: a click to another window, or one whose settle has passed,
+/// holds the paste back for nothing.
+#[test]
+fn a_paste_waits_for_nothing_after_a_click_to_another_window_or_once_its_click_settle_has_passed() {
+    let ab = Probe::open_all(&[("a", 0), ("b", 400)]);
+    let mut engine = Engine::start_with(&["--paste-click-settle-ms", &ms(PASTE_SETTLE)]);
+    let (ta, tb) = (ab.target_of(0), ab.target_of(1));
+    let paste_after = |engine: &mut Engine, click_to: &Value, pause: Duration| {
+        engine
+            .request("click", json!({"window": click_to, "x": 20, "y": 20}))
+            .unwrap();
+        sleep(pause);
+        let started = Instant::now();
+        let answer = engine.request("type_text", json!({"window": ta, "text": "x"}));
+        assert!(answer.is_err(), "no field to paste into: {answer:?}");
+        started.elapsed()
+    };
+    let other = paste_after(&mut engine, &tb, Duration::ZERO);
+    assert!(other < PROMPT, "after a click to the other window: {other:?}");
+    let settled = paste_after(&mut engine, &ta, PASTE_SETTLE);
+    assert!(settled < PROMPT, "after its own window's click settle: {settled:?}");
+    let recent = paste_after(&mut engine, &ta, Duration::ZERO);
+    assert!(
+        recent >= PASTE_SETTLE - SLACK,
+        "the control, a click just before: {recent:?}"
+    );
+}
+
 /// The settle follows the paste's own window's keys, and only while they are recent: a paste after keys to another
 /// window, or after its own window's settle has passed, waits for nothing.
 #[test]

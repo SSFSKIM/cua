@@ -935,10 +935,11 @@ const EXIT_LATE_TAKE: Duration = Duration::from_millis(200);
 const EXIT_SETTLE: Duration = Duration::from_millis(300);
 
 /// An engine stopped straight after a watched drag's answer, with the after-release watch still armed: a drag and drop
-/// that begins well after the drag answered is still cancelled. The drag's session ended with its answer, its
-/// `FocusOut` sent then (M4's T7 as ruled on task 59); the watch runs out its lifetime, its Escape reaches the source,
-/// and the engine exits only once the exit's settle has passed since that Escape, so the redirect it would drop cannot
-/// cut it (the re-review of T7's first fix: a safety Escape cut at exit lets a late drop land).
+/// that begins well after the drag answered is still cancelled. The drag's session is still open, kept focused while
+/// its watch is armed (the design session's ruling on task 60); the watch runs out its lifetime, its Escape reaches the
+/// source inside that session, the session's `FocusOut` follows, and the engine exits only once the exit's settle has
+/// passed since that Escape, so the redirect it would drop cannot cut it (the re-review of T7's first fix: a safety
+/// Escape cut at exit lets a late drop land).
 #[test]
 fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_and_settles_after_its_escape() {
     let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
@@ -979,15 +980,15 @@ fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_and_se
     let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
     assert_eq!(
         order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
-        vec!["focus-out", "escape"],
-        "the drag's FocusOut with its answer, then the watch's Escape, and no FocusOut after it"
+        vec!["escape", "focus-out"],
+        "the watch's Escape inside the drag's session, then its FocusOut, after the watch ran out"
     );
     // the source reads the Escape at most a poll after it arrived (it reads the FocusOut only after its own wait for the
     // late take, so that read's time says nothing)
     assert!(
-        exited >= order[1].1 + EXIT_SETTLE - Duration::from_millis(20),
+        exited >= order[0].1 + EXIT_SETTLE - Duration::from_millis(20),
         "the exit settled after the Escape: {:?}",
-        exited.saturating_duration_since(order[1].1)
+        exited.saturating_duration_since(order[0].1)
     );
     assert!(
         exited - answered >= EXIT_LATE_TAKE,
@@ -999,6 +1000,99 @@ fn an_exit_inside_the_watch_s_lifetime_still_cancels_a_late_drag_and_drop_and_se
         exited - answered < EXIT_LATE_TAKE + Duration::from_millis(300 + 250),
         "{:?}",
         exited - answered
+    );
+}
+
+/// The after-release watch's lifetime after the release (`dnd::SETTLE`).
+const WATCH: Duration = Duration::from_millis(300);
+
+/// A watched drag's session stays focused until its late-take watch ends, with no request to end it (the design
+/// session's ruling on task 60): a take well after the drag answered gets its Escape inside the session, and the
+/// session's `FocusOut` follows only then, by the watch's end 300 ms after the release, whether a take came or not.
+#[test]
+fn a_watched_drag_s_focus_out_waits_for_its_watch_to_end_so_a_late_take_s_escape_comes_inside_the_session() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    for take in [Some(EXIT_LATE_TAKE), None] {
+        let (window, stop, recorder) = drag_source(match take {
+            Some(after) => OnRelease::TakesLateAfter(after),
+            None => OnRelease::NeverTakes,
+        });
+        focus_nothing();
+        let mut shared = Engine::start();
+        assert_eq!(
+            shared.request("drag", json!({"window": {"id": window}, "path": path})),
+            Ok(Value::Null),
+            "no take by the release: a plain drag"
+        );
+        let answered = Instant::now();
+        // no request comes: the watch's end alone ends the session
+        sleep(WATCH + Duration::from_millis(300));
+        stop.send(()).unwrap();
+        recorder.join().unwrap();
+        let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+        let what: Vec<_> = order.iter().map(|(what, _)| *what).collect();
+        match take {
+            Some(_) => assert_eq!(
+                what,
+                ["escape", "focus-out"],
+                "the Escape inside the session, then its FocusOut"
+            ),
+            None => assert_eq!(what, ["focus-out"], "a quiet watch: the FocusOut alone"),
+        }
+        let focus_out = order.last().expect("the drag's FocusOut").1 - answered;
+        // the source reads the FocusOut after its own wait for the late take at most, so only the quiet watch's time
+        // is read to the millisecond
+        if take.is_none() {
+            assert!(
+                focus_out >= WATCH - Duration::from_millis(30),
+                "held back until the watch's end: {focus_out:?} after the answer"
+            );
+        }
+        assert!(
+            focus_out < WATCH + Duration::from_millis(100),
+            "no later than the watch's end: {focus_out:?} after the answer"
+        );
+        drop(shared);
+    }
+}
+
+/// An acting request inside a watched drag's watch stops the watch and ends the drag's session before its own input:
+/// the drag's `FocusOut` goes with that request, not at the watch's end.
+#[test]
+fn an_acting_request_inside_the_watch_ends_the_watched_drag_s_session_first() {
+    let path = json!([{"x": 20, "y": 20}, {"x": 200, "y": 120}]);
+    let (window, stop, recorder) = drag_source(OnRelease::NeverTakes);
+    focus_nothing();
+    let mut shared = Engine::start();
+    shared
+        .request("drag", json!({"window": {"id": window}, "path": path}))
+        .unwrap();
+    let answered = Instant::now();
+    shared
+        .request("click", json!({"window": {"id": window}, "x": 50, "y": 50}))
+        .unwrap();
+    sleep(SETTLE);
+    stop.send(()).unwrap();
+    assert_eq!(
+        recorder.join().unwrap(),
+        vec![
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+            Input::ButtonPress { button: 1, sent: true },
+            Input::ButtonRelease { button: 1, sent: true },
+        ],
+        "the drag, then the click"
+    );
+    let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
+    assert_eq!(
+        order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
+        ["focus-out", "focus-out"],
+        "the drag's session, then the click's"
+    );
+    let drag_s = order[0].1 - answered;
+    assert!(
+        drag_s < WATCH / 2,
+        "the drag's FocusOut with the click, not at the watch's end: {drag_s:?} after the drag's answer"
     );
 }
 
@@ -1050,13 +1144,13 @@ fn the_exit_releases_a_held_key_before_it_waits_out_the_late_take_watch() {
     let order = ESCAPES_AND_FOCUS_OUTS.lock().unwrap().clone();
     assert_eq!(
         order.iter().map(|(what, _)| *what).collect::<Vec<_>>(),
-        vec!["focus-out", "escape"],
-        "the drag's FocusOut with its answer, then the watch's Escape after the release"
+        vec!["escape", "focus-out"],
+        "the watch's Escape after the release, inside the drag's session, then its FocusOut"
     );
     assert!(
-        exited >= order[1].1 + EXIT_SETTLE - Duration::from_millis(20),
+        exited >= order[0].1 + EXIT_SETTLE - Duration::from_millis(20),
         "the exit settled after the Escape: {:?}",
-        exited.saturating_duration_since(order[1].1)
+        exited.saturating_duration_since(order[0].1)
     );
     assert!(exited - answered >= EXIT_LATE_TAKE, "{:?}", exited - answered);
 }

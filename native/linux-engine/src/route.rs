@@ -11,7 +11,11 @@
 //! and the window's redirect is kept (M4's T7, as the design session ruled on task 59's measurement, 2026-11-04: with
 //! the redirect held, a `FocusOut` at once cut and reordered no key on any family, idle or at twice the load). Nothing
 //! is left pending between requests, so input to another window, the desktop or the foreground route waits for nothing.
-//! What follows a window's keys is time, kept here per window: the exit's settle and a paste's (`settle.rs`).
+//! One session outlives its request without a hold: a watched drag's, kept focused until its late-take watch ends (300
+//! ms after the release at most), so the watch's safety Escape lands inside the session it cancels, by construction
+//! and not by what an application does with an Escape that comes unfocused (the design session's ruling on task 60,
+//! 2026-11-05; `Watched`). What follows a window's input is time, kept here per window: the exit's settle and a
+//! paste's (`settle.rs`).
 
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -71,13 +75,15 @@ impl Holds {
 pub enum Cause {
     /// Its request's input ended.
     Request,
+    /// The late-take watch of the drag whose session it was ended (`Watched`).
+    Watch,
     /// The engine's exit ended a session a hold had kept open, once it had released the hold.
     Exit,
 }
 
 /// One `FocusOut` a session's end sent, for the `--stats` line and the harness's audit: its window, why, how long
-/// after the session's input ended it went out (0 but for a teardown set for measurement), and the request whose input
-/// it ends (`scheduled_by`, the name the audit reads; the exit's names the last request handled).
+/// after the session's input ended it went out (0 but for a teardown set for measurement, and a watched drag's), and the
+/// request whose input it ends (`scheduled_by`, the name the audit reads; the exit's names the last request handled).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Sent {
     pub window: u32,
@@ -93,6 +99,7 @@ impl Sent {
             "window": self.window,
             "cause": match self.cause {
                 Cause::Request => "request",
+                Cause::Watch => "watch",
                 Cause::Exit => "exit",
             },
             "after_input_ms": (self.after_input.as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0,
@@ -101,8 +108,26 @@ impl Sent {
     }
 }
 
-/// The input state of the engine's life: the open sessions of windows with held keys, the desktop's held keys, the
-/// holds themselves, and when each window last took a key.
+/// A drag whose late-take watch may be armed (`Inputs::with_route_kept`): its window, its request's id, which its
+/// session's `FocusOut` names, and its session once its input has ended with no hold to keep it, the `FocusOut` held
+/// back until the watch ends (`end_watched`), with when that input ended.
+struct Watched {
+    window: Window,
+    request: Value,
+    session: Option<(Session, Instant)>,
+}
+
+/// What a paste's settle saw and did (`Inputs::settle_paste`): how long ago its window's last key and last click were
+/// when the paste came (None: none yet), and the time it waited.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PasteSettle {
+    pub after_key: Option<Duration>,
+    pub after_click: Option<Duration>,
+    pub waited: Duration,
+}
+
+/// The input state of the engine's life: the open sessions of windows with held keys, a watched drag's session, the
+/// desktop's held keys, the holds themselves, and when each window last took input.
 pub struct Inputs {
     pub pacing: Pacing,
     pub sessions: HashMap<Window, Session>,
@@ -115,9 +140,15 @@ pub struct Inputs {
     /// When each window's background key input last ended, the late-take Escape included (`note_key`): what a paste's
     /// settle follows (`settle.rs`), since its observation raced keys sent just before it (task 59).
     last_key: HashMap<Window, Instant>,
+    /// When each window's background input that pressed a button (1 to 3: a click, a drag) last ended: what a paste's
+    /// settle follows as well, since a click that moves the focus or the caret can land after the paste's observation
+    /// (the design session's ruling on task 60, 2026-11-05).
+    last_click: HashMap<Window, Instant>,
     /// When each window's background input of any kind last ended, the Escape included: what the exit's settle follows.
     /// The exit's unredirect cuts keys and clicks alike once no wait comes before it (task 60).
     last_input: HashMap<Window, Instant>,
+    /// The drag whose late-take watch is armed, and its session, kept until the watch ends (`end_watched`).
+    watched: Option<Watched>,
     /// Sessions a hold kept open, their keys released by the exit's first act and their `FocusOut` not yet sent: the
     /// exit sends it once an armed late-take watch has run out (`end_released`).
     released: Vec<(Window, Session)>,
@@ -140,19 +171,35 @@ impl Inputs {
             request: Value::Null,
             sent: Vec::new(),
             last_key: HashMap::new(),
+            last_click: HashMap::new(),
             last_input: HashMap::new(),
+            watched: None,
             released: Vec::new(),
         }
     }
 
-    /// Runs `body` on the target's route. A window's session is the held one if its keys are held, else opened for this
-    /// request; afterwards it stays open while the window has holds, with any button still down released and its grab
-    /// dropped, and otherwise ends, its `FocusOut` sent before the request answers (whatever the body's outcome; the
-    /// body's error wins).
+    /// Runs `body` on the target's route. A window's session is the held one if its keys are held, else the watched
+    /// drag's if it is that window's, else opened for this request; afterwards it stays open while the window has
+    /// holds, with any button still down released and its grab dropped, and otherwise ends, its `FocusOut` sent before
+    /// the request answers (whatever the body's outcome; the body's error wins), unless it is the watched drag's.
     pub fn with_route<T>(
         &mut self,
         x: &mut X11,
         target: Target,
+        body: impl FnOnce(&mut X11, &mut Route, &mut Holds) -> Result<T>,
+    ) -> Result<T> {
+        self.with_route_kept(x, target, false, body)
+    }
+
+    /// [`Inputs::with_route`] for a drag that may arm a late-take watch (`watch`, a background drag only): from then on
+    /// the window's session, once no hold keeps it, is kept as the watched one instead of ended, its `FocusOut` held
+    /// back. The drag either leaves it to its watch, which `end_watched` ends once the watch has ended, or ends it at
+    /// once (`end_watched`) when it arms none.
+    pub fn with_route_kept<T>(
+        &mut self,
+        x: &mut X11,
+        target: Target,
+        watch: bool,
         body: impl FnOnce(&mut X11, &mut Route, &mut Holds) -> Result<T>,
     ) -> Result<T> {
         match target {
@@ -161,9 +208,24 @@ impl Inputs {
                 body(x, &mut Route::Desktop(&mut self.desktop, Some(window)), &mut self.holds)
             }
             Target::Window(window) => {
-                let mut session = match self.sessions.remove(&window) {
-                    Some(session) => session,
-                    None => Session::open(x, window, self.pacing)?,
+                if watch {
+                    // an acting request collects an earlier drag's watch before it runs, so normally there is none
+                    self.end_watched(x);
+                    self.watched = Some(Watched {
+                        window,
+                        request: self.request.clone(),
+                        session: None,
+                    });
+                }
+                let kept = self
+                    .watched
+                    .as_mut()
+                    .filter(|w| w.window == window)
+                    .and_then(|w| w.session.take());
+                let mut session = match (self.sessions.remove(&window), kept) {
+                    (Some(session), _) => session,
+                    (None, Some((session, _))) => session,
+                    (None, None) => Session::open(x, window, self.pacing)?,
                 };
                 let result = body(x, &mut Route::Window(&mut session), &mut self.holds);
                 if self.holds.any_for(target) {
@@ -172,21 +234,34 @@ impl Inputs {
                     self.sessions.insert(window, session);
                 } else {
                     session.finish(x);
-                    self.end(x, window, session, Cause::Request);
+                    let ended = self.note_input(window, &session);
+                    match self.watched.as_mut().filter(|w| w.window == window) {
+                        // the window's drag's watch is armed: its FocusOut waits for the watch's end
+                        Some(watched) => watched.session = Some((session, ended)),
+                        None => self.end(x, window, session, Cause::Request, ended, self.request.clone()),
+                    }
                 }
                 result
             }
         }
     }
 
-    /// A session whose input has ended: its last input noted (and its last key, if it took keys), then its `FocusOut`
-    /// sent (after the teardown a measurement sets, 0 by default) and its redirect kept or dropped as the retention says.
-    fn end(&mut self, x: &mut X11, window: Window, session: Session, cause: Cause) {
+    /// A session's input ended now: noted as the window's last input, and as its last key or click if it took any.
+    fn note_input(&mut self, window: Window, session: &Session) -> Instant {
         let ended = Instant::now();
         self.last_input.insert(window, ended);
         if session.took_keys() {
             self.last_key.insert(window, ended);
         }
+        if session.took_clicks() {
+            self.last_click.insert(window, ended);
+        }
+        ended
+    }
+
+    /// A session whose input ended at `ended`: its `FocusOut` sent (after the teardown a measurement sets, 0 by default)
+    /// and its redirect kept or dropped as the retention says.
+    fn end(&mut self, x: &mut X11, window: Window, session: Session, cause: Cause, ended: Instant, request: Value) {
         if !self.pacing.teardown.is_zero() {
             std::thread::sleep(self.pacing.teardown);
         }
@@ -196,8 +271,22 @@ impl Inputs {
             window,
             cause,
             after_input,
-            scheduled_by: self.request.clone(),
+            scheduled_by: request,
         });
+    }
+
+    /// The watched drag's session ended, its `FocusOut` sent now: once its late-take watch has ended (collected, so its
+    /// Escape, if one went, came first), or at once for a drag that armed no watch. Nothing when there is none, or when
+    /// a hold still keeps the drag's session (its own end, or the exit's, sends that `FocusOut`).
+    pub fn end_watched(&mut self, x: &mut X11) {
+        if let Some(Watched {
+            window,
+            request,
+            session: Some((session, ended)),
+        }) = self.watched.take()
+        {
+            self.end(x, window, session, Cause::Watch, ended, request);
+        }
     }
 
     /// A key that reached `window` by another route at `at` (the late-take Escape): the settles follow it as they follow
@@ -211,15 +300,27 @@ impl Inputs {
         }
     }
 
-    /// A paste's settle (`settle.rs`), before its observation: if `window` took a key within the settle, waits until the
-    /// settle has passed since that key. Returns how long ago the last key was when the paste came (None: never), and
-    /// the time waited.
-    pub fn settle_paste(&self, window: Window) -> (Option<Duration>, Duration) {
-        let last = self.last_key.get(&window).copied();
+    /// A paste's settle (`settle.rs`), before its observation: if `window` took a key or a click within its settle,
+    /// waits until that settle has passed since it (`Pacing::paste_settle` after a key, `paste_click_settle` after a
+    /// click).
+    pub fn settle_paste(&self, window: Window) -> PasteSettle {
+        let (key, click) = (
+            self.last_key.get(&window).copied(),
+            self.last_click.get(&window).copied(),
+        );
         let now = Instant::now();
-        let wait = settle::paste_wait(last, self.pacing.paste_settle, now);
+        let wait = settle::paste_wait(key, self.pacing.paste_settle, now).max(settle::paste_wait(
+            click,
+            self.pacing.paste_click_settle,
+            now,
+        ));
         let waited = settle::wait((!wait.is_zero()).then(|| now + wait));
-        (last.map(|at| now.saturating_duration_since(at)), waited)
+        let ago = |at: Option<Instant>| at.map(|at| now.saturating_duration_since(at));
+        PasteSettle {
+            after_key: ago(key),
+            after_click: ago(click),
+            waited,
+        }
     }
 
     /// The `FocusOut`s sent since the last call, for the `--stats` line.
@@ -244,7 +345,8 @@ impl Inputs {
     /// The exit's sessions ended: each one `release_held` kept gets its `FocusOut` now, with no wait.
     pub fn end_released(&mut self, x: &mut X11) {
         for (window, session) in std::mem::take(&mut self.released) {
-            self.end(x, window, session, Cause::Exit);
+            let ended = self.note_input(window, &session);
+            self.end(x, window, session, Cause::Exit, ended, self.request.clone());
         }
     }
 

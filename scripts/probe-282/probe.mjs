@@ -5,6 +5,7 @@
 // Cells (CELLS below), each on a fresh Chrome (its own user-data directory), a fresh engine process and connection:
 //   a-main/textarea          origin/main's engine, a coordinate click on the textarea
 //   b-shared/checkbox        the branch, shared mode, a coordinate click on the checkbox (AXPress-capable)
+//   b-shared/button          the branch, shared mode, the Apply button (AXPress-capable)
 //   b-shared/textarea        the branch, shared mode, the textarea
 //   c-dedicated/textarea     the branch, `ping {desktop: "dedicated"}`, the textarea
 //   b-shared/toolbar-reload  the branch, shared mode, Chrome's own Reload button, after the observation saw the page
@@ -37,15 +38,16 @@ const log = (...a) => console.log('probe-282:', ...a);
 // checkbox's change, the window's focus and blur; each beaconed with the page's load id, the checkbox's state, the last
 // click's isTrusted and detail, the document's hasFocus() and the active element.
 const PAGE = `<!doctype html><html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>probe282 page</title></head>
-<body><p><b>probe282 page</b></p><p><label><input id="option" type="checkbox"> Probe option</label></p>
+<body><p><b>probe282 page</b></p><p><label><input id="option" type="checkbox"> Probe option</label> <button id="apply" type="button">Apply</button></p>
 <p><textarea id="notes" aria-label="Probe notes" rows="10" cols="60"></textarea></p><p id="status">Ready</p>
-<script>(() => { const c = {pointerdown: 0, mousedown: 0, mouseup: 0, click: 0, textFocus: 0, optionChange: 0, windowFocus: 0, windowBlur: 0};
+<script>(() => { const c = {pointerdown: 0, mousedown: 0, mouseup: 0, click: 0, textFocus: 0, optionChange: 0, applyClick: 0, windowFocus: 0, windowBlur: 0};
 let seq = 0, lastClick = null; const load = Math.random().toString(36).slice(2, 10);
-const notes = document.getElementById('notes'), option = document.getElementById('option');
+const notes = document.getElementById('notes'), option = document.getElementById('option'), apply = document.getElementById('apply');
 const send = () => { seq += 1; navigator.sendBeacon('/counters', JSON.stringify({load, seq, counts: c, checked: option.checked, lastClick, focused: document.hasFocus(), active: document.activeElement ? document.activeElement.id || document.activeElement.tagName : null})); };
 for (const k of ['pointerdown', 'mousedown', 'mouseup', 'click']) document.addEventListener(k, e => { c[k] += 1; if (k === 'click') lastClick = {trusted: e.isTrusted, detail: e.detail, target: e.target.id || e.target.tagName}; send(); }, true);
 notes.addEventListener('focus', () => { c.textFocus += 1; send(); });
 option.addEventListener('change', () => { c.optionChange += 1; send(); });
+apply.addEventListener('click', () => { c.applyClick += 1; send(); });
 window.addEventListener('focus', e => { if (e.target === window) { c.windowFocus += 1; send(); } });
 window.addEventListener('blur', e => { if (e.target === window) { c.windowBlur += 1; send(); } });
 addEventListener('load', () => { navigator.sendBeacon('/ready'); send(); }); })();</script></body></html>`;
@@ -109,7 +111,7 @@ const frontmost = () => {
   return (info.match(/"CFBundleIdentifier"="([^"]*)"/) || [])[1] || info || null;
 };
 const osa = script => sh('osascript', ['-e', script]);
-const COUNTS = ['pointerdown', 'mousedown', 'mouseup', 'click', 'textFocus', 'optionChange', 'windowFocus', 'windowBlur'];
+const COUNTS = ['pointerdown', 'mousedown', 'mouseup', 'click', 'textFocus', 'optionChange', 'applyClick', 'windowFocus', 'windowBlur'];
 const counters = () => (latest ? {load: latest.load, ...latest.counts, checked: latest.checked, lastClick: latest.lastClick, focused: latest.focused, active: latest.active, loads} : {loads});
 // The change over the click; a reload (a new load id) counts from zero.
 const delta = (before, after) => Object.fromEntries([...COUNTS.map(k => [k, (after[k] ?? 0) - (after.load === before.load ? before[k] ?? 0 : 0)]), ['loads', after.loads - before.loads]]);
@@ -162,16 +164,19 @@ async function startEngine(bin, label) {
 const TARGETS = {
   textarea: n => n.role === 'AXTextArea',
   checkbox: n => n.role === 'AXCheckBox',
+  button: n => n.role === 'AXButton' && n.title === 'Apply',
   reload: n => n.role === 'AXButton' && /reload/i.test(`${n.title ?? ''} ${n.description ?? ''} ${n.help ?? ''}`),
 };
 
 const CELLS = [
   {label: 'a-main/textarea', engine: 'main', target: 'textarea'},
   {label: 'b-shared/checkbox', engine: 'branch', target: 'checkbox'},
+  {label: 'b-shared/button', engine: 'branch', target: 'button'},
   {label: 'b-shared/textarea', engine: 'branch', target: 'textarea'},
   {label: 'c-dedicated/textarea', engine: 'branch', desktop: 'dedicated', target: 'textarea'},
   {label: 'b-shared/toolbar-reload', engine: 'branch', target: 'reload'},
   {label: 'b-shared/cmdL+checkbox', engine: 'branch', keysFirst: 'cmd+l', target: 'checkbox'},
+  {label: 'b-shared/cmdL+button', engine: 'branch', keysFirst: 'cmd+l', target: 'button'},
   {label: 'b-shared/cmdL+textarea', engine: 'branch', keysFirst: 'cmd+l', target: 'textarea'},
   {label: 'geometry', engine: 'branch', geometry: true},
 ];
@@ -225,14 +230,16 @@ async function cell(spec) {
     const started = Date.now();
     row.click = lean(await w.execute('click', {pid: chrome.pid, x, y}));
     row.clickMs = Date.now() - started;
+    row.hitAfter = json(sh(HIT, [String(chrome.pid), String(row.point.screen.x), String(row.point.screen.y)]));
     await sleep(2500);
     row.after = counters();
     row.delta = delta(row.before, row.after);
     row.frontAfter = frontmost();
     sh('screencapture', ['-x', join(OUT, `screen-${fileName(label)}.png`)]);
     const later = await w.execute('get_app_state', {pid: chrome.pid});
-    const f = later.result?.focused;
-    row.focusedAfter = f ? {role: f.role, title: f.title, description: f.description, identifier: f.identifier} : (later.error ?? null);
+    // The observation's `focused` is a node's token.
+    const f = later.result?.nodes?.find(n => n.token === later.result.focused);
+    row.focusedAfter = f ? {role: f.role, title: f.title, description: f.description} : (later.error ?? later.result?.focused ?? null);
     try { await w.call('shutdown', {}, 5000); } catch {}
     w.close();
   } catch (e) {
@@ -274,7 +281,7 @@ for (const spec of CELLS) {
   log(`${row.label}: ${verdict(row)}`);
   if (row.keys) log(`${row.label}: keys ${row.keys.error ? 'error ' + (row.keys.error.errorName ?? row.keys.error.code) : 'success route=' + row.keys.result?.meta?.inputRoute}`);
   if (row.delta) log(`${row.label}: delta ${JSON.stringify(row.delta)} checked=${row.after?.checked} lastClick=${JSON.stringify(row.after?.lastClick)} active=${row.after?.active} focusedAfter=${JSON.stringify(row.focusedAfter)}`);
-  if (row.hit) log(`${row.label}: hit ${JSON.stringify(row.hit)}`);
+  if (row.hit) log(`${row.label}: hit before ${JSON.stringify(row.hit.appChain?.slice(0, 3))} actions ${JSON.stringify(row.hit.appActions)}; after actions ${JSON.stringify(row.hitAfter?.appActions)}`);
   if (row.geometry) log(`${row.label}: geometry ${JSON.stringify(row.geometry)}`);
   if (row.exception || row.problem) log(`${row.label}: PROBLEM ${JSON.stringify(row.problem ?? '')} ${row.exception ?? ''} ${row.buttons ? JSON.stringify(row.buttons) : ''}`);
 }

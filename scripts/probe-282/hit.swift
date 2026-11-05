@@ -1,6 +1,7 @@
 // #282 probe diagnostics, one JSON line each.
 //   hit <pid> <x> <y>   what AX answers at a screen point asked of the process's first window and of its application, each
-//                       hit's role chain up to its window (the walk the engine's pointerView makes)
+//                       hit's role chain up to its window (the walk the engine's pointerView makes), and the application
+//                       hit's action names as AXUIElementCopyActionNames reads them now (the engine's webAreaPress reads)
 //   hit geom <pid>      the first window's frame and AXActivationPoint read before one fresh activation (subtype 1, posted
 //                       to the process as the engine posts it), after it, and after its deactivation (subtype 2)
 import AppKit
@@ -69,13 +70,15 @@ if args.count == 3, args[1] == "geom", let pid = pid_t(args[2]) {
 }
 
 guard args.count == 4, let pid = pid_t(args[1]), let x = Float(args[2]), let y = Float(args[3]) else { emit(["usage": true]); exit(2) }
-func hit(_ e: AXUIElement) -> (String, [String]) {
+func hit(_ e: AXUIElement) -> (String, [String], Any) {
   var h: AXUIElement?
   let err = AXUIElementCopyElementAtPosition(e, x, y, &h)
-  return ("\(err.rawValue)", chain(h))
+  var names: CFArray?
+  let actions: Any = h.map { AXUIElementCopyActionNames($0, &names) == .success ? (names as? [String] ?? []) : "unreadable" as Any } ?? NSNull()
+  return ("\(err.rawValue)", chain(h), actions)
 }
 let app = AXUIElementCreateApplication(pid)
 let windows = (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
-let (we, wc) = windows.first.map(hit) ?? ("noWindow", [])
-let (ae, ac) = hit(app)
-emit(["trusted": AXIsProcessTrusted(), "windows": windows.count, "windowHitError": we, "windowChain": wc, "appHitError": ae, "appChain": ac])
+let (we, wc, _) = windows.first.map(hit) ?? ("noWindow", [], NSNull())
+let (ae, ac, aa) = hit(app)
+emit(["trusted": AXIsProcessTrusted(), "windows": windows.count, "windowHitError": we, "windowChain": wc, "appHitError": ae, "appChain": ac, "appActions": aa])

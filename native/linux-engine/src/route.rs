@@ -112,10 +112,12 @@ pub struct Inputs {
     pub request: Value,
     /// The `FocusOut`s sent and not yet reported (`take_sent`).
     sent: Vec<Sent>,
-    /// When each window's background key input last ended, the late-take Escape included (`note_key`): what the exit's
-    /// settle and a paste's follow (`settle.rs`). The exit's unredirect cut keys at twice the load and no click (task
-    /// 56's measured steps), and a paste's observation raced keys (task 59), so both follow keys.
+    /// When each window's background key input last ended, the late-take Escape included (`note_key`): what a paste's
+    /// settle follows (`settle.rs`), since its observation raced keys sent just before it (task 59).
     last_key: HashMap<Window, Instant>,
+    /// When each window's background input of any kind last ended, the Escape included: what the exit's settle follows.
+    /// The exit's unredirect cuts keys and clicks alike once no wait comes before it (task 60).
+    last_input: HashMap<Window, Instant>,
     /// Sessions a hold kept open, their keys released by the exit's first act and their `FocusOut` not yet sent: the
     /// exit sends it once an armed late-take watch has run out (`end_released`).
     released: Vec<(Window, Session)>,
@@ -138,6 +140,7 @@ impl Inputs {
             request: Value::Null,
             sent: Vec::new(),
             last_key: HashMap::new(),
+            last_input: HashMap::new(),
             released: Vec::new(),
         }
     }
@@ -176,10 +179,11 @@ impl Inputs {
         }
     }
 
-    /// A session whose input has ended: its last key noted, then its `FocusOut` sent (after the teardown a measurement
-    /// sets, 0 by default) and its redirect kept or dropped as the retention says.
+    /// A session whose input has ended: its last input noted (and its last key, if it took keys), then its `FocusOut`
+    /// sent (after the teardown a measurement sets, 0 by default) and its redirect kept or dropped as the retention says.
     fn end(&mut self, x: &mut X11, window: Window, session: Session, cause: Cause) {
         let ended = Instant::now();
+        self.last_input.insert(window, ended);
         if session.took_keys() {
             self.last_key.insert(window, ended);
         }
@@ -199,9 +203,11 @@ impl Inputs {
     /// A key that reached `window` by another route at `at` (the late-take Escape): the settles follow it as they follow
     /// the engine's own keys, since the exit's unredirect could cut it.
     pub fn note_key(&mut self, window: Window, at: Instant) {
-        let last = self.last_key.entry(window).or_insert(at);
-        if at > *last {
-            *last = at;
+        for record in [&mut self.last_key, &mut self.last_input] {
+            let last = record.entry(window).or_insert(at);
+            if at > *last {
+                *last = at;
+            }
         }
     }
 
@@ -242,10 +248,10 @@ impl Inputs {
         }
     }
 
-    /// When the exit's settle ends (`settle::EXIT_SETTLE`): the settle after the last key to a window whose redirect the
-    /// exit drops, None when no such window took a key.
+    /// When the exit's settle ends (`settle::EXIT_SETTLE`): the settle after the last background input to a window whose
+    /// redirect the exit drops, None when no such window took input.
     pub fn exit_settle_until(&self, x: &X11) -> Option<Instant> {
-        let held = self.last_key.iter().filter(|(window, _)| x.holds_redirect(**window));
+        let held = self.last_input.iter().filter(|(window, _)| x.holds_redirect(**window));
         settle::until(held.map(|(_, at)| *at), self.pacing.exit_settle)
     }
 }

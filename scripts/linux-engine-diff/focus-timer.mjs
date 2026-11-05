@@ -82,11 +82,13 @@ export const CONTROL_RUNS = 10;
 export const SIGTERM_RUNS = 30;
 export const SIGKILL_RUNS = 3;
 /**
- * SIGTERM straight after ten clicks on the keys page's pad (`clicks`): whether the exit's unredirect cuts pointer input
- * as it cuts keys. A drag has no such case on Chromium: shared mode refuses a background drag to it ("does not accept
- * background input"), so no drag release to a Chromium window goes by the redirected route.
+ * SIGTERM straight after ten clicks on the keys page's pad (`clicks`): the exit's unredirect cuts pointer input as it
+ * cuts keys once no FocusOut drain waits before it (task 60: 7 of 10 on Chrome and on Electron, idle, with the settle
+ * after keys only), so the settle follows clicks too, and these runs hold it to the keys' rule, 30 a family. A drag has
+ * no such case on Chromium: shared mode refuses a background drag to it ("does not accept background input"), so no
+ * drag release to a Chromium window goes by the redirected route.
  */
-export const POINTER_STOP_RUNS = 10;
+export const POINTER_STOP_RUNS = 30;
 export const STOP_KINDS = ['keys', 'clicks'];
 /** The paste settle's measured steps, in ms (the design session's wait rule, 2026-11-04: the smallest that passes). */
 export const SETTLE_STEPS = [25, 50, 75, 100];
@@ -210,15 +212,14 @@ export function auditVerdict({ forbidden, attributed, sessionsOk, runsOk, lane }
 
 /**
  * A stop run's verdict. SIGTERM: the burst in order at the caret, every synthetic-focus session closed, an orderly exit
- * (128 + 15) that ended by itself before the backstop, every answer a success, and after keys the exit's settle run (its
- * `--stats` record; clicks get none, since the settle follows keys). SIGKILL, the control: the kill skipped the
- * settle, so the settle check can fail.
+ * (128 + 15) that ended by itself before the backstop, every answer a success, and the exit's settle run (its `--stats`
+ * record), after keys and after clicks alike: with no FocusOut drain before the exit, its unredirect cuts both (task
+ * 60). SIGKILL, the control: the kill skipped the settle, so the settle check can fail.
  */
-export function stopPasses({ signal, input = 'keys', inOrder, sessions, exit, settle, drainedMs }) {
+export function stopPasses({ signal, inOrder, sessions, exit, settle, drainedMs }) {
   if (signal === 'SIGKILL') return exit.signal === 'SIGKILL' && settle === null;
   const closed = sessions.sessions.length > 0 && sessions.sessions.every((s) => s.closed) && sessions.problems.length === 0;
-  const settled = input === 'keys' ? settle !== null : settle === null;
-  return inOrder && closed && exit.code === 143 && settled && drainedMs < EXIT_WITHIN_MS && !exit.answers;
+  return inOrder && closed && exit.code === 143 && settle !== null && drainedMs < EXIT_WITHIN_MS && !exit.answers;
 }
 
 /**
@@ -624,7 +625,7 @@ async function stopRun(ctx, family, signal, windows, i, kind = 'keys') {
   const inOrder = insertedAt(before.text, before.caret, expected.a, after.text);
   const settle = settles[0] ?? null;
   // settled by its own exit, before the 1 s backstop that would end the process at once
-  const ok = stopPasses({ signal, input: kind, inOrder, sessions, exit, settle, drainedMs: drained });
+  const ok = stopPasses({ signal, inOrder, sessions, exit, settle, drainedMs: drained });
   const got = typeof after.text === 'string' && typeof before.text === 'string' ? after.text.slice(before.caret ?? 0, (before.caret ?? 0) + after.text.length - before.text.length) : null;
   const closedSessions = sessions.sessions.filter((s) => s.closed).length;
   const row = { kind: 'focus-timer-stop', family, signal, input: kind, trial: i, ok, tail_at_start: tail, exit_settle_ms: settle?.waited_ms ?? null, in_order: inOrder, got, sessions: sessions.sessions.length, sessions_closed: closedSessions, session_problems: sessions.problems, exit, focus_outs: records.length, signalled_after_answer_ms: Math.round(gap * 10) / 10, exited_after_answer_ms: Math.round(drained * 10) / 10 };

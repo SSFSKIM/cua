@@ -190,7 +190,7 @@ pub struct Session {
     grab: Option<Window>,
     pointer: Option<Pointer>,
     pacing: Pacing,
-    /// Whether a key event went to the target in this session: the exit's and a paste's settles follow keys (`settle.rs`).
+    /// Whether a key event went to the target in this session: a paste's settle follows keys (`settle.rs`).
     took_keys: bool,
 }
 

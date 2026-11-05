@@ -4,8 +4,10 @@
 //! `:0`). Two things still follow a window's last key, and wait for time to pass since it:
 //!
 //! - **The exit's settle.** The exit drops every redirect the engine holds, and a covered Chromium window whose redirect
-//!   goes while it still has keys queued cuts them and delivers them only with its next `FocusIn` (task 56). So the exit
-//!   waits until `EXIT_SETTLE` has passed since the last key to a window it still holds redirected.
+//!   goes while it still has input queued cuts it and delivers it only with its next `FocusIn` (task 56). So the exit
+//!   waits until `EXIT_SETTLE` has passed since the last background input to a window it still holds redirected:
+//!   keys, and clicks too, which task 56 saw no cut only because its `FocusOut` drain waited 100 ms before the exit
+//!   (task 60: with no drain, 7 of 10 SIGTERMs straight after ten clicks cut them, on Chrome and on Electron, idle).
 //! - **The paste's settle.** A paste observes its field before it acts, and keys sent just before it may not have landed
 //!   yet: the observation then reads the field short, and the paste is refused with nothing sent or lands at a caret
 //!   the confirmation did not expect (task 59: Chrome, Electron, Firefox and gnome-terminal at 0). So a paste whose
@@ -17,8 +19,7 @@ use std::time::{Duration, Instant};
 /// The exit's settle (the design session's ruling on T7's escalation, 2026-11-04): the smallest value that held 30
 /// consecutive independent SIGTERM runs at twice the load on Chrome and on Electron, in 50 ms steps (0: 24/30 and
 /// 17/30; 200: 26/30 and 28/30; 250: 30/30 both in its step, then 29/30 on Chrome in a full sitting, one whole burst
-/// cut; 300: 30/30 both, and in the full sitting; task 56's exit-settle steps). The unredirect cut no click at any step
-/// (10/10 each), so the settle follows keys only.
+/// cut; 300: 30/30 both, and in the full sitting; task 56's exit-settle steps). It follows clicks as well (above).
 pub const EXIT_SETTLE: Duration = Duration::from_millis(300);
 
 /// The paste's settle: the smallest of 25, 50, 75 and 100 ms that held 30 consecutive independent key-then-paste runs

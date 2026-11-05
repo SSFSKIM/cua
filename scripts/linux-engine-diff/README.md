@@ -884,9 +884,9 @@ node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" -
 - **The exit** (Chromium): a burst to a fresh engine, then SIGTERM straight after its last answer, inside the exit's
   settle: every key in order, every request's session closed by its `FocusOut` in the trace, the exit's settle run
   (its `--stats` record) and an exit code of 143 within 0.9 s, in all 30 runs (`stopPasses`); then ten clicks on the
-  keys page's pad followed by SIGTERM the same way, ten runs, their presses and releases read from the page's log (`d`,
-  `u`; a drag has no such case on Chromium, whose background drags shared mode refuses), with no settle, since it
-  follows keys; SIGKILL, the documented limit, is the control that skips the settle. `--exit-settle-ms <ms>` runs the
+  keys page's pad followed by SIGTERM the same way, 30 runs, their presses and releases read from the page's log (`d`,
+  `u`; a drag has no such case on Chromium, whose background drags shared mode refuses), the settle run after them
+  too; SIGKILL, the documented limit, is the control that skips the settle. `--exit-settle-ms <ms>` runs the
   stop runs' engine with that settle, and `--stops-only` runs the stop runs alone (the settle's measured steps).
 
 The events experiment (`events.mjs`) reads each step's events once the synthetic focus it left open has closed, at most

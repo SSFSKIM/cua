@@ -269,9 +269,9 @@ test("a stop run passes on SIGTERM when the burst kept its order, every session 
   assert.equal(stopPasses({ ...good, sessions: { sessions: [{ closed: false }], problems: ['never closed'] } }), false);
   assert.equal(stopPasses({ ...good, drainedMs: EXIT_WITHIN_MS + 1 }), false, 'ended by the backstop');
   assert.equal(stopPasses({ ...good, exit: { code: 143, signal: null, answers: ['refused'] } }), false);
-  // clicks get no settle: it follows keys
-  assert.equal(stopPasses({ ...good, input: 'clicks', settle: null }), true);
-  assert.equal(stopPasses({ ...good, input: 'clicks' }), false, 'a settle after clicks alone');
+  // clicks get the settle too: with no FocusOut drain before the exit, the unredirect cuts them as it cuts keys (task 60)
+  assert.equal(stopPasses({ ...good, input: 'clicks', settle: null }), false, 'clicks with no settle');
+  assert.equal(stopPasses({ ...good, input: 'clicks' }), true);
   const killed = { ...good, signal: 'SIGKILL', exit: { code: null, signal: 'SIGKILL' }, settle: null };
   assert.equal(stopPasses(killed), true, 'the control: the kill skipped the settle');
   assert.equal(stopPasses({ ...killed, settle: { waited_ms: 290 } }), false, 'a kill that settled cannot be told from the drain');

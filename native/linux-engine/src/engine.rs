@@ -654,8 +654,8 @@ impl Engine {
         self.inputs.end_released(&mut self.x);
         self.report_sent();
         let _ = self.x.sync();
-        // the exit drops every redirect it holds: keys still queued in a covered Chromium window would be cut, so the
-        // last key to such a window is given the exit's settle first (`settle::EXIT_SETTLE`)
+        // the exit drops every redirect it holds: input still queued in a covered Chromium window would be cut, so the
+        // last input to such a window is given the exit's settle first (`settle::EXIT_SETTLE`)
         let until = self.inputs.exit_settle_until(&self.x);
         let started = Instant::now();
         crate::settle::wait(until);

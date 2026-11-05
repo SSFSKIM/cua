@@ -474,8 +474,9 @@ fn sigterm_straight_after_a_burst_waits_the_settle_after_its_last_key_then_exits
 }
 
 #[test]
-fn clicks_alone_hold_the_exit_back_for_no_settle() {
-    // the exit's unredirect cut no click in 20 runs at twice the load (task 56's measured steps): the settle follows keys
+fn clicks_alone_hold_the_exit_back_for_the_settle_too() {
+    // with no FocusOut left to drain, the exit's unredirect cut clicks on Chrome and Electron straight after their
+    // answers (task 60: 7 of 10 each, idle); task 56 had seen none cut only because its drain waited out 100 ms first
     let probe = Probe::open("clicks", 0);
     let mut engine = Engine::start();
     let target = probe.target();
@@ -488,7 +489,12 @@ fn clicks_alone_hold_the_exit_back_for_no_settle() {
     engine.signal(Signal::TERM);
     let (status, at) = engine.exit_within(Duration::from_secs(5)).expect("the engine exits");
     assert_eq!(status.code(), Some(143));
-    assert!(at - stopped < PROMPT, "at once: {:?}", at - stopped);
+    assert!(
+        at - stopped >= EXIT_SETTLE - PROMPT,
+        "the settle after the last click: {:?}",
+        at - stopped
+    );
+    assert!(at - stopped < EXIT_SETTLE + PROMPT, "{:?}", at - stopped);
 }
 
 #[test]

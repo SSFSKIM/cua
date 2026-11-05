@@ -79,13 +79,13 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   button 1 up where the pointer is), then held keys are released, so no wait of the exit keeps one down; then an armed
   after-release drag-and-drop watch runs out its lifetime (at most 300 ms after its drag's release), so a late
   take is still cancelled with its Escape; then a session a hold kept open gets its `FocusOut`; then the
-  exit's settle: the engine waits until `--exit-settle-ms` (300 ms) has passed since the last background key to
-  a window whose redirect it still holds, the watch's Escape included (keys only: the unredirect cut no click in the
-  measured steps). At its longest, a stop right after a watched drag whose late take comes at the end of the watch,
+  exit's settle: the engine waits until `--exit-settle-ms` (300 ms) has passed since the last background input to
+  a window whose redirect it still holds, the watch's Escape included (clicks too: once no `FocusOut` drain waits first, the unredirect cuts them as it
+  cuts keys). At its longest, a stop right after a watched drag whose late take comes at the end of the watch,
   that is about 300 + 300 ms after the drag's release, inside the 1 s backstop. Its exit drops those redirects (the X
   connection closes), and a covered Chromium window whose redirect goes while it still has input queued cuts that input
   and delivers it only with its next `FocusIn`. So a burst answered just before the signal still arrives in order; an
-  exit with no such key in the last 300 ms waits for nothing. The declared limits
+  exit with no such input in the last 300 ms waits for nothing. The declared limits
   are SIGKILL and load beyond twice the gate's. A request already running finishes first; requests
   queued behind the signal are not run. The exit code is 0 for stdin closing and 128 plus the signal's number
   otherwise. A second SIGINT, or an exit still not done 1 s after the first signal (the backstop), ends the process at
@@ -330,7 +330,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--retention` | `session`, `per-request`, `none` | when the target window is redirected through Composite: once until destroyed, per request as the vendor does, or never |
 | `--settle-ms` | 0 | the wait after a window's redirect before input to it |
 | `--capture-wait` | `damage`, `fixed` | a capture of a fresh pixmap waits for the DAMAGE rule, or a fixed 100 ms once per pixmap (the fallback) |
-| `--exit-settle-ms` | 300 | the exit's wait after the last background key input to a window whose redirect it still holds (Exit, above); the measured value, set lower or higher only to measure it |
+| `--exit-settle-ms` | 300 | the exit's wait after the last background input to a window whose redirect it still holds (Exit, above); the measured value, set lower or higher only to measure it |
 | `--teardown-ms` | 0 | a wait before each background session's `FocusOut`, on the request path, for measurement only (0.3.0's wait, the vendor's 100 ms there); 0 sends each `FocusOut` as its request's input ends |
 | `--paste-settle-ms` | 100 | a paste's wait before it observes, after the last key to its window (The paste's settle, above); the measured value, set otherwise only to measure it |
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |

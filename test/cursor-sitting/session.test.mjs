@@ -62,6 +62,18 @@ test('a re-slot row keeps the activation\'s click, the paste\'s per-line records
   assert.deepEqual(read.meta, {activationClickKind: kind, paste, delivery, afterActionRepairs: repairs, coordinateClick: placement});
 });
 
+test('a reply keeps the engine\'s whole identity, a control build\'s variant included, and the activation\'s join (#187\'s isolating slot)', () => {
+  const control = {engine: 'cua', version: '0.1.0', build: 'c'.repeat(64), variant: 'control-no-inert-click'};
+  const read = readReply(reply({'cua/nativeEngine': {...control, extra: 1}, 'cua/activationJoin': 'rearmed'}));
+  assert.deepEqual(read.nativeEngine, control, 'only the identity\'s own fields');
+  assert.equal(read.engine, 'cua');
+  assert.deepEqual(read.meta, {activationJoin: 'rearmed'});
+  const {variant, ...shipping} = control;
+  assert.deepEqual(readReply(reply({'cua/nativeEngine': shipping})).nativeEngine, shipping, 'a release names no variant');
+  assert.equal(readReply(reply({})).nativeEngine, null);
+  assert.equal(readReply({timedOut: true}).nativeEngine, null);
+});
+
 // A session whose serve is a fake: what each opening sends.
 async function opened(bind, scenes = [{id: 'electron', app: '/c/F.app', pid: 7, at: 1, window: {number: 5}}]) {
   const sent = [];

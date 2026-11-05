@@ -342,8 +342,9 @@ export function groupItem({item, group, blocks, engine = 'cua'}) {
 }
 
 // The background-paste repetition (the bar's route): its own item, so a stop leaves the other repetitions to run.
-export function cellItem({half, rep}) {
-  const item = ITEMS.cell(half, rep), tag = tagOf(item, 0), bg = keyOf(item, 0, 0);
+// `item`: its name (the isolating slot's, ./item-187-isolate.mjs, names its own).
+export function cellItem({half, rep, item = ITEMS.cell(half, rep)}) {
+  const tag = tagOf(item, 0), bg = keyOf(item, 0, 0);
   const sent = results => Boolean(results[LABELS.act(bg, CELL_ROW.method, CELL_ROW.string.id)]);
   const gate = s => (s.task === '187-before' ? s : {...s, when: s.when ? r => sent(r) && s.when(r) : sent});
   return [
@@ -424,7 +425,7 @@ const premiseSteps = () => [
   {task: '187-down', args: ['chrome']},
 ];
 
-const placeSteps = () => [
+export const placeSteps = () => [
   {say: '#187: the slot\'s preconditions, then the harness windows placed (Chrome for Testing at the left, TextEdit over its right half), TextEdit in front'},
   {task: '187-preflight', required: true},
   {task: '187-place', required: true},
@@ -435,7 +436,7 @@ const placeAgainSteps = () => [
   {task: '187-place', required: true},
   {task: 'activate', args: ['textedit'], required: true},
 ];
-const endSteps = () => [
+export const endSteps = () => [
   {say: '#187: the owner\'s input source selected again, TextEdit\'s run window on top'},
   {task: 'activate', args: ['textedit'], required: true},
   {task: 'select-source', args: ['owner', 'textedit'], required: true},
@@ -536,7 +537,9 @@ export function keyHeld(reading, pageFocused) {
 // each raise from the act on, and `stateAtStart` its order when the act began; `userKept`: the composition's hash after
 // the row (null without a user window); `clipboard`: {mid, after} type-list digests; `menu`: {read, observed};
 // `keyWindow`: the driven app's key-window reading before the act (ax-state.swift window); `personTouched`: what of the
-// person the row saw (personTouchedOf), which makes it invalid. -> the record; `ok` is delivered and valid.
+// person the row saw (personTouchedOf), which makes it invalid. The record keeps the act's `cua/nativeEngine` (the
+// engine that answered: its build, and a control build's variant) and `activationJoin` (how the act came by a held
+// activation). -> the record; `ok` is delivered and valid.
 export function rowRecord({spec, prepare = null, act = null, check = null, page = null, fixture = null, front = null, activations = [], raisedAt = [], stateAtStart = null,
   userKept = null, clipboard = null, menu = null, keyWindow = null, disturbed = false, personTouched = null}) {
   const meta = act?.meta ?? {}, paste = meta.paste ?? null, background = spec.regime === 'background';
@@ -563,7 +566,8 @@ export function rowRecord({spec, prepare = null, act = null, check = null, page 
   const kw = keyWindowOf(keyWindow), pageFocused = page?.mid ? (typeof page.mid.focused === 'boolean' ? page.mid.focused : null) : null;
   return {ok: invalid === null && delivered, key: spec.key, item: spec.item, group: spec.group, id: rowId(spec.group, spec.method, spec.string), block: spec.block,
     i: spec.i, string: spec.string, method: spec.method, expectedLength: spec.expectedLength, prior: spec.prior ?? null, lines: spec.lines ?? 1, regime: spec.regime, engine: spec.engine,
-    route: act?.route ?? null, activationClick: meta.activationClick ?? null, activationClickKind: meta.activationClickKind ?? null, activationGuardMs: meta.activationGuardMs ?? null,
+    route: act?.route ?? null, activationClick: meta.activationClick ?? null, activationClickKind: meta.activationClickKind ?? null, activationJoin: meta.activationJoin ?? null,
+    activationGuardMs: meta.activationGuardMs ?? null, nativeEngine: act?.nativeEngine ?? null,
     entered: meta.entered ?? null, delivery: meta.delivery ?? null, afterActionRepairs: meta.afterActionRepairs ?? null,
     actMs: act?.value?.actMs ?? null, threw: act?.value?.threw ?? null, error: act?.value?.message ?? null, paste,
     readBack, page: pageReading, fixtureDeltas: fixture ? deltas(fixture.mid, fixture.after) : null, delivered,
@@ -624,7 +628,7 @@ export function slotTouches(rows, activationLines = []) {
 // repetition, #259's cell, a #188 item: each later item sets up its own scene) or the person touched it. `mark(item,
 // error, touched)` records a stop. -> {stopped, touched, ran}.
 export const GOES_ON = Object.freeze(['cell', 'press', '259', '188']);
-export async function driveItems(plan, {runItem, evidenceOf, mark = () => {}, seed = 0, print = () => {}}) {
+export async function driveItems(plan, {runItem, evidenceOf, mark = () => {}, seed = 0, print = () => {}, goesOn = GOES_ON}) {
   const queue = [...plan], ran = [];
   let stopped = null, touched = seed;
   while (queue.length) {
@@ -643,7 +647,7 @@ export async function driveItems(plan, {runItem, evidenceOf, mark = () => {}, se
     }
     if (t.rep && entry.replace) { const replacement = entry.replace(lastAttempt(evidence.rows)[0]?.at ?? null); queue.unshift(replacement); print(`${entry.item} was touched by the person: ${replacement.item} replaces it`); }
     if (!error || stopped) continue;
-    if (GOES_ON.includes(entry.stage) || t.count) { print(`${entry.item} stopped: ${error.message}; the drive goes on`); continue; }
+    if (goesOn.includes(entry.stage) || t.count) { print(`${entry.item} stopped: ${error.message}; the drive goes on`); continue; }
     stopped = `${entry.item}: ${error.message}`;
     print(`stopped at ${stopped}; the items after it were not run`);
   }
@@ -680,7 +684,7 @@ export function perLineProblem(record) {
 
 // ---- the judge -------------------------------------------------------------------------------------------------------
 
-const lastAttempt = rows => rows.slice(Math.max(0, rows.map(r => r.kind).lastIndexOf('start')));
+export const lastAttempt = rows => rows.slice(Math.max(0, rows.map(r => r.kind).lastIndexOf('start')));
 const tally = values => values.reduce((m, v) => ({...m, [v ?? 'none']: (m[v ?? 'none'] ?? 0) + 1}), {});
 const sumOf = list => list.reduce((m, d) => { for (const [k, v] of Object.entries(d ?? {})) m[k] = (m[k] ?? 0) + v; return m; }, {});
 const stageOf = r => `${r.paste?.stage ?? 'no stage'}: read ${r.paste?.readWait ?? '–'}, effect ${r.paste?.effectWait ?? '–'}${r.paste?.confirmed === false ? ', unconfirmed' : ''}`;
@@ -872,19 +876,7 @@ export function judge187(items) {
         : stop ? [stop.personTouched ? 'person-touched' : 'stopped', stop.error] : ['not recorded', null];
       return {item: name, route, half, rep, attemptAt: rowsOf(name)[0]?.at ?? null, replaces: taskResult(name, '187-replaces'), stopped: stop?.error ?? null, record, watcher, ...v, status, why};
     });
-    // A replacement counts only in place of the attempt it was run for: that attempt still the parent's last, and
-    // person-touched; one per parent attempt. Any other (a stale one from before the half was re-run) counts for nothing.
-    const used = new Set();
-    return list.map(c => {
-      if (c.rep < planned.length || c.status === 'not recorded') return c;
-      const parent = list.find(p => p.item === c.replaces?.parent), key = `${c.replaces?.parent}@${c.replaces?.attempt}`;
-      const live = parent && c.replaces.attempt != null && parent.attemptAt === c.replaces.attempt && parent.status === 'person-touched' && !used.has(key);
-      if (live) { used.add(key); return c; }
-      return {...c, status: 'stale replacement', counted: false, pass: false, predicted: false, delivers: false,
-        why: !c.replaces ? 'it names no attempt it replaces' : !parent ? `it replaces ${c.replaces.parent}, not a repetition of this half`
-          : parent.attemptAt !== c.replaces.attempt ? `it replaced an earlier attempt of ${parent.item}, which has run again since`
-            : parent.status !== 'person-touched' ? `${parent.item}'s attempt was ${parent.status}, not person-touched` : `${parent.item}'s attempt is already replaced`};
-    });
+    return settleReplacements(list, planned.length);
   };
   const cells = Object.fromEntries(ROUTES.map(route => [route, Object.fromEntries(HALVES.map(half => [half, reps(route, half)]))]));
   const samples = rowsOf(ITEMS.premise).filter(r => r.kind === 'task' && r.task === '187-axpress').map(r => r.result);
@@ -899,6 +891,25 @@ export function judge187(items) {
   return {groups, cells, premise, press: pressStatement(cells.press, premise), mechanism: mechanismOf(cells.paste), axFocused: axFocusedCount({groups, cells}), bar, putback, restore, overall: {ok: bar.ok, verdict: bar.verdict, why: bar.why, on: bar.on, shown: bar.shown},
     vendor: items[ITEMS.vendor] ? summarize(records(ITEMS.vendor)) : null, vendorKorean: items[ITEMS.vendorKorean] ? summarize(records(ITEMS.vendorKorean)) : null,
     item188: judge188(items), item259: judge259(items)};
+}
+
+// A replacement counts only in place of the attempt it was run for: that attempt still its parent's last, and
+// person-touched; one per parent attempt. Any other (a stale one from before the half was re-run) counts for nothing.
+// `list`: one route and half's repetitions, each {item, rep, status, replaces ({parent, attempt}, its 187-replaces
+// record), attemptAt (its last attempt's start)}; `planned`: how many were planned (a rep past them is a replacement).
+// -> the list, a replacement that is not live marked 'stale replacement' and counted for nothing.
+export function settleReplacements(list, planned) {
+  const used = new Set();
+  return list.map(c => {
+    if (c.rep < planned || c.status === 'not recorded') return c;
+    const parent = list.find(p => p.item === c.replaces?.parent), key = `${c.replaces?.parent}@${c.replaces?.attempt}`;
+    const live = parent && c.replaces.attempt != null && parent.attemptAt === c.replaces.attempt && parent.status === 'person-touched' && !used.has(key);
+    if (live) { used.add(key); return c; }
+    return {...c, status: 'stale replacement', counted: false, pass: false, predicted: false, delivers: false,
+      why: !c.replaces ? 'it names no attempt it replaces' : !parent ? `it replaces ${c.replaces.parent}, not a repetition of this half`
+        : parent.attemptAt !== c.replaces.attempt ? `it replaced an earlier attempt of ${parent.item}, which has run again since`
+          : parent.status !== 'person-touched' ? `${parent.item}'s attempt was ${parent.status}, not person-touched` : `${parent.item}'s attempt is already replaced`};
+  });
 }
 
 // A repetition whose rows the bar judges: recorded, not the person's (person-touched) and not obsolete (a stale

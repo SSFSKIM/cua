@@ -15,6 +15,7 @@ import {ADDENDUM_FILE, AXPRESS_BOUND_MS, BLOCK_ROWS, CELL_REPS, CELL_ROW, cellIt
   item187Markdown, item187Tasks, ITEMS, judge187, judgedOk, keyHeld, LABELS, menuOpened, PARTS, perLineProblem, personTouchedOf, plan187, PREMISE_SAMPLES, PRESS_REPS, pressItem, READ_TIMEOUT, readTimedOut, legacyTimeout, releaseOf,
   premiseOpens, RELAUNCH_STABLE_POLLS, ROWS, rowRecord, slotTouches, TARGET, TOUCHED_STOP, touchedOfItem, VENDOR_ROWS} from '../../scripts/cursor-sitting/item-187.mjs';
 import {ITEMS_188, ITEMS_259} from '../../scripts/cursor-sitting/item-188.mjs';
+import {cellOutcome, ITEMS as ISO, repPremise} from '../../scripts/cursor-sitting/item-187-isolate.mjs';
 import {describeStep, runSteps} from '../../scripts/cursor-sitting/runner.mjs';
 import {sha256Hex} from '../../scripts/native-matrix/matrix-text.mjs';
 import {EMPTY_HASH} from '../../scripts/native-matrix/probe-plan.mjs';
@@ -538,9 +539,10 @@ test('the AXPress route is reported, never the bar: not run behind a closed gate
 // textarea's action reads before AXPress shows (Infinity: never); `premise`: the premise part's record (open, closed,
 // none); `strayWindowReads`: window reads of the relaunched Chrome with another window in front (Infinity: always);
 // `shortMoves`: moves of Chrome's window that land halfway; `foreignAt`: acts during which the person activates Activity
-// Monitor; `foreignInSetup`: the person activates it once, at the item's first activation (outside every row).
+// Monitor; `foreignInSetup`: the person activates it once, at the item's first activation (outside every row);
+// `native`: the engine every act's result names (`cua/nativeEngine`), `clickKind` the act's activationClickKind.
 function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [], tailRaise = false, menuWatch = 'ok', menuSnapshot = true, lostKeys = 0, delayedReads = 0, latinKey = false, keyless: keylessOpen = false,
-  armSet = false, activationInside = false, axpressReads = 0, premise = 'open', strayWindowReads = 0, shortMoves = 0, foreignAt = [], foreignInSetup = false} = {}) {
+  armSet = false, activationInside = false, axpressReads = 0, premise = 'open', strayWindowReads = 0, shortMoves = 0, foreignAt = [], foreignInSetup = false, native = null, clickKind = null} = {}) {
   const keyless = keylessOpen || armSet;
   let actionReads = 0, strays = strayWindowReads, shorts = shortMoves;
   let clock = T0, front = 'textedit', composed = false, typedLatin = false, keyedAt = null, fieldReads = 0;
@@ -583,8 +585,8 @@ function fakeMac(out, {raiseAt = [], lateRaiseAt = [], activationsInWaitAt = [],
         if (lands) beacon({length: page.length + text.length});  // a paste goes in at the caret, after what the field holds
         if (raiseAt.includes(key)) order('back-above');
         if (lateRaiseAt.includes(key)) { order('back-above'); changes.at(-1).visibleAfter = attempts + 2; }
-        return {ok: true, value: {actMs: lands ? 180 : 2100, threw: !lands, message: lands ? null : 'timed out'}, route: 'paste', images: [],
-          meta: {activationGuardMs: 40, activationClick: activationInside ? 'posted' : 'outsideFrame', entered: lands ? text.length : 0,
+        return {ok: true, value: {actMs: lands ? 180 : 2100, threw: !lands, message: lands ? null : 'timed out'}, route: 'paste', images: [], nativeEngine: native,
+          meta: {activationGuardMs: 40, activationClick: activationInside ? 'posted' : 'outsideFrame', entered: lands ? text.length : 0, ...(clickKind ? {activationClickKind: clickKind, activationJoin: 'fresh'} : {}),
             paste: lands ? {stage: 'effect', confirmed: true, focusEnforcement: {activated: true, point: 'outside'}, perLine: perLineFor(code.includes('__app.paste(') ? 'paste' : 'typeText', text)} : {stage: 'read', readWait: 'timeout'}}};
       }
       if (code.includes('// cua-187: check')) {
@@ -759,11 +761,12 @@ test('the composition key (review P2 on 15583c65): a delayed first key is waited
   assert.deepEqual([latin.result.ok, latin.result.posts, latin.result.read, latin.result.waited], [false, 1, 'latin', false], 'a field holding the Latin key is never typed over');
 });
 
-// One repetition run on the fake Mac. -> {rows, calls, result (its '187-cell' record), error}.
-const runRep = async (t, {route = 'paste', half = 'after', rep = 0, ...options} = {}) => {
-  const out = scratch(t), mac = fakeMac(out, options), item = route === 'paste' ? ITEMS.cell(half, rep) : ITEMS.press(half, rep);
+// One repetition run on the fake Mac (`name`: the item's, the isolating slot's own). -> {rows, calls, result (its
+// '187-cell' record), error}.
+const runRep = async (t, {route = 'paste', half = 'after', rep = 0, name = null, ...options} = {}) => {
+  const out = scratch(t), mac = fakeMac(out, options), item = name ?? (route === 'paste' ? ITEMS.cell(half, rep) : ITEMS.press(half, rep));
   let error = null;
-  await runSteps((route === 'paste' ? cellItem : pressItem)({half, rep}), {item, out, io: mac.io, log: () => {}}).catch(e => { error = e; });
+  await runSteps(route === 'paste' ? cellItem({half, rep, item}) : pressItem({half, rep}), {item, out, io: mac.io, log: () => {}}).catch(e => { error = e; });
   const rows = read187(out)[item];
   return {rows, calls: mac.calls, result: rows.find(r => r.task === '187-cell')?.result ?? null, error, sleeps: mac.sleeps};
 };
@@ -803,6 +806,25 @@ test('the background-paste cell end to end: relaunched, placed, the background p
   assert.equal(inside.result.verdict.status, 'premise not met');
   assert.equal(inside.result.ok, false);
   assert.deepEqual(leaks(JSON.stringify(after.rows) + JSON.stringify(before.rows)), []);
+});
+
+test('the isolating slot\'s cell end to end: each paste\'s record keeps the engine that answered and its click, so the premise attests the half', async t => {
+  const BUILD = {after: 'a'.repeat(64), before: 'c'.repeat(64)};
+  const NATIVE = {after: {engine: 'cua', version: '0.1.0', build: BUILD.after}, before: {engine: 'cua', version: '0.1.0', build: BUILD.before, variant: 'control-no-inert-click'}};
+  const KIND = {after: {kind: 'inertOutside', point: 'offset', when: 'early'}, before: {kind: 'skipped', skippedReason: 'controlBuild'}};
+  for (const half of ['after', 'before']) {
+    const name = ISO.cell(half, 0), run = await runRep(t, {half, name, native: NATIVE[half], clickKind: KIND[half], armSet: half === 'before'});
+    assert.equal(run.error, null);
+    assert.ok(run.rows.some(r => r.task === '187-relaunch' && r.args[0] === name), 'the slot\'s own item name');
+    const cell = run.result;
+    assert.deepEqual([cell.background.nativeEngine, cell.row.nativeEngine, cell.background.activationClickKind, cell.background.activationJoin], [NATIVE[half], NATIVE[half], KIND[half], 'fresh']);
+    assert.deepEqual(repPremise(cell, {half, build: BUILD[half]}), ['counted', null], half);
+    assert.equal(cellOutcome(cell, half).met, true, `${half} as predicted`);
+    const other = half === 'after' ? 'before' : 'after';
+    assert.equal(repPremise(cell, {half: other, build: BUILD[other]})[0], 'not attested', 'a result never attests the other half');
+  }
+  const unnamed = await runRep(t, {name: ISO.cell('after', 1), clickKind: KIND.after});
+  assert.match(repPremise(unnamed.result, {half: 'after', build: BUILD.after})[1], /carried no cua\/nativeEngine/);
 });
 
 test('the AXPress cell end to end: the click only once AXPress shows; without it PRECONDITION UNMET and nothing clicked or pasted; a closed gate runs nothing', async t => {

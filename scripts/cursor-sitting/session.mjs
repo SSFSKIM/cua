@@ -45,20 +45,24 @@ export function parseCells(text) {
 // focus at ⌘V, what its activation did, `focusEnforcement`, and every line's record, `perLine`); the click the
 // activation posted (#187, `activationClickKind`: at the activation point, the inert one outside the frame, or none and
 // why); an element click's plan, the ladder's reason and the hit-test's answer (#188, `elementClick`); a coordinate
-// click's placement from the screenshot point to the posted events (#259, `coordinateClick`).
-export const KEPT_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'activationClickKind', 'actionInterval', 'receivedAt', 'hidIdleMs', 'intervention', 'entered',
+// click's placement from the screenshot point to the posted events (#259, `coordinateClick`); how the call came by a
+// held activation (#187, `activationJoin`: fresh, shared, rearmed, replacedSpent).
+export const KEPT_META = ['engineMs', 'serviceMs', 'activationGuardMs', 'activationClick', 'activationClickKind', 'activationJoin', 'actionInterval', 'receivedAt', 'hidIdleMs', 'intervention', 'entered',
   'delivery', 'afterActionRepairs', 'observation', 'paste', 'elementClick', 'coordinateClick'];
 
 // What the sitting keeps of a js reply: the cell's answer, the route the engine reported for the last call, the
-// attested engine, that call's meta (KEPT_META, the keys it carried), and the images it emitted (base64, SHOT only).
-// -> {ok, value?, error?, inCellMs?, route, engine, meta, images}.
+// attested engine and its whole identity (`nativeEngine`: engine, version, build, and a control build's variant, which
+// the isolating slot attests its half by), that call's meta (KEPT_META, the keys it carried), and the images it emitted
+// (base64, SHOT only). -> {ok, value?, error?, inCellMs?, route, engine, nativeEngine, meta, images}.
 export function readReply(reply) {
-  if (reply.timedOut) return {ok: false, error: 'no answer within the cell\'s bound', route: null, engine: null, meta: {}, images: []};
+  if (reply.timedOut) return {ok: false, error: 'no answer within the cell\'s bound', route: null, engine: null, nativeEngine: null, meta: {}, images: []};
   const meta = reply.result?._meta ?? {};
   const parsed = parseCells(resultText(reply));
   const images = (reply.result?.content ?? []).filter(c => c.type === 'image').map(c => ({mimeType: c.mimeType, data: c.data}));
   const kept = Object.fromEntries(KEPT_META.filter(key => meta[`cua/${key}`] != null).map(key => [key, meta[`cua/${key}`]]));
-  const base = {route: meta['cua/inputRoute'] ?? null, engine: meta['cua/nativeEngine']?.engine ?? null, meta: kept, images};
+  const native = meta['cua/nativeEngine'];
+  const nativeEngine = native && typeof native === 'object' ? Object.fromEntries(['engine', 'version', 'build', 'variant'].filter(k => typeof native[k] === 'string').map(k => [k, native[k]])) : null;
+  const base = {route: meta['cua/inputRoute'] ?? null, engine: native?.engine ?? null, nativeEngine, meta: kept, images};
   if (!parsed) return {ok: false, error: (reply.error?.message ?? resultText(reply).split('\n').filter(Boolean).at(-1) ?? 'no output').slice(0, 300), ...base};
   return {...parsed, ...base};
 }

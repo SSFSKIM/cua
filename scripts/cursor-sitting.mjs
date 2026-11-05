@@ -126,6 +126,24 @@
 //       engine; `--vendor` the vendor's lanes (recorded only). `judge` writes <out>/item-187.md; with `--addendum` it
 //       writes the re-judgment by the amended predicates to <out>/item-187-rejudge.md and never touches item-187.md.
 //       Exit 1 unless the bar holds (the item's header).
+//   cursor-sitting.mjs control-build --home <dir> --scratch <new dir> [--sign-wait <ms>] [--dry-run]
+//       #187's control build (./cursor-sitting/control-build.mjs): native/engine copied whole into <scratch>/engine, the
+//       copy's Package.swift given CUA_CONTROL_NO_INERT_CLICK on its Engine target alone, checked (only that line
+//       differs; its build id is not the shipping one), recorded in <scratch>/control.json, then built into <home>'s
+//       engine directory, pending approval, by the CLI's own `engine build` with the copy as its source. --dry-run makes
+//       and checks the copy and prints both build ids; nothing is built.
+//   cursor-sitting.mjs isolate-187 drive --run <dir> --out <dir> --home <dir> --halves <dir> [--blocks <list>] [--no-tail]
+//                                      [--quiet] [--dry-run]
+//   cursor-sitting.mjs isolate-187 judge --out <dir>
+//       #187's isolating slot (./cursor-sitting/item-187-isolate.mjs; the runbook's "Item 187: the isolating slot"):
+//       the placement, six blocks A B B A A B (each a swap to its half's save under --halves, engine-after/ or
+//       engine-control/, approved with no terminal and attested from the running engine's ping; 2 background-paste
+//       repetitions; 3 chrome/composing@textedit rows), the AFTER-only block (a swap to AFTER, #188's `--part 188`, C2's
+//       and C3's items when they land), the tail (C4's), and the owner's source. --blocks runs some blocks only (1-7, 3,
+//       2,5; 7 is the AFTER-only block) and --no-tail leaves the tail out (the slot running long); the placement and the
+//       end always run. The out directory is the slot's own, never
+//       a re-slot's (one holding item-187.md is refused). `judge` writes <out>/item-187-isolate.md, the pre-registered
+//       verdict: LANDS, DOES NOT LAND or INCONCLUSIVE; exit 1 unless LANDS. The dry run prints each block's steps.
 //   cursor-sitting.mjs remote prepare|enroll|run --kit <dir> [--port n] [--run <dir> --out <dir>] [--quiet] [--dry-run]
 //       Acceptance 8's loopback device (./cursor-sitting/remote.mjs): prepare the kit (and print what it still needs),
 //       enrol it on a loopback relay, then run: the relay and the agent started, three client sessions driven
@@ -139,12 +157,14 @@ import {ORDER_TARGETS, route3Plan, writeFrames, writeLag, writeOrder} from './cu
 import {keepSeriesSignposts, signpostCoverage} from './cursor-sitting/signposts.mjs';
 import {liveSourceSwitch, switchSource, writeConsent} from './cursor-sitting/input-source.mjs';
 import {windowListProbe, writeOrderFromMeta} from './cursor-sitting/glide.mjs';
-import {restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
+import {buildControl, prepareControlSource} from './cursor-sitting/control-build.mjs';
+import {engineDirOf, restoreEngine, saveEngine} from './cursor-sitting/engine-copy.mjs';
+import {GOES_ON_ISO, isolateMarkdown, isolatePlan, isolateTasks, judgeIsolate, parseBlocks, SAVED as SAVED_ISO, stepCounts, VERDICT_FILE} from './cursor-sitting/item-187-isolate.mjs';
 import {PLANS} from './cursor-sitting/plans.mjs';
 import {CASES, elementFrameTool, ENGINES, itemOf, judgeCase, moveWindowTool, orderFileOf, orderLines, orderWatchProbe, placeSteps, raiseMarkdown,
   raiseSteps} from './cursor-sitting/raise.mjs';
 import {ENGINES as FIRST_ENGINES, firstMarkdown, firstSteps, itemOf as firstItemOf, judgeFirst, VARIANTS} from './cursor-sitting/first-observation.mjs';
-import {ADDENDUM_FILE, axStateTool, driveItems, item187Addendum, item187Markdown, judge187, judgedOk, menuTool, PARTS as PARTS_187, plan187, slotTouches} from './cursor-sitting/item-187.mjs';
+import {ADDENDUM_FILE, axStateTool, driveItems, GOES_ON, item187Addendum, item187Markdown, judge187, judgedOk, menuTool, PARTS as PARTS_187, plan187, slotTouches} from './cursor-sitting/item-187.mjs';
 import {agentConnected, enrollKit, kitPaths, prepareKit, remoteSteps, startLoopback, DEFAULT_PORT} from './cursor-sitting/remote.mjs';
 import {liveIo, runSteps} from './cursor-sitting/runner.mjs';
 import {clipPathProblem, REPO_ROOT} from './cursor-sitting/recording.mjs';
@@ -157,7 +177,8 @@ const CLI = fileURLToPath(new URL('../bin/cua.mjs', import.meta.url));
 const OPTIONS = {home: {type: 'string'}, to: {type: 'string'}, from: {type: 'string'}, aside: {type: 'string'}, run: {type: 'string'}, out: {type: 'string'},
   engine: {type: 'string'}, 'other-session': {type: 'string'}, samples: {type: 'string'}, kit: {type: 'string'}, port: {type: 'string'},
   arm: {type: 'string'}, 'owner-source': {type: 'boolean', default: false}, clip: {type: 'string'}, frames: {type: 'string'}, series: {type: 'string'}, source: {type: 'string'}, 'no-clip': {type: 'boolean', default: false}, still: {type: 'boolean', default: false}, control: {type: 'boolean', default: false},
-  case: {type: 'string'}, variant: {type: 'string'}, part: {type: 'string'}, vendor: {type: 'boolean', default: false}, saved: {type: 'string'}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}, addendum: {type: 'boolean', default: false}};
+  case: {type: 'string'}, variant: {type: 'string'}, part: {type: 'string'}, vendor: {type: 'boolean', default: false}, saved: {type: 'string'}, quiet: {type: 'boolean', default: false}, 'dry-run': {type: 'boolean', default: false}, addendum: {type: 'boolean', default: false},
+  scratch: {type: 'string'}, 'sign-wait': {type: 'string'}, halves: {type: 'string'}, blocks: {type: 'string'}, 'no-tail': {type: 'boolean', default: false}};
 const TIMING_ITEM = {typing: 12, clicks: 13};
 
 const absolute = (values, name) => {
@@ -172,6 +193,21 @@ function cuaJson(home, args) {
   try { return JSON.parse(execFileSync(process.execPath, [CLI, ...args, '--json'], {encoding: 'utf8', env: {...process.env, HOME: home}, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60_000})); } catch (error) {
     return {ok: false, detail: String(error.stderr || error.stdout || error.message).trim().split('\n').at(-1)};
   }
+}
+
+// The engine's stop and status for engine-copy's restore, as `restore` runs them.
+const engineDeps = home => ({stop: async () => { const r = cuaJson(home, ['engine', 'stop']); return r.ok === false ? r : {ok: true, ...r}; },
+  status: async () => cuaJson(home, ['engine', 'status'])});
+// `cua engine approve --json` with no terminal (stdin closed), so a missing grant or a capture confirmation fails it at
+// once instead of waiting for someone. -> its JSON (also when it exits 1), or {ok: false, detail}.
+function approveHeadless(home) {
+  try { return JSON.parse(execFileSync(process.execPath, [CLI, 'engine', 'approve', '--json'], {encoding: 'utf8', env: {...process.env, HOME: home}, stdio: ['ignore', 'pipe', 'pipe'], timeout: 180_000})); } catch (error) {
+    try { return JSON.parse(String(error.stdout ?? '').trim().split('\n').at(-1)); } catch { return {ok: false, detail: String(error.stderr || error.message).trim().split('\n').at(-1)}; }
+  }
+}
+// This checkout's commit, for a report's header. -> 12 hex digits, or null.
+function kitCommit() {
+  try { return execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {cwd: dirname(SCRIPT), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']}).trim() || null; } catch { return null; }
 }
 
 const readJsonl = file => (existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line)) : []);
@@ -373,23 +409,53 @@ async function drive187(values) {
   if (part === 'before' && !dryRun && !values.saved) throw new Error('--part before takes --saved <the directory `save` wrote before the build>, read for the put-back');
   const saved = values.saved ? absolute(values, 'saved') : '<saved>';
   const io = liveIo({run, out, quiet: values.quiet});
-  const plan = plan187({part, vendor: values.vendor, saved});
-  const lines = file => (existsSync(file) ? readJsonl(file) : []);
-  const evidenceOf = item => ({rows: lines(join(out, `item-${item}.jsonl`)), activations: lines(join(out, `item-${item}-activations.ndjson`))});
-  // The slot's count so far: every person-touched item the out directory records, in every attempt of every item (a
-  // part run again included), so no re-run resets the stop rule.
-  const seed = dryRun ? 0 : Object.keys(read187(out)).filter(item => item.startsWith('187-'))
-    .reduce((n, item) => n + (({rows, activations}) => slotTouches(rows, activations))(evidenceOf(item)), 0);
-  let steps = 0;
-  const {stopped} = await driveItems(plan, {seed, print,
-    runItem: async ({item, steps: itemSteps}) => { steps += itemSteps.length; try { await runSteps(itemSteps, {item, out, io, dryRun}); return null; } catch (error) { return error; } },
-    evidenceOf: item => (dryRun ? {rows: [], activations: []} : evidenceOf(item)),
-    mark: (item, error, touched) => appendFileSync(join(out, `item-${item}.jsonl`), `${JSON.stringify({item, at: Date.now(), kind: 'stopped', error: error.message, ...(touched.count ? {personTouched: touched.foreign ?? true} : {})})}\n`)});
+  const {stopped, steps} = await drivePlan(plan187({part, vendor: values.vendor, saved}), {out, io, dryRun});
   if (dryRun) { print(`dry run: ${steps} steps, nothing sent`); return 0; }
   const judged = judge187(read187(out));
   writeFileSync(join(out, 'item-187.md'), item187Markdown(judged));
   print(item187Markdown(judged));
   return !stopped && judgedOk(judged) ? 0 : 1;
+}
+
+// A #187 plan's items driven into `out` (./cursor-sitting/item-187.mjs driveItems), seeded with the slot's count so far:
+// every person-touched item the out directory records, in every attempt of every item (a part run again included), so
+// no re-run resets the stop rule. `goesOn`: the stages whose stop lets the drive go on. -> {stopped, steps}.
+async function drivePlan(plan, {out, io, dryRun, goesOn = GOES_ON}) {
+  const lines = file => (existsSync(file) ? readJsonl(file) : []);
+  const evidenceOf = item => ({rows: lines(join(out, `item-${item}.jsonl`)), activations: lines(join(out, `item-${item}-activations.ndjson`))});
+  const seed = dryRun ? 0 : Object.keys(read187(out)).filter(item => item.startsWith('187-'))
+    .reduce((n, item) => n + (({rows, activations}) => slotTouches(rows, activations))(evidenceOf(item)), 0);
+  let steps = 0;
+  const {stopped} = await driveItems(plan, {seed, print, goesOn,
+    runItem: async ({item, steps: itemSteps}) => { steps += itemSteps.length; try { await runSteps(itemSteps, {item, out, io, dryRun}); return null; } catch (error) { return error; } },
+    evidenceOf: item => (dryRun ? {rows: [], activations: []} : evidenceOf(item)),
+    mark: (item, error, touched) => appendFileSync(join(out, `item-${item}.jsonl`), `${JSON.stringify({item, at: Date.now(), kind: 'stopped', error: error.message, ...(touched.count ? {personTouched: touched.foreign ?? true} : {})})}\n`)});
+  return {stopped, steps};
+}
+
+// #187's isolating slot: the swaps' tasks over this Mac's engine (engine-copy's restore and a headless approve, both on
+// --home) beside the kit's, then the plan driven, and the verdict file written at the end. Refused on a re-slot's out
+// directory, so no slot's report is written over.
+async function driveIsolate(values) {
+  const plan = isolatePlan({blocks: parseBlocks(values.blocks), tail: !values['no-tail']});
+  const out = absolute(values, 'out'), dryRun = values['dry-run'];
+  if (existsSync(join(out, 'item-187.md'))) throw new Error(`${out} holds a re-slot's report (item-187.md): the isolating slot writes to its own new directory`);
+  if (dryRun) {
+    const {steps} = await drivePlan(plan, {out, io: liveIo({run: values.run ?? '/nonexistent', out, quiet: values.quiet}), dryRun, goesOn: GOES_ON_ISO});
+    for (const b of stepCounts(plan)) print(`dry run: ${b.label}: ${b.steps} steps`);
+    print(`dry run: ${steps} steps, nothing sent`);
+    return 0;
+  }
+  const run = absolute(values, 'run'), home = absolute(values, 'home'), halves = absolute(values, 'halves');
+  for (const dir of Object.values(SAVED_ISO)) if (!existsSync(join(halves, dir, 'saved.json'))) throw new Error(`${join(halves, dir)} holds no save (saved.json): save both halves before the slot (the runbook)`);
+  const io = liveIo({run, out, quiet: values.quiet});
+  Object.assign(io.tasks, isolateTasks({halves, now: Date.now, savedRecord: dir => JSON.parse(readFileSync(join(dir, 'saved.json'), 'utf8')),
+    restore: ({from, aside}) => restoreEngine({home, from, aside, ...engineDeps(home)}), approve: async () => approveHeadless(home)}));
+  const {stopped} = await drivePlan(plan, {out, io, dryRun, goesOn: GOES_ON_ISO});
+  const judged = judgeIsolate(read187(out)), text = isolateMarkdown(judged, {commit: kitCommit()});
+  writeFileSync(join(out, VERDICT_FILE), text);
+  print(text);
+  return !stopped && judged.ok ? 0 : 1;
 }
 
 async function drive(steps, {item, values, gap = null}) {
@@ -422,9 +488,7 @@ export async function main(argv) {
   }
   if (command === 'restore') {
     const home = absolute(values, 'home');
-    const restored = await restoreEngine({home, from: absolute(values, 'from'), aside: absolute(values, 'aside'),
-      stop: async () => { const r = cuaJson(home, ['engine', 'stop']); return r.ok === false ? r : {ok: true, ...r}; },
-      status: async () => cuaJson(home, ['engine', 'status'])});
+    const restored = await restoreEngine({home, from: absolute(values, 'from'), aside: absolute(values, 'aside'), ...engineDeps(home)});
     print(restored);
     return restored.ok ? 0 : 1;
   }
@@ -588,9 +652,7 @@ export async function main(argv) {
       const out = absolute(values, 'out'), judged = judge187(read187(out));
       // --addendum: the re-judgment by the amended predicates, beside the slot's report; item-187.md is never touched.
       if (values.addendum) {
-        let commit = null;
-        try { commit = execFileSync('git', ['rev-parse', '--short=12', 'HEAD'], {cwd: dirname(fileURLToPath(import.meta.url)), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore']}).trim() || null; } catch {}
-        const text = item187Addendum(judged, {commit});
+        const text = item187Addendum(judged, {commit: kitCommit()});
         writeFileSync(join(out, ADDENDUM_FILE), `${text.replace(/\n+$/, '')}\n`);
         print(text);
         return judgedOk(judged) ? 0 : 1;
@@ -600,6 +662,30 @@ export async function main(argv) {
       return judgedOk(judged) ? 0 : 1;
     }
     throw new Error('paste-187 takes drive or judge');
+  }
+  if (command === 'control-build') {
+    const home = absolute(values, 'home'), scratch = absolute(values, 'scratch');
+    if (values['dry-run']) {
+      const {record} = prepareControlSource({scratch});
+      print({ok: true, dryRun: true, ...record, next: 'nothing was built'});
+      return 0;
+    }
+    const {main: cliMain} = await import('../src/cli.mjs');
+    const built = await buildControl({home, scratch, cliMain, engineDir: engineDirOf(home), signWait: values['sign-wait'] ?? null});
+    print({ok: built.code === 0, copy: built.copy, shippingBuild: built.shippingBuild, controlBuild: built.controlBuild,
+      next: built.code === 0 ? 'cua engine approve, then save the engine directory as the BEFORE half (the runbook)' : 'the build failed: its error is above'});
+    return built.code;
+  }
+  if (command === 'isolate-187') {
+    const sub = positionals[0];
+    if (sub === 'drive') return driveIsolate(values);
+    if (sub === 'judge') {
+      const out = absolute(values, 'out'), judged = judgeIsolate(read187(out)), text = isolateMarkdown(judged, {commit: kitCommit()});
+      writeFileSync(join(out, VERDICT_FILE), text);
+      print(text);
+      return judged.ok ? 0 : 1;
+    }
+    throw new Error('isolate-187 takes drive or judge');
   }
   if (command === 'remote') {
     const kit = absolute(values, 'kit'), sub = positionals[0];
@@ -629,7 +715,7 @@ export async function main(argv) {
     }
     throw new Error('remote takes prepare, enroll or run');
   }
-  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | source consent|restore | clip frames|order | raise drive|judge | first-observation drive|judge | paste-187 drive|judge | remote prepare|enroll|run (see the header)');
+  throw new Error('usage: cursor-sitting.mjs prepare | save | restore | drive <item> | timing typing|clicks | judge | verdict | summary | source consent|restore | clip frames|order | raise drive|judge | first-observation drive|judge | paste-187 drive|judge | control-build | isolate-187 drive|judge | remote prepare|enroll|run (see the header)');
 }
 
 if (process.argv[1] && SCRIPT === resolve(process.argv[1])) {

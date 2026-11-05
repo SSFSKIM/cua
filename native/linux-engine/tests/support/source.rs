@@ -162,3 +162,71 @@ pub fn engine_sources() -> Vec<(PathBuf, String)> {
     assert!(files.len() > 10, "the walk found the engine's sources: {}", files.len());
     files
 }
+
+/// Whether a byte can be part of an identifier.
+pub fn is_word(c: u8) -> bool {
+    c.is_ascii_alphanumeric() || c == b'_'
+}
+
+/// The byte offsets where `ident` occurs as a whole identifier.
+pub fn idents(code: &str, ident: &str) -> Vec<usize> {
+    code.match_indices(ident)
+        .filter(|(at, _)| {
+            let before = code[..*at].bytes().last();
+            let after = code[at + ident.len()..].bytes().next();
+            !before.is_some_and(is_word) && !after.is_some_and(is_word)
+        })
+        .map(|(at, _)| at)
+        .collect()
+}
+
+/// Every `fn <name>` in `code` with the span from `fn` to its body's closing brace (signature included).
+pub fn functions(code: &str) -> Vec<(String, usize, usize)> {
+    let b = code.as_bytes();
+    let mut out = Vec::new();
+    for at in idents(code, "fn") {
+        let rest = code[at + 2..].trim_start();
+        let name: String = rest.bytes().take_while(|c| is_word(*c)).map(char::from).collect();
+        if name.is_empty() {
+            continue; // a `fn(` pointer type
+        }
+        let Some(open) = (at..b.len()).find(|&i| b[i] == b'{' || b[i] == b';') else {
+            continue;
+        };
+        if b[open] == b';' {
+            continue; // a declaration without a body
+        }
+        let mut depth = 0;
+        let mut end = b.len();
+        for (i, &c) in b.iter().enumerate().skip(open) {
+            match c {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        end = i + 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        out.push((name, at, end));
+    }
+    out
+}
+
+/// The innermost named function around offset `at`, if any.
+pub fn enclosing(fns: &[(String, usize, usize)], at: usize) -> Option<&str> {
+    fns.iter()
+        .filter(|(_, start, end)| *start <= at && at < *end)
+        .min_by_key(|(_, start, end)| end - start)
+        .map(|(name, ..)| name.as_str())
+}
+
+/// The trimmed line of `code` around offset `at`.
+pub fn line_at(code: &str, at: usize) -> &str {
+    let start = code[..at].rfind('\n').map_or(0, |i| i + 1);
+    let end = code[at..].find('\n').map_or(code.len(), |i| at + i);
+    code[start..end].trim()
+}

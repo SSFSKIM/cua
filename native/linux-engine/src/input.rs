@@ -184,6 +184,9 @@ impl Keys {
 pub struct Session {
     pub target: Window,
     synthesized_focus: bool,
+    /// The presses this session has sent: what a press's acknowledgement is issued against, so it serves one press
+    /// (`focus_ack::PressAck`).
+    presses: u64,
     redirected: bool,
     anchor_time: u32,
     anchor: Instant,
@@ -262,6 +265,7 @@ impl Session {
         let mut session = Session {
             target,
             synthesized_focus: false,
+            presses: 0,
             redirected,
             anchor_time,
             anchor,
@@ -333,7 +337,7 @@ impl Session {
     pub fn release_buttons(&mut self, x: &X11) {
         for button in 1..=5u8 {
             if self.buttons & (1 << (button + 7)) != 0 {
-                let _ = self.button(x, button, false);
+                let _ = self.release_button(x, button);
             }
         }
         self.buttons = 0;
@@ -346,7 +350,7 @@ impl Session {
     }
 
     /// Whether the session holds no synthetic focus: none was synthesized, because the X input focus was within the
-    /// target when the session opened (and no press took one since, `refocus`). The synthetic-focus state a paste
+    /// target when the session opened (and no press took one since, `take_focus`). The synthetic-focus state a paste
     /// revalidates before its dispatch.
     pub fn focus_was_within(&self) -> bool {
         !self.synthesized_focus
@@ -427,15 +431,21 @@ impl Session {
         }
     }
 
-    /// Takes the synthetic focus now, if the session holds none: a session opened while the real focus was within
-    /// the target synthesized no `FocusIn`, and the real focus may have left since (a hold keeps the session across
-    /// requests). Answers whether a `FocusIn` went; the session's end then sends its `FocusOut`.
-    pub fn refocus(&mut self, x: &X11) -> Result<bool> {
-        if self.synthesized_focus {
-            return Ok(false);
-        }
-        self.focus_in(x)?;
-        Ok(true)
+    /// Takes a synthetic focus now, a fresh `FocusIn` (`focus_ack.rs`, a press's `Need::Take`): the session held none
+    /// (it opened while the real focus was within the target, which has left since), or its earlier `FocusIn` is spent
+    /// (the toolkit has given its focus to another window since). The session's end then sends its `FocusOut`.
+    pub fn take_focus(&mut self, x: &X11) -> Result<()> {
+        self.focus_in(x)
+    }
+
+    /// Whether the session sent a synthetic `FocusIn` (at its opening or since, `take_focus`): whether one may hold.
+    pub fn synthesized_focus(&self) -> bool {
+        self.synthesized_focus
+    }
+
+    /// The presses this session has sent, against which a press's acknowledgement is issued.
+    pub fn presses(&self) -> u64 {
+        self.presses
     }
 
     /// Places the pointer at a root point: Enter and Motion to the deepest viewable child under it, or one
@@ -502,8 +512,27 @@ impl Session {
         Ok(())
     }
 
-    /// A button press or release at the last placed position (behaviour §8.3).
-    pub fn button(&mut self, x: &X11, button: u8, press: bool) -> Result<()> {
+    /// A button press at the last placed position (behaviour §8.3), spending the acknowledgement taken for it
+    /// ([`crate::focus_ack::press_ack`]): one issued for this session's next press at this point, and no other, so no
+    /// acknowledgement serves two presses, outlives its request, or covers a point it did not check (task 61's fix 3).
+    pub fn press(&mut self, x: &X11, button: u8, ack: crate::focus_ack::PressAck) -> Result<()> {
+        let Some((window, presses, at)) = ack.issued_for() else {
+            bail!("a desktop press's acknowledgement cannot press in a background session")
+        };
+        let placed = self.pointer.map(|p| (p.root_x, p.root_y));
+        if window != self.target || presses != self.presses || placed != Some(at) {
+            bail!("a press's acknowledgement was taken for another press; nothing was pressed");
+        }
+        self.presses += 1;
+        self.send_button(x, button, true)
+    }
+
+    /// A button release at the last placed position (behaviour §8.3).
+    pub fn release_button(&mut self, x: &X11, button: u8) -> Result<()> {
+        self.send_button(x, button, false)
+    }
+
+    fn send_button(&mut self, x: &X11, button: u8, press: bool) -> Result<()> {
         let Some(pointer) = self.pointer else {
             bail!("background pointer input requires a position")
         };

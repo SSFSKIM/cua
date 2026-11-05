@@ -38,6 +38,11 @@
 //!   since. So the focus is read before every press: if it has left a session that holds no synthetic focus, the
 //!   session takes one now, as a fresh session would (the earlier focus let go first, then the `FocusIn`, then its
 //!   `active` waited for), and its end sends the `FocusOut`.
+//! - **Qt's state now, not an earlier press's report** (task 61's fix 3). Once a synthetic `FocusIn` was reported
+//!   taken, Qt can still give its focus to another window of the application (the person focusing it during a held
+//!   click), and the session's `FocusIn` is spent. So no acknowledgement outlives its press: every press gets its own
+//!   [`PressAck`] from [`press_ack`], which reads the frame again, and a press with none does not compile. A frame no
+//!   longer active takes a fresh `FocusIn` with its own report, as a fresh session would.
 
 use std::time::{Duration, Instant};
 
@@ -46,10 +51,11 @@ use serde_json::{Value, json};
 
 use crate::atspi;
 use crate::dbus::Bus;
-use crate::input::focus_is_within;
+use crate::input::{Session, focus_is_within};
 use crate::route::Route;
 use crate::tree::ObjRef;
 use crate::x11::X11;
+use x11rb::protocol::xproto::Window;
 
 /// How long a background press waits for the toolkit to report the session's focus taken (`--focus-ack-ms`, for
 /// measurement): the smallest of 25, 50, 100 and 200 ms that held 30 consecutive independent click runs on kate (Qt
@@ -120,6 +126,15 @@ pub fn no_frame(app: &str) -> String {
     )
 }
 
+/// Why input to `window` is withheld while its modal `dialog` is shown (`engine.rs`'s modal refusal, and a press about to
+/// take a fresh synthetic focus, which Qt would hand to the dialog).
+pub fn blocked_by(app: &str, window: u32, dialog: u32) -> String {
+    format!(
+        "{app} window {window} is blocked by its modal dialog, window {dialog}, which takes the desktop's focus on \
+         background input to the window"
+    )
+}
+
 /// What a coordinate press's refusal ends with: nothing of the request's input went out.
 pub fn nothing_pressed(cause: String) -> String {
     format!("{cause}; nothing was sent, so it is safe to retry")
@@ -144,29 +159,92 @@ pub fn refused_press(cause: String, sent: u32, count: u32) -> String {
     }
 }
 
-/// What a press needs once its recipient is the target window itself (`FocusAck::before_press`), from the real focus
-/// read just before it and whether the session synthesized a focus of its own.
+/// What one press needs once its recipient is the target window itself (`FocusAck::check`), read just before that
+/// press: never carried over from an earlier press or request (task 61's fix 3; the design session's ruling, 2026-11-05:
+/// no acknowledgement outlives the press it was taken for).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Need {
-    /// The real focus is within the window: Qt's focus window is the window's own, nothing to wait for.
+    /// The real focus is within the window, or Qt reports the window active now: its focus window is the window's own.
     Nothing,
-    /// The session's synthetic focus: its `active` reported, once per request.
-    Taken,
-    /// The session holds no synthetic focus (it opened with the real focus within) and the real focus has left: an
-    /// earlier focus let go, a `FocusIn` taken now, then its `active` reported.
-    Refocus,
+    /// A synthetic `FocusIn` this request sent is not yet acknowledged: its `active` waited for.
+    Wait,
+    /// No synthetic focus holds now (the session opened with the real focus within and it has left, or the session's
+    /// earlier `FocusIn` was acknowledged and Qt has since given its focus to another window): an earlier focus let go,
+    /// a fresh `FocusIn`, and its own `active` waited for.
+    Take,
 }
 
-/// [`Need`] from the real focus now and the session's synthetic focus.
-pub fn need(within_now: bool, synthesized: bool) -> Need {
-    match (within_now, synthesized) {
-        (true, _) => Need::Nothing,
-        (false, true) => Need::Taken,
-        (false, false) => Need::Refocus,
+/// [`Need`] from the state now: the real focus within the window, a synthetic focus held by the session, one sent by
+/// this request and not yet acknowledged, and (read only when the rest cannot decide) the frame's `active`.
+pub fn need(
+    within_now: bool,
+    synthesized: bool,
+    pending: bool,
+    active_now: impl FnOnce() -> Result<bool>,
+) -> Result<Need> {
+    Ok(if within_now {
+        Need::Nothing
+    } else if !synthesized {
+        Need::Take
+    } else if pending {
+        Need::Wait
+    } else if active_now()? {
+        Need::Nothing
+    } else {
+        Need::Take
+    })
+}
+
+/// The acknowledgement one background press needs: issued by [`press_ack`] alone, for one session's next press at one
+/// point, and consumed by that press (`Route::press`, `Session::press`). It is neither `Clone` nor `Copy`, and only this
+/// module can build one, so a press without a fresh one does not compile; the press refuses one issued for another
+/// window, point or press (`Session::press`), and nothing stores one (`tests/press_boundary.rs`). On the desktop route
+/// it carries nothing: no window's toolkit is asked.
+#[must_use = "an acknowledgement is for the press it was taken for"]
+#[derive(Debug)]
+pub struct PressAck {
+    /// The session's window and its press count when issued, and the root point checked; None on the desktop route.
+    on: Option<(Window, u64, (i16, i16))>,
+}
+
+impl PressAck {
+    /// What the press checks: the window, its session's press count and the point the acknowledgement was taken for.
+    pub fn issued_for(&self) -> Option<(Window, u64, (i16, i16))> {
+        self.on
     }
 }
 
-/// One request's wait for a window's focus (`Engine::focus_ack_for`): its frame, the bound, and what it waited.
+/// The one way to the acknowledgement a press needs (`PressAck`), read just before that press on the request's route:
+/// on a background session, the press's recipient and Qt's focus as they are now (`FocusAck::check`, where the request
+/// has a `FocusAck`: shared mode, a family whose press activates a window it has not focused), else nothing to ask. The
+/// inner error is the refusal's cause, for the caller to word with what the request already sent; the outer, a failed
+/// read or send.
+pub fn press_ack(
+    ack: Option<&mut FocusAck>,
+    bus: Option<&mut Bus>,
+    x: &X11,
+    route: &mut Route,
+    at: Option<(i16, i16)>,
+) -> Result<std::result::Result<PressAck, String>> {
+    let Some(session) = route.session_mut() else {
+        return Ok(Ok(PressAck { on: None }));
+    };
+    let Some(at) = at else {
+        anyhow::bail!("background pointer input requires a position");
+    };
+    if let Some(ack) = ack {
+        let bus = bus.ok_or_else(|| anyhow::anyhow!("AT-SPI accessibility bus is unavailable"))?;
+        if let Err(cause) = ack.check(bus, x, session, at)? {
+            return Ok(Err(cause));
+        }
+    }
+    Ok(Ok(PressAck {
+        on: Some((session.target, session.presses(), at)),
+    }))
+}
+
+/// One request's wait for a window's focus (`Engine::focus_ack_for`): its frame, the bound, and what it waited. It
+/// holds no acknowledgement: each press reads Qt's state again (`check`).
 #[derive(Debug)]
 pub struct FocusAck {
     frame: ObjRef,
@@ -175,12 +253,15 @@ pub struct FocusAck {
     /// Before the session opened: how long the toolkit took to let an earlier focus go, None when not looked at (a
     /// session already open, or the real focus within the window).
     released: Option<Duration>,
-    /// After the session's `FocusIn`: how long the toolkit took to report it, None until looked at.
+    /// The longest wait for a synthetic `FocusIn`'s `active` in this request, None until one was waited for.
     taken: Option<Duration>,
-    /// The session's synthetic focus reported taken in this request: not waited for again.
-    settled: bool,
-    /// A press found the real focus gone from a session that held no synthetic focus, and took one (`Need::Refocus`).
-    refocused: bool,
+    /// A synthetic `FocusIn` this request sent (the session's opening one, or a press's fresh one) that Qt has not yet
+    /// reported taken. Once it has, a later press reads the frame again instead.
+    pending: bool,
+    /// How many presses of this request found no synthetic focus holding and took a fresh one (`Need::Take`).
+    refocused: u32,
+    /// The presses checked in this request.
+    presses: u32,
     /// A press was refused because it would have gone to a native child window.
     native_child: bool,
 }
@@ -193,10 +274,17 @@ impl FocusAck {
             bound,
             released: None,
             taken: None,
-            settled: false,
-            refocused: false,
+            pending: false,
+            refocused: 0,
+            presses: 0,
             native_child: false,
         }
+    }
+
+    /// The request's session will open with a synthetic `FocusIn` of its own (the real focus is not within the window
+    /// and no session is open for it): the first press waits for that one.
+    pub fn expect_focus_in(&mut self) {
+        self.pending = true;
     }
 
     /// Before the request's session opens: an earlier focus the toolkit still holds let go, at most the toolkit's linger
@@ -215,48 +303,53 @@ impl FocusAck {
         )
     }
 
-    /// Just before a press at root point `at`, on the request's route: the press's recipient the target window itself,
-    /// then the focus it needs (`need`), read now. The inner error is the refusal's cause, for the caller to word; the
-    /// outer, a failed read or send. Nothing to check on a route that is not a background session.
-    pub fn before_press(
+    /// Just before one press at root point `at` on `session` ([`press_ack`]): the press's recipient the target window
+    /// itself, then the focus it needs (`need`), read now. The inner error is the refusal's cause; the outer, a failed
+    /// read or send.
+    fn check(
         &mut self,
         bus: &mut Bus,
         x: &X11,
-        route: &mut Route,
+        session: &mut Session,
         at: (i16, i16),
     ) -> Result<std::result::Result<(), String>> {
-        let Some(session) = route.session_mut() else {
-            return Ok(Ok(()));
-        };
+        self.presses += 1;
         if session.recipient(x, at.0, at.1)? != session.target {
             self.native_child = true;
             return Ok(Err(native_child(&self.app)));
         }
-        match need(focus_is_within(x, session.target)?, !session.focus_was_within()) {
+        let within = focus_is_within(x, session.target)?;
+        let frame = &self.frame;
+        let need = need(within, session.synthesized_focus(), self.pending, || {
+            atspi::frame_active(bus, frame)
+        })?;
+        match need {
             Need::Nothing => Ok(Ok(())),
-            Need::Refocus => {
+            Need::Wait => self.taken(bus),
+            Need::Take => {
+                // a fresh FocusIn mid-request: a modal dialog shown since the request's own check would take it
+                if let Some(dialog) = x.modal_transient_of(session.target)? {
+                    return Ok(Err(blocked_by(&self.app, session.target, dialog)));
+                }
                 if let Err(cause) = self.released(bus)? {
                     return Ok(Err(cause));
                 }
-                self.refocused = session.refocus(x)?;
-                self.settled = false;
+                session.take_focus(x)?;
+                self.refocused += 1;
+                self.pending = true;
                 self.taken(bus)
             }
-            Need::Taken => self.taken(bus),
         }
     }
 
-    /// The session's synthetic focus reported taken, at most the bound, once per request.
+    /// The synthetic `FocusIn` this request sent reported taken, at most the bound.
     fn taken(&mut self, bus: &mut Bus) -> Result<std::result::Result<(), String>> {
-        if self.settled {
-            return Ok(Ok(()));
-        }
         let frame = &self.frame;
         Ok(
             match until_state(true, self.bound, POLL, || atspi::frame_active(bus, frame))? {
                 Some(waited) => {
-                    self.taken = Some(waited);
-                    self.settled = true;
+                    self.taken = Some(self.taken.map_or(waited, |t| t.max(waited)));
+                    self.pending = false;
                     Ok(())
                 }
                 None => Err(not_taken(&self.app, self.bound)),
@@ -264,15 +357,18 @@ impl FocusAck {
         )
     }
 
-    /// The record on the `--stats` line: the bound and each wait, in ms (null where none was looked at), and whether
-    /// the press took a fresh synthetic focus or was refused for a native child.
+    /// The record on the `--stats` line: the bound and each wait, in ms (null where none was looked at; `waited_ms` the
+    /// longest), how many presses were checked and how many took a fresh synthetic focus, and whether one was refused
+    /// for a native child.
     pub fn record(&self) -> Value {
         let ms = |d: Option<Duration>| d.map(|d| (d.as_secs_f64() * 1000.0 * 1000.0).round() / 1000.0);
         json!({
             "bound_ms": self.bound.as_millis() as u64,
             "released_ms": ms(self.released),
             "waited_ms": ms(self.taken),
-            "refocused": self.refocused,
+            "presses": self.presses,
+            "refocused": self.refocused > 0,
+            "refocused_presses": self.refocused,
             "native_child": self.native_child,
         })
     }
@@ -349,27 +445,43 @@ mod tests {
         );
         assert_eq!(
             ack.record(),
-            json!({"bound_ms": 25, "released_ms": null, "waited_ms": null, "refocused": false, "native_child": false})
+            json!({"bound_ms": 25, "released_ms": null, "waited_ms": null, "presses": 0, "refocused": false,
+                   "refocused_presses": 0, "native_child": false})
         );
         ack.released = Some(Duration::from_micros(1500));
         ack.taken = Some(Duration::from_micros(12_345));
-        ack.refocused = true;
+        ack.presses = 2;
+        ack.refocused = 1;
         assert_eq!(
             ack.record(),
-            json!({"bound_ms": 25, "released_ms": 1.5, "waited_ms": 12.345, "refocused": true, "native_child": false})
+            json!({"bound_ms": 25, "released_ms": 1.5, "waited_ms": 12.345, "presses": 2, "refocused": true,
+                   "refocused_presses": 1, "native_child": false})
         );
     }
 
     #[test]
     fn a_press_needs_the_focus_as_it_is_now_not_as_the_session_found_it() {
+        let unread = || -> Result<bool> { panic!("the frame is read only when the rest cannot decide") };
+        let need = |within, synthesized, pending, active: Option<bool>| {
+            need(within, synthesized, pending, || match active {
+                Some(active) => Ok(active),
+                None => unread(),
+            })
+            .unwrap()
+        };
         // the real focus within the window: Qt's own focus window is it
-        assert_eq!(need(true, true), Need::Nothing);
-        assert_eq!(need(true, false), Need::Nothing);
-        // the session's synthetic focus: its report waited for
-        assert_eq!(need(false, true), Need::Taken);
-        // the review's case: a hold kept a session opened with the real focus within, and the focus has left since,
-        // so the session holds no focus at all: it takes one, as a fresh session would
-        assert_eq!(need(false, false), Need::Refocus);
+        assert_eq!(need(true, true, true, None), Need::Nothing);
+        assert_eq!(need(true, false, false, None), Need::Nothing);
+        // the request's own synthetic FocusIn, not yet reported: its report waited for
+        assert_eq!(need(false, true, true, None), Need::Wait);
+        // task 61 fix 2's review: a hold kept a session opened with the real focus within, and the focus has left
+        // since, so the session holds no focus at all: it takes one, as a fresh session would
+        assert_eq!(need(false, false, false, None), Need::Take);
+        // fix 3's review: the session's FocusIn was reported taken by an earlier press, so this press reads the frame
+        // again; still active, nothing to do; no longer active (Qt gave its focus to another window of the
+        // application during the earlier click's hold), the FocusIn is spent and a fresh one is taken
+        assert_eq!(need(false, true, false, Some(true)), Need::Nothing);
+        assert_eq!(need(false, true, false, Some(false)), Need::Take);
     }
 
     #[test]

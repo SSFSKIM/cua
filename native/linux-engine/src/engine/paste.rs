@@ -27,6 +27,7 @@ use crate::clipboard::{Clipboard, Payload, TRANSFER_WAIT};
 use crate::copy;
 use crate::families::{DEFAULT_PASTE, Family, Kind, PasteRoute};
 use crate::field::{self, Observation};
+use crate::focus_ack::press_ack;
 use crate::input::{chord_keycodes, focus_is_within};
 use crate::paste::{self, CHANGED_CAUSE, Expected, Transfer, UNCONFIRMED};
 use crate::route::Route;
@@ -332,16 +333,15 @@ impl Engine {
                     let (after, clicks) = click_for_focus(
                         || {
                             confirmed(&element, &mut shared.borrow_mut(), x, *clicked)?;
-                            if let Some(ack) = ack.as_mut() {
-                                ack.before_press(&mut shared.borrow_mut(), x, route, (rx, ry))?
+                            let pressing =
+                                press_ack(ack.as_mut(), Some(&mut **shared.borrow_mut()), x, route, Some((rx, ry)))?
                                     .map_err(|cause| refused(&cause, *clicked))?;
-                            }
                             // sent from the moment the pointer is placed, so no later refusal says nothing was
                             *clicked = true;
                             route.place(x, rx, ry)?;
-                            route.button(x, 1, true)?;
+                            route.press(x, 1, pressing)?;
                             std::thread::sleep(CLICK_HOLD);
-                            route.button(x, 1, false)
+                            route.release_button(x, 1)
                         },
                         || observe(&mut shared.borrow_mut(), &element.target),
                         FOCUS_WAIT,

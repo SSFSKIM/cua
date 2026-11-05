@@ -176,8 +176,8 @@ fn minimized_sentence(window: u32) -> String {
 /// `clipboard_read` whose Copy left a menu open) may; releases always run.
 fn modal_sentence(app: &str, window: u32, dialog: u32) -> String {
     format!(
-        "{app} window {window} is blocked by its modal dialog, window {dialog}, which takes the desktop's focus on \
-         background input to the window; nothing was sent: send the input to the dialog, or use a dedicated desktop"
+        "{}; nothing was sent: send the input to the dialog, or use a dedicated desktop",
+        crate::focus_ack::blocked_by(app, window, dialog)
     )
 }
 

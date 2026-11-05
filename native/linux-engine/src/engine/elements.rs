@@ -12,7 +12,7 @@ use super::way::Way;
 use crate::atspi::{self, Associated};
 use crate::dbus::Bus;
 use crate::families::Kind;
-use crate::focus_ack::{FocusAck, nothing_pressed};
+use crate::focus_ack::{FocusAck, nothing_pressed, press_ack};
 use crate::resolve;
 use crate::route::{Inputs, Target};
 use crate::tree::ObjRef;
@@ -206,20 +206,18 @@ fn right_click(
     inputs: &mut Inputs,
     element: &Element,
     target: Target,
-    mut ack: Option<&mut FocusAck>,
+    ack: Option<&mut FocusAck>,
 ) -> std::result::Result<(), RightClick> {
     let mut point_failed = false;
     let result = inputs.with_route(x, target, |x, route, _| {
         let (rx, ry) = visible_point(bus, element, "right-clicking").inspect_err(|_| point_failed = true)?;
         element.associated.confirm_before_acting(bus, x)?;
-        if let Some(ack) = ack.as_mut() {
-            ack.before_press(bus, x, route, (rx, ry))?
-                .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
-        }
+        let pressing = press_ack(ack, Some(&mut *bus), x, route, Some((rx, ry)))?
+            .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
         route.place(x, rx, ry)?;
-        route.button(x, 3, true)?;
+        route.press(x, 3, pressing)?;
         std::thread::sleep(CLICK_HOLD);
-        route.button(x, 3, false)
+        route.release_button(x, 3)
     });
     result.map_err(|error| {
         if point_failed {

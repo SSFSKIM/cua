@@ -18,7 +18,10 @@ A mode, if given, changes the window as task 61's review and the design session'
 - `nested`: as `modal`, and that dialog opens a modal dialog of its own over itself, as a message box over a file
   dialog: `{"dialog": id, "inner": id}` printed once both are shown (the bounded re-review's P2).
 
-usage: qt-late.py <title> qt5|qt6 <block ms> <every ms> [native|modal|nested]
+- `other`: a second top-level window of the same application, `{"other": id}` printed once it is shown, for the person
+  to focus while a background press to the first is held (task 61's fix 3).
+
+usage: qt-late.py <title> qt5|qt6 <block ms> <every ms> [native|modal|nested|other]
 """
 
 import json
@@ -64,6 +67,13 @@ if mode == 'native':
 app.focusWindowChanged.connect(lambda w: say({'focus_window': w is not None and w is editor.windowHandle()}))
 editor.show()
 say({'xid': int(editor.winId())})
+if mode == 'other':
+    other = QPlainTextEdit()
+    other.setWindowTitle(title + ' other')
+    other.resize(200, 100)
+    other.move(450, 300)
+    other.show()
+    QTimer.singleShot(300, lambda: say({'other': int(other.winId())}))
 if mode in ('modal', 'nested'):
     dialog = QDialog(editor)
     dialog.setWindowTitle(title + ' dialog')

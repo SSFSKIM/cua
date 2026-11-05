@@ -732,6 +732,70 @@ fn a_double_click_on_a_held_session_checks_the_focus_again_before_its_second_pre
 }
 
 #[test]
+fn a_double_click_whose_first_hold_sees_qt_focus_another_of_its_windows_reads_qt_again_before_the_second_press() {
+    // fix 2's re-review (the reviewer's `synthmulti`): A's session holds a synthetic focus (a background key_down, the
+    // front window holding the real focus), and a held double click to A starts; during the first click's hold the
+    // person focuses B, another window of the same application, so Qt's focus window becomes B and A's FocusIn is
+    // spent. Before the fix the second press reused the first's acknowledgement without reading A's frame, and Qt
+    // activated A. Now every press reads Qt's state again (`focus_ack::press_ack`): A no longer active, the press takes
+    // a fresh FocusIn with its own acknowledgement, and the X focus stays with B.
+    const RUNS: usize = 5;
+    for binding in ["qt5", "qt6"] {
+        let mut engine = Engine::start_with(&["--focus-ack-ms", LATE_BOUND]);
+        let Some(late) = late_as(binding, &mut engine, 0, Some("other"), true) else {
+            continue;
+        };
+        let other = loop {
+            if let Some(xid) = late.log.lock().unwrap().iter().find_map(|r| r["other"].as_u64()) {
+                break xid as u32;
+            }
+            sleep(Duration::from_millis(50));
+        };
+        let front = Front::open();
+        let shift = json!({"window": {"id": late.window}, "key": "shift"});
+        let double = json!({"window": {"id": late.window}, "x": 40, "y": 12, "click_count": 2, "duration": 400});
+        let before = late.presses();
+        let mut activated = 0;
+        for _ in 0..RUNS {
+            front.focus();
+            sleep(BETWEEN);
+            engine.request("key_down", shift.clone()).expect("key_down");
+            sleep(Duration::from_millis(300));
+            let first = late.presses() + 1;
+            engine.pipeline(&[("click", double.clone())]);
+            let deadline = Instant::now() + PATIENCE;
+            while late.presses() < first {
+                assert!(
+                    Instant::now() < deadline,
+                    "{binding}: the first press reached the editor"
+                );
+                sleep(Duration::from_millis(5));
+            }
+            // the person focuses B, the application's other window, during the first click's hold
+            front.give(other);
+            let (answer, _) = engine.answers(1).remove(0);
+            sleep(Duration::from_millis(300));
+            if front.focused() != other {
+                activated += 1;
+            }
+            engine.request("key_up", shift.clone()).expect("key_up");
+            assert_eq!(
+                answer["ok"],
+                json!(true),
+                "{binding}: the double click answered: {answer}"
+            );
+        }
+        sleep(Duration::from_millis(300));
+        assert_eq!(activated, 0, "{binding}: no second press took the X focus from B");
+        assert_eq!(
+            late.presses() - before,
+            2 * RUNS,
+            "{binding}: both presses of every double click reached the editor"
+        );
+    }
+}
+
+#[test]
 fn a_modal_dialog_over_a_modal_dialog_takes_input_and_the_dialog_below_it_is_refused() {
     // the bounded re-review's P2 and the design session's regression: modal D1 over the main window opens modal D2, as
     // a message box over a file dialog. D2 is the dialog the person can use: input to it goes, the X focus staying

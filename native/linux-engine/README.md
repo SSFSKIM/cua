@@ -106,6 +106,13 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
     one would (the earlier focus let go, the `FocusIn`, its `active` waited for), and its end sends the `FocusOut`. A
     press refused after earlier clicks of its request went says so: "…; the request's next click was not sent, but
     `<n>` of its `<count>` clicks already reached the window, so read the window before retrying".
+  - *No acknowledgement outlives its press* (task 61's fix 3). Every press, on every route, spends a `PressAck` that
+    only `focus_ack::press_ack` issues, reading the recipient and Qt's state again just before that press; the press
+    refuses one taken for another window, point or press, and `tests/press_boundary.rs` holds that no code presses
+    without one or keeps one. Once a request's synthetic `FocusIn` was reported taken, a later press reads the frame
+    again: Qt may have given its focus to another of the application's windows meanwhile (the person focusing it
+    during a held click), and then the press takes a fresh `FocusIn` with its own report, as a fresh session would,
+    unless a modal dialog of the window's is shown by then, which refuses it.
   - *Qt with no accessibility tree.* A window no listed family names that carries `_XEMBED_INFO` (Qt's xcb backend
     sets it on every window it creates; no other family surveyed carries it: GTK 3, GTK 4, VTE, Firefox, Chrome,
     Electron, Java AWT and Swing, Tk, LibreOffice, xterm), or whose process maps Qt 5's or Qt 6's core library

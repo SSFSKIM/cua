@@ -166,6 +166,8 @@ impl Engine {
             if let Err(cause) = ack.released(bus)? {
                 bail!(nothing_pressed(cause));
             }
+            // the session this request opens sends a FocusIn of its own, which its first press waits for
+            ack.expect_focus_in();
         }
         Ok(Some(ack))
     }

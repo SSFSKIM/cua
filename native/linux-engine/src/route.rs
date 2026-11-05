@@ -450,10 +450,24 @@ impl Route<'_> {
         }
     }
 
-    pub fn button(&mut self, x: &X11, button: u8, press: bool) -> Result<()> {
+    /// A button press, spending the acknowledgement [`crate::focus_ack::press_ack`] gave for it (task 61's fix 3): every
+    /// press on a route has its own, read just before it; on the desktop route it asks nothing.
+    pub fn press(&mut self, x: &X11, button: u8, ack: crate::focus_ack::PressAck) -> Result<()> {
         match self {
-            Route::Window(session) => session.button(x, button, press),
-            Route::Desktop(..) => Desktop::button(x, button, press),
+            Route::Window(session) => session.press(x, button, ack),
+            Route::Desktop(..) => {
+                if ack.issued_for().is_some() {
+                    anyhow::bail!("a background press's acknowledgement cannot press on the desktop route");
+                }
+                Desktop::button(x, button, true)
+            }
+        }
+    }
+
+    pub fn release_button(&mut self, x: &X11, button: u8) -> Result<()> {
+        match self {
+            Route::Window(session) => session.release_button(x, button),
+            Route::Desktop(..) => Desktop::button(x, button, false),
         }
     }
 }

@@ -14,7 +14,7 @@ use crate::desktop::Desktop;
 use crate::dnd::{DndWatch, LateWatch, Outcome, Standing};
 use crate::families::DragPacing;
 use crate::families::Kind;
-use crate::focus_ack::{nothing_pressed, refused_press};
+use crate::focus_ack::{PressAck, nothing_pressed, press_ack, refused_press};
 use crate::input::chord_keycodes;
 use crate::route::{Route, Target};
 use crate::stray::{StrayWatch, Strays, Watching};
@@ -144,13 +144,14 @@ fn atomic_press(
     samples: &[(i16, i16)],
     pressed: &mut bool,
     pressed_at: &mut Option<Instant>,
+    pressing: PressAck,
 ) -> Result<usize> {
     let count = press_samples(samples);
     let started = Instant::now();
     x.conn.grab_server()?;
     let sent = (|| -> Result<bool> {
         let inside = x.pointer_in(press.window, press.parent)?;
-        route.button(x, 1, true)?;
+        route.press(x, 1, pressing)?;
         *pressed = true;
         *pressed_at = Some(Instant::now());
         for &(sx, sy) in &samples[..count] {
@@ -179,7 +180,7 @@ fn chord(x: &X11, key: Option<&str>) -> Result<Vec<u8>> {
 }
 
 /// Press, hold, release of one button, inside a pressed chord that is released whatever happened; the first error
-/// wins (behaviour §10.1).
+/// wins (behaviour §10.1). The press spends `pressing`, the acknowledgement taken for it.
 fn click_once(
     x: &X11,
     route: &mut Route,
@@ -187,17 +188,18 @@ fn click_once(
     at: Option<(i16, i16)>,
     button: u8,
     hold: Duration,
+    pressing: PressAck,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let pressed = match at {
         Some((rx, ry)) => route.place_again(x, rx, ry),
         None => Ok(()),
     }
-    .and_then(|()| route.button(x, button, true));
+    .and_then(|()| route.press(x, button, pressing));
     if pressed.is_ok() {
         std::thread::sleep(hold);
     }
-    let released = pressed.and_then(|()| route.button(x, button, false));
+    let released = pressed.and_then(|()| route.release_button(x, button));
     let keys_released = route.release(x, &held);
     released.and(keys_released)
 }
@@ -247,7 +249,7 @@ fn cancel_in_time(x: &X11, route: &mut Route, guard: &mut DropGuard, pressed: &m
     guard.outcome = Some(Outcome::Undecided);
     escape(x, route)?;
     *pressed = false;
-    route.button(x, 1, false)?;
+    route.release_button(x, 1)?;
     guard.outcome = Some(Outcome::InTime);
     Err(DropCancelled.into())
 }
@@ -284,6 +286,7 @@ fn drag_along(
     after_take: Duration,
     scheduled: &mut Option<Value>,
     mut press: Option<&mut ChromiumPress>,
+    pressing: PressAck,
 ) -> Result<()> {
     let held = route.acquire(x, keycodes)?;
     let mut pressed = false;
@@ -298,10 +301,10 @@ fn drag_along(
         let first = match press.as_deref_mut() {
             Some(press) => {
                 press.watching = Some(press.watch.begin(press.window, press.xtest)?);
-                atomic_press(x, route, press, &samples, &mut pressed, &mut pressed_at)?
+                atomic_press(x, route, press, &samples, &mut pressed, &mut pressed_at, pressing)?
             }
             None => {
-                route.button(x, 1, true)?;
+                route.press(x, 1, pressing)?;
                 pressed = true;
                 pressed_at = Some(Instant::now());
                 0
@@ -398,15 +401,15 @@ fn drag_along(
                 Some(json!({ "steps_after_take": left, "release_after_take_ms": at.elapsed().as_secs_f64() * 1000.0 }));
         }
         pressed = false;
-        route.button(x, 1, false)?;
+        route.release_button(x, 1)?;
         let released_at = Instant::now();
         // the watch ends at the release: what reached the window from the press on
-        if let Some(press) = press.as_deref_mut()
+        if let Some(press) = press
             && let Some(watching) = press.watching.take()
         {
             press.strays = Some(press.watch.finish(watching));
         }
-        if let Some(guard) = guard.as_deref_mut() {
+        if let Some(guard) = guard {
             // measurement only: the take the drag went on past, its Escape after the release
             if guard.late && guard.watch.started(x) {
                 guard.outcome = Some(Outcome::Late);
@@ -424,7 +427,7 @@ fn drag_along(
     })();
     if pressed {
         // interrupted while the button is down: its release is attempted; the interruption stays the answer
-        let _ = route.button(x, 1, false);
+        let _ = route.release_button(x, 1);
     }
     let keys_released = route.release(x, &held);
     dragged.and(keys_released)
@@ -480,17 +483,16 @@ impl Engine {
             // the press's checks before every press, not once per request: the person may move the focus during an
             // earlier click's hold (the bounded re-review's P1); a count of 0 still checks and places, pressing nothing
             for sent in 0..count.max(1) {
-                if let (Some(ack), Some(bus), Some(at)) = (ack.as_mut(), bus.as_mut(), at) {
-                    ack.before_press(bus, x, route, at)?
-                        .map_err(|cause| anyhow!(refused_press(cause, sent, count)))?;
-                }
+                // each press its own acknowledgement, read just before it (task 61's fix 3)
+                let pressing = press_ack(ack.as_mut(), bus.as_mut(), x, route, at)?
+                    .map_err(|cause| anyhow!(refused_press(cause, sent, count)))?;
                 if sent == 0
                     && let Some((rx, ry)) = at
                 {
                     route.place(x, rx, ry)?;
                 }
                 if count > 0 {
-                    click_once(x, route, &keycodes, at, button, hold)?;
+                    click_once(x, route, &keycodes, at, button, hold, pressing)?;
                 }
             }
             Ok(())
@@ -712,11 +714,9 @@ impl Engine {
             if points.len() < 2 {
                 bail!("drag path must contain at least two points");
             }
-            // the drag's press goes at the path's start
-            if let (Some(ack), Some(bus)) = (ack.as_mut(), bus.as_mut()) {
-                ack.before_press(bus, x, route, points[0])?
-                    .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
-            }
+            // the drag's press goes at the path's start, with its own acknowledgement
+            let pressing = press_ack(ack.as_mut(), bus.as_mut(), x, route, Some(points[0]))?
+                .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
             route.place(x, points[0].0, points[0].1)?;
             let keycodes = chord(x, input.key.as_deref())?;
             let dragged = drag_along(
@@ -731,6 +731,7 @@ impl Engine {
                 after_take,
                 &mut scheduled,
                 press.as_mut(),
+                pressing,
             );
             if let Some(event) = route.event_time()
                 && let Ok(server) = crate::input::server_time(x)
@@ -954,10 +955,15 @@ pub(super) fn wheel(x: &X11, route: &mut Route, at: Option<(i16, i16)>, input: &
     let held = route.acquire(x, &keycodes)?;
     let mut scrolled = Ok(());
     for _ in 0..scroll_steps(pixels) {
-        scrolled = route.button(x, button, true).and_then(|()| {
-            std::thread::sleep(WHEEL_HOLD);
-            route.button(x, button, false)
-        });
+        // a wheel step asks no toolkit (Qt never activates on one, and its scrolls are refused in shared mode), but
+        // it is a press like any other, with its own acknowledgement
+        scrolled = press_ack(None, None, x, route, at)
+            .and_then(|ack| ack.map_err(anyhow::Error::msg))
+            .and_then(|pressing| route.press(x, button, pressing))
+            .and_then(|()| {
+                std::thread::sleep(WHEEL_HOLD);
+                route.release_button(x, button)
+            });
         if scrolled.is_err() {
             break;
         }

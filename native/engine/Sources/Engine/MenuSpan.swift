@@ -315,19 +315,20 @@ final class HeldActivations: @unchecked Sendable {
     }
   }
 
-  /// For a holder that already holds `pid`: when its activation went stale (or was withdrawn), `beforeActivating`, then
-  /// `make()`'s run in its place (a failed guard throws and leaves the spent one held); otherwise the kept inert click
-  /// when the arm is still set, recorded in `meta`, as a joiner with no mouse down of its own posts it: the holder's
-  /// input never meets a set arm, whatever left it set.
+  /// For a holder that already holds `pid`: `beforeActivating` (the in-flight intervention check) once the lock is held,
+  /// as `acquire` runs it, so a user event stops the request with nothing posted; then, when its activation went stale
+  /// (or was withdrawn), `make()`'s run in its place (a failed guard throws and leaves the spent one held); otherwise the
+  /// kept inert click when the arm is still set, recorded in `meta`, as a joiner with no mouse down of its own posts it:
+  /// the holder's input never meets a set arm, whatever left it set.
   func refresh(pid: pid_t, beforeActivating: () throws -> Void, make: () -> FakeActivation, meta: inout InputMeta) throws {
     lock.lock()
     defer { lock.unlock() }
     guard var entry = held[pid] else { return }
+    try beforeActivating()
     guard isSpent(entry) else {
       if entry.activation.consumeArm(.early) { meta.activationClickKind = entry.activation.clickKind }
       return
     }
-    try beforeActivating()
     entry.activation = try run(make, meta: &meta)
     entry.withdrawn = false
     held[pid] = entry

@@ -575,4 +575,32 @@ final class FocusHoldTests: XCTestCase {
     connection.endFocusHold()
     XCTAssertEqual(mouseKinds(seam).last, .appKit(2))
   }
+
+  /// The re-review of 4d68fee4..23d68dae: the held path runs the in-flight intervention check under the registry's lock
+  /// before it may consume a set arm, so a user event stops the held key with nothing posted.
+  func testAUserEventStopsAHeldKeyBeforeItConsumesASetArm() throws {
+    let seam = GuardSeam(frontmost: user)
+    let connection = connection()
+    var keys = meta()
+    try holdChrome(connection, seam, meta: &keys)
+    var pointerMeta = meta()
+    let pointer = try activations.acquire(pid: target, holder: ActivationHolder(connection: 1), postsLeftMouseDown: true, beforeActivating: {},
+                                          make: { self.chrome(seam) }, meta: &pointerMeta)
+    let armed = seam.posts.count
+    var underLock = false
+    var next = meta()
+    XCTAssertThrowsError(try holdFocus(app: "chrome", pid: target, connection: connection, activations: activations,
+                                       activation: { XCTFail("held, not made"); return self.chrome(seam) }, beforeActivating: {
+                                         underLock = self.activations.isLocked
+                                         throw userChanged("Chrome")
+                                       }, meta: &next)) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "userIntervened")
+    }
+    XCTAssertTrue(underLock, "the check runs once the registry's lock is held")
+    XCTAssertEqual(seam.posts.count, armed, "nothing posted: the arm is left set")
+    XCTAssertNil(next.activationClickKind)
+    _ = pointer()
+    connection.endFocusHold()
+    XCTAssertEqual(mouseKinds(seam), inertClick + [.appKit(2)] + inertClick + [.appKit(2)], "the kept click at the pointer's release")
+  }
 }

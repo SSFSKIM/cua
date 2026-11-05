@@ -1756,7 +1756,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      click if the arm is still set; it is recorded in that action's meta as {`inertOutside`, when `release`}. And the
      already-held path (`refresh`, the focus hold's next key or element action) consumes a set arm before its input, as
      a no-click joiner of `acquire` does, recorded in its meta as `early`. So no-click input never meets a set arm,
-     whatever left it set.
+     whatever left it set. As in `acquire`, the in-flight intervention check runs first, under the registry's lock (the
+     re-review of 4d68fee4..23d68dae), so a user event stops the request with nothing posted.
   8. **The window number of the final subtype 2** (the reviewer's reading, settled statically). After a swap, the
      hold's last subtype 2 carries the click's window number, which may be a dialog's. On 25G83, subtype 2's dispatch
      (`-[NSApplication sendEvent:]`'s fast path, then `_handleAppKitDefinedEvent:`'s table, then

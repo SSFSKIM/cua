@@ -94,8 +94,8 @@ export function killProcessTree(root, {list = descendantsOf, signal = sendSignal
 // ends it 1 s after the signal whatever its drain is doing (native/linux-engine/src/serve.rs EXIT_BACKSTOP), the forced
 // release it sends first, bounded at 200 ms (pressed.rs FORCED_RELEASE_BOUND), and 50 ms for that exit to be seen, so
 // the kill comes after the engine's latest end (the design session, M4 T7b; serve.rs checks the sum). Its drain is far
-// shorter: at most its 100 ms FocusOuts and the 300 ms settle after its last key, about 600 ms after a watched drag's
-// release (the engine README, "Exit").
+// shorter: the 300 ms settle after its last key, about 600 ms after a watched drag's release, its late-take watch run
+// out first (the engine README, "Exit").
 export const ENGINE_EXIT_WAIT_MS = 1250;
 const ENGINE_EXIT_POLL_MS = 10;
 
@@ -153,8 +153,8 @@ export function processExited(pid) {
 
 // Stops `root`'s tree as killProcessTree does, but lets cua's Linux engine in it run its orderly exit first (Linux only;
 // the Decision Log, M4 T7b): the whole tree is frozen as above; each frozen process running the engine at `engine` (by
-// its executable, runsExecutable) alone is sent SIGTERM, then SIGCONT, so it finishes the request it is in, sends its
-// pending FocusOuts, settles and releases what it holds, then exits; once every such engine has exited, or after
+// its executable, runsExecutable) alone is sent SIGTERM, then SIGCONT, so it finishes the request it is in, releases
+// what it holds and settles, then exits; once every such engine has exited, or after
 // `waitMs`, every process frozen at the start is SIGKILLed, the engines first (their pids still held by their frozen
 // parents). Nothing is listed again and nothing else is thawed, so a process the engine started, reparented when it
 // exits, is still killed, and the worker the engine answers stays frozen: the engine's drain reads nothing from it and

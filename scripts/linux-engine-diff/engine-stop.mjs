@@ -1,7 +1,7 @@
 // The REPL host's stop of cua's engine, live (M4's T7b; the Decision Log, M4 T7b): `--experiment engine-stop`. On
 // Linux the REPL host freezes the trusted worker's tree, sends the engine in it alone SIGTERM then SIGCONT, waits for
 // its exit (bounded), then SIGKILLs everything it froze (src/repl-host/kernel-child.mjs `stopProcessTree`), so the
-// engine's orderly exit runs: its pending FocusOuts, the settle before its redirects go, the release of what it holds.
+// engine's orderly exit runs: the release of what it holds, then the settle before its redirects go.
 // This proves it through `cua serve` itself, on the engine under test (`--cua`, as CUA_LINUX_ENGINE_BIN), on each of
 // the production stop paths:
 //   - idle: end_task, then the runtime's idle stop (CUA_RUNTIME_IDLE_MS 1);

@@ -22,7 +22,9 @@ use std::time::{Duration, Instant};
 pub const EXIT_SETTLE: Duration = Duration::from_millis(300);
 
 /// The paste's settle: the smallest of 25, 50, 75 and 100 ms that held 30 consecutive independent key-then-paste runs
-/// on all 8 families, idle and at twice the load (task 60's sittings; evidence `m4/paste-settle/`).
+/// on all 8 families, idle and at twice the load (task 60's sittings; evidence `m4/paste-settle/`). Idle every step
+/// held; at twice the load 25 missed on Chrome, Electron and Firefox, 50 on Electron and Firefox, 75 on Electron (13
+/// of 60), and 100 held everywhere. 0 is task 59's measurement: Chrome, Electron, Firefox and gnome-terminal missed.
 pub const PASTE_SETTLE: Duration = Duration::from_millis(100);
 
 /// When a settle of `settle` after the latest of `last_keys` ends: None when there is no key.

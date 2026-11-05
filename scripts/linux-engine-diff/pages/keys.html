@@ -11,9 +11,10 @@
 </style>
 </head>
 <body>
-<!-- The FocusOut timer's Chromium scene (focus-timer.mjs): a field that holds the focus, whose page spends a few
+<!-- The focus-timer experiment's Chromium scene (focus-timer.mjs): a field that holds the focus, whose page spends a few
      milliseconds on each key before the field takes it, as a page with its own key handling does. A burst then outruns
-     the renderer, so a FocusOut that follows the keys too soon finds keys still queued, which Chromium holds back until
+     the renderer, so a redirect dropped too soon after the keys (M0.4 read it as the FocusOut; tasks 56 to 59) finds
+     keys still queued, which Chromium holds back until
      the window's next FocusIn (M0.4, on the person's long-lived Chrome); a fresh, idle Chromium otherwise keeps up with
      a burst and shows no reorder at all. The work per key is `SPIN_MS`; the title comes from the URL's fragment.
      The pad takes pointer input the same way: each press and release costs `SPIN_MS` and is written to the log (`d`,

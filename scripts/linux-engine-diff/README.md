@@ -829,68 +829,69 @@ node scripts/linux-engine-diff.mjs --experiment atspi --cua "$INSTALLED" --out "
   4.14's entry answers `GetText(0, -1)` with nothing); a control in a window of its own (the key, then one Ctrl+Z) shows
   each widget's undo working without `InsertText`. These are the probe's only writes, into windows it opened.
 
-## M4 T7's addition: the FocusOut timer (`--experiment focus-timer`)
+## M4 T7's addition: the FocusOut and the paste settle (`--experiment focus-timer`)
 
-The proof of the engine's `FocusOut` timer (Plan of Work, M4, T7; the engine's `focus_timer.rs`): a background request
-answers as soon as its input is sent, and its window's synthetic `FocusOut` follows 100 ms after the window's last
-input, flushed before input to another window, before a paste's observation and at exit.
+The proof of the background route's `FocusOut` and the paste's settle (Plan of Work, M4, T7, as the design session
+ruled on task 59's measurement, 2026-11-04; the engine's `route.rs` and `settle.rs`). A background request's synthetic
+`FocusOut` goes as its input ends, before its answer, the window's redirect kept; a paste whose window took a key just
+before waits its settle before it observes its field. The experiment keeps the name it had for T7's timer, which it
+measured and which is gone.
 
 ```bash
 node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/focus-timer/idle" [--family <list>]
 node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/focus-timer/load2" --load-factor 2
+node scripts/linux-engine-diff.mjs --experiment focus-timer --cua "$CANDIDATE" --out "$OUT/paste-settle/idle" --lanes settle-25,settle-50,settle-75,settle-100 --scenarios paste
 ```
 
 - **Its display**, as the AT-SPI probe's: a private X server it starts itself, Openbox, the harness's own Desktop with
   the run's applications, homes, session bus and own Chrome and Electron; the live-run declaration withdrawn first, so
   nothing reaches `:0`. `--load-factor 2` runs it under twice the gate's load.
 - **The families**: every family of the matrix whose background keys cua sends (Chrome, Electron, gedit, kate,
-  qtcreator, Firefox, Writer on gtk3, gnome-terminal; Writer on gen exposes no text field), two windows each, covered by the front window. Chromium's
-  windows show `pages/keys.html`, whose page spends 3 ms on each key, so a burst outruns the renderer.
-- **The lanes**: the engine as it is (`timer`); a control with no delay whose every request also drops its redirect
-  with its `FocusOut` (`control`, `--teardown-ms 0 --retention per-request`); and the delay with that same per-request
-  unredirect (`unredirect`, `--retention per-request`), so the control differs from a passing lane in the delay alone.
-  On the private Xvfb a `FocusOut` with the redirect kept cuts nothing in Chromium (task 56: `--teardown-ms 0` alone,
-  0 of 10 runs, idle and at twice the load), while the unredirect after it cuts keys and delivers them with the next
-  `FocusIn`, the reorder M0.4 saw on `:0` after a `FocusOut` alone. `--lanes <list>` runs only the lanes it names,
-  beside `timer`, which it must include, and no stop runs; among them `control-0ms`, the plain 0 ms control as an
-  engine setting (`--teardown-ms 0`, the default session retention: each request's `FocusOut` as its input ends, the
-  redirect kept), judged by the wait rule as `timer` is, with its own audit pass (one session per request); a miss
-  keeps the engine's `FocusOut` records (task 59: whether the timer stays). `--trace` runs every series run with the
-  engine's connection through xtrace and keeps a missed run's trace under `traces/`, with its synthetic-focus sessions
-  and the engine's Composite requests on its row; the proxy delays every request, so a traced sitting is one of its
-  own, never the verdict's. Each run is a fresh engine's. The scenarios, pipelined: `burst` (20 keys, Shift chords among them), `aba` (8 keys to A, 8 to B,
-  8 to A again) and `paste` (8 keys, then a `type_text` to the same window, of `Pasted` and three letters of the
-  run's own: a terminal's screen holds many runs' text, and the engine confirms a paste the screen's scroll moved only
-  when its text occurs once, task 56 fix 2). `--scenarios <list>` runs only those, with no stop runs. A run passes when every answer is a success
-  and each window's text is exactly its old text with the scenario's text put at the caret read before the run. The
-  timer and unredirect lanes each need 30 consecutive passing runs of each scenario (at most 60; a miss restarts the
-  series and is reported; `--trials` sets fewer for a development run, which the verdict then fails); the control lane
-  runs 10 and must fail on Chromium, which shows the run can see what the delay prevents; its line counts the runs whose
-  text was wrong (a paste can fail on its answer alone, its observation racing keys still landing).
+  qtcreator, Firefox, Writer on gtk3, gnome-terminal; Writer on gen exposes no text field), two windows each, covered by
+  the front window. Chromium's windows show `pages/keys.html`, whose page spends 3 ms on each key, so a burst outruns
+  the renderer.
+- **The lanes**: the engine as it ships (`shipped`); the paste's settle at each of its measured steps (`settle-25`,
+  `settle-50`, `settle-75`, `settle-100`: `--paste-settle-ms`, the redirect kept); and a control whose every request
+  drops its redirect with its `FocusOut` (`control`, `--retention per-request`), which cuts Chromium's keys and
+  delivers them with the next `FocusIn`, the reorder M0.4 saw (on the private Xvfb a `FocusOut` with the redirect kept
+  cuts nothing, tasks 56 and 59). `--lanes <list>` runs only the lanes it names, at least one judged, and no stop runs.
+  `--trace` runs every series run with the engine's connection through xtrace and keeps a missed run's trace under
+  `traces/`, with its synthetic-focus sessions and the engine's Composite requests on its row; the proxy delays every
+  request, so a traced sitting is one of its own, never the verdict's. Each run is a fresh engine's. The scenarios,
+  pipelined: `burst` (20 keys, Shift chords among them), `aba` (8 keys to A, 8 to B, 8 to A again) and `paste` (8
+  keys, then a `type_text` to the same window, of `Pasted` and three letters of the run's own: a terminal's screen
+  holds many runs' text, and the engine confirms a paste the screen's scroll moved only under its strict rule, task 56
+  fix 3). `--scenarios <list>` runs only those, with no stop runs. A run passes when every answer is a success and each
+  window's text is exactly its old text with the scenario's text put at the caret read before the run. Every lane but
+  the control needs 30 consecutive passing runs of each scenario (at most 60; a miss restarts the series and is
+  reported; `--trials` sets fewer for a development run, which the verdict then fails); the control lane runs 10 and
+  must fail on Chromium, which shows the run can see a cut; its line counts the runs whose text was wrong. A paste
+  series reports its settle's cost (`settleCost`: the pastes, the median and the largest wait, and the median time
+  since the window's last key), from each paste's `--stats` record.
 - **The audit**, a pass per family and lane: each scenario once with the engine's X connection through xtrace and its
   `--stats` records of its `FocusOut`s. Nothing the background route forbids; the synthetic-focus sessions, by window and
-  in order, exactly the scenarios' (one per burst on the timer lane, one per request on the control lane); no two windows
-  under synthetic focus at once; every `FocusOut` in the trace attributed to the request whose input started its timer,
-  and on the timer lane none sooner than 100 ms after its window's last input (`audit.mjs` `attributeFocusOuts`).
+  in order, exactly the scenarios' (one per request); no two windows under synthetic focus at once; every `FocusOut` in
+  the trace attributed to the request whose input it ends, and none left past that request's answer (`audit.mjs`
+  `attributeFocusOuts`, `auditVerdict`).
 - **Independent starts** (the design session's ruling on T7's review): a Chromium window holds a cut's tail until its
   next `FocusIn`, so before each Chromium run a fresh engine sends Shift to each of the run's windows (its `FocusIn`
   delivers any tail) and empties the field (Ctrl+A, BackSpace); a run after an unconfirmed paste waits out the engine's
   retry guard (11 s). Each series reports two counts: the independent one, which the verdict judges (30 consecutive),
   and the raw one, in which a run whose start met a tail, or that follows an unconfirmed paste, fails too, as it would
   have in use (`rawOks`). A series' misses are listed by cause (`missCause`: `guard`, `unconfirmed`, `refused`, `error`,
-  `text`), and each paste run keeps its `--stats` record (what its observation and confirmation saw). A row's index is
-  `trial`; `run` is the sitting's name.
-- **The exit drain** (Chromium): a burst to a fresh engine, then SIGTERM straight after its last answer, inside the
-  100 ms: every key in order, its session closed by its `FocusOut` in the trace, the engine's exit record (the full delay
-  waited, and its exit settle's wait) and an exit code of 143 within 1.5 s, in all 30 runs; then ten clicks on the keys
-  page's pad followed by SIGTERM the same way, ten runs, their presses and releases read from the page's log (`d`, `u`;
-  a drag has no such case on Chromium, whose background drags shared mode refuses); SIGKILL, the documented limit, is the control that leaves the session unclosed.
-  `--exit-settle-ms <ms>` runs the stop runs' engine with that settle, and `--stops-only` runs the stop runs alone (the
-  settle's measured steps).
+  `text`), and each paste run keeps its `--stats` record (what its observation and confirmation saw, and its settle). A
+  row's index is `trial`; `run` is the sitting's name.
+- **The exit** (Chromium): a burst to a fresh engine, then SIGTERM straight after its last answer, inside the exit's
+  settle: every key in order, every request's session closed by its `FocusOut` in the trace, the exit's settle run
+  (its `--stats` record) and an exit code of 143 within 0.9 s, in all 30 runs (`stopPasses`); then ten clicks on the
+  keys page's pad followed by SIGTERM the same way, ten runs, their presses and releases read from the page's log (`d`,
+  `u`; a drag has no such case on Chromium, whose background drags shared mode refuses), with no settle, since it
+  follows keys; SIGKILL, the documented limit, is the control that skips the settle. `--exit-settle-ms <ms>` runs the
+  stop runs' engine with that settle, and `--stops-only` runs the stop runs alone (the settle's measured steps).
 
 The events experiment (`events.mjs`) reads each step's events once the synthetic focus it left open has closed, at most
-300 ms (`settleFocus`), since cua's `FocusOut` now follows the answer: each request is then compared with the pinned
-build's own events, `FocusOut` included, as before.
+300 ms (`settleFocus`); cua's `FocusOut` now goes before its answer again, as the pinned build's does, so a step is read
+once, a hold's after the bound.
 
 ## M4 T7b's addition: the REPL host's stop (`--experiment engine-stop`)
 
@@ -953,7 +954,7 @@ node scripts/linux-engine-diff.mjs --experiment engine-stop --cua "$CANDIDATE" -
 | `wire-check.mjs`, `stub-replay.mjs`, `record-wire.mjs`, `fixtures/wire/` | the wire fixtures |
 | `stub-activating.mjs` | the negative check's stub engine |
 | `events.mjs`, `xprobe/src/record.rs` | M1a.2's input events experiment and its recorder window |
-| `focus-timer.mjs`, `pages/keys.html` | M4 T7's FocusOut timer experiment and its Chromium page |
+| `focus-timer.mjs`, `pages/keys.html` | M4 T7's FocusOut and paste-settle experiment and its Chromium page |
 | `engine-stop.mjs`, `remote-serve.mjs` | M4 T7b's REPL-host stop experiment through `cua serve`, and its remote session's endpoint |
 | `pages/` | the Chrome scenes (`input.html` the pointer and key scene, `text.html` the text scene) and `gtk-table.py`, the large-table scene |
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |

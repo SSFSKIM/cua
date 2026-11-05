@@ -305,11 +305,11 @@ export const FOCUS_SETTLE_MS = 300;
 /**
  * A step's events once the synthetic focus left open over the scenario so far (`open`, plus the step's own `FocusIn`s
  * less its `FocusOut`s) has closed, read on with `mark` every `pollMs`, or once `boundMs` has passed: `{events, open}`.
- * cua's `FocusOut` follows a request's answer on its timer (M4's T7, the engine's `focus_timer.rs`), where the vendor
- * builds send theirs before they answer, so each request's events are compared once its session has ended, as the
- * vendor's has; the next step then starts on no open session in either engine, as it does in the vendor's. A hold keeps
- * its session open in every engine until its release: such a step is read after the bound. The burst a timer serves
- * (requests in a row to one window, one `FocusIn` and one `FocusOut`) is the focus-timer experiment's to judge.
+ * T7's timer once sent cua's `FocusOut` after a request's answer; it now goes before the answer, as the vendor builds'
+ * does (M4's T7 as ruled on task 59, the engine's `route.rs`), and each request's events are still compared once its
+ * session has ended, as the vendor's has, so a step whose session closed before its answer is read once; the next step
+ * then starts on no open session in either engine. A hold keeps its session open in every engine until its release:
+ * such a step is read after the bound.
  */
 export async function settleFocus(events, { open = 0, mark, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), boundMs = FOCUS_SETTLE_MS, pollMs = 20 }) {
   const count = (list) => list.reduce((n, e) => n + (e.send === true && e.type === 'FocusIn' ? 1 : e.send === true && e.type === 'FocusOut' ? -1 : 0), 0);

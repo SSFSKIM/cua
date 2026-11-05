@@ -55,35 +55,37 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 
 - **Routes** (`route.rs`): a request naming a window goes through that window's background session (`input.rs`):
   synthetic `FocusIn` unless the focus is already within it, key and pointer events by `SendEvent` (pointer events
-  to the deepest child under the point), and `FocusOut` the vendor's 100 ms after the window's last input; nothing on
-  it activates, raises, focuses or moves the pointer. A request without a window uses the desktop route (`desktop.rs`,
+  to the deepest child under the point), and `FocusOut` as the request's input ends, before its answer; nothing on it
+  activates, raises, focuses or moves the pointer. A request without a window uses the desktop route (`desktop.rs`,
   XTEST). The window is redirected (retained) before its first targeted input, with no wait after it; keys are not
   paced.
-- **The `FocusOut` timer** (`focus_timer.rs`, M4): the 100 ms is not slept on the request path. A request answers as
-  soon as its input is sent, and its window's session waits, still open, for its `FocusOut`, due 100 ms after that
-  input; more background input to the same window takes the session back (no `FocusOut` and no new `FocusIn` between),
-  so a burst pays the 100 ms once. Any other input (to another window, through the desktop or the foreground route),
-  a paste's observation (its own window's timer included) and `activate_window` first flush every pending timer: each
-  is waited out to its full 100 ms since its window's last input, then its `FocusOut` sent, then the request goes on,
-  so no `FocusOut` ever comes sooner than 100 ms after a burst (Chromium cuts and reorders the last keys of a burst a
-  sooner `FocusOut` follows). A late drag-and-drop's Escape (`dnd.rs`) is not delayed by a timer; on its own window it
-  restarts the timer, and no `FocusOut` can fall between the two: the watch sends the Escape under a lock the timers
-  hold whenever they end a session, its instant recorded first (`focus_timer::Gate`). With `--stats`, each `FocusOut` is reported (`focus_out`: window, cause `timer`, `flush` or
-  `exit`, the time since the window's last input, and the request whose input last started the timer): on the line of
-  the request it went out in, or on a line of its own (`"id": null`) when it went out between requests.
+- **No wait before `FocusOut`** (`route.rs`, M4's T7 as the design session ruled on task 59's measurement): the
+  vendor's 100 ms before each `FocusOut` is gone. It was kept because Chromium cut and reordered the last keys of a
+  burst when `FocusOut` came sooner (M0.4), but what cut them was the window's redirect going away (M0.4's control
+  ended its engine before reading); with the redirect retained, a `FocusOut` at once cut and reordered no key on any
+  family, idle or at twice the load (task 59). Nothing is left pending between requests, so input to another window
+  waits for nothing. A session stays open across requests only while a `key_down` holds keys in it. With `--stats`,
+  each `FocusOut` is reported (`focus_out`: window, cause `request` or `exit`, the time since the session's input
+  ended, and the request whose input it ends): on the line of the request it went out in, or for the exit's on a line
+  of its own (`"id": null`).
+- **The paste's settle** (`settle.rs`, `engine/paste.rs`): a paste observes its field before it acts, and keys its
+  window took just before may not have landed yet, so the observation reads the field short and the paste is refused
+  with nothing sent, or lands at a caret the confirmation did not expect (task 59). So a paste whose window took a key
+  within `--paste-settle-ms` (100 ms) waits, before its observation and before the clipboard lock and never between
+  the observation and the dispatch, until that long has passed since the key. Each paste's `--stats` record says how
+  long after the key it came and what it waited (`paste.settle`).
 - **Exit** (`serve.rs`): stdin closing, SIGTERM, SIGINT or SIGHUP end the engine through its orderly exit: a
   `drag_handle` still between its start and its end ends first as its own end would (the family's release dwell, then
   button 1 up where the pointer is), then held keys are released, so no wait of the exit keeps one down; then an armed
   after-release drag-and-drop watch runs out its lifetime (at most 300 ms after its drag's release), so a late
-  take is still cancelled with its Escape before any of the exit's `FocusOut`s; then every
-  pending `FocusOut` waited out (at most 100 ms, the Escape's window's counted from the Escape) and sent, then the
-  exit's settle: the engine waits until `--exit-settle-ms` (300 ms) has passed since the last background key input to
+  take is still cancelled with its Escape; then a session a hold kept open gets its `FocusOut`; then the
+  exit's settle: the engine waits until `--exit-settle-ms` (300 ms) has passed since the last background key to
   a window whose redirect it still holds, the watch's Escape included (keys only: the unredirect cut no click in the
   measured steps). At its longest, a stop right after a watched drag whose late take comes at the end of the watch,
-  that is about 300 + 300 ms after the drag's release, inside the 1 s backstop. Its exit drops those redirects (the X connection closes), and a covered Chromium window whose redirect goes
-  while it still has input queued cuts that input and delivers it only with its next `FocusIn`, which at twice the
-  gate's load the 100 ms alone did not prevent. So a burst answered just before the signal still arrives in order, and
-  its window gets its `FocusOut`; an exit with no such input in the last 300 ms waits for nothing. The declared limits
+  that is about 300 + 300 ms after the drag's release, inside the 1 s backstop. Its exit drops those redirects (the X
+  connection closes), and a covered Chromium window whose redirect goes while it still has input queued cuts that input
+  and delivers it only with its next `FocusIn`. So a burst answered just before the signal still arrives in order; an
+  exit with no such key in the last 300 ms waits for nothing. The declared limits
   are SIGKILL and load beyond twice the gate's. A request already running finishes first; requests
   queued behind the signal are not run. The exit code is 0 for stdin closing and 128 plus the signal's number
   otherwise. A second SIGINT, or an exit still not done 1 s after the first signal (the backstop), ends the process at
@@ -92,7 +94,8 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
   a copy the panicking thread keeps of that record, before its diagnostics are written; a second SIGTERM or SIGHUP
   changes nothing, since a supervisor may send its own after another's. A drag's button released there (a `drag` cut
   by the forced exit, a `drag_handle` before its end) ends the drag where the pointer is. SIGKILL cuts the
-  drain and the release: the last burst's window keeps its synthetic focus until it next gets a `FocusOut`, and a key
+  settle and the release: a window whose session was still open (a hold, a request still running) keeps its
+  synthetic focus until it next gets a `FocusOut`, and a key
   held at the server stays down, unless the engine runs under cua's launcher shim (`cua-engine launcher-shim`,
   `shim.rs`, the REPL host's on Linux): there the engine writes its XTEST-held keys and buttons to a held record
   (`held.rs`: a bitmap of every key and button, written on a pipe whose write end the shim hands down, named in
@@ -328,7 +331,8 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--settle-ms` | 0 | the wait after a window's redirect before input to it |
 | `--capture-wait` | `damage`, `fixed` | a capture of a fresh pixmap waits for the DAMAGE rule, or a fixed 100 ms once per pixmap (the fallback) |
 | `--exit-settle-ms` | 300 | the exit's wait after the last background key input to a window whose redirect it still holds (Exit, above); the measured value, set lower or higher only to measure it |
-| `--teardown-ms` | 100 | the delay from a window's last background input to its session's `FocusOut`, on the timer (above); 0 sends each request's `FocusOut` as its input ends, before its answer (the harness's control lane) |
+| `--teardown-ms` | 0 | a wait before each background session's `FocusOut`, on the request path, for measurement only (0.3.0's wait, the vendor's 100 ms there); 0 sends each `FocusOut` as its request's input ends |
+| `--paste-settle-ms` | 100 | a paste's wait before it observes, after the last key to its window (The paste's settle, above); the measured value, set otherwise only to measure it |
 | `--key-pace-ms` | 0 | the wait after each new key edge (the pinned build's is 33) |
 | `--drag-step-ms`, `--drag-step-us` | by family | the wait after each drag sample, fixed for every target (the vendor's is 1 ms; measurement only) |
 | `--drag-press-dwell-ms`, `--drag-release-dwell-ms` | by family | the wait after a drag's press and before its release, fixed for every target (measurement only); any drag flag sets the others to 0 |
@@ -336,7 +340,7 @@ Releases are built, tested and attested by `.github/workflows/linux-engine.yml` 
 | `--drag-dnd-hold-ms` | 250 | how long after the press a Chromium drag the engine lets drop keeps its button down for its source's take when none came by the path's end (measurement only; 0 turns the hold off; `--stats` `hold`) |
 | `--dnd-cancel-after-release` | off | a drag and drop the engine cancels is cancelled only after the release, too late (measurement only: the harness's check of the honest answer) |
 | `--dnd-defer-take` | off | a drag and drop that begins during a watched drag is left unseen until after the release, so the after-release watch finds it and the next request carries the notice (measurement only: Acceptance 8's late-take case) |
-| `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, how a desktop screenshot was read (`shm` or `get_image`), and each `FocusOut` (`focus_out`, above), a `FocusOut` sent between requests on a line of its own |
+| `--stats` | off | one JSON line per request on stderr: bus calls by member, waits, waits with one call outstanding, the most calls in flight, reply bytes, the tree's admitted, discovered and wasted counts and its tables, a capture's wait and the damage it saw, how a desktop screenshot was read (`shm` or `get_image`), each `FocusOut` (`focus_out`, above), the exit's on a line of its own, and a paste's settle (`paste.settle`) |
 
 ## Dependencies
 

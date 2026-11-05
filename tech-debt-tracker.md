@@ -2,6 +2,7 @@
 
 ## Open
 
+- **2026-11-05 — A sharing pointer's release click can go unreported in its meta (minor, #261's hold join, reviewer-high on 4d68fee4..23d68dae, P3).** Connection A re-arms its focus hold for a pointer action, B's pointer action shares that activation, and both stop before posting. A releases first, so B's release posts the kept inert click (`HeldActivations`' release guard, MenuSpan.swift). B's `deliverPointer` leaves `reportsArm` false, because B neither made the activation nor consumed its arm through `postAction`, so B's meta omits that `activationClickKind {inertOutside, release}`. The click itself is right. Only its record is missing, in a two-connection double-abort. Fix: the release reports whether it consumed the arm, and the sharing pointer records it as its own. Check: `deliverPointer`'s defer still reads `reportsArm` alone.
 - **2026-11-01 — A capped route-3 action can answer up to 1 s late (accepted limit, #200).** When the delivery guard
   reaches the 100 ms screen-hold cap with the click's raise not yet settled, it keeps repairing synchronously inside the
   action until the raise settles or 1 s after the events (`FakeActivation.deliver`, the past-cap branch), so that action's

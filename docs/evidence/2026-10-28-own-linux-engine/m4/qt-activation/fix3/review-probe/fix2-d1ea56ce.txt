@@ -1,0 +1,58 @@
+## qt5 click_count 2 run 1
+{"command": "get_window_state", "answer": {"ok": true, "tree": "x11"}}
+{"command": "get_window_state", "answer": {"ok": true, "tree": "at_spi"}}
+{"command": "key_down", "answer": {"id": 3, "ok": true, "output": null, "error": null, "restart": false}}
+{"command": "click", "answer": {"id": 4, "ok": true, "output": null, "error": null, "restart": false}}
+{"case": "synthmulti", "front": 2097152, "main": 4194310, "native_view": null, "before": "2097152", "after": "4194310", "activated": true}
+{"command": "key_up", "answer": {"id": 5, "ok": true, "output": null, "error": null, "restart": false}}
+{"bus": {"by_member": {"org.a11y.atspi.Accessible.GetChildren": 1, "org.freedesktop.DBus.GetConnectionUnixProcessID": 1, "org.freedesktop.DBus.Properties.Get": 2}, "calls": 4, "connections": 0, "max_in_flight": 2, "peak_staged_bytes": 155, "reply_bytes": 367, "waits": 3, "waits_alone": 2}, "command": "key_down", "elapsed_ms": 4.323, "id": 3, "ok": true, "route": "background", "toolkit": {"name": "Qt", "version": "5.15.13"}, "variant": {"call_reservation": 4096, "capture_wait": "damage", "key_pace_ms": 0, "paste_settle_ms": 100, "retention": "Session", "settle_ms": 0, "slack_nodes": 8, "teardown_ms": 0, "window_bytes": 4194304, "window_calls": 32}}
+{"bus": {"by_member": {"org.a11y.atspi.Accessible.GetChildren": 2, "org.a11y.atspi.Accessible.GetState": 1, "org.freedesktop.DBus.GetConnectionUnixProcessID": 1, "org.freedesktop.DBus.Properties.Get": 3}, "calls": 7, "connections": 0, "max_in_flight": 2, "peak_staged_bytes": 190, "reply_bytes": 746, "waits": 6, "waits_alone": 5}, "command": "click", "elapsed_ms": 805.97, "focus_ack": {"bound_ms": 25, "native_child": false, "refocused": false, "released_ms": null, "waited_ms": 0.253}, "id": 4, "ok": true, "route": "background", "variant": {"call_reservation": 4096, "capture_wait": "damage", "key_pace_ms": 0, "paste_settle_ms": 100, "retention": "Session", "settle_ms": 0, "slack_nodes": 8, "teardown_ms": 0, "window_bytes": 4194304, "window_calls": 32}}
+fixture_log: {"qt_focus": 4194310, "main_active": true}
+{"press": 1, "x_focus": "4194317"}
+{"qt_focus": 4194317, "main_active": false}
+{"press": 2, "x_focus": "4194310"}
+{"qt_focus": 4194310, "main_active": true}
+
+## qt5 click_count 1 run 1
+{"command": "get_window_state", "answer": {"ok": true, "tree": "x11"}}
+{"command": "get_window_state", "answer": {"ok": true, "tree": "at_spi"}}
+{"command": "key_down", "answer": {"id": 3, "ok": true, "output": null, "error": null, "restart": false}}
+{"command": "click", "answer": {"id": 4, "ok": true, "output": null, "error": null, "restart": false}}
+{"case": "synthmulti", "front": 2097152, "main": 4194310, "native_view": null, "before": "2097152", "after": "4194317", "activated": true}
+{"command": "key_up", "answer": {"id": 5, "ok": true, "output": null, "error": null, "restart": false}}
+{"bus": {"by_member": {"org.a11y.atspi.Accessible.GetChildren": 1, "org.freedesktop.DBus.GetConnectionUnixProcessID": 1, "org.freedesktop.DBus.Properties.Get": 2}, "calls": 4, "connections": 0, "max_in_flight": 2, "peak_staged_bytes": 155, "reply_bytes": 367, "waits": 3, "waits_alone": 2}, "command": "key_down", "elapsed_ms": 4.305, "id": 3, "ok": true, "route": "background", "toolkit": {"name": "Qt", "version": "5.15.13"}, "variant": {"call_reservation": 4096, "capture_wait": "damage", "key_pace_ms": 0, "paste_settle_ms": 100, "retention": "Session", "settle_ms": 0, "slack_nodes": 8, "teardown_ms": 0, "window_bytes": 4194304, "window_calls": 32}}
+{"bus": {"by_member": {"org.a11y.atspi.Accessible.GetChildren": 2, "org.a11y.atspi.Accessible.GetState": 1, "org.freedesktop.DBus.GetConnectionUnixProcessID": 1, "org.freedesktop.DBus.Properties.Get": 3}, "calls": 7, "connections": 0, "max_in_flight": 2, "peak_staged_bytes": 190, "reply_bytes": 746, "waits": 6, "waits_alone": 5}, "command": "click", "elapsed_ms": 407.504, "focus_ack": {"bound_ms": 25, "native_child": false, "refocused": false, "released_ms": null, "waited_ms": 0.419}, "id": 4, "ok": true, "route": "background", "variant": {"call_reservation": 4096, "capture_wait": "damage", "key_pace_ms": 0, "paste_settle_ms": 100, "retention": "Session", "settle_ms": 0, "slack_nodes": 8, "teardown_ms": 0, "window_bytes": 4194304, "window_calls": 32}}
+fixture_log: {"qt_focus": 4194310, "main_active": true}
+{"press": 1, "x_focus": "4194317"}
+{"qt_focus": 4194317, "main_active": false}
+{"qt_focus": null, "main_active": false}
+
+## qt6 click_count 2 run 1
+{"command": "get_window_state", "answer": {"ok": true, "tree": "x11"}}
+{"command": "get_window_state", "answer": {"ok": true, "tree": "at_spi"}}
+{"command": "key_down", "answer": {"id": 3, "ok": true, "output": null, "error": null, "restart": false}}
+{"command": "click", "answer": {"id": 4, "ok": true, "output": null, "error": null, "restart": false}}
+{"case": "synthmulti", "front": 2097152, "main": 4194310, "native_view": null, "before": "2097152", "after": "4194310", "activated": true}
+{"command": "key_up", "answer": {"id": 5, "ok": true, "output": null, "error": null, "restart": false}}
+{"bus": {"by_member": {"org.a11y.atspi.Accessible.GetChildren": 1, "org.freedesktop.DBus.GetConnectionUnixProcessID": 1, "org.freedesktop.DBus.Properties.Get": 2}, "calls": 4, "connections": 0, "max_in_flight": 2, "peak_staged_bytes": 153, "reply_bytes": 365, "waits": 3, "waits_alone": 2}, "command": "key_down", "elapsed_ms": 2.913, "id": 3, "ok": true, "route": "background", "toolkit": {"name": "Qt", "version": "6.4.2"}, "variant": {"call_reservation": 4096, "capture_wait": "damage", "key_pace_ms": 0, "paste_settle_ms": 100, "retention": "Session", "settle_ms": 0, "slack_nodes": 8, "teardown_ms": 0, "window_bytes": 4194304, "window_calls": 32}}
+{"bus": {"by_member": {"org.a11y.atspi.Accessible.GetChildren": 2, "org.a11y.atspi.Accessible.GetState": 1, "org.freedesktop.DBus.GetConnectionUnixProcessID": 1, "org.freedesktop.DBus.Properties.Get": 3}, "calls": 7, "connections": 0, "max_in_flight": 2, "peak_staged_bytes": 190, "reply_bytes": 746, "waits": 6, "waits_alone": 5}, "command": "click", "elapsed_ms": 807.036, "focus_ack": {"bound_ms": 25, "native_child": false, "refocused": false, "released_ms": null, "waited_ms": 0.382}, "id": 4, "ok": true, "route": "background", "variant": {"call_reservation": 4096, "capture_wait": "damage", "key_pace_ms": 0, "paste_settle_ms": 100, "retention": "Session", "settle_ms": 0, "slack_nodes": 8, "teardown_ms": 0, "window_bytes": 4194304, "window_calls": 32}}
+fixture_log: {"qt_focus": 4194310, "main_active": true}
+{"press": 1, "x_focus": "4194317"}
+{"qt_focus": 4194317, "main_active": false}
+{"press": 2, "x_focus": "4194310"}
+{"qt_focus": 4194310, "main_active": true}
+
+## qt6 click_count 1 run 1
+{"command": "get_window_state", "answer": {"ok": true, "tree": "x11"}}
+{"command": "get_window_state", "answer": {"ok": true, "tree": "at_spi"}}
+{"command": "key_down", "answer": {"id": 3, "ok": true, "output": null, "error": null, "restart": false}}
+{"command": "click", "answer": {"id": 4, "ok": true, "output": null, "error": null, "restart": false}}
+{"case": "synthmulti", "front": 2097152, "main": 4194310, "native_view": null, "before": "2097152", "after": "4194317", "activated": true}
+{"command": "key_up", "answer": {"id": 5, "ok": true, "output": null, "error": null, "restart": false}}
+{"bus": {"by_member": {"org.a11y.atspi.Accessible.GetChildren": 1, "org.freedesktop.DBus.GetConnectionUnixProcessID": 1, "org.freedesktop.DBus.Properties.Get": 2}, "calls": 4, "connections": 0, "max_in_flight": 2, "peak_staged_bytes": 153, "reply_bytes": 365, "waits": 3, "waits_alone": 2}, "command": "key_down", "elapsed_ms": 3.312, "id": 3, "ok": true, "route": "background", "toolkit": {"name": "Qt", "version": "6.4.2"}, "variant": {"call_reservation": 4096, "capture_wait": "damage", "key_pace_ms": 0, "paste_settle_ms": 100, "retention": "Session", "settle_ms": 0, "slack_nodes": 8, "teardown_ms": 0, "window_bytes": 4194304, "window_calls": 32}}
+{"bus": {"by_member": {"org.a11y.atspi.Accessible.GetChildren": 2, "org.a11y.atspi.Accessible.GetState": 1, "org.freedesktop.DBus.GetConnectionUnixProcessID": 1, "org.freedesktop.DBus.Properties.Get": 3}, "calls": 7, "connections": 0, "max_in_flight": 2, "peak_staged_bytes": 190, "reply_bytes": 746, "waits": 6, "waits_alone": 5}, "command": "click", "elapsed_ms": 404.811, "focus_ack": {"bound_ms": 25, "native_child": false, "refocused": false, "released_ms": null, "waited_ms": 0.316}, "id": 4, "ok": true, "route": "background", "variant": {"call_reservation": 4096, "capture_wait": "damage", "key_pace_ms": 0, "paste_settle_ms": 100, "retention": "Session", "settle_ms": 0, "slack_nodes": 8, "teardown_ms": 0, "window_bytes": 4194304, "window_calls": 32}}
+fixture_log: {"qt_focus": 4194310, "main_active": true}
+{"press": 1, "x_focus": "4194317"}
+{"qt_focus": 4194317, "main_active": false}
+{"qt_focus": null, "main_active": false}
+

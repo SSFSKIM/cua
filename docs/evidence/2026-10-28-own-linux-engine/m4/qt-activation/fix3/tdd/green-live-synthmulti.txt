@@ -1,0 +1,8 @@
+    Finished `release` profile [optimized] target(s) in 0.04s
+     Running tests/live_focus_ack.rs (target/release/deps/live_focus_ack-c9af77cccabc9385)
+
+running 1 test
+test a_double_click_whose_first_hold_sees_qt_focus_another_of_its_windows_reads_qt_again_before_the_second_press ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 19.74s
+

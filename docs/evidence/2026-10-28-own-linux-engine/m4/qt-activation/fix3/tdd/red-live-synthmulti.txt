@@ -1,0 +1,23 @@
+    Finished `release` profile [optimized] target(s) in 0.02s
+     Running tests/live_focus_ack.rs (target/release/deps/live_focus_ack-c9af77cccabc9385)
+
+running 1 test
+test a_double_click_whose_first_hold_sees_qt_focus_another_of_its_windows_reads_qt_again_before_the_second_press ... FAILED
+
+failures:
+
+---- a_double_click_whose_first_hold_sees_qt_focus_another_of_its_windows_reads_qt_again_before_the_second_press stdout ----
+
+thread 'a_double_click_whose_first_hold_sees_qt_focus_another_of_its_windows_reads_qt_again_before_the_second_press' (4158306) panicked at tests/live_focus_ack.rs:789:9:
+assertion `left == right` failed: qt5: no second press took the X focus from B
+  left: 5
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    a_double_click_whose_first_hold_sees_qt_focus_another_of_its_windows_reads_qt_again_before_the_second_press
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 9.87s
+
+error: test failed, to rerun pass `--test live_focus_ack`

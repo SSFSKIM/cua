@@ -90,9 +90,12 @@ test('docs/cua-api holds only the shipped documents and their provenance', () =>
 // The surface inventory's "Table 3 addition (2026-10-30, #235)": cua's own paragraph, not the vendor's, on what the
 // person sees while the agent acts (docs/doperpowers/specs/2026-10-30-macos-agent-cursor-design.md, M3).
 const AGENT_CURSOR = 'While you act in an app, a cursor labelled with this session\'s name shows the user where each action lands, unless the user has turned it off, and fades a few seconds after your last action. Your actions do not wait for it, it is not the user\'s pointer, and your screenshots do not show it.\n';
+// The surface inventory's "Table 3 addition (2026-11-05, #282)": cua's own paragraph on background clicks into a
+// Chromium web page, which cua's macOS engine refuses or leaves unconfirmed, in the same macOS-only document.
+const BACKGROUND_CLICKS = '\nA web page in a Chromium-based app (Chrome, Electron apps) that is in the background does not take a pointer: unless this Mac is a dedicated desktop, a left click, double click or drag there is refused with "<App>\'s web page does not accept a background click; bring <App> forward or use a dedicated desktop", and nothing is sent. A plain click there goes through the clicked element\'s own accessibility action instead when it has one, so prefer clicking such an element by its index. A click or drag that fails with `clickUnconfirmed` was sent but may only have activated the window: observe the app before any retry.\n';
 
-test('agent-cursor.md is the Table 3 addition\'s paragraph, and the core carries it only where the facade asks for it', async () => {
-  assert.equal(read(DOCS, 'agent-cursor.md'), AGENT_CURSOR);
+test('agent-cursor.md is the Table 3 additions\' paragraphs, and the core carries it only where the facade asks for it', async () => {
+  assert.equal(read(DOCS, 'agent-cursor.md'), AGENT_CURSOR + BACKGROUND_CLICKS);
   const read_ = async name => `<${name}>`;
   assert.equal(await create_documentation(read_).read_core(), '<core-cua-repl>\n<confirmations>');
   assert.equal(await create_documentation(read_, {agentCursor: () => false}).read_core(), '<core-cua-repl>\n<confirmations>');

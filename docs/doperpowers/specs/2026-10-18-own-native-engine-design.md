@@ -1819,6 +1819,88 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   `swift build` with the define compiling, and under it the inert-click and ping tests failing as they should; the
   client's and service's tests for the variant and the join's pass-through). Nothing live ran.
   Date/Author: 2026-11-05, cursor235's implementer for the design session's rulings on #187's isolating slot.
+- Decision (#282, 2026-11-05, `fix/282-chrome-first-mouse`; the design session's ruling, 1ea561bc 33e95829, in the
+  issue's body; amends route 3 in "Input", #187's inert-click entry and "#261's hold join" above): **the device mode
+  reaches the macOS engine; in shared mode a background pointer into a Chromium web area is element-routed or refused
+  with nothing posted, in dedicated mode the inert click goes first and nothing is put back, and everywhere a pointer
+  that may only have activated its window answers `clickUnconfirmed`.**
+  1. **The cause** (#187's isolating slot; the issue's file:line reading). Where route 3's activation clicks no
+     AXActivationPoint (Chrome's lies outside its frame), a left pointer holder (`defersArmClick`) posts no early inert
+     click, and its own down is the first mouse event after subtype 1 (`activationClickKind {action, consumedByAction}`).
+     AppKit takes it as the activating click and asks `acceptsFirstMouse:`; Chromium's `RenderWidgetHostViewCocoa`
+     answers NO below the popup levels, so the page gets neither the down nor the up, and the engine answered success.
+     Since 5941e988 (#176).
+  2. **The mode.** `desktopModeFor` (src/runtime/launch.mjs: `CUA_DESKTOP_MODE`, else engine.json's `desktop`, else
+     `shared`) now resolves for a macOS session on cua's engine too; the launch puts it in the worker's environment, and
+     the service (`desktopMode`) names it in every connection's `ping` as `desktop`, so the engine keeps it on that
+     connection (`ConnectionState.desktop`), never engine-wide: one engine serves sessions of either mode. A ping naming
+     none leaves `shared`; another value is invalid params. Doctor's macOS row reports it as the Linux row does (an
+     invalid one fails the row).
+  3. **The web-area test** (Routes.swift `pointerView`). The process is Chromium's by its principal class
+     (`chromiumFamily`: `BrowserCrApplication`, `AtomApplication`; Electron's web contents are the same view), and the
+     AX hit at the pointer's point (a coordinate click's and a drag's start: the window's hit-test; an element click's:
+     its reach check's against the owner's application) is an AXWebArea or lies inside one, its parents walked up to
+     300 levels and no further than its window. Chosen over `webShaped`, which counts any app with an `http` URL type
+     (Safari, Firefox), whose views are not Chromium's: the known-accept rule below is Chromium's alone, and the
+     honest result covers the rest.
+  4. **The known-accept rule.** A Chromium process's native views (its toolbar: `BridgedContentView` accepts first
+     mouse) count as known to accept, but only once an observation has seen a web area in the process (`webAreaSeen`):
+     before its page tree is exposed, a page point may answer outside any web area and would be misread as native. That
+     is the one rule; everything else is `unknown`.
+  5. **What is affected: the activation the pointer meets clicked no activation point** (the implementer's reading,
+     wider than the ruling's "the pointer's down would consume the arm"). A new activation's click plan is read before
+     subtype 1 (the activation point and the hit-test there are window geometry, which subtype 1 does not move), so
+     the refusal posts nothing and holds no screen updates; a held one counts when it ran and its click was not the
+     activation point's (`activatedWithoutActivationPointClick`), checked under the registry's lock before any join,
+     withdrawal or run. This takes in a pointer joining a spent hold (⌘L then a click, focusField's fallback inside
+     set_value's held activation, another connection's hold, a recorded menu's), because with the re-arming narrowed
+     (item 8) its down would meet a key window and order it front, #200's raise, which the owner's ruling keeps off a
+     shared desktop; the ruling names focusField's fallback among the refusals, which only this reading reaches. Where
+     the activation point's click made the window key (Electron, TextEdit) nothing changes: #188's Electron row
+     delivers there.
+  6. **Shared mode** (the default). A left click, double click or drag so affected into a Chromium web area is never
+     posted (`PointerHold.refusedWithoutActivationPointClick`, thrown as the internal `PointerRefused` before anything is
+     posted, so no activation or inert click is left behind and no hold ends with its arm set). A plain left click whose
+     hit advertises AXPick or AXPress (`webAreaElementAction`, `elementClickPlan`'s choice on the hit) is carried by that
+     action exactly as an element click's (`elementActionClick`: the focus hold first when the app does not believe it
+     has focus, then the action), its meta's `elementClick` reason `webArea`. Anything else (no action, a double
+     click, a drag, focusField's fallback, which is refused and never pressed, since an action is no focusing) is
+     `backgroundClickRefused` (-10005): `<App>'s web page does not accept a background click; bring <App> forward or use
+     a dedicated desktop`, the Linux engine's form. Right and middle clicks are unaffected.
+  7. **Dedicated mode.** Left pointers take the inert click right after subtype 1 (`defersArmClick` false), so their
+     own down meets a key window and is delivered, and the action's events go out with no delivery guard and no
+     after-action watch (`delivery` absent): the window may come forward and stays so, the Linux foreground route's
+     choice. Scoped to the action: its activation's own guard is unchanged (three stable samples, its hold released by
+     it), and a later shared-mode connection's action guards as ever. No re-arming.
+  8. **`rearmed`** stays only for a shared-mode pointer into a view known to accept first mouse
+     (`PointerHold.rearmsSpentArm`). Into any other view the new arm's consuming down may be lost; the spent arm's key
+     window delivers it, the raise left to the delivery guard, as before #261.
+  9. **`clickUnconfirmed`** (-10005), everywhere: when an action's own left mouse down claimed the activation's arm
+     (`FakeActivation.postAction`) and its view is not known to accept first mouse, the action answers, after its
+     events and with its full meta (the delivery guard's included), `The click could not be confirmed: it was sent to
+     <App> in the background, but it may only have activated the window without reaching what is under the pointer.
+     Observe the app with get_app_state before any retry, and never retry blindly.` (`drag` for a drag). An error,
+     not a success with a note as the paste route's no-channel case: the loss has a known mechanism here, and the model
+     must look before it goes on. The route's guard counts as passed for `routeAdvice`. In practice: non-Chromium apps
+     whose activation point was not clicked, a Chromium process whose page tree was not yet seen, and a dedicated
+     action whose inert click could not be placed.
+  10. **Model-facing text.** `docs/cua-api/agent-cursor.md`, cua's own macOS-only first-call paragraph, gains a second
+     paragraph with the refusal's sentence and `clickUnconfirmed` (the surface inventory's "Table 3 addition
+     (2026-11-05, #282)"); `core.md`'s port is untouched. The two names join the set a concealed set_value's
+     diagnostic repeats (src/services/sky.mjs), since focusField's fallback can stop under them.
+  11. **Not done.** Route 2′ on a Chrome carrying Chromium 212c026a (the ruling's D) and WebKit's first-mouse rules
+     (Safari's page refuses first mouse unless a selection may be dragged; it gets `clickUnconfirmed`, not a refusal).
+  Proven offline (`BackgroundPointerTests`, 14, failing before the change where they bite: shared mode's refusal of
+  a click, a double click and a drag into a web area with nothing posted, no hold taken and nothing left held; a plain
+  click carried by the element route with no mouse event; a web-area pointer joining its own or another connection's
+  spent hold refused with the hold untouched; an Electron-shaped activation still posting; dedicated mode's inert click
+  before the down, no restore, no watch, no re-arming; `clickUnconfirmed` for an unknown view's consuming click and
+  drag and for a dedicated click whose inert click could not be placed, success for a known-accept view; an unknown
+  view sharing a spent hold rather than re-arming; the web-area walk, its bound and its stop at the window; the
+  element route's action; the ping's per-connection mode. The service's ping and pass-through, the launch's mode,
+  doctor's row and the client's ping in their JS suites). Nothing live ran: the hosted Chrome for Testing A/B of the
+  ruling's acceptance is the next step.
+  Date/Author: 2026-11-05, cursor235's implementer for the design session's ruling on #282.
 
 ## Outcomes & Retrospective
 

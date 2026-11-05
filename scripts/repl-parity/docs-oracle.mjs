@@ -36,8 +36,10 @@ export function transformCoreDocument(source){
 }
 const ownCore=transformCoreDocument(vendorCore);
 // Table 3 addition (2026-10-30, #235): cua's own paragraph after the core, before the policy, where cua's host serves a
-// macOS computer surface (cua's own engine, whose agent cursor it describes). `agentCursor` says the lane is one.
-export const AGENT_CURSOR="While you act in an app, a cursor labelled with this session's name shows the user where each action lands, unless the user has turned it off, and fades a few seconds after your last action. Your actions do not wait for it, it is not the user's pointer, and your screenshots do not show it.\n";
+// macOS computer surface (cua's own engine, whose agent cursor it describes). `agentCursor` says the lane is one. The
+// Table 3 addition of 2026-11-05 (#282) adds the engine's background-click paragraph to the same document.
+export const AGENT_CURSOR="While you act in an app, a cursor labelled with this session's name shows the user where each action lands, unless the user has turned it off, and fades a few seconds after your last action. Your actions do not wait for it, it is not the user's pointer, and your screenshots do not show it.\n"
+ +"\nA web page in a Chromium-based app (Chrome, Electron apps) that is in the background does not take a pointer: unless this Mac is a dedicated desktop, a left click, double click or drag there is refused with \"<App>'s web page does not accept a background click; bring <App> forward or use a dedicated desktop\", and nothing is sent. A plain click there goes through the clicked element's own accessibility action instead when it has one, so prefer clicking such an element by its index. A click or drag that fails with `clickUnconfirmed` was sent but may only have activated the window: observe the app before any retry.\n";
 export function coreDocument({host,requestMeta,agentCursor=false}={}){
  assert.ok(['vendor','cua'].includes(host),'explicit document host required');
  const policies=requestMeta?.['openai/confirmation_policies'];

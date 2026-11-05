@@ -19,9 +19,10 @@
 // - Composing (./item-187.mjs groupItem): a third of hold 3's nine paste rows behind a fresh Hangul composition in
 //   TextEdit (THIRDS: each half pastes every string once), the harness windows placed first.
 // - The AFTER-only block: a swap to AFTER, then #188's `--part 188` as it is (its own placement and source restore;
-//   its verdict is #188's). C2 and C3 register their items in AFTER_ONLY; C4's tail items in TAIL (ruling 4: after every
-//   verdict item, a minute or less each, skipped when the slot runs long). Keeping the merged build at the end needs no
-//   further swap; restoring the owner's is the operator's `restore` after the drive (ruling 6).
+//   its verdict is #188's), then C2's and C3's repetitions (./item-187-join.mjs: the keys-then-click row and its dialog
+//   variant, each its own verdict); then the tail, C4 (b) and (c) (ruling 4: after every verdict item, a minute or less
+//   each, measured with no verdict, left out with `--no-tail`). Keeping the merged build at the end needs no further
+//   swap; restoring the owner's is the operator's `restore` after the drive (ruling 6).
 // Every row and repetition keeps the act's `cua/nativeEngine`, so each is attested on its own, not by the block alone.
 //
 // The verdict (judgeIsolate; pre-registered, written to item-187-isolate.md, the plan's C1 with ruling 2's composing):
@@ -40,7 +41,8 @@
 // - Overall: DOES NOT LAND when either part does; LANDS only when both do; INCONCLUSIVE otherwise.
 // - Reported, never judged: the key readings per half before and after `open -a` (frontmost, AXMain, AXFocusedWindow,
 //   hasFocus, the run window's AXFocused), the activation joins, what the rows did to the person's side, each swap's
-//   attestation, #188's rows (judged as #188's) and the owner's source at the end.
+//   attestation, #188's rows (judged as #188's), C2's and C3's verdicts (their own, ./item-187-join.mjs), C4's measures
+//   and the owner's source at the end.
 // The judge is pure over records, and its pieces (repPremise, cellOutcome, rowOutcome, partVerdict) take records alone,
 // so a replay on other records runs the same predicates.
 import {join} from 'node:path';
@@ -48,6 +50,7 @@ import {OBSERVE} from './cells.mjs';
 import {CONTROL_VARIANT} from './control-build.mjs';
 import {cellItem, endSteps, groupItem, interferenceOf, lastAttempt, placeSteps, plan187, readTimedOut, restoreOf, S, settleReplacements, VENDOR_ROWS} from './item-187.mjs';
 import {ALL_ITEMS_188, ITEMS_188, judge188, markdown188} from './item-188.mjs';
+import {dialogPlan, inframePlan, joinMarkdown, judgeJoin, judgeTail, menuPlan, raisePlan, tailMarkdown} from './item-187-join.mjs';
 
 export const HALVES = Object.freeze(['after', 'before']);
 export const HALF_NAMES = Object.freeze({after: 'AFTER (the merged shipping build)', before: 'BEFORE (the control build, no inert click)'});
@@ -76,16 +79,22 @@ export const ITEMS = Object.freeze({place: '187-iso-place', swap: n => `187-iso-
 const CELL_ITEM = /^187-iso-cell-(after|before)-(\d+)$/, COMPOSING_ITEM = /^187-iso-composing-(after|before)-(\d+)$/;
 export const LABELS = Object.freeze({attest: tag => `${tag} attest: the textedit scene observed, its result read for the engine that answered`});
 
-// The AFTER-only block's items after its swap, in order: #188's `--part 188` (C5). C2 (the keys-then-click row) and C3
-// (the popup dialog) add theirs here, each {id, what, items: () => [plan entries]}.
+// The AFTER-only block's items after its swap, in order, each {id, what, items: () => [plan entries]}: #188's `--part
+// 188` (C5), then C2 (the keys-then-click row) and C3 (the popup dialog), ./item-187-join.mjs, each with its own verdict.
 export const AFTER_ONLY = Object.freeze([
   Object.freeze({id: '188', what: '#188\'s 4 rows and cell 3, as `--part 188` defines them (counted for #188)', items: () => plan187({part: '188'})}),
+  Object.freeze({id: 'C2', what: 'the keys-then-click raise row on background Chrome, 3 repetitions (its own verdict)', items: raisePlan}),
+  Object.freeze({id: 'C3', what: 'the dialog variant, a popup closed by its own button, 3 repetitions (its own verdict)', items: dialogPlan}),
 ]);
-// The tail, after every verdict item (ruling 4): C4 (b) and (c) add theirs here, in the same shape.
-export const TAIL = Object.freeze([]);
+// The tail, after every verdict item (ruling 4): C4 (b) and (c), #279's cases, measured with no verdict, a minute or less
+// each, left out with `--no-tail`.
+export const TAIL = Object.freeze([
+  Object.freeze({id: 'C4b', what: '#279\'s menu span: a menu recorded on Chrome, then a coordinate click into its page, 3 repetitions (measured)', items: menuPlan}),
+  Object.freeze({id: 'C4c', what: '#279\'s in-frame case: TextEdit behind the run\'s Finder window, ⌘↑, then a coordinate click into its text, 3 repetitions (measured)', items: inframePlan}),
+]);
 // The stages whose stop lets the drive go on: each later item sets up its own scene. A swap, the placement or the end
 // stopping stops it.
-export const GOES_ON_ISO = Object.freeze(['cell', 'composing', '188', 'tail']);
+export const GOES_ON_ISO = Object.freeze(['cell', 'composing', '188', 'raise', 'dialog', 'tail']);
 
 // ---- the plan ------------------------------------------------------------------------------------------------------
 
@@ -129,7 +138,8 @@ export function isolatePlan({blocks = BLOCK_NUMBERS, tail = true} = {}) {
     ...Array.from({length: CELL_REPS_PER_BLOCK}, (_, j) => repEntry(half, index * CELL_REPS_PER_BLOCK + j, n)),
     {item: ITEMS.composing(half, index), stage: 'composing', block: n, half, steps: composingItem({half, index})},
   ];
-  const tagged = (entries, stage) => entries.map(e => ({...e, block: AFTER_BLOCK, stage: stage ?? e.stage}));
+  // A repetition's replacement (C2's, C3's) stays in the block.
+  const tagged = (entries, stage) => entries.map(e => ({...e, block: AFTER_BLOCK, stage: stage ?? e.stage, ...(e.replace ? {replace: attempt => ({...e.replace(attempt), block: AFTER_BLOCK})} : {})}));
   const afterOnly = blocks.includes(AFTER_BLOCK) ? [{item: ITEMS.swap(AFTER_BLOCK), stage: 'swap', block: AFTER_BLOCK, half: 'after', steps: swapItem({n: AFTER_BLOCK, half: 'after'})},
     ...AFTER_ONLY.flatMap(s => tagged(s.items())), ...(tail ? TAIL.flatMap(s => tagged(s.items(), 'tail')) : [])] : [];
   return [{item: ITEMS.place, stage: 'place', block: 0, steps: placeSteps()}, ...BLOCKS.filter(b => blocks.includes(b.n)).flatMap(block), ...afterOnly,
@@ -148,14 +158,16 @@ export function parseBlocks(text) {
   return [...new Set(numbers)].sort((a, b) => a - b);
 }
 
-// What the dry run prints: the steps of each block. -> [{block, label, steps}].
+// What the dry run prints: the steps of each block, the tail apart. -> [{block, label, steps}] (the tail's block 'tail').
 export function stepCounts(plan) {
-  const label = n => (n === 0 ? 'the start (the placement)' : n === null ? 'the end (the owner\'s source)' : n === AFTER_BLOCK ? `block ${n}, AFTER only (${[...AFTER_ONLY, ...TAIL].map(s => s.id).join(', ') || 'its swap'})`
-    : `block ${n}, ${BLOCKS[n - 1].half.toUpperCase()}`);
+  const names = new Set(plan.map(e => e.item));
+  const ids = sections => sections.filter(s => s.items().some(e => names.has(e.item))).map(s => s.id).join(', ');
+  const label = n => (n === 0 ? 'the start (the placement)' : n === null ? 'the end (the owner\'s source)' : n === 'tail' ? `the tail (${ids(TAIL)})`
+    : n === AFTER_BLOCK ? `block ${n}, AFTER only (${ids(AFTER_ONLY) || 'its swap'})` : `block ${n}, ${BLOCKS[n - 1].half.toUpperCase()}`);
   const out = [];
   for (const e of plan) {
-    const last = out.at(-1);
-    if (last && last.block === e.block) last.steps += e.steps.length; else out.push({block: e.block, label: label(e.block), steps: e.steps.length});
+    const block = e.stage === 'tail' ? 'tail' : e.block, last = out.at(-1);
+    if (last && last.block === block) last.steps += e.steps.length; else out.push({block, label: label(block), steps: e.steps.length});
   }
   return out;
 }
@@ -319,7 +331,10 @@ export function judgeIsolate(items) {
     const unattested = cells188.filter(c => attestProblem(c.nativeEngine, after));
     return {item: name, cells: cells188.length, unattested: unattested.length, first: unattested[0] ? attestProblem(unattested[0].nativeEngine, after) : null};
   });
+  // C2 and C3 (their own verdicts, the AFTER build attested) and C4 (measured): never C1's verdict.
+  const attestAfter = native => attestProblem(native, after);
   return {swaps, builds, cells, composingRows, composingStops, cell, composing, verdict, ok: verdict === 'LANDS',
+    raise: judgeJoin('raise', items, {attest: attestAfter}), dialog: judgeJoin('dialog', items, {attest: attestAfter}), tail: judgeTail(items),
     mechanism: mechanismIso(cells), person: personSide({cells, composingRows}),
     item188: {...judge188(items), ran: ALL_ITEMS_188.some(n => items[n]), attest: attest188},
     restore: restoreOf(rowsOf(ITEMS.end), {recorded: Boolean(items[ITEMS.end]), stopped: stoppedOf(ITEMS.end)?.error ?? null})};
@@ -395,9 +410,11 @@ export function isolateMarkdown(j, {commit = null} = {}) {
     '| half | before `open -a` | after `open -a` | activation joins | click kinds (every recorded) |', '|---|---|---|---|---|',
     ...HALVES.map(half => `| ${half} | ${listed(j.mechanism[half].before)} | ${listed(j.mechanism[half].after)} | ${listed(j.mechanism[half].joins)} | ${listed(j.mechanism[half].kinds)} |`),
     '', '## The person\'s side (reported, never the verdict)', '', ...HALVES.map(half => `- ${half}: ${j.person[half].rows} counted row(s); ${listed(j.person[half].flags)}`));
-  lines.push('', `## The AFTER-only block (block ${AFTER_BLOCK})`, '', ...[...AFTER_ONLY, ...TAIL].map(s => `- ${s.id}: ${s.what}`), '',
+  lines.push('', `## The AFTER-only block (block ${AFTER_BLOCK}) and the tail`, '', ...[...AFTER_ONLY, ...TAIL].map(s => `- ${s.id}: ${s.what}`), '',
+    `- C2, the keys-then-click row: **${j.raise.verdict}**`, `- C3, the dialog variant: **${j.dialog.verdict}**`, '- C4 (b) and (c): measured, no verdict', '',
+    'C2\'s and C3\'s verdicts are their own, never the isolating verdict above.', '',
     ...(j.item188.attest.length ? [`#188's cua items on the AFTER build: ${j.item188.attest.map(a => `${a.item} ${a.cells - a.unattested} of ${a.cells} cell(s) attested${a.first ? ` (${a.first})` : ''}`).join('; ')}.`, ''] : []),
-    ...markdown188(j.item188));
+    ...markdown188(j.item188), ...joinMarkdown(j.raise), ...joinMarkdown(j.dialog), ...tailMarkdown(j.tail));
   lines.push(`The owner's input source at the end: ${j.restore.ok ? `restored (${j.restore.current}, read back)` : `NOT restored (${j.restore.why})`}. The engine's end state is the owner's choice after the drive (the runbook): the merged build kept, or the owner's saved engine restored.`);
   return `${lines.join('\n')}\n`;
 }

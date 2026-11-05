@@ -29,6 +29,7 @@ import {clipPathProblem, recordingPlan, REPO_ROOT, screencaptureCommand, startRe
 import {firstTasks} from './first-observation.mjs';
 import {item187Tasks, liveDeps187, stop187} from './item-187.mjs';
 import {item188Tasks, stop188} from './item-188.mjs';
+import {joinTasks} from './item-187-join.mjs';
 import {readConsent} from './input-source.mjs';
 import {liveElementFrame, liveMoveWindow, raiseTasks, stopRaiseWatch} from './raise.mjs';
 import {openDriven} from './session.mjs';
@@ -252,8 +253,9 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
   // cell's relaunch of Chrome (the scenes CLI) and its activation. #188's tasks over the same deps (./item-188.mjs): the
   // ABC gate, the matrix rows' readings, cell 3's range reads, #259's geometry.
   const deps187 = liveDeps187({io, run, out, guard, cli: args => cli(args), probe: args => runProbe(enginePaths().bundle, args),
-    bundle: enginePaths().bundle, windowList: () => liveWindowList(), moveWindow: liveMoveWindow(), consent: () => readConsent(out), scenes: args => scenes(args, 120_000)});
-  Object.assign(io.tasks, item187Tasks(deps187), item188Tasks(deps187));
+    bundle: enginePaths().bundle, windowList: () => liveWindowList(), moveWindow: liveMoveWindow(), elementFrame: liveElementFrame(), consent: () => readConsent(out), scenes: args => scenes(args, 120_000)});
+  // The isolating slot's hold-join rows (./item-187-join.mjs: C2, C3, C4's tail) over the same deps.
+  Object.assign(io.tasks, item187Tasks(deps187), item188Tasks(deps187), joinTasks(deps187));
   function writeSettings(write) {
     const text = existsSync(settingsFile) ? readFileSync(settingsFile, 'utf8') : null;
     if (existsSync(before) || existsSync(`${before}.absent`)) throw new Error(`${before} exists from an earlier run: restore engine.json from it by hand, then remove it`);
@@ -268,7 +270,7 @@ export function liveIo({run, out, quiet = false, home = homedir(), gap = null}) 
 }
 
 const describe = step => {
-  if (step.open) return `open session ${step.open}${step.device ? ` on the device ${step.device}` : ''} on ${step.scenes.join(', ')}${step.bind === false ? ' (none bound)' : Array.isArray(step.bind) ? ` (${step.bind.join(', ')} bound)` : ''}${step.env ? ` with ${JSON.stringify(step.env)}` : ''}${step.engine ? ` (${step.engine} engine)` : ''}`;
+  if (step.open) return `open session ${step.open}${step.device ? ` on the device ${step.device}` : ''} on ${step.scenes.join(', ')}${step.bind === false ? ' (none bound)' : Array.isArray(step.bind) ? ` (${step.bind.join(', ')} bound)` : ''}${step.windows ? ` (${Object.keys(step.windows).join(', ')} on the window a task found)` : ''}${step.env ? ` with ${JSON.stringify(step.env)}` : ''}${step.engine ? ` (${step.engine} engine)` : ''}`;
   if (step.run) return `${step.run}: ${step.label}${step.keys ? ` (only while ${step.keys} is frontmost)` : ''}`;
   if (step.together) return `at once: ${step.together.map(describe).join(' | ')}`;
   if (step.cue) return `CUE (spoken to the owner, then ${step.ms} ms): ${step.cue}`;
@@ -283,6 +285,16 @@ const describe = step => {
   return JSON.stringify(step);
 };
 export {describe as describeStep};
+
+// A session's record of a scene: the run's, or, where the open step names a window for it (`windows[id](results)`: a
+// window number an earlier task found, the isolating slot's popup), the same process on that window, so the session's
+// target guard checks that window as the scene's front one. A window named but not found stops the item.
+export function sessionRecord(record, windowOf, results) {
+  if (!windowOf) return record;
+  const number = windowOf(results);
+  if (!Number.isSafeInteger(number)) throw new Error(`the ${record.id} scene's window for this session was not found: nothing is opened`);
+  return {...record, window: {...record.window, number}};
+}
 
 // Runs `steps` for `item`, recording into <out>/item-<item>.jsonl (a re-run appends after a new `start` row; the
 // summary reads the last attempt). `engine`: the sessions' engine unless a step names one. -> {rows, failed}: `failed`
@@ -320,7 +332,7 @@ export async function runSteps(steps, {item, out, io, engine = 'cua', log = line
       if (dryRun) { record({step: n, kind: 'plan', text: describe(step)}); continue; }
       if (step.when && !step.when(ctx.results)) { record({step: n, kind: 'skipped', text: describe(step)}); continue; }
       if (step.open) {
-        ctx.sessions[step.open] = await io.open({name: step.open, engine: step.engine ?? engine, env: step.env ?? {}, scenes: step.scenes.map(io.scene), device: step.device ?? null,
+        ctx.sessions[step.open] = await io.open({name: step.open, engine: step.engine ?? engine, env: step.env ?? {}, scenes: step.scenes.map(id => sessionRecord(io.scene(id), step.windows?.[id], ctx.results)), device: step.device ?? null,
           bind: step.bind ?? true});
         record({step: n, kind: 'open', session: step.open, env: step.env ?? {}, engine: step.engine ?? engine, ...(step.bind === false || Array.isArray(step.bind) ? {bound: step.bind} : {})});
       } else if (step.run) await runCell(step);

@@ -89,15 +89,19 @@ test('the plan: the placement, six blocks A B B A A B (a swap, 2 cell repetition
     const rows = plan.filter(p => p.stage === 'composing' && p.half === half).flatMap(p => p.steps.filter(s => s.task === '187-row'));
     assert.equal(rows.length, 9);
   }
-  // The AFTER-only block: a swap to AFTER, then #188's part exactly as `--part 188` plans it.
+  // The AFTER-only block: a swap to AFTER, then #188's part exactly as `--part 188` plans it, then C2's and C3's
+  // repetitions; the tail (C4) after them, before the end.
   const afterOnly = plan.filter(p => p.block === AFTER_BLOCK);
   assert.deepEqual(afterOnly[0], {...afterOnly[0], item: ITEMS.swap(AFTER_BLOCK), half: 'after', stage: 'swap'});
-  assert.deepEqual(afterOnly.slice(1).map(p => p.item), plan187({part: '188'}).map(p => p.item));
-  assert.deepEqual(afterOnly.slice(1).map(p => p.steps.map(describeStep)), plan187({part: '188'}).map(p => p.steps.map(describeStep)));
+  const part188 = afterOnly.filter(p => p.stage === '188' || p.stage === 'place' || p.stage === 'end');
+  assert.deepEqual(part188.map(p => p.item), plan187({part: '188'}).map(p => p.item));
+  assert.deepEqual(part188.map(p => p.steps.map(describeStep)), plan187({part: '188'}).map(p => p.steps.map(describeStep)));
   assert.ok(afterOnly.some(p => p.item === ITEMS_188.rows('cua')));
-  assert.deepEqual(AFTER_ONLY.map(s => s.id), ['188'], 'C2 and C3 register here');
-  assert.deepEqual(TAIL, [], 'C4 registers here');
-  assert.deepEqual(GOES_ON_ISO, ['cell', 'composing', '188', 'tail'], 'a swap, the placement or the end stopping stops the drive');
+  assert.deepEqual(afterOnly.slice(1 + part188.length).map(p => p.stage), ['raise', 'raise', 'raise', 'dialog', 'dialog', 'dialog', 'tail', 'tail']);
+  assert.deepEqual(plan.slice(-3).map(p => p.stage), ['tail', 'tail', 'end'], 'the tail runs after every verdict item, right before the end');
+  assert.deepEqual(AFTER_ONLY.map(s => s.id), ['188', 'C2', 'C3']);
+  assert.deepEqual(TAIL.map(s => s.id), ['C4b', 'C4c']);
+  assert.deepEqual(GOES_ON_ISO, ['cell', 'composing', '188', 'raise', 'dialog', 'tail'], 'a swap, the placement or the end stopping stops the drive');
   // Nothing of the 11-05 re-slot's items, so its judge never reads this slot's.
   assert.ok(!items.some(i => /^187-(cell|press|chrome|place|end|premise|putback)/.test(i)));
 });
@@ -141,9 +145,15 @@ test('--blocks: some blocks only, the placement and the end always; the step cou
   const only = isolatePlan({blocks: [3]});
   assert.deepEqual(only.map(p => p.item), [ITEMS.place, ITEMS.swap(3), ITEMS.cell('before', 2), ITEMS.cell('before', 3), ITEMS.composing('before', 1), ITEMS.end]);
   const counts = stepCounts(isolatePlan());
-  assert.deepEqual(counts.map(c => c.block), [0, 1, 2, 3, 4, 5, 6, 7, null]);
+  assert.deepEqual(counts.map(c => c.block), [0, 1, 2, 3, 4, 5, 6, 7, 'tail', null]);
   assert.equal(counts.reduce((n, c) => n + c.steps, 0), isolatePlan().reduce((n, p) => n + p.steps.length, 0));
-  assert.match(counts[7].label, /block 7, AFTER only \(188\)/);
+  assert.match(counts[7].label, /block 7, AFTER only \(188, C2, C3\)/);
+  assert.equal(counts[8].label, 'the tail (C4b, C4c)');
+  // --no-tail: the tail left out, every verdict item kept.
+  const noTail = stepCounts(isolatePlan({tail: false}));
+  assert.deepEqual(noTail.map(c => c.block), [0, 1, 2, 3, 4, 5, 6, 7, null]);
+  assert.ok(!isolatePlan({tail: false}).some(p => p.stage === 'tail'));
+  assert.equal(noTail[7].steps, counts[7].steps);
 });
 
 test('the attestation: the saved build and the half\'s variant, from the result\'s cua/nativeEngine', () => {

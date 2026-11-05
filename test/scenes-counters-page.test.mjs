@@ -8,9 +8,10 @@ import {createHash} from 'node:crypto';
 import {mkdtempSync, readFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {COUNTER_NAMES, COUNTERS_CSP, COUNTERS_PAGE_HTML, COUNTERS_PATH, COUNTERS_SCRIPT, CSP, countersRecord, PAGE_HTML, PAGE_VARIANTS, READY_PATH, SCRIPT,
+import {COUNTER_NAMES, COUNTERS_CSP, COUNTERS_PAGE_HTML, COUNTERS_PATH, COUNTERS_SCRIPT, CSP, countersRecord, PAGE_HTML, PAGE_VARIANTS, POPUP_BUTTON, POPUP_CLOSE_SCRIPT, POPUP_CSP,
+  POPUP_FEATURES, POPUP_HTML, POPUP_OPEN_PATH, POPUP_OPENER_SCRIPT, POPUP_PAGE_CSP, POPUP_PAGE_HTML, POPUP_PATH, POPUP_WAIT_PATH, READY_PATH, SCRIPT,
   startScenePage} from '../scripts/native-matrix/fixtures/scene-page.mjs';
-import {PAGE_COUNTERS, pageVariantProblem, parse, readPageCounters, spawnPage} from '../scripts/repl-parity/scenes-mac.mjs';
+import {chromeArgs, chromeArgsProblems, PAGE_COUNTERS, pageVariantProblem, parse, readPageCounters, spawnPage} from '../scripts/repl-parity/scenes-mac.mjs';
 
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 const scriptHash = text => `'sha256-${createHash('sha256').update(text).digest('base64')}'`;
@@ -19,7 +20,7 @@ test('the shared page is byte-identical to the one every earlier record used', (
   assert.equal(sha256(PAGE_HTML), '67d628ac5fbb8568140649e3ae68d0558e0940495b00275864a708b94b53ba84');
   assert.equal(sha256(CSP), '6af8ad1d6acfb72ceebd4eadcfa1a86c636ce261e381d09b29431e27d170aa99');
   assert.equal(sha256(SCRIPT), '1795a24d8619bd7c548947d659eadd07ee0663263efa4d34bad94a3749d6f706');
-  assert.deepEqual(PAGE_VARIANTS, ['shared', 'counters']);
+  assert.deepEqual(PAGE_VARIANTS, ['shared', 'counters', 'popup']);
 });
 
 test('the counters page is the shared DOM plus one script, and its CSP adds only that script\'s hash', () => {
@@ -125,4 +126,72 @@ test('up chrome --page counters: parsed, refused for another scene or variant, a
   assert.deepEqual(kept.counts, counts);
   assert.ok(Number.isFinite(kept.receivedAt));
   assert.ok(!readFileSync(join(run, PAGE_COUNTERS), 'utf8').includes('never kept'));
+});
+
+// The popup page (#187's isolating slot, C3): the counters page plus one script that opens a popup window when the kit
+// asks the page's server; no person and no engine action opens it.
+test('the popup page is the counters page plus one script, its CSP adding only that hash; the popup is one button and its own script', () => {
+  const extra = `<script>${POPUP_OPENER_SCRIPT}</script>`;
+  assert.equal(POPUP_PAGE_HTML.replace(extra, ''), COUNTERS_PAGE_HTML, 'removing the opener gives the counters page back');
+  assert.equal(POPUP_PAGE_CSP, COUNTERS_CSP.replace(scriptHash(COUNTERS_SCRIPT), `${scriptHash(COUNTERS_SCRIPT)} ${scriptHash(POPUP_OPENER_SCRIPT)}`));
+  assert.match(POPUP_PAGE_CSP, /connect-src 'self'/, 'the wait goes only to the page\'s own server');
+  assert.equal(POPUP_CSP, CSP.replace(`script-src ${scriptHash(SCRIPT)}`, `script-src ${scriptHash(POPUP_CLOSE_SCRIPT)}`));
+  assert.match(POPUP_HTML, new RegExp(`<button id="close" type="button">${POPUP_BUTTON}</button>`));
+  assert.equal(POPUP_HTML.split('<script>').length - 1, 1);
+  assert.ok(!POPUP_HTML.includes(COUNTERS_SCRIPT), 'the popup beacons nothing: the counters are the main window\'s alone');
+});
+
+test('the opener waits on its server, opens the popup with its features on a 200 and waits again otherwise; the popup\'s button closes its window', async () => {
+  const calls = [], timers = [], opened = [];
+  let answer = 409;
+  const fetch = (path, init) => { calls.push([path, init.method]); return Promise.resolve({status: answer}); };
+  const window = {open: (...args) => opened.push(args)};
+  new Function('window', 'fetch', 'setTimeout', 'screenX', 'screenY', POPUP_OPENER_SCRIPT)(window, fetch, (fn, ms) => timers.push([fn, ms]), 100, 50);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(calls, [[POPUP_WAIT_PATH, 'POST']]);
+  assert.deepEqual(opened, []);
+  assert.equal(timers[0][1], 200, 'no open: it waits again');
+  answer = 200;
+  timers[0][0]();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(opened, [[POPUP_PATH, 'cua-popup', `popup,width=${POPUP_FEATURES.width},height=${POPUP_FEATURES.height},left=${100 + POPUP_FEATURES.left},top=${50 + POPUP_FEATURES.top}`]]);
+  const listeners = {}, closed = [];
+  new Function('document', 'window', POPUP_CLOSE_SCRIPT)({getElementById: id => ({addEventListener: (type, fn) => { listeners[`${id}:${type}`] = fn; }})}, {close: () => closed.push(true)});
+  listeners['close:click']();
+  assert.deepEqual(closed, [true]);
+});
+
+test('the popup page\'s server: the page, the popup, the wait held until an open answers it, 409 with no page waiting, the counters kept', async t => {
+  const got = [];
+  const page = await startScenePage({page: 'popup', onCounters: record => got.push(record)});
+  const counters = await startScenePage({page: 'counters'});
+  t.after(() => Promise.all([page.close(), counters.close()]));
+  const main = await fetch(page.url);
+  assert.equal(await main.text(), POPUP_PAGE_HTML);
+  assert.equal(main.headers.get('content-security-policy'), POPUP_PAGE_CSP);
+  const popup = await fetch(new URL(POPUP_PATH, page.url));
+  assert.equal(await popup.text(), POPUP_HTML);
+  assert.equal(popup.headers.get('content-security-policy'), POPUP_CSP);
+  assert.equal((await fetch(new URL(POPUP_OPEN_PATH, page.url), {method: 'POST'})).status, 409, 'no page is waiting');
+  let waited = null;
+  const wait = fetch(new URL(POPUP_WAIT_PATH, page.url), {method: 'POST'}).then(r => { waited = r.status; });
+  await new Promise(resolve => setTimeout(resolve, 50));
+  assert.equal(waited, null, 'the wait is held open');
+  assert.equal((await fetch(new URL(POPUP_OPEN_PATH, page.url), {method: 'POST'})).status, 200);
+  await wait;
+  assert.equal(waited, 200);
+  assert.equal((await fetch(new URL(POPUP_OPEN_PATH, page.url), {method: 'POST'})).status, 409, 'one open per wait');
+  const body = JSON.stringify({seq: 1, length: 0, counts: Object.fromEntries(COUNTER_NAMES.map(n => [n, 0])), focused: true});
+  assert.equal((await fetch(new URL(COUNTERS_PATH, page.url), {method: 'POST', body})).status, 204);
+  assert.equal(got.length, 1);
+  for (const path of [POPUP_PATH, POPUP_WAIT_PATH, POPUP_OPEN_PATH]) assert.equal((await fetch(new URL(path, counters.url), {method: path === POPUP_PATH ? 'GET' : 'POST'})).status, 404, `the counters page has no ${path}`);
+});
+
+test('up chrome --page popup: accepted, and only that launch disables Chrome\'s popup blocker', () => {
+  assert.equal(pageVariantProblem('chrome', 'popup'), null);
+  const plain = chromeArgs({userDataDir: '/u', url: 'http://127.0.0.1:1/'}), popups = chromeArgs({userDataDir: '/u', url: 'http://127.0.0.1:1/', popups: true});
+  assert.ok(!plain.includes('--disable-popup-blocking'));
+  assert.deepEqual(popups.filter(a => !plain.includes(a)), ['--disable-popup-blocking']);
+  assert.equal(popups.at(-1), 'http://127.0.0.1:1/');
+  assert.deepEqual(chromeArgsProblems(popups), []);
 });

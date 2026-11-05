@@ -139,7 +139,7 @@
 //       the placement, six blocks A B B A A B (each a swap to its half's save under --halves, engine-after/ or
 //       engine-control/, approved with no terminal and attested from the running engine's ping; 2 background-paste
 //       repetitions; 3 chrome/composing@textedit rows), the AFTER-only block (a swap to AFTER, #188's `--part 188`, C2's
-//       and C3's items when they land), the tail (C4's), and the owner's source. --blocks runs some blocks only (1-7, 3,
+//       and C3's repetitions, ./cursor-sitting/item-187-join.mjs), the tail (C4 (b), (c)), and the owner's source. --blocks runs some blocks only (1-7, 3,
 //       2,5; 7 is the AFTER-only block) and --no-tail leaves the tail out (the slot running long); the placement and the
 //       end always run. The out directory is the slot's own, never
 //       a re-slot's (one holding item-187.md is refused). `judge` writes <out>/item-187-isolate.md, the pre-registered

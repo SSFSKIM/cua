@@ -100,6 +100,7 @@ import {basename, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {cell} from '../native-baseline/cells.mjs';
 import {FIXTURE_COUNTERS_FILE} from '../native-matrix/fixtures/electron-fixture.mjs';
+import {POPUP_OPEN_PATH} from '../native-matrix/fixtures/scene-page.mjs';
 import {clipboardDigest, probeStatus, startWatch, stopWatch} from '../native-matrix/live-device.mjs';
 import {compiled} from '../native-matrix/matrix-device.mjs';
 import {prelude} from '../native-matrix/matrix-cells.mjs';
@@ -174,6 +175,8 @@ export const GROUPS = Object.freeze({
   'chrome-korean': Object.freeze({driven: 'chrome', user: null, condition: 'korean', regime: 'frontmost'}),
   'chrome-cell-background': Object.freeze({driven: 'chrome', user: 'textedit', condition: 'latin', regime: 'background', clickless: true, release: false}),
   'chrome-cell': Object.freeze({driven: 'chrome', user: null, condition: 'activated', regime: 'frontmost', clickless: true}),
+  // The isolating slot's in-frame case (./item-187-join.mjs, C4 (c)): TextEdit behind the run's Finder window.
+  'textedit-behind-finder': Object.freeze({driven: 'textedit', user: 'finder', condition: 'latin', regime: 'background', clickless: true, release: false}),
 });
 export const CONTROLS = Object.freeze(['electron-composing', 'textedit-composing', 'chrome-korean']);
 const SCENES = SCENES_187;
@@ -582,10 +585,12 @@ export function rowRecord({spec, prepare = null, act = null, check = null, page 
 
 // What of the person an item, row or repetition saw: an app activated that is neither a scene's nor the engine's (the
 // activation watcher's lines; one without a bundle id counts), or a frontmost process that is no scene's (`fronts`:
-// pids, against `scenePids`; the guard's frontmost reading already passes over the engine's own). -> {apps, frontPids}
-// or null.
-export function personTouchedOf({activations = [], fronts = [], scenePids = []}) {
-  const apps = [...new Set(activations.filter(l => l?.kind === 'activated' && !OWN_BUNDLES.includes(l.bundleId)).map(l => l.bundleId ?? 'unknown'))];
+// pids, against `scenePids`; the guard's frontmost reading already passes over the engine's own). `own`: the bundle ids of
+// the item's further scenes (the run's Finder window, when an item drives behind it), counted as the scenes' are. The
+// rule is by process and bundle, never by window: a window the run's Chrome opens (the isolating slot's popup) is the
+// scene's. -> {apps, frontPids} or null.
+export function personTouchedOf({activations = [], fronts = [], scenePids = [], own = []}) {
+  const apps = [...new Set(activations.filter(l => l?.kind === 'activated' && !OWN_BUNDLES.includes(l.bundleId) && !own.includes(l.bundleId)).map(l => l.bundleId ?? 'unknown'))];
   const frontPids = [...new Set(fronts.filter(pid => Number.isSafeInteger(pid) && !scenePids.includes(pid)))];
   return apps.length || frontPids.length ? {apps, frontPids} : null;
 }
@@ -602,13 +607,16 @@ export function touchedOfItem(rows, activationLines = []) {
 // One attempt's touches: its rows and repetition recorded as touched, else the drive's mark on its stop, else the touch
 // summary its watcher's stop wrote into the attempt's own record, else (the latest attempt only, whose watcher's file it
 // is, when it stopped before that summary) a foreign activation the watcher saw.
+// A repetition's own record: the cell's, or a hold-join row's (./item-187-join.mjs).
+export const REP_RECORD_TASKS = Object.freeze(['187-cell', '187-join-record']);
 function attemptTouches(attempt, activationLines) {
   const rowsTouched = attempt.filter(r => r.kind === 'task' && r.task === '187-row' && r.result?.personTouched).length;
-  const cell = attempt.findLast(r => r.kind === 'task' && r.task === '187-cell')?.result ?? null;
+  const cell = attempt.findLast(r => r.kind === 'task' && REP_RECORD_TASKS.includes(r.task))?.result ?? null;
   const marked = attempt.findLast(r => r.kind === 'stopped')?.personTouched ?? null;
   const summary = attempt.findLast(r => r.kind === 'task' && r.task === '187-activations-stop' && r.result && 'personTouched' in r.result)?.result ?? null;
-  const watched = activationLines && attempt.some(r => r.kind === 'task' && r.task === '187-activations-start');
-  const foreign = marked && typeof marked === 'object' ? marked : summary ? summary.personTouched : watched ? personTouchedOf({activations: activationLines}) : null;
+  const started = attempt.findLast(r => r.kind === 'task' && r.task === '187-activations-start') ?? null;
+  const watched = activationLines && started;
+  const foreign = marked && typeof marked === 'object' ? marked : summary ? summary.personTouched : watched ? personTouchedOf({activations: activationLines, own: started.result?.own ?? []}) : null;
   const recorded = rowsTouched + (cell?.personTouched ? 1 : 0);
   return {count: recorded || (marked || foreign ? 1 : 0), rep: cell ? Boolean(cell.personTouched) : Boolean(marked || foreign), foreign};
 }
@@ -1190,12 +1198,13 @@ export function item187Tasks(d) {
   // Chrome's run window at the screen's left and TextEdit's over its right half (raise.mjs placementPlan with the roles
   // swapped), moved through Accessibility; then the bounds read again after a settle until both are within 2 pt or
   // PLACE_READ_BOUND_MS pass, and a window still away from its place (mid-move under load, as in the slot) moved again
-  // from where it is now, PLACE_ATTEMPTS times at most, before the placement refuses.
-  const place = async () => {
-    const back = runWindow('chrome'), front = runWindow('textedit');
+  // from where it is now, PLACE_ATTEMPTS times at most, before the placement refuses. `backId`, `frontId`: another pair
+  // of harness windows (the isolating slot's in-frame case: TextEdit at the left, the run's Finder window over it).
+  const place = async (backId = 'chrome', frontId = 'textedit') => {
+    const back = runWindow(backId), front = runWindow(frontId);
     const gone = [back, front].find(w => !w.bounds);
     if (gone) return {ok: false, problem: `the ${gone.id} scene's run window is not on screen`};
-    const plan = placementPlan({back: back.bounds, front: front.bounds}), targets = [['chrome', plan.back], ['textedit', plan.front]], moves = [];
+    const plan = placementPlan({back: back.bounds, front: front.bounds}), targets = [[backId, plan.back], [frontId, plan.front]], moves = [];
     const away = (b, to) => !b || Math.abs(b.x - to.x) > 2 || Math.abs(b.y - to.y) > 2;
     let now = [], off = [], attempts = 0;
     while (attempts < PLACE_ATTEMPTS) {
@@ -1226,7 +1235,8 @@ export function item187Tasks(d) {
       const problems = [], consent = d.consent(), state = d.state();
       if (consent?.consent !== true) problems.push('the owner\'s yes to the input-source switch is not recorded (cursor-sitting.mjs source consent yes --out <out>)');
       for (const id of SCENES) if (!state.scenes?.[id]) problems.push(`the ${id} scene is not up`);
-      if (state.scenes?.chrome && state.scenes.chrome.page?.variant !== 'counters') problems.push('Chrome is not on the counters page (down chrome, then up chrome --page counters)');
+      // The popup page is the counters page with its opener (the isolating slot's dialog row leaves Chrome on it).
+      if (state.scenes?.chrome && !['counters', 'popup'].includes(state.scenes.chrome.page?.variant)) problems.push('Chrome is not on the counters page (down chrome, then up chrome --page counters)');
       const status = attempt(d.engineStatus);
       return {ok: problems.length === 0, consent: consent ? {consent: consent.consent, owner: consent.owner?.id ?? null} : null, chromePage: state.scenes?.chrome?.page?.variant ?? null,
         engine: {build: status?.build ?? null, approved: status?.approved ?? null}, ...(problems.length ? {problem: problems.join('; ')} : {})};
@@ -1272,21 +1282,22 @@ export function item187Tasks(d) {
     // A replacement's link to the attempt it replaces (plan187's repEntry), for the judge.
     '187-replaces': async ([parent, attempt]) => ({ok: true, parent, attempt: Number.isFinite(Number(attempt)) && attempt !== 'null' ? Number(attempt) : null}),
     '187-down': async ([scene]) => { const down = d.scenes(['down', scene]); return {ok: down?.down === true, scene, ...(down?.down === true ? {} : {problem: down?.reason ?? down?.error ?? 'no answer'})}; },
-    '187-place': async () => place(),
+    '187-place': async ([back, front] = []) => place(back, front),
     // The cell's Chrome relaunched by the scenes tool (its harness Chrome: down, then up on the counters page), so no
     // activation's state is left over: a new process, on the counters page; then, before any session may bind it, its
     // run window its one on-screen document window and so its front one, on RELAUNCH_STABLE_POLLS polls in a row within
     // RELAUNCH_WINDOW_BOUND_MS (in the slot's rep 1 another window of the new Chrome was in front, and the session's open
     // was refused).
-    '187-relaunch': async ([item, scene]) => {
+    // `page`: the page it comes up on (the counters page; the isolating slot's dialog row, the popup page).
+    '187-relaunch': async ([item, scene, page = 'counters']) => {
       let before = null;
       try { before = d.scene(scene); } catch {}
       const down = d.scenes(['down', scene]);
       if (down?.down !== true) return {ok: false, item, before: before?.pid ?? null, problem: `the ${scene} scene did not come down (${down?.reason ?? down?.error ?? 'no answer'})`};
-      const up = d.scenes(['up', scene, '--page', 'counters']);
-      const fresh = Boolean(up?.pid && up?.window?.number && up.pid !== before?.pid), counters = d.state().scenes?.[scene]?.page?.variant === 'counters';
-      const base = {item, before: before?.pid ?? null, pid: up?.pid ?? null, window: up?.window?.number ?? null};
-      if (!fresh || !counters) return {ok: false, ...base, problem: !fresh ? `the ${scene} scene did not come up as a new process (${up?.error ?? 'no record'})` : `the ${scene} scene is not on the counters page`};
+      const up = d.scenes(['up', scene, '--page', page]);
+      const fresh = Boolean(up?.pid && up?.window?.number && up.pid !== before?.pid), onPage = d.state().scenes?.[scene]?.page?.variant === page;
+      const base = {item, before: before?.pid ?? null, pid: up?.pid ?? null, window: up?.window?.number ?? null, ...(page === 'counters' ? {} : {page})};
+      if (!fresh || !onPage) return {ok: false, ...base, problem: !fresh ? `the ${scene} scene did not come up as a new process (${up?.error ?? 'no record'})` : `the ${scene} scene is not on the ${page} page`};
       const t0 = d.now();
       let stable = 0, polls = 0, windows = [];
       while (stable < RELAUNCH_STABLE_POLLS && (polls === 0 || d.now() - t0 < RELAUNCH_WINDOW_BOUND_MS)) {
@@ -1387,13 +1398,17 @@ export function item187Tasks(d) {
     // The bundle's activation watcher over an item, its lines written to item-<item>-activations.ndjson when it stops,
     // and also when the item stops first (the runner's finally, stop187), so the drive can tell a person's touch on an
     // item that never recorded it (touchedOfItem). The file starts empty, so an earlier attempt's lines never count.
-    '187-activations-start': async ([item], ctx) => {
+    // `scenes`: the item's further scenes beyond the slot's own (the run's Finder window), whose activations and
+    // frontmost process are the run's too; kept in the record, so the drive's touch rule reads them (attemptTouches).
+    '187-activations-start': async ([item, ...scenes], ctx) => {
       const s = st(ctx), watch = d.activations.start(), file = `item-${item}-activations.ndjson`;
       const save = lines => d.write(file, lines.map(l => JSON.stringify(l)).join('\n') + (lines.length ? '\n' : ''));
       save([]);
       s.activations = watch;
+      s.own = scenes.map(id => HARNESS_SCENES[id].bundleId);
+      s.ownScenes = scenes;
       s.stops.set('activations', () => save(d.activations.stop(watch)));
-      return {ok: true, item};
+      return {ok: true, item, ...(scenes.length ? {scenes, own: s.own} : {})};
     },
     '187-activations-stop': async ([item], ctx) => {
       const s = st(ctx), watch = s.activations;
@@ -1405,7 +1420,7 @@ export function item187Tasks(d) {
       d.write(`item-${item}-activations.ndjson`, lines.map(l => JSON.stringify(l)).join('\n') + (lines.length ? '\n' : ''));
       // The attempt's touch summary kept in its own record, watcher-only touches included (an app activated between rows
       // or in the setup, the harness reactivating its scene after it): a re-run replaces the watcher's file, never this.
-      return {ok: true, item, lines: lines.length, activated: lines.filter(l => l.kind === 'activated').length, personTouched: personTouchedOf({activations: lines})};
+      return {ok: true, item, lines: lines.length, activated: lines.filter(l => l.kind === 'activated').length, personTouched: personTouchedOf({activations: lines, own: s.own ?? []})};
     },
     // Chrome's menus watched for an AXMenuOpened notification over a block (menu-open.swift watch).
     '187-menu-start': async ([item], ctx) => {
@@ -1601,9 +1616,12 @@ async function stopMenuWatch(handle) {
 // The Mac's deps for item187Tasks. `io`: the runner's (scene); `guard`: the target guard's readings; `cli(args)`: this
 // checkout's CLI answering JSON; `probe(args)`: the approved bundle's probe; `bundle`: its path; `scenes(args)`: the
 // scenes CLI on the run (its last JSON line).
-export function liveDeps187({io, run, out, guard, cli, probe, bundle, windowList, moveWindow, consent, scenes}) {
+// `elementFrame(args)`: element-frame.swift's answer (./raise.mjs liveElementFrame).
+export function liveDeps187({io, run, out, guard, cli, probe, bundle, windowList, moveWindow, elementFrame, consent, scenes}) {
   return {
-    out, scene: io.scene, state: () => readState(run), activate: scene => io.tasks.activate([scene]), frontmost: guard.frontmost, windows: guard.windows, windowList, probe, moveWindow, consent, scenes,
+    out, scene: io.scene, state: () => readState(run), activate: scene => io.tasks.activate([scene]), frontmost: guard.frontmost, windows: guard.windows, windowList, probe, moveWindow, elementFrame, consent, scenes,
+    // The popup page's open (#187's isolating slot, C3): a post to the run's own page server. -> its HTTP status.
+    openPopup: async url => (await fetch(new URL(POPUP_OPEN_PATH, url), {method: 'POST', signal: AbortSignal.timeout(5000)})).status,
     engineStatus: () => cli(['engine', 'status', '--json']),
     savedRecord: dir => JSON.parse(readFileSync(join(dir, 'saved.json'), 'utf8')),
     openApp: app => execFileSync('/usr/bin/open', ['-a', app], {stdio: 'ignore', timeout: 15_000}),

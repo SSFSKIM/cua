@@ -863,8 +863,8 @@ events).
 
 ## Item 187: the isolating slot
 
-**About 22–31 minutes at the Mac. The owner is active for about 4–6 of them: their steps at the start and the end
-state at the end. The hands-off window is about 13–18 minutes** (the step list below). The plan is
+**About 25–35 minutes at the Mac. The owner is active for about 4–6 of them: their steps at the start and the end
+state at the end. The hands-off window is about 16–22 minutes** (the step list below). The plan is
 `~/.local/share/187/next-slot-plan.md`; its rulings of 2026-11-05 decide where it differs from its draft.
 
 **What the slot tests.** Is the inert click outside the frame what makes Chrome's background paste deliver? The two
@@ -877,7 +877,8 @@ halves differ by that click alone:
   activationClickPlan records `skipped controlBuild`, and the ping names `variant: control-no-inert-click`.
 
 The kit is `scripts/cursor-sitting/item-187-isolate.mjs`. Its header says what each item does and how the verdict is
-judged. It reuses the re-slot's cell, rows, Korean, touch rule, order watcher and placement.
+judged. It reuses the re-slot's cell, rows, Korean, touch rule, order watcher and placement. The hold-join rows (C2,
+C3 and C4's tail) are `scripts/cursor-sitting/item-187-join.mjs`, whose header states their bars.
 
 The slot writes to its own new directory, `item-187-isolate/`, which the slot creates. The drive refuses a directory
 that holds a re-slot's `item-187.md`, so `item-187-reslot2/` is never written over.
@@ -922,7 +923,7 @@ $S restore --home "$HOME" --from "$SLOT/engine-owner" --aside "$SLOT/aside/prep"
 8. **The end state**, asked now and carried out at the end (ruling 6): keep the merged build, or have their saved
    engine restored. The control build is never left installed.
 
-**The hands-off notice.** The operator sends it after step 4. It says that hands-off lasts about 18 minutes, until
+**The hands-off notice.** The operator sends it after step 4. It says that hands-off lasts about 22 minutes, until
 the clock time it gives, and that the verdict comes right after.
 
 It names the one touch allowed. If a macOS prompt for cua Engine appears (a grant, or a screen capture confirmation),
@@ -942,7 +943,8 @@ mkdir -p "$OUTI" && $S source consent yes --out "$OUTI"                         
 # step 4 (operator): the scenes, Chrome on the counters page; then the hands-off notice
 $SC preflight --run "$RUN"
 $SC up textedit --run "$RUN" && $SC up chrome --run "$RUN" --page counters && $SC up electron --run "$RUN" && $SC up finder --run "$RUN"
-# steps 5-14 (the drive): the placement, blocks 1-6, block 7, the tail, the owner's source; it writes item-187-isolate.md
+# steps 5-14 (the drive): the placement, blocks 1-6, block 7 (#188, C2, C3), the tail (C4), the owner's source; it
+# writes item-187-isolate.md
 $S isolate-187 drive --run "$RUN" --out "$OUTI" --home "$HOME" --halves "$SLOT"
 # a drive stopped at block n (a swap that met a prompt, once the owner says done): add --blocks n-7
 # running long: --no-tail leaves the tail out
@@ -958,7 +960,8 @@ $S restore --home "$HOME" --from "$SLOT/engine-owner" --aside "$SLOT/aside/end" 
 node bin/cua.mjs engine status                                                     # expected: the chosen build, approved: yes
 ```
 
-The dry run is expected to print the following counts. `--blocks 7` alone prints 143 steps.
+The dry run is expected to print the following counts. `--blocks 7` alone prints 372 steps. `--no-tail` prints 1049,
+and the tail's line is gone.
 
 ```
 dry run: the start (the placement): 4 steps
@@ -968,13 +971,16 @@ dry run: block 3, BEFORE: 126 steps
 dry run: block 4, AFTER: 126 steps
 dry run: block 5, AFTER: 126 steps
 dry run: block 6, BEFORE: 126 steps
-dry run: block 7, AFTER only (188): 136 steps
+dry run: block 7, AFTER only (188, C2, C3): 286 steps
+dry run: the tail (C4b, C4c): 79 steps
 dry run: the end (the owner's source): 3 steps
-dry run: 899 steps, nothing sent
+dry run: 1128 steps, nothing sent
 ```
 
-A block of 126 steps is a swap (7), two cell repetitions (33 each) and its composing rows (53). The re-slot's dry runs
-are unchanged (806, 131 and 15 steps).
+- A block of 126 steps is a swap (7), two cell repetitions (33 each) and its composing rows (53).
+- Block 7's 286 are its swap (7), #188's part (129), C2's three repetitions (23 each) and C3's three (27 each).
+- The tail's 79 are C4 (b) (42) and C4 (c) (37), three repetitions each in one session.
+- The re-slot's dry runs are unchanged (806, 131 and 15 steps).
 
 **The step list** (minutes):
 
@@ -987,16 +993,18 @@ are unchanged (806, 131 and 15 steps).
 | 4 | the preflight, the scenes up (TextEdit, Chrome on the counters page, Electron, Finder), the load gate; **the hands-off notice** | operator | 1–2 |
 | 5 | 187-iso-place: the preconditions, Chrome at the left, TextEdit over its right half | drive | 0.5 |
 | 6–11 | blocks 1–6, A B B A A B. Each is a swap (restore, headless approve, the ping attested: 0.3–0.5), two cell repetitions (relaunch, placement, background paste, `open -a`, key read, frontmost paste: 0.7–1), and three composing rows behind a fresh composition (0.4–0.6). BEFORE's pastes wait out their read | drive | 1.5–2 each, 9–12 |
-| 12 | block 7, AFTER only: the swap to AFTER (0.5), then #188's `--part 188` (its placement, the 4 rows and cell 3 on cua and the vendor, its source; 2.5–4). C2 and C3 add their minutes here | drive | 3–4.5 |
-| 13 | the tail (C4 (b), (c)): none yet; a minute or less each once added, left out with `--no-tail` | drive | 0 |
+| 12 | block 7, AFTER only: the swap to AFTER (0.5), #188's `--part 188` (its placement, the 4 rows and cell 3 on cua and the vendor, its source; 2.5–4), C2's three repetitions (Chrome relaunched and placed, ⌘L, the click, the tail and its observation: 0.3–0.4 each) and C3's three (relaunched on the popup page, the popup opened, ⌘A, the click on its close button, the release and its readings: 0.4–0.5 each) | drive | 5–7 |
+| 13 | the tail: C4 (b) (Chrome relaunched, three menu records and clicks in one session: 0.5–1) and C4 (c) (Finder placed over TextEdit, three ⌘↑ and clicks in one session: 0.4–0.8); left out with `--no-tail` | drive | 1–2 |
 | 14 | 187-iso-end: the owner's source selected again and read back; the verdict file written | drive | 0.5 |
 | 15 | judge, `source restore`, the scenes down, the owner's front app back; the verdict to the owner | operator | 2 |
 | 16 | the end state: keep the merged build or restore the owner's, status read (approve again only if the restore says so) | owner present, operator | 1–2 |
-| | **the slot (steps 1–16)** | | **about 22–31** |
+| | **the slot (steps 1–16)** | | **about 25–35** |
 
 - **The owner is active for about 4–6 minutes**: steps 2, 3 and 16, plus the one prompt if one appears.
 - **The hands-off window** starts with the notice at the end of step 4 and ends with the drive at the end of step 14,
-  about 13–18 minutes. The one touch allowed is a cua Engine prompt at a swap.
+  about 16–22 minutes. The one touch allowed is a cua Engine prompt at a swap.
+- The minutes of steps 12 and 13 are estimates from the cell's measured relaunch and session times. No hold-join row
+  has run live yet.
 - A person-touched cell repetition gets one replacement, run right after it in its block, adding about 0.5 minutes.
   More than three person-touched items stop the drive, except for its end.
 
@@ -1007,7 +1015,10 @@ are unchanged (806, 131 and 15 steps).
 | 187-iso-cell-after-0..5, 187-iso-cell-before-0..5 | the re-slot's background-paste cell, 2 a block | the bar's cell, 6 a half |
 | 187-iso-composing-after-0..2, 187-iso-composing-before-0..2 | chrome/composing@textedit, a third of hold 3's nine paste rows a block, behind a fresh composition | #187's own failure on both halves, 9 a half |
 | 187-iso-swap-7, 188-* | the swap to AFTER, then `--part 188` as it is | #188's verdict, on the merged build |
-| 187-iso-cell-<half>-6… | replacements | one for each repetition the person touched |
+| 187-iso-raise-0..2 | C2: ⌘L into background Chrome, then a coordinate click into its textarea inside the hold | #261's re-arming, live; its own verdict |
+| 187-iso-dialog-0..2 | C3: the same with a popup window, the click closing it, then the hold ended | the release stamped with a closed window; its own verdict |
+| 187-iso-menu, 187-iso-inframe | C4 (b) and (c), three repetitions each | #279's numbers, no verdict |
+| 187-iso-cell-<half>-6…, 187-iso-raise-3…, 187-iso-dialog-3… | replacements | one for each repetition the person touched |
 | 187-iso-end | the owner's source | as in the re-slot |
 
 **The verdict** (`isolate-187 judge`, written into `item-187-isolate.md` with the kit's commit; pre-registered, so the
@@ -1046,16 +1057,70 @@ file states the bar before any reading). The bar is exactly the plan's C1 with r
   - #188's rows, judged as #188's, with its cua cells checked against the AFTER build;
   - the owner's source.
 
-**Where the next kit plugs in** (C2, C3, C4; the plan's section D replays the judge later):
+**C2, C3 and C4: the hold-join rows** (`item-187-join.mjs`). All run on the AFTER build, after #188's part. Each has
+its own section in `item-187-isolate.md`. C1's verdict stays the cell's and composing's, whatever these show.
 
-- **C2** (the keys-then-click row) and **C3** (the popup dialog) register their items in `AFTER_ONLY`
-  (`item-187-isolate.mjs`), after #188's. They run in block 7 after its swap, and step 12 grows by their minutes. Their
-  judges add their own sections to `isolateMarkdown` with their own verdicts; C1's verdict stays the cell and
-  composing. C2's premise reads `activationJoin`, which every row now keeps.
-- **C4 (b) and (c)** register in `TAIL`. They run in stage `tail`, which goes on when an item stops, after every
-  verdict item and before 187-iso-end. `--no-tail` leaves them out.
-- **Section D** calls the judge's pure pieces over 11-05's records: `repPremise`, `cellOutcome`, `rowOutcome`,
-  `partVerdict` and `combineVerdict`.
+- **C2, the keys-then-click row.** It runs 3 repetitions, each its own item:
+  - Chrome is relaunched clean and placed, with TextEdit in front under ABC and both watchers on.
+  - ⌘L goes into Chrome's run window, under TextEdit's key guard.
+  - Inside the hold, a coordinate click goes into the page's textarea, at its middle as read through Accessibility.
+  - A 1 s tail follows, then one observation of Chrome, whose reply carries the after-action repairs.
+
+  **Premise:** the click's `activationJoin` is `rearmed`.
+
+  **Bar, every condition in each of 3 counted repetitions:**
+  - the order watcher never shows Chrome's window above TextEdit's;
+  - TextEdit is frontmost at every reading, and no app is activated over the row;
+  - no repair: the delivery guard's restores are 0, and no after-action repair names the click;
+  - the page saw the click: its own counters show a click and a textarea focus after it;
+  - no order sample is out of place after the display hold.
+- **C3, the dialog variant.** It runs 3 repetitions, each its own item:
+  - Chrome is relaunched on the **popup page** (`up chrome --page popup`).
+  - The page opens a 360 × 240 popup window when the kit posts to the page's own loopback server. The page holds a
+    request open there, and the server answers it on the kit's post.
+  - Chrome's popup blocker refuses a script's `window.open` with no user gesture. So that launch alone adds
+    `--disable-popup-blocking`, the switch ChromeDriver passes by default. No person and no engine action opens the
+    popup, and nothing touches Chrome before the row but the kit's own placement.
+  - TextEdit is activated in front again, and the session takes the popup as Chrome's window. The runner's `windows`
+    option lets the target guard check the popup as Chrome's front window.
+  - ⌘A goes into the popup. Inside the hold, a coordinate click lands on its close button, so the click's own window
+    closes.
+  - After a 1 s tail, **the hold is ended by one observation of the electron scene**: a request aimed at another app
+    ends the connection's hold before it runs (FocusHold.swift). Its subtype 2 carries the closed popup's window number.
+    This is the composing rows' way of ending a hold, and it is deterministic, where the 120 s idle bound is not.
+  - Chrome is then read every 100 ms for up to 2 s.
+
+  **Premise:** the popup opened, the click's join is `rearmed`, and the popup is gone after the click.
+
+  **Bar, every condition in each of 3 counted repetitions:**
+  - Chrome's main window's `document.hasFocus()` is false, with a window blur beaconed after the release. This reads
+    unread, not failed, when the page did not hold the focus as the hold ended, because its blur could not show.
+  - Chrome's AXFrontmost is false.
+  - TextEdit is frontmost.
+
+  A failing condition is the live counterpart of 11-05's static reading, and it reopens the Decision Log's item 8.
+- **The verdicts.** C2 and C3 are each judged the same way:
+  - PASS when 3 repetitions are counted and every condition holds in each.
+  - FAIL when a counted repetition fails a condition.
+  - INCOMPLETE otherwise.
+  - Not counted, with the reason given: person-touched (replaced once), not attested, invalid, premise not met.
+- **The touch rule and the popup.** The rule is by process and bundle, never by window (`personTouchedOf`). The popup
+  belongs to Chrome's process and bundle, so an activation of Chrome as it opens is the scene's. C3's activation
+  watcher starts before the popup opens, so that opening is read and classified. C4 (c) names Finder as its scene
+  (`187-activations-start <item> finder`), so the kit's own activation of Finder, and Finder in front, are the run's,
+  not the person's.
+- **C4 (b) and (c), measured with no verdict.** Each runs 3 repetitions in one item and one session, in the tail.
+  - **(b)** The engine records Chrome's last menu-bar item (Help). The kit reads whether a menu shows open, then makes
+    a coordinate click into the page with no observation between.
+  - **(c)** TextEdit is placed at the left, behind the run's Finder window. ⌘↑ goes in (it selects and changes
+    nothing), then a coordinate click into the text.
+  - Reported for each repetition: whether the click ordered the window, the guard's repairs and their times, whether a
+    sample was out of place after the display hold, and the click's `activationJoin`.
+- **Resuming.** A drive stopped in C3 leaves Chrome on the popup page. The placement's preflight accepts that page,
+  which also carries the counters, so `--blocks 7` resumes there.
+- **Section D** (later) calls the judge's pure pieces over 11-05's records: `repPremise`, `cellOutcome`, `rowOutcome`,
+  `partVerdict` and `combineVerdict`. For C2 and C3, it calls `joinStatus`, `raiseConditions`, `releaseConditions`
+  and `joinVerdict`.
 
 ## Known limits
 

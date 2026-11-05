@@ -4,7 +4,8 @@
 // allows its one inline script and no network beyond that beacon to its own origin. Its content is fixed (no per-run marker), so the two engines' texts of the same state
 // can be compared in one sitting. The controls are the finding-elements targets of the scene (PAGE_CONTROLS) and the
 // textarea is where the Korean and Unicode matrix types. A counters variant of the page (COUNTERS_PAGE_HTML, below) adds
-// one script and its hash, for #187's live slot. The page never turns accessibility on itself: the engine's
+// one script and its hash, for #187's live slot, and a popup variant (POPUP_PAGE_HTML) one more, for its isolating slot's
+// dialog row. The page never turns accessibility on itself: the engine's
 // AXManualAccessibility is what the scene proves. It declares itself untranslatable (`translate="no"` and Google's
 // notranslate meta), so Chrome never offers to translate it on a Mac whose language is not English.
 import {createServer} from 'node:http';
@@ -67,7 +68,7 @@ const headersFor = csp => ({'content-type': 'text/html; charset=utf-8', 'cache-c
 // COUNTERS_PATH, at every counted event and every input. Its CSP
 // is the shared one with only this script's hash added. The shared page stays byte-identical: every record so far was
 // taken on it.
-export const PAGE_VARIANTS = Object.freeze(['shared', 'counters']);
+export const PAGE_VARIANTS = Object.freeze(['shared', 'counters', 'popup']);
 export const COUNTERS_PATH = '/counters';
 export const COUNTER_NAMES = Object.freeze(['windowFocus', 'windowBlur', 'textFocus', 'textBlur', 'mousedown', 'click']);
 export const COUNTERS_SCRIPT = "(() => { const c = {windowFocus: 0, windowBlur: 0, textFocus: 0, textBlur: 0, mousedown: 0, click: 0}; let seq = 0;"
@@ -85,6 +86,33 @@ export const COUNTERS_PAGE_HTML = PAGE_HTML.replace(`<script>${SCRIPT}</script>`
 // The largest beacon body the server reads; the page's is under 200 bytes.
 const COUNTERS_BODY_MAX = 4096;
 
+// The popup page (#187's isolating slot, C3; `scenes-mac.mjs up chrome --page popup`): the counters page plus one script
+// that opens a small popup window (`window.open` with features: a separate NSWindow, which Chrome's JS dialogs are not)
+// when the kit asks for it, and nothing else. The page waits on its own server (POPUP_WAIT_PATH, a request the server
+// holds open) and opens the popup once the server answers it 200, which it does when the kit posts POPUP_OPEN_PATH: no
+// person and no engine action on Chrome opens it. A script's window.open with no user gesture is refused by Chrome's
+// popup blocker, so the scenes CLI launches this variant alone with `--disable-popup-blocking` (ChromeDriver's default
+// switch). The popup (POPUP_PATH) is one button, POPUP_BUTTON, whose click calls window.close(): the click closes its
+// own window. It beacons nothing: the counters are the main window's page alone.
+export const POPUP_WAIT_PATH = '/popup-wait', POPUP_OPEN_PATH = '/popup-open', POPUP_PATH = '/popup';
+export const POPUP_TITLE = 'cua scene popup', POPUP_BUTTON = 'Close popup';
+// Where the popup opens: 360 × 240 pt, 40 pt in from the main window's left and 120 pt down from its top, so it lies
+// over the main window's left part, which the kit's placement leaves clear of TextEdit's window.
+export const POPUP_FEATURES = Object.freeze({width: 360, height: 240, left: 40, top: 120});
+export const POPUP_OPENER_SCRIPT = "(() => { const wait = () => fetch('" + POPUP_WAIT_PATH + "', {method: 'POST'}).then(r => {"
+  + ` if (r.status === 200) window.open('${POPUP_PATH}', 'cua-popup', 'popup,width=${POPUP_FEATURES.width},height=${POPUP_FEATURES.height},left=' + (screenX + ${POPUP_FEATURES.left}) + ',top=' + (screenY + ${POPUP_FEATURES.top}));`
+  + ' else setTimeout(wait, 200); }, () => setTimeout(wait, 1000)); wait(); })();';
+const POPUP_OPENER_HASH = createHash('sha256').update(POPUP_OPENER_SCRIPT).digest('base64');
+export const POPUP_CLOSE_SCRIPT = "document.getElementById('close').addEventListener('click', () => window.close());";
+const POPUP_CLOSE_HASH = createHash('sha256').update(POPUP_CLOSE_SCRIPT).digest('base64');
+export const POPUP_PAGE_CSP = COUNTERS_CSP.replace(`'sha256-${COUNTERS_HASH}'`, `'sha256-${COUNTERS_HASH}' 'sha256-${POPUP_OPENER_HASH}'`);
+export const POPUP_PAGE_HTML = COUNTERS_PAGE_HTML.replace(`<script>${COUNTERS_SCRIPT}</script>`, `<script>${COUNTERS_SCRIPT}</script><script>${POPUP_OPENER_SCRIPT}</script>`);
+export const POPUP_CSP = CSP.replace(`script-src 'sha256-${SCRIPT_HASH}'`, `script-src 'sha256-${POPUP_CLOSE_HASH}'`);
+export const POPUP_HTML = `<!doctype html>
+<html lang="en" translate="no"><head><meta charset="utf-8"><meta name="google" content="notranslate"><title>${POPUP_TITLE}</title></head>
+<body><main><button id="close" type="button">${POPUP_BUTTON}</button></main><script>${POPUP_CLOSE_SCRIPT}</script></body></html>
+`;
+
 // What the server keeps of a counters beacon: its sequence, the textarea's length and each count, every one a
 // non-negative whole number, and whether the document had the focus (a boolean); anything else in the body is dropped.
 // -> {seq, length, counts, focused} or null.
@@ -99,13 +127,31 @@ export function countersRecord(text) {
 }
 
 // Serves the page (`page`: one of PAGE_VARIANTS); `onReady` is called once, on the page's first load beacon, and
-// `onCounters` with each counters beacon's record (the counters page only). -> {url, port, close()}.
+// `onCounters` with each counters beacon's record (the counters and popup pages). The popup page's server also holds
+// the page's POPUP_WAIT_PATH request open until a POPUP_OPEN_PATH post answers it 200 (the post 200 when a wait was
+// there to answer, else 409), and serves the popup's document at POPUP_PATH. -> {url, port, close()}.
 export async function startScenePage({port = 0, onReady = null, page = 'shared', onCounters = null} = {}) {
   if (!PAGE_VARIANTS.includes(page)) throw new Error(`the page variant is ${PAGE_VARIANTS.join(' or ')}, not ${page}`);
-  const counters = page === 'counters', html = counters ? COUNTERS_PAGE_HTML : PAGE_HTML, headers = headersFor(counters ? COUNTERS_CSP : CSP);
+  const popup = page === 'popup', counters = page === 'counters' || popup;
+  const html = popup ? POPUP_PAGE_HTML : counters ? COUNTERS_PAGE_HTML : PAGE_HTML, headers = headersFor(popup ? POPUP_PAGE_CSP : counters ? COUNTERS_CSP : CSP);
   let expectedHost, reported = false;
+  const waiting = [];
   const server = createServer((req, res) => {
     if (req.headers.host !== expectedHost) { res.writeHead(421, {'content-type': 'text/plain'}).end('misdirected\n'); return; }
+    if (popup && req.method === 'POST' && req.url === POPUP_WAIT_PATH) {
+      req.resume();
+      waiting.push(res);
+      res.once('close', () => { const k = waiting.indexOf(res); if (k >= 0) waiting.splice(k, 1); });
+      return;
+    }
+    if (popup && req.method === 'POST' && req.url === POPUP_OPEN_PATH) {
+      req.resume();
+      const wait = waiting.shift();
+      if (wait) wait.writeHead(200, {'content-type': 'text/plain'}).end('open\n');
+      res.writeHead(wait ? 200 : 409, {'content-type': 'text/plain'}).end(wait ? 'opened\n' : 'no page is waiting\n');
+      return;
+    }
+    if (popup && req.method === 'GET' && req.url === POPUP_PATH) { res.writeHead(200, headersFor(POPUP_CSP)).end(POPUP_HTML); return; }
     if (req.method === 'POST' && req.url === READY_PATH) {
       req.resume();
       res.writeHead(204).end();

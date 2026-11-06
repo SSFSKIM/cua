@@ -736,3 +736,15 @@ the agent cursor's paragraph is (cua's macOS engine, in either device mode), so 
 `docs/cua-api/agent-cursor.md`, after a blank line; `core.md`'s port is untouched. The paragraph:
 
 > A click or drag at coordinates is checked against the screenshot the coordinates came from: when what that screenshot showed at the point is gone, has moved off it, or has given way to another control, it fails with `screenChangedSinceScreenshot` and nothing is sent. Take a new screenshot and give the coordinates in it.
+
+### Table 3 addition (2026-11-06, #301)
+
+The design session's ruling on #301 (aed3f041; the native engine spec's Decision Log, the #301 entries) changes what an
+observation prints when its node budget cuts: the walk keeps what the window shows first, and the tree ends with how
+many omitted parts lie above the visible area, below it and elsewhere, so the model knows to scroll and observe again.
+The ruling asks for any change to an observation's wording in the first-call document. It is true wherever the agent
+cursor's paragraph is (cua's macOS engine), so it is a fourth paragraph of `docs/cua-api/agent-cursor.md`, after a blank
+line; `core.md`'s port is untouched. It states the ruling's limit: on Chromium what the window shows is found from hit-tests
+80 pt apart. The paragraph:
+
+> When a window holds more than its accessibility tree can list, the tree lists what the window shows first, in its usual order, and ends with a line such as `[truncated: at least 1234 elements omitted: 812 above the visible area, 403 below it, 19 elsewhere]`, every count a lower bound. To reach an element the tree does not list, scroll toward it and call `getAXState()` again. In a Chromium-based app the tree finds what the window shows by probing points 80 pt apart, so a control smaller than that can occasionally be missing from the list while it shows.

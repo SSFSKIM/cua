@@ -311,7 +311,8 @@ extension Engine {
     }
     let deadline = monotonicMilliseconds() + Double(min(observationDeadlineMs, max(0, context.deadline - unixMilliseconds())))
     let walk = TreeWalk(source: source, lineage: lineage, limits: WalkLimits(deadline: deadline), markdown: markdownEnabled,
-                        interactionFlags: interactionFlags, chromium: chromium, visibleFrame: menuRoot == nil ? windowFrame : nil)
+                        interactionFlags: interactionFlags, chromium: chromium, visibleFrame: menuRoot == nil ? windowFrame : nil,
+                        recordsScreenshot: pendingCapture != nil)
     timings.time("walk") { walk.run(window: menuRoot ?? window, menuBar: menuBarElement, menuItems: menuItems) }
     walk.revision.menuRoot = menuRoot
     timings.merge(source.costs)
@@ -326,6 +327,17 @@ extension Engine {
     if walk.deadlineHit { timings.set("deadlineHit", true) }
     if walk.budgetHit { timings.set("budgetHit", true) }
     if walk.nodeCapHit { timings.set("nodeCapHit", true) }
+    // #301's seeding, when the walk ran it, and the guard's record-only reads: what the hosted A/B prices.
+    if let seeding = walk.seeding {
+      timings.add("seed", seeding.ms)
+      timings.set("seedPoints", seeding.points)
+      timings.set("seedHits", seeding.hits)
+      timings.set("seedChains", seeding.chains)
+      timings.set("seeds", seeding.seeds)
+      timings.set("seedPromoted", seeding.promoted)
+      if seeding.capped { timings.set("seedCapped", true) }
+    }
+    if walk.recordOnlyReads > 0 { timings.set("recordOnlyNodes", walk.recordOnlyReads) }
 
     var focused: Any = NSNull()
     var selectedText: Any = NSNull()
@@ -374,7 +386,14 @@ extension Engine {
 
     var truncated: [String: Any] = [:]
     if walk.depthHit { truncated["depth"] = maxDepth }
-    if walk.omitted > 0 { truncated["count"] = walk.omitted }
+    if walk.omitted > 0 {
+      truncated["count"] = walk.omitted
+      // Where the omitted lie (#301), for a walk of the window, which has what it shows to place them by.
+      if menuRoot == nil, windowFrame != nil {
+        truncated["above"] = walk.omittedAbove
+        truncated["below"] = walk.omittedBelow
+      }
+    }
     // Whether the app is a Catalyst app, which filterActions consults (FUN_100782c24; the renderer's): the vendor's
     // ApplicationUIElement.isCatalystApp 0x100704c88 reads the application's `exhibitsMacCatalystBehavior`
     // (`_AXExhibitsMacCatalystBehavior`, false when it answers none), and the transformation context's init 0x100747490

@@ -86,6 +86,36 @@ final class TokenResolutionTests: XCTestCase {
     XCTAssertEqual(fake.treeReads, 0, "the live re-read matched: no re-fetch walk")
   }
 
+  /// #301: the re-fetch walks what the window shows first, as the observation spends its budget, so an element the
+  /// observation reached past where the plain preorder's budget runs out is found again.
+  func testTheRefetchReachesWhatTheWindowShowsPastThePreordersBudget() throws {
+    let tree = FakeTree()
+    let window = CGRect(x: 0, y: 0, width: 1000, height: 800)
+    tree.extra[0] = ["AXRole": "AXWindow" as CFString]
+    tree.frames[0] = window
+    tree.children[0] = Array(100..<150)
+    for j in 0..<50 {
+      let y = Double(j - 45) * 100
+      tree.frames[100 + j] = CGRect(x: 0, y: y, width: 1000, height: 100)
+      tree.children[100 + j] = (0..<99).map { 1000 + 100 * j + $0 }
+      for k in 0..<99 { tree.frames[1000 + 100 * j + k] = CGRect(x: Double(k) * 10, y: y, width: 10, height: 100) }
+    }
+    let target = 1000 + 100 * 46 + 5
+    tree.extra[target] = ["AXRole": "AXButton" as CFString, "AXTitle": "Target" as CFString]
+    let lineage = Lineage()
+    let observation = walk(tree, lineage, visibleFrame: window)
+    XCTAssertTrue(observation.nodeCapHit, "5,001 elements over the 4,000 budget")
+    let token = try XCTUnwrap(observation.token(of: Engine.element(target)), "the observation keeps what the window shows")
+    // The page re-rendered the button: its handle is gone, a new one (9999) takes its place with the same attributes.
+    tree.unreadable = [target]
+    tree.children[146]![5] = 9999
+    tree.extra[9999] = tree.extra[target]
+    tree.frames[9999] = tree.frames[target]
+    let fake = FakeResolution(tree)
+    fake.invalidated = true
+    XCTAssertTrue(CFEqual(try lineage.resolve(token, resolver: fake.resolver).element, Engine.element(9999)))
+  }
+
   func testAReplacedElementOfAnotherProcessIsRefetchedByItsElevenAttributes() throws {
     let (tree, lineage) = observed()
     // The panel service redrew its button: the old handle is gone, a new one (4) carries the same attributes, and the

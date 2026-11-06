@@ -108,11 +108,19 @@ export function elementLine({index, depth, text, detailText}) {
   return `${'\t'.repeat(depth)}${index} ${text}${detailText ? ` ${detailText}` : ''}`;
 }
 
-// cua's own markers for the engine's caps (the vendor has none) [B §4; Design, Observation].
+// cua's own markers for the engine's caps (the vendor has none) [B §4; Design, Observation]. A walk of the window spends
+// its budgets on what the window shows first and places what it left unread (#301): how many omitted parts lie above
+// the visible area, below it, and elsewhere, each part counting once whatever it holds, so every count is a floor.
 function truncationMarkers(skyshot) {
   const out = [];
-  if (skyshot.truncated?.depth != null) out.push(`[truncated: elements deeper than ${skyshot.truncated.depth} levels omitted]`);
-  if (skyshot.truncated?.count) out.push(`[truncated: ${skyshot.truncated.count} elements omitted]`);
+  const truncated = skyshot.truncated;
+  if (truncated?.depth != null) out.push(`[truncated: elements deeper than ${truncated.depth} levels omitted]`);
+  if (truncated?.count && Number.isInteger(truncated.above) && Number.isInteger(truncated.below)) {
+    const elsewhere = truncated.count - truncated.above - truncated.below;
+    out.push(`[truncated: at least ${truncated.count} elements omitted: ${truncated.above} above the visible area, ${truncated.below} below it${elsewhere > 0 ? `, ${elsewhere} elsewhere` : ''}]`);
+  } else if (truncated?.count) {
+    out.push(`[truncated: ${truncated.count} elements omitted]`);
+  }
   return out;
 }
 

@@ -252,6 +252,18 @@ class ElementSource: @unchecked Sendable {
     }
   }
 
+  /// The element `pid`'s application answers at a global screen point (the seeding's hit-test, #301; uncached), its
+  /// messaging timeout `timeout` seconds so one hung answer cannot overrun the seeding's cap.
+  func hitTest(pid: pid_t, at point: CGPoint, timeout: Float) -> AXUIElement? {
+    let application = AXUIElementCreateApplication(pid)
+    AXUIElementSetMessagingTimeout(application, timeout)
+    let (error, hit) = elementAtPosition(application, point)
+    return error == .success ? hit : nil
+  }
+
+  /// The element's AXParent (the seeding's climb, #301; uncached).
+  func parent(_ element: AXUIElement) -> AXUIElement? { elementAttribute(element, kAXParentAttribute) }
+
   func readFrame(_ element: AXUIElement) -> CGRect? {
     costs.time("width") {
       var values: CFArray?

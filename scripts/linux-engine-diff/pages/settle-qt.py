@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """The settle experiment's Qt scene (#171 M4, T8; action-settle.mjs), under Qt 5 (PyQt5) or Qt 6 (PyQt6): one window
 of plain Qt widgets, a push button whose label counts its presses and a pad whose label counts the pointer moves it
-receives, so a click's, an element action's and a move's effect each read back as an accessible name in the window's
-tree. (Qt takes no synthetic wheel event, so cua refuses a background scroll to it; the pad counts none.)
+receives and the wheel steps it takes, so a click's, an element action's, a move's and a scroll's effect each read back
+as an accessible name in the window's tree. (Qt takes no synthetic wheel event, so cua refuses a background scroll to it
+in shared mode; the pad counts the foreground route's, in dedicated mode: task 63.)
 
 usage: settle-qt.py <title> qt5|qt6
 """
@@ -15,18 +16,25 @@ if binding == 'qt5':
 else:
     from PyQt6.QtWidgets import QApplication, QLabel, QPushButton, QVBoxLayout, QWidget
 
-counts = {'presses': 0, 'moves': 0}
+counts = {'presses': 0, 'moves': 0, 'scrolls': 0}
 
 
 class Pad(QLabel):
     def __init__(self):
-        super().__init__('moves 0')
+        super().__init__('moves 0 scrolls 0')
         self.setMouseTracking(True)
         self.setMinimumSize(600, 260)
 
+    def show_counts(self):
+        self.setText(f"moves {counts['moves']} scrolls {counts['scrolls']}")
+
     def mouseMoveEvent(self, event):
         counts['moves'] += 1
-        self.setText(f"moves {counts['moves']}")
+        self.show_counts()
+
+    def wheelEvent(self, event):
+        counts['scrolls'] += 1
+        self.show_counts()
 
 
 def pressed():

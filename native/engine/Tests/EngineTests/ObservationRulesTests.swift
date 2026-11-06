@@ -333,13 +333,19 @@ final class EnablementReleaseTests: XCTestCase {
     web.release(connection: 1)
     XCTAssertEqual(app.values["AXManualAccessibility"], true, "the reset did not take")
     XCTAssertEqual(failures, ["enablement release failed: AXManualAccessibility on pid 7; kept for a later close or shutdown"])
-    web.releaseAll()
-    XCTAssertEqual(failures.count, 2, "shutdown retried it")
     app.failWrites = false
     XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "still owned: nothing read or set")
     web.release(connection: 2)
     XCTAssertEqual(app.values["AXManualAccessibility"], false, "the next close released what the engine still owns")
+    XCTAssertEqual(failures.count, 1)
+    let other = FakeApplication(names: ["AXManualAccessibility"])
+    _ = web.enable(pid: 8, launched: launched, connection: 3, access: other.access)
+    other.failWrites = true
+    web.release(connection: 3)
     XCTAssertEqual(failures.count, 2)
+    other.failWrites = false
+    web.releaseAll()
+    XCTAssertEqual(other.values["AXManualAccessibility"], false, "shutdown retried it")
   }
 
   func testAProcessNoLongerTheOneObservedIsNotWritten() {
@@ -711,9 +717,10 @@ final class EnablementOwnershipAndGraceTests: XCTestCase {
     let app = chrome()
     _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
     web.release(connection: 1)
-    web.releaseAll()
-    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "one write back, not retried at the stop")
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"])
     XCTAssertEqual(failures, [], "not a failure")
+    web.release(connection: 1)
+    XCTAssertEqual(app.writes.count, 2, "done: not retried at a later close")
     app.values[eui] = true  // the readback after a write-back
     XCTAssertEqual(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), eui, "written back, so set again, owned")
   }
@@ -909,6 +916,89 @@ final class EnablementOwnershipAndGraceTests: XCTestCase {
     XCTAssertEqual(enabled.value, eui, "it read after the reset and enabled again")
     XCTAssertEqual(app.values[eui], true)
     XCTAssertTrue(web.enablementHolds(pid: 7, launched: launched))
+  }
+
+  /// The review of d2568c76..96c6f093: the grace's token is checked again under the entry's lock, so an observation
+  /// landing between the timer's first check and the reset (which finds the attribute still owned and writes nothing)
+  /// is not reset underneath.
+  func testActivityBetweenTheGracesFirstCheckAndItsResetMakesItStale() {
+    let timers = ManualTimers()
+    let web = graced(timers)
+    let app = chrome()
+    let launched = self.launched
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    web.beforeGraceRelease = { XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "still owned") }
+    timers.advance(to: 30_000)
+    XCTAssertEqual(app.writes.count, 1, "the observation's newer token made the timer stale")
+    XCTAssertTrue(web.enablementHolds(pid: 7, launched: launched))
+    web.beforeGraceRelease = {}
+    timers.advance(to: 59_999)
+    XCTAssertEqual(app.writes.count, 1)
+    timers.advance(to: 60_000)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "30 s after that observation")
+  }
+
+  /// The review of d2568c76..96c6f093: the stop enters its stopping state before it takes the processes, so an
+  /// observation arriving during its reset neither registers nor writes, and nothing is recorded after it.
+  func testAnObservationDuringTheStopsResetWritesNothing() {
+    let web = graced(ManualTimers())
+    let app = chrome()
+    let launched = self.launched
+    _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access)
+    let inReset = DispatchSemaphore(value: 0)
+    let proceed = DispatchSemaphore(value: 0)
+    app.duringWrite = { _, value in
+      guard !value else { return }
+      inReset.signal()
+      _ = proceed.wait(timeout: .now() + 5)
+    }
+    let stopped = DispatchSemaphore(value: 0)
+    Thread { web.releaseAll(); stopped.signal() }.start()
+    XCTAssertEqual(inReset.wait(timeout: .now() + 5), .success)
+    app.duringWrite = { _, _ in }
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 2, access: app.access), "refused at once, not waiting on the reset")
+    XCTAssertTrue(web.observers(pid: 7, launched: launched).isEmpty)
+    proceed.signal()
+    XCTAssertEqual(stopped.wait(timeout: .now() + 5), .success)
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"])
+    XCTAssertNil(web.enable(pid: 7, launched: launched, connection: 3, access: app.access), "after the stop, nothing is written")
+    web.noteActivity(pid: 7, launched: launched, connection: 3)
+    XCTAssertTrue(web.observers(pid: 7, launched: launched).isEmpty, "nor recorded")
+    XCTAssertEqual(app.values[eui], false)
+  }
+
+  /// An observation that registered before the stop and waits on the entry's lock behind another one's write: the stop
+  /// resets what that write set, and the waiting observation, whichever of the two takes the lock first, writes nothing.
+  func testAnObservationRegisteredBeforeTheStopDoesNotReEnableAfterItsReset() {
+    let web = graced(ManualTimers())
+    let app = chrome()
+    let launched = self.launched
+    let inWrite = DispatchSemaphore(value: 0)
+    let proceed = DispatchSemaphore(value: 0)
+    app.duringWrite = { _, value in
+      guard value else { return }
+      inWrite.signal()
+      _ = proceed.wait(timeout: .now() + 5)
+    }
+    let first = DispatchSemaphore(value: 0)
+    Thread { _ = web.enable(pid: 7, launched: launched, connection: 1, access: app.access); first.signal() }.start()
+    XCTAssertEqual(inWrite.wait(timeout: .now() + 5), .success, "the first observation holds the entry's lock in its write")
+    app.duringWrite = { _, _ in }
+    let second = DispatchSemaphore(value: 0)
+    let secondSet = Box<String?>()
+    Thread { secondSet.value = web.enable(pid: 7, launched: launched, connection: 2, access: app.access); second.signal() }.start()
+    let registered = Date().addingTimeInterval(5)
+    while !web.observers(pid: 7, launched: launched).contains(2), Date() < registered { usleep(1_000) }
+    XCTAssertTrue(web.observers(pid: 7, launched: launched).contains(2), "registered before the stop")
+    let stopped = DispatchSemaphore(value: 0)
+    Thread { web.releaseAll(); stopped.signal() }.start()
+    let entered = Date().addingTimeInterval(5)
+    while !web.observers(pid: 7, launched: launched).isEmpty, Date() < entered { usleep(1_000) }
+    proceed.signal()
+    for semaphore in [first, second, stopped] { XCTAssertEqual(semaphore.wait(timeout: .now() + 5), .success) }
+    XCTAssertEqual(app.values[eui], false, "the stop reset what the first observation set")
+    XCTAssertEqual(app.written, ["\(eui)=true", "\(eui)=false"], "and nothing was written after it")
+    XCTAssertNil(secondSet.value ?? nil)
   }
 
   func testTheEndTaskRequestReleasesTheConnectionsEnablementAtOnce() {

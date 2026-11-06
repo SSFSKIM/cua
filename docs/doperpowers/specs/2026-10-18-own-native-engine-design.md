@@ -2048,6 +2048,14 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   the characters that may lack a box, a surrogate pair as one character, an emoji line still arriving against a
   whole one), a static text scanned over its whole value, the in-flight stop before any
   write, the record and the note; the service's note test for click).
+  Proven live (`docs/evidence/2026-11-05-web-text-focus/`; hosted runs 42155227806 and its repeat 42155231373 at af4bd331,
+  macOS 26.6.2 and 26.7.2 with Chrome for Testing 156; the earlier run 42152333871 found the visible-range and
+  half-arrived-boxes bugs fixed in af4bd331). Main refuses every text-field click. On the branch, the input, the textarea,
+  a one-node and a multi-node contenteditable (in its 2nd and 3rd text node, after a `<br>`), a prior selection and a point
+  past a line's end are focused, with the caret at the expected offset and type_text landing there: in 55 to 199 ms 3 s
+  after the observation, and in 1.5 to 1.9 s 0.1 s after it, by the re-read (32 of 32 fresh clicks in the repeat run).
+  The password field is focused only, and a padding click is focused but not placed. Every cell had zero pointer events,
+  TextEdit stayed frontmost, and Chrome was not raised.
   Date/Author: 2026-11-05, cursor235 for the design session's rulings on #283.
 
 ## Outcomes & Retrospective

@@ -104,7 +104,7 @@ final class StalePointTests: XCTestCase {
     XCTAssertEqual(moved.reason, .frameMoved)
     XCTAssertEqual(moved.identity, .handle)
     XCTAssertTrue(moved.refused)
-    let outcome = stalePointOutcome(moved, hit: chrome.reload, ms: 0.4, reads: reads)
+    let outcome = stalePointOutcome(moved, ms: 0.4, reads: reads)
     XCTAssertEqual(outcome.refusal?.errorName, "screenChangedSinceScreenshot")
     XCTAssertEqual(outcome.refusal?.message,
                    "The screen changed since the screenshot: the AXButton \"Reload\" it showed at this point has moved away from it. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.",
@@ -114,7 +114,7 @@ final class StalePointTests: XCTestCase {
     // The hit-test answering what lies there now (the disabled Forward button, which came back) names it.
     chrome.toolbar.add(chrome.forward)
     chrome.forward.frame = CGRect(x: 442, y: 77, width: 34, height: 34)
-    let forward = stalePointOutcome(verdict(nodes, at: reloadPoint, hit: chrome.forward), hit: chrome.forward, ms: 0, reads: reads)
+    let forward = stalePointOutcome(verdict(nodes, at: reloadPoint, hit: chrome.forward), ms: 0, reads: reads)
     XCTAssertEqual(forward.refusal?.message,
                    "The screen changed since the screenshot: the AXButton \"Reload\" it showed at this point has moved away from it; AXButton \"Forward\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
   }
@@ -131,7 +131,7 @@ final class StalePointTests: XCTestCase {
     let kept = verdict(nodes, at: point, hit: label)
     XCTAssertEqual(kept.reason, .nonInteractiveHit)
     XCTAssertFalse(kept.refused)
-    XCTAssertNil(stalePointOutcome(kept, hit: label, ms: 0, reads: reads).refusal)
+    XCTAssertNil(stalePointOutcome(kept, ms: 0, reads: reads).refusal)
     // A group too; and a hit that answers nothing, with the node in place.
     let group = Node("AXGroup", CGRect(x: 100, y: 300, width: 120, height: 30))
     chrome.button.add(group)
@@ -192,8 +192,8 @@ final class StalePointTests: XCTestCase {
     }
     let changed = recreate(was: ("Like (12)", nil), now: ("Like (13)", nil))
     XCTAssertEqual(changed.reason, .nodeGone)
-    XCTAssertEqual(stalePointOutcome(changed, hit: nil, ms: 0, reads: reads).refusal?.message,
-                   "The screen changed since the screenshot: the AXButton \"Like (12)\" it showed at this point is gone. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    XCTAssertEqual(stalePointOutcome(changed, ms: 0, reads: reads).refusal?.message,
+                   "The screen changed since the screenshot: the AXButton \"Like (12)\" it showed at this point is gone; AXButton \"Like (13)\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
     XCTAssertEqual(recreate(was: ("Like (12)", nil), now: ("Like (12)", nil)).reason, .sameElement)
     XCTAssertEqual(recreate(was: (nil, nil), now: ("Like (13)", nil)).reason, .sameElement, "the recorded title unread")
     XCTAssertEqual(recreate(was: ("Like (12)", nil), now: (nil, nil)).reason, .sameElement, "the title unread now")
@@ -230,7 +230,7 @@ final class StalePointTests: XCTestCase {
     window.add(sheet)
     let refused = verdict(nodes, at: CGPoint(x: 20, y: 20), hit: delete)
     XCTAssertEqual(refused.reason, .interactiveHit)
-    XCTAssertEqual(stalePointOutcome(refused, hit: delete, ms: 0, reads: reads).refusal?.message,
+    XCTAssertEqual(stalePointOutcome(refused, ms: 0, reads: reads).refusal?.message,
                    "The screen changed since the screenshot: the AXStaticText \"Draft saved\" it showed at this point is no longer what it reaches; AXButton \"Delete\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
   }
 
@@ -354,6 +354,114 @@ final class StalePointTests: XCTestCase {
     XCTAssertEqual(stalePointLabelsAgree(recordedTitle: bounded(label), recordedDescription: nil, title: "Terms", description: nil), false)
   }
 
+  // MARK: The A/B's round (run 42184616121; the design session's ruling 1ea561bc ca82a6f4)
+
+  /// A button replaced every 500 ms: between the old node's destruction and the new one's arrival the hit-test answers
+  /// nothing. The point is hit-tested again (3 times, 50 ms apart) and the re-created search runs on the first real hit;
+  /// a hit that stays empty is gone after the bound, and the sentence then names nothing there.
+  func testAnEmptyHitMidReplacementIsHitTestedAgainWithinTheBound() {
+    XCTAssertEqual(stalePointRehits, 3, "the bound this test pins")
+    XCTAssertEqual(stalePointRehitMs, 50)
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 200))
+    let button = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 30), title: "Again")
+    window.add(button)
+    let nodes = recorded(window)
+    button.destroy()
+    let again = Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 30), title: "Again")
+    var answers: [Node?] = [nil, again]
+    var sleeps: [Double] = []
+    let kept = stalePointVerdict(at: CGPoint(x: 50, y: 25), nodes: nodes, hit: nil, rehit: {
+      let next = answers.removeFirst()
+      if next != nil { window.add(again) }
+      return next
+    }, sleep: { sleeps.append($0) }, reads: reads)
+    XCTAssertEqual(kept.identity, .recreated, "the second re-hit's handle")
+    XCTAssertEqual(kept.reason, .sameElement)
+    XCTAssertEqual(sleeps, [50, 50])
+    // Still empty after the bound: gone, and nothing is named there.
+    sleeps = []
+    let dead = Node("AXButton", nil)  // an element whose role cannot be read counts as no hit
+    let gone = stalePointVerdict(at: CGPoint(x: 50, y: 25), nodes: nodes, hit: nil, rehit: { nil }, sleep: { sleeps.append($0) }, reads: reads)
+    XCTAssertEqual(gone.reason, .nodeGone)
+    XCTAssertEqual(sleeps, [50, 50, 50])
+    XCTAssertEqual(stalePointOutcome(gone, ms: 0, reads: reads).refusal?.message,
+                   "The screen changed since the screenshot: the AXButton \"Again\" it showed at this point is gone. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    let unreadable = StalePointReads<Node>(role: { $0 === dead ? nil : $0.role }, frame: { $0.frame }, parent: { $0.parent }, children: { $0.children },
+                                           title: { $0.title }, description: { $0.description }, same: { $0 === $1 })
+    let blind = stalePointVerdict(at: CGPoint(x: 50, y: 25), nodes: nodes, hit: dead, rehit: { dead }, reads: unreadable)
+    XCTAssertEqual(blind.reason, .nodeGone)
+    XCTAssertNil(blind.hitRole)
+    XCTAssertEqual(stalePointOutcome(blind, ms: 0, reads: unreadable).refusal?.message,
+                   "The screen changed since the screenshot: the AXButton \"Again\" it showed at this point is gone. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.",
+                   "no \"element is there now\"")
+    // A live handle never waits.
+    sleeps = []
+    let live = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 200), [Node("AXButton", CGRect(x: 10, y: 10, width: 80, height: 30))])
+    XCTAssertEqual(stalePointVerdict(at: CGPoint(x: 50, y: 25), nodes: recorded(live), hit: nil, rehit: { nil }, sleep: { sleeps.append($0) },
+                                     reads: reads).reason, .noHit)
+    XCTAssertEqual(sleeps, [])
+  }
+
+  /// What an element route may press at a kept point: the node itself or its control (an ancestor, reached from the hit
+  /// through its plain children), or anything inside a node whose children the record does not all hold; anything else
+  /// is `pressedOther`, refused.
+  func testThePressedElementMustBeTheNodeOrItsControl() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 200))
+    let link = Node("AXLink", CGRect(x: 10, y: 10, width: 100, height: 20))
+    let text = Node("AXStaticText", CGRect(x: 12, y: 12, width: 90, height: 16), description: "Keep")
+    link.add(text)
+    let remove = Node("AXLink", CGRect(x: 10, y: 40, width: 100, height: 20), title: "Remove")
+    window.add(link)
+    window.add(remove)
+    let nodes = recorded(window)
+    let first = verdict(nodes, at: CGPoint(x: 20, y: 20), hit: text)
+    XCTAssertEqual(first.reason, .sameElement)
+    XCTAssertEqual(stalePointPressVerdict(text, first, reads: reads).reason, .sameElement, "the node")
+    XCTAssertEqual(stalePointPressVerdict(link, first, reads: reads).reason, .sameElement, "its control, the walk's ancestor")
+    let other = stalePointPressVerdict(remove, first, reads: reads)
+    XCTAssertEqual(other.reason, .pressedOther)
+    XCTAssertTrue(other.refused)
+    XCTAssertEqual(stalePointOutcome(other, ms: 0, reads: reads).refusal?.message,
+                   "The screen changed since the screenshot: the AXStaticText \"Keep\" it showed at this point is no longer what it reaches; AXLink \"Remove\" is there now. Nothing was sent. Call getScreenshot for a new screenshot, then give the coordinates in its pixels.")
+    // Inside a node the record holds incompletely; at a point nothing recorded holds.
+    let canvas = Node("AXGroup", CGRect(x: 0, y: 100, width: 400, height: 100))
+    let tool = Node("AXButton", CGRect(x: 10, y: 110, width: 40, height: 40))
+    canvas.add(tool)
+    window.add(canvas)
+    let cut = recorded(window, skipping: [ObjectIdentifier(tool)])
+    let inside = verdict(cut, at: CGPoint(x: 20, y: 120), hit: tool)
+    XCTAssertEqual(stalePointPressVerdict(tool, inside, reads: reads).reason, .unrecordedDescendant)
+    XCTAssertEqual(stalePointPressVerdict(tool, verdict(cut, at: CGPoint(x: 900, y: 900), hit: tool), reads: reads).reason, .unrecorded)
+  }
+
+  /// The route's wait (#282's action re-read, #283's box re-read): the guard runs again just before the press, on the
+  /// element it is about to press, and a page that changed meanwhile is refused at that second check; without a wait the
+  /// first verdict stands. The record says it was rechecked and carries both checks' time.
+  func testAChangeDuringTheRouteWaitIsRefusedAtTheSecondCheck() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 0, width: 400, height: 200))
+    let item = Node("AXButton", CGRect(x: 10, y: 10, width: 200, height: 30), title: "item-9")
+    window.add(item)
+    let nodes = recorded(window)
+    let point = CGPoint(x: 50, y: 25)
+    let first = verdict(nodes, at: point, hit: item)
+    XCTAssertFalse(first.refused)
+    var clock: Double = 0
+    let gate = StalePointGate(first: first, firstMs: 1.5) { () -> StalePointVerdict<Node> in
+      clock += 0.75
+      return verdict(nodes, at: point, hit: item)
+    }
+    let before = gate.check(item, waited: false, now: { clock }, reads: reads)
+    XCTAssertNil(before.refusal, "no wait: the first verdict")
+    XCTAssertEqual(before.record.rechecked, false)
+    item.frame = CGRect(x: 10, y: 40, width: 200, height: 30)  // a prepend pushed it down during the wait
+    XCTAssertNil(gate.check(item, waited: false, now: { clock }, reads: reads).refusal, "without a wait nothing is read again")
+    let after = gate.check(item, waited: true, now: { clock }, reads: reads)
+    XCTAssertEqual(after.refusal?.errorName, "screenChangedSinceScreenshot")
+    XCTAssertEqual(after.record.reason, .frameMoved)
+    XCTAssertEqual(after.record.wire["rechecked"] as? Bool, true)
+    XCTAssertEqual(after.record.ms, 2.25, "both checks' time")
+  }
+
   /// The record: each node's shown frame cut by its clipping ancestors, so page content scrolled up under the toolbar
   /// (its frame above the web area's) is never the node at a toolbar point; the deepest node, the later of two at a depth.
   func testTheRecordCutsFramesByClippingAncestorsAndTakesTheDeepestNode() {
@@ -451,27 +559,27 @@ final class StalePointDeliveryTests: XCTestCase {
     }, "a drag")
   }
 
-  /// #282's element route still carries a plain click into a background web area whose activation clicks no activation
-  /// point (the guard does not apply there): the hit's action runs, cua posts nothing, and the meta says the guard was
-  /// skipped. Without an element route it is #282's own refusal.
-  func testTheElementRouteStillCarriesAWebAreaClickTheGuardWouldRefuse() throws {
+  /// The design session's ruling 1ea561bc ca82a6f4: a stale point into a background web area is refused before #282's
+  /// element route, which presses nothing (the A/B's feed and link-swap cells had it press what lay there now), and cua
+  /// posts nothing; a kept point's element route runs as before.
+  func testAStalePointIsRefusedBeforeTheElementRouteAndAKeptOneIsElementRouted() throws {
     let seam = GuardSeam(frontmost: user)
     var clickMeta = meta()
     var pressed = 0
-    try click(seam, activation(seam), pointer: refused(.webArea) { meta in
+    let press: (inout InputMeta) throws -> Void = { meta in
       pressed += 1
       try deliverAction("AXPress", route: .action, perform: { _ in .success }, meta: &meta)
-    }, meta: &clickMeta)
-    XCTAssertEqual(pressed, 1)
-    XCTAssertEqual(seam.posts.count, 0)
-    XCTAssertEqual(clickMeta.stalePoint?.verdict, .skipped)
-    XCTAssertEqual(clickMeta.stalePoint?.wire["verdict"] as? String, "skipped")
-    let other = GuardSeam(frontmost: user)
-    var refusedMeta = meta()
-    XCTAssertThrowsError(try click(other, activation(other), pointer: refused(.possibleWebArea), meta: &refusedMeta)) {
-      XCTAssertEqual(($0 as? EngineError)?.errorName, "backgroundClickRefused")
     }
-    XCTAssertEqual(other.posts.count, 0)
+    assertRefusedWithNothingPosted(seam, clickMeta, {
+      try self.click(seam, self.activation(seam), pointer: self.refused(.webArea, elementRoute: press), meta: &clickMeta)
+    }, "a stale web-area click")
+    XCTAssertEqual(pressed, 0, "nothing pressed")
+    XCTAssertEqual(clickMeta.stalePoint?.wire["verdict"] as? String, "refused")
+    let kept = GuardSeam(frontmost: user)
+    var keptMeta = meta()
+    try click(kept, activation(kept), pointer: PointerTarget(view: .webArea, app: "Google Chrome for Testing", elementRoute: press), meta: &keptMeta)
+    XCTAssertEqual(pressed, 1, "a kept point: element-routed as before")
+    XCTAssertEqual(kept.posts.count, 0)
   }
 
   /// Where a web-area click in shared mode would be posted rather than element-routed (an activation that clicks its

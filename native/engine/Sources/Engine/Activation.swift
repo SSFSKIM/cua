@@ -167,11 +167,6 @@ func frontWindowNumber(of pid: pid_t) -> CGWindowID? {
 /// takes the element route instead (`deliverPointer`).
 struct PointerRefused: Error {}
 
-/// Thrown, with nothing posted, for a pointer holder whose hold refuses every path that would post its events (#296,
-/// `PointerHold.refusedIfPosted`: the stale-point guard refused its point, and only #282's element route, reached through
-/// `PointerRefused`, may still carry it). Never reaches the wire: `deliverPointer` answers the guard's refusal.
-struct PointerPostRefused: Error {}
-
 /// Route 3's refusal (Interfaces, input errors): the action's own events were never posted.
 func activationFailed(_ detail: String) -> EngineError {
   EngineError(name: "activationFailed", "The action was not performed: \(detail), so the app could not be prepared for input in the background. Nothing was clicked or typed; try again.")
@@ -351,10 +346,6 @@ final class FakeActivation {
   /// an arm left by an activation that clicks no activation point, so `activate` throws `PointerRefused` there before
   /// anything is posted.
   var refusesPointerWithoutActivationPointClick = false
-  /// Set by the registry before the activation runs (#296, `PointerHold.refusedIfPosted`): `activate` throws
-  /// `PointerPostRefused`, before anything is posted, wherever its holder's events would go out (the app believing it has
-  /// focus, or a plan that `refusesPointerWithoutActivationPointClick` lets through).
-  var refusesPointerPosting = false
   /// The arm's state, behind its own lock (a holder joining on another connection may consume it): set from subtype 1
   /// until a mouse down to the process, and the inert click kept for it. `armClaimed`: a pointer holder's events, which
   /// open with its own left mouse down, are going out (`postAction`); an inert click waits until they are out.
@@ -384,13 +375,11 @@ final class FakeActivation {
   /// with nothing posted and no screen-update hold taken.
   func activate() throws {
     guard !system.believesItHasFocus(pid) else {
-      if refusesPointerPosting { throw PointerPostRefused() }
       epoch = realEpoch?()
       return
     }
     let planned = planClick()
     if refusesPointerWithoutActivationPointClick, planned.kind != .activationPoint { throw PointerRefused() }
-    if refusesPointerPosting { throw PointerPostRefused() }
     guard let user = system.frontmost(), user != pid else {
       postActivation(planned)
       return

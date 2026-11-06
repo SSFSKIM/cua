@@ -313,8 +313,14 @@ extension Engine {
   /// and recorded with the reason `webArea`, the control's role and whether it was the hit. A control with no action
   /// after that is refused, asking for an observation first, as a hit that resolves to none is refused; either refusal
   /// records the walk (`elementClick.walk`, `walkStopped`). Nil for a click that is not a plain left one.
+  ///
+  /// `stalePoint` (#296, a coordinate click's; nil for an element click's synthesized path): what the route presses must
+  /// be the node the screenshot showed at the point or its control (`stalePointPressVerdict`), checked just before the
+  /// press, and after the action's re-read wait against the guard run again (`StalePointGate`); refused otherwise as
+  /// `screenChangedSinceScreenshot`, nothing pressed. The focus route (#283) checks its field the same way.
   func webAreaPress(_ hit: AXUIElement, button: MouseButton, count: Int, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp,
-                    appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext) -> ((inout InputMeta) throws -> Void)? {
+                    appPid: pid_t, guarding: InterventionGuard, context: ExecutionContext,
+                    stalePoint: StalePointGate<AXUIElement>? = nil) -> ((inout InputMeta) throws -> Void)? {
     guard button == .left, count == 1 else { return nil }
     var walk: [String] = []
     let resolution = webAreaControl(hit, role: { attribute($0, kAXRoleAttribute) as? String }, parent: { elementAttribute($0, kAXParentAttribute) },
@@ -328,7 +334,9 @@ extension Engine {
     guard case .success(let resolved) = resolution else {
       guard case .failure(let why) = resolution else { return nil }
       // A text field is focused instead (#283), with no re-read: AXFocused works before complete mode.
-      if why == .editable { return webAreaFocus(hit, point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context) }
+      if why == .editable {
+        return webAreaFocus(hit, point: point, windowID: windowID, app: app, appPid: appPid, guarding: guarding, context: context, stalePoint: stalePoint)
+      }
       return { meta in
         refused(why, &meta)
         throw backgroundClickRefused(app.displayName)
@@ -341,11 +349,12 @@ extension Engine {
       let fresh = webAreaAccessibilityFresh(freshSince: freshSince,
                                             now: monotonicMilliseconds(), webAreaSeen: webAccessibility.hasSeenWebArea(pid: appPid, launched: generation))
       // The action, re-read where fresh, then the control requalified as it is now, all before anything is posted.
+      var waited = false
       let decision = webAreaPressDecision(control, walkedRole: resolved.role, fresh: fresh, freshSince: freshSince, actions: establishedActionNames(of:),
                                           role: { attribute($0, kAXRoleAttribute) as? String },
                                           parent: { elementAttribute($0, kAXParentAttribute) },
                                           editable: { attribute($0, "AXEditableAncestor") != nil },
-                                          now: monotonicMilliseconds, sleep: { usleep(UInt32($0 * 1000)) })
+                                          now: monotonicMilliseconds, sleep: { waited = true; usleep(UInt32($0 * 1000)) })
       let action: String, role: String
       switch decision {
       case .success(let pressed): (action, role) = (pressed.action, pressed.role)
@@ -353,6 +362,7 @@ extension Engine {
         refused(why, &meta)
         throw why == .noAction ? backgroundClickRefusedObserveFirst(app.displayName) : backgroundClickRefused(app.displayName)
       }
+      try checkStalePoint(stalePoint, pressing: control, waited: waited, meta: &meta)
       let owner = ownerPid(of: control, fallback: appPid)
       try refuseForbiddenOwner(owner)
       actionTargets(owner, app: app, connection: context.connection)
@@ -375,7 +385,7 @@ extension Engine {
   /// whose accessibility is fresh are re-read for up to 2 s, or 3 s just after an enablement write, `caretAwaitingBoxes`) and read back on the focused element, the result's note saying what was done. Records the walk, the focused role, whether it
   /// was the hit, and the caret (`elementClick` reason `focusField` or `focusedNotPlaced`).
   func webAreaFocus(_ hit: AXUIElement, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
-                    context: ExecutionContext) -> (inout InputMeta) throws -> Void {
+                    context: ExecutionContext, stalePoint: StalePointGate<AXUIElement>? = nil) -> (inout InputMeta) throws -> Void {
     let role: (AXUIElement) -> String? = { attribute($0, kAXRoleAttribute) as? String }
     func focusTarget(_ walk: inout [String]) -> Result<WebAreaFocusTarget<AXUIElement>, WebAreaRefusal> {
       webAreaFocusTarget(hit, role: role, subrole: subroleRead, parent: { elementAttribute($0, kAXParentAttribute) },
@@ -396,19 +406,29 @@ extension Engine {
     }
     let field = target.element
     return { [self] meta in
+      // #296: the field must be the node the screenshot showed at the point or its ancestor, before it is focused.
+      try checkStalePoint(stalePoint, pressing: field, waited: false, meta: &meta)
       let owner = ownerPid(of: field, fallback: appPid)
       try refuseForbiddenOwner(owner)
       actionTargets(owner, app: app, connection: context.connection)
       meta.inputRoute = .action
       meta.elementClick = ElementClickRecord(plan: .action(kAXFocusedAttribute), reason: .focusField, pressedRole: target.role,
                                              pressedAncestor: target.ancestor, walk: walk)
-      let sleep: (Double) -> Void = { usleep(UInt32($0 * 1000)) }
+      var waited = false
+      let sleep: (Double) -> Void = { waited = true; usleep(UInt32($0 * 1000)) }
       let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
       let freshSince = webAccessibility.freshSince(pid: appPid, launched: generation)
       let fresh = webAreaAccessibilityFresh(freshSince: freshSince,
                                             now: monotonicMilliseconds(), webAreaSeen: webAccessibility.hasSeenWebArea(pid: appPid, launched: generation))
       let outcome = try focusPlacingCaret(
         app: app.displayName, secure: target.secure, fresh: fresh, freshSince: freshSince, beforeMutating: guarding.checkInFlight,
+        beforeCaret: {
+          // After the focus's settle or the boxes' re-read, the guard again: a changed page places no caret.
+          guard waited, let stalePoint else { return nil }
+          let checked = stalePoint.check(field, waited: true, now: monotonicMilliseconds, reads: .live)
+          meta.stalePoint = checked.record
+          return checked.refusal == nil ? nil : .screenChanged
+        },
         writeFocused: {
           cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point))
           _ = meta.posting { _ = gatedWrite(field, kAXFocusedAttribute, kCFBooleanTrue); return true }
@@ -451,6 +471,15 @@ extension Engine {
       }
       meta.note = focusNote(app.displayName, outcome)
     }
+  }
+
+  /// #296's check of what an element route is about to act on (`StalePointGate.check`): its record into the meta, and its
+  /// refusal thrown, nothing pressed. Nothing without a gate.
+  func checkStalePoint(_ gate: StalePointGate<AXUIElement>?, pressing element: AXUIElement, waited: Bool, meta: inout InputMeta) throws {
+    guard let gate else { return }
+    let checked = gate.check(element, waited: waited, now: monotonicMilliseconds, reads: .live)
+    meta.stalePoint = checked.record
+    if let refusal = checked.refusal { throw refusal }
   }
 
   /// An element click by its own action (route 1; route 3's held activation first, `route` .activation, when the app does

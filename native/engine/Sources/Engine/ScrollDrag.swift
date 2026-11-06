@@ -161,7 +161,8 @@ extension Engine {
       // Where the drag's own down goes (#282): in shared mode one starting in a Chromium web area is refused, nothing posted.
       var pointer = route == .activation ? pointerTarget(hit: hit, app: app, appPid: appPid, noun: "drag") : .acceptingFirstMouse
       // #296: the start point, where the drag presses, checked against the screenshot (the end is where it drops).
-      let stale = stalePointGuard(at: start.point, windowOrigin: start.windowFrame.origin, hit: hit, app: app, context: context)
+      let stale = stalePointGuard(at: start.point, windowOrigin: start.windowFrame.origin, hit: hit,
+                                  rehit: { hitTest(window: start.window, pid: appPid, at: start.point) }, app: app, context: context)
       meta.stalePoint = stale.record
       pointer.staleRefusal = stale.refusal
       try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in

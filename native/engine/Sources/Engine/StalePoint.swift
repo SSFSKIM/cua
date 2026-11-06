@@ -12,8 +12,10 @@ import Foundation
 // neither has a title, whenever both sides can be read). It refuses, with nothing posted, when that node is gone, when
 // its frame read now no longer holds the point, or when the hit-test at the point now answers another interactive
 // element; any other hit inside a node still in place (its label's text, a group) passes. The vendor posts at the point
-// blindly. Where #282 element-routes the pointer (Input.swift `deliverPointer`) the guard does not apply. Everything here
-// reads through closures, so the rule is unit-tested over a fake tree.
+// blindly. Where #282 element-routes the pointer (the design session's ruling 1ea561bc ca82a6f4, reversing the first
+// build's skip), a refused point is refused before anything is pressed, and a kept one's route presses only the recorded
+// node or its control, the guard run again after any wait of the route's (`StalePointGate`). Everything here reads
+// through closures, so the rule is unit-tested over a fake tree.
 
 /// One node of the tree an observation with a screenshot walked, as the screenshot showed it.
 struct ScreenshotNode<Element> {
@@ -117,6 +119,13 @@ let stalePointInteractiveRoles: Set<String> = [
 /// every re-created control it met at distance 0, used the same 300 descendants.
 let stalePointAncestorLevels = 300
 let stalePointDescendantBound = 300
+/// When the node's handle is gone and the hit-test at the point answers nothing (or an element whose role cannot be read),
+/// the page may be mid-replacement: the old node destroyed, the new one not yet hit-testable (the hosted A/B, run
+/// 42184616121, chrome/dedicated/recreate/20s: a button replaced every 500 ms refused once as `nodeGone` with no hit). So
+/// the point is hit-tested again up to this many times, this many ms apart, and the re-created search runs on the first
+/// real hit; the node is gone only if none comes within the bound (150 ms at most).
+let stalePointRehits = 3
+let stalePointRehitMs: Double = 50
 /// How far a re-created handle's frame may lie from the recorded one, each edge, in points.
 let stalePointFrameTolerance: CGFloat = 2
 
@@ -141,8 +150,11 @@ enum StalePointReason: String, Equatable {
   case frameMoved
   /// Refused: the hit-test now answers another interactive element.
   case interactiveHit
+  /// Refused: #282's element route (or #283's focus) would act on an element that is neither the node nor an ancestor
+  /// of it (its control), nor inside a node whose children the record does not all hold.
+  case pressedOther
 
-  var refuses: Bool { self == .nodeGone || self == .frameMoved || self == .interactiveHit }
+  var refuses: Bool { self == .nodeGone || self == .frameMoved || self == .interactiveHit || self == .pressedOther }
 }
 
 /// How the recorded node was found now: its own handle, or one re-created in place.
@@ -157,6 +169,8 @@ struct StalePointVerdict<Element> {
   /// The node's element as found now: its own handle or the re-created one; nil when gone.
   var current: Element?
   var hitRole: String?
+  /// The hit the verdict judged: the action's, or a later one's when the first answered nothing (`stalePointRehits`).
+  var hit: Element?
   var refused: Bool { reason.refuses }
 }
 
@@ -276,14 +290,28 @@ func recreatedHandle<Element>(of node: ScreenshotNode<Element>, near hit: Elemen
 /// is chosen at the point moved back by `windowShift` (the window's current origin less its origin at the screenshot),
 /// the point the model meant in the image, while its frame read now is checked against the posted point, and a
 /// re-created handle is matched against the recorded frame moved by the shift. A window that only moved keeps every node.
-func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero, nodes: [ScreenshotNode<Element>], hit: Element?,
+///
+/// With the node's handle gone and no real hit (none, or one whose role cannot be read), `rehit` hit-tests the point again
+/// (`stalePointRehits` times, `sleep` `stalePointRehitMs` before each) until a real hit comes, which the rest judges.
+func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero, nodes: [ScreenshotNode<Element>], hit first: Element?,
+                                rehit: () -> Element? = { nil }, sleep: (Double) -> Void = { _ in },
                                 reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
   let shown = CGPoint(x: point.x - windowShift.dx, y: point.y - windowShift.dy)
-  guard let node = deepestScreenshotNode(at: shown, in: nodes) else { return StalePointVerdict(reason: .unrecorded) }
-  let hitRole = hit.flatMap(reads.role)
-  var verdict = StalePointVerdict(reason: .nodeGone, node: node, hitRole: hitRole)
+  guard let node = deepestScreenshotNode(at: shown, in: nodes) else { return StalePointVerdict(reason: .unrecorded, hit: first) }
+  var hit = first
+  var hitRole = hit.flatMap(reads.role)
+  let nodeFrame = reads.frame(node.element)
+  if nodeFrame == nil, hitRole == nil {
+    for _ in 0..<stalePointRehits {
+      sleep(stalePointRehitMs)
+      guard let again = rehit(), let role = reads.role(again) else { continue }
+      (hit, hitRole) = (again, role)
+      break
+    }
+  }
+  var verdict = StalePointVerdict(reason: .nodeGone, node: node, hitRole: hitRole, hit: hit)
   var currentFrame: CGRect?
-  if let frame = reads.frame(node.element) {
+  if let frame = nodeFrame {
     (verdict.current, verdict.identity, currentFrame) = (node.element, .handle, frame)
   } else if let hit, reads.same(hit, node.element) || isInside(hit, node.element, reads) {
     (verdict.current, verdict.identity) = (node.element, .handle)  // its frame unread, but the point reaches it
@@ -292,7 +320,7 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   }
   guard let current = verdict.current else { return verdict }
   func judged(_ reason: StalePointReason) -> StalePointVerdict<Element> {
-    StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: hitRole)
+    StalePointVerdict(reason: reason, node: node, identity: verdict.identity, current: current, hitRole: hitRole, hit: hit)
   }
   // Judged in order: the node's frame, then the hit (the reasons name what was read, kept or refused).
   if let currentFrame, !holdsPoint(currentFrame, point) { return judged(.frameMoved) }
@@ -304,25 +332,28 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
   return judged(.interactiveHit)
 }
 
-/// The meta's `stalePoint` (#296): what the guard decided, why, how it found the node, the recorded node's role and the
-/// hit's, and its own time. `verdict` "kept" | "refused" | "skipped", the last when the guard would have refused but #282's
-/// element route carried the pointer instead, where the guard does not apply. Value-free: roles and enumeration words.
+/// The meta's `stalePoint` (#296): what the guard decided ("kept" | "refused"), why, how it found the node, the recorded
+/// node's role and the hit's, its time (both checks' when there were two), and `rechecked` when an element route's wait
+/// made it run again before the press (`StalePointGate`), whose verdict this then is. Value-free: roles and enumeration
+/// words.
 struct StalePointRecord: Equatable {
-  enum Verdict: String { case kept, refused, skipped }
-  var verdict: Verdict
+  enum Verdict: String { case kept, refused }
+  let verdict: Verdict
   let reason: StalePointReason
   let identity: StalePointIdentity?
   let recordedRole: String?
   let hitRole: String?
   let ms: Double
+  var rechecked = false
 
-  init<Element>(_ verdict: StalePointVerdict<Element>, ms: Double) {
+  init<Element>(_ verdict: StalePointVerdict<Element>, ms: Double, rechecked: Bool = false) {
     self.verdict = verdict.refused ? .refused : .kept
     reason = verdict.reason
     identity = verdict.identity
     recordedRole = verdict.node?.role
     hitRole = verdict.hitRole
     self.ms = ms
+    self.rechecked = rechecked
   }
 
   var wire: [String: Any] {
@@ -330,7 +361,42 @@ struct StalePointRecord: Equatable {
     if let identity { wire["identity"] = identity.rawValue }
     if let recordedRole { wire["recordedRole"] = recordedRole }
     if let hitRole { wire["hitRole"] = hitRole }
+    if rechecked { wire["rechecked"] = true }
     return wire
+  }
+}
+
+/// What an element route (#282's press, #283's focus) may act on at a kept point (the design session's ruling 1ea561bc
+/// ca82a6f4): the node the screenshot showed there as found now, or an ancestor of it (the control the walk reached
+/// from the hit through plain children), or anything inside a node whose children the record does not all hold (the
+/// `unrecordedDescendant` reading: the screenshot may have shown it), or anything at a point no recorded node holds.
+/// Otherwise the verdict becomes `pressedOther`, refused.
+func stalePointPressVerdict<Element>(_ pressed: Element, _ verdict: StalePointVerdict<Element>,
+                                     reads: StalePointReads<Element>) -> StalePointVerdict<Element> {
+  guard !verdict.refused, let node = verdict.node, let current = verdict.current else { return verdict }
+  if reads.same(pressed, current) || isInside(current, pressed, reads) { return verdict }
+  if !node.subtreeRecorded, isInside(pressed, current, reads) { return verdict }
+  return StalePointVerdict(reason: .pressedOther, node: node, identity: verdict.identity, current: current, hitRole: reads.role(pressed),
+                           hit: pressed)
+}
+
+/// #296's check where a kept point is carried by an element route: the first verdict (the click's), and the guard run
+/// again at the point with a fresh hit-test (`recheck`), which the route asks for when it waited (#282's action re-read,
+/// #283's focus settle and box re-read; up to `webAreaRereadDeadline`) since the page can change meanwhile.
+struct StalePointGate<Element> {
+  let first: StalePointVerdict<Element>
+  let firstMs: Double
+  let recheck: () -> StalePointVerdict<Element>
+
+  /// The verdict on `pressed` just before the route acts on it: the first one, or after a wait the recheck's, each
+  /// judged by `stalePointPressVerdict`; its record (`rechecked` after a wait, the time both checks') and its refusal.
+  func check(_ pressed: Element, waited: Bool, now: () -> Double, reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
+    let started = now()
+    let verdict = stalePointPressVerdict(pressed, waited ? recheck() : first, reads: reads)
+    let outcome = stalePointOutcome(verdict, ms: firstMs + (now() - started), reads: reads)
+    var record = outcome.record
+    record.rechecked = waited
+    return (record, outcome.refusal)
   }
 }
 
@@ -349,7 +415,7 @@ func screenChangedSinceScreenshot(was: String, reason: StalePointReason, now: St
   let change: String
   switch reason {
   case .frameMoved: change = "has moved away from it"
-  case .interactiveHit: change = "is no longer what it reaches"
+  case .interactiveHit, .pressedOther: change = "is no longer what it reaches"
   default: change = "is gone"
   }
   let there = now.map { "; \($0) is there now" } ?? ""
@@ -358,16 +424,17 @@ func screenChangedSinceScreenshot(was: String, reason: StalePointReason, now: St
 }
 
 /// The guard's outcome at a point: its meta record, and the refusal to throw (nil when it kept the pointer). The refusal
-/// names what the point reaches now only when that is not the node itself (Chrome's hit-test may still answer a moved
-/// control's handle at its old point).
-func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, hit: Element?, ms: Double,
+/// names what is there now (the verdict's hit; for `pressedOther` the element the route would act on) only when it is
+/// known (its role read) and is not the node itself (Chrome's hit-test may still answer a moved control's handle at its
+/// old point); otherwise it names nothing there.
+func stalePointOutcome<Element>(_ verdict: StalePointVerdict<Element>, ms: Double,
                                 reads: StalePointReads<Element>) -> (record: StalePointRecord, refusal: EngineError?) {
   let record = StalePointRecord(verdict, ms: ms)
   guard verdict.refused, let node = verdict.node else { return (record, nil) }
   let was = stalePointName(role: node.role, title: node.title, description: node.description)
   var now: String?
-  if let hit, !(verdict.current.map { reads.same(hit, $0) } ?? false) {
-    now = stalePointName(role: verdict.hitRole, title: reads.title(hit), description: reads.description(hit))
+  if let hit = verdict.hit, let role = verdict.hitRole, !(verdict.current.map { reads.same(hit, $0) } ?? false) {
+    now = stalePointName(role: role, title: reads.title(hit), description: reads.description(hit))
   }
   return (record, screenChangedSinceScreenshot(was: was, reason: verdict.reason, now: now))
 }
@@ -380,14 +447,24 @@ extension ConnectionState {
 extension Engine {
   /// The guard at a coordinate pointer's posted point, live (`stalePointVerdict` over the Accessibility API), with `hit` the
   /// hit-test the action already took there and `windowOrigin` the origin of the window the point was placed in, now; its
-  /// time covers the reads it adds.
-  func stalePointGuard(at point: CGPoint, windowOrigin: CGPoint, hit: AXUIElement?, app: ResolvedApp,
-                       context: ExecutionContext) -> (record: StalePointRecord, refusal: EngineError?) {
+  /// time covers the reads it adds. `rehit` hit-tests the point again (the action's own hit-test).
+  func stalePointGuard(at point: CGPoint, windowOrigin: CGPoint, hit: AXUIElement?, rehit: () -> AXUIElement?, app: ResolvedApp,
+                       context: ExecutionContext) -> (record: StalePointRecord, refusal: EngineError?, verdict: StalePointVerdict<AXUIElement>, shift: CGVector) {
     let started = monotonicMilliseconds()
     let reads = StalePointReads<AXUIElement>.live
     let screenshot = context.connection.observedScreenshot(app: app)
     let shift = screenshot.map { CGVector(dx: windowOrigin.x - $0.windowOrigin.x, dy: windowOrigin.y - $0.windowOrigin.y) } ?? .zero
-    let verdict = stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], hit: hit, reads: reads)
-    return stalePointOutcome(verdict, hit: hit, ms: monotonicMilliseconds() - started, reads: reads)
+    let verdict = stalePointVerdict(at: point, windowShift: shift, nodes: screenshot?.nodes ?? [], hit: hit, rehit: rehit,
+                                    sleep: { usleep(UInt32($0 * 1000)) }, reads: reads)
+    let outcome = stalePointOutcome(verdict, ms: monotonicMilliseconds() - started, reads: reads)
+    return (outcome.record, outcome.refusal, verdict, shift)
+  }
+
+  /// `stalePointVerdict` again at a point an element route was given (`StalePointGate.recheck`), its hit taken fresh.
+  func stalePointRecheck(at point: CGPoint, shift: CGVector, window: AXUIElement, appPid: pid_t, app: ResolvedApp,
+                         context: ExecutionContext) -> StalePointVerdict<AXUIElement> {
+    let rehit = { hitTest(window: window, pid: appPid, at: point) }
+    return stalePointVerdict(at: point, windowShift: shift, nodes: context.connection.observedScreenshot(app: app)?.nodes ?? [], hit: rehit(),
+                             rehit: rehit, sleep: { usleep(UInt32($0 * 1000)) }, reads: .live)
   }
 }

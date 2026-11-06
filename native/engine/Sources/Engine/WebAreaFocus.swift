@@ -227,6 +227,9 @@ enum CaretNotPlaced: String, Error, Equatable {
   /// The hit's text could not be mapped to the focused field's offsets: a contenteditable region's hit that is not an
   /// AXStaticText, or one `regionTextStart` does not place.
   case unmapped
+  /// #296: after the focus's waits, the stale-point guard found the screen changed at the point (`beforeCaret`), so
+  /// the caret the point names is not placed.
+  case screenChanged
 }
 
 enum WebAreaFocusOutcome: Equatable {
@@ -239,7 +242,8 @@ enum WebAreaFocusOutcome: Equatable {
 /// reading true, the click answers `focusUnconfirmed`. A secure field stops there. Otherwise the caret's offset
 /// (`offset`, read once the field holds focus; `caretAwaitingBoxes` where it finds no character boxes yet), written
 /// (`writeSelection`) and read back (`selection`, polled for the same settle) as {offset, 0}.
-func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, freshSince: Double? = nil, beforeMutating: () throws -> Void, writeFocused: () -> Void,
+func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, freshSince: Double? = nil, beforeMutating: () throws -> Void,
+                       beforeCaret: () -> CaretNotPlaced? = { nil }, writeFocused: () -> Void,
                        focused: () -> Bool?, offset: () -> Result<Int, CaretNotPlaced>, sameTarget: () -> Bool, valueLength: () -> Int?,
                        writeSelection: (Int) -> Void, selection: () -> (location: Int, length: Int)?,
                        now: () -> Double, sleep: (Double) -> Void) throws -> WebAreaFocusOutcome {
@@ -261,6 +265,7 @@ func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, freshSince: Doubl
   case .failure(let why): return .notPlaced(why)
   case .success(let found): target = found
   }
+  if let why = beforeCaret() { return .notPlaced(why) }
   try beforeMutating()
   writeSelection(target)
   return settles({ selection().map { $0.location == target && $0.length == 0 } == true }) ? .placed(target) : .notPlaced(.selectionMismatch)
@@ -313,6 +318,8 @@ func focusNote(_ app: String, _ outcome: WebAreaFocusOutcome) -> String {
   switch outcome {
   case .placed:
     return "\(app)'s text field was focused through accessibility, with the caret at the point. No mouse event was sent, so the page saw no click."
+  case .notPlaced(.screenChanged):
+    return "\(app)'s text field was focused through accessibility, but the page changed at the point while the caret waited, so the caret was not placed: typing goes to the field's existing selection, or to its start if it had none. Take a new screenshot before typing if the position matters. No mouse event was sent."
   case .notPlaced:
     return "\(app)'s text field was focused through accessibility, but the caret could not be placed at the point: typing goes to the field's existing selection, or to its start if it had none. Use select_text or set_value first if the position matters. No mouse event was sent."
   }

@@ -198,15 +198,20 @@ struct CapturedScreenshot {
 /// display is unplugged or sleeps, or the window moves to another display, that scale can differ and the click would
 /// land at twice or half the offset. The vendor keeps its observation's scaling factor the same way
 /// (R/F-helper-logic.md §5.2).
+///
+/// It keeps the tree the observation walked as the screenshot showed it (`nodes`, #296's stale-point record,
+/// StalePoint.swift): an observation without a screenshot leaves it, as it leaves the screenshot.
 struct ObservedScreenshot {
   let window: AXUIElement
   let scaleX: CGFloat
   let scaleY: CGFloat
+  let nodes: [ScreenshotNode<AXUIElement>]
 
-  init(window: AXUIElement, image: CapturedScreenshot) {
+  init(window: AXUIElement, image: CapturedScreenshot, nodes: [ScreenshotNode<AXUIElement>] = []) {
     self.window = window
     scaleX = CGFloat(image.width) / image.frame.width  // the capture refuses a frame under one point
     scaleY = CGFloat(image.height) / image.frame.height
+    self.nodes = nodes
   }
 
   /// A point in the image's pixels as the window-local point in points.

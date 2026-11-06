@@ -102,6 +102,8 @@ struct InputMeta {
   var coordinateClick: CoordinateClickRecord?
   /// #288's establishment of a page tree not yet seen, before a left click's walk (Routes.swift `establishedPointerView`).
   var pointerEstablish: PointerEstablishRecord?
+  /// #296's stale-point guard at a coordinate pointer's point (StalePoint.swift): kept, refused and why, or skipped.
+  var stalePoint: StalePointRecord?
   /// With detection on, the milliseconds from the app's last attributed user event to the request's receipt (null when
   /// none was attributed while the app was driven); with detection off, the machine-wide HID idle time at receipt.
   var hidIdleMs: Int?
@@ -158,6 +160,7 @@ struct InputMeta {
     if let elementClick { wire["elementClick"] = elementClick.wire }
     if let coordinateClick { wire["coordinateClick"] = coordinateClick.wire }
     if let pointerEstablish { wire["pointerEstablish"] = pointerEstablish.wire }
+    if let stalePoint { wire["stalePoint"] = stalePoint.wire }
     if let afterActionRepairs = context.connection.afterAction.wire { wire["afterActionRepairs"] = afterActionRepairs }
     return wire
   }
@@ -198,6 +201,9 @@ struct PointerTarget {
   let app: String
   var noun = "click"
   var elementRoute: ((inout InputMeta) throws -> Void)? = nil
+  /// #296's refusal of a stale point (StalePoint.swift), thrown before anything is posted on every path that would post
+  /// the pointer's events; nil when the guard kept the point or did not run (an element's own point).
+  var staleRefusal: EngineError? = nil
 
   /// The unit tests' default: a view known to accept first mouse, where a pointer's path is the one before #282.
   static var acceptingFirstMouse: PointerTarget { PointerTarget(view: .acceptsFirstMouse, app: "the app") }
@@ -222,15 +228,22 @@ struct PointerTarget {
 /// arm's inert click goes early, no hold is re-armed, and the events go out with no delivery guard and no after-action
 /// watch: the window may come forward and stays so. Everywhere, events whose own mouse down consumed the arm into a view
 /// not known to accept first mouse answer `clickUnconfirmed` once they are out.
+///
+/// #296: a pointer whose point the stale-point guard refused (`pointer.staleRefusal`) throws that refusal before anything
+/// is posted, activated or withdrawn, unless #282 may element-route it (shared mode, route 3, a left pointer into a
+/// possible web area); there the hold refuses every path that would post (`PointerHold.refusedIfPosted`), and only the
+/// element route or #282's own refusal goes on (meta `stalePoint.verdict` "skipped" when the element route carries it).
 func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation?, activations: HeldActivations = HeldActivations(),
                     postsLeftMouseDown: Bool = true, foreground: ForegroundAssist? = nil, pointer: PointerTarget = .acceptingFirstMouse,
                     beforeActivating: () throws -> Void = {}, beforePosting: () throws -> Void = {}, announce: () -> Void = {},
                     post: (CGEvent, pid_t) -> Void, meta: inout InputMeta, events: () -> [CGEvent]) throws {
   meta.inputRoute = route
+  let shared = meta.context.connection.desktop == .shared
+  let mayBeElementRouted = shared && route == .activation && activation != nil && postsLeftMouseDown && pointer.view.mayBeWebArea
+  if let stale = pointer.staleRefusal, !mayBeElementRouted { throw stale }
   // An earlier action's after-action watch ends before anything of this one happens (its activation included).
   let watches = meta.context.connection.afterAction
   watches.cancel()
-  let shared = meta.context.connection.desktop == .shared
   var release: (() -> Bool)?
   var standing: FakeActivation?
   var reportsArm = false
@@ -244,7 +257,7 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
     activation.holdsThroughDelivery = shared
     let hold = postsLeftMouseDown
       ? PointerHold(defersArmClick: shared, rearmsSpentArm: shared && pointer.view == .acceptsFirstMouse,
-                    refusedWithoutActivationPointClick: shared && pointer.view.mayBeWebArea)
+                    refusedWithoutActivationPointClick: shared && pointer.view.mayBeWebArea, refusedIfPosted: pointer.staleRefusal != nil)
       : nil
     // A failed guard says how long it held; a shared activation runs none and leaves the meta's time in place (a
     // focusing click inside set_value's held activation), unless the action re-arms a hold of its own connection whose
@@ -254,8 +267,11 @@ func deliverPointer(to pid: pid_t, route: InputRoute, activation: FakeActivation
                                         pointer: hold, beforeActivating: beforeActivating, make: { activation }, meta: &meta)
     } catch is PointerRefused {
       guard let elementRoute = pointer.elementRoute else { throw backgroundClickRefused(pointer.app) }
+      if pointer.staleRefusal != nil { meta.stalePoint?.verdict = .skipped }  // #282's route, which the guard does not cover
       try elementRoute(&meta)
       return
+    } catch is PointerPostRefused {
+      throw pointer.staleRefusal ?? backgroundClickRefused(pointer.app)
     }
     standing = activations.activation(of: activation.pid)
     reportsArm = standing === activation
@@ -343,7 +359,9 @@ extension Engine {
   /// posts nothing; any other click on a menu-bar item or the menu bar is refused before anything is posted. A
   /// successful element click clears the app's menu record. A coordinate click is in the pixels of the last screenshot
   /// of the app's primary window on this connection, refused (`noScreenshotForCoordinates`, nothing posted) when there
-  /// is none, and goes by route 3. Route 4 takes route 3's place for an app the owner's override names. The process
+  /// is none, and goes by route 3; it is refused, nothing posted, when what that screenshot showed at the point has gone,
+  /// moved off it, or given way to another interactive element (`screenChangedSinceScreenshot`, #296, StalePoint.swift),
+  /// unless #282 element-routes it. Route 4 takes route 3's place for an app the owner's override names. The process
   /// serving the target receives the input, after the forbidden list has been checked against it.
   func click(_ args: [String: Any], _ context: ExecutionContext) throws -> Any {
     let token = try elementTokenArg(args, lineage: context.lineage)
@@ -426,8 +444,10 @@ extension Engine {
         // What a left click by route 3 points into (#282): in shared mode a Chromium web area's plain click takes the hit's
         // own action when it has one, any other is refused, before anything is posted.
         var pointer = PointerTarget.acceptingFirstMouse
+        var pointerHit = hit
         if route == .activation, button == .left {
-          let (established, pointerHit) = signposted("click.pointerView") {
+          let established: PointerTarget
+          (established, pointerHit) = signposted("click.pointerView") {
             clickPointerTarget(hit: hit, window: placed.window, rehit: { hitTest(window: placed.window, pid: appPid, at: placed.point) },
                                app: app, appPid: appPid, meta: &meta)
           }
@@ -437,6 +457,11 @@ extension Engine {
                                                 appPid: appPid, guarding: guarding, context: context)
           }
         }
+        // #296: what the screenshot showed at the point is checked against what is there now, every button and route; a
+        // refusal is thrown before anything is posted (deliverPointer), except where #282 element-routes the click.
+        let stale = signposted("click.stalePoint") { stalePointGuard(at: placed.point, hit: pointerHit, app: app, context: context) }
+        meta.stalePoint = stale.record
+        pointer.staleRefusal = stale.refusal
         try armingSettle(&meta, acted: { context.connection.markActed(app) }) { meta in
           try recordingRouteAdvice(route, app: app, meta: &meta) { meta in
             try signposted("click.deliver") { try deliverClick(target, route: route, button: button, count: count, activation: activation, activations: heldActivations,

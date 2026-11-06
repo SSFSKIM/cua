@@ -165,6 +165,9 @@ struct PointerHold: Equatable {
   /// one whose click plan is not the activation point's, or a held one that clicked none (shared mode, a Chromium web
   /// area).
   var refusedWithoutActivationPointClick = false
+  /// It is refused (`PointerPostRefused`, nothing posted) on every path where its events would go out, the refusal above
+  /// excepted (#296: the stale-point guard refused its point, and only #282's element route may carry it).
+  var refusedIfPosted = false
 }
 
 /// How an acquire or `refresh` of `HeldActivations` came by the process's activation (the input meta's `activationJoin`;
@@ -286,6 +289,7 @@ final class HeldActivations: @unchecked Sendable {
     activation.realEpoch = { [self] in epoch(pid) }
     activation.defersArmClick = pointer?.defersArmClick ?? false
     activation.refusesPointerWithoutActivationPointClick = pointer?.refusedWithoutActivationPointClick ?? false
+    activation.refusesPointerPosting = pointer?.refusedIfPosted ?? false
     defer {
       meta.activationGuardMs = activation.guardMs ?? meta.activationGuardMs
       meta.activationClick = activation.click ?? meta.activationClick
@@ -335,6 +339,7 @@ final class HeldActivations: @unchecked Sendable {
         let rearming = pointer?.rearmsSpentArm == true && rearms(entry, for: holder)
         meta.activationJoin = rearming ? .rearmed : .shared
         if pointer?.refusedWithoutActivationPointClick == true, entry.activation.activatedWithoutActivationPointClick { throw PointerRefused() }
+        if pointer?.refusedIfPosted == true { throw PointerPostRefused() }  // #296: before any re-arming or join
         if rearming, entry.activation.deactivate() {
           do {
             entry.activation = try run(make, pointer: pointer, meta: &meta)

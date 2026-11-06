@@ -10,6 +10,9 @@ The design session's rulings on task 63 (2026-11-06):
   requested; nothing else was sent`. The live cell: `activate_window`, then a pipelined windowless click, 30 runs at
   twice the load, 0 reaching the old top window, in both modes. The service's settle after `activate_window` (10 ms,
   T8) is unchanged; T8's next wave re-measures it on top of this wait.
+- Follow-up (`followup/`, 5138f698): the activation now waits only for windows of the normal layer (ABOVE, docks,
+  notifications and other clients' override-redirect windows neither hold nor fail it), and its error reads `the
+  activation of window <id> was requested, but a normal window still covered it after 1000 ms; nothing else was sent`.
 - The residual few milliseconds between the last stacking read and the press is a stated limit (#307): in the
   sittings below and task 63's, no press after a passing read reached another window, in about 2,200 foreground and
   activate-then-click presses on the fixed engines (task 63's ~1,000 foreground runs, and this wave's).

@@ -6,7 +6,7 @@ import { test } from 'node:test';
 
 import { parseArgs } from '../../scripts/linux-engine-diff/cli.mjs';
 import {
-  CELLS, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, STEPS, cellName, cellsFor, chosenPlan, heldStep, hopeless, landed, laneSettles, methodConstants, runPasses, settleVerdict,
+  CELLS, CONSECUTIVE, FAMILY_SCENES, KIND_METHOD, MAX_RUNS, SCENES, STEPS, cellName, cellsFor, chosenPlan, heldStep, hopeless, landed, laneSettles, lostInput, methodConstants, runPasses, settleVerdict,
 } from '../../scripts/linux-engine-diff/action-settle-cells.mjs';
 import { SETTLE_MS } from '../../src/services/engine/linux/settle.mjs';
 
@@ -204,10 +204,25 @@ test('each method\'s constant is the largest held step across its cells and sitt
     { cell: 'chrome-input scroll background', method: 'scroll', load: 2, held: null },
   ];
   const constants = methodConstants(rows);
-  assert.deepEqual(constants.press_key, { ms: 25, by: ['electron-input press_key background at 2x'], unheld: [] });
-  assert.deepEqual(constants.click, { ms: 0, by: ['gedit click background at 2x'], unheld: [] });
-  assert.deepEqual(constants.scroll, { ms: SETTLE_MS.scroll, by: [], unheld: ['chrome-input scroll background at 2x'] });
-  assert.deepEqual(constants.launch_app, { ms: SETTLE_MS.launch_app, by: [], unheld: [], unmeasured: true });
+  assert.deepEqual(constants.press_key, { ms: 25, by: ['electron-input press_key background at 2x'], unheld: [], lost: [] });
+  assert.deepEqual(constants.click, { ms: 0, by: ['gedit click background at 2x'], unheld: [], lost: [] });
+  assert.deepEqual(constants.scroll, { ms: SETTLE_MS.scroll, by: [], unheld: ['chrome-input scroll background at 2x'], lost: [] });
+  assert.deepEqual(constants.launch_app, { ms: SETTLE_MS.launch_app, by: [], unheld: [], lost: [], unmeasured: true });
+});
+
+test('a cell whose input never came at any step is set aside, listed; one with any late effect is not', () => {
+  const s = (lane, late, never, reached = false) => ({ lane, late, never, reached });
+  const steps = (late, never) => STEPS.map((ms) => s(`settle-${ms}`, late, never));
+  assert.equal(lostInput(steps(0, 9)), true);
+  assert.equal(lostInput([...steps(0, 9).slice(0, 5), s('settle-100', 1, 8)]), false, 'one late effect: a settle bears on it');
+  assert.equal(lostInput([s('settle-0', 0, 9), s('settle-10', 0, 0, true)]), false, 'it held');
+  assert.equal(lostInput([]), false);
+  const constants = methodConstants([
+    { cell: 'electron-input drag background', method: 'drag', load: 0, held: 10 },
+    { cell: 'gtk4-input drag dedicated', method: 'drag', load: 2, held: null, lost: true },
+  ]);
+  assert.deepEqual(constants.drag, { ms: 10, by: ['electron-input drag background at idle'], unheld: [], lost: ['gtk4-input drag dedicated at 2x'] });
+  assert.equal(methodConstants([{ cell: 'x', method: 'drag', load: 2, held: null, lost: true }]).drag.ms, SETTLE_MS.drag, 'with no cell held, the shipped value');
 });
 
 test('the verdict: a search sitting needs a held step in every cell, a lanes sitting every judged series reached; a missing cell fails', () => {

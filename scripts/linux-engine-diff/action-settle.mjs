@@ -245,6 +245,9 @@ async function clearScreen(ctx, sc) {
 async function prepareRun(ctx, cell, sc, svc, trial) {
   const run = { trial };
   const effects = sc.effects;
+  // the desktop route aims at the screen: the window's place read again, since the window manager may have moved it
+  // since the scene opened (the points are the window's own)
+  if (cell.route === 'desktop') sc.origin = (await ctx.desktop.state(sc)).window;
   const line = sc.lines?.[trial % 2];
   if (['press_key', 'key_down', 'key_up'].includes(cell.kind)) {
     run.key = 'x';

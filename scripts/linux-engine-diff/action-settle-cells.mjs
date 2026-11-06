@@ -286,27 +286,40 @@ export function heldStep(series) {
 }
 
 /**
- * The service's constants from the search sittings' cells (`{cell, method, load, held}`, `held` the cell's held step in
- * that sitting or null): each method's the largest held step across its cells and sittings, naming the cells that set
- * it; any cell that held at no step keeps the method at its shipped value (`unheld`), and a method no cell measured
- * keeps it too (`unmeasured`).
+ * Whether a cell's series lost its input rather than met it late: it held at no step, and every miss of every series
+ * was one whose effect never came, within 2 s of its reading (`never`), with none that came late. A settle only delays
+ * the reading after an input, so it cannot bring an effect that never comes: such a cell fails at every step alike, the
+ * shipped value included, and says nothing about how long the reading must wait.
+ */
+export function lostInput(series) {
+  return heldStep(series) === null && series.length > 0 && series.every((s) => s.late === 0 && s.never > 0);
+}
+
+/**
+ * The service's constants from the search sittings' cells (`{cell, method, load, held, lost}`, `held` the cell's held
+ * step in that sitting or null, `lost` from `lostInput`): each method's the largest held step across its cells and
+ * sittings, naming the cells that set it. A cell that held at no step keeps the method at its shipped value (`unheld`),
+ * unless it lost its input at every step (`lost`, listed apart and set aside: no settle bears on it); a method no cell
+ * measured keeps it too (`unmeasured`).
  */
 export function methodConstants(rows) {
   const out = {};
   for (const method of Object.keys(SETTLE_MS)) {
     const mine = rows.filter((r) => r.method === method);
     const label = (r) => `${r.cell} at ${r.load ? `${r.load}x` : 'idle'}`;
-    const unheld = mine.filter((r) => r.held === null).map(label);
+    const lost = mine.filter((r) => r.held === null && r.lost).map(label);
+    const unheld = mine.filter((r) => r.held === null && !r.lost).map(label);
+    const held = mine.filter((r) => r.held !== null);
     if (!mine.length) {
-      out[method] = { ms: SETTLE_MS[method], by: [], unheld: [], unmeasured: true };
+      out[method] = { ms: SETTLE_MS[method], by: [], unheld: [], lost: [], unmeasured: true };
       continue;
     }
-    if (unheld.length) {
-      out[method] = { ms: SETTLE_MS[method], by: [], unheld };
+    if (unheld.length || !held.length) {
+      out[method] = { ms: SETTLE_MS[method], by: [], unheld, lost };
       continue;
     }
-    const ms = Math.max(...mine.map((r) => r.held));
-    out[method] = { ms, by: mine.filter((r) => r.held === ms).map(label), unheld: [] };
+    const ms = Math.max(...held.map((r) => r.held));
+    out[method] = { ms, by: held.filter((r) => r.held === ms).map(label), unheld: [], lost };
   }
   return out;
 }

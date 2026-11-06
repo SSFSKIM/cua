@@ -162,6 +162,37 @@ export function verdicts(probeRecord, points) {
   return {all, clickable: click, underStripParent: strip};
 }
 
+/// `verdicts`' reading point by point (#305 picks its clicks from it): the reason, whether the point is clickable, the
+/// recorded node chosen (role, frame, depth) and the hit's role and frame.
+export function pointVerdicts(probeRecord, points) {
+  const r = f => f && {x: f.x, y: f.y, w: f.width, h: f.height};
+  const nodes = probeRecord.map(([role, depth, complete, frame, shown]) => ({role, depth, complete, frame: r(frame), shownRect: r(shown), parent: null}));
+  const stack = [];
+  nodes.forEach((n, i) => {
+    while (stack.length && nodes[stack[stack.length - 1]].depth >= n.depth) stack.pop();
+    if (stack.length) n.parent = stack[stack.length - 1];
+    stack.push(i);
+  });
+  const framed = nodes.filter(n => n.shownRect);
+  return points.map(p => {
+    const chain = p.chain ?? null;
+    let best = null;
+    for (const n of framed) if (holds(n.shownRect, p) && (!best || n.depth >= best.depth)) best = n;
+    let v;
+    if (!best) v = 'unrecorded';
+    else if (!best.complete && (!chain || chain.some(x => x[0] === best.role && near(best.frame, x)))) v = 'unrecordedDescendant';
+    else if (!chain) v = 'noHit';
+    else if (chain[0][0] === best.role && near(best.frame, chain[0])) v = 'sameElement';
+    else if (!INTERACTIVE.has(chain[0][0])) v = 'nonInteractiveHit';
+    else {
+      v = 'interactiveHit';
+      for (let a = best.parent; a !== null; a = nodes[a].parent) if (nodes[a].frame && nodes[a].role === chain[0][0] && near(nodes[a].frame, chain[0])) { v = 'hitAboveNode'; break; }
+    }
+    return {x: p.x, y: p.y, v, clickable: clickable(chain), node: best && {role: best.role, depth: best.depth, frame: best.frame},
+      hit: chain && {role: chain[0][0], frame: {x: chain[0][1], y: chain[0][2], w: chain[0][3], h: chain[0][4]}}};
+  });
+}
+
 /// The same reading over the engine's own record (`probeRecord`, the probe build's instrumentation of
 /// `lineage.screenshot.nodes`: [role, depth, subtreeRecorded, frame, shown] per node in the record's order), so nodes the
 /// record holds beyond the printed tree (#301's record-only rows) count.

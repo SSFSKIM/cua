@@ -336,6 +336,88 @@ func handles(_ req: [String: Any]) -> [String: Any] {
   return ["tables": out]
 }
 
+/// An element's description for #305's mechanism probe: role, subrole, frame, label, DOM id and classes, AXIdentifier.
+func describeFully(_ e: AXUIElement) -> [String: Any] {
+  let v = multi(e, [kAXRoleAttribute, kAXSubroleAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXTitleAttribute, kAXDescriptionAttribute,
+                    "AXDOMIdentifier", "AXDOMClassList", kAXIdentifierAttribute])
+  var d: [String: Any] = ["role": (v[0] as? String) ?? NSNull(), "subrole": (v[1] as? String) ?? NSNull(), "frame": wire(rect(v[2], v[3]))]
+  if let t = v[4] as? String, !t.isEmpty { d["title"] = String(t.prefix(40)) }
+  if let t = v[5] as? String, !t.isEmpty { d["description"] = String(t.prefix(40)) }
+  if let t = v[6] as? String, !t.isEmpty { d["domId"] = t }
+  if let c = v[7] as? [String], !c.isEmpty { d["classes"] = Array(c.prefix(4)) }
+  if let t = v[8] as? String, !t.isEmpty { d["identifier"] = t }
+  return d
+}
+func parentsOf(_ e: AXUIElement, limit: Int = 300) -> [AXUIElement] {
+  var out: [AXUIElement] = [], current = e
+  for _ in 0..<limit {
+    guard let p = asElement(multi(current, [kAXParentAttribute])[0]) else { break }
+    out.append(p)
+    if ["AXWindow", "AXApplication"].contains((multi(p, [kAXRoleAttribute])[0] as? String) ?? "") { break }
+    current = p
+  }
+  return out
+}
+
+/// `{"op":"chains","pid","points":[[x,y],...]}`: each point's hit and its chain (role and frame up to the window).
+func chains(_ req: [String: Any]) -> [String: Any] {
+  guard let pid = (req["pid"] as? NSNumber)?.int32Value, let points = req["points"] as? [[Double]] else { return ["error": "bad chains args"] }
+  let app = prepare(AXUIElementCreateApplication(pid))
+  return ["points": points.map { p -> Any in
+    var hit: AXUIElement?
+    guard AXUIElementCopyElementAtPosition(app, Float(p[0]), Float(p[1]), &hit) == .success, let first = hit.map(prepare) else { return ["x": p[0], "y": p[1]] }
+    let chain = ([first] + parentsOf(first)).map { e -> [Any] in
+      let v = multi(e, [kAXRoleAttribute, kAXPositionAttribute, kAXSizeAttribute]); let f = rect(v[1], v[2])
+      return [(v[0] as? String) ?? "", f.map { r1($0.origin.x) } ?? NSNull(), f.map { r1($0.origin.y) } ?? NSNull(), f.map { r1($0.width) } ?? NSNull(), f.map { r1($0.height) } ?? NSNull()]
+    }
+    return ["x": p[0], "y": p[1], "chain": chain]
+  }]
+}
+
+/// `{"op":"mech","pid","window","x","y","role","frame"}` (#305): why the live guard's ancestry test fails at a point. The
+/// hit and its AXParent chain, described; the elements of the recorded node's role whose frame lies within 1 pt of the
+/// recorded frame (found breadth-first through AXChildren); and for each, whether the hit is inside it or it inside the hit
+/// by AXParent (CFEqual, as StalePoint.swift's isInside), whether the hit is among its first 2,000 descendants through
+/// AXChildren, and where the two chains first meet.
+func mech(_ req: [String: Any]) -> [String: Any] {
+  guard let pid = (req["pid"] as? NSNumber)?.int32Value, let window = rectArg(req["window"]), let x = req["x"] as? Double, let y = req["y"] as? Double,
+        let role = req["role"] as? String, let target = rectArg(req["frame"]) else { return ["error": "bad mech args"] }
+  let app = prepare(AXUIElementCreateApplication(pid))
+  var hitRef: AXUIElement?
+  guard AXUIElementCopyElementAtPosition(app, Float(x), Float(y), &hitRef) == .success, let hit = hitRef.map(prepare) else { return ["error": "no hit"] }
+  let hitParents = parentsOf(hit)
+  var out: [String: Any] = ["hit": describeFully(hit), "hitParents": hitParents.prefix(12).map(describeFully), "hitDepthToWindow": hitParents.count]
+  guard let root = findWindow(pid: pid, frame: window) else { out["error"] = "no window"; return out }
+  var queue = [root], head = 0
+  var found: [AXUIElement] = []
+  let deadline = nowMs() + 15_000
+  while head < queue.count, head < 60_000, found.count < 4, nowMs() < deadline {
+    let e = queue[head]; head += 1
+    let v = multi(e, [kAXRoleAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXChildrenAttribute])
+    if (v[0] as? String) == role, let f = rect(v[1], v[2]), diff(f, target) <= 1 { found.append(e) }
+    queue.append(contentsOf: asElements(v[3]))
+  }
+  out["scanned"] = head
+  out["candidates"] = found.map { c -> Any in
+    let cParents = parentsOf(c)
+    let hitInside = hitParents.contains { CFEqual($0, c) }
+    let candidateInsideHit = cParents.contains { CFEqual($0, hit) }
+    var meet: Any = NSNull()
+    outer: for (i, a) in ([hit] + hitParents).enumerated() {
+      for (j, b) in ([c] + cParents).enumerated() where CFEqual(a, b) { meet = ["hitLevel": i, "candidateLevel": j, "at": describeFully(a)]; break outer }
+    }
+    var descendants = asElements(multi(c, [kAXChildrenAttribute])[0]), k = 0, reachable = false
+    while k < descendants.count, descendants.count < 2_000 {
+      if CFEqual(descendants[k], hit) { reachable = true; break }
+      descendants.append(contentsOf: asElements(multi(descendants[k], [kAXChildrenAttribute])[0])); k += 1
+    }
+    if !reachable { reachable = descendants.contains { CFEqual($0, hit) } }
+    return ["candidate": describeFully(c), "candidateParents": cParents.prefix(6).map(describeFully), "hitInsideByAXParent": hitInside,
+            "candidateInsideHitByAXParent": candidateInsideHit, "hitAmongDescendantsByAXChildren": reachable, "meet": meet]
+  }
+  return out
+}
+
 let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
 while let line = readLine() {
   guard let data = line.data(using: .utf8), let req = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -352,6 +434,8 @@ while let line = readLine() {
   case "descend": emit(descend(req))
   case "wide": emit(wide(req))
   case "handles": emit(handles(req))
+  case "chains": emit(chains(req))
+  case "mech": emit(mech(req))
   default: emit(["error": "unknown op"])
   }
 }

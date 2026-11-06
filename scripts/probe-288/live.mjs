@@ -175,7 +175,7 @@ async function stop(chrome) {
 }
 const watch = (pid, P, pollMs, sampleMs = 20) => ax(['watch', String(pid), JSON.stringify({pollMs, sampleMs, cb: P.cb, tf: P.tf})], pollMs + 30_000);
 const geom = (pid, label) => ax(['geom', String(pid), JSON.stringify({phases: [{label, before: [], waitMs: 0}]})]);
-const geomLine = g => { const p = g?.phases?.[0]; return p ? ['move', 'resize', 'moveBack', 'resizeBack'].map(k => p[k] ? `${p[k].distinctFrames}f/${p[k].settledMs}ms` : '-').join(' ') : JSON.stringify(g).slice(0, 200); };
+const geomLine = g => { const p = g?.phases?.[0]; return p ? ['move', 'resize', 'moveBack', 'resizeBack'].map(k => p[k] ? `${p[k].distinctFrames}f/${p[k].settledMs}ms` : '-').join(' ') : String(JSON.stringify(g) ?? '-').slice(0, 200); };
 // When a watch's samples first showed a state, relative to `from` (epoch ms).
 const firstAt = (w, pred, from) => { const c = w?.changes?.find(pred); return c && w.t0 ? Math.round(w.t0 + c.t - from) : null; };
 

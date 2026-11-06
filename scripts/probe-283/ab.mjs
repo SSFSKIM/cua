@@ -11,7 +11,8 @@
 // Cells, each on a fresh Chrome, engine and connection: main and the branch, each clicking about 0.1 s after the first
 // observation (fresh: boxes empty) and 3 s after it, on input, textarea, ce, mce at t1 (2nd text node) and t2 (3rd,
 // after the <br>), the password field, and an input whose selection the page set on load (prior); and the branch alone,
-// 3 s after, on a point past a textarea line's end and on a point in the input's left padding.
+// 3 s after, on a point past a textarea line's end and on a point in the input's left padding; and the branch's fresh
+// click past that line's end.
 //
 //   node scripts/probe-283/ab.mjs --main <cua-engine> --branch <cua-engine> --ax <ax> --out <dir> [--cells <prefix,…>]
 //
@@ -221,6 +222,8 @@ const CELLS = [];
 for (const engine of ['main', 'branch']) for (const timing of ['fresh', 'late']) for (const target of TARGETS)
   CELLS.push({label: `${engine}/${timing}/${target}`, engine, timing, target});
 for (const target of ['past-end', 'padding']) CELLS.push({label: `branch/late/${target}`, engine: 'branch', timing: 'late', target});
+// A fresh click past a line's end: placed once the boxes are there, without waiting out the 2 s.
+CELLS.push({label: 'branch/fresh/past-end', engine: 'branch', timing: 'fresh', target: 'past-end'});
 // --repeat N: each selected cell N times (labels suffixed #1…#N), to count a race.
 const REPEAT = Math.max(1, Number(arg('repeat') || 1));
 const RUN = CELLS.filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)))

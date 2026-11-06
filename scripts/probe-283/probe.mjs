@@ -310,7 +310,7 @@ for (const phase of ['pre', 'post']) for (const kind of KINDS) for (const route 
 for (const kind of KINDS) CELLS.push({label: `place/${kind}/focus@editable`, kind, phase: 'post', route: 'focus', target: 'editable', place: true});
 // Round 2 (?page=multi): the multi-node contenteditable at t1 (the 2nd text node, in <b>) and t2 (the 3rd, after the
 // <br>), each route of `ax mce`; and the long textarea (`ax longta`).
-for (const phase of ['pre', 'post']) for (const t of ['t1', 't2']) for (const route of ['a', 'b-children', 'b-marker', 'c', 'd'])
+for (const phase of ['pre', 'post']) for (const t of ['t1', 't2']) for (const route of ['a', 'b-children', 'b-value', 'b-marker', 'c', 'd'])
   CELLS.push({label: `multi-${phase}/${t}/${route}`, multi: 'mce', phase, t, route});
 for (const phase of ['pre', 'post']) CELLS.push({label: `long-${phase}/lta`, multi: 'lta', phase});
 const RUN = CELLS.filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)));
@@ -341,7 +341,7 @@ async function multiCell(spec) {
     if (spec.phase === 'post') { const wait = observedAt + 3000 - Date.now(); if (wait > 0) await sleep(wait); }
     row.frontBefore = frontmost();
     const before = latest();
-    const args = spec.multi === 'mce' ? ['mce', String(chrome.pid), String(P.x), String(P.y), JSON.stringify({route: spec.route, settleMs: 150})]
+    const args = spec.multi === 'mce' ? ['mce', String(chrome.pid), String(P.x), String(P.y), JSON.stringify({route: spec.route, settleMs: 150, knownLocal: target.off})]
                                       : ['longta', String(chrome.pid), String(P.x), String(P.y), String(target.expect)];
     const act = await ax(args);
     row.act = act;
@@ -389,9 +389,9 @@ function multiSummary(row) {
   if (row.exception || row.problem) return `PROBLEM ${JSON.stringify(row.problem ?? '')} ${row.exception ?? ''}`;
   const a = row.act ?? {};
   const typed = row.type?.error ? `error ${row.type.error.errorName ?? row.type.error.code}` : `ok`;
-  if (row.multi === 'lta') return `+${row.actStartAfterObservationMs}ms hit=${a.hit?.role} visible=${JSON.stringify(a.visible)} edges=${JSON.stringify(a.visibleEdges && [a.visibleEdges.first?.rect, a.visibleEdges.last?.rect])} bounded=${JSON.stringify(a.boundedScan)} full=${JSON.stringify(a.fullScan)} exhaustive=${JSON.stringify(a.exhaustiveScan)} write=${JSON.stringify(a.write)} page=${JSON.stringify(row.page)} type ${typed} ${JSON.stringify(row.typed)} front ${row.frontAfterWrite}/${row.frontAfterType}`;
-  return [`+${row.actStartAfterObservationMs}ms chain=${(a.chain ?? []).map(l => `${l.role}${l.dom ? '#' + l.dom : ''}`).join('>')} hitActions=${JSON.stringify(a.chain?.[0]?.actions)} focus=${JSON.stringify(a.focusWrite?.error)} active@${row.focus?.activeChangeMs} local=${JSON.stringify(a.local)}`,
-    `starts children=${a.starts?.children?.start} marker=${JSON.stringify(a.starts?.marker && {start: a.starts.marker.start, hit: a.starts.marker.hitIndexInWebArea, ed: a.starts.marker.editableIndexInWebArea, ofEditable: a.starts.marker.askedOfEditable})} rangeLength=${JSON.stringify(a.starts?.rangeLength)} childIndex=${JSON.stringify(a.starts?.indexForChildUIElement)} leaves=${JSON.stringify(a.starts?.children?.leaves?.map(l => [l.role, l.value, l.isHit]))}`,
+  if (row.multi === 'lta') return `+${row.actStartAfterObservationMs}ms hit=${a.hit?.role} visible=${JSON.stringify(a.visible)} edges=${JSON.stringify(a.visibleEdges && [a.visibleEdges.first?.rect, a.visibleEdges.last?.rect])} bounded=${JSON.stringify(a.boundedScan)} full=${JSON.stringify(a.fullScan)} binary=${JSON.stringify(a.binarySearch)} exhaustive=${JSON.stringify(a.exhaustiveScan)} write=${JSON.stringify(a.write)} page=${JSON.stringify(row.page)} type ${typed} ${JSON.stringify(row.typed)} front ${row.frontAfterWrite}/${row.frontAfterType}`;
+  return [`+${row.actStartAfterObservationMs}ms chain=${(a.chain ?? []).map(l => `${l.role}${l.dom ? '#' + l.dom : ''}`).join('>')} hitActions=${JSON.stringify(a.chain?.[0]?.actions)} focus=${JSON.stringify(a.focusWrite?.error)} active@${row.focus?.activeChangeMs} local=${JSON.stringify(a.local)} source=${a.localSource}`,
+    `starts children=${a.starts?.children?.start} value=${a.starts?.value?.start} attr=${JSON.stringify(a.starts?.attributeStartIndex)} marker=${JSON.stringify(a.starts?.marker && {start: a.starts.marker.start, hit: a.starts.marker.hitIndexInWebArea, ed: a.starts.marker.editableIndexInWebArea, ofEditable: a.starts.marker.askedOfEditable})} rangeLength=${JSON.stringify(a.starts?.rangeLength)} childIndex=${JSON.stringify(a.starts?.indexForChildUIElement)} leaves=${JSON.stringify(a.starts?.children?.leaves?.map(l => [l.role, l.value, l.isHit]))}`,
     `write=${JSON.stringify(a.write)} after=${JSON.stringify(a.after)}`,
     `expected=${JSON.stringify(row.expected)} page=${JSON.stringify(row.page)} typed=${JSON.stringify(row.typed?.at)} ${row.typed?.matches ? 'TYPED-OK' : 'typed-off'} type ${typed} front ${row.frontAfterWrite}/${row.frontAfterType} ptr=${JSON.stringify(row.pageDeltaWrite)}`].join('\n    ');
 }

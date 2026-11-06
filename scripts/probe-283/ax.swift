@@ -209,7 +209,10 @@ if args.count == 6, args[1] == "mce", let pid = pid_t(args[2]), let p = pointArg
   let n = textLength(hit)
   let s = scan(hit, p, from: 0, to: n)
   out["local"] = ["characters": n, "found": orNull(s.found), "calls": s.calls, "ms": s.ms]
-  let local = s.found ?? 0
+  // Before complete mode the boxes are empty and the scan finds nothing: the page's offset then stands in, so the
+  // writes are still measured.
+  let local = s.found ?? (spec["knownLocal"] as? NSNumber)?.intValue ?? 0
+  out["localSource"] = s.found != nil ? "scan" : (spec["knownLocal"] != nil ? "page" : "zero")
 
   // The hit's start in the editable's offset space.
   var starts: [String: Any] = [:]
@@ -231,8 +234,28 @@ if args.count == 6, args[1] == "mce", let pid = pid_t(args[2]), let p = pointArg
   }
   for k in (attr(editable, kAXChildrenAttribute) as? [AXUIElement]) ?? [] { walk(k, 0) }
   starts["children"] = ["start": orNull(startChildren), "leaves": leaves, "leafTotal": acc]
+  // 1b. Each leaf found in the editable's AXValue in order (the value spells a <br> as a line break no leaf holds).
+  let edValue = (str(editable, kAXValueAttribute) ?? "") as NSString
+  var startValue: Int?, cursor = 0
+  for leaf in leaves {
+    let v = leaf["value"] as? String ?? ""
+    if v.isEmpty { continue }
+    let r = edValue.range(of: v, options: [], range: NSRange(location: cursor, length: edValue.length - cursor))
+    if r.location == NSNotFound { break }
+    if leaf["isHit"] as? Bool == true { startValue = r.location; break }
+    cursor = r.location + r.length
+  }
+  starts["value"] = ["start": orNull(startValue)]
+  // The AXStartTextMarker attributes, indexed in the web area (round 2's first run: both read as the document's start).
+  func idx(_ m: CFTypeRef?) -> Any { guard let m else { return NSNull() }; let (a, e) = param(webArea, "AXIndexForTextMarker", m); return a != nil ? describe(a) : "error \(e)" }
+  starts["attributeStartIndex"] = ["hit": idx(attr(hit, "AXStartTextMarker")), "editable": idx(attr(editable, "AXStartTextMarker"))]
+  // The start markers used below: AXTextMarkerRangeCopyStartMarker of AXTextMarkerRangeForUIElement, asked of the web area.
+  func rangeStart(_ of: AXUIElement) -> CFTypeRef? {
+    guard let r = param(webArea, "AXTextMarkerRangeForUIElement", of).0, CFGetTypeID(r) == AXTextMarkerRangeGetTypeID() else { return nil }
+    return AXTextMarkerRangeCopyStartMarker(r as! AXTextMarkerRange)
+  }
   // 2. AXIndexForTextMarker of the start markers, asked of the web area (and of the editable, to see it refused).
-  let mHit = attr(hit, "AXStartTextMarker"), mEditable = attr(editable, "AXStartTextMarker")
+  let mHit = rangeStart(hit), mEditable = rangeStart(editable)
   var idxHit: Int?, idxEditable: Int?
   if let mHit, let mEditable {
     let (a1, e1) = param(webArea, "AXIndexForTextMarker", mHit), (a2, e2) = param(webArea, "AXIndexForTextMarker", mEditable)
@@ -280,8 +303,8 @@ if args.count == 6, args[1] == "mce", let pid = pid_t(args[2]), let p = pointArg
   case "a":
     w["atMs"] = nowMs(); w["loc"] = local
     w["error"] = AXUIElementSetAttributeValue(hit, "AXSelectedTextRange" as CFString, rangeValue(local, 0)).rawValue
-  case "b-children", "b-marker":
-    let start = route == "b-children" ? startChildren : (idxHit != nil && idxEditable != nil ? idxHit! - idxEditable! : nil)
+  case "b-children", "b-marker", "b-value":
+    let start = route == "b-children" ? startChildren : route == "b-value" ? startValue : (idxHit != nil && idxEditable != nil ? idxHit! - idxEditable! : nil)
     if let start {
       w["atMs"] = nowMs(); w["loc"] = start + local
       w["error"] = AXUIElementSetAttributeValue(editable, "AXSelectedTextRange" as CFString, rangeValue(start + local, 0)).rawValue
@@ -305,15 +328,18 @@ if args.count == 6, args[1] == "mce", let pid = pid_t(args[2]), let p = pointArg
       writeMarker(m)
     } else { w["problem"] = "no AXStartTextMarker on the hit" }
   case "d":
-    let start = startChildren ?? (idxHit != nil && idxEditable != nil ? idxHit! - idxEditable! : nil)
+    let start = startValue ?? startChildren
     if let start {
       let target = start + local
       w["editableOffset"] = target
-      var (m, e) = param(editable, "AXTextMarkerForIndex", NSNumber(value: target))
-      w["askedOfEditable"] = m != nil ? "ok" : "error \(e)"
-      if m == nil, let idxEditable {
-        (m, e) = param(webArea, "AXTextMarkerForIndex", NSNumber(value: idxEditable + target))
-        w["askedOfWebArea"] = m != nil ? "ok index \(idxEditable + target)" : "error \(e)"
+      // Round 2's first run: the editable answers AXTextMarkerForIndex in the web area's index space, so the web area is
+      // asked at the editable's own start index plus the offset; the editable's answer at the bare offset is recorded.
+      let (me, ee) = param(editable, "AXTextMarkerForIndex", NSNumber(value: target))
+      w["askedOfEditable"] = me != nil ? ["index": idx(me)] : "error \(ee)"
+      var m: CFTypeRef?
+      if let idxEditable {
+        let (mw, ew) = param(webArea, "AXTextMarkerForIndex", NSNumber(value: idxEditable + target))
+        m = mw; w["askedOfWebArea"] = mw != nil ? "ok index \(idxEditable + target)" : "error \(ew)"
       }
       if let m { w["markerIndexBack"] = describe(param(webArea, "AXIndexForTextMarker", m).0); writeMarker(m) }
     } else { w["problem"] = "no start" }
@@ -354,6 +380,18 @@ if args.count == 6, args[1] == "longta", let pid = pid_t(args[2]), let p = point
   }
   let f = scan(field, p, from: 0, to: n)
   out["fullScan"] = ["found": orNull(f.found), "calls": f.calls, "ms": f.ms]
+  // A binary search over offsets in reading order (rows top to bottom, then left to right): the first character whose
+  // box is past the point or holds it, then that character's box checked.
+  do {
+    let t0 = nowMs()
+    var calls = 0, lo = 0, hi = n
+    func box(_ i: Int) -> CGRect? { calls += 1; return rect(param(field, "AXBoundsForRange", rangeValue(i, 1)).0).flatMap { $0.height > 0 ? $0 : nil } }
+    func past(_ i: Int) -> Bool { guard let r = box(i) else { return false }; return r.minY > p.y || (r.maxY > p.y && r.maxX > p.x) }
+    while lo < hi { let mid = (lo + hi) / 2; if past(mid) { hi = mid } else { lo = mid + 1 } }
+    var found: Int?
+    if lo < n, let r = box(lo), p.x >= r.minX, p.x < r.maxX, p.y >= r.minY, p.y <= r.maxY { found = p.x < r.midX ? lo : lo + 1 }
+    out["binarySearch"] = ["found": orNull(found), "firstPast": lo, "calls": calls, "ms": nowMs() - t0]
+  }
   // The whole field's boxes once, to see what an unbounded scan costs when nothing matches.
   let all = scan(field, CGPoint(x: -10_000, y: -10_000), from: 0, to: n)
   out["exhaustiveScan"] = ["calls": all.calls, "ms": all.ms]

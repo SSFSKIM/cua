@@ -550,6 +550,24 @@ test('a coordinate click\'s placement rides as cua/coordinateClick on its result
   assert.equal(meta['cua/coordinateClick'], null, 'reset by the next call');
 });
 
+test('#288: a click\'s establishment of a page tree not yet seen rides as cua/pointerEstablish, on a refusal too', async t => {
+  const record = {ms: 312.5, webAreaFound: true, rehits: 9};
+  const refusal = "Google Chrome for Testing's web page does not accept a background click; bring Google Chrome for Testing forward or use a dedicated desktop";
+  let refuse = false;
+  const {getApp, call, meta} = await session(t, {handlers: {'execute:click': () => {
+    if (refuse) throw new EngineFailure(-10005, refusal, 'backgroundClickRefused', {meta: {...INPUT_META, pointerEstablish: record}});
+    return {meta: {...INPUT_META, pointerEstablish: record}};
+  }}});
+  const {app} = await getApp('TextEdit');
+  await call(() => app.click([120, 168]));
+  assert.deepEqual(meta['cua/pointerEstablish'], record);
+  await call(() => app.getAXState({emit: false}));
+  assert.equal(meta['cua/pointerEstablish'], null, 'reset by the next call');
+  refuse = true;
+  await assert.rejects(call(() => app.click([120, 168])));
+  assert.deepEqual(meta['cua/pointerEstablish'], record);
+});
+
 test('a control build\'s variant rides in cua/nativeEngine, on its results and its input errors alike', async t => {
   const {getApp, call, meta} = await session(t, {identity: {engineVersion: '0.1.0', build: 'b1', variant: 'control-no-inert-click'},
     handlers: {'execute:press_key': () => { throw new EngineFailure(-10005, 'activationFailed', 'activationFailed', {meta: INPUT_META}); }}});
@@ -697,7 +715,7 @@ async function until(check, ms = 2_000) {
   }
 }
 
-test('the service tells the engine its session\'s cursor at connect, and end_task\'s turn-ended hook hides it and closes the connection (#237)', async t => {
+test('the service tells the engine its session\'s cursor at connect, and end_task\'s turn-ended hook hides it, ends the task (#292) and closes the connection (#237)', async t => {
   const {service, engine, hooks, turnEnded} = await ownService(t, {CUA_CURSOR_LABEL: 'linux171', CUA_CURSOR_COLOR: '#8250df'});
   assert.equal(hooks.length, 1);
   assert.ok(Number.isSafeInteger(hooks[0].timeoutMs) && hooks[0].timeoutMs > 0);
@@ -708,13 +726,14 @@ test('the service tells the engine its session\'s cursor at connect, and end_tas
   await turnEnded();
   await until(() => engine.sockets.size === 0);
   assert.deepEqual(engine.received.map(r => [r.method, r.method === 'cursor' ? r.params : r.params?.method ?? null]),
-    [['ping', null], ['cursor', {label: 'linux171', color: '#8250df', enabled: true}], ['execute', 'list_apps'], ['cursor', {hide: true}]]);
+    [['ping', null], ['cursor', {label: 'linux171', color: '#8250df', enabled: true}], ['execute', 'list_apps'], ['cursor', {hide: true}], ['endTask', null]]);
   // The next task's first engine-bound call reconnects, and its end_task closes that connection too.
   assert.deepEqual(await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]}), []);
   assert.equal(engine.sockets.size, 1);
-  assert.deepEqual(engine.received.slice(4).map(r => r.method), ['ping', 'cursor', 'execute']);
+  assert.deepEqual(engine.received.slice(5).map(r => r.method), ['ping', 'cursor', 'execute']);
   await turnEnded();
   await until(() => engine.sockets.size === 0);
+  assert.deepEqual(engine.received.slice(8).map(r => r.method), ['cursor', 'endTask'], 'that task\'s end too');
 });
 
 test('the service names its session\'s device mode in the ping (#282): CUA_DESKTOP_MODE, shared when the launch names none', async t => {
@@ -745,20 +764,22 @@ test('#282: the engine\'s background-click refusal and clickUnconfirmed reach th
   }
 });
 
-test('against an engine without the cursor method the session goes on, and end_task still closes the connection, sending nothing', async t => {
+test('against an engine without the cursor method the session goes on, and end_task still ends the task and closes the connection, sending no hide', async t => {
   const {service, engine, turnEnded} = await ownService(t, {CUA_CURSOR: '0'}, {handlers: {cursor: undefined}});
   assert.deepEqual(await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]}), []);
   await turnEnded();
   await until(() => engine.sockets.size === 0);
-  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'cursor', 'execute']);
+  assert.deepEqual(engine.received.map(r => r.method), ['ping', 'cursor', 'execute', 'endTask']);
   assert.deepEqual(engine.received[1].params, {enabled: false});
 });
 
-test('end_task\'s hook answers without waiting on the engine: a hide the engine never answers holds nothing up', async t => {
-  const {service, engine, turnEnded} = await ownService(t, {CUA_CURSOR_LABEL: 'linux171'}, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null})}});
+test('end_task\'s hook waits at most endTask\'s bound: a hide and an endTask the engine never answers hold it no longer', async t => {
+  const {service, engine, turnEnded} = await ownService(t, {CUA_CURSOR_LABEL: 'linux171'}, {handlers: {cursor: ({hide}) => (hide ? NO_REPLY : {cursor: 'on', reason: null}),
+    endTask: () => NO_REPLY}});
   await service.handleRpc({type: 'execute', method: 'list_apps', args: [{}]});
   const started = performance.now();
   await turnEnded();
-  assert.ok(performance.now() - started < 100, 'the hook returned at once');
+  const waited = performance.now() - started;
+  assert.ok(waited < 1_500, `the hook returned within endTask's 1 s bound (${Math.round(waited)} ms), under its own 2 s`);
   await until(() => engine.sockets.size === 0);
 });

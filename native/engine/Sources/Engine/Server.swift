@@ -71,6 +71,7 @@ final class Server: @unchecked Sendable {
     takeLock()
     bindSocket()
     engine.server = self
+    Lifecycle.beforeSignalExit = { [engine] in engine.webAccessibility.releaseAll() }  // SIGTERM's stop releases too (#292)
     Lifecycle.started(socket: paths.socket)
     let thread = Thread { [self] in acceptLoop() }
     thread.name = "cua-engine accept"
@@ -185,7 +186,7 @@ final class Server: @unchecked Sendable {
     connection.endMenuInteraction()  // a held menu activation goes with its connection (MenuSpan.swift)
     connection.endFocusHold()  // and its focus hold (FocusHold.swift)
     engine.connectionClosed(connection)  // its drives end, the intervention tap with the last (Intervention.swift)
-    engine.webAccessibility.release(connection: connection.id)  // enablement no connection observes now (Enablement.swift)
+    engine.webAccessibility.release(connection: connection.id)  // enablement no connection observes now, after its grace (Enablement.swift)
     engine.cursor.closed(connection: connection.id)  // its cursor's panel goes, after a fade under way (Cursor/CursorHub.swift)
   }
 
@@ -252,7 +253,11 @@ final class Server: @unchecked Sendable {
           let written = writeFrame(connection.fd, responseBody(id: request.id, outcome: outcome.result))
           // An accepted shutdown has closed the listener: the engine exits whether or not the answer reached the client.
           if outcome.exitAfter { stopAndExit() }
-          guard written else { return }
+          guard written else {
+            // The client closed (end_task's relay closes fully): a task's end it sent first is still honoured (#292).
+            endTasksAfterFailedWrite(connection.fd) { _ = engine.handle($0, on: connection, receivedAt: unixMilliseconds()) }
+            return
+          }
         }
       }
     }
@@ -274,6 +279,19 @@ final class Server: @unchecked Sendable {
     engine.webAccessibility.releaseAll()  // the engine's enablement goes with it
     unlink(paths.socket)
     Lifecycle.exit("shutdown requested", status: 0)
+  }
+}
+
+/// After a response could not be written (the client is gone: the relay ends and then destroys its socket, so an
+/// answer still being written meets EPIPE), the frames the client sent before it closed are still in the socket's
+/// buffer: they are read, for at most a second each, and an `endTask` among them handled, so the task's end (an
+/// immediate release of the web enablement, #292) is not lost to an earlier answer's failed write. Nothing else is
+/// handled or answered.
+func endTasksAfterFailedWrite(_ fd: Int32, handle: (Request) -> Void) {
+  var timeout = timeval(tv_sec: 1, tv_usec: 0)
+  setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+  while case .frame(let body) = readFrame(fd) {
+    if case .success(let request) = parseRequest(body), request.method == "endTask" { handle(request) }
   }
 }
 

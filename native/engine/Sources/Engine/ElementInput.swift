@@ -223,8 +223,14 @@ extension Engine {
       throw EngineError(name: "cannotClickOffscreenElement", "The element is not visible on screen.")
     }
     meta.pointUnconfirmed = pointing.relation.unconfirmed
-    var pointer = route == .activation && button == .left ? pointerTarget(hit: pointing.hitElement, app: app, appPid: appPid) : .acceptingFirstMouse
-    if webAreaElementRoute, pointer.view.mayBeWebArea, let hit = pointing.hitElement {
+    var pointer = PointerTarget.acceptingFirstMouse
+    var pointerHit = pointing.hitElement
+    if route == .activation && button == .left {
+      let owner = pointing.owner
+      (pointer, pointerHit) = clickPointerTarget(hit: pointing.hitElement, window: pointing.window, rehit: { hitTest(application: owner, at: point) },
+                                                 app: app, appPid: appPid, meta: &meta)
+    }
+    if webAreaElementRoute, pointer.view.mayBeWebArea, let hit = pointerHit {
       pointer.elementRoute = webAreaPress(hit, button: button, count: count, point: point, windowID: pointing.windowID, app: app,
                                           appPid: appPid, guarding: guarding, context: context)
     }
@@ -274,13 +280,35 @@ extension Engine {
     let chromium = webAccessibility.isChromiumFamily(app.appPath)
     let seen = chromium && webAccessibility.hasSeenWebArea(pid: appPid, launched: processGeneration(launchDate: app.running?.launchDate, pid: appPid))
     let view = pointerView(chromium: chromium, webAreaSeen: seen, hit: hit, role: { attribute($0, kAXRoleAttribute) as? String },
-                           parent: { elementAttribute($0, kAXParentAttribute) })
+                           parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead)
     return PointerTarget(view: view, app: app.displayName, noun: noun)
+  }
+
+  /// `pointerTarget` for a left click by route 3, with #288's establishment first (Routes.swift `establishedPointerView`)
+  /// in a Chromium process where no web area has been seen: the application's role read, `window` searched for an
+  /// AXWebArea, and the point hit-tested again by `rehit` (the caller's own hit-test). Answers the target and the hit
+  /// it was read from, which the element route walks; the establishment's record goes in the meta.
+  func clickPointerTarget(hit: AXUIElement?, window: AXUIElement?, rehit: @escaping () -> AXUIElement?, app: ResolvedApp, appPid: pid_t,
+                          meta: inout InputMeta) -> (target: PointerTarget, hit: AXUIElement?) {
+    let chromium = webAccessibility.isChromiumFamily(app.appPath)
+    let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
+    let seen = chromium && webAccessibility.hasSeenWebArea(pid: appPid, launched: generation)
+    let application = prepare(AXUIElementCreateApplication(appPid))
+    let establish = PointerEstablishing<AXUIElement>(
+      readAppRole: { _ = attribute(application, kAXRoleAttribute) },
+      windowHasWebArea: { (window ?? primaryWindow(of: application)).map(containsWebArea) ?? false },
+      noteWebArea: { [webAccessibility] in webAccessibility.noteWebArea(pid: appPid, launched: generation) },
+      rehit: rehit, now: monotonicMilliseconds, sleep: { usleep(UInt32(max(0, $0) * 1000)) })
+    let established = establishedPointerView(chromium: chromium, webAreaSeen: seen, hit: hit, role: { attribute($0, kAXRoleAttribute) as? String },
+                                             parent: { elementAttribute($0, kAXParentAttribute) }, children: childrenRead,
+                                             establish: establish)
+    if let record = established.record { meta.pointerEstablish = record }
+    return (PointerTarget(view: established.view, app: app.displayName), established.hit)
   }
 
   /// The element route a plain left click refused in a web area takes (#282): the control the hit resolves to
   /// (`webAreaControl`: the hit, or its nearest allowlisted ancestor through plain children), its action read and, where
-  /// the process's accessibility is fresh, re-read for up to 2 s posting nothing (`webAreaActionRereading`), carried as an
+  /// the process's accessibility is fresh, re-read for up to 2 s, or 3 s just after an enablement write, posting nothing (`webAreaActionRereading`, `webAreaRereadDeadline`), carried as an
   /// element click's is (`elementActionClick`), confirmed by its value where its role has one (`pressConfirmingValue`),
   /// and recorded with the reason `webArea`, the control's role and whether it was the hit. A control with no action
   /// after that is refused, asking for an observation first, as a hit that resolves to none is refused; either refusal
@@ -309,10 +337,11 @@ extension Engine {
     let control = resolved.control
     return { [self] meta in
       let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
-      let fresh = webAreaAccessibilityFresh(freshSince: webAccessibility.freshSince(pid: appPid, launched: generation),
+      let freshSince = webAccessibility.freshSince(pid: appPid, launched: generation)
+      let fresh = webAreaAccessibilityFresh(freshSince: freshSince,
                                             now: monotonicMilliseconds(), webAreaSeen: webAccessibility.hasSeenWebArea(pid: appPid, launched: generation))
       // The action, re-read where fresh, then the control requalified as it is now, all before anything is posted.
-      let decision = webAreaPressDecision(control, walkedRole: resolved.role, fresh: fresh, actions: establishedActionNames(of:),
+      let decision = webAreaPressDecision(control, walkedRole: resolved.role, fresh: fresh, freshSince: freshSince, actions: establishedActionNames(of:),
                                           role: { attribute($0, kAXRoleAttribute) as? String },
                                           parent: { elementAttribute($0, kAXParentAttribute) },
                                           editable: { attribute($0, "AXEditableAncestor") != nil },
@@ -343,7 +372,7 @@ extension Engine {
   /// written by route 1 with no activation and accepted once it reads back true, then the caret placed at the point
   /// (`caretOffset` over the field's own characters' boxes when the hit is the field; over a contenteditable region's
   /// AXStaticText hit's boxes, mapped into the region's offsets by `regionTextStart`; boxes still empty in a process
-  /// whose accessibility is fresh are re-read for up to 2 s, `caretAwaitingBoxes`) and read back on the focused element, the result's note saying what was done. Records the walk, the focused role, whether it
+  /// whose accessibility is fresh are re-read for up to 2 s, or 3 s just after an enablement write, `caretAwaitingBoxes`) and read back on the focused element, the result's note saying what was done. Records the walk, the focused role, whether it
   /// was the hit, and the caret (`elementClick` reason `focusField` or `focusedNotPlaced`).
   func webAreaFocus(_ hit: AXUIElement, point: CGPoint, windowID: CGWindowID?, app: ResolvedApp, appPid: pid_t, guarding: InterventionGuard,
                     context: ExecutionContext) -> (inout InputMeta) throws -> Void {
@@ -375,10 +404,11 @@ extension Engine {
                                              pressedAncestor: target.ancestor, walk: walk)
       let sleep: (Double) -> Void = { usleep(UInt32($0 * 1000)) }
       let generation = processGeneration(launchDate: app.running?.launchDate, pid: appPid)
-      let fresh = webAreaAccessibilityFresh(freshSince: webAccessibility.freshSince(pid: appPid, launched: generation),
+      let freshSince = webAccessibility.freshSince(pid: appPid, launched: generation)
+      let fresh = webAreaAccessibilityFresh(freshSince: freshSince,
                                             now: monotonicMilliseconds(), webAreaSeen: webAccessibility.hasSeenWebArea(pid: appPid, launched: generation))
       let outcome = try focusPlacingCaret(
-        app: app.displayName, secure: target.secure, fresh: fresh, beforeMutating: guarding.checkInFlight,
+        app: app.displayName, secure: target.secure, fresh: fresh, freshSince: freshSince, beforeMutating: guarding.checkInFlight,
         writeFocused: {
           cursor.act(connection: context.connection.id, app: app.key, window: windowID, .click(point))
           _ = meta.posting { _ = gatedWrite(field, kAXFocusedAttribute, kCFBooleanTrue); return true }

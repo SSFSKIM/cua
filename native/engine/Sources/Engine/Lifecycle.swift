@@ -16,6 +16,9 @@ enum Lifecycle {
   nonisolated(unsafe) private static var explained = false
   private static let signalQueue = DispatchQueue(label: "cua-engine signals")
   nonisolated(unsafe) private static var signalSources: [DispatchSourceSignal] = []
+  /// Run on a termination signal before the exit (the server's: the engine's web enablement is written back, #292);
+  /// SIGKILL runs nothing.
+  nonisolated(unsafe) static var beforeSignalExit: () -> Void = {}
 
   static func started(socket: String) {
     log.notice("started pid \(getpid(), privacy: .public) build \(engineBuild, privacy: .public) socket \(socket, privacy: .public)")
@@ -40,7 +43,10 @@ enum Lifecycle {
     for signalNumber in [SIGTERM, SIGINT, SIGHUP, SIGQUIT, SIGUSR1, SIGUSR2, SIGALRM] {
       signal(signalNumber, SIG_IGN)
       let source = DispatchSource.makeSignalSource(signal: signalNumber, queue: signalQueue)
-      source.setEventHandler { Lifecycle.exit("signal \(signalNumber) (\(String(cString: strsignal(signalNumber))))", status: 128 + signalNumber) }
+      source.setEventHandler {
+        Lifecycle.beforeSignalExit()
+        Lifecycle.exit("signal \(signalNumber) (\(String(cString: strsignal(signalNumber))))", status: 128 + signalNumber)
+      }
       source.resume()
       signalSources.append(source)
     }

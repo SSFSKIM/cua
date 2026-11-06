@@ -239,7 +239,7 @@ enum WebAreaFocusOutcome: Equatable {
 /// reading true, the click answers `focusUnconfirmed`. A secure field stops there. Otherwise the caret's offset
 /// (`offset`, read once the field holds focus; `caretAwaitingBoxes` where it finds no character boxes yet), written
 /// (`writeSelection`) and read back (`selection`, polled for the same settle) as {offset, 0}.
-func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, beforeMutating: () throws -> Void, writeFocused: () -> Void,
+func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, freshSince: Double? = nil, beforeMutating: () throws -> Void, writeFocused: () -> Void,
                        focused: () -> Bool?, offset: () -> Result<Int, CaretNotPlaced>, sameTarget: () -> Bool, valueLength: () -> Int?,
                        writeSelection: (Int) -> Void, selection: () -> (location: Int, length: Int)?,
                        now: () -> Double, sleep: (Double) -> Void) throws -> WebAreaFocusOutcome {
@@ -256,7 +256,7 @@ func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, beforeMutating: (
   guard settles({ focused() == true }) else { throw focusUnconfirmed(app) }
   if secure { return .notPlaced(.secure) }
   let target: Int
-  switch caretAwaitingBoxes(fresh: fresh, offset: offset, focused: focused, sameTarget: sameTarget, valueLength: valueLength,
+  switch caretAwaitingBoxes(fresh: fresh, freshSince: freshSince, offset: offset, focused: focused, sameTarget: sameTarget, valueLength: valueLength,
                             now: now, sleep: sleep) {
   case .failure(let why): return .notPlaced(why)
   case .success(let found): target = found
@@ -269,15 +269,15 @@ func focusPlacingCaret(app: String, secure: Bool, fresh: Bool, beforeMutating: (
 /// The caret's offset where a focused field's boxes may not exist yet (#283, the design session's ruling 37d4c12c): before
 /// Chromium's complete accessibility mode every character box is empty (`noCharacterBoxes`), and while they arrive some
 /// are (`boxesIncomplete`, run 42152333871; widened from 37d4c12c under 9ba80c48). In a process whose accessibility is
-/// `fresh` (#282's rule) the offset is computed again every `webAreaActionRereadSampleMs` for up to
-/// `webAreaActionRereadMs`, posting nothing, until it answers anything else (an offset, or a complete miss
+/// `fresh` (#282's rule) the offset is computed again every `webAreaActionRereadSampleMs` until
+/// `webAreaRereadDeadline` (2 s, or up to 3 s just after an enablement write, #292), posting nothing, until it answers anything else (an offset, or a complete miss
 /// `pointOutsideText` or `unmapped`, which then is the answer). Each re-read waits on `sameTarget` (still the element
 /// the click focused, and not a secure one): failing, nothing more is read. An offset found by a re-read counts only
 /// if the field still reads focused, is still that element and its value's length (`valueLength`) is the one read
 /// when the wait began. Otherwise, as when the boxes stay empty or the process is not fresh or that length cannot be
 /// read (no wait at all), `noCharacterBoxes`; an incomplete miss not waited for, or still incomplete at the bound, is
 /// `pointOutsideText`.
-func caretAwaitingBoxes(fresh: Bool, offset: () -> Result<Int, CaretNotPlaced>, focused: () -> Bool?, sameTarget: () -> Bool,
+func caretAwaitingBoxes(fresh: Bool, freshSince: Double? = nil, offset: () -> Result<Int, CaretNotPlaced>, focused: () -> Bool?, sameTarget: () -> Bool,
                         valueLength: () -> Int?, now: () -> Double, sleep: (Double) -> Void) -> Result<Int, CaretNotPlaced> {
   func awaited(_ answer: Result<Int, CaretNotPlaced>) -> Bool {
     answer == .failure(.noCharacterBoxes) || answer == .failure(.boxesIncomplete)
@@ -288,9 +288,9 @@ func caretAwaitingBoxes(fresh: Bool, offset: () -> Result<Int, CaretNotPlaced>, 
   }
   let first = offset()
   guard awaited(first), fresh, let length = valueLength() else { return settled(first) }
-  let started = now()
+  let deadline = webAreaRereadDeadline(started: now(), freshSince: freshSince)
   var answer = first
-  while awaited(answer), now() - started < webAreaActionRereadMs {
+  while awaited(answer), now() < deadline {
     sleep(webAreaActionRereadSampleMs)
     // Requalified before each read: a field that became another element, or a password field, is not read again.
     guard sameTarget() else { return .failure(.noCharacterBoxes) }

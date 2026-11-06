@@ -22,7 +22,7 @@ permissions:
   contents: read
 env:
   P288_MAIN_REF: d2568c76
-  P288_BRANCH_REF: 96c6f093
+  P288_BRANCH_REF: 63926945
 jobs:
   probe:
     strategy:

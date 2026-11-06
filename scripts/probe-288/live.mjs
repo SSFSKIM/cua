@@ -104,8 +104,14 @@ class Wire {
       this.s.write(data);
     });
   }
-  // The client's end_task (client.mjs `release`): endTask written, its answer not waited for, then the close.
-  endTaskThenClose() { this.s.write(this.frame('endTask', {}).data); this.s.end(); }
+  // The client's end_task (client.mjs `release`, 63926945): endTask, its answer waited for up to 1 s, then the close.
+  async endTaskThenClose() {
+    const started = Date.now();
+    let answer;
+    try { answer = await this.call('endTask', {}, 1000); } catch (e) { answer = {wait: String(e.message ?? e)}; }
+    this.s.end();
+    return {answer, ms: Date.now() - started};
+  }
   execute(method, args) { return this.call('execute', {method, args, deadlineUnixMilliseconds: Date.now() + 80_000}); }
   close() { this.s.destroy(); }
 }
@@ -255,8 +261,10 @@ async function cell(spec) {
         row.watchBefore = await watch(pid, P, 200);
         const at = Date.now();
         row.endedAt = at;
-        if (spec.kind === 'endTask') w.endTaskThenClose(); else engine.child.kill('SIGTERM');
-        row.watchAfter = await watch(pid, P, 1500);
+        // The sampler starts with the end, so the endTask round trip is inside its window.
+        const watching = watch(pid, P, 1500);
+        if (spec.kind === 'endTask') row.endTask = await w.endTaskThenClose(); else engine.child.kill('SIGTERM');
+        row.watchAfter = await watching;
         row.releasedPressLostMs = firstAt(row.watchAfter, c => c.press === false, at);
         row.releasedEuiFalseMs = firstAt(row.watchAfter, c => c.eui === false, at);
         row.boxesLostMs = firstAt(row.watchAfter, c => c.box !== 'box', at);

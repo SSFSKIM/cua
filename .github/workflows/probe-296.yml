@@ -1,0 +1,67 @@
+# #296's hosted false-positive spike (scripts/probe-296/live.mjs): the stale-point guard emulated outside the engine on
+# Chrome for Testing (its toolbar, and dynamic pages in dedicated mode), Safari (shared mode) and a native AppKit window
+# (both modes), origin/main's engine, two repetitions on separate runners. Runs only on a push to probe/296-hosted (or by
+# hand); not a ci-kit gate.
+name: probe-296
+on:
+  push:
+    branches: [probe/296-hosted]
+  workflow_dispatch:
+    inputs:
+      cells:
+        description: --cells (label prefixes, comma-separated; empty for every cell)
+        required: false
+        default: ''
+permissions:
+  contents: read
+env:
+  P296_ENGINE_REF: 50f3312d3f6a8c7a40d6842746ee50e08d9a47ee
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        rep: [1, 2]
+        group: [chrome, safari, native]
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Build main's engine
+        run: |
+          sw_vers
+          git worktree add "$RUNNER_TEMP/main" "$P296_ENGINE_REF"
+          echo "P296_ENGINE_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
+          swift build --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+      - name: Build the side tool and the native app
+        run: |
+          swiftc -O -o "$RUNNER_TEMP/p296-tool" scripts/probe-296/tool.swift
+          app="$RUNNER_TEMP/Probe296.app/Contents"
+          mkdir -p "$app/MacOS"
+          swiftc -O -o "$app/MacOS/Probe296" scripts/probe-296/app.swift
+          printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+            '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
+            '<plist version="1.0"><dict>' \
+            '<key>CFBundleIdentifier</key><string>com.ssfskim.probe296</string>' \
+            '<key>CFBundleName</key><string>Probe296</string>' \
+            '<key>CFBundleExecutable</key><string>Probe296</string>' \
+            '<key>CFBundlePackageType</key><string>APPL</string>' \
+            '<key>NSPrincipalClass</key><string>NSApplication</string>' \
+            '</dict></plist>' > "$app/Info.plist"
+      - name: Live
+        env:
+          P296_REP: ${{ matrix.rep }}
+          P296_CELLS: ${{ github.event.inputs.cells || '' }}
+        run: node scripts/probe-296/live.mjs --group ${{ matrix.group }} --engine "$RUNNER_TEMP/eng/debug/cua-engine" --tool "$RUNNER_TEMP/p296-tool" --app "$RUNNER_TEMP/Probe296.app/Contents/MacOS/Probe296" ${P296_CELLS:+--cells "$P296_CELLS"} --out "$RUNNER_TEMP/probe-296"
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: probe-296-${{ matrix.group }}-rep${{ matrix.rep }}
+          path: |
+            ${{ runner.temp }}/probe-296/*.json
+            ${{ runner.temp }}/probe-296/*.jsonl
+          if-no-files-found: warn

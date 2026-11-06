@@ -2627,19 +2627,23 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      `pressedOther`, the click is kept as `recordedHit` when all three hold (`recordedHitAtPoint`): (a) the hit is
      itself a recorded node, its handle `CFEqual` to a recorded one, or by #296's full re-created identity (its role, a
      frame within 2 pt of the recorded one moved by the window's shift, and a title, else description, that agrees
-     where both read), no looser match; (b) that node's frame at the screenshot, widened by 2 pt, holds the point in
-     the screenshot's space (the posted point less the window's shift, as the guard already places it); (c) its frame
+     where both read), no looser match; (b) that node's shown frame at the screenshot (the part its clipping ancestors left
+     in the image, `ScreenshotNode.shown`), widened by 2 pt, holds the point in the screenshot's space (the posted
+     point less the window's shift, as the guard already places it), so a node scrolled under a clipping boundary (page
+     content under a browser's toolbar) never passes there, however its AX frame lies (the coordinator's ruling on the
+     build: "the screenshot showed this element at this point" means the part it showed); (c) its frame
      read now, widened by 2 pt, holds the posted point. The chosen node's own checks (`nodeGone`, `frameMoved`, the
      incomplete container's condition and #301's thin-gap rule) run first, unchanged, so every class #296 refused still
      refuses: the chosen node gone, swapped or moved is judged before the hit is looked at. The reason is its own in
      `cua/stalePoint` (a kept verdict), so the evidence can count which rule carried each click.
-  2. **Two readings of the implementer's** where the ruling is silent. (i) The re-created identity applies only while
+  2. **Three readings of the implementer's** where the ruling is silent. (i) The re-created identity applies only while
      the recorded node's own handle reads no frame, as #296 takes a re-created handle only when the node's handle is
      gone; a hit that is a live lookalike of a recorded node (another element of its role, frame and label over it) is
      not that node, so a new button covering a recorded twin still refuses (`VisibleFirstTests`' strip test, which
      would flip to kept otherwise). (ii) A hit that is a recorded handle is that node and no other: its own recorded
-     frame decides (b), and no gone lookalike at the point stands in for it. (b) tests the recorded AX frame, not the
-     part of it the clipping left showing, as the ruling words it.
+     frame decides (b), and no gone lookalike at the point stands in for it. (iii) The meta adds no field: the reason
+     alone tells `recordedHit` from every other pass reason, and does not say whether the hit matched by handle or by
+     the re-created identity.
   3. **The limit** (the ruling's): two recorded elements that overlapped at the point in the screenshot can trade places
      on top while both stay in place, and the click then lands on the one now on top. For example a recorded popover
      that stays in the tree but goes hidden over a recorded button. `docs/cua-api/agent-cursor.md`'s guard paragraph
@@ -2647,12 +2651,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   4. **The cost:** nothing at a point #296 kept; where it would refuse, the hit's frame, role and labels, a `CFEqual`
      pass over the record, and a frame read per recorded node of the hit's role and frame at the point whose handle it
      does not match.
-  Proven offline (`RecordedHitTests`, 8; each rule's removal fails at least one, by mutation): GitHub's overlay
+  Proven offline (`RecordedHitTests`, 9; each rule's removal fails at least one, by mutation): GitHub's overlay
   sibling, also with the window moved 700 pt; Safari's address field and Reload over the full-window page view; the
   wrapped link text over its neighbour; Finder's 1-pt edge kept, 2 pt kept and 3 pt refused; rule (a)'s re-created
   match kept in place and within 2 pt, refused 3 pt off, with another label, another role, as a live lookalike, as a
-  new element, and as a recorded node from elsewhere in a gone lookalike's place; rule (c)'s moved and unread frame
-  refused; every #296 class still refused (#294's frame re-read with the same handle and with a recorded Forward in
+  new element, and as a recorded node from elsewhere in a gone lookalike's place; rule (b)'s clipping, page links scrolled under
+  Chrome's toolbar answered at a toolbar point refused wholly and partly clipped out (kept 1 pt from where one showed;
+  the test fails under the full AX frame); rule (c)'s moved and unread frame refused; every #296 class still refused (#294's frame re-read with the same handle and with a recorded Forward in
   Reload's place, a moved button with a recorded neighbour slid in, a feed prepend, a swapped-in element new or
   recorded, a link that replaced a button, a same-role swap with a changed label, a hit recorded elsewhere); and the
   element route kept as `recordedHit` (and after its wait's recheck), refused `pressedOther` for a target recorded

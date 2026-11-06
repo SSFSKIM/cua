@@ -795,6 +795,26 @@ final class RecordedHitTests: XCTestCase {
     XCTAssertEqual(verdict(nodes, at: codePoint, hit: page.textArea).reason, .interactiveHit, "its frame unread")
   }
 
+  /// Rule 2 tests the part of the recorded frame the screenshot showed: page content scrolled up under Chrome's toolbar
+  /// keeps frames there, and a hit-test that answers it at a toolbar point is refused, wholly or partly clipped.
+  func testARecordedNodeClippedOutAtThePointIsRefused() {
+    let window = Node("AXWindow", CGRect(x: 0, y: 25, width: 620, height: 700))
+    let reload = Node("AXButton", CGRect(x: 442, y: 77, width: 34, height: 34), description: "Reload")
+    window.add(Node("AXToolbar", CGRect(x: 0, y: 70, width: 620, height: 48), [reload]))
+    let hidden = Node("AXLink", CGRect(x: 400, y: 60, width: 200, height: 40), title: "Scrolled away")
+    let partly = Node("AXLink", CGRect(x: 400, y: 80, width: 200, height: 60), title: "Half under the toolbar")
+    window.add(Node("AXWebArea", CGRect(x: 0, y: 118, width: 620, height: 607),
+                    [Node("AXGroup", CGRect(x: 0, y: -400, width: 620, height: 1100), [hidden, partly])]))
+    let nodes = recorded(window)
+    XCTAssertNil(nodes.first { $0.element === hidden }?.shown)
+    XCTAssertEqual(nodes.first { $0.element === partly }?.shown, CGRect(x: 400, y: 118, width: 200, height: 22))
+    let point = CGPoint(x: 459, y: 94)
+    XCTAssertTrue(deepestScreenshotNode(at: point, in: nodes)?.element === reload)
+    XCTAssertEqual(verdict(nodes, at: point, hit: hidden).reason, .interactiveHit, "wholly clipped out")
+    XCTAssertEqual(verdict(nodes, at: point, hit: partly).reason, .interactiveHit, "clipped out at the point")
+    XCTAssertEqual(verdict(nodes, at: CGPoint(x: 459, y: 117), hit: partly).reason, .recordedHit, "1 pt from where it showed, the toolbar chosen")
+  }
+
   /// Every stale class #296 refused still refuses: the chosen node's own checks run first, and a hit recorded elsewhere
   /// fails rule 2.
   func testEveryStaleClassOf296StillRefuses() {

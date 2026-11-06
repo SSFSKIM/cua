@@ -383,7 +383,8 @@ func stalePointVerdict<Element>(at point: CGPoint, windowShift: CGVector = .zero
 ///    (gone, as #296 takes a re-created handle only then), #296's re-created identity: its role, its frame within 2 pt of
 ///    the recorded one moved by `windowShift`, and its label agreeing (`stalePointLabelsAgree`). A hit that is a recorded
 ///    handle is that node and no other, so a lookalike elsewhere never stands in for it;
-/// 2. that node's frame at the screenshot, widened by 2 pt, holds the point the model meant (`point` less the shift);
+/// 2. the part of that node's frame the screenshot showed (`ScreenshotNode.shown`, what its clipping ancestors left),
+///    widened by 2 pt, holds the point the model meant (`point` less the shift): a node clipped out there never passes;
 /// 3. its frame read now, widened by 2 pt, holds the posted `point`.
 /// Read only where the verdict would refuse: the element's frame, role and labels, and a frame read per recorded node
 /// of its role and frame there that its handle does not match.
@@ -391,14 +392,15 @@ func recordedHitAtPoint<Element>(_ element: Element, at point: CGPoint, windowSh
                                  _ reads: StalePointReads<Element>) -> Bool {
   let tolerance = stalePointFrameTolerance
   func widened(_ rect: CGRect) -> CGRect { rect.insetBy(dx: -tolerance, dy: -tolerance) }
-  let shown = CGPoint(x: point.x - windowShift.dx, y: point.y - windowShift.dy)
+  let meant = CGPoint(x: point.x - windowShift.dx, y: point.y - windowShift.dy)
+  func showed(_ node: ScreenshotNode<Element>) -> Bool { node.shown.map { holdsPoint(widened($0), meant) } ?? false }
   guard let live = reads.frame(element), holdsPoint(widened(live), point) else { return false }
   let handles = nodes.filter { reads.same(element, $0.element) }
-  if !handles.isEmpty { return handles.contains { holdsPoint(widened($0.frame), shown) } }
+  if !handles.isEmpty { return handles.contains(where: showed) }
   guard let role = reads.role(element) else { return false }
   let (title, description) = (reads.title(element), reads.description(element))
   return nodes.contains { node in
-    node.role == role && holdsPoint(widened(node.frame), shown)
+    node.role == role && showed(node)
       && frameDistance(live, node.frame.offsetBy(dx: windowShift.dx, dy: windowShift.dy)) <= tolerance
       && stalePointLabelsAgree(recordedTitle: node.title, recordedDescription: node.description, title: title, description: description)
       && reads.frame(node.element) == nil

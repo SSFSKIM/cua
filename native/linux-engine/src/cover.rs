@@ -29,6 +29,20 @@ impl Rect {
         px >= self.x && py >= self.y && px < self.x + self.w && py < self.y + self.h
     }
 
+    fn intersection(&self, other: &Rect) -> Rect {
+        let (x, y) = (self.x.max(other.x), self.y.max(other.y));
+        let (x2, y2) = (
+            (self.x + self.w).min(other.x + other.w),
+            (self.y + self.h).min(other.y + other.h),
+        );
+        Rect {
+            x,
+            y,
+            w: (x2 - x).max(0),
+            h: (y2 - y).max(0),
+        }
+    }
+
     fn overlaps(&self, other: &Rect) -> bool {
         !self.is_empty()
             && !other.is_empty()
@@ -94,37 +108,51 @@ pub fn points_unobscured(window: Rect, levels: &[Level], points: &[(i32, i32)]) 
 /// meant for the window reaches it only where nothing is stacked above it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reach {
-    /// Every point lies in the window and under no window above it: the input reaches the window.
+    /// No point inside the window lies under another client's window: the input reaches the window wherever it lands
+    /// in it. Points outside the window, an ancestor or the screen go where they would go, as before the wait (the
+    /// design session's ruling on task 63, 2026-11-06: a drag from the window into another window is sent).
     Window,
-    /// A point lies under another client's window stacked above it or above an ancestor, judged by outer rectangles
-    /// as `points_unobscured` judges a drag's path, InputOnly windows included, since they take pointer input though
-    /// they draw nothing. The window's own client's windows (its popups and menus) take the input for the application
-    /// and do not count. A window manager's raise can still change this.
+    /// A point inside the window lies under another client's window stacked above it or above an ancestor, judged by
+    /// outer rectangles as `points_unobscured` judges a drag's path, InputOnly windows included, since they take
+    /// pointer input though they draw nothing; or there is no stacking to judge by. The window's own client's windows
+    /// (its popups and menus) take the input for the application and do not count. A window manager's raise can still
+    /// change this.
     Covered,
-    /// A point lies outside the window, or outside an ancestor or the screen, or there is no point or no stacking to
-    /// judge by: no raise makes input there reach the window.
-    Outside,
+}
+
+/// Whether a window stacked above takes pointer input that would go to the window under it.
+fn takes_input(a: &Above) -> bool {
+    a.viewable && !a.own
 }
 
 /// [`Reach`] of real pointer input at `points` (root coordinates) into `window`.
 pub fn reach(window: Rect, levels: &[Level], points: &[(i32, i32)]) -> Reach {
     let inside = |p| window.contains_point(p) && levels.iter().all(|level| level.clip.contains_point(p));
-    if levels.is_empty() || points.is_empty() || !points.iter().all(|&p| inside(p)) {
-        return Reach::Outside;
-    }
     let under_another = |p| {
-        levels.iter().any(|level| {
-            level
-                .above
-                .iter()
-                .any(|a| a.viewable && !a.own && a.rect.contains_point(p))
-        })
+        levels
+            .iter()
+            .any(|level| level.above.iter().any(|a| takes_input(a) && a.rect.contains_point(p)))
     };
-    if points.iter().any(|&p| under_another(p)) {
+    let mut inside = points.iter().copied().filter(|&p| inside(p)).peekable();
+    if inside.peek().is_some() && (levels.is_empty() || inside.any(under_another)) {
         Reach::Covered
     } else {
         Reach::Window
     }
+}
+
+/// Whether `window` is on top over its visible area (task 63, `activate_window`): no other client's window stacked
+/// above it or an ancestor overlaps the part of it inside every ancestor and the screen, InputOnly windows included,
+/// as `reach` judges each point. A window with nothing on the screen has nothing to cover; no stacking is doubt.
+pub fn on_top(window: Rect, levels: &[Level]) -> bool {
+    if levels.is_empty() {
+        return false;
+    }
+    let visible = levels.iter().fold(window, |r, level| r.intersection(&level.clip));
+    visible.is_empty()
+        || !levels
+            .iter()
+            .any(|level| level.above.iter().any(|a| takes_input(a) && a.rect.overlaps(&visible)))
 }
 
 #[cfg(test)]
@@ -396,21 +424,71 @@ mod tests {
     }
 
     #[test]
-    fn a_point_outside_the_window_or_the_screen_is_outside_whatever_is_stacked_above() {
+    fn only_the_points_inside_the_window_are_waited_for_and_a_drag_into_another_window_reaches_it() {
+        // a drag from the window into another window beside it (dedicated mode's cross-window drag): before the raise
+        // the cover above the window's part of the path holds it; once raised, the part in the other window goes as it
+        // would have, and the drag is sent
+        let path = segment((300, 100), (1200, 100));
         let (w, levels) = framed(rect(0, 20, 1000, 780), vec![above(rect(0, 0, 1280, 800))]);
         assert_eq!(
-            reach(w, &levels, &[(300, 100), (1100, 100)]),
-            Reach::Outside,
-            "one point past the window's right edge, the rest covered"
+            reach(w, &levels, &path),
+            Reach::Covered,
+            "the window's own part still covered"
+        );
+        let other = above(rect(1010, 0, 270, 800));
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![other]);
+        assert_eq!(
+            reach(w, &levels, &path),
+            Reach::Window,
+            "raised: sent, the rest into the other window"
+        );
+        // points outside the window, an ancestor or the screen go as before, whatever is stacked there
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![above(rect(0, 0, 1280, 800))]);
+        assert_eq!(
+            reach(w, &levels, &[(1100, 100)]),
+            Reach::Window,
+            "past the window's right edge"
         );
         assert_eq!(
             reach(w, &levels, &[(300, 10)]),
-            Reach::Outside,
+            Reach::Window,
             "on the frame's title bar"
         );
         let (w, levels) = on_root(rect(800, 20, 600, 400));
-        assert_eq!(reach(w, &levels, &[(1300, 100)]), Reach::Outside, "off the screen");
-        assert_eq!(reach(w, &levels, &[]), Reach::Outside, "no point");
-        assert_eq!(reach(w, &[], &[(900, 100)]), Reach::Outside, "no stacking read");
+        assert_eq!(reach(w, &levels, &[(1300, 100)]), Reach::Window, "off the screen");
+        assert_eq!(reach(w, &levels, &[]), Reach::Window, "no point");
+        assert_eq!(reach(w, &[], &[(900, 100)]), Reach::Covered, "no stacking read: doubt");
+    }
+
+    #[test]
+    fn a_window_is_on_top_when_no_other_client_s_window_overlaps_its_visible_area() {
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![]);
+        assert!(on_top(w, &levels), "nothing above it");
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![above(rect(990, 700, 50, 50))]);
+        assert!(!on_top(w, &levels), "a corner of it covered");
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![above(rect(1010, 0, 200, 200))]);
+        assert!(on_top(w, &levels), "a window above that does not overlap it");
+        let menu = Above {
+            own: true,
+            ..above(rect(250, 50, 100, 100))
+        };
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![menu]);
+        assert!(on_top(w, &levels), "its own popup over it");
+        let input_only = Above {
+            input_only: true,
+            ..above(rect(250, 50, 100, 100))
+        };
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![input_only]);
+        assert!(!on_top(w, &levels), "an InputOnly window over it takes its input");
+        // only the part on the screen counts: a window above the off-screen part covers nothing
+        let (w, mut levels) = on_root(rect(800, 20, 600, 400));
+        levels[0].above.push(above(rect(1280, 20, 200, 200)));
+        assert!(on_top(w, &levels), "above its off-screen part only");
+        let (w, levels) = on_root(rect(1300, 20, 600, 400));
+        assert!(
+            on_top(w, &levels),
+            "wholly off the screen: nothing of it can be covered"
+        );
+        assert!(!on_top(rect(0, 0, 10, 10), &[]), "no stacking read: doubt");
     }
 }

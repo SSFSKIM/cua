@@ -757,6 +757,14 @@ impl X11 {
         Ok(crate::cover::reach(rect, &levels, &points))
     }
 
+    /// Whether `window` is on top over its visible area now (`cover.rs` `on_top`): the X errors of the stacking read are
+    /// the caller's.
+    pub fn on_top(&self, window: Window) -> Result<bool> {
+        let geometry = self.conn.get_geometry(window)?.reply()?;
+        let (rect, levels) = self.cover(window, &geometry)?;
+        Ok(crate::cover::on_top(rect, &levels))
+    }
+
     /// Whether `window` is fully unobscured now (`cover.rs`); any X error is doubt, and doubt is obscured.
     fn fully_unobscured(&self, window: Window, geometry: &GetGeometryReply) -> bool {
         self.cover(window, geometry)

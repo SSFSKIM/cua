@@ -3,7 +3,7 @@
 
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use serde_json::{Value, json};
 use x11rb::connection::Connection;
 use x11rb::errors::ReplyError;
@@ -14,21 +14,32 @@ use x11rb::protocol::xproto::{
 
 use super::Engine;
 use crate::apps;
+use crate::route::{ON_TOP_POLL, ON_TOP_WAIT, wait_until};
 use crate::wire::{LaunchAppInput, WindowInput, parse_input};
 use crate::x11::X11;
 
 impl Engine {
     /// `_NET_ACTIVE_WINDOW` (source indication 1, the application), a raise, and the input focus, in that order;
-    /// no prior validation, no wait (behaviour §14). The vendor checks each with a round trip of its own; here the
-    /// three go out together and are checked in order, so the server sees the same requests in the same order and the
-    /// first failure is the answer, at the cost of one round trip.
+    /// no prior validation (behaviour §14). The vendor checks each with a round trip of its own; here the three go out
+    /// together and are checked in order, so the server sees the same requests in the same order and the first failure
+    /// is the answer, at the cost of one round trip. Then, where the vendor answers at once, the answer waits until the
+    /// window is on top over its visible area (`cover::on_top`), at most [`ON_TOP_WAIT`]: the window manager raises it
+    /// after the requests, and pointer input sent on the answer would otherwise reach the window still covering it,
+    /// on a shared desktop the person's (the design session's ruling on task 63, 2026-11-06). Still covered at the
+    /// bound, it answers an error saying the window was not brought to the front.
     pub(super) fn activate_window(&mut self, input: Option<Value>) -> Result<Value> {
         let input: WindowInput = parse_input(input)?;
-        if let Some(waited) = activate(&self.x, input.window.id)? {
-            self.extra.insert(
-                "activation".into(),
-                json!({ "map_wait_ms": waited.as_secs_f64() * 1000.0 }),
-            );
+        let window = input.window.id;
+        let mapped = activate(&self.x, window)?;
+        let started = Instant::now();
+        let on_top = wait_until(|| self.x.on_top(window), ON_TOP_WAIT, ON_TOP_POLL)?;
+        let mut record = json!({ "on_top_wait_ms": started.elapsed().as_secs_f64() * 1000.0 });
+        if let Some(waited) = mapped {
+            record["map_wait_ms"] = json!(waited.as_secs_f64() * 1000.0);
+        }
+        self.extra.insert("activation".into(), record);
+        if !on_top {
+            bail!(not_in_front(window));
         }
         Ok(Value::Null)
     }
@@ -50,6 +61,16 @@ impl Engine {
         self.launched.add(child);
         Ok(Value::Null)
     }
+}
+
+/// `activate_window`'s answer when the window is still covered at [`ON_TOP_WAIT`]: the activation was asked for, the
+/// window is not in front, and nothing else went to it.
+fn not_in_front(window: Window) -> String {
+    format!(
+        "window {window} was not brought to the front: another window still covered it {} ms after its activation was \
+         requested; nothing else was sent",
+        ON_TOP_WAIT.as_millis()
+    )
 }
 
 /// How long an activated window that is not viewable (a minimized one) may take to be mapped by the window manager
@@ -138,7 +159,16 @@ mod tests {
 
     use anyhow::anyhow;
 
-    use super::{MAP_WAIT, refocus};
+    use super::{MAP_WAIT, not_in_front, refocus};
+
+    #[test]
+    fn a_window_still_covered_at_the_bound_is_said_not_to_be_in_front_with_nothing_else_sent() {
+        assert_eq!(
+            not_in_front(0x60_0003),
+            "window 6291459 was not brought to the front: another window still covered it 1000 ms after its activation \
+             was requested; nothing else was sent"
+        );
+    }
 
     /// The design session's condition on C22's retry (M4): it follows any `BadMatch`, but a window that is viewable
     /// already, whose `BadMatch` had another cause, gets the one retry at once and its answer, never the bound's wait.

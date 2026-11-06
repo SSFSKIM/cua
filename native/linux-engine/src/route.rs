@@ -31,18 +31,20 @@ use crate::settle;
 use crate::x11::X11;
 
 /// How long the foreground route's pointer input waits for its activated window to be on top at its points
-/// (`Route::on_top_at`), and how often it looks. Task 63 measured the window manager's raise at twice the gate's load.
+/// (`Route::on_top_at`), and `activate_window` for its window to be on top over its visible area, and how often each
+/// looks. Task 63 measured the window manager's raise at twice the gate's load: 17.2 ms at the most.
 pub const ON_TOP_WAIT: Duration = Duration::from_millis(1000);
-const ON_TOP_POLL: Duration = Duration::from_millis(2);
+pub const ON_TOP_POLL: Duration = Duration::from_millis(2);
 
-/// Reads `reach` until the input would reach the window, a point is outside it (which no raise changes), or `bound` has
-/// passed, the last reading then the answer.
-fn wait_for_reach(mut reach: impl FnMut() -> Result<Reach>, bound: Duration, poll: Duration) -> Result<Reach> {
+/// Reads `ready` until it holds or `bound` has passed: whether it held, the last reading's.
+pub fn wait_until(mut ready: impl FnMut() -> Result<bool>, bound: Duration, poll: Duration) -> Result<bool> {
     let deadline = Instant::now() + bound;
     loop {
-        let now = reach()?;
-        if now != Reach::Covered || Instant::now() >= deadline {
-            return Ok(now);
+        if ready()? {
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            return Ok(false);
         }
         std::thread::sleep(poll);
     }
@@ -433,23 +435,28 @@ impl Route<'_> {
     /// input will use (a click's or a wheel's point, a move's end, every sample of a drag's path), as the server's
     /// stacking says (`cover.rs` `reach`), at most [`ON_TOP_WAIT`]. XTEST pointer events go to the topmost window under
     /// the point, and the window manager raises an activated window after the engine's own focus request has already
-    /// given it the focus, so a press sent once the focus is in can reach the window still covering it (task 63). The
-    /// refusal's cause, with nothing sent, when a point is outside the window or the window is still covered at the
-    /// bound. Every other route sends to the window itself, or to the desktop as it is: nothing to wait for.
+    /// given it the focus, so a press sent once the focus is in can reach the window still covering it (task 63). Only
+    /// the points inside the window are waited for; the rest go where they would go, as a drag into another window does.
+    /// The refusal's cause, with nothing sent, when the window is still covered at the bound. Every other route sends
+    /// to the window itself, or to the desktop as it is: nothing to wait for.
     pub fn on_top_at(&mut self, x: &X11, points: &[(i16, i16)]) -> Result<std::result::Result<(), String>> {
         let Route::Desktop(desktop, Some(window)) = self else {
             return Ok(Ok(()));
         };
         let started = Instant::now();
-        let reached = wait_for_reach(|| x.reach(*window, points), ON_TOP_WAIT, ON_TOP_POLL)?;
+        let reached = wait_until(
+            || Ok(x.reach(*window, points)? == Reach::Window),
+            ON_TOP_WAIT,
+            ON_TOP_POLL,
+        )?;
         desktop.on_top_waited = Some(started.elapsed());
-        Ok(match reached {
-            Reach::Window => Ok(()),
-            Reach::Outside => Err(format!("the input's point is outside window {window}")),
-            Reach::Covered => Err(format!(
+        Ok(if reached {
+            Ok(())
+        } else {
+            Err(format!(
                 "window {window} was still covered at the input's point {} ms after it was activated",
                 ON_TOP_WAIT.as_millis()
-            )),
+            ))
         })
     }
 
@@ -520,39 +527,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_wait_for_the_raise_ends_when_the_input_would_reach_the_window() {
+    fn the_wait_for_the_raise_ends_once_it_holds_or_at_its_bound() {
         let readings = std::cell::Cell::new(0);
-        let reached = wait_for_reach(
+        let held = wait_until(
             || {
                 readings.set(readings.get() + 1);
-                Ok(if readings.get() < 4 {
-                    Reach::Covered
-                } else {
-                    Reach::Window
-                })
+                Ok(readings.get() >= 4)
             },
             Duration::from_secs(5),
             Duration::from_millis(1),
         )
         .unwrap();
-        assert_eq!((reached, readings.get()), (Reach::Window, 4));
-    }
-
-    #[test]
-    fn a_point_outside_the_window_answers_at_once_and_a_window_never_raised_at_the_bound() {
-        let started = Instant::now();
-        let reached = wait_for_reach(|| Ok(Reach::Outside), Duration::from_secs(5), Duration::from_millis(1));
-        assert_eq!(reached.unwrap(), Reach::Outside);
-        assert!(
-            started.elapsed() < Duration::from_millis(100),
-            "no raise makes it reach the window"
-        );
+        assert_eq!((held, readings.get()), (true, 4));
         let bound = Duration::from_millis(40);
         let started = Instant::now();
-        let reached = wait_for_reach(|| Ok(Reach::Covered), bound, Duration::from_millis(1));
-        assert_eq!(reached.unwrap(), Reach::Covered);
+        assert!(!wait_until(|| Ok(false), bound, Duration::from_millis(1)).unwrap());
         assert!(started.elapsed() >= bound);
-        assert!(wait_for_reach(|| Err(anyhow::anyhow!("BadWindow")), bound, Duration::from_millis(1)).is_err());
+        assert!(wait_until(|| Err(anyhow::anyhow!("BadWindow")), bound, Duration::from_millis(1)).is_err());
     }
 
     fn hold(target: Target, chord: &[u32]) -> Hold {

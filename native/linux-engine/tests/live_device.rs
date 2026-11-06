@@ -1972,8 +1972,8 @@ fn foreground_pointer_input_waits_for_the_window_manager_to_raise_its_window() {
     }
 }
 
-/// A window the window manager never raises over the point is refused at the wait's bound, and one asked for input at
-/// a point outside it at once, each with nothing sent: no event reaches the window or the window covering it.
+/// A window the window manager never raises over the point is refused at the wait's bound, with nothing sent: no event
+/// reaches the window or the window covering it.
 #[test]
 fn foreground_pointer_input_is_refused_with_nothing_sent_when_its_window_is_not_on_top_at_its_points() {
     let firefox = Probe::open("firefox", (0, 0, 320, 200));
@@ -1993,30 +1993,102 @@ fn foreground_pointer_input_is_refused_with_nothing_sent_when_its_window_is_not_
         "{refusal}"
     );
     assert!(took >= Duration::from_millis(1000), "refused at the bound ({took:?})");
-    // a drag whose path leaves the window, and a move to a point beyond it: outside, refused at once (with no window
-    // manager here, the raise comes at once)
-    for (command, input) in [
-        (
-            "drag",
-            json!({"window": firefox.target(), "path": [{"x": 60, "y": 60}, {"x": 360, "y": 60}]}),
-        ),
-        ("move", json!({"window": firefox.target(), "x": 330, "y": 60})),
-    ] {
-        firefox.unfocus();
-        cover.raise();
-        let started = Instant::now();
-        assert_eq!(
-            dedicated.request(command, input),
-            Err(format!(
-                "the input's point is outside window {}; nothing was sent, so it is safe to retry",
-                firefox.id
-            )),
-            "{command}"
-        );
-        assert!(started.elapsed() < Duration::from_millis(500), "{command}: at once");
-    }
     assert_eq!(firefox.inputs(), vec![], "nothing reached the window");
     assert_eq!(cover.inputs(), vec![], "nor the window covering it");
+}
+
+/// Only the points inside the window wait for its raise; the rest go as before the wait (the design session's ruling
+/// on task 63, 2026-11-06): a dedicated-mode drag from the covered window into another window beside it is sent, its
+/// press in the window (which holds the implicit grab to the release), and a move to a point beyond the window too.
+#[test]
+fn a_foreground_drag_from_its_window_into_another_window_is_sent_not_refused() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let other = Probe::open("Other", (330, 0, 300, 200));
+    let cover = Probe::open("Cover", (0, 0, 320, 200));
+    let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+    firefox.unfocus();
+    cover.raise();
+    dedicated
+        .request(
+            "drag",
+            json!({"window": firefox.target(), "path": [{"x": 60, "y": 60}, {"x": 400, "y": 60}]}),
+        )
+        .expect("a drag into another window is sent");
+    assert_eq!(
+        firefox.inputs(),
+        vec![
+            Input::ButtonPress { button: 1, sent: false },
+            Input::ButtonRelease { button: 1, sent: false }
+        ],
+        "pressed in the window, released to its grab"
+    );
+    assert_eq!(cover.inputs(), vec![], "nothing reached the window that covered it");
+    firefox.unfocus();
+    cover.raise();
+    dedicated
+        .request("move", json!({"window": firefox.target(), "x": 400, "y": 60}))
+        .expect("a move beyond the window is sent");
+    assert_eq!(other.inputs(), vec![], "a move presses nothing");
+}
+
+/// `activate_window` answers once the window manager has raised the window over its visible area, so pointer input
+/// pipelined on its answer (a windowless click at once, no observation between) lands in it and not in the window that
+/// covered it, which on a shared desktop is the person's; a window never raised answers an error at the bound, with
+/// nothing else sent (the design session's ruling on task 63, 2026-11-06).
+#[test]
+fn activate_window_answers_once_its_window_is_on_top_so_a_pipelined_click_lands_in_it() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let cover = Probe::open("Cover", (0, 0, 400, 300));
+    for mode in ["shared", "dedicated"] {
+        let mut engine = Engine::start_with(&["--desktop", mode]);
+        firefox.unfocus();
+        cover.raise();
+        let raises = SlowRaises::start(firefox.id, Some(Duration::from_millis(150)));
+        let started = Instant::now();
+        engine
+            .request("activate_window", json!({"window": firefox.target()}))
+            .unwrap();
+        let took = started.elapsed();
+        engine.request("click", json!({"x": 100, "y": 100})).unwrap();
+        drop(raises);
+        assert_eq!(
+            cover.inputs(),
+            vec![],
+            "{mode}: nothing reached the window that covered it"
+        );
+        assert_eq!(
+            firefox.inputs(),
+            vec![
+                Input::ButtonPress { button: 1, sent: false },
+                Input::ButtonRelease { button: 1, sent: false }
+            ],
+            "{mode}: the pipelined click, in the activated window"
+        );
+        assert!(
+            took >= Duration::from_millis(150),
+            "{mode}: it waited for the raise ({took:?})"
+        );
+
+        firefox.unfocus();
+        cover.raise();
+        let raises = SlowRaises::start(firefox.id, None);
+        let started = Instant::now();
+        let refused = engine.request("activate_window", json!({"window": firefox.target()}));
+        let took = started.elapsed();
+        drop(raises);
+        assert_eq!(
+            refused,
+            Err(format!(
+                "window {} was not brought to the front: another window still covered it 1000 ms after its activation \
+                 was requested; nothing else was sent",
+                firefox.id
+            )),
+            "{mode}"
+        );
+        assert!(took >= Duration::from_millis(1000), "{mode}: at the bound ({took:?})");
+        assert_eq!(firefox.inputs(), vec![], "{mode}: nothing else was sent");
+        assert_eq!(cover.inputs(), vec![], "{mode}");
+    }
 }
 
 /// A point under the window's own popup (an override-redirect window of its own X client, as a menu it opened) is the

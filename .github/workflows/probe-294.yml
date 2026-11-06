@@ -45,7 +45,7 @@ jobs:
       - name: Live
         env:
           P294_REP: ${{ matrix.rep }}
-          P294_CELLS: ${{ github.event.inputs.cells || 'b/' }}
+          P294_CELLS: ${{ github.event.inputs.cells || 'c/' }}
         run: node scripts/probe-294/live.mjs --engine "$RUNNER_TEMP/eng/debug/cua-engine" --tool "$RUNNER_TEMP/p294-tool" ${P294_CELLS:+--cells "$P294_CELLS"} --out "$RUNNER_TEMP/probe-294"
       - name: Upload
         if: always()

@@ -219,6 +219,32 @@ CELLS.push({label: 'b/reobs-then-click-25', between: {at: 25_000, do: 'reobs-nos
 CELLS.push({label: 'b/element-tap-25s', route: 'element', tap: true, waitMs: 25_000});
 CELLS.push({label: 'b/coord-then-element-25', then: {route: 'element', afterMs: 1500}, waitMs: 25_000});
 CELLS.push({label: 'b/timeline-25', timeline: true, waitMs: 25_000});
+// Wave 3 (run 42175037968: the element click posted at (495, 94), not Reload's observed centre (459, 94); a real HID
+// click at (459, 94) 25 s after launch with no engine at all was lost too): the toolbar's layout over time.
+//   c/layout-noeng         no engine: every second for 32 s the toolbar's controls and the hit at (459, 94), and
+//                          region captures at 1, 8, 14, 18, 22, 26 and 30 s
+//   c/layout-eng           the same after an observation, then a re-observation's Reload frame
+//   c/current-coord-25     observe; re-observe (no screenshot) at 24 s; route 3 at 25 s at Reload's current centre,
+//                          in the first screenshot's pixels
+//   c/fresh-shot-25        observe; re-observe with a screenshot at 24 s; route 3 at 25 s at that screenshot's Reload
+CELLS.push({label: 'c/layout-noeng', noEngine: true, layout: true, waitMs: 32_000});
+CELLS.push({label: 'c/layout-eng', layout: true, waitMs: 32_000, noClick: true});
+CELLS.push({label: 'c/current-coord-25', between: {at: 24_000, do: 'reobs-noshot'}, clickCurrent: true, waitMs: 25_000});
+CELLS.push({label: 'c/fresh-shot-25', between: {at: 24_000, do: 'reobs'}, clickCurrent: true, waitMs: 25_000});
+async function layoutSample(pid, from, untilMs, label) {
+  const out = [];
+  const shots = [1000, 8000, 14_000, 18_000, 22_000, 26_000, 30_000];
+  while (Date.now() < from + untilMs) {
+    const at = Date.now() - from;
+    const tb = await tool(['toolbar', String(pid), '459', '94']).done;
+    const entry = {at, controls: tb.controls?.map(c => `${c.role}:${c.desc}:${c.enabled}@${c.frame?.map(Math.round).join(',')}`), hit: tb.hit, ms: tb.ms};
+    const due = shots.find(s => at >= s && !out.some(e => e.shotAt === s));
+    if (due !== undefined) { entry.shotAt = due; entry.shot = sh('screencapture', ['-x', '-R400,30,620,140', join(OUT, `${fileName(label)}-${due / 1000}s.png`)]).status; }
+    out.push(entry);
+    await sleep(Math.max(0, 1000 - (Date.now() - from - at)));
+  }
+  return out;
+}
 const RUN = CELLS.filter(c => !ONLY || ONLY.some(p => c.label.startsWith(p)));
 
 async function cell(spec) {
@@ -234,6 +260,10 @@ async function cell(spec) {
     row.textEditFrontAt = Date.now();
     const userPid = pidOf('TextEdit');
     if (spec.preMs) await sleep(spec.preMs);
+    if (spec.noEngine && spec.layout) {
+      row.layout = await layoutSample(pid, row.textEditFrontAt, spec.waitMs, spec.label);
+      return row;
+    }
     if (spec.noEngine) {
       // Reload's point at the window's fixed place (every observed cell found its frame at 442,77 34x34).
       const screen = {x: 459, y: 94};
@@ -290,6 +320,20 @@ async function cell(spec) {
         row.between = {ms: o2.ms, lineage: o2.sky.lineage ?? null};
         sky = o2.sky;
       }
+    }
+    if (spec.layout) {
+      row.layout = await layoutSample(pid, o.at, spec.waitMs, spec.label);
+      const o2 = await observe(w, pid, `${spec.label}-2`, false);
+      const n2 = findReload(o2.sky);
+      row.reloadLater = n2 ? {frame: n2.frame, token: n2.token, afterObservationMs: o2.at - o.at} : null;
+      try { await w.call('shutdown', {}, 5000); } catch {}
+      w.close();
+      return row;
+    }
+    if (spec.clickCurrent) {
+      const current = findReload(sky);
+      row.reloadCurrent = current?.frame ?? null;
+      if (current?.frame) { row.pixelStale = px; Object.assign(px, pixel(sky.screenshot ? sky : o.sky, centre(current))); }
     }
     const wait = o.at + spec.waitMs - Date.now(); if (wait > 0) await sleep(wait);
     const tap = spec.tap ? tool(['tap', String(pid), '4000'], 30_000, true) : null;
@@ -357,7 +401,12 @@ function summary(r) {
   const meta = m ? JSON.stringify({route: m.inputRoute, join: m.activationJoin, kind: m.activationClickKind, ac: m.activationClick, el: m.elementClick?.reason ?? m.elementClick?.route, restores: m.delivery?.restores, capped: m.delivery?.capped}) : '';
   const err = r.click?.error ? `ERROR ${r.click.error.name ?? ''} ${String(r.click.error.message ?? '').slice(0, 120)}` : '';
   const states = r.state?.changes ? ` state ${JSON.stringify(r.state.changes.map(c => [c.t, c.front, c.key, c.main, c.winMain, c.winFocused, c.userFront]))}` : '';
-  const extra = [r.between ? ` between ${JSON.stringify(r.between).slice(0, 200)}` : '',
+  if (r.layout) {
+    const lines = r.layout.map(e => `${Math.round(e.at / 100) / 10}s reload=${(e.controls ?? []).find(c => /reload/i.test(c)) ?? '-'} hit=${e.hit?.role}:${e.hit?.desc}:${e.hit?.enabled}@${e.hit?.frame?.map(Math.round).join(',')}`);
+    const changes = lines.filter((l, i) => i === 0 || l.split(' ').slice(1).join(' ') !== lines[i - 1].split(' ').slice(1).join(' '));
+    return `layout changes ${JSON.stringify(changes)} first ${JSON.stringify(r.layout[0]?.controls)} last ${JSON.stringify(r.layout.at(-1)?.controls)} later ${JSON.stringify(r.reloadLater ?? null)}`;
+  }
+  const extra = [r.reloadCurrent ? ` current ${JSON.stringify(r.reloadCurrent)} px ${JSON.stringify(r.pixel)} stale ${JSON.stringify(r.pixelStale)}` : '', r.between ? ` between ${JSON.stringify(r.between).slice(0, 200)}` : '',
     r.second ? ` firstLoads+${r.firstLoadsDelta} second@${r.second.afterObservationMs} ${JSON.stringify(r.second.click?.error?.name ?? r.second.click?.meta?.elementClick ?? null)}` : '',
     r.timeline ? ` timeline ${JSON.stringify([...new Set(r.timeline.map(e => JSON.stringify(e.cg)))])} axAfter ${JSON.stringify(r.windowsAfter?.ax ?? null)}` : ''].join('');
   return `${extra} click@${r.clickAfterObservationMs}ms(teFront+${r.clickAfterTextEditFrontMs}) ${r.clickMs}ms ${err}${meta} LOADS+${r.loadsDelta} page ${JSON.stringify(r.pageEvents)} before ${JSON.stringify(r.pageBefore && {hasFocus: r.pageBefore.hasFocus, vis: r.pageBefore.vis})} idle ${JSON.stringify(r.idleTicks)} front ${r.frontBefore}->${r.frontAfter}${states}${tapLine(r)}`;

@@ -205,6 +205,39 @@ case "windows":
   }
   emit(out)
 
+case "toolbar":
+  // tool toolbar <pid> <x> <y>: the toolbar's controls (buttons, pop-up and menu buttons, text fields, combo boxes) with
+  // their frames and enabled state, found breadth-first under the application (up to 4000 elements, frames above y 140),
+  // and the hit-test at (x, y) with its role, description and frame.
+  let pid = pid_t(args[2])!, x = Double(args[3])!, y = Double(args[4])!
+  let app = prepare(AXUIElementCreateApplication(pid))
+  let t0 = nowMs()
+  func describe(_ e: AXUIElement) -> [String: Any] {
+    var d: [String: Any] = ["role": attr(e, kAXRoleAttribute) as? String ?? NSNull(),
+                            "desc": (attr(e, kAXDescriptionAttribute) as? String) ?? (attr(e, kAXTitleAttribute) as? String) ?? NSNull(),
+                            "enabled": boolValue(attr(e, kAXEnabledAttribute))]
+    if let p = attr(e, kAXPositionAttribute), let s = attr(e, kAXSizeAttribute) {
+      var pt = CGPoint.zero, sz = CGSize.zero
+      if AXValueGetValue(p as! AXValue, .cgPoint, &pt), AXValueGetValue(s as! AXValue, .cgSize, &sz) { d["frame"] = [pt.x, pt.y, sz.width, sz.height] }
+    }
+    return d
+  }
+  let wanted: Set<String> = ["AXButton", "AXPopUpButton", "AXMenuButton", "AXTextField", "AXComboBox"]
+  var queue = [app], head = 0, found: [[String: Any]] = []
+  while head < queue.count && head < 4000 {
+    let e = prepare(queue[head]); head += 1
+    let role = attr(e, kAXRoleAttribute) as? String ?? ""
+    if role == "AXWebArea" { continue }
+    if wanted.contains(role) {
+      let d = describe(e)
+      if let f = d["frame"] as? [Double], f[1] < 140 { found.append(d) }
+    }
+    queue.append(contentsOf: elements(attr(e, kAXChildrenAttribute)))
+  }
+  var hit: AXUIElement?
+  let r = AXUIElementCopyElementAtPosition(app, Float(x), Float(y), &hit)
+  emit(["controls": found, "hit": hit.map { describe(prepare($0)) } ?? ["error": Int(r.rawValue)], "visited": head, "ms": r1(nowMs() - t0)])
+
 case "cursor":
   let c = CGEvent(source: nil)?.location ?? .zero
   emit(["x": c.x, "y": c.y])

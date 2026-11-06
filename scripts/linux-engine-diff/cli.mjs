@@ -11,11 +11,12 @@ export const USAGE = `usage:
   linux-engine-diff.mjs --vendor <bin> --newest <bin> --cua <artifact> --scene <list> --ops <list|all> --out <dir>
       [--dev] [--blocks 3] [--samples-tree 7] [--samples-input 5] [--variant <label>=<cua flags>]... [--run <name>]
       [--occlusion covered|visible|partial (drag, kinds)] [--no-counts] [--no-audit] [--via wire|vendor-js --vendor-js <@oai/sky directory>]
-  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation --cua <bin> --out <dir> [--run <name>]
+  linux-engine-diff.mjs --experiment capture-readiness|key-pace|matrix|qt-bridge|element-click|partial-cover|events|engine-readiness|drag|kinds|dnd|atspi|focus-timer|engine-stop|qt-activation|settle --cua <bin> --out <dir> [--run <name>]
       [--vendor <bin> --newest <bin>] [--family <list>] [--load | --load-factor <workers per core>] [--no-grabs] [--dnd-short] [--stops-only] [--exit-settle-ms <ms>] [--scenarios <list>] [--lanes <list>] [--trace] (focus-timer) [--dnd-cold [--cover-ms N] [--prelude dedicated] [--ballast gate] [--stray nudge|popup:N] [--park-pointer X,Y]] (dnd) [--samples-input 5] [--samples-text 2] [--trials 12] [--geometry WxH]
       [--via vendor-js --vendor-js <@oai/sky directory>] (events only) [--lanes <labels>] (drag, kinds, dnd, engine-stop, qt-activation)
       [--released <bin>] [--kinds click,key-click,press_key,drag,scroll] (qt-activation)
       [--control-root <cua checkout> [--paths idle,eof,signal,remote,held-back] [--cases hold,burst,handle] [--sandbox scoped|disabled] [--require-burst-cut]] (engine-stop)
+      [--family <list>] [--kinds <list>] [--routes background,desktop,dedicated] [--lanes shipped,settle-<ms>...] [--no-audit] (settle)
   linux-engine-diff.mjs --record-wire --cua <bin>
   linux-engine-diff.mjs --summarize --out <dir>`;
 
@@ -123,8 +124,13 @@ export function parseArgs(argv) {
       a.loadFactor = Number(need());
     }
     else if (flag === '--family') a.families = need().split(',').filter(Boolean);
-    // the qt-activation experiment's input kinds (qt-activation.mjs KINDS)
+    // the qt-activation and settle experiments' input kinds (qt-activation.mjs KINDS, action-settle-cells.mjs KIND_METHOD)
     else if (flag === '--kinds') a.kinds = need().split(',').filter(Boolean);
+    // the settle experiment's routes (action-settle-cells.mjs CELLS)
+    else if (flag === '--routes') {
+      a.routes = need().split(',').filter(Boolean);
+      for (const route of a.routes) if (!['background', 'desktop', 'dedicated'].includes(route)) throw new Error('--routes takes background, desktop and dedicated');
+    }
     else if (flag === '--lanes') a.lanes = need().split(',').filter(Boolean);
     // the engine-stop experiment's stop paths, by name (engine-stop.mjs PATHS)
     else if (flag === '--paths') a.paths = need().split(',').filter(Boolean);
@@ -173,7 +179,7 @@ export function parseArgs(argv) {
   else if (a.mode === 'summarize') require('out');
   else if (a.mode === 'experiment') {
     require('cua', 'out');
-    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag', 'kinds', 'dnd', 'atspi', 'focus-timer', 'engine-stop', 'qt-activation'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
+    if (!['capture-readiness', 'key-pace', 'matrix', 'qt-bridge', 'element-click', 'partial-cover', 'events', 'engine-readiness', 'drag', 'kinds', 'dnd', 'atspi', 'focus-timer', 'engine-stop', 'qt-activation', 'settle'].includes(a.experiment)) throw new Error(`unknown experiment ${a.experiment}\n${USAGE}`);
     if (['matrix', 'element-click', 'partial-cover', 'events'].includes(a.experiment)) require('vendor', 'newest');
     if (['qt-bridge', 'engine-readiness', 'drag', 'kinds', 'dnd'].includes(a.experiment)) require('vendor');
     // the drag and kinds experiments also measure a window with its bottom half covered (Gecko's cover condition)

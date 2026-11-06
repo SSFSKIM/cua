@@ -193,6 +193,29 @@ export const FAMILIES = {
     geometry: [600, 400],
     launch: (ctx) => qtLaunch(ctx, 'qt5', 'fusion'),
   },
+  // M4 T8: the settle experiment's own scenes (action-settle.mjs): a push button counting its presses and a pad counting
+  // the pointer moves (and, under GTK 3, the wheel steps) it receives, each count in an accessible name the window's tree
+  // carries, under GTK 3 (pages/settle-gtk3.py) and Qt 5 and 6 (pages/settle-qt.py)
+  'settle-gtk3': {
+    title: 'GTK 3 settle scene (harness scene)',
+    kind: 'settle-scene',
+    geometry: [600, 400],
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'settle-gtk3.py'), ctx.label], match: (w) => w.title === ctx.label }),
+  },
+  'settle-qt5': {
+    title: 'Qt 5 settle scene (harness scene)',
+    qt: true,
+    kind: 'settle-scene',
+    geometry: [600, 400],
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'settle-qt.py'), ctx.label, 'qt5'], match: (w) => w.title === ctx.label }),
+  },
+  'settle-qt6': {
+    title: 'Qt 6 settle scene (harness scene)',
+    qt: true,
+    kind: 'settle-scene',
+    geometry: [600, 400],
+    launch: (ctx) => ({ cmd: 'python3', args: ['-I', join(PAGES, 'settle-qt.py'), ctx.label, 'qt6'], match: (w) => w.title === ctx.label }),
+  },
   // M4 T6: the AT-SPI probe's scenes (atspi-probe.mjs): a GTK 4 window and a Qt 5 and Qt 6 one holding open menus, a
   // tree that changes on a timer, and (GTK 4) text widgets recording the signals their edits raise, to a record file;
   // `mode` (openFamily's) names the GTK 4 scene's (pages/atspi-gtk4.py)
@@ -615,6 +638,9 @@ async function resolveTargets(desktop, oracle, scene) {
     scene.button = nodes.find((n) => n.name === 'press')?.id ?? null;
   } else if (scene.kindOf === 'button') {
     scene.button = nodes.find((n) => COUNTED.test(n.name ?? ''))?.id ?? null;
+  } else if (scene.kindOf === 'settle-scene') {
+    scene.button = nodes.find((n) => COUNTED.test(n.name ?? ''))?.id ?? null;
+    scene.status = nodes.find((n) => /^moves \d+/.test(n.name ?? ''))?.id ?? null;
   } else if (scene.kindOf === 'electron') {
     scene.field = nodes.find((n) => n.role === 'entry' && n.name === 'Fixture text')?.id ?? null;
     scene.button = nodes.find((n) => n.role === 'push button' && n.name === 'Fixture button')?.id ?? null;

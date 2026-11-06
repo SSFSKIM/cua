@@ -28,6 +28,7 @@ import { runEvents } from './events.mjs';
 import { controlLabel, runEngineStop } from './engine-stop.mjs';
 import { runFocusTimer } from './focus-timer.mjs';
 import { runQtActivation } from './qt-activation.mjs';
+import { runSettle } from './action-settle.mjs';
 import { runDnd } from './dnd.mjs';
 import { runKinds } from './kinds.mjs';
 import { familyNames, openFamily, readText } from './families.mjs';
@@ -323,6 +324,15 @@ export async function runExperiment(args) {
     // on a private X server of its own, as the focus-timer experiment (qt-activation.mjs), its load started there
     emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
     const { md, complete, failed, ending } = await runQtActivation(args, { emit, run, startLoad });
+    emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
+    process.stdout.write(`${md.join('\n')}\n`);
+    writeSummary(args.out);
+    return complete;
+  }
+  if (args.experiment === 'settle') {
+    // through cua's own service, on a private X server of its own (action-settle.mjs), its load started there
+    emit({ kind: 'meta', experiment: args.experiment, commit: gitHead(), families: args.families, kinds: args.kinds ?? [], routes: args.routes ?? [], lanes: args.lanes ?? null, load: args.load, load_factor: args.loadFactor ?? null, started: new Date().toISOString() });
+    const { md, complete, failed, ending } = await runSettle(args, { emit, run, startLoad });
     emit({ kind: 'experiment-summary', markdown: md, complete, failed, desktop: ending.record, finished: new Date().toISOString() });
     process.stdout.write(`${md.join('\n')}\n`);
     writeSummary(args.out);

@@ -974,6 +974,44 @@ node scripts/linux-engine-diff.mjs --experiment engine-stop --cua "$CANDIDATE" -
   cleanup. Each row records how long the engine lived after the stop began and after the last answer; the control is
   recorded by its directory's name (`control_label`), never its path.
 
+## M4 T8's addition: the action settle through cua's service (`--experiment settle`)
+
+cua's Linux service holds the call after a successful input until that input's method's settle has passed
+(`src/services/engine/linux/settle.mjs`, per method since T8), so the model's next observation finds the input's effect.
+The experiment measures, per cell (a scene, an input kind, a route, an occlusion: `action-settle-cells.mjs` `CELLS`),
+whether an observation straight after the input's answer shows the effect, through the service itself
+(`createService`, in this process, its engine the candidate).
+
+```bash
+node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out "$OUT/settle/search-idle" [--family <list>] [--kinds <list>] [--routes background,desktop,dedicated]
+node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out "$OUT/settle/search-load2" --load-factor 2
+node scripts/linux-engine-diff.mjs --experiment settle --cua "$CANDIDATE" --out "$OUT/settle/shipped-idle" --lanes shipped
+```
+
+- **Its display**, as the focus-timer experiment's: a private X server it starts itself, Openbox, the harness's Desktop
+  with one family's windows at a time (`FAMILY_SCENES`), the front window over them holding the focus.
+- **The scenes**: Chrome, Electron and Firefox on the input page (`pages/input.html`, every pointer and key kind
+  counted in its status lines) and on the matrix page's field (the text kinds); gedit, kate, qtcreator and Writer;
+  gnome-terminal and xterm running the recorder; the settle scenes `pages/settle-gtk3.py` and `pages/settle-qt.py`
+  (a button counting presses, a pad counting moves and wheel steps, in accessible names); GTK 4's button and input
+  scenes and gnome-text-editor. A kind the family's `families.rs` entry ignores on the background route is refused in
+  shared mode with nothing sent, so GTK 4's kinds and xterm's keys run in dedicated mode (the foreground route).
+- **A run**: prepared outside its span (a caret put at the text's end through AT-SPI, a terminal's screen cleared,
+  a key held for a `key_up`, a word copied for a `clipboard_write`), read once its scene has stopped changing, then its
+  requests through the service and the reading of its effect inside one witness span. The effect is read through the
+  service's own `get_window_state` where the tree carries it, else (a caret, a selection, a field whose node has no
+  value, a terminal's screen, the clipboard, what xterm's program received, an activation's `_NET_ACTIVE_WINDOW` and
+  frame `ACTIVE` state) by the harness the moment the service's settle ends, over one kept D-Bus connection
+  (`bus-client.mjs`; `busctl` would start each read about 5 ms late). A run passes on its answers and its effect, and
+  on the background route on a desktop left alone (the witness clean, no activation request, the front window still
+  active). A miss records whether its effect came within 2 s (`late_ms`) or never.
+- **The lanes**: every method at one step (`settle-0`, `-10`, `-25`, `-50`, `-75`, `-100`) or the shipped constants
+  (`shipped`). Without `--lanes` a sitting searches each cell upward from 0 ms, the control, stopping at the first step
+  that reaches 30 consecutive passing runs in at most 60 (a series stops once it cannot). A fresh service and engine for
+  each series. With `--lanes shipped`, each background cell also gets an audit pass through xtrace (`--no-audit`).
+- **The constants**: each method's is the largest held step across its cells, idle and at twice the load
+  (`methodConstants`); a cell that held at no step keeps its method at the shipped value.
+
 ## Files
 
 | File | What it is |
@@ -1005,6 +1043,7 @@ node scripts/linux-engine-diff.mjs --experiment engine-stop --cua "$CANDIDATE" -
 | `focus-timer.mjs`, `pages/keys.html` | M4 T7's FocusOut and paste-settle experiment and its Chromium page |
 | `qt-activation.mjs` | M4 task 61's experiment: whether a background input activates a Qt window, per engine and kind |
 | `engine-stop.mjs`, `remote-serve.mjs` | M4 T7b's REPL-host stop experiment through `cua serve`, and its remote session's endpoint |
+| `action-settle.mjs`, `action-settle-cells.mjs`, `bus-client.mjs`, `pages/settle-gtk3.py`, `pages/settle-qt.py` | M4 T8's settle experiment through cua's service: its live runs, its cells and judges, the kept D-Bus connection its readings use, its GTK 3 and Qt scenes |
 | `pages/` | the Chrome scenes (`input.html` the pointer and key scene, `text.html` the text scene) and `gtk-table.py`, the large-table scene |
 | `text.mjs`, `safety.mjs`, `safety-judge.mjs`, `clip.mjs`, `xprobe/src/clip.rs`, `pages/paste-target.py` | M2's text operations, the paste safety cases and their judges, the clipboard owner and reader, the paste-target window |
 | `kinds.mjs`, `dnd.mjs`, `device.mjs`, `xprobe/src/dnd.rs`, `pages/gtk4-input.py`, `pages/qt-input.py` | M3.1's kinds and drag-and-drop experiments, Acceptance 8's device cases, the `XdndSelection` watch, the GTK 4 and Qt scenes |

@@ -42,6 +42,9 @@ const ISOLATION = {
   'atspi-gtk4': (l) => l.cmd === 'python3' && l.args[0] === '-I',
   'atspi-qt5': (l) => l.cmd === 'python3' && l.args[0] === '-I',
   'atspi-qt6': (l) => l.cmd === 'python3' && l.args[0] === '-I',
+  'settle-gtk3': (l) => l.cmd === 'python3' && l.args[0] === '-I',
+  'settle-qt5': (l) => l.cmd === 'python3' && l.args[0] === '-I',
+  'settle-qt6': (l) => l.cmd === 'python3' && l.args[0] === '-I',
 };
 
 test('every family launches an instance of its own, and every family is classified', () => {

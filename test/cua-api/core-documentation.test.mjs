@@ -97,8 +97,12 @@ const BACKGROUND_CLICKS = '\nA web page in a Chromium-based app (Chrome, Electro
 // The third (the surface inventory's "Table 3 addition (2026-11-06, #296)"): the stale-point guard's refusal.
 const STALE_POINT = '\nA click or drag at coordinates is checked against the screenshot the coordinates came from: when what that screenshot showed at the point is gone, has moved off it, or has given way to another control, it fails with `screenChangedSinceScreenshot` and nothing is sent. Take a new screenshot and give the coordinates in it.\n';
 
+// The fourth (the surface inventory's "Table 3 addition (2026-11-06, #301)"): the truncation marker of a walk the
+// node budget cut, which keeps what the window shows first.
+const TRUNCATION = '\nWhen a window holds more than its accessibility tree can list, the tree lists what the window shows first, in its usual order, and ends with a line such as `[truncated: at least 1234 elements omitted, above and below the visible area]`, the count a lower bound and the words saying which way the omitted elements lie. To reach an element the tree does not list, scroll toward it and call `getAXState()` again. A visible control inside a container that reports a collapsed frame can still be left out. In a Chromium-based app, a table\'s column and header elements take new element IDs at every observation.\n';
+
 test('agent-cursor.md is the Table 3 additions\' paragraphs, and the core carries it only where the facade asks for it', async () => {
-  assert.equal(read(DOCS, 'agent-cursor.md'), AGENT_CURSOR + BACKGROUND_CLICKS + STALE_POINT);
+  assert.equal(read(DOCS, 'agent-cursor.md'), AGENT_CURSOR + BACKGROUND_CLICKS + STALE_POINT + TRUNCATION);
   const read_ = async name => `<${name}>`;
   assert.equal(await create_documentation(read_).read_core(), '<core-cua-repl>\n<confirmations>');
   assert.equal(await create_documentation(read_, {agentCursor: () => false}).read_core(), '<core-cua-repl>\n<confirmations>');

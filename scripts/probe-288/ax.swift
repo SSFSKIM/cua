@@ -317,6 +317,32 @@ case "toolbar":
   out["totalMs"] = r1(nowMs() - t0)
   emit(out)
 
+case "watch":
+  // The live check's sampler (#292): every sampleMs for pollMs, the application's AXEnhancedUserInterface value, whether
+  // the checkbox hit advertises AXPress, and whether the field's character box is non-empty; each change with its time.
+  let pollMs = (spec["pollMs"] as? NSNumber)?.doubleValue ?? 1500, sampleMs = (spec["sampleMs"] as? NSNumber)?.doubleValue ?? 20
+  let cb = spec["cb"] as? [String: Any] ?? [:], tf = spec["tf"] as? [String: Any] ?? [:]
+  let k = Int(num(tf, "k"))
+  let t0 = nowMs()
+  var changes: [[String: Any]] = [], last = "", samples = 0
+  while nowMs() - t0 <= pollMs {
+    let st = nowMs()
+    let (e, ee) = copy(app, "AXEnhancedUserInterface")
+    let eui: Any = e != nil ? boolValue(e) : "error \(ee)"
+    let cbHit = hitTest(app, num(cb, "x"), num(cb, "y")).0
+    let press = (cbHit.flatMap(actions) ?? []).contains("AXPress")
+    var box = "none"
+    if let tfHit = hitTest(app, num(tf, "x"), num(tf, "y")).0 {
+      let (v, err) = param(tfHit, "AXBoundsForRange", rangeValue(k, 1))
+      if let r = rect(v) { box = r.width > 0 && r.height > 0 ? "box" : "empty" } else { box = "err\(err)" }
+    }
+    samples += 1
+    let key = "\(eui)|\(press)|\(box)"
+    if key != last { changes.append(["t": r1(nowMs() - t0), "eui": eui, "press": press, "box": box]); last = key }
+    pause(max(1, sampleMs - (nowMs() - st)))
+  }
+  emit(["t0": t0, "samples": samples, "changes": changes])
+
 case "tbtimeline":
   // Round 2: one sample before the role read, then the role read, then every 5 ms for 600 ms: the page point's and the
   // toolbar point's hits, their walks, whether the hit has an AXWebArea among its descendants (2 levels), and the

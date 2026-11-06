@@ -1,20 +1,28 @@
-# #288's hosted probe (scripts/probe-288/probe.mjs): how soon a background Chrome for Testing reaches Chromium's complete
-# accessibility mode, by trigger, behind a frontmost TextEdit; the side effects of AXEnhancedUserInterface on the window's
-# scripted move and resize; what a click-time step establishes about Chrome's toolbar in a process nothing observed; and
-# origin/main's engine's first click after each trigger at first contact. Two repetitions on two runners. Runs only on a
-# push to probe/288-hosted (or by hand); not a ci-kit gate.
+# #288's hosted probe. script probe (scripts/probe-288/probe.mjs): how soon a background Chrome for Testing reaches
+# Chromium's complete accessibility mode, by trigger, behind a frontmost TextEdit; AXEnhancedUserInterface's side effects on
+# the window's scripted move and resize; the toolbar's click-time establishment; origin/main's first click after each
+# trigger. script live (scripts/probe-288/live.mjs, the push default): #292/#288's live check, fix/288-fresh-chrome's
+# engine against origin/main's. Two repetitions on two runners. Runs only on a push to probe/288-hosted (or by hand);
+# not a ci-kit gate.
 name: probe-288
 on:
   push:
     branches: [probe/288-hosted]
   workflow_dispatch:
     inputs:
+      script:
+        description: live (the engines' live check) or probe (the trigger spike)
+        required: false
+        default: live
       cells:
-        description: probe.mjs --cells (label prefixes, comma-separated; empty for all)
+        description: --cells (label prefixes, comma-separated; empty for the script's default)
         required: false
         default: ''
 permissions:
   contents: read
+env:
+  P288_MAIN_REF: d2568c76
+  P288_BRANCH_REF: 96c6f093
 jobs:
   probe:
     strategy:
@@ -35,16 +43,31 @@ jobs:
             echo "== $db"
             sudo sqlite3 "$db" "select service, client, auth_value from access where service in ('kTCCServiceAccessibility','kTCCServicePostEvent','kTCCServiceScreenCapture','kTCCServiceListenEvent') order by service, client" || true
           done
-      - name: Build origin/main's engine
+      - name: Build main's engine
         run: |
-          git worktree add "$RUNNER_TEMP/main" origin/main
-          echo "P288_ENGINE_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
+          git worktree add "$RUNNER_TEMP/main" "$P288_MAIN_REF"
+          echo "P288_MAIN_COMMIT=$(git -C "$RUNNER_TEMP/main" rev-parse HEAD)" >> "$GITHUB_ENV"
           swift build --package-path "$RUNNER_TEMP/main/native/engine" --scratch-path "$RUNNER_TEMP/eng"
+      - name: Build the branch's engine
+        if: github.event.inputs.script != 'probe'
+        run: |
+          git fetch --no-tags origin fix/288-fresh-chrome
+          git worktree add "$RUNNER_TEMP/branch" "$P288_BRANCH_REF"
+          echo "P288_BRANCH_COMMIT=$(git -C "$RUNNER_TEMP/branch" rev-parse HEAD)" >> "$GITHUB_ENV"
+          swift build --package-path "$RUNNER_TEMP/branch/native/engine" --scratch-path "$RUNNER_TEMP/eng-branch"
       - name: Build the AX tool
         run: swiftc -O -o "$RUNNER_TEMP/p288-ax" scripts/probe-288/ax.swift
-      - name: Probe
+      - name: Live check
+        if: github.event.inputs.script != 'probe'
         env:
           P288_REP: ${{ matrix.rep }}
+          P288_CELLS: ${{ github.event.inputs.cells || '' }}
+        run: node scripts/probe-288/live.mjs --main "$RUNNER_TEMP/eng/debug/cua-engine" --branch "$RUNNER_TEMP/eng-branch/debug/cua-engine" --ax "$RUNNER_TEMP/p288-ax" --cells "$P288_CELLS" --out "$RUNNER_TEMP/probe-288"
+      - name: Probe
+        if: github.event.inputs.script == 'probe'
+        env:
+          P288_REP: ${{ matrix.rep }}
+          P288_ENGINE_COMMIT: ${{ env.P288_MAIN_COMMIT }}
           P288_CELLS: ${{ github.event.inputs.cells || 'tb/,r2/' }}
         run: node scripts/probe-288/probe.mjs --engine "$RUNNER_TEMP/eng/debug/cua-engine" --ax "$RUNNER_TEMP/p288-ax" --cells "$P288_CELLS" --out "$RUNNER_TEMP/probe-288"
       - name: Upload

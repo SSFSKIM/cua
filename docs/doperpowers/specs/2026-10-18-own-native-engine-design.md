@@ -2222,8 +2222,11 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
   1. **The record** (`ObservedScreenshot.nodes`; StalePoint.swift `screenshotNodes`). Every observation that returns a
      screenshot keeps, with it, each node of the window's walk: its handle, role, title, description and AX frame (global
      points, as clicks are posted), the part of that frame its clipping ancestors leave showing (`visibleFrame`'s rule
-     over the recorded tree), and whether the walk recorded all its children. An observation without a screenshot leaves
-     the record, as it leaves the screenshot. The menu bar is not recorded: it is not in the window's image.
+     over the recorded tree), and whether the walk recorded all its children (a frameless descendant's unrecorded children
+     count against its nearest framed ancestor, since a frameless node is never chosen at a point), with the window's
+     origin at the capture. Titles and descriptions are kept as the walk keeps them, cut at 10,000 UTF-16 units. An
+     observation without a screenshot leaves the record, as it leaves the screenshot. The menu bar is not recorded: it is
+     not in the window's image.
   2. **Where it applies.** Every coordinate pointer that presses at a screenshot point: `click {x, y}` with every button
      and count, on every route (3, 4, and the spike's 2 and 2′), and a drag's start point. Not a drag's end, where it
      drops. Not a scroll at a point: a scroll presses nothing, and a model's next scroll at the same point follows content
@@ -2236,11 +2239,19 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      `deliverPointer`, before the after-action watch is cancelled or anything is acquired.
   3. **Which node.** The deepest recorded node whose shown frame holds the point (edges included), the later in the
      walk's order at one depth. The clipping matters: page content scrolled up under Chrome's toolbar keeps frames there,
-     and would otherwise be the deepest node at a toolbar point.
+     and would otherwise be the deepest node at a toolbar point. **The window's move:** a coordinate is posted in the
+     window as it lies now (offset by its current origin), while the record's frames are where it lay at the screenshot.
+     So the node is chosen at the posted point moved back by the window's shift (its origin now less its origin at the
+     capture), the point the model meant in the image; its frame read now is checked against the posted point; and a
+     re-created handle is matched against the recorded frame moved by the shift. A window that only moved keeps every
+     node, and a node that moved inside it is still refused (the review of d482bcc2..a7a43b02: without this, a click on
+     one control in a window moved 100 pt chose the control the old coordinates held and refused it as moved, and a move
+     past the old bounds left the point unrecorded).
   4. **Is it the same node.** Its own handle while its frame reads, or while the hit or one of the hit's ancestors is
      that handle. Else a re-created handle: the node's role, a frame within 2 pt of the recorded one on every edge (the
      nearest such), and, by the amendment (0c0b70f0), the same title when both have one, else the same description when
-     neither has a title and both have one; a label either side cannot read never counts against it. **The bound:** it
+     neither has a title and both have one, the label read now cut as the record's was; a label either side cannot read
+     never counts against it. **The bound:** it
      is looked for among the hit, the hit's parents up to its window (at most 300 levels, the bound of every parent walk
      here) and the hit's first 300 descendants breadth-first, the spike's bound, within which it matched every
      re-created control it met at distance 0.
@@ -2282,12 +2293,15 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      (Save to Delete on one element) passes: its identity and its frame are unchanged, and refusing a label change on a
      live handle would refuse every control whose label ticks (#298). (iii) A hit in another window over the point (a
      menu, a popover) reads as no hit, and passes while the node is in place. (iv) cua refuses where the vendor posts.
-  Proven offline (`StalePointTests`, 9, and `StalePointDeliveryTests`, 4; #294's test fails with the frame check removed,
+  Proven offline (`StalePointTests`, 12, and `StalePointDeliveryTests`, 4; #294's test fails with the frame check removed,
   and the delivery's with the early refusal or the activation's refusal removed): the frame re-read with the same handle
   refusing (#294); the non-interactive child hit passing; the bounded re-created search (the 299th descendant found, the
   301st not, the hit's ancestor found, more than 2 pt off not); the changed label refused and an absent or unreadable
   label not counting either way; the relabelled live handle passing (#298); another interactive element refusing with
-  both named; the ancestor and unrecorded-descendant readings; the record's clipping and its choice of node. Through
+  both named; the ancestor and unrecorded-descendant readings; the record's clipping and its choice of node; and, after
+  the review, a window moved 100 pt (the node kept, a node moved inside it refused, a re-created one matched at the
+  shifted frame), a frameless container's unrecorded button counted against the window, and a re-created control with a
+  13,200-unit label matched. Through
   the delivery: a refusal with nothing posted, activated or held for a native view, an unknown app, a right click, a
   dedicated web area, a forced route and a drag; the element route still carrying a web-area click (`skipped`); and a
   web-area click that would have been posted refused before subtype 1 (an activation point's click, the app believing

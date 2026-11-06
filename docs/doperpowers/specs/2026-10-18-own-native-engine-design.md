@@ -1918,7 +1918,8 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      AXCheckBox and AXRadioButton. Every other role, text entry included, and any hit with an `AXEditableAncestor`
      (text and editing are #283's) is `backgroundClickRefused`. A checkbox's or radio button's AXValue (so a toggle's, a
      switch's, a tab's) is read before the press and polled every 20 ms for up to 500 ms after it
-     (`pressConfirmingValue`): unchanged, or unreadable after a readable one, the click answers `clickUnconfirmed`
+     (`pressConfirmingValue`): unchanged, or unreadable after a readable one, or with no readable baseline at all (the
+     press still goes, the model's intended action; the re-review of c768d2bb..1c8f2229), the click answers `clickUnconfirmed`
      (`pressUnconfirmed`'s sentence), never success. The criterion is that the control changes exactly once: Chrome's
      own AXPress on a checkbox synthesizes trusted pointer events in the page, which are Chrome's, not cua's posting,
      so no claim of zero pointer events is made for the element route.
@@ -1938,10 +1939,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      false). So where the process's accessibility is fresh (the engine's last enablement write to it under 10 s old,
      `WebAccessibility.lastEnabledAt`, or no web area seen in it yet), a resolved control with no action is re-read every
      100 ms for up to 2 s, posting nothing, before the refusal (`webAreaActionRereading`); a role the walk refuses waits
-     not at all. The refusal of a control still without an action asks for an observation first
+     not at all. After the read or the re-read, and before any activation or press, the chosen control is requalified as
+     it is then (`webAreaControlRequalified`, the re-review of c768d2bb..1c8f2229: a node may change during the wait): an
+     allowlisted role, not editable, its parents read up to the AXWebArea; otherwise it is refused, nothing posted, and
+     its action and value check follow its current role. The refusal of a control still without an action asks for an observation first
      (`backgroundClickRefusedObserveFirst`). **The cost:** up to 2 s of latency on the first click into a fresh Chrome
      whose control has not yet exposed its action, and the whole 2 s when it never does.
-  Proven offline (`BackgroundPointerTests`, 23, failing before the change where they bite: shared mode's refusal of
+  Proven offline (`BackgroundPointerTests`, 25, failing before the change where they bite: shared mode's refusal of
   a click, a double click and a drag into a web area with nothing posted, no hold taken and nothing left held; a plain
   click carried by the element route with nothing posted by cua; a web-area pointer joining its own or another connection's
   spent hold refused with the hold untouched; an Electron-shaped activation still posting; dedicated mode's inert click

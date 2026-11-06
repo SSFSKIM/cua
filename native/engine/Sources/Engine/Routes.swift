@@ -438,15 +438,53 @@ func webAreaActionRereading(role: String, first: [String]?, fresh: Bool, read: (
   return nil
 }
 
+/// Whether the control the walk chose still qualifies, read now (the review of c768d2bb..1c8f2229: a node may change
+/// during the re-read's wait): an allowlisted role, not editable, its parents read up to the AXWebArea (no window or
+/// application, no unread role or parent, within 300 levels). Answers its role now.
+func webAreaControlRequalified<Element>(_ control: Element, role: (Element) -> String?, parent: (Element) -> Element?,
+                                        editable: (Element) -> Bool) -> Result<String, WebAreaRefusal> {
+  guard let name = role(control) else { return .failure(.incompleteAncestry) }
+  if webAreaEditableRoles.contains(name) || editable(control) { return .failure(.editable) }
+  guard webAreaPressableRoles.contains(name) else { return .failure(.roleNotAllowed) }
+  var current = control
+  for _ in 0...300 {
+    guard let next = parent(current), let above = role(next) else { return .failure(.incompleteAncestry) }
+    if above == "AXWebArea" { return .success(name) }
+    if webAreaWalkStops.contains(above) { return .failure(.roleNotAllowed) }  // reached its window: outside every web area
+    current = next
+  }
+  return .failure(.incompleteAncestry)
+}
+
+/// The press of the control the walk chose (`walkedRole` its role then), decided before anything is posted: its action,
+/// re-read where the process's accessibility is fresh (`webAreaActionRereading`), then the control requalified as it is
+/// now (`webAreaControlRequalified`) and its action taken again under its current role. Answers the action and the
+/// current role, or why it is refused.
+func webAreaPressDecision<Element>(_ control: Element, walkedRole: String, fresh: Bool, actions: (Element) -> [String]?,
+                                   role: (Element) -> String?, parent: (Element) -> Element?, editable: (Element) -> Bool,
+                                   now: () -> Double, sleep: (Double) -> Void) -> Result<(action: String, role: String), WebAreaRefusal> {
+  guard webAreaActionRereading(role: walkedRole, first: actions(control), fresh: fresh, read: { actions(control) }, now: now,
+                               sleep: sleep) != nil else { return .failure(.noAction) }
+  switch webAreaControlRequalified(control, role: role, parent: parent, editable: editable) {
+  case .failure(let why): return .failure(why)
+  case .success(let current):
+    guard let action = webAreaAction(role: current, actions: actions(control)) else { return .failure(.noAction) }
+    return .success((action, current))
+  }
+}
+
 /// A web-area press whose role has a value to check (`webAreaValueCheckedRoles`): the value read before the press and
 /// polled after it for up to `webAreaValueSettleMs`; unchanged, or unreadable after a readable one, it answers
-/// clickUnconfirmed, never success. With no value to check (another role, or none readable before) the press stands as
-/// its own answer. Success means the control changed; the events Chrome itself synthesizes for the action are its own.
+/// clickUnconfirmed, never success. A role with no value to check stands on the press. A value-checked role whose
+/// baseline could not be read is still pressed (the model's intended action) and answers clickUnconfirmed, since nothing
+/// can show the control changed (the review of c768d2bb..1c8f2229). Success means the control changed; the events Chrome
+/// itself synthesizes for the action are its own.
 func pressConfirmingValue(app: String, checksValue: Bool, readValue: () -> String?, now: () -> Double, sleep: (Double) -> Void,
                           press: () throws -> Void) throws {
-  let before = checksValue ? readValue() : nil
+  guard checksValue else { return try press() }
+  let baseline = readValue()
   try press()
-  guard let before else { return }
+  guard let before = baseline else { throw pressUnconfirmed(app) }
   let started = now()
   repeat {
     if let after = readValue(), after != before { return }

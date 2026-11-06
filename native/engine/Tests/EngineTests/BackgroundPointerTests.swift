@@ -499,9 +499,73 @@ final class BackgroundPointerTests: XCTestCase {
     XCTAssertNoThrow(try run(["0", "0", "0", "1"]), "the value changed within the settle")
     XCTAssertLessThan(clock, webAreaValueSettleMs)
     XCTAssertThrowsError(try run(["1", nil]), "unreadable after a readable value: unconfirmed")
-    XCTAssertNoThrow(try run([nil]), "no value to read before: the press stands")
     XCTAssertNoThrow(try run(["0"], checks: false), "a button has no value to check")
-    XCTAssertEqual(presses, 5)
+    XCTAssertEqual(presses, 4)
+  }
+
+  /// The review of c768d2bb..1c8f2229: a value-checked role whose baseline read fails is still pressed, once, and answers
+  /// clickUnconfirmed, never success; a role with no value to check reads nothing at all.
+  func testAValueCheckedPressWhoseBaselineCannotBeReadAnswersClickUnconfirmed() {
+    var presses = 0, reads = 0
+    XCTAssertThrowsError(try pressConfirmingValue(app: "Google Chrome for Testing", checksValue: true, readValue: { reads += 1; return nil },
+                                                  now: { 0 }, sleep: { _ in XCTFail("no settle without a baseline") }) { presses += 1 }) {
+      XCTAssertEqual(($0 as? EngineError)?.errorName, "clickUnconfirmed")
+    }
+    XCTAssertEqual(presses, 1, "the press goes ahead, the model's intended action")
+    XCTAssertEqual(reads, 1)
+    reads = 0
+    XCTAssertNoThrow(try pressConfirmingValue(app: "Chrome", checksValue: false, readValue: { reads += 1; return nil },
+                                              now: { 0 }, sleep: { _ in }) { presses += 1 })
+    XCTAssertEqual(reads, 0, "no value to check: none read")
+    XCTAssertEqual(presses, 2)
+  }
+
+  /// A node that can change while the re-read waits.
+  private final class Live {
+    var role: String?
+    var editable = false
+    var actions: [String]? = []
+    let parent: Live?
+    init(_ role: String?, parent: Live? = nil) { self.role = role; self.parent = parent }
+  }
+
+  /// The review of c768d2bb..1c8f2229: the control the walk chose is requalified after the re-read and before anything is
+  /// posted. A button that, during the wait, becomes a text field or editable, moves out of the web area, or loses its
+  /// readable ancestry is refused; one still a button presses, and one now a checkbox presses as a checkbox (value checked).
+  func testTheChosenControlIsRequalifiedAfterTheReReadBeforeAnyPress() {
+    var clock: Double = 0
+    func decide(_ control: Live, during change: @escaping (Live) -> Void) -> Result<(action: String, role: String), WebAreaRefusal> {
+      var changed = false
+      return webAreaPressDecision(control, walkedRole: "AXButton", fresh: true, actions: { node in
+        if clock >= 1_600, !changed { changed = true; change(node); node.actions = ["AXPress"] }
+        return node.actions
+      }, role: { $0.role }, parent: { $0.parent }, editable: { $0.editable }, now: { clock }, sleep: { clock += $0 })
+    }
+    let web = { Live("AXWebArea", parent: Live("AXWindow")) }
+    func refusal(_ result: Result<(action: String, role: String), WebAreaRefusal>) -> WebAreaRefusal? {
+      if case .failure(let why) = result { return why }
+      return nil
+    }
+    clock = 0
+    XCTAssertEqual(refusal(decide(Live("AXButton", parent: web())) { $0.role = "AXTextField" }), .editable, "became a text field")
+    clock = 0
+    XCTAssertEqual(refusal(decide(Live("AXButton", parent: web())) { $0.editable = true }), .editable, "became editable")
+    clock = 0
+    XCTAssertEqual(refusal(decide(Live("AXButton", parent: web())) { $0.role = "AXStaticText" }), .roleNotAllowed, "no longer a control")
+    clock = 0
+    XCTAssertEqual(refusal(decide(Live("AXButton", parent: Live("AXGroup", parent: Live("AXWindow")))) { _ in }), .roleNotAllowed,
+                   "outside every web area")
+    clock = 0
+    XCTAssertEqual(refusal(decide(Live("AXButton", parent: Live("AXGroup"))) { _ in }), .incompleteAncestry, "ancestry unread")
+    clock = 0
+    let stillButton = decide(Live("AXButton", parent: Live("AXGroup", parent: web())), during: { _ in })
+    guard case .success(let same) = stillButton else { return XCTFail("still a button") }
+    XCTAssertEqual(same.action, "AXPress")
+    XCTAssertEqual(same.role, "AXButton")
+    clock = 0
+    let nowCheckbox = decide(Live("AXButton", parent: web()), during: { $0.role = "AXCheckBox" })
+    guard case .success(let toggled) = nowCheckbox else { return XCTFail("now a checkbox") }
+    XCTAssertEqual(toggled.role, "AXCheckBox", "pressed under its current role, so its value is checked")
   }
 
   // MARK: The coordinate hit-test asks the application, bounded to the window (#282, found live on the hosted runner)

@@ -293,6 +293,29 @@ final class VisibleFirstTests: XCTestCase {
     XCTAssertTrue((100..<700).allSatisfy { source.reads[$0] == nil }, "the hidden rows are never read")
   }
 
+  /// The re-review of 4e73574a..b2685041: a strip that clips (a 1-pt scroll area) keeps its own boundary, so its
+  /// omitted child cannot stand behind a new interactive element elsewhere in its parent, which is still refused.
+  func testAClippingStripsOmittedChildIsItsOwnNotItsParents() {
+    let window = CGRect(x: 0, y: 0, width: 100, height: 100)
+    let reads = [
+      ScreenshotNodeRead(element: Engine.element(0), number: 0, parent: nil, depth: 0, role: "AXWindow", title: nil, description: nil,
+                         frame: window, actions: [], childCount: 1),
+      ScreenshotNodeRead(element: Engine.element(1), number: 1, parent: 0, depth: 1, role: "AXScrollArea", title: nil, description: nil,
+                         frame: CGRect(x: 0, y: 0, width: 100, height: 1), actions: [], childCount: 1),
+    ]
+    let nodes = screenshotNodes(reads)
+    XCTAssertTrue(nodes[0].subtreeRecorded, "the window keeps its record")
+    XCTAssertFalse(nodes[1].subtreeRecorded, "the strip lacks its own child")
+    let frames: [Int: CGRect] = [0: window, 1: CGRect(x: 0, y: 0, width: 100, height: 1), 7: CGRect(x: 40, y: 40, width: 20, height: 20)]
+    let parents: [Int: Int] = [1: 0, 7: 0]
+    let id = { (element: AXUIElement) in Int(pid(of: element)) - 60_000 }
+    let live = StalePointReads<AXUIElement>(role: { id($0) == 7 ? "AXButton" : id($0) == 0 ? "AXWindow" : "AXScrollArea" },
+                                            frame: { frames[id($0)] }, parent: { parents[id($0)].map(Engine.element) },
+                                            children: { _ in [] }, title: { _ in "New" }, description: { _ in nil }, same: { CFEqual($0, $1) })
+    let verdict = stalePointVerdict(at: CGPoint(x: 50, y: 50), nodes: nodes, hit: Engine.element(7), reads: live)
+    XCTAssertEqual(verdict.reason, .interactiveHit, "a new button in the window is refused")
+  }
+
   func testOmittedPartsArePlacedByTheEdgeTheirElementLiesPast() {
     XCTAssertEqual(omittedPlace(frame: CGRect(x: 0, y: 0, width: 10, height: 50), visible: viewport), .above)
     XCTAssertEqual(omittedPlace(frame: CGRect(x: 0, y: 100, width: 10, height: 1), visible: viewport), .above, "a strip at the top edge")

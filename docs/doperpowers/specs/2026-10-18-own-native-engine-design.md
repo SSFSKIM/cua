@@ -2567,8 +2567,13 @@ Dependencies: Xcode 26's Swift 6 toolchain on each Mac; Node 24+ for the own hos
      guard's record treating a strip-framed container as framed: its unrecorded children did not count against its
      parent, so at a point under it the deepest recorded node was a complete-looking web area and an interactive hit
      there refused as `interactiveHit`, a false refusal (main has it too). `screenshotNodes` now counts a strip-framed
-     node (1 pt or less either way) as frameless for that rule, so the point is checked container-only, as stated
-     (`testAVisibleControlUnderACollapsedContainerCanStillBeCut`, which fails without the rule).
+     node (1 pt or less either way) that does not clip its descendants as frameless for that rule, so the point is
+     checked container-only, as stated (`testAVisibleControlUnderACollapsedContainerCanStillBeCut`). A strip that clips
+     (`clipsDescendants`, the same predicate the walk's visible-first order cuts by: a 1-pt scroll area or page-scrolling
+     group) keeps its own boundary, since its children show only inside it: its missing children make only the strip
+     incomplete, and a new interactive element elsewhere in its parent is still refused (the re-review of
+     4e73574a..b2685041 found the first form of the rule passing such a button as `unrecordedDescendant`;
+     `testAClippingStripsOmittedChildIsItsOwnNotItsParents`). Each test fails with its half of the rule removed.
   3. **The marker** reads `[truncated: at least N elements omitted, above the visible area]`, `…, below the visible
      area]` or `…, above and below the visible area]`, the direction from where the omitted parts lie (`above` and
      `below` stay on the wire, and in the tests). A part placed neither way (beside the visible area, overlapping it,

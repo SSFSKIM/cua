@@ -17,7 +17,7 @@ permissions:
   contents: read
 env:
   P299_MAIN_REF: c4057c3a7426606c65145f3a4b16c5d3d307febb
-  P299_BRANCH_REF: effffcee
+  P299_BRANCH_REF: ab0e019a
 jobs:
   probe:
     strategy:

@@ -203,7 +203,7 @@ func descend(_ req: [String: Any]) -> [String: Any] {
   return ["rows": rows, "p50": pctl(ms, 0.5), "p95": pctl(ms, 0.95), "max": ms.max() ?? 0]
 }
 
-/// #301's record-only search, copied from feat/301-visible-first@effffcee Walk.swift `recordedChildPositions`, to compare
+/// #301's record-only search, copied from feat/301-visible-first@effffcee Walk.swift (unchanged at ab0e019a) `recordedChildPositions`, to compare
 /// against every child's frame read (whether a wide list's children bisect cleanly).
 func recordedChildPositions(_ children: [AXUIElement], frame: (AXUIElement) -> CGRect?, window: CGRect, limit: Int) -> [Int] {
   let probe = 8

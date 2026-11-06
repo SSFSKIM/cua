@@ -351,6 +351,10 @@ impl Engine {
             self.extra
                 .insert("focus_out".into(), sent.iter().map(Sent::record).collect());
         }
+        if let Some(waited) = self.inputs.desktop.on_top_waited.take() {
+            self.extra
+                .insert("on_top_wait_ms".into(), json!(waited.as_secs_f64() * 1000.0));
+        }
         if self.cfg.stats {
             self.pending_stats = Some((
                 request.id.clone(),

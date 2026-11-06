@@ -87,6 +87,40 @@ pub fn points_unobscured(window: Rect, levels: &[Level], points: &[(i32, i32)]) 
         })
 }
 
+/// Where real pointer input at a window's points would go (task 63: the foreground route's pointer input after the
+/// window is activated). XTEST events go to the topmost window under each point, whatever holds the focus, so input
+/// meant for the window reaches it only where nothing is stacked above it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reach {
+    /// Every point lies in the window and under no window above it: the input reaches the window.
+    Window,
+    /// A point lies under a window stacked above it or above an ancestor, judged by outer rectangles as
+    /// `points_unobscured` judges a drag's path, and InputOnly windows count, since they take pointer input though
+    /// they draw nothing. A window manager's raise can still change this.
+    Covered,
+    /// A point lies outside the window, or outside an ancestor or the screen, or there is no point or no stacking to
+    /// judge by: no raise makes input there reach the window.
+    Outside,
+}
+
+/// [`Reach`] of real pointer input at `points` (root coordinates) into `window`.
+pub fn reach(window: Rect, levels: &[Level], points: &[(i32, i32)]) -> Reach {
+    let inside = |p| window.contains_point(p) && levels.iter().all(|level| level.clip.contains_point(p));
+    if levels.is_empty() || points.is_empty() || !points.iter().all(|&p| inside(p)) {
+        return Reach::Outside;
+    }
+    let under_another = |p| {
+        levels
+            .iter()
+            .any(|level| level.above.iter().any(|a| a.viewable && a.rect.contains_point(p)))
+    };
+    if points.iter().any(|&p| under_another(p)) {
+        Reach::Covered
+    } else {
+        Reach::Window
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,5 +317,73 @@ mod tests {
         assert!(!fully_unobscured(rect(0, 0, 10, 10), &[]));
         let (_, levels) = framed(rect(10, 30, 900, 700), vec![]);
         assert!(!fully_unobscured(rect(10, 30, 0, 700), &levels));
+    }
+
+    #[test]
+    fn pointer_input_reaches_the_window_only_where_nothing_is_stacked_above_it() {
+        // the front window over the window's bottom half, as before a window manager's raise
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![above(rect(0, 410, 1280, 390))]);
+        assert_eq!(
+            reach(w, &levels, &[(300, 103)]),
+            Reach::Window,
+            "a point above the cover"
+        );
+        assert_eq!(reach(w, &levels, &[(300, 500)]), Reach::Covered, "a point under it");
+        assert_eq!(
+            reach(w, &levels, &segment((300, 100), (300, 600))),
+            Reach::Covered,
+            "a drag path running under it"
+        );
+        // raised: the cover is below it now, among the levels' windows above it no more
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![]);
+        assert_eq!(reach(w, &levels, &segment((300, 100), (300, 600))), Reach::Window);
+        // a sibling above inside the frame takes the input too
+        let (w, mut levels) = framed(rect(0, 20, 1000, 780), vec![]);
+        levels[0].above.push(above(rect(290, 90, 20, 20)));
+        assert_eq!(reach(w, &levels, &[(300, 100)]), Reach::Covered);
+    }
+
+    #[test]
+    fn an_input_only_window_above_takes_the_input_though_it_draws_nothing() {
+        let input_only = Above {
+            input_only: true,
+            ..above(rect(250, 50, 100, 100))
+        };
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![input_only]);
+        assert!(
+            points_unobscured(w, &levels, &[(300, 100)]),
+            "nothing drawn over the point"
+        );
+        assert_eq!(
+            reach(w, &levels, &[(300, 100)]),
+            Reach::Covered,
+            "but it would take the press"
+        );
+        // unmapped windows take nothing
+        let unmapped = Above {
+            viewable: false,
+            ..above(SCREEN)
+        };
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![unmapped]);
+        assert_eq!(reach(w, &levels, &[(300, 100)]), Reach::Window);
+    }
+
+    #[test]
+    fn a_point_outside_the_window_or_the_screen_is_outside_whatever_is_stacked_above() {
+        let (w, levels) = framed(rect(0, 20, 1000, 780), vec![above(rect(0, 0, 1280, 800))]);
+        assert_eq!(
+            reach(w, &levels, &[(300, 100), (1100, 100)]),
+            Reach::Outside,
+            "one point past the window's right edge, the rest covered"
+        );
+        assert_eq!(
+            reach(w, &levels, &[(300, 10)]),
+            Reach::Outside,
+            "on the frame's title bar"
+        );
+        let (w, levels) = on_root(rect(800, 20, 600, 400));
+        assert_eq!(reach(w, &levels, &[(1300, 100)]), Reach::Outside, "off the screen");
+        assert_eq!(reach(w, &levels, &[]), Reach::Outside, "no point");
+        assert_eq!(reach(w, &[], &[(900, 100)]), Reach::Outside, "no stacking read");
     }
 }

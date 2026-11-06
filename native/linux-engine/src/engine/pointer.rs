@@ -480,6 +480,12 @@ impl Engine {
                 Some((px, py)) => Some(route.root_point(x, px, py)?),
                 None => None,
             };
+            // the foreground route's window on top at the point before anything is sent (task 63)
+            if let Some(point) = at {
+                route
+                    .on_top_at(x, &[point])?
+                    .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
+            }
             // the press's checks before every press, not once per request: the person may move the focus during an
             // earlier click's hold (the bounded re-review's P1); a count of 0 still checks and places, pressing nothing
             for sent in 0..count.max(1) {
@@ -516,6 +522,9 @@ impl Engine {
         inputs.with_route(x, target, |x, route, _| {
             let (rx, ry) = route.root_point(x, input.x, input.y)?;
             let keycodes = chord(x, input.key.as_deref())?;
+            route
+                .on_top_at(x, &[(rx, ry)])?
+                .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
             let held = route.acquire(x, &keycodes)?;
             let moved = route.place(x, rx, ry);
             moved.and(route.release(x, &held))
@@ -714,6 +723,10 @@ impl Engine {
             if points.len() < 2 {
                 bail!("drag path must contain at least two points");
             }
+            // the foreground route's window on top along the whole path before anything is sent (task 63)
+            route
+                .on_top_at(x, &drag_samples(&points))?
+                .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
             // the drag's press goes at the path's start, with its own acknowledgement
             let pressing = press_ack(ack.as_mut(), bus.as_mut(), x, route, Some(points[0]))?
                 .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
@@ -949,6 +962,9 @@ pub(super) fn wheel(x: &X11, route: &mut Route, at: Option<(i16, i16)>, input: &
     }
     let keycodes = chord(x, input.key.as_deref())?;
     if let Some((rx, ry)) = at {
+        route
+            .on_top_at(x, &[(rx, ry)])?
+            .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
         route.place(x, rx, ry)?;
     }
     let button = input.direction.button();

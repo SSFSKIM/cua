@@ -184,7 +184,10 @@ impl Engine {
         self.extra.insert("route".into(), json!(way.name()));
     }
 
-    /// The foreground route's start: the window activated, and holding the X input focus.
+    /// The foreground route's start: the window activated, and holding the X input focus. The focus is the engine's own
+    /// request and comes at once; the raise is the window manager's and can come later, so pointer input waits for it
+    /// at its own points before it sends anything (`Route::on_top_at`, task 63). Keys go to the focus, which this waits
+    /// for.
     pub(super) fn enter(&mut self, window: Window) -> Result<()> {
         activate(&self.x, window)?;
         let deadline = Instant::now() + ACTIVATION_WAIT;

@@ -44,6 +44,9 @@ pub struct Desktop {
     pub keys: Keys,
     /// After each new key edge (Design: no pacing).
     pub key_pace: Duration,
+    /// How long the request's foreground pointer input waited for its window to be on top at its points
+    /// (`Route::on_top_at`), for the `--stats` line.
+    pub on_top_waited: Option<Duration>,
 }
 
 fn fake(x: &X11, kind: u8, detail: u8, root: u32, rx: i16, ry: i16) -> Result<()> {
@@ -56,6 +59,7 @@ impl Desktop {
         Desktop {
             keys: Keys::new(Vec::new()),
             key_pace,
+            on_top_waited: None,
         }
     }
 

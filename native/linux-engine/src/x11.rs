@@ -748,6 +748,15 @@ impl X11 {
             .is_some_and(|(rect, levels)| crate::cover::points_unobscured(rect, &levels, &points))
     }
 
+    /// Where real pointer input at root `points` would go now (`cover.rs` `reach`): the X errors of the stacking read are
+    /// the caller's, since a window gone or its ancestry changing is not a judgement of the points.
+    pub fn reach(&self, window: Window, points: &[(i16, i16)]) -> Result<crate::cover::Reach> {
+        let points: Vec<(i32, i32)> = points.iter().map(|&(x, y)| (x as i32, y as i32)).collect();
+        let geometry = self.conn.get_geometry(window)?.reply()?;
+        let (rect, levels) = self.cover(window, &geometry)?;
+        Ok(crate::cover::reach(rect, &levels, &points))
+    }
+
     /// Whether `window` is fully unobscured now (`cover.rs`); any X error is doubt, and doubt is obscured.
     fn fully_unobscured(&self, window: Window, geometry: &GetGeometryReply) -> bool {
         self.cover(window, geometry)

@@ -333,6 +333,10 @@ impl Engine {
                     let (after, clicks) = click_for_focus(
                         || {
                             confirmed(&element, &mut shared.borrow_mut(), x, *clicked)?;
+                            // the foreground route's window on top at the point before the click (task 63)
+                            route
+                                .on_top_at(x, &[(rx, ry)])?
+                                .map_err(|cause| refused(&cause, *clicked))?;
                             let pressing =
                                 press_ack(ack.as_mut(), Some(&mut **shared.borrow_mut()), x, route, Some((rx, ry)))?
                                     .map_err(|cause| refused(&cause, *clicked))?;

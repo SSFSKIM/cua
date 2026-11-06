@@ -212,6 +212,10 @@ fn right_click(
     let result = inputs.with_route(x, target, |x, route, _| {
         let (rx, ry) = visible_point(bus, element, "right-clicking").inspect_err(|_| point_failed = true)?;
         element.associated.confirm_before_acting(bus, x)?;
+        // the foreground route's window on top at the point before anything is sent (task 63)
+        route
+            .on_top_at(x, &[(rx, ry)])?
+            .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
         let pressing = press_ack(ack, Some(&mut *bus), x, route, Some((rx, ry)))?
             .map_err(|cause| anyhow!(nothing_pressed(cause)))?;
         route.place(x, rx, ry)?;

@@ -1846,3 +1846,175 @@ fn a_real_pointer_motion_in_the_press_window_answers_that_the_drag_may_not_have_
         ]
     );
 }
+
+/// A window manager's stand-in, on its own connection (task 63): it takes `SubstructureRedirect` on the root, so a
+/// client's restack of a top-level window comes to it as a `ConfigureRequest`. It carries out `slow`'s only `delay`
+/// later (never, with None), as a window manager under load raises an activated window after the engine's own focus
+/// request has already given it the focus, and every other request at once. The engine's activation request reaches
+/// it too, and asks nothing more of it. Dropped, it lets the redirect go.
+struct SlowRaises {
+    stop: mpsc::Sender<()>,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl SlowRaises {
+    fn start(slow: Window, delay: Option<Duration>) -> SlowRaises {
+        use x11rb::protocol::xproto::{ChangeWindowAttributesAux, ConfigureRequestEvent};
+        let (stop, stopped) = mpsc::channel();
+        let (ready, started) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            let (conn, screen) = x11rb::connect(None).expect("an X connection");
+            let root = conn.setup().roots[screen].root;
+            conn.change_window_attributes(
+                root,
+                &ChangeWindowAttributesAux::new().event_mask(EventMask::SUBSTRUCTURE_REDIRECT),
+            )
+            .unwrap()
+            .check()
+            .expect("no window manager on the test's display");
+            ready.send(()).unwrap();
+            let carry_out = |e: &ConfigureRequestEvent| {
+                let aux = ConfigureWindowAux::from_configure_request(e);
+                let _ = conn.configure_window(e.window, &aux);
+                let _ = conn.flush();
+            };
+            let mut pending: Vec<(Instant, ConfigureRequestEvent)> = Vec::new();
+            while stopped.try_recv().is_err() {
+                while let Some(event) = conn.poll_for_event().unwrap() {
+                    match event {
+                        Event::ConfigureRequest(e) if e.window == slow => {
+                            if let Some(delay) = delay {
+                                pending.push((Instant::now() + delay, e));
+                            }
+                        }
+                        Event::ConfigureRequest(e) => carry_out(&e),
+                        Event::MapRequest(e) => {
+                            let _ = conn.map_window(e.window);
+                            let _ = conn.flush();
+                        }
+                        _ => {}
+                    }
+                }
+                let now = Instant::now();
+                for (_, e) in pending.iter().filter(|(due, _)| *due <= now) {
+                    carry_out(e);
+                }
+                pending.retain(|(due, _)| *due > now);
+                sleep(Duration::from_millis(1));
+            }
+        });
+        started.recv().unwrap();
+        SlowRaises {
+            stop,
+            thread: Some(thread),
+        }
+    }
+}
+
+impl Drop for SlowRaises {
+    fn drop(&mut self) {
+        let _ = self.stop.send(());
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// The foreground route's pointer input waits until its activated window is on top at the input's points, not only
+/// until it holds the focus (task 63): with the window manager's raise 150 ms behind the engine's focus request, the
+/// click, the wheel step and the drag each still land in the window and none reaches the window that covered it,
+/// which received every one of them while the route waited for the focus alone.
+#[test]
+fn foreground_pointer_input_waits_for_the_window_manager_to_raise_its_window() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let cover = Probe::open("Cover", (0, 0, 400, 300));
+    let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+    let cases = [
+        ("click", json!({"window": firefox.target(), "x": 100, "y": 100}), 1),
+        (
+            "scroll",
+            json!({"window": firefox.target(), "x": 100, "y": 100, "direction": "down", "pixels": 100}),
+            5,
+        ),
+        (
+            "drag",
+            json!({"window": firefox.target(), "path": [{"x": 60, "y": 60}, {"x": 160, "y": 120}]}),
+            1,
+        ),
+    ];
+    for (command, input, button) in cases {
+        firefox.unfocus();
+        cover.raise();
+        assert!(cover.above(&firefox), "{command}: covered before the request");
+        let raises = SlowRaises::start(firefox.id, Some(Duration::from_millis(150)));
+        let started = Instant::now();
+        dedicated.request(command, input).unwrap();
+        let took = started.elapsed();
+        drop(raises);
+        assert_eq!(
+            cover.inputs(),
+            vec![],
+            "{command}: nothing reached the window that covered it"
+        );
+        assert!(firefox.above(&cover), "{command}: raised");
+        assert_eq!(
+            firefox.inputs(),
+            vec![
+                Input::ButtonPress { button, sent: false },
+                Input::ButtonRelease { button, sent: false }
+            ],
+            "{command}: its real button events, in the window"
+        );
+        assert!(
+            took >= Duration::from_millis(150),
+            "{command}: it waited for the raise ({took:?})"
+        );
+    }
+}
+
+/// A window the window manager never raises over the point is refused at the wait's bound, and one asked for input at
+/// a point outside it at once, each with nothing sent: no event reaches the window or the window covering it.
+#[test]
+fn foreground_pointer_input_is_refused_with_nothing_sent_when_its_window_is_not_on_top_at_its_points() {
+    let firefox = Probe::open("firefox", (0, 0, 320, 200));
+    let cover = Probe::open("Cover", (0, 0, 400, 300));
+    let mut dedicated = Engine::start_with(&["--desktop", "dedicated"]);
+    firefox.unfocus();
+    cover.raise();
+    let raises = SlowRaises::start(firefox.id, None);
+    let started = Instant::now();
+    let refused = dedicated.request("click", json!({"window": firefox.target(), "x": 100, "y": 100}));
+    let took = started.elapsed();
+    drop(raises);
+    let refusal = refused.expect_err("never raised: refused");
+    assert!(
+        refusal.starts_with(&format!("window {} was still covered at the input's point", firefox.id))
+            && refusal.ends_with("; nothing was sent, so it is safe to retry"),
+        "{refusal}"
+    );
+    assert!(took >= Duration::from_millis(1000), "refused at the bound ({took:?})");
+    // a drag whose path leaves the window, and a move to a point beyond it: outside, refused at once (with no window
+    // manager here, the raise comes at once)
+    for (command, input) in [
+        (
+            "drag",
+            json!({"window": firefox.target(), "path": [{"x": 60, "y": 60}, {"x": 360, "y": 60}]}),
+        ),
+        ("move", json!({"window": firefox.target(), "x": 330, "y": 60})),
+    ] {
+        firefox.unfocus();
+        cover.raise();
+        let started = Instant::now();
+        assert_eq!(
+            dedicated.request(command, input),
+            Err(format!(
+                "the input's point is outside window {}; nothing was sent, so it is safe to retry",
+                firefox.id
+            )),
+            "{command}"
+        );
+        assert!(started.elapsed() < Duration::from_millis(500), "{command}: at once");
+    }
+    assert_eq!(firefox.inputs(), vec![], "nothing reached the window");
+    assert_eq!(cover.inputs(), vec![], "nor the window covering it");
+}
